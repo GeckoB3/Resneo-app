@@ -1,0 +1,199 @@
+import { useEffect, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+
+import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
+import { Text } from '@/components/ui/Text';
+import { useGuests } from '@/lib/queries/useGuests';
+import { walkInGuestSchema } from '@/lib/validation/walk-in-guest';
+import { radius, spacing } from '@/theme/index';
+import { useTheme } from '@/theme/useTheme';
+import type { GuestListItem } from '@/types/guest-list';
+
+export type GuestDetails = {
+  name: string;
+  phone: string;
+  email: string;
+};
+
+type GuestDetailsStepProps = {
+  value: GuestDetails;
+  onChange: (value: GuestDetails) => void;
+  onContinue: () => void;
+};
+
+const SEARCH_DEBOUNCE_MS = 280;
+const MIN_SEARCH_LENGTH = 2;
+
+function guestName(guest: GuestListItem): string {
+  return [guest.first_name, guest.last_name].filter(Boolean).join(' ').trim() || 'Unnamed guest';
+}
+
+function guestMeta(guest: GuestListItem): string {
+  const visits =
+    guest.visit_count > 0 ? `${guest.visit_count} visit${guest.visit_count === 1 ? '' : 's'}` : null;
+  return [guest.phone, visits].filter(Boolean).join(' · ');
+}
+
+/** Step 4 — find an existing guest or enter new contact details. */
+export function GuestDetailsStep({ value, onChange, onContinue }: GuestDetailsStepProps) {
+  const { colors } = useTheme();
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof GuestDetails, string>>>({});
+  const [searchInput, setSearchInput] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchInput.trim()), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  const guestsQuery = useGuests({
+    search: debouncedSearch.length >= MIN_SEARCH_LENGTH ? debouncedSearch : undefined,
+    page: 0,
+    limit: 8,
+  });
+  const results =
+    debouncedSearch.length >= MIN_SEARCH_LENGTH ? guestsQuery.data?.guests ?? [] : [];
+
+  const pickGuest = (guest: GuestListItem) => {
+    onChange({ name: guestName(guest), phone: guest.phone ?? '', email: guest.email ?? '' });
+    setSearchInput('');
+    setDebouncedSearch('');
+    setFieldErrors({});
+  };
+
+  const handleContinue = () => {
+    const parsed = walkInGuestSchema.safeParse(value);
+    if (!parsed.success) {
+      const nextErrors: Partial<Record<keyof GuestDetails, string>> = {};
+      for (const issue of parsed.error.issues) {
+        const field = issue.path[0];
+        if (typeof field === 'string' && !nextErrors[field as keyof GuestDetails]) {
+          nextErrors[field as keyof GuestDetails] = issue.message;
+        }
+      }
+      setFieldErrors(nextErrors);
+      return;
+    }
+    setFieldErrors({});
+    onContinue();
+  };
+
+  return (
+    <ScrollView
+      style={styles.flex}
+      contentContainerStyle={styles.container}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}>
+      <Text variant="heading">Guest details</Text>
+
+      <Input
+        label="Find an existing guest"
+        placeholder="Search name or phone"
+        value={searchInput}
+        onChangeText={setSearchInput}
+        autoCapitalize="none"
+        autoCorrect={false}
+        returnKeyType="search"
+      />
+
+      {results.length > 0 ? (
+        <View style={styles.results}>
+          {results.map((guest) => (
+            <Pressable
+              key={guest.id}
+              accessibilityRole="button"
+              onPress={() => pickGuest(guest)}
+              style={({ pressed }) => [
+                styles.resultRow,
+                { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? 0.85 : 1 },
+              ]}>
+              <Text variant="bodyMedium" numberOfLines={1}>
+                {guestName(guest)}
+              </Text>
+              {guestMeta(guest) ? (
+                <Text variant="caption" tone="muted" numberOfLines={1}>
+                  {guestMeta(guest)}
+                </Text>
+              ) : null}
+            </Pressable>
+          ))}
+        </View>
+      ) : debouncedSearch.length >= MIN_SEARCH_LENGTH && !guestsQuery.isFetching ? (
+        <Text variant="caption" tone="muted">
+          No matching guests — enter details below.
+        </Text>
+      ) : null}
+
+      <View style={styles.divider}>
+        <View style={[styles.line, { backgroundColor: colors.border }]} />
+        <Text variant="caption" tone="muted">
+          or enter details
+        </Text>
+        <View style={[styles.line, { backgroundColor: colors.border }]} />
+      </View>
+
+      <Input
+        autoCapitalize="words"
+        autoComplete="name"
+        error={fieldErrors.name}
+        label="Name"
+        onChangeText={(name) => onChange({ ...value, name })}
+        placeholder="Guest name"
+        value={value.name}
+      />
+      <Input
+        autoComplete="tel"
+        error={fieldErrors.phone}
+        keyboardType="phone-pad"
+        label="Phone"
+        onChangeText={(phone) => onChange({ ...value, phone })}
+        placeholder="Phone number"
+        textContentType="telephoneNumber"
+        value={value.phone}
+      />
+      <Input
+        autoCapitalize="none"
+        autoComplete="email"
+        error={fieldErrors.email}
+        keyboardType="email-address"
+        label="Email (optional)"
+        onChangeText={(email) => onChange({ ...value, email })}
+        placeholder="Email address"
+        textContentType="emailAddress"
+        value={value.email}
+      />
+
+      <Button label="Continue" fullWidth onPress={handleContinue} />
+    </ScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  flex: {
+    flex: 1,
+  },
+  container: {
+    gap: spacing.base,
+    paddingBottom: spacing.xl,
+  },
+  results: {
+    gap: spacing.sm,
+  },
+  resultRow: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.base,
+    paddingVertical: spacing.md,
+    gap: 2,
+  },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  line: {
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
+  },
+});

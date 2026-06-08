@@ -1,0 +1,123 @@
+# Resneo Mobile App — Cursor Rules
+
+## Project Context
+
+This is the React Native mobile app for Resneo, a booking and business 
+management SaaS platform for Northern Ireland businesses (salons, restaurants, 
+practitioners). It shares a backend with the Resneo web app but is a 
+separate codebase.
+
+Target users: business owners and staff (NOT end customers booking 
+appointments). Primary use case: a salon owner glancing at today's diary 
+behind the counter, taking a quick booking when someone walks in, getting 
+push notifications for new bookings.
+
+The developer (Andrew) is a beginner. Explain non-obvious choices in 
+comments. Prefer clear, readable code over clever code. When introducing a 
+new pattern or library, briefly explain why in a comment.
+
+## Tech Stack — Use These, Not Alternatives
+
+- React Native via Expo (SDK 52+)
+- Expo Router for file-based navigation (NOT React Navigation directly)
+- TypeScript, strict mode, NO `any` types
+- Supabase (@supabase/supabase-js) for backend, auth, and database
+- expo-secure-store for auth tokens (NOT AsyncStorage, NOT localStorage)
+- TanStack Query (@tanstack/react-query) for server state
+- Zod for runtime validation
+- date-fns for date manipulation (NOT moment, NOT dayjs)
+- react-native-reanimated for animations when needed
+- expo-notifications for push
+
+## Critical: This Is Not a Web App
+
+NEVER generate:
+- HTML elements (<div>, <span>, <button>, <input>, <a>, <p>, <h1>, etc.)
+- className= or CSS classes
+- CSS files, Tailwind, or styled-components
+- window., document., localStorage, sessionStorage
+- href links — use Expo Router's <Link> or router.push()
+- <form> with onSubmit — use button onPress handlers
+
+ALWAYS use:
+- <View>, <Text>, <Pressable>, <ScrollView>, <TextInput>, <Image>
+- StyleSheet.create({...}) or inline style={{...}} objects
+- Flexbox for all layout (no Grid — it doesn't exist in RN)
+- expo-secure-store for sensitive storage
+- expo-router's <Link> and useRouter() for navigation
+
+## Styling Conventions
+
+- Define a central theme in `theme/index.ts` with colors, spacing, typography
+- Use StyleSheet.create() at the bottom of component files for component-scoped styles
+- Spacing scale: 4, 8, 12, 16, 20, 24, 32, 48 (multiples of 4)
+- Use SafeAreaView (from react-native-safe-area-context) for top-level screens
+- Touch targets minimum 44x44 (Apple HIG) — important on a phone behind a busy salon counter
+
+## File Structure
+
+app/                    # Expo Router screens (file-based routing)
+  (auth)/              # Auth flow group
+    sign-in.tsx
+    sign-up.tsx
+  (tabs)/              # Main tab navigation
+    index.tsx          # Today view
+    week.tsx
+    clients.tsx
+    settings.tsx
+  booking/[id].tsx     # Booking detail
+components/            # Reusable UI components
+  ui/                  # Primitive components (Button, Card, Input)
+  bookings/            # Domain components
+lib/                   # Non-UI logic
+  supabase.ts          # Supabase client setup
+  queries/             # TanStack Query hooks
+  validation/          # Zod schemas
+types/                 # Shared TypeScript types
+theme/                 # Colors, spacing, typography
+
+## Supabase Patterns
+
+- Use Row Level Security policies — never bypass with service role on the client
+- The mobile app uses the same RLS policies as the web app
+- For queries, prefer TanStack Query wrappers in lib/queries/ over inline calls
+- Auth tokens go in expo-secure-store via Supabase's custom storage option
+- Real-time subscriptions are powerful for the Today view — use them for booking updates
+
+## Linked Accounts Context
+
+Resneo supports linked accounts for chair-rental scenarios (multiple 
+self-employed stylists sharing a salon). The mobile app must support 
+account switching. When implementing anything that touches bookings, 
+clients, or settings, consider which account context the user is currently 
+in. Use a global account context provider.
+
+## Code Quality
+
+- TypeScript strict mode — fix errors, don't suppress with `any` or `@ts-ignore`
+- Always handle loading and error states in UI components, not just success
+- All async functions need try/catch when they touch the network
+- Validate any data crossing a trust boundary (user input, API responses) with Zod
+- Prefer composition over inheritance; prefer hooks over HOCs
+
+## Performance
+
+- Use FlatList (not .map() over ScrollView) for any list of >20 items
+- Memoize expensive computations with useMemo
+- Wrap callback props with useCallback when passed to memoized children
+- Images: use expo-image (NOT React Native's Image) — better caching and performance
+- Avoid inline functions in render for performance-sensitive screens
+
+## Comments and Explanations
+
+- Add JSDoc comments to exported functions explaining purpose and params
+- Mark TODOs with // TODO(andrew): description
+- When implementing something non-obvious (e.g. why a setTimeout, why a ref),
+  explain in a comment. Future-me will thank present-me.
+
+## What NOT to Do
+
+- Don't introduce new dependencies without explaining why in the chat first
+- Don't generate code that uses lib/supabase with the service role key — anon/publishable key only
+- Don't commit `.env.local` or paste secret keys into source files
+- Don't read or modify `_reference/reserve-ni` except when explicitly porting API patterns to the mobile app
