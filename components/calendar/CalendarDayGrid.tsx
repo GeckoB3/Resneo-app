@@ -203,6 +203,9 @@ export function CalendarDayGrid({
             serviceName={item.booking.serviceName}
             timeLabel={item.timeLabel}
             status={item.booking.status}
+            clientArrivedAt={item.booking.client_arrived_at}
+            staffAttendanceConfirmedAt={item.booking.staff_attendance_confirmed_at}
+            guestAttendanceConfirmedAt={item.booking.guest_attendance_confirmed_at}
             top={item.top}
             height={item.height}
             onPress={onBlockPress}

@@ -1,7 +1,10 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Text } from '@/components/ui/Text';
-import { bookingCalendarBlockPalette } from '@/lib/booking/booking-status-visual';
+import {
+  bookingCalendarBlockPalette,
+  isArrivedWaitingDisplay,
+} from '@/lib/booking/booking-status-visual';
 import { bookingStatusDisplayLabel } from '@/lib/booking/infer-booking-row-model';
 import { hexToRgba } from '@/lib/color';
 import { fonts, radius, spacing } from '@/theme/index';
@@ -13,6 +16,10 @@ type AppointmentBlockProps = {
   serviceName: string;
   timeLabel: string;
   status: string;
+  /** Attendance overlay — an arrived-but-not-started guest colours the bar amber. */
+  clientArrivedAt?: string | null;
+  staffAttendanceConfirmedAt?: string | null;
+  guestAttendanceConfirmedAt?: string | null;
   top: number;
   height: number;
   onPress: (id: string) => void;
@@ -26,6 +33,9 @@ export function AppointmentBlock({
   serviceName,
   timeLabel,
   status,
+  clientArrivedAt,
+  staffAttendanceConfirmedAt,
+  guestAttendanceConfirmedAt,
   top,
   height,
   onPress,
@@ -33,13 +43,21 @@ export function AppointmentBlock({
 }: AppointmentBlockProps) {
   const compact = height < 52;
   // The bar's saturated fill IS the status (web parity): Pending orange, Booked sky,
-  // Confirmed navy, Started emerald, Completed slate, No-Show red, Cancelled ghost.
-  const palette = bookingCalendarBlockPalette({ status });
+  // Confirmed navy, Started emerald, Completed slate, No-Show red, Cancelled ghost. A guest
+  // who's arrived but not yet started overrides to amber; attendance-confirmed reads as Confirmed.
+  const palette = bookingCalendarBlockPalette({
+    status,
+    client_arrived_at: clientArrivedAt,
+    staff_attendance_confirmed_at: staffAttendanceConfirmedAt,
+    guest_attendance_confirmed_at: guestAttendanceConfirmedAt,
+  });
+  const arrivedWaiting = isArrivedWaitingDisplay({ status, client_arrived_at: clientArrivedAt });
+  const statusLabel = `${bookingStatusDisplayLabel(status, false)}${arrivedWaiting ? ', arrived' : ''}`;
 
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${timeLabel}, ${guestName}, ${serviceName}, ${bookingStatusDisplayLabel(status, false)}`}
+      accessibilityLabel={`${timeLabel}, ${guestName}, ${serviceName}, ${statusLabel}`}
       accessibilityHint="Tap to open, long-press to reschedule"
       onPress={() => onPress(id)}
       onLongPress={onLongPress ? () => onLongPress(id) : undefined}

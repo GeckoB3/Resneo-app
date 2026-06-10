@@ -14,6 +14,10 @@ export interface CalendarGridBooking {
   status: string;
   /** Hex colour; usually null from this endpoint — fall back to the practitioner colour. */
   colour?: string | null;
+  /** Attendance overlay — drives the calendar bar colour (arrived-waiting guests show amber). */
+  client_arrived_at?: string | null;
+  staff_attendance_confirmed_at?: string | null;
+  guest_attendance_confirmed_at?: string | null;
 }
 
 export interface CalendarGridBlock {
