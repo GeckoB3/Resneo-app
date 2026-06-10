@@ -37,7 +37,7 @@ export function WeekStrip({ days, selectedDate, today, counts, onSelectDay }: We
             onPress={() => onSelectDay(date)}
             accessibilityRole="button"
             accessibilityState={{ selected }}
-            style={styles.cell}>
+            style={({ pressed }) => [styles.cell, { opacity: pressed ? 0.55 : 1 }]}>
             <Text variant="caption" color={selected ? colors.brand : colors.textMuted}>
               {format(d, 'EEE')}
             </Text>

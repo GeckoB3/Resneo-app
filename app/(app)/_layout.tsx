@@ -2,10 +2,12 @@ import { Redirect, Stack } from 'expo-router';
 import { useMemo } from 'react';
 
 import { LoadingState } from '@/components/ui/LoadingState';
+import { useColorScheme } from '@/components/useColorScheme';
 import { ApiError } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { useAuth } from '@/providers/AuthProvider';
+import { darkColors, fonts, lightColors } from '@/theme/index';
 
 type StaffGateStatus = 'loading' | 'staff' | 'not_staff' | 'unknown';
 
@@ -59,6 +61,8 @@ function useStaffGateStatus(): StaffGateStatus {
  */
 export default function AppLayout() {
   const staffStatus = useStaffGateStatus();
+  const colorScheme = useColorScheme();
+  const colors = colorScheme === 'dark' ? darkColors : lightColors;
 
   if (staffStatus === 'loading') {
     return <LoadingState message="Checking staff access…" />;
@@ -69,7 +73,16 @@ export default function AppLayout() {
   }
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
+    <Stack
+      screenOptions={{
+        headerShown: false,
+        // Themed, Inter-set headers — match the tab screens (system default otherwise).
+        headerStyle: { backgroundColor: colors.background },
+        headerTintColor: colors.text,
+        headerTitleStyle: { fontFamily: fonts.semibold, fontSize: 17 },
+        headerShadowVisible: false,
+        headerBackButtonDisplayMode: 'minimal',
+      }}>
       <Stack.Screen name="(tabs)" />
       <Stack.Screen
         name="booking/[id]"

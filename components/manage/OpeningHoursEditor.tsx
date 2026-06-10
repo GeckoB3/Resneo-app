@@ -153,7 +153,7 @@ export function OpeningHoursEditor({ value, onChange, editable = true }: Opening
                         onPress={() =>
                           setDay(key, { periods: periods.filter((_, i) => i !== index) })
                         }
-                        style={styles.removeBtn}>
+                        style={({ pressed }) => [styles.removeBtn, { opacity: pressed ? 0.5 : 1 }]}>
                         <Text variant="title" tone="danger">
                           ✕
                         </Text>

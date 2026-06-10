@@ -154,7 +154,7 @@ export function VariantsEditorSheet({ target, saving = false, onClose, onSave }:
                       <Pressable
                         accessibilityRole="button"
                         onPress={() => setExpandedKey(expanded ? null : draft.key)}
-                        style={styles.optionHeader}>
+                        style={({ pressed }) => [styles.optionHeader, { opacity: pressed ? 0.55 : 1 }]}>
                         <View style={styles.optionText}>
                           <Text variant="bodyMedium" numberOfLines={1}>
                             {draft.name.trim() || 'New option'}

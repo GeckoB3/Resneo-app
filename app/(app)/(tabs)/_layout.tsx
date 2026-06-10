@@ -1,7 +1,8 @@
 import { SymbolView } from 'expo-symbols';
 import { Tabs } from 'expo-router';
-import { useMemo } from 'react';
-import type { ColorValue } from 'react-native';
+import type { BottomTabBarButtonProps } from 'expo-router/build/react-navigation/bottom-tabs';
+import { useMemo, type ComponentProps } from 'react';
+import { Pressable, StyleSheet, type ColorValue } from 'react-native';
 
 import { LinkedVenueBanner } from '@/components/ui/LinkedVenueBanner';
 import { OfflineBanner } from '@/components/ui/OfflineBanner';
@@ -57,6 +58,43 @@ function MoreTabIcon({ color }: TabIconProps) {
 
 type TabBarIconRenderProps = { color: ColorValue; focused: boolean; size: number };
 
+/**
+ * Tab button without the navigator's default *borderless* Android ripple,
+ * which radiates past the bar into the system-navigation area on
+ * edge-to-edge devices. A bounded, clipped highlight + a gentle opacity dip
+ * stay strictly inside the tab — and feel closer to a native iOS tab bar.
+ */
+function TabBarButton({
+  children,
+  style,
+  // Injected for the navigator's default PlatformPressable — not Pressable props.
+  ref: _ref,
+  href: _href,
+  pressColor: _pressColor,
+  pressOpacity: _pressOpacity,
+  hoverEffect: _hoverEffect,
+  android_ripple: _ripple,
+  ...rest
+}: BottomTabBarButtonProps) {
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  return (
+    <Pressable
+      {...(rest as ComponentProps<typeof Pressable>)}
+      android_ripple={{
+        color: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 59, 111, 0.08)',
+        borderless: false,
+      }}
+      style={({ pressed }) => [style, styles.tabButton, { opacity: pressed ? 0.6 : 1 }]}>
+      {children}
+    </Pressable>
+  );
+}
+
+function renderTabBarButton(props: BottomTabBarButtonProps) {
+  return <TabBarButton {...props} />;
+}
+
 function renderCalendarIcon({ color }: TabBarIconRenderProps) {
   return <CalendarTabIcon color={color} />;
 }
@@ -93,10 +131,13 @@ export default function TabLayout() {
         backgroundColor: colors.surfaceRaised,
         borderTopColor: colors.border,
       },
+      tabBarButton: renderTabBarButton,
       headerStyle: { backgroundColor: colors.background },
       headerTintColor: colors.text,
       headerShadowVisible: false,
       headerShown,
+      // Match the app's Inter type ramp — native headers default to the system font.
+      headerTitleStyle: { fontFamily: fonts.semibold, fontSize: 17 },
       tabBarLabelStyle: { fontFamily: fonts.medium, fontSize: 12, marginBottom: spacing.xs },
       // Mount tab screens on first visit — avoids duplicate hooks firing at once.
       lazy: true,
@@ -145,3 +186,11 @@ export default function TabLayout() {
     </>
   );
 }
+
+const styles = StyleSheet.create({
+  // Clip the bounded ripple to a soft rounded rect inside the tab.
+  tabButton: {
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+});

@@ -55,7 +55,7 @@ function MenuRow({
   return (
     <Pressable
       onPress={onPress}
-      style={styles.menuRow}
+      style={({ pressed }) => [styles.menuRow, { opacity: pressed ? 0.55 : 1 }]}
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityHint={hint}>

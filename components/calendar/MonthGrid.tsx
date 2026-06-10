@@ -49,10 +49,11 @@ export function MonthGrid({ anchor, today, counts, onSelectDay }: MonthGridProps
                 onPress={() => onSelectDay(dateStr)}
                 accessibilityRole="button"
                 accessibilityLabel={`${format(cell, 'd MMMM')}, ${count} bookings`}
-                style={[
+                style={({ pressed }) => [
                   styles.dayCell,
                   { borderColor: colors.border },
                   isToday ? { backgroundColor: colors.brandSubtle } : null,
+                  pressed ? { opacity: 0.55 } : null,
                 ]}>
                 <Text
                   variant="bodySmall"

@@ -76,7 +76,10 @@ function ServiceRow({
 
   return (
     <Card padded={false} style={styles.serviceCard}>
-      <Pressable onPress={onToggle} accessibilityRole="button" style={styles.serviceHeader}>
+      <Pressable
+        onPress={onToggle}
+        accessibilityRole="button"
+        style={({ pressed }) => [styles.serviceHeader, { opacity: pressed ? 0.55 : 1 }]}>
         <View
           style={[styles.colourDot, { backgroundColor: service.colour ?? colors.brand }]}
         />

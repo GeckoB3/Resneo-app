@@ -2,6 +2,7 @@ import { SymbolView } from 'expo-symbols';
 import { useRouter, type Href } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 
 import { BookingPeekSheet } from '@/components/bookings/BookingPeekSheet';
 import { CalendarDayGrid } from '@/components/calendar/CalendarDayGrid';
@@ -35,7 +36,7 @@ import { useRescheduleBooking } from '@/lib/queries/useBookingMutations';
 import { useCalendarGrid } from '@/lib/queries/useCalendarGrid';
 import { usePractitioners } from '@/lib/queries/usePractitioners';
 import { useVenueContext } from '@/providers/VenueProvider';
-import { spacing } from '@/theme/index';
+import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { Practitioner } from '@/types/practitioner';
 
@@ -268,12 +269,32 @@ export default function CalendarScreen() {
                 onPress={goToday}
                 accessibilityRole="button"
                 accessibilityHint="Jump to today"
-                style={styles.dateLabel}>
+                style={({ pressed }) => [styles.dateLabel, { opacity: pressed ? 0.55 : 1 }]}>
                 <Text variant="subheading" numberOfLines={1}>
                   {label}
                 </Text>
               </Pressable>
               <ChevButton dir="right" onPress={() => step(1)} />
+              {!isToday ? (
+                <Animated.View entering={FadeIn.duration(160)} exiting={FadeOut.duration(120)}>
+                  <Pressable
+                    onPress={goToday}
+                    accessibilityRole="button"
+                    accessibilityLabel="Jump to today"
+                    style={({ pressed }) => [
+                      styles.todayPill,
+                      {
+                        borderColor: colors.border,
+                        backgroundColor: colors.surface,
+                        opacity: pressed ? 0.7 : 1,
+                      },
+                    ]}>
+                    <Text variant="label" color={colors.brand}>
+                      Today
+                    </Text>
+                  </Pressable>
+                </Animated.View>
+              ) : null}
             </View>
 
             {scope !== 'month' ? (
@@ -334,7 +355,7 @@ export default function CalendarScreen() {
           )}
 
           <Fab
-            label={newBookingActionLabel(terminology)}
+            accessibilityLabel={newBookingActionLabel(terminology)}
             onPress={() => router.push('/booking/new')}
           />
         </>
@@ -370,7 +391,7 @@ function ChevButton({ dir, onPress }: { dir: 'left' | 'right'; onPress: () => vo
       accessibilityRole="button"
       accessibilityLabel={dir === 'left' ? 'Previous' : 'Next'}
       hitSlop={8}
-      style={styles.chevButton}>
+      style={({ pressed }) => [styles.chevButton, { opacity: pressed ? 0.45 : 1 }]}>
       <SymbolView
         name={
           dir === 'left'
@@ -406,6 +427,12 @@ const styles = StyleSheet.create({
     height: 36,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  todayPill: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 1,
+    borderRadius: radius.pill,
+    borderWidth: 1,
   },
   chips: {
     gap: spacing.sm,

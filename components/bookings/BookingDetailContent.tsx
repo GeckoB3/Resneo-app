@@ -108,7 +108,7 @@ function GuestHistoryCard({
         accessibilityRole="button"
         accessibilityLabel="Guest history"
         onPress={() => setExpanded((cur) => !cur)}
-        style={styles.cardHeaderRow}>
+        style={({ pressed }) => [styles.cardHeaderRow, { opacity: pressed ? 0.55 : 1 }]}>
         <Text variant="label">Guest history</Text>
         <Text variant="title" tone="muted">
           {expanded ? '▾' : '›'}

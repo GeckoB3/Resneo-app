@@ -225,7 +225,7 @@ export default function BookingsScreen() {
             onPress={goToday}
             accessibilityRole="button"
             accessibilityHint="Jump to today"
-            style={styles.dateLabel}>
+            style={({ pressed }) => [styles.dateLabel, { opacity: pressed ? 0.55 : 1 }]}>
             <Text variant="subheading" numberOfLines={1}>
               {label}
             </Text>
@@ -331,7 +331,10 @@ export default function BookingsScreen() {
         />
       )}
 
-      <Fab label={newBookingActionLabel(terminology)} onPress={() => router.push('/booking/new')} />
+      <Fab
+        accessibilityLabel={newBookingActionLabel(terminology)}
+        onPress={() => router.push('/booking/new')}
+      />
     </Screen>
   );
 }
@@ -348,7 +351,7 @@ function NavButton({ dir, onPress }: { dir: 'left' | 'right'; onPress: () => voi
       accessibilityRole="button"
       accessibilityLabel={dir === 'left' ? 'Previous' : 'Next'}
       hitSlop={8}
-      style={styles.navButton}>
+      style={({ pressed }) => [styles.navButton, { opacity: pressed ? 0.45 : 1 }]}>
       <SymbolView
         name={
           dir === 'left'

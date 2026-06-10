@@ -10,10 +10,16 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
 import { hapticTap } from '@/lib/haptics';
 import { fonts, minTouchTarget, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
+/** Quick, controlled press spring — subtle enough for dense forms. */
+const PRESS_SPRING = { damping: 20, stiffness: 480, mass: 0.5 };
 
 type ButtonVariant = 'primary' | 'accent' | 'secondary' | 'ghost' | 'danger';
 type ButtonSize = 'sm' | 'md' | 'lg';
@@ -59,6 +65,14 @@ export function Button({
   const isDisabled = disabled || loading;
   const sizing = SIZES[size];
 
+  // Spring scale + dip on press — tactile without being bouncy. A single
+  // progress value drives both so they always stay in sync.
+  const pressed = useSharedValue(0);
+  const pressAnimation = useAnimatedStyle(() => ({
+    transform: [{ scale: 1 - pressed.get() * 0.03 }],
+    opacity: 1 - pressed.get() * 0.12,
+  }));
+
   const variantStyles: Record<
     ButtonVariant,
     { backgroundColor: string; text: string; borderColor: string }
@@ -77,23 +91,30 @@ export function Button({
   }
 
   return (
-    <Pressable
+    <AnimatedPressable
       accessibilityRole="button"
       accessibilityState={{ disabled: !!isDisabled, busy: loading }}
       disabled={isDisabled}
       onPress={handlePress}
-      style={({ pressed }) => [
+      onPressIn={() => {
+        pressed.set(withSpring(1, PRESS_SPRING));
+      }}
+      onPressOut={() => {
+        pressed.set(withSpring(0, PRESS_SPRING));
+      }}
+      style={[
         styles.base,
         {
           minHeight: sizing.height,
           paddingHorizontal: sizing.paddingH,
           backgroundColor: v.backgroundColor,
           borderColor: v.borderColor,
-          opacity: isDisabled ? 0.45 : pressed ? 0.88 : 1,
           // Default: inherit parent alignment (stretches full-width in a column,
           // sizes to content in a row). `fullWidth` forces a stretch.
           alignSelf: fullWidth ? 'stretch' : undefined,
         },
+        pressAnimation,
+        isDisabled ? styles.disabled : null,
         style,
       ]}
       {...props}>
@@ -105,7 +126,7 @@ export function Button({
           <Text style={[styles.label, { color: v.text, fontSize: sizing.fontSize }]}>{label}</Text>
         </View>
       )}
-    </Pressable>
+    </AnimatedPressable>
   );
 }
 
@@ -115,6 +136,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  disabled: {
+    opacity: 0.45,
   },
   content: {
     flexDirection: 'row',
