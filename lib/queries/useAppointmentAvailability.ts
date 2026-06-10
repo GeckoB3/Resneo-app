@@ -23,6 +23,8 @@ type UseAppointmentAvailabilityParams = {
   addonIds?: string[];
   /** Staff duration override (base minutes; add-ons stack on top server-side). */
   durationMinutes?: number | null;
+  /** Modify flows: free the booking's own slot so it stays selectable. */
+  excludeBookingId?: string | null;
   enabled?: boolean;
 };
 
@@ -34,6 +36,7 @@ function availabilityPath(params: {
   variantId?: string | null;
   addonIds?: string[];
   durationMinutes?: number | null;
+  excludeBookingId?: string | null;
 }): string {
   const search = new URLSearchParams({
     date: params.date,
@@ -43,6 +46,7 @@ function availabilityPath(params: {
   if (params.ownerVenueId) search.set('owner_venue_id', params.ownerVenueId);
   if (params.variantId) search.set('variant_id', params.variantId);
   if (params.durationMinutes != null) search.set('duration_minutes', String(params.durationMinutes));
+  if (params.excludeBookingId) search.set('exclude_booking_id', params.excludeBookingId);
   for (const id of params.addonIds ?? []) {
     search.append('addon_ids', id);
   }
@@ -63,6 +67,7 @@ export function useAppointmentAvailability({
   variantId,
   addonIds,
   durationMinutes,
+  excludeBookingId,
   enabled = true,
 }: UseAppointmentAvailabilityParams) {
   const accessToken = useAccessToken();
@@ -84,6 +89,7 @@ export function useAppointmentAvailability({
       variantId,
       addonsKey,
       durationMinutes,
+      excludeBookingId,
     ),
     enabled: queryEnabled,
     queryFn: async (): Promise<AppointmentAvailabilityResponse> => {
@@ -99,6 +105,7 @@ export function useAppointmentAvailability({
           variantId,
           addonIds,
           durationMinutes,
+          excludeBookingId,
         }),
         { accessToken },
       );

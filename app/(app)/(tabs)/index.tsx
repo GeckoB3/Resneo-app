@@ -6,6 +6,7 @@ import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 
 import { BookingPeekSheet } from '@/components/bookings/BookingPeekSheet';
 import { CalendarDayGrid } from '@/components/calendar/CalendarDayGrid';
+import { timeToMinutes } from '@/components/calendar/grid-layout';
 import { MonthGrid } from '@/components/calendar/MonthGrid';
 import { RescheduleSheet, type RescheduleTarget } from '@/components/calendar/RescheduleSheet';
 import { WeekStrip } from '@/components/calendar/WeekStrip';
@@ -79,24 +80,38 @@ export default function CalendarScreen() {
   const [rescheduleTarget, setRescheduleTarget] = useState<RescheduleTarget | null>(null);
   const [peekBookingId, setPeekBookingId] = useState<string | null>(null);
   // Undo state for the last reschedule (6s window).
-  const [undoTarget, setUndoTarget] = useState<RescheduleTarget | null>(null);
+  const [undoState, setUndoState] = useState<{
+    target: RescheduleTarget;
+    durationChanged: boolean;
+  } | null>(null);
+  const undoTarget = undoState?.target ?? null;
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const undoMutation = useRescheduleBooking(undoTarget?.id ?? '');
 
-  const showUndo = useCallback((previous: RescheduleTarget) => {
-    if (undoTimer.current) clearTimeout(undoTimer.current);
-    setUndoTarget(previous);
-    undoTimer.current = setTimeout(() => setUndoTarget(null), 6000);
-  }, []);
+  const showUndo = useCallback(
+    (previous: RescheduleTarget, meta: { durationChanged: boolean }) => {
+      if (undoTimer.current) clearTimeout(undoTimer.current);
+      setUndoState({ target: previous, durationChanged: meta.durationChanged });
+      undoTimer.current = setTimeout(() => setUndoState(null), 6000);
+    },
+    [],
+  );
 
   const handleUndo = useCallback(() => {
-    if (!undoTarget) return;
+    if (!undoState) return;
     if (undoTimer.current) clearTimeout(undoTimer.current);
+    const { target, durationChanged } = undoState;
     undoMutation.mutate(
-      { date: undoTarget.date, time: `${undoTarget.time.slice(0, 5)}:00` },
-      { onSettled: () => setUndoTarget(null) },
+      {
+        date: target.date,
+        time: `${target.time.slice(0, 5)}:00`,
+        ...(durationChanged && target.durationMinutes != null
+          ? { durationMinutes: target.durationMinutes }
+          : {}),
+      },
+      { onSettled: () => setUndoState(null) },
     );
-  }, [undoTarget, undoMutation]);
+  }, [undoState, undoMutation]);
 
   const week = useMemo(() => getCalendarWeekFromDate(anchor), [anchor]);
   const range = useMemo<DateRange>(() => {
@@ -217,11 +232,15 @@ export default function CalendarScreen() {
     (bookingId: string) => {
       const booking = day?.bookings.find((b) => b.id === bookingId);
       if (booking) {
+        const start = timeToMinutes(booking.startTime);
+        const end = booking.endTime ? timeToMinutes(booking.endTime) : null;
+        const durationMinutes = end != null && end > start ? end - start : null;
         setRescheduleTarget({
           id: booking.id,
           guestName: booking.guestName,
           date: anchor,
           time: booking.startTime,
+          durationMinutes,
         });
       }
     },

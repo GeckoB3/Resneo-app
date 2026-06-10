@@ -76,7 +76,8 @@ export function useCancelBooking(bookingId: string) {
 }
 
 /**
- * PATCH /api/venue/bookings/[id] — move a booking to a new date/time (reschedule).
+ * PATCH /api/venue/bookings/[id] — move a booking to a new date/time (reschedule),
+ * optionally resizing it (duration_minutes recomputes booking_end_time server-side).
  * The backend validates availability and returns an error on conflict.
  */
 export function useRescheduleBooking(bookingId: string) {
@@ -84,14 +85,24 @@ export function useRescheduleBooking(bookingId: string) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (input: { date: string; time: string }): Promise<BookingDetail> => {
+    mutationFn: async (input: {
+      date: string;
+      time: string;
+      durationMinutes?: number;
+    }): Promise<BookingDetail> => {
       if (!accessToken) {
         throw new Error('Missing access token');
       }
       return apiFetch<BookingDetail>(`/api/venue/bookings/${bookingId}`, {
         accessToken,
         method: 'PATCH',
-        body: JSON.stringify({ booking_date: input.date, booking_time: input.time }),
+        body: JSON.stringify({
+          booking_date: input.date,
+          booking_time: input.time,
+          ...(input.durationMinutes !== undefined
+            ? { duration_minutes: input.durationMinutes }
+            : {}),
+        }),
       });
     },
     onSuccess: (data) => {
@@ -99,6 +110,85 @@ export function useRescheduleBooking(bookingId: string) {
         queryClient.setQueryData(queryKeys.bookings.detail(accessToken, bookingId), data);
       }
       invalidateBookingCaches(queryClient, accessToken, bookingId);
+    },
+  });
+}
+
+/**
+ * Full appointment modification — change service, staff, slot and duration in
+ * one PATCH (web StaffAppointmentModifyForm parity). Exactly one of
+ * `appointment_service_id` / `service_item_id` must be set, matching which
+ * anchor the booking row uses.
+ */
+export interface ModifyAppointmentInput {
+  booking_date: string;
+  /** HH:mm:ss */
+  booking_time: string;
+  practitioner_id: string;
+  appointment_service_id?: string;
+  service_item_id?: string;
+  duration_minutes: number;
+  service_variant_id?: string | null;
+}
+
+/** PATCH /api/venue/bookings/[id] — full appointment modify. */
+export function useModifyAppointment(bookingId: string) {
+  const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: ModifyAppointmentInput): Promise<BookingDetail> => {
+      if (!accessToken) {
+        throw new Error('Missing access token');
+      }
+      return apiFetch<BookingDetail>(`/api/venue/bookings/${bookingId}`, {
+        accessToken,
+        method: 'PATCH',
+        body: JSON.stringify(input),
+      });
+    },
+    onSuccess: (data) => {
+      if (accessToken) {
+        queryClient.setQueryData(queryKeys.bookings.detail(accessToken, bookingId), data);
+      }
+      invalidateBookingCaches(queryClient, accessToken, bookingId);
+    },
+  });
+}
+
+export interface ValidateAppointmentModificationInput {
+  booking_date: string;
+  /** HH:mm */
+  booking_time: string;
+  practitioner_id: string;
+  appointment_service_id?: string | null;
+  service_item_id?: string | null;
+  duration_minutes?: number | null;
+  service_variant_id?: string | null;
+}
+
+export type ValidateAppointmentModificationResult =
+  | { ok: true }
+  | { ok: false; error?: string };
+
+/**
+ * POST /api/venue/bookings/[id]/validate-appointment-modification — dry-run
+ * slot check for the modify sheet (same engine as the PATCH validation).
+ */
+export function useValidateAppointmentModification(bookingId: string) {
+  const accessToken = useAccessToken();
+
+  return useMutation({
+    mutationFn: async (
+      input: ValidateAppointmentModificationInput,
+    ): Promise<ValidateAppointmentModificationResult> => {
+      if (!accessToken) {
+        throw new Error('Missing access token');
+      }
+      return apiFetch<ValidateAppointmentModificationResult>(
+        `/api/venue/bookings/${bookingId}/validate-appointment-modification`,
+        { accessToken, method: 'POST', body: JSON.stringify(input) },
+      );
     },
   });
 }

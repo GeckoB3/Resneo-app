@@ -63,6 +63,8 @@ export const queryKeys = {
       [...queryKeys.compliance.all(), 'dashboard', accessToken ?? null] as const,
     formLinks: (accessToken?: string | null) =>
       [...queryKeys.compliance.all(), 'formLinks', accessToken ?? null] as const,
+    booking: (accessToken?: string | null, bookingId?: string | null) =>
+      [...queryKeys.compliance.all(), 'booking', accessToken ?? null, bookingId ?? null] as const,
   },
 
   addonGroups: {
@@ -103,6 +105,13 @@ export const queryKeys = {
         'detail',
         accessToken ?? null,
         bookingId ?? null,
+      ] as const,
+    groupVisit: (accessToken?: string | null, groupBookingId?: string | null) =>
+      [
+        ...queryKeys.bookings.all(),
+        'groupVisit',
+        accessToken ?? null,
+        groupBookingId ?? null,
       ] as const,
   },
 
@@ -168,6 +177,7 @@ export const queryKeys = {
       variantId?: string | null,
       addonsKey?: string | null,
       durationMinutes?: number | null,
+      excludeBookingId?: string | null,
     ) =>
       [
         ...queryKeys.appointments.all(),
@@ -180,6 +190,7 @@ export const queryKeys = {
         variantId ?? null,
         addonsKey ?? null,
         durationMinutes ?? null,
+        excludeBookingId ?? null,
       ] as const,
     monthAvailability: (
       accessToken?: string | null,

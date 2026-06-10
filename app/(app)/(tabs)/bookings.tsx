@@ -63,7 +63,6 @@ function isAttendanceConfirmed(b: BookingListRow): boolean {
 /** Status filters — labels + semantics mirror the web AppointmentBookingsDashboard. */
 const STATUS_FILTERS: { key: string; label: string; matches: (b: BookingListRow) => boolean }[] = [
   { key: 'All', label: 'All', matches: () => true },
-  { key: 'Pending', label: 'Pending', matches: (b) => b.status === 'Pending' },
   {
     key: 'Booked',
     label: 'Booked',
@@ -74,6 +73,7 @@ const STATUS_FILTERS: { key: string; label: string; matches: (b: BookingListRow)
   { key: 'Completed', label: 'Completed', matches: (b) => b.status === 'Completed' },
   { key: 'Cancelled', label: 'Cancelled', matches: (b) => b.status === 'Cancelled' },
   { key: 'NoShow', label: 'No show', matches: (b) => b.status === 'No-Show' },
+  { key: 'Pending', label: 'Pending', matches: (b) => b.status === 'Pending' },
 ];
 
 type BookingSection = SectionListData<BookingListRow, { title: string; date: string }>;

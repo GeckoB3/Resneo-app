@@ -32,6 +32,20 @@ export interface BookingTableAssignment {
   name: string;
 }
 
+/**
+ * Sent email/SMS row merged from communication_logs + legacy communications.
+ * @see _reference/Resneo/src/lib/booking/load-booking-detail-bundle.ts
+ */
+export interface BookingCommunicationRow {
+  id: string;
+  message_type: string;
+  channel: string;
+  status: string;
+  created_at: string;
+  recipient: string | null;
+  error_message?: string | null;
+}
+
 /** Immutable add-on snapshot row stored at booking time (booking_addons). */
 export interface BookingDetailAddon {
   id?: string;
@@ -76,15 +90,25 @@ export interface BookingDetail {
   guest_attendance_confirmed_at?: string | null;
   staff_attendance_confirmed_at?: string | null;
   client_arrived_at?: string | null;
+  checked_in_at?: string | null;
+  /** Booking origin ("Online", "Phone", "Walk-in"…) — full GET spreads the row. */
+  source?: string | null;
+  created_at?: string;
+  /** Guest self-service cancel cutoff (ISO timestamp). */
+  cancellation_deadline?: string | null;
   /** Appointment anchors (model B / unified). */
   appointment_service_id?: string | null;
   service_item_id?: string | null;
   practitioner_id?: string | null;
   calendar_id?: string | null;
   service_variant_id?: string | null;
+  /** Multi-service visit / group booking link (full GET spreads the row). */
+  group_booking_id?: string | null;
+  /** Per-person label on group people visits ("Person 1", a name…). */
+  person_label?: string | null;
   /** Present on full GET; summary returns empty arrays. */
   events?: BookingTimelineEventRow[];
-  communications?: unknown[];
+  communications?: BookingCommunicationRow[];
 }
 
 /** PATCH /api/venue/bookings/[id] — status-only updates for v1 mobile actions. */

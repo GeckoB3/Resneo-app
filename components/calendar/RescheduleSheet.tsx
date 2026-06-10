@@ -1,16 +1,16 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { minutesToTime, timeToMinutes } from '@/components/calendar/grid-layout';
 import { Button } from '@/components/ui/Button';
 import { Sheet } from '@/components/ui/Sheet';
+import { Stepper } from '@/components/ui/Stepper';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { addDaysToDateStr, formatDayHeading } from '@/lib/dates/venue-dates';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useRescheduleBooking } from '@/lib/queries/useBookingMutations';
-import { fonts, radius, spacing } from '@/theme/index';
-import { useTheme } from '@/theme/useTheme';
+import { spacing } from '@/theme/index';
 
 export type RescheduleTarget = {
   id: string;
@@ -18,24 +18,36 @@ export type RescheduleTarget = {
   /** Current date (YYYY-MM-DD) and time (HH:mm[:ss]). */
   date: string;
   time: string;
+  /** Current length in minutes; null/undefined hides the duration stepper. */
+  durationMinutes?: number | null;
 };
 
 type RescheduleSheetProps = {
   target: RescheduleTarget | null;
   onClose: () => void;
   /** Fired after a successful move with the PREVIOUS slot (for undo). */
-  onMoved?: (previous: RescheduleTarget) => void;
+  onMoved?: (previous: RescheduleTarget, meta: { durationChanged: boolean }) => void;
 };
 
-const STEP_MINUTES = 15;
-const MAX_MINUTES = 23 * 60 + 45;
+const MAX_MINUTES = 23 * 60 + 59;
+// API bounds: appointments accept 15–840; table bookings cap at 300 (server-validated).
+const MIN_DURATION_MINUTES = 15;
+const MAX_DURATION_MINUTES = 14 * 60;
 
-/** Bottom-sheet to move a booking to a new day/time (long-press a calendar block). */
+function formatDuration(total: number): string {
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  if (h === 0) return `${m} min`;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+
+/** Bottom-sheet to move/resize a booking (long-press a calendar block). */
 export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetProps) {
   const mutation = useRescheduleBooking(target?.id ?? '');
 
   const [date, setDate] = useState('');
   const [minutes, setMinutes] = useState(0);
+  const [duration, setDuration] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [seededId, setSeededId] = useState<string | null>(null);
 
@@ -45,20 +57,34 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
     setSeededId(target.id);
     setDate(target.date);
     setMinutes(timeToMinutes(target.time));
+    setDuration(target.durationMinutes ?? null);
     setError(null);
   } else if (!target && seededId !== null) {
     setSeededId(null);
   }
 
-  const unchanged = target ? date === target.date && minutesToTime(minutes) === target.time.slice(0, 5) : true;
+  const durationChanged =
+    duration != null && target?.durationMinutes != null && duration !== target.durationMinutes;
+  const unchanged = target
+    ? date === target.date && minutesToTime(minutes) === target.time.slice(0, 5) && !durationChanged
+    : true;
+
+  const endPreview =
+    duration != null ? minutesToTime((minutes + duration) % (24 * 60)) : null;
 
   async function handleConfirm() {
     if (!target) return;
     setError(null);
     try {
-      await mutation.mutateAsync({ date, time: `${minutesToTime(minutes)}:00` });
+      await mutation.mutateAsync({
+        date,
+        time: `${minutesToTime(minutes)}:00`,
+        // Only send the duration when it changed — table bookings have a lower
+        // server-side cap, so an untouched duration must not be re-asserted.
+        ...(durationChanged ? { durationMinutes: duration } : {}),
+      });
       hapticSuccess();
-      onMoved?.(target);
+      onMoved?.(target, { durationChanged });
       onClose();
     } catch (e) {
       hapticWarning();
@@ -77,6 +103,9 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
                 <Text variant="title">{target.guestName}</Text>
                 <Text variant="bodySmall" tone="muted">
                   Now: {formatDayHeading(target.date)} · {target.time.slice(0, 5)}
+                  {target.durationMinutes != null
+                    ? ` · ${formatDuration(target.durationMinutes)}`
+                    : ''}
                 </Text>
               </View>
 
@@ -87,11 +116,32 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
                 onIncrement={() => setDate((d) => addDaysToDateStr(d, 1))}
               />
               <Stepper
-                label="Time"
+                label="Start"
                 value={minutesToTime(minutes)}
-                onDecrement={() => setMinutes((m) => Math.max(0, m - STEP_MINUTES))}
-                onIncrement={() => setMinutes((m) => Math.min(MAX_MINUTES, m + STEP_MINUTES))}
+                onDecrement={() => setMinutes((m) => Math.max(0, m - 1))}
+                onIncrement={() => setMinutes((m) => Math.min(MAX_MINUTES, m + 1))}
               />
+              {duration != null ? (
+                <Stepper
+                  label="Duration"
+                  value={formatDuration(duration)}
+                  onDecrement={() =>
+                    setDuration((d) => Math.max(MIN_DURATION_MINUTES, (d ?? 0) - 1))
+                  }
+                  onIncrement={() =>
+                    setDuration((d) => Math.min(MAX_DURATION_MINUTES, (d ?? 0) + 1))
+                  }
+                />
+              ) : null}
+              {endPreview ? (
+                <Text variant="caption" tone="muted" style={styles.endPreview}>
+                  Ends at {endPreview}. Hold − / + to change faster.
+                </Text>
+              ) : (
+                <Text variant="caption" tone="muted" style={styles.endPreview}>
+                  Hold − / + to change faster.
+                </Text>
+              )}
 
               {error ? (
                 <Text variant="bodySmall" tone="danger">
@@ -115,49 +165,6 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
   );
 }
 
-function Stepper({
-  label,
-  value,
-  onDecrement,
-  onIncrement,
-}: {
-  label: string;
-  value: string;
-  onDecrement: () => void;
-  onIncrement: () => void;
-}) {
-  return (
-    <View style={styles.stepperRow}>
-      <Text variant="label" tone="secondary">
-        {label}
-      </Text>
-      <View style={styles.stepperControl}>
-        <StepButton symbol="−" onPress={onDecrement} />
-        <Text variant="subheading" style={styles.stepperValue}>
-          {value}
-        </Text>
-        <StepButton symbol="+" onPress={onIncrement} />
-      </View>
-    </View>
-  );
-}
-
-function StepButton({ symbol, onPress }: { symbol: string; onPress: () => void }) {
-  const { colors } = useTheme();
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={symbol === '+' ? 'Increase' : 'Decrease'}
-      style={({ pressed }) => [
-        styles.stepButton,
-        { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
-      ]}>
-      <Text style={[styles.stepSymbol, { color: colors.brand }]}>{symbol}</Text>
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
   body: {
     gap: spacing.lg,
@@ -165,33 +172,8 @@ const styles = StyleSheet.create({
   headerBlock: {
     gap: spacing.xs,
   },
-  stepperRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  stepperControl: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.base,
-  },
-  stepperValue: {
-    minWidth: 140,
-    textAlign: 'center',
-    fontVariant: ['tabular-nums'],
-  },
-  stepButton: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.full,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stepSymbol: {
-    fontFamily: fonts.bold,
-    fontSize: 22,
-    lineHeight: 26,
+  endPreview: {
+    marginTop: -spacing.md,
   },
   actions: {
     flexDirection: 'row',

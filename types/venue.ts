@@ -20,7 +20,8 @@ export interface VenueTerminology {
 export type AppointmentsFeatureFlagKey =
   | 'waitlist_v2'
   | 'guest_self_reschedule'
-  | 'any_available_practitioner';
+  | 'any_available_practitioner'
+  | 'compliance_records_enabled';
 
 /** Raw flags stored on `venues.feature_flags`. */
 export type VenueFeatureFlagsRaw = Partial<

@@ -39,6 +39,8 @@ export function useUpdateGuest(guestId: string) {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.guests.all() });
+      // Booking detail embeds the guest (tags, profile notes) — refresh it too.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.bookings.all() });
     },
   });
 }
