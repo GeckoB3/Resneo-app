@@ -31,9 +31,27 @@ type PositionedBooking = {
   timeLabel: string;
 };
 
+/** Blocked-out time (break / leave / manual block) rendered as a grey overlay. */
+export type CalendarTimeBlock = {
+  id: string;
+  /** HH:mm[:ss] */
+  start: string;
+  end: string;
+  label?: string | null;
+};
+
+type PositionedTimeBlock = {
+  block: CalendarTimeBlock;
+  top: number;
+  height: number;
+  timeLabel: string;
+};
+
 type CalendarDayGridProps = {
   bookings: CalendarGridBooking[];
   workingHours: CalendarGridWorkingHours[];
+  /** Breaks/blocks for this practitioner+day — render as non-bookable overlays. */
+  timeBlocks?: CalendarTimeBlock[];
   /** Fallback colour (the practitioner's) when a booking has none. */
   practitionerColor: string;
   /** Current time in minutes-since-midnight, or null when not viewing today. */
@@ -49,6 +67,7 @@ const DEFAULT_DURATION_MINUTES = 30;
 export function CalendarDayGrid({
   bookings,
   workingHours,
+  timeBlocks = [],
   practitionerColor,
   nowMinutes,
   onBlockPress,
@@ -57,7 +76,7 @@ export function CalendarDayGrid({
 }: CalendarDayGridProps) {
   const { colors } = useTheme();
 
-  const { startHour, endHour, totalHeight, positioned } = useMemo(() => {
+  const { startHour, endHour, totalHeight, positioned, positionedBlocks } = useMemo(() => {
     const ranges: { start: number; end: number }[] = [];
     for (const wh of workingHours) {
       ranges.push({ start: timeToMinutes(wh.start), end: timeToMinutes(wh.end) });
@@ -72,6 +91,17 @@ export function CalendarDayGrid({
       ranges.push({ start, end });
       return { booking, start, end };
     });
+
+    const rawTimeBlocks = timeBlocks
+      .map((block) => {
+        const start = timeToMinutes(block.start);
+        const end = timeToMinutes(block.end);
+        return { block, start, end };
+      })
+      .filter(({ start, end }) => end > start);
+    for (const { start, end } of rawTimeBlocks) {
+      ranges.push({ start, end });
+    }
 
     const bounds = computeGridBounds(ranges);
     const gridStartMin = bounds.startHour * 60;
@@ -88,13 +118,21 @@ export function CalendarDayGrid({
       };
     });
 
+    const overlayBlocks: PositionedTimeBlock[] = rawTimeBlocks.map(({ block, start, end }) => ({
+      block,
+      top: (start - gridStartMin) * PX_PER_MINUTE,
+      height: Math.max(end - start, MIN_BLOCK_MINUTES) * PX_PER_MINUTE,
+      timeLabel: `${minutesToTime(start)}–${minutesToTime(end)}`,
+    }));
+
     return {
       startHour: bounds.startHour,
       endHour: bounds.endHour,
       totalHeight: total,
       positioned: blocks,
+      positionedBlocks: overlayBlocks,
     };
-  }, [bookings, workingHours, practitionerColor]);
+  }, [bookings, workingHours, timeBlocks, practitionerColor]);
 
   const hours = useMemo(
     () => Array.from({ length: endHour - startHour + 1 }, (_, i) => startHour + i),
@@ -134,6 +172,26 @@ export function CalendarDayGrid({
             </View>
           );
         })}
+
+        {positionedBlocks.map((item) => (
+          <Pressable
+            key={item.block.id}
+            accessibilityLabel={`Blocked ${item.timeLabel}`}
+            // Swallow taps so blocked time can't be tapped-to-book.
+            onPress={() => {}}
+            style={[
+              styles.blockedOverlay,
+              {
+                top: item.top,
+                height: item.height,
+                borderColor: colors.border,
+              },
+            ]}>
+            <Text variant="caption" tone="muted" numberOfLines={1}>
+              {item.block.label?.trim() || 'Blocked'} · {item.timeLabel}
+            </Text>
+          </Pressable>
+        ))}
 
         {nowTop != null ? (
           <View pointerEvents="none" style={[styles.nowLine, { top: nowTop }]}>
@@ -184,6 +242,18 @@ const styles = StyleSheet.create({
   hourLine: {
     flex: 1,
     height: StyleSheet.hairlineWidth,
+  },
+  blockedOverlay: {
+    position: 'absolute',
+    left: TIME_GUTTER_WIDTH + spacing.xs,
+    right: spacing.sm,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    // Slate at low alpha — reads as "unavailable" on both themes.
+    backgroundColor: 'rgba(148, 163, 184, 0.22)',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    justifyContent: 'flex-start',
   },
   nowLine: {
     position: 'absolute',

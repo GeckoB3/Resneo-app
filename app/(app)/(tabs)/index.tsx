@@ -28,6 +28,7 @@ import {
   getMonthRangeFromDate,
   type DateRange,
 } from '@/lib/dates/venue-dates';
+import { useCalendarBlocks } from '@/lib/queries/useAvailabilityManage';
 import { useCalendarGrid } from '@/lib/queries/useCalendarGrid';
 import { usePractitioners } from '@/lib/queries/usePractitioners';
 import { useVenueContext } from '@/providers/VenueProvider';
@@ -106,6 +107,20 @@ export default function CalendarScreen() {
     return calendar?.dates.find((d) => d.date === anchor) ?? null;
   }, [gridQuery.data, effectiveId, anchor]);
 
+  // Breaks/blocks for the visible range — rendered as non-bookable overlays.
+  const blocksQuery = useCalendarBlocks(range.from, range.to);
+  const dayBlocks = useMemo(() => {
+    const rows = blocksQuery.data?.blocks ?? [];
+    return rows
+      .filter(
+        (b) =>
+          (b.practitioner_id ?? b.calendar_id) === effectiveId &&
+          b.block_date === anchor &&
+          !b.class_instance_id,
+      )
+      .map((b) => ({ id: b.id, start: b.start_time, end: b.end_time, label: b.reason }));
+  }, [blocksQuery.data, effectiveId, anchor]);
+
   /** date → total bookings across all calendars (for week strip + month grid). */
   const counts = useMemo(() => {
     const map: Record<string, number> = {};
@@ -174,6 +189,7 @@ export default function CalendarScreen() {
     <CalendarDayGrid
       bookings={day?.bookings ?? []}
       workingHours={day?.workingHours ?? []}
+      timeBlocks={dayBlocks}
       practitionerColor={selectedPractitioner?.colour ?? DEFAULT_PRACTITIONER_COLOR}
       nowMinutes={nowMinutes}
       onBlockPress={openBooking}

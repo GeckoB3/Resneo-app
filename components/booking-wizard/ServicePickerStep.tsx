@@ -8,9 +8,10 @@ import { ErrorState } from '@/components/ui/ErrorState';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { Text } from '@/components/ui/Text';
 import { spacing } from '@/theme/index';
-import type {
-  AppointmentCatalogResponse,
-  AppointmentServiceOption,
+import {
+  ANY_AVAILABLE_PRACTITIONER_ID,
+  type AppointmentCatalogResponse,
+  type AppointmentServiceOption,
 } from '@/types/appointment-catalog';
 
 type ServicePickerStepProps = {
@@ -40,13 +41,44 @@ export function flattenCatalogServices(
         serviceName: service.name,
         durationMinutes: service.duration_minutes,
         pricePence: service.price_pence,
+        depositPence: service.deposit_pence ?? null,
         practitionerId: practitioner.id,
         practitionerName: practitioner.name,
+        addonGroups: service.addon_groups ?? [],
+        variants: service.variants ?? [],
       });
     }
   }
 
   return options.sort((a, b) => a.serviceName.localeCompare(b.serviceName));
+}
+
+/**
+ * One pooled "Any available" row per service offered by 2+ practitioners.
+ * Slots for these rows are merged client-side across the candidate practitioners.
+ */
+export function buildAnyAvailableOptions(
+  options: AppointmentServiceOption[],
+): AppointmentServiceOption[] {
+  const byService = new Map<string, AppointmentServiceOption[]>();
+  for (const option of options) {
+    const list = byService.get(option.serviceId) ?? [];
+    list.push(option);
+    byService.set(option.serviceId, list);
+  }
+
+  const pooled: AppointmentServiceOption[] = [];
+  for (const list of byService.values()) {
+    if (list.length < 2) continue;
+    const first = list[0]!;
+    pooled.push({
+      ...first,
+      practitionerId: ANY_AVAILABLE_PRACTITIONER_ID,
+      practitionerName: 'Any available',
+      candidatePractitionerIds: list.map((o) => o.practitionerId),
+    });
+  }
+  return pooled;
 }
 
 function formatPrice(pricePence: number | null): string | null {
@@ -73,13 +105,20 @@ export function ServicePickerStep({
   const effectiveFilter =
     filter && practitioners.some((p) => p.id === filter) ? filter : null;
 
-  const services = useMemo(
-    () =>
-      effectiveFilter
-        ? allServices.filter((s) => s.practitionerId === effectiveFilter)
-        : allServices,
-    [allServices, effectiveFilter],
-  );
+  const services = useMemo(() => {
+    if (effectiveFilter) {
+      return allServices.filter((s) => s.practitionerId === effectiveFilter);
+    }
+    // No practitioner filter: offer pooled "Any available" rows ahead of the
+    // per-practitioner duplicates for services with 2+ practitioners.
+    const pooled = buildAnyAvailableOptions(allServices);
+    return [...allServices, ...pooled].sort(
+      (a, b) =>
+        a.serviceName.localeCompare(b.serviceName) ||
+        Number(b.practitionerId === ANY_AVAILABLE_PRACTITIONER_ID) -
+          Number(a.practitionerId === ANY_AVAILABLE_PRACTITIONER_ID),
+    );
+  }, [allServices, effectiveFilter]);
 
   if (isLoading) {
     return <LoadingState message="Loading services…" />;

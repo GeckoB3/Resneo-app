@@ -10,7 +10,12 @@ import { splitGuestName } from '@/lib/validation/walk-in-guest';
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { AppointmentSlot } from '@/types/appointment-availability';
-import type { AppointmentServiceOption } from '@/types/appointment-catalog';
+import {
+  ANY_AVAILABLE_PRACTITIONER_ID,
+  type AppointmentCatalogAddon,
+  type AppointmentCatalogVariant,
+  type AppointmentServiceOption,
+} from '@/types/appointment-catalog';
 
 import type { GuestDetails } from './GuestDetailsStep';
 
@@ -19,9 +24,15 @@ type ConfirmStepProps = {
   date: string;
   slot: AppointmentSlot;
   guest: GuestDetails;
+  variant?: AppointmentCatalogVariant | null;
+  addons?: AppointmentCatalogAddon[];
   ownerVenueId?: string | null;
   onSuccess: (bookingId: string) => void;
 };
+
+function formatMoney(pence: number): string {
+  return `£${(pence / 100).toFixed(2)}`;
+}
 
 function formatSummaryDate(isoDate: string): string {
   const [year, month, day] = isoDate.split('-').map(Number);
@@ -54,10 +65,38 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
 }
 
 /** Step 5 — review the summary and submit the appointment. */
-export function ConfirmStep({ service, date, slot, guest, ownerVenueId, onSuccess }: ConfirmStepProps) {
+export function ConfirmStep({
+  service,
+  date,
+  slot,
+  guest,
+  variant = null,
+  addons = [],
+  ownerVenueId,
+  onSuccess,
+}: ConfirmStepProps) {
   const { colors } = useTheme();
   const createBooking = useCreateBooking();
   const { first_name, last_name } = splitGuestName(guest.name);
+
+  // For "Any available" rows the booking targets the slot's real practitioner.
+  const practitionerId =
+    service.practitionerId === ANY_AVAILABLE_PRACTITIONER_ID
+      ? slot.practitioner_id
+      : service.practitionerId;
+  const practitionerName =
+    service.practitionerId === ANY_AVAILABLE_PRACTITIONER_ID
+      ? slot.practitioner_name
+      : service.practitionerName;
+
+  const addonsPrice = addons.reduce((sum, a) => sum + a.additional_price_pence, 0);
+  const addonsDuration = addons.reduce((sum, a) => sum + a.additional_duration_minutes, 0);
+  const basePrice = (variant ? variant.price_pence : service.pricePence) ?? 0;
+  const baseDuration = variant ? variant.duration_minutes : service.durationMinutes;
+  const baseDeposit = variant ? variant.deposit_pence : service.depositPence;
+  const totalPrice = basePrice + addonsPrice;
+  const totalDuration = baseDuration + addonsDuration;
+  const depositLabel = baseDeposit && baseDeposit > 0 ? formatMoney(baseDeposit) : null;
 
   const handleConfirm = () => {
     createBooking.mutate(
@@ -69,14 +108,19 @@ export function ConfirmStep({ service, date, slot, guest, ownerVenueId, onSucces
         last_name,
         phone: guest.phone.trim(),
         email: guest.email.trim() || undefined,
-        practitioner_id: service.practitionerId,
+        practitioner_id: practitionerId,
         appointment_service_id: service.serviceId,
+        ...(variant ? { service_variant_id: variant.id } : {}),
+        ...(addons.length ? { addons: addons.map((a) => ({ addon_id: a.id })) } : {}),
         source: 'walk-in',
         ...(ownerVenueId ? { owner_venue_id: ownerVenueId } : {}),
       },
       {
         onSuccess: (response) => {
           hapticSuccess();
+          if (response.payment_url) {
+            Alert.alert('Booking created', 'A deposit payment link was sent to the guest.');
+          }
           onSuccess(response.booking_id);
         },
         onError: (error) => {
@@ -92,9 +136,12 @@ export function ConfirmStep({ service, date, slot, guest, ownerVenueId, onSucces
       <Text variant="heading">Review &amp; confirm</Text>
       <Card>
         <View style={[styles.serviceHeader, { borderBottomColor: colors.border }]}>
-          <Text variant="subheading">{service.serviceName}</Text>
+          <Text variant="subheading">
+            {service.serviceName}
+            {variant ? ` · ${variant.name}` : ''}
+          </Text>
           <Text variant="bodySmall" tone="muted">
-            {service.durationMinutes} min · {service.practitionerName}
+            {totalDuration} min · {practitionerName}
           </Text>
         </View>
         <SummaryRow label="Date" value={formatSummaryDate(date)} />
@@ -102,6 +149,41 @@ export function ConfirmStep({ service, date, slot, guest, ownerVenueId, onSucces
         <SummaryRow label="Guest" value={guest.name.trim()} />
         <SummaryRow label="Phone" value={guest.phone.trim()} />
         {guest.email.trim() ? <SummaryRow label="Email" value={guest.email.trim()} /> : null}
+
+        {addons.length > 0 ? (
+          <View style={[styles.addonsBlock, { borderTopColor: colors.border }]}>
+            <Text variant="caption" tone="muted">
+              Add-ons
+            </Text>
+            {addons.map((addon) => (
+              <View key={addon.id} style={styles.addonLine}>
+                <Text variant="bodySmall">{addon.name}</Text>
+                {addon.additional_price_pence > 0 ? (
+                  <Text variant="bodySmall" tone="muted">
+                    +{formatMoney(addon.additional_price_pence)}
+                  </Text>
+                ) : null}
+              </View>
+            ))}
+          </View>
+        ) : null}
+
+        {totalPrice > 0 ? (
+          <View style={[styles.totalRow, { borderTopColor: colors.border }]}>
+            <Text variant="label">Total</Text>
+            <Text variant="label" tone="brand">
+              {formatMoney(totalPrice)}
+            </Text>
+          </View>
+        ) : null}
+        {depositLabel ? (
+          <View style={styles.depositRow}>
+            <Text variant="caption" tone="muted">
+              Deposit
+            </Text>
+            <Text variant="bodySmall">{depositLabel}</Text>
+          </View>
+        ) : null}
       </Card>
       <Button
         label="Create booking"
@@ -127,5 +209,29 @@ const styles = StyleSheet.create({
   row: {
     gap: 2,
     marginBottom: spacing.md,
+  },
+  addonsBlock: {
+    gap: spacing.xs,
+    paddingTop: spacing.md,
+    marginBottom: spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  addonLine: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: spacing.base,
+  },
+  totalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  depositRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: spacing.sm,
   },
 });

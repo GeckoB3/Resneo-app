@@ -28,6 +28,18 @@ export interface DashboardRecentBooking {
   booking_model?: string;
 }
 
+export interface DashboardForecastDay {
+  date: string;
+  day: string;
+  covers: number;
+  bookings: number;
+}
+
+export interface DashboardAlert {
+  type: string;
+  message: string;
+}
+
 export interface DashboardHomePayload {
   booking_model?: string;
   pricing_tier?: string | null;
@@ -35,5 +47,7 @@ export interface DashboardHomePayload {
   today_by_booking_model?: Record<string, number>;
   table_focus_secondaries_enabled?: boolean;
   today: DashboardTodayStats;
+  forecast?: DashboardForecastDay[];
+  alerts?: DashboardAlert[];
   recent_bookings: DashboardRecentBooking[];
 }

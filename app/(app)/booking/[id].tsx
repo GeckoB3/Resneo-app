@@ -10,6 +10,7 @@ import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useUpdateBookingStatus } from '@/lib/queries/useBookingMutations';
 import { useBookingDetail } from '@/lib/queries/useBookingDetail';
 import { useDashboardHome } from '@/lib/queries/useDashboardHome';
+import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { isAppointmentExperience } from '@/lib/venue/venue-experience';
 import { useVenueContext } from '@/providers/VenueProvider';
 import type { BookingStatus } from '@/types/booking-detail';
@@ -19,8 +20,10 @@ export default function BookingDetailScreen() {
   const bookingId = typeof id === 'string' ? id : undefined;
   const detailQuery = useBookingDetail(bookingId);
   const dashboardQuery = useDashboardHome();
+  const staffQuery = useStaffMe();
   const { venue } = useVenueContext();
   const updateStatus = useUpdateBookingStatus(bookingId ?? '');
+  const isAdmin = staffQuery.data?.staff?.role === 'admin';
 
   const actionLoading = updateStatus.isPending;
 
@@ -96,6 +99,7 @@ export default function BookingDetailScreen() {
         <BookingDetailContent
           actionLoading={actionLoading}
           booking={detailQuery.data}
+          isAdmin={isAdmin}
           isAppointmentVenue={isAppointmentVenue}
           onStatusChange={handleStatusChange}
         />

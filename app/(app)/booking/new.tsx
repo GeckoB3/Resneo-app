@@ -2,6 +2,7 @@ import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
+import { AddonsStep } from '@/components/booking-wizard/AddonsStep';
 import { ConfirmStep } from '@/components/booking-wizard/ConfirmStep';
 import { DatePickerStep } from '@/components/booking-wizard/DatePickerStep';
 import type { GuestDetails } from '@/components/booking-wizard/GuestDetailsStep';
@@ -9,6 +10,7 @@ import { GuestDetailsStep } from '@/components/booking-wizard/GuestDetailsStep';
 import { RestaurantWalkInForm } from '@/components/booking-wizard/RestaurantWalkInForm';
 import { ServicePickerStep } from '@/components/booking-wizard/ServicePickerStep';
 import { TimeSlotStep } from '@/components/booking-wizard/TimeSlotStep';
+import { VariantStep } from '@/components/booking-wizard/VariantStep';
 import { WizardStepIndicator } from '@/components/booking-wizard/WizardStepIndicator';
 import { Button } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/ErrorState';
@@ -21,9 +23,22 @@ import { useVenueContext } from '@/providers/VenueProvider';
 import { useLinkedVenueContext } from '@/providers/LinkedVenueProvider';
 import { spacing } from '@/theme/index';
 import type { AppointmentSlot } from '@/types/appointment-availability';
-import type { AppointmentServiceOption } from '@/types/appointment-catalog';
+import type {
+  AppointmentCatalogVariant,
+  AppointmentServiceOption,
+} from '@/types/appointment-catalog';
 
-const TOTAL_STEPS = 5;
+type StepKey = 'service' | 'variant' | 'addons' | 'date' | 'time' | 'guest' | 'confirm';
+
+const STEP_LABELS: Record<StepKey, string> = {
+  service: 'Service',
+  variant: 'Option',
+  addons: 'Add-ons',
+  date: 'Date',
+  time: 'Time',
+  guest: 'Guest',
+  confirm: 'Confirm',
+};
 
 const EMPTY_GUEST: GuestDetails = {
   name: '',
@@ -49,17 +64,28 @@ export default function NewBookingScreen() {
   const router = useRouter();
   const { venue, isLoading: venueLoading } = useVenueContext();
   const { ownerVenueId } = useLinkedVenueContext();
-  const { guestId: guestIdParam, date: dateParam, practitionerId: practitionerIdParam } =
-    useLocalSearchParams<{ guestId?: string; date?: string; practitionerId?: string }>();
+  const {
+    guestId: guestIdParam,
+    date: dateParam,
+    practitionerId: practitionerIdParam,
+    time: timeParam,
+  } = useLocalSearchParams<{
+    guestId?: string;
+    date?: string;
+    practitionerId?: string;
+    time?: string;
+  }>();
   const prefilledGuestId =
     typeof guestIdParam === 'string' && guestIdParam.length > 0 ? guestIdParam : null;
-  // Prefill from a calendar empty-slot tap (date / practitioner).
+  // Prefill from a calendar empty-slot tap (date / practitioner / time).
   const prefilledDate =
     typeof dateParam === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? dateParam : null;
   const prefilledPractitionerId =
     typeof practitionerIdParam === 'string' && practitionerIdParam.length > 0
       ? practitionerIdParam
       : null;
+  const prefilledTime =
+    typeof timeParam === 'string' && /^\d{2}:\d{2}$/.test(timeParam) ? timeParam : null;
 
   const venueId = venue?.id ?? null;
   const timeZone = venue?.timezone ?? 'Europe/London';
@@ -71,10 +97,12 @@ export default function NewBookingScreen() {
   const catalogQuery = useAppointmentCatalog(appointmentVenue ? venueId : null);
   const prefillGuestQuery = useGuestDetail(prefilledGuestId);
 
-  const [step, setStep] = useState(0);
+  const [stepIndex, setStepIndex] = useState(0);
   const [selectedService, setSelectedService] = useState<AppointmentServiceOption | null>(null);
   const [selectedDate, setSelectedDate] = useState<string | null>(prefilledDate);
   const [selectedSlot, setSelectedSlot] = useState<AppointmentSlot | null>(null);
+  const [selectedVariant, setSelectedVariant] = useState<AppointmentCatalogVariant | null>(null);
+  const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
   const [guest, setGuest] = useState<GuestDetails>(EMPTY_GUEST);
   const [guestPrefilled, setGuestPrefilled] = useState(false);
 
@@ -103,11 +131,11 @@ export default function NewBookingScreen() {
   }, [catalogQuery.error, catalogQuery.isError]);
 
   const handleBack = () => {
-    if (step === 0) {
+    if (stepIndex === 0) {
       router.back();
       return;
     }
-    setStep((current) => Math.max(0, current - 1));
+    setStepIndex((current) => Math.max(0, current - 1));
   };
 
   const handleBookingCreated = (bookingId: string) => {
@@ -138,12 +166,32 @@ export default function NewBookingScreen() {
     );
   }
 
+  const addonGroups = selectedService?.addonGroups ?? [];
+  const hasAddons = addonGroups.length > 0;
+  const serviceVariants = selectedService?.variants ?? [];
+  const hasVariants = serviceVariants.length > 0;
+  const steps: StepKey[] = [
+    'service',
+    ...(hasVariants ? (['variant'] as StepKey[]) : []),
+    ...(hasAddons ? (['addons'] as StepKey[]) : []),
+    'date',
+    'time',
+    'guest',
+    'confirm',
+  ];
+  const currentKey = steps[stepIndex] ?? 'service';
+  const stepLabels = steps.map((key) => STEP_LABELS[key]);
+  const selectedAddons = addonGroups
+    .flatMap((group) => group.addons)
+    .filter((addon) => selectedAddonIds.includes(addon.id));
+  const goNext = () => setStepIndex((current) => Math.min(steps.length - 1, current + 1));
+
   return (
     <Screen>
       <View style={styles.container}>
-        <WizardStepIndicator currentStep={step} />
+        <WizardStepIndicator currentStep={stepIndex} labels={stepLabels} />
 
-        {step === 0 ? (
+        {currentKey === 'service' ? (
           <ServicePickerStep
             catalog={catalogQuery.data}
             defaultPractitionerId={prefilledPractitionerId}
@@ -158,52 +206,78 @@ export default function NewBookingScreen() {
             onSelect={(option) => {
               setSelectedService(option);
               setSelectedSlot(null);
-              setStep(1);
+              setSelectedVariant(null);
+              setSelectedAddonIds([]);
+              setStepIndex(1);
             }}
           />
         ) : null}
 
-        {step === 1 ? (
+        {currentKey === 'variant' && selectedService ? (
+          <VariantStep
+            serviceName={selectedService.serviceName}
+            variants={serviceVariants}
+            selected={selectedVariant}
+            onSelect={(variant) => {
+              setSelectedVariant(variant);
+              setSelectedSlot(null);
+            }}
+            onContinue={goNext}
+          />
+        ) : null}
+
+        {currentKey === 'addons' ? (
+          <AddonsStep
+            groups={addonGroups}
+            value={selectedAddonIds}
+            onChange={setSelectedAddonIds}
+            onContinue={goNext}
+          />
+        ) : null}
+
+        {currentKey === 'date' ? (
           <DatePickerStep
-            onContinue={() => setStep(2)}
+            onContinue={goNext}
             onSelectDate={setSelectedDate}
             selectedDate={selectedDate}
             timeZone={timeZone}
           />
         ) : null}
 
-        {step === 2 && selectedService && selectedDate ? (
+        {currentKey === 'time' && selectedService && selectedDate ? (
           <TimeSlotStep
+            addonIds={selectedAddonIds}
+            candidatePractitionerIds={selectedService.candidatePractitionerIds}
             date={selectedDate}
-            onContinue={() => setStep(3)}
+            onContinue={goNext}
             onSelectSlot={setSelectedSlot}
             ownerVenueId={ownerVenueId}
             practitionerId={selectedService.practitionerId}
+            preferredTime={selectedDate === prefilledDate ? prefilledTime : null}
             selectedSlot={selectedSlot}
             serviceId={selectedService.serviceId}
+            variantId={selectedVariant?.id ?? null}
           />
         ) : null}
 
-        {step === 3 ? (
-          <GuestDetailsStep
-            onChange={setGuest}
-            onContinue={() => setStep(4)}
-            value={guest}
-          />
+        {currentKey === 'guest' ? (
+          <GuestDetailsStep onChange={setGuest} onContinue={goNext} value={guest} />
         ) : null}
 
-        {step === 4 && selectedService && selectedDate && selectedSlot ? (
+        {currentKey === 'confirm' && selectedService && selectedDate && selectedSlot ? (
           <ConfirmStep
+            addons={selectedAddons}
             date={selectedDate}
             guest={guest}
             onSuccess={handleBookingCreated}
             ownerVenueId={ownerVenueId}
             service={selectedService}
             slot={selectedSlot}
+            variant={selectedVariant}
           />
         ) : null}
 
-        {step < TOTAL_STEPS - 1 ? (
+        {currentKey !== 'confirm' ? (
           <Button label="Back" onPress={handleBack} variant="ghost" style={styles.backButton} />
         ) : null}
       </View>

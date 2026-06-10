@@ -15,13 +15,17 @@ export type DateOption = {
   monthLabel: string;
 };
 
-/** Returns the next seven calendar days starting from today in the venue timezone. */
-export function buildNextSevenDays(timeZone: string, from: Date = new Date()): DateOption[] {
+/** Returns the next `count` calendar days starting from today in the venue timezone. */
+export function buildUpcomingDays(
+  timeZone: string,
+  count = 28,
+  from: Date = new Date(),
+): DateOption[] {
   const todayIso = calendarDateInTimeZone(from, timeZone);
   const [year, month, day] = todayIso.split('-').map(Number);
   const anchor = new Date(year!, month! - 1, day!);
 
-  return Array.from({ length: 7 }, (_, index) => {
+  return Array.from({ length: count }, (_, index) => {
     const date = addDays(anchor, index);
     const isoDate = calendarDateInTimeZone(date, timeZone);
     return {
@@ -48,7 +52,7 @@ export function DatePickerStep({
   onContinue,
 }: DatePickerStepProps) {
   const { colors } = useTheme();
-  const dates = useMemo(() => buildNextSevenDays(timeZone), [timeZone]);
+  const dates = useMemo(() => buildUpcomingDays(timeZone), [timeZone]);
 
   return (
     <View style={styles.container}>

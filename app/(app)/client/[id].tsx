@@ -1,7 +1,10 @@
+import { format, parseISO } from 'date-fns';
 import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
+import { GuestEditSheet, type GuestEditTarget } from '@/components/clients/GuestEditSheet';
+import { GuestMessageSheet, type GuestMessageTarget } from '@/components/clients/GuestMessageSheet';
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge, StatusPill } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -13,6 +16,7 @@ import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { useGuestDetail } from '@/lib/queries/useGuestDetail';
+import { useGuestTimeline } from '@/lib/queries/useGuestMutations';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type {
@@ -20,6 +24,14 @@ import type {
   GuestDetailProfile,
   GuestDetailStats,
 } from '@/types/guest-detail';
+
+function formatTimelineTime(iso: string): string {
+  try {
+    return format(parseISO(iso), 'd MMM yyyy, HH:mm');
+  } catch {
+    return iso;
+  }
+}
 
 function formatGuestName(guest: GuestDetailProfile): string {
   const parts = [guest.first_name, guest.last_name].filter(Boolean);
@@ -104,6 +116,9 @@ export default function ClientDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const guestId = typeof id === 'string' ? id : undefined;
   const detailQuery = useGuestDetail(guestId);
+  const timelineQuery = useGuestTimeline(guestId);
+  const [editTarget, setEditTarget] = useState<GuestEditTarget | null>(null);
+  const [messageTarget, setMessageTarget] = useState<GuestMessageTarget | null>(null);
 
   const handleBookingPress = useCallback(
     (bookingId: string) => router.push(`/booking/${bookingId}` as Href),
@@ -150,6 +165,22 @@ export default function ClientDetailScreen() {
 
   const { guest, stats, booking_history } = detailQuery.data;
   const name = formatGuestName(guest);
+  const canMessage = !!guest.email?.trim() || !!guest.phone?.trim();
+  const timelineEvents = timelineQuery.data?.events ?? [];
+
+  const openEdit = () =>
+    setEditTarget({
+      id: guest.id,
+      firstName: guest.first_name ?? '',
+      lastName: guest.last_name ?? '',
+      phone: guest.phone ?? '',
+      email: guest.email ?? '',
+      notes: guest.customer_profile_notes ?? '',
+      tags: guest.tags.join(', '),
+      marketingConsent: guest.marketing_consent,
+    });
+  const openMessage = () =>
+    setMessageTarget({ id: guest.id, guestName: name, email: guest.email, phone: guest.phone });
 
   return (
     <Screen padded={false} scroll={false}>
@@ -172,6 +203,25 @@ export default function ClientDetailScreen() {
             ) : null}
           </View>
         </View>
+
+        <View style={styles.actionRow}>
+          <Button label="Edit" variant="secondary" size="sm" style={styles.flex1} onPress={openEdit} />
+          {canMessage ? (
+            <Button
+              label="Message"
+              variant="secondary"
+              size="sm"
+              style={styles.flex1}
+              onPress={openMessage}
+            />
+          ) : null}
+        </View>
+
+        {guest.marketing_consent ? (
+          <Badge label="Marketing: opted in" tone="success" />
+        ) : guest.marketing_opt_out ? (
+          <Badge label="Marketing: opted out" tone="neutral" />
+        ) : null}
 
         {guest.tags.length > 0 ? (
           <View style={styles.tagRow}>
@@ -222,7 +272,30 @@ export default function ClientDetailScreen() {
             ))}
           </Card>
         )}
+
+        {timelineEvents.length > 0 ? (
+          <>
+            <Text variant="heading" style={styles.sectionTitle}>
+              Activity
+            </Text>
+            <Card>
+              {timelineEvents.map((event) => (
+                <View key={event.id} style={styles.timelineRow}>
+                  <Text variant="bodySmall" numberOfLines={2}>
+                    {event.label}
+                  </Text>
+                  <Text variant="caption" tone="muted">
+                    {formatTimelineTime(event.occurred_at)}
+                  </Text>
+                </View>
+              ))}
+            </Card>
+          </>
+        ) : null}
       </ScrollView>
+
+      <GuestEditSheet target={editTarget} onClose={() => setEditTarget(null)} />
+      <GuestMessageSheet target={messageTarget} onClose={() => setMessageTarget(null)} />
     </Screen>
   );
 }
@@ -243,10 +316,21 @@ const styles = StyleSheet.create({
     minWidth: 0,
     gap: 2,
   },
+  actionRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  flex1: {
+    flex: 1,
+  },
   tagRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.sm,
+  },
+  timelineRow: {
+    paddingVertical: spacing.sm,
+    gap: 2,
   },
   statsRow: {
     flexDirection: 'row',

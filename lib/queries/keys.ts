@@ -25,6 +25,38 @@ export const queryKeys = {
       [...queryKeys.dashboard.all(), 'today', accessToken ?? null, date ?? null] as const,
   },
 
+  daySheet: {
+    all: () => [...queryKeys.all, 'daySheet'] as const,
+    byDate: (accessToken?: string | null, date?: string | null) =>
+      [...queryKeys.daySheet.all(), accessToken ?? null, date ?? null] as const,
+  },
+
+  waitlist: {
+    all: () => [...queryKeys.all, 'waitlist'] as const,
+    list: (accessToken?: string | null, kind?: string | null) =>
+      [...queryKeys.waitlist.all(), accessToken ?? null, kind ?? null] as const,
+  },
+
+  notifications: {
+    all: () => [...queryKeys.all, 'notifications'] as const,
+    list: (accessToken?: string | null) =>
+      [...queryKeys.notifications.all(), accessToken ?? null] as const,
+  },
+
+  reports: {
+    all: () => [...queryKeys.all, 'reports'] as const,
+    range: (accessToken?: string | null, from?: string | null, to?: string | null) =>
+      [...queryKeys.reports.all(), accessToken ?? null, from ?? null, to ?? null] as const,
+  },
+
+  availabilityManage: {
+    all: () => [...queryKeys.all, 'availabilityManage'] as const,
+    blocks: (accessToken?: string | null, from?: string | null, to?: string | null) =>
+      [...queryKeys.availabilityManage.all(), 'blocks', accessToken ?? null, from ?? null, to ?? null] as const,
+    leave: (accessToken?: string | null, from?: string | null, to?: string | null) =>
+      [...queryKeys.availabilityManage.all(), 'leave', accessToken ?? null, from ?? null, to ?? null] as const,
+  },
+
   bookings: {
     all: () => [...queryKeys.all, 'bookings'] as const,
     list: (accessToken?: string | null, date?: string | null) =>
@@ -67,6 +99,8 @@ export const queryKeys = {
         guestId ?? null,
         bookingHistoryLimit ?? null,
       ] as const,
+    timeline: (accessToken?: string | null, guestId?: string | null) =>
+      [...queryKeys.guests.all(), 'timeline', accessToken ?? null, guestId ?? null] as const,
   },
 
   practitioners: {
@@ -103,6 +137,8 @@ export const queryKeys = {
       serviceId?: string | null,
       practitionerId?: string | null,
       ownerVenueId?: string | null,
+      variantId?: string | null,
+      addonsKey?: string | null,
     ) =>
       [
         ...queryKeys.appointments.all(),
@@ -112,6 +148,8 @@ export const queryKeys = {
         serviceId ?? null,
         practitionerId ?? null,
         ownerVenueId ?? null,
+        variantId ?? null,
+        addonsKey ?? null,
       ] as const,
   },
 } as const;

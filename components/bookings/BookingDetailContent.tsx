@@ -2,18 +2,28 @@ import { format, parseISO } from 'date-fns';
 import { useState } from 'react';
 import { Alert, StyleSheet, View } from 'react-native';
 
+import { DepositSheet, type DepositTarget } from '@/components/bookings/DepositSheet';
+import { EditBookingSheet, type EditBookingTarget } from '@/components/bookings/EditBookingSheet';
+import { GuestMessageSheet, type GuestMessageTarget } from '@/components/bookings/GuestMessageSheet';
 import { RescheduleSheet, type RescheduleTarget } from '@/components/calendar/RescheduleSheet';
 import { Avatar } from '@/components/ui/Avatar';
 import { StatusPill } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
+import { ApiError } from '@/lib/api/client';
 import { bookingDetailActions } from '@/lib/booking/booking-status-actions';
+import {
+  bookingTimelineEventsForDisplay,
+  formatTimelineEventTime,
+} from '@/lib/booking/booking-timeline';
 import {
   bookingModelShortLabel,
   isTableReservationBooking,
 } from '@/lib/booking/infer-booking-row-model';
 import { partySizeLabel } from '@/lib/booking/terminology';
+import { hapticSuccess, hapticWarning } from '@/lib/haptics';
+import { useResendConfirmation } from '@/lib/queries/useBookingMutations';
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { BookingDetail, BookingStatus } from '@/types/booking-detail';
@@ -21,6 +31,8 @@ import type { BookingDetail, BookingStatus } from '@/types/booking-detail';
 type BookingDetailContentProps = {
   booking: BookingDetail;
   isAppointmentVenue?: boolean;
+  /** Gates admin-only actions (e.g. deposit refunds). */
+  isAdmin?: boolean;
   onStatusChange: (status: BookingStatus) => void;
   actionLoading?: boolean;
 };
@@ -88,11 +100,29 @@ function NoteBlock({ label, value }: { label: string; value: string | null | und
 export function BookingDetailContent({
   booking,
   isAppointmentVenue = false,
+  isAdmin = false,
   onStatusChange,
   actionLoading = false,
 }: BookingDetailContentProps) {
   const { colors } = useTheme();
   const [rescheduleTarget, setRescheduleTarget] = useState<RescheduleTarget | null>(null);
+  const [messageTarget, setMessageTarget] = useState<GuestMessageTarget | null>(null);
+  const [depositTarget, setDepositTarget] = useState<DepositTarget | null>(null);
+  const [editTarget, setEditTarget] = useState<EditBookingTarget | null>(null);
+  const resend = useResendConfirmation(booking.id);
+
+  const openEdit = () =>
+    setEditTarget({
+      id: booking.id,
+      guestFirstName: booking.guest?.first_name ?? '',
+      guestLastName: booking.guest?.last_name ?? '',
+      guestPhone: booking.guest?.phone ?? '',
+      guestEmail: booking.guest?.email ?? '',
+      specialRequests: booking.special_requests ?? '',
+      dietaryNotes: booking.dietary_notes ?? '',
+      occasion: booking.occasion ?? '',
+      internalNotes: booking.internal_notes ?? '',
+    });
 
   const guestName = formatGuestName(booking);
   const isTable = isTableReservationBooking(booking);
@@ -108,6 +138,41 @@ export function BookingDetailContent({
     isTableReservation: isTable,
   });
   const canReschedule = !TERMINAL_STATUSES.has(booking.status);
+
+  const primaryAction = actions.find((a) => a.kind === 'primary');
+  const revertAction = actions.find((a) => a.kind === 'revert');
+  const destructiveActions = actions.filter((a) => a.kind === 'destructive');
+  const timelineEvents = bookingTimelineEventsForDisplay(booking.events ?? []);
+
+  const guestEmail = booking.guest?.email?.trim();
+  const guestPhone = booking.guest?.phone?.trim();
+  const canMessage = !!guestEmail || !!guestPhone;
+  const canResend = !!guestEmail;
+  const hasDeposit = booking.deposit_amount_pence != null;
+  const showManage = canMessage || canResend || hasDeposit;
+
+  const handleResend = () => {
+    Alert.alert('Resend confirmation', 'Re-send the booking confirmation to the guest?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Resend',
+        onPress: () =>
+          resend.mutate(undefined, {
+            onSuccess: () => {
+              hapticSuccess();
+              Alert.alert('Confirmation resent');
+            },
+            onError: (error) => {
+              hapticWarning();
+              Alert.alert(
+                'Could not resend',
+                error instanceof ApiError ? error.message : 'Please try again.',
+              );
+            },
+          }),
+      },
+    ]);
+  };
 
   const hasNotes =
     !!booking.special_requests?.trim() ||
@@ -185,7 +250,10 @@ export function BookingDetailContent({
 
       {/* Notes */}
       <Card>
-        <Text variant="label">Notes</Text>
+        <View style={styles.cardHeaderRow}>
+          <Text variant="label">Notes</Text>
+          <Button label="Edit" variant="ghost" size="sm" onPress={openEdit} />
+        </View>
         {hasNotes ? (
           <View style={styles.notes}>
             <NoteBlock label="Special requests" value={booking.special_requests} />
@@ -200,18 +268,44 @@ export function BookingDetailContent({
         )}
       </Card>
 
-      {/* Actions */}
+      {/* Activity timeline */}
+      {timelineEvents.length > 0 ? (
+        <Card>
+          <Text variant="label">Activity</Text>
+          <View style={styles.timeline}>
+            {timelineEvents.map((event) => (
+              <View key={event.id} style={styles.timelineRow}>
+                <View style={styles.timelineMarker}>
+                  <View style={[styles.timelineDot, { backgroundColor: colors.accent }]} />
+                </View>
+                <View style={styles.timelineBody}>
+                  <Text variant="bodySmall">{event.title}</Text>
+                  {event.detail ? (
+                    <Text variant="caption" tone="muted">
+                      {event.detail}
+                    </Text>
+                  ) : null}
+                  <Text variant="caption" tone="muted">
+                    {formatTimelineEventTime(event.created_at)}
+                  </Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        </Card>
+      ) : null}
+
+      {/* Actions — primary forward, reschedule, undo, then destructive */}
       <View style={styles.actions}>
-        {actions.map((action) => (
+        {primaryAction ? (
           <Button
-            key={`${action.target}-${action.label}`}
-            label={action.label}
+            label={primaryAction.label}
+            variant="primary"
             fullWidth
             loading={actionLoading}
-            onPress={() => handleActionPress(action.target, action.label, action.destructive)}
-            variant={action.variant === 'primary' ? 'primary' : action.variant === 'danger' ? 'danger' : 'secondary'}
+            onPress={() => handleActionPress(primaryAction.target, primaryAction.label)}
           />
-        ))}
+        ) : null}
         {canReschedule ? (
           <Button
             label="Reschedule"
@@ -227,9 +321,80 @@ export function BookingDetailContent({
             }
           />
         ) : null}
+        {revertAction ? (
+          <Button
+            label={revertAction.label}
+            variant="ghost"
+            fullWidth
+            loading={actionLoading}
+            onPress={() => handleActionPress(revertAction.target, revertAction.label)}
+          />
+        ) : null}
+        {destructiveActions.map((action) => (
+          <Button
+            key={`${action.target}-${action.label}`}
+            label={action.label}
+            variant="danger"
+            fullWidth
+            loading={actionLoading}
+            onPress={() => handleActionPress(action.target, action.label, action.destructive)}
+          />
+        ))}
       </View>
 
+      {/* Manage — guest communications + deposit */}
+      {showManage ? (
+        <Card>
+          <Text variant="label">Manage</Text>
+          <View style={styles.manage}>
+            {canMessage ? (
+              <Button
+                label="Message guest"
+                variant="secondary"
+                fullWidth
+                onPress={() =>
+                  setMessageTarget({
+                    id: booking.id,
+                    guestName,
+                    email: booking.guest?.email,
+                    phone: booking.guest?.phone,
+                  })
+                }
+              />
+            ) : null}
+            {canResend ? (
+              <Button
+                label="Resend confirmation"
+                variant="secondary"
+                fullWidth
+                loading={resend.isPending}
+                onPress={handleResend}
+              />
+            ) : null}
+            {hasDeposit ? (
+              <Button
+                label="Deposit"
+                variant="secondary"
+                fullWidth
+                onPress={() =>
+                  setDepositTarget({
+                    id: booking.id,
+                    guestName,
+                    amountPence: booking.deposit_amount_pence,
+                    status: booking.deposit_status,
+                    canRefund: isAdmin,
+                  })
+                }
+              />
+            ) : null}
+          </View>
+        </Card>
+      ) : null}
+
       <RescheduleSheet target={rescheduleTarget} onClose={() => setRescheduleTarget(null)} />
+      <GuestMessageSheet target={messageTarget} onClose={() => setMessageTarget(null)} />
+      <DepositSheet target={depositTarget} onClose={() => setDepositTarget(null)} />
+      <EditBookingSheet target={editTarget} onClose={() => setEditTarget(null)} />
     </View>
   );
 }
@@ -286,5 +451,36 @@ const styles = StyleSheet.create({
   actions: {
     gap: spacing.sm,
     marginTop: spacing.xs,
+  },
+  timeline: {
+    marginTop: spacing.sm,
+    gap: spacing.md,
+  },
+  timelineRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  timelineMarker: {
+    width: 12,
+    alignItems: 'center',
+    paddingTop: 4,
+  },
+  timelineDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  timelineBody: {
+    flex: 1,
+    gap: 1,
+  },
+  manage: {
+    marginTop: spacing.sm,
+    gap: spacing.sm,
+  },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
 });

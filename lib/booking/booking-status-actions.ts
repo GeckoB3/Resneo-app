@@ -8,15 +8,29 @@ const PRIMARY: Partial<Record<BookingStatus, { label: string; target: BookingSta
   Seated: { label: 'Complete', target: 'Completed' },
 };
 
+/** Non-destructive "undo" per status — matches web `BOOKING_REVERT_ACTIONS`. */
+const REVERT: Partial<Record<BookingStatus, { label: string; target: BookingStatus }>> = {
+  Booked: { label: 'Mark pending', target: 'Pending' },
+  Confirmed: { label: 'Undo confirm', target: 'Booked' },
+  Seated: { label: 'Unseat', target: 'Booked' },
+  Completed: { label: 'Reopen', target: 'Seated' },
+  'No-Show': { label: 'Undo No-Show', target: 'Booked' },
+};
+
+export type BookingActionKind = 'primary' | 'revert' | 'destructive';
+
 export type BookingAction = {
   label: string;
   target: BookingStatus;
-  variant: 'primary' | 'secondary' | 'danger';
+  variant: 'primary' | 'secondary' | 'ghost' | 'danger';
+  kind: BookingActionKind;
   destructive?: boolean;
 };
 
 /**
- * Staff actions shown on booking detail — aligned with web ExpandedBookingContent v1 subset.
+ * Staff actions shown on booking detail — aligned with the web status model
+ * (`BOOKING_PRIMARY_ACTIONS` + `BOOKING_REVERT_ACTIONS`). Reverts are
+ * non-destructive undos applied instantly; cancel/no-show confirm first.
  */
 export function bookingDetailActions(
   status: BookingStatus,
@@ -30,11 +44,7 @@ export function bookingDetailActions(
     if (primary.target === 'Seated' && !isTableReservation) {
       label = 'Start';
     }
-    actions.push({
-      label,
-      target: primary.target,
-      variant: 'primary',
-    });
+    actions.push({ label, target: primary.target, variant: 'primary', kind: 'primary' });
   }
 
   if (status === 'Booked' || status === 'Confirmed') {
@@ -42,6 +52,7 @@ export function bookingDetailActions(
       label: 'No-show',
       target: 'No-Show',
       variant: 'danger',
+      kind: 'destructive',
       destructive: true,
     });
   }
@@ -51,8 +62,14 @@ export function bookingDetailActions(
       label: 'Cancel booking',
       target: 'Cancelled',
       variant: 'danger',
+      kind: 'destructive',
       destructive: true,
     });
+  }
+
+  const revert = REVERT[status];
+  if (revert) {
+    actions.push({ label: revert.label, target: revert.target, variant: 'ghost', kind: 'revert' });
   }
 
   return actions;

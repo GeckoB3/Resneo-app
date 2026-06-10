@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
@@ -6,16 +6,27 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { Text } from '@/components/ui/Text';
-import { useAppointmentAvailability } from '@/lib/queries/useAppointmentAvailability';
+import {
+  useAnyPractitionerAvailability,
+  useAppointmentAvailability,
+} from '@/lib/queries/useAppointmentAvailability';
 import { minTouchTarget, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { AppointmentSlot } from '@/types/appointment-availability';
+import { ANY_AVAILABLE_PRACTITIONER_ID } from '@/types/appointment-catalog';
 
 type TimeSlotStepProps = {
   date: string;
   serviceId: string;
+  /** Real practitioner id, or ANY_AVAILABLE_PRACTITIONER_ID for pooled slots. */
   practitionerId: string;
+  /** Real ids backing an "any available" row. */
+  candidatePractitionerIds?: string[];
+  variantId?: string | null;
+  addonIds?: string[];
   ownerVenueId?: string | null;
+  /** HH:mm from a calendar empty-slot tap — auto-selects the matching slot once. */
+  preferredTime?: string | null;
   selectedSlot: AppointmentSlot | null;
   onSelectSlot: (slot: AppointmentSlot) => void;
   onContinue: () => void;
@@ -29,52 +40,90 @@ function formatSlotTime(startTime: string): string {
   return `${hour12}:${minutes}${suffix}`;
 }
 
-/** Step 3 — available appointment slots for the chosen service and date. */
+/** Step — available appointment slots for the chosen service/variant/add-ons and date. */
 export function TimeSlotStep({
   date,
   serviceId,
   practitionerId,
+  candidatePractitionerIds,
+  variantId,
+  addonIds,
   ownerVenueId,
+  preferredTime,
   selectedSlot,
   onSelectSlot,
   onContinue,
 }: TimeSlotStepProps) {
   const { colors } = useTheme();
-  const availabilityQuery = useAppointmentAvailability({
+  const isAnyAvailable = practitionerId === ANY_AVAILABLE_PRACTITIONER_ID;
+
+  const singleQuery = useAppointmentAvailability({
     date,
     serviceId,
     practitionerId,
     ownerVenueId,
+    variantId,
+    addonIds,
+    enabled: !isAnyAvailable,
+  });
+  const pooledQuery = useAnyPractitionerAvailability({
+    date,
+    serviceId,
+    practitionerIds: candidatePractitionerIds ?? [],
+    ownerVenueId,
+    variantId,
+    addonIds,
+    enabled: isAnyAvailable,
   });
 
-  const slots = useMemo(() => {
-    if (!availabilityQuery.data) {
+  const singleSlots = useMemo(() => {
+    if (!singleQuery.data) {
       return [];
     }
-    const matchingPractitioner = availabilityQuery.data.practitioners.find(
+    const matchingPractitioner = singleQuery.data.practitioners.find(
       (practitioner) => practitioner.id === practitionerId,
     );
     const practitionerSlots = matchingPractitioner?.slots ?? [];
     return practitionerSlots.filter((slot) => slot.service_id === serviceId);
-  }, [availabilityQuery.data, practitionerId, serviceId]);
+  }, [singleQuery.data, practitionerId, serviceId]);
 
-  if (availabilityQuery.isLoading) {
+  const slots = isAnyAvailable ? pooledQuery.slots : singleSlots;
+
+  // One-shot: when arriving from a calendar empty-slot tap, pre-select the
+  // matching slot once availability loads (no-op if that time isn't free).
+  const appliedPreferredTime = useRef(false);
+  useEffect(() => {
+    if (appliedPreferredTime.current || !preferredTime || selectedSlot) {
+      return;
+    }
+    const match = slots.find((slot) => slot.start_time.slice(0, 5) === preferredTime);
+    if (match) {
+      appliedPreferredTime.current = true;
+      onSelectSlot(match);
+    }
+  }, [slots, preferredTime, selectedSlot, onSelectSlot]);
+
+  const isLoading = isAnyAvailable ? pooledQuery.isLoading : singleQuery.isLoading;
+  const isFetching = isAnyAvailable ? pooledQuery.isFetching : singleQuery.isFetching;
+  const isError = isAnyAvailable ? pooledQuery.isError : singleQuery.isError;
+  const errorValue = isAnyAvailable ? pooledQuery.error : singleQuery.error;
+  const retry = isAnyAvailable ? pooledQuery.refetch : () => void singleQuery.refetch();
+
+  if (isLoading) {
     return <LoadingState message="Loading available times…" />;
   }
 
-  if (availabilityQuery.isError) {
+  if (isError) {
     const message =
-      availabilityQuery.error instanceof Error
-        ? availabilityQuery.error.message
-        : 'Could not load availability.';
-    return <ErrorState message={message} onRetry={() => void availabilityQuery.refetch()} />;
+      errorValue instanceof Error ? errorValue.message : 'Could not load availability.';
+    return <ErrorState message={message} onRetry={retry} />;
   }
 
   return (
     <View style={styles.container}>
       <View style={styles.titleRow}>
         <Text variant="heading">Choose a time</Text>
-        {availabilityQuery.isFetching ? <ActivityIndicator color={colors.brand} /> : null}
+        {isFetching ? <ActivityIndicator color={colors.brand} /> : null}
       </View>
 
       {slots.length === 0 ? (
@@ -105,6 +154,14 @@ export function TimeSlotStep({
                 <Text variant="bodyMedium" color={isSelected ? colors.onBrand : colors.text}>
                   {formatSlotTime(slot.start_time)}
                 </Text>
+                {isAnyAvailable ? (
+                  <Text
+                    variant="caption"
+                    color={isSelected ? colors.onBrand : colors.textMuted}
+                    numberOfLines={1}>
+                    {slot.practitioner_name}
+                  </Text>
+                ) : null}
               </Pressable>
             );
           })}

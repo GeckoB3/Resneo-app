@@ -15,6 +15,8 @@ export interface CreateBookingPayload {
   email?: string;
   practitioner_id?: string;
   appointment_service_id?: string;
+  service_variant_id?: string;
+  addons?: { addon_id: string }[];
   source?: 'phone' | 'walk-in';
   owner_venue_id?: string;
 }

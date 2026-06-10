@@ -1,6 +1,7 @@
 import Constants from 'expo-constants';
+import { useRouter, type Href } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Alert, Linking, StyleSheet, View } from 'react-native';
+import { Alert, Linking, Pressable, StyleSheet, View } from 'react-native';
 
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge } from '@/components/ui/Badge';
@@ -10,6 +11,7 @@ import { LoadingState } from '@/components/ui/LoadingState';
 import { Screen } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import { getApiUrl } from '@/lib/env';
 import { registerCurrentDeviceForPush } from '@/lib/push/registerDevice';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { useAuth } from '@/providers/AuthProvider';
@@ -17,11 +19,34 @@ import { useVenueContext } from '@/providers/VenueProvider';
 import { spacing } from '@/theme/index';
 import type { StaffRole } from '@/types/staff';
 
-const WEB_DASHBOARD_URL = 'https://reserveni.com/dashboard';
+/** The staff dashboard lives on the same host the app's API points at. */
+function webDashboardUrl(): string {
+  try {
+    return `${getApiUrl()}/dashboard`;
+  } catch {
+    return 'https://reserve-ni.vercel.app/dashboard';
+  }
+}
 
 /** Human-readable staff role for the settings screen. */
 function formatStaffRole(role: StaffRole): string {
   return role === 'admin' ? 'Admin' : 'Staff';
+}
+
+function ToolRow({ label, hint, onPress }: { label: string; hint: string; onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress} style={styles.toolRow} accessibilityRole="button">
+      <View style={styles.toolText}>
+        <Text variant="bodyMedium">{label}</Text>
+        <Text variant="caption" tone="muted">
+          {hint}
+        </Text>
+      </View>
+      <Text variant="title" tone="muted">
+        ›
+      </Text>
+    </Pressable>
+  );
 }
 
 function InfoRow({ label, value }: { label: string; value: string }) {
@@ -38,6 +63,7 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 }
 
 export default function SettingsScreen() {
+  const router = useRouter();
   const { session, signOut } = useAuth();
   const { data: staffData, isLoading: staffLoading } = useStaffMe();
   const {
@@ -84,8 +110,9 @@ export default function SettingsScreen() {
   }, [accessToken]);
 
   const handleOpenWebDashboard = useCallback(() => {
-    void Linking.openURL(WEB_DASHBOARD_URL).catch(() => {
-      Alert.alert('Could not open browser', WEB_DASHBOARD_URL);
+    const url = webDashboardUrl();
+    void Linking.openURL(url).catch(() => {
+      Alert.alert('Could not open browser', url);
     });
   }, []);
 
@@ -117,6 +144,47 @@ export default function SettingsScreen() {
             <Badge
               label={formatStaffRole(staff.role)}
               tone={staff.role === 'admin' ? 'brand' : 'neutral'}
+            />
+          ) : null}
+        </View>
+      </Card>
+
+      {/* Tools */}
+      <Card>
+        <Text variant="overline" tone="muted">
+          Tools
+        </Text>
+        <View style={styles.tools}>
+          <ToolRow
+            label="Today"
+            hint="KPIs, forecast & arrivals"
+            onPress={() => router.push('/today' as Href)}
+          />
+          <ToolRow
+            label="Day sheet"
+            hint="Run-sheet for any date"
+            onPress={() => router.push('/day-sheet' as Href)}
+          />
+          <ToolRow
+            label="Waitlist"
+            hint="Offer & confirm waiting guests"
+            onPress={() => router.push('/waitlist' as Href)}
+          />
+          <ToolRow
+            label="Availability"
+            hint="Block time & book leave"
+            onPress={() => router.push('/availability' as Href)}
+          />
+          <ToolRow
+            label="Notifications"
+            hint="In-app notification feed"
+            onPress={() => router.push('/notifications' as Href)}
+          />
+          {staff?.role === 'admin' ? (
+            <ToolRow
+              label="Reports"
+              hint="Bookings, no-shows, deposits & insights"
+              onPress={() => router.push('/reports' as Href)}
             />
           ) : null}
         </View>
@@ -191,6 +259,21 @@ const styles = StyleSheet.create({
   rows: {
     marginTop: spacing.sm,
     gap: spacing.sm,
+  },
+  tools: {
+    marginTop: spacing.sm,
+  },
+  toolRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  toolText: {
+    flex: 1,
+    minWidth: 0,
+    gap: 1,
   },
   infoRow: {
     flexDirection: 'row',

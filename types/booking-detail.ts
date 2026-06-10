@@ -1,3 +1,4 @@
+import type { BookingTimelineEventRow } from '@/lib/booking/booking-timeline';
 import type { BookingModel } from '@/types/venue';
 
 /** Booking lifecycle statuses — matches PostgreSQL enum and web dashboard. */
@@ -48,6 +49,7 @@ export interface BookingDetail {
   special_requests?: string | null;
   internal_notes?: string | null;
   dietary_notes?: string | null;
+  occasion?: string | null;
   deposit_status?: string | null;
   deposit_amount_pence?: number | null;
   area_name?: string | null;
@@ -56,7 +58,7 @@ export interface BookingDetail {
   inferred_booking_model?: BookingModel | null;
   table_assignments?: BookingTableAssignment[];
   /** Present on full GET; summary returns empty arrays. */
-  events?: unknown[];
+  events?: BookingTimelineEventRow[];
   communications?: unknown[];
 }
 
