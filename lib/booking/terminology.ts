@@ -43,8 +43,9 @@ export function todaySectionTitle(
   return `Today's ${booking.toLowerCase()}s`;
 }
 
-export function clientsScreenTitle(terminology: VenueTerminology | null | undefined): string {
-  return mergeTerminology(terminology).client + 's';
+/** The CRM tab/page is always "Contacts", mirroring the web dashboard nav. */
+export function clientsScreenTitle(_terminology?: VenueTerminology | null | undefined): string {
+  return 'Contacts';
 }
 
 /**

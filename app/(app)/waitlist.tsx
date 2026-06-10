@@ -1,5 +1,4 @@
 import { Stack, useRouter, type Href } from 'expo-router';
-import { useState } from 'react';
 import { Alert, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Badge, type BadgeTone } from '@/components/ui/Badge';
@@ -8,7 +7,6 @@ import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Screen } from '@/components/ui/Screen';
-import { Segmented } from '@/components/ui/Segmented';
 import { ListSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
@@ -16,7 +14,7 @@ import { formatDayHeading } from '@/lib/dates/venue-dates';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useUpdateWaitlistEntry, useWaitlist } from '@/lib/queries/useWaitlist';
 import { spacing } from '@/theme/index';
-import type { WaitlistEntry, WaitlistKind, WaitlistStatus } from '@/types/waitlist';
+import type { WaitlistEntry, WaitlistStatus } from '@/types/waitlist';
 
 const STATUS_TONE: Record<string, BadgeTone> = {
   waiting: 'warning',
@@ -59,10 +57,10 @@ function offerExpiryLabel(expiresAt: string | null | undefined): string | null {
   return `Offer expires in ${span}`;
 }
 
+/** Appointment waitlist — the app is appointments-plan only (no table waitlist). */
 export default function WaitlistScreen() {
   const router = useRouter();
-  const [kind, setKind] = useState<WaitlistKind>('appointment');
-  const query = useWaitlist(kind);
+  const query = useWaitlist('appointment');
   const update = useUpdateWaitlistEntry();
 
   const act = (id: string, status: WaitlistStatus, confirmText?: string) => {
@@ -102,16 +100,6 @@ export default function WaitlistScreen() {
   return (
     <Screen scroll={false} padded={false}>
       <Stack.Screen options={{ title: 'Waitlist' }} />
-      <View style={styles.toolbar}>
-        <Segmented
-          options={[
-            { value: 'appointment', label: 'Appointments' },
-            { value: 'table', label: 'Tables' },
-          ]}
-          value={kind}
-          onChange={setKind}
-        />
-      </View>
 
       {query.isLoading ? (
         <ListSkeleton />
@@ -213,11 +201,8 @@ export default function WaitlistScreen() {
 }
 
 const styles = StyleSheet.create({
-  toolbar: {
-    padding: spacing.base,
-  },
   content: {
-    paddingHorizontal: spacing.base,
+    padding: spacing.base,
     gap: spacing.sm,
   },
   entryHeader: {

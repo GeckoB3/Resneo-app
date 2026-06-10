@@ -21,6 +21,8 @@ type UseAppointmentAvailabilityParams = {
   variantId?: string | null;
   /** Selected add-ons — extend the slot length the engine must fit. */
   addonIds?: string[];
+  /** Staff duration override (base minutes; add-ons stack on top server-side). */
+  durationMinutes?: number | null;
   enabled?: boolean;
 };
 
@@ -31,6 +33,7 @@ function availabilityPath(params: {
   ownerVenueId?: string | null;
   variantId?: string | null;
   addonIds?: string[];
+  durationMinutes?: number | null;
 }): string {
   const search = new URLSearchParams({
     date: params.date,
@@ -39,6 +42,7 @@ function availabilityPath(params: {
   });
   if (params.ownerVenueId) search.set('owner_venue_id', params.ownerVenueId);
   if (params.variantId) search.set('variant_id', params.variantId);
+  if (params.durationMinutes != null) search.set('duration_minutes', String(params.durationMinutes));
   for (const id of params.addonIds ?? []) {
     search.append('addon_ids', id);
   }
@@ -58,6 +62,7 @@ export function useAppointmentAvailability({
   ownerVenueId,
   variantId,
   addonIds,
+  durationMinutes,
   enabled = true,
 }: UseAppointmentAvailabilityParams) {
   const accessToken = useAccessToken();
@@ -78,6 +83,7 @@ export function useAppointmentAvailability({
       ownerVenueId,
       variantId,
       addonsKey,
+      durationMinutes,
     ),
     enabled: queryEnabled,
     queryFn: async (): Promise<AppointmentAvailabilityResponse> => {
@@ -92,6 +98,7 @@ export function useAppointmentAvailability({
           ownerVenueId,
           variantId,
           addonIds,
+          durationMinutes,
         }),
         { accessToken },
       );
@@ -112,6 +119,7 @@ export function useAnyPractitionerAvailability({
   ownerVenueId,
   variantId,
   addonIds,
+  durationMinutes,
   enabled = true,
 }: {
   date: string | null | undefined;
@@ -120,6 +128,7 @@ export function useAnyPractitionerAvailability({
   ownerVenueId?: string | null;
   variantId?: string | null;
   addonIds?: string[];
+  durationMinutes?: number | null;
   enabled?: boolean;
 }) {
   const accessToken = useAccessToken();
@@ -137,6 +146,7 @@ export function useAnyPractitionerAvailability({
         ownerVenueId,
         variantId,
         addonsKey,
+        durationMinutes,
       ),
       enabled: baseEnabled,
       queryFn: async (): Promise<AppointmentAvailabilityResponse> => {
@@ -151,6 +161,7 @@ export function useAnyPractitionerAvailability({
             ownerVenueId,
             variantId,
             addonIds,
+            durationMinutes,
           }),
           { accessToken },
         );

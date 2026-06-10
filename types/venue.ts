@@ -38,9 +38,22 @@ export interface VenueFeatureFlagsPayload {
   resolved: ResolvedAppointmentsFeatureFlags;
 }
 
+/** One open/close period within a day (HH:mm). */
+export interface OpeningHoursPeriod {
+  open: string;
+  close: string;
+}
+
+/** One day: closed, or 1–2 service periods. Keys "0" (Sun) … "6" (Sat). */
+export type OpeningHoursDay =
+  | { closed: true }
+  | { closed?: false; periods: OpeningHoursPeriod[] };
+
+export type OpeningHours = Partial<Record<'0' | '1' | '2' | '3' | '4' | '5' | '6', OpeningHoursDay>>;
+
 /**
- * Minimal venue payload for auth gate and shell bootstrap (Phase 1–2).
- * Subset of GET /api/venue — expand as settings and booking flows land.
+ * Venue payload for auth gate, shell bootstrap and the More/settings pages.
+ * Subset of GET /api/venue.
  * @see _reference/reserve-ni/src/app/api/venue/route.ts
  */
 export interface VenueBootstrap {
@@ -57,4 +70,12 @@ export interface VenueBootstrap {
   terminology: VenueTerminology | null;
   current_user_role: StaffRole;
   feature_flags: VenueFeatureFlagsPayload;
+  /** Settings fields (present on full GET; optional for older cached payloads). */
+  address?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  website_url?: string | null;
+  opening_hours?: OpeningHours | null;
+  stripe_connected_account_id?: string | null;
+  require_account_login_for_bookings?: boolean;
 }

@@ -16,9 +16,8 @@ function invalidateBookingCaches(
   });
   void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all() });
   void queryClient.invalidateQueries({ queryKey: queryKeys.guests.all() });
-  // Keep the calendar grid + run-sheet in sync after status/reschedule changes.
+  // Keep the calendar grid in sync after status/reschedule changes.
   void queryClient.invalidateQueries({ queryKey: queryKeys.calendar.all() });
-  void queryClient.invalidateQueries({ queryKey: queryKeys.daySheet.all() });
 }
 
 /**
@@ -184,6 +183,34 @@ export function useBookingDeposit(bookingId: string) {
       return apiFetch<{ success: boolean }>(`/api/venue/bookings/${bookingId}/deposit`, {
         accessToken,
         method: 'POST',
+        body: JSON.stringify(input),
+      });
+    },
+    onSuccess: () => {
+      invalidateBookingCaches(queryClient, accessToken, bookingId);
+    },
+  });
+}
+
+/**
+ * PATCH /api/venue/bookings/[id] — staff attendance confirmation and
+ * guest-arrived toggles (mirrors the web's attendance pills).
+ */
+export function useSetBookingAttendance(bookingId: string) {
+  const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: {
+      staff_attendance_confirmed?: boolean;
+      client_arrived?: boolean;
+    }): Promise<unknown> => {
+      if (!accessToken) {
+        throw new Error('Missing access token');
+      }
+      return apiFetch<unknown>(`/api/venue/bookings/${bookingId}`, {
+        accessToken,
+        method: 'PATCH',
         body: JSON.stringify(input),
       });
     },

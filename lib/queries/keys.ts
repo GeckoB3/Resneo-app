@@ -25,12 +25,6 @@ export const queryKeys = {
       [...queryKeys.dashboard.all(), 'today', accessToken ?? null, date ?? null] as const,
   },
 
-  daySheet: {
-    all: () => [...queryKeys.all, 'daySheet'] as const,
-    byDate: (accessToken?: string | null, date?: string | null) =>
-      [...queryKeys.daySheet.all(), accessToken ?? null, date ?? null] as const,
-  },
-
   waitlist: {
     all: () => [...queryKeys.all, 'waitlist'] as const,
     list: (accessToken?: string | null, kind?: string | null) =>
@@ -41,6 +35,38 @@ export const queryKeys = {
     all: () => [...queryKeys.all, 'notifications'] as const,
     list: (accessToken?: string | null) =>
       [...queryKeys.notifications.all(), accessToken ?? null] as const,
+  },
+
+  services: {
+    all: () => [...queryKeys.all, 'services'] as const,
+    list: (accessToken?: string | null) =>
+      [...queryKeys.services.all(), accessToken ?? null] as const,
+  },
+
+  team: {
+    all: () => [...queryKeys.all, 'team'] as const,
+    list: (accessToken?: string | null) =>
+      [...queryKeys.team.all(), accessToken ?? null] as const,
+  },
+
+  communications: {
+    all: () => [...queryKeys.all, 'communications'] as const,
+    notificationSettings: (accessToken?: string | null) =>
+      [...queryKeys.communications.all(), 'notificationSettings', accessToken ?? null] as const,
+  },
+
+  compliance: {
+    all: () => [...queryKeys.all, 'compliance'] as const,
+    dashboard: (accessToken?: string | null) =>
+      [...queryKeys.compliance.all(), 'dashboard', accessToken ?? null] as const,
+    formLinks: (accessToken?: string | null) =>
+      [...queryKeys.compliance.all(), 'formLinks', accessToken ?? null] as const,
+  },
+
+  addonGroups: {
+    all: () => [...queryKeys.all, 'addonGroups'] as const,
+    list: (accessToken?: string | null) =>
+      [...queryKeys.addonGroups.all(), accessToken ?? null] as const,
   },
 
   reports: {
@@ -139,6 +165,7 @@ export const queryKeys = {
       ownerVenueId?: string | null,
       variantId?: string | null,
       addonsKey?: string | null,
+      durationMinutes?: number | null,
     ) =>
       [
         ...queryKeys.appointments.all(),
@@ -148,6 +175,27 @@ export const queryKeys = {
         serviceId ?? null,
         practitionerId ?? null,
         ownerVenueId ?? null,
+        variantId ?? null,
+        addonsKey ?? null,
+        durationMinutes ?? null,
+      ] as const,
+    monthAvailability: (
+      accessToken?: string | null,
+      serviceId?: string | null,
+      practitionerId?: string | null,
+      year?: number,
+      month?: number,
+      variantId?: string | null,
+      addonsKey?: string | null,
+    ) =>
+      [
+        ...queryKeys.appointments.all(),
+        'monthAvailability',
+        accessToken ?? null,
+        serviceId ?? null,
+        practitionerId ?? null,
+        year ?? null,
+        month ?? null,
         variantId ?? null,
         addonsKey ?? null,
       ] as const,

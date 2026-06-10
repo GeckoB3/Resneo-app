@@ -1,8 +1,9 @@
 import { type Href, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, View, type ListRenderItem } from 'react-native';
+import { FlatList, Pressable, ScrollView, StyleSheet, View, type ListRenderItem } from 'react-native';
 
 import { Avatar } from '@/components/ui/Avatar';
+import { Chip } from '@/components/ui/Chip';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Input } from '@/components/ui/Input';
@@ -12,6 +13,7 @@ import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { clientsScreenTitle } from '@/lib/booking/terminology';
 import { useGuests } from '@/lib/queries/useGuests';
+import { useGuestTags } from '@/lib/queries/useGuestTags';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -19,6 +21,13 @@ import type { GuestListItem } from '@/types/guest-list';
 
 const SEARCH_DEBOUNCE_MS = 280;
 const MIN_SEARCH_LENGTH = 2;
+
+const SORT_OPTIONS: { value: string; label: string }[] = [
+  { value: 'last_visit_desc', label: 'Recent first' },
+  { value: 'last_visit_asc', label: 'Oldest first' },
+  { value: 'name_asc', label: 'Name A–Z' },
+  { value: 'visit_count_desc', label: 'Most visits' },
+];
 
 function formatGuestName(guest: GuestListItem): string {
   const parts = [guest.first_name, guest.last_name].filter(Boolean);
@@ -81,16 +90,23 @@ export default function ClientsScreen() {
   const clientLabel = terminology.client.toLowerCase();
   const [searchInput, setSearchInput] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [sort, setSort] = useState('last_visit_desc');
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(searchInput.trim()), SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [searchInput]);
 
+  const tagsQuery = useGuestTags();
+  const tags = tagsQuery.data?.tags ?? [];
+
   const guestsQuery = useGuests({
     search: debouncedSearch.length >= MIN_SEARCH_LENGTH ? debouncedSearch : undefined,
     page: 0,
     limit: 50,
+    sort,
+    segmentTag: tagFilter ?? undefined,
   });
 
   const openGuest = useCallback(
@@ -127,6 +143,39 @@ export default function ClientsScreen() {
           <Text variant="caption" tone="muted">
             Type at least {MIN_SEARCH_LENGTH} characters to search
           </Text>
+        ) : null}
+
+        {/* Sort + tag filters (mirrors the web contacts directory). */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterRow}
+          keyboardShouldPersistTaps="handled">
+          {SORT_OPTIONS.map((option) => (
+            <Chip
+              key={option.value}
+              label={option.label}
+              selected={sort === option.value}
+              onPress={() => setSort(option.value)}
+            />
+          ))}
+        </ScrollView>
+        {tags.length > 0 ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filterRow}
+            keyboardShouldPersistTaps="handled">
+            <Chip label="All tags" selected={tagFilter === null} onPress={() => setTagFilter(null)} />
+            {tags.map((tag) => (
+              <Chip
+                key={tag}
+                label={tag}
+                selected={tagFilter === tag}
+                onPress={() => setTagFilter((cur) => (cur === tag ? null : tag))}
+              />
+            ))}
+          </ScrollView>
         ) : null}
       </View>
 
@@ -167,6 +216,10 @@ const styles = StyleSheet.create({
     padding: spacing.base,
     paddingBottom: spacing.sm,
     gap: spacing.sm,
+  },
+  filterRow: {
+    gap: spacing.sm,
+    paddingRight: spacing.base,
   },
   listContent: {
     paddingHorizontal: spacing.base,

@@ -1,8 +1,9 @@
 import { SymbolView } from 'expo-symbols';
 import { useRouter, type Href } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
+import { BookingPeekSheet } from '@/components/bookings/BookingPeekSheet';
 import { CalendarDayGrid } from '@/components/calendar/CalendarDayGrid';
 import { MonthGrid } from '@/components/calendar/MonthGrid';
 import { RescheduleSheet, type RescheduleTarget } from '@/components/calendar/RescheduleSheet';
@@ -14,6 +15,7 @@ import { Fab } from '@/components/ui/Fab';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { Screen } from '@/components/ui/Screen';
 import { Segmented } from '@/components/ui/Segmented';
+import { Snackbar } from '@/components/ui/Snackbar';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { newBookingActionLabel } from '@/lib/booking/terminology';
@@ -29,6 +31,7 @@ import {
   type DateRange,
 } from '@/lib/dates/venue-dates';
 import { useCalendarBlocks } from '@/lib/queries/useAvailabilityManage';
+import { useRescheduleBooking } from '@/lib/queries/useBookingMutations';
 import { useCalendarGrid } from '@/lib/queries/useCalendarGrid';
 import { usePractitioners } from '@/lib/queries/usePractitioners';
 import { useVenueContext } from '@/providers/VenueProvider';
@@ -75,6 +78,26 @@ export default function CalendarScreen() {
   const [anchor, setAnchor] = useState<string>(today);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [rescheduleTarget, setRescheduleTarget] = useState<RescheduleTarget | null>(null);
+  const [peekBookingId, setPeekBookingId] = useState<string | null>(null);
+  // Undo state for the last reschedule (6s window).
+  const [undoTarget, setUndoTarget] = useState<RescheduleTarget | null>(null);
+  const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const undoMutation = useRescheduleBooking(undoTarget?.id ?? '');
+
+  const showUndo = useCallback((previous: RescheduleTarget) => {
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    setUndoTarget(previous);
+    undoTimer.current = setTimeout(() => setUndoTarget(null), 6000);
+  }, []);
+
+  const handleUndo = useCallback(() => {
+    if (!undoTarget) return;
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    undoMutation.mutate(
+      { date: undoTarget.date, time: `${undoTarget.time.slice(0, 5)}:00` },
+      { onSettled: () => setUndoTarget(null) },
+    );
+  }, [undoTarget, undoMutation]);
 
   const week = useMemo(() => getCalendarWeekFromDate(anchor), [anchor]);
   const range = useMemo<DateRange>(() => {
@@ -111,7 +134,7 @@ export default function CalendarScreen() {
   const blocksQuery = useCalendarBlocks(range.from, range.to);
   const dayBlocks = useMemo(() => {
     const rows = blocksQuery.data?.blocks ?? [];
-    return rows
+    const oneOff = rows
       .filter(
         (b) =>
           (b.practitioner_id ?? b.calendar_id) === effectiveId &&
@@ -119,7 +142,26 @@ export default function CalendarScreen() {
           !b.class_instance_id,
       )
       .map((b) => ({ id: b.id, start: b.start_time, end: b.end_time, label: b.reason }));
-  }, [blocksQuery.data, effectiveId, anchor]);
+
+    // Recurring breaks from the practitioner's schedule (every-day or per-weekday).
+    const practitioner = practitioners.find((p) => p.id === effectiveId);
+    const [y, m, d] = anchor.split('-').map(Number);
+    const weekday = new Date(y!, m! - 1, d!).getDay(); // Sun=0
+    const dayNames = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+    const byDay = practitioner?.break_times_by_day;
+    const hasByDay = byDay && Object.keys(byDay).length > 0;
+    const breakRanges = hasByDay
+      ? byDay[String(weekday)] ?? byDay[dayNames[weekday]!] ?? []
+      : practitioner?.break_times ?? [];
+    const breaks = breakRanges.map((range, index) => ({
+      id: `break-${effectiveId}-${index}`,
+      start: range.start,
+      end: range.end,
+      label: 'Break',
+    }));
+
+    return [...oneOff, ...breaks];
+  }, [blocksQuery.data, effectiveId, anchor, practitioners]);
 
   /** date → total bookings across all calendars (for week strip + month grid). */
   const counts = useMemo(() => {
@@ -160,6 +202,9 @@ export default function CalendarScreen() {
     [router],
   );
 
+  // Tap a block → quick peek sheet (full detail is one tap further).
+  const peekBooking = useCallback((id: string) => setPeekBookingId(id), []);
+
   const createAt = useCallback(
     (time: string) => {
       router.push({
@@ -192,7 +237,7 @@ export default function CalendarScreen() {
       timeBlocks={dayBlocks}
       practitionerColor={selectedPractitioner?.colour ?? DEFAULT_PRACTITIONER_COLOR}
       nowMinutes={nowMinutes}
-      onBlockPress={openBooking}
+      onBlockPress={peekBooking}
       onBlockLongPress={startReschedule}
       onEmptyPress={createAt}
     />
@@ -299,7 +344,24 @@ export default function CalendarScreen() {
         </>
       )}
 
-      <RescheduleSheet target={rescheduleTarget} onClose={() => setRescheduleTarget(null)} />
+      <RescheduleSheet
+        target={rescheduleTarget}
+        onClose={() => setRescheduleTarget(null)}
+        onMoved={showUndo}
+      />
+      <Snackbar
+        message={undoTarget ? `Moved ${undoTarget.guestName}'s booking` : null}
+        actionLabel="Undo"
+        onAction={handleUndo}
+      />
+      <BookingPeekSheet
+        bookingId={peekBookingId}
+        onClose={() => setPeekBookingId(null)}
+        onOpenFull={(id) => {
+          setPeekBookingId(null);
+          openBooking(id);
+        }}
+      />
     </Screen>
   );
 }

@@ -10,6 +10,8 @@ import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { useDashboardHome } from '@/lib/queries/useDashboardHome';
+import { useDismissSetupChecklist, useSetupStatus } from '@/lib/queries/useSetupStatus';
+import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { isAppointmentExperience } from '@/lib/venue/venue-experience';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { spacing } from '@/theme/index';
@@ -68,6 +70,61 @@ function ForecastChart({ days, isAppointment }: { days: DashboardForecastDay[]; 
   );
 }
 
+function SetupChecklistCard() {
+  const { colors } = useTheme();
+  const staffQuery = useStaffMe();
+  const isAdmin = staffQuery.data?.staff?.role === 'admin';
+  const setupQuery = useSetupStatus(isAdmin);
+  const dismiss = useDismissSetupChecklist();
+
+  const status = setupQuery.data;
+  if (!isAdmin || !status || status.setup_checklist_dismissed) return null;
+
+  const steps = [
+    { done: status.profile_complete, label: 'Complete your venue profile' },
+    { done: status.availability_set, label: 'Add staff & working hours' },
+    { done: status.guest_booking_ready, label: 'Publish your booking page' },
+    { done: status.stripe_connected, label: 'Connect Stripe for deposits' },
+    { done: status.first_booking_made, label: 'Take your first booking' },
+  ];
+  const doneCount = steps.filter((s) => s.done).length;
+  if (doneCount === steps.length) return null;
+
+  return (
+    <Card>
+      <View style={styles.checklistHeader}>
+        <Text variant="label">Finish setting up · {doneCount}/{steps.length}</Text>
+        <Text
+          variant="bodySmall"
+          tone="muted"
+          onPress={() => dismiss.mutate()}
+          accessibilityRole="button"
+          accessibilityLabel="Dismiss setup checklist">
+          Dismiss
+        </Text>
+      </View>
+      <View style={styles.checklist}>
+        {steps.map((step) => (
+          <View key={step.label} style={styles.checklistRow}>
+            <Text variant="bodySmall" color={step.done ? colors.success : colors.textMuted}>
+              {step.done ? '✓' : '○'}
+            </Text>
+            <Text
+              variant="bodySmall"
+              tone={step.done ? 'muted' : 'secondary'}
+              style={step.done ? styles.checklistDone : undefined}>
+              {step.label}
+            </Text>
+          </View>
+        ))}
+      </View>
+      <Text variant="caption" tone="muted">
+        Setup steps are completed on the web dashboard.
+      </Text>
+    </Card>
+  );
+}
+
 export default function TodayScreen() {
   const { colors } = useTheme();
   const query = useDashboardHome();
@@ -117,6 +174,8 @@ export default function TodayScreen() {
         refreshControl={
           <RefreshControl refreshing={query.isRefetching} onRefresh={() => void query.refetch()} />
         }>
+        <SetupChecklistCard />
+
         <View style={styles.kpiGrid}>
           <Kpi label={`Today’s ${unit}`} value={String(isAppointment ? today.bookings : today.covers)} />
           <Kpi label="Confirmed" value={String(today.confirmed)} hint={`${today.pending} pending`} />
@@ -244,5 +303,23 @@ const styles = StyleSheet.create({
   },
   spacer: {
     height: spacing.xl,
+  },
+  checklistHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  checklist: {
+    marginVertical: spacing.sm,
+    gap: spacing.sm,
+  },
+  checklistRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  checklistDone: {
+    textDecorationLine: 'line-through',
   },
 });

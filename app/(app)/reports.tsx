@@ -10,6 +10,7 @@ import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { addDaysToDateStr } from '@/lib/dates/venue-dates';
+import { formatPence } from '@/lib/format';
 import { calendarDateInTimeZone } from '@/lib/queries/useBookingsList';
 import { useReports } from '@/lib/queries/useReports';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
@@ -21,9 +22,7 @@ type RangeKey = '7d' | '30d' | '90d';
 
 const RANGE_DAYS: Record<RangeKey, number> = { '7d': 7, '30d': 30, '90d': 90 };
 
-function money(pence: number): string {
-  return `£${(pence / 100).toFixed(2)}`;
-}
+const money = (pence: number): string => formatPence(pence) ?? '—';
 
 function StatRow({ label, value }: { label: string; value: string }) {
   return (

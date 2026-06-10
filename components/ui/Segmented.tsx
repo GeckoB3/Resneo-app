@@ -42,10 +42,7 @@ export function Segmented<T extends string>({ options, value, onChange }: Segmen
               styles.segment,
               isActive && {
                 backgroundColor: colors.surfaceRaised,
-                shadowColor: '#0F172A',
-                shadowOpacity: 0.08,
-                shadowRadius: 4,
-                shadowOffset: { width: 0, height: 1 },
+                boxShadow: '0 1px 4px rgba(15, 23, 42, 0.08)',
                 elevation: 1,
               },
             ]}>

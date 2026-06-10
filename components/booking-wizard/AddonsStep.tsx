@@ -3,6 +3,7 @@ import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
 import { Text } from '@/components/ui/Text';
+import { formatPence } from '@/lib/format';
 import { hapticSelect } from '@/lib/haptics';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -18,7 +19,7 @@ type AddonsStepProps = {
 
 function extraLabel(pricePence: number, durationMinutes: number): string | null {
   const parts: string[] = [];
-  if (pricePence > 0) parts.push(`+£${(pricePence / 100).toFixed(2)}`);
+  if (pricePence > 0) parts.push(`+${formatPence(pricePence)}`);
   if (durationMinutes > 0) parts.push(`+${durationMinutes} min`);
   return parts.length ? parts.join(' · ') : null;
 }

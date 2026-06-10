@@ -206,29 +206,15 @@ export type TypographyVariant = keyof typeof typography;
 
 // ---------------------------------------------------------------------------
 // Elevation — two shadow tiers mirroring the web's --ds-shadow-* tokens.
-// (Shadow props on iOS; `elevation` drives Android.)
+// `boxShadow` renders on iOS/Android (new architecture) and web without the
+// deprecated `shadow*` props; `elevation` keeps the Android fallback.
 // ---------------------------------------------------------------------------
-type Elevation = Pick<
-  ViewStyle,
-  'shadowColor' | 'shadowOpacity' | 'shadowRadius' | 'shadowOffset' | 'elevation'
->;
+type Elevation = Pick<ViewStyle, 'boxShadow' | 'elevation'>;
 
 export const elevation = {
-  none: { shadowColor: 'transparent', shadowOpacity: 0, shadowRadius: 0, elevation: 0 },
-  card: {
-    shadowColor: '#0F172A',
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
-  },
-  raised: {
-    shadowColor: '#0F172A',
-    shadowOpacity: 0.12,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 8,
-  },
+  none: { boxShadow: 'none', elevation: 0 },
+  card: { boxShadow: '0 2px 8px rgba(15, 23, 42, 0.06)', elevation: 2 },
+  raised: { boxShadow: '0 10px 24px rgba(15, 23, 42, 0.12)', elevation: 8 },
 } as const satisfies Record<string, Elevation>;
 
 // ---------------------------------------------------------------------------

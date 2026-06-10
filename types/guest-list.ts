@@ -31,4 +31,6 @@ export interface GuestListParams {
   page?: number;
   limit?: number;
   sort?: string;
+  /** Filter to contacts carrying this tag (segment=tag). */
+  segmentTag?: string;
 }

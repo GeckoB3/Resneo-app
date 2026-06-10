@@ -1,14 +1,14 @@
 import { useState } from 'react';
-import { Alert, Modal, Pressable, StyleSheet, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Alert, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
+import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import { formatPositivePence } from '@/lib/format';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useBookingDeposit, type DepositAction } from '@/lib/queries/useBookingMutations';
-import { radius, spacing } from '@/theme/index';
-import { useTheme } from '@/theme/useTheme';
+import { spacing } from '@/theme/index';
 
 export type DepositTarget = {
   id: string;
@@ -24,14 +24,8 @@ type DepositSheetProps = {
   onClose: () => void;
 };
 
-function formatAmount(pence?: number | null): string | null {
-  if (pence == null || pence <= 0) return null;
-  return `£${(pence / 100).toFixed(2)}`;
-}
-
 /** Bottom-sheet for deposit actions: send link, record cash, waive, refund. */
 export function DepositSheet({ target, onClose }: DepositSheetProps) {
-  const { colors } = useTheme();
   const mutation = useBookingDeposit(target?.id ?? '');
 
   const [pending, setPending] = useState<DepositAction | null>(null);
@@ -68,17 +62,12 @@ export function DepositSheet({ target, onClose }: DepositSheetProps) {
     ]);
   }
 
-  const amount = formatAmount(target?.amountPence);
+  const amount = formatPositivePence(target?.amountPence);
 
   return (
-    <Modal visible={!!target} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.root}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Dismiss" />
-        <SafeAreaView edges={['bottom']} style={[styles.sheet, { backgroundColor: colors.surfaceRaised }]}>
-          {target && seededId === target.id ? (
-            <View style={styles.content}>
-              <View style={[styles.handle, { backgroundColor: colors.border }]} />
-
+    <Sheet visible={!!target} onClose={onClose}>
+      {target && seededId === target.id ? (
+        <View style={styles.body}>
               <View style={styles.headerBlock}>
                 <Text variant="overline" tone="muted">
                   Deposit
@@ -135,33 +124,15 @@ export function DepositSheet({ target, onClose }: DepositSheetProps) {
               ) : null}
 
               <Button label="Close" variant="secondary" onPress={onClose} fullWidth />
-            </View>
-          ) : null}
-        </SafeAreaView>
-      </View>
-    </Modal>
+        </View>
+      ) : null}
+    </Sheet>
   );
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(15, 23, 42, 0.45)',
-  },
-  sheet: {
-    borderTopLeftRadius: radius.surface,
-    borderTopRightRadius: radius.surface,
-  },
-  content: {
-    padding: spacing.lg,
+  body: {
     gap: spacing.lg,
-  },
-  handle: {
-    alignSelf: 'center',
-    width: 40,
-    height: 4,
-    borderRadius: radius.full,
   },
   headerBlock: {
     gap: spacing.xs,

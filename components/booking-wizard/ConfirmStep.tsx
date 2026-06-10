@@ -2,8 +2,10 @@ import { Alert, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { Segmented } from '@/components/ui/Segmented';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import { formatPence } from '@/lib/format';
 import { hapticSuccess } from '@/lib/haptics';
 import { useCreateBooking } from '@/lib/queries/useCreateBooking';
 import { splitGuestName } from '@/lib/validation/walk-in-guest';
@@ -19,6 +21,8 @@ import {
 
 import type { GuestDetails } from './GuestDetailsStep';
 
+type BookingSource = 'phone' | 'walk-in';
+
 type ConfirmStepProps = {
   service: AppointmentServiceOption;
   date: string;
@@ -26,13 +30,16 @@ type ConfirmStepProps = {
   guest: GuestDetails;
   variant?: AppointmentCatalogVariant | null;
   addons?: AppointmentCatalogAddon[];
+  /** Staff base-duration override (minutes). */
+  durationOverride?: number | null;
+  /** Phone bookings are slot-validated server-side; walk-ins skip the gate. */
+  source: BookingSource;
+  onChangeSource: (source: BookingSource) => void;
   ownerVenueId?: string | null;
   onSuccess: (bookingId: string) => void;
 };
 
-function formatMoney(pence: number): string {
-  return `£${(pence / 100).toFixed(2)}`;
-}
+const formatMoney = (pence: number): string => formatPence(pence) ?? '—';
 
 function formatSummaryDate(isoDate: string): string {
   const [year, month, day] = isoDate.split('-').map(Number);
@@ -72,6 +79,9 @@ export function ConfirmStep({
   guest,
   variant = null,
   addons = [],
+  durationOverride = null,
+  source,
+  onChangeSource,
   ownerVenueId,
   onSuccess,
 }: ConfirmStepProps) {
@@ -92,7 +102,8 @@ export function ConfirmStep({
   const addonsPrice = addons.reduce((sum, a) => sum + a.additional_price_pence, 0);
   const addonsDuration = addons.reduce((sum, a) => sum + a.additional_duration_minutes, 0);
   const basePrice = (variant ? variant.price_pence : service.pricePence) ?? 0;
-  const baseDuration = variant ? variant.duration_minutes : service.durationMinutes;
+  const baseDuration =
+    durationOverride ?? (variant ? variant.duration_minutes : service.durationMinutes);
   const baseDeposit = variant ? variant.deposit_pence : service.depositPence;
   const totalPrice = basePrice + addonsPrice;
   const totalDuration = baseDuration + addonsDuration;
@@ -112,7 +123,8 @@ export function ConfirmStep({
         appointment_service_id: service.serviceId,
         ...(variant ? { service_variant_id: variant.id } : {}),
         ...(addons.length ? { addons: addons.map((a) => ({ addon_id: a.id })) } : {}),
-        source: 'walk-in',
+        ...(durationOverride != null ? { duration_minutes: durationOverride } : {}),
+        source,
         ...(ownerVenueId ? { owner_venue_id: ownerVenueId } : {}),
       },
       {
@@ -185,6 +197,25 @@ export function ConfirmStep({
           </View>
         ) : null}
       </Card>
+      <View style={styles.sourceBlock}>
+        <Text variant="label" tone="secondary">
+          Booking type
+        </Text>
+        <Segmented
+          options={[
+            { value: 'phone', label: 'Phone' },
+            { value: 'walk-in', label: 'Walk-in' },
+          ]}
+          value={source}
+          onChange={onChangeSource}
+        />
+        <Text variant="caption" tone="muted">
+          {source === 'phone'
+            ? 'The slot is re-checked when you book.'
+            : 'Walk-ins can be booked outside normal hours.'}
+        </Text>
+      </View>
+
       <Button
         label="Create booking"
         fullWidth
@@ -233,5 +264,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginTop: spacing.sm,
+  },
+  sourceBlock: {
+    gap: spacing.sm,
   },
 });

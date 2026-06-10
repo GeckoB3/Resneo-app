@@ -4,7 +4,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { GuestEditSheet, type GuestEditTarget } from '@/components/clients/GuestEditSheet';
-import { GuestMessageSheet, type GuestMessageTarget } from '@/components/clients/GuestMessageSheet';
+import { GuestMessageSheet, type GuestMessageTarget } from '@/components/messaging/GuestMessageSheet';
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge, StatusPill } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -15,8 +15,9 @@ import { Screen } from '@/components/ui/Screen';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import { formatPence } from '@/lib/format';
 import { useGuestDetail } from '@/lib/queries/useGuestDetail';
-import { useGuestTimeline } from '@/lib/queries/useGuestMutations';
+import { useGuestTimeline, useSendGuestMessage } from '@/lib/queries/useGuestMutations';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type {
@@ -38,13 +39,7 @@ function formatGuestName(guest: GuestDetailProfile): string {
   return parts.length > 0 ? parts.join(' ') : 'Unnamed guest';
 }
 
-function formatCurrencyPence(pence: number): string {
-  try {
-    return new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(pence / 100);
-  } catch {
-    return `£${(pence / 100).toFixed(2)}`;
-  }
-}
+const formatCurrencyPence = (pence: number): string => formatPence(pence) ?? '—';
 
 function StatTile({ label, value }: { label: string; value: string }) {
   const { colors } = useTheme();
@@ -117,6 +112,7 @@ export default function ClientDetailScreen() {
   const guestId = typeof id === 'string' ? id : undefined;
   const detailQuery = useGuestDetail(guestId);
   const timelineQuery = useGuestTimeline(guestId);
+  const sendMessage = useSendGuestMessage(guestId ?? '');
   const [editTarget, setEditTarget] = useState<GuestEditTarget | null>(null);
   const [messageTarget, setMessageTarget] = useState<GuestMessageTarget | null>(null);
 
@@ -295,7 +291,12 @@ export default function ClientDetailScreen() {
       </ScrollView>
 
       <GuestEditSheet target={editTarget} onClose={() => setEditTarget(null)} />
-      <GuestMessageSheet target={messageTarget} onClose={() => setMessageTarget(null)} />
+      <GuestMessageSheet
+        target={messageTarget}
+        onSend={(input) => sendMessage.mutateAsync(input)}
+        sending={sendMessage.isPending}
+        onClose={() => setMessageTarget(null)}
+      />
     </Screen>
   );
 }

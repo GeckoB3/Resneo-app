@@ -32,6 +32,17 @@ export interface BookingTableAssignment {
   name: string;
 }
 
+/** Immutable add-on snapshot row stored at booking time (booking_addons). */
+export interface BookingDetailAddon {
+  id?: string;
+  addon_id: string | null;
+  addon_group_id?: string | null;
+  addon_name_snapshot: string;
+  addon_group_name_snapshot?: string | null;
+  price_pence_at_booking: number;
+  duration_minutes_at_booking: number;
+}
+
 /**
  * Mobile subset of GET /api/venue/bookings/[id] (and /summary prefetch).
  * @see _reference/reserve-ni/src/app/api/venue/bookings/[id]/route.ts
@@ -57,6 +68,20 @@ export interface BookingDetail {
   service_variant_price_pence?: number | null;
   inferred_booking_model?: BookingModel | null;
   table_assignments?: BookingTableAssignment[];
+  /** Add-on snapshots + totals (full GET). */
+  addons?: BookingDetailAddon[];
+  addons_total_price_pence?: number | null;
+  addons_total_duration_minutes?: number | null;
+  /** Attendance + arrival timestamps. */
+  guest_attendance_confirmed_at?: string | null;
+  staff_attendance_confirmed_at?: string | null;
+  client_arrived_at?: string | null;
+  /** Appointment anchors (model B / unified). */
+  appointment_service_id?: string | null;
+  service_item_id?: string | null;
+  practitioner_id?: string | null;
+  calendar_id?: string | null;
+  service_variant_id?: string | null;
   /** Present on full GET; summary returns empty arrays. */
   events?: BookingTimelineEventRow[];
   communications?: unknown[];

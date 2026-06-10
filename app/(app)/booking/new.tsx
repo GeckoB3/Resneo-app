@@ -4,7 +4,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { AddonsStep } from '@/components/booking-wizard/AddonsStep';
 import { ConfirmStep } from '@/components/booking-wizard/ConfirmStep';
-import { DatePickerStep } from '@/components/booking-wizard/DatePickerStep';
+import { MonthDatePicker } from '@/components/booking-wizard/MonthDatePicker';
 import type { GuestDetails } from '@/components/booking-wizard/GuestDetailsStep';
 import { GuestDetailsStep } from '@/components/booking-wizard/GuestDetailsStep';
 import { RestaurantWalkInForm } from '@/components/booking-wizard/RestaurantWalkInForm';
@@ -18,7 +18,9 @@ import { LoadingState } from '@/components/ui/LoadingState';
 import { Screen } from '@/components/ui/Screen';
 import { ApiError } from '@/lib/api/client';
 import { useAppointmentCatalog } from '@/lib/queries/useAppointmentCatalog';
+import { calendarDateInTimeZone } from '@/lib/queries/useBookingsList';
 import { useGuestDetail } from '@/lib/queries/useGuestDetail';
+import { useMonthAvailability } from '@/lib/queries/useMonthAvailability';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { useLinkedVenueContext } from '@/providers/LinkedVenueProvider';
 import { spacing } from '@/theme/index';
@@ -103,6 +105,10 @@ export default function NewBookingScreen() {
   const [selectedSlot, setSelectedSlot] = useState<AppointmentSlot | null>(null);
   const [selectedVariant, setSelectedVariant] = useState<AppointmentCatalogVariant | null>(null);
   const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
+  const [durationOverride, setDurationOverride] = useState<number | null>(null);
+  const [source, setSource] = useState<'phone' | 'walk-in'>('phone');
+  const today = calendarDateInTimeZone(new Date(), timeZone);
+  const [monthAnchor, setMonthAnchor] = useState<string>(prefilledDate ?? today);
   const [guest, setGuest] = useState<GuestDetails>(EMPTY_GUEST);
   const [guestPrefilled, setGuestPrefilled] = useState(false);
 
@@ -142,6 +148,41 @@ export default function NewBookingScreen() {
     router.replace(`/booking/${bookingId}` as Href);
   };
 
+  const addonGroups = selectedService?.addonGroups ?? [];
+  const hasAddons = addonGroups.length > 0;
+  const serviceVariants = selectedService?.variants ?? [];
+  const hasVariants = serviceVariants.length > 0;
+  const steps: StepKey[] = [
+    'service',
+    ...(hasVariants ? (['variant'] as StepKey[]) : []),
+    ...(hasAddons ? (['addons'] as StepKey[]) : []),
+    'date',
+    'time',
+    'guest',
+    'confirm',
+  ];
+  const currentKey = steps[stepIndex] ?? 'service';
+  const stepLabels = steps.map((key) => STEP_LABELS[key]);
+  const selectedAddons = addonGroups
+    .flatMap((group) => group.addons)
+    .filter((addon) => selectedAddonIds.includes(addon.id));
+  const goNext = () => setStepIndex((current) => Math.min(steps.length - 1, current + 1));
+
+  // Month availability for the date picker — hook must run unconditionally
+  // (before the early returns below), gated via `enabled`.
+  const [monthYear, monthMonth] = monthAnchor.split('-').map(Number);
+  const monthQuery = useMonthAvailability({
+    serviceId: selectedService?.serviceId ?? null,
+    practitionerId: selectedService?.practitionerId ?? null,
+    candidatePractitionerIds: selectedService?.candidatePractitionerIds,
+    year: monthYear ?? new Date().getFullYear(),
+    month: monthMonth ?? 1,
+    variantId: selectedVariant?.id ?? null,
+    addonIds: selectedAddonIds,
+    enabled: currentKey === 'date' && !!selectedService,
+  });
+  const availableDates = monthQuery.data ? new Set(monthQuery.data.available_dates) : null;
+
   if (venueLoading) {
     return (
       <Screen>
@@ -166,26 +207,6 @@ export default function NewBookingScreen() {
     );
   }
 
-  const addonGroups = selectedService?.addonGroups ?? [];
-  const hasAddons = addonGroups.length > 0;
-  const serviceVariants = selectedService?.variants ?? [];
-  const hasVariants = serviceVariants.length > 0;
-  const steps: StepKey[] = [
-    'service',
-    ...(hasVariants ? (['variant'] as StepKey[]) : []),
-    ...(hasAddons ? (['addons'] as StepKey[]) : []),
-    'date',
-    'time',
-    'guest',
-    'confirm',
-  ];
-  const currentKey = steps[stepIndex] ?? 'service';
-  const stepLabels = steps.map((key) => STEP_LABELS[key]);
-  const selectedAddons = addonGroups
-    .flatMap((group) => group.addons)
-    .filter((addon) => selectedAddonIds.includes(addon.id));
-  const goNext = () => setStepIndex((current) => Math.min(steps.length - 1, current + 1));
-
   return (
     <Screen>
       <View style={styles.container}>
@@ -208,6 +229,7 @@ export default function NewBookingScreen() {
               setSelectedSlot(null);
               setSelectedVariant(null);
               setSelectedAddonIds([]);
+              setDurationOverride(null);
               setStepIndex(1);
             }}
           />
@@ -236,19 +258,32 @@ export default function NewBookingScreen() {
         ) : null}
 
         {currentKey === 'date' ? (
-          <DatePickerStep
-            onContinue={goNext}
-            onSelectDate={setSelectedDate}
+          <MonthDatePicker
+            monthAnchor={monthAnchor}
+            onChangeMonth={setMonthAnchor}
+            today={today}
             selectedDate={selectedDate}
-            timeZone={timeZone}
+            onSelectDate={(iso) => {
+              setSelectedDate(iso);
+              setSelectedSlot(null);
+            }}
+            availableDates={availableDates}
+            isLoading={monthQuery.isLoading || monthQuery.isFetching}
+            onContinue={goNext}
           />
         ) : null}
 
         {currentKey === 'time' && selectedService && selectedDate ? (
           <TimeSlotStep
             addonIds={selectedAddonIds}
+            baseDurationMinutes={selectedVariant?.duration_minutes ?? selectedService.durationMinutes}
             candidatePractitionerIds={selectedService.candidatePractitionerIds}
             date={selectedDate}
+            durationMinutes={durationOverride}
+            onChangeDuration={(minutes) => {
+              setDurationOverride(minutes);
+              setSelectedSlot(null);
+            }}
             onContinue={goNext}
             onSelectSlot={setSelectedSlot}
             ownerVenueId={ownerVenueId}
@@ -257,6 +292,7 @@ export default function NewBookingScreen() {
             selectedSlot={selectedSlot}
             serviceId={selectedService.serviceId}
             variantId={selectedVariant?.id ?? null}
+            venueId={venueId}
           />
         ) : null}
 
@@ -268,11 +304,14 @@ export default function NewBookingScreen() {
           <ConfirmStep
             addons={selectedAddons}
             date={selectedDate}
+            durationOverride={durationOverride}
             guest={guest}
+            onChangeSource={setSource}
             onSuccess={handleBookingCreated}
             ownerVenueId={ownerVenueId}
             service={selectedService}
             slot={selectedSlot}
+            source={source}
             variant={selectedVariant}
           />
         ) : null}

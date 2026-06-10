@@ -1,13 +1,14 @@
 import { format, parseISO } from 'date-fns';
+import { useRouter, type Href } from 'expo-router';
 import { useState } from 'react';
-import { Alert, StyleSheet, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, View } from 'react-native';
 
 import { DepositSheet, type DepositTarget } from '@/components/bookings/DepositSheet';
 import { EditBookingSheet, type EditBookingTarget } from '@/components/bookings/EditBookingSheet';
-import { GuestMessageSheet, type GuestMessageTarget } from '@/components/bookings/GuestMessageSheet';
+import { GuestMessageSheet, type GuestMessageTarget } from '@/components/messaging/GuestMessageSheet';
 import { RescheduleSheet, type RescheduleTarget } from '@/components/calendar/RescheduleSheet';
 import { Avatar } from '@/components/ui/Avatar';
-import { StatusPill } from '@/components/ui/Badge';
+import { Badge, StatusPill } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
@@ -22,8 +23,14 @@ import {
   isTableReservationBooking,
 } from '@/lib/booking/infer-booking-row-model';
 import { partySizeLabel } from '@/lib/booking/terminology';
+import { formatPence, formatPositivePence } from '@/lib/format';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
-import { useResendConfirmation } from '@/lib/queries/useBookingMutations';
+import {
+  useResendConfirmation,
+  useSendBookingMessage,
+  useSetBookingAttendance,
+} from '@/lib/queries/useBookingMutations';
+import { useGuestDetail } from '@/lib/queries/useGuestDetail';
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { BookingDetail, BookingStatus } from '@/types/booking-detail';
@@ -63,12 +70,7 @@ function formatBookingWhen(date: string, time: string, endTime?: string | null):
   }
 }
 
-function formatDeposit(depositPence: number | null | undefined): string | null {
-  if (depositPence == null || depositPence <= 0) {
-    return null;
-  }
-  return `£${(depositPence / 100).toFixed(2)}`;
-}
+const formatDeposit = formatPositivePence;
 
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
@@ -80,6 +82,77 @@ function DetailRow({ label, value }: { label: string; value: string }) {
         {value}
       </Text>
     </View>
+  );
+}
+
+/** Other visits for this guest — loaded lazily on first expand. */
+function GuestHistoryCard({
+  guestId,
+  currentBookingId,
+}: {
+  guestId: string;
+  currentBookingId: string;
+}) {
+  const router = useRouter();
+  const { colors } = useTheme();
+  const [expanded, setExpanded] = useState(false);
+  const detail = useGuestDetail(expanded ? guestId : null, { bookingHistoryLimit: 10 });
+
+  const history = (detail.data?.booking_history ?? [])
+    .filter((row) => row.id !== currentBookingId)
+    .slice(0, 5);
+
+  return (
+    <Card>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Guest history"
+        onPress={() => setExpanded((cur) => !cur)}
+        style={styles.cardHeaderRow}>
+        <Text variant="label">Guest history</Text>
+        <Text variant="title" tone="muted">
+          {expanded ? '▾' : '›'}
+        </Text>
+      </Pressable>
+      {expanded ? (
+        <View style={styles.historyBody}>
+          {detail.isLoading ? (
+            <Text variant="bodySmall" tone="muted">
+              Loading…
+            </Text>
+          ) : history.length === 0 ? (
+            <Text variant="bodySmall" tone="muted">
+              No other bookings for this guest.
+            </Text>
+          ) : (
+            history.map((row) => (
+              <Pressable
+                key={row.id}
+                accessibilityRole="button"
+                onPress={() => router.push(`/booking/${row.id}` as Href)}
+                style={[styles.historyRow, { borderBottomColor: colors.border }]}>
+                <View style={styles.historyText}>
+                  <Text variant="bodySmall" numberOfLines={1}>
+                    {row.detail_label || row.kind_label}
+                  </Text>
+                  <Text variant="caption" tone="muted">
+                    {row.booking_date}
+                    {row.booking_time ? ` · ${row.booking_time.slice(0, 5)}` : ''}
+                  </Text>
+                </View>
+                <StatusPill status={row.status} />
+              </Pressable>
+            ))
+          )}
+          <Button
+            label="View contact"
+            variant="ghost"
+            size="sm"
+            onPress={() => router.push(`/client/${guestId}` as Href)}
+          />
+        </View>
+      ) : null}
+    </Card>
   );
 }
 
@@ -110,6 +183,8 @@ export function BookingDetailContent({
   const [depositTarget, setDepositTarget] = useState<DepositTarget | null>(null);
   const [editTarget, setEditTarget] = useState<EditBookingTarget | null>(null);
   const resend = useResendConfirmation(booking.id);
+  const sendMessage = useSendBookingMessage(booking.id);
+  const attendance = useSetBookingAttendance(booking.id);
 
   const openEdit = () =>
     setEditTarget({
@@ -150,6 +225,36 @@ export function BookingDetailContent({
   const canResend = !!guestEmail;
   const hasDeposit = booking.deposit_amount_pence != null;
   const showManage = canMessage || canResend || hasDeposit;
+
+  // Add-on snapshots + price breakdown (variant/base price + add-ons).
+  const addons = booking.addons ?? [];
+  const addonsTotal =
+    booking.addons_total_price_pence ??
+    addons.reduce((sum, addon) => sum + addon.price_pence_at_booking, 0);
+  const basePrice = booking.service_variant_price_pence ?? null;
+  const totalPrice = basePrice != null ? basePrice + addonsTotal : addons.length ? addonsTotal : null;
+
+  // Attendance — mirrors the web pills/actions.
+  const guestConfirmed = !!booking.guest_attendance_confirmed_at;
+  const staffConfirmed = !!booking.staff_attendance_confirmed_at;
+  const arrived = !!booking.client_arrived_at;
+  const attendanceRelevant = !TERMINAL_STATUSES.has(booking.status) || booking.status === 'Completed';
+
+  const toggleAttendance = (field: 'staff_attendance_confirmed' | 'client_arrived', next: boolean) => {
+    attendance.mutate(
+      { [field]: next },
+      {
+        onSuccess: () => hapticSuccess(),
+        onError: (error) => {
+          hapticWarning();
+          Alert.alert(
+            'Could not update',
+            error instanceof ApiError ? error.message : 'Please try again.',
+          );
+        },
+      },
+    );
+  };
 
   const handleResend = () => {
     Alert.alert('Resend confirmation', 'Re-send the booking confirmation to the guest?', [
@@ -246,6 +351,48 @@ export function BookingDetailContent({
             />
           ) : null}
         </View>
+
+        {addons.length > 0 ? (
+          <View style={[styles.details, { borderTopColor: colors.border }]}>
+            <Text variant="caption" tone="muted">
+              Add-ons
+            </Text>
+            {addons.map((addon, index) => (
+              <View key={addon.id ?? `${addon.addon_id}-${index}`} style={styles.detailRow}>
+                <Text variant="bodySmall" numberOfLines={1} style={styles.addonName}>
+                  {addon.addon_name_snapshot}
+                  {addon.duration_minutes_at_booking > 0
+                    ? ` (+${addon.duration_minutes_at_booking}m)`
+                    : ''}
+                </Text>
+                <Text variant="bodySmall" tone="secondary">
+                  {addon.price_pence_at_booking > 0
+                    ? `+${formatPence(addon.price_pence_at_booking)}`
+                    : 'Free'}
+                </Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
+
+        {totalPrice != null && totalPrice > 0 ? (
+          <View style={[styles.details, { borderTopColor: colors.border }]}>
+            <View style={styles.detailRow}>
+              <Text variant="label">Total</Text>
+              <Text variant="label" tone="brand">
+                {formatPence(totalPrice)}
+              </Text>
+            </View>
+          </View>
+        ) : null}
+
+        {attendanceRelevant && (guestConfirmed || staffConfirmed || arrived) ? (
+          <View style={styles.attendancePills}>
+            {guestConfirmed ? <Badge label="Guest confirmed" tone="success" /> : null}
+            {staffConfirmed ? <Badge label="Staff confirmed" tone="success" /> : null}
+            {arrived ? <Badge label="Arrived" tone="accent" /> : null}
+          </View>
+        ) : null}
       </Card>
 
       {/* Notes */}
@@ -267,6 +414,11 @@ export function BookingDetailContent({
           </Text>
         )}
       </Card>
+
+      {/* Guest history — other visits, lazy-loaded */}
+      {booking.guest_id ? (
+        <GuestHistoryCard guestId={booking.guest_id} currentBookingId={booking.id} />
+      ) : null}
 
       {/* Activity timeline */}
       {timelineEvents.length > 0 ? (
@@ -342,11 +494,31 @@ export function BookingDetailContent({
         ))}
       </View>
 
-      {/* Manage — guest communications + deposit */}
-      {showManage ? (
+      {/* Manage — attendance, guest communications + deposit */}
+      {showManage || attendanceRelevant ? (
         <Card>
           <Text variant="label">Manage</Text>
           <View style={styles.manage}>
+            {attendanceRelevant && booking.status !== 'Completed' ? (
+              <View style={styles.attendanceRow}>
+                <Button
+                  label={staffConfirmed ? 'Unconfirm attendance' : 'Confirm attendance'}
+                  variant="secondary"
+                  size="sm"
+                  style={styles.attendanceBtn}
+                  loading={attendance.isPending}
+                  onPress={() => toggleAttendance('staff_attendance_confirmed', !staffConfirmed)}
+                />
+                <Button
+                  label={arrived ? 'Undo arrived' : 'Mark arrived'}
+                  variant="secondary"
+                  size="sm"
+                  style={styles.attendanceBtn}
+                  loading={attendance.isPending}
+                  onPress={() => toggleAttendance('client_arrived', !arrived)}
+                />
+              </View>
+            ) : null}
             {canMessage ? (
               <Button
                 label="Message guest"
@@ -392,7 +564,12 @@ export function BookingDetailContent({
       ) : null}
 
       <RescheduleSheet target={rescheduleTarget} onClose={() => setRescheduleTarget(null)} />
-      <GuestMessageSheet target={messageTarget} onClose={() => setMessageTarget(null)} />
+      <GuestMessageSheet
+        target={messageTarget}
+        onSend={(input) => sendMessage.mutateAsync(input)}
+        sending={sendMessage.isPending}
+        onClose={() => setMessageTarget(null)}
+      />
       <DepositSheet target={depositTarget} onClose={() => setDepositTarget(null)} />
       <EditBookingSheet target={editTarget} onClose={() => setEditTarget(null)} />
     </View>
@@ -482,5 +659,38 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  addonName: {
+    flex: 1,
+    minWidth: 0,
+  },
+  attendancePills: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  attendanceRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  attendanceBtn: {
+    flex: 1,
+  },
+  historyBody: {
+    marginTop: spacing.sm,
+    gap: spacing.xs,
+  },
+  historyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  historyText: {
+    flex: 1,
+    minWidth: 0,
+    gap: 1,
   },
 });

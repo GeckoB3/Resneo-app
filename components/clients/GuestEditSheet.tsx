@@ -1,15 +1,14 @@
 import { useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { ScrollView, StyleSheet, Switch, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useUpdateGuest, type UpdateGuestInput } from '@/lib/queries/useGuestMutations';
-import { radius, spacing } from '@/theme/index';
-import { useTheme } from '@/theme/useTheme';
+import { spacing } from '@/theme/index';
 
 export type GuestEditTarget = {
   id: string;
@@ -37,7 +36,6 @@ function parseTags(value: string): string[] {
 
 /** Bottom-sheet to edit a guest's profile, tags, notes and marketing consent. */
 export function GuestEditSheet({ target, onClose }: GuestEditSheetProps) {
-  const { colors } = useTheme();
   const mutation = useUpdateGuest(target?.id ?? '');
 
   const [firstName, setFirstName] = useState('');
@@ -108,13 +106,9 @@ export function GuestEditSheet({ target, onClose }: GuestEditSheetProps) {
   }
 
   return (
-    <Modal visible={!!target} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.root}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Dismiss" />
-        <SafeAreaView edges={['bottom']} style={[styles.sheet, { backgroundColor: colors.surfaceRaised }]}>
-          {target && seededId === target.id ? (
-            <View style={styles.content}>
-              <View style={[styles.handle, { backgroundColor: colors.border }]} />
+    <Sheet visible={!!target} onClose={onClose} maxHeight="88%">
+      {target && seededId === target.id ? (
+        <View style={styles.body}>
               <Text variant="overline" tone="muted">
                 Edit guest
               </Text>
@@ -170,19 +164,14 @@ export function GuestEditSheet({ target, onClose }: GuestEditSheetProps) {
                   style={styles.actionButton}
                 />
               </View>
-            </View>
-          ) : null}
-        </SafeAreaView>
-      </View>
-    </Modal>
+        </View>
+      ) : null}
+    </Sheet>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(15, 23, 42, 0.45)' },
-  sheet: { maxHeight: '88%', borderTopLeftRadius: radius.surface, borderTopRightRadius: radius.surface },
-  content: { padding: spacing.lg, gap: spacing.md },
-  handle: { alignSelf: 'center', width: 40, height: 4, borderRadius: radius.full },
+  body: { gap: spacing.md },
   scroll: { flexGrow: 0 },
   scrollBody: { gap: spacing.md, paddingBottom: spacing.sm },
   nameRow: { flexDirection: 'row', gap: spacing.md },

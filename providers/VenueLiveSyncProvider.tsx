@@ -22,8 +22,7 @@ export function VenueLiveSyncProvider({ children }: VenueLiveSyncProviderProps) 
     void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all() });
     void queryClient.invalidateQueries({ queryKey: queryKeys.bookings.all() });
     void queryClient.invalidateQueries({ queryKey: queryKeys.calendar.all() });
-    // The run-sheet and waitlist mirror booking state too.
-    void queryClient.invalidateQueries({ queryKey: queryKeys.daySheet.all() });
+    // The waitlist mirrors booking state too.
     void queryClient.invalidateQueries({ queryKey: queryKeys.waitlist.all() });
   }, [queryClient]);
 

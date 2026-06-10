@@ -242,6 +242,26 @@ Mobile authenticates venue routes with a **Bearer JWT**; web routes must use `cr
 2. **Secondary models (R16)** — **out of scope. Appointments-only.** Skip classes/events/resources/tables; hold the strict appointments-first line.
 3. **New-surface placement** — **add a "More" hub** (keep the 4-tab bar; surface Day Sheet, Today, Waitlist, Reports, etc. from a More/menu screen).
 
+**Locked 2026-06-10 — appointments-plan pivot (R19):**
+- The app is built **for appointments-plan venues only**, mirroring the web's plan separation. Restaurant surfaces disabled: **Day Sheet deleted** (screen/hook/type/keys), **Waitlist is appointment-only** (tables tab removed).
+- **Tabs renamed to mirror web IA:** Calendar · Appointments · **Contacts** (was Guests/Clients) · **More** (was Settings; ellipsis icon).
+- **More = the entry point to everything else** (web sidebar + settings equivalent):
+  - *Workspace:* Today, Waitlist, Calendar availability (blocks + leave), Notifications, Reports (admin).
+  - *Manage:* **Services** (`manage/services` — list with variants/add-on summary, expandable detail, create + edit name/description/duration/price/deposit/active via partial-safe PATCH that never sends `variants`/`addon_group_links`), **Venue profile** (`manage/venue-profile`, admin edit of name/address/phone/email/website), **Business hours** (`manage/hours`, read-only weekly hours from bootstrap), **Team** (`manage/team`, admin staff list), **Plan & payments** (`manage/plan`, tier + models + Stripe status), Booking page + Communications (web link-outs, admin).
+  - *Booking types:* model-gated link-out rows (Classes/Events/Resources/Tables) that **only appear when those models are enabled** on the venue.
+- **Backend Bearer batch 5 (NEEDS DEPLOY):** `appointment-services` (GET/POST/PATCH/DELETE), `opening-hours` PATCH, `staff` GET, `billing/status` GET, `venue` PATCH.
+- Venue bootstrap type extended with `address/phone/email/website_url/opening_hours/stripe_connected_account_id` (all already returned by GET /api/venue).
+
+**R19.1 — Full settings editors (2026-06-10, second pass):**
+- ✅ **Variants editor** (`VariantsEditorSheet`): add/edit/remove service options (name, duration, price, deposit) with accordion rows; saves the **full set** via `useReplaceServiceVariants` (replace-semantics handled deliberately; existing ids preserved). Admin-only button on Services.
+- ✅ **Add-on linking** (`AddonLinksSheet` + `useAddonGroups`): checkbox list of the venue's add-on groups (with addon counts/selection type); saves full `addon_group_links` via `useReplaceServiceAddonLinks`. Group/add-on CRUD stays on web.
+- ✅ **Business hours editor** (`OpeningHoursEditor` + `useUpdateOpeningHours`): per-day open/closed switch, 1–2 periods with 15-min time steppers, client-side validation (close>open, period order); admin edits, staff read-only.
+- ✅ **Communications editor** (`manage/communications.tsx` + `useNotificationSettings`/`useUpdateNotificationSettings`): confirmations (channels + custom SMS), reminders 1/2 (hours-before steppers + channels), update toggles, staff alerts; diff-PUT. (Web `communication-templates` is 410 — notification-settings/policies are the real API.)
+- ✅ **Compliance** (`manage/compliance.tsx`): missing-for-bookings, expiring-soon, awaiting-submission (form links with **Resend email/SMS** + **Revoke**); rows deep-link to booking/contact; friendly plan-gate state on 403.
+- ✅ **Booking settings** (`manage/booking-settings.tsx`): primary model badge (immutable), secondary-model switches (Classes/Events/Resources/Tables) writing `active_booking_models` (primary kept first), require-sign-in-to-book toggle; handles `BOOKING_MODEL_HAS_FUTURE_BOOKINGS` 409 with a clear message.
+- More hub: Booking settings / Communications / Compliance rows added (admin).
+- **Backend Bearer batch 6 (NEEDS DEPLOY with batch 5):** `addon-groups` (GET/POST/PUT), `notification-settings` (GET/PUT), `communication-policies` (GET/PUT), `compliance/dashboard`, `compliance/records` (GET/POST), `compliance/form-links` (GET/POST + `[id]/resend` + `[id]/revoke`). Left cookie-only: `addon-groups/[id]`, `compliance/records/[id]`(+void).
+
 **Still to confirm at the relevant phase:**
 4. **Payments in-app (R11)** — collect deposits on device (Stripe) vs. always send-a-link / record-cash. In-app card capture is a large lift; recommend link/record-cash for v1.
 5. **Verification reality** — web preview is light-only and the Android emulator is blocked; an **EAS dev build + Expo Go on the S23** is needed to verify gestures, push, payments, and many features on device. Schedule the dev build early (R18 item, but pull forward).

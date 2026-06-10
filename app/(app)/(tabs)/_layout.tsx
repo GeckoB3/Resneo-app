@@ -8,6 +8,7 @@ import { OfflineBanner } from '@/components/ui/OfflineBanner';
 import { useClientOnlyValue } from '@/components/useClientOnlyValue';
 import { useColorScheme } from '@/components/useColorScheme';
 import { bookingsScreenTitle, clientsScreenTitle } from '@/lib/booking/terminology';
+import { useNotifications } from '@/lib/queries/useNotifications';
 import { isAppointmentFromVenue } from '@/lib/venue/venue-experience';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { darkColors, fonts, lightColors, spacing } from '@/theme/index';
@@ -44,10 +45,10 @@ function ClientsTabIcon({ color }: TabIconProps) {
   );
 }
 
-function SettingsTabIcon({ color }: TabIconProps) {
+function MoreTabIcon({ color }: TabIconProps) {
   return (
     <SymbolView
-      name={{ ios: 'gearshape', android: 'settings', web: 'settings' }}
+      name={{ ios: 'ellipsis.circle', android: 'more_horiz', web: 'more_horiz' }}
       tintColor={color}
       size={24}
     />
@@ -68,14 +69,14 @@ function renderClientsIcon({ color }: TabBarIconRenderProps) {
   return <ClientsTabIcon color={color} />;
 }
 
-function renderSettingsIcon({ color }: TabBarIconRenderProps) {
-  return <SettingsTabIcon color={color} />;
+function renderMoreIcon({ color }: TabBarIconRenderProps) {
+  return <MoreTabIcon color={color} />;
 }
 
 /**
- * Main tab shell — Calendar · Bookings · Clients · Settings.
+ * Main tab shell — Calendar · Appointments · Contacts · More.
  * Calendar lives at the `index` route so it's the default tab on launch.
- * Labels follow venue terminology (e.g. "Appointments", "Guests").
+ * Mirrors the web dashboard IA for appointments-plan venues.
  */
 export default function TabLayout() {
   const colorScheme = useColorScheme();
@@ -118,9 +119,17 @@ export default function TabLayout() {
     () => ({ title: clientsScreenTitle(terminology), tabBarIcon: renderClientsIcon }),
     [terminology],
   );
+  // Unread notifications surface as a badge on the More tab.
+  const notificationsQuery = useNotifications();
+  const unreadCount = notificationsQuery.data?.unreadCount ?? 0;
+
   const settingsOptions = useMemo(
-    () => ({ title: 'Settings', tabBarIcon: renderSettingsIcon }),
-    [],
+    () => ({
+      title: 'More',
+      tabBarIcon: renderMoreIcon,
+      tabBarBadge: unreadCount > 0 ? (unreadCount > 99 ? '99+' : String(unreadCount)) : undefined,
+    }),
+    [unreadCount],
   );
 
   return (

@@ -90,6 +90,18 @@ export function PushNotificationsProvider({ children }: PushNotificationsProvide
             router.push(`/booking/${bookingId}` as Href);
           }
         });
+
+        // Cold start: the tap that LAUNCHED the app isn't delivered to the
+        // listener above — fetch it explicitly and route once.
+        const lastResponse = await Notifications.getLastNotificationResponseAsync();
+        if (!cancelled && lastResponse) {
+          const coldStartBookingId = extractBookingId(
+            lastResponse.notification.request.content.data as Record<string, unknown> | null,
+          );
+          if (coldStartBookingId) {
+            router.push(`/booking/${coldStartBookingId}` as Href);
+          }
+        }
       } catch (error) {
         console.warn('[push] notification listener setup failed:', error);
       }

@@ -18,6 +18,10 @@ function buildGuestListPath(params: GuestListParams): string {
   if (params.search?.trim()) {
     searchParams.set('search', params.search.trim());
   }
+  if (params.segmentTag?.trim()) {
+    searchParams.set('segment', 'tag');
+    searchParams.set('segment_tag', params.segmentTag.trim());
+  }
 
   return `/api/venue/guests?${searchParams.toString()}`;
 }
@@ -39,6 +43,7 @@ export function useGuests(params: GuestListParams) {
       page: params.page ?? 0,
       limit: params.limit ?? 30,
       sort: params.sort ?? 'last_visit_desc',
+      segmentTag: params.segmentTag ?? null,
     }),
     enabled,
     // Keep the previous results on screen while a new search term loads, so the

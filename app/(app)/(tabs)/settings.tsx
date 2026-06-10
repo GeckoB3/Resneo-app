@@ -18,65 +18,89 @@ import { useAuth } from '@/providers/AuthProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { spacing } from '@/theme/index';
 import type { StaffRole } from '@/types/staff';
+import type { BookingModel } from '@/types/venue';
 
 /** The staff dashboard lives on the same host the app's API points at. */
-function webDashboardUrl(): string {
+function webDashboardUrl(path = '/dashboard'): string {
   try {
-    return `${getApiUrl()}/dashboard`;
+    return `${getApiUrl()}${path}`;
   } catch {
-    return 'https://reserve-ni.vercel.app/dashboard';
+    return `https://reserve-ni.vercel.app${path}`;
   }
 }
 
-/** Human-readable staff role for the settings screen. */
 function formatStaffRole(role: StaffRole): string {
   return role === 'admin' ? 'Admin' : 'Staff';
 }
 
-function ToolRow({ label, hint, onPress }: { label: string; hint: string; onPress: () => void }) {
+/** Secondary booking models with their own settings area (managed on web). */
+const SECONDARY_MODEL_ROWS: { model: BookingModel; label: string; hint: string; webPath: string }[] = [
+  { model: 'class_session', label: 'Classes', hint: 'Timetable & class products', webPath: '/dashboard/class-timetable' },
+  { model: 'event_ticket', label: 'Events', hint: 'Event sessions & tickets', webPath: '/dashboard/event-manager' },
+  { model: 'resource_booking', label: 'Resources', hint: 'Bookable resources', webPath: '/dashboard/resource-timeline' },
+  { model: 'table_reservation', label: 'Tables', hint: 'Table & floor plan setup', webPath: '/dashboard/tables' },
+];
+
+function MenuRow({
+  label,
+  hint,
+  onPress,
+  external = false,
+}: {
+  label: string;
+  hint: string;
+  onPress: () => void;
+  external?: boolean;
+}) {
   return (
-    <Pressable onPress={onPress} style={styles.toolRow} accessibilityRole="button">
-      <View style={styles.toolText}>
+    <Pressable
+      onPress={onPress}
+      style={styles.menuRow}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityHint={hint}>
+      <View style={styles.menuText}>
         <Text variant="bodyMedium">{label}</Text>
         <Text variant="caption" tone="muted">
           {hint}
         </Text>
       </View>
       <Text variant="title" tone="muted">
-        ›
+        {external ? '↗' : '›'}
       </Text>
     </Pressable>
   );
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.infoRow}>
-      <Text variant="bodySmall" tone="muted">
-        {label}
-      </Text>
-      <Text variant="bodyMedium" style={styles.infoValue} numberOfLines={1}>
-        {value}
-      </Text>
-    </View>
-  );
-}
-
-export default function SettingsScreen() {
+/**
+ * More tab — the entry point to every surface beyond Calendar / Appointments /
+ * Contacts, mirroring the web dashboard's sidebar + settings for appointments venues.
+ */
+export default function MoreScreen() {
   const router = useRouter();
   const { session, signOut } = useAuth();
   const { data: staffData, isLoading: staffLoading } = useStaffMe();
-  const {
-    name: venueName,
-    pricingTier,
-    bookingModel,
-    isLoading: venueLoading,
-  } = useVenueContext();
+  const { venue, name: venueName, isLoading: venueLoading } = useVenueContext();
   const [pushBusy, setPushBusy] = useState(false);
 
   const staff = staffData?.staff;
+  const isAdmin = staff?.role === 'admin';
   const accessToken = session?.access_token ?? null;
   const appVersion = Constants.expoConfig?.version ?? '—';
+
+  const enabledSecondaryRows = SECONDARY_MODEL_ROWS.filter((row) => {
+    const models = new Set<BookingModel>([
+      ...(venue?.active_booking_models ?? []),
+      ...(venue?.enabled_models ?? []),
+      ...(venue?.booking_model ? [venue.booking_model] : []),
+    ]);
+    return models.has(row.model);
+  });
+
+  const openWeb = useCallback((path: string) => {
+    const url = webDashboardUrl(path);
+    void Linking.openURL(url).catch(() => Alert.alert('Could not open browser', url));
+  }, []);
 
   const handleRetryPush = useCallback(async () => {
     if (!accessToken) {
@@ -109,24 +133,17 @@ export default function SettingsScreen() {
     }
   }, [accessToken]);
 
-  const handleOpenWebDashboard = useCallback(() => {
-    const url = webDashboardUrl();
-    void Linking.openURL(url).catch(() => {
-      Alert.alert('Could not open browser', url);
-    });
-  }, []);
-
   if (staffLoading || venueLoading) {
     return (
       <Screen>
-        <LoadingState message="Loading settings…" />
+        <LoadingState message="Loading…" />
       </Screen>
     );
   }
 
   return (
     <Screen scroll contentContainerStyle={styles.content}>
-      {/* Staff profile */}
+      {/* Profile header */}
       <Card>
         <View style={styles.profileHeader}>
           <Avatar name={staff?.name ?? staff?.email ?? 'Staff'} size={48} />
@@ -134,11 +151,9 @@ export default function SettingsScreen() {
             <Text variant="subheading" numberOfLines={1}>
               {staff?.name ?? 'Staff member'}
             </Text>
-            {staff?.email ? (
-              <Text variant="bodySmall" tone="secondary" numberOfLines={1}>
-                {staff.email}
-              </Text>
-            ) : null}
+            <Text variant="bodySmall" tone="secondary" numberOfLines={1}>
+              {venueName ?? staff?.email ?? ''}
+            </Text>
           </View>
           {staff ? (
             <Badge
@@ -149,39 +164,34 @@ export default function SettingsScreen() {
         </View>
       </Card>
 
-      {/* Tools */}
+      {/* Workspace — day-to-day tools */}
       <Card>
         <Text variant="overline" tone="muted">
-          Tools
+          Workspace
         </Text>
-        <View style={styles.tools}>
-          <ToolRow
+        <View style={styles.menu}>
+          <MenuRow
             label="Today"
             hint="KPIs, forecast & arrivals"
             onPress={() => router.push('/today' as Href)}
           />
-          <ToolRow
-            label="Day sheet"
-            hint="Run-sheet for any date"
-            onPress={() => router.push('/day-sheet' as Href)}
-          />
-          <ToolRow
+          <MenuRow
             label="Waitlist"
-            hint="Offer & confirm waiting guests"
+            hint="Offer & confirm waiting clients"
             onPress={() => router.push('/waitlist' as Href)}
           />
-          <ToolRow
-            label="Availability"
+          <MenuRow
+            label="Calendar availability"
             hint="Block time & book leave"
             onPress={() => router.push('/availability' as Href)}
           />
-          <ToolRow
+          <MenuRow
             label="Notifications"
             hint="In-app notification feed"
             onPress={() => router.push('/notifications' as Href)}
           />
-          {staff?.role === 'admin' ? (
-            <ToolRow
+          {isAdmin ? (
+            <MenuRow
               label="Reports"
               hint="Bookings, no-shows, deposits & insights"
               onPress={() => router.push('/reports' as Href)}
@@ -190,45 +200,117 @@ export default function SettingsScreen() {
         </View>
       </Card>
 
-      {/* Venue */}
+      {/* Manage — services + venue settings */}
       <Card>
         <Text variant="overline" tone="muted">
-          Venue
+          Manage
         </Text>
-        <View style={styles.rows}>
-          <InfoRow label="Name" value={venueName ?? 'Not loaded'} />
-          {pricingTier ? <InfoRow label="Plan" value={pricingTier} /> : null}
-          {bookingModel ? <InfoRow label="Booking model" value={bookingModel} /> : null}
+        <View style={styles.menu}>
+          <MenuRow
+            label="Services"
+            hint="Review & edit your appointment services"
+            onPress={() => router.push('/manage/services' as Href)}
+          />
+          {isAdmin ? (
+            <MenuRow
+              label="Venue profile"
+              hint="Name, contact details & address"
+              onPress={() => router.push('/manage/venue-profile' as Href)}
+            />
+          ) : null}
+          <MenuRow
+            label="Business hours"
+            hint="Weekly opening hours"
+            onPress={() => router.push('/manage/hours' as Href)}
+          />
+          {isAdmin ? (
+            <MenuRow
+              label="Team"
+              hint="Staff logins & roles"
+              onPress={() => router.push('/manage/team' as Href)}
+            />
+          ) : null}
+          {isAdmin ? (
+            <MenuRow
+              label="Booking settings"
+              hint="Booking types & guest accounts"
+              onPress={() => router.push('/manage/booking-settings' as Href)}
+            />
+          ) : null}
+          {isAdmin ? (
+            <MenuRow
+              label="Communications"
+              hint="Confirmations, reminders & alerts"
+              onPress={() => router.push('/manage/communications' as Href)}
+            />
+          ) : null}
+          {isAdmin ? (
+            <MenuRow
+              label="Compliance"
+              hint="Forms, records & expiries"
+              onPress={() => router.push('/manage/compliance' as Href)}
+            />
+          ) : null}
+          {isAdmin ? (
+            <MenuRow
+              label="Plan & payments"
+              hint="Subscription tier & Stripe"
+              onPress={() => router.push('/manage/plan' as Href)}
+            />
+          ) : null}
+          {isAdmin ? (
+            <MenuRow
+              label="Booking page"
+              hint="Public page, branding & widget"
+              external
+              onPress={() => openWeb('/dashboard/settings')}
+            />
+          ) : null}
         </View>
       </Card>
 
-      {/* Notifications */}
-      <Card>
-        <Text variant="label">Notifications</Text>
-        <Text variant="bodySmall" tone="secondary" style={styles.help}>
-          Re-register this device for push notifications. The app registers automatically the first
-          time you sign in.
-        </Text>
-        <Button
-          label={pushBusy ? 'Working…' : 'Re-register for push'}
-          variant="secondary"
-          fullWidth
-          loading={pushBusy}
-          onPress={() => void handleRetryPush()}
-        />
-      </Card>
+      {/* Booking models — only when those models are enabled */}
+      {isAdmin && enabledSecondaryRows.length > 0 ? (
+        <Card>
+          <Text variant="overline" tone="muted">
+            Booking types
+          </Text>
+          <View style={styles.menu}>
+            {enabledSecondaryRows.map((row) => (
+              <MenuRow
+                key={row.model}
+                label={row.label}
+                hint={row.hint}
+                external
+                onPress={() => openWeb(row.webPath)}
+              />
+            ))}
+          </View>
+        </Card>
+      ) : null}
 
       {/* App */}
       <Card>
-        <Text variant="label">App</Text>
-        <View style={styles.rows}>
-          <InfoRow label="Version" value={appVersion} />
+        <Text variant="overline" tone="muted">
+          App
+        </Text>
+        <View style={styles.menu}>
+          <MenuRow
+            label="Push notifications"
+            hint="Re-register this device for push"
+            onPress={() => void handleRetryPush()}
+          />
+          <MenuRow
+            label="Web dashboard"
+            hint="Open the full dashboard in your browser"
+            external
+            onPress={() => openWeb('/dashboard')}
+          />
         </View>
-        <Button
-          label="Manage billing & settings on web"
-          variant="ghost"
-          onPress={handleOpenWebDashboard}
-        />
+        <Text variant="caption" tone="muted" style={styles.version}>
+          Resneo v{appVersion}
+          {pushBusy ? ' · registering push…' : ''}
+        </Text>
       </Card>
 
       <Button
@@ -256,38 +338,24 @@ const styles = StyleSheet.create({
     minWidth: 0,
     gap: 2,
   },
-  rows: {
-    marginTop: spacing.sm,
-    gap: spacing.sm,
-  },
-  tools: {
+  menu: {
     marginTop: spacing.sm,
   },
-  toolRow: {
+  menuRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.md,
     paddingVertical: spacing.sm,
   },
-  toolText: {
+  menuText: {
     flex: 1,
     minWidth: 0,
     gap: 1,
   },
-  infoRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    justifyContent: 'space-between',
-    gap: spacing.base,
-  },
-  infoValue: {
-    flexShrink: 1,
-    textAlign: 'right',
-  },
-  help: {
-    marginTop: spacing.xs,
-    marginBottom: spacing.md,
+  version: {
+    marginTop: spacing.sm,
+    textAlign: 'center',
   },
   signOut: {
     marginTop: spacing.sm,

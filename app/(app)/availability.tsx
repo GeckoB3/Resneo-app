@@ -2,14 +2,12 @@ import { Stack } from 'expo-router';
 import { useState } from 'react';
 import {
   Alert,
-  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { minutesToTime } from '@/components/calendar/grid-layout';
 import { Button } from '@/components/ui/Button';
@@ -20,6 +18,7 @@ import { ErrorState } from '@/components/ui/ErrorState';
 import { Input } from '@/components/ui/Input';
 import { Screen } from '@/components/ui/Screen';
 import { Segmented } from '@/components/ui/Segmented';
+import { Sheet } from '@/components/ui/Sheet';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
@@ -301,12 +300,8 @@ export default function AvailabilityScreen() {
       )}
 
       {/* Create sheet (block / leave) */}
-      <Modal visible={sheet !== null} transparent animationType="slide" onRequestClose={() => setSheet(null)}>
-        <View style={styles.sheetRoot}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setSheet(null)} accessibilityLabel="Dismiss" />
-          <SafeAreaView edges={['bottom']} style={[styles.sheet, { backgroundColor: colors.surfaceRaised }]}>
-            <View style={styles.sheetContent}>
-              <View style={[styles.handle, { backgroundColor: colors.border }]} />
+      <Sheet visible={sheet !== null} onClose={() => setSheet(null)}>
+        <View style={styles.sheetBody}>
               <Text variant="overline" tone="muted">
                 {sheet === 'block' ? 'Block time' : 'Add leave'}
               </Text>
@@ -390,10 +385,8 @@ export default function AvailabilityScreen() {
                   onPress={() => void handleCreate()}
                 />
               </View>
-            </View>
-          </SafeAreaView>
         </View>
-      </Modal>
+      </Sheet>
     </Screen>
   );
 }
@@ -432,24 +425,8 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: spacing.base,
   },
-  sheetRoot: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(15, 23, 42, 0.45)',
-  },
-  sheet: {
-    borderTopLeftRadius: radius.surface,
-    borderTopRightRadius: radius.surface,
-  },
-  sheetContent: {
-    padding: spacing.lg,
+  sheetBody: {
     gap: spacing.lg,
-  },
-  handle: {
-    alignSelf: 'center',
-    width: 40,
-    height: 4,
-    borderRadius: radius.full,
   },
   chipRow: {
     gap: spacing.sm,

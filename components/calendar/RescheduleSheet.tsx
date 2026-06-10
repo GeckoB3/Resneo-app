@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { Modal, Pressable, StyleSheet, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { minutesToTime, timeToMinutes } from '@/components/calendar/grid-layout';
 import { Button } from '@/components/ui/Button';
+import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { addDaysToDateStr, formatDayHeading } from '@/lib/dates/venue-dates';
@@ -23,14 +23,15 @@ export type RescheduleTarget = {
 type RescheduleSheetProps = {
   target: RescheduleTarget | null;
   onClose: () => void;
+  /** Fired after a successful move with the PREVIOUS slot (for undo). */
+  onMoved?: (previous: RescheduleTarget) => void;
 };
 
 const STEP_MINUTES = 15;
 const MAX_MINUTES = 23 * 60 + 45;
 
 /** Bottom-sheet to move a booking to a new day/time (long-press a calendar block). */
-export function RescheduleSheet({ target, onClose }: RescheduleSheetProps) {
-  const { colors } = useTheme();
+export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetProps) {
   const mutation = useRescheduleBooking(target?.id ?? '');
 
   const [date, setDate] = useState('');
@@ -52,10 +53,12 @@ export function RescheduleSheet({ target, onClose }: RescheduleSheetProps) {
   const unchanged = target ? date === target.date && minutesToTime(minutes) === target.time.slice(0, 5) : true;
 
   async function handleConfirm() {
+    if (!target) return;
     setError(null);
     try {
       await mutation.mutateAsync({ date, time: `${minutesToTime(minutes)}:00` });
       hapticSuccess();
+      onMoved?.(target);
       onClose();
     } catch (e) {
       hapticWarning();
@@ -64,14 +67,9 @@ export function RescheduleSheet({ target, onClose }: RescheduleSheetProps) {
   }
 
   return (
-    <Modal visible={!!target} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.root}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Dismiss" />
-        <SafeAreaView edges={['bottom']} style={[styles.sheet, { backgroundColor: colors.surfaceRaised }]}>
-          {target && seededId === target.id ? (
-            <View style={styles.content}>
-              <View style={[styles.handle, { backgroundColor: colors.border }]} />
-
+    <Sheet visible={!!target} onClose={onClose}>
+      {target && seededId === target.id ? (
+        <View style={styles.body}>
               <View style={styles.headerBlock}>
                 <Text variant="overline" tone="muted">
                   Reschedule
@@ -111,11 +109,9 @@ export function RescheduleSheet({ target, onClose }: RescheduleSheetProps) {
                   style={styles.actionButton}
                 />
               </View>
-            </View>
-          ) : null}
-        </SafeAreaView>
-      </View>
-    </Modal>
+        </View>
+      ) : null}
+    </Sheet>
   );
 }
 
@@ -163,24 +159,8 @@ function StepButton({ symbol, onPress }: { symbol: string; onPress: () => void }
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(15, 23, 42, 0.45)',
-  },
-  sheet: {
-    borderTopLeftRadius: radius.surface,
-    borderTopRightRadius: radius.surface,
-  },
-  content: {
-    padding: spacing.lg,
+  body: {
     gap: spacing.lg,
-  },
-  handle: {
-    alignSelf: 'center',
-    width: 40,
-    height: 4,
-    borderRadius: radius.full,
   },
   headerBlock: {
     gap: spacing.xs,

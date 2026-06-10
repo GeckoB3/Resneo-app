@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
@@ -11,8 +11,7 @@ import {
   useUpdateBookingDetails,
   type UpdateBookingDetailsInput,
 } from '@/lib/queries/useBookingMutations';
-import { radius, spacing } from '@/theme/index';
-import { useTheme } from '@/theme/useTheme';
+import { spacing } from '@/theme/index';
 
 export type EditBookingTarget = {
   id: string;
@@ -33,7 +32,6 @@ type EditBookingSheetProps = {
 
 /** Bottom-sheet to edit the guest's contact details and the booking's notes. */
 export function EditBookingSheet({ target, onClose }: EditBookingSheetProps) {
-  const { colors } = useTheme();
   const mutation = useUpdateBookingDetails(target?.id ?? '');
 
   const [firstName, setFirstName] = useState('');
@@ -103,13 +101,9 @@ export function EditBookingSheet({ target, onClose }: EditBookingSheetProps) {
   }
 
   return (
-    <Modal visible={!!target} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.root}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Dismiss" />
-        <SafeAreaView edges={['bottom']} style={[styles.sheet, { backgroundColor: colors.surfaceRaised }]}>
-          {target && seededId === target.id ? (
-            <View style={styles.content}>
-              <View style={[styles.handle, { backgroundColor: colors.border }]} />
+    <Sheet visible={!!target} onClose={onClose} maxHeight="88%">
+      {target && seededId === target.id ? (
+        <View style={styles.body}>
               <Text variant="overline" tone="muted">
                 Edit booking
               </Text>
@@ -188,34 +182,15 @@ export function EditBookingSheet({ target, onClose }: EditBookingSheetProps) {
                   style={styles.actionButton}
                 />
               </View>
-            </View>
-          ) : null}
-        </SafeAreaView>
-      </View>
-    </Modal>
+        </View>
+      ) : null}
+    </Sheet>
   );
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(15, 23, 42, 0.45)',
-  },
-  sheet: {
-    maxHeight: '88%',
-    borderTopLeftRadius: radius.surface,
-    borderTopRightRadius: radius.surface,
-  },
-  content: {
-    padding: spacing.lg,
+  body: {
     gap: spacing.md,
-  },
-  handle: {
-    alignSelf: 'center',
-    width: 40,
-    height: 4,
-    borderRadius: radius.full,
   },
   scroll: {
     flexGrow: 0,

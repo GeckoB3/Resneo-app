@@ -164,7 +164,7 @@ export function CalendarDayGrid({
         {hours.map((hour) => {
           const top = (hour - startHour) * 60 * PX_PER_MINUTE;
           return (
-            <View key={hour} pointerEvents="none" style={[styles.hourRow, { top }]}>
+            <View key={hour} style={[styles.hourRow, { top, pointerEvents: 'none' }]}>
               <Text variant="caption" tone="muted" style={styles.hourLabel}>
                 {hourLabel(hour)}
               </Text>
@@ -194,7 +194,7 @@ export function CalendarDayGrid({
         ))}
 
         {nowTop != null ? (
-          <View pointerEvents="none" style={[styles.nowLine, { top: nowTop }]}>
+          <View style={[styles.nowLine, { top: nowTop, pointerEvents: 'none' }]}>
             <View style={[styles.nowDot, { backgroundColor: colors.danger }]} />
             <View style={[styles.nowBar, { backgroundColor: colors.danger }]} />
           </View>
