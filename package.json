@@ -37,6 +37,7 @@
     "@types/react": "~19.2.2",
     "eslint": "^9.0.0",
     "eslint-config-expo": "~56.0.4",
+    "sharp": "^0.35.0",
     "typescript": "~6.0.3"
   },
   "scripts": {
@@ -45,7 +46,8 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "icons": "node scripts/generate-icons.mjs"
   },
   "private": true
 }
