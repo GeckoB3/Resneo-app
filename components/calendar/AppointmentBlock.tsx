@@ -1,11 +1,10 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Text } from '@/components/ui/Text';
-import { bookingStatusVisualForKey } from '@/lib/booking/booking-status-visual';
+import { bookingCalendarBlockPalette } from '@/lib/booking/booking-status-visual';
 import { bookingStatusDisplayLabel } from '@/lib/booking/infer-booking-row-model';
 import { hexToRgba } from '@/lib/color';
 import { fonts, radius, spacing } from '@/theme/index';
-import { useTheme } from '@/theme/useTheme';
 import { TIME_GUTTER_WIDTH } from '@/components/calendar/grid-layout';
 
 type AppointmentBlockProps = {
@@ -14,30 +13,28 @@ type AppointmentBlockProps = {
   serviceName: string;
   timeLabel: string;
   status: string;
-  /** Resolved hex colour (service or practitioner). */
-  color: string;
   top: number;
   height: number;
   onPress: (id: string) => void;
   onLongPress?: (id: string) => void;
 };
 
-/** A positioned appointment card on the day grid. */
+/** A positioned appointment card on the day grid — filled with its status colour. */
 export function AppointmentBlock({
   id,
   guestName,
   serviceName,
   timeLabel,
   status,
-  color,
   top,
   height,
   onPress,
   onLongPress,
 }: AppointmentBlockProps) {
-  const { colors, isDark } = useTheme();
   const compact = height < 52;
-  const statusColor = bookingStatusVisualForKey(status).dotColor;
+  // The bar's saturated fill IS the status (web parity): Pending orange, Booked sky,
+  // Confirmed navy, Started emerald, Completed slate, No-Show red, Cancelled ghost.
+  const palette = bookingCalendarBlockPalette({ status });
 
   return (
     <Pressable
@@ -51,22 +48,26 @@ export function AppointmentBlock({
         {
           top,
           height,
-          backgroundColor: hexToRgba(color, isDark ? 0.26 : 0.16),
-          borderLeftColor: color,
-          opacity: pressed ? 0.8 : 1,
+          backgroundColor: palette.bg,
+          borderColor: palette.border,
+          opacity: pressed ? 0.85 : 1,
         },
       ]}>
-      <View style={styles.titleRow}>
-        <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
-        <Text variant="caption" numberOfLines={1} style={[styles.guest, { color: colors.text }]}>
+      {/* Glass left edge — a luminous highlight that lifts the lozenge off the grid. */}
+      <View style={styles.glassEdge} />
+      <View style={styles.content}>
+        <Text variant="caption" numberOfLines={1} style={[styles.guest, { color: palette.text }]}>
           {guestName}
         </Text>
+        {!compact ? (
+          <Text
+            variant="caption"
+            numberOfLines={1}
+            style={{ color: hexToRgba(palette.text, 0.82) }}>
+            {serviceName} · {timeLabel}
+          </Text>
+        ) : null}
       </View>
-      {!compact ? (
-        <Text variant="caption" tone="muted" numberOfLines={1}>
-          {serviceName} · {timeLabel}
-        </Text>
-      ) : null}
     </Pressable>
   );
 }
@@ -77,25 +78,23 @@ const styles = StyleSheet.create({
     left: TIME_GUTTER_WIDTH + spacing.xs,
     right: spacing.sm,
     borderRadius: radius.sm,
-    borderLeftWidth: 3,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+    flexDirection: 'row',
+  },
+  glassEdge: {
+    width: 4,
+    backgroundColor: 'rgba(255,255,255,0.5)',
+  },
+  content: {
+    flex: 1,
+    minWidth: 0,
     paddingVertical: spacing.xs,
     paddingHorizontal: spacing.sm,
-    overflow: 'hidden',
     justifyContent: 'flex-start',
     gap: 1,
   },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
   guest: {
-    flex: 1,
     fontFamily: fonts.semibold,
   },
 });

@@ -35,7 +35,7 @@ import { useRescheduleBooking } from '@/lib/queries/useBookingMutations';
 import { useCalendarGrid } from '@/lib/queries/useCalendarGrid';
 import { usePractitioners } from '@/lib/queries/usePractitioners';
 import { useVenueContext } from '@/providers/VenueProvider';
-import { brand, spacing } from '@/theme/index';
+import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { Practitioner } from '@/types/practitioner';
 
@@ -47,8 +47,6 @@ const SCOPE_OPTIONS: { value: Scope; label: string }[] = [
   { value: 'month', label: 'Month' },
 ];
 
-/** Appointments default to the brand navy when a practitioner has no colour. */
-const DEFAULT_PRACTITIONER_COLOR = brand[600];
 
 /** Current wall-clock time (minutes since midnight) in the venue timezone. */
 function nowMinutesInTz(timeZone: string): number {
@@ -123,7 +121,6 @@ export default function CalendarScreen() {
 
   const effectiveId =
     selectedId && calendarIds.includes(selectedId) ? selectedId : calendarIds[0] ?? null;
-  const selectedPractitioner = practitioners.find((p) => p.id === effectiveId) ?? null;
 
   const day = useMemo(() => {
     const calendar = gridQuery.data?.calendars.find((c) => c.calendarId === effectiveId);
@@ -235,7 +232,6 @@ export default function CalendarScreen() {
       bookings={day?.bookings ?? []}
       workingHours={day?.workingHours ?? []}
       timeBlocks={dayBlocks}
-      practitionerColor={selectedPractitioner?.colour ?? DEFAULT_PRACTITIONER_COLOR}
       nowMinutes={nowMinutes}
       onBlockPress={peekBooking}
       onBlockLongPress={startReschedule}

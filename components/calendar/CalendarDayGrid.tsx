@@ -27,7 +27,6 @@ type PositionedBooking = {
   booking: CalendarGridBooking;
   top: number;
   height: number;
-  color: string;
   timeLabel: string;
 };
 
@@ -52,8 +51,6 @@ type CalendarDayGridProps = {
   workingHours: CalendarGridWorkingHours[];
   /** Breaks/blocks for this practitioner+day — render as non-bookable overlays. */
   timeBlocks?: CalendarTimeBlock[];
-  /** Fallback colour (the practitioner's) when a booking has none. */
-  practitionerColor: string;
   /** Current time in minutes-since-midnight, or null when not viewing today. */
   nowMinutes: number | null;
   onBlockPress: (bookingId: string) => void;
@@ -68,7 +65,6 @@ export function CalendarDayGrid({
   bookings,
   workingHours,
   timeBlocks = [],
-  practitionerColor,
   nowMinutes,
   onBlockPress,
   onBlockLongPress,
@@ -113,7 +109,6 @@ export function CalendarDayGrid({
         booking,
         top: (start - gridStartMin) * PX_PER_MINUTE,
         height: durationMin * PX_PER_MINUTE,
-        color: booking.colour ?? practitionerColor,
         timeLabel: `${minutesToTime(start)}–${minutesToTime(end)}`,
       };
     });
@@ -132,7 +127,7 @@ export function CalendarDayGrid({
       positioned: blocks,
       positionedBlocks: overlayBlocks,
     };
-  }, [bookings, workingHours, timeBlocks, practitionerColor]);
+  }, [bookings, workingHours, timeBlocks]);
 
   const hours = useMemo(
     () => Array.from({ length: endHour - startHour + 1 }, (_, i) => startHour + i),
@@ -208,7 +203,6 @@ export function CalendarDayGrid({
             serviceName={item.booking.serviceName}
             timeLabel={item.timeLabel}
             status={item.booking.status}
-            color={item.color}
             top={item.top}
             height={item.height}
             onPress={onBlockPress}
