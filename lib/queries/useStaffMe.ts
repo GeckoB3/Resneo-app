@@ -17,6 +17,9 @@ export function useStaffMe() {
   return useQuery({
     queryKey: queryKeys.staff.me(accessToken),
     enabled,
+    // The staff profile rarely changes mid-session — don't refetch every time
+    // a screen mounts a new observer (it churned the app-level staff gate).
+    staleTime: 5 * 60 * 1000,
     queryFn: async (): Promise<StaffMeResponse> => {
       if (!accessToken) {
         throw new Error('Missing access token');

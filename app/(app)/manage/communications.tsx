@@ -13,76 +13,167 @@ import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { hapticSelect, hapticSuccess, hapticWarning } from '@/lib/haptics';
 import {
+  useCommunicationPolicies,
   useNotificationSettings,
+  useUpdateCommunicationPolicies,
   useUpdateNotificationSettings,
 } from '@/lib/queries/useCommunications';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { fonts, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type {
+  CommunicationMessageKey,
+  LaneCommunicationPolicies,
+  LaneMessagePolicy,
   MessageChannel,
-  NotificationSettingsPatch,
   VenueNotificationSettings,
 } from '@/types/communications';
 
-function SettingRow({
-  label,
-  hint,
-  value,
-  onChange,
-  disabled = false,
-}: {
+/**
+ * Per-message definitions — ported from the web `CommunicationTemplatesSection`
+ * (appointments_other lane). Order matches the web page.
+ */
+type MessageDef = {
+  key: CommunicationMessageKey;
   label: string;
-  hint?: string;
-  value: boolean;
-  onChange: (next: boolean) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <View style={styles.settingRow}>
-      <View style={styles.settingText}>
-        <Text variant="bodyMedium">{label}</Text>
-        {hint ? (
-          <Text variant="caption" tone="muted">
-            {hint}
-          </Text>
-        ) : null}
-      </View>
-      <Switch value={value} onValueChange={onChange} disabled={disabled} accessibilityLabel={label} />
-    </View>
-  );
-}
+  description: string;
+  allowedChannels: MessageChannel[];
+  /** Timing-controlled messages: hours before start / after end. */
+  timing?: { field: 'hoursBefore' | 'hoursAfter'; label: string; default: number };
+  defaultEnabled: boolean;
+  defaultChannels: MessageChannel[];
+};
 
-function ChannelPicker({
-  value,
-  onChange,
-  disabled = false,
-}: {
-  value: MessageChannel[];
-  onChange: (next: MessageChannel[]) => void;
-  disabled?: boolean;
-}) {
-  const toggle = (channel: MessageChannel) => {
-    if (disabled) return;
-    hapticSelect();
-    onChange(
-      value.includes(channel) ? value.filter((c) => c !== channel) : [...value, channel],
-    );
+const MESSAGE_DEFS: MessageDef[] = [
+  {
+    key: 'booking_confirmation',
+    label: 'Booking confirmation',
+    description: 'Sent as soon as the booking is confirmed',
+    allowedChannels: ['email', 'sms'],
+    defaultEnabled: true,
+    defaultChannels: ['email'],
+  },
+  {
+    key: 'confirm_or_cancel_prompt',
+    label: 'Confirm or cancel prompt',
+    description: 'Ask the guest to confirm or cancel before the visit',
+    allowedChannels: ['email', 'sms'],
+    timing: { field: 'hoursBefore', label: 'before the visit', default: 24 },
+    defaultEnabled: true,
+    defaultChannels: ['email', 'sms'],
+  },
+  {
+    key: 'pre_visit_reminder',
+    label: 'Pre-visit reminder',
+    description: 'Reminder shortly before the booking starts',
+    allowedChannels: ['email', 'sms'],
+    timing: { field: 'hoursBefore', label: 'before the visit', default: 2 },
+    defaultEnabled: true,
+    defaultChannels: ['email'],
+  },
+  {
+    key: 'deposit_payment_request',
+    label: 'Deposit payment request',
+    description: 'Used when a booking needs a separate deposit payment link',
+    allowedChannels: ['email', 'sms'],
+    defaultEnabled: true,
+    defaultChannels: ['email', 'sms'],
+  },
+  {
+    key: 'deposit_confirmation',
+    label: 'Deposit confirmation',
+    description: 'Confirms that a deposit has been paid successfully',
+    allowedChannels: ['email'],
+    defaultEnabled: true,
+    defaultChannels: ['email'],
+  },
+  {
+    key: 'deposit_payment_reminder',
+    label: 'Deposit payment reminder',
+    description: 'Reminder for unpaid deposit bookings before they are released',
+    allowedChannels: ['email', 'sms'],
+    timing: { field: 'hoursBefore', label: 'before release', default: 2 },
+    defaultEnabled: true,
+    defaultChannels: ['sms'],
+  },
+  {
+    key: 'booking_modification',
+    label: 'Booking modification',
+    description: 'Sent when the booking details are changed',
+    allowedChannels: ['email', 'sms'],
+    defaultEnabled: true,
+    defaultChannels: ['email'],
+  },
+  {
+    key: 'cancellation_confirmation',
+    label: 'Cancellation confirmation',
+    description: 'Sent when a booking is cancelled',
+    allowedChannels: ['email', 'sms'],
+    defaultEnabled: true,
+    defaultChannels: ['email'],
+  },
+  {
+    key: 'auto_cancel_notification',
+    label: 'Auto-cancel notification',
+    description: 'Sent when an unpaid booking is automatically cancelled',
+    allowedChannels: ['email', 'sms'],
+    defaultEnabled: true,
+    defaultChannels: ['email', 'sms'],
+  },
+  {
+    key: 'no_show_notification',
+    label: 'No-show notification',
+    description: 'Optional notice when staff mark a booking as a no-show',
+    allowedChannels: ['email'],
+    defaultEnabled: false,
+    defaultChannels: ['email'],
+  },
+  {
+    key: 'post_visit_thankyou',
+    label: 'Post-visit thank you',
+    description: 'Follow-up after the booking has taken place',
+    allowedChannels: ['email'],
+    timing: { field: 'hoursAfter', label: 'after the visit', default: 4 },
+    defaultEnabled: true,
+    defaultChannels: ['email'],
+  },
+  {
+    key: 'custom_message',
+    label: 'Custom message',
+    description: 'Staff-composed message sent directly to the guest',
+    allowedChannels: ['email', 'sms'],
+    defaultEnabled: true,
+    defaultChannels: ['email', 'sms'],
+  },
+];
+
+const WAITLIST_DEF: MessageDef = {
+  key: 'appointment_waitlist_offer',
+  label: 'Waitlist invite',
+  description: 'Sent when staff offer an appointment slot to someone on the waitlist',
+  allowedChannels: ['email', 'sms'],
+  defaultEnabled: false,
+  defaultChannels: ['email'],
+};
+
+function defaultPolicy(def: MessageDef): LaneMessagePolicy {
+  return {
+    enabled: def.defaultEnabled,
+    channels: def.defaultChannels,
+    emailCustomMessage: null,
+    smsCustomMessage: null,
+    ...(def.timing ? { [def.timing.field]: def.timing.default } : {}),
   };
-  return (
-    <View style={styles.channelRow}>
-      <Chip label="Email" selected={value.includes('email')} onPress={() => toggle('email')} />
-      <Chip label="SMS" selected={value.includes('sms')} onPress={() => toggle('sms')} />
-    </View>
-  );
 }
 
 function HoursStepper({
   value,
+  suffix,
   onChange,
   disabled = false,
 }: {
   value: number;
+  suffix: string;
   onChange: (next: number) => void;
   disabled?: boolean;
 }) {
@@ -94,13 +185,13 @@ function HoursStepper({
   };
   return (
     <View style={styles.hoursRow}>
-      <Text variant="bodySmall" tone="muted" style={styles.hoursLabel}>
+      <Text variant="bodySmall" tone="muted">
         Send
       </Text>
       <View style={styles.hoursControl}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Fewer hours before"
+          accessibilityLabel="Fewer hours"
           onPress={() => step(-1)}
           style={({ pressed }) => [
             styles.stepBtn,
@@ -113,7 +204,7 @@ function HoursStepper({
         </Text>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="More hours before"
+          accessibilityLabel="More hours"
           onPress={() => step(1)}
           style={({ pressed }) => [
             styles.stepBtn,
@@ -123,51 +214,182 @@ function HoursStepper({
         </Pressable>
       </View>
       <Text variant="bodySmall" tone="muted">
-        before the visit
+        {suffix}
       </Text>
     </View>
   );
 }
 
-/** Communications — guest confirmations/reminders + staff alerts (admin edits). */
-export default function CommunicationsScreen() {
-  const { venue } = useVenueContext();
-  const isAdmin = venue?.current_user_role === 'admin';
-  const query = useNotificationSettings();
-  const update = useUpdateNotificationSettings();
+/** One message policy card — toggle, channels, timing, custom template lines. */
+function MessageCard({
+  def,
+  policy,
+  isAdmin,
+  onChange,
+}: {
+  def: MessageDef;
+  policy: LaneMessagePolicy;
+  isAdmin: boolean;
+  onChange: (next: LaneMessagePolicy) => void;
+}) {
+  const toggleChannel = (channel: MessageChannel) => {
+    if (!isAdmin) return;
+    const has = policy.channels.includes(channel);
+    if (has && policy.channels.length === 1) {
+      // At least one channel must stay selected (web parity).
+      hapticWarning();
+      return;
+    }
+    hapticSelect();
+    onChange({
+      ...policy,
+      channels: has
+        ? policy.channels.filter((c) => c !== channel)
+        : [...policy.channels, channel],
+    });
+  };
 
-  const [draft, setDraft] = useState<VenueNotificationSettings | null>(null);
+  const timingValue = def.timing
+    ? policy[def.timing.field] ?? def.timing.default
+    : null;
+
+  return (
+    <Card>
+      <View style={styles.cardHeader}>
+        <View style={styles.cardHeaderText}>
+          <Text variant="bodyMedium">{def.label}</Text>
+          <Text variant="caption" tone="muted">
+            {def.description}
+          </Text>
+        </View>
+        <Switch
+          value={policy.enabled}
+          disabled={!isAdmin}
+          accessibilityLabel={def.label}
+          onValueChange={(enabled) => onChange({ ...policy, enabled })}
+        />
+      </View>
+
+      {policy.enabled ? (
+        <View style={styles.cardBody}>
+          <View style={styles.channelRow}>
+            {def.allowedChannels.map((channel) => (
+              <Chip
+                key={channel}
+                label={channel === 'email' ? 'Email' : 'SMS'}
+                selected={policy.channels.includes(channel)}
+                onPress={() => toggleChannel(channel)}
+              />
+            ))}
+          </View>
+
+          {def.timing && timingValue != null ? (
+            <HoursStepper
+              value={timingValue}
+              suffix={def.timing.label}
+              disabled={!isAdmin}
+              onChange={(v) => onChange({ ...policy, [def.timing!.field]: v })}
+            />
+          ) : null}
+
+          {isAdmin && def.allowedChannels.includes('email') && policy.channels.includes('email') ? (
+            <Input
+              label="Email optional message"
+              helper="Optional extra line shown with the standard template."
+              value={policy.emailCustomMessage ?? ''}
+              onChangeText={(v) => onChange({ ...policy, emailCustomMessage: v || null })}
+              multiline
+              style={styles.multiline}
+              maxLength={500}
+            />
+          ) : null}
+          {isAdmin && def.allowedChannels.includes('sms') && policy.channels.includes('sms') ? (
+            <Input
+              label="SMS optional message"
+              helper={`Kept short — counts toward the SMS length. ${(policy.smsCustomMessage ?? '').length}/320`}
+              value={policy.smsCustomMessage ?? ''}
+              onChangeText={(v) => onChange({ ...policy, smsCustomMessage: v || null })}
+              multiline
+              style={styles.multiline}
+              maxLength={320}
+            />
+          ) : null}
+        </View>
+      ) : null}
+    </Card>
+  );
+}
+
+/**
+ * Communications — per-message guest policies (web "Guest communications"
+ * parity: enable, channels, timing, optional template lines) + staff alerts.
+ */
+export default function CommunicationsScreen() {
+  const { venue, featureFlags } = useVenueContext();
+  const isAdmin = venue?.current_user_role === 'admin';
+  const waitlistEnabled = featureFlags?.resolved?.waitlist_v2 === true;
+
+  const policiesQuery = useCommunicationPolicies();
+  const updatePolicies = useUpdateCommunicationPolicies();
+  const settingsQuery = useNotificationSettings();
+  const updateSettings = useUpdateNotificationSettings();
+
+  const [lane, setLane] = useState<LaneCommunicationPolicies | null>(null);
+  const [staffDraft, setStaffDraft] = useState<VenueNotificationSettings | null>(null);
   const [seeded, setSeeded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
-  if (query.data && !seeded) {
+  if (policiesQuery.data && settingsQuery.data && !seeded) {
     setSeeded(true);
-    setDraft(query.data);
+    setLane(policiesQuery.data.appointments_other ?? {});
+    setStaffDraft(settingsQuery.data);
   }
 
-  const patch = <K extends keyof VenueNotificationSettings>(
-    key: K,
-    value: VenueNotificationSettings[K],
-  ) => {
-    setDraft((current) => (current ? { ...current, [key]: value } : current));
+  const defs = waitlistEnabled ? [...MESSAGE_DEFS, WAITLIST_DEF] : MESSAGE_DEFS;
+
+  const policyFor = (def: MessageDef): LaneMessagePolicy =>
+    lane?.[def.key] ?? defaultPolicy(def);
+
+  const setPolicy = (key: CommunicationMessageKey, next: LaneMessagePolicy) => {
+    setLane((current) => ({ ...(current ?? {}), [key]: next }));
     setSaved(false);
   };
 
-  const hasChanges =
-    !!draft && !!query.data && JSON.stringify(draft) !== JSON.stringify(query.data);
+  const patchStaff = <K extends keyof VenueNotificationSettings>(
+    key: K,
+    value: VenueNotificationSettings[K],
+  ) => {
+    setStaffDraft((current) => (current ? { ...current, [key]: value } : current));
+    setSaved(false);
+  };
+
+  const laneChanged =
+    !!lane &&
+    !!policiesQuery.data &&
+    JSON.stringify(lane) !== JSON.stringify(policiesQuery.data.appointments_other ?? {});
+  const staffChanged =
+    !!staffDraft &&
+    !!settingsQuery.data &&
+    JSON.stringify(staffDraft) !== JSON.stringify(settingsQuery.data);
+  const hasChanges = laneChanged || staffChanged;
 
   async function handleSave() {
-    if (!draft || !query.data) return;
+    if (!lane || !staffDraft || !settingsQuery.data) return;
     setError(null);
-    const changes: NotificationSettingsPatch = {};
-    for (const key of Object.keys(draft) as (keyof VenueNotificationSettings)[]) {
-      if (JSON.stringify(draft[key]) !== JSON.stringify(query.data[key])) {
-        (changes as Record<string, unknown>)[key] = draft[key];
-      }
-    }
     try {
-      await update.mutateAsync(changes);
+      if (laneChanged) {
+        await updatePolicies.mutateAsync({ appointments_other: lane });
+      }
+      if (staffChanged) {
+        const changes: Partial<VenueNotificationSettings> = {};
+        for (const key of Object.keys(staffDraft) as (keyof VenueNotificationSettings)[]) {
+          if (JSON.stringify(staffDraft[key]) !== JSON.stringify(settingsQuery.data[key])) {
+            (changes as Record<string, unknown>)[key] = staffDraft[key];
+          }
+        }
+        await updateSettings.mutateAsync(changes);
+      }
       hapticSuccess();
       setSaved(true);
     } catch (e) {
@@ -177,8 +399,10 @@ export default function CommunicationsScreen() {
   }
 
   const header = <Stack.Screen options={{ title: 'Communications' }} />;
+  const loading =
+    policiesQuery.isLoading || settingsQuery.isLoading || ((policiesQuery.data && settingsQuery.data) && (!lane || !staffDraft));
 
-  if (query.isLoading || (query.data && !draft)) {
+  if (loading) {
     return (
       <Screen padded={false}>
         {header}
@@ -187,15 +411,17 @@ export default function CommunicationsScreen() {
     );
   }
 
-  if (query.isError || !draft) {
+  if (policiesQuery.isError || settingsQuery.isError || !lane || !staffDraft) {
+    const err = policiesQuery.error ?? settingsQuery.error;
     return (
       <Screen>
         {header}
         <ErrorState
-          message={
-            query.error instanceof ApiError ? query.error.message : 'Could not load settings.'
-          }
-          onRetry={() => void query.refetch()}
+          message={err instanceof ApiError ? err.message : 'Could not load settings.'}
+          onRetry={() => {
+            void policiesQuery.refetch();
+            void settingsQuery.refetch();
+          }}
         />
       </Screen>
     );
@@ -205,137 +431,57 @@ export default function CommunicationsScreen() {
     <Screen scroll={false} padded={false}>
       {header}
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <Card>
-          <Text variant="label">Booking confirmations</Text>
-          <View style={styles.section}>
-            <SettingRow
-              label="Send confirmations"
-              hint="When a booking is made"
-              value={draft.confirmation_enabled}
-              disabled={!isAdmin}
-              onChange={(v) => patch('confirmation_enabled', v)}
-            />
-            {draft.confirmation_enabled ? (
-              <>
-                <ChannelPicker
-                  value={draft.confirmation_channels}
-                  disabled={!isAdmin}
-                  onChange={(v) => patch('confirmation_channels', v)}
-                />
-                {isAdmin ? (
-                  <Input
-                    label="Custom SMS message (optional)"
-                    value={draft.confirmation_sms_custom_message ?? ''}
-                    onChangeText={(v) => patch('confirmation_sms_custom_message', v || null)}
-                    multiline
-                    style={styles.multiline}
-                    maxLength={320}
-                  />
-                ) : null}
-              </>
-            ) : null}
-          </View>
-        </Card>
+        <Text variant="bodySmall" tone="secondary">
+          Messages for appointments and other bookings. Each one can be switched off, sent by
+          email and/or SMS, and carry an optional extra line on top of the standard template.
+        </Text>
 
-        <Card>
-          <Text variant="label">Reminders</Text>
-          <View style={styles.section}>
-            <SettingRow
-              label="First reminder"
-              value={draft.reminder_1_enabled}
-              disabled={!isAdmin}
-              onChange={(v) => patch('reminder_1_enabled', v)}
-            />
-            {draft.reminder_1_enabled ? (
-              <>
-                <HoursStepper
-                  value={draft.reminder_1_hours_before}
-                  disabled={!isAdmin}
-                  onChange={(v) => patch('reminder_1_hours_before', v)}
-                />
-                <ChannelPicker
-                  value={draft.reminder_1_channels}
-                  disabled={!isAdmin}
-                  onChange={(v) => patch('reminder_1_channels', v)}
-                />
-              </>
-            ) : null}
-
-            <SettingRow
-              label="Second reminder"
-              value={draft.reminder_2_enabled}
-              disabled={!isAdmin}
-              onChange={(v) => patch('reminder_2_enabled', v)}
-            />
-            {draft.reminder_2_enabled ? (
-              <>
-                <HoursStepper
-                  value={draft.reminder_2_hours_before}
-                  disabled={!isAdmin}
-                  onChange={(v) => patch('reminder_2_hours_before', v)}
-                />
-                <ChannelPicker
-                  value={draft.reminder_2_channels}
-                  disabled={!isAdmin}
-                  onChange={(v) => patch('reminder_2_channels', v)}
-                />
-              </>
-            ) : null}
-          </View>
-        </Card>
-
-        <Card>
-          <Text variant="label">Booking updates</Text>
-          <View style={styles.section}>
-            <SettingRow
-              label="Reschedule notifications"
-              value={draft.reschedule_notification_enabled}
-              disabled={!isAdmin}
-              onChange={(v) => patch('reschedule_notification_enabled', v)}
-            />
-            <SettingRow
-              label="Cancellation notifications"
-              value={draft.cancellation_notification_enabled}
-              disabled={!isAdmin}
-              onChange={(v) => patch('cancellation_notification_enabled', v)}
-            />
-            <SettingRow
-              label="No-show notifications"
-              value={draft.no_show_notification_enabled}
-              disabled={!isAdmin}
-              onChange={(v) => patch('no_show_notification_enabled', v)}
-            />
-            <SettingRow
-              label="Post-visit thank you"
-              value={draft.post_visit_enabled}
-              disabled={!isAdmin}
-              onChange={(v) => patch('post_visit_enabled', v)}
-            />
-          </View>
-        </Card>
+        {defs.map((def) => (
+          <MessageCard
+            key={def.key}
+            def={def}
+            policy={policyFor(def)}
+            isAdmin={!!isAdmin}
+            onChange={(next) => setPolicy(def.key, next)}
+          />
+        ))}
 
         <Card>
           <Text variant="label">Staff alerts</Text>
-          <View style={styles.section}>
-            <SettingRow
-              label="Daily schedule email"
-              hint="Each morning's appointments"
-              value={draft.daily_schedule_enabled}
-              disabled={!isAdmin}
-              onChange={(v) => patch('daily_schedule_enabled', v)}
-            />
-            <SettingRow
-              label="New booking alerts"
-              value={draft.staff_new_booking_alert}
-              disabled={!isAdmin}
-              onChange={(v) => patch('staff_new_booking_alert', v)}
-            />
-            <SettingRow
-              label="Cancellation alerts"
-              value={draft.staff_cancellation_alert}
-              disabled={!isAdmin}
-              onChange={(v) => patch('staff_cancellation_alert', v)}
-            />
+          <View style={styles.staffSection}>
+            <View style={styles.settingRow}>
+              <View style={styles.settingText}>
+                <Text variant="bodyMedium">Daily schedule email</Text>
+                <Text variant="caption" tone="muted">
+                  Each morning&apos;s appointments
+                </Text>
+              </View>
+              <Switch
+                value={staffDraft.daily_schedule_enabled}
+                disabled={!isAdmin}
+                onValueChange={(v) => patchStaff('daily_schedule_enabled', v)}
+              />
+            </View>
+            <View style={styles.settingRow}>
+              <View style={styles.settingText}>
+                <Text variant="bodyMedium">New booking alerts</Text>
+              </View>
+              <Switch
+                value={staffDraft.staff_new_booking_alert}
+                disabled={!isAdmin}
+                onValueChange={(v) => patchStaff('staff_new_booking_alert', v)}
+              />
+            </View>
+            <View style={styles.settingRow}>
+              <View style={styles.settingText}>
+                <Text variant="bodyMedium">Cancellation alerts</Text>
+              </View>
+              <Switch
+                value={staffDraft.staff_cancellation_alert}
+                disabled={!isAdmin}
+                onValueChange={(v) => patchStaff('staff_cancellation_alert', v)}
+              />
+            </View>
           </View>
         </Card>
 
@@ -354,7 +500,7 @@ export default function CommunicationsScreen() {
           <Button
             label="Save changes"
             fullWidth
-            loading={update.isPending}
+            loading={updatePolicies.isPending || updateSettings.isPending}
             disabled={!hasChanges}
             onPress={() => void handleSave()}
           />
@@ -364,7 +510,7 @@ export default function CommunicationsScreen() {
           </Text>
         )}
         <Text variant="caption" tone="muted" style={styles.footnote}>
-          Per-message templates & advanced policies are managed on the web dashboard.
+          Message previews are available on the web dashboard.
         </Text>
         <View style={styles.spacer} />
       </ScrollView>
@@ -377,20 +523,19 @@ const styles = StyleSheet.create({
     padding: spacing.base,
     gap: spacing.base,
   },
-  section: {
-    marginTop: spacing.sm,
-    gap: spacing.md,
-  },
-  settingRow: {
+  cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     gap: spacing.base,
   },
-  settingText: {
+  cardHeaderText: {
     flex: 1,
     minWidth: 0,
     gap: 1,
+  },
+  cardBody: {
+    marginTop: spacing.md,
+    gap: spacing.md,
   },
   channelRow: {
     flexDirection: 'row',
@@ -400,9 +545,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-  },
-  hoursLabel: {
-    width: 34,
   },
   hoursControl: {
     flexDirection: 'row',
@@ -430,6 +572,21 @@ const styles = StyleSheet.create({
   multiline: {
     minHeight: 64,
     textAlignVertical: 'top',
+  },
+  staffSection: {
+    marginTop: spacing.sm,
+    gap: spacing.md,
+  },
+  settingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.base,
+  },
+  settingText: {
+    flex: 1,
+    minWidth: 0,
+    gap: 1,
   },
   footnote: {
     textAlign: 'center',

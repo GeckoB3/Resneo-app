@@ -27,9 +27,18 @@ export interface ManagedService {
   addon_groups?: AppointmentCatalogAddonGroup[];
 }
 
+/** Calendar↔service link row from GET (table `practitioner_services`). */
+export interface PractitionerServiceLink {
+  practitioner_id: string;
+  service_id: string;
+}
+
 export interface ManagedServicesResponse {
   services: ManagedService[];
+  practitioner_services?: PractitionerServiceLink[];
 }
+
+export type ServicePaymentRequirement = 'none' | 'deposit' | 'full_payment';
 
 /**
  * Partial update for PATCH /api/venue/appointment-services.
@@ -45,13 +54,30 @@ export interface UpdateServiceInput {
   buffer_minutes?: number;
   price_pence?: number | null;
   deposit_pence?: number | null;
+  payment_requirement?: ServicePaymentRequirement;
+  colour?: string;
   is_active?: boolean;
+  max_advance_booking_days?: number;
+  min_booking_notice_hours?: number;
+  cancellation_notice_hours?: number;
+  allow_same_day_booking?: boolean;
+  /** Calendars offering this service — replace semantics on the API. */
+  practitioner_ids?: string[];
 }
 
 export interface CreateServiceInput {
   name: string;
   duration_minutes: number;
+  description?: string;
+  buffer_minutes?: number;
   price_pence?: number;
   deposit_pence?: number;
-  description?: string;
+  payment_requirement?: ServicePaymentRequirement;
+  colour?: string;
+  is_active?: boolean;
+  max_advance_booking_days?: number;
+  min_booking_notice_hours?: number;
+  cancellation_notice_hours?: number;
+  allow_same_day_booking?: boolean;
+  practitioner_ids?: string[];
 }

@@ -53,6 +53,8 @@ export const queryKeys = {
     all: () => [...queryKeys.all, 'communications'] as const,
     notificationSettings: (accessToken?: string | null) =>
       [...queryKeys.communications.all(), 'notificationSettings', accessToken ?? null] as const,
+    policies: (accessToken?: string | null) =>
+      [...queryKeys.communications.all(), 'policies', accessToken ?? null] as const,
   },
 
   compliance: {

@@ -29,8 +29,12 @@ function useStaffGateStatus(): StaffGateStatus {
       return 'unknown';
     }
 
-    if (staffQuery.isLoading || staffQuery.isFetching) {
-      return 'loading';
+    // Once we have a profile, stay 'staff' through background refetches.
+    // Gating on isFetching unmounted the whole Stack mid-session (e.g. the
+    // More tab mounting a fresh useStaffMe observer), which reset navigation
+    // back to the Calendar tab.
+    if (staffQuery.data) {
+      return 'staff';
     }
 
     if (staffQuery.isError) {
@@ -40,19 +44,8 @@ function useStaffGateStatus(): StaffGateStatus {
       return 'unknown';
     }
 
-    if (staffQuery.isSuccess) {
-      return 'staff';
-    }
-
     return 'loading';
-  }, [
-    session?.access_token,
-    staffQuery.isLoading,
-    staffQuery.isFetching,
-    staffQuery.isError,
-    staffQuery.error,
-    staffQuery.isSuccess,
-  ]);
+  }, [session?.access_token, staffQuery.data, staffQuery.isError, staffQuery.error]);
 }
 
 /**

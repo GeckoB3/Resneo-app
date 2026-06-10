@@ -6,7 +6,6 @@ import { Pressable, StyleSheet, type ColorValue } from 'react-native';
 
 import { LinkedVenueBanner } from '@/components/ui/LinkedVenueBanner';
 import { OfflineBanner } from '@/components/ui/OfflineBanner';
-import { useClientOnlyValue } from '@/components/useClientOnlyValue';
 import { useColorScheme } from '@/components/useColorScheme';
 import { bookingsScreenTitle, clientsScreenTitle } from '@/lib/booking/terminology';
 import { useNotifications } from '@/lib/queries/useNotifications';
@@ -120,7 +119,6 @@ export default function TabLayout() {
   const colorScheme = useColorScheme();
   const colors = colorScheme === 'dark' ? darkColors : lightColors;
   const { terminology, pricingTier, bookingModel } = useVenueContext();
-  const headerShown = useClientOnlyValue(false, true);
   const isAppointment = isAppointmentFromVenue(pricingTier, bookingModel);
 
   const screenOptions = useMemo(
@@ -132,17 +130,14 @@ export default function TabLayout() {
         borderTopColor: colors.border,
       },
       tabBarButton: renderTabBarButton,
-      headerStyle: { backgroundColor: colors.background },
-      headerTintColor: colors.text,
-      headerShadowVisible: false,
-      headerShown,
-      // Match the app's Inter type ramp — native headers default to the system font.
-      headerTitleStyle: { fontFamily: fonts.semibold, fontSize: 17 },
+      // No native headers on tabs — the screens' own toolbars are the visual
+      // top, and the redundant title + double safe-area inset wasted ~90px.
+      headerShown: false,
       tabBarLabelStyle: { fontFamily: fonts.medium, fontSize: 12, marginBottom: spacing.xs },
       // Mount tab screens on first visit — avoids duplicate hooks firing at once.
       lazy: true,
     }),
-    [colors, headerShown],
+    [colors],
   );
 
   const calendarOptions = useMemo(

@@ -24,3 +24,44 @@ export interface VenueNotificationSettings {
 }
 
 export type NotificationSettingsPatch = Partial<VenueNotificationSettings>;
+
+/**
+ * GET/PUT /api/venue/communication-policies — the web "Guest communications"
+ * surface: a per-message policy map per lane.
+ * @see _reference/reserve-ni/src/lib/communications/policies.ts
+ */
+export type CommunicationLane = 'table' | 'appointments_other';
+
+export type CommunicationMessageKey =
+  | 'booking_confirmation'
+  | 'confirm_or_cancel_prompt'
+  | 'pre_visit_reminder'
+  | 'deposit_payment_request'
+  | 'deposit_confirmation'
+  | 'deposit_payment_reminder'
+  | 'booking_modification'
+  | 'cancellation_confirmation'
+  | 'auto_cancel_notification'
+  | 'no_show_notification'
+  | 'post_visit_thankyou'
+  | 'custom_message'
+  | 'appointment_waitlist_offer';
+
+export interface LaneMessagePolicy {
+  enabled: boolean;
+  channels: MessageChannel[];
+  emailCustomMessage?: string | null;
+  smsCustomMessage?: string | null;
+  /** Only on timing-controlled messages (e.g. reminders). */
+  hoursBefore?: number | null;
+  hoursAfter?: number | null;
+}
+
+export type LaneCommunicationPolicies = Partial<
+  Record<CommunicationMessageKey, LaneMessagePolicy>
+>;
+
+export interface VenueCommunicationPolicies {
+  table?: LaneCommunicationPolicies;
+  appointments_other?: LaneCommunicationPolicies;
+}

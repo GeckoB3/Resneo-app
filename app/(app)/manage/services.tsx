@@ -36,20 +36,32 @@ import {
   useReplaceServiceVariants,
   useUpdateService,
 } from '@/lib/queries/useServicesManage';
+import { usePractitioners } from '@/lib/queries/usePractitioners';
 import { useVenueContext } from '@/providers/VenueProvider';
-import { spacing } from '@/theme/index';
+import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
-import type { ManagedService } from '@/types/services-manage';
+import type {
+  ManagedService,
+  ServicePaymentRequirement,
+} from '@/types/services-manage';
 
 type EditTarget = {
   id: string;
-  name: string;
-  description: string;
-  duration: string;
-  price: string;
-  deposit: string;
-  isActive: boolean;
+  /** Snapshot of linked calendar ids — practitioner_ids only sent when changed. */
+  practitionerIds: string[];
 };
+
+/** Web service colour presets (`APPOINTMENT_SERVICE_COLOUR_OPTIONS`). */
+const COLOUR_OPTIONS = [
+  '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6',
+  '#EC4899', '#06B6D4', '#84CC16', '#F97316', '#6366F1',
+];
+
+const PAYMENT_OPTIONS: { value: ServicePaymentRequirement; label: string; hint: string }[] = [
+  { value: 'none', label: 'No online payment', hint: 'Pay at the venue or arrange separately' },
+  { value: 'deposit', label: 'Custom deposit', hint: 'Fixed amount paid online when booking' },
+  { value: 'full_payment', label: 'Pay in full online', hint: 'Full price taken at booking' },
+];
 
 function ServiceRow({
   service,
@@ -189,6 +201,7 @@ function ServiceRow({
 }
 
 export default function ServicesScreen() {
+  const { colors } = useTheme();
   const { venue } = useVenueContext();
   const isAdmin = venue?.current_user_role === 'admin';
   const query = useManagedServices();
@@ -205,43 +218,71 @@ export default function ServicesScreen() {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Sheet form state (shared between edit + create).
+  // Sheet form state (shared between edit + create) — full web form parity.
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [duration, setDuration] = useState('');
+  const [buffer, setBuffer] = useState('0');
   const [price, setPrice] = useState('');
   const [deposit, setDeposit] = useState('');
+  const [paymentReq, setPaymentReq] = useState<ServicePaymentRequirement>('none');
+  const [colour, setColour] = useState(COLOUR_OPTIONS[0]!);
+  const [advanceDays, setAdvanceDays] = useState('90');
+  const [noticeHours, setNoticeHours] = useState('1');
+  const [cancelHours, setCancelHours] = useState('48');
+  const [sameDay, setSameDay] = useState(true);
+  const [practitionerIds, setPractitionerIds] = useState<string[]>([]);
   const [isActive, setIsActive] = useState(true);
+
+  // Active calendars for the "Offered by" picker.
+  const practitionersQuery = usePractitioners();
+  const practitioners = (practitionersQuery.data?.practitioners ?? [])
+    .filter((p) => p.is_active)
+    .sort((a, b) => a.sort_order - b.sort_order);
 
   const services = [...(query.data?.services ?? [])].sort(
     (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.name.localeCompare(b.name),
   );
 
+  const linkedCalendarIds = (serviceId: string): string[] =>
+    (query.data?.practitioner_services ?? [])
+      .filter((link) => link.service_id === serviceId)
+      .map((link) => link.practitioner_id);
+
   const openEdit = (service: ManagedService) => {
+    const linked = linkedCalendarIds(service.id);
     setName(service.name);
     setDescription(service.description ?? '');
     setDuration(String(service.duration_minutes));
+    setBuffer(String(service.buffer_minutes ?? 0));
     setPrice(penceToPoundsInput(service.price_pence));
     setDeposit(penceToPoundsInput(service.deposit_pence));
+    setPaymentReq(service.payment_requirement ?? 'none');
+    setColour(service.colour ?? COLOUR_OPTIONS[0]!);
+    setAdvanceDays(String(service.max_advance_booking_days ?? 90));
+    setNoticeHours(String(service.min_booking_notice_hours ?? 1));
+    setCancelHours(String(service.cancellation_notice_hours ?? 48));
+    setSameDay(service.allow_same_day_booking !== false);
+    setPractitionerIds(linked);
     setIsActive(service.is_active !== false);
     setError(null);
-    setEditTarget({
-      id: service.id,
-      name: service.name,
-      description: service.description ?? '',
-      duration: String(service.duration_minutes),
-      price: penceToPoundsInput(service.price_pence),
-      deposit: penceToPoundsInput(service.deposit_pence),
-      isActive: service.is_active !== false,
-    });
+    setEditTarget({ id: service.id, practitionerIds: linked });
   };
 
   const openCreate = () => {
     setName('');
     setDescription('');
     setDuration('30');
+    setBuffer('0');
     setPrice('');
     setDeposit('');
+    setPaymentReq('none');
+    setColour(COLOUR_OPTIONS[0]!);
+    setAdvanceDays('90');
+    setNoticeHours('1');
+    setCancelHours('48');
+    setSameDay(true);
+    setPractitionerIds(practitioners.map((p) => p.id));
     setIsActive(true);
     setError(null);
     setCreating(true);
@@ -255,6 +296,11 @@ export default function ServicesScreen() {
   async function handleSave() {
     setError(null);
     const durationMinutes = Number(duration);
+    const bufferMinutes = Number(buffer || '0');
+    const advance = Number(advanceDays);
+    const notice = Number(noticeHours);
+    const cancel = Number(cancelHours);
+
     if (!name.trim()) {
       setError('Name is required.');
       return;
@@ -263,33 +309,76 @@ export default function ServicesScreen() {
       setError('Duration must be 5–480 minutes.');
       return;
     }
+    if (!Number.isInteger(bufferMinutes) || bufferMinutes < 0 || bufferMinutes > 120) {
+      setError('Buffer must be 0–120 minutes.');
+      return;
+    }
+    if (!Number.isInteger(advance) || advance < 1 || advance > 365) {
+      setError('Max advance booking must be 1–365 days.');
+      return;
+    }
+    if (!Number.isInteger(notice) || notice < 0 || notice > 168) {
+      setError('Min booking notice must be 0–168 hours.');
+      return;
+    }
+    if (!Number.isInteger(cancel) || cancel < 0 || cancel > 168) {
+      setError('Cancellation notice must be 0–168 hours.');
+      return;
+    }
     const pricePence = parsePoundsToPence(price);
     const depositPence = parsePoundsToPence(deposit);
     if (pricePence === undefined || depositPence === undefined) {
       setError('Price and deposit must be valid amounts.');
       return;
     }
+    // Web superrefine rules.
+    if (paymentReq === 'deposit' && !(depositPence != null && depositPence > 0)) {
+      setError('Enter a deposit amount greater than zero for the deposit option.');
+      return;
+    }
+    if (paymentReq === 'full_payment' && !(pricePence != null && pricePence > 0)) {
+      setError('Enter a price greater than zero to take full payment online.');
+      return;
+    }
+    if (practitionerIds.length === 0) {
+      setError('Select at least one calendar to offer this service.');
+      return;
+    }
+
+    const shared = {
+      name: name.trim(),
+      description: description.trim() || null,
+      duration_minutes: durationMinutes,
+      buffer_minutes: bufferMinutes,
+      price_pence: pricePence ?? null,
+      deposit_pence: depositPence ?? null,
+      payment_requirement: paymentReq,
+      colour,
+      is_active: isActive,
+      max_advance_booking_days: advance,
+      min_booking_notice_hours: notice,
+      cancellation_notice_hours: cancel,
+      allow_same_day_booking: sameDay,
+    };
 
     try {
       if (editTarget) {
+        const linksChanged =
+          JSON.stringify([...practitionerIds].sort()) !==
+          JSON.stringify([...editTarget.practitionerIds].sort());
         await update.mutateAsync({
           id: editTarget.id,
-          ...(name.trim() !== editTarget.name ? { name: name.trim() } : {}),
-          ...(description.trim() !== editTarget.description
-            ? { description: description.trim() || null }
-            : {}),
-          ...(duration !== editTarget.duration ? { duration_minutes: durationMinutes } : {}),
-          ...(price !== editTarget.price ? { price_pence: pricePence } : {}),
-          ...(deposit !== editTarget.deposit ? { deposit_pence: depositPence } : {}),
-          ...(isActive !== editTarget.isActive ? { is_active: isActive } : {}),
+          ...shared,
+          // Only send links when changed — replace semantics on the API.
+          ...(linksChanged ? { practitioner_ids: practitionerIds } : {}),
         });
       } else {
         await create.mutateAsync({
-          name: name.trim(),
-          duration_minutes: durationMinutes,
-          ...(pricePence != null ? { price_pence: pricePence } : {}),
-          ...(depositPence != null ? { deposit_pence: depositPence } : {}),
-          ...(description.trim() ? { description: description.trim() } : {}),
+          ...shared,
+          description: shared.description ?? undefined,
+          price_pence: pricePence ?? undefined,
+          deposit_pence: depositPence ?? undefined,
+          practitioner_ids: practitionerIds,
         });
       }
       hapticSuccess();
@@ -438,27 +527,183 @@ export default function ServicesScreen() {
                   onChangeText={setDescription}
                   multiline
                   style={styles.multiline}
+                  maxLength={1000}
                 />
-                <Input
-                  label="Duration (minutes)"
-                  value={duration}
-                  onChangeText={setDuration}
-                  keyboardType="number-pad"
-                />
+                <View style={styles.moneyRow}>
+                  <View style={styles.moneyField}>
+                    <Input
+                      label="Duration (mins)"
+                      value={duration}
+                      onChangeText={setDuration}
+                      keyboardType="number-pad"
+                    />
+                  </View>
+                  <View style={styles.moneyField}>
+                    <Input
+                      label="Buffer (mins)"
+                      value={buffer}
+                      onChangeText={setBuffer}
+                      keyboardType="number-pad"
+                    />
+                  </View>
+                </View>
+
+                {/* Online payment rules (web parity: none / deposit / full payment) */}
+                <Text variant="overline" tone="muted">
+                  Online payment
+                </Text>
+                {PAYMENT_OPTIONS.map((option) => {
+                  const selected = paymentReq === option.value;
+                  return (
+                    <Pressable
+                      key={option.value}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected }}
+                      onPress={() => setPaymentReq(option.value)}
+                      style={({ pressed }) => [
+                        styles.radioRow,
+                        {
+                          borderColor: selected ? colors.brand : colors.border,
+                          backgroundColor: selected ? colors.brandSubtle : colors.surface,
+                          opacity: pressed ? 0.7 : 1,
+                        },
+                      ]}>
+                      <View
+                        style={[
+                          styles.radioDot,
+                          { borderColor: selected ? colors.brand : colors.borderStrong },
+                        ]}>
+                        {selected ? (
+                          <View style={[styles.radioDotInner, { backgroundColor: colors.brand }]} />
+                        ) : null}
+                      </View>
+                      <View style={styles.radioText}>
+                        <Text variant="bodyMedium">{option.label}</Text>
+                        <Text variant="caption" tone="muted">
+                          {option.hint}
+                        </Text>
+                      </View>
+                    </Pressable>
+                  );
+                })}
                 <View style={styles.moneyRow}>
                   <View style={styles.moneyField}>
                     <Input label="Price (£)" value={price} onChangeText={setPrice} keyboardType="decimal-pad" />
                   </View>
+                  {paymentReq === 'deposit' ? (
+                    <View style={styles.moneyField}>
+                      <Input label="Deposit (£)" value={deposit} onChangeText={setDeposit} keyboardType="decimal-pad" />
+                    </View>
+                  ) : null}
+                </View>
+
+                {/* Guest booking rules */}
+                <Text variant="overline" tone="muted">
+                  Guest booking rules
+                </Text>
+                <View style={styles.moneyRow}>
                   <View style={styles.moneyField}>
-                    <Input label="Deposit (£)" value={deposit} onChangeText={setDeposit} keyboardType="decimal-pad" />
+                    <Input
+                      label="Book ahead (days)"
+                      value={advanceDays}
+                      onChangeText={setAdvanceDays}
+                      keyboardType="number-pad"
+                    />
+                  </View>
+                  <View style={styles.moneyField}>
+                    <Input
+                      label="Min notice (hours)"
+                      value={noticeHours}
+                      onChangeText={setNoticeHours}
+                      keyboardType="number-pad"
+                    />
                   </View>
                 </View>
-                {editTarget ? (
-                  <View style={styles.switchRow}>
-                    <Text variant="bodyMedium">Active (bookable)</Text>
-                    <Switch value={isActive} onValueChange={setIsActive} />
-                  </View>
-                ) : null}
+                <Input
+                  label="Cancellation notice (hours)"
+                  helper="Refund cut-off for deposits and online payments."
+                  value={cancelHours}
+                  onChangeText={setCancelHours}
+                  keyboardType="number-pad"
+                />
+                <View style={styles.switchRow}>
+                  <Text variant="bodyMedium">Allow same-day bookings</Text>
+                  <Switch value={sameDay} onValueChange={setSameDay} />
+                </View>
+
+                {/* Colour */}
+                <Text variant="overline" tone="muted">
+                  Calendar colour
+                </Text>
+                <View style={styles.swatchRow}>
+                  {COLOUR_OPTIONS.map((option) => {
+                    const selected = colour === option;
+                    return (
+                      <Pressable
+                        key={option}
+                        accessibilityRole="radio"
+                        accessibilityLabel={`Colour ${option}`}
+                        accessibilityState={{ selected }}
+                        onPress={() => setColour(option)}
+                        style={({ pressed }) => [
+                          styles.swatch,
+                          { backgroundColor: option, opacity: pressed ? 0.7 : 1 },
+                          selected
+                            ? { borderColor: colors.text, borderWidth: 2.5 }
+                            : { borderColor: 'transparent', borderWidth: 2.5 },
+                        ]}
+                      />
+                    );
+                  })}
+                </View>
+
+                {/* Calendars offering this service */}
+                <Text variant="overline" tone="muted">
+                  Offered by
+                </Text>
+                <View style={styles.calendarWrap}>
+                  {practitioners.map((practitioner) => {
+                    const selected = practitionerIds.includes(practitioner.id);
+                    return (
+                      <Pressable
+                        key={practitioner.id}
+                        accessibilityRole="checkbox"
+                        accessibilityState={{ checked: selected }}
+                        onPress={() =>
+                          setPractitionerIds((current) =>
+                            selected
+                              ? current.filter((id) => id !== practitioner.id)
+                              : [...current, practitioner.id],
+                          )
+                        }
+                        style={({ pressed }) => [
+                          styles.calendarChip,
+                          {
+                            backgroundColor: selected ? colors.brand : colors.surface,
+                            borderColor: selected ? colors.brand : colors.border,
+                            opacity: pressed ? 0.75 : 1,
+                          },
+                        ]}>
+                        <Text
+                          variant="label"
+                          color={selected ? colors.onBrand : colors.textSecondary}
+                          numberOfLines={1}>
+                          {practitioner.name}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+
+                <View style={styles.switchRow}>
+                  <Text variant="bodyMedium">Active (visible to clients)</Text>
+                  <Switch value={isActive} onValueChange={setIsActive} />
+                </View>
+
+                <Text variant="caption" tone="muted">
+                  Custom availability windows, processing-time blocks and per-calendar staff
+                  overrides are managed on the web dashboard.
+                </Text>
 
                 {error ? (
                   <Text variant="bodySmall" tone="danger">
@@ -555,6 +800,53 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingVertical: spacing.xs,
+  },
+  radioRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+  },
+  radioDot: {
+    width: 20,
+    height: 20,
+    borderRadius: radius.full,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  radioDotInner: {
+    width: 10,
+    height: 10,
+    borderRadius: radius.full,
+  },
+  radioText: {
+    flex: 1,
+    minWidth: 0,
+    gap: 1,
+  },
+  swatchRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  swatch: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.full,
+  },
+  calendarWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  calendarChip: {
+    paddingHorizontal: spacing.base,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.pill,
+    borderWidth: 1,
   },
   actions: {
     flexDirection: 'row',

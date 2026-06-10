@@ -1,11 +1,11 @@
 import Constants from 'expo-constants';
+import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 import { useRouter, type Href } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useState, type ReactNode } from 'react';
 import { Alert, Linking, Pressable, StyleSheet, View } from 'react-native';
 
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge } from '@/components/ui/Badge';
-import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { Screen } from '@/components/ui/Screen';
@@ -16,7 +16,8 @@ import { registerCurrentDeviceForPush } from '@/lib/push/registerDevice';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { useAuth } from '@/providers/AuthProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
-import { spacing } from '@/theme/index';
+import { radius, spacing } from '@/theme/index';
+import { useTheme } from '@/theme/useTheme';
 import type { StaffRole } from '@/types/staff';
 import type { BookingModel } from '@/types/venue';
 
@@ -33,42 +34,114 @@ function formatStaffRole(role: StaffRole): string {
   return role === 'admin' ? 'Admin' : 'Staff';
 }
 
+/** Icon-tile hues — a curated ramp so each group feels distinct (iOS Settings style). */
+const TILE = {
+  amber: '#D97706',
+  teal: '#0D9488',
+  sky: '#0369A1',
+  navy: '#003B6F',
+  indigo: '#4F46E5',
+  emerald: '#059669',
+  rose: '#BE123C',
+  slate: '#475569',
+  violet: '#7C3AED',
+  orange: '#EA580C',
+};
+
 /** Secondary booking models with their own settings area (managed on web). */
-const SECONDARY_MODEL_ROWS: { model: BookingModel; label: string; hint: string; webPath: string }[] = [
-  { model: 'class_session', label: 'Classes', hint: 'Timetable & class products', webPath: '/dashboard/class-timetable' },
-  { model: 'event_ticket', label: 'Events', hint: 'Event sessions & tickets', webPath: '/dashboard/event-manager' },
-  { model: 'resource_booking', label: 'Resources', hint: 'Bookable resources', webPath: '/dashboard/resource-timeline' },
-  { model: 'table_reservation', label: 'Tables', hint: 'Table & floor plan setup', webPath: '/dashboard/tables' },
+const SECONDARY_MODEL_ROWS: {
+  model: BookingModel;
+  label: string;
+  hint: string;
+  webPath: string;
+  icon: SymbolViewProps['name'];
+  tile: string;
+}[] = [
+  { model: 'class_session', label: 'Classes', hint: 'Timetable & class products', webPath: '/dashboard/class-timetable', icon: { ios: 'figure.run', android: 'fitness_center', web: 'fitness_center' }, tile: TILE.emerald },
+  { model: 'event_ticket', label: 'Events', hint: 'Event sessions & tickets', webPath: '/dashboard/event-manager', icon: { ios: 'ticket.fill', android: 'confirmation_number', web: 'confirmation_number' }, tile: TILE.violet },
+  { model: 'resource_booking', label: 'Resources', hint: 'Bookable resources', webPath: '/dashboard/resource-timeline', icon: { ios: 'shippingbox.fill', android: 'inventory_2', web: 'inventory_2' }, tile: TILE.slate },
+  { model: 'table_reservation', label: 'Tables', hint: 'Table & floor plan setup', webPath: '/dashboard/tables', icon: { ios: 'fork.knife', android: 'restaurant', web: 'restaurant' }, tile: TILE.orange },
 ];
 
+/** 30pt rounded-square icon tile — the iOS Settings row glyph. */
+function IconTile({ name, tint }: { name: SymbolViewProps['name']; tint: string }) {
+  return (
+    <View style={[styles.iconTile, { backgroundColor: tint }]}>
+      <SymbolView name={name} tintColor="#FFFFFF" size={17} />
+    </View>
+  );
+}
+
 function MenuRow({
+  icon,
+  tile,
   label,
   hint,
   onPress,
   external = false,
+  destructive = false,
+  isFirst = false,
 }: {
+  icon: SymbolViewProps['name'];
+  tile: string;
   label: string;
-  hint: string;
+  hint?: string;
   onPress: () => void;
   external?: boolean;
+  destructive?: boolean;
+  isFirst?: boolean;
 }) {
+  const { colors } = useTheme();
   return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [styles.menuRow, { opacity: pressed ? 0.55 : 1 }]}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityHint={hint}>
-      <View style={styles.menuText}>
-        <Text variant="bodyMedium">{label}</Text>
-        <Text variant="caption" tone="muted">
-          {hint}
+    <View>
+      {!isFirst ? (
+        <View style={[styles.separator, { backgroundColor: colors.border }]} />
+      ) : null}
+      <Pressable
+        onPress={onPress}
+        style={({ pressed }) => [
+          styles.menuRow,
+          pressed ? { backgroundColor: colors.surface } : null,
+        ]}
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        accessibilityHint={hint}>
+        <IconTile name={icon} tint={tile} />
+        <View style={styles.menuText}>
+          <Text variant="bodyMedium" color={destructive ? colors.danger : undefined}>
+            {label}
+          </Text>
+          {hint ? (
+            <Text variant="caption" tone="muted" numberOfLines={1}>
+              {hint}
+            </Text>
+          ) : null}
+        </View>
+        <SymbolView
+          name={
+            external
+              ? { ios: 'arrow.up.right', android: 'open_in_new', web: 'open_in_new' }
+              : { ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }
+          }
+          tintColor={colors.textMuted}
+          size={external ? 14 : 16}
+        />
+      </Pressable>
+    </View>
+  );
+}
+
+/** Uppercase section header sitting above its inset group (iOS Settings style). */
+function Group({ title, children }: { title?: string; children: ReactNode }) {
+  return (
+    <View style={styles.group}>
+      {title ? (
+        <Text variant="overline" tone="muted" style={styles.groupTitle}>
+          {title}
         </Text>
-      </View>
-      <Text variant="title" tone="muted">
-        {external ? '↗' : '›'}
-      </Text>
-    </Pressable>
+      ) : null}
+      <Card padded={false}>{children}</Card>
+    </View>
   );
 }
 
@@ -78,6 +151,7 @@ function MenuRow({
  */
 export default function MoreScreen() {
   const router = useRouter();
+  const { colors } = useTheme();
   const { session, signOut } = useAuth();
   const { data: staffData, isLoading: staffLoading } = useStaffMe();
   const { venue, name: venueName, isLoading: venueLoading } = useVenueContext();
@@ -133,6 +207,13 @@ export default function MoreScreen() {
     }
   }, [accessToken]);
 
+  const confirmSignOut = useCallback(() => {
+    Alert.alert('Sign out?', 'You can sign back in with the same work email.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Sign out', style: 'destructive', onPress: () => void signOut() },
+    ]);
+  }, [signOut]);
+
   if (staffLoading || venueLoading) {
     return (
       <Screen>
@@ -142,11 +223,15 @@ export default function MoreScreen() {
   }
 
   return (
-    <Screen scroll contentContainerStyle={styles.content}>
+    <Screen scroll padded={false} contentContainerStyle={styles.content}>
+      <Text variant="display" style={styles.pageTitle}>
+        More
+      </Text>
+
       {/* Profile header */}
       <Card>
         <View style={styles.profileHeader}>
-          <Avatar name={staff?.name ?? staff?.email ?? 'Staff'} size={48} />
+          <Avatar name={staff?.name ?? staff?.email ?? 'Staff'} size={52} />
           <View style={styles.profileText}>
             <Text variant="subheading" numberOfLines={1}>
               {staff?.name ?? 'Staff member'}
@@ -164,169 +249,197 @@ export default function MoreScreen() {
         </View>
       </Card>
 
-      {/* Workspace — day-to-day tools */}
-      <Card>
-        <Text variant="overline" tone="muted">
-          Workspace
-        </Text>
-        <View style={styles.menu}>
+      <Group title="Workspace">
+        <MenuRow
+          isFirst
+          icon={{ ios: 'sun.max.fill', android: 'wb_sunny', web: 'wb_sunny' }}
+          tile={TILE.amber}
+          label="Today"
+          hint="KPIs, forecast & arrivals"
+          onPress={() => router.push('/today' as Href)}
+        />
+        <MenuRow
+          icon={{ ios: 'hourglass', android: 'hourglass_empty', web: 'hourglass_empty' }}
+          tile={TILE.teal}
+          label="Waitlist"
+          hint="Offer & confirm waiting clients"
+          onPress={() => router.push('/waitlist' as Href)}
+        />
+        <MenuRow
+          icon={{ ios: 'calendar', android: 'edit_calendar', web: 'edit_calendar' }}
+          tile={TILE.sky}
+          label="Calendar availability"
+          hint="Block time & book leave"
+          onPress={() => router.push('/availability' as Href)}
+        />
+        <MenuRow
+          icon={{ ios: 'bell.fill', android: 'notifications', web: 'notifications' }}
+          tile={TILE.rose}
+          label="Notifications"
+          hint="In-app notification feed"
+          onPress={() => router.push('/notifications' as Href)}
+        />
+        {isAdmin ? (
           <MenuRow
-            label="Today"
-            hint="KPIs, forecast & arrivals"
-            onPress={() => router.push('/today' as Href)}
+            icon={{ ios: 'chart.bar.fill', android: 'bar_chart', web: 'bar_chart' }}
+            tile={TILE.indigo}
+            label="Reports"
+            hint="Bookings, no-shows, deposits & insights"
+            onPress={() => router.push('/reports' as Href)}
           />
-          <MenuRow
-            label="Waitlist"
-            hint="Offer & confirm waiting clients"
-            onPress={() => router.push('/waitlist' as Href)}
-          />
-          <MenuRow
-            label="Calendar availability"
-            hint="Block time & book leave"
-            onPress={() => router.push('/availability' as Href)}
-          />
-          <MenuRow
-            label="Notifications"
-            hint="In-app notification feed"
-            onPress={() => router.push('/notifications' as Href)}
-          />
-          {isAdmin ? (
-            <MenuRow
-              label="Reports"
-              hint="Bookings, no-shows, deposits & insights"
-              onPress={() => router.push('/reports' as Href)}
-            />
-          ) : null}
-        </View>
-      </Card>
+        ) : null}
+      </Group>
 
-      {/* Manage — services + venue settings */}
-      <Card>
-        <Text variant="overline" tone="muted">
-          Manage
-        </Text>
-        <View style={styles.menu}>
+      <Group title="Manage">
+        <MenuRow
+          isFirst
+          icon={{ ios: 'scissors', android: 'content_cut', web: 'content_cut' }}
+          tile={TILE.navy}
+          label="Services"
+          hint="Review & edit your appointment services"
+          onPress={() => router.push('/manage/services' as Href)}
+        />
+        {isAdmin ? (
           <MenuRow
-            label="Services"
-            hint="Review & edit your appointment services"
-            onPress={() => router.push('/manage/services' as Href)}
+            icon={{ ios: 'building.2.fill', android: 'storefront', web: 'storefront' }}
+            tile={TILE.teal}
+            label="Venue profile"
+            hint="Name, contact details & address"
+            onPress={() => router.push('/manage/venue-profile' as Href)}
           />
-          {isAdmin ? (
-            <MenuRow
-              label="Venue profile"
-              hint="Name, contact details & address"
-              onPress={() => router.push('/manage/venue-profile' as Href)}
-            />
-          ) : null}
+        ) : null}
+        <MenuRow
+          icon={{ ios: 'clock.fill', android: 'access_time', web: 'access_time' }}
+          tile={TILE.sky}
+          label="Business hours"
+          hint="Weekly opening hours"
+          onPress={() => router.push('/manage/hours' as Href)}
+        />
+        {isAdmin ? (
           <MenuRow
-            label="Business hours"
-            hint="Weekly opening hours"
-            onPress={() => router.push('/manage/hours' as Href)}
+            icon={{ ios: 'person.2.fill', android: 'group', web: 'group' }}
+            tile={TILE.emerald}
+            label="Team"
+            hint="Staff logins & roles"
+            onPress={() => router.push('/manage/team' as Href)}
           />
-          {isAdmin ? (
-            <MenuRow
-              label="Team"
-              hint="Staff logins & roles"
-              onPress={() => router.push('/manage/team' as Href)}
-            />
-          ) : null}
-          {isAdmin ? (
-            <MenuRow
-              label="Booking settings"
-              hint="Booking types & guest accounts"
-              onPress={() => router.push('/manage/booking-settings' as Href)}
-            />
-          ) : null}
-          {isAdmin ? (
-            <MenuRow
-              label="Communications"
-              hint="Confirmations, reminders & alerts"
-              onPress={() => router.push('/manage/communications' as Href)}
-            />
-          ) : null}
-          {isAdmin ? (
-            <MenuRow
-              label="Compliance"
-              hint="Forms, records & expiries"
-              onPress={() => router.push('/manage/compliance' as Href)}
-            />
-          ) : null}
-          {isAdmin ? (
-            <MenuRow
-              label="Plan & payments"
-              hint="Subscription tier & Stripe"
-              onPress={() => router.push('/manage/plan' as Href)}
-            />
-          ) : null}
-          {isAdmin ? (
-            <MenuRow
-              label="Booking page"
-              hint="Public page, branding & widget"
-              external
-              onPress={() => openWeb('/dashboard/settings')}
-            />
-          ) : null}
-        </View>
-      </Card>
+        ) : null}
+        {isAdmin ? (
+          <MenuRow
+            icon={{ ios: 'slider.horizontal.3', android: 'tune', web: 'tune' }}
+            tile={TILE.slate}
+            label="Booking settings"
+            hint="Booking types & guest accounts"
+            onPress={() => router.push('/manage/booking-settings' as Href)}
+          />
+        ) : null}
+        {isAdmin ? (
+          <MenuRow
+            icon={{ ios: 'envelope.fill', android: 'mail', web: 'mail' }}
+            tile={TILE.amber}
+            label="Communications"
+            hint="Confirmations, reminders & alerts"
+            onPress={() => router.push('/manage/communications' as Href)}
+          />
+        ) : null}
+        {isAdmin ? (
+          <MenuRow
+            icon={{ ios: 'checkmark.shield.fill', android: 'verified_user', web: 'verified_user' }}
+            tile={TILE.emerald}
+            label="Compliance"
+            hint="Forms, records & expiries"
+            onPress={() => router.push('/manage/compliance' as Href)}
+          />
+        ) : null}
+        {isAdmin ? (
+          <MenuRow
+            icon={{ ios: 'creditcard.fill', android: 'credit_card', web: 'credit_card' }}
+            tile={TILE.violet}
+            label="Plan & payments"
+            hint="Subscription tier & Stripe"
+            onPress={() => router.push('/manage/plan' as Href)}
+          />
+        ) : null}
+        {isAdmin ? (
+          <MenuRow
+            icon={{ ios: 'globe', android: 'public', web: 'public' }}
+            tile={TILE.indigo}
+            label="Booking page"
+            hint="Public page, branding & widget"
+            external
+            onPress={() => openWeb('/dashboard/settings')}
+          />
+        ) : null}
+      </Group>
 
       {/* Booking models — only when those models are enabled */}
       {isAdmin && enabledSecondaryRows.length > 0 ? (
-        <Card>
-          <Text variant="overline" tone="muted">
-            Booking types
-          </Text>
-          <View style={styles.menu}>
-            {enabledSecondaryRows.map((row) => (
-              <MenuRow
-                key={row.model}
-                label={row.label}
-                hint={row.hint}
-                external
-                onPress={() => openWeb(row.webPath)}
-              />
-            ))}
-          </View>
-        </Card>
+        <Group title="Booking types">
+          {enabledSecondaryRows.map((row, index) => (
+            <MenuRow
+              key={row.model}
+              isFirst={index === 0}
+              icon={row.icon}
+              tile={row.tile}
+              label={row.label}
+              hint={row.hint}
+              external
+              onPress={() => openWeb(row.webPath)}
+            />
+          ))}
+        </Group>
       ) : null}
 
-      {/* App */}
-      <Card>
-        <Text variant="overline" tone="muted">
-          App
-        </Text>
-        <View style={styles.menu}>
-          <MenuRow
-            label="Push notifications"
-            hint="Re-register this device for push"
-            onPress={() => void handleRetryPush()}
-          />
-          <MenuRow
-            label="Web dashboard"
-            hint="Open the full dashboard in your browser"
-            external
-            onPress={() => openWeb('/dashboard')}
-          />
-        </View>
-        <Text variant="caption" tone="muted" style={styles.version}>
-          Resneo v{appVersion}
-          {pushBusy ? ' · registering push…' : ''}
-        </Text>
-      </Card>
+      <Group title="App">
+        <MenuRow
+          isFirst
+          icon={{ ios: 'bell.badge.fill', android: 'notifications_active', web: 'notifications_active' }}
+          tile={TILE.rose}
+          label="Push notifications"
+          hint={pushBusy ? 'Registering…' : 'Re-register this device for push'}
+          onPress={() => void handleRetryPush()}
+        />
+        <MenuRow
+          icon={{ ios: 'desktopcomputer', android: 'computer', web: 'computer' }}
+          tile={TILE.slate}
+          label="Web dashboard"
+          hint="Open the full dashboard in your browser"
+          external
+          onPress={() => openWeb('/dashboard')}
+        />
+      </Group>
 
-      <Button
-        label="Sign out"
-        variant="secondary"
-        fullWidth
-        onPress={() => void signOut()}
-        style={styles.signOut}
-      />
+      <Group>
+        <Pressable
+          onPress={confirmSignOut}
+          accessibilityRole="button"
+          accessibilityLabel="Sign out"
+          style={({ pressed }) => [
+            styles.signOutRow,
+            pressed ? { backgroundColor: colors.surface } : null,
+          ]}>
+          <Text variant="bodyMedium" color={colors.danger}>
+            Sign out
+          </Text>
+        </Pressable>
+      </Group>
+
+      <Text variant="caption" tone="muted" style={styles.version}>
+        Resneo v{appVersion}
+      </Text>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
   content: {
-    gap: spacing.base,
+    paddingHorizontal: spacing.base,
+    paddingTop: spacing.md,
+    paddingBottom: spacing['3xl'],
+    gap: spacing.lg,
+  },
+  pageTitle: {
+    marginBottom: -spacing.xs,
   },
   profileHeader: {
     flexDirection: 'row',
@@ -338,26 +451,40 @@ const styles = StyleSheet.create({
     minWidth: 0,
     gap: 2,
   },
-  menu: {
-    marginTop: spacing.sm,
+  group: {
+    gap: spacing.xs,
+  },
+  groupTitle: {
+    marginLeft: spacing.md,
+  },
+  iconTile: {
+    width: 30,
+    height: 30,
+    borderRadius: radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   menuRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     gap: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.sm + 2,
+    paddingHorizontal: spacing.base,
   },
   menuText: {
     flex: 1,
     minWidth: 0,
     gap: 1,
   },
-  version: {
-    marginTop: spacing.sm,
-    textAlign: 'center',
+  separator: {
+    height: StyleSheet.hairlineWidth,
+    marginLeft: spacing.base + 30 + spacing.md,
   },
-  signOut: {
-    marginTop: spacing.sm,
+  signOutRow: {
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+  },
+  version: {
+    textAlign: 'center',
   },
 });
