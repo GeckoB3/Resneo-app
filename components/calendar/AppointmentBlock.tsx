@@ -2,6 +2,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Text } from '@/components/ui/Text';
 import { bookingStatusVisualForKey } from '@/lib/booking/booking-status-visual';
+import { bookingStatusDisplayLabel } from '@/lib/booking/infer-booking-row-model';
 import { hexToRgba } from '@/lib/color';
 import { fonts, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -41,7 +42,7 @@ export function AppointmentBlock({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${timeLabel}, ${guestName}, ${serviceName}, ${status}`}
+      accessibilityLabel={`${timeLabel}, ${guestName}, ${serviceName}, ${bookingStatusDisplayLabel(status, false)}`}
       accessibilityHint="Tap to open, long-press to reschedule"
       onPress={() => onPress(id)}
       onLongPress={onLongPress ? () => onLongPress(id) : undefined}

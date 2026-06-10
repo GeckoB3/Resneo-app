@@ -69,7 +69,13 @@ export function bookingDetailActions(
 
   const revert = REVERT[status];
   if (revert) {
-    actions.push({ label: revert.label, target: revert.target, variant: 'ghost', kind: 'revert' });
+    // Appointment venues say "Undo Start" (web ExpandedBookingContent override);
+    // "Unseat" is restaurant wording.
+    const label =
+      status === 'Seated' && revert.target === 'Booked' && !isTableReservation
+        ? 'Undo Start'
+        : revert.label;
+    actions.push({ label, target: revert.target, variant: 'ghost', kind: 'revert' });
   }
 
   return actions;

@@ -51,8 +51,30 @@ const SCOPE_OPTIONS: { value: Scope; label: string }[] = [
   { value: 'month', label: 'Month' },
 ];
 
-/** Canonical status filters (mirrors the web bookings dashboard). */
-const STATUS_FILTERS = ['All', 'Pending', 'Confirmed', 'Seated', 'Completed', 'Cancelled', 'No-Show'];
+/** Confirmed = explicit status OR either attendance timestamp (web semantics). */
+function isAttendanceConfirmed(b: BookingListRow): boolean {
+  return (
+    b.status === 'Confirmed' ||
+    !!b.guest_attendance_confirmed_at ||
+    !!b.staff_attendance_confirmed_at
+  );
+}
+
+/** Status filters — labels + semantics mirror the web AppointmentBookingsDashboard. */
+const STATUS_FILTERS: { key: string; label: string; matches: (b: BookingListRow) => boolean }[] = [
+  { key: 'All', label: 'All', matches: () => true },
+  { key: 'Pending', label: 'Pending', matches: (b) => b.status === 'Pending' },
+  {
+    key: 'Booked',
+    label: 'Booked',
+    matches: (b) => b.status === 'Booked' && !isAttendanceConfirmed(b),
+  },
+  { key: 'Confirmed', label: 'Confirmed', matches: isAttendanceConfirmed },
+  { key: 'Started', label: 'Started', matches: (b) => b.status === 'Seated' },
+  { key: 'Completed', label: 'Completed', matches: (b) => b.status === 'Completed' },
+  { key: 'Cancelled', label: 'Cancelled', matches: (b) => b.status === 'Cancelled' },
+  { key: 'NoShow', label: 'No show', matches: (b) => b.status === 'No-Show' },
+];
 
 type BookingSection = SectionListData<BookingListRow, { title: string; date: string }>;
 
@@ -114,16 +136,18 @@ export default function BookingsScreen() {
 
   const counts = useMemo(() => {
     const map: Record<string, number> = {};
-    for (const booking of searchedRows) {
-      map[booking.status] = (map[booking.status] ?? 0) + 1;
+    for (const option of STATUS_FILTERS) {
+      if (option.key === 'All') continue;
+      map[option.key] = searchedRows.filter(option.matches).length;
     }
     return map;
   }, [searchedRows]);
 
-  const filteredRows = useMemo(
-    () => (status === 'All' ? searchedRows : searchedRows.filter((b) => b.status === status)),
-    [searchedRows, status],
-  );
+  const filteredRows = useMemo(() => {
+    const option = STATUS_FILTERS.find((o) => o.key === status);
+    if (!option || option.key === 'All') return searchedRows;
+    return searchedRows.filter(option.matches);
+  }, [searchedRows, status]);
 
   const sections = useMemo<BookingSection[]>(() => {
     const byDate = new Map<string, BookingListRow[]>();
@@ -224,11 +248,11 @@ export default function BookingsScreen() {
           contentContainerStyle={styles.chips}>
           {STATUS_FILTERS.map((option) => (
             <Chip
-              key={option}
-              label={option}
-              count={option === 'All' ? searchedRows.length : counts[option] ?? 0}
-              selected={status === option}
-              onPress={() => setStatus(option)}
+              key={option.key}
+              label={option.label}
+              count={option.key === 'All' ? searchedRows.length : counts[option.key] ?? 0}
+              selected={status === option.key}
+              onPress={() => setStatus(option.key)}
             />
           ))}
         </ScrollView>
@@ -289,11 +313,11 @@ export default function BookingsScreen() {
           ItemSeparatorComponent={ItemSeparator}
           ListEmptyComponent={
             <EmptyState
-              title="No bookings"
+              title="No appointments"
               message={
                 status === 'All'
                   ? 'Nothing booked for this period yet.'
-                  : `No ${status.toLowerCase()} bookings for this period.`
+                  : `No ${(STATUS_FILTERS.find((o) => o.key === status)?.label ?? status).toLowerCase()} appointments for this period.`
               }
             />
           }

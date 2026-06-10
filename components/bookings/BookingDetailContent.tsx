@@ -140,7 +140,10 @@ function GuestHistoryCard({
                     {row.booking_time ? ` · ${row.booking_time.slice(0, 5)}` : ''}
                   </Text>
                 </View>
-                <StatusPill status={row.status} />
+                <StatusPill
+                  status={row.status}
+                  isTableReservation={row.booking_model === 'table_reservation'}
+                />
               </Pressable>
             ))
           )}
@@ -307,7 +310,7 @@ export function BookingDetailContent({
               <Text variant="subheading" style={styles.guestName} numberOfLines={1}>
                 {guestName}
               </Text>
-              <StatusPill status={booking.status} />
+              <StatusPill status={booking.status} isTableReservation={isTable} />
             </View>
             {booking.guest?.phone ? (
               <Text variant="bodySmall" tone="secondary">

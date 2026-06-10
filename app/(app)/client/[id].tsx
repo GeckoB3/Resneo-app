@@ -89,7 +89,10 @@ function HistoryRow({ booking, onPress, divider }: {
           {party}
         </Text>
       </View>
-      <StatusPill status={booking.status} />
+      <StatusPill
+        status={booking.status}
+        isTableReservation={booking.booking_model === 'table_reservation'}
+      />
     </Pressable>
   );
 }

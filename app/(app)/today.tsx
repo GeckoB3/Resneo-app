@@ -219,7 +219,10 @@ export default function TodayScreen() {
                       {booking.party_size} · {booking.kind_label ?? unit}
                     </Text>
                   </View>
-                  <StatusPill status={booking.status as BookingStatus} />
+                  <StatusPill
+                    status={booking.status as BookingStatus}
+                    isTableReservation={booking.booking_model === 'table_reservation'}
+                  />
                 </View>
               ))}
             </View>

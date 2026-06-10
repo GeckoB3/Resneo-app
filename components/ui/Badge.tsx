@@ -51,8 +51,24 @@ const STATUS_TONE: Record<string, BadgeTone> = {
   'No-Show': 'danger',
 };
 
-export function StatusPill({ status }: { status: string }) {
-  return <Badge label={status} tone={STATUS_TONE[status] ?? 'neutral'} />;
+/** "Seated" is restaurant wording — appointment venues display "Started" (web parity). */
+const APPOINTMENT_STATUS_LABEL: Record<string, string> = {
+  Seated: 'Started',
+};
+
+/**
+ * Booking status pill. Appointments-first: `Seated` renders as "Started"
+ * unless the booking is a genuine table reservation.
+ */
+export function StatusPill({
+  status,
+  isTableReservation = false,
+}: {
+  status: string;
+  isTableReservation?: boolean;
+}) {
+  const label = isTableReservation ? status : APPOINTMENT_STATUS_LABEL[status] ?? status;
+  return <Badge label={label} tone={STATUS_TONE[status] ?? 'neutral'} />;
 }
 
 const styles = StyleSheet.create({

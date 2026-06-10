@@ -2,6 +2,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { StatusPill } from '@/components/ui/Badge';
 import { Text } from '@/components/ui/Text';
+import { bookingStatusDisplayLabel } from '@/lib/booking/infer-booking-row-model';
 import { minTouchTarget, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { BookingListRow } from '@/types/booking-list';
@@ -52,7 +53,7 @@ export function BookingRow({ booking, isAppointment, onPress }: BookingRowProps)
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${formatTime(booking.booking_time)}, ${booking.guest_name}, ${booking.status}`}
+      accessibilityLabel={`${formatTime(booking.booking_time)}, ${booking.guest_name}, ${bookingStatusDisplayLabel(booking.status, booking.booking_model === 'table_reservation')}`}
       onPress={() => onPress(booking.id)}
       style={({ pressed }) => [
         styles.row,
@@ -86,7 +87,10 @@ export function BookingRow({ booking, isAppointment, onPress }: BookingRowProps)
       </View>
 
       <View style={styles.trailing}>
-        <StatusPill status={booking.status} />
+        <StatusPill
+          status={booking.status}
+          isTableReservation={booking.booking_model === 'table_reservation'}
+        />
         {showDeposit ? (
           <Text variant="caption" tone="muted" numberOfLines={1}>
             {booking.deposit_status}
