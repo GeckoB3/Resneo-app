@@ -36,6 +36,7 @@ import {
 } from '@/lib/dates/venue-dates';
 import { useBookingsList } from '@/lib/queries/useBookingsList';
 import { useBookingsRange } from '@/lib/queries/useBookingsRange';
+import { usePractitioners } from '@/lib/queries/usePractitioners';
 import { isAppointmentFromVenue } from '@/lib/venue/venue-experience';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { radius, spacing } from '@/theme/index';
@@ -77,6 +78,16 @@ export default function BookingsScreen() {
   const [anchor, setAnchor] = useState<string>(() => calendarDateInTimeZone(new Date(), timeZone));
   const [status, setStatus] = useState<string>('All');
   const [search, setSearch] = useState('');
+  const [practitionerFilter, setPractitionerFilter] = useState<string | null>(null);
+
+  const practitionersQuery = usePractitioners();
+  const practitioners = useMemo(
+    () =>
+      (practitionersQuery.data?.practitioners ?? [])
+        .filter((p) => p.is_active)
+        .sort((a, b) => a.sort_order - b.sort_order),
+    [practitionersQuery.data],
+  );
 
   const range = useMemo(() => rangeFor(scope, anchor), [scope, anchor]);
 
@@ -89,11 +100,17 @@ export default function BookingsScreen() {
 
   const searchedRows = useMemo(() => {
     const term = search.trim().toLowerCase();
-    if (!term) {
-      return rawRows;
+    let rows = rawRows;
+    if (practitionerFilter) {
+      rows = rows.filter(
+        (b) => (b.practitioner_id ?? b.calendar_id) === practitionerFilter,
+      );
     }
-    return rawRows.filter((b) => b.guest_name.toLowerCase().includes(term));
-  }, [rawRows, search]);
+    if (!term) {
+      return rows;
+    }
+    return rows.filter((b) => b.guest_name.toLowerCase().includes(term));
+  }, [rawRows, search, practitionerFilter]);
 
   const counts = useMemo(() => {
     const map: Record<string, number> = {};
@@ -215,6 +232,28 @@ export default function BookingsScreen() {
             />
           ))}
         </ScrollView>
+
+        {/* Staff filter — matches practitioner_id (model B) or calendar_id (unified). */}
+        {isAppointment && practitioners.length > 1 ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chips}>
+            <Chip
+              label="All staff"
+              selected={practitionerFilter === null}
+              onPress={() => setPractitionerFilter(null)}
+            />
+            {practitioners.map((p) => (
+              <Chip
+                key={p.id}
+                label={p.name}
+                selected={practitionerFilter === p.id}
+                onPress={() => setPractitionerFilter((cur) => (cur === p.id ? null : p.id))}
+              />
+            ))}
+          </ScrollView>
+        ) : null}
       </View>
 
       {activeQuery.isLoading ? (

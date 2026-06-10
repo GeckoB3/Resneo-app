@@ -35,10 +35,19 @@ function partyLabel(partySize: number, isAppointment: boolean): string | null {
 export function BookingRow({ booking, isAppointment, onPress }: BookingRowProps) {
   const { colors } = useTheme();
 
-  const subtitle = [booking.booking_item_name, partyLabel(booking.party_size, isAppointment)]
+  const addonCount = booking.addons_count ?? 0;
+  const subtitle = [
+    booking.service_variant_name ?? booking.booking_item_name,
+    booking.calendar_name,
+    partyLabel(booking.party_size, isAppointment),
+    addonCount > 0 ? `+${addonCount} add-on${addonCount === 1 ? '' : 's'}` : null,
+  ]
     .filter(Boolean)
     .join(' · ');
   const showDeposit = booking.deposit_status && !HIDDEN_DEPOSIT.has(booking.deposit_status);
+  const attendanceConfirmed =
+    !!booking.guest_attendance_confirmed_at || !!booking.staff_attendance_confirmed_at;
+  const arrived = !!booking.client_arrived_at;
 
   return (
     <Pressable
@@ -56,9 +65,19 @@ export function BookingRow({ booking, isAppointment, onPress }: BookingRowProps)
       </View>
 
       <View style={styles.main}>
-        <Text variant="bodyMedium" numberOfLines={1}>
-          {booking.guest_name}
-        </Text>
+        <View style={styles.nameRow}>
+          <Text variant="bodyMedium" numberOfLines={1} style={styles.name}>
+            {booking.guest_name}
+          </Text>
+          {arrived ? (
+            <View style={[styles.dot, { backgroundColor: colors.accent }]} accessibilityLabel="Arrived" />
+          ) : attendanceConfirmed ? (
+            <View
+              style={[styles.dot, { backgroundColor: colors.success }]}
+              accessibilityLabel="Attendance confirmed"
+            />
+          ) : null}
+        </View>
         {subtitle ? (
           <Text variant="caption" tone="muted" numberOfLines={1} style={styles.subtitle}>
             {subtitle}
@@ -99,6 +118,19 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     gap: 2,
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  name: {
+    flexShrink: 1,
+  },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
   subtitle: {
     marginTop: 0,

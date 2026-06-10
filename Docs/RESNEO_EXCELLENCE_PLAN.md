@@ -147,13 +147,15 @@ R20 → R21 → R22 → R23 → R24 → R25. R20 first because every later phase
 
 **R22 ✅:** **W1 source fix** — wizard defaults to `phone` (server slot-validation) with an explicit Walk-in toggle on Confirm; **W2 month date-picker** (`MonthDatePicker` + `useMonthAvailability`, availability dots, past/unavailable disabled, any-available pooling); **W3 duration presets** (chips on the slot step, threads `duration_minutes` through availability + create); **W4 waitlist-join** (empty-slot state → guest details sheet → public `appointment-waitlist`). DatePickerStep deleted. *Deferred:* W5 multi-service, W6 payment step.
 
-**R23 🟡 partial:** Contacts **sort** (recent/oldest/name/most-visits — server values verified) + **tag filter chips** (`useGuestTags`). *Deferred:* bulk select→message/tag, merge UI, CSV export (backend `contacts/bulk` + `guests/merge` ARE migrated in batch 7, UI pending); Appointments practitioner/service filters + sort — **blocked: `bookings/list` rows carry no practitioner/service fields; needs a backend payload extension first.**
+**R23 ✅ (2nd pass):** Contacts **sort** + **tag filter chips**; **bulk select** (long-press rows) with **Tag / Message (marketing, consent-respecting) / Merge** (pick-the-keeper sheet, 2–5 contacts) + **Export CSV** via share sheet (current filter, up to 250 rows) — all admin-gated. Appointments list: **no backend change was needed** — `bookings/list` already returns `practitioner_id`/`calendar_id`/`calendar_name`/`service_variant_name`/`addons_count`/`booking_addon_labels`/attendance timestamps (the mobile type was just a narrow subset). Added **staff filter chips** (matches practitioner_id or calendar_id) and enriched rows (service/variant · staff · add-on count · arrived/confirmed dot). *Still open:* explicit sort selector (rows are time-sorted per day, matching web default).
 
 **R24 🟡 partial:** **K1 recurring breaks** now overlay the day grid (derived from the roster's `break_times`/`break_times_by_day` — no extra API call; discovery: `GET /api/venue/schedule` is the classes/events feed, NOT breaks); **K4 undo snackbar** after reschedule (6s revert window, new `Snackbar` primitive). *Deferred (device-gated or minor):* K2 multi-column, K3 toolbar search, K5 drag, K6 card density, K7 month dots.
 
 **R25 🟡 partial:** **P1 push deep links** — cold-start tap now routed via `getLastNotificationResponseAsync` (warm taps already worked); **P3 setup checklist** card on Today (admin, dismissible, web-completed steps). *Deferred:* Sentry (needs DSN + dev build), motion pass, empty-state art, on-device matrix (yours).
 
 **Backend batch 7 ✅ migrated (deploy with 5+6):** `schedule`, `contacts/bulk`, `guests/merge`, `setup-status`, `setup-checklist-dismiss`, `bookings/[id]/compliance`.
+
+**Device session:** `Docs/DEVICE_TEST_PLAN.md` — smoke pass, booking lifecycle, gesture tuning (drag deliberately NOT shipped blind; implementation notes included), More-surface sweep, contacts bulk, push warm/cold, light/dark × admin/staff matrix. Requires batches 5–7 deployed + the dev build.
 
 ---
 

@@ -1,8 +1,23 @@
 import { type Href, useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
-import { FlatList, Pressable, ScrollView, StyleSheet, View, type ListRenderItem } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  Alert,
+  FlatList,
+  Pressable,
+  ScrollView,
+  Share,
+  StyleSheet,
+  View,
+  type ListRenderItem,
+} from 'react-native';
 
+import {
+  BulkMessageSheet,
+  BulkTagSheet,
+  MergeContactsSheet,
+} from '@/components/clients/BulkActionSheets';
 import { Avatar } from '@/components/ui/Avatar';
+import { Button } from '@/components/ui/Button';
 import { Chip } from '@/components/ui/Chip';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
@@ -10,14 +25,15 @@ import { Input } from '@/components/ui/Input';
 import { Screen } from '@/components/ui/Screen';
 import { ListSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
-import { ApiError } from '@/lib/api/client';
+import { ApiError, apiFetch } from '@/lib/api/client';
 import { clientsScreenTitle } from '@/lib/booking/terminology';
+import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { useGuests } from '@/lib/queries/useGuests';
 import { useGuestTags } from '@/lib/queries/useGuestTags';
 import { useVenueContext } from '@/providers/VenueProvider';
-import { radius, spacing } from '@/theme/index';
+import { elevation, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
-import type { GuestListItem } from '@/types/guest-list';
+import type { GuestListItem, GuestListResponse } from '@/types/guest-list';
 
 const SEARCH_DEBOUNCE_MS = 280;
 const MIN_SEARCH_LENGTH = 2;
@@ -42,7 +58,19 @@ function formatNextBooking(guest: GuestListItem): string | null {
   return time ? `${guest.next_booking_date} · ${time}` : guest.next_booking_date;
 }
 
-function GuestRow({ guest, onPress }: { guest: GuestListItem; onPress: () => void }) {
+function GuestRow({
+  guest,
+  onPress,
+  onLongPress,
+  selectionMode = false,
+  selected = false,
+}: {
+  guest: GuestListItem;
+  onPress: () => void;
+  onLongPress?: () => void;
+  selectionMode?: boolean;
+  selected?: boolean;
+}) {
   const { colors } = useTheme();
   const name = formatGuestName(guest);
   const visits =
@@ -53,11 +81,30 @@ function GuestRow({ guest, onPress }: { guest: GuestListItem; onPress: () => voi
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityState={{ selected }}
       onPress={onPress}
+      onLongPress={onLongPress}
       style={({ pressed }) => [
         styles.row,
-        { backgroundColor: colors.surfaceRaised, borderColor: colors.border, opacity: pressed ? 0.85 : 1 },
+        {
+          backgroundColor: colors.surfaceRaised,
+          borderColor: selected ? colors.brand : colors.border,
+          borderWidth: selected ? 1 : StyleSheet.hairlineWidth,
+          opacity: pressed ? 0.85 : 1,
+        },
       ]}>
+      {selectionMode ? (
+        <View
+          style={[
+            styles.selectCheck,
+            {
+              borderColor: selected ? colors.brand : colors.borderStrong,
+              backgroundColor: selected ? colors.brand : 'transparent',
+            },
+          ]}>
+          {selected ? <Text style={{ color: colors.onBrand, fontSize: 12 }}>✓</Text> : null}
+        </View>
+      ) : null}
       <Avatar name={name} size={44} />
       <View style={styles.rowText}>
         <Text variant="bodyMedium" numberOfLines={1}>
@@ -85,13 +132,21 @@ function GuestRow({ guest, onPress }: { guest: GuestListItem; onPress: () => voi
 
 export default function ClientsScreen() {
   const router = useRouter();
-  const { terminology } = useVenueContext();
+  const { colors } = useTheme();
+  const { terminology, venue } = useVenueContext();
+  const isAdmin = venue?.current_user_role === 'admin';
+  const accessToken = useAccessToken();
   const screenTitle = clientsScreenTitle(terminology);
   const clientLabel = terminology.client.toLowerCase();
   const [searchInput, setSearchInput] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [sort, setSort] = useState('last_visit_desc');
   const [tagFilter, setTagFilter] = useState<string | null>(null);
+  // Bulk selection (long-press a row to start).
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkSheet, setBulkSheet] = useState<'tag' | 'message' | 'merge' | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const selectionMode = selectedIds.length > 0;
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(searchInput.trim()), SEARCH_DEBOUNCE_MS);
@@ -114,12 +169,71 @@ export default function ClientsScreen() {
     [router],
   );
 
-  const renderItem: ListRenderItem<GuestListItem> = useCallback(
-    ({ item }) => <GuestRow guest={item} onPress={() => openGuest(item.id)} />,
-    [openGuest],
+  // React Compiler memoizes these — manual useCallback here fights it.
+  const toggleSelected = (guestId: string) => {
+    setSelectedIds((current) =>
+      current.includes(guestId)
+        ? current.filter((id) => id !== guestId)
+        : [...current, guestId],
+    );
+  };
+
+  const clearSelection = () => {
+    setSelectedIds([]);
+    setBulkSheet(null);
+  };
+
+  const renderItem: ListRenderItem<GuestListItem> = ({ item }) => (
+    <GuestRow
+      guest={item}
+      selectionMode={selectionMode}
+      selected={selectedIds.includes(item.id)}
+      onPress={() => (selectionMode ? toggleSelected(item.id) : openGuest(item.id))}
+      onLongPress={() => toggleSelected(item.id)}
+    />
   );
 
-  const guests = guestsQuery.data?.guests ?? [];
+  const guests = useMemo(() => guestsQuery.data?.guests ?? [], [guestsQuery.data]);
+  const selectedGuests = useMemo(
+    () => guests.filter((guest) => selectedIds.includes(guest.id)),
+    [guests, selectedIds],
+  );
+
+  /** Export the current view (up to 250 contacts) as CSV via the share sheet. */
+  const handleExport = useCallback(async () => {
+    if (!accessToken) return;
+    setExporting(true);
+    try {
+      const params = new URLSearchParams({ page: '0', limit: '250', sort });
+      if (debouncedSearch.length >= MIN_SEARCH_LENGTH) params.set('search', debouncedSearch);
+      if (tagFilter) {
+        params.set('segment', 'tag');
+        params.set('segment_tag', tagFilter);
+      }
+      const data = await apiFetch<GuestListResponse>(`/api/venue/guests?${params.toString()}`, {
+        accessToken,
+      });
+      const esc = (value: string | null | undefined) => `"${(value ?? '').replace(/"/g, '""')}"`;
+      const rows = [
+        'Name,Email,Phone,Visits,Last visit,Tags',
+        ...data.guests.map((g) =>
+          [
+            esc(formatGuestName(g)),
+            esc(g.email),
+            esc(g.phone),
+            String(g.visit_count ?? 0),
+            esc(g.last_visit_date),
+            esc((g.tags ?? []).join('; ')),
+          ].join(','),
+        ),
+      ];
+      await Share.share({ title: 'Contacts export', message: rows.join('\n') });
+    } catch (e) {
+      Alert.alert('Export failed', e instanceof ApiError ? e.message : 'Please try again.');
+    } finally {
+      setExporting(false);
+    }
+  }, [accessToken, sort, debouncedSearch, tagFilter]);
   const errorMessage =
     guestsQuery.error instanceof ApiError
       ? guestsQuery.error.message
@@ -159,6 +273,13 @@ export default function ClientsScreen() {
               onPress={() => setSort(option.value)}
             />
           ))}
+          {isAdmin ? (
+            <Chip
+              label={exporting ? 'Exporting…' : 'Export CSV'}
+              selected={false}
+              onPress={() => void handleExport()}
+            />
+          ) : null}
         </ScrollView>
         {tags.length > 0 ? (
           <ScrollView
@@ -203,6 +324,54 @@ export default function ClientsScreen() {
           renderItem={renderItem}
         />
       )}
+
+      {/* Bulk action bar — long-press rows to select. */}
+      {selectionMode ? (
+        <View
+          style={[
+            styles.bulkBar,
+            elevation.raised,
+            { backgroundColor: colors.surfaceRaised, borderColor: colors.border },
+          ]}>
+          <Text variant="label" style={styles.bulkCount}>
+            {selectedIds.length} selected
+          </Text>
+          {isAdmin ? (
+            <Button label="Tag" size="sm" variant="secondary" onPress={() => setBulkSheet('tag')} />
+          ) : null}
+          {isAdmin ? (
+            <Button
+              label="Message"
+              size="sm"
+              variant="secondary"
+              onPress={() => setBulkSheet('message')}
+            />
+          ) : null}
+          {isAdmin && selectedIds.length >= 2 && selectedIds.length <= 5 ? (
+            <Button label="Merge" size="sm" variant="secondary" onPress={() => setBulkSheet('merge')} />
+          ) : null}
+          <Button label="✕" size="sm" variant="ghost" onPress={clearSelection} />
+        </View>
+      ) : null}
+
+      <BulkTagSheet
+        guestIds={selectedIds}
+        open={bulkSheet === 'tag'}
+        onClose={() => setBulkSheet(null)}
+        onDone={clearSelection}
+      />
+      <BulkMessageSheet
+        guestIds={selectedIds}
+        open={bulkSheet === 'message'}
+        onClose={() => setBulkSheet(null)}
+        onDone={clearSelection}
+      />
+      <MergeContactsSheet
+        guests={selectedGuests}
+        open={bulkSheet === 'merge'}
+        onClose={() => setBulkSheet(null)}
+        onDone={clearSelection}
+      />
     </Screen>
   );
 }
@@ -241,5 +410,29 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     gap: 2,
+  },
+  selectCheck: {
+    width: 22,
+    height: 22,
+    borderRadius: radius.sm,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bulkBar: {
+    position: 'absolute',
+    left: spacing.base,
+    right: spacing.base,
+    bottom: spacing.base,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    padding: spacing.sm,
+    borderRadius: radius.card,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  bulkCount: {
+    flex: 1,
+    paddingLeft: spacing.sm,
   },
 });
