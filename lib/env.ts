@@ -1,11 +1,16 @@
 import Constants from 'expo-constants';
 
 /**
- * Public env vars are embedded at build time via Expo's EXPO_PUBLIC_ prefix.
+ * Public env vars are embedded at BUILD time via Expo's EXPO_PUBLIC_ prefix.
  * Copy .env.example to .env.local and fill in values from your reserve-ni project.
+ *
+ * IMPORTANT: Expo/Metro only inlines EXPO_PUBLIC_* vars for STATIC member access —
+ * i.e. `process.env.EXPO_PUBLIC_FOO`. A dynamic read like `process.env[name]` is
+ * NOT replaced at build time, so it resolves to `undefined` in a production bundle
+ * (there is no runtime `process.env` on device). Every getter below must therefore
+ * reference the literal key directly.
  */
-function requirePublicEnv(name: string): string {
-  const value = process.env[name];
+function required(value: string | undefined, name: string): string {
   if (!value) {
     throw new Error(
       `Missing ${name}. Copy .env.example to .env.local and add your Resneo backend values.`,
@@ -16,7 +21,7 @@ function requirePublicEnv(name: string): string {
 
 /** Optional at Phase 0 — throws only when Supabase client is first used. */
 export function getSupabaseUrl(): string {
-  return requirePublicEnv('EXPO_PUBLIC_SUPABASE_URL');
+  return required(process.env.EXPO_PUBLIC_SUPABASE_URL, 'EXPO_PUBLIC_SUPABASE_URL');
 }
 
 export function getSupabaseAnonKey(): string {
@@ -32,7 +37,7 @@ export function getSupabaseAnonKey(): string {
 }
 
 export function getApiUrl(): string {
-  return requirePublicEnv('EXPO_PUBLIC_API_URL');
+  return required(process.env.EXPO_PUBLIC_API_URL, 'EXPO_PUBLIC_API_URL');
 }
 
 export function getAppVersion(): string {

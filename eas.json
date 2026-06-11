@@ -17,6 +17,11 @@
     "preview": {
       "distribution": "internal",
       "environment": "preview",
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://zkppmyyvkjvbsvemakbb.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY": "sb_publishable_3OiMNwftdkz3XhDy9f3Vbw_IN67kE9i",
+        "EXPO_PUBLIC_API_URL": "https://reserve-ni.vercel.app"
+      },
       "android": {
         "buildType": "apk"
       },
