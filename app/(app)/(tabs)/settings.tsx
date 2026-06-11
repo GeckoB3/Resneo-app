@@ -1,5 +1,6 @@
 import Constants from 'expo-constants';
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
+import * as WebBrowser from 'expo-web-browser';
 import { useRouter, type Href } from 'expo-router';
 import { useCallback, useState, type ReactNode } from 'react';
 import { Alert, Linking, Pressable, StyleSheet, View } from 'react-native';
@@ -51,18 +52,24 @@ const TILE = {
   orange: '#EA580C',
 };
 
-/** Secondary booking models with their own settings area (managed on web). */
+/**
+ * Secondary booking models. Classes/Events/Resources now have in-app screens
+ * (timetables/rosters); setup & products still live on the web (each screen
+ * links out). Tables remain web-only.
+ */
 const SECONDARY_MODEL_ROWS: {
   model: BookingModel;
   label: string;
   hint: string;
+  /** In-app route when set; otherwise opens the web dashboard path. */
+  appRoute?: string;
   webPath: string;
   icon: SymbolViewProps['name'];
   tile: string;
 }[] = [
-  { model: 'class_session', label: 'Classes', hint: 'Timetable & class products', webPath: '/dashboard/class-timetable', icon: { ios: 'figure.run', android: 'fitness_center', web: 'fitness_center' }, tile: TILE.emerald },
-  { model: 'event_ticket', label: 'Events', hint: 'Event sessions & tickets', webPath: '/dashboard/event-manager', icon: { ios: 'ticket.fill', android: 'confirmation_number', web: 'confirmation_number' }, tile: TILE.violet },
-  { model: 'resource_booking', label: 'Resources', hint: 'Bookable resources', webPath: '/dashboard/resource-timeline', icon: { ios: 'shippingbox.fill', android: 'inventory_2', web: 'inventory_2' }, tile: TILE.slate },
+  { model: 'class_session', label: 'Classes', hint: 'Timetable & session rosters', appRoute: '/classes', webPath: '/dashboard/class-timetable', icon: { ios: 'figure.run', android: 'fitness_center', web: 'fitness_center' }, tile: TILE.emerald },
+  { model: 'event_ticket', label: 'Events', hint: 'Events & attendee rosters', appRoute: '/events', webPath: '/dashboard/event-manager', icon: { ios: 'ticket.fill', android: 'confirmation_number', web: 'confirmation_number' }, tile: TILE.violet },
+  { model: 'resource_booking', label: 'Resources', hint: 'Resource day view', appRoute: '/resources', webPath: '/dashboard/resource-timeline', icon: { ios: 'shippingbox.fill', android: 'inventory_2', web: 'inventory_2' }, tile: TILE.slate },
   { model: 'table_reservation', label: 'Tables', hint: 'Table & floor plan setup', webPath: '/dashboard/tables', icon: { ios: 'fork.knife', android: 'restaurant', web: 'restaurant' }, tile: TILE.orange },
 ];
 
@@ -178,9 +185,14 @@ export default function MoreScreen() {
     return models.has(row.model);
   });
 
+  // In-app browser tab (SFSafariViewController / Chrome Custom Tab) so web
+  // content opens without bouncing the user out of the app.
   const openWeb = useCallback((path: string) => {
     const url = webDashboardUrl(path);
-    void Linking.openURL(url).catch(() => Alert.alert('Could not open browser', url));
+    void WebBrowser.openBrowserAsync(url).catch(() =>
+      // Fallback to the system browser if the in-app tab is unavailable.
+      Linking.openURL(url).catch(() => Alert.alert('Could not open browser', url)),
+    );
   }, []);
 
   const handleRetryPush = useCallback(async () => {
@@ -404,9 +416,10 @@ export default function MoreScreen() {
             icon={{ ios: 'globe', android: 'public', web: 'public' }}
             tile={TILE.indigo}
             label="Booking page"
-            hint={venue?.slug ? `resneo.com/book/${venue.slug}` : 'Public page, branding & widget'}
+            hint={venue?.slug ? `Preview your public booking page` : 'Public page, branding & widget'}
             external
-            onPress={() => openWeb('/dashboard/settings')}
+            // Opens the guest-facing booking page in an IN-APP browser tab.
+            onPress={() => openWeb(venue?.slug ? `/book/${venue.slug}` : '/dashboard/settings')}
           />
         ) : null}
       </Group>
@@ -422,8 +435,10 @@ export default function MoreScreen() {
               tile={row.tile}
               label={row.label}
               hint={row.hint}
-              external
-              onPress={() => openWeb(row.webPath)}
+              external={!row.appRoute}
+              onPress={() =>
+                row.appRoute ? router.push(row.appRoute as Href) : openWeb(row.webPath)
+              }
             />
           ))}
         </Group>

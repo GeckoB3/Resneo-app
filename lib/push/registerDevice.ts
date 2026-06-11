@@ -3,6 +3,7 @@ import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 
 import { apiFetch } from '@/lib/api/client';
+import { Notifications } from '@/lib/push/notificationsModule';
 import { isExpoGoClient } from '@/lib/push/runtime';
 
 export type DevicePlatform = 'ios' | 'android' | 'web';
@@ -59,11 +60,19 @@ export async function registerCurrentDeviceForPush(
     return { registered: false, pushToken: null, reason: 'simulator' };
   }
 
-  const Notifications = await import('expo-notifications');
+  if (!Notifications) {
+    return { registered: false, pushToken: null, reason: 'web' };
+  }
 
-  let permission = await Notifications.getPermissionsAsync();
-  if (permission.status !== 'granted') {
-    permission = await Notifications.requestPermissionsAsync();
+  let permission;
+  try {
+    permission = await Notifications.getPermissionsAsync();
+    if (permission.status !== 'granted') {
+      permission = await Notifications.requestPermissionsAsync();
+    }
+  } catch (error) {
+    console.warn('[push] permission check failed:', error);
+    return { registered: false, pushToken: null, reason: 'error' };
   }
   if (permission.status !== 'granted') {
     return { registered: false, pushToken: null, reason: 'denied' };

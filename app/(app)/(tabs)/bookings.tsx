@@ -3,13 +3,12 @@ import { useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import {
   Alert,
+  FlatList,
   Pressable,
   RefreshControl,
   ScrollView,
-  SectionList,
   StyleSheet,
   View,
-  type SectionListData,
 } from 'react-native';
 import { Sheet } from '@/components/ui/Sheet';
 import { Button } from '@/components/ui/Button';
@@ -24,6 +23,7 @@ import { BookingSortSheet } from '@/components/bookings/BookingSortSheet';
 import { BookingServiceFilterSheet } from '@/components/bookings/BookingServiceFilterSheet';
 import { Chip } from '@/components/ui/Chip';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Fab } from '@/components/ui/Fab';
 import { Input } from '@/components/ui/Input';
@@ -91,7 +91,15 @@ const STATUS_FILTERS: { key: string; label: string; matches: (b: BookingListRow)
   { key: 'NoShow', label: 'No show', matches: (b) => b.status === 'No-Show' },
 ];
 
-type BookingSection = SectionListData<BookingListRow, { title: string; date: string }>;
+/**
+ * Flattened list row — date headers are plain rows instead of SectionList
+ * sticky sections. SectionList's sticky-header mounting is a known source of
+ * Fabric "addViewAt: child already has a parent" native crashes on Android,
+ * which made this page unopenable; a flat list avoids that machinery.
+ */
+type ListRow =
+  | { kind: 'header'; date: string; title: string }
+  | { kind: 'booking'; booking: BookingListRow };
 
 function rangeFor(scope: Scope, anchor: string): DateRange {
   if (scope === 'week') {
@@ -114,7 +122,7 @@ function applySortWithin(rows: BookingListRow[], sortKey: SortKey, sortDir: Sort
         cmp = (a.booking_time ?? '').localeCompare(b.booking_time ?? '');
         break;
       case 'client':
-        cmp = a.guest_name.localeCompare(b.guest_name);
+        cmp = (a.guest_name ?? '').localeCompare(b.guest_name ?? '');
         break;
       case 'status':
         cmp = (a.status ?? '').localeCompare(b.status ?? '');
@@ -307,13 +315,13 @@ export default function BookingsScreen() {
 
     // Extended search: name, phone, email, booking item name, booking ID (with/without hyphens).
     return rows.filter((b) => {
-      const idNorm = b.id.replace(/-/g, '');
+      const idNorm = (b.id ?? '').replace(/-/g, '');
       return (
-        b.guest_name.toLowerCase().includes(term) ||
+        (b.guest_name ?? '').toLowerCase().includes(term) ||
         (b.guest_phone ?? '').toLowerCase().includes(term) ||
         (b.guest_email ?? '').toLowerCase().includes(term) ||
         (b.booking_item_name ?? '').toLowerCase().includes(term) ||
-        b.id.toLowerCase().includes(term) ||
+        (b.id ?? '').toLowerCase().includes(term) ||
         idNorm.includes(term.replace(/-/g, ''))
       );
     });
@@ -334,23 +342,26 @@ export default function BookingsScreen() {
     return searchedRows.filter(option.matches);
   }, [searchedRows, status]);
 
-  const sections = useMemo<BookingSection[]>(() => {
+  const showDateHeaders = scope !== 'day';
+
+  const listRows = useMemo<ListRow[]>(() => {
     const byDate = new Map<string, BookingListRow[]>();
     for (const booking of filteredRows) {
       const list = byDate.get(booking.booking_date) ?? [];
       list.push(booking);
       byDate.set(booking.booking_date, list);
     }
-    return [...byDate.entries()]
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, data]) => ({
-        date,
-        title: formatDayHeading(date),
-        data: applySortWithin(data, sortKey, sortDir),
-      }));
-  }, [filteredRows, sortKey, sortDir]);
-
-  const showSectionHeaders = scope !== 'day';
+    const out: ListRow[] = [];
+    for (const [date, data] of [...byDate.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+      if (showDateHeaders) {
+        out.push({ kind: 'header', date, title: formatDayHeading(date) });
+      }
+      for (const booking of applySortWithin(data, sortKey, sortDir)) {
+        out.push({ kind: 'booking', booking });
+      }
+    }
+    return out;
+  }, [filteredRows, sortKey, sortDir, showDateHeaders]);
 
   const label =
     scope === 'day'
@@ -401,36 +412,44 @@ export default function BookingsScreen() {
   );
 
   const renderItem = useCallback(
-    ({ item }: { item: BookingListRow }) => (
-      <BookingRow
-        booking={item}
-        isAppointment={isAppointment}
-        onPress={openBooking}
-        onLongPress={toggleSelect}
-        selected={selectedIds.has(item.id)}
-        selectionMode={selectionMode}
-        complianceFlag={complianceFlags?.[item.id]}
-      />
-    ),
-    [isAppointment, openBooking, toggleSelect, selectedIds, selectionMode, complianceFlags],
-  );
-
-  const renderSectionHeader = useCallback(
-    ({ section }: { section: BookingSection }) =>
-      showSectionHeaders ? (
-        <View style={[styles.sectionHeader, { backgroundColor: colors.background }]}>
-          <Text variant="overline" tone="muted">
-            {section.title}
-          </Text>
-        </View>
-      ) : null,
-    [showSectionHeaders, colors.background],
+    ({ item }: { item: ListRow }) => {
+      if (item.kind === 'header') {
+        return (
+          <View style={[styles.sectionHeader, { backgroundColor: colors.background }]}>
+            <Text variant="overline" tone="muted">
+              {item.title}
+            </Text>
+          </View>
+        );
+      }
+      return (
+        <BookingRow
+          booking={item.booking}
+          isAppointment={isAppointment}
+          onPress={openBooking}
+          onLongPress={toggleSelect}
+          selected={selectedIds.has(item.booking.id)}
+          selectionMode={selectionMode}
+          complianceFlag={complianceFlags?.[item.booking.id]}
+        />
+      );
+    },
+    [
+      isAppointment,
+      openBooking,
+      toggleSelect,
+      selectedIds,
+      selectionMode,
+      complianceFlags,
+      colors.background,
+    ],
   );
 
   const isServiceFiltered = serviceFilter !== null;
 
   return (
     <Screen padded={false}>
+      <ErrorBoundary label="appointments">
       <View style={[styles.toolbar, { borderBottomColor: colors.border }]}>
         <Segmented value={scope} onChange={setScope} options={SCOPE_OPTIONS} />
 
@@ -596,12 +615,12 @@ export default function BookingsScreen() {
             </View>
           ) : null}
 
-          <SectionList
-            sections={sections}
-            keyExtractor={(item) => item.id}
+          <FlatList
+            data={listRows}
+            keyExtractor={(item) =>
+              item.kind === 'header' ? `header-${item.date}` : item.booking.id
+            }
             renderItem={renderItem}
-            renderSectionHeader={renderSectionHeader}
-            stickySectionHeadersEnabled={showSectionHeaders}
             contentContainerStyle={styles.listContent}
             ItemSeparatorComponent={ItemSeparator}
             ListEmptyComponent={
@@ -669,6 +688,7 @@ export default function BookingsScreen() {
         selectedServiceId={serviceFilter}
         onSelect={setServiceFilter}
       />
+      </ErrorBoundary>
     </Screen>
   );
 }

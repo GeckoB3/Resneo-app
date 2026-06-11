@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 
 import { BreaksEditor } from '@/components/availability/BreaksEditor';
+import { TeamLeaveCalendar } from '@/components/availability/TeamLeaveCalendar';
 import { WorkingHoursEditor } from '@/components/availability/WorkingHoursEditor';
 import { minutesToTime } from '@/components/calendar/grid-layout';
 import { Button } from '@/components/ui/Button';
@@ -43,7 +44,12 @@ import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { fonts, minTouchTarget, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
-import type { BreakTimesByDayMap, WorkingHoursMap , LeaveType } from '@/types/availability-manage';
+import type {
+  BreakTimesByDayMap,
+  LeavePeriod,
+  LeaveType,
+  WorkingHoursMap,
+} from '@/types/availability-manage';
 
 
 const RANGE_DAYS = 90;
@@ -211,10 +217,8 @@ export default function AvailabilityScreen() {
     setSheet('block');
   }
 
-  function openEditLeave(id: string) {
-    const period = (leaveQuery.data?.periods ?? []).find((p) => p.id === id);
-    if (!period) return;
-    setEditingLeaveId(id);
+  function openEditLeave(period: LeavePeriod) {
+    setEditingLeaveId(period.id);
     setEditingBlockId(null);
     setPractitionerId(period.practitioner_id);
     setDate(period.start_date);
@@ -463,6 +467,15 @@ export default function AvailabilityScreen() {
               onPress={() => openSheet('leave')}
             />
           </View>
+          {/* Team leave calendar — whole team's time off, month view (web parity) */}
+          <TeamLeaveCalendar
+            today={today}
+            filterPractitionerId={filterPractitionerId}
+            onEditLeave={openEditLeave}
+            onDeleteLeave={handleDeleteLeave}
+            deletingLeaveIds={deletingLeaveIds}
+          />
+
           <Text variant="caption" tone="muted">
             Next {RANGE_DAYS} days
           </Text>
@@ -541,7 +554,7 @@ export default function AvailabilityScreen() {
                           label="Edit"
                           variant="ghost"
                           size="sm"
-                          onPress={() => openEditLeave(period.id)}
+                          onPress={() => openEditLeave(period)}
                         />
                         <Button
                           label="Remove"

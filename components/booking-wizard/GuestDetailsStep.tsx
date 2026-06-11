@@ -186,29 +186,15 @@ export function GuestDetailsStep({ value, onChange, onContinue, readOnlyContact 
         value={value.email}
       />
 
+      {/* Appointment wizard only — restaurant-specific fields (dietary,
+          occasion) live on RestaurantWalkInForm, not here. */}
       <View style={styles.optionalSection}>
         <Text variant="label" tone="secondary">
-          Additional details (optional)
+          Notes (optional)
         </Text>
         <Input
-          label="Occasion"
-          placeholder="e.g. Birthday, Anniversary"
-          value={value.occasion ?? ''}
-          onChangeText={(occasion) => onChange({ ...value, occasion: occasion || undefined })}
-          autoCapitalize="sentences"
-          maxLength={200}
-        />
-        <Input
-          label="Dietary requirements"
-          placeholder="e.g. Vegan, Nut allergy"
-          value={value.dietary_notes ?? ''}
-          onChangeText={(dietary_notes) => onChange({ ...value, dietary_notes: dietary_notes || undefined })}
-          autoCapitalize="sentences"
-          maxLength={500}
-        />
-        <Input
           label="Special requests"
-          placeholder="Any other requests for the team"
+          placeholder="Anything the team should know"
           value={value.special_requests ?? ''}
           onChangeText={(special_requests) => onChange({ ...value, special_requests: special_requests || undefined })}
           autoCapitalize="sentences"

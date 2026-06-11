@@ -111,6 +111,11 @@ export default function NewBookingScreen() {
   const prefillGuestQuery = useGuestDetail(prefilledGuestId);
 
   const [stepIndex, setStepIndex] = useState(0);
+  // Whether THIS flow includes the practitioner-choice step. Captured once at
+  // service selection — deriving it from the live selection made the steps
+  // array shrink the moment a practitioner was picked, which double-skipped
+  // the next step (the "date picker never showed" bug).
+  const [includePractitionerStep, setIncludePractitionerStep] = useState(false);
   const [selectedService, setSelectedService] = useState<AppointmentServiceOption | null>(null);
   const [selectedDate, setSelectedDate] = useState<string | null>(prefilledDate);
   const [selectedSlot, setSelectedSlot] = useState<AppointmentSlot | null>(null);
@@ -183,10 +188,27 @@ export default function NewBookingScreen() {
             if (appt.durationMinutes != null && appt.durationMinutes !== service.duration_minutes) {
               setDurationOverride(appt.durationMinutes);
             }
-            // Jump to date step.
-            const baseSteps: StepKey[] = ['service', 'date', 'time', 'guest', 'confirm'];
-            const dateIndex = baseSteps.indexOf('date');
-            setStepIndex(dateIndex);
+            // Jump ahead using the steps THIS service produces (a specific
+            // practitioner is known, so no practitioner step). If the service
+            // has variants but the rebook variant didn't resolve, land on the
+            // variant step so the user picks one; otherwise go to the date.
+            const resolvedVariant =
+              appt.variantId && service.variants
+                ? service.variants.find((v) => v.id === appt.variantId) ?? null
+                : null;
+            const jumpSteps: StepKey[] = [
+              'service',
+              ...((service.variants ?? []).length > 0 ? (['variant'] as StepKey[]) : []),
+              ...((service.addon_groups ?? []).length > 0 ? (['addons'] as StepKey[]) : []),
+              'date',
+              'time',
+              'guest',
+              'confirm',
+            ];
+            const landOn: StepKey =
+              (service.variants ?? []).length > 0 && !resolvedVariant ? 'variant' : 'date';
+            setIncludePractitionerStep(false);
+            setStepIndex(Math.max(0, jumpSteps.indexOf(landOn)));
           }
         }
       }
@@ -244,9 +266,7 @@ export default function NewBookingScreen() {
   const serviceVariants = selectedService?.variants ?? [];
   const hasVariants = serviceVariants.length > 0;
 
-  // Determine if a Practitioner step is needed: when the service has 2+ practitioners
-  // AND the user hasn't already picked a specific one via a direct practitioner filter
-  // (i.e., selectedService still has ANY_AVAILABLE or no candidatePractitionerIds).
+  // Practitioners able to perform the selected service (for the choice step).
   const servicePractitioners: AppointmentCatalogPractitioner[] = useMemo(() => {
     if (!selectedService || !catalogQuery.data) return [];
     return catalogQuery.data.practitioners.filter((p) =>
@@ -254,20 +274,9 @@ export default function NewBookingScreen() {
     );
   }, [selectedService, catalogQuery.data]);
 
-  // Show the practitioner step only when: service is selected, has 2+ practitioners,
-  // and the currently selected option is "Any available" (pool) rather than a specific person.
-  // This handles the case where the user arrives from ServicePickerStep without specifying a
-  // practitioner (e.g. tapping "Any available") and we want them to explicitly choose.
-  // When user already chose a specific practitioner in ServicePickerStep, skip this step.
-  const needsPractitionerStep =
-    servicePractitioners.length >= 2 &&
-    selectedService !== null &&
-    // If this is an ANY_AVAILABLE row we expose the practitioner step
-    selectedService.practitionerId === ANY_AVAILABLE_PRACTITIONER_ID;
-
   const steps: StepKey[] = [
     'service',
-    ...(needsPractitionerStep ? (['practitioner'] as StepKey[]) : []),
+    ...(includePractitionerStep ? (['practitioner'] as StepKey[]) : []),
     ...(hasVariants ? (['variant'] as StepKey[]) : []),
     ...(hasAddons ? (['addons'] as StepKey[]) : []),
     'date',
@@ -275,7 +284,17 @@ export default function NewBookingScreen() {
     'guest',
     'confirm',
   ];
-  const currentKey = steps[stepIndex] ?? 'service';
+
+  // Safety net: never render a step whose prerequisites are missing — fall
+  // back to the step that supplies them instead of a blank screen.
+  let currentKey: StepKey = steps[stepIndex] ?? 'service';
+  if (currentKey !== 'service' && !selectedService) {
+    currentKey = 'service';
+  } else if (currentKey === 'confirm' && !selectedSlot) {
+    currentKey = selectedDate ? 'time' : 'date';
+  } else if (currentKey === 'time' && !selectedDate) {
+    currentKey = 'date';
+  }
   const stepLabels = steps.map((key) => STEP_LABELS[key]);
   const selectedAddons = addonGroups
     .flatMap((group) => group.addons)
@@ -339,6 +358,17 @@ export default function NewBookingScreen() {
             isLoading={catalogQuery.isLoading}
             onRetry={() => void catalogQuery.refetch()}
             onSelect={(option) => {
+              // Capture once whether this flow needs a practitioner-choice step
+              // ("Any available" picked for a service with 2+ practitioners).
+              const practitionerCount = catalogQuery.data
+                ? catalogQuery.data.practitioners.filter((p) =>
+                    p.services.some((s) => s.id === option.serviceId),
+                  ).length
+                : 0;
+              setIncludePractitionerStep(
+                option.practitionerId === ANY_AVAILABLE_PRACTITIONER_ID &&
+                  practitionerCount >= 2,
+              );
               setSelectedService(option);
               setSelectedSlot(null);
               setSelectedVariant(null);
@@ -355,6 +385,11 @@ export default function NewBookingScreen() {
             serviceOption={selectedService}
             onSelect={(option) => {
               setSelectedService(option);
+              // The practitioner-specific option can carry different variants
+              // and add-on groups — clear dependent picks so stale selections
+              // never ride along into the new flow.
+              setSelectedVariant(null);
+              setSelectedAddonIds([]);
               setSelectedSlot(null);
               goNext();
             }}

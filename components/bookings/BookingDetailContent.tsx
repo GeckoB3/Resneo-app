@@ -1,7 +1,6 @@
 import * as Clipboard from 'expo-clipboard';
 import { format, parseISO } from 'date-fns';
 import { useRouter, type Href } from 'expo-router';
-import { SymbolView } from 'expo-symbols';
 import { useRef, useState } from 'react';
 import { Alert, Linking, Pressable, StyleSheet, View } from 'react-native';
 
@@ -13,16 +12,18 @@ import {
   ModifyBookingSheet,
   type ModifyBookingTarget,
 } from '@/components/bookings/ModifyBookingSheet';
-import { GuestMessageSheet, type GuestMessageTarget } from '@/components/messaging/GuestMessageSheet';
 import { RescheduleSheet, type RescheduleTarget } from '@/components/calendar/RescheduleSheet';
 import { timeToMinutes } from '@/components/calendar/grid-layout';
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge, StatusPill, type BadgeTone } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { Chip } from '@/components/ui/Chip';
+import { CollapsibleCard } from '@/components/ui/CollapsibleCard';
 import { Input } from '@/components/ui/Input';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import { ACTION_COLORS, primaryActionColors } from '@/lib/booking/booking-action-colors';
 import { bookingDetailActions } from '@/lib/booking/booking-status-actions';
 import {
   bookingTimelineEventsForDisplay,
@@ -98,7 +99,7 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 }
 
 /** Other visits for this guest — loaded lazily on first expand. */
-function GuestHistoryCard({
+function GuestHistoryBody({
   guestId,
   currentBookingId,
 }: {
@@ -107,72 +108,52 @@ function GuestHistoryCard({
 }) {
   const router = useRouter();
   const { colors } = useTheme();
-  const [expanded, setExpanded] = useState(false);
-  const detail = useGuestDetail(expanded ? guestId : null, { bookingHistoryLimit: 10 });
+  const detail = useGuestDetail(guestId, { bookingHistoryLimit: 10 });
 
   const history = (detail.data?.booking_history ?? [])
     .filter((row) => row.id !== currentBookingId)
     .slice(0, 5);
 
   return (
-    <Card>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Guest history"
-        onPress={() => setExpanded((cur) => !cur)}
-        style={({ pressed }) => [styles.cardHeaderRow, { opacity: pressed ? 0.55 : 1 }]}>
-        <Text variant="label">Guest history</Text>
-        <SymbolView
-          name={expanded
-            ? { ios: 'chevron.down', android: 'expand_more', web: 'expand_more' }
-            : { ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }
-          }
-          tintColor={colors.textMuted}
-          size={16}
-        />
-      </Pressable>
-      {expanded ? (
-        <View style={styles.historyBody}>
-          {detail.isLoading ? (
-            <Text variant="bodySmall" tone="muted">
-              Loading…
-            </Text>
-          ) : history.length === 0 ? (
-            <Text variant="bodySmall" tone="muted">
-              No other bookings for this guest.
-            </Text>
-          ) : (
-            history.map((row) => (
-              <Pressable
-                key={row.id}
-                accessibilityRole="button"
-                onPress={() => router.push(`/booking/${row.id}` as Href)}
-                style={[styles.historyRow, { borderBottomColor: colors.border }]}>
-                <View style={styles.historyText}>
-                  <Text variant="bodySmall" numberOfLines={1}>
-                    {row.detail_label || row.kind_label}
-                  </Text>
-                  <Text variant="caption" tone="muted">
-                    {row.booking_date}
-                    {row.booking_time ? ` · ${row.booking_time.slice(0, 5)}` : ''}
-                  </Text>
-                </View>
-                <StatusPill
-                  status={row.status}
-                  isTableReservation={row.booking_model === 'table_reservation'}
-                />
-              </Pressable>
-            ))
-          )}
-          <Button
-            label="View contact"
-            variant="ghost"
-            size="sm"
-            onPress={() => router.push(`/client/${guestId}` as Href)}
-          />
-        </View>
-      ) : null}
-    </Card>
+    <View style={styles.historyBody}>
+      {detail.isLoading ? (
+        <Text variant="bodySmall" tone="muted">
+          Loading…
+        </Text>
+      ) : history.length === 0 ? (
+        <Text variant="bodySmall" tone="muted">
+          No other bookings for this guest.
+        </Text>
+      ) : (
+        history.map((row) => (
+          <Pressable
+            key={row.id}
+            accessibilityRole="button"
+            onPress={() => router.push(`/booking/${row.id}` as Href)}
+            style={[styles.historyRow, { borderBottomColor: colors.border }]}>
+            <View style={styles.historyText}>
+              <Text variant="bodySmall" numberOfLines={1}>
+                {row.detail_label || row.kind_label}
+              </Text>
+              <Text variant="caption" tone="muted">
+                {row.booking_date}
+                {row.booking_time ? ` · ${row.booking_time.slice(0, 5)}` : ''}
+              </Text>
+            </View>
+            <StatusPill
+              status={row.status}
+              isTableReservation={row.booking_model === 'table_reservation'}
+            />
+          </Pressable>
+        ))
+      )}
+      <Button
+        label="View contact"
+        variant="ghost"
+        size="sm"
+        onPress={() => router.push(`/client/${guestId}` as Href)}
+      />
+    </View>
   );
 }
 
@@ -205,12 +186,134 @@ function formatShortDate(value: string): string {
   }
 }
 
+/** Service delivery location — "Online" or the client's address (web parity). */
+function locationLabel(booking: BookingDetail): string | null {
+  if (booking.location_type === 'online') return 'Online';
+  if (booking.location_type === 'client_address' || booking.client_address_line1) {
+    const parts = [
+      booking.client_address_line1,
+      booking.client_address_line2,
+      booking.client_address_city,
+      booking.client_address_postcode,
+    ].filter((p): p is string => !!p?.trim());
+    return parts.length > 0 ? parts.join(', ') : "Client's address";
+  }
+  return null;
+}
+
 /** Web parity: green for delivered, red for failures, amber while pending. */
 function commStatusTone(status: string): BadgeTone {
   const s = status.toLowerCase();
   if (s === 'sent' || s === 'delivered') return 'success';
   if (s === 'failed' || s === 'bounced' || s === 'error') return 'danger';
   return 'warning';
+}
+
+type MessageChannel = 'email' | 'sms' | 'both';
+
+/**
+ * Inline SMS/email compose — mirrors the web's guest-communications
+ * accordion: channel selector, message box, send with inline feedback.
+ */
+function MessageGuestCompose({
+  bookingId,
+  guestEmail,
+  guestPhone,
+}: {
+  bookingId: string;
+  guestEmail?: string | null;
+  guestPhone?: string | null;
+}) {
+  const sendMessage = useSendBookingMessage(bookingId);
+  const hasEmail = !!guestEmail?.trim();
+  const hasPhone = !!guestPhone?.trim();
+  const [message, setMessage] = useState('');
+  const [channel, setChannel] = useState<MessageChannel>(hasEmail ? 'email' : 'sms');
+  const [feedback, setFeedback] = useState<{ tone: 'success' | 'danger'; text: string } | null>(
+    null,
+  );
+  const feedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showFeedback = (tone: 'success' | 'danger', text: string) => {
+    if (feedbackTimer.current) clearTimeout(feedbackTimer.current);
+    setFeedback({ tone, text });
+    // Web parity: success/error notices auto-dismiss after 8s.
+    feedbackTimer.current = setTimeout(() => setFeedback(null), 8000);
+  };
+
+  const channels: { value: MessageChannel; label: string; enabled: boolean }[] = [
+    { value: 'email', label: 'Email', enabled: hasEmail },
+    { value: 'sms', label: 'SMS', enabled: hasPhone },
+    { value: 'both', label: 'Both', enabled: hasEmail && hasPhone },
+  ];
+
+  const handleSend = () => {
+    const text = message.trim();
+    if (!text) return;
+    sendMessage.mutate(
+      { message: text, channel },
+      {
+        onSuccess: () => {
+          hapticSuccess();
+          setMessage('');
+          showFeedback(
+            'success',
+            channel === 'both'
+              ? 'Message sent by email and SMS.'
+              : channel === 'sms'
+                ? 'SMS sent to the guest.'
+                : 'Email sent to the guest.',
+          );
+        },
+        onError: (error) => {
+          hapticWarning();
+          showFeedback(
+            'danger',
+            error instanceof ApiError ? error.message : 'Could not send the message.',
+          );
+        },
+      },
+    );
+  };
+
+  return (
+    <View style={styles.composeBlock}>
+      <View style={styles.composeChannels}>
+        {channels
+          .filter((c) => c.enabled)
+          .map((c) => (
+            <Chip
+              key={c.value}
+              label={c.label}
+              selected={channel === c.value}
+              onPress={() => setChannel(c.value)}
+            />
+          ))}
+      </View>
+      <Input
+        placeholder="Write a message to the guest…"
+        value={message}
+        onChangeText={setMessage}
+        multiline
+        numberOfLines={3}
+        textAlignVertical="top"
+      />
+      {feedback ? (
+        <Text variant="bodySmall" tone={feedback.tone}>
+          {feedback.text}
+        </Text>
+      ) : null}
+      <Button
+        label={sendMessage.isPending ? 'Sending…' : 'Send message'}
+        variant="secondary"
+        size="sm"
+        fullWidth
+        loading={sendMessage.isPending}
+        disabled={!message.trim() || sendMessage.isPending}
+        onPress={handleSend}
+      />
+    </View>
+  );
 }
 
 /** Guest tags with inline add/remove — mirrors the web GuestTagsEditor. */
@@ -303,13 +406,11 @@ export function BookingDetailContent({
   const { featureFlags } = useVenueContext();
   const [rescheduleTarget, setRescheduleTarget] = useState<RescheduleTarget | null>(null);
   const [modifyTarget, setModifyTarget] = useState<ModifyBookingTarget | null>(null);
-  const [messageTarget, setMessageTarget] = useState<GuestMessageTarget | null>(null);
   const [depositTarget, setDepositTarget] = useState<DepositTarget | null>(null);
   const [editTarget, setEditTarget] = useState<EditBookingTarget | null>(null);
   const [copiedRef, setCopiedRef] = useState(false);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resend = useResendConfirmation(booking.id);
-  const sendMessage = useSendBookingMessage(booking.id);
   const attendance = useSetBookingAttendance(booking.id);
 
   const copyReference = async () => {
@@ -331,6 +432,7 @@ export function BookingDetailContent({
       dietaryNotes: booking.dietary_notes ?? '',
       occasion: booking.occasion ?? '',
       internalNotes: booking.internal_notes ?? '',
+      isTableReservation: isTable,
     });
 
   const guestName = formatGuestName(booking);
@@ -396,7 +498,6 @@ export function BookingDetailContent({
   const canMessage = !!guestEmail || !!guestPhone;
   const canResend = !!guestEmail;
   const hasDeposit = booking.deposit_amount_pence != null || !!booking.deposit_status;
-  const showManage = canMessage || canResend || hasDeposit;
 
   // Add-on snapshots + price breakdown (variant/base price + add-ons).
   const addons = booking.addons ?? [];
@@ -451,11 +552,13 @@ export function BookingDetailContent({
     ]);
   };
 
+  // Dietary + occasion are restaurant concepts — only table reservations
+  // surface them; appointment bookings show requests/internal/profile notes.
   const hasNotes =
     !!booking.special_requests?.trim() ||
-    !!booking.dietary_notes?.trim() ||
     !!booking.internal_notes?.trim() ||
-    !!booking.guest?.customer_profile_notes?.trim();
+    !!booking.guest?.customer_profile_notes?.trim() ||
+    (isTable && (!!booking.dietary_notes?.trim() || !!booking.occasion?.trim()));
 
   const handleActionPress = (target: BookingStatus, label: string, destructive?: boolean) => {
     if (destructive) {
@@ -506,6 +609,11 @@ export function BookingDetailContent({
                 {visitCount} previous visit{visitCount === 1 ? '' : 's'}
               </Text>
             ) : null}
+            {booking.deposit_status === 'Pending' ? (
+              <View style={styles.headerPillRow}>
+                <Badge label="Deposit pending" tone="warning" />
+              </View>
+            ) : null}
           </View>
         </View>
         {guestPhone || guestEmail ? (
@@ -532,6 +640,118 @@ export function BookingDetailContent({
         ) : null}
       </Card>
 
+      {/* Actions toolbar — straight under the header (web parity). Primary
+          transition first, then attendance/arrival, booking shortcuts, and
+          destructive actions last. */}
+      <Card>
+        <View style={styles.toolbarGrid}>
+          {primaryAction ? (
+            <View style={styles.toolbarCell}>
+              <Button
+                label={primaryAction.label}
+                variant="primary"
+                customColors={primaryActionColors(primaryAction.target)}
+                size="sm"
+                fullWidth
+                loading={actionLoading}
+                onPress={() => handleActionPress(primaryAction.target, primaryAction.label)}
+              />
+            </View>
+          ) : null}
+          {attendanceRelevant && booking.status !== 'Completed' ? (
+            <>
+              <View style={styles.toolbarCell}>
+                <Button
+                  label={arrived ? 'Clear arrived' : 'Arrived'}
+                  variant="secondary"
+                  customColors={arrived ? undefined : ACTION_COLORS.arrived}
+                  size="sm"
+                  fullWidth
+                  loading={attendance.isPending}
+                  onPress={() => toggleAttendance('client_arrived', !arrived)}
+                />
+              </View>
+              <View style={styles.toolbarCell}>
+                <Button
+                  label={staffConfirmed ? 'Unconfirm' : 'Confirm attendance'}
+                  variant="secondary"
+                  customColors={staffConfirmed ? undefined : ACTION_COLORS.attendance}
+                  size="sm"
+                  fullWidth
+                  loading={attendance.isPending}
+                  onPress={() => toggleAttendance('staff_attendance_confirmed', !staffConfirmed)}
+                />
+              </View>
+            </>
+          ) : null}
+          {canReschedule ? (
+            <View style={styles.toolbarCell}>
+              <Button
+                label="Reschedule"
+                variant="secondary"
+                size="sm"
+                fullWidth
+                onPress={() =>
+                  setRescheduleTarget({
+                    id: booking.id,
+                    guestName,
+                    date: booking.booking_date,
+                    time: booking.booking_time,
+                    durationMinutes,
+                  })
+                }
+              />
+            </View>
+          ) : null}
+          {canModify ? (
+            <View style={styles.toolbarCell}>
+              <Button label="Modify" variant="secondary" size="sm" fullWidth onPress={openModify} />
+            </View>
+          ) : null}
+          {booking.guest_id ? (
+            <View style={styles.toolbarCell}>
+              <Button
+                label="Rebook"
+                variant="secondary"
+                size="sm"
+                fullWidth
+                onPress={() =>
+                  router.push({
+                    pathname: '/booking/new',
+                    params: { guestId: booking.guest_id },
+                  })
+                }
+              />
+            </View>
+          ) : null}
+          {revertAction ? (
+            <View style={styles.toolbarCell}>
+              <Button
+                label={revertAction.label}
+                variant="ghost"
+                size="sm"
+                fullWidth
+                loading={actionLoading}
+                onPress={() => handleActionPress(revertAction.target, revertAction.label)}
+              />
+            </View>
+          ) : null}
+          {destructiveActions.map((action) => (
+            <View key={`${action.target}-${action.label}`} style={styles.toolbarCell}>
+              <Button
+                label={action.label}
+                variant="danger"
+                customColors={action.target === 'No-Show' ? ACTION_COLORS.noShow : undefined}
+                size="sm"
+                fullWidth
+                loading={actionLoading}
+                onPress={() => handleActionPress(action.target, action.label, action.destructive)}
+              />
+            </View>
+          ))}
+        </View>
+      </Card>
+
       {/* When + details */}
       <Card>
         <Text variant="overline" tone="muted">
@@ -549,6 +769,9 @@ export function BookingDetailContent({
             <DetailRow label="Duration" value={formatDurationLabel(durationMinutes)} />
           ) : null}
           {modelLabel ? <DetailRow label="Type" value={modelLabel} /> : null}
+          {locationLabel(booking) ? (
+            <DetailRow label="Location" value={locationLabel(booking)!} />
+          ) : null}
           {booking.area_name ? <DetailRow label="Area" value={booking.area_name} /> : null}
           {tableNames ? <DetailRow label="Table" value={tableNames} /> : null}
           {depositLabel || booking.deposit_status ? (
@@ -644,16 +867,18 @@ export function BookingDetailContent({
         />
       ) : null}
 
-      {/* Notes */}
-      <Card>
-        <View style={styles.cardHeaderRow}>
-          <Text variant="label">Notes</Text>
+      {/* Notes — expanded when there's content, tucked away otherwise */}
+      <CollapsibleCard
+        title="Notes"
+        summary={hasNotes ? null : 'None'}
+        defaultExpanded={hasNotes}>
+        <View style={styles.notesHeaderRow}>
           <Button label="Edit" variant="ghost" size="sm" onPress={openEdit} />
         </View>
         {hasNotes ? (
           <View style={styles.notes}>
             <NoteBlock label="Special requests" value={booking.special_requests} />
-            <NoteBlock label="Dietary" value={booking.dietary_notes} />
+            {isTable ? <NoteBlock label="Dietary" value={booking.dietary_notes} /> : null}
             <NoteBlock label="Internal" value={booking.internal_notes} />
             <NoteBlock label="Guest profile" value={booking.guest?.customer_profile_notes} />
           </View>
@@ -662,7 +887,7 @@ export function BookingDetailContent({
             No notes for this booking.
           </Text>
         )}
-        {booking.occasion?.trim() ? (
+        {isTable && booking.occasion?.trim() ? (
           <View style={styles.occasionRow}>
             <Badge label={`Occasion: ${booking.occasion}`} tone="accent" />
           </View>
@@ -670,11 +895,13 @@ export function BookingDetailContent({
         {booking.guest ? (
           <GuestTagsEditor guestId={booking.guest.id} tags={booking.guest.tags ?? []} />
         ) : null}
-      </Card>
+      </CollapsibleCard>
 
-      {/* Guest history — other visits, lazy-loaded */}
+      {/* Guest history — other visits, lazy-loaded on first expand */}
       {booking.guest_id ? (
-        <GuestHistoryCard guestId={booking.guest_id} currentBookingId={booking.id} />
+        <CollapsibleCard title="Guest history" lazy>
+          <GuestHistoryBody guestId={booking.guest_id} currentBookingId={booking.id} />
+        </CollapsibleCard>
       ) : null}
 
       {/* Compliance — requirement states + guest records (feature-flagged) */}
@@ -687,10 +914,106 @@ export function BookingDetailContent({
         />
       ) : null}
 
+      {/* Payments & confirmation — deposit state, actions, resend (web parity) */}
+      {hasDeposit || canResend || booking.cancellation_deadline ? (
+        <CollapsibleCard
+          title="Payments & confirmation"
+          summary={booking.deposit_status ?? null}
+          defaultExpanded={booking.deposit_status === 'Pending'}>
+          <View style={styles.manage}>
+            {hasDeposit ? (
+              <View style={styles.detailRow}>
+                <Text variant="bodySmall" tone="muted">
+                  Deposit
+                </Text>
+                <Text variant="bodyMedium" style={styles.detailValue}>
+                  {depositLabel
+                    ? `${depositLabel}${booking.deposit_status ? ` · ${booking.deposit_status}` : ''}`
+                    : booking.deposit_status ?? '—'}
+                </Text>
+              </View>
+            ) : null}
+            {hasDeposit ? (
+              <Button
+                label="Deposit actions"
+                variant="secondary"
+                fullWidth
+                onPress={() =>
+                  setDepositTarget({
+                    id: booking.id,
+                    guestName,
+                    amountPence: booking.deposit_amount_pence,
+                    status: booking.deposit_status,
+                  })
+                }
+              />
+            ) : null}
+            {canResend ? (
+              <Button
+                label="Resend confirmation"
+                variant="secondary"
+                fullWidth
+                loading={resend.isPending}
+                onPress={handleResend}
+              />
+            ) : null}
+            {booking.cancellation_deadline ? (
+              <Text variant="caption" tone="muted">
+                Guest can self-cancel until{' '}
+                {formatTimelineEventTime(booking.cancellation_deadline)}
+              </Text>
+            ) : null}
+          </View>
+        </CollapsibleCard>
+      ) : null}
+
+      {/* SMS / Email the guest — compose + sent log (web accordion parity) */}
+      {canMessage || communications.length > 0 ? (
+        <CollapsibleCard
+          title="SMS / Email guest"
+          summary={communications.length > 0 ? `${communications.length} sent` : null}>
+          {canMessage ? (
+            <MessageGuestCompose
+              bookingId={booking.id}
+              guestEmail={guestEmail}
+              guestPhone={guestPhone}
+            />
+          ) : null}
+          <View style={styles.commList}>
+            {communications.length === 0 ? (
+              <Text variant="bodySmall" tone="muted">
+                No messages sent to this guest yet.
+              </Text>
+            ) : null}
+            {communications.map((row) => (
+              <View key={row.id} style={[styles.commRow, { borderBottomColor: colors.border }]}>
+                <View style={styles.commHeader}>
+                  <Badge label={(row.channel ?? '').toUpperCase()} tone="brand" />
+                  <Badge label={row.status} tone={commStatusTone(row.status ?? '')} />
+                </View>
+                <Text variant="bodySmall">{(row.message_type ?? '').replace(/_/g, ' ')}</Text>
+                {row.recipient ? (
+                  <Text variant="caption" tone="muted" numberOfLines={1}>
+                    {row.recipient}
+                  </Text>
+                ) : null}
+                <Text variant="caption" tone="muted">
+                  {formatTimelineEventTime(row.created_at)}
+                </Text>
+                {row.error_message ? (
+                  <Text variant="caption" tone="danger">
+                    {row.error_message}
+                  </Text>
+                ) : null}
+              </View>
+            ))}
+          </View>
+        </CollapsibleCard>
+      ) : null}
+
       {/* Activity timeline */}
       {timelineEvents.length > 0 ? (
-        <Card>
-          <Text variant="label">Activity</Text>
+        <CollapsibleCard title="Activity" summary={`${timelineEvents.length} events`}>
           <View style={styles.timeline}>
             {timelineEvents.map((event) => (
               <View key={event.id} style={styles.timelineRow}>
@@ -711,186 +1034,11 @@ export function BookingDetailContent({
               </View>
             ))}
           </View>
-        </Card>
-      ) : null}
-
-      {/* Sent emails/SMS — mirrors the web communication log */}
-      {communications.length > 0 ? (
-        <Card>
-          <Text variant="label">Communications</Text>
-          <View style={styles.commList}>
-            {communications.map((row) => (
-              <View key={row.id} style={[styles.commRow, { borderBottomColor: colors.border }]}>
-                <View style={styles.commHeader}>
-                  <Badge label={row.channel.toUpperCase()} tone="brand" />
-                  <Badge label={row.status} tone={commStatusTone(row.status)} />
-                </View>
-                <Text variant="bodySmall">{row.message_type.replace(/_/g, ' ')}</Text>
-                {row.recipient ? (
-                  <Text variant="caption" tone="muted" numberOfLines={1}>
-                    {row.recipient}
-                  </Text>
-                ) : null}
-                <Text variant="caption" tone="muted">
-                  {formatTimelineEventTime(row.created_at)}
-                </Text>
-                {row.error_message ? (
-                  <Text variant="caption" tone="danger">
-                    {row.error_message}
-                  </Text>
-                ) : null}
-              </View>
-            ))}
-          </View>
-        </Card>
-      ) : null}
-
-      {/* Actions — primary forward, reschedule, undo, then destructive */}
-      <View style={styles.actions}>
-        {primaryAction ? (
-          <Button
-            label={primaryAction.label}
-            variant="primary"
-            fullWidth
-            loading={actionLoading}
-            onPress={() => handleActionPress(primaryAction.target, primaryAction.label)}
-          />
-        ) : null}
-        {canReschedule ? (
-          <Button
-            label="Reschedule"
-            variant="secondary"
-            fullWidth
-            onPress={() =>
-              setRescheduleTarget({
-                id: booking.id,
-                guestName,
-                date: booking.booking_date,
-                time: booking.booking_time,
-                durationMinutes,
-              })
-            }
-          />
-        ) : null}
-        {canModify ? (
-          <Button label="Modify booking" variant="secondary" fullWidth onPress={openModify} />
-        ) : null}
-        {booking.guest_id ? (
-          <Button
-            label="Rebook guest"
-            variant="secondary"
-            fullWidth
-            onPress={() =>
-              router.push({
-                pathname: '/booking/new',
-                params: { guestId: booking.guest_id },
-              })
-            }
-          />
-        ) : null}
-        {revertAction ? (
-          <Button
-            label={revertAction.label}
-            variant="ghost"
-            fullWidth
-            loading={actionLoading}
-            onPress={() => handleActionPress(revertAction.target, revertAction.label)}
-          />
-        ) : null}
-        {destructiveActions.map((action) => (
-          <Button
-            key={`${action.target}-${action.label}`}
-            label={action.label}
-            variant="danger"
-            fullWidth
-            loading={actionLoading}
-            onPress={() => handleActionPress(action.target, action.label, action.destructive)}
-          />
-        ))}
-      </View>
-
-      {/* Manage — attendance, guest communications + deposit */}
-      {showManage || attendanceRelevant ? (
-        <Card>
-          <Text variant="label">Manage</Text>
-          <View style={styles.manage}>
-            {attendanceRelevant && booking.status !== 'Completed' ? (
-              <View style={styles.attendanceRow}>
-                <Button
-                  label={staffConfirmed ? 'Unconfirm attendance' : 'Confirm attendance'}
-                  variant="secondary"
-                  size="sm"
-                  style={styles.attendanceBtn}
-                  loading={attendance.isPending}
-                  onPress={() => toggleAttendance('staff_attendance_confirmed', !staffConfirmed)}
-                />
-                <Button
-                  label={arrived ? 'Undo arrived' : 'Mark arrived'}
-                  variant="secondary"
-                  size="sm"
-                  style={styles.attendanceBtn}
-                  loading={attendance.isPending}
-                  onPress={() => toggleAttendance('client_arrived', !arrived)}
-                />
-              </View>
-            ) : null}
-            {canMessage ? (
-              <Button
-                label="Message guest"
-                variant="secondary"
-                fullWidth
-                onPress={() =>
-                  setMessageTarget({
-                    id: booking.id,
-                    guestName,
-                    email: booking.guest?.email,
-                    phone: booking.guest?.phone,
-                  })
-                }
-              />
-            ) : null}
-            {canResend ? (
-              <Button
-                label="Resend confirmation"
-                variant="secondary"
-                fullWidth
-                loading={resend.isPending}
-                onPress={handleResend}
-              />
-            ) : null}
-            {hasDeposit ? (
-              <Button
-                label="Deposit"
-                variant="secondary"
-                fullWidth
-                onPress={() =>
-                  setDepositTarget({
-                    id: booking.id,
-                    guestName,
-                    amountPence: booking.deposit_amount_pence,
-                    status: booking.deposit_status,
-                  })
-                }
-              />
-            ) : null}
-            {booking.cancellation_deadline ? (
-              <Text variant="caption" tone="muted">
-                Guest can self-cancel until{' '}
-                {formatTimelineEventTime(booking.cancellation_deadline)}
-              </Text>
-            ) : null}
-          </View>
-        </Card>
+        </CollapsibleCard>
       ) : null}
 
       <RescheduleSheet target={rescheduleTarget} onClose={() => setRescheduleTarget(null)} />
       <ModifyBookingSheet target={modifyTarget} onClose={() => setModifyTarget(null)} />
-      <GuestMessageSheet
-        target={messageTarget}
-        onSend={(input) => sendMessage.mutateAsync(input)}
-        sending={sendMessage.isPending}
-        onClose={() => setMessageTarget(null)}
-      />
       <DepositSheet target={depositTarget} onClose={() => setDepositTarget(null)} />
       <EditBookingSheet target={editTarget} onClose={() => setEditTarget(null)} />
     </View>
@@ -939,16 +1087,29 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     textAlign: 'right',
   },
+  headerPillRow: {
+    flexDirection: 'row',
+    marginTop: spacing.xs,
+  },
+  toolbarGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  toolbarCell: {
+    flexBasis: '47%',
+    flexGrow: 1,
+  },
+  notesHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+  },
   notes: {
     marginTop: spacing.sm,
   },
   noteBlock: {
     gap: 2,
     marginBottom: spacing.sm,
-  },
-  actions: {
-    gap: spacing.sm,
-    marginTop: spacing.xs,
   },
   timeline: {
     marginTop: spacing.sm,
@@ -976,11 +1137,6 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     gap: spacing.sm,
   },
-  cardHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
   addonName: {
     flex: 1,
     minWidth: 0,
@@ -990,13 +1146,6 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: spacing.sm,
     marginTop: spacing.md,
-  },
-  attendanceRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  attendanceBtn: {
-    flex: 1,
   },
   historyBody: {
     marginTop: spacing.sm,
@@ -1046,6 +1195,14 @@ const styles = StyleSheet.create({
   },
   tagInput: {
     flex: 1,
+  },
+  composeBlock: {
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  composeChannels: {
+    flexDirection: 'row',
+    gap: spacing.sm,
   },
   commList: {
     marginTop: spacing.sm,

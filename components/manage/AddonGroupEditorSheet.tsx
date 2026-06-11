@@ -112,26 +112,30 @@ export function AddonGroupEditorSheet({ target, onClose }: Props) {
     if (seedKey === seededId) return;
 
     if (target.mode === 'create') {
-       
+
       setName('');
-       
+
       setPrompt('');
-       
+
       setDescription('');
-       
+
       setSelectionType('single');
-       
-      setMinSelect('0');
-       
+
+      // Web parity: new single-select groups default to "required".
+      setMinSelect('1');
+
       setMaxSelect('');
-       
+
       setHiddenFromOnline(false);
-       
+
       setIsActive(true);
-       
-      setAddons([]);
-       
-      setExpandedAddonKey(null);
+
+      // Web parity: seed one blank option row — the API requires at least one option.
+      setAddons([
+        { key: 'new-addon-seed', name: '', description: '', price: '', duration: '0', isActive: true },
+      ]);
+
+      setExpandedAddonKey('new-addon-seed');
     } else {
       const g = target.group;
        
@@ -172,7 +176,7 @@ export function AddonGroupEditorSheet({ target, onClose }: Props) {
     setAddonCounter((n) => n + 1);
     setAddons((cur) => [
       ...cur,
-      { key, name: '', description: '', price: '0', duration: '0', isActive: true },
+      { key, name: '', description: '', price: '', duration: '0', isActive: true },
     ]);
     setExpandedAddonKey(key);
   };
@@ -188,38 +192,54 @@ export function AddonGroupEditorSheet({ target, onClose }: Props) {
       setError('Group name is required.');
       return;
     }
-    const min = Number(minSelect || '0');
-    const max = maxSelect.trim() ? Number(maxSelect) : null;
-    if (!Number.isInteger(min) || min < 0) {
-      setError('Min select must be 0 or more.');
-      return;
-    }
-    if (max !== null && (!Number.isInteger(max) || max < 1)) {
-      setError('Max select must be 1 or more.');
-      return;
-    }
-    if (max !== null && max < min) {
-      setError('Max select must be at least min select.');
-      return;
+    // Web parity: single-select groups are normalised to min 0/1 and max 1
+    // (the API rejects anything else); min/max are only free-form for multi.
+    let min: number;
+    let max: number | null;
+    if (selectionType === 'single') {
+      min = Number(minSelect) >= 1 ? 1 : 0;
+      max = 1;
+    } else {
+      min = Number(minSelect || '0');
+      max = maxSelect.trim() ? Number(maxSelect) : null;
+      if (!Number.isInteger(min) || min < 0) {
+        setError('Minimum must be 0 or more.');
+        return;
+      }
+      if (max !== null && (!Number.isInteger(max) || max < 1)) {
+        setError('Maximum must be 1 or more, or blank for no limit.');
+        return;
+      }
+      if (max !== null && max < min) {
+        setError('Maximum must be at least the minimum.');
+        return;
+      }
     }
 
-    // Validate add-ons
+    // Validate add-ons. Completely blank rows are dropped silently (web parity);
+    // partially filled rows without a name are an error.
     const addonInputs: AddonItemInput[] = [];
     for (const draft of addons) {
+      const pricePence = parsePoundsToPence(draft.price);
+      const isBlankRow =
+        !draft.name.trim() &&
+        !draft.description.trim() &&
+        (pricePence == null || pricePence === 0) &&
+        (!draft.duration.trim() || Number(draft.duration) === 0);
+      if (isBlankRow) continue;
       if (!draft.name.trim()) {
         setError('Every add-on needs a name.');
         setExpandedAddonKey(draft.key);
         return;
       }
-      const pricePence = parsePoundsToPence(draft.price);
       if (pricePence === undefined) {
         setError(`"${draft.name.trim()}": price must be a valid amount.`);
         setExpandedAddonKey(draft.key);
         return;
       }
       const dur = Number(draft.duration || '0');
-      if (!Number.isInteger(dur) || dur < 0 || dur > 480) {
-        setError(`"${draft.name.trim()}": duration must be 0–480 minutes.`);
+      if (!Number.isInteger(dur) || dur < 0 || dur > 240) {
+        setError(`"${draft.name.trim()}": duration must be 0–240 minutes.`);
         setExpandedAddonKey(draft.key);
         return;
       }
@@ -230,10 +250,21 @@ export function AddonGroupEditorSheet({ target, onClose }: Props) {
         additional_price_pence: pricePence ?? 0,
         additional_duration_minutes: dur,
         is_active: draft.isActive,
+        // Explicit order — the API re-inserts options and sorts on this field.
+        sort_order: addonInputs.length,
       });
     }
+    if (addonInputs.length === 0) {
+      setError('Add at least one option with a name.');
+      return;
+    }
+    if (addonInputs.length > 40) {
+      setError('A group can have at most 40 options.');
+      return;
+    }
 
-    const groupInput: AddonGroupInput = {
+    // `sort_order` rides along (the API would otherwise reset it to 0 on edit).
+    const groupInput: AddonGroupInput & { sort_order: number } = {
       name: name.trim(),
       prompt_to_client: prompt.trim() || null,
       description: description.trim() || null,
@@ -242,6 +273,7 @@ export function AddonGroupEditorSheet({ target, onClose }: Props) {
       max_select: max,
       hidden_from_online: hiddenFromOnline,
       is_active: isActive,
+      sort_order: target?.mode === 'edit' ? target.group.sort_order : 0,
       addons: addonInputs,
     };
 
@@ -261,31 +293,32 @@ export function AddonGroupEditorSheet({ target, onClose }: Props) {
 
   function handleDelete() {
     if (target?.mode !== 'edit') return;
-    const groupName = target.group.name;
-    Alert.alert(
-      'Delete add-on group',
-      `Delete "${groupName}"? If it has booking history it will be archived (hidden from new bookings) instead.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteMutation.mutateAsync(target.group.id);
-              hapticSuccess();
-              onClose();
-            } catch (e) {
-              hapticWarning();
-              Alert.alert(
-                'Could not delete',
-                e instanceof ApiError ? e.message : 'Please try again.',
-              );
-            }
-          },
+    const group = target.group;
+    // Web parity: archived groups get the permanent-delete wording.
+    const message = group.is_active
+      ? `Delete "${group.name}"? If it has booking history it will be archived (hidden from new bookings) instead.`
+      : `"${group.name}" is already archived. Delete it permanently? This is only possible when no bookings reference it.`;
+    Alert.alert('Delete add-on group', message, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteMutation.mutateAsync(group.id);
+            hapticSuccess();
+            onClose();
+          } catch (e) {
+            hapticWarning();
+            setError(
+              e instanceof ApiError
+                ? e.message
+                : 'Could not delete the group. Please try again.',
+            );
+          }
         },
-      ],
-    );
+      },
+    ]);
   }
 
   const saving = createMutation.isPending || updateMutation.isPending;
@@ -315,14 +348,20 @@ export function AddonGroupEditorSheet({ target, onClose }: Props) {
             style={styles.scroll}
             contentContainerStyle={styles.scrollBody}
             keyboardShouldPersistTaps="handled">
-            {/* Group metadata */}
-            <Input label="Group name" value={name} onChangeText={setName} maxLength={200} />
+            {/* Group metadata — max lengths match the API schema */}
+            <Input
+              label="Group name"
+              helper="Internal label; shown to clients only when the prompt is blank."
+              value={name}
+              onChangeText={setName}
+              maxLength={120}
+            />
             <Input
               label="Prompt shown to client (optional)"
               helper='e.g. "Would you like any extras?"'
               value={prompt}
               onChangeText={setPrompt}
-              maxLength={300}
+              maxLength={240}
             />
             <Input
               label="Description (optional)"
@@ -330,7 +369,7 @@ export function AddonGroupEditorSheet({ target, onClose }: Props) {
               onChangeText={setDescription}
               multiline
               style={styles.multiline}
-              maxLength={500}
+              maxLength={2000}
             />
 
             {/* Selection type */}
@@ -372,27 +411,42 @@ export function AddonGroupEditorSheet({ target, onClose }: Props) {
               );
             })}
 
-            {/* Min / max */}
-            <View style={styles.twoCol}>
-              <View style={styles.col}>
-                <Input
-                  label="Min select"
-                  helper="0 = optional"
-                  value={minSelect}
-                  onChangeText={setMinSelect}
-                  keyboardType="number-pad"
+            {/* Selection rules — single uses a required toggle; multi uses min/max */}
+            {selectionType === 'single' ? (
+              <View style={styles.switchRow}>
+                <View style={styles.switchLabel}>
+                  <Text variant="bodyMedium">Required</Text>
+                  <Text variant="caption" tone="muted">
+                    Client must choose one option at booking.
+                  </Text>
+                </View>
+                <Switch
+                  value={Number(minSelect) >= 1}
+                  onValueChange={(v) => setMinSelect(v ? '1' : '0')}
                 />
               </View>
-              <View style={styles.col}>
-                <Input
-                  label="Max select"
-                  helper="Leave blank for unlimited"
-                  value={maxSelect}
-                  onChangeText={setMaxSelect}
-                  keyboardType="number-pad"
-                />
+            ) : (
+              <View style={styles.twoCol}>
+                <View style={styles.col}>
+                  <Input
+                    label="Minimum"
+                    helper="0 = optional"
+                    value={minSelect}
+                    onChangeText={setMinSelect}
+                    keyboardType="number-pad"
+                  />
+                </View>
+                <View style={styles.col}>
+                  <Input
+                    label="Maximum"
+                    helper="Blank = no limit"
+                    value={maxSelect}
+                    onChangeText={setMaxSelect}
+                    keyboardType="number-pad"
+                  />
+                </View>
               </View>
-            </View>
+            )}
 
             {/* Toggles */}
             <View style={styles.switchRow}>
@@ -463,7 +517,7 @@ export function AddonGroupEditorSheet({ target, onClose }: Props) {
                         onChangeText={(v) => patchAddon(addon.key, { description: v })}
                         multiline
                         style={styles.multiline}
-                        maxLength={300}
+                        maxLength={2000}
                       />
                       <View style={styles.twoCol}>
                         <View style={styles.col}>
@@ -477,6 +531,7 @@ export function AddonGroupEditorSheet({ target, onClose }: Props) {
                         <View style={styles.col}>
                           <Input
                             label="Extra duration (mins)"
+                            helper="0–240"
                             value={addon.duration}
                             onChangeText={(v) => patchAddon(addon.key, { duration: v })}
                             keyboardType="number-pad"

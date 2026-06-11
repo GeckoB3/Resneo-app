@@ -102,6 +102,12 @@ export interface BookingDetail {
   practitioner_id?: string | null;
   calendar_id?: string | null;
   service_variant_id?: string | null;
+  /** Service delivery location (web 2026-06: online / client-address services). */
+  location_type?: string | null;
+  client_address_line1?: string | null;
+  client_address_line2?: string | null;
+  client_address_city?: string | null;
+  client_address_postcode?: string | null;
   /** Multi-service visit / group booking link (full GET spreads the row). */
   group_booking_id?: string | null;
   /** Per-person label on group people visits ("Person 1", a name…). */

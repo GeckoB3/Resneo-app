@@ -84,7 +84,7 @@ export function BookingDetailSheet({ bookingId, onClose, onOpenFull }: BookingDe
     <Sheet visible={!!bookingId} onClose={onClose} fill maxHeight="94%">
       <View style={styles.header}>
         <Text variant="subheading">
-          Booking
+          {isAppointmentVenue ? 'Appointment' : 'Booking'}
         </Text>
         <View style={styles.headerActions}>
           <Pressable

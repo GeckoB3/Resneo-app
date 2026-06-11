@@ -6,7 +6,9 @@ import { BaselineMetricsCard } from '@/components/reports/BaselineMetricsCard';
 import { BookingLogEmailCard } from '@/components/reports/BookingLogEmailCard';
 import { ClientsTab } from '@/components/reports/ClientsTab';
 import { DataExportCard } from '@/components/reports/DataExportCard';
+import { HistorySection } from '@/components/reports/HistorySection';
 import { SvgBarChart } from '@/components/reports/SvgBarChart';
+import { bookingStatusDisplayLabel } from '@/lib/booking/infer-booking-row-model';
 import { SvgLineChart } from '@/components/reports/SvgLineChart';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -203,14 +205,17 @@ export default function ReportsScreen() {
     await buildAndShareCsv(`report1-booking-summary-${data.from}-${data.to}.csv`, [
       ['Metric', 'Value'],
       ['Bookings created', String(summary.total_bookings_created)],
-      ['Covers booked', String(summary.covers_booked)],
-      ['Clients seen', String(summary.covers_seated)],
+      [isAppointmentVenue ? 'Client places booked' : 'Covers booked', String(summary.covers_booked)],
+      [isAppointmentVenue ? 'Clients seen' : 'Covers seated', String(summary.covers_seated)],
       ['By source', ''],
       ...aggregateSourcesByLabel(summary.by_source).map(({ name, value }) => [name, String(value)]),
       ['By status', ''],
-      ...Object.entries(summary.by_status).map(([k, v]) => [k, String(v)]),
+      ...Object.entries(summary.by_status).map(([k, v]) => [
+        bookingStatusDisplayLabel(k, !isAppointmentVenue),
+        String(v),
+      ]),
     ]);
-  }, [summary, data]);
+  }, [summary, data, isAppointmentVenue]);
 
   const exportReport2 = useCallback(async () => {
     if (!noShowSeries.length || !data) return;
@@ -533,7 +538,8 @@ export default function ReportsScreen() {
                       <SvgBarChart
                         data={Object.entries(summary.by_status).map(([status, count]) => ({
                           key: status,
-                          label: status,
+                          // Appointment venues say "Started", never "Seated".
+                          label: bookingStatusDisplayLabel(status, !isAppointmentVenue),
                           value: count,
                         }))}
                         color={colors.brand}
@@ -823,6 +829,13 @@ export default function ReportsScreen() {
                   </View>
                 </Card>
               ) : null}
+
+              {/* History & trends (range-driven, independent of the toolbar presets) */}
+              <HistorySection
+                isAppointmentVenue={isAppointmentVenue}
+                today={today}
+                showClassCommerceNote={Boolean(data?.enabled_models?.includes('class_session'))}
+              />
 
               {/* Data export */}
               <DataExportCard

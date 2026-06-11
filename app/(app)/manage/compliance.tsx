@@ -20,6 +20,8 @@ import {
   useRevokeFormLink,
 } from '@/lib/queries/useCompliance';
 import { useSendComplianceFormLink } from '@/lib/queries/useBookingCompliance';
+import { useStaffMe } from '@/lib/queries/useStaffMe';
+import { useUpdateFeatureFlags } from '@/lib/queries/useVenueSettings';
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { ComplianceMissingRow } from '@/types/compliance';
@@ -119,6 +121,33 @@ export default function ComplianceScreen() {
   const [pendingRevokeId, setPendingRevokeId] = useState<string | null>(null);
   const [pendingSendKey, setPendingSendKey] = useState<string | null>(null);
 
+  // Enable-compliance flow — admins can switch the feature flag on in-app.
+  const staffQuery = useStaffMe();
+  const isAdmin = staffQuery.data?.staff?.role === 'admin';
+  const updateFlags = useUpdateFeatureFlags();
+  const [enableError, setEnableError] = useState<string | null>(null);
+
+  const handleEnableCompliance = () => {
+    setEnableError(null);
+    updateFlags.mutate(
+      { compliance_records_enabled: true },
+      {
+        onSuccess: () => {
+          hapticSuccess();
+          void dashboard.refetch();
+        },
+        onError: (error) => {
+          hapticWarning();
+          setEnableError(
+            error instanceof ApiError
+              ? error.message
+              : 'Could not enable compliance. Check your plan on the web dashboard.',
+          );
+        },
+      },
+    );
+  };
+
   const header = <Stack.Screen options={{ title: 'Compliance' }} />;
 
   const planGated =
@@ -140,8 +169,27 @@ export default function ComplianceScreen() {
         {header}
         <EmptyState
           title="Compliance isn't enabled"
-          message="Compliance records are part of the appointments plan's compliance add-on. Enable it on the web dashboard."
+          message={
+            isAdmin
+              ? 'Turn on compliance records to track consent forms, expiries and per-booking requirements.'
+              : 'Compliance records are part of the appointments plan. Ask an admin to enable them.'
+          }
         />
+        {isAdmin ? (
+          <View style={styles.enableBlock}>
+            <Button
+              label="Enable compliance"
+              fullWidth
+              loading={updateFlags.isPending}
+              onPress={handleEnableCompliance}
+            />
+            {enableError ? (
+              <Text variant="bodySmall" tone="danger">
+                {enableError}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
       </Screen>
     );
   }
@@ -306,6 +354,13 @@ export default function ComplianceScreen() {
               onRefresh={() => void dashboard.refetch()}
             />
           }>
+          <Button
+            label="Compliance templates"
+            variant="secondary"
+            size="sm"
+            onPress={() => router.push('/manage/compliance-types' as Href)}
+          />
+
           {allClear ? (
             <EmptyState
               title="All clear"
@@ -579,6 +634,11 @@ const styles = StyleSheet.create({
   content: {
     padding: spacing.base,
     gap: spacing.base,
+  },
+  enableBlock: {
+    gap: spacing.sm,
+    paddingHorizontal: spacing.base,
+    paddingBottom: spacing.xl,
   },
   todayCard: {
     // Override Card default surface color for the "act now" emphasis — done via inline style above

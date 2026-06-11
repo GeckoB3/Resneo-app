@@ -35,6 +35,11 @@ type ButtonProps = Omit<PressableProps, 'style'> & {
   leftIcon?: ReactNode;
   /** Light haptic on press (default true). */
   haptic?: boolean;
+  /**
+   * Override the variant's colours (e.g. web-parity per-status action
+   * colours: Confirm blue, Start green, Arrived amber).
+   */
+  customColors?: { background: string; text: string; border?: string };
   style?: StyleProp<ViewStyle>;
 };
 
@@ -56,6 +61,7 @@ export function Button({
   fullWidth = false,
   leftIcon,
   haptic = true,
+  customColors,
   disabled,
   style,
   onPress,
@@ -83,7 +89,13 @@ export function Button({
     ghost: { backgroundColor: 'transparent', text: colors.brand, borderColor: 'transparent' },
     danger: { backgroundColor: colors.danger, text: colors.onDanger, borderColor: colors.danger },
   };
-  const v = variantStyles[variant];
+  const v = customColors
+    ? {
+        backgroundColor: customColors.background,
+        text: customColors.text,
+        borderColor: customColors.border ?? customColors.background,
+      }
+    : variantStyles[variant];
 
   function handlePress(event: GestureResponderEvent) {
     if (haptic) hapticTap();

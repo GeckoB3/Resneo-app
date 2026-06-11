@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert, ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -162,6 +162,7 @@ export function ConfirmStep({
   const { first_name, last_name } = splitGuestName(guest.name);
   const [confirmation, setConfirmation] = useState<BookingConfirmation | null>(null);
   const [complianceError, setComplianceError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   // For "Any available" rows the booking targets the slot's real practitioner.
   const practitionerId =
@@ -206,6 +207,7 @@ export function ConfirmStep({
 
   const handleConfirm = (overrideCompliance?: boolean) => {
     setComplianceError(null);
+    setSubmitError(null);
     createBooking.mutate(buildPayload(overrideCompliance), {
       onSuccess: (response) => {
         hapticSuccess();
@@ -233,8 +235,9 @@ export function ConfirmStep({
           return;
         }
         hapticWarning();
-        const message = apiError ? apiError.message : 'Could not create booking';
-        Alert.alert('Booking failed', message);
+        // Inline (not Alert.alert — a no-op on react-native-web): the message
+        // stays visible above the button while the user adjusts and retries.
+        setSubmitError(apiError ? apiError.message : 'Could not create booking. Please try again.');
       },
     });
   };
@@ -345,6 +348,12 @@ export function ConfirmStep({
             loading={createBooking.isPending}
           />
         </View>
+      ) : null}
+
+      {submitError ? (
+        <Text variant="bodySmall" tone="danger">
+          {submitError}
+        </Text>
       ) : null}
 
       <Button

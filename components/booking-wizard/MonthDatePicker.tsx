@@ -107,7 +107,8 @@ export function MonthDatePicker({
       <View style={styles.grid}>
         {cells.map((cell) => {
           const isPast = cell.iso < today;
-          const available = availableDates ? availableDates.has(cell.iso) : false;
+          const available =
+            !!availableDates && availableDates.has(cell.iso) && cell.inMonth && !isPast;
           const disabled = !cell.inMonth || isPast || (availableDates !== null && !available);
           const isSelected = cell.iso === selectedDate;
           const isToday = cell.iso === today;
@@ -115,40 +116,52 @@ export function MonthDatePicker({
             <Pressable
               key={cell.iso}
               accessibilityRole="button"
-              accessibilityLabel={cell.iso}
+              accessibilityLabel={`${cell.iso}${available ? ', available' : ''}`}
               accessibilityState={{ disabled, selected: isSelected }}
               disabled={disabled}
               onPress={() => {
                 hapticSelect();
                 onSelectDate(cell.iso);
               }}
-              style={[
-                styles.cell,
-                isSelected ? { backgroundColor: colors.brand } : null,
-                isToday && !isSelected ? { borderColor: colors.brand, borderWidth: 1 } : null,
-              ]}>
-              <Text
-                variant="bodyMedium"
-                color={
-                  isSelected
-                    ? colors.onBrand
-                    : disabled
-                      ? colors.textMuted
-                      : colors.text
-                }
-                style={!cell.inMonth ? styles.outsideMonth : undefined}>
-                {cell.day}
-              </Text>
-              {available && !isSelected && cell.inMonth && !isPast ? (
-                <View style={[styles.dot, { backgroundColor: colors.accent }]} />
-              ) : null}
+              style={styles.cellWrap}>
+              {/* Availability is a filled green square (web parity); selection
+                  overrides with the brand fill; today keeps an outline. */}
+              <View
+                style={[
+                  styles.cell,
+                  available && !isSelected
+                    ? { backgroundColor: colors.successSurface }
+                    : null,
+                  isSelected ? { backgroundColor: colors.brand } : null,
+                  isToday && !isSelected
+                    ? { borderColor: colors.brand, borderWidth: 1 }
+                    : null,
+                ]}>
+                <Text
+                  variant="bodyMedium"
+                  color={
+                    isSelected
+                      ? colors.onBrand
+                      : available
+                        ? colors.success
+                        : disabled
+                          ? colors.textMuted
+                          : colors.text
+                  }
+                  style={[
+                    !cell.inMonth ? styles.outsideMonth : undefined,
+                    available && !isSelected ? styles.availableDay : undefined,
+                  ]}>
+                  {cell.day}
+                </Text>
+              </View>
             </Pressable>
           );
         })}
       </View>
 
       <Text variant="caption" tone="muted" style={styles.hint}>
-        Dates with a dot have open times for this service.
+        Green dates have open times for this service.
       </Text>
 
       <Button label="Continue" fullWidth onPress={onContinue} disabled={!selectedDate} />
@@ -188,21 +201,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
   },
-  cell: {
+  cellWrap: {
     width: `${100 / 7}%`,
-    aspectRatio: 1.1,
+    aspectRatio: 1.05,
+    padding: 2,
+  },
+  cell: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: radius.md,
-    gap: 2,
+    borderRadius: radius.sm,
   },
   outsideMonth: {
     opacity: 0.35,
   },
-  dot: {
-    width: 5,
-    height: 5,
-    borderRadius: 3,
+  availableDay: {
+    fontWeight: '600',
   },
   hint: {
     textAlign: 'center',

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, type RefObject } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -11,13 +11,15 @@ import {
 import { DraggableAppointmentBlock } from '@/components/calendar/DraggableAppointmentBlock';
 import {
   computeGridBounds,
+  computeLaneLayouts,
   hourLabel,
+  MIN_BLOCK_HEIGHT,
   minutesToTime,
-  MIN_BLOCK_MINUTES,
   PX_PER_MINUTE,
   TAP_SNAP_MINUTES,
   TIME_GUTTER_WIDTH,
   timeToMinutes,
+  type LaneInput,
 } from '@/components/calendar/grid-layout';
 import { Text } from '@/components/ui/Text';
 import type { ComplianceBookingFlag } from '@/lib/queries/useCompliance';
@@ -29,6 +31,9 @@ type PositionedBooking = {
   booking: CalendarGridBooking;
   top: number;
   height: number;
+  laneIndex: number;
+  laneCount: number;
+  durationMinutes: number;
   timeLabel: string;
 };
 
@@ -58,7 +63,6 @@ type CalendarDayGridProps = {
   /** Current time in minutes-since-midnight, or null when not viewing today. */
   nowMinutes: number | null;
   onBlockPress: (bookingId: string) => void;
-  onBlockLongPress?: (bookingId: string) => void;
   /** Called when a quick-status tray button is tapped on an appointment block. */
   onStatusChange?: (bookingId: string, status: string) => void;
   /** Called when the arrived toggle is tapped on an appointment block. */
@@ -70,31 +74,9 @@ type CalendarDayGridProps = {
   onEmptyPress: (time: string) => void;
   /** Called when a user taps an editable time block (for edit/delete). */
   onBlockTimeBlockPress?: (blockId: string) => void;
-  /**
-   * Shared ScrollView ref — when set the CalendarDayGrid uses this ref instead
-   * of creating its own (multi-column layout wires all columns to the same
-   * scroll position via parent-managed synced scroll).
-   */
-  scrollRef?: RefObject<ScrollViewType | null>;
-  /**
-   * When true the time-gutter column is suppressed (the parent renders its own
-   * shared gutter instead). Used by MultiColumnDayGrid.
-   */
-  hideGutter?: boolean;
-  /**
-   * Extra grid bounds to honour when computing start/end hours.
-   * Multi-column layout passes all columns' ranges so every column shares the
-   * same vertical extent.
-   */
-  sharedBoundsRanges?: { start: number; end: number }[];
-  /**
-   * Called when the user completes a drag-to-reschedule on a block.
-   * The parent handles committing via useRescheduleBooking.
-   */
+  /** Called when the user completes a hold-drag-to-reschedule on a block. */
   onDragReschedule?: (bookingId: string, newTime: string) => void;
-  /**
-   * Called when the user drags the resize handle to change a booking's duration.
-   */
+  /** Called when the user hold-drags the bottom edge to change duration. */
   onDragResize?: (bookingId: string, newDurationMinutes: number) => void;
 };
 
@@ -109,30 +91,22 @@ export function CalendarDayGrid({
   timeBlocks = [],
   nowMinutes,
   onBlockPress,
-  onBlockLongPress,
   onStatusChange,
   onArrivalToggle,
   pendingActionIds,
   complianceFlags,
   onEmptyPress,
   onBlockTimeBlockPress,
-  scrollRef: externalScrollRef,
-  hideGutter = false,
-  sharedBoundsRanges,
   onDragReschedule,
   onDragResize,
 }: CalendarDayGridProps) {
   const { colors } = useTheme();
-  const internalScrollRef = useRef<ScrollViewType | null>(null);
-  const scrollRef = externalScrollRef ?? internalScrollRef;
+  const scrollRef = useRef<ScrollViewType | null>(null);
 
   const { startHour, endHour, totalHeight, positioned, positionedBlocks } = useMemo(() => {
     const ranges: { start: number; end: number }[] = [];
     for (const wh of workingHours) {
       ranges.push({ start: timeToMinutes(wh.start), end: timeToMinutes(wh.end) });
-    }
-    if (sharedBoundsRanges) {
-      for (const r of sharedBoundsRanges) ranges.push(r);
     }
 
     const rawBlocks = bookings.map((booking) => {
@@ -160,12 +134,27 @@ export function CalendarDayGrid({
     const gridStartMin = bounds.startHour * 60;
     const total = (bounds.endHour - bounds.startHour) * 60 * PX_PER_MINUTE;
 
-    const blocks: PositionedBooking[] = rawBlocks.map(({ booking, start, end }) => {
-      const durationMin = Math.max(end - start, MIN_BLOCK_MINUTES);
+    // True-to-duration positioning with a small visual minimum; the inflated
+    // visual extents feed the lane packer so cards that would collide render
+    // side-by-side (web lane model) instead of stacking.
+    const laneInputs: LaneInput[] = [];
+    const prelim = rawBlocks.map(({ booking, start, end }) => {
+      const top = (start - gridStartMin) * PX_PER_MINUTE;
+      const height = Math.max((end - start) * PX_PER_MINUTE, MIN_BLOCK_HEIGHT);
+      laneInputs.push({ id: booking.id, top, bottom: top + height });
+      return { booking, start, end, top, height };
+    });
+    const lanes = computeLaneLayouts(laneInputs);
+
+    const blocks: PositionedBooking[] = prelim.map(({ booking, start, end, top, height }) => {
+      const lane = lanes.get(booking.id) ?? { laneIndex: 0, laneCount: 1 };
       return {
         booking,
-        top: (start - gridStartMin) * PX_PER_MINUTE,
-        height: durationMin * PX_PER_MINUTE,
+        top,
+        height,
+        laneIndex: lane.laneIndex,
+        laneCount: lane.laneCount,
+        durationMinutes: Math.max(end - start, TAP_SNAP_MINUTES),
         timeLabel: `${minutesToTime(start)}–${minutesToTime(end)}`,
       };
     });
@@ -173,7 +162,7 @@ export function CalendarDayGrid({
     const overlayBlocks: PositionedTimeBlock[] = rawTimeBlocks.map(({ block, start, end }) => ({
       block,
       top: (start - gridStartMin) * PX_PER_MINUTE,
-      height: Math.max(end - start, MIN_BLOCK_MINUTES) * PX_PER_MINUTE,
+      height: Math.max((end - start) * PX_PER_MINUTE, MIN_BLOCK_HEIGHT),
       timeLabel: `${minutesToTime(start)}–${minutesToTime(end)}`,
     }));
 
@@ -184,7 +173,7 @@ export function CalendarDayGrid({
       positioned: blocks,
       positionedBlocks: overlayBlocks,
     };
-  }, [bookings, workingHours, timeBlocks, sharedBoundsRanges]);
+  }, [bookings, workingHours, timeBlocks]);
 
   const hours = useMemo(
     () => Array.from({ length: endHour - startHour + 1 }, (_, i) => startHour + i),
@@ -196,6 +185,17 @@ export function CalendarDayGrid({
       ? (nowMinutes - startHour * 60) * PX_PER_MINUTE
       : null;
 
+  // Scroll to the current time once on mount (web parity: scroll-to-now).
+  const didAutoScroll = useRef(false);
+  useEffect(() => {
+    if (didAutoScroll.current || nowTop == null) return;
+    didAutoScroll.current = true;
+    const timer = setTimeout(() => {
+      scrollRef.current?.scrollTo({ y: Math.max(0, nowTop - 140), animated: false });
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [nowTop]);
+
   const handleBackgroundPress = useCallback(
     (event: GestureResponderEvent) => {
       const y = event.nativeEvent.locationY - PADDING_TOP;
@@ -205,12 +205,6 @@ export function CalendarDayGrid({
     },
     [startHour, onEmptyPress],
   );
-
-  // When hideGutter=true, the appointment blocks and now-line left-offset by
-  // the gutter width shift LEFT so they start at 0. The gutter is rendered
-  // by the parent MultiColumnDayGrid.
-  const blockLeft = hideGutter ? spacing.xs : TIME_GUTTER_WIDTH + spacing.xs;
-  const nowLineLeft = hideGutter ? 0 : TIME_GUTTER_WIDTH - 4;
 
   return (
     <ScrollView
@@ -225,17 +219,38 @@ export function CalendarDayGrid({
           accessibilityLabel="Tap an empty slot to add a booking or block"
         />
 
-        {/* Hour lines + labels */}
-        {hours.map((hour) => {
+        {/* Hour rows: label + line + alternating shading + half-hour line. */}
+        {hours.map((hour, index) => {
           const top = (hour - startHour) * 60 * PX_PER_MINUTE;
+          const isLast = hour === endHour;
           return (
-            <View key={hour} style={[styles.hourRow, { top }, { pointerEvents: 'none' }]}>
-              {!hideGutter ? (
+            <View key={hour} style={[styles.hourRow, { top }]} pointerEvents="none">
+              <View style={styles.hourLineRow}>
                 <Text variant="caption" tone="muted" style={styles.hourLabel}>
                   {hourLabel(hour)}
                 </Text>
+                <View style={[styles.hourLine, { backgroundColor: colors.border }]} />
+              </View>
+              {!isLast ? (
+                <>
+                  {/* Subtle alternate-hour banding (web parity). */}
+                  {index % 2 === 1 ? (
+                    <View
+                      style={[
+                        styles.hourBand,
+                        { backgroundColor: colors.text, opacity: 0.025 },
+                      ]}
+                    />
+                  ) : null}
+                  {/* Lighter half-hour line. */}
+                  <View
+                    style={[
+                      styles.halfHourLine,
+                      { top: 30 * PX_PER_MINUTE, backgroundColor: colors.border },
+                    ]}
+                  />
+                </>
               ) : null}
-              <View style={[styles.hourLine, { backgroundColor: colors.border }]} />
             </View>
           );
         })}
@@ -255,14 +270,13 @@ export function CalendarDayGrid({
               {
                 top: item.top,
                 height: item.height,
-                left: blockLeft,
                 borderColor: colors.border,
               },
             ]}>
             <Text variant="caption" tone="muted" numberOfLines={1}>
               {item.block.label?.trim() || 'Blocked'} · {item.timeLabel}
             </Text>
-            {item.block.isEditable ? (
+            {item.block.isEditable && item.height >= 40 ? (
               <Text variant="caption" tone="muted" numberOfLines={1} style={styles.editHint}>
                 Tap to edit
               </Text>
@@ -272,27 +286,16 @@ export function CalendarDayGrid({
 
         {/* Now indicator */}
         {nowTop != null ? (
-          <View
-            style={[
-              styles.nowLine,
-              { top: nowTop, left: nowLineLeft, pointerEvents: 'none' },
-            ]}>
+          <View style={[styles.nowLine, { top: nowTop }]} pointerEvents="none">
             <View style={[styles.nowDot, { backgroundColor: colors.danger }]} />
             <View style={[styles.nowBar, { backgroundColor: colors.danger }]} />
           </View>
         ) : null}
 
-        {/* Appointment blocks */}
-        {positioned.map((item) => {
-          const bookingStartMin = timeToMinutes(item.booking.startTime);
-          const bookingEndMin = item.booking.endTime
-            ? timeToMinutes(item.booking.endTime)
-            : bookingStartMin + DEFAULT_DURATION_MINUTES;
-          const bookingDuration = Math.max(
-            DEFAULT_DURATION_MINUTES,
-            bookingEndMin - bookingStartMin,
-          );
-          return (
+        {/* Appointment blocks — positioned within the content layer so lane
+            percentages are relative to the bookable column, not the gutter. */}
+        <View style={styles.blocksLayer} pointerEvents="box-none">
+          {positioned.map((item) => (
             <DraggableAppointmentBlock
               key={item.booking.id}
               id={item.booking.id}
@@ -305,20 +308,20 @@ export function CalendarDayGrid({
               guestAttendanceConfirmedAt={item.booking.guest_attendance_confirmed_at}
               top={item.top}
               height={item.height}
+              laneIndex={item.laneIndex}
+              laneCount={item.laneCount}
               startTime={item.booking.startTime}
-              durationMinutes={bookingDuration}
+              durationMinutes={item.durationMinutes}
               onPress={onBlockPress}
-              onLongPress={onBlockLongPress}
               onStatusChange={onStatusChange}
               onArrivalToggle={onArrivalToggle}
               actionPending={pendingActionIds?.has(item.booking.id) ?? false}
               complianceFlag={complianceFlags?.[item.booking.id]}
-              blockLeft={blockLeft}
               onDragReschedule={onDragReschedule}
               onDragResize={onDragResize}
             />
-          );
-        })}
+          ))}
+        </View>
       </View>
     </ScrollView>
   );
@@ -333,6 +336,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
+    height: 60 * PX_PER_MINUTE,
+  },
+  hourLineRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
@@ -347,8 +353,23 @@ const styles = StyleSheet.create({
     flex: 1,
     height: StyleSheet.hairlineWidth,
   },
+  hourBand: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: TIME_GUTTER_WIDTH,
+    right: 0,
+  },
+  halfHourLine: {
+    position: 'absolute',
+    left: TIME_GUTTER_WIDTH,
+    right: 0,
+    height: StyleSheet.hairlineWidth,
+    opacity: 0.55,
+  },
   blockedOverlay: {
     position: 'absolute',
+    left: TIME_GUTTER_WIDTH + spacing.xs,
     right: spacing.sm,
     borderRadius: 8,
     borderWidth: StyleSheet.hairlineWidth,
@@ -363,9 +384,11 @@ const styles = StyleSheet.create({
   },
   nowLine: {
     position: 'absolute',
+    left: TIME_GUTTER_WIDTH - 4,
     right: 0,
     flexDirection: 'row',
     alignItems: 'center',
+    zIndex: 20,
   },
   nowDot: {
     width: 8,
@@ -375,5 +398,12 @@ const styles = StyleSheet.create({
   nowBar: {
     flex: 1,
     height: 2,
+  },
+  blocksLayer: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: TIME_GUTTER_WIDTH + spacing.xs,
+    right: spacing.sm,
   },
 });

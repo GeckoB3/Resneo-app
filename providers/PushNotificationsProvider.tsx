@@ -2,6 +2,7 @@ import { type Href, useRouter } from 'expo-router';
 import { useEffect, useRef, type ReactNode } from 'react';
 
 import { isBackendConfigured } from '@/lib/env';
+import { Notifications } from '@/lib/push/notificationsModule';
 import { isExpoGoClient } from '@/lib/push/runtime';
 import { registerCurrentDeviceForPush } from '@/lib/push/registerDevice';
 import { useAuth } from '@/providers/AuthProvider';
@@ -50,11 +51,16 @@ export function PushNotificationsProvider({ children }: PushNotificationsProvide
     }
     registeredForTokenRef.current = accessToken;
 
-    void registerCurrentDeviceForPush({ accessToken }).then((result) => {
-      if (!result.registered && result.reason) {
-        console.info('[push] not registered:', result.reason);
-      }
-    });
+    void registerCurrentDeviceForPush({ accessToken })
+      .then((result) => {
+        if (!result.registered && result.reason) {
+          console.info('[push] not registered:', result.reason);
+        }
+      })
+      .catch((error) => {
+        // Push registration is best-effort — never let it take the app down.
+        console.warn('[push] device registration failed:', error);
+      });
   }, [accessToken]);
 
   useEffect(() => {
@@ -67,8 +73,8 @@ export function PushNotificationsProvider({ children }: PushNotificationsProvide
 
     void (async () => {
       try {
-        const Notifications = await import('expo-notifications');
-
+        // Statically bundled per-platform (null on web) — see notificationsModule.
+        if (!Notifications) return;
         if (cancelled) return;
 
         Notifications.setNotificationHandler({

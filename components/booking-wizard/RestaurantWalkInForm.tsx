@@ -1,4 +1,4 @@
-import { Alert, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/Button';
@@ -29,6 +29,8 @@ export function RestaurantWalkInForm({ onSuccess }: RestaurantWalkInFormProps) {
   const [customParty, setCustomParty] = useState('');
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  // Inline, not Alert.alert — Alert is a no-op on react-native-web.
+  const [formError, setFormError] = useState<string | null>(null);
 
   const resolvedPartySize = customParty
     ? Number.parseInt(customParty, 10)
@@ -40,8 +42,9 @@ export function RestaurantWalkInForm({ onSuccess }: RestaurantWalkInFormProps) {
     resolvedPartySize > 50;
 
   const handleSubmit = () => {
+    setFormError(null);
     if (partySizeInvalid) {
-      Alert.alert('Party size required', 'Choose a party size between 1 and 50.');
+      setFormError('Choose a party size between 1 and 50.');
       return;
     }
 
@@ -60,15 +63,15 @@ export function RestaurantWalkInForm({ onSuccess }: RestaurantWalkInFormProps) {
         onSuccess: (response) => {
           const bookingId = response.booking_id ?? response.id;
           if (!bookingId) {
-            Alert.alert('Walk-in created', 'Booking saved but no id was returned.');
+            setFormError('Walk-in created, but it could not be opened automatically.');
             return;
           }
           onSuccess(bookingId);
         },
         onError: (error) => {
-          const message =
-            error instanceof ApiError ? error.message : 'Could not create walk-in';
-          Alert.alert('Walk-in failed', message);
+          setFormError(
+            error instanceof ApiError ? error.message : 'Could not create walk-in.',
+          );
         },
       },
     );
@@ -143,6 +146,12 @@ export function RestaurantWalkInForm({ onSuccess }: RestaurantWalkInFormProps) {
           value={phone}
         />
       </Card>
+
+      {formError ? (
+        <Text variant="bodySmall" tone="danger">
+          {formError}
+        </Text>
+      ) : null}
 
       <Button
         label="Seat walk-in"

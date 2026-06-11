@@ -8,9 +8,11 @@ const PRIMARY: Partial<Record<BookingStatus, { label: string; target: BookingSta
   Seated: { label: 'Complete', target: 'Completed' },
 };
 
-/** Non-destructive "undo" per status — matches web `BOOKING_REVERT_ACTIONS`. */
+/**
+ * Non-destructive "undo" per status — matches web `BOOKING_REVERT_ACTIONS`.
+ * ("Mark pending" intentionally omitted — rarely used, removed per user request.)
+ */
 const REVERT: Partial<Record<BookingStatus, { label: string; target: BookingStatus }>> = {
-  Booked: { label: 'Mark pending', target: 'Pending' },
   Confirmed: { label: 'Undo confirm', target: 'Booked' },
   Seated: { label: 'Unseat', target: 'Booked' },
   Completed: { label: 'Reopen', target: 'Seated' },

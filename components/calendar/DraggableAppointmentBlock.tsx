@@ -1,27 +1,24 @@
 /**
  * DraggableAppointmentBlock
  *
- * Wraps AppointmentBlock with drag-to-reschedule behaviour:
- *   - Short tap    → opens booking detail (onPress)
- *   - Long-press (hold, no movement) → opens RescheduleSheet (onLongPress)
- *   - Hold + vertical drag → arms on haptic, translates block live, snaps on
- *     release and calls onDragReschedule(bookingId, newTime)
+ * Wraps AppointmentBlock with touch-and-hold drag behaviour (web parity:
+ * BOOKING_RESIZE_HOLD_MS — movement never starts from a plain swipe):
  *
- * Gesture composition:
- *   A Pan gesture with activateAfterLongPress handles the drag. AppointmentBlock's
- *   own Pressable handles the tap — the pan won't activate on a short tap since
- *   it requires both the hold delay AND movement, so tap and drag compose cleanly.
+ *   - Tap            → opens booking detail (onPress)
+ *   - Hold 500 ms    → arms the gesture (haptic + lift), then:
+ *       · started anywhere on the card  → vertical drag MOVES the booking
+ *       · started on the bottom edge    → vertical drag RESIZES (duration)
+ *   - Release        → snaps to 5-minute grid and commits via the parent
  *
- * Design:
- *   - Reanimated shared values drive translation on the UI thread (no JS bridge).
- *   - useAnimatedReaction bridges shared-value changes to React state for the
- *     live-time badge so it updates in near-real-time without illegal read-during-render.
- *   - Scale + opacity feedback when armed.
- *   - A resize handle at the bottom edge (≥56 px tall blocks) lets the user
- *     drag to change duration (optional, only rendered when onDragResize is provided).
+ * A plain swipe over the card scrolls the grid (the pan only activates after
+ * the hold), so scrolling never accidentally moves an appointment.
+ *
+ * After a successful drop the card STAYS at the new position/size; the
+ * translation resets only once fresh data re-renders it at the committed spot
+ * (or the mutation fails and it snaps home). No bounce-back-then-jump.
  */
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -35,9 +32,9 @@ import Animated, {
 
 import { AppointmentBlock } from '@/components/calendar/AppointmentBlock';
 import {
+  DRAG_SNAP_MINUTES,
   minutesToTime,
   PX_PER_MINUTE,
-  TAP_SNAP_MINUTES,
   timeToMinutes,
 } from '@/components/calendar/grid-layout';
 import { hapticError, hapticSelect, hapticSuccess } from '@/lib/haptics';
@@ -47,17 +44,18 @@ import type { ComplianceBookingFlag } from '@/lib/queries/useCompliance';
 
 // ---- Constants ---------------------------------------------------------------
 
-/** How long the user must hold before the drag arms (ms). */
-const HOLD_MS = 300;
-/** Minimum vertical movement (px) that counts as a drag intention. */
-const DRAG_THRESHOLD_PX = 4;
-/** Spring config for snapping back on cancel. */
+/** Hold duration before the drag arms (ms) — guards against accidental moves. */
+const HOLD_MS = 500;
+/** Pointer drift allowed during the hold before it cancels (px) — web parity. */
+const HOLD_TOLERANCE_PX = 10;
+/** Spring config for snapping back on cancel/error. */
 const SNAP_SPRING = { damping: 22, stiffness: 280 };
-/** Height of the resize handle at the bottom of the block. */
-const RESIZE_HANDLE_HEIGHT = 14;
-/** Minimum block height to show the resize handle. */
-const RESIZE_HANDLE_MIN_BLOCK_HEIGHT = 56;
-/** Maximum duration in minutes (14 h). */
+/** Touch zone at the bottom edge that resizes instead of moves (px). */
+const RESIZE_ZONE_HEIGHT = 22;
+/** Minimum block height to offer the resize zone. */
+const RESIZE_MIN_BLOCK_HEIGHT = 48;
+/** Duration bounds (minutes). */
+const MIN_DURATION_MINUTES = DRAG_SNAP_MINUTES;
 const MAX_DURATION_MINUTES = 14 * 60;
 
 // ---- Worklet helpers ---------------------------------------------------------
@@ -91,6 +89,8 @@ function formatDurationLabel(totalMins: number): string {
 
 // ---- Types -------------------------------------------------------------------
 
+type DragMode = 0 | 1 | 2; // 0 = idle, 1 = move, 2 = resize
+
 type DraggableAppointmentBlockProps = {
   id: string;
   guestName: string;
@@ -100,27 +100,25 @@ type DraggableAppointmentBlockProps = {
   clientArrivedAt?: string | null;
   staffAttendanceConfirmedAt?: string | null;
   guestAttendanceConfirmedAt?: string | null;
+  /** Pixel offset from the grid top. */
   top: number;
+  /** Visual height in px. */
   height: number;
-  /** The booking's start time in "HH:mm" format — used to compute new time. */
+  /** Overlap lane — drives percentage left/width within the blocks layer. */
+  laneIndex: number;
+  laneCount: number;
+  /** The booking's start time "HH:mm[:ss]" — used to compute the new time. */
   startTime: string;
-  /** Duration in minutes — used for duration resize. */
+  /** True duration in minutes — used for duration resize. */
   durationMinutes: number;
   onPress: (id: string) => void;
-  onLongPress?: (id: string) => void;
   onStatusChange?: (id: string, status: string) => void;
   onArrivalToggle?: (id: string, arrived: boolean) => void;
   actionPending?: boolean;
   complianceFlag?: ComplianceBookingFlag | null;
-  blockLeft?: number;
-  /**
-   * Called when the user releases after a drag, with the new snapped time.
-   * The parent is responsible for committing via useRescheduleBooking.
-   */
+  /** Called on drag release with the new snapped "HH:mm". Parent commits. */
   onDragReschedule?: (bookingId: string, newTime: string) => void;
-  /**
-   * Called when the user drags the resize handle to change duration.
-   */
+  /** Called on resize release with the new snapped duration (minutes). */
   onDragResize?: (bookingId: string, newDurationMinutes: number) => void;
 };
 
@@ -137,238 +135,300 @@ export function DraggableAppointmentBlock({
   guestAttendanceConfirmedAt,
   top,
   height,
+  laneIndex,
+  laneCount,
   startTime,
   durationMinutes,
   onPress,
-  onLongPress,
   onStatusChange,
   onArrivalToggle,
   actionPending = false,
   complianceFlag,
-  blockLeft,
   onDragReschedule,
   onDragResize,
 }: DraggableAppointmentBlockProps) {
   const { colors } = useTheme();
 
+  const dragEnabled = onDragReschedule != null;
+  const resizeEnabled = onDragResize != null && height >= RESIZE_MIN_BLOCK_HEIGHT;
+
   // ---- Shared animated values (UI thread) ----
+  const mode = useSharedValue<DragMode>(0);
   const translateY = useSharedValue(0);
   const scale = useSharedValue(1);
-  const opacity = useSharedValue(1);
-  const isDragging = useSharedValue(false);
-  const isResizing = useSharedValue(false);
+  /** 0→1 across the hold window; drives the arming progress bar. */
+  const holdProgress = useSharedValue(0);
   const liveMinutes = useSharedValue(timeToMinutes(startTime));
   const liveDurationMins = useSharedValue(durationMinutes);
+  /** -1 = no override; otherwise the held height (px) during/after a resize. */
+  const heightOverride = useSharedValue(-1);
+  /** True between a successful drop and the data refresh — keeps the new spot. */
+  const settled = useSharedValue(false);
 
-  // ---- React state for live labels (JS thread, fed by useAnimatedReaction) ----
-  const [liveTimeLabel, setLiveTimeLabel] = useState(startTime.slice(0, 5));
+  // ---- React state for live labels (fed from the UI thread) ----
+  const [liveTimeLabel, setLiveTimeLabel] = useState(() => startTime.slice(0, 5));
   const [liveDurLabel, setLiveDurLabel] = useState('');
-  const [showDragLabel, setShowDragLabel] = useState(false);
-  const [showResizeLabel, setShowResizeLabel] = useState(false);
+  const [activeMode, setActiveMode] = useState<DragMode>(0);
 
-  // Bridge shared-value changes to state for the live badges.
   useAnimatedReaction(
-    () => ({ mins: liveMinutes.value, dragging: isDragging.value }),
-    ({ mins, dragging }) => {
-      runOnJS(setLiveTimeLabel)(formatMinutesLabel(mins));
-      runOnJS(setShowDragLabel)(dragging);
+    () => ({ m: mode.value, mins: liveMinutes.value, dur: liveDurationMins.value }),
+    ({ m, mins, dur }) => {
+      runOnJS(setActiveMode)(m);
+      if (m === 1) runOnJS(setLiveTimeLabel)(formatMinutesLabel(mins));
+      if (m === 2) runOnJS(setLiveDurLabel)(formatDurationLabel(dur));
     },
   );
 
-  useAnimatedReaction(
-    () => ({ dur: liveDurationMins.value, resizing: isResizing.value }),
-    ({ dur, resizing }) => {
-      runOnJS(setLiveDurLabel)(formatDurationLabel(dur));
-      runOnJS(setShowResizeLabel)(resizing);
+  // ---- Reset overrides once fresh data re-lays the block out ----
+  //
+  // After a successful drop the props (top/height/startTime/duration) update
+  // when the grid refetches — resetting the visual overrides at that moment is
+  // seamless (new layout equals the held position). If the mutation FAILED the
+  // props never change, so a fallback timer snaps the block home shortly after
+  // the parent's error alert.
+  /* eslint-disable react-hooks/immutability -- SharedValue writes inside effects
+     are the supported Reanimated pattern; they mutate UI-thread state, not
+     React-managed values. */
+  const errorResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wasPendingRef = useRef(false);
+
+  const resetOverrides = useCallback(() => {
+    if (errorResetTimer.current) {
+      clearTimeout(errorResetTimer.current);
+      errorResetTimer.current = null;
+    }
+    settled.value = false;
+    translateY.value = 0;
+    heightOverride.value = -1;
+    liveMinutes.value = timeToMinutes(startTime);
+    liveDurationMins.value = durationMinutes;
+  }, [settled, translateY, heightOverride, liveMinutes, liveDurationMins, startTime, durationMinutes]);
+
+  // Layout-defining props changed → the data caught up; drop overrides now.
+  useEffect(() => {
+    resetOverrides();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sync to layout-defining props only
+  }, [top, height, startTime, durationMinutes]);
+
+  // Mutation settled without a layout change (error path) → snap home soon.
+  useEffect(() => {
+    if (actionPending) {
+      wasPendingRef.current = true;
+      return;
+    }
+    if (wasPendingRef.current) {
+      wasPendingRef.current = false;
+      errorResetTimer.current = setTimeout(resetOverrides, 2500);
+    }
+  }, [actionPending, resetOverrides]);
+
+  useEffect(
+    () => () => {
+      if (errorResetTimer.current) clearTimeout(errorResetTimer.current);
     },
+    [],
   );
+  /* eslint-enable react-hooks/immutability */
 
   // ---- Stable JS callbacks (called via runOnJS from worklets) ----
-  const jsHapticSelect = useCallback(() => hapticSelect(), []);
-  const jsHapticSuccess = useCallback(() => hapticSuccess(), []);
-  const jsHapticError = useCallback(() => hapticError(), []);
+  const jsHapticArm = useCallback(() => hapticSelect(), []);
+  const jsHapticDrop = useCallback(() => hapticSuccess(), []);
+  const jsHapticCancel = useCallback(() => hapticError(), []);
 
-  const jsCommitDrag = useCallback(
-    (newTime: string) => {
-      onDragReschedule?.(id, newTime);
-    },
+  const jsCommitMove = useCallback(
+    (newTime: string) => onDragReschedule?.(id, newTime),
     [id, onDragReschedule],
   );
-
   const jsCommitResize = useCallback(
-    (newDuration: number) => {
-      onDragResize?.(id, newDuration);
-    },
+    (newDuration: number) => onDragResize?.(id, newDuration),
     [id, onDragResize],
   );
 
-  // ---- Drag gesture (hold + pan to reschedule) ----
   const originalMinutes = timeToMinutes(startTime);
 
-  /* eslint-disable react-hooks/immutability -- worklet callbacks execute asynchronously
-     on the Reanimated UI thread and are not called during React render. Mutating
-     SharedValue.value here is the correct and only pattern Reanimated supports. */
+  /* eslint-disable react-hooks/immutability -- worklet callbacks run on the
+     Reanimated UI thread, not during React render; mutating SharedValue.value
+     there is the supported pattern. */
+
+  // ---- The gesture: hold to arm, then pan vertically ----
+  const startedInResizeZone = useSharedValue(false);
 
   const dragGesture = Gesture.Pan()
+    .enabled(dragEnabled || resizeEnabled)
+    .maxPointers(1)
     .activateAfterLongPress(HOLD_MS)
-    .minDistance(DRAG_THRESHOLD_PX)
+    // Drift past tolerance before the hold elapses → the pan FAILS (scroll wins).
+    .failOffsetX([-HOLD_TOLERANCE_PX, HOLD_TOLERANCE_PX])
+    .onTouchesDown((e) => {
+      'worklet';
+      const touch = e.allTouches[0];
+      startedInResizeZone.value =
+        resizeEnabled && touch != null && touch.y >= height - RESIZE_ZONE_HEIGHT;
+      // Arming feedback: fill the hold-progress bar across the hold window.
+      // It only becomes visible ~90ms in, so taps and scroll-grabs never flash.
+      holdProgress.value = 0;
+      holdProgress.value = withTiming(1, { duration: HOLD_MS });
+    })
     .onStart(() => {
       'worklet';
-      isDragging.value = true;
+      holdProgress.value = 0; // armed — the lift + live badge take over
+      const resizing = startedInResizeZone.value && resizeEnabled;
+      if (!resizing && !dragEnabled) return;
+      mode.value = resizing ? 2 : 1;
+      settled.value = false;
       liveMinutes.value = originalMinutes;
-      scale.value = withSpring(1.04, SNAP_SPRING);
-      opacity.value = withTiming(0.88, { duration: 120 });
-      runOnJS(jsHapticSelect)();
-    })
-    .onUpdate((event) => {
-      'worklet';
-      if (!isDragging.value) return;
-      const deltaMinutes = event.translationY / PX_PER_MINUTE;
-      const rawMinutes = originalMinutes + deltaMinutes;
-      const snapped = snapToGrid(rawMinutes, TAP_SNAP_MINUTES);
-      const clamped = clampMinutes(snapped);
-      liveMinutes.value = clamped;
-      translateY.value = (clamped - originalMinutes) * PX_PER_MINUTE;
-    })
-    .onEnd(() => {
-      'worklet';
-      if (!isDragging.value) return;
-      isDragging.value = false;
-      const snappedMinutes = liveMinutes.value;
-      const newTime = minutesToTime(snappedMinutes);
-      scale.value = withSpring(1, SNAP_SPRING);
-      opacity.value = withTiming(1, { duration: 120 });
-      translateY.value = withSpring(0, SNAP_SPRING);
-      runOnJS(jsHapticSuccess)();
-      runOnJS(jsCommitDrag)(newTime);
-    })
-    .onFinalize((_event, success) => {
-      'worklet';
-      if (!success && isDragging.value) {
-        isDragging.value = false;
-        scale.value = withSpring(1, SNAP_SPRING);
-        opacity.value = withTiming(1, { duration: 120 });
-        translateY.value = withSpring(0, SNAP_SPRING);
-        runOnJS(jsHapticError)();
-      }
-    });
-
-  // ---- Resize gesture (drag the bottom handle to change duration) ----
-  const resizeGesture = Gesture.Pan()
-    .minDistance(DRAG_THRESHOLD_PX)
-    .onStart(() => {
-      'worklet';
-      isResizing.value = true;
       liveDurationMins.value = durationMinutes;
-      runOnJS(jsHapticSelect)();
+      if (!resizing) {
+        scale.value = withSpring(1.03, SNAP_SPRING);
+      }
+      runOnJS(jsHapticArm)();
     })
     .onUpdate((event) => {
       'worklet';
-      if (!isResizing.value) return;
-      const deltaMins = event.translationY / PX_PER_MINUTE;
-      const rawDuration = durationMinutes + deltaMins;
-      const snapped = snapToGrid(rawDuration, TAP_SNAP_MINUTES);
-      const clamped = Math.max(TAP_SNAP_MINUTES, Math.min(MAX_DURATION_MINUTES, snapped));
-      liveDurationMins.value = clamped;
+      if (mode.value === 1) {
+        const deltaMinutes = event.translationY / PX_PER_MINUTE;
+        const snapped = clampMinutes(
+          snapToGrid(originalMinutes + deltaMinutes, DRAG_SNAP_MINUTES),
+        );
+        liveMinutes.value = snapped;
+        translateY.value = (snapped - originalMinutes) * PX_PER_MINUTE;
+      } else if (mode.value === 2) {
+        const deltaMins = event.translationY / PX_PER_MINUTE;
+        const snapped = snapToGrid(durationMinutes + deltaMins, DRAG_SNAP_MINUTES);
+        const clamped = Math.max(
+          MIN_DURATION_MINUTES,
+          Math.min(MAX_DURATION_MINUTES, snapped),
+        );
+        liveDurationMins.value = clamped;
+        heightOverride.value = clamped * PX_PER_MINUTE;
+      }
     })
     .onEnd(() => {
       'worklet';
-      if (!isResizing.value) return;
-      isResizing.value = false;
-      const newDuration = liveDurationMins.value;
-      runOnJS(jsHapticSuccess)();
-      runOnJS(jsCommitResize)(newDuration);
+      if (mode.value === 1) {
+        const newMinutes = liveMinutes.value;
+        scale.value = withSpring(1, SNAP_SPRING);
+        if (newMinutes === originalMinutes) {
+          // No-op drag — glide home.
+          translateY.value = withSpring(0, SNAP_SPRING);
+          mode.value = 0;
+          return;
+        }
+        // Keep the dropped position; props re-sync after the mutation settles.
+        settled.value = true;
+        mode.value = 0;
+        runOnJS(jsHapticDrop)();
+        runOnJS(jsCommitMove)(minutesToTime(newMinutes));
+      } else if (mode.value === 2) {
+        const newDuration = liveDurationMins.value;
+        if (newDuration === durationMinutes) {
+          heightOverride.value = withTiming(-1, { duration: 0 });
+          mode.value = 0;
+          return;
+        }
+        settled.value = true;
+        mode.value = 0;
+        runOnJS(jsHapticDrop)();
+        runOnJS(jsCommitResize)(newDuration);
+      }
     })
     .onFinalize((_event, success) => {
       'worklet';
-      if (!success && isResizing.value) {
-        isResizing.value = false;
-        liveDurationMins.value = durationMinutes;
-        runOnJS(jsHapticError)();
+      // Touch ended before (or without) activation — clear the arming bar.
+      holdProgress.value = withTiming(0, { duration: 120 });
+      if (!success && mode.value !== 0) {
+        // Cancelled mid-drag (e.g. another gesture took over).
+        mode.value = 0;
+        scale.value = withSpring(1, SNAP_SPRING);
+        translateY.value = withSpring(0, SNAP_SPRING);
+        heightOverride.value = -1;
+        runOnJS(jsHapticCancel)();
       }
     });
 
   /* eslint-enable react-hooks/immutability */
 
   // ---- Animated styles ----
-  const animatedBlockStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: translateY.value }, { scale: scale.value }],
-    opacity: opacity.value,
-    zIndex: isDragging.value ? 999 : 1,
-    elevation: isDragging.value ? 12 : 0,
-  }));
+  const animatedWrapperStyle = useAnimatedStyle(() => {
+    const dragging = mode.value !== 0;
+    return {
+      transform: [{ translateY: translateY.value }, { scale: scale.value }],
+      height: heightOverride.value >= 0 ? heightOverride.value : height,
+      zIndex: dragging ? 999 : settled.value ? 50 : 10 + laneIndex,
+      elevation: dragging ? 12 : 0,
+      shadowOpacity: dragging ? 0.25 : 0,
+    };
+  }, [height, laneIndex]);
 
-  const animatedHeightStyle = useAnimatedStyle(() => ({
-    height: isResizing.value
-      ? Math.max(TAP_SNAP_MINUTES, liveDurationMins.value) * PX_PER_MINUTE
-      : height,
-  }));
+  // Arming progress — fades in ~90ms into the hold, fills left→right.
+  const holdBarStyle = useAnimatedStyle(() => {
+    const p = holdProgress.value;
+    return {
+      width: `${p * 100}%`,
+      opacity: p < 0.18 ? 0 : Math.min(1, (p - 0.18) / 0.15),
+    };
+  });
 
-  const showResizeHandle = height >= RESIZE_HANDLE_MIN_BLOCK_HEIGHT && onDragResize != null;
+  const widthPct = 100 / laneCount;
+  const leftPct = laneIndex * widthPct;
 
   return (
-    <GestureDetector gesture={onDragReschedule != null ? dragGesture : Gesture.Pan().enabled(false)}>
+    <GestureDetector gesture={dragGesture}>
       <Animated.View
         style={[
           styles.root,
-          animatedBlockStyle,
-          { top, left: 0, right: 0 },
+          {
+            top,
+            left: `${leftPct}%`,
+            width: `${widthPct}%`,
+          },
+          animatedWrapperStyle,
         ]}>
-        {/* Live time badge — shown above the block while dragging */}
-        {showDragLabel ? (
+        {/* Live badge — time while moving, duration while resizing. */}
+        {activeMode !== 0 ? (
           <View
             style={[styles.liveLabel, { backgroundColor: colors.brand }]}
             pointerEvents="none">
             <Animated.Text style={[styles.liveLabelText, { color: colors.surface }]}>
-              {liveTimeLabel}
+              {activeMode === 1 ? liveTimeLabel : liveDurLabel}
             </Animated.Text>
           </View>
         ) : null}
 
-        <Animated.View style={animatedHeightStyle}>
-          <AppointmentBlock
-            id={id}
-            guestName={guestName}
-            serviceName={serviceName}
-            timeLabel={timeLabel}
-            status={status}
-            clientArrivedAt={clientArrivedAt}
-            staffAttendanceConfirmedAt={staffAttendanceConfirmedAt}
-            guestAttendanceConfirmedAt={guestAttendanceConfirmedAt}
-            // top=0 because the outer Animated.View owns the vertical position
-            top={0}
-            height={height}
-            onPress={onPress}
-            onLongPress={onLongPress}
-            onStatusChange={onStatusChange}
-            onArrivalToggle={onArrivalToggle}
-            actionPending={actionPending}
-            complianceFlag={complianceFlag}
-            blockLeft={blockLeft}
-          />
+        <AppointmentBlock
+          id={id}
+          guestName={guestName}
+          serviceName={serviceName}
+          timeLabel={timeLabel}
+          status={status}
+          clientArrivedAt={clientArrivedAt}
+          staffAttendanceConfirmedAt={staffAttendanceConfirmedAt}
+          guestAttendanceConfirmedAt={guestAttendanceConfirmedAt}
+          height={height}
+          laneIndex={laneIndex}
+          laneCount={laneCount}
+          onPress={onPress}
+          onStatusChange={onStatusChange}
+          onArrivalToggle={onArrivalToggle}
+          actionPending={actionPending}
+          complianceFlag={complianceFlag}
+        />
 
-          {/* Resize handle — bottom edge, only when onDragResize is provided */}
-          {showResizeHandle ? (
-            <GestureDetector gesture={resizeGesture}>
-              <Animated.View
-                style={[styles.resizeHandle, { backgroundColor: colors.brand }]}
-                accessibilityLabel="Drag to resize appointment duration">
-                <View style={[styles.resizeGrip, { backgroundColor: colors.surface }]} />
-              </Animated.View>
-            </GestureDetector>
-          ) : null}
-        </Animated.View>
-
-        {/* Live duration badge — shown below the block while resizing */}
-        {showResizeHandle && showResizeLabel ? (
+        {/* Resize affordance — a grip on the bottom edge (hold it to resize). */}
+        {resizeEnabled ? (
           <View
-            style={[styles.liveDurationLabel, { backgroundColor: colors.brand }]}
-            pointerEvents="none">
-            <Animated.Text style={[styles.liveDurationLabelText, { color: colors.surface }]}>
-              {liveDurLabel}
-            </Animated.Text>
+            style={styles.resizeGripWrap}
+            pointerEvents="none"
+            accessibilityLabel="Touch and hold the bottom edge to change duration">
+            <View style={[styles.resizeGrip, { backgroundColor: colors.surface }]} />
           </View>
         ) : null}
+
+        {/* Hold-to-arm progress — fills along the bottom edge during the hold. */}
+        <Animated.View
+          pointerEvents="none"
+          style={[styles.holdBar, { backgroundColor: colors.accent }, holdBarStyle]}
+        />
       </Animated.View>
     </GestureDetector>
   );
@@ -379,11 +439,15 @@ export function DraggableAppointmentBlock({
 const styles = StyleSheet.create({
   root: {
     position: 'absolute',
+    paddingHorizontal: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 8,
   },
   liveLabel: {
     position: 'absolute',
-    top: -24,
-    left: 8,
+    top: -26,
+    left: 6,
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,
     borderRadius: radius.sm,
@@ -393,37 +457,27 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     lineHeight: 18,
+    fontVariant: ['tabular-nums'],
   },
-  resizeHandle: {
+  resizeGripWrap: {
     position: 'absolute',
-    bottom: 0,
-    left: 8,
-    right: 8,
-    height: RESIZE_HANDLE_HEIGHT,
-    borderBottomLeftRadius: 4,
-    borderBottomRightRadius: 4,
+    bottom: 2,
+    left: 0,
+    right: 0,
     alignItems: 'center',
-    justifyContent: 'center',
-    opacity: 0.75,
   },
   resizeGrip: {
-    width: 24,
+    width: 28,
     height: 3,
     borderRadius: 2,
-    opacity: 0.7,
+    opacity: 0.65,
   },
-  liveDurationLabel: {
+  holdBar: {
     position: 'absolute',
-    bottom: -22,
-    left: 8,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    borderRadius: radius.sm,
-    zIndex: 1000,
-  },
-  liveDurationLabelText: {
-    fontSize: 12,
-    fontWeight: '600',
-    lineHeight: 18,
+    bottom: 0,
+    left: 1,
+    height: 3,
+    borderRadius: 2,
+    maxWidth: '100%',
   },
 });

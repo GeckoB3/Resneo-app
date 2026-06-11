@@ -1,14 +1,35 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Stack } from 'expo-router';
-import { Alert, AppState, type AppStateStatus, Linking, ScrollView, StyleSheet, View } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
+import {
+  AppState,
+  type AppStateStatus,
+  Linking,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  View,
+} from 'react-native';
 
+import { PlanChangeSection } from '@/components/plan/PlanChangeSection';
+import { StripeConnectCard } from '@/components/plan/StripeConnectCard';
+import { UsageMeter } from '@/components/plan/UsageMeter';
+import {
+  APPOINTMENTS_PLAN_DETAILS,
+  isAppointmentsTier,
+  planCalendarLimit,
+  planDisplayName,
+  planPriceLabel,
+  smsMonthlyAllowance,
+  SMS_OVERAGE_GBP_PER_MESSAGE,
+  SUBSCRIPTION_CANCELLATION_PUBLIC_NOTICE,
+} from '@/components/plan/planConstants';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Screen } from '@/components/ui/Screen';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
-import { PlanChangeTierSheet, type AppointmentsTier } from '@/components/manage/PlanChangeTierSheet';
 import { hapticError, hapticSuccess, hapticWarning } from '@/lib/haptics';
 import {
   useBillingPortalSession,
@@ -16,6 +37,7 @@ import {
   useChangePlan,
   useStripeConnect,
   useStripeConnectLink,
+  type BillingQuotePayload,
   type PlanStatus,
 } from '@/lib/queries/useBillingStatus';
 import { useVenueContext } from '@/providers/VenueProvider';
@@ -30,7 +52,6 @@ import type { BookingModel } from '@/types/venue';
 /**
  * Returns the web dashboard origin. Uses EXPO_PUBLIC_WEB_URL if set,
  * otherwise falls back to EXPO_PUBLIC_API_URL (common for monorepo deploys).
- * Avoids importing getApiUrl() directly to decouple from the shared lib.
  */
 function getWebUrl(): string {
   const webUrl = process.env.EXPO_PUBLIC_WEB_URL;
@@ -48,47 +69,20 @@ const MODEL_LABELS: Record<BookingModel, string> = {
   resource_booking: 'Resources',
 };
 
-const APPOINTMENTS_PLAN_TIERS = new Set(['light', 'plus', 'appointments']);
-
-function isAppointmentsTier(tier: string | null | undefined): tier is AppointmentsTier {
-  return APPOINTMENTS_PLAN_TIERS.has(tier ?? '');
-}
-
-function planDisplayName(tier: string | null | undefined): string {
-  if (!tier) return '—';
-  const map: Record<string, string> = {
-    light: 'Appointments Light',
-    plus: 'Appointments Plus',
-    appointments: 'Appointments Pro',
-    restaurant: 'Restaurant',
-    founding: 'Founding',
-  };
-  return map[tier.toLowerCase()] ?? tier.charAt(0).toUpperCase() + tier.slice(1);
-}
-
-function planCalendarLimit(tier: string | null | undefined): number {
-  if (!tier) return Infinity;
-  if (tier === 'light') return 1;
-  if (tier === 'plus') return 5;
-  return Infinity;
-}
-
 function formatDate(iso: string | null | undefined): string {
   if (!iso) return '—';
-  try {
-    return new Date(iso).toLocaleDateString('en-GB', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    });
-  } catch {
-    return '—';
-  }
+  const ms = Date.parse(iso);
+  if (Number.isNaN(ms)) return '—';
+  return new Date(ms).toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
 }
 
-function daysRemaining(iso: string | null | undefined): number {
+function daysRemaining(iso: string | null | undefined, nowMs: number): number {
   if (!iso) return 0;
-  const diff = Date.parse(iso) - Date.now();
+  const diff = Date.parse(iso) - nowMs;
   return Math.max(0, Math.ceil(diff / 86_400_000));
 }
 
@@ -113,6 +107,32 @@ function planStatusLabel(
   }
 }
 
+/**
+ * The live payload sends `discount_summaries` as plain strings (web
+ * VenueBillingQuotePayload); the local type predates that. Accept both.
+ */
+function discountSummaryLines(quote: BillingQuotePayload | null | undefined): string[] {
+  if (!quote?.discount_summaries) return [];
+  const raw = quote.discount_summaries as unknown as (
+    | string
+    | { description?: string | null; formatted?: string | null }
+  )[];
+  return raw
+    .map((d) =>
+      typeof d === 'string' ? d : [d?.description, d?.formatted].filter(Boolean).join(' '),
+    )
+    .filter((line) => line.length > 0);
+}
+
+/** Coupon names, falling back to the lead of each discount line — web parity. */
+function couponTitles(quote: BillingQuotePayload | null | undefined): string[] {
+  if (!quote) return [];
+  if (quote.coupon_titles?.length) return quote.coupon_titles;
+  return discountSummaryLines(quote)
+    .map((line) => line.split(':')[0]?.trim() ?? '')
+    .filter((line) => line.length > 0);
+}
+
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
@@ -130,67 +150,32 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-type UsageMeterProps = {
-  label: string;
-  used: number;
-  total: number | null;
-  color: string;
-  note?: string;
-};
-
-function UsageMeter({ label, used, total, color, note }: UsageMeterProps) {
-  const { colors } = useTheme();
-  const unlimited = total === null || total === Infinity;
-  const pct = unlimited ? 0 : Math.min(100, (used / total) * 100);
-
-  return (
-    <View style={styles.meterRow}>
-      <View style={styles.meterLabelRow}>
-        <Text variant="bodySmall" tone="secondary">
-          {label}
-        </Text>
-        <Text variant="bodySmall" tone="muted">
-          {unlimited ? `${used} used · Unlimited` : `${used} / ${total}`}
-        </Text>
-      </View>
-      {!unlimited && (
-        <View style={[styles.meterTrack, { backgroundColor: colors.border }]}>
-          <View
-            style={[
-              styles.meterFill,
-              {
-                width: `${pct}%` as `${number}%`,
-                backgroundColor: color,
-              },
-            ]}
-          />
-        </View>
-      )}
-      {note && (
-        <Text variant="caption" tone="muted">
-          {note}
-        </Text>
-      )}
-    </View>
-  );
-}
-
 type StatusBannerProps = {
-  tone: 'warning' | 'danger';
+  tone: 'warning' | 'danger' | 'success' | 'brand';
+  title?: string;
   message: string;
   buttonLabel?: string;
   loading?: boolean;
   onPress?: () => void;
 };
 
-function StatusBanner({ tone, message, buttonLabel, loading, onPress }: StatusBannerProps) {
+function StatusBanner({ tone, title, message, buttonLabel, loading, onPress }: StatusBannerProps) {
   const { colors } = useTheme();
-  const bg = tone === 'warning' ? colors.warningSurface : colors.dangerSurface;
-  const textColor = tone === 'warning' ? colors.warning : colors.danger;
+  const palette = {
+    warning: { bg: colors.warningSurface, fg: colors.warning },
+    danger: { bg: colors.dangerSurface, fg: colors.danger },
+    success: { bg: colors.successSurface, fg: colors.success },
+    brand: { bg: colors.brandSubtle, fg: colors.brand },
+  }[tone];
 
   return (
-    <View style={[styles.banner, { backgroundColor: bg }]}>
-      <Text variant="bodySmall" color={textColor} style={styles.bannerText}>
+    <View style={[styles.banner, { backgroundColor: palette.bg }]}>
+      {title ? (
+        <Text variant="label" color={palette.fg}>
+          {title}
+        </Text>
+      ) : null}
+      <Text variant="bodySmall" color={palette.fg} style={styles.bannerText}>
         {message}
       </Text>
       {buttonLabel && (
@@ -209,162 +194,47 @@ function StatusBanner({ tone, message, buttonLabel, loading, onPress }: StatusBa
   );
 }
 
-type StripeConnectCardProps = {
-  isAdmin: boolean;
-  hasAccountId: boolean;
-  chargesEnabled: boolean;
-  detailsSubmitted: boolean;
-  connecting: boolean;
-  onConnect: () => void;
-};
-
-function StripeConnectCard({
-  isAdmin,
-  hasAccountId,
-  chargesEnabled,
-  detailsSubmitted,
-  connecting,
-  onConnect,
-}: StripeConnectCardProps) {
-  const { colors } = useTheme();
-  type ConnectState = 'not_connected' | 'step1_pending' | 'step2_pending' | 'active';
-
-  const state: ConnectState = !hasAccountId
-    ? 'not_connected'
-    : chargesEnabled && detailsSubmitted
-      ? 'active'
-      : !detailsSubmitted
-        ? 'step1_pending'
-        : 'step2_pending';
-
-  const statusCopy: Record<
-    ConnectState,
-    { badge: string; tone: 'success' | 'warning' | 'neutral'; desc: string; cta: string | null }
-  > = {
-    not_connected: {
-      badge: 'Not connected',
-      tone: 'warning',
-      desc: 'Connect Stripe to accept online deposits and payments from clients.',
-      cta: 'Connect Stripe',
-    },
-    step1_pending: {
-      badge: 'Setup incomplete',
-      tone: 'warning',
-      desc: 'Step 1 of 2: Add your business and bank details in Stripe to activate payments.',
-      cta: 'Continue setup',
-    },
-    step2_pending: {
-      badge: 'Verification pending',
-      tone: 'warning',
-      desc: 'Step 2 of 2: Complete Stripe identity verification to finish activating payments.',
-      cta: 'Complete verification',
-    },
-    active: {
-      badge: 'Active',
-      tone: 'success',
-      desc: 'Online deposits and card payments are enabled.',
-      cta: null,
-    },
-  };
-
-  const s = statusCopy[state];
-
-  return (
-    <Card>
-      <View style={styles.cardHeader}>
-        <Text variant="label">Stripe payments</Text>
-        <Badge label={s.badge} tone={s.tone} />
-      </View>
-
-      {/* Step indicator for partial onboarding */}
-      {(state === 'step1_pending' || state === 'step2_pending') && (
-        <View style={styles.stepIndicator}>
-          <StepDot active done={state === 'step2_pending'} label="Business & bank" />
-          <View style={[styles.stepLine, { backgroundColor: colors.border }]} />
-          <StepDot active={state === 'step2_pending'} done={false} label="Identity check" />
-        </View>
-      )}
-
-      <Text variant="bodySmall" tone="secondary" style={styles.help}>
-        {s.desc}
-      </Text>
-
-      {isAdmin && s.cta && (
-        <Button
-          label={connecting ? 'Opening Stripe…' : s.cta}
-          variant="primary"
-          fullWidth
-          loading={connecting}
-          onPress={onConnect}
-        />
-      )}
-
-      {!isAdmin && state !== 'active' && (
-        <Text variant="caption" tone="muted">
-          Ask an admin to complete Stripe setup.
-        </Text>
-      )}
-    </Card>
-  );
-}
-
-function StepDot({ active, done, label }: { active: boolean; done: boolean; label: string }) {
-  const { colors } = useTheme();
-  const bg = done ? colors.success : active ? colors.brand : colors.border;
-
-  return (
-    <View style={styles.stepDotContainer}>
-      <View style={[styles.stepDot, { backgroundColor: bg }]}>
-        {done && (
-          <Text variant="caption" color={colors.onColor}>
-            ✓
-          </Text>
-        )}
-        {!done && active && (
-          <Text variant="caption" color={colors.onColor}>
-            1
-          </Text>
-        )}
-      </View>
-      <Text variant="caption" tone={active ? 'default' : 'muted'} style={styles.stepLabel}>
-        {label}
-      </Text>
-    </View>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Main screen
 // ---------------------------------------------------------------------------
 
-/** Plan & payments — live billing, Stripe connect, and admin actions. */
+/**
+ * Plan & payments — mobile equivalent of the web dashboard's Settings → Plan
+ * and Settings → Payments tabs (SettingsView PlanSection + StripeConnectSection).
+ */
 export default function PlanScreen() {
-  const { venue, isLoading: venueLoading } = useVenueContext();
+  const { venue, isLoading: venueLoading, refetch: refetchVenue } = useVenueContext();
   const { colors } = useTheme();
 
   const isAdmin = venue?.current_user_role === 'admin';
 
-  // Only fetch billing status for admins (server also gates on admin)
+  // Billing status is admin-only on the server (403 otherwise).
   const {
     data: billing,
     isLoading: billingLoading,
+    isError: billingError,
     refetch: refetchBilling,
   } = useBillingStatus(isAdmin);
 
-  const {
-    data: stripeConnect,
-    refetch: refetchStripe,
-  } = useStripeConnect(isAdmin && !!venue?.stripe_connected_account_id);
+  const { data: stripeConnect, refetch: refetchStripe } = useStripeConnect(
+    isAdmin && !!venue?.stripe_connected_account_id,
+  );
 
   const portalMutation = useBillingPortalSession();
   const changePlanMutation = useChangePlan();
   const stripeConnectLinkMutation = useStripeConnectLink();
 
-  const [showChangePlan, setShowChangePlan] = useState(false);
-  const [returnBannerMsg, setReturnBannerMsg] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [portalUnavailable, setPortalUnavailable] = useState(false);
+  const [connectError, setConnectError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  // Stable "now" per mount — render-time Date.now() violates react-hooks/purity
+  // (same pattern as the web SettingsView's currentTimeMs).
+  const [nowMs] = useState(() => Date.now());
 
-  // Re-fetch billing/stripe status when app returns to foreground (AppState)
-  // — mirrors the web's visibilitychange handler for Stripe portal returns.
+  // Re-fetch billing/stripe status when the app returns to the foreground —
+  // mirrors the web's focus/visibilitychange sync for Stripe portal/checkout returns.
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
   useEffect(() => {
     const sub = AppState.addEventListener('change', (nextState) => {
@@ -377,67 +247,91 @@ export default function PlanScreen() {
     return () => sub.remove();
   }, [refetchBilling, refetchStripe]);
 
-  const openWeb = (path: string) => {
-    const url = `${getWebUrl()}${path}`;
-    void Linking.openURL(url).catch(() => Alert.alert('Could not open browser', url));
-  };
+  // In-app browser tab (SFSafariViewController / Chrome Custom Tab), with a
+  // system-browser fallback. Inline error if neither opens — no Alert.alert.
+  const openExternal = useCallback((url: string) => {
+    void WebBrowser.openBrowserAsync(url).catch(() =>
+      Linking.openURL(url).catch(() => setActionError(`Could not open browser: ${url}`)),
+    );
+  }, []);
+
+  const openWeb = useCallback(
+    (path: string) => openExternal(`${getWebUrl()}${path}`),
+    [openExternal],
+  );
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    refetchVenue();
+    await Promise.allSettled([refetchBilling(), refetchStripe()]);
+    setRefreshing(false);
+  }, [refetchBilling, refetchStripe, refetchVenue]);
 
   function handleManageBilling() {
     if (!isAdmin) return;
+    setActionError(null);
+    setSuccessMsg(null);
     portalMutation.mutate(undefined, {
       onSuccess: ({ url }) => {
-        setReturnBannerMsg(null);
-        void Linking.openURL(url).catch(() => Alert.alert('Could not open browser', url));
+        setPortalUnavailable(false);
+        openExternal(url);
       },
-      onError: (err: Error) => {
+      onError: () => {
         hapticError();
-        Alert.alert('Could not open billing portal', err.message);
+        setPortalUnavailable(true);
+        setActionError(
+          'The Stripe Customer Portal could not be opened from the app. Manage card details, invoices, and cancellation from the web dashboard instead.',
+        );
       },
     });
   }
 
   function handleResume() {
     hapticWarning();
+    setActionError(null);
+    setSuccessMsg(null);
     changePlanMutation.mutate('resume_subscription', {
       onSuccess: (data) => {
         hapticSuccess();
-        setReturnBannerMsg(data.message ?? 'Your subscription will continue.');
+        setSuccessMsg(data.message ?? 'Your subscription will continue.');
       },
       onError: (err: Error) => {
         hapticError();
-        Alert.alert('Could not resume subscription', err.message);
+        setActionError(err.message);
       },
     });
   }
 
   function handleResubscribe() {
     hapticWarning();
+    setActionError(null);
+    setSuccessMsg(null);
     changePlanMutation.mutate('resubscribe', {
       onSuccess: (data) => {
         if (data.redirect_url) {
-          void Linking.openURL(data.redirect_url).catch(() =>
-            Alert.alert('Could not open Stripe Checkout', data.redirect_url ?? ''),
+          setSuccessMsg(
+            'Complete checkout in the browser — your plan updates here when you return.',
           );
+          openExternal(data.redirect_url);
         } else {
           hapticSuccess();
-          setReturnBannerMsg('You have resubscribed. Welcome back!');
+          setSuccessMsg(data.message ?? 'You have resubscribed. Welcome back!');
         }
       },
       onError: (err: Error) => {
         hapticError();
-        Alert.alert('Could not resubscribe', err.message);
+        setActionError(err.message);
       },
     });
   }
 
   function handleStripeConnect() {
+    setConnectError(null);
     stripeConnectLinkMutation.mutate(undefined, {
-      onSuccess: ({ url }) => {
-        void Linking.openURL(url).catch(() => Alert.alert('Could not open Stripe', url));
-      },
+      onSuccess: ({ url }) => openExternal(url),
       onError: (err: Error) => {
         hapticError();
-        Alert.alert('Could not start Stripe setup', err.message);
+        setConnectError(err.message);
       },
     });
   }
@@ -453,15 +347,33 @@ export default function PlanScreen() {
     );
   }
 
-  // --- Derived data ---
+  // --- Derived data (billing/status wins; venue bootstrap is the fallback) ---
   const pricingTier = billing?.pricing_tier ?? venue.pricing_tier;
-  const planStatus = billing?.plan_status ?? null;
+  const planStatus: PlanStatus = billing?.plan_status ?? (venue.plan_status as PlanStatus) ?? null;
+  const periodStart = billing?.subscription_current_period_start;
   const periodEnd = billing?.subscription_current_period_end;
-  const billingQuote = billing?.billing_quote;
+  const billingQuote = billing?.billing_quote ?? null;
   const calendarCount = billing?.calendar_count ?? null;
   const calendarLimit = planCalendarLimit(pricingTier);
+  const hasStripeSub = !!(billing?.stripe_subscription_id ?? venue.stripe_subscription_id);
 
   const statusInfo = planStatusLabel(planStatus);
+  const tierLabel = planDisplayName(pricingTier);
+  const planPrice = planPriceLabel(pricingTier);
+  const inclusions = isAppointmentsTier(pricingTier) ? APPOINTMENTS_PLAN_DETAILS[pricingTier] : null;
+  const smsIncluded = smsMonthlyAllowance(pricingTier);
+  const coupons = couponTitles(billingQuote);
+  const discountLines = discountSummaryLines(billingQuote);
+
+  const periodEndMs = periodEnd ? Date.parse(periodEnd) : Number.NaN;
+  const hasFuturePeriodEnd = Number.isFinite(periodEndMs) && periodEndMs > nowMs;
+  const isTrial = planStatus === 'trialing';
+  const isCancelling = planStatus === 'cancelling';
+  // Web parity: 'cancelling' (or cancelled with a future period end) keeps access until the date;
+  // cancelled with no future period end means the subscription has fully ended.
+  const cancelledWithAccess = isCancelling || (planStatus === 'cancelled' && hasFuturePeriodEnd);
+  const subscriptionExpired = planStatus === 'cancelled' && !hasFuturePeriodEnd;
+  const billingActive = planStatus === 'active' || isTrial;
 
   const models = Array.from(
     new Set(
@@ -475,112 +387,182 @@ export default function PlanScreen() {
   const chargesEnabled = stripeConnect?.charges_enabled ?? false;
   const detailsSubmitted = stripeConnect?.details_submitted ?? false;
 
-  const isAppointmentsPlan = isAppointmentsTier(pricingTier);
-  const canChangePlan =
-    isAdmin &&
-    isAppointmentsPlan &&
-    planStatus !== 'past_due' &&
-    planStatus !== 'cancelling' &&
-    planStatus !== 'cancelled';
-
-  const isTrial = planStatus === 'trialing';
-  const trialDaysLeft = daysRemaining(periodEnd);
+  const trialDaysLeft = daysRemaining(periodEnd, nowMs);
 
   return (
     <Screen scroll={false} padded={false}>
       {header}
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-
-        {/* Return-from-portal success banner */}
-        {returnBannerMsg && (
-          <View style={[styles.banner, { backgroundColor: colors.successSurface }]}>
-            <Text variant="bodySmall" color={colors.success}>
-              {returnBannerMsg}
-            </Text>
-          </View>
-        )}
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={() => void onRefresh()} />
+        }>
+        {/* Success banner (resume / plan change / portal sync) */}
+        {successMsg && <StatusBanner tone="success" message={successMsg} />}
 
         {/* Trial countdown */}
         {isTrial && (
-          <View style={[styles.banner, { backgroundColor: colors.brandSubtle }]}>
-            <Text variant="bodySmall" tone="brand">
-              Free trial — {trialDaysLeft} day{trialDaysLeft !== 1 ? 's' : ''} remaining (ends{' '}
-              {formatDate(periodEnd)})
-            </Text>
-          </View>
+          <StatusBanner
+            tone="brand"
+            message={`Free trial — ${trialDaysLeft} day${trialDaysLeft !== 1 ? 's' : ''} remaining (ends ${formatDate(periodEnd)})`}
+          />
         )}
 
-        {/* Status banners */}
+        {/* Payment failed */}
         {planStatus === 'past_due' && (
           <StatusBanner
             tone="danger"
-            message="Your last payment failed. Update your payment method to keep access."
+            title="Payment required"
+            message="Your last payment failed. Update your payment method in Stripe so invoicing can retry and keep your plan active."
             buttonLabel={portalMutation.isPending ? 'Opening…' : 'Update payment method'}
             loading={portalMutation.isPending}
             onPress={isAdmin ? handleManageBilling : undefined}
           />
         )}
-        {planStatus === 'cancelling' && (
+
+        {/* Cancelling — keep access until period end, can resume */}
+        {isCancelling && (
           <StatusBanner
             tone="warning"
-            message={`Your subscription is set to cancel on ${formatDate(periodEnd)}. Changed your mind?`}
+            title="Your subscription has been cancelled."
+            message={`You keep access to your current plan until ${formatDate(periodEnd)}. Stripe will not charge again unless the subscription is restarted before then. Changed your mind?`}
             buttonLabel={changePlanMutation.isPending ? 'Resuming…' : 'Keep my plan'}
             loading={changePlanMutation.isPending}
             onPress={isAdmin ? handleResume : undefined}
           />
         )}
-        {planStatus === 'cancelled' && (
+
+        {/* Cancelled but access continues to period end (no resume once fully cancelled) */}
+        {planStatus === 'cancelled' && hasFuturePeriodEnd && (
           <StatusBanner
             tone="warning"
-            message="Your subscription has ended. Resubscribe to restore full access."
+            title="Your subscription has been cancelled."
+            message={`You keep access to your current plan until ${formatDate(periodEnd)}. Stripe will not charge again after that date.`}
+          />
+        )}
+
+        {/* Subscription fully ended */}
+        {subscriptionExpired && (
+          <StatusBanner
+            tone="warning"
+            title="Your subscription has ended"
+            message="Venue changes and public online booking are paused until you start a new subscription. Use Resubscribe to pay again with Stripe Checkout."
             buttonLabel={changePlanMutation.isPending ? 'Opening Stripe…' : 'Resubscribe'}
             loading={changePlanMutation.isPending}
             onPress={isAdmin ? handleResubscribe : undefined}
           />
         )}
 
+        {/* Inline action error — replaces Alert.alert (no-op on web) */}
+        {actionError && <StatusBanner tone="danger" message={actionError} />}
+
         {/* Plan card */}
         <Card>
           <View style={styles.cardHeader}>
-            <Text variant="label">Plan</Text>
+            <Text variant="label">Your plan</Text>
             {planStatus && <Badge label={statusInfo.label} tone={statusInfo.tone} />}
           </View>
 
-          {pricingTier && (
-            <Text variant="bodySmall" tone="secondary" style={styles.tierLabel}>
-              {planDisplayName(pricingTier)}
+          <Text variant="subheading" style={styles.tierName}>
+            {tierLabel}
+          </Text>
+          <Text variant="bodySmall" tone="secondary">
+            Published listing {planPrice}
+            {coupons.length > 0 ? ' · promotional pricing applied in Stripe' : ''}
+          </Text>
+          {inclusions && (
+            <Text variant="caption" tone="muted" style={styles.inclusions}>
+              {inclusions.calendars} · {inclusions.team} · {inclusions.sms}
             </Text>
           )}
 
           <View style={styles.rows}>
-            <InfoRow label="Booking types" value={models.join(' · ') || '—'} />
-            <InfoRow label="Currency" value={venue.currency?.toUpperCase() ?? 'GBP'} />
+            {billingQuote?.next_charge?.formatted && !cancelledWithAccess && !subscriptionExpired && (
+              <InfoRow label="Est. next invoice" value={billingQuote.next_charge.formatted} />
+            )}
+            {coupons.length > 0 && <InfoRow label="Coupon applied" value={coupons.join(', ')} />}
             <InfoRow
-              label={planStatus === 'cancelling' || planStatus === 'cancelled' ? 'Access until' : 'Next billing'}
+              label={cancelledWithAccess || subscriptionExpired ? 'Access until' : 'Next billing'}
               value={formatDate(periodEnd)}
             />
-            {billingQuote?.next_charge?.formatted &&
-              planStatus !== 'cancelling' &&
-              planStatus !== 'cancelled' && (
-                <InfoRow label="Est. next invoice" value={billingQuote.next_charge.formatted} />
-              )}
-            {billingQuote?.coupon_titles && billingQuote.coupon_titles.length > 0 && (
-              <InfoRow label="Discounts" value={billingQuote.coupon_titles.join(', ')} />
+            {periodStart && periodEnd && (
+              <InfoRow
+                label="Current period"
+                value={`${formatDate(periodStart)} – ${formatDate(periodEnd)}`}
+              />
             )}
+            <InfoRow label="Booking types" value={models.join(' · ') || '—'} />
+            <InfoRow label="Currency" value={venue.currency?.toUpperCase() ?? 'GBP'} />
           </View>
 
-          {/* Calendar usage meter */}
-          {calendarCount !== null && (
-            <View style={styles.meters}>
+          {discountLines.length > 0 && (
+            <View style={styles.discountList}>
+              {discountLines.map((line) => (
+                <Text key={line} variant="caption" tone="muted">
+                  • {line}
+                </Text>
+              ))}
+            </View>
+          )}
+
+          {billingQuote?.next_charge?.formatted && (
+            <Text variant="caption" tone="muted" style={styles.disclaimer}>
+              Invoice estimate comes from Stripe’s upcoming invoice preview (includes coupons and
+              account balance). Final amounts may differ if usage or tax changes. Metered SMS
+              overage may be added.
+            </Text>
+          )}
+
+          {/* Usage */}
+          <View style={styles.meters}>
+            {calendarCount !== null && (
               <UsageMeter
-                label="Calendars"
+                label="Calendar usage"
                 used={calendarCount}
-                total={calendarLimit === Infinity ? null : calendarLimit}
+                total={Number.isFinite(calendarLimit) ? calendarLimit : null}
                 color={colors.brand}
-                note={calendarLimit === Infinity ? 'Unlimited on Pro' : undefined}
+                note={
+                  Number.isFinite(calendarLimit)
+                    ? undefined
+                    : 'Your current plan has no calendar cap.'
+                }
+              />
+            )}
+            <View>
+              <View style={styles.smsRow}>
+                <Text variant="bodySmall" tone="secondary">
+                  SMS allowance
+                </Text>
+                <Text variant="bodySmall" tone="muted">
+                  {smsIncluded} segments/month included
+                </Text>
+              </View>
+              <Text variant="caption" tone="muted">
+                Overage is £{SMS_OVERAGE_GBP_PER_MESSAGE.toFixed(2)} per SMS segment. Live SMS
+                usage isn’t available in the app yet — check the web dashboard (Settings → Plan).
+              </Text>
+            </View>
+          </View>
+
+          {isAdmin && billingError && (
+            <View style={[styles.billingErrorBox, { backgroundColor: colors.dangerSurface }]}>
+              <Text variant="caption" color={colors.danger} style={styles.billingErrorText}>
+                Couldn’t load live billing details from Stripe.
+              </Text>
+              <Button
+                label="Retry"
+                variant="ghost"
+                size="sm"
+                onPress={() => void refetchBilling()}
               />
             </View>
           )}
+
+          <Text variant="caption" tone="muted" style={styles.cancelNotice}>
+            {SUBSCRIPTION_CANCELLATION_PUBLIC_NOTICE} For billing administration (card details,
+            invoices, receipts, billing address, and cancellation), use the Stripe Customer Portal.
+          </Text>
 
           {/* Admin billing actions */}
           {isAdmin ? (
@@ -590,15 +572,15 @@ export default function PlanScreen() {
                 variant="primary"
                 fullWidth
                 loading={portalMutation.isPending}
-                disabled={billingLoading}
+                disabled={billingLoading || portalMutation.isPending}
                 onPress={handleManageBilling}
               />
-              {canChangePlan && (
+              {portalUnavailable && (
                 <Button
-                  label="Change plan"
+                  label="Open billing on web"
                   variant="secondary"
                   fullWidth
-                  onPress={() => setShowChangePlan(true)}
+                  onPress={() => openWeb('/dashboard/settings?tab=plan')}
                 />
               )}
               <Button
@@ -609,19 +591,42 @@ export default function PlanScreen() {
               />
             </View>
           ) : (
-            <Text variant="caption" tone="muted" style={styles.adminNote}>
-              Contact your admin to manage billing.
-            </Text>
+            <View style={styles.actions}>
+              <Text variant="caption" tone="muted">
+                Contact your admin to manage billing.
+              </Text>
+              <Button
+                label="View plan on web"
+                variant="ghost"
+                fullWidth
+                onPress={() => openWeb('/dashboard/settings?tab=plan')}
+              />
+            </View>
           )}
         </Card>
 
-        {/* Stripe Connect card (always visible; state derived from API) */}
+        {/* Change Appointments plan — Light / Plus / Pro with proration previews */}
+        {isAdmin && isAppointmentsTier(pricingTier) && !subscriptionExpired && (
+          <PlanChangeSection
+            currentTier={pricingTier}
+            planStatus={planStatus}
+            hasStripeSubscription={hasStripeSub && billingActive}
+            onChanged={(message) => {
+              setSuccessMsg(message);
+              setActionError(null);
+              void refetchBilling();
+            }}
+          />
+        )}
+
+        {/* Stripe Connect (web Settings → Payments tab) */}
         <StripeConnectCard
           isAdmin={isAdmin}
           hasAccountId={hasStripeAccount}
           chargesEnabled={chargesEnabled}
           detailsSubmitted={detailsSubmitted}
           connecting={stripeConnectLinkMutation.isPending}
+          errorText={connectError}
           onConnect={handleStripeConnect}
         />
 
@@ -637,19 +642,6 @@ export default function PlanScreen() {
 
         <View style={styles.spacer} />
       </ScrollView>
-
-      {/* Plan tier change sheet — appointments venues only */}
-      {isAppointmentsPlan && isAppointmentsTier(pricingTier) && (
-        <PlanChangeTierSheet
-          visible={showChangePlan}
-          currentTier={pricingTier}
-          onClose={() => setShowChangePlan(false)}
-          onSuccess={(_newTier) => {
-            setShowChangePlan(false);
-            void refetchBilling();
-          }}
-        />
-      )}
     </Screen>
   );
 }
@@ -666,7 +658,7 @@ const styles = StyleSheet.create({
   banner: {
     padding: spacing.sm,
     borderRadius: radius.sm,
-    gap: spacing.sm,
+    gap: spacing.xs,
   },
   bannerText: {
     lineHeight: 20,
@@ -681,8 +673,11 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     marginBottom: spacing.xs,
   },
-  tierLabel: {
-    marginBottom: spacing.sm,
+  tierName: {
+    marginBottom: spacing.xs,
+  },
+  inclusions: {
+    marginTop: spacing.xs,
   },
   rows: {
     marginVertical: spacing.sm,
@@ -698,62 +693,39 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     textAlign: 'right',
   },
+  discountList: {
+    gap: spacing.xs,
+    marginBottom: spacing.sm,
+  },
+  disclaimer: {
+    marginBottom: spacing.sm,
+  },
   meters: {
-    marginTop: spacing.sm,
+    marginTop: spacing.xs,
     gap: spacing.sm,
   },
-  meterRow: {
-    gap: spacing.xs,
-  },
-  meterLabelRow: {
+  smsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    marginBottom: spacing.xs,
   },
-  meterTrack: {
-    height: 6,
-    borderRadius: 3,
-    overflow: 'hidden',
+  billingErrorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    padding: spacing.sm,
+    borderRadius: radius.sm,
+    marginTop: spacing.sm,
   },
-  meterFill: {
-    height: 6,
-    borderRadius: 3,
+  billingErrorText: {
+    flex: 1,
+  },
+  cancelNotice: {
+    marginTop: spacing.sm,
   },
   actions: {
-    marginTop: spacing.sm,
+    marginTop: spacing.base,
     gap: spacing.sm,
-  },
-  adminNote: {
-    marginTop: spacing.sm,
-  },
-  help: {
-    marginVertical: spacing.sm,
-  },
-  stepIndicator: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginVertical: spacing.sm,
-    gap: 0,
-  },
-  stepDotContainer: {
-    alignItems: 'center',
-    flex: 1,
-    gap: spacing.xs,
-  },
-  stepDot: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stepLabel: {
-    textAlign: 'center',
-  },
-  stepLine: {
-    height: 2,
-    flex: 0.3,
-    marginTop: 11,
-    alignSelf: 'flex-start',
   },
   spacer: {
     height: spacing.xl,

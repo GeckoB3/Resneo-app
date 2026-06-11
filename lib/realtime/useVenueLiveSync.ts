@@ -12,6 +12,16 @@ export interface VenuePostgresSubscription {
 
 const DEFAULT_POLL_MS = 30_000;
 
+/**
+ * Channel topics must be unique per subscriber. `supabase.channel(name)`
+ * returns the EXISTING instance for a repeated topic, and calling `.on()`
+ * on an already-subscribed channel throws ("cannot add postgres_changes
+ * callbacks after subscribe()") — which happened whenever two screens/
+ * providers watched the same table (e.g. the global provider + the bookings
+ * tab). A per-hook-instance suffix keeps every subscriber on its own channel.
+ */
+let liveSyncInstanceCounter = 0;
+
 interface UseVenueLiveSyncOptions {
   venueId?: string | null;
   /** Called for change events and during polling fallback. */
@@ -45,6 +55,11 @@ export function useVenueLiveSync({
   enabled = true,
 }: UseVenueLiveSyncOptions): LiveSyncState {
   const [state, setState] = useState<LiveSyncState>('idle');
+  // Lazily-initialised, stable per hook instance — see liveSyncInstanceCounter.
+  const [instanceId] = useState(() => {
+    liveSyncInstanceCounter += 1;
+    return liveSyncInstanceCounter;
+  });
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hasSubscribedRef = useRef(false);
   const onRefreshRef = useRef(onRefresh);
@@ -79,7 +94,7 @@ export function useVenueLiveSync({
 
     const channelName = `venue-live-${venueId}-${subscriptionsRef.current
       .map((s) => s.table)
-      .join('-')}`;
+      .join('-')}-${instanceId}`;
     let channel = supabase.channel(channelName);
 
     for (let index = 0; index < subscriptionsRef.current.length; index += 1) {

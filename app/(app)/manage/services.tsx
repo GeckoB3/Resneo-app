@@ -14,7 +14,11 @@ import {
   AddonGroupEditorSheet,
   type AddonGroupEditorTarget,
 } from '@/components/manage/AddonGroupEditorSheet';
-import { AddonLinksSheet, type AddonLinksTarget } from '@/components/manage/AddonLinksSheet';
+import {
+  AddonLinksSheet,
+  addonSelectionRuleLabel,
+  type AddonLinksTarget,
+} from '@/components/manage/AddonLinksSheet';
 import {
   VariantsEditorSheet,
   type VariantsEditorTarget,
@@ -255,6 +259,8 @@ function AddonsTab({
   addonGroupsQuery,
   includeInactive,
   setIncludeInactive,
+  serviceNameById,
+  onPressService,
   onEdit,
   onCreate,
 }: {
@@ -262,6 +268,10 @@ function AddonsTab({
   addonGroupsQuery: ReturnType<typeof useAddonGroups>;
   includeInactive: boolean;
   setIncludeInactive: (v: boolean) => void;
+  /** id → name for every managed service, to render "Used by" chips. */
+  serviceNameById: Map<string, string>;
+  /** Jump to a service from a "Used by" chip. */
+  onPressService: (serviceId: string) => void;
   onEdit: (target: AddonGroupEditorTarget) => void;
   onCreate: () => void;
 }) {
@@ -270,15 +280,18 @@ function AddonsTab({
   const addonsByGroup = addonGroupsQuery.data?.addons_by_group ?? {};
   const serviceLinks = addonGroupsQuery.data?.service_links ?? [];
 
-  const usedByCount = (groupId: string) => {
+  /** Services linked to a group, named and sorted (web parity: usedByForGroup). */
+  const usedByForGroup = (groupId: string) => {
     const ids = new Set<string>();
     for (const link of serviceLinks) {
       if (link.addon_group_id === groupId) {
-        const sid = link.appointment_service_id ?? link.service_item_id;
+        const sid = link.service_item_id ?? link.appointment_service_id;
         if (sid) ids.add(sid);
       }
     }
-    return ids.size;
+    return [...ids]
+      .map((id) => ({ id, name: serviceNameById.get(id) ?? 'Unknown service' }))
+      .sort((a, b) => a.name.localeCompare(b.name));
   };
 
   if (addonGroupsQuery.isLoading) return <ListSkeleton />;
@@ -326,7 +339,7 @@ function AddonsTab({
       ) : (
         groups.map((group) => {
           const addons = addonsByGroup[group.id] ?? [];
-          const usedBy = usedByCount(group.id);
+          const usedBy = usedByForGroup(group.id);
           return (
             <Card key={group.id} padded={false} style={styles.serviceCard}>
               <View style={styles.addonGroupRow}>
@@ -336,14 +349,15 @@ function AddonsTab({
                       {group.name}
                     </Text>
                     {!group.is_active ? (
-                      <Badge label="Archived" tone="neutral" />
+                      <Badge label="Archived" tone="warning" />
+                    ) : null}
+                    {group.hidden_from_online ? (
+                      <Badge label="Hidden online" tone="neutral" />
                     ) : null}
                   </View>
                   <Text variant="caption" tone="muted">
-                    {addons.length} add-on{addons.length === 1 ? '' : 's'} ·{' '}
-                    {group.selection_type === 'single' ? 'pick one' : 'pick multiple'}
-                    {group.min_select > 0 ? ' · required' : ''}
-                    {usedBy > 0 ? ` · used by ${usedBy} service${usedBy === 1 ? '' : 's'}` : ''}
+                    {addonSelectionRuleLabel(group)} · {addons.length} option
+                    {addons.length === 1 ? '' : 's'}
                   </Text>
                   {group.prompt_to_client ? (
                     <Text variant="caption" tone="muted" numberOfLines={1}>
@@ -386,6 +400,41 @@ function AddonsTab({
                   ))}
                 </View>
               ) : null}
+              <View style={[styles.usedByWrap, { borderTopColor: colors.border }]}>
+                {usedBy.length > 0 ? (
+                  <>
+                    <Text variant="overline" tone="muted">
+                      Used by ({usedBy.length})
+                    </Text>
+                    <View style={styles.usedByChips}>
+                      {usedBy.map((svc) => (
+                        <Pressable
+                          key={svc.id}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Open service ${svc.name}`}
+                          hitSlop={6}
+                          onPress={() => onPressService(svc.id)}
+                          style={({ pressed }) => [
+                            styles.usedByChip,
+                            {
+                              borderColor: colors.border,
+                              backgroundColor: colors.surface,
+                              opacity: pressed ? 0.6 : 1,
+                            },
+                          ]}>
+                          <Text variant="caption" tone="secondary" numberOfLines={1}>
+                            {svc.name}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  </>
+                ) : (
+                  <Text variant="caption" tone="muted">
+                    Not linked to any services yet.
+                  </Text>
+                )}
+              </View>
             </Card>
           );
         })
@@ -657,7 +706,9 @@ export default function ServicesScreen() {
     setAddonsTarget({
       serviceId: service.id,
       serviceName: service.name,
-      linkedGroupIds: (service.addon_groups ?? []).map((group) => group.group.id),
+      linkedGroups: [...(service.addon_groups ?? [])]
+        .sort((a, b) => (a.link_sort_order ?? 0) - (b.link_sort_order ?? 0))
+        .map((entry) => ({ id: entry.group.id, name: entry.group.name })),
     });
 
   const sheetOpen = editTarget !== null || creating;
@@ -751,6 +802,11 @@ export default function ServicesScreen() {
           addonGroupsQuery={addonGroupsQuery}
           includeInactive={includeInactiveAddons}
           setIncludeInactive={setIncludeInactiveAddons}
+          serviceNameById={new Map(services.map((s) => [s.id, s.name] as const))}
+          onPressService={(serviceId) => {
+            setActiveTab('services');
+            setExpandedId(serviceId);
+          }}
           onEdit={(target) => setAddonGroupEditorTarget(target)}
           onCreate={() => setAddonGroupEditorTarget({ mode: 'create' })}
         />
@@ -1134,6 +1190,24 @@ const styles = StyleSheet.create({
     paddingTop: spacing.sm,
     borderTopWidth: StyleSheet.hairlineWidth,
     gap: spacing.xs,
+  },
+  usedByWrap: {
+    paddingHorizontal: spacing.base,
+    paddingVertical: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: spacing.xs,
+  },
+  usedByChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  usedByChip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 2,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    maxWidth: '100%',
   },
   spacer: {
     height: spacing.xl,

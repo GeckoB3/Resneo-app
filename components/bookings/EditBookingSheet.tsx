@@ -23,6 +23,8 @@ export type EditBookingTarget = {
   dietaryNotes: string;
   occasion: string;
   internalNotes: string;
+  /** Dietary + occasion are restaurant fields — hidden for appointments. */
+  isTableReservation?: boolean;
 };
 
 type EditBookingSheetProps = {
@@ -155,14 +157,18 @@ export function EditBookingSheet({ target, onClose }: EditBookingSheetProps) {
                   multiline
                   style={styles.multiline}
                 />
-                <Input
-                  label="Dietary notes"
-                  value={dietaryNotes}
-                  onChangeText={setDietaryNotes}
-                  multiline
-                  style={styles.multiline}
-                />
-                <Input label="Occasion" value={occasion} onChangeText={setOccasion} />
+                {target.isTableReservation ? (
+                  <>
+                    <Input
+                      label="Dietary notes"
+                      value={dietaryNotes}
+                      onChangeText={setDietaryNotes}
+                      multiline
+                      style={styles.multiline}
+                    />
+                    <Input label="Occasion" value={occasion} onChangeText={setOccasion} />
+                  </>
+                ) : null}
                 <Input
                   label="Internal notes (staff only)"
                   value={internalNotes}

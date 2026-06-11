@@ -3,7 +3,6 @@ import * as Linking from 'expo-linking';
 import { Stack } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -16,6 +15,7 @@ import { Button } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Input } from '@/components/ui/Input';
 import { Screen } from '@/components/ui/Screen';
+import { Segmented } from '@/components/ui/Segmented';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
@@ -44,6 +44,16 @@ type SlugHint = 'idle' | 'checking' | 'current' | 'available' | 'taken' | 'inval
 // ------------------------------------------------------------------
 const SLUG_RE = /^[a-z0-9-]+$/;
 
+/** Price band options — matches the web Profile tab select (£/££/£££, empty = not set). */
+const PRICE_BANDS = [
+  { value: '', label: 'Not set' },
+  { value: '£', label: '£' },
+  { value: '££', label: '££' },
+  { value: '£££', label: '£££' },
+] as const;
+
+type PriceBand = (typeof PRICE_BANDS)[number]['value'];
+
 function buildPayloadFingerprint(fields: {
   name: string;
   addrName: string;
@@ -56,6 +66,9 @@ function buildPayloadFingerprint(fields: {
   slug: string;
   timezone: string;
   noShowGrace: string;
+  cuisineType: string;
+  priceBand: string;
+  kitchenEmail: string;
 }): string {
   return JSON.stringify({
     name: fields.name.trim(),
@@ -71,6 +84,9 @@ function buildPayloadFingerprint(fields: {
     slug: fields.slug.trim().toLowerCase(),
     timezone: fields.timezone.trim(),
     no_show_grace_minutes: parseInt(fields.noShowGrace, 10) || 15,
+    cuisine_type: fields.cuisineType.trim(),
+    price_band: fields.priceBand,
+    kitchen_email: fields.kitchenEmail.trim(),
   });
 }
 
@@ -100,6 +116,10 @@ export default function VenueProfileScreen() {
   const [slug, setSlug] = useState('');
   const [timezone, setTimezone] = useState('');
   const [noShowGrace, setNoShowGrace] = useState('');
+  // Restaurant-only fields (hidden on appointments plans — web parity)
+  const [cuisineType, setCuisineType] = useState('');
+  const [priceBand, setPriceBand] = useState('');
+  const [kitchenEmail, setKitchenEmail] = useState('');
 
   // ------------------------------------------------------------------
   // Validation errors
@@ -109,10 +129,17 @@ export default function VenueProfileScreen() {
   const [websiteError, setWebsiteError] = useState<string | null>(null);
   const [noShowError, setNoShowError] = useState<string | null>(null);
   const [slugFieldError, setSlugFieldError] = useState<string | null>(null);
+  const [kitchenEmailError, setKitchenEmailError] = useState<string | null>(null);
 
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Inline feedback for logo/cover uploads (Alert.alert is a no-op on web)
+  const [brandingFeedback, setBrandingFeedback] = useState<{
+    tone: 'success' | 'danger';
+    text: string;
+  } | null>(null);
 
   // ------------------------------------------------------------------
   // Slug availability
@@ -138,6 +165,9 @@ export default function VenueProfileScreen() {
         slug: venue.slug ?? '',
         timezone: venue.timezone ?? '',
         noShowGrace: String((venue as VenueBootstrapExtended).no_show_grace_minutes ?? 15),
+        cuisineType: (venue as VenueBootstrapExtended).cuisine_type ?? '',
+        priceBand: (venue as VenueBootstrapExtended).price_band ?? '',
+        kitchenEmail: (venue as VenueBootstrapExtended).kitchen_email ?? '',
       })
     : null;
 
@@ -154,6 +184,9 @@ export default function VenueProfileScreen() {
         slug,
         timezone,
         noShowGrace,
+        cuisineType,
+        priceBand,
+        kitchenEmail,
       })
     : null;
 
@@ -188,9 +221,15 @@ export default function VenueProfileScreen() {
     setSlug(venue.slug ?? '');
      
     setTimezone(venue.timezone ?? 'Europe/London');
-     
+
     setNoShowGrace(String(ext.no_show_grace_minutes ?? 15));
-     
+
+    setCuisineType(ext.cuisine_type ?? '');
+
+    setPriceBand(ext.price_band ?? '');
+
+    setKitchenEmail(ext.kitchen_email ?? '');
+
     setSeeded(true);
   }, [venue, seeded]);
 
@@ -268,6 +307,7 @@ export default function VenueProfileScreen() {
     setWebsiteError(null);
     setNoShowError(null);
     setSlugFieldError(null);
+    setKitchenEmailError(null);
 
     if (!name.trim()) {
       setNameError('Business name is required.');
@@ -293,6 +333,10 @@ export default function VenueProfileScreen() {
     }
     if (slugHint === 'taken') {
       setSlugFieldError('This booking page address is already taken.');
+      ok = false;
+    }
+    if (kitchenEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(kitchenEmail.trim())) {
+      setKitchenEmailError('Enter a valid email address.');
       ok = false;
     }
     return ok;
@@ -344,6 +388,15 @@ export default function VenueProfileScreen() {
       patch.no_show_grace_minutes = grace;
     }
 
+    // Restaurant-only fields — only editable (and only sent) on non-appointments plans
+    if (!isAppointments) {
+      if (cuisineType.trim() !== (prev.cuisine_type ?? '')) patch.cuisine_type = cuisineType.trim();
+      if (priceBand !== (prev.price_band ?? '')) patch.price_band = priceBand;
+      if (kitchenEmail.trim() !== (prev.kitchen_email ?? '')) {
+        patch.kitchen_email = kitchenEmail.trim();
+      }
+    }
+
     if (Object.keys(patch).length === 0) {
       // Nothing changed
       setSavedAt(Date.now());
@@ -365,29 +418,37 @@ export default function VenueProfileScreen() {
   // ------------------------------------------------------------------
   const handleLogoUpload = useCallback(async () => {
     hapticSelect();
+    setBrandingFeedback(null);
     const picked = await pickVenueImage();
     if (!picked) return;
     try {
       await uploadLogo.mutateAsync(picked);
       hapticSuccess();
-      Alert.alert('Logo updated', 'Your venue logo has been saved.');
+      setBrandingFeedback({ tone: 'success', text: 'Logo updated.' });
     } catch (e) {
       hapticWarning();
-      Alert.alert('Upload failed', e instanceof ApiError ? e.message : 'Could not upload logo.');
+      setBrandingFeedback({
+        tone: 'danger',
+        text: e instanceof ApiError ? e.message : 'Could not upload logo.',
+      });
     }
   }, [uploadLogo]);
 
   const handleCoverUpload = useCallback(async () => {
     hapticSelect();
+    setBrandingFeedback(null);
     const picked = await pickVenueImage();
     if (!picked) return;
     try {
       await uploadCover.mutateAsync(picked);
       hapticSuccess();
-      Alert.alert('Cover photo updated', 'Your venue cover photo has been saved.');
+      setBrandingFeedback({ tone: 'success', text: 'Cover photo updated.' });
     } catch (e) {
       hapticWarning();
-      Alert.alert('Upload failed', e instanceof ApiError ? e.message : 'Could not upload cover photo.');
+      setBrandingFeedback({
+        tone: 'danger',
+        text: e instanceof ApiError ? e.message : 'Could not upload cover photo.',
+      });
     }
   }, [uploadCover]);
 
@@ -566,6 +627,47 @@ export default function VenueProfileScreen() {
             ) : null}
           </View>
 
+          {/* Restaurant details — web parity: hidden for appointments plans */}
+          {!isAppointments ? (
+            <>
+              <SectionHeader title="Restaurant details" />
+
+              <Input
+                label="Cuisine type"
+                value={cuisineType}
+                onChangeText={setCuisineType}
+                maxLength={100}
+                placeholder="e.g. Style or category"
+                autoCapitalize="words"
+              />
+
+              <View style={styles.priceBandGroup}>
+                <Text variant="label" tone="secondary">Price band</Text>
+                <Segmented
+                  options={[...PRICE_BANDS]}
+                  value={(PRICE_BANDS.some((b) => b.value === priceBand) ? priceBand : '') as PriceBand}
+                  onChange={(v) => setPriceBand(v)}
+                />
+                <Text variant="caption" tone="muted">
+                  £ budget · ££ mid-range · £££ fine dining
+                </Text>
+              </View>
+
+              <Input
+                label="Kitchen email"
+                value={kitchenEmail}
+                onChangeText={(v) => { setKitchenEmail(v); setKitchenEmailError(null); }}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                maxLength={255}
+                placeholder="kitchen@venue.com"
+                helper="Receives the daily dietary digest email."
+                error={kitchenEmailError ?? undefined}
+              />
+            </>
+          ) : null}
+
           {/* Operational settings */}
           <SectionHeader title="Operational settings" />
 
@@ -609,6 +711,12 @@ export default function VenueProfileScreen() {
             colors={colors}
           />
 
+          {brandingFeedback ? (
+            <Text variant="bodySmall" tone={brandingFeedback.tone}>
+              {brandingFeedback.text}
+            </Text>
+          ) : null}
+
           <Pressable
             onPress={() => void Linking.openURL('https://app.resneo.com/dashboard/settings')}
             hitSlop={8}
@@ -617,6 +725,41 @@ export default function VenueProfileScreen() {
               For full booking-page branding (colours, fonts, gallery) open the web dashboard →
             </Text>
           </Pressable>
+
+          {/* Table management — web Profile tab parity (restaurant venues; tool lives on the web) */}
+          {!isAppointments ? (
+            <>
+              <SectionHeader title="Table management & availability" />
+              <Pressable
+                onPress={() =>
+                  void Linking.openURL('https://app.resneo.com/dashboard/availability?tab=table')
+                }
+                hitSlop={8}
+              >
+                <Text variant="bodySmall" tone="secondary">
+                  Floor plan, table combinations, legacy availability, and related deposit options
+                  are managed on the web dashboard under Dining Availability → Table Management.{' '}
+                  <Text variant="bodySmall" tone="brand">
+                    Open on the web →
+                  </Text>
+                </Text>
+              </Pressable>
+            </>
+          ) : null}
+
+          {/* Data import — web Profile tab parity (admin-only; tool lives on the web) */}
+          <SectionHeader title="Data import" />
+
+          <Text variant="bodySmall" tone="secondary">
+            Import clients and bookings from CSV exports of your previous booking system. The
+            import tool (column mapping, validation, 24-hour undo) runs on the web dashboard.
+          </Text>
+          <Button
+            label="Open Data Import on the web"
+            variant="secondary"
+            fullWidth
+            onPress={() => void Linking.openURL('https://app.resneo.com/dashboard/import')}
+          />
 
           {/* Feedback */}
           {error ? (
@@ -729,6 +872,9 @@ const styles = StyleSheet.create({
   },
   slugPrefix: {
     marginTop: spacing.xs,
+  },
+  priceBandGroup: {
+    gap: spacing.xs,
   },
   imageRow: {
     flexDirection: 'row',

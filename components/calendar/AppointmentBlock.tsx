@@ -2,6 +2,7 @@ import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
 import { ComplianceFlagDot } from '@/components/compliance/ComplianceFlagBadge';
 import { Text } from '@/components/ui/Text';
+import { ACTION_COLORS, type ActionColors } from '@/lib/booking/booking-action-colors';
 import type { ComplianceBookingFlag } from '@/lib/queries/useCompliance';
 import {
   bookingCalendarBlockPalette,
@@ -9,8 +10,29 @@ import {
 } from '@/lib/booking/booking-status-visual';
 import { bookingStatusDisplayLabel } from '@/lib/booking/infer-booking-row-model';
 import { hexToRgba } from '@/lib/color';
-import { fonts, minTouchTarget, radius, spacing } from '@/theme/index';
-import { TIME_GUTTER_WIDTH } from '@/components/calendar/grid-layout';
+import { fonts, radius } from '@/theme/index';
+
+// ---------------------------------------------------------------------------
+// Density rules — how much detail fits at a given block height.
+// Mobile adaptation of the web's pickInfoRowCount (BookingCardInfo.tsx).
+// ---------------------------------------------------------------------------
+
+type Density = {
+  /** Rows of text to show: 1 = name, 2 = +time, 3 = +service, 4 = +status. */
+  rows: 1 | 2 | 3 | 4;
+  /** How many quick-action buttons fit (0–2). */
+  trayActions: 0 | 1 | 2;
+};
+
+/** Decide visible rows + tray size from block height and lane squeeze. */
+export function pickBlockDensity(height: number, laneCount: number): Density {
+  const squeezed = laneCount >= 3;
+  if (height < 36) return { rows: 1, trayActions: 0 };
+  if (height < 48) return { rows: 2, trayActions: 0 };
+  if (height < 68) return { rows: 2, trayActions: squeezed ? 0 : 1 };
+  if (height < 96) return { rows: 3, trayActions: squeezed ? 0 : laneCount === 2 ? 1 : 2 };
+  return { rows: 4, trayActions: squeezed ? 1 : 2 };
+}
 
 // ---------------------------------------------------------------------------
 // Status action tray helpers — mirrors web BookingCardInfo action buttons
@@ -23,57 +45,46 @@ type TrayAction =
   | { kind: 'clearArrived'; label: string };
 
 /**
- * Pick up to 2 compact tray actions for a block given its current status and
- * arrived state. Follows the web priority order:
- * - Pending   → Confirm + Arrived
- * - Booked    → Confirm + Arrived
- * - Confirmed → Start + Arrived (or Arrived-waiting → Start + Clear)
- * - Seated    → Complete + Undo
- * - Completed → Reopen
- * - No-Show   → Reopen
+ * Quick actions for a block — mirrors the web /dashboard/calendar on-block
+ * buttons exactly (PractitionerCalendarView quick actions):
+ * - Pending   → Arrived | Confirm (→ Booked)
+ * - Booked    → Arrived | Start (→ Seated)
+ * - Confirmed → Arrived | Start (→ Seated)
+ * - Seated    → Undo start (→ Booked) | Complete
+ * - Completed → Reopen (→ Seated)
+ * - Cancelled / No-Show → none
+ * When only one button fits, the status action wins over the arrived toggle
+ * (web omission rule).
  */
 export function pickTrayActions(params: {
   status: string;
   clientArrivedAt?: string | null;
-  height: number;
+  max: number;
 }): TrayAction[] {
-  const { status, clientArrivedAt, height } = params;
+  const { status, clientArrivedAt, max } = params;
+  if (max <= 0) return [];
   const hasArrived = !!clientArrivedAt;
-  const showArrived = height >= 56; // Only show arrived toggle on tall-enough blocks
+  const arrivedToggle: TrayAction = hasArrived
+    ? { kind: 'clearArrived', label: 'Clear' }
+    : { kind: 'arrived', arrived: true, label: 'Arrived' };
 
   switch (status) {
-    case 'Pending':
-    case 'Booked': {
-      const actions: TrayAction[] = [{ kind: 'status', status: 'Confirmed', label: 'Confirm' }];
-      if (showArrived) {
-        actions.push(
-          hasArrived
-            ? { kind: 'clearArrived', label: 'Clear' }
-            : { kind: 'arrived', arrived: true, label: 'Arrived' },
-        );
-      }
-      return actions;
+    case 'Pending': {
+      const confirm: TrayAction = { kind: 'status', status: 'Booked', label: 'Confirm' };
+      return max >= 2 ? [arrivedToggle, confirm] : [confirm];
     }
+    case 'Booked':
     case 'Confirmed': {
-      const actions: TrayAction[] = [{ kind: 'status', status: 'Seated', label: 'Start' }];
-      if (showArrived) {
-        actions.push(
-          hasArrived
-            ? { kind: 'clearArrived', label: 'Clear' }
-            : { kind: 'arrived', arrived: true, label: 'Arrived' },
-        );
-      }
-      return actions;
+      const start: TrayAction = { kind: 'status', status: 'Seated', label: 'Start' };
+      return max >= 2 ? [arrivedToggle, start] : [start];
     }
-    case 'Seated':
-      return [
-        { kind: 'status', status: 'Completed', label: 'Complete' },
-        { kind: 'status', status: 'Confirmed', label: 'Undo' },
-      ];
+    case 'Seated': {
+      const complete: TrayAction = { kind: 'status', status: 'Completed', label: 'Complete' };
+      const undo: TrayAction = { kind: 'status', status: 'Booked', label: 'Undo' };
+      return max >= 2 ? [undo, complete] : [complete];
+    }
     case 'Completed':
-      return [{ kind: 'status', status: 'Confirmed', label: 'Reopen' }];
-    case 'No-Show':
-      return [{ kind: 'status', status: 'Booked', label: 'Reopen' }];
+      return [{ kind: 'status', status: 'Seated', label: 'Reopen' }];
     default:
       return [];
   }
@@ -83,20 +94,26 @@ export function pickTrayActions(params: {
 // Component
 // ---------------------------------------------------------------------------
 
+/** Reserved vertical space (px) for the tray row when it is shown. */
+const TRAY_HEIGHT = 22;
+
 type AppointmentBlockProps = {
   id: string;
   guestName: string;
   serviceName: string;
+  /** "HH:mm–HH:mm" range label. */
   timeLabel: string;
   status: string;
   /** Attendance overlay — an arrived-but-not-started guest colours the bar amber. */
   clientArrivedAt?: string | null;
   staffAttendanceConfirmedAt?: string | null;
   guestAttendanceConfirmedAt?: string | null;
-  top: number;
+  /** Visual height (px) the card is being rendered at. */
   height: number;
+  /** Overlap lane within the column (0-based) and total lanes in the cluster. */
+  laneIndex?: number;
+  laneCount?: number;
   onPress: (id: string) => void;
-  onLongPress?: (id: string) => void;
   /** Fired when a quick-status tray button is tapped. */
   onStatusChange?: (id: string, status: string) => void;
   /** Fired when the arrived toggle is tapped. */
@@ -105,14 +122,14 @@ type AppointmentBlockProps = {
   actionPending?: boolean;
   /** Per-booking compliance flag — renders a small coloured dot top-right. */
   complianceFlag?: ComplianceBookingFlag | null;
-  /**
-   * Override the left offset of the block (pixels from the column edge).
-   * Defaults to TIME_GUTTER_WIDTH + spacing.xs when not supplied.
-   */
-  blockLeft?: number;
 };
 
-/** A positioned appointment card on the day grid — filled with its status colour. */
+/**
+ * The visual card for one appointment on the day grid. Fills its parent
+ * (positioning — top/height/lane left/width — is owned by the wrapper in
+ * CalendarDayGrid), adapts its content to the space available, and renders
+ * compact quick-status actions that never overlap the text.
+ */
 export function AppointmentBlock({
   id,
   guestName,
@@ -122,18 +139,15 @@ export function AppointmentBlock({
   clientArrivedAt,
   staffAttendanceConfirmedAt,
   guestAttendanceConfirmedAt,
-  top,
   height,
+  laneIndex = 0,
+  laneCount = 1,
   onPress,
-  onLongPress,
   onStatusChange,
   onArrivalToggle,
   actionPending = false,
-  blockLeft,
   complianceFlag,
 }: AppointmentBlockProps) {
-  const computedLeft = blockLeft ?? TIME_GUTTER_WIDTH + spacing.xs;
-  const compact = height < 52;
   const palette = bookingCalendarBlockPalette({
     status,
     client_arrived_at: clientArrivedAt,
@@ -141,97 +155,156 @@ export function AppointmentBlock({
     guest_attendance_confirmed_at: guestAttendanceConfirmedAt,
   });
   const arrivedWaiting = isArrivedWaitingDisplay({ status, client_arrived_at: clientArrivedAt });
-  const statusLabel = `${bookingStatusDisplayLabel(status, false)}${arrivedWaiting ? ', arrived' : ''}`;
+  const statusLabel = `${bookingStatusDisplayLabel(status, false)}${arrivedWaiting ? ' · arrived' : ''}`;
 
-  const showTray = (onStatusChange || onArrivalToggle) && !compact;
-  const trayActions = showTray
-    ? pickTrayActions({ status, clientArrivedAt, height })
+  const density = pickBlockDensity(height, laneCount);
+  const squeezed = laneCount >= 2;
+
+  const trayEnabled = !!(onStatusChange || onArrivalToggle);
+  const trayActions = trayEnabled
+    ? pickTrayActions({ status, clientArrivedAt, max: density.trayActions })
     : [];
+  const showTray = trayActions.length > 0 || (trayEnabled && actionPending && height >= 48);
 
   function handleTrayAction(action: TrayAction) {
     if (action.kind === 'status') {
       onStatusChange?.(id, action.status);
     } else if (action.kind === 'arrived') {
       onArrivalToggle?.(id, true);
-    } else if (action.kind === 'clearArrived') {
+    } else {
       onArrivalToggle?.(id, false);
     }
   }
+
+  /** Web-parity button colour per action; null = neutral translucent chip. */
+  function trayActionColors(action: TrayAction): ActionColors | null {
+    if (action.kind === 'arrived') return ACTION_COLORS.arrived;
+    if (action.kind === 'clearArrived') return null;
+    switch (action.status) {
+      case 'Booked':
+        return action.label === 'Confirm' ? ACTION_COLORS.confirm : null;
+      case 'Seated':
+        return action.label === 'Reopen' ? ACTION_COLORS.confirm : ACTION_COLORS.start;
+      case 'Completed':
+        return ACTION_COLORS.complete;
+      default:
+        return null;
+    }
+  }
+
+  const subtleText = hexToRgba(palette.text, 0.82);
 
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`${timeLabel}, ${guestName}, ${serviceName}, ${statusLabel}`}
-      accessibilityHint="Tap to open, long-press to reschedule"
+      accessibilityHint="Tap to open. Touch and hold to move."
       onPress={() => onPress(id)}
-      onLongPress={onLongPress ? () => onLongPress(id) : undefined}
       style={({ pressed }) => [
         styles.block,
         {
-          top,
-          height,
-          left: computedLeft,
           backgroundColor: palette.bg,
           borderColor: palette.border,
           opacity: pressed ? 0.85 : 1,
         },
       ]}>
-      {/* Glass left edge — a luminous highlight that lifts the lozenge off the grid. */}
-      <View style={styles.glassEdge} />
-      {/* Compliance flag — top-right corner (clears the bottom-right action tray). */}
+      {/* Status accent stripe (web parity: left colour bar). */}
+      <View style={[styles.accentStripe, { backgroundColor: palette.accent }]} />
+
+      {/* Compliance flag — top-right corner. */}
       {complianceFlag ? (
         <View style={styles.complianceDot} pointerEvents="none">
           <ComplianceFlagDot flag={complianceFlag} />
         </View>
       ) : null}
-      <View style={styles.content}>
-        <Text variant="caption" numberOfLines={1} style={[styles.guest, { color: palette.text }]}>
-          {guestName}
-        </Text>
-        {!compact ? (
-          <Text
-            variant="caption"
-            numberOfLines={1}
-            style={{ color: hexToRgba(palette.text, 0.82) }}>
-            {serviceName} · {timeLabel}
+
+      <View
+        style={[
+          styles.content,
+          squeezed && styles.contentSqueezed,
+          showTray && { paddingBottom: TRAY_HEIGHT },
+        ]}
+        pointerEvents="none">
+        {density.rows === 1 ? (
+          <Text numberOfLines={1} style={[styles.rowName, { color: palette.text }]}>
+            {guestName} · {timeLabel.split('–')[0]}
           </Text>
-        ) : null}
+        ) : (
+          <>
+            <Text numberOfLines={1} style={[styles.rowName, { color: palette.text }]}>
+              {guestName}
+            </Text>
+            {density.rows === 2 ? (
+              <Text numberOfLines={1} style={[styles.rowMeta, { color: subtleText }]}>
+                {timeLabel}
+              </Text>
+            ) : (
+              <>
+                <Text numberOfLines={1} style={[styles.rowMeta, { color: subtleText }]}>
+                  {serviceName}
+                </Text>
+                <Text numberOfLines={1} style={[styles.rowMeta, { color: subtleText }]}>
+                  {timeLabel}
+                </Text>
+                {density.rows >= 4 ? (
+                  <View style={styles.statusChipRow}>
+                    <View
+                      style={[styles.statusChip, { backgroundColor: hexToRgba('#FFFFFF', 0.9) }]}>
+                      <View style={[styles.statusChipDot, { backgroundColor: palette.accent }]} />
+                      <Text numberOfLines={1} style={[styles.statusChipLabel, { color: palette.accent }]}>
+                        {statusLabel}
+                      </Text>
+                    </View>
+                  </View>
+                ) : null}
+              </>
+            )}
+          </>
+        )}
       </View>
 
-      {/* Quick-status action tray — bottom-right corner, independent hit targets. */}
-      {trayActions.length > 0 ? (
-        <View
-          style={styles.tray}
-          // Prevent tray area from bubbling to the block's onPress.
-          onStartShouldSetResponder={() => true}>
+      {/* Quick-status tray — bottom-right, compact, never overlaps content. */}
+      {showTray ? (
+        <View style={styles.tray} onStartShouldSetResponder={() => true}>
           {actionPending ? (
-            <ActivityIndicator size="small" color={palette.text} style={styles.traySpinner} />
+            <ActivityIndicator size="small" color={palette.text} />
           ) : (
-            trayActions.map((action) => (
-              <Pressable
-                key={action.label}
-                accessibilityRole="button"
-                accessibilityLabel={action.label}
-                onPress={(e) => {
-                  e.stopPropagation?.();
-                  handleTrayAction(action);
-                }}
-                hitSlop={4}
-                style={({ pressed }) => [
-                  styles.trayBtn,
-                  {
-                    backgroundColor: hexToRgba(palette.text, pressed ? 0.3 : 0.2),
-                    borderColor: hexToRgba(palette.text, 0.35),
-                  },
-                ]}>
-                <Text
-                  variant="caption"
-                  numberOfLines={1}
-                  style={[styles.trayBtnLabel, { color: palette.text }]}>
-                  {action.label}
-                </Text>
-              </Pressable>
-            ))
+            trayActions.map((action) => {
+              const actionColors = trayActionColors(action);
+              return (
+                <Pressable
+                  key={action.label}
+                  accessibilityRole="button"
+                  accessibilityLabel={action.label}
+                  onPress={(e) => {
+                    e.stopPropagation?.();
+                    handleTrayAction(action);
+                  }}
+                  hitSlop={6}
+                  style={({ pressed }) => [
+                    styles.trayBtn,
+                    actionColors
+                      ? {
+                          backgroundColor: actionColors.background,
+                          borderColor: hexToRgba('#FFFFFF', 0.55),
+                          opacity: pressed ? 0.8 : 1,
+                        }
+                      : {
+                          backgroundColor: hexToRgba('#FFFFFF', pressed ? 0.4 : 0.25),
+                          borderColor: hexToRgba('#FFFFFF', 0.45),
+                        },
+                  ]}>
+                  <Text
+                    numberOfLines={1}
+                    style={[
+                      styles.trayBtnLabel,
+                      { color: actionColors ? actionColors.text : palette.text },
+                    ]}>
+                    {action.label}
+                  </Text>
+                </Pressable>
+              );
+            })
           )}
         </View>
       ) : null}
@@ -241,48 +314,75 @@ export function AppointmentBlock({
 
 const styles = StyleSheet.create({
   block: {
-    position: 'absolute',
-    right: spacing.sm,
+    flex: 1,
     borderRadius: radius.sm,
     borderWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
     flexDirection: 'row',
   },
-  glassEdge: {
-    width: 4,
-    backgroundColor: 'rgba(255,255,255,0.5)',
+  accentStripe: {
+    width: 3,
   },
   complianceDot: {
     position: 'absolute',
-    top: spacing.xs,
-    right: spacing.sm,
+    top: 3,
+    right: 4,
+    zIndex: 1,
   },
   content: {
     flex: 1,
     minWidth: 0,
-    paddingVertical: spacing.xs,
-    paddingHorizontal: spacing.sm,
-    justifyContent: 'flex-start',
+    paddingVertical: 3,
+    paddingHorizontal: 7,
     gap: 1,
   },
-  guest: {
+  contentSqueezed: {
+    paddingHorizontal: 4,
+  },
+  rowName: {
     fontFamily: fonts.semibold,
+    fontSize: 12,
+    lineHeight: 15,
+  },
+  rowMeta: {
+    fontFamily: fonts.regular,
+    fontSize: 11,
+    lineHeight: 14,
+    fontVariant: ['tabular-nums'],
+  },
+  statusChipRow: {
+    flexDirection: 'row',
+    marginTop: 2,
+  },
+  statusChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: radius.pill,
+  },
+  statusChipDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  statusChipLabel: {
+    fontFamily: fonts.semibold,
+    fontSize: 10,
+    lineHeight: 12,
   },
   tray: {
     position: 'absolute',
-    bottom: spacing.xs,
-    right: spacing.sm,
+    bottom: 3,
+    right: 4,
     flexDirection: 'row',
-    gap: 3,
+    gap: 4,
     alignItems: 'center',
   },
-  traySpinner: {
-    marginRight: spacing.xs,
-  },
   trayBtn: {
-    paddingHorizontal: 5,
+    paddingHorizontal: 8,
     paddingVertical: 2,
-    minHeight: minTouchTarget,
     borderRadius: radius.sm,
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
@@ -290,7 +390,7 @@ const styles = StyleSheet.create({
   },
   trayBtnLabel: {
     fontFamily: fonts.semibold,
-    fontSize: 10,
-    lineHeight: 14,
+    fontSize: 11,
+    lineHeight: 15,
   },
 });

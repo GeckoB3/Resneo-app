@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
 import { Chip } from '@/components/ui/Chip';
@@ -258,6 +258,12 @@ function WaitlistJoinSheet({
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [joined, setJoined] = useState(false);
+
+  const handleClose = () => {
+    setJoined(false);
+    onClose();
+  };
 
   async function handleJoin() {
     setError(null);
@@ -277,16 +283,31 @@ function WaitlistJoinSheet({
         guest_phone: phone.trim(),
       });
       hapticSuccess();
-      onClose();
-      Alert.alert('Added to waitlist', 'The guest will be offered a slot if one opens up.');
+      // Confirm INSIDE the sheet (Alert.alert is a no-op on web, and firing it
+      // after onClose left no visible feedback at all).
+      setJoined(true);
     } catch (e) {
       hapticWarning();
       setError(e instanceof ApiError ? e.message : 'Could not join the waitlist.');
     }
   }
 
+  if (joined) {
+    return (
+      <Sheet visible={open} onClose={handleClose}>
+        <View style={styles.waitlistBody}>
+          <Text variant="subheading">Added to waitlist</Text>
+          <Text variant="bodySmall" tone="muted">
+            The guest will be offered a slot if one opens up.
+          </Text>
+          <Button label="Done" fullWidth onPress={handleClose} />
+        </View>
+      </Sheet>
+    );
+  }
+
   return (
-    <Sheet visible={open} onClose={onClose} maxHeight="88%">
+    <Sheet visible={open} onClose={handleClose} maxHeight="88%">
       <View style={styles.waitlistBody}>
         <Text variant="overline" tone="muted">
           Join waitlist
@@ -314,7 +335,7 @@ function WaitlistJoinSheet({
           </Text>
         ) : null}
         <View style={styles.waitlistActions}>
-          <Button label="Cancel" variant="secondary" style={styles.waitlistBtn} onPress={onClose} />
+          <Button label="Cancel" variant="secondary" style={styles.waitlistBtn} onPress={handleClose} />
           <Button
             label="Add to waitlist"
             style={styles.waitlistBtn}

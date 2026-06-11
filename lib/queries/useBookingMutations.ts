@@ -115,6 +115,47 @@ export function useRescheduleBooking(bookingId: string) {
 }
 
 /**
+ * PATCH /api/venue/bookings/[id] — reschedule where the booking id is part of
+ * the mutation input. Used by drag-to-reschedule on the calendar grid, where
+ * the target booking changes per gesture (a fixed-id hook would close over a
+ * stale id).
+ */
+export function useRescheduleBookingById() {
+  const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: {
+      bookingId: string;
+      date: string;
+      time: string;
+      durationMinutes?: number;
+    }): Promise<BookingDetail> => {
+      if (!accessToken) {
+        throw new Error('Missing access token');
+      }
+      return apiFetch<BookingDetail>(`/api/venue/bookings/${input.bookingId}`, {
+        accessToken,
+        method: 'PATCH',
+        body: JSON.stringify({
+          booking_date: input.date,
+          booking_time: input.time,
+          ...(input.durationMinutes !== undefined
+            ? { duration_minutes: input.durationMinutes }
+            : {}),
+        }),
+      });
+    },
+    onSuccess: (data, input) => {
+      if (accessToken) {
+        queryClient.setQueryData(queryKeys.bookings.detail(accessToken, input.bookingId), data);
+      }
+      invalidateBookingCaches(queryClient, accessToken, input.bookingId);
+    },
+  });
+}
+
+/**
  * Full appointment modification — change service, staff, slot and duration in
  * one PATCH (web StaffAppointmentModifyForm parity). Exactly one of
  * `appointment_service_id` / `service_item_id` must be set, matching which

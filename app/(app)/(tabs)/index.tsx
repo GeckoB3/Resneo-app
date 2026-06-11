@@ -7,24 +7,20 @@ import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { BookingDetailSheet } from '@/components/bookings/BookingDetailSheet';
 import { BlockEditSheet, type BlockTarget } from '@/components/calendar/BlockEditSheet';
 import { CalendarDayGrid } from '@/components/calendar/CalendarDayGrid';
-import { ColumnVisibilitySheet } from '@/components/calendar/ColumnVisibilitySheet';
 import { timeToMinutes } from '@/components/calendar/grid-layout';
 import { MonthGrid } from '@/components/calendar/MonthGrid';
-import { MultiColumnDayGrid } from '@/components/calendar/MultiColumnDayGrid';
-import { RescheduleSheet, type RescheduleTarget } from '@/components/calendar/RescheduleSheet';
+import { type RescheduleTarget } from '@/components/calendar/RescheduleSheet';
 import { WeekStrip } from '@/components/calendar/WeekStrip';
-import {
-  StatusFilterBar,
-  applyStatusFilter,
-  type CalendarStatusFilter,
-} from '@/components/calendar/StatusFilterBar';
+import { Button } from '@/components/ui/Button';
 import { Chip } from '@/components/ui/Chip';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Fab } from '@/components/ui/Fab';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { Screen } from '@/components/ui/Screen';
 import { Segmented } from '@/components/ui/Segmented';
+import { Sheet } from '@/components/ui/Sheet';
 import { Snackbar } from '@/components/ui/Snackbar';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
@@ -42,7 +38,7 @@ import {
   type DateRange,
 } from '@/lib/dates/venue-dates';
 import { useCalendarBlocks } from '@/lib/queries/useAvailabilityManage';
-import { useRescheduleBooking } from '@/lib/queries/useBookingMutations';
+import { useRescheduleBookingById } from '@/lib/queries/useBookingMutations';
 import {
   useCalendarStatusAction,
   useCalendarArrivalAction,
@@ -76,10 +72,16 @@ function nowMinutesInTz(timeZone: string): number {
   return hour * 60 + minute;
 }
 
+/** What the add-action sheet was opened for. */
+type AddSheetTarget =
+  | { kind: 'fab' }
+  | { kind: 'slot'; time: string; practitionerId: string };
+
 /**
- * Calendar tab (default tab — `index` route). Day/Week/Month views of the
- * practitioner schedule with multi-practitioner day columns, inline status
- * actions, block create/edit/delete, status filter, and walk-in shortcut.
+ * Calendar tab (default tab — `index` route). Day/Week/Month views of one
+ * practitioner's schedule at a time, with switcher chips to move between
+ * calendars, inline status actions, hold-drag move/resize, block
+ * create/edit/delete, status filter, and walk-in shortcut.
  */
 export default function CalendarScreen() {
   const router = useRouter();
@@ -103,16 +105,22 @@ export default function CalendarScreen() {
       setScope('day');
     }
   }, [params.date]);
+
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [rescheduleTarget, setRescheduleTarget] = useState<RescheduleTarget | null>(null);
   const [detailBookingId, setDetailBookingId] = useState<string | null>(null);
   const [blockTarget, setBlockTarget] = useState<BlockTarget | null>(null);
-  const [statusFilter, setStatusFilter] = useState<CalendarStatusFilter>('All');
-  const [columnSheetVisible, setColumnSheetVisible] = useState(false);
-  const [visibleColumnIds, setVisibleColumnIds] = useState<Set<string> | null>(null); // null = all
+  const [addSheetTarget, setAddSheetTarget] = useState<AddSheetTarget | null>(null);
 
-  // Pending action tracking for inline status tray
+  // Pending action tracking for inline status tray + drag commits.
   const [pendingActionIds, setPendingActionIds] = useState<Set<string>>(new Set());
+
+  const removePending = useCallback((bookingId: string) => {
+    setPendingActionIds((prev) => {
+      const next = new Set(prev);
+      next.delete(bookingId);
+      return next;
+    });
+  }, []);
 
   // Undo state for the last reschedule (6s window).
   const [undoState, setUndoState] = useState<{
@@ -121,12 +129,9 @@ export default function CalendarScreen() {
   } | null>(null);
   const undoTarget = undoState?.target ?? null;
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const undoMutation = useRescheduleBooking(undoTarget?.id ?? '');
 
-  // Drag-reschedule mutation — tracks the active drag booking id so the
-  // mutation's API path is correct. Updated just before calling mutate.
-  const [dragBookingId, setDragBookingId] = useState<string>('');
-  const dragRescheduleMutation = useRescheduleBooking(dragBookingId);
+  // One mutation for drag commits AND undo — the booking id travels in the input.
+  const rescheduleById = useRescheduleBookingById();
 
   const showUndo = useCallback(
     (previous: RescheduleTarget, meta: { durationChanged: boolean }) => {
@@ -141,8 +146,9 @@ export default function CalendarScreen() {
     if (!undoState) return;
     if (undoTimer.current) clearTimeout(undoTimer.current);
     const { target, durationChanged } = undoState;
-    undoMutation.mutate(
+    rescheduleById.mutate(
       {
+        bookingId: target.id,
         date: target.date,
         time: `${target.time.slice(0, 5)}:00`,
         ...(durationChanged && target.durationMinutes != null
@@ -151,7 +157,7 @@ export default function CalendarScreen() {
       },
       { onSettled: () => setUndoState(null) },
     );
-  }, [undoState, undoMutation]);
+  }, [undoState, rescheduleById]);
 
   const week = useMemo(() => getCalendarWeekFromDate(anchor), [anchor]);
   const range = useMemo<DateRange>(() => {
@@ -168,22 +174,6 @@ export default function CalendarScreen() {
 
   const calendarIds = useMemo(() => practitioners.map((p) => p.id), [practitioners]);
 
-  // Initialise visible column ids once practitioners load
-  useEffect(() => {
-    if (practitioners.length > 0 && visibleColumnIds === null) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- seed initial column set once data loads
-      setVisibleColumnIds(new Set(practitioners.map((p) => p.id)));
-    }
-  }, [practitioners, visibleColumnIds]);
-
-  const visiblePractitioners = useMemo(
-    () =>
-      visibleColumnIds === null
-        ? practitioners
-        : practitioners.filter((p) => visibleColumnIds.has(p.id)),
-    [practitioners, visibleColumnIds],
-  );
-
   const gridQuery = useCalendarGrid({
     calendarIds,
     from: range.from,
@@ -191,8 +181,7 @@ export default function CalendarScreen() {
     enabled: calendarIds.length > 0,
   });
 
-  // In day view multi-column mode, effectiveId is still used for single-col
-  // week view and for the block create/edit sheet.
+  // The calendar being viewed — one at a time, switched via the chips row.
   const effectiveId =
     selectedId && calendarIds.includes(selectedId) ? selectedId : calendarIds[0] ?? null;
 
@@ -256,20 +245,15 @@ export default function CalendarScreen() {
     return map;
   }, [gridQuery.data]);
 
-  /** Status counts for the filter bar — across the currently-viewed columns on the anchor date. */
-  const filterCounts = useMemo(() => {
-    const tally: Partial<Record<CalendarStatusFilter, number>> = {};
-    for (const cal of gridQuery.data?.calendars ?? []) {
-      if (!visibleColumnIds?.has(cal.calendarId) && visibleColumnIds !== null) continue;
-      const dateData = cal.dates.find((d) => d.date === anchor);
-      if (!dateData) continue;
-      for (const b of dateData.bookings) {
-        const s = b.status as CalendarStatusFilter;
-        tally[s] = (tally[s] ?? 0) + 1;
-      }
+  /** practitionerId → bookings on the anchor date (badges on the switcher chips). */
+  const perPractitionerCounts = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const calendar of gridQuery.data?.calendars ?? []) {
+      const dateData = calendar.dates.find((d) => d.date === anchor);
+      map[calendar.calendarId] = dateData?.bookings.length ?? 0;
     }
-    return tally;
-  }, [gridQuery.data, anchor, visibleColumnIds]);
+    return map;
+  }, [gridQuery.data, anchor]);
 
   const isToday = anchor === today;
   const nowMinutes = isToday ? nowMinutesInTz(timeZone) : null;
@@ -298,157 +282,89 @@ export default function CalendarScreen() {
   const openDetail = useCallback((id: string) => setDetailBookingId(id), []);
 
   const createAt = useCallback(
-    (time: string, calId?: string) => {
-      const practitionerId = calId ?? effectiveId ?? '';
-      // Show action sheet: New booking or Block time
-      Alert.alert('Add to calendar', `At ${time}`, [
-        {
-          text: 'New booking',
-          onPress: () => {
-            router.push({
-              pathname: '/booking/new',
-              params: { date: anchor, practitionerId, time },
-            });
-          },
-        },
-        {
-          text: 'Block time',
-          onPress: () => {
-            setBlockTarget({
-              mode: 'create',
-              practitionerId,
-              date: anchor,
-              startTime: time,
-            });
-          },
-        },
-        { text: 'Cancel', style: 'cancel' },
-      ]);
+    (time: string) => {
+      setAddSheetTarget({ kind: 'slot', time, practitionerId: effectiveId ?? '' });
     },
-    [router, anchor, effectiveId],
+    [effectiveId],
   );
 
-  const startReschedule = useCallback(
+  /** Look up a booking on the viewed calendar for the anchor date. */
+  const findBookingOnAnchor = useCallback(
     (bookingId: string) => {
-      // Search across all calendar columns for this booking
       for (const cal of gridQuery.data?.calendars ?? []) {
         const dateData = cal.dates.find((d) => d.date === anchor);
         if (!dateData) continue;
         const booking = dateData.bookings.find((b) => b.id === bookingId);
-        if (booking) {
-          const start = timeToMinutes(booking.startTime);
-          const end = booking.endTime ? timeToMinutes(booking.endTime) : null;
-          const durationMinutes = end != null && end > start ? end - start : null;
-          setRescheduleTarget({
-            id: booking.id,
-            guestName: booking.guestName,
-            date: anchor,
-            time: booking.startTime,
-            durationMinutes,
-          });
-          return;
-        }
+        if (booking) return booking;
       }
+      return null;
     },
     [gridQuery.data, anchor],
   );
 
-  // ---- Drag-to-reschedule ----
-  //
-  // Pattern: store the pending drag parameters in a ref, update `dragBookingId`
-  // state so the mutation re-creates with the right API path, then commit via
-  // useEffect once React has re-rendered with the updated mutation function.
-  type DragPending = {
-    bookingId: string;
-    input: { date: string; time: string; durationMinutes?: number };
-    previousTarget: RescheduleTarget;
-    durationChanged: boolean;
-  };
-  const pendingDragRef = useRef<DragPending | null>(null);
+  // ---- Hold-drag move / resize commits ----
 
-  // useEffect fires after the render triggered by setDragBookingId, at which
-  // point dragRescheduleMutation.mutate uses the correct booking id closure.
-  useEffect(() => {
-    const pending = pendingDragRef.current;
-    if (!pending || dragBookingId !== pending.bookingId) return;
-    pendingDragRef.current = null;
-    const { input, previousTarget, durationChanged } = pending;
-    dragRescheduleMutation.mutate(input, {
-      onSuccess: () => {
-        hapticSuccess();
-        setPendingActionIds((prev) => {
-          const next = new Set(prev);
-          next.delete(dragBookingId);
-          return next;
-        });
-        showUndo(previousTarget, { durationChanged });
-      },
-      onError: (error) => {
-        hapticWarning();
-        setPendingActionIds((prev) => {
-          const next = new Set(prev);
-          next.delete(dragBookingId);
-          return next;
-        });
-        Alert.alert(
-          durationChanged ? 'Resize failed' : 'Reschedule failed',
-          error instanceof ApiError
-            ? error.message
-            : durationChanged
-              ? 'Could not change duration. Try again.'
-              : 'Could not reschedule. Try another time.',
-        );
-      },
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: run when dragBookingId changes
-  }, [dragBookingId]);
-
-  /** Helper: look up a booking across all calendar columns on the anchor date. */
-  function findBookingOnAnchor(bookingId: string) {
-    for (const cal of gridQuery.data?.calendars ?? []) {
-      const dateData = cal.dates.find((d) => d.date === anchor);
-      if (!dateData) continue;
-      const booking = dateData.bookings.find((b) => b.id === bookingId);
-      if (booking) return booking;
-    }
-    return null;
-  }
+  const commitDrag = useCallback(
+    (input: {
+      bookingId: string;
+      time: string;
+      durationMinutes?: number;
+      previousTarget: RescheduleTarget;
+      durationChanged: boolean;
+    }) => {
+      setPendingActionIds((prev) => new Set([...prev, input.bookingId]));
+      rescheduleById.mutate(
+        {
+          bookingId: input.bookingId,
+          date: anchor,
+          time: input.time,
+          ...(input.durationMinutes != null ? { durationMinutes: input.durationMinutes } : {}),
+        },
+        {
+          onSuccess: () => {
+            hapticSuccess();
+            removePending(input.bookingId);
+            showUndo(input.previousTarget, { durationChanged: input.durationChanged });
+          },
+          onError: (error) => {
+            hapticWarning();
+            removePending(input.bookingId);
+            Alert.alert(
+              input.durationChanged ? 'Resize failed' : 'Reschedule failed',
+              error instanceof ApiError
+                ? error.message
+                : input.durationChanged
+                  ? 'Could not change duration. Try again.'
+                  : 'Could not reschedule. Try another time.',
+            );
+          },
+        },
+      );
+    },
+    [anchor, rescheduleById, removePending, showUndo],
+  );
 
   const handleDragReschedule = useCallback(
     (bookingId: string, newTime: string) => {
       const booking = findBookingOnAnchor(bookingId);
-      const guestName = booking?.guestName ?? 'booking';
-      const previousTime = booking?.startTime ?? '';
-
-      // Suppress no-op drags.
-      if (!booking || newTime === previousTime.slice(0, 5)) return;
+      if (!booking || newTime === booking.startTime.slice(0, 5)) return;
 
       const start = timeToMinutes(booking.startTime);
       const end = booking.endTime ? timeToMinutes(booking.endTime) : null;
-      const previousDuration = end != null && end > start ? end - start : null;
-
-      const previousTarget: RescheduleTarget = {
-        id: bookingId,
-        guestName,
-        date: anchor,
-        time: previousTime,
-        durationMinutes: previousDuration,
-      };
-
-      hapticSelect();
-      setPendingActionIds((prev) => new Set([...prev, bookingId]));
-
-      // Queue the mutation and update the id so useEffect fires it.
-      pendingDragRef.current = {
+      commitDrag({
         bookingId,
-        input: { date: anchor, time: `${newTime}:00` },
-        previousTarget,
+        time: `${newTime}:00`,
+        previousTarget: {
+          id: bookingId,
+          guestName: booking.guestName ?? 'booking',
+          date: anchor,
+          time: booking.startTime,
+          durationMinutes: end != null && end > start ? end - start : null,
+        },
         durationChanged: false,
-      };
-      setDragBookingId(bookingId);
+      });
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- findBookingOnAnchor reads gridQuery/anchor via closure
-    [gridQuery.data, anchor],
+    [findBookingOnAnchor, anchor, commitDrag],
   );
 
   const handleDragResize = useCallback(
@@ -456,37 +372,23 @@ export default function CalendarScreen() {
       const booking = findBookingOnAnchor(bookingId);
       if (!booking) return;
 
-      const guestName = booking.guestName;
-      const previousTime = booking.startTime;
       const start = timeToMinutes(booking.startTime);
       const end = booking.endTime ? timeToMinutes(booking.endTime) : null;
-      const previousDuration = end != null && end > start ? end - start : null;
-
-      const previousTarget: RescheduleTarget = {
-        id: bookingId,
-        guestName,
-        date: anchor,
-        time: previousTime,
-        durationMinutes: previousDuration,
-      };
-
-      hapticSelect();
-      setPendingActionIds((prev) => new Set([...prev, bookingId]));
-
-      pendingDragRef.current = {
+      commitDrag({
         bookingId,
-        input: {
+        time: `${booking.startTime.slice(0, 5)}:00`,
+        durationMinutes: newDurationMinutes,
+        previousTarget: {
+          id: bookingId,
+          guestName: booking.guestName ?? 'booking',
           date: anchor,
-          time: `${previousTime.slice(0, 5)}:00`,
-          durationMinutes: newDurationMinutes,
+          time: booking.startTime,
+          durationMinutes: end != null && end > start ? end - start : null,
         },
-        previousTarget,
         durationChanged: true,
-      };
-      setDragBookingId(bookingId);
+      });
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- findBookingOnAnchor reads gridQuery/anchor via closure
-    [gridQuery.data, anchor],
+    [findBookingOnAnchor, anchor, commitDrag],
   );
 
   const handleBlockTimeBlockPress = useCallback(
@@ -519,19 +421,11 @@ export default function CalendarScreen() {
         {
           onSuccess: () => {
             hapticSuccess();
-            setPendingActionIds((prev) => {
-              const next = new Set(prev);
-              next.delete(bookingId);
-              return next;
-            });
+            removePending(bookingId);
           },
           onError: (error) => {
             hapticWarning();
-            setPendingActionIds((prev) => {
-              const next = new Set(prev);
-              next.delete(bookingId);
-              return next;
-            });
+            removePending(bookingId);
             Alert.alert(
               'Update failed',
               error instanceof ApiError ? error.message : 'Could not update booking.',
@@ -540,7 +434,7 @@ export default function CalendarScreen() {
         },
       );
     },
-    [calendarStatusAction],
+    [calendarStatusAction, removePending],
   );
 
   const handleArrivalToggle = useCallback(
@@ -551,19 +445,11 @@ export default function CalendarScreen() {
         {
           onSuccess: () => {
             hapticSuccess();
-            setPendingActionIds((prev) => {
-              const next = new Set(prev);
-              next.delete(bookingId);
-              return next;
-            });
+            removePending(bookingId);
           },
           onError: (error) => {
             hapticWarning();
-            setPendingActionIds((prev) => {
-              const next = new Set(prev);
-              next.delete(bookingId);
-              return next;
-            });
+            removePending(bookingId);
             Alert.alert(
               'Update failed',
               error instanceof ApiError ? error.message : 'Could not update attendance.',
@@ -572,138 +458,69 @@ export default function CalendarScreen() {
         },
       );
     },
-    [calendarArrivalAction],
+    [calendarArrivalAction, removePending],
   );
 
-  // ---- Column visibility ----
+  // ---- Day data for the viewed calendar ----
 
-  const toggleColumn = useCallback(
-    (id: string) => {
-      hapticSelect();
-      setVisibleColumnIds((prev) => {
-        const base = prev ?? new Set(calendarIds);
-        const next = new Set(base);
-        if (next.has(id) && next.size > 1) {
-          next.delete(id);
-        } else {
-          next.add(id);
-        }
-        return next;
-      });
-    },
-    [calendarIds],
-  );
-
-  const showAllColumns = useCallback(() => {
-    setVisibleColumnIds(new Set(calendarIds));
-  }, [calendarIds]);
-
-  // ---- Day view — multi-column vs single-column ----
-
-  const isDayMultiColumn = scope === 'day' && visiblePractitioners.length > 1;
-
-  /** Build column data for the multi-column grid on the anchor date. */
-  const multiColumnData = useMemo(() => {
-    if (!isDayMultiColumn) return [];
-    return visiblePractitioners.map((p) => {
-      const calData = gridQuery.data?.calendars.find((c) => c.calendarId === p.id);
-      const dateData = calData?.dates.find((d) => d.date === anchor);
-      const rawBookings = dateData?.bookings ?? [];
-      return {
-        calendarId: p.id,
-        calendarName: p.name,
-        bookings: applyStatusFilter(rawBookings, statusFilter),
-        workingHours: dateData?.workingHours ?? [],
-        timeBlocks: getDayBlocks(p.id, anchor),
-      };
-    });
-  }, [
-    isDayMultiColumn,
-    visiblePractitioners,
-    gridQuery.data,
-    anchor,
-    statusFilter,
-    getDayBlocks,
-  ]);
-
-  /** Single-column day view (also used for week sub-grid). */
-  const singleColBookings = useMemo(() => {
-    const raw = day?.bookings ?? [];
-    return applyStatusFilter(raw, statusFilter);
-  }, [day, statusFilter]);
+  const dayBookings = useMemo(() => day?.bookings ?? [], [day]);
 
   const dayBlocks = useMemo(
-    () => getDayBlocks(effectiveId ?? '', anchor),
+    () => (effectiveId ? getDayBlocks(effectiveId, anchor) : []),
     [getDayBlocks, effectiveId, anchor],
   );
 
-  // Per-booking compliance flags for the visible day — a small corner dot on
-  // each block. Gated on the compliance feature flag so non-compliance venues
-  // never hit the endpoint. Built from unfiltered ids so the status filter
-  // doesn't churn the query key.
-  const visibleBookingIds = useMemo(() => {
-    const ids: string[] = [];
-    const wanted =
-      scope === 'day'
-        ? new Set(visiblePractitioners.map((p) => p.id))
-        : new Set(effectiveId ? [effectiveId] : []);
-    for (const cal of gridQuery.data?.calendars ?? []) {
-      if (!wanted.has(cal.calendarId)) continue;
-      const dateData = cal.dates.find((d) => d.date === anchor);
-      if (dateData) for (const b of dateData.bookings) ids.push(b.id);
-    }
-    return ids;
-  }, [gridQuery.data, scope, visiblePractitioners, effectiveId, anchor]);
-
+  // Per-booking compliance flags for the visible day — gated on the feature
+  // flag so non-compliance venues never hit the endpoint. Unfiltered ids so
+  // the status filter doesn't churn the query key.
+  const visibleBookingIds = useMemo(
+    () => (day?.bookings ?? []).map((b) => b.id),
+    [day],
+  );
   const complianceFlagsQuery = useComplianceBookingFlags(
     complianceEnabled ? visibleBookingIds : [],
   );
   const complianceFlags = complianceFlagsQuery.data?.flags;
 
-  const singleDayGrid = (
+  // Closed-day notice — the practitioner has no working hours and nothing
+  // booked for this date (web parity: closed days are visibly flagged).
+  const dayIsClosed =
+    !gridQuery.isLoading &&
+    (day?.workingHours?.length ?? 0) === 0 &&
+    (day?.bookings?.length ?? 0) === 0;
+
+  const dayGrid = (
     <CalendarDayGrid
-      bookings={singleColBookings}
+      bookings={dayBookings}
       workingHours={day?.workingHours ?? []}
       timeBlocks={dayBlocks}
       nowMinutes={nowMinutes}
       onBlockPress={openDetail}
-      onBlockLongPress={startReschedule}
       onStatusChange={handleStatusChange}
       onArrivalToggle={handleArrivalToggle}
       pendingActionIds={pendingActionIds}
       complianceFlags={complianceFlags}
-      onEmptyPress={(time) => createAt(time, effectiveId ?? undefined)}
+      onEmptyPress={createAt}
       onBlockTimeBlockPress={handleBlockTimeBlockPress}
       onDragReschedule={handleDragReschedule}
       onDragResize={handleDragResize}
     />
   );
 
-  // ---- FAB — shows new booking + walk-in action sheet ----
+  // ---- Add-action sheet (FAB + empty-slot tap) ----
 
-  const handleFabPress = useCallback(() => {
-    const nowTime = nowMinutes != null
+  const nowTime =
+    nowMinutes != null
       ? `${String(Math.floor(nowMinutes / 60)).padStart(2, '0')}:${String(nowMinutes % 60).padStart(2, '0')}`
       : '12:00';
-    Alert.alert('Add booking', undefined, [
-      {
-        text: newBookingActionLabel(terminology),
-        onPress: () => router.push('/booking/new'),
-      },
-      {
-        text: 'Walk-in',
-        onPress: () =>
-          router.push({
-            pathname: '/booking/new',
-            params: { date: anchor, time: nowTime, isWalkIn: '1' },
-          }),
-      },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
-  }, [router, anchor, nowMinutes, terminology]);
+
+  const closeAddSheet = useCallback(() => setAddSheetTarget(null), []);
+
+  const addSheetSlot = addSheetTarget?.kind === 'slot' ? addSheetTarget : null;
 
   return (
     <Screen padded={false}>
+      <ErrorBoundary label="the calendar">
       {practitionersQuery.isLoading ? (
         <LoadingState message="Loading calendar…" />
       ) : practitionersQuery.isError ? (
@@ -718,7 +535,7 @@ export default function CalendarScreen() {
       ) : practitioners.length === 0 ? (
         <EmptyState
           title="No practitioners yet"
-          message="Add practitioners on the web dashboard and they'll appear here as calendar columns."
+          message="Add practitioners on the web dashboard and they'll appear here as calendars."
         />
       ) : (
         <>
@@ -727,6 +544,7 @@ export default function CalendarScreen() {
 
             <View style={styles.dateNav}>
               <ChevButton dir="left" onPress={() => step(-1)} />
+              {/* Label flexes, so the Today pill appearing never moves the arrows. */}
               <Pressable
                 onPress={goToday}
                 accessibilityRole="button"
@@ -736,7 +554,6 @@ export default function CalendarScreen() {
                   {label}
                 </Text>
               </Pressable>
-              <ChevButton dir="right" onPress={() => step(1)} />
               {!isToday ? (
                 <Animated.View entering={FadeIn.duration(160)} exiting={FadeOut.duration(120)}>
                   <Pressable
@@ -757,65 +574,32 @@ export default function CalendarScreen() {
                   </Pressable>
                 </Animated.View>
               ) : null}
+              <ChevButton dir="right" onPress={() => step(1)} />
             </View>
 
-            {/* Practitioner chips — day mode shows a column-visibility icon; week shows single-select. */}
-            {scope !== 'month' ? (
-              <View style={styles.chipRow}>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.chips}>
-                  {scope === 'day' ? (
-                    // Multi-column day: chips are visibility toggles
-                    visiblePractitioners.length < practitioners.length ? (
-                      <Chip
-                        label={`${visiblePractitioners.length}/${practitioners.length} shown`}
-                        selected={false}
-                        onPress={() => setColumnSheetVisible(true)}
-                      />
-                    ) : null
-                  ) : (
-                    // Week view: single select (existing behaviour)
-                    practitioners.map((p) => (
-                      <Chip
-                        key={p.id}
-                        label={p.name}
-                        selected={p.id === effectiveId}
-                        onPress={() => setSelectedId(p.id)}
-                      />
-                    ))
-                  )}
-                </ScrollView>
-
-                {scope === 'day' ? (
-                  <Pressable
-                    onPress={() => setColumnSheetVisible(true)}
-                    accessibilityRole="button"
-                    accessibilityLabel="Show/hide practitioners"
-                    hitSlop={8}
-                    style={({ pressed }) => [styles.colVisBtn, { opacity: pressed ? 0.6 : 1 }]}>
-                    <SymbolView
-                      name={{ ios: 'person.2.fill', android: 'people', web: 'people' }}
-                      tintColor={colors.brand}
-                      size={18}
-                    />
-                  </Pressable>
-                ) : null}
-              </View>
+            {/* Calendar switcher — one calendar at a time, chips to change. */}
+            {scope !== 'month' && practitioners.length > 1 ? (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.chips}>
+                {practitioners.map((p) => (
+                  <Chip
+                    key={p.id}
+                    label={p.name}
+                    count={scope === 'day' ? perPractitionerCounts[p.id] : undefined}
+                    selected={p.id === effectiveId}
+                    onPress={() => {
+                      if (p.id !== effectiveId) {
+                        hapticSelect();
+                        setSelectedId(p.id);
+                      }
+                    }}
+                  />
+                ))}
+              </ScrollView>
             ) : null}
           </View>
-
-          {/* Status filter — shown on day/week when there are bookings */}
-          {scope !== 'month' ? (
-            <View style={[styles.filterRow, { borderBottomColor: colors.border }]}>
-              <StatusFilterBar
-                selected={statusFilter}
-                onChange={setStatusFilter}
-                counts={filterCounts}
-              />
-            </View>
-          ) : null}
 
           {gridQuery.isLoading ? (
             <LoadingState message="Loading appointments…" />
@@ -851,39 +635,80 @@ export default function CalendarScreen() {
                   onSelectDay={setAnchor}
                 />
               </View>
-              {singleDayGrid}
+              {dayIsClosed ? <ClosedDayBanner /> : null}
+              {dayGrid}
             </View>
-          ) : isDayMultiColumn ? (
-            <MultiColumnDayGrid
-              columns={multiColumnData}
-              nowMinutes={nowMinutes}
-              onBlockPress={openDetail}
-              onBlockLongPress={startReschedule}
-              onStatusChange={handleStatusChange}
-              onArrivalToggle={handleArrivalToggle}
-              pendingActionIds={pendingActionIds}
-              complianceFlags={complianceFlags}
-              onEmptyPress={(calId, time) => createAt(time, calId)}
-              onBlockTimeBlockPress={handleBlockTimeBlockPress}
-              onDragReschedule={handleDragReschedule}
-              onDragResize={handleDragResize}
-            />
           ) : (
-            singleDayGrid
+            <View style={styles.weekBody}>
+              {dayIsClosed ? <ClosedDayBanner /> : null}
+              {dayGrid}
+            </View>
           )}
 
           <Fab
             accessibilityLabel={newBookingActionLabel(terminology)}
-            onPress={handleFabPress}
+            onPress={() => setAddSheetTarget({ kind: 'fab' })}
           />
         </>
       )}
 
-      <RescheduleSheet
-        target={rescheduleTarget}
-        onClose={() => setRescheduleTarget(null)}
-        onMoved={showUndo}
-      />
+      {/* Add-action sheet — replaces Alert menus (no-ops on web). */}
+      <Sheet visible={addSheetTarget !== null} onClose={closeAddSheet}>
+        <Text variant="subheading">
+          {addSheetSlot ? `Add at ${addSheetSlot.time}` : 'Add to calendar'}
+        </Text>
+        <View style={styles.addSheetActions}>
+          <Button
+            label={newBookingActionLabel(terminology)}
+            variant="primary"
+            fullWidth
+            onPress={() => {
+              const slot = addSheetSlot;
+              closeAddSheet();
+              router.push({
+                pathname: '/booking/new',
+                params: slot
+                  ? { date: anchor, practitionerId: slot.practitionerId, time: slot.time }
+                  : {},
+              });
+            }}
+          />
+          {addSheetTarget?.kind === 'fab' ? (
+            <Button
+              label="Walk-in"
+              variant="secondary"
+              fullWidth
+              onPress={() => {
+                closeAddSheet();
+                router.push({
+                  pathname: '/booking/new',
+                  params: { date: anchor, time: nowTime, isWalkIn: '1' },
+                });
+              }}
+            />
+          ) : (
+            <Button
+              label="Block time"
+              variant="secondary"
+              fullWidth
+              onPress={() => {
+                const slot = addSheetSlot;
+                closeAddSheet();
+                if (slot) {
+                  setBlockTarget({
+                    mode: 'create',
+                    practitionerId: slot.practitionerId,
+                    date: anchor,
+                    startTime: slot.time,
+                  });
+                }
+              }}
+            />
+          )}
+          <Button label="Cancel" variant="ghost" fullWidth onPress={closeAddSheet} />
+        </View>
+      </Sheet>
+
       <Snackbar
         message={undoTarget ? `Moved ${undoTarget.guestName}'s booking` : null}
         actionLabel="Undo"
@@ -897,14 +722,7 @@ export default function CalendarScreen() {
         target={blockTarget}
         onClose={() => setBlockTarget(null)}
       />
-      <ColumnVisibilitySheet
-        visible={columnSheetVisible}
-        onClose={() => setColumnSheetVisible(false)}
-        practitioners={practitioners}
-        visibleIds={visibleColumnIds ?? new Set(calendarIds)}
-        onToggle={toggleColumn}
-        onShowAll={showAllColumns}
-      />
+      </ErrorBoundary>
     </Screen>
   );
 }
@@ -912,6 +730,17 @@ export default function CalendarScreen() {
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
+
+function ClosedDayBanner() {
+  const { colors } = useTheme();
+  return (
+    <View style={[styles.closedBanner, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+      <Text variant="caption" tone="muted">
+        Not scheduled to work this day — tap a slot to book anyway or block time.
+      </Text>
+    </View>
+  );
+}
 
 function ChevButton({ dir, onPress }: { dir: 'left' | 'right'; onPress: () => void }) {
   const { colors } = useTheme();
@@ -934,7 +763,6 @@ function ChevButton({ dir, onPress }: { dir: 'left' | 'right'; onPress: () => vo
     </Pressable>
   );
 }
-
 
 const styles = StyleSheet.create({
   toolbar: {
@@ -965,23 +793,9 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     borderWidth: 1,
   },
-  chipRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
   chips: {
     gap: spacing.sm,
     paddingRight: spacing.base,
-  },
-  colVisBtn: {
-    minWidth: minTouchTarget,
-    minHeight: minTouchTarget,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  filterRow: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   weekBody: {
     flex: 1,
@@ -989,5 +803,17 @@ const styles = StyleSheet.create({
   weekStripWrap: {
     paddingHorizontal: spacing.sm,
     borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  closedBanner: {
+    marginHorizontal: spacing.base,
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  addSheetActions: {
+    gap: spacing.sm,
+    marginTop: spacing.md,
   },
 });
