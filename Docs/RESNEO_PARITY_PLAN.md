@@ -285,4 +285,25 @@ Mobile authenticates venue routes with a **Bearer JWT**; web routes must use `cr
 
 Start **R10 (Booking detail depth)** — it has the highest ratio of value to effort (reuses an existing screen, adds the actions staff most miss: message, resend, deposit, edit, reverts), and it forces the bottom-sheet primitive that R11/R12 also need. Gate it on the §5 R10 Bearer audit.
 
+---
+
+## 9. Multi-agent parity push — 2026-06-11
+
+A supervised team of agents took every app page through investigate → implement → bug-fix → design-polish → lint. Artifacts: `Docs/PARITY_GAP_REPORT.md` (full 20-page gap report), `Docs/parity/*.md` (per-page briefs), `Docs/DESIGN_REVIEW.md` (the design standard). Final state: **`tsc` 0 errors, `expo lint` 0 errors, Metro bundles clean**.
+
+**Shipped this push:**
+- **Keystone:** `components/bookings/BookingDetailSheet.tsx` — full expanded booking detail as a tall scrollable sheet on **Calendar** taps and **Bookings-list** taps (and contact history). `components/ui/Sheet.tsx` gained a `fill` mode.
+- **Calendar:** multi-practitioner side-by-side columns, column-visibility, status filters, on-block inline quick actions, block create/edit/delete, deep-link `?date=`.
+- **Bookings list:** stats bar, bulk tag/message, realtime live-sync.
+- **Contacts (list + detail):** create, advanced filters/segments + identity scope, pagination, custom fields, marketing consent (opt-in/out + timestamp), household, documents (expo-document-picker), GDPR export/erase, merge, message, timeline, inline booking drill-through.
+- **Create-booking:** guest dietary/occasion/special fields, post-create confirmation, rebook bootstrap, practitioner step.
+- **Today / Waitlist / Notifications / Reports / Availability:** brought up substantially (KPIs/forecast/checklist; offer-confirm-cancel + TTL + alerts; deep-links + prefs; report sections + CSV share; blocks + leave CRUD).
+- **Manage:** Services (+ add-on group CRUD, richer variants, staff-permission flags), Venue profile (structured address, slug-availability, logo/cover upload, grace period, validation), Hours (per-day CRUD + copy-to-all), Team (invite/role/password/calendars + My Account), Plan (billing hub + tier change + portal), Booking settings, Communications (diff-PUT), Compliance (dashboard/records/form-links/flags). More hub IA + account screen.
+- **Quality:** 15 real runtime bugs fixed (deposit-status guards, 4 setState-in-render→effect, unified-scheduling slot filter that hid all times, unthemed walk-in form); 5 conditional-hook violations in `reports.tsx` (crash risk) fixed; design-system consistency (themed Text everywhere, 44pt targets, haptics, SymbolView icons).
+
+**Still gated (require action outside this app repo / environment):**
+- **Backend deploy** — many venue routes must be Bearer-migrated + deployed on `reserve-ni`; app-side wiring is complete and typed but unverifiable end-to-end until then.
+- **On-device EAS dev build** — needed to verify gestures, push, payments, nested-modal behaviour, document picker, light/dark on the S23.
+- **Deferred app-side backlog:** compliance flag badges onto calendar/list rows (hook + `ComplianceFlagDot`/`ComplianceFlagBadge` exist, need cross-domain wiring), realtime guest-list sync, full merge wizard on contact detail, on-grid drag/resize reschedule, interactive charts (needs a charting lib), multi-service/group/in-app-payment booking (mostly out of the appointments-only cut line).
+
 *Living document — update phase checkboxes and decisions as the build progresses.*

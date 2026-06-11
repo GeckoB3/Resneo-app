@@ -14,12 +14,20 @@ export type GuestDetails = {
   name: string;
   phone: string;
   email: string;
+  /** Optional dietary requirements (max 500 chars). */
+  dietary_notes?: string;
+  /** Occasion for the visit (max 200 chars). */
+  occasion?: string;
+  /** Any special requests (max 500 chars). */
+  special_requests?: string;
 };
 
 type GuestDetailsStepProps = {
   value: GuestDetails;
   onChange: (value: GuestDetails) => void;
   onContinue: () => void;
+  /** When true, pre-fill fields are read-only (rebook flow). */
+  readOnlyContact?: boolean;
 };
 
 const SEARCH_DEBOUNCE_MS = 280;
@@ -36,9 +44,9 @@ function guestMeta(guest: GuestListItem): string {
 }
 
 /** Step 4 — find an existing guest or enter new contact details. */
-export function GuestDetailsStep({ value, onChange, onContinue }: GuestDetailsStepProps) {
+export function GuestDetailsStep({ value, onChange, onContinue, readOnlyContact = false }: GuestDetailsStepProps) {
   const { colors } = useTheme();
-  const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof GuestDetails, string>>>({});
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<'name' | 'phone' | 'email', string>>>({});
   const [searchInput, setSearchInput] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
 
@@ -56,7 +64,12 @@ export function GuestDetailsStep({ value, onChange, onContinue }: GuestDetailsSt
     debouncedSearch.length >= MIN_SEARCH_LENGTH ? guestsQuery.data?.guests ?? [] : [];
 
   const pickGuest = (guest: GuestListItem) => {
-    onChange({ name: guestName(guest), phone: guest.phone ?? '', email: guest.email ?? '' });
+    onChange({
+      ...value,
+      name: guestName(guest),
+      phone: guest.phone ?? '',
+      email: guest.email ?? '',
+    });
     setSearchInput('');
     setDebouncedSearch('');
     setFieldErrors({});
@@ -65,11 +78,11 @@ export function GuestDetailsStep({ value, onChange, onContinue }: GuestDetailsSt
   const handleContinue = () => {
     const parsed = walkInGuestSchema.safeParse(value);
     if (!parsed.success) {
-      const nextErrors: Partial<Record<keyof GuestDetails, string>> = {};
+      const nextErrors: Partial<Record<'name' | 'phone' | 'email', string>> = {};
       for (const issue of parsed.error.issues) {
         const field = issue.path[0];
-        if (typeof field === 'string' && !nextErrors[field as keyof GuestDetails]) {
-          nextErrors[field as keyof GuestDetails] = issue.message;
+        if (typeof field === 'string' && !nextErrors[field as 'name' | 'phone' | 'email']) {
+          nextErrors[field as 'name' | 'phone' | 'email'] = issue.message;
         }
       }
       setFieldErrors(nextErrors);
@@ -87,55 +100,62 @@ export function GuestDetailsStep({ value, onChange, onContinue }: GuestDetailsSt
       showsVerticalScrollIndicator={false}>
       <Text variant="heading">Guest details</Text>
 
-      <Input
-        label="Find an existing guest"
-        placeholder="Search name or phone"
-        value={searchInput}
-        onChangeText={setSearchInput}
-        autoCapitalize="none"
-        autoCorrect={false}
-        returnKeyType="search"
-      />
-
-      {results.length > 0 ? (
-        <View style={styles.results}>
-          {results.map((guest) => (
-            <Pressable
-              key={guest.id}
-              accessibilityRole="button"
-              onPress={() => pickGuest(guest)}
-              style={({ pressed }) => [
-                styles.resultRow,
-                { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? 0.85 : 1 },
-              ]}>
-              <Text variant="bodyMedium" numberOfLines={1}>
-                {guestName(guest)}
-              </Text>
-              {guestMeta(guest) ? (
-                <Text variant="caption" tone="muted" numberOfLines={1}>
-                  {guestMeta(guest)}
-                </Text>
-              ) : null}
-            </Pressable>
-          ))}
-        </View>
-      ) : debouncedSearch.length >= MIN_SEARCH_LENGTH && !guestsQuery.isFetching ? (
-        <Text variant="caption" tone="muted">
-          No matching guests — enter details below.
-        </Text>
+      {!readOnlyContact ? (
+        <Input
+          label="Find an existing guest"
+          placeholder="Search name or phone"
+          value={searchInput}
+          onChangeText={setSearchInput}
+          autoCapitalize="none"
+          autoCorrect={false}
+          returnKeyType="search"
+        />
       ) : null}
 
-      <View style={styles.divider}>
-        <View style={[styles.line, { backgroundColor: colors.border }]} />
-        <Text variant="caption" tone="muted">
-          or enter details
-        </Text>
-        <View style={[styles.line, { backgroundColor: colors.border }]} />
-      </View>
+      {!readOnlyContact ? (
+        <>
+          {results.length > 0 ? (
+            <View style={styles.results}>
+              {results.map((guest) => (
+                <Pressable
+                  key={guest.id}
+                  accessibilityRole="button"
+                  onPress={() => pickGuest(guest)}
+                  style={({ pressed }) => [
+                    styles.resultRow,
+                    { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? 0.85 : 1 },
+                  ]}>
+                  <Text variant="bodyMedium" numberOfLines={1}>
+                    {guestName(guest)}
+                  </Text>
+                  {guestMeta(guest) ? (
+                    <Text variant="caption" tone="muted" numberOfLines={1}>
+                      {guestMeta(guest)}
+                    </Text>
+                  ) : null}
+                </Pressable>
+              ))}
+            </View>
+          ) : debouncedSearch.length >= MIN_SEARCH_LENGTH && !guestsQuery.isFetching ? (
+            <Text variant="caption" tone="muted">
+              No matching guests — enter details below.
+            </Text>
+          ) : null}
+
+          <View style={styles.divider}>
+            <View style={[styles.line, { backgroundColor: colors.border }]} />
+            <Text variant="caption" tone="muted">
+              or enter details
+            </Text>
+            <View style={[styles.line, { backgroundColor: colors.border }]} />
+          </View>
+        </>
+      ) : null}
 
       <Input
         autoCapitalize="words"
         autoComplete="name"
+        editable={!readOnlyContact}
         error={fieldErrors.name}
         label="Name"
         onChangeText={(name) => onChange({ ...value, name })}
@@ -144,6 +164,7 @@ export function GuestDetailsStep({ value, onChange, onContinue }: GuestDetailsSt
       />
       <Input
         autoComplete="tel"
+        editable={!readOnlyContact}
         error={fieldErrors.phone}
         keyboardType="phone-pad"
         label="Phone"
@@ -155,6 +176,7 @@ export function GuestDetailsStep({ value, onChange, onContinue }: GuestDetailsSt
       <Input
         autoCapitalize="none"
         autoComplete="email"
+        editable={!readOnlyContact}
         error={fieldErrors.email}
         keyboardType="email-address"
         label="Email (optional)"
@@ -163,6 +185,38 @@ export function GuestDetailsStep({ value, onChange, onContinue }: GuestDetailsSt
         textContentType="emailAddress"
         value={value.email}
       />
+
+      <View style={styles.optionalSection}>
+        <Text variant="label" tone="secondary">
+          Additional details (optional)
+        </Text>
+        <Input
+          label="Occasion"
+          placeholder="e.g. Birthday, Anniversary"
+          value={value.occasion ?? ''}
+          onChangeText={(occasion) => onChange({ ...value, occasion: occasion || undefined })}
+          autoCapitalize="sentences"
+          maxLength={200}
+        />
+        <Input
+          label="Dietary requirements"
+          placeholder="e.g. Vegan, Nut allergy"
+          value={value.dietary_notes ?? ''}
+          onChangeText={(dietary_notes) => onChange({ ...value, dietary_notes: dietary_notes || undefined })}
+          autoCapitalize="sentences"
+          maxLength={500}
+        />
+        <Input
+          label="Special requests"
+          placeholder="Any other requests for the team"
+          value={value.special_requests ?? ''}
+          onChangeText={(special_requests) => onChange({ ...value, special_requests: special_requests || undefined })}
+          autoCapitalize="sentences"
+          maxLength={500}
+          multiline
+          numberOfLines={3}
+        />
+      </View>
 
       <Button label="Continue" fullWidth onPress={handleContinue} />
     </ScrollView>
@@ -195,5 +249,8 @@ const styles = StyleSheet.create({
   line: {
     flex: 1,
     height: StyleSheet.hairlineWidth,
+  },
+  optionalSection: {
+    gap: spacing.md,
   },
 });

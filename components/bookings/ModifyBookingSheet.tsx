@@ -88,8 +88,15 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   const [seededId, setSeededId] = useState<string | null>(null);
   const checkSeq = useRef(0);
 
-  // Seed from the booking when the sheet opens (adjust-state-during-render).
-  if (target && target.id !== seededId) {
+  // Seed from the booking when the sheet opens or the target booking changes.
+  // useEffect avoids setState-during-render in Fabric/concurrent mode.
+  useEffect(() => {
+    if (!target) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset seed when sheet closes
+      setSeededId(null);
+      return;
+    }
+    if (target.id === seededId) return;
     setSeededId(target.id);
     setServiceId(target.serviceId);
     setVariantId(target.serviceVariantId);
@@ -99,9 +106,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     setDuration(target.durationMinutes ?? 30);
     setChecked({ sig: null, result: { state: 'idle' } });
     setError(null);
-  } else if (!target && seededId !== null) {
-    setSeededId(null);
-  }
+  }, [target?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Unique services across the catalog + which practitioners offer each.
   const { services, offeredBy, practitioners } = useMemo(() => {

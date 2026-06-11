@@ -62,8 +62,10 @@ export interface VariantWriteInput {
   name: string;
   description?: string | null;
   duration_minutes: number;
+  buffer_minutes?: number | null;
   price_pence?: number | null;
   deposit_pence?: number | null;
+  is_active?: boolean;
   sort_order?: number;
 }
 
@@ -120,6 +122,29 @@ export function useReplaceServiceAddonLinks() {
             sort_order: index,
           })),
         }),
+      });
+    },
+    onSuccess: () => invalidateServices(queryClient),
+  });
+}
+
+/**
+ * DELETE /api/venue/appointment-services — admin (or creator-staff).
+ * The API returns 409 when upcoming bookings block deletion.
+ */
+export function useDeleteService() {
+  const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id: string): Promise<unknown> => {
+      if (!accessToken) {
+        throw new Error('Missing access token');
+      }
+      return apiFetch<unknown>('/api/venue/appointment-services', {
+        accessToken,
+        method: 'DELETE',
+        body: JSON.stringify({ id }),
       });
     },
     onSuccess: () => invalidateServices(queryClient),

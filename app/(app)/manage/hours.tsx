@@ -1,7 +1,8 @@
 import { Stack } from 'expo-router';
-import { useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
+import { AvailabilityBlocksSection } from '@/components/manage/AvailabilityBlocksSection';
 import { OpeningHoursEditor } from '@/components/manage/OpeningHoursEditor';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -13,6 +14,7 @@ import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useUpdateOpeningHours } from '@/lib/queries/useVenueSettings';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { spacing } from '@/theme/index';
+import { useTheme } from '@/theme/useTheme';
 import type { OpeningHours } from '@/types/venue';
 
 function validate(hours: OpeningHours): string | null {
@@ -35,19 +37,24 @@ function validate(hours: OpeningHours): string | null {
 
 /** Business hours — weekly opening-hours editor (admin) / read-only view (staff). */
 export default function BusinessHoursScreen() {
-  const { venue, isLoading } = useVenueContext();
+  const { venue, isLoading, refetch } = useVenueContext();
+  const { colors } = useTheme();
   const update = useUpdateOpeningHours();
   const isAdmin = venue?.current_user_role === 'admin';
 
+  // Seed draft via useEffect to avoid setState-during-render in React 18 strict mode.
   const [draft, setDraft] = useState<OpeningHours | null>(null);
-  const [seeded, setSeeded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  if (venue && !seeded) {
-    setSeeded(true);
-    setDraft(venue.opening_hours ?? {});
-  }
+  useEffect(() => {
+    if (venue && draft === null) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setDraft(venue.opening_hours ?? {});
+    }
+  }, [venue, draft]);
 
   const original = JSON.stringify(venue?.opening_hours ?? {});
   const hasChanges = draft !== null && JSON.stringify(draft) !== original;
@@ -59,12 +66,16 @@ export default function BusinessHoursScreen() {
     const validation = validate(draft);
     if (validation) {
       setError(validation);
+      hapticWarning();
       return;
     }
     try {
       await update.mutateAsync(draft);
       hapticSuccess();
       setSaved(true);
+      // Auto-clear the success message after 2500 ms so it doesn't linger indefinitely.
+      if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+      savedTimerRef.current = setTimeout(() => setSaved(false), 2500);
     } catch (e) {
       hapticWarning();
       setError(e instanceof ApiError ? e.message : 'Could not save opening hours.');
@@ -85,11 +96,31 @@ export default function BusinessHoursScreen() {
   return (
     <Screen scroll={false} padded={false}>
       {header}
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <Card>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              refetch();
+              setRefreshing(false);
+            }}
+            tintColor={colors.brand}
+          />
+        }>
+
+        {/* ---- Weekly hours card ---- */}
+        <Card style={hasChanges ? [styles.cardUnsaved, { borderColor: colors.warning }] : undefined}>
+          {hasChanges ? (
+            <Text variant="caption" tone="muted" style={styles.unsavedHint}>
+              Unsaved changes
+            </Text>
+          ) : null}
           <OpeningHoursEditor
             value={draft}
-            editable={isAdmin}
+            editable={isAdmin && !update.isPending}
             onChange={(next) => {
               setDraft(next);
               setSaved(false);
@@ -117,10 +148,10 @@ export default function BusinessHoursScreen() {
             onPress={() => void handleSave()}
           />
         ) : null}
-        <Text variant="caption" tone="muted" style={styles.footnote}>
-          Hours apply to your public booking page. One-off closures and per-service custom
-          availability are managed on the web dashboard.
-        </Text>
+
+        {/* ---- Closures & Exceptions card ---- */}
+        <AvailabilityBlocksSection isAdmin={isAdmin} />
+
         <View style={styles.spacer} />
       </ScrollView>
     </Screen>
@@ -132,8 +163,11 @@ const styles = StyleSheet.create({
     padding: spacing.base,
     gap: spacing.base,
   },
-  footnote: {
-    textAlign: 'center',
+  cardUnsaved: {
+    borderWidth: 2,
+  },
+  unsavedHint: {
+    marginBottom: spacing.sm,
   },
   spacer: {
     height: spacing.xl,

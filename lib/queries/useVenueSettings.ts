@@ -4,7 +4,7 @@ import { apiFetch } from '@/lib/api/client';
 import { queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 
-import type { OpeningHours } from '@/types/venue';
+import type { OpeningHours, VenueFeatureFlagsRaw } from '@/types/venue';
 
 /** Editable venue fields on PATCH /api/venue (admin only). */
 export interface UpdateVenueInput {
@@ -13,6 +13,22 @@ export interface UpdateVenueInput {
   phone?: string;
   email?: string;
   website_url?: string;
+  /** Booking-page slug (lowercase letters, numbers, hyphens). */
+  slug?: string;
+  /** IANA timezone string, e.g. 'Europe/London'. */
+  timezone?: string;
+  /** Minutes after appointment time that staff can mark a no-show (10–60). */
+  no_show_grace_minutes?: number;
+  /** Logo image URL (returned by POST /api/venue/logo). */
+  logo_url?: string | null;
+  /** Cover photo URL (returned by POST /api/venue/cover). */
+  cover_photo_url?: string | null;
+  /** Cuisine type (non-appointments venues). */
+  cuisine_type?: string;
+  /** Price band £/££/£££ (non-appointments venues). */
+  price_band?: string;
+  /** Kitchen digest email (non-appointments venues). */
+  kitchen_email?: string;
   /** Appointments-tier source of truth for bookable models (primary stays first). */
   active_booking_models?: string[];
   enabled_models?: string[];
@@ -36,6 +52,40 @@ export function useUpdateVenue() {
       });
     },
     onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.venue.all() });
+    },
+  });
+}
+
+/** Response shape from GET/PATCH /api/venue/feature-flags. */
+export interface FeatureFlagsResponse {
+  raw: VenueFeatureFlagsRaw;
+  resolved: Record<string, boolean>;
+  any_available_practitioner_config?: {
+    mode: 'priority' | 'random';
+    calendar_order: string[];
+  };
+  calendars?: { id: string; name: string }[];
+}
+
+/** PATCH /api/venue/feature-flags — per-venue feature flag overrides (admin only). */
+export function useUpdateFeatureFlags() {
+  const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (patch: VenueFeatureFlagsRaw): Promise<FeatureFlagsResponse> => {
+      if (!accessToken) {
+        throw new Error('Missing access token');
+      }
+      return apiFetch<FeatureFlagsResponse>('/api/venue/feature-flags', {
+        accessToken,
+        method: 'PATCH',
+        body: JSON.stringify(patch),
+      });
+    },
+    onSuccess: () => {
+      // Invalidate venue bootstrap so feature_flags.resolved is refreshed everywhere.
       void queryClient.invalidateQueries({ queryKey: queryKeys.venue.all() });
     },
   });

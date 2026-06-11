@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
@@ -15,8 +15,6 @@ export type DepositTarget = {
   guestName: string;
   amountPence?: number | null;
   status?: string | null;
-  /** Stripe refunds are admin-only (mirrors web permissions). */
-  canRefund?: boolean;
 };
 
 type DepositSheetProps = {
@@ -32,13 +30,17 @@ export function DepositSheet({ target, onClose }: DepositSheetProps) {
   const [error, setError] = useState<string | null>(null);
   const [seededId, setSeededId] = useState<string | null>(null);
 
-  if (target && target.id !== seededId) {
+  useEffect(() => {
+    if (!target) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- seed local form state when target changes
+      setSeededId(null);
+      return;
+    }
+    if (target.id === seededId) return;
     setSeededId(target.id);
     setPending(null);
     setError(null);
-  } else if (!target && seededId !== null) {
-    setSeededId(null);
-  }
+  }, [target?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function run(action: DepositAction) {
     setError(null);
@@ -82,30 +84,34 @@ export function DepositSheet({ target, onClose }: DepositSheetProps) {
               </View>
 
               <View style={styles.buttons}>
-                <Button
-                  label="Send payment link"
-                  onPress={() => void run('send_payment_link')}
-                  loading={pending === 'send_payment_link'}
-                  disabled={pending !== null}
-                  fullWidth
-                />
-                <Button
-                  label="Record cash payment"
-                  variant="secondary"
-                  onPress={() => void run('record_cash')}
-                  loading={pending === 'record_cash'}
-                  disabled={pending !== null}
-                  fullWidth
-                />
-                <Button
-                  label="Waive deposit"
-                  variant="ghost"
-                  onPress={() => void run('waive')}
-                  loading={pending === 'waive'}
-                  disabled={pending !== null}
-                  fullWidth
-                />
-                {target.canRefund !== false ? (
+                {target.status !== 'Paid' && target.status !== 'Refunded' ? (
+                  <>
+                    <Button
+                      label="Send payment link"
+                      onPress={() => void run('send_payment_link')}
+                      loading={pending === 'send_payment_link'}
+                      disabled={pending !== null}
+                      fullWidth
+                    />
+                    <Button
+                      label="Record cash payment"
+                      variant="secondary"
+                      onPress={() => void run('record_cash')}
+                      loading={pending === 'record_cash'}
+                      disabled={pending !== null}
+                      fullWidth
+                    />
+                    <Button
+                      label="Waive deposit"
+                      variant="ghost"
+                      onPress={() => void run('waive')}
+                      loading={pending === 'waive'}
+                      disabled={pending !== null}
+                      fullWidth
+                    />
+                  </>
+                ) : null}
+                {target.status === 'Paid' ? (
                   <Button
                     label="Refund"
                     variant="danger"

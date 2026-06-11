@@ -16,6 +16,8 @@ export interface UpdateGuestInput {
   customer_profile_notes?: string | null;
   marketing_consent?: boolean;
   marketing_opt_out?: boolean;
+  /** Custom client field values — keys are field_key strings. */
+  custom_fields?: Record<string, unknown>;
 }
 
 /**
@@ -67,6 +69,29 @@ export function useSendGuestMessage(guestId: string) {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.guests.timeline(accessToken, guestId) });
+    },
+  });
+}
+
+/**
+ * POST /api/venue/gdpr/erase-guest — permanently erase a guest's personal data (GDPR).
+ * Invalidates the guest list so the screen refreshes after erasure.
+ */
+export function useEraseGuest() {
+  const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ guestId }: { guestId: string }): Promise<unknown> => {
+      if (!accessToken) throw new Error('Missing access token');
+      return apiFetch<unknown>('/api/venue/gdpr/erase-guest', {
+        method: 'POST',
+        body: JSON.stringify({ guest_id: guestId }),
+        accessToken,
+      });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.guests.all() });
     },
   });
 }

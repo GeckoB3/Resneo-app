@@ -1,5 +1,12 @@
 import { type ReactNode } from 'react';
-import { StyleSheet, TextInput, View, type TextInputProps } from 'react-native';
+import {
+  StyleSheet,
+  TextInput,
+  View,
+  type StyleProp,
+  type TextInputProps,
+  type ViewStyle,
+} from 'react-native';
 import Animated, {
   interpolateColor,
   useAnimatedStyle,
@@ -18,6 +25,11 @@ type InputProps = TextInputProps & {
   helper?: string;
   /** Optional adornment rendered inside the field, before the input. */
   leftIcon?: ReactNode;
+  /**
+   * Style for the outer wrapper — use for layout (e.g. top margin/spacing).
+   * The `style` prop targets the inner TextInput (text styling) only.
+   */
+  containerStyle?: StyleProp<ViewStyle>;
 };
 
 /**
@@ -36,6 +48,7 @@ export function Input({
   helper,
   leftIcon,
   style,
+  containerStyle,
   onFocus,
   onBlur,
   ...props
@@ -63,7 +76,7 @@ export function Input({
   };
 
   return (
-    <View style={styles.wrapper}>
+    <View style={[styles.wrapper, containerStyle]}>
       {label ? (
         <Text variant="label" tone="secondary">
           {label}

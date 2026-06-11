@@ -1,7 +1,17 @@
 import { Stack } from 'expo-router';
-import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import {
+  Alert,
+  Animated,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  View,
+} from 'react-native';
 
+import { CommunicationPreviewSheet } from '@/components/manage/CommunicationPreviewSheet';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Chip } from '@/components/ui/Chip';
@@ -15,19 +25,24 @@ import { hapticSelect, hapticSuccess, hapticWarning } from '@/lib/haptics';
 import {
   useCommunicationPolicies,
   useNotificationSettings,
+  usePreviewCommunication,
   useUpdateCommunicationPolicies,
   useUpdateNotificationSettings,
 } from '@/lib/queries/useCommunications';
 import { useVenueContext } from '@/providers/VenueProvider';
-import { fonts, radius, spacing } from '@/theme/index';
+import { fonts, minTouchTarget, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type {
+  CommunicationLane,
   CommunicationMessageKey,
+  CommunicationPreviewResponse,
   LaneCommunicationPolicies,
   LaneMessagePolicy,
   MessageChannel,
+  PostVisitTiming,
   VenueNotificationSettings,
 } from '@/types/communications';
+import { POST_VISIT_TIMING_OPTIONS } from '@/types/communications';
 
 /**
  * Per-message definitions — ported from the web `CommunicationTemplatesSection`
@@ -166,6 +181,9 @@ function defaultPolicy(def: MessageDef): LaneMessagePolicy {
   };
 }
 
+// ---------------------------------------------------------------------------
+// HoursStepper — fixed to 44-pt minimum touch targets (Apple HIG).
+// ---------------------------------------------------------------------------
 function HoursStepper({
   value,
   suffix,
@@ -193,11 +211,16 @@ function HoursStepper({
           accessibilityRole="button"
           accessibilityLabel="Fewer hours"
           onPress={() => step(-1)}
+          disabled={disabled}
           style={({ pressed }) => [
             styles.stepBtn,
-            { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
+            { backgroundColor: colors.surface, borderColor: colors.border },
+            pressed && styles.stepBtnPressed,
+            disabled && styles.stepBtnDisabled,
           ]}>
-          <Text style={[styles.stepSymbol, { color: colors.brand }]}>−</Text>
+          <Text style={[styles.stepSymbol, { color: disabled ? colors.textMuted : colors.brand }]}>
+            −
+          </Text>
         </Pressable>
         <Text variant="bodyMedium" style={styles.hoursValue}>
           {value}h
@@ -206,11 +229,16 @@ function HoursStepper({
           accessibilityRole="button"
           accessibilityLabel="More hours"
           onPress={() => step(1)}
+          disabled={disabled}
           style={({ pressed }) => [
             styles.stepBtn,
-            { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
+            { backgroundColor: colors.surface, borderColor: colors.border },
+            pressed && styles.stepBtnPressed,
+            disabled && styles.stepBtnDisabled,
           ]}>
-          <Text style={[styles.stepSymbol, { color: colors.brand }]}>+</Text>
+          <Text style={[styles.stepSymbol, { color: disabled ? colors.textMuted : colors.brand }]}>
+            +
+          </Text>
         </Pressable>
       </View>
       <Text variant="bodySmall" tone="muted">
@@ -220,18 +248,101 @@ function HoursStepper({
   );
 }
 
-/** One message policy card — toggle, channels, timing, custom template lines. */
+// ---------------------------------------------------------------------------
+// PostVisitTimingPicker — selects a timing bucket for post_visit_timing.
+// ---------------------------------------------------------------------------
+function PostVisitTimingPicker({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string;
+  onChange: (v: PostVisitTiming) => void;
+  disabled: boolean;
+}) {
+  return (
+    <View style={styles.timingPickerRow}>
+      <Text variant="bodySmall" tone="muted">
+        Send
+      </Text>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.timingPickerScroll}>
+        {POST_VISIT_TIMING_OPTIONS.map((opt) => (
+          <Chip
+            key={opt.value}
+            label={opt.label}
+            selected={value === opt.value}
+            onPress={() => {
+              if (!disabled) {
+                hapticSelect();
+                onChange(opt.value);
+              }
+            }}
+          />
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// PreviewButton — small tappable label in MessageCard channel rows.
+// ---------------------------------------------------------------------------
+function PreviewButton({
+  onPress,
+  disabled,
+}: {
+  onPress: () => void;
+  disabled?: boolean;
+}) {
+  const { colors } = useTheme();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Preview message"
+      onPress={onPress}
+      disabled={disabled}
+      style={({ pressed }) => [
+        styles.previewBtn,
+        {
+          backgroundColor: pressed ? colors.surface : colors.surfaceRaised,
+          borderColor: colors.border,
+        },
+        disabled && { opacity: 0.4 },
+      ]}>
+      <Text variant="caption" style={{ color: colors.brand }}>
+        Preview
+      </Text>
+    </Pressable>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// MessageCard — toggle, channels, timing, custom template lines + preview.
+// ---------------------------------------------------------------------------
+type PreviewRequest = {
+  def: MessageDef;
+  channel: MessageChannel;
+  customMessage: string | null;
+};
+
 function MessageCard({
   def,
   policy,
   isAdmin,
   onChange,
+  onPreview,
 }: {
   def: MessageDef;
   policy: LaneMessagePolicy;
   isAdmin: boolean;
   onChange: (next: LaneMessagePolicy) => void;
+  onPreview: (req: PreviewRequest) => void;
 }) {
+  const { colors } = useTheme();
+
   const toggleChannel = (channel: MessageChannel) => {
     if (!isAdmin) return;
     const has = policy.channels.includes(channel);
@@ -250,7 +361,7 @@ function MessageCard({
   };
 
   const timingValue = def.timing
-    ? policy[def.timing.field] ?? def.timing.default
+    ? (policy[def.timing.field] ?? def.timing.default)
     : null;
 
   return (
@@ -266,12 +377,16 @@ function MessageCard({
           value={policy.enabled}
           disabled={!isAdmin}
           accessibilityLabel={def.label}
-          onValueChange={(enabled) => onChange({ ...policy, enabled })}
+          onValueChange={(enabled) => {
+            hapticSelect();
+            onChange({ ...policy, enabled });
+          }}
         />
       </View>
 
       {policy.enabled ? (
         <View style={styles.cardBody}>
+          {/* Channel chips */}
           <View style={styles.channelRow}>
             {def.allowedChannels.map((channel) => (
               <Chip
@@ -283,6 +398,7 @@ function MessageCard({
             ))}
           </View>
 
+          {/* Timing stepper */}
           {def.timing && timingValue != null ? (
             <HoursStepper
               value={timingValue}
@@ -292,27 +408,79 @@ function MessageCard({
             />
           ) : null}
 
-          {isAdmin && def.allowedChannels.includes('email') && policy.channels.includes('email') ? (
-            <Input
-              label="Email optional message"
-              helper="Optional extra line shown with the standard template."
-              value={policy.emailCustomMessage ?? ''}
-              onChangeText={(v) => onChange({ ...policy, emailCustomMessage: v || null })}
-              multiline
-              style={styles.multiline}
-              maxLength={500}
-            />
+          {/* Custom-message inputs + preview buttons — shown for ALL allowed
+              channels when the message is on (web parity: pre-fill even if
+              channel not yet active). */}
+          {def.allowedChannels.includes('email') ? (
+            <View
+              style={[
+                styles.channelEditor,
+                { backgroundColor: colors.surface, borderColor: colors.border },
+              ]}>
+              <View style={styles.channelEditorHeader}>
+                <Text variant="label">Email optional message</Text>
+                <PreviewButton
+                  onPress={() =>
+                    onPreview({
+                      def,
+                      channel: 'email',
+                      customMessage: policy.emailCustomMessage ?? null,
+                    })
+                  }
+                />
+              </View>
+              {isAdmin ? (
+                <Input
+                  value={policy.emailCustomMessage ?? ''}
+                  placeholder="Optional extra line shown with the standard template…"
+                  onChangeText={(v) => onChange({ ...policy, emailCustomMessage: v || null })}
+                  multiline
+                  style={styles.multiline}
+                  maxLength={500}
+                  helper={`${(policy.emailCustomMessage ?? '').length}/500 characters`}
+                />
+              ) : (
+                <Text variant="bodySmall" tone="muted">
+                  {policy.emailCustomMessage ?? '—'}
+                </Text>
+              )}
+            </View>
           ) : null}
-          {isAdmin && def.allowedChannels.includes('sms') && policy.channels.includes('sms') ? (
-            <Input
-              label="SMS optional message"
-              helper={`Kept short — counts toward the SMS length. ${(policy.smsCustomMessage ?? '').length}/320`}
-              value={policy.smsCustomMessage ?? ''}
-              onChangeText={(v) => onChange({ ...policy, smsCustomMessage: v || null })}
-              multiline
-              style={styles.multiline}
-              maxLength={320}
-            />
+
+          {def.allowedChannels.includes('sms') ? (
+            <View
+              style={[
+                styles.channelEditor,
+                { backgroundColor: colors.surface, borderColor: colors.border },
+              ]}>
+              <View style={styles.channelEditorHeader}>
+                <Text variant="label">SMS optional message</Text>
+                <PreviewButton
+                  onPress={() =>
+                    onPreview({
+                      def,
+                      channel: 'sms',
+                      customMessage: policy.smsCustomMessage ?? null,
+                    })
+                  }
+                />
+              </View>
+              {isAdmin ? (
+                <Input
+                  value={policy.smsCustomMessage ?? ''}
+                  placeholder="Optional extra line added to the SMS…"
+                  onChangeText={(v) => onChange({ ...policy, smsCustomMessage: v || null })}
+                  multiline
+                  style={styles.multiline}
+                  maxLength={320}
+                  helper={`${(policy.smsCustomMessage ?? '').length}/320 — counts toward SMS length`}
+                />
+              ) : (
+                <Text variant="bodySmall" tone="muted">
+                  {policy.smsCustomMessage ?? '—'}
+                </Text>
+              )}
+            </View>
           ) : null}
         </View>
       ) : null}
@@ -320,31 +488,92 @@ function MessageCard({
   );
 }
 
+// ---------------------------------------------------------------------------
+// SMS Light-plan banner
+// ---------------------------------------------------------------------------
+function SmsLightBanner() {
+  const { colors } = useTheme();
+  return (
+    <View
+      style={[
+        styles.infoBanner,
+        { backgroundColor: colors.infoSurface, borderColor: colors.brandBorder },
+      ]}>
+      <Text variant="label" style={{ color: colors.brand }}>
+        SMS on Appointments Light
+      </Text>
+      <Text variant="bodySmall" style={{ color: colors.brand, marginTop: spacing.xs }}>
+        100 SMS segments are included each month, then a small per-segment fee beyond that. Add a
+        payment card under Settings → Plan to enable SMS sending.
+      </Text>
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main screen
+// ---------------------------------------------------------------------------
+
+type PreviewSheetState = {
+  visible: boolean;
+  title: string;
+  channel: MessageChannel;
+  preview: CommunicationPreviewResponse | null;
+  loading: boolean;
+  error: string | null;
+};
+
+const PREVIEW_CLOSED: PreviewSheetState = {
+  visible: false,
+  title: '',
+  channel: 'email',
+  preview: null,
+  loading: false,
+  error: null,
+};
+
 /**
  * Communications — per-message guest policies (web "Guest communications"
  * parity: enable, channels, timing, optional template lines) + staff alerts.
  */
 export default function CommunicationsScreen() {
   const { venue, featureFlags } = useVenueContext();
+  const { colors } = useTheme();
   const isAdmin = venue?.current_user_role === 'admin';
   const waitlistEnabled = featureFlags?.resolved?.waitlist_v2 === true;
+
+  // SMS upsell banner: show when pricing_tier === 'light' and no Stripe subscription.
+  // VenueBootstrap doesn't yet surface stripe_subscription_id, so we derive a safe
+  // fallback: if stripe_connected_account_id is absent, assume no subscription.
+  const showSmsLightBanner =
+    venue?.pricing_tier === 'light' && !venue?.stripe_connected_account_id;
 
   const policiesQuery = useCommunicationPolicies();
   const updatePolicies = useUpdateCommunicationPolicies();
   const settingsQuery = useNotificationSettings();
   const updateSettings = useUpdateNotificationSettings();
+  const previewMutation = usePreviewCommunication();
 
   const [lane, setLane] = useState<LaneCommunicationPolicies | null>(null);
   const [staffDraft, setStaffDraft] = useState<VenueNotificationSettings | null>(null);
   const [seeded, setSeeded] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [previewSheet, setPreviewSheet] = useState<PreviewSheetState>(PREVIEW_CLOSED);
 
-  if (policiesQuery.data && settingsQuery.data && !seeded) {
-    setSeeded(true);
-    setLane(policiesQuery.data.appointments_other ?? {});
-    setStaffDraft(settingsQuery.data);
-  }
+  // ---------------------------------------------------------------------------
+  // Seed local state once (fixes the render-path side-effect bug).
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    if (policiesQuery.data && settingsQuery.data && !seeded) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSeeded(true);
+       
+      setLane(policiesQuery.data.appointments_other ?? {});
+       
+      setStaffDraft(settingsQuery.data);
+    }
+  }, [policiesQuery.data, settingsQuery.data, seeded]);
 
   const defs = waitlistEnabled ? [...MESSAGE_DEFS, WAITLIST_DEF] : MESSAGE_DEFS;
 
@@ -376,7 +605,7 @@ export default function CommunicationsScreen() {
 
   async function handleSave() {
     if (!lane || !staffDraft || !settingsQuery.data) return;
-    setError(null);
+    setSaveError(null);
     try {
       if (laneChanged) {
         await updatePolicies.mutateAsync({ appointments_other: lane });
@@ -394,15 +623,44 @@ export default function CommunicationsScreen() {
       setSaved(true);
     } catch (e) {
       hapticWarning();
-      setError(e instanceof ApiError ? e.message : 'Could not save communication settings.');
+      const msg =
+        e instanceof ApiError ? e.message : 'Could not save communication settings.';
+      setSaveError(msg);
+      Alert.alert('Save failed', msg);
     }
   }
 
-  const header = <Stack.Screen options={{ title: 'Communications' }} />;
-  const loading =
-    policiesQuery.isLoading || settingsQuery.isLoading || ((policiesQuery.data && settingsQuery.data) && (!lane || !staffDraft));
+  // ---------------------------------------------------------------------------
+  // Preview handling
+  // ---------------------------------------------------------------------------
+  async function handlePreview(req: PreviewRequest) {
+    if (!isAdmin) return;
+    hapticSelect();
+    const title = `${req.def.label} (${req.channel === 'sms' ? 'SMS' : 'Email'})`;
+    setPreviewSheet({ visible: true, title, channel: req.channel, preview: null, loading: true, error: null });
+    try {
+      const result = await previewMutation.mutateAsync({
+        lane: 'appointments_other' as CommunicationLane,
+        messageKey: req.def.key,
+        channel: req.channel,
+        customMessage: req.customMessage,
+      });
+      setPreviewSheet((prev) => ({ ...prev, preview: result, loading: false }));
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : 'Preview failed to load.';
+      setPreviewSheet((prev) => ({ ...prev, loading: false, error: msg }));
+    }
+  }
 
-  if (loading) {
+  // ---------------------------------------------------------------------------
+  // Loading / error states
+  // ---------------------------------------------------------------------------
+  const header = <Stack.Screen options={{ title: 'Communications' }} />;
+  const isLoading = policiesQuery.isLoading || settingsQuery.isLoading;
+
+  // Show skeleton while queries are in flight OR while seeding state into lane/staffDraft
+  // (the useEffect runs asynchronously on the next tick after query success).
+  if (isLoading || (!policiesQuery.isError && !settingsQuery.isError && (!lane || !staffDraft))) {
     return (
       <Screen padded={false}>
         {header}
@@ -411,7 +669,7 @@ export default function CommunicationsScreen() {
     );
   }
 
-  if (policiesQuery.isError || settingsQuery.isError || !lane || !staffDraft) {
+  if (policiesQuery.isError || settingsQuery.isError) {
     const err = policiesQuery.error ?? settingsQuery.error;
     return (
       <Screen>
@@ -427,15 +685,39 @@ export default function CommunicationsScreen() {
     );
   }
 
+  // At this point lane and staffDraft are guaranteed non-null (seeded by useEffect).
+  if (!lane || !staffDraft) {
+    // Unreachable in practice, but satisfies TypeScript narrowing.
+    return null;
+  }
+
+  const isSaving = updatePolicies.isPending || updateSettings.isPending;
+
   return (
     <Screen scroll={false} padded={false}>
       {header}
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={policiesQuery.isRefetching || settingsQuery.isRefetching}
+            onRefresh={() => {
+              void policiesQuery.refetch();
+              void settingsQuery.refetch();
+            }}
+            tintColor={colors.brand}
+          />
+        }>
         <Text variant="bodySmall" tone="secondary">
-          Messages for appointments and other bookings. Each one can be switched off, sent by
-          email and/or SMS, and carry an optional extra line on top of the standard template.
+          Messages for appointments and other bookings. Switch each one on or off, choose
+          email and/or SMS, and optionally add an extra line to the standard template.
         </Text>
 
+        {/* SMS Light-plan upsell */}
+        {showSmsLightBanner ? <SmsLightBanner /> : null}
+
+        {/* Message policy cards */}
         {defs.map((def) => (
           <MessageCard
             key={def.key}
@@ -443,9 +725,11 @@ export default function CommunicationsScreen() {
             policy={policyFor(def)}
             isAdmin={!!isAdmin}
             onChange={(next) => setPolicy(def.key, next)}
+            onPreview={handlePreview}
           />
         ))}
 
+        {/* Staff alerts */}
         <Card>
           <Text variant="label">Staff alerts</Text>
           <View style={styles.staffSection}>
@@ -482,46 +766,123 @@ export default function CommunicationsScreen() {
                 onValueChange={(v) => patchStaff('staff_cancellation_alert', v)}
               />
             </View>
+
+            {/* post_visit_timing — hours-after bucket for post-visit thank-you */}
+            {staffDraft.post_visit_enabled ? (
+              <View style={styles.timingPickerBlock}>
+                <Text variant="bodyMedium">Post-visit thank you timing</Text>
+                <Text variant="caption" tone="muted">
+                  When to send the post-visit thank-you email
+                </Text>
+                <PostVisitTimingPicker
+                  value={staffDraft.post_visit_timing ?? '4_hours_after'}
+                  onChange={(v) => patchStaff('post_visit_timing', v)}
+                  disabled={!isAdmin}
+                />
+              </View>
+            ) : null}
           </View>
         </Card>
 
-        {error ? (
+        {saveError ? (
           <Text variant="bodySmall" tone="danger">
-            {error}
+            {saveError}
           </Text>
         ) : null}
         {saved && !hasChanges ? (
-          <Text variant="bodySmall" tone="success">
-            Saved.
+          <Text variant="bodySmall" tone="success" style={styles.savedText}>
+            Settings saved.
           </Text>
         ) : null}
 
-        {isAdmin ? (
-          <Button
-            label="Save changes"
-            fullWidth
-            loading={updatePolicies.isPending || updateSettings.isPending}
-            disabled={!hasChanges}
-            onPress={() => void handleSave()}
-          />
-        ) : (
+        {!isAdmin ? (
           <Text variant="caption" tone="muted" style={styles.footnote}>
             Only admins can change these settings.
           </Text>
-        )}
-        <Text variant="caption" tone="muted" style={styles.footnote}>
-          Message previews are available on the web dashboard.
-        </Text>
+        ) : null}
+
         <View style={styles.spacer} />
       </ScrollView>
+
+      {/* Sticky save bar — visible only when there are unsaved changes */}
+      {isAdmin ? <StickyBar hasChanges={hasChanges} isSaving={isSaving} onSave={handleSave} /> : null}
+
+      {/* Preview sheet */}
+      <CommunicationPreviewSheet
+        visible={previewSheet.visible}
+        title={previewSheet.title}
+        channel={previewSheet.channel}
+        preview={previewSheet.preview}
+        loading={previewSheet.loading}
+        error={previewSheet.error}
+        onClose={() => setPreviewSheet(PREVIEW_CLOSED)}
+      />
     </Screen>
   );
 }
 
+// ---------------------------------------------------------------------------
+// StickyBar — appears at the bottom when hasChanges; replaces the scroll-to-
+// bottom Save button pattern.
+// ---------------------------------------------------------------------------
+function StickyBar({
+  hasChanges,
+  isSaving,
+  onSave,
+}: {
+  hasChanges: boolean;
+  isSaving: boolean;
+  onSave: () => void;
+}) {
+  const { colors } = useTheme();
+  // Use useState to hold the Animated.Value so it is stable across renders
+  // without accessing a ref during render (satisfies react-hooks/refs).
+  const [anim] = useState(() => new Animated.Value(0));
+
+  useEffect(() => {
+    Animated.timing(anim, {
+      toValue: hasChanges ? 1 : 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+  }, [hasChanges, anim]);
+
+  const translateY = anim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [80, 0],
+  });
+
+  return (
+    <Animated.View
+      style={[
+        styles.stickyBar,
+        {
+          backgroundColor: colors.surfaceRaised,
+          borderTopColor: colors.border,
+          transform: [{ translateY }],
+          opacity: anim,
+        },
+      ]}
+      pointerEvents={hasChanges ? 'auto' : 'none'}>
+      <Button
+        label={isSaving ? 'Saving…' : 'Save changes'}
+        fullWidth
+        loading={isSaving}
+        disabled={!hasChanges || isSaving}
+        onPress={onSave}
+      />
+    </Animated.View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Styles
+// ---------------------------------------------------------------------------
 const styles = StyleSheet.create({
   content: {
     padding: spacing.base,
     gap: spacing.base,
+    paddingBottom: spacing['2xl'],
   },
   cardHeader: {
     flexDirection: 'row',
@@ -557,17 +918,45 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   stepBtn: {
-    width: 34,
-    height: 34,
+    width: minTouchTarget,
+    height: minTouchTarget,
+    minWidth: minTouchTarget,
     borderRadius: radius.full,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  stepBtnPressed: {
+    opacity: 0.7,
+  },
+  stepBtnDisabled: {
+    opacity: 0.4,
+  },
   stepSymbol: {
     fontFamily: fonts.bold,
     fontSize: 17,
     lineHeight: 20,
+  },
+  channelEditor: {
+    borderRadius: radius.md,
+    borderWidth: 1,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  channelEditorHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  previewBtn: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 5,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    minHeight: minTouchTarget,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   multiline: {
     minHeight: 64,
@@ -582,16 +971,45 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.base,
+    minHeight: minTouchTarget,
   },
   settingText: {
     flex: 1,
     minWidth: 0,
     gap: 1,
   },
+  timingPickerBlock: {
+    gap: spacing.sm,
+    paddingTop: spacing.sm,
+  },
+  timingPickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  timingPickerScroll: {
+    gap: spacing.sm,
+    flexDirection: 'row',
+  },
+  infoBanner: {
+    borderRadius: radius.md,
+    borderWidth: 1,
+    padding: spacing.md,
+    gap: spacing.xs,
+  },
   footnote: {
+    textAlign: 'center',
+  },
+  savedText: {
     textAlign: 'center',
   },
   spacer: {
     height: spacing.xl,
+  },
+  stickyBar: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    padding: spacing.base,
+    paddingBottom: spacing.md,
   },
 });

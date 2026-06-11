@@ -4,24 +4,31 @@ import {
   Alert,
   FlatList,
   Pressable,
+  RefreshControl,
   ScrollView,
   Share,
   StyleSheet,
   View,
   type ListRenderItem,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
   BulkMessageSheet,
+  BulkRemoveTagSheet,
   BulkTagSheet,
   MergeContactsSheet,
 } from '@/components/clients/BulkActionSheets';
+import { ContactFilterSheet, type ContactFilterState, DEFAULT_FILTER_STATE } from '@/components/clients/ContactFilterSheet';
+import { CreateContactSheet } from '@/components/clients/CreateContactSheet';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { Chip } from '@/components/ui/Chip';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
+import { Fab } from '@/components/ui/Fab';
 import { Input } from '@/components/ui/Input';
+import { LiveDot } from '@/components/ui/LiveDot';
 import { Screen } from '@/components/ui/Screen';
 import { ListSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
@@ -30,6 +37,7 @@ import { clientsScreenTitle } from '@/lib/booking/terminology';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { useGuests } from '@/lib/queries/useGuests';
 import { useGuestTags } from '@/lib/queries/useGuestTags';
+import { useVenueLiveSync } from '@/lib/realtime/useVenueLiveSync';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { elevation, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -37,15 +45,19 @@ import type { GuestListItem, GuestListResponse } from '@/types/guest-list';
 
 const SEARCH_DEBOUNCE_MS = 280;
 const MIN_SEARCH_LENGTH = 2;
+const PAGE_SIZE = 50;
 
 const SORT_OPTIONS: { value: string; label: string }[] = [
   { value: 'last_visit_desc', label: 'Recent first' },
   { value: 'last_visit_asc', label: 'Oldest first' },
   { value: 'name_asc', label: 'Name A–Z' },
+  { value: 'name_desc', label: 'Name Z–A' },
   { value: 'visit_count_desc', label: 'Most visits' },
+  { value: 'created_desc', label: 'Recently added' },
 ];
 
 function formatGuestName(guest: GuestListItem): string {
+  if (guest.identifiability_tier === 'anonymous') return 'Anonymous guest';
   const parts = [guest.first_name, guest.last_name].filter(Boolean);
   return parts.length > 0 ? parts.join(' ') : 'Unnamed guest';
 }
@@ -77,6 +89,7 @@ function GuestRow({
     guest.visit_count > 0 ? `${guest.visit_count} visit${guest.visit_count === 1 ? '' : 's'}` : null;
   const next = formatNextBooking(guest);
   const stats = [visits, next ? `Next: ${next}` : null].filter(Boolean).join(' · ');
+  const isAnonymous = guest.identifiability_tier === 'anonymous';
 
   return (
     <Pressable
@@ -94,7 +107,9 @@ function GuestRow({
         },
       ]}>
       {selectionMode ? (
-        <View
+        <Pressable
+          hitSlop={10}
+          onPress={onPress}
           style={[
             styles.selectCheck,
             {
@@ -103,11 +118,11 @@ function GuestRow({
             },
           ]}>
           {selected ? <Text style={{ color: colors.onBrand, fontSize: 12 }}>✓</Text> : null}
-        </View>
+        </Pressable>
       ) : null}
       <Avatar name={name} size={44} />
       <View style={styles.rowText}>
-        <Text variant="bodyMedium" numberOfLines={1}>
+        <Text variant="bodyMedium" numberOfLines={1} tone={isAnonymous ? 'muted' : undefined}>
           {name}
         </Text>
         {guest.phone ? (
@@ -133,6 +148,7 @@ function GuestRow({
 export default function ClientsScreen() {
   const router = useRouter();
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const { terminology, venue } = useVenueContext();
   const isAdmin = venue?.current_user_role === 'admin';
   const accessToken = useAccessToken();
@@ -141,27 +157,56 @@ export default function ClientsScreen() {
   const [searchInput, setSearchInput] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [sort, setSort] = useState('last_visit_desc');
+  const [page, setPage] = useState(0);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
+  const [filterState, setFilterState] = useState<ContactFilterState>(DEFAULT_FILTER_STATE);
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false);
+  const [createSheetOpen, setCreateSheetOpen] = useState(false);
   // Bulk selection (long-press a row to start).
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [bulkSheet, setBulkSheet] = useState<'tag' | 'message' | 'merge' | null>(null);
+  const [bulkSheet, setBulkSheet] = useState<'tag' | 'remove_tag' | 'message' | 'merge' | null>(null);
   const [exporting, setExporting] = useState(false);
+
   const selectionMode = selectedIds.length > 0;
 
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(searchInput.trim()), SEARCH_DEBOUNCE_MS);
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchInput.trim());
+      setPage(0); // reset to first page on new search
+    }, SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [searchInput]);
+
+  // Reset page when filter/sort changes
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPage(0);
+  }, [sort, filterState]);
 
   const tagsQuery = useGuestTags();
   const tags = tagsQuery.data?.tags ?? [];
 
   const guestsQuery = useGuests({
     search: debouncedSearch.length >= MIN_SEARCH_LENGTH ? debouncedSearch : undefined,
-    page: 0,
-    limit: 50,
+    page,
+    limit: PAGE_SIZE,
     sort,
-    segmentTag: tagFilter ?? undefined,
+    // Use filterState segment/tag
+    segment: filterState.segment !== 'all' ? filterState.segment : undefined,
+    segmentTag: filterState.segment === 'tag' ? filterState.segmentTag : (tagFilter ?? undefined),
+    filter: filterState.filter !== 'identified' ? filterState.filter : undefined,
+    date_from: filterState.date_from || undefined,
+    date_to: filterState.date_to || undefined,
+    marketing: filterState.marketing || undefined,
+  });
+
+  // Realtime: refresh the directory when the venue's guests change server-side.
+  const venueId = venue?.id;
+  const liveState = useVenueLiveSync({
+    venueId,
+    subscriptions: [{ table: 'guests', filter: venueId ? `venue_id=eq.${venueId}` : undefined }],
+    onRefresh: useCallback(() => void guestsQuery.refetch(), [guestsQuery]),
+    enabled: Boolean(venueId),
   });
 
   const openGuest = useCallback(
@@ -169,7 +214,6 @@ export default function ClientsScreen() {
     [router],
   );
 
-  // React Compiler memoizes these — manual useCallback here fights it.
   const toggleSelected = (guestId: string) => {
     setSelectedIds((current) =>
       current.includes(guestId)
@@ -183,6 +227,16 @@ export default function ClientsScreen() {
     setBulkSheet(null);
   };
 
+  const selectAllOnPage = () => {
+    const allIds = guests.map((g) => g.id);
+    const allSelected = allIds.every((id) => selectedIds.includes(id));
+    if (allSelected) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(allIds);
+    }
+  };
+
   const renderItem: ListRenderItem<GuestListItem> = ({ item }) => (
     <GuestRow
       guest={item}
@@ -193,7 +247,10 @@ export default function ClientsScreen() {
     />
   );
 
-  const guests = useMemo(() => guestsQuery.data?.guests ?? [], [guestsQuery.data]);
+  const guests = useMemo(() => guestsQuery.data?.guests ?? [], [guestsQuery.data]); // eslint-disable-line react-hooks/preserve-manual-memoization
+  const totalCount = guestsQuery.data?.total_count ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+
   const selectedGuests = useMemo(
     () => guests.filter((guest) => selectedIds.includes(guest.id)),
     [guests, selectedIds],
@@ -234,16 +291,25 @@ export default function ClientsScreen() {
       setExporting(false);
     }
   }, [accessToken, sort, debouncedSearch, tagFilter]);
+
   const errorMessage =
     guestsQuery.error instanceof ApiError
       ? guestsQuery.error.message
       : guestsQuery.error?.message ?? 'Could not load clients.';
 
+  // Is the active filter set different from defaults?
+  const hasActiveFilter =
+    filterState.segment !== 'all' ||
+    filterState.filter !== 'identified' ||
+    filterState.date_from !== '' ||
+    filterState.date_to !== '' ||
+    filterState.marketing !== '';
+
+  const bulkBarBottom = Math.max(spacing.base, insets.bottom + spacing.xs);
+
   return (
     <Screen padded={false}>
-      {/* Search box is rendered OUTSIDE the FlatList and the loading/error
-          branches, so its TextInput is never remounted while results update —
-          the keyboard stays up and you can keep typing. */}
+      {/* Search box is rendered OUTSIDE the FlatList so its TextInput is never remounted. */}
       <View style={styles.header}>
         <Input
           autoCapitalize="none"
@@ -259,7 +325,7 @@ export default function ClientsScreen() {
           </Text>
         ) : null}
 
-        {/* Sort + tag filters (mirrors the web contacts directory). */}
+        {/* Sort + filter controls */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -273,6 +339,11 @@ export default function ClientsScreen() {
               onPress={() => setSort(option.value)}
             />
           ))}
+          <Chip
+            label={hasActiveFilter ? 'Filters ●' : 'Filters'}
+            selected={hasActiveFilter}
+            onPress={() => setFilterSheetOpen(true)}
+          />
           {isAdmin ? (
             <Chip
               label={exporting ? 'Exporting…' : 'Export CSV'}
@@ -281,6 +352,8 @@ export default function ClientsScreen() {
             />
           ) : null}
         </ScrollView>
+
+        {/* Tag filter chips (legacy quick-filter) */}
         {tags.length > 0 ? (
           <ScrollView
             horizontal
@@ -298,6 +371,34 @@ export default function ClientsScreen() {
             ))}
           </ScrollView>
         ) : null}
+
+        {/* Total count + pagination controls */}
+        {!guestsQuery.isLoading && totalCount > 0 ? (
+          <View style={styles.pageBar}>
+            <View style={styles.countRow}>
+              <LiveDot state={liveState} />
+              <Text variant="caption" tone="muted">
+                {totalCount} {clientLabel}{totalCount === 1 ? '' : 's'} · Page {page + 1} of {totalPages}
+              </Text>
+            </View>
+            <View style={styles.pageButtons}>
+              <Button
+                label="‹ Prev"
+                size="sm"
+                variant="ghost"
+                disabled={page === 0}
+                onPress={() => setPage((p) => Math.max(0, p - 1))}
+              />
+              <Button
+                label="Next ›"
+                size="sm"
+                variant="ghost"
+                disabled={page >= totalPages - 1}
+                onPress={() => setPage((p) => p + 1)}
+              />
+            </View>
+          </View>
+        ) : null}
       </View>
 
       {guestsQuery.isLoading ? (
@@ -306,11 +407,21 @@ export default function ClientsScreen() {
         <ErrorState message={errorMessage} onRetry={() => void guestsQuery.refetch()} />
       ) : (
         <FlatList
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[
+            styles.listContent,
+            selectionMode ? { paddingBottom: 80 + bulkBarBottom } : undefined,
+          ]}
           data={guests}
           keyExtractor={(item) => item.id}
           keyboardShouldPersistTaps="handled"
           ItemSeparatorComponent={Separator}
+          refreshControl={
+            <RefreshControl
+              refreshing={guestsQuery.isRefetching}
+              onRefresh={() => void guestsQuery.refetch()}
+              tintColor={colors.brand}
+            />
+          }
           ListEmptyComponent={
             <EmptyState
               title={`No ${screenTitle.toLowerCase()} found`}
@@ -331,13 +442,27 @@ export default function ClientsScreen() {
           style={[
             styles.bulkBar,
             elevation.raised,
-            { backgroundColor: colors.surfaceRaised, borderColor: colors.border },
+            { backgroundColor: colors.surfaceRaised, borderColor: colors.border, bottom: bulkBarBottom },
           ]}>
           <Text variant="label" style={styles.bulkCount}>
             {selectedIds.length} selected
           </Text>
+          <Button
+            label={guests.every((g) => selectedIds.includes(g.id)) ? 'Deselect all' : 'Select all'}
+            size="sm"
+            variant="ghost"
+            onPress={selectAllOnPage}
+          />
           {isAdmin ? (
             <Button label="Tag" size="sm" variant="secondary" onPress={() => setBulkSheet('tag')} />
+          ) : null}
+          {isAdmin ? (
+            <Button
+              label="Remove tag"
+              size="sm"
+              variant="secondary"
+              onPress={() => setBulkSheet('remove_tag')}
+            />
           ) : null}
           {isAdmin ? (
             <Button
@@ -354,9 +479,23 @@ export default function ClientsScreen() {
         </View>
       ) : null}
 
+      {/* FAB — create new contact */}
+      {!selectionMode ? (
+        <Fab
+          accessibilityLabel={`New ${clientLabel}`}
+          onPress={() => setCreateSheetOpen(true)}
+        />
+      ) : null}
+
       <BulkTagSheet
         guestIds={selectedIds}
         open={bulkSheet === 'tag'}
+        onClose={() => setBulkSheet(null)}
+        onDone={clearSelection}
+      />
+      <BulkRemoveTagSheet
+        guestIds={selectedIds}
+        open={bulkSheet === 'remove_tag'}
         onClose={() => setBulkSheet(null)}
         onDone={clearSelection}
       />
@@ -371,6 +510,27 @@ export default function ClientsScreen() {
         open={bulkSheet === 'merge'}
         onClose={() => setBulkSheet(null)}
         onDone={clearSelection}
+      />
+
+      <ContactFilterSheet
+        visible={filterSheetOpen}
+        onClose={() => setFilterSheetOpen(false)}
+        value={filterState}
+        onApply={(state) => {
+          setFilterState(state);
+          setTagFilter(null); // clear legacy tag chip when advanced filter applied
+        }}
+        availableTags={tags}
+      />
+
+      <CreateContactSheet
+        visible={createSheetOpen}
+        onClose={() => setCreateSheetOpen(false)}
+        onCreated={(guestId) => {
+          setCreateSheetOpen(false);
+          router.push(`/client/${guestId}` as Href);
+        }}
+        clientNoun={clientLabel}
       />
     </Screen>
   );
@@ -412,8 +572,8 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   selectCheck: {
-    width: 22,
-    height: 22,
+    width: 24,
+    height: 24,
     borderRadius: radius.sm,
     borderWidth: 1.5,
     alignItems: 'center',
@@ -423,10 +583,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: spacing.base,
     right: spacing.base,
-    bottom: spacing.base,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: spacing.xs,
     padding: spacing.sm,
     borderRadius: radius.card,
     borderWidth: StyleSheet.hairlineWidth,
@@ -434,5 +593,19 @@ const styles = StyleSheet.create({
   bulkCount: {
     flex: 1,
     paddingLeft: spacing.sm,
+  },
+  pageBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  pageButtons: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  countRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
 });

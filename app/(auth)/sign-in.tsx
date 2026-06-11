@@ -1,4 +1,3 @@
-import { useRouter, type Href } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
@@ -7,7 +6,6 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Screen } from '@/components/ui/Screen';
-import { getAuthCallbackRedirectUrl } from '@/lib/auth/redirect';
 import { isBackendConfigured } from '@/lib/env';
 import { useAuth } from '@/providers/AuthProvider';
 import { spacing, typography } from '@/theme/index';
@@ -15,16 +13,11 @@ import { useTheme } from '@/theme/useTheme';
 
 type SignInView = 'sign-in' | 'forgot-password' | 'magic-sent';
 
-// Dev-only gallery route. Cast because Expo's typed-routes table only includes
-// this new screen after the next `expo start` regenerates `.expo/types`.
-const DESIGN_SYSTEM_ROUTE = '/design-system' as unknown as Href;
-
 /**
  * Staff sign-in — password or magic link, matching reserve-ni /login (staff default: Password tab).
  */
 export default function SignInScreen() {
   const { colors } = useTheme();
-  const router = useRouter();
   const { signInWithEmail, signInWithPassword, requestPasswordReset, initError } = useAuth();
 
   const [view, setView] = useState<SignInView>('sign-in');
@@ -219,6 +212,7 @@ export default function SignInScreen() {
         keyboardType="email-address"
         placeholder="you@salon.com"
         error={mode === 'magic' ? (error ?? undefined) : undefined}
+        containerStyle={styles.fieldGap}
       />
 
       {mode === 'password' ? (
@@ -231,7 +225,7 @@ export default function SignInScreen() {
             autoComplete="password"
             placeholder="Your password"
             error={error ?? undefined}
-            style={styles.passwordInput}
+            containerStyle={styles.fieldGap}
           />
 
           <Button
@@ -265,20 +259,6 @@ export default function SignInScreen() {
         />
       )}
 
-      {__DEV__ ? (
-        <Text style={[styles.footerHint, { color: colors.textMuted }]}>
-          Add this redirect URL in Supabase: {getAuthCallbackRedirectUrl()}
-        </Text>
-      ) : null}
-
-      {__DEV__ ? (
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => router.push(DESIGN_SYSTEM_ROUTE)}
-          style={styles.textLinkWrap}>
-          <Text style={[styles.textLink, { color: colors.brand }]}>🎨 View design system</Text>
-        </Pressable>
-      ) : null}
     </Screen>
   );
 }
@@ -300,7 +280,7 @@ const styles = StyleSheet.create({
   cardBody: {
     ...typography.bodySmall,
   },
-  passwordInput: {
+  fieldGap: {
     marginTop: spacing.base,
   },
   action: {
@@ -314,10 +294,6 @@ const styles = StyleSheet.create({
   textLink: {
     ...typography.bodySmall,
     fontWeight: '600',
-  },
-  footerHint: {
-    ...typography.caption,
-    marginTop: spacing.xl,
   },
   inlineError: {
     ...typography.bodySmall,

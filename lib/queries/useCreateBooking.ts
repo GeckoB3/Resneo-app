@@ -19,12 +19,27 @@ export interface CreateBookingPayload {
   addons?: { addon_id: string }[];
   source?: 'phone' | 'walk-in';
   owner_venue_id?: string;
+  /** Staff override for this booking's duration (minutes). */
+  duration_minutes?: number;
+  /** Dietary notes from the guest (max 500 chars). */
+  dietary_notes?: string;
+  /** Occasion (max 200 chars). */
+  occasion?: string;
+  /** Special requests (max 500 chars). */
+  special_requests?: string;
+  /** Force Stripe deposit link generation even for phone bookings. */
+  require_deposit?: boolean;
+  /** Admin override for compliance pre-check failures (409 COMPLIANCE_REQUIREMENT_UNMET). */
+  override_compliance?: boolean;
 }
 
 export interface CreateBookingResponse {
   booking_id: string;
   payment_url?: string;
   message?: string;
+  requires_deposit?: boolean;
+  deposit_amount_pence?: number;
+  cancellation_notice_hours?: number;
 }
 
 /**
@@ -46,9 +61,15 @@ export function useCreateBooking() {
         body: JSON.stringify(payload),
       });
     },
-    onSuccess: () => {
+    onSuccess: (response) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.bookings.all() });
       void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all() });
+      // Pre-invalidate the detail cache so BookingDetailSheet hits fresh data immediately.
+      if (response.booking_id) {
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.bookings.detail(undefined, response.booking_id),
+        });
+      }
     },
   });
 }

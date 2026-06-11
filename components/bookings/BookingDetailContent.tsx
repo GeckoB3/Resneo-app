@@ -1,6 +1,7 @@
 import * as Clipboard from 'expo-clipboard';
 import { format, parseISO } from 'date-fns';
 import { useRouter, type Href } from 'expo-router';
+import { SymbolView } from 'expo-symbols';
 import { useRef, useState } from 'react';
 import { Alert, Linking, Pressable, StyleSheet, View } from 'react-native';
 
@@ -121,9 +122,14 @@ function GuestHistoryCard({
         onPress={() => setExpanded((cur) => !cur)}
         style={({ pressed }) => [styles.cardHeaderRow, { opacity: pressed ? 0.55 : 1 }]}>
         <Text variant="label">Guest history</Text>
-        <Text variant="title" tone="muted">
-          {expanded ? '▾' : '›'}
-        </Text>
+        <SymbolView
+          name={expanded
+            ? { ios: 'chevron.down', android: 'expand_more', web: 'expand_more' }
+            : { ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }
+          }
+          tintColor={colors.textMuted}
+          size={16}
+        />
       </Pressable>
       {expanded ? (
         <View style={styles.historyBody}>
@@ -863,7 +869,6 @@ export function BookingDetailContent({
                     guestName,
                     amountPence: booking.deposit_amount_pence,
                     status: booking.deposit_status,
-                    canRefund: isAdmin,
                   })
                 }
               />

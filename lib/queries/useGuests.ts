@@ -18,7 +18,45 @@ function buildGuestListPath(params: GuestListParams): string {
   if (params.search?.trim()) {
     searchParams.set('search', params.search.trim());
   }
-  if (params.segmentTag?.trim()) {
+
+  // Identity scope filter (identified/all/anonymous)
+  if (params.filter?.trim()) {
+    searchParams.set('filter', params.filter.trim());
+  }
+
+  // Handle all segment options
+  if (params.segment && params.segment !== 'all') {
+    searchParams.set('segment', params.segment);
+
+    // Tag segment
+    if (params.segment === 'tag' && params.segmentTag?.trim()) {
+      searchParams.set('segment_tag', params.segmentTag.trim());
+    }
+
+    // Date range (new, upcoming, visit, marketing, last_staff, last_service)
+    if (params.date_from?.trim()) {
+      searchParams.set('date_from', params.date_from.trim());
+    }
+    if (params.date_to?.trim()) {
+      searchParams.set('date_to', params.date_to.trim());
+    }
+
+    // Marketing consent filter
+    if (params.segment === 'marketing' && params.marketing?.trim()) {
+      searchParams.set('marketing', params.marketing.trim());
+    }
+
+    // Last staff member
+    if (params.segment === 'last_staff' && params.last_staff_id?.trim()) {
+      searchParams.set('last_staff_id', params.last_staff_id.trim());
+    }
+
+    // Last service
+    if (params.segment === 'last_service' && params.last_service_id?.trim()) {
+      searchParams.set('last_service_id', params.last_service_id.trim());
+    }
+  } else if (!params.segment && params.segmentTag?.trim()) {
+    // Legacy support: segmentTag without segment
     searchParams.set('segment', 'tag');
     searchParams.set('segment_tag', params.segmentTag.trim());
   }
@@ -28,6 +66,7 @@ function buildGuestListPath(params: GuestListParams): string {
 
 /**
  * Paginated guest directory. Pass debounced search from the screen component.
+ * Supports all segment types, identity scope filters, and date ranges.
  */
 export function useGuests(params: GuestListParams) {
   const accessToken = useAccessToken();
@@ -44,6 +83,13 @@ export function useGuests(params: GuestListParams) {
       limit: params.limit ?? 30,
       sort: params.sort ?? 'last_visit_desc',
       segmentTag: params.segmentTag ?? null,
+      segment: params.segment ?? null,
+      filter: params.filter ?? null,
+      date_from: params.date_from ?? null,
+      date_to: params.date_to ?? null,
+      marketing: params.marketing ?? null,
+      last_staff_id: params.last_staff_id ?? null,
+      last_service_id: params.last_service_id ?? null,
     }),
     enabled,
     // Keep the previous results on screen while a new search term loads, so the

@@ -19,6 +19,7 @@ export interface VenueAddon {
   id: string;
   addon_group_id: string;
   name: string;
+  description?: string | null;
   additional_price_pence: number;
   additional_duration_minutes: number;
   is_active: boolean;
@@ -34,4 +35,38 @@ export interface AddonGroupsResponse {
     addon_group_id: string;
     sort_order: number;
   }[];
+}
+
+/** One add-on item sent in the group create/update payload. */
+export interface AddonItemInput {
+  id?: string;
+  name: string;
+  description?: string | null;
+  additional_price_pence: number;
+  additional_duration_minutes: number;
+  is_active: boolean;
+  sort_order?: number;
+}
+
+/** Payload shape for POST /api/venue/addon-groups (group field). */
+export interface AddonGroupInput {
+  name: string;
+  prompt_to_client?: string | null;
+  description?: string | null;
+  selection_type: 'single' | 'multi';
+  min_select: number;
+  max_select?: number | null;
+  hidden_from_online: boolean;
+  is_active: boolean;
+  addons: AddonItemInput[];
+}
+
+export interface CreateAddonGroupPayload {
+  group: AddonGroupInput;
+}
+
+/** Response from POST or PATCH /api/venue/addon-groups/[id]. */
+export interface AddonGroupUpsertResponse {
+  group: VenueAddonGroup;
+  addons: VenueAddon[];
 }

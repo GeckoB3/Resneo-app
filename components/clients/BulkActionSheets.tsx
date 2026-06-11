@@ -12,11 +12,13 @@ import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import {
   useBulkAddTag,
   useBulkMarketingMessage,
+  useBulkRemoveTag,
   useMergeGuests,
 } from '@/lib/queries/useContactsBulk';
 import { spacing, radius } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { GuestListItem } from '@/types/guest-list';
+import type { MergeGuestsInput } from '@/types/guest-merge';
 
 type DoneHandler = () => void;
 
@@ -70,6 +72,64 @@ export function BulkTagSheet({
             loading={mutation.isPending}
             disabled={!tag.trim()}
             onPress={() => void handleApply()}
+          />
+        </View>
+      </View>
+    </Sheet>
+  );
+}
+
+/** Remove a tag from all selected contacts. */
+export function BulkRemoveTagSheet({
+  guestIds,
+  open,
+  onClose,
+  onDone,
+}: {
+  guestIds: string[];
+  open: boolean;
+  onClose: () => void;
+  onDone: DoneHandler;
+}) {
+  const mutation = useBulkRemoveTag();
+  const [tag, setTag] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleRemove() {
+    if (!tag.trim()) return;
+    setError(null);
+    try {
+      await mutation.mutateAsync({ guest_ids: guestIds, tag: tag.trim() });
+      hapticSuccess();
+      setTag('');
+      onDone();
+    } catch (e) {
+      hapticWarning();
+      setError(e instanceof ApiError ? e.message : 'Could not remove the tag.');
+    }
+  }
+
+  return (
+    <Sheet visible={open} onClose={onClose}>
+      <View style={styles.body}>
+        <Text variant="overline" tone="muted">
+          Remove tag from {guestIds.length} contact{guestIds.length === 1 ? '' : 's'}
+        </Text>
+        <Input label="Tag to remove" value={tag} onChangeText={setTag} maxLength={60} autoCapitalize="none" />
+        {error ? (
+          <Text variant="bodySmall" tone="danger">
+            {error}
+          </Text>
+        ) : null}
+        <View style={styles.actions}>
+          <Button label="Cancel" variant="secondary" style={styles.flex1} onPress={onClose} />
+          <Button
+            label="Remove tag"
+            variant="danger"
+            style={styles.flex1}
+            loading={mutation.isPending}
+            disabled={!tag.trim()}
+            onPress={() => void handleRemove()}
           />
         </View>
       </View>
@@ -193,7 +253,21 @@ export function MergeContactsSheet({
     if (sources.length === 0) return;
     setError(null);
     try {
-      await mutation.mutateAsync({ target_guest_id: effectiveTarget, source_guest_ids: sources });
+      const targetGuest = guests.find((g) => g.id === effectiveTarget);
+      // Build a basic merged_profile from the target (field-level resolution
+      // for a full wizard is in MergeContactDetailSheet on the detail screen).
+      const mergeInput: MergeGuestsInput = {
+        target_guest_id: effectiveTarget,
+        source_guest_ids: sources,
+        merged_profile: {
+          first_name: targetGuest?.first_name,
+          last_name: targetGuest?.last_name,
+          email: targetGuest?.email,
+          phone: targetGuest?.phone,
+          tags: targetGuest?.tags,
+        },
+      };
+      await mutation.mutateAsync(mergeInput);
       hapticSuccess();
       onDone();
       Alert.alert('Contacts merged', 'Booking history now lives on the kept contact.');

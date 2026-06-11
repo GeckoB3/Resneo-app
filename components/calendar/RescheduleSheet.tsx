@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { minutesToTime, timeToMinutes } from '@/components/calendar/grid-layout';
@@ -51,17 +51,22 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
   const [error, setError] = useState<string | null>(null);
   const [seededId, setSeededId] = useState<string | null>(null);
 
-  // Seed the editable date/time from the target booking when it changes — the
-  // React-recommended "adjust state during render" pattern (no effect needed).
-  if (target && target.id !== seededId) {
+  // Seed editable state when the target booking changes (open/swap).
+  // useEffect avoids setState-during-render in Fabric/concurrent mode —
+  // it ensures user edits survive parent re-renders that keep the same id.
+  useEffect(() => {
+    if (!target) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset seed when sheet closes
+      setSeededId(null);
+      return;
+    }
+    if (target.id === seededId) return;
     setSeededId(target.id);
     setDate(target.date);
     setMinutes(timeToMinutes(target.time));
     setDuration(target.durationMinutes ?? null);
     setError(null);
-  } else if (!target && seededId !== null) {
-    setSeededId(null);
-  }
+  }, [target?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const durationChanged =
     duration != null && target?.durationMinutes != null && duration !== target.durationMinutes;

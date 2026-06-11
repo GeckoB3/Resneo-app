@@ -10,7 +10,17 @@ export interface BookingListRow {
   party_size: number;
   status: string;
   guest_name: string;
+  /** Guest contact UUID — present when the booking is linked to a guest profile. */
+  guest_id?: string | null;
+  /** Guest phone number — used for extended search (phone / email / name). */
+  guest_phone?: string | null;
+  /** Guest email address — used for extended search (phone / email / name). */
+  guest_email?: string | null;
   deposit_status: string | null;
+  /** Deposit amount in pence from the DB row — lets the row show a formatted figure. */
+  deposit_amount_pence?: number | null;
+  /** Group booking UUID — present for multi-guest visits. */
+  group_booking_id?: string | null;
   booking_model?: string | null;
   booking_item_name?: string | null;
   /** Appointment anchors — practitioner venues use practitioner_id, unified use calendar_id. */

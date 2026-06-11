@@ -1,6 +1,7 @@
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
-import { spacing, typography } from '@/theme/index';
+import { Text } from '@/components/ui/Text';
+import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
 type LoadingStateProps = {
@@ -13,7 +14,9 @@ export function LoadingState({ message = 'Loading…' }: LoadingStateProps) {
   return (
     <View style={styles.centered} accessibilityRole="progressbar">
       <ActivityIndicator size="large" color={colors.brand} />
-      <Text style={[styles.message, { color: colors.textSecondary }]}>{message}</Text>
+      <Text variant="bodySmall" tone="secondary" style={styles.message}>
+        {message}
+      </Text>
     </View>
   );
 }
@@ -27,7 +30,6 @@ const styles = StyleSheet.create({
     padding: spacing.xl,
   },
   message: {
-    ...typography.bodySmall,
     textAlign: 'center',
   },
 });

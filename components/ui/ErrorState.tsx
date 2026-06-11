@@ -1,8 +1,8 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
-import { spacing, typography } from '@/theme/index';
-import { useTheme } from '@/theme/useTheme';
+import { Text } from '@/components/ui/Text';
+import { spacing } from '@/theme/index';
 
 type ErrorStateProps = {
   title?: string;
@@ -15,12 +15,14 @@ export function ErrorState({
   message,
   onRetry,
 }: ErrorStateProps) {
-  const { colors } = useTheme();
-
   return (
     <View style={styles.centered}>
-      <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
-      <Text style={[styles.message, { color: colors.textSecondary }]}>{message}</Text>
+      <Text variant="heading" style={styles.center}>
+        {title}
+      </Text>
+      <Text variant="bodySmall" tone="secondary" style={styles.center}>
+        {message}
+      </Text>
       {onRetry ? <Button label="Try again" onPress={onRetry} variant="secondary" /> : null}
     </View>
   );
@@ -34,12 +36,7 @@ const styles = StyleSheet.create({
     gap: spacing.base,
     padding: spacing.xl,
   },
-  title: {
-    ...typography.heading,
-    textAlign: 'center',
-  },
-  message: {
-    ...typography.bodySmall,
+  center: {
     textAlign: 'center',
   },
 });

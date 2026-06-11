@@ -106,7 +106,11 @@ export function TimeSlotStep({
       (practitioner) => practitioner.id === practitionerId,
     );
     const practitionerSlots = matchingPractitioner?.slots ?? [];
-    return practitionerSlots.filter((slot) => slot.service_id === serviceId);
+    // When service_id is absent (unified_scheduling) every slot belongs to this
+    // service — the practitioner match above is the correct scoping mechanism.
+    return practitionerSlots.filter(
+      (slot) => !slot.service_id || slot.service_id === serviceId,
+    );
   }, [singleQuery.data, practitionerId, serviceId]);
 
   const slots = isAnyAvailable ? pooledQuery.slots : singleSlots;

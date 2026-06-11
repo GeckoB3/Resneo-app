@@ -21,6 +21,8 @@ export interface Practitioner {
   break_times?: PractitionerTimeRange[];
   /** Per-weekday breaks — keys "0"–"6" (Sun–Sat) or "sun"–"sat". */
   break_times_by_day?: Record<string, PractitionerTimeRange[]> | null;
+  /** Per-weekday working hours — keys "0"–"6" (Sun–Sat) or "sun"–"sat" (roster=1). */
+  working_hours?: Record<string, PractitionerTimeRange[]> | null;
 }
 
 export interface PractitionersResponse {

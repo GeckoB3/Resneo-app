@@ -15,6 +15,14 @@ export interface SetupStatus {
   stripe_connected: boolean;
   first_booking_made: boolean;
   is_admin: boolean;
+  // Extended fields returned by backend (may be absent on older deploys)
+  booking_model?: string;
+  pricing_tier?: string | null;
+  active_booking_models?: unknown;
+  enabled_models?: unknown;
+  secondary_event_catalog_ready?: boolean;
+  secondary_class_catalog_ready?: boolean;
+  secondary_resource_catalog_ready?: boolean;
 }
 
 export function useSetupStatus(enabled = true) {

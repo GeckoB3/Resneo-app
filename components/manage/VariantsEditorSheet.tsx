@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -16,15 +16,27 @@ type DraftVariant = {
   key: string;
   id?: string;
   name: string;
+  description: string;
   duration: string;
+  buffer: string;
   price: string;
   deposit: string;
+  isActive: boolean;
 };
 
 export type VariantsEditorTarget = {
   serviceId: string;
   serviceName: string;
-  variants: { id: string; name: string; duration_minutes: number; price_pence: number | null; deposit_pence: number | null }[];
+  variants: {
+    id: string;
+    name: string;
+    description?: string | null;
+    duration_minutes: number;
+    buffer_minutes?: number | null;
+    price_pence: number | null;
+    deposit_pence: number | null;
+    is_active?: boolean;
+  }[];
 };
 
 type VariantsEditorSheetProps = {
@@ -40,15 +52,21 @@ function toDraft(target: VariantsEditorTarget): DraftVariant[] {
     key: variant.id,
     id: variant.id,
     name: variant.name,
+    description: variant.description ?? '',
     duration: String(variant.duration_minutes),
+    buffer: String(variant.buffer_minutes ?? 0),
     price: penceToPoundsInput(variant.price_pence),
     deposit: penceToPoundsInput(variant.deposit_pence),
+    isActive: variant.is_active !== false,
   }));
 }
 
 /**
  * Service options (variants) editor — add / edit / remove, then save the full
  * set. Each option expands in place; the sheet keeps everything thumb-reachable.
+ *
+ * State is seeded via useEffect (key-based reset) to avoid the React 18 strict-mode
+ * render-phase setState anti-pattern.
  */
 export function VariantsEditorSheet({ target, saving = false, onClose, onSave }: VariantsEditorSheetProps) {
   const { colors } = useTheme();
@@ -56,17 +74,30 @@ export function VariantsEditorSheet({ target, saving = false, onClose, onSave }:
   const [drafts, setDrafts] = useState<DraftVariant[]>([]);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [seededId, setSeededId] = useState<string | null>(null);
   const [draftCounter, setDraftCounter] = useState(0);
+  // seededId stored in state (not a ref) so the `seeded` derived value is safe
+  // to read during render without violating react-hooks/refs.
+  const [seededId, setSeededId] = useState<string | null>(null);
 
-  if (target && target.serviceId !== seededId) {
-    setSeededId(target.serviceId);
+  // Seed (or re-seed) state whenever the target changes.
+  useEffect(() => {
+    if (!target) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSeededId(null);
+      return;
+    }
+    if (target.serviceId === seededId) return;
+     
     setDrafts(toDraft(target));
+     
     setExpandedKey(null);
+     
     setError(null);
-  } else if (!target && seededId !== null) {
-    setSeededId(null);
-  }
+     
+    setSeededId(target.serviceId);
+  // seededId intentionally omitted to avoid an infinite re-seed loop
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target]);
 
   const patchDraft = (key: string, patch: Partial<DraftVariant>) => {
     setDrafts((current) => current.map((d) => (d.key === key ? { ...d, ...patch } : d)));
@@ -76,7 +107,7 @@ export function VariantsEditorSheet({ target, saving = false, onClose, onSave }:
     hapticSelect();
     const key = `draft-${draftCounter}`;
     setDraftCounter((n) => n + 1);
-    setDrafts((current) => [...current, { key, name: '', duration: '30', price: '', deposit: '' }]);
+    setDrafts((current) => [...current, { key, name: '', description: '', duration: '30', buffer: '0', price: '', deposit: '', isActive: true }]);
     setExpandedKey(key);
   };
 
@@ -90,6 +121,7 @@ export function VariantsEditorSheet({ target, saving = false, onClose, onSave }:
     const result: VariantWriteInput[] = [];
     for (const draft of drafts) {
       const duration = Number(draft.duration);
+      const buffer = Number(draft.buffer || '0');
       if (!draft.name.trim()) {
         setError('Every option needs a name.');
         setExpandedKey(draft.key);
@@ -97,6 +129,11 @@ export function VariantsEditorSheet({ target, saving = false, onClose, onSave }:
       }
       if (!Number.isInteger(duration) || duration < 5 || duration > 480) {
         setError(`"${draft.name.trim()}": duration must be 5–480 minutes.`);
+        setExpandedKey(draft.key);
+        return;
+      }
+      if (!Number.isInteger(buffer) || buffer < 0 || buffer > 120) {
+        setError(`"${draft.name.trim()}": buffer must be 0–120 minutes.`);
         setExpandedKey(draft.key);
         return;
       }
@@ -110,17 +147,22 @@ export function VariantsEditorSheet({ target, saving = false, onClose, onSave }:
       result.push({
         ...(draft.id ? { id: draft.id } : {}),
         name: draft.name.trim(),
+        description: draft.description.trim() || null,
         duration_minutes: duration,
+        buffer_minutes: buffer,
         price_pence: price,
         deposit_pence: deposit,
+        is_active: draft.isActive,
       });
     }
     onSave(result);
   }
 
+  const seeded = target && seededId === target.serviceId;
+
   return (
     <Sheet visible={!!target} onClose={onClose}>
-      {target && seededId === target.serviceId ? (
+      {seeded ? (
         <View style={styles.body}>
               <View>
                 <Text variant="overline" tone="muted">
@@ -162,6 +204,7 @@ export function VariantsEditorSheet({ target, saving = false, onClose, onSave }:
                           <Text variant="caption" tone="muted">
                             {draft.duration || '—'} min
                             {draft.price.trim() ? ` · £${draft.price.trim()}` : ''}
+                            {!draft.isActive ? ' · Inactive' : ''}
                           </Text>
                         </View>
                         <Text variant="title" tone="muted">
@@ -178,11 +221,31 @@ export function VariantsEditorSheet({ target, saving = false, onClose, onSave }:
                             maxLength={120}
                           />
                           <Input
-                            label="Duration (minutes)"
-                            value={draft.duration}
-                            onChangeText={(duration) => patchDraft(draft.key, { duration })}
-                            keyboardType="number-pad"
+                            label="Description (optional)"
+                            value={draft.description}
+                            onChangeText={(description) => patchDraft(draft.key, { description })}
+                            multiline
+                            style={styles.multiline}
+                            maxLength={500}
                           />
+                          <View style={styles.moneyRow}>
+                            <View style={styles.moneyField}>
+                              <Input
+                                label="Duration (mins)"
+                                value={draft.duration}
+                                onChangeText={(duration) => patchDraft(draft.key, { duration })}
+                                keyboardType="number-pad"
+                              />
+                            </View>
+                            <View style={styles.moneyField}>
+                              <Input
+                                label="Buffer (mins)"
+                                value={draft.buffer}
+                                onChangeText={(buffer) => patchDraft(draft.key, { buffer })}
+                                keyboardType="number-pad"
+                              />
+                            </View>
+                          </View>
                           <View style={styles.moneyRow}>
                             <View style={styles.moneyField}>
                               <Input
@@ -200,6 +263,13 @@ export function VariantsEditorSheet({ target, saving = false, onClose, onSave }:
                                 keyboardType="decimal-pad"
                               />
                             </View>
+                          </View>
+                          <View style={styles.switchRow}>
+                            <Text variant="bodySmall">Offer this option to clients</Text>
+                            <Switch
+                              value={draft.isActive}
+                              onValueChange={(isActive) => patchDraft(draft.key, { isActive })}
+                            />
                           </View>
                           <Button
                             label="Remove option"
@@ -270,12 +340,22 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     gap: spacing.md,
   },
+  multiline: {
+    minHeight: 60,
+    textAlignVertical: 'top',
+  },
   moneyRow: {
     flexDirection: 'row',
     gap: spacing.md,
   },
   moneyField: {
     flex: 1,
+  },
+  switchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.xs,
   },
   actions: {
     flexDirection: 'row',

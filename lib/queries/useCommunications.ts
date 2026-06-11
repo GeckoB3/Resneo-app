@@ -5,6 +5,8 @@ import { isBackendConfigured } from '@/lib/env';
 import { queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import type {
+  CommunicationPreviewRequest,
+  CommunicationPreviewResponse,
   NotificationSettingsPatch,
   VenueCommunicationPolicies,
   VenueNotificationSettings,
@@ -73,6 +75,27 @@ export function useUpdateCommunicationPolicies() {
     onSuccess: () => {
       void queryClient.invalidateQueries({
         queryKey: queryKeys.communications.policies(accessToken),
+      });
+    },
+  });
+}
+
+/**
+ * POST /api/venue/communication-preview — renders a message preview.
+ * Used by PreviewBottomSheet to show email HTML or SMS text.
+ */
+export function usePreviewCommunication() {
+  const accessToken = useAccessToken();
+
+  return useMutation({
+    mutationFn: async (req: CommunicationPreviewRequest): Promise<CommunicationPreviewResponse> => {
+      if (!accessToken) {
+        throw new Error('Missing access token');
+      }
+      return apiFetch<CommunicationPreviewResponse>('/api/venue/communication-preview', {
+        accessToken,
+        method: 'POST',
+        body: JSON.stringify(req),
       });
     },
   });

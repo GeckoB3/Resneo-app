@@ -1,8 +1,11 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 
+import { ComplianceFlagDot } from '@/components/compliance/ComplianceFlagBadge';
 import { StatusPill } from '@/components/ui/Badge';
 import { Text } from '@/components/ui/Text';
+import { hapticSelect } from '@/lib/haptics';
 import { bookingStatusDisplayLabel } from '@/lib/booking/infer-booking-row-model';
+import type { ComplianceBookingFlag } from '@/lib/queries/useCompliance';
 import { minTouchTarget, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { BookingListRow } from '@/types/booking-list';
@@ -12,6 +15,14 @@ type BookingRowProps = {
   /** Drives guest vs cover wording in the subtitle. */
   isAppointment: boolean;
   onPress: (id: string) => void;
+  /** Long-press enters bulk-selection mode. */
+  onLongPress?: (id: string) => void;
+  /** When true, the row shows a selected ring and checkbox indicator. */
+  selected?: boolean;
+  /** When true, selection mode is active — all rows show their select state. */
+  selectionMode?: boolean;
+  /** Per-booking compliance flag — renders a small coloured dot by the name. */
+  complianceFlag?: ComplianceBookingFlag | null;
 };
 
 /** Deposit values that aren't worth surfacing in a list row. */
@@ -32,8 +43,16 @@ function partyLabel(partySize: number, isAppointment: boolean): string | null {
   return `${partySize} ${noun}${partySize === 1 ? '' : 's'}`;
 }
 
-/** A single booking in the list — time-led, tap navigates to detail. */
-export function BookingRow({ booking, isAppointment, onPress }: BookingRowProps) {
+/** A single booking in the list — time-led, tap opens detail, long-press enters selection mode. */
+export function BookingRow({
+  booking,
+  isAppointment,
+  onPress,
+  onLongPress,
+  selected = false,
+  selectionMode = false,
+  complianceFlag,
+}: BookingRowProps) {
   const { colors } = useTheme();
 
   const addonCount = booking.addons_count ?? 0;
@@ -53,12 +72,47 @@ export function BookingRow({ booking, isAppointment, onPress }: BookingRowProps)
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityState={{ selected }}
       accessibilityLabel={`${formatTime(booking.booking_time)}, ${booking.guest_name}, ${bookingStatusDisplayLabel(booking.status, booking.booking_model === 'table_reservation')}`}
-      onPress={() => onPress(booking.id)}
+      onPress={() => {
+        if (selectionMode) {
+          hapticSelect();
+          onLongPress?.(booking.id);
+        } else {
+          onPress(booking.id);
+        }
+      }}
+      onLongPress={() => {
+        hapticSelect();
+        onLongPress?.(booking.id);
+      }}
+      delayLongPress={350}
       style={({ pressed }) => [
         styles.row,
-        { backgroundColor: colors.surfaceRaised, borderColor: colors.border, opacity: pressed ? 0.85 : 1 },
+        {
+          backgroundColor: selected ? colors.brandSubtle : colors.surfaceRaised,
+          borderColor: selected ? colors.brand : colors.border,
+          opacity: pressed ? 0.85 : 1,
+        },
       ]}>
+      {/* Selection checkbox indicator */}
+      {selectionMode ? (
+        <View
+          style={[
+            styles.checkbox,
+            {
+              backgroundColor: selected ? colors.brand : colors.surface,
+              borderColor: selected ? colors.brand : colors.borderStrong,
+            },
+          ]}>
+          {selected ? (
+            <Text variant="caption" color={colors.onBrand} style={styles.checkmark}>
+              ✓
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
+
       <View style={styles.timeCol}>
         <Text variant="label" style={styles.time}>
           {formatTime(booking.booking_time)}
@@ -78,6 +132,7 @@ export function BookingRow({ booking, isAppointment, onPress }: BookingRowProps)
               accessibilityLabel="Attendance confirmed"
             />
           ) : null}
+          <ComplianceFlagDot flag={complianceFlag} />
         </View>
         {subtitle ? (
           <Text variant="caption" tone="muted" numberOfLines={1} style={styles.subtitle}>
@@ -111,6 +166,17 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
     gap: spacing.md,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkmark: {
+    lineHeight: 14,
   },
   timeCol: {
     width: 46,

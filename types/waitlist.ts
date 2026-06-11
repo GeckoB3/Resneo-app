@@ -1,10 +1,12 @@
 /**
  * Subset of GET /api/venue/waitlist used by the mobile waitlist screen.
- * @see _reference/reserve-ni/src/app/api/venue/waitlist/route.ts
+ * @see _reference/Resneo/src/app/api/venue/waitlist/route.ts
  */
 export type WaitlistStatus = 'waiting' | 'offered' | 'confirmed' | 'expired' | 'cancelled';
 
 export type WaitlistKind = 'appointment' | 'table';
+
+export type WaitlistMode = 'notify_in_order' | 'staff_choose';
 
 export interface WaitlistEntry {
   id: string;
@@ -25,10 +27,32 @@ export interface WaitlistEntry {
   notes?: string | null;
   created_at?: string;
   expires_at?: string | null;
+  offered_at?: string | null;
   can_offer?: boolean;
+  offer_unavailable_reason?: string | null;
+  booking_id?: string | null;
 }
 
 export interface WaitlistResponse {
   entries: WaitlistEntry[];
-  waitlist_mode?: string;
+  waitlist_mode?: WaitlistMode | string;
+}
+
+/** Shape of GET /api/venue/waitlist/alerts response */
+export interface WaitlistAlert {
+  id: string;
+  venue_id?: string;
+  slot_date?: string;
+  slot_time?: string;
+  service_id?: string | null;
+  service_name?: string | null;
+  practitioner_id?: string | null;
+  practitioner_name?: string | null;
+  matching_waitlist_count: number;
+  status?: string;
+  created_at?: string;
+}
+
+export interface WaitlistAlertsResponse {
+  alerts: WaitlistAlert[];
 }

@@ -21,6 +21,9 @@ import { useTheme } from '@/theme/useTheme';
 import type { StaffRole } from '@/types/staff';
 import type { BookingModel } from '@/types/venue';
 
+/** Subscription/plan statuses that warrant a warning banner. */
+const WARN_PLAN_STATUSES = new Set(['past_due', 'canceled', 'cancelled', 'unpaid', 'expired']);
+
 /** The staff dashboard lives on the same host the app's API points at. */
 function webDashboardUrl(path = '/dashboard'): string {
   try {
@@ -162,6 +165,10 @@ export default function MoreScreen() {
   const accessToken = session?.access_token ?? null;
   const appVersion = Constants.expoConfig?.version ?? '—';
 
+  /** Derive a plan status warning from the venue's pricing tier. */
+  const planStatus: string | undefined = (venue as unknown as { plan_status?: string })?.plan_status;
+  const showPlanWarning = isAdmin && planStatus != null && WARN_PLAN_STATUSES.has(planStatus.toLowerCase());
+
   const enabledSecondaryRows = SECONDARY_MODEL_ROWS.filter((row) => {
     const models = new Set<BookingModel>([
       ...(venue?.active_booking_models ?? []),
@@ -228,8 +235,8 @@ export default function MoreScreen() {
         More
       </Text>
 
-      {/* Profile header */}
-      <Card>
+      {/* Profile header — tappable to open Account settings */}
+      <Card onPress={() => router.push('/manage/account' as Href)}>
         <View style={styles.profileHeader}>
           <Avatar name={staff?.name ?? staff?.email ?? 'Staff'} size={52} />
           <View style={styles.profileText}>
@@ -248,6 +255,38 @@ export default function MoreScreen() {
           ) : null}
         </View>
       </Card>
+
+      {/* Account settings — available to all roles */}
+      <Group>
+        <MenuRow
+          isFirst
+          icon={{ ios: 'person.circle.fill', android: 'account_circle', web: 'account_circle' }}
+          tile={TILE.navy}
+          label="Account settings"
+          hint="Name, sign-in email, phone & password"
+          onPress={() => router.push('/manage/account' as Href)}
+        />
+      </Group>
+
+      {/* Plan warning banner for admins when billing has an issue */}
+      {showPlanWarning ? (
+        <Pressable
+          onPress={() => router.push('/manage/plan' as Href)}
+          style={({ pressed }) => [
+            styles.planWarning,
+            { backgroundColor: colors.warningSurface, borderColor: colors.warning },
+            pressed ? styles.planWarningPressed : null,
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="Plan issue — tap to view">
+          <Text variant="label" color={colors.warning}>
+            Subscription issue
+          </Text>
+          <Text variant="caption" color={colors.warning}>
+            Your plan is {planStatus}. Tap to manage billing.
+          </Text>
+        </Pressable>
+      ) : null}
 
       <Group title="Workspace">
         <MenuRow
@@ -365,7 +404,7 @@ export default function MoreScreen() {
             icon={{ ios: 'globe', android: 'public', web: 'public' }}
             tile={TILE.indigo}
             label="Booking page"
-            hint="Public page, branding & widget"
+            hint={venue?.slug ? `resneo.com/book/${venue.slug}` : 'Public page, branding & widget'}
             external
             onPress={() => openWeb('/dashboard/settings')}
           />
@@ -393,6 +432,13 @@ export default function MoreScreen() {
       <Group title="App">
         <MenuRow
           isFirst
+          icon={{ ios: 'questionmark.circle.fill', android: 'help', web: 'help' }}
+          tile={TILE.teal}
+          label="Support"
+          hint="Contact the Resneo team"
+          onPress={() => router.push('/support' as Href)}
+        />
+        <MenuRow
           icon={{ ios: 'bell.badge.fill', android: 'notifications_active', web: 'notifications_active' }}
           tile={TILE.rose}
           label="Push notifications"
@@ -486,5 +532,14 @@ const styles = StyleSheet.create({
   },
   version: {
     textAlign: 'center',
+  },
+  planWarning: {
+    borderWidth: 1,
+    borderRadius: radius.card,
+    padding: spacing.base,
+    gap: spacing.xs,
+  },
+  planWarningPressed: {
+    opacity: 0.8,
   },
 });

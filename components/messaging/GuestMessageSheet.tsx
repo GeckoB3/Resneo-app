@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
@@ -44,18 +44,21 @@ export function GuestMessageSheet({ target, onSend, sending = false, onClose }: 
   const [message, setMessage] = useState('');
   const [channel, setChannel] = useState<MessageChannel>('both');
   const [error, setError] = useState<string | null>(null);
-  const [seededId, setSeededId] = useState<string | null>(null);
 
   const options = channelOptions(target?.email, target?.phone);
 
-  if (target && target.id !== seededId) {
-    setSeededId(target.id);
-    setMessage('');
-    setError(null);
-    setChannel(options.some((o) => o.value === 'both') ? 'both' : options[0]?.value ?? 'email');
-  } else if (!target && seededId !== null) {
-    setSeededId(null);
-  }
+  // Reset form whenever the target changes (new guest or sheet closed).
+  // useEffect avoids the setState-during-render anti-pattern that drops
+  // TextInput focus on Android/Fabric.
+  useEffect(() => {
+    if (target) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- seed local form state when target changes
+      setMessage('');
+      setError(null);
+      const opts = channelOptions(target.email, target.phone);
+      setChannel(opts.some((o) => o.value === 'both') ? 'both' : opts[0]?.value ?? 'email');
+    }
+  }, [target?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleSend() {
     if (!message.trim()) return;
@@ -75,7 +78,7 @@ export function GuestMessageSheet({ target, onSend, sending = false, onClose }: 
 
   return (
     <Sheet visible={!!target} onClose={onClose}>
-      {target && seededId === target.id ? (
+      {target ? (
         <View style={styles.body}>
           <View style={styles.headerBlock}>
             <Text variant="overline" tone="muted">

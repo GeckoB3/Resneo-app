@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
@@ -45,7 +45,15 @@ export function EditBookingSheet({ target, onClose }: EditBookingSheetProps) {
   const [error, setError] = useState<string | null>(null);
   const [seededId, setSeededId] = useState<string | null>(null);
 
-  if (target && target.id !== seededId) {
+  // Seed from the booking when the sheet opens or the target booking changes.
+  // useEffect avoids setState-during-render in Fabric/concurrent mode.
+  useEffect(() => {
+    if (!target) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset seed when sheet closes
+      setSeededId(null);
+      return;
+    }
+    if (target.id === seededId) return;
     setSeededId(target.id);
     setFirstName(target.guestFirstName);
     setLastName(target.guestLastName);
@@ -56,9 +64,7 @@ export function EditBookingSheet({ target, onClose }: EditBookingSheetProps) {
     setOccasion(target.occasion);
     setInternalNotes(target.internalNotes);
     setError(null);
-  } else if (!target && seededId !== null) {
-    setSeededId(null);
-  }
+  }, [target?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function buildPayload(t: EditBookingTarget): UpdateBookingDetailsInput {
     const payload: UpdateBookingDetailsInput = {};

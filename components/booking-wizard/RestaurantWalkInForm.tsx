@@ -1,13 +1,14 @@
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, View } from 'react-native';
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
+import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { useCreateWalkIn } from '@/lib/queries/useCreateWalkIn';
 import { splitGuestName } from '@/lib/validation/walk-in-guest';
-import { minTouchTarget, radius, spacing, typography } from '@/theme/index';
+import { minTouchTarget, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
 const QUICK_PARTY_SIZES = [1, 2, 3, 4, 5, 6, 7, 8] as const;
@@ -75,13 +76,13 @@ export function RestaurantWalkInForm({ onSuccess }: RestaurantWalkInFormProps) {
 
   return (
     <View style={styles.container}>
-      <Text style={[styles.title, { color: colors.text }]}>Walk-in</Text>
-      <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+      <Text variant="title">Walk-in</Text>
+      <Text variant="bodySmall" tone="secondary">
         Seat a party now. The booking is created with status &ldquo;Seated&rdquo;.
       </Text>
 
       <Card style={styles.card}>
-        <Text style={[styles.sectionLabel, { color: colors.text }]}>Party size</Text>
+        <Text variant="label">Party size</Text>
         <View style={styles.partyGrid}>
           {QUICK_PARTY_SIZES.map((size) => {
             const isSelected = !customParty && size === partySize;
@@ -103,10 +104,8 @@ export function RestaurantWalkInForm({ onSuccess }: RestaurantWalkInFormProps) {
                   },
                 ]}>
                 <Text
-                  style={[
-                    styles.partyChipText,
-                    { color: isSelected ? '#ffffff' : colors.text },
-                  ]}>
+                  variant="heading"
+                  color={isSelected ? colors.onBrand : colors.text}>
                   {size}
                 </Text>
               </Pressable>
@@ -123,7 +122,7 @@ export function RestaurantWalkInForm({ onSuccess }: RestaurantWalkInFormProps) {
       </Card>
 
       <Card style={styles.card}>
-        <Text style={[styles.sectionLabel, { color: colors.text }]}>
+        <Text variant="label">
           Guest (optional)
         </Text>
         <Input
@@ -159,18 +158,8 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: spacing.base,
   },
-  title: {
-    ...typography.title,
-  },
-  subtitle: {
-    ...typography.bodySmall,
-    marginBottom: spacing.sm,
-  },
   card: {
     gap: spacing.sm,
-  },
-  sectionLabel: {
-    ...typography.label,
   },
   partyGrid: {
     flexDirection: 'row',
@@ -187,8 +176,5 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  partyChipText: {
-    ...typography.heading,
   },
 });

@@ -18,6 +18,12 @@ type SheetProps = {
   onClose: () => void;
   /** Cap the sheet height (default 90%). */
   maxHeight?: DimensionValue;
+  /**
+   * Tall mode: pin the sheet to a fixed `maxHeight` and let the content fill it
+   * (the child manages its own scrolling + horizontal padding). Use for screens
+   * that need to show a long, scrollable body — e.g. the full booking detail.
+   */
+  fill?: boolean;
   children: ReactNode;
 };
 
@@ -26,7 +32,7 @@ type SheetProps = {
  * scrim, drag handle, bottom safe area and keyboard avoidance; callers supply
  * the content (header, scroll body, actions).
  */
-export function Sheet({ visible, onClose, maxHeight = '90%', children }: SheetProps) {
+export function Sheet({ visible, onClose, maxHeight = '90%', fill = false, children }: SheetProps) {
   const { colors } = useTheme();
 
   return (
@@ -37,8 +43,12 @@ export function Sheet({ visible, onClose, maxHeight = '90%', children }: SheetPr
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Dismiss" />
         <SafeAreaView
           edges={['bottom']}
-          style={[styles.sheet, { backgroundColor: colors.surfaceRaised, maxHeight }]}>
-          <View style={styles.content}>
+          style={[
+            styles.sheet,
+            { backgroundColor: colors.surfaceRaised },
+            fill ? { height: maxHeight } : { maxHeight },
+          ]}>
+          <View style={fill ? styles.contentFill : styles.content}>
             <View style={[styles.handle, { backgroundColor: colors.border }]} />
             {children}
           </View>
@@ -60,6 +70,11 @@ const styles = StyleSheet.create({
   content: {
     padding: spacing.lg,
     gap: spacing.md,
+  },
+  contentFill: {
+    flex: 1,
+    paddingTop: spacing.sm,
+    gap: spacing.sm,
   },
   handle: {
     alignSelf: 'center',

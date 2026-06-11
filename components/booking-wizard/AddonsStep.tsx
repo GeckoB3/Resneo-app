@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/Button';
 import { Text } from '@/components/ui/Text';
 import { formatPence } from '@/lib/format';
 import { hapticSelect } from '@/lib/haptics';
-import { radius, spacing } from '@/theme/index';
+import { fonts, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { AppointmentCatalogAddonGroup } from '@/types/appointment-catalog';
 
@@ -173,7 +173,7 @@ const styles = StyleSheet.create({
   },
   checkMark: {
     fontSize: 13,
-    fontWeight: '700',
+    fontFamily: fonts.bold,
     lineHeight: 16,
   },
   addonText: {

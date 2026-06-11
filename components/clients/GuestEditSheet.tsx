@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Switch, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
@@ -20,6 +20,8 @@ export type GuestEditTarget = {
   /** Comma-joined tags. */
   tags: string;
   marketingConsent: boolean;
+  /** Explicit opt-out (tracked independently of consent). */
+  marketingOptOut: boolean;
 };
 
 type GuestEditSheetProps = {
@@ -44,23 +46,26 @@ export function GuestEditSheet({ target, onClose }: GuestEditSheetProps) {
   const [email, setEmail] = useState('');
   const [notes, setNotes] = useState('');
   const [tags, setTags] = useState('');
-  const [marketing, setMarketing] = useState(false);
+  const [marketingConsent, setMarketingConsent] = useState(false);
+  const [marketingOptOut, setMarketingOptOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [seededId, setSeededId] = useState<string | null>(null);
 
-  if (target && target.id !== seededId) {
-    setSeededId(target.id);
-    setFirstName(target.firstName);
-    setLastName(target.lastName);
-    setPhone(target.phone);
-    setEmail(target.email);
-    setNotes(target.notes);
-    setTags(target.tags);
-    setMarketing(target.marketingConsent);
-    setError(null);
-  } else if (!target && seededId !== null) {
-    setSeededId(null);
-  }
+  // Seed form values when a new target is opened. Using useEffect avoids
+  // the render-time setState anti-pattern that caused double-renders.
+  useEffect(() => {
+    if (target) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- seed local form state when target.id changes
+      setFirstName(target.firstName);
+      setLastName(target.lastName);
+      setPhone(target.phone);
+      setEmail(target.email);
+      setNotes(target.notes);
+      setTags(target.tags);
+      setMarketingConsent(target.marketingConsent);
+      setMarketingOptOut(target.marketingOptOut);
+      setError(null);
+    }
+  }, [target?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function buildPayload(t: GuestEditTarget): UpdateGuestInput {
     const payload: UpdateGuestInput = {};
@@ -82,10 +87,14 @@ export function GuestEditSheet({ target, onClose }: GuestEditSheetProps) {
     const origTags = parseTags(t.tags);
     if (nextTags.join('|') !== origTags.join('|')) payload.tags = nextTags;
 
-    if (marketing !== t.marketingConsent) {
-      payload.marketing_consent = marketing;
-      payload.marketing_opt_out = !marketing;
+    // Track consent and opt-out independently — never conflate them.
+    if (marketingConsent !== t.marketingConsent) {
+      payload.marketing_consent = marketingConsent;
     }
+    if (marketingOptOut !== t.marketingOptOut) {
+      payload.marketing_opt_out = marketingOptOut;
+    }
+
     return payload;
   }
 
@@ -107,63 +116,90 @@ export function GuestEditSheet({ target, onClose }: GuestEditSheetProps) {
 
   return (
     <Sheet visible={!!target} onClose={onClose} maxHeight="88%">
-      {target && seededId === target.id ? (
+      {target ? (
         <View style={styles.body}>
-              <Text variant="overline" tone="muted">
-                Edit guest
-              </Text>
+          <Text variant="overline" tone="muted">
+            Edit guest
+          </Text>
 
-              <ScrollView
-                style={styles.scroll}
-                contentContainerStyle={styles.scrollBody}
-                keyboardShouldPersistTaps="handled">
-                <View style={styles.nameRow}>
-                  <View style={styles.nameField}>
-                    <Input label="First name" value={firstName} onChangeText={setFirstName} />
-                  </View>
-                  <View style={styles.nameField}>
-                    <Input label="Last name" value={lastName} onChangeText={setLastName} />
-                  </View>
-                </View>
-                <Input label="Phone" value={phone} onChangeText={setPhone} keyboardType="phone-pad" autoCapitalize="none" />
-                <Input
-                  label="Email"
-                  value={email}
-                  onChangeText={setEmail}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
-                <Input label="Tags (comma separated)" value={tags} onChangeText={setTags} autoCapitalize="none" />
-                <Input
-                  label="Notes"
-                  value={notes}
-                  onChangeText={setNotes}
-                  multiline
-                  style={styles.multiline}
-                />
-                <View style={styles.switchRow}>
-                  <Text variant="bodyMedium">Marketing consent</Text>
-                  <Switch value={marketing} onValueChange={setMarketing} />
-                </View>
-
-                {error ? (
-                  <Text variant="bodySmall" tone="danger">
-                    {error}
-                  </Text>
-                ) : null}
-              </ScrollView>
-
-              <View style={styles.actions}>
-                <Button label="Cancel" variant="secondary" onPress={onClose} style={styles.actionButton} />
-                <Button
-                  label="Save"
-                  onPress={() => void handleSave()}
-                  loading={mutation.isPending}
-                  disabled={!hasChanges}
-                  style={styles.actionButton}
-                />
+          <ScrollView
+            style={styles.scroll}
+            contentContainerStyle={styles.scrollBody}
+            keyboardShouldPersistTaps="handled">
+            <View style={styles.nameRow}>
+              <View style={styles.nameField}>
+                <Input label="First name" value={firstName} onChangeText={setFirstName} autoCapitalize="words" />
               </View>
+              <View style={styles.nameField}>
+                <Input label="Last name" value={lastName} onChangeText={setLastName} autoCapitalize="words" />
+              </View>
+            </View>
+            <Input
+              label="Phone"
+              value={phone}
+              onChangeText={setPhone}
+              keyboardType="phone-pad"
+              autoCapitalize="none"
+            />
+            <Input
+              label="Email"
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <Input
+              label="Tags (comma separated)"
+              value={tags}
+              onChangeText={setTags}
+              autoCapitalize="none"
+            />
+            <Input
+              label="Notes"
+              value={notes}
+              onChangeText={setNotes}
+              multiline
+              style={styles.multiline}
+            />
+
+            {/* Marketing consent — two independent toggles */}
+            <View style={styles.switchRow}>
+              <View style={styles.switchLabel}>
+                <Text variant="bodyMedium">Marketing consent</Text>
+                <Text variant="caption" tone="muted">
+                  Explicitly opted in to marketing
+                </Text>
+              </View>
+              <Switch value={marketingConsent} onValueChange={setMarketingConsent} />
+            </View>
+            <View style={styles.switchRow}>
+              <View style={styles.switchLabel}>
+                <Text variant="bodyMedium">Opted out</Text>
+                <Text variant="caption" tone="muted">
+                  Has asked not to be contacted
+                </Text>
+              </View>
+              <Switch value={marketingOptOut} onValueChange={setMarketingOptOut} />
+            </View>
+
+            {error ? (
+              <Text variant="bodySmall" tone="danger">
+                {error}
+              </Text>
+            ) : null}
+          </ScrollView>
+
+          <View style={styles.actions}>
+            <Button label="Cancel" variant="secondary" onPress={onClose} style={styles.actionButton} />
+            <Button
+              label="Save"
+              onPress={() => void handleSave()}
+              loading={mutation.isPending}
+              disabled={!hasChanges}
+              style={styles.actionButton}
+            />
+          </View>
         </View>
       ) : null}
     </Sheet>
@@ -182,6 +218,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingVertical: spacing.xs,
+    gap: spacing.md,
+  },
+  switchLabel: {
+    flex: 1,
+    gap: 2,
   },
   actions: { flexDirection: 'row', gap: spacing.md },
   actionButton: { flex: 1 },

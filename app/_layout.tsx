@@ -10,6 +10,7 @@ import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
 
 import { LoadingState } from '@/components/ui/LoadingState';
@@ -50,9 +51,11 @@ export default function RootLayout() {
   }
 
   return (
-    <AppProviders>
-      <RootLayoutNav />
-    </AppProviders>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <AppProviders>
+        <RootLayoutNav />
+      </AppProviders>
+    </GestureHandlerRootView>
   );
 }
 
@@ -74,7 +77,7 @@ function RootLayoutNav() {
         <Stack.Protected guard={!session}>
           <Stack.Screen name="(auth)" />
         </Stack.Protected>
-        {/* Dev-only design-system gallery, reachable from sign-in (see __DEV__ link). */}
+        {/* Dev-only design-system gallery, reachable via the /design-system URL. */}
         {__DEV__ ? (
           <Stack.Screen
             name="design-system"

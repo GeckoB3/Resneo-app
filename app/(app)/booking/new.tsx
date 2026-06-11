@@ -1,5 +1,5 @@
 import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { AddonsStep } from '@/components/booking-wizard/AddonsStep';
@@ -7,6 +7,7 @@ import { ConfirmStep } from '@/components/booking-wizard/ConfirmStep';
 import { MonthDatePicker } from '@/components/booking-wizard/MonthDatePicker';
 import type { GuestDetails } from '@/components/booking-wizard/GuestDetailsStep';
 import { GuestDetailsStep } from '@/components/booking-wizard/GuestDetailsStep';
+import { PractitionerStep } from '@/components/booking-wizard/PractitionerStep';
 import { RestaurantWalkInForm } from '@/components/booking-wizard/RestaurantWalkInForm';
 import { ServicePickerStep } from '@/components/booking-wizard/ServicePickerStep';
 import { TimeSlotStep } from '@/components/booking-wizard/TimeSlotStep';
@@ -21,19 +22,26 @@ import { useAppointmentCatalog } from '@/lib/queries/useAppointmentCatalog';
 import { calendarDateInTimeZone } from '@/lib/queries/useBookingsList';
 import { useGuestDetail } from '@/lib/queries/useGuestDetail';
 import { useMonthAvailability } from '@/lib/queries/useMonthAvailability';
+import {
+  readAndClearRebookBootstrap,
+  resetRebookBootstrapGuard,
+} from '@/lib/rebook-bootstrap';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { useLinkedVenueContext } from '@/providers/LinkedVenueProvider';
 import { spacing } from '@/theme/index';
 import type { AppointmentSlot } from '@/types/appointment-availability';
-import type {
-  AppointmentCatalogVariant,
-  AppointmentServiceOption,
+import {
+  ANY_AVAILABLE_PRACTITIONER_ID,
+  type AppointmentCatalogPractitioner,
+  type AppointmentCatalogVariant,
+  type AppointmentServiceOption,
 } from '@/types/appointment-catalog';
 
-type StepKey = 'service' | 'variant' | 'addons' | 'date' | 'time' | 'guest' | 'confirm';
+type StepKey = 'service' | 'practitioner' | 'variant' | 'addons' | 'date' | 'time' | 'guest' | 'confirm';
 
 const STEP_LABELS: Record<StepKey, string> = {
   service: 'Service',
+  practitioner: 'Practitioner',
   variant: 'Option',
   addons: 'Add-ons',
   date: 'Date',
@@ -46,6 +54,9 @@ const EMPTY_GUEST: GuestDetails = {
   name: '',
   phone: '',
   email: '',
+  dietary_notes: undefined,
+  occasion: undefined,
+  special_requests: undefined,
 };
 
 const APPOINTMENT_PLAN_TIERS = new Set(['appointments', 'light', 'plus']);
@@ -96,7 +107,7 @@ export default function NewBookingScreen() {
     venue?.booking_model ?? null,
   );
 
-  const catalogQuery = useAppointmentCatalog(appointmentVenue ? venueId : null);
+  const catalogQuery = useAppointmentCatalog(appointmentVenue ? venueId : null, { includeHidden: true });
   const prefillGuestQuery = useGuestDetail(prefilledGuestId);
 
   const [stepIndex, setStepIndex] = useState(0);
@@ -111,6 +122,86 @@ export default function NewBookingScreen() {
   const [monthAnchor, setMonthAnchor] = useState<string>(prefilledDate ?? today);
   const [guest, setGuest] = useState<GuestDetails>(EMPTY_GUEST);
   const [guestPrefilled, setGuestPrefilled] = useState(false);
+  const [rebookApplied, setRebookApplied] = useState(false);
+  const [rebookContactReadOnly, setRebookContactReadOnly] = useState(false);
+
+  // Apply rebook bootstrap on mount (after catalog loads).
+  const rebookApplyRef = useRef(false);
+  useEffect(() => {
+    if (rebookApplyRef.current || rebookApplied) return;
+
+    void (async () => {
+      const bootstrap = await readAndClearRebookBootstrap();
+      if (!bootstrap) return;
+
+      // Pre-fill guest details from the rebook payload.
+      if (bootstrap.guest) {
+        const g = bootstrap.guest;
+        const fullName = [g.firstName, g.lastName].filter(Boolean).join(' ').trim();
+        setGuest((prev) => ({
+          ...prev,
+          name: fullName,
+          phone: typeof g.phone === 'string' ? g.phone : '',
+          email: typeof g.email === 'string' ? g.email : '',
+        }));
+        setRebookContactReadOnly(true);
+        setGuestPrefilled(true);
+      }
+
+      // Pre-set initial date.
+      if (bootstrap.initialDate && /^\d{4}-\d{2}-\d{2}$/.test(bootstrap.initialDate)) {
+        setSelectedDate(bootstrap.initialDate);
+        setMonthAnchor(bootstrap.initialDate);
+      }
+
+      // Pre-select service/variant/practitioner and jump ahead once catalog is ready.
+      if (bootstrap.appointment) {
+        const appt = bootstrap.appointment;
+        const catalog = catalogQuery.data;
+        if (catalog) {
+          const practitioner = catalog.practitioners.find((p) => p.id === appt.practitionerId);
+          const service = practitioner?.services.find((s) => s.id === appt.serviceId);
+          if (practitioner && service) {
+            const serviceOption: AppointmentServiceOption = {
+              serviceId: service.id,
+              serviceName: service.name,
+              durationMinutes: service.duration_minutes,
+              pricePence: service.price_pence,
+              depositPence: service.deposit_pence ?? null,
+              practitionerId: practitioner.id,
+              practitionerName: practitioner.name,
+              addonGroups: service.addon_groups ?? [],
+              variants: service.variants ?? [],
+            };
+            setSelectedService(serviceOption);
+            // Apply variant if present and valid.
+            if (appt.variantId && service.variants) {
+              const variant = service.variants.find((v) => v.id === appt.variantId);
+              if (variant) setSelectedVariant(variant);
+            }
+            // Apply duration override if it differs from natural duration.
+            if (appt.durationMinutes != null && appt.durationMinutes !== service.duration_minutes) {
+              setDurationOverride(appt.durationMinutes);
+            }
+            // Jump to date step.
+            const baseSteps: StepKey[] = ['service', 'date', 'time', 'guest', 'confirm'];
+            const dateIndex = baseSteps.indexOf('date');
+            setStepIndex(dateIndex);
+          }
+        }
+      }
+
+      rebookApplyRef.current = true;
+      setRebookApplied(true);
+    })();
+  }, [catalogQuery.data, rebookApplied]);
+
+  // Clean up the guard when the wizard unmounts so a subsequent navigation starts fresh.
+  useEffect(() => {
+    return () => {
+      resetRebookBootstrapGuard();
+    };
+  }, []);
 
   useEffect(() => {
     if (guestPrefilled || !prefillGuestQuery.data) {
@@ -152,8 +243,31 @@ export default function NewBookingScreen() {
   const hasAddons = addonGroups.length > 0;
   const serviceVariants = selectedService?.variants ?? [];
   const hasVariants = serviceVariants.length > 0;
+
+  // Determine if a Practitioner step is needed: when the service has 2+ practitioners
+  // AND the user hasn't already picked a specific one via a direct practitioner filter
+  // (i.e., selectedService still has ANY_AVAILABLE or no candidatePractitionerIds).
+  const servicePractitioners: AppointmentCatalogPractitioner[] = useMemo(() => {
+    if (!selectedService || !catalogQuery.data) return [];
+    return catalogQuery.data.practitioners.filter((p) =>
+      p.services.some((s) => s.id === selectedService.serviceId),
+    );
+  }, [selectedService, catalogQuery.data]);
+
+  // Show the practitioner step only when: service is selected, has 2+ practitioners,
+  // and the currently selected option is "Any available" (pool) rather than a specific person.
+  // This handles the case where the user arrives from ServicePickerStep without specifying a
+  // practitioner (e.g. tapping "Any available") and we want them to explicitly choose.
+  // When user already chose a specific practitioner in ServicePickerStep, skip this step.
+  const needsPractitionerStep =
+    servicePractitioners.length >= 2 &&
+    selectedService !== null &&
+    // If this is an ANY_AVAILABLE row we expose the practitioner step
+    selectedService.practitionerId === ANY_AVAILABLE_PRACTITIONER_ID;
+
   const steps: StepKey[] = [
     'service',
+    ...(needsPractitionerStep ? (['practitioner'] as StepKey[]) : []),
     ...(hasVariants ? (['variant'] as StepKey[]) : []),
     ...(hasAddons ? (['addons'] as StepKey[]) : []),
     'date',
@@ -235,6 +349,18 @@ export default function NewBookingScreen() {
           />
         ) : null}
 
+        {currentKey === 'practitioner' && selectedService && servicePractitioners.length >= 2 ? (
+          <PractitionerStep
+            practitioners={servicePractitioners}
+            serviceOption={selectedService}
+            onSelect={(option) => {
+              setSelectedService(option);
+              setSelectedSlot(null);
+              goNext();
+            }}
+          />
+        ) : null}
+
         {currentKey === 'variant' && selectedService ? (
           <VariantStep
             serviceName={selectedService.serviceName}
@@ -297,7 +423,12 @@ export default function NewBookingScreen() {
         ) : null}
 
         {currentKey === 'guest' ? (
-          <GuestDetailsStep onChange={setGuest} onContinue={goNext} value={guest} />
+          <GuestDetailsStep
+            onChange={setGuest}
+            onContinue={goNext}
+            readOnlyContact={rebookContactReadOnly}
+            value={guest}
+          />
         ) : null}
 
         {currentKey === 'confirm' && selectedService && selectedDate && selectedSlot ? (

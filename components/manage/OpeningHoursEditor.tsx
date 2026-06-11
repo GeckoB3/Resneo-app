@@ -84,7 +84,8 @@ type OpeningHoursEditorProps = {
 
 /**
  * Weekly opening-hours editor — per-day open/closed switch with 1–2 service
- * periods, 15-minute steppers. Pure controlled component (mockable).
+ * periods, 15-minute steppers and a "Copy to all open days" shortcut.
+ * Pure controlled component (mockable).
  */
 export function OpeningHoursEditor({ value, onChange, editable = true }: OpeningHoursEditorProps) {
   const { colors } = useTheme();
@@ -103,12 +104,33 @@ export function OpeningHoursEditor({ value, onChange, editable = true }: Opening
     setDay(key, { periods: next });
   };
 
+  /** Copy this day's periods to every other currently-open day. */
+  const copyToAllOpenDays = (
+    sourceKey: (typeof DAYS)[number]['key'],
+    sourcePeriods: OpeningHoursPeriod[],
+  ) => {
+    const updated = { ...value };
+    for (const { key } of DAYS) {
+      if (key === sourceKey) continue;
+      const day = value[key];
+      if (isOpen(day)) {
+        updated[key] = { periods: sourcePeriods.map((p) => ({ ...p })) };
+      }
+    }
+    hapticSelect();
+    onChange(updated);
+  };
+
+  // Whether there is at least one OTHER open day (for the copy button visibility).
+  const openDayKeys = DAYS.filter(({ key }) => isOpen(value[key])).map((d) => d.key);
+
   return (
     <View style={styles.container}>
       {DAYS.map(({ key, label }) => {
         const day = value[key];
         const open = isOpen(day);
         const periods = open ? day.periods : [];
+        const otherOpenDays = openDayKeys.filter((k) => k !== key);
         return (
           <View key={key} style={[styles.dayBlock, { borderBottomColor: colors.border }]}>
             <View style={styles.dayHeader}>
@@ -136,7 +158,7 @@ export function OpeningHoursEditor({ value, onChange, editable = true }: Opening
                     <TimeStepper
                       label={`${label} opening time`}
                       value={period.open}
-                      onChange={(open) => setPeriod(key, periods, index, { ...period, open })}
+                      onChange={(o) => setPeriod(key, periods, index, { ...period, open: o })}
                     />
                     <Text variant="caption" tone="muted">
                       to
@@ -164,16 +186,30 @@ export function OpeningHoursEditor({ value, onChange, editable = true }: Opening
               : null}
 
             {editable && open && periods.length === 1 ? (
-              <Button
-                label="Add second period"
-                variant="ghost"
-                size="sm"
-                onPress={() =>
-                  setDay(key, {
-                    periods: [...periods, { open: periods[0]!.close, close: '21:00' }],
-                  })
-                }
-              />
+              <View style={styles.minTouchRow}>
+                <Button
+                  label="Add second period"
+                  variant="ghost"
+                  size="sm"
+                  onPress={() =>
+                    setDay(key, {
+                      periods: [...periods, { open: periods[0]!.close, close: '21:00' }],
+                    })
+                  }
+                />
+              </View>
+            ) : null}
+
+            {/* Copy to all open days — only shown when at least one other day is open */}
+            {editable && open && otherOpenDays.length > 0 ? (
+              <View style={styles.minTouchRow}>
+                <Button
+                  label="Copy to all open days"
+                  variant="ghost"
+                  size="sm"
+                  onPress={() => copyToAllOpenDays(key, periods)}
+                />
+              </View>
             ) : null}
           </View>
         );
@@ -212,14 +248,14 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   timeValue: {
-    minWidth: 52,
+    minWidth: 64, // Increased from 52 — prevents clipping of '23:45' on small fonts.
     textAlign: 'center',
     fontVariant: ['tabular-nums'],
   },
   stepBtn: {
     width: 36,
     height: 36,
-    borderRadius: radius.full,
+    borderRadius: radius.md,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -233,6 +269,11 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     alignItems: 'center',
+    justifyContent: 'center',
+  },
+  /** Ensures ghost buttons meet the 44pt touch target. */
+  minTouchRow: {
+    minHeight: 44,
     justifyContent: 'center',
   },
 });

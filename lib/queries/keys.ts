@@ -46,7 +46,9 @@ export const queryKeys = {
   team: {
     all: () => [...queryKeys.all, 'team'] as const,
     list: (accessToken?: string | null) =>
-      [...queryKeys.team.all(), accessToken ?? null] as const,
+      [...queryKeys.team.all(), 'list', accessToken ?? null] as const,
+    sessionSettings: (accessToken?: string | null) =>
+      [...queryKeys.team.all(), 'sessionSettings', accessToken ?? null] as const,
   },
 
   communications: {

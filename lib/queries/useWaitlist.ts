@@ -4,7 +4,12 @@ import { apiFetch } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
 import { queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
-import type { WaitlistKind, WaitlistResponse, WaitlistStatus } from '@/types/waitlist';
+import type {
+  WaitlistAlertsResponse,
+  WaitlistKind,
+  WaitlistResponse,
+  WaitlistStatus,
+} from '@/types/waitlist';
 
 /** GET /api/venue/waitlist?kind= (Bearer). */
 export function useWaitlist(kind: WaitlistKind) {
@@ -26,6 +31,7 @@ export function useWaitlist(kind: WaitlistKind) {
 /**
  * PATCH /api/venue/waitlist — update a waitlist entry's status
  * (offer / confirm → creates a booking / cancel). Invalidates the list + bookings.
+ * Returns `notify_failed` when the backend could not send a guest notification.
  */
 export function useUpdateWaitlistEntry() {
   const accessToken = useAccessToken();
@@ -36,11 +42,11 @@ export function useUpdateWaitlistEntry() {
       id: string;
       status: WaitlistStatus;
       expires_at?: string;
-    }): Promise<{ booking_id?: string }> => {
+    }): Promise<{ booking_id?: string; notify_failed?: boolean }> => {
       if (!accessToken) {
         throw new Error('Missing access token');
       }
-      return apiFetch<{ booking_id?: string }>(`/api/venue/waitlist`, {
+      return apiFetch<{ booking_id?: string; notify_failed?: boolean }>(`/api/venue/waitlist`, {
         accessToken,
         method: 'PATCH',
         body: JSON.stringify(input),
@@ -50,6 +56,79 @@ export function useUpdateWaitlistEntry() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.waitlist.all() });
       void queryClient.invalidateQueries({ queryKey: queryKeys.bookings.all() });
       void queryClient.invalidateQueries({ queryKey: queryKeys.calendar.all() });
+    },
+  });
+}
+
+/**
+ * DELETE /api/venue/waitlist — permanently remove an expired/cancelled entry.
+ * Body: { id }. On success, invalidates the waitlist list.
+ */
+export function useDeleteWaitlistEntry() {
+  const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id: string): Promise<{ success: boolean }> => {
+      if (!accessToken) {
+        throw new Error('Missing access token');
+      }
+      return apiFetch<{ success: boolean }>('/api/venue/waitlist', {
+        accessToken,
+        method: 'DELETE',
+        body: JSON.stringify({ id }),
+      });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.waitlist.all() });
+    },
+  });
+}
+
+/**
+ * GET /api/venue/waitlist/alerts — open slot opportunity alerts for staff_choose mode.
+ * Only returns data when the venue is in staff_choose waitlist mode.
+ */
+export function useWaitlistAlerts(enabled = true) {
+  const accessToken = useAccessToken();
+  const queryEnabled = isBackendConfigured() && accessToken !== null && enabled;
+
+  return useQuery({
+    queryKey: [...queryKeys.waitlist.all(), 'alerts', accessToken ?? null] as const,
+    enabled: queryEnabled,
+    queryFn: async (): Promise<WaitlistAlertsResponse> => {
+      if (!accessToken) {
+        throw new Error('Missing access token');
+      }
+      return apiFetch<WaitlistAlertsResponse>('/api/venue/waitlist/alerts', { accessToken });
+    },
+  });
+}
+
+/**
+ * POST /api/venue/waitlist/alerts — offer or dismiss a staff-choose alert.
+ * Body: { id, action: 'offer' | 'dismiss' }
+ */
+export function useActOnWaitlistAlert() {
+  const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: {
+      id: string;
+      action: 'offer' | 'dismiss';
+    }): Promise<{ success: boolean; waitlist_entry_id?: string; guest_name?: string; email_sent?: boolean; sms_sent?: boolean }> => {
+      if (!accessToken) {
+        throw new Error('Missing access token');
+      }
+      return apiFetch('/api/venue/waitlist/alerts', {
+        accessToken,
+        method: 'POST',
+        body: JSON.stringify(input),
+      });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.waitlist.all() });
     },
   });
 }

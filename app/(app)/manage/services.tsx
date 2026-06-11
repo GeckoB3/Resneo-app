@@ -10,6 +10,10 @@ import {
   View,
 } from 'react-native';
 
+import {
+  AddonGroupEditorSheet,
+  type AddonGroupEditorTarget,
+} from '@/components/manage/AddonGroupEditorSheet';
 import { AddonLinksSheet, type AddonLinksTarget } from '@/components/manage/AddonLinksSheet';
 import {
   VariantsEditorSheet,
@@ -31,6 +35,7 @@ import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useAddonGroups } from '@/lib/queries/useAddonGroups';
 import {
   useCreateService,
+  useDeleteService,
   useManagedServices,
   useReplaceServiceAddonLinks,
   useReplaceServiceVariants,
@@ -47,9 +52,10 @@ import type {
 
 type EditTarget = {
   id: string;
-  /** Snapshot of linked calendar ids — practitioner_ids only sent when changed. */
   practitionerIds: string[];
 };
+
+type ActiveTab = 'services' | 'addons';
 
 /** Web service colour presets (`APPOINTMENT_SERVICE_COLOUR_OPTIONS`). */
 const COLOUR_OPTIONS = [
@@ -63,12 +69,48 @@ const PAYMENT_OPTIONS: { value: ServicePaymentRequirement; label: string; hint: 
   { value: 'full_payment', label: 'Pay in full online', hint: 'Full price taken at booking' },
 ];
 
+/** The seven staff_may_customize_* flags shown in admin-only form section. */
+const STAFF_MAY_FIELDS: { key: keyof StaffMayState; label: string }[] = [
+  { key: 'name', label: 'Display name' },
+  { key: 'description', label: 'Description' },
+  { key: 'duration', label: 'Duration' },
+  { key: 'buffer', label: 'Buffer time' },
+  { key: 'price', label: 'Price' },
+  { key: 'deposit', label: 'Deposit' },
+  { key: 'colour', label: 'Colour' },
+];
+
+type StaffMayState = {
+  name: boolean;
+  description: boolean;
+  duration: boolean;
+  buffer: boolean;
+  price: boolean;
+  deposit: boolean;
+  colour: boolean;
+};
+
+const DEFAULT_STAFF_MAY: StaffMayState = {
+  name: false,
+  description: false,
+  duration: false,
+  buffer: false,
+  price: false,
+  deposit: false,
+  colour: false,
+};
+
+// ---------------------------------------------------------------------------
+// ServiceRow
+// ---------------------------------------------------------------------------
+
 function ServiceRow({
   service,
   expanded,
   isAdmin,
   onToggle,
   onEdit,
+  onDelete,
   onEditVariants,
   onEditAddons,
 }: {
@@ -77,6 +119,7 @@ function ServiceRow({
   isAdmin: boolean;
   onToggle: () => void;
   onEdit: () => void;
+  onDelete: () => void;
   onEditVariants: () => void;
   onEditAddons: () => void;
 }) {
@@ -92,9 +135,7 @@ function ServiceRow({
         onPress={onToggle}
         accessibilityRole="button"
         style={({ pressed }) => [styles.serviceHeader, { opacity: pressed ? 0.55 : 1 }]}>
-        <View
-          style={[styles.colourDot, { backgroundColor: service.colour ?? colors.brand }]}
-        />
+        <View style={[styles.colourDot, { backgroundColor: service.colour ?? colors.brand }]} />
         <View style={styles.serviceText}>
           <Text variant="bodyMedium" numberOfLines={1}>
             {service.name}
@@ -121,14 +162,10 @@ function ServiceRow({
           ) : null}
           <View style={styles.metaGrid}>
             {deposit ? (
-              <Text variant="caption" tone="muted">
-                Deposit {deposit}
-              </Text>
+              <Text variant="caption" tone="muted">Deposit {deposit}</Text>
             ) : null}
             {service.buffer_minutes ? (
-              <Text variant="caption" tone="muted">
-                Buffer {service.buffer_minutes} min
-              </Text>
+              <Text variant="caption" tone="muted">Buffer {service.buffer_minutes} min</Text>
             ) : null}
             {service.payment_requirement && service.payment_requirement !== 'none' ? (
               <Text variant="caption" tone="muted">
@@ -140,27 +177,30 @@ function ServiceRow({
                 Cancel notice {service.cancellation_notice_hours}h
               </Text>
             ) : null}
+            {service.custom_availability_enabled ? (
+              <Text variant="caption" tone="muted">Custom schedule</Text>
+            ) : null}
           </View>
 
           {variants.length > 0 ? (
             <View style={styles.subList}>
-              <Text variant="overline" tone="muted">
-                Options
-              </Text>
-              {variants.map((variant) => (
-                <Text key={variant.id} variant="bodySmall" tone="secondary">
-                  • {variant.name} — {variant.duration_minutes} min
-                  {variant.price_pence != null ? ` · ${formatPence(variant.price_pence)}` : ''}
-                </Text>
-              ))}
+              <Text variant="overline" tone="muted">Options</Text>
+              {variants.map((variant) => {
+                const staffVariant = variant as typeof variant & { is_active?: boolean };
+                return (
+                  <Text key={variant.id} variant="bodySmall" tone="secondary">
+                    • {variant.name} — {variant.duration_minutes} min
+                    {variant.price_pence != null ? ` · ${formatPence(variant.price_pence)}` : ''}
+                    {staffVariant.is_active === false ? ' (inactive)' : ''}
+                  </Text>
+                );
+              })}
             </View>
           ) : null}
 
           {addonGroups.length > 0 ? (
             <View style={styles.subList}>
-              <Text variant="overline" tone="muted">
-                Add-on groups
-              </Text>
+              <Text variant="overline" tone="muted">Add-on groups</Text>
               {addonGroups.map((group) => (
                 <Text key={group.group.id} variant="bodySmall" tone="secondary">
                   • {group.group.name} ({group.addons.length} add-on
@@ -170,9 +210,12 @@ function ServiceRow({
             </View>
           ) : null}
 
+          {/* Action buttons — two rows to avoid truncation on narrow screens */}
           <View style={styles.editRow}>
-            <Button label="Edit" variant="secondary" size="sm" style={styles.editBtn} onPress={onEdit} />
-            {isAdmin ? (
+            <Button label="Edit" variant="secondary" size="sm" style={styles.editBtnFull} onPress={onEdit} />
+          </View>
+          {isAdmin ? (
+            <View style={styles.editRow}>
               <Button
                 label={variants.length ? `Options (${variants.length})` : 'Options'}
                 variant="secondary"
@@ -180,8 +223,6 @@ function ServiceRow({
                 style={styles.editBtn}
                 onPress={onEditVariants}
               />
-            ) : null}
-            {isAdmin ? (
               <Button
                 label={addonGroups.length ? `Add-ons (${addonGroups.length})` : 'Add-ons'}
                 variant="secondary"
@@ -189,36 +230,203 @@ function ServiceRow({
                 style={styles.editBtn}
                 onPress={onEditAddons}
               />
-            ) : null}
-          </View>
-          <Text variant="caption" tone="muted">
-            Per-service availability rules & processing time are managed on the web dashboard.
-          </Text>
+            </View>
+          ) : null}
+          {isAdmin ? (
+            <Button
+              label="Delete service"
+              variant="ghost"
+              size="sm"
+              onPress={onDelete}
+            />
+          ) : null}
         </View>
       ) : null}
     </Card>
   );
 }
 
+// ---------------------------------------------------------------------------
+// Add-ons library tab
+// ---------------------------------------------------------------------------
+
+function AddonsTab({
+  isAdmin,
+  addonGroupsQuery,
+  includeInactive,
+  setIncludeInactive,
+  onEdit,
+  onCreate,
+}: {
+  isAdmin: boolean;
+  addonGroupsQuery: ReturnType<typeof useAddonGroups>;
+  includeInactive: boolean;
+  setIncludeInactive: (v: boolean) => void;
+  onEdit: (target: AddonGroupEditorTarget) => void;
+  onCreate: () => void;
+}) {
+  const { colors } = useTheme();
+  const groups = addonGroupsQuery.data?.groups ?? [];
+  const addonsByGroup = addonGroupsQuery.data?.addons_by_group ?? {};
+  const serviceLinks = addonGroupsQuery.data?.service_links ?? [];
+
+  const usedByCount = (groupId: string) => {
+    const ids = new Set<string>();
+    for (const link of serviceLinks) {
+      if (link.addon_group_id === groupId) {
+        const sid = link.appointment_service_id ?? link.service_item_id;
+        if (sid) ids.add(sid);
+      }
+    }
+    return ids.size;
+  };
+
+  if (addonGroupsQuery.isLoading) return <ListSkeleton />;
+  if (addonGroupsQuery.isError) {
+    return (
+      <View style={styles.stateWrap}>
+        <ErrorState
+          message={
+            addonGroupsQuery.error instanceof ApiError
+              ? addonGroupsQuery.error.message
+              : 'Could not load add-on groups.'
+          }
+          onRetry={() => void addonGroupsQuery.refetch()}
+        />
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView
+      contentContainerStyle={styles.content}
+      refreshControl={
+        <RefreshControl
+          refreshing={addonGroupsQuery.isRefetching}
+          onRefresh={() => void addonGroupsQuery.refetch()}
+        />
+      }>
+      {isAdmin ? <Button label="New add-on group" onPress={onCreate} fullWidth /> : null}
+      <View style={styles.switchRow}>
+        <Text variant="bodySmall" tone="muted">
+          Show archived groups
+        </Text>
+        <Switch value={includeInactive} onValueChange={setIncludeInactive} />
+      </View>
+
+      {groups.length === 0 ? (
+        <EmptyState
+          title="No add-on groups"
+          message={
+            isAdmin
+              ? 'Create add-on groups to offer clients optional extras at booking.'
+              : 'No add-on groups have been created yet.'
+          }
+        />
+      ) : (
+        groups.map((group) => {
+          const addons = addonsByGroup[group.id] ?? [];
+          const usedBy = usedByCount(group.id);
+          return (
+            <Card key={group.id} padded={false} style={styles.serviceCard}>
+              <View style={styles.addonGroupRow}>
+                <View style={styles.serviceText}>
+                  <View style={styles.addonGroupNameRow}>
+                    <Text variant="bodyMedium" numberOfLines={1}>
+                      {group.name}
+                    </Text>
+                    {!group.is_active ? (
+                      <Badge label="Archived" tone="neutral" />
+                    ) : null}
+                  </View>
+                  <Text variant="caption" tone="muted">
+                    {addons.length} add-on{addons.length === 1 ? '' : 's'} ·{' '}
+                    {group.selection_type === 'single' ? 'pick one' : 'pick multiple'}
+                    {group.min_select > 0 ? ' · required' : ''}
+                    {usedBy > 0 ? ` · used by ${usedBy} service${usedBy === 1 ? '' : 's'}` : ''}
+                  </Text>
+                  {group.prompt_to_client ? (
+                    <Text variant="caption" tone="muted" numberOfLines={1}>
+                      &quot;{group.prompt_to_client}&quot;
+                    </Text>
+                  ) : null}
+                </View>
+                {isAdmin ? (
+                  <Button
+                    label="Edit"
+                    variant="secondary"
+                    size="sm"
+                    onPress={() =>
+                      onEdit({
+                        mode: 'edit',
+                        group,
+                        addons: addonsByGroup[group.id] ?? [],
+                      })
+                    }
+                  />
+                ) : null}
+              </View>
+              {addons.length > 0 ? (
+                <View
+                  style={[
+                    styles.addonList,
+                    { borderTopColor: colors.border },
+                  ]}>
+                  {addons.map((addon) => (
+                    <Text key={addon.id} variant="bodySmall" tone="secondary">
+                      • {addon.name}
+                      {addon.additional_price_pence > 0
+                        ? ` +${formatPence(addon.additional_price_pence)}`
+                        : ''}
+                      {addon.additional_duration_minutes > 0
+                        ? ` +${addon.additional_duration_minutes}min`
+                        : ''}
+                      {!addon.is_active ? ' (inactive)' : ''}
+                    </Text>
+                  ))}
+                </View>
+              ) : null}
+            </Card>
+          );
+        })
+      )}
+      <View style={styles.spacer} />
+    </ScrollView>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main screen
+// ---------------------------------------------------------------------------
+
 export default function ServicesScreen() {
   const { colors } = useTheme();
   const { venue } = useVenueContext();
   const isAdmin = venue?.current_user_role === 'admin';
+
   const query = useManagedServices();
   const update = useUpdateService();
   const create = useCreateService();
+  const deleteService = useDeleteService();
   const replaceVariants = useReplaceServiceVariants();
   const replaceAddonLinks = useReplaceServiceAddonLinks();
-  const addonGroupsQuery = useAddonGroups(isAdmin);
+
+  const [activeTab, setActiveTab] = useState<ActiveTab>('services');
+  const [includeInactiveAddons, setIncludeInactiveAddons] = useState(false);
+
+  // Always load addon groups (needed for both the link sheet and the add-ons tab).
+  const addonGroupsQuery = useAddonGroups(true, includeInactiveAddons);
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
   const [variantsTarget, setVariantsTarget] = useState<VariantsEditorTarget | null>(null);
   const [addonsTarget, setAddonsTarget] = useState<AddonLinksTarget | null>(null);
+  const [addonGroupEditorTarget, setAddonGroupEditorTarget] =
+    useState<AddonGroupEditorTarget | null>(null);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Sheet form state (shared between edit + create) — full web form parity.
+  // Sheet form state (shared between edit + create).
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [duration, setDuration] = useState('');
@@ -233,8 +441,9 @@ export default function ServicesScreen() {
   const [sameDay, setSameDay] = useState(true);
   const [practitionerIds, setPractitionerIds] = useState<string[]>([]);
   const [isActive, setIsActive] = useState(true);
+  // Admin-only: staff override permissions
+  const [staffMay, setStaffMay] = useState<StaffMayState>(DEFAULT_STAFF_MAY);
 
-  // Active calendars for the "Offered by" picker.
   const practitionersQuery = usePractitioners();
   const practitioners = (practitionersQuery.data?.practitioners ?? [])
     .filter((p) => p.is_active)
@@ -265,6 +474,15 @@ export default function ServicesScreen() {
     setSameDay(service.allow_same_day_booking !== false);
     setPractitionerIds(linked);
     setIsActive(service.is_active !== false);
+    setStaffMay({
+      name: service.staff_may_customize_name ?? false,
+      description: service.staff_may_customize_description ?? false,
+      duration: service.staff_may_customize_duration ?? false,
+      buffer: service.staff_may_customize_buffer ?? false,
+      price: service.staff_may_customize_price ?? false,
+      deposit: service.staff_may_customize_deposit ?? false,
+      colour: service.staff_may_customize_colour ?? false,
+    });
     setError(null);
     setEditTarget({ id: service.id, practitionerIds: linked });
   };
@@ -284,6 +502,7 @@ export default function ServicesScreen() {
     setSameDay(true);
     setPractitionerIds(practitioners.map((p) => p.id));
     setIsActive(true);
+    setStaffMay(DEFAULT_STAFF_MAY);
     setError(null);
     setCreating(true);
   };
@@ -301,48 +520,35 @@ export default function ServicesScreen() {
     const notice = Number(noticeHours);
     const cancel = Number(cancelHours);
 
-    if (!name.trim()) {
-      setError('Name is required.');
-      return;
-    }
+    if (!name.trim()) { setError('Name is required.'); return; }
     if (!Number.isInteger(durationMinutes) || durationMinutes < 5 || durationMinutes > 480) {
-      setError('Duration must be 5–480 minutes.');
-      return;
+      setError('Duration must be 5–480 minutes.'); return;
     }
     if (!Number.isInteger(bufferMinutes) || bufferMinutes < 0 || bufferMinutes > 120) {
-      setError('Buffer must be 0–120 minutes.');
-      return;
+      setError('Buffer must be 0–120 minutes.'); return;
     }
     if (!Number.isInteger(advance) || advance < 1 || advance > 365) {
-      setError('Max advance booking must be 1–365 days.');
-      return;
+      setError('Max advance booking must be 1–365 days.'); return;
     }
     if (!Number.isInteger(notice) || notice < 0 || notice > 168) {
-      setError('Min booking notice must be 0–168 hours.');
-      return;
+      setError('Min booking notice must be 0–168 hours.'); return;
     }
     if (!Number.isInteger(cancel) || cancel < 0 || cancel > 168) {
-      setError('Cancellation notice must be 0–168 hours.');
-      return;
+      setError('Cancellation notice must be 0–168 hours.'); return;
     }
     const pricePence = parsePoundsToPence(price);
     const depositPence = parsePoundsToPence(deposit);
     if (pricePence === undefined || depositPence === undefined) {
-      setError('Price and deposit must be valid amounts.');
-      return;
+      setError('Price and deposit must be valid amounts.'); return;
     }
-    // Web superrefine rules.
     if (paymentReq === 'deposit' && !(depositPence != null && depositPence > 0)) {
-      setError('Enter a deposit amount greater than zero for the deposit option.');
-      return;
+      setError('Enter a deposit amount greater than zero for the deposit option.'); return;
     }
     if (paymentReq === 'full_payment' && !(pricePence != null && pricePence > 0)) {
-      setError('Enter a price greater than zero to take full payment online.');
-      return;
+      setError('Enter a price greater than zero to take full payment online.'); return;
     }
     if (practitionerIds.length === 0) {
-      setError('Select at least one calendar to offer this service.');
-      return;
+      setError('Select at least one calendar to offer this service.'); return;
     }
 
     const shared = {
@@ -359,6 +565,16 @@ export default function ServicesScreen() {
       min_booking_notice_hours: notice,
       cancellation_notice_hours: cancel,
       allow_same_day_booking: sameDay,
+      // Admin-only: staff permission flags (always sent when admin to allow clearing them)
+      ...(isAdmin ? {
+        staff_may_customize_name: staffMay.name,
+        staff_may_customize_description: staffMay.description,
+        staff_may_customize_duration: staffMay.duration,
+        staff_may_customize_buffer: staffMay.buffer,
+        staff_may_customize_price: staffMay.price,
+        staff_may_customize_deposit: staffMay.deposit,
+        staff_may_customize_colour: staffMay.colour,
+      } : {}),
     };
 
     try {
@@ -369,7 +585,6 @@ export default function ServicesScreen() {
         await update.mutateAsync({
           id: editTarget.id,
           ...shared,
-          // Only send links when changed — replace semantics on the API.
           ...(linksChanged ? { practitioner_ids: practitionerIds } : {}),
         });
       } else {
@@ -389,17 +604,53 @@ export default function ServicesScreen() {
     }
   }
 
+  function handleDeleteService(service: ManagedService) {
+    Alert.alert(
+      'Delete service',
+      `Delete "${service.name}"? This cannot be undone. The service will not be deleted if upcoming bookings exist.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            deleteService.mutate(service.id, {
+              onSuccess: () => {
+                hapticSuccess();
+                setExpandedId(null);
+              },
+              onError: (e) => {
+                hapticWarning();
+                const msg =
+                  e instanceof ApiError
+                    ? e.message
+                    : 'Could not delete the service. Please try again.';
+                Alert.alert('Could not delete', msg);
+              },
+            });
+          },
+        },
+      ],
+    );
+  }
+
   const openVariantsEditor = (service: ManagedService) =>
     setVariantsTarget({
       serviceId: service.id,
       serviceName: service.name,
-      variants: (service.variants ?? []).map((variant) => ({
-        id: variant.id,
-        name: variant.name,
-        duration_minutes: variant.duration_minutes,
-        price_pence: variant.price_pence,
-        deposit_pence: variant.deposit_pence,
-      })),
+      variants: (service.variants ?? []).map((variant) => {
+        const sv = variant as typeof variant & { is_active?: boolean };
+        return {
+          id: variant.id,
+          name: variant.name,
+          description: variant.description ?? null,
+          duration_minutes: variant.duration_minutes,
+          buffer_minutes: variant.buffer_minutes ?? null,
+          price_pence: variant.price_pence,
+          deposit_pence: variant.deposit_pence,
+          is_active: sv.is_active,
+        };
+      }),
     });
 
   const openAddonsEditor = (service: ManagedService) =>
@@ -416,46 +667,96 @@ export default function ServicesScreen() {
     <Screen scroll={false} padded={false}>
       <Stack.Screen options={{ title: 'Services' }} />
 
-      {query.isLoading ? (
-        <ListSkeleton />
-      ) : query.isError ? (
-        <View style={styles.stateWrap}>
-          <ErrorState
-            message={query.error instanceof ApiError ? query.error.message : 'Could not load services.'}
-            onRetry={() => void query.refetch()}
-          />
-        </View>
-      ) : (
-        <ScrollView
-          contentContainerStyle={styles.content}
-          refreshControl={
-            <RefreshControl refreshing={query.isRefetching} onRefresh={() => void query.refetch()} />
-          }>
-          <Button label="New service" onPress={openCreate} fullWidth />
-          {services.length === 0 ? (
-            <EmptyState
-              title="No services yet"
-              message="Create your first service to start taking appointments."
-            />
-          ) : (
-            services.map((service) => (
-              <ServiceRow
-                key={service.id}
-                service={service}
-                expanded={expandedId === service.id}
-                isAdmin={isAdmin}
-                onToggle={() => setExpandedId((cur) => (cur === service.id ? null : service.id))}
-                onEdit={() => openEdit(service)}
-                onEditVariants={() => openVariantsEditor(service)}
-                onEditAddons={() => openAddonsEditor(service)}
-              />
-            ))
-          )}
-          <View style={styles.spacer} />
-        </ScrollView>
-      )}
+      {/* Tab bar */}
+      <View style={[styles.tabBar, { borderBottomColor: colors.border }]}>
+        {(['services', 'addons'] as ActiveTab[]).map((tab) => {
+          const active = activeTab === tab;
+          return (
+            <Pressable
+              key={tab}
+              onPress={() => setActiveTab(tab)}
+              style={styles.tabItem}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: active }}>
+              <Text
+                variant="label"
+                color={active ? colors.brand : colors.textSecondary}>
+                {tab === 'services' ? 'Services' : 'Add-ons'}
+              </Text>
+              {active ? (
+                <View style={[styles.tabUnderline, { backgroundColor: colors.brand }]} />
+              ) : null}
+            </Pressable>
+          );
+        })}
+      </View>
 
-      {/* Options (variants) editor — sends the FULL set on save */}
+      {/* ---- Services tab ---- */}
+      {activeTab === 'services' ? (
+        query.isLoading ? (
+          <ListSkeleton />
+        ) : query.isError ? (
+          <View style={styles.stateWrap}>
+            <ErrorState
+              message={
+                query.error instanceof ApiError ? query.error.message : 'Could not load services.'
+              }
+              onRetry={() => void query.refetch()}
+            />
+          </View>
+        ) : (
+          <ScrollView
+            contentContainerStyle={styles.content}
+            refreshControl={
+              <RefreshControl
+                refreshing={query.isRefetching}
+                onRefresh={() => void query.refetch()}
+                tintColor={colors.brand}
+              />
+            }>
+            {isAdmin ? <Button label="New service" onPress={openCreate} fullWidth /> : null}
+            {services.length === 0 ? (
+              <EmptyState
+                title="No services yet"
+                message={
+                  isAdmin
+                    ? 'Create your first service to start taking appointments.'
+                    : 'No services have been created yet.'
+                }
+              />
+            ) : (
+              services.map((service) => (
+                <ServiceRow
+                  key={service.id}
+                  service={service}
+                  expanded={expandedId === service.id}
+                  isAdmin={isAdmin}
+                  onToggle={() => setExpandedId((cur) => (cur === service.id ? null : service.id))}
+                  onEdit={() => openEdit(service)}
+                  onDelete={() => handleDeleteService(service)}
+                  onEditVariants={() => openVariantsEditor(service)}
+                  onEditAddons={() => openAddonsEditor(service)}
+                />
+              ))
+            )}
+            <View style={styles.spacer} />
+          </ScrollView>
+        )
+      ) : null}
+
+      {/* ---- Add-ons tab ---- */}
+      {activeTab === 'addons' ? (
+        <AddonsTab
+          isAdmin={isAdmin}
+          addonGroupsQuery={addonGroupsQuery}
+          includeInactive={includeInactiveAddons}
+          setIncludeInactive={setIncludeInactiveAddons}
+          onEdit={(target) => setAddonGroupEditorTarget(target)}
+          onCreate={() => setAddonGroupEditorTarget({ mode: 'create' })}
+        />
+      ) : null}
+
+      {/* Options (variants) editor */}
       <VariantsEditorSheet
         target={variantsTarget}
         saving={replaceVariants.isPending}
@@ -509,220 +810,260 @@ export default function ServicesScreen() {
         }}
       />
 
-      {/* Edit / create sheet */}
-      <Sheet visible={sheetOpen} onClose={closeSheet} maxHeight="88%">
+      {/* Add-on group create/edit sheet */}
+      <AddonGroupEditorSheet
+        target={addonGroupEditorTarget}
+        onClose={() => setAddonGroupEditorTarget(null)}
+      />
+
+      {/* Service edit / create sheet */}
+      <Sheet visible={sheetOpen} onClose={closeSheet} maxHeight="92%">
         <View style={styles.sheetBodyWrap}>
-              <Text variant="overline" tone="muted">
-                {editTarget ? 'Edit service' : 'New service'}
-              </Text>
+          <Text variant="overline" tone="muted">
+            {editTarget ? 'Edit service' : 'New service'}
+          </Text>
 
-              <ScrollView
-                style={styles.sheetScroll}
-                contentContainerStyle={styles.sheetBody}
-                keyboardShouldPersistTaps="handled">
-                <Input label="Name" value={name} onChangeText={setName} maxLength={200} />
+          <ScrollView
+            style={styles.sheetScroll}
+            contentContainerStyle={styles.sheetBody}
+            keyboardShouldPersistTaps="handled">
+            <Input label="Name" value={name} onChangeText={setName} maxLength={200} />
+            <Input
+              label="Description (optional)"
+              value={description}
+              onChangeText={setDescription}
+              multiline
+              style={styles.multiline}
+              maxLength={1000}
+            />
+            <View style={styles.moneyRow}>
+              <View style={styles.moneyField}>
                 <Input
-                  label="Description (optional)"
-                  value={description}
-                  onChangeText={setDescription}
-                  multiline
-                  style={styles.multiline}
-                  maxLength={1000}
-                />
-                <View style={styles.moneyRow}>
-                  <View style={styles.moneyField}>
-                    <Input
-                      label="Duration (mins)"
-                      value={duration}
-                      onChangeText={setDuration}
-                      keyboardType="number-pad"
-                    />
-                  </View>
-                  <View style={styles.moneyField}>
-                    <Input
-                      label="Buffer (mins)"
-                      value={buffer}
-                      onChangeText={setBuffer}
-                      keyboardType="number-pad"
-                    />
-                  </View>
-                </View>
-
-                {/* Online payment rules (web parity: none / deposit / full payment) */}
-                <Text variant="overline" tone="muted">
-                  Online payment
-                </Text>
-                {PAYMENT_OPTIONS.map((option) => {
-                  const selected = paymentReq === option.value;
-                  return (
-                    <Pressable
-                      key={option.value}
-                      accessibilityRole="radio"
-                      accessibilityState={{ selected }}
-                      onPress={() => setPaymentReq(option.value)}
-                      style={({ pressed }) => [
-                        styles.radioRow,
-                        {
-                          borderColor: selected ? colors.brand : colors.border,
-                          backgroundColor: selected ? colors.brandSubtle : colors.surface,
-                          opacity: pressed ? 0.7 : 1,
-                        },
-                      ]}>
-                      <View
-                        style={[
-                          styles.radioDot,
-                          { borderColor: selected ? colors.brand : colors.borderStrong },
-                        ]}>
-                        {selected ? (
-                          <View style={[styles.radioDotInner, { backgroundColor: colors.brand }]} />
-                        ) : null}
-                      </View>
-                      <View style={styles.radioText}>
-                        <Text variant="bodyMedium">{option.label}</Text>
-                        <Text variant="caption" tone="muted">
-                          {option.hint}
-                        </Text>
-                      </View>
-                    </Pressable>
-                  );
-                })}
-                <View style={styles.moneyRow}>
-                  <View style={styles.moneyField}>
-                    <Input label="Price (£)" value={price} onChangeText={setPrice} keyboardType="decimal-pad" />
-                  </View>
-                  {paymentReq === 'deposit' ? (
-                    <View style={styles.moneyField}>
-                      <Input label="Deposit (£)" value={deposit} onChangeText={setDeposit} keyboardType="decimal-pad" />
-                    </View>
-                  ) : null}
-                </View>
-
-                {/* Guest booking rules */}
-                <Text variant="overline" tone="muted">
-                  Guest booking rules
-                </Text>
-                <View style={styles.moneyRow}>
-                  <View style={styles.moneyField}>
-                    <Input
-                      label="Book ahead (days)"
-                      value={advanceDays}
-                      onChangeText={setAdvanceDays}
-                      keyboardType="number-pad"
-                    />
-                  </View>
-                  <View style={styles.moneyField}>
-                    <Input
-                      label="Min notice (hours)"
-                      value={noticeHours}
-                      onChangeText={setNoticeHours}
-                      keyboardType="number-pad"
-                    />
-                  </View>
-                </View>
-                <Input
-                  label="Cancellation notice (hours)"
-                  helper="Refund cut-off for deposits and online payments."
-                  value={cancelHours}
-                  onChangeText={setCancelHours}
+                  label="Duration (mins)"
+                  value={duration}
+                  onChangeText={setDuration}
                   keyboardType="number-pad"
                 />
-                <View style={styles.switchRow}>
-                  <Text variant="bodyMedium">Allow same-day bookings</Text>
-                  <Switch value={sameDay} onValueChange={setSameDay} />
-                </View>
-
-                {/* Colour */}
-                <Text variant="overline" tone="muted">
-                  Calendar colour
-                </Text>
-                <View style={styles.swatchRow}>
-                  {COLOUR_OPTIONS.map((option) => {
-                    const selected = colour === option;
-                    return (
-                      <Pressable
-                        key={option}
-                        accessibilityRole="radio"
-                        accessibilityLabel={`Colour ${option}`}
-                        accessibilityState={{ selected }}
-                        onPress={() => setColour(option)}
-                        style={({ pressed }) => [
-                          styles.swatch,
-                          { backgroundColor: option, opacity: pressed ? 0.7 : 1 },
-                          selected
-                            ? { borderColor: colors.text, borderWidth: 2.5 }
-                            : { borderColor: 'transparent', borderWidth: 2.5 },
-                        ]}
-                      />
-                    );
-                  })}
-                </View>
-
-                {/* Calendars offering this service */}
-                <Text variant="overline" tone="muted">
-                  Offered by
-                </Text>
-                <View style={styles.calendarWrap}>
-                  {practitioners.map((practitioner) => {
-                    const selected = practitionerIds.includes(practitioner.id);
-                    return (
-                      <Pressable
-                        key={practitioner.id}
-                        accessibilityRole="checkbox"
-                        accessibilityState={{ checked: selected }}
-                        onPress={() =>
-                          setPractitionerIds((current) =>
-                            selected
-                              ? current.filter((id) => id !== practitioner.id)
-                              : [...current, practitioner.id],
-                          )
-                        }
-                        style={({ pressed }) => [
-                          styles.calendarChip,
-                          {
-                            backgroundColor: selected ? colors.brand : colors.surface,
-                            borderColor: selected ? colors.brand : colors.border,
-                            opacity: pressed ? 0.75 : 1,
-                          },
-                        ]}>
-                        <Text
-                          variant="label"
-                          color={selected ? colors.onBrand : colors.textSecondary}
-                          numberOfLines={1}>
-                          {practitioner.name}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-
-                <View style={styles.switchRow}>
-                  <Text variant="bodyMedium">Active (visible to clients)</Text>
-                  <Switch value={isActive} onValueChange={setIsActive} />
-                </View>
-
-                <Text variant="caption" tone="muted">
-                  Custom availability windows, processing-time blocks and per-calendar staff
-                  overrides are managed on the web dashboard.
-                </Text>
-
-                {error ? (
-                  <Text variant="bodySmall" tone="danger">
-                    {error}
-                  </Text>
-                ) : null}
-              </ScrollView>
-
-              <View style={styles.actions}>
-                <Button label="Cancel" variant="secondary" style={styles.flex1} onPress={closeSheet} />
-                <Button label="Save" style={styles.flex1} loading={saving} onPress={() => void handleSave()} />
               </View>
+              <View style={styles.moneyField}>
+                <Input
+                  label="Buffer (mins)"
+                  value={buffer}
+                  onChangeText={setBuffer}
+                  keyboardType="number-pad"
+                />
+              </View>
+            </View>
+
+            {/* Online payment */}
+            <Text variant="overline" tone="muted">Online payment</Text>
+            {PAYMENT_OPTIONS.map((option) => {
+              const selected = paymentReq === option.value;
+              return (
+                <Pressable
+                  key={option.value}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected }}
+                  onPress={() => setPaymentReq(option.value)}
+                  style={({ pressed }) => [
+                    styles.radioRow,
+                    {
+                      borderColor: selected ? colors.brand : colors.border,
+                      backgroundColor: selected ? colors.brandSubtle : colors.surface,
+                      opacity: pressed ? 0.7 : 1,
+                    },
+                  ]}>
+                  <View
+                    style={[
+                      styles.radioDot,
+                      { borderColor: selected ? colors.brand : colors.borderStrong },
+                    ]}>
+                    {selected ? (
+                      <View style={[styles.radioDotInner, { backgroundColor: colors.brand }]} />
+                    ) : null}
+                  </View>
+                  <View style={styles.radioText}>
+                    <Text variant="bodyMedium">{option.label}</Text>
+                    <Text variant="caption" tone="muted">{option.hint}</Text>
+                  </View>
+                </Pressable>
+              );
+            })}
+            <View style={styles.moneyRow}>
+              <View style={styles.moneyField}>
+                <Input label="Price (£)" value={price} onChangeText={setPrice} keyboardType="decimal-pad" />
+              </View>
+              {paymentReq === 'deposit' ? (
+                <View style={styles.moneyField}>
+                  <Input label="Deposit (£)" value={deposit} onChangeText={setDeposit} keyboardType="decimal-pad" />
+                </View>
+              ) : null}
+            </View>
+
+            {/* Guest booking rules */}
+            <Text variant="overline" tone="muted">Guest booking rules</Text>
+            <View style={styles.moneyRow}>
+              <View style={styles.moneyField}>
+                <Input
+                  label="Book ahead (days)"
+                  value={advanceDays}
+                  onChangeText={setAdvanceDays}
+                  keyboardType="number-pad"
+                />
+              </View>
+              <View style={styles.moneyField}>
+                <Input
+                  label="Min notice (hours)"
+                  value={noticeHours}
+                  onChangeText={setNoticeHours}
+                  keyboardType="number-pad"
+                />
+              </View>
+            </View>
+            <Input
+              label="Cancellation notice (hours)"
+              helper="Refund cut-off for deposits and online payments."
+              value={cancelHours}
+              onChangeText={setCancelHours}
+              keyboardType="number-pad"
+            />
+            <View style={styles.switchRow}>
+              <Text variant="bodyMedium">Allow same-day bookings</Text>
+              <Switch value={sameDay} onValueChange={setSameDay} />
+            </View>
+
+            {/* Colour */}
+            <Text variant="overline" tone="muted">Calendar colour</Text>
+            <View style={styles.swatchRow}>
+              {COLOUR_OPTIONS.map((option) => {
+                const selected = colour === option;
+                return (
+                  <Pressable
+                    key={option}
+                    accessibilityRole="radio"
+                    accessibilityLabel={`Colour ${option}`}
+                    accessibilityState={{ selected }}
+                    onPress={() => setColour(option)}
+                    style={({ pressed }) => [
+                      styles.swatch,
+                      { backgroundColor: option, opacity: pressed ? 0.7 : 1 },
+                      selected
+                        ? { borderColor: colors.text, borderWidth: 2.5 }
+                        : { borderColor: 'transparent', borderWidth: 2.5 },
+                    ]}
+                  />
+                );
+              })}
+            </View>
+
+            {/* Offered by */}
+            <Text variant="overline" tone="muted">Offered by</Text>
+            <View style={styles.calendarWrap}>
+              {practitioners.map((practitioner) => {
+                const selected = practitionerIds.includes(practitioner.id);
+                return (
+                  <Pressable
+                    key={practitioner.id}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: selected }}
+                    onPress={() =>
+                      setPractitionerIds((current) =>
+                        selected
+                          ? current.filter((id) => id !== practitioner.id)
+                          : [...current, practitioner.id],
+                      )
+                    }
+                    style={({ pressed }) => [
+                      styles.calendarChip,
+                      {
+                        backgroundColor: selected ? colors.brand : colors.surface,
+                        borderColor: selected ? colors.brand : colors.border,
+                        opacity: pressed ? 0.75 : 1,
+                      },
+                    ]}>
+                    <Text
+                      variant="label"
+                      color={selected ? colors.onBrand : colors.textSecondary}
+                      numberOfLines={1}>
+                      {practitioner.name}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <View style={styles.switchRow}>
+              <Text variant="bodyMedium">Active (visible to clients)</Text>
+              <Switch value={isActive} onValueChange={setIsActive} />
+            </View>
+
+            {/* Admin-only: staff override permissions */}
+            {isAdmin ? (
+              <>
+                <Text variant="overline" tone="muted">Staff override permissions</Text>
+                <Text variant="caption" tone="muted">
+                  Allow staff members with their own calendar to override these fields for their
+                  calendar only.
+                </Text>
+                {STAFF_MAY_FIELDS.map(({ key, label }) => (
+                  <View key={key} style={styles.switchRow}>
+                    <Text variant="bodyMedium">{label}</Text>
+                    <Switch
+                      value={staffMay[key]}
+                      onValueChange={(v) =>
+                        setStaffMay((prev) => ({ ...prev, [key]: v }))
+                      }
+                    />
+                  </View>
+                ))}
+              </>
+            ) : null}
+
+            <Text variant="caption" tone="muted">
+              Custom availability windows and processing-time blocks are managed on the web
+              dashboard.
+            </Text>
+
+            {error ? (
+              <Text variant="bodySmall" tone="danger">
+                {error}
+              </Text>
+            ) : null}
+          </ScrollView>
+
+          <View style={styles.actions}>
+            <Button label="Cancel" variant="secondary" style={styles.flex1} onPress={closeSheet} />
+            <Button label="Save" style={styles.flex1} loading={saving} onPress={() => void handleSave()} />
+          </View>
         </View>
       </Sheet>
     </Screen>
   );
 }
 
+// ---------------------------------------------------------------------------
+// Styles
+// ---------------------------------------------------------------------------
+
 const styles = StyleSheet.create({
+  tabBar: {
+    flexDirection: 'row',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  tabItem: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    position: 'relative',
+  },
+  tabUnderline: {
+    position: 'absolute',
+    bottom: 0,
+    left: '20%',
+    right: '20%',
+    height: 2,
+    borderRadius: 1,
+  },
   content: {
     padding: spacing.base,
     gap: spacing.sm,
@@ -771,9 +1112,33 @@ const styles = StyleSheet.create({
   editBtn: {
     flex: 1,
   },
+  editBtnFull: {
+    flex: 1,
+  },
+  // Add-ons tab
+  addonGroupRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    padding: spacing.base,
+  },
+  addonGroupNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    flexWrap: 'wrap',
+  },
+  addonList: {
+    paddingHorizontal: spacing.base,
+    paddingBottom: spacing.base,
+    paddingTop: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: spacing.xs,
+  },
   spacer: {
     height: spacing.xl,
   },
+  // Sheet
   sheetBodyWrap: {
     gap: spacing.md,
   },

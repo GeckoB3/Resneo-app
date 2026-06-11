@@ -21,7 +21,8 @@ export type AppointmentsFeatureFlagKey =
   | 'waitlist_v2'
   | 'guest_self_reschedule'
   | 'any_available_practitioner'
-  | 'compliance_records_enabled';
+  | 'compliance_records_enabled'
+  | 'class_commerce_enabled';
 
 /** Raw flags stored on `venues.feature_flags`. */
 export type VenueFeatureFlagsRaw = Partial<
@@ -78,5 +79,10 @@ export interface VenueBootstrap {
   website_url?: string | null;
   opening_hours?: OpeningHours | null;
   stripe_connected_account_id?: string | null;
+  stripe_subscription_id?: string | null;
   require_account_login_for_bookings?: boolean;
+  no_show_grace_minutes?: number | null;
+  cover_photo_url?: string | null;
+  cuisine_type?: string | null;
+  plan_status?: string | null;
 }

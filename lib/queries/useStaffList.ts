@@ -4,22 +4,10 @@ import { apiFetch } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
 import { queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
+import type { TeamListResponse } from '@/types/staff';
 
-/** One team member from GET /api/venue/staff (admin only). */
-export interface TeamMember {
-  id: string;
-  email: string | null;
-  name: string | null;
-  phone?: string | null;
-  role: 'admin' | 'staff' | string;
-  created_at?: string;
-  /** Calendars this login manages (unified venues). */
-  calendar_names?: string[];
-}
-
-export interface TeamListResponse {
-  staff: TeamMember[];
-}
+export type { TeamListResponse } from '@/types/staff';
+export type { TeamMember } from '@/types/staff';
 
 /** GET /api/venue/staff — team logins & roles (admin only, Bearer). */
 export function useStaffList(enabled = true) {

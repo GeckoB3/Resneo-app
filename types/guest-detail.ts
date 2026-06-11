@@ -2,7 +2,7 @@ import type { BookingModel } from '@/types/venue';
 
 /**
  * Full guest detail returned by GET /api/venue/guests/[guestId].
- * @see _reference/reserve-ni/src/app/api/venue/guests/[guestId]/route.ts
+ * @see _reference/Resneo/src/app/api/venue/guests/[guestId]/route.ts
  */
 export interface GuestDetailProfile {
   id: string;
@@ -50,10 +50,32 @@ export interface GuestBookingHistoryRow {
   area_name: string | null;
 }
 
+/** Custom client field definition from the venue setup. */
+export interface CustomClientFieldDefinition {
+  id: string;
+  venue_id: string;
+  field_name: string;
+  field_key: string;
+  field_type: 'text' | 'number' | 'date' | 'boolean';
+  is_active: boolean;
+  created_at: string;
+}
+
+/** Row from guest communications history. */
+export interface CommunicationRow {
+  id: string;
+  message_type: string;
+  channel: string;
+  status: string;
+  created_at: string;
+  booking_id: string | null;
+  guest_id: string | null;
+}
+
 export interface GuestDetailResponse {
   guest: GuestDetailProfile;
   stats: GuestDetailStats;
   booking_history: GuestBookingHistoryRow[];
-  communications: unknown[];
-  custom_field_definitions: unknown[];
+  communications: CommunicationRow[];
+  custom_field_definitions: CustomClientFieldDefinition[];
 }
