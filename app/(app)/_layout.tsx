@@ -1,6 +1,7 @@
-import { Redirect, Stack } from 'expo-router';
-import { useMemo } from 'react';
+import { Stack } from 'expo-router';
+import { useEffect, useMemo, useState } from 'react';
 
+import { StaffRequired } from '@/components/auth/StaffRequired';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { useColorScheme } from '@/components/useColorScheme';
 import { ApiError } from '@/lib/api/client';
@@ -54,15 +55,38 @@ function useStaffGateStatus(): StaffGateStatus {
  */
 export default function AppLayout() {
   const staffStatus = useStaffGateStatus();
+  const staffQuery = useStaffMe();
   const colorScheme = useColorScheme();
   const colors = colorScheme === 'dark' ? darkColors : lightColors;
 
-  if (staffStatus === 'loading') {
+  // Never block the whole app indefinitely on staff/me. If the check can't
+  // complete (e.g. the web preview can't reach the API cross-origin, or a slow
+  // network), proceed to the app after a short wait rather than hanging on the
+  // "Checking staff access…" screen. A genuine non-staff 401 resolves fast and
+  // still routes to <StaffRequired/> below.
+  const [proceedAnyway, setProceedAnyway] = useState(false);
+  useEffect(() => {
+    if (staffStatus !== 'loading') {
+      return;
+    }
+    const timer = setTimeout(() => setProceedAnyway(true), 5000);
+    return () => clearTimeout(timer);
+  }, [staffStatus]);
+
+  if (staffStatus === 'loading' && !proceedAnyway) {
     return <LoadingState message="Checking staff access…" />;
   }
 
+  // Render the staff-required screen INLINE (not a redirect into this same gated
+  // stack, which infinite-loops). A 401 from staff/me lands here; "Try again"
+  // refetches in case the venue API was mid-deploy.
   if (staffStatus === 'not_staff') {
-    return <Redirect href="/staff-required" />;
+    return (
+      <StaffRequired
+        onRetry={() => void staffQuery.refetch()}
+        retrying={staffQuery.isFetching}
+      />
+    );
   }
 
   return (
