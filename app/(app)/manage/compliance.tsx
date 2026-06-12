@@ -1,4 +1,4 @@
-import { Linking , Alert, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { Linking, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { Stack, useRouter, type Href } from 'expo-router';
 import { useState } from 'react';
 
@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Screen } from '@/components/ui/Screen';
+import { Sheet } from '@/components/ui/Sheet';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
@@ -22,6 +23,7 @@ import {
 import { useSendComplianceFormLink } from '@/lib/queries/useBookingCompliance';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { useUpdateFeatureFlags } from '@/lib/queries/useVenueSettings';
+import { useToast } from '@/providers/ToastProvider';
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { ComplianceMissingRow } from '@/types/compliance';
@@ -107,15 +109,35 @@ type CaptureTarget = {
   bookingId: string;
 };
 
+/**
+ * In-app action sheet state. `Alert.alert`'s channel pickers and destructive
+ * confirms are no-ops on react-native-web (the dev-preview path), so these flows
+ * run through a real `Sheet` instead.
+ */
+type ComplianceAction =
+  | { kind: 'resend'; id: string; guestName: string }
+  | { kind: 'revoke'; id: string; guestName: string }
+  | {
+      kind: 'send';
+      key: string;
+      guestId: string;
+      typeId: string;
+      typeName: string;
+      bookingId?: string | null;
+    };
+
 /** Compliance — today's check-ins, expiring records, missing-for-booking flags & outstanding forms. */
 export default function ComplianceScreen() {
   const router = useRouter();
   const { colors } = useTheme();
+  const toast = useToast();
   const dashboard = useComplianceDashboard();
   const resend = useResendFormLink();
   const revoke = useRevokeFormLink();
   const sendLink = useSendComplianceFormLink();
   const [captureTarget, setCaptureTarget] = useState<CaptureTarget | null>(null);
+  // Active Sheet-based action (channel picker / revoke confirm).
+  const [action, setAction] = useState<ComplianceAction | null>(null);
   // Per-link pending tracking to avoid shared spinner
   const [pendingResendId, setPendingResendId] = useState<string | null>(null);
   const [pendingRevokeId, setPendingRevokeId] = useState<string | null>(null);
@@ -227,53 +249,13 @@ export default function ComplianceScreen() {
 
   // --- Handlers ---
 
+  // Open the Sheet-based pickers/confirms (Alert.alert is a no-op on web).
   const handleResend = (id: string, guestName: string) => {
-    Alert.alert(`Resend form to ${guestName}?`, undefined, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Email',
-        onPress: () => {
-          setPendingResendId(id);
-          resend.mutate(
-            { id, send_via: 'email' },
-            {
-              onSuccess: () => { hapticSuccess(); setPendingResendId(null); },
-              onError: () => { hapticWarning(); setPendingResendId(null); },
-            },
-          );
-        },
-      },
-      {
-        text: 'SMS',
-        onPress: () => {
-          setPendingResendId(id);
-          resend.mutate(
-            { id, send_via: 'sms' },
-            {
-              onSuccess: () => { hapticSuccess(); setPendingResendId(null); },
-              onError: () => { hapticWarning(); setPendingResendId(null); },
-            },
-          );
-        },
-      },
-    ]);
+    setAction({ kind: 'resend', id, guestName });
   };
 
   const handleRevoke = (id: string, guestName: string) => {
-    Alert.alert(`Revoke ${guestName}'s form link?`, 'They will no longer be able to submit it.', [
-      { text: 'Keep', style: 'cancel' },
-      {
-        text: 'Revoke',
-        style: 'destructive',
-        onPress: () => {
-          setPendingRevokeId(id);
-          revoke.mutate(id, {
-            onSuccess: () => { hapticSuccess(); setPendingRevokeId(null); },
-            onError: () => { hapticWarning(); setPendingRevokeId(null); },
-          });
-        },
-      },
-    ]);
+    setAction({ kind: 'revoke', id, guestName });
   };
 
   /**
@@ -286,60 +268,84 @@ export default function ComplianceScreen() {
     typeName: string;
     bookingId?: string | null;
   }) => {
-    const key = `${opts.guestId}:${opts.typeId}`;
-    Alert.alert(`Send ${opts.typeName} link`, 'How should the guest receive the form?', [
+    setAction({
+      kind: 'send',
+      key: `${opts.guestId}:${opts.typeId}`,
+      guestId: opts.guestId,
+      typeId: opts.typeId,
+      typeName: opts.typeName,
+      bookingId: opts.bookingId,
+    });
+  };
+
+  // --- Sheet action runners ---
+
+  const runResend = (send_via: 'email' | 'sms') => {
+    if (action?.kind !== 'resend') return;
+    const { id } = action;
+    setAction(null);
+    setPendingResendId(id);
+    resend.mutate(
+      { id, send_via },
       {
-        text: 'Email',
-        onPress: () => {
-          setPendingSendKey(key);
-          sendLink.mutate(
-            {
-              guest_id: opts.guestId,
-              compliance_type_id: opts.typeId,
-              booking_id: opts.bookingId ?? undefined,
-              send_via: 'email',
-            },
-            {
-              onSuccess: () => { hapticSuccess(); setPendingSendKey(null); },
-              onError: (err) => {
-                hapticWarning();
-                setPendingSendKey(null);
-                Alert.alert(
-                  'Could not send link',
-                  err instanceof ApiError ? err.message : 'Please try again.',
-                );
-              },
-            },
-          );
+        onSuccess: () => {
+          hapticSuccess();
+          setPendingResendId(null);
+          toast.success(send_via === 'email' ? 'Form re-emailed.' : 'Form link re-sent by SMS.');
+        },
+        onError: (err) => {
+          hapticWarning();
+          setPendingResendId(null);
+          toast.error(err instanceof ApiError ? err.message : 'Could not resend the form.');
         },
       },
+    );
+  };
+
+  const runRevoke = () => {
+    if (action?.kind !== 'revoke') return;
+    const { id } = action;
+    setAction(null);
+    setPendingRevokeId(id);
+    revoke.mutate(id, {
+      onSuccess: () => {
+        hapticSuccess();
+        setPendingRevokeId(null);
+        toast.success('Form link revoked.');
+      },
+      onError: (err) => {
+        hapticWarning();
+        setPendingRevokeId(null);
+        toast.error(err instanceof ApiError ? err.message : 'Could not revoke the link.');
+      },
+    });
+  };
+
+  const runSend = (send_via: 'email' | 'sms') => {
+    if (action?.kind !== 'send') return;
+    const { key, guestId, typeId, bookingId } = action;
+    setAction(null);
+    setPendingSendKey(key);
+    sendLink.mutate(
       {
-        text: 'SMS',
-        onPress: () => {
-          setPendingSendKey(key);
-          sendLink.mutate(
-            {
-              guest_id: opts.guestId,
-              compliance_type_id: opts.typeId,
-              booking_id: opts.bookingId ?? undefined,
-              send_via: 'sms',
-            },
-            {
-              onSuccess: () => { hapticSuccess(); setPendingSendKey(null); },
-              onError: (err) => {
-                hapticWarning();
-                setPendingSendKey(null);
-                Alert.alert(
-                  'Could not send link',
-                  err instanceof ApiError ? err.message : 'Please try again.',
-                );
-              },
-            },
-          );
+        guest_id: guestId,
+        compliance_type_id: typeId,
+        booking_id: bookingId ?? undefined,
+        send_via,
+      },
+      {
+        onSuccess: () => {
+          hapticSuccess();
+          setPendingSendKey(null);
+          toast.success(send_via === 'email' ? 'Form link emailed.' : 'Form link sent by SMS.');
+        },
+        onError: (err) => {
+          hapticWarning();
+          setPendingSendKey(null);
+          toast.error(err instanceof ApiError ? err.message : 'Could not send the link.');
         },
       },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+    );
   };
 
   return (
@@ -626,6 +632,60 @@ export default function ComplianceScreen() {
           }}
         />
       ) : null}
+
+      {/* Channel picker / revoke confirm — a Sheet, since Alert.alert is a no-op on web. */}
+      <Sheet visible={action !== null} onClose={() => setAction(null)}>
+        <View style={styles.sheetBody}>
+          {action?.kind === 'revoke' ? (
+            <>
+              <Text variant="subheading">Revoke {action.guestName}&apos;s form link?</Text>
+              <Text variant="bodySmall" tone="secondary">
+                They will no longer be able to submit it.
+              </Text>
+              <View style={styles.sheetActions}>
+                <Button
+                  label="Keep"
+                  variant="secondary"
+                  style={styles.flex1}
+                  onPress={() => setAction(null)}
+                />
+                <Button
+                  label="Revoke"
+                  variant="danger"
+                  style={styles.flex1}
+                  onPress={runRevoke}
+                />
+              </View>
+            </>
+          ) : action ? (
+            <>
+              <Text variant="subheading">
+                {action.kind === 'resend'
+                  ? `Resend form to ${action.guestName}`
+                  : `Send ${action.typeName} link`}
+              </Text>
+              <Text variant="bodySmall" tone="secondary">
+                How should the guest receive the form?
+              </Text>
+              <View style={styles.sheetChannels}>
+                <Button
+                  label="Email"
+                  variant="secondary"
+                  style={styles.flex1}
+                  onPress={() => (action.kind === 'resend' ? runResend('email') : runSend('email'))}
+                />
+                <Button
+                  label="SMS"
+                  variant="secondary"
+                  style={styles.flex1}
+                  onPress={() => (action.kind === 'resend' ? runResend('sms') : runSend('sms'))}
+                />
+              </View>
+              <Button label="Cancel" variant="ghost" onPress={() => setAction(null)} />
+            </>
+          ) : null}
+        </View>
+      </Sheet>
     </>
   );
 }
@@ -710,5 +770,20 @@ const styles = StyleSheet.create({
   },
   spacer: {
     height: spacing.xl,
+  },
+  sheetBody: {
+    gap: spacing.md,
+  },
+  sheetActions: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    paddingTop: spacing.sm,
+  },
+  sheetChannels: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  flex1: {
+    flex: 1,
   },
 });

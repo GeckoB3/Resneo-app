@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -7,10 +7,11 @@ import { Segmented } from '@/components/ui/Segmented';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { formatPence } from '@/lib/format';
-import { hapticSuccess, hapticWarning } from '@/lib/haptics';
+import { hapticSelect, hapticSuccess, hapticWarning } from '@/lib/haptics';
+import { normalizePhone } from '@/lib/phone/normalize';
 import { useCreateBooking } from '@/lib/queries/useCreateBooking';
 import { splitGuestName } from '@/lib/validation/walk-in-guest';
-import { spacing } from '@/theme/index';
+import { fonts, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { AppointmentSlot } from '@/types/appointment-availability';
 import {
@@ -38,6 +39,13 @@ type ConfirmStepProps = {
   onChangeSource: (source: BookingSource) => void;
   ownerVenueId?: string | null;
   onSuccess: (bookingId: string) => void;
+  /** Staff "Require deposit" toggle state (only shown when the service has a deposit). */
+  requireDeposit?: boolean;
+  onChangeRequireDeposit?: (value: boolean) => void;
+  /** True when an existing/known contact was picked — sends `returning_guest`. */
+  returningGuest?: boolean;
+  /** Default dialling country for phone normalisation (matches the web). */
+  phoneDefaultCountry?: string;
 };
 
 interface BookingConfirmation {
@@ -156,6 +164,10 @@ export function ConfirmStep({
   onChangeSource,
   ownerVenueId,
   onSuccess,
+  requireDeposit = false,
+  onChangeRequireDeposit,
+  returningGuest = false,
+  phoneDefaultCountry = 'GB',
 }: ConfirmStepProps) {
   const { colors } = useTheme();
   const createBooking = useCreateBooking();
@@ -182,7 +194,14 @@ export function ConfirmStep({
   const baseDeposit = variant ? variant.deposit_pence : service.depositPence;
   const totalPrice = basePrice + addonsPrice;
   const totalDuration = baseDuration + addonsDuration;
-  const depositLabel = baseDeposit && baseDeposit > 0 ? formatMoney(baseDeposit) : null;
+  const hasDeposit = baseDeposit != null && baseDeposit > 0;
+  const depositLabel = hasDeposit ? formatMoney(baseDeposit!) : null;
+
+  // The web folds the appointment's free-text comment into `dietary_notes`
+  // (DetailsStep maps "Comments or requests" → dietary_notes). Mirror that: the
+  // mobile "Special requests" box is the comment field, so it must NOT be
+  // silently dropped — send it under `dietary_notes` like the web.
+  const comment = (guest.special_requests ?? guest.dietary_notes ?? '').trim();
 
   const buildPayload = (overrideCompliance?: boolean) => ({
     booking_date: date,
@@ -190,16 +209,21 @@ export function ConfirmStep({
     party_size: 1,
     first_name,
     last_name,
-    phone: guest.phone.trim(),
+    phone: normalizePhone(guest.phone, phoneDefaultCountry),
     email: guest.email.trim() || undefined,
     practitioner_id: practitionerId,
     appointment_service_id: service.serviceId,
     ...(variant ? { service_variant_id: variant.id } : {}),
     ...(addons.length ? { addons: addons.map((a) => ({ addon_id: a.id })) } : {}),
     ...(durationOverride != null ? { duration_minutes: durationOverride } : {}),
-    ...(guest.dietary_notes ? { dietary_notes: guest.dietary_notes } : {}),
+    ...(comment ? { dietary_notes: comment } : {}),
     ...(guest.occasion ? { occasion: guest.occasion } : {}),
-    ...(guest.special_requests ? { special_requests: guest.special_requests } : {}),
+    // Staff "Require deposit": send when the service has a deposit and the toggle
+    // is on (the web sends require_deposit under the same condition). Walk-ins
+    // never charge a deposit.
+    ...(hasDeposit && requireDeposit && source !== 'walk-in' ? { require_deposit: true } : {}),
+    // Existing-contact / rebook → flag as a returning guest (web parity).
+    ...(returningGuest ? { returning_guest: true } : {}),
     source,
     ...(ownerVenueId ? { owner_venue_id: ownerVenueId } : {}),
     ...(overrideCompliance ? { override_compliance: true } : {}),
@@ -274,12 +298,7 @@ export function ConfirmStep({
         <SummaryRow label="Phone" value={guest.phone.trim()} />
         {guest.email.trim() ? <SummaryRow label="Email" value={guest.email.trim()} /> : null}
         {guest.occasion ? <SummaryRow label="Occasion" value={guest.occasion} /> : null}
-        {guest.dietary_notes ? (
-          <SummaryRow label="Dietary notes" value={guest.dietary_notes} />
-        ) : null}
-        {guest.special_requests ? (
-          <SummaryRow label="Requests" value={guest.special_requests} />
-        ) : null}
+        {comment ? <SummaryRow label="Comments" value={comment} /> : null}
 
         {addons.length > 0 ? (
           <View style={[styles.addonsBlock, { borderTopColor: colors.border }]}>
@@ -334,6 +353,41 @@ export function ConfirmStep({
             : 'Walk-ins can be booked outside normal hours.'}
         </Text>
       </View>
+
+      {hasDeposit && source !== 'walk-in' && onChangeRequireDeposit ? (
+        <Pressable
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: requireDeposit }}
+          accessibilityLabel={`Require deposit ${depositLabel ?? ''}`}
+          onPress={() => {
+            hapticSelect();
+            onChangeRequireDeposit(!requireDeposit);
+          }}
+          style={({ pressed }) => [
+            styles.depositToggle,
+            {
+              backgroundColor: requireDeposit ? colors.surfaceRaised : colors.surface,
+              borderColor: requireDeposit ? colors.brand : colors.border,
+              opacity: pressed ? 0.9 : 1,
+            },
+          ]}>
+          <View
+            style={[
+              styles.check,
+              {
+                borderColor: requireDeposit ? colors.brand : colors.borderStrong,
+                backgroundColor: requireDeposit ? colors.brand : 'transparent',
+              },
+            ]}>
+            {requireDeposit ? (
+              <Text style={[styles.checkMark, { color: colors.onBrand }]}>✓</Text>
+            ) : null}
+          </View>
+          <Text variant="bodyMedium" style={styles.depositToggleLabel}>
+            Require deposit{depositLabel ? ` (${depositLabel})` : ''}
+          </Text>
+        </Pressable>
+      ) : null}
 
       {complianceError ? (
         <View style={[styles.complianceBlock, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -427,6 +481,31 @@ const styles = StyleSheet.create({
   },
   sourceBlock: {
     gap: spacing.sm,
+  },
+  depositToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: spacing.base,
+  },
+  depositToggleLabel: {
+    flex: 1,
+    minWidth: 0,
+  },
+  check: {
+    width: 22,
+    height: 22,
+    borderRadius: radius.sm,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkMark: {
+    fontSize: 13,
+    fontFamily: fonts.bold,
+    lineHeight: 16,
   },
   complianceBlock: {
     borderWidth: StyleSheet.hairlineWidth,

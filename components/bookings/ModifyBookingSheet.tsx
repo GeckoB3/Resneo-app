@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { minutesToTime, timeToMinutes } from '@/components/calendar/grid-layout';
 import { Button } from '@/components/ui/Button';
@@ -9,17 +9,22 @@ import { Stepper } from '@/components/ui/Stepper';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { addDaysToDateStr, formatDayHeading } from '@/lib/dates/venue-dates';
-import { hapticSuccess, hapticWarning } from '@/lib/haptics';
+import { formatPence } from '@/lib/format';
+import { hapticSelect, hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useAppointmentAvailability } from '@/lib/queries/useAppointmentAvailability';
 import { useAppointmentCatalog } from '@/lib/queries/useAppointmentCatalog';
+import { useBookingDetail } from '@/lib/queries/useBookingDetail';
 import {
   useModifyAppointment,
   useValidateAppointmentModification,
 } from '@/lib/queries/useBookingMutations';
 import { useVenueContext } from '@/providers/VenueProvider';
-import { spacing } from '@/theme/index';
+import { fonts, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
-import type { AppointmentCatalogService } from '@/types/appointment-catalog';
+import type {
+  AppointmentCatalogAddonGroup,
+  AppointmentCatalogService,
+} from '@/types/appointment-catalog';
 
 export type ModifyBookingTarget = {
   id: string;
@@ -59,6 +64,29 @@ function formatDuration(total: number): string {
   return m === 0 ? `${h}h` : `${h}h ${m}m`;
 }
 
+/** Short "+£X · +Ymin" badge for an add-on, or null when it adds nothing. */
+function addonExtraLabel(pricePence: number, durationMinutes: number): string | null {
+  const parts: string[] = [];
+  if (pricePence > 0) {
+    const formatted = formatPence(pricePence);
+    if (formatted) parts.push(`+${formatted}`);
+  }
+  if (durationMinutes > 0) parts.push(`+${durationMinutes} min`);
+  return parts.length ? parts.join(' · ') : null;
+}
+
+/** Per-group selection rule hint (mirrors the wizard's AddonsStep). */
+function addonRequirementLabel(group: AppointmentCatalogAddonGroup['group']): string | null {
+  const { selection_type, min_select, max_select } = group;
+  if (min_select > 0 && max_select != null && min_select === max_select) {
+    return `Choose ${min_select}`;
+  }
+  if (min_select > 0) return `Choose at least ${min_select}`;
+  if (selection_type === 'single') return 'Optional · choose one';
+  if (max_select != null) return `Optional · up to ${max_select}`;
+  return 'Optional';
+}
+
 /**
  * Full appointment modify — change service, variant, staff, date, time and
  * duration with live availability validation (web StaffAppointmentModifyForm
@@ -70,6 +98,11 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   const catalogQuery = useAppointmentCatalog(target ? venue?.id ?? null : null);
   const modify = useModifyAppointment(target?.id ?? '');
   const validate = useValidateAppointmentModification(target?.id ?? '');
+  // Read the open booking's full detail (cache hit — the detail sheet is already
+  // open) so we can seed the booking's current add-ons. ModifyBookingTarget does
+  // not carry them and its source component is out of scope to edit.
+  const detailQuery = useBookingDetail(target?.id);
+  const currentAddons = detailQuery.data?.addons ?? null;
 
   const [serviceId, setServiceId] = useState<string | null>(null);
   const [variantId, setVariantId] = useState<string | null>(null);
@@ -77,6 +110,10 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   const [date, setDate] = useState('');
   const [minutes, setMinutes] = useState(0);
   const [duration, setDuration] = useState(30);
+  /** Flat selected add-on ids across all groups (matches AddonsStep's `value`). */
+  const [addonIds, setAddonIds] = useState<string[]>([]);
+  /** True once we've seeded add-ons from the loaded booking detail. */
+  const [addonsSeeded, setAddonsSeeded] = useState(false);
   // Last validation result, keyed by the field signature it was checked for —
   // "checking" is derived (signature mismatch) so the effect never sets state
   // synchronously.
@@ -104,6 +141,8 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     setDate(target.date);
     setMinutes(timeToMinutes(target.time));
     setDuration(target.durationMinutes ?? 30);
+    setAddonIds([]);
+    setAddonsSeeded(false);
     setChecked({ sig: null, result: { state: 'idle' } });
     setError(null);
   }, [target?.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -139,6 +178,11 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   }, [serviceId, offeredBy, practitioners]);
 
   const selectService = (svc: AppointmentCatalogService) => {
+    // Switching to a different service invalidates the current add-on choices
+    // (groups are per-service). Re-selecting the same service keeps them.
+    if (svc.id !== serviceId) {
+      setAddonIds([]);
+    }
     setServiceId(svc.id);
     const svcVariants = svc.variants ?? [];
     const keepVariant =
@@ -161,6 +205,116 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     if (v) setDuration(v.duration_minutes);
   };
 
+  // Add-on groups for the chosen service (catalog carries them per service).
+  // Derived from the stable `services`/`serviceId` so its identity is stable for
+  // the lookups/effects below (selectedService is an unmemoised .find()).
+  const addonGroups = useMemo(
+    () => services.find((s) => s.id === serviceId)?.addon_groups ?? [],
+    [services, serviceId],
+  );
+  const hasAddonGroups = addonGroups.length > 0;
+
+  // Flat addon -> {price, duration} lookup for the chosen service so totals and
+  // chips read the catalogue (not the booking snapshot, which may be stale).
+  const addonById = useMemo(() => {
+    const map = new Map<string, { price_pence: number; duration_minutes: number }>();
+    for (const group of addonGroups) {
+      for (const addon of group.addons) {
+        map.set(addon.id, {
+          price_pence: addon.additional_price_pence,
+          duration_minutes: addon.additional_duration_minutes,
+        });
+      }
+    }
+    return map;
+  }, [addonGroups]);
+
+  const selectedAddonSet = useMemo(() => new Set(addonIds), [addonIds]);
+
+  // Seed selected add-ons from the booking's current add-ons once the detail
+  // loads AND the catalogue knows the service's groups (so stale snapshots that
+  // are no longer offered drop out). Effect (not render) to stay Fabric-safe.
+  useEffect(() => {
+    if (!target || addonsSeeded || !currentAddons) return;
+    if (!serviceInCatalog || !hasAddonGroups) {
+      // Nothing to seed against yet (or service has no add-ons) — mark seeded so
+      // we don't keep re-checking, but only once the catalogue has resolved.
+      if (serviceInCatalog && !catalogQuery.isLoading) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot seed flag
+        setAddonsSeeded(true);
+      }
+      return;
+    }
+    const seeded = currentAddons
+      .map((a) => a.addon_id)
+      .filter((id): id is string => !!id && addonById.has(id));
+    setAddonIds(seeded);
+    setAddonsSeeded(true);
+  }, [
+    target,
+    addonsSeeded,
+    currentAddons,
+    serviceInCatalog,
+    hasAddonGroups,
+    addonById,
+    catalogQuery.isLoading,
+  ]);
+
+  // Toggle an add-on, enforcing the group's selection rule (single vs multi,
+  // max cap) — same logic as the wizard's AddonsStep.toggle.
+  const toggleAddon = (group: AppointmentCatalogAddonGroup, addonId: string) => {
+    hapticSelect();
+    const groupAddonIds = group.addons.map((a) => a.id);
+    const selectedInGroup = groupAddonIds.filter((id) => selectedAddonSet.has(id));
+    const isSelected = selectedAddonSet.has(addonId);
+    const next = new Set(selectedAddonSet);
+
+    if (group.group.selection_type === 'single') {
+      groupAddonIds.forEach((id) => next.delete(id));
+      if (!isSelected || group.group.min_select > 0) {
+        next.add(addonId);
+      }
+    } else if (isSelected) {
+      next.delete(addonId);
+    } else {
+      const max = group.group.max_select;
+      if (max != null && selectedInGroup.length >= max) {
+        return; // at cap — ignore
+      }
+      next.add(addonId);
+    }
+    setAddonIds([...next]);
+  };
+
+  // Only count add-ons that belong to the current service's groups so a service
+  // switch can't carry orphaned ids into the totals or payload.
+  const validAddonIds = useMemo(
+    () => addonIds.filter((id) => addonById.has(id)),
+    [addonIds, addonById],
+  );
+  const addonTotals = useMemo(() => {
+    let price = 0;
+    let mins = 0;
+    for (const id of validAddonIds) {
+      const a = addonById.get(id);
+      if (a) {
+        price += a.price_pence;
+        mins += a.duration_minutes;
+      }
+    }
+    return { pricePence: price, durationMinutes: mins };
+  }, [validAddonIds, addonById]);
+
+  // Every group satisfies its minimum (mirrors AddonsStep.allGroupsValid).
+  const addonGroupsValid = addonGroups.every(
+    (g) => g.addons.filter((a) => selectedAddonSet.has(a.id)).length >= g.group.min_select,
+  );
+
+  // Total length sent to the validator + PATCH: the user-set base duration plus
+  // the selected add-ons' extra minutes (the create route adds these the same
+  // way; the PATCH validator only takes a single duration_minutes).
+  const effectiveDuration = duration + addonTotals.durationMinutes;
+
   // Quick duration presets — current/default/initial + common lengths.
   const durationPresets = [
     ...new Set(
@@ -177,12 +331,13 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   ].sort((a, b) => a - b);
 
   // Free slots for the chosen day (the booking's own slot stays available).
+  // Use the effective length so add-ons that lengthen the booking re-query slots.
   const availability = useAppointmentAvailability({
     date: date || null,
     serviceId,
     practitionerId,
     variantId,
-    durationMinutes: duration,
+    durationMinutes: effectiveDuration,
     excludeBookingId: target?.id,
     enabled: !!target && serviceInCatalog,
   });
@@ -199,7 +354,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   // on the endpoint degrade to "unknown" — the PATCH still validates.
   const canCheck = !!target && !!serviceId && !!practitionerId && !!date;
   const signature = canCheck
-    ? [target.id, serviceId, variantId, practitionerId, date, minutes, duration].join('|')
+    ? [target.id, serviceId, variantId, practitionerId, date, minutes, effectiveDuration].join('|')
     : null;
   const validateMutate = validate.mutate;
   useEffect(() => {
@@ -216,7 +371,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
           ...(target.usesServiceItem
             ? { service_item_id: serviceId }
             : { appointment_service_id: serviceId }),
-          duration_minutes: duration,
+          duration_minutes: effectiveDuration,
           service_variant_id: requiresVariant ? variantId : null,
         },
         {
@@ -244,7 +399,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     practitionerId,
     date,
     minutes,
-    duration,
+    effectiveDuration,
     requiresVariant,
     signature,
     validateMutate,
@@ -261,6 +416,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     !!serviceId &&
     !!practitionerId &&
     (!requiresVariant || !!variantId) &&
+    addonGroupsValid &&
     check.state !== 'invalid' &&
     check.state !== 'checking';
 
@@ -275,8 +431,14 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
         ...(target.usesServiceItem
           ? { service_item_id: serviceId }
           : { appointment_service_id: serviceId }),
-        duration_minutes: duration,
+        // Total length = base duration + selected add-on minutes (REPLACE).
+        duration_minutes: effectiveDuration,
         service_variant_id: requiresVariant ? variantId : null,
+        // Full desired add-on set (REPLACE semantics). Only send the key when
+        // the service has groups so non-add-on services keep a clean payload.
+        ...(hasAddonGroups
+          ? { addons: validAddonIds.map((addon_id) => ({ addon_id })) }
+          : {}),
       });
       hapticSuccess();
       onClose();
@@ -286,7 +448,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     }
   }
 
-  const endPreview = minutesToTime((minutes + duration) % (24 * 60));
+  const endPreview = minutesToTime((minutes + effectiveDuration) % (24 * 60));
 
   return (
     <Sheet visible={!!target} onClose={onClose}>
@@ -373,6 +535,80 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
               </View>
             ) : null}
 
+            {serviceInCatalog && hasAddonGroups ? (
+              <View style={styles.fieldBlock}>
+                <Text variant="label" tone="secondary">
+                  Add-ons
+                </Text>
+                {addonGroups.map((group) => (
+                  <View key={group.group.id} style={styles.addonGroup}>
+                    <View style={styles.addonGroupHeader}>
+                      <Text variant="bodySmall" tone="secondary">
+                        {group.group.name}
+                      </Text>
+                      {addonRequirementLabel(group.group) ? (
+                        <Text variant="caption" tone="muted">
+                          {addonRequirementLabel(group.group)}
+                        </Text>
+                      ) : null}
+                    </View>
+                    {group.group.prompt_to_client ? (
+                      <Text variant="caption" tone="muted">
+                        {group.group.prompt_to_client}
+                      </Text>
+                    ) : null}
+                    {group.addons.map((addon) => {
+                      const isSelected = selectedAddonSet.has(addon.id);
+                      const extra = addonExtraLabel(
+                        addon.additional_price_pence,
+                        addon.additional_duration_minutes,
+                      );
+                      return (
+                        <Pressable
+                          key={addon.id}
+                          accessibilityRole="checkbox"
+                          accessibilityState={{ checked: isSelected }}
+                          onPress={() => toggleAddon(group, addon.id)}
+                          style={({ pressed }) => [
+                            styles.addonRow,
+                            {
+                              backgroundColor: isSelected
+                                ? colors.surfaceRaised
+                                : colors.surface,
+                              borderColor: isSelected ? colors.brand : colors.border,
+                              opacity: pressed ? 0.9 : 1,
+                            },
+                          ]}>
+                          <View
+                            style={[
+                              styles.addonCheck,
+                              {
+                                borderColor: isSelected ? colors.brand : colors.borderStrong,
+                                backgroundColor: isSelected ? colors.brand : 'transparent',
+                              },
+                            ]}>
+                            {isSelected ? (
+                              <Text style={[styles.addonCheckMark, { color: colors.onBrand }]}>
+                                ✓
+                              </Text>
+                            ) : null}
+                          </View>
+                          <View style={styles.addonText}>
+                            <Text variant="bodyMedium">{addon.name}</Text>
+                            {extra ? (
+                              <Text variant="caption" tone="muted">
+                                {extra}
+                              </Text>
+                            ) : null}
+                          </View>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                ))}
+              </View>
+            ) : null}
+
             <Stepper
               label="Date"
               value={formatDayHeading(date)}
@@ -404,6 +640,18 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
             <Text variant="caption" tone="muted">
               Ends at {endPreview}. Hold − / + to change faster.
             </Text>
+            {addonTotals.durationMinutes > 0 || addonTotals.pricePence > 0 ? (
+              <Text variant="caption" tone="muted">
+                Includes add-ons
+                {addonTotals.durationMinutes > 0
+                  ? ` · +${addonTotals.durationMinutes} min`
+                  : ''}
+                {addonTotals.pricePence > 0
+                  ? ` · +${formatPence(addonTotals.pricePence)}`
+                  : ''}
+                {` · ${formatDuration(effectiveDuration)} total`}
+              </Text>
+            ) : null}
 
             {slots.length > 0 ? (
               <View style={styles.fieldBlock}>
@@ -489,6 +737,41 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.sm,
+  },
+  addonGroup: {
+    gap: spacing.sm,
+  },
+  addonGroupHeader: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  addonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: spacing.base,
+  },
+  addonCheck: {
+    width: 22,
+    height: 22,
+    borderRadius: radius.sm,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addonCheckMark: {
+    fontSize: 13,
+    fontFamily: fonts.bold,
+    lineHeight: 16,
+  },
+  addonText: {
+    flex: 1,
+    minWidth: 0,
+    gap: 1,
   },
   actions: {
     flexDirection: 'row',

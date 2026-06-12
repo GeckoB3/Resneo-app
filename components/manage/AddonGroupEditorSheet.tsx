@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -96,6 +96,8 @@ export function AddonGroupEditorSheet({ target, onClose }: Props) {
   const [addonCounter, setAddonCounter] = useState(0);
 
   const [error, setError] = useState<string | null>(null);
+  // Two-step inline delete confirm — Alert.alert's confirm is a no-op on web.
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   // seededId tracks which target we last seeded so we can guard re-seeding.
   // Stored in state (not a ref) so the `seeded` derived value is safe to read
   // during render without violating react-hooks/refs.
@@ -161,7 +163,9 @@ export function AddonGroupEditorSheet({ target, onClose }: Props) {
     }
      
     setError(null);
-     
+
+    setConfirmingDelete(false);
+
     setSeededId(seedKey);
   // seededId intentionally omitted — including it would cause an infinite loop
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -291,35 +295,30 @@ export function AddonGroupEditorSheet({ target, onClose }: Props) {
     }
   }
 
-  function handleDelete() {
+  async function runDelete() {
     if (target?.mode !== 'edit') return;
     const group = target.group;
-    // Web parity: archived groups get the permanent-delete wording.
-    const message = group.is_active
-      ? `Delete "${group.name}"? If it has booking history it will be archived (hidden from new bookings) instead.`
-      : `"${group.name}" is already archived. Delete it permanently? This is only possible when no bookings reference it.`;
-    Alert.alert('Delete add-on group', message, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await deleteMutation.mutateAsync(group.id);
-            hapticSuccess();
-            onClose();
-          } catch (e) {
-            hapticWarning();
-            setError(
-              e instanceof ApiError
-                ? e.message
-                : 'Could not delete the group. Please try again.',
-            );
-          }
-        },
-      },
-    ]);
+    try {
+      await deleteMutation.mutateAsync(group.id);
+      hapticSuccess();
+      setConfirmingDelete(false);
+      onClose();
+    } catch (e) {
+      hapticWarning();
+      setConfirmingDelete(false);
+      setError(
+        e instanceof ApiError ? e.message : 'Could not delete the group. Please try again.',
+      );
+    }
   }
+
+  // Web parity: archived groups get the permanent-delete wording.
+  const deleteMessage =
+    target?.mode === 'edit'
+      ? target.group.is_active
+        ? `Delete "${target.group.name}"? If it has booking history it will be archived (hidden from new bookings) instead.`
+        : `"${target.group.name}" is already archived. Delete it permanently? This is only possible when no bookings reference it.`
+      : '';
 
   const saving = createMutation.isPending || updateMutation.isPending;
   const deleting = deleteMutation.isPending;
@@ -333,16 +332,43 @@ export function AddonGroupEditorSheet({ target, onClose }: Props) {
             <Text variant="overline" tone="muted">
               {target.mode === 'create' ? 'New add-on group' : 'Edit add-on group'}
             </Text>
-            {target.mode === 'edit' ? (
+            {target.mode === 'edit' && !confirmingDelete ? (
               <Button
                 label="Delete"
                 variant="ghost"
                 size="sm"
                 loading={deleting}
-                onPress={handleDelete}
+                onPress={() => setConfirmingDelete(true)}
               />
             ) : null}
           </View>
+
+          {/* Inline delete confirm — a Sheet-in-Sheet would be unreliable, and
+              Alert.alert's confirm is a no-op on web. */}
+          {target.mode === 'edit' && confirmingDelete ? (
+            <View style={styles.deleteConfirm}>
+              <Text variant="bodySmall" tone="secondary">
+                {deleteMessage}
+              </Text>
+              <View style={styles.deleteConfirmActions}>
+                <Button
+                  label="Cancel"
+                  variant="secondary"
+                  size="sm"
+                  style={styles.flex1}
+                  onPress={() => setConfirmingDelete(false)}
+                />
+                <Button
+                  label="Delete"
+                  variant="danger"
+                  size="sm"
+                  style={styles.flex1}
+                  loading={deleting}
+                  onPress={() => void runDelete()}
+                />
+              </View>
+            </View>
+          ) : null}
 
           <ScrollView
             style={styles.scroll}
@@ -589,6 +615,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  deleteConfirm: {
+    gap: spacing.sm,
+  },
+  deleteConfirmActions: {
+    flexDirection: 'row',
+    gap: spacing.md,
   },
   scroll: {
     flexGrow: 0,

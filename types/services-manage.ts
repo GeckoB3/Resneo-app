@@ -3,6 +3,54 @@ import type {
   AppointmentCatalogVariant,
 } from '@/types/appointment-catalog';
 
+/** Where the service is delivered (mirrors the web `service_location_type`). */
+export type ServiceLocationType = 'business_venue' | 'client_address' | 'online';
+
+/**
+ * One internal processing gap within the service core duration where the
+ * practitioner is free for another booking. Matches the web/API JSON shape
+ * (`{ id, start_minute, duration_minutes }`) — there is no `kind`/`offset`
+ * field server-side; the gap before/after blocks is the "client-facing" time.
+ * @see _reference/Resneo/src/lib/appointments/processing-time.ts
+ */
+export interface ProcessingTimeBlock {
+  /** UUID when persisted; optional for freshly-added rows (API back-fills one). */
+  id?: string;
+  start_minute: number;
+  duration_minutes: number;
+}
+
+/** Per-service custom availability schedule (versioned rule list). */
+export interface ServiceCustomScheduleV2 {
+  version: 2;
+  rules: ServiceCustomRule[];
+}
+
+/** Time window as `HH:mm` strings. */
+export interface ServiceTimeRange {
+  start: string;
+  end: string;
+}
+
+/** Day-keyed working hours: keys are `"0"`–`"6"` (0 = Sunday). */
+export type ServiceWorkingHours = Record<string, ServiceTimeRange[]>;
+
+/**
+ * A single custom-availability rule. The mobile editor only writes `weekly`
+ * rules; the other kinds are preserved on read/round-trip but edited on web.
+ */
+export type ServiceCustomRule =
+  | { id: string; kind: 'weekly'; windows: ServiceWorkingHours }
+  | { id: string; kind: 'specific_dates'; entries: { date: string; ranges: ServiceTimeRange[] }[] }
+  | {
+      id: string;
+      kind: 'date_range_pattern';
+      start_date: string;
+      end_date: string;
+      days_of_week: number[];
+      ranges: ServiceTimeRange[];
+    };
+
 /**
  * Staff-facing service row from GET /api/venue/appointment-services.
  * @see _reference/reserve-ni/src/app/api/venue/appointment-services/route.ts
@@ -33,6 +81,16 @@ export interface ManagedService {
   staff_may_customize_colour?: boolean;
   /** Admin-only: whether per-service custom availability schedule is enabled. */
   custom_availability_enabled?: boolean;
+  /** Per-service custom availability schedule (versioned rule list or legacy map). */
+  custom_working_hours?: ServiceCustomScheduleV2 | ServiceWorkingHours | null;
+  /** Internal processing gaps inside the service core duration. */
+  processing_time_blocks?: ProcessingTimeBlock[] | null;
+  /** Where the service is delivered. */
+  location_type?: ServiceLocationType | null;
+  /** Online services: meeting link sent in booking emails. */
+  online_meeting_url?: string | null;
+  /** Online services: joining instructions shown with the link in emails. */
+  online_meeting_info?: string | null;
   variants?: AppointmentCatalogVariant[];
   addon_groups?: AppointmentCatalogAddonGroup[];
 }
@@ -83,6 +141,22 @@ export interface UpdateServiceInput {
   staff_may_customize_colour?: boolean;
   /** Admin-only: per-service custom availability schedule. */
   custom_availability_enabled?: boolean;
+  /**
+   * Versioned schedule rule list. Only sent alongside `custom_availability_enabled`.
+   * Pass `null` to clear when disabling.
+   */
+  custom_working_hours?: ServiceCustomScheduleV2 | ServiceWorkingHours | null;
+  /**
+   * Internal processing gaps inside the core duration (REPLACE semantics — the
+   * API swaps the whole array). Only send when the user edited it.
+   */
+  processing_time_blocks?: ProcessingTimeBlock[];
+  /** Where the service is delivered. */
+  location_type?: ServiceLocationType;
+  /** Online services: meeting link (http(s), ≤500 chars). Empty string/null clears it. */
+  online_meeting_url?: string | null;
+  /** Online services: joining instructions (≤2000 chars). */
+  online_meeting_info?: string | null;
 }
 
 export interface CreateServiceInput {
@@ -108,4 +182,13 @@ export interface CreateServiceInput {
   staff_may_customize_price?: boolean;
   staff_may_customize_deposit?: boolean;
   staff_may_customize_colour?: boolean;
+  /** Internal processing gaps inside the core duration. */
+  processing_time_blocks?: ProcessingTimeBlock[];
+  /** Admin-only: per-service custom availability schedule. */
+  custom_availability_enabled?: boolean;
+  custom_working_hours?: ServiceCustomScheduleV2 | ServiceWorkingHours | null;
+  /** Where the service is delivered. */
+  location_type?: ServiceLocationType;
+  online_meeting_url?: string | null;
+  online_meeting_info?: string | null;
 }

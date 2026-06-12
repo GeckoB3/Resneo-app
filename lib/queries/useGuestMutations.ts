@@ -18,6 +18,11 @@ export interface UpdateGuestInput {
   marketing_opt_out?: boolean;
   /** Custom client field values — keys are field_key strings. */
   custom_fields?: Record<string, unknown>;
+  /** Contact address (client-address services). */
+  address_line1?: string | null;
+  address_line2?: string | null;
+  address_city?: string | null;
+  address_postcode?: string | null;
 }
 
 /**

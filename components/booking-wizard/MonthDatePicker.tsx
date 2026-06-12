@@ -45,7 +45,23 @@ type MonthDatePickerProps = {
   availableDates: Set<string> | null;
   isLoading?: boolean;
   onContinue: () => void;
+  /** Booking source — drives the walk-in "Start now" shortcut. */
+  source?: 'phone' | 'walk-in';
+  /** Venue IANA timezone, for computing "today" when starting a walk-in now. */
+  timeZone?: string;
+  /** Walk-in shortcut — jumps straight to today's slots at the current time. */
+  onStartNow?: (todayIso: string) => void;
 };
+
+/** Today's calendar date (YYYY-MM-DD) in the venue's timezone. */
+function venueToday(timeZone: string): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+}
 
 /**
  * Month calendar with availability markers — only dates the engine can fit the
@@ -60,15 +76,34 @@ export function MonthDatePicker({
   availableDates,
   isLoading = false,
   onContinue,
+  source = 'phone',
+  timeZone = 'Europe/London',
+  onStartNow,
 }: MonthDatePickerProps) {
   const { colors } = useTheme();
   const cells = useMemo(() => buildMonthCells(monthAnchor), [monthAnchor]);
   const currentMonth = monthAnchor.slice(0, 7);
   const canGoBack = currentMonth > today.slice(0, 7);
+  // Empty-state hint: the month finished loading but no date is bookable.
+  const monthHasAvailability =
+    !availableDates ||
+    cells.some(
+      (cell) => cell.inMonth && cell.iso >= today && availableDates.has(cell.iso),
+    );
+  const showStartNow = source === 'walk-in' && !!onStartNow;
 
   return (
     <View style={styles.container}>
       <Text variant="heading">Choose a date</Text>
+
+      {showStartNow ? (
+        <Button
+          label="Start now"
+          variant="secondary"
+          fullWidth
+          onPress={() => onStartNow?.(venueToday(timeZone))}
+        />
+      ) : null}
 
       <View style={styles.monthNav}>
         <Pressable
@@ -160,9 +195,15 @@ export function MonthDatePicker({
         })}
       </View>
 
-      <Text variant="caption" tone="muted" style={styles.hint}>
-        Green dates have open times for this service.
-      </Text>
+      {!isLoading && !monthHasAvailability ? (
+        <Text variant="caption" tone="muted" style={styles.hint}>
+          No open times this month. Try another month{showStartNow ? ' or start a walk-in now' : ''}.
+        </Text>
+      ) : (
+        <Text variant="caption" tone="muted" style={styles.hint}>
+          Green dates have open times for this service.
+        </Text>
+      )}
 
       <Button label="Continue" fullWidth onPress={onContinue} disabled={!selectedDate} />
     </View>

@@ -1,12 +1,19 @@
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { ComplianceFlagDot } from '@/components/compliance/ComplianceFlagBadge';
 import { StatusPill } from '@/components/ui/Badge';
+import { Dot } from '@/components/ui/Dot';
+import { PressableScale } from '@/components/ui/PressableScale';
 import { Text } from '@/components/ui/Text';
 import { hapticSelect } from '@/lib/haptics';
+import {
+  bookingDisplayVisualKey,
+  bookingStatusVisualForKey,
+} from '@/lib/booking/booking-status-visual';
+import { showAttendanceConfirmedSupplementPill, showDepositPendingPill } from '@/lib/booking/booking-staff-indicators';
 import { bookingStatusDisplayLabel } from '@/lib/booking/infer-booking-row-model';
 import type { ComplianceBookingFlag } from '@/lib/queries/useCompliance';
-import { minTouchTarget, radius, spacing } from '@/theme/index';
+import { fonts, minTouchTarget, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { BookingListRow } from '@/types/booking-list';
 
@@ -24,6 +31,9 @@ type BookingRowProps = {
   /** Per-booking compliance flag — renders a small coloured dot by the name. */
   complianceFlag?: ComplianceBookingFlag | null;
 };
+
+/** Confirmed visual (navy) — reused for the attendance supplement pill. */
+const CONFIRMED_VISUAL = bookingStatusVisualForKey('Confirmed');
 
 /** Deposit values that aren't worth surfacing in a list row. */
 const HIDDEN_DEPOSIT = new Set(['N/A', 'Not Required', 'None', '']);
@@ -68,11 +78,14 @@ export function BookingRow({
   const attendanceConfirmed =
     !!booking.guest_attendance_confirmed_at || !!booking.staff_attendance_confirmed_at;
   const arrived = !!booking.client_arrived_at;
+  // Signature at-a-glance scan: a colour stripe keyed to lifecycle + attendance + arrived.
+  const stripeColor = bookingStatusVisualForKey(bookingDisplayVisualKey(booking)).listStripeColor;
+  // Supplement "Confirmed" pill when attendance is confirmed but lifecycle status isn't (web parity).
+  const showConfirmedSupplement = showAttendanceConfirmedSupplementPill(booking);
+  const showDepositPending = showDepositPendingPill(booking);
 
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityState={{ selected }}
+    <PressableScale
       accessibilityLabel={`${formatTime(booking.booking_time)}, ${booking.guest_name}, ${bookingStatusDisplayLabel(booking.status, booking.booking_model === 'table_reservation')}`}
       onPress={() => {
         if (selectionMode) {
@@ -86,13 +99,13 @@ export function BookingRow({
         hapticSelect();
         onLongPress?.(booking.id);
       }}
-      delayLongPress={350}
-      style={({ pressed }) => [
+      style={[
         styles.row,
         {
           backgroundColor: selected ? colors.brandSubtle : colors.surfaceRaised,
           borderColor: selected ? colors.brand : colors.border,
-          opacity: pressed ? 0.85 : 1,
+          borderLeftWidth: 3,
+          borderLeftColor: stripeColor,
         },
       ]}>
       {/* Selection checkbox indicator */}
@@ -125,12 +138,9 @@ export function BookingRow({
             {booking.guest_name}
           </Text>
           {arrived ? (
-            <View style={[styles.dot, { backgroundColor: colors.accent }]} accessibilityLabel="Arrived" />
+            <Dot color={colors.accent} />
           ) : attendanceConfirmed ? (
-            <View
-              style={[styles.dot, { backgroundColor: colors.success }]}
-              accessibilityLabel="Attendance confirmed"
-            />
+            <Dot color={colors.success} />
           ) : null}
           <ComplianceFlagDot flag={complianceFlag} />
         </View>
@@ -142,17 +152,42 @@ export function BookingRow({
       </View>
 
       <View style={styles.trailing}>
-        <StatusPill
-          status={booking.status}
-          isTableReservation={booking.booking_model === 'table_reservation'}
-        />
-        {showDeposit ? (
+        <View style={styles.pillRow}>
+          {showConfirmedSupplement ? (
+            <View
+              style={[
+                styles.supplementPill,
+                {
+                  backgroundColor: CONFIRMED_VISUAL.backgroundColor,
+                  borderColor: CONFIRMED_VISUAL.borderColor,
+                },
+              ]}
+              accessibilityLabel="Confirmed">
+              <Text variant="caption" color={CONFIRMED_VISUAL.textColor} style={styles.supplementText}>
+                Confirmed
+              </Text>
+            </View>
+          ) : null}
+          <StatusPill
+            status={booking.status}
+            isTableReservation={booking.booking_model === 'table_reservation'}
+          />
+        </View>
+        {showDepositPending ? (
+          <View
+            style={[styles.depositPill, { backgroundColor: colors.warningSurface }]}
+            accessibilityLabel="Deposit pending">
+            <Text variant="caption" color={colors.warning} style={styles.supplementText}>
+              Deposit due
+            </Text>
+          </View>
+        ) : showDeposit ? (
           <Text variant="caption" tone="muted" numberOfLines={1}>
             {booking.deposit_status}
           </Text>
         ) : null}
       </View>
-    </Pressable>
+    </PressableScale>
   );
 }
 
@@ -197,16 +232,30 @@ const styles = StyleSheet.create({
   name: {
     flexShrink: 1,
   },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
   subtitle: {
     marginTop: 0,
   },
   trailing: {
     alignItems: 'flex-end',
     gap: spacing.xs,
+  },
+  pillRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  supplementPill: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+  },
+  depositPill: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: radius.pill,
+  },
+  supplementText: {
+    fontFamily: fonts.semibold,
   },
 });

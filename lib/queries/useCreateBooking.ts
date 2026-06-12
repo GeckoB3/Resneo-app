@@ -29,6 +29,12 @@ export interface CreateBookingPayload {
   special_requests?: string;
   /** Force Stripe deposit link generation even for phone bookings. */
   require_deposit?: boolean;
+  /**
+   * Flag the booking as belonging to an existing/known contact. The web sends
+   * this when staff pick a known contact (or rebook a guest) so the backend
+   * links the booking to the existing client rather than minting a new one.
+   */
+  returning_guest?: boolean;
   /** Admin override for compliance pre-check failures (409 COMPLIANCE_REQUIREMENT_UNMET). */
   override_compliance?: boolean;
 }

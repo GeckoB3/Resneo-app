@@ -126,6 +126,7 @@ export default function ComplianceTypesScreen() {
                     <Pressable
                       key={template.id}
                       accessibilityRole="button"
+                      accessibilityLabel={`Edit ${detail?.type.name ?? template.name}`}
                       onPress={() => setSelectedId(template.id)}
                       style={({ pressed }) => [
                         styles.row,

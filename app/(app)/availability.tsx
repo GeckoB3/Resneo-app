@@ -1,7 +1,6 @@
 import { Stack } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -41,6 +40,7 @@ import {
 import { calendarDateInTimeZone } from '@/lib/queries/useBookingsList';
 import { usePractitioners } from '@/lib/queries/usePractitioners';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
+import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { fonts, minTouchTarget, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -120,6 +120,7 @@ type BlockType = 'allday' | 'window';
 
 export default function AvailabilityScreen() {
   const { colors } = useTheme();
+  const toast = useToast();
   const { venue } = useVenueContext();
   const timeZone = venue?.timezone ?? 'Europe/London';
   const today = calendarDateInTimeZone(new Date(), timeZone);
@@ -151,6 +152,27 @@ export default function AvailabilityScreen() {
   // Track per-id pending deletes to prevent double-delete and scope loading state
   const [deletingBlockIds, setDeletingBlockIds] = useState<Set<string>>(new Set());
   const [deletingLeaveIds, setDeletingLeaveIds] = useState<Set<string>>(new Set());
+
+  // Two-step confirm for destructive removes. `Alert.alert` confirms never fire
+  // on react-native-web (the dev-preview path), so arm a button then confirm.
+  const [pendingConfirm, setPendingConfirm] = useState<string | null>(null);
+  const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const armConfirm = useCallback((token: string) => {
+    setPendingConfirm(token);
+    hapticWarning();
+    if (confirmTimer.current) clearTimeout(confirmTimer.current);
+    confirmTimer.current = setTimeout(() => setPendingConfirm(null), 4000);
+  }, []);
+  const clearConfirm = useCallback(() => {
+    if (confirmTimer.current) clearTimeout(confirmTimer.current);
+    setPendingConfirm(null);
+  }, []);
+  useEffect(
+    () => () => {
+      if (confirmTimer.current) clearTimeout(confirmTimer.current);
+    },
+    [],
+  );
 
   const practitionerName = useCallback(
     (id: string | null) =>
@@ -322,6 +344,15 @@ export default function AvailabilityScreen() {
 
       hapticSuccess();
       setSheet(null);
+      toast.success(
+        sheet === 'block'
+          ? editingBlockId
+            ? 'Block updated.'
+            : 'Time blocked.'
+          : editingLeaveId
+            ? 'Leave updated.'
+            : 'Leave added.',
+      );
     } catch (e) {
       hapticWarning();
       setSheetError(e instanceof ApiError ? e.message : 'Could not save. Try again.');
@@ -329,57 +360,40 @@ export default function AvailabilityScreen() {
   }
 
   // ---- Delete handlers -------------------------------------------------------
-  const confirmDelete = (label: string, run: () => void) => {
-    Alert.alert(label, undefined, [
-      { text: 'Keep', style: 'cancel' },
-      { text: 'Remove', style: 'destructive', onPress: run },
-    ]);
-  };
-
-  function handleDeleteBlock(blockId: string) {
-    confirmDelete('Remove this block?', async () => {
-      if (deletingBlockIds.has(blockId)) return;
-      setDeletingBlockIds((prev) => new Set(prev).add(blockId));
-      try {
-        await deleteBlock.mutateAsync(blockId);
-        hapticSuccess();
-      } catch (e) {
-        hapticWarning();
-        Alert.alert(
-          'Could not remove',
-          e instanceof ApiError ? e.message : 'An error occurred.',
-        );
-      } finally {
-        setDeletingBlockIds((prev) => {
-          const next = new Set(prev);
-          next.delete(blockId);
-          return next;
-        });
-      }
-    });
+  async function handleDeleteBlock(blockId: string) {
+    clearConfirm();
+    if (deletingBlockIds.has(blockId)) return;
+    setDeletingBlockIds((prev) => new Set(prev).add(blockId));
+    try {
+      await deleteBlock.mutateAsync(blockId);
+      toast.success('Block removed.');
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Could not remove. An error occurred.');
+    } finally {
+      setDeletingBlockIds((prev) => {
+        const next = new Set(prev);
+        next.delete(blockId);
+        return next;
+      });
+    }
   }
 
-  function handleDeleteLeave(leaveId: string) {
-    confirmDelete('Remove this leave?', async () => {
-      if (deletingLeaveIds.has(leaveId)) return;
-      setDeletingLeaveIds((prev) => new Set(prev).add(leaveId));
-      try {
-        await deleteLeave.mutateAsync(leaveId);
-        hapticSuccess();
-      } catch (e) {
-        hapticWarning();
-        Alert.alert(
-          'Could not remove',
-          e instanceof ApiError ? e.message : 'An error occurred.',
-        );
-      } finally {
-        setDeletingLeaveIds((prev) => {
-          const next = new Set(prev);
-          next.delete(leaveId);
-          return next;
-        });
-      }
-    });
+  async function handleDeleteLeave(leaveId: string) {
+    clearConfirm();
+    if (deletingLeaveIds.has(leaveId)) return;
+    setDeletingLeaveIds((prev) => new Set(prev).add(leaveId));
+    try {
+      await deleteLeave.mutateAsync(leaveId);
+      toast.success('Leave removed.');
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Could not remove. An error occurred.');
+    } finally {
+      setDeletingLeaveIds((prev) => {
+        const next = new Set(prev);
+        next.delete(leaveId);
+        return next;
+      });
+    }
   }
 
   // ---- Derived data ----------------------------------------------------------
@@ -507,12 +521,18 @@ export default function AvailabilityScreen() {
                         onPress={() => openEditBlock(block.id)}
                       />
                       <Button
-                        label="Remove"
+                        label={
+                          pendingConfirm === `block-${block.id}` ? 'Tap to confirm' : 'Remove'
+                        }
                         variant="ghost"
                         size="sm"
                         loading={deletingBlockIds.has(block.id)}
                         disabled={deletingBlockIds.has(block.id)}
-                        onPress={() => handleDeleteBlock(block.id)}
+                        onPress={() =>
+                          pendingConfirm === `block-${block.id}`
+                            ? void handleDeleteBlock(block.id)
+                            : armConfirm(`block-${block.id}`)
+                        }
                       />
                     </View>
                   </View>
@@ -557,12 +577,18 @@ export default function AvailabilityScreen() {
                           onPress={() => openEditLeave(period)}
                         />
                         <Button
-                          label="Remove"
+                          label={
+                            pendingConfirm === `leave-${period.id}` ? 'Tap to confirm' : 'Remove'
+                          }
                           variant="ghost"
                           size="sm"
                           loading={deletingLeaveIds.has(period.id)}
                           disabled={deletingLeaveIds.has(period.id)}
-                          onPress={() => handleDeleteLeave(period.id)}
+                          onPress={() =>
+                            pendingConfirm === `leave-${period.id}`
+                              ? void handleDeleteLeave(period.id)
+                              : armConfirm(`leave-${period.id}`)
+                          }
                         />
                       </View>
                     </View>

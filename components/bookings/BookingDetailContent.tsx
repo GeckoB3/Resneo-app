@@ -2,7 +2,7 @@ import * as Clipboard from 'expo-clipboard';
 import { format, parseISO } from 'date-fns';
 import { useRouter, type Href } from 'expo-router';
 import { useRef, useState } from 'react';
-import { Alert, Linking, Pressable, StyleSheet, View } from 'react-native';
+import { Linking, Pressable, StyleSheet, View } from 'react-native';
 
 import { ComplianceCard } from '@/components/bookings/ComplianceCard';
 import { DepositSheet, type DepositTarget } from '@/components/bookings/DepositSheet';
@@ -37,12 +37,18 @@ import { partySizeLabel } from '@/lib/booking/terminology';
 import { formatPence, formatPositivePence } from '@/lib/format';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import {
+  useDeleteBooking,
   useResendConfirmation,
   useSendBookingMessage,
   useSetBookingAttendance,
 } from '@/lib/queries/useBookingMutations';
 import { useGuestDetail } from '@/lib/queries/useGuestDetail';
 import { useUpdateGuest } from '@/lib/queries/useGuestMutations';
+import {
+  canShowCancelStaffAttendanceConfirmationAction,
+  canShowConfirmStaffAttendanceConfirmationAction,
+} from '@/lib/booking/booking-staff-indicators';
+import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -55,6 +61,8 @@ type BookingDetailContentProps = {
   isAdmin?: boolean;
   onStatusChange: (status: BookingStatus) => void;
   actionLoading?: boolean;
+  /** Called after a permanent delete so the host can dismiss/navigate away. */
+  onDeleted?: () => void;
 };
 
 const TERMINAL_STATUSES = new Set<BookingStatus>(['Cancelled', 'Completed', 'No-Show']);
@@ -319,6 +327,7 @@ function MessageGuestCompose({
 /** Guest tags with inline add/remove — mirrors the web GuestTagsEditor. */
 function GuestTagsEditor({ guestId, tags }: { guestId: string; tags: string[] }) {
   const { colors } = useTheme();
+  const toast = useToast();
   const update = useUpdateGuest(guestId);
   const [draft, setDraft] = useState('');
 
@@ -327,11 +336,7 @@ function GuestTagsEditor({ guestId, tags }: { guestId: string; tags: string[] })
       { tags: next },
       {
         onError: (error) => {
-          hapticWarning();
-          Alert.alert(
-            'Could not update tags',
-            error instanceof ApiError ? error.message : 'Please try again.',
-          );
+          toast.error(error instanceof ApiError ? error.message : 'Could not update tags.');
         },
       },
     );
@@ -400,18 +405,37 @@ export function BookingDetailContent({
   isAdmin = false,
   onStatusChange,
   actionLoading = false,
+  onDeleted,
 }: BookingDetailContentProps) {
   const { colors } = useTheme();
   const router = useRouter();
+  const toast = useToast();
   const { featureFlags } = useVenueContext();
   const [rescheduleTarget, setRescheduleTarget] = useState<RescheduleTarget | null>(null);
   const [modifyTarget, setModifyTarget] = useState<ModifyBookingTarget | null>(null);
   const [depositTarget, setDepositTarget] = useState<DepositTarget | null>(null);
   const [editTarget, setEditTarget] = useState<EditBookingTarget | null>(null);
   const [copiedRef, setCopiedRef] = useState(false);
+  // Two-step confirm for destructive/irreversible actions. `Alert.alert` is a
+  // no-op on react-native-web, so we arm the button (label flips to "Tap to
+  // confirm") and disarm after a few seconds if the user doesn't follow through.
+  const [pendingConfirm, setPendingConfirm] = useState<BookingStatus | null>(null);
+  const [resendArmed, setResendArmed] = useState(false);
+  const [deleteArmed, setDeleteArmed] = useState(false);
+  const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const resendTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const deleteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resend = useResendConfirmation(booking.id);
   const attendance = useSetBookingAttendance(booking.id);
+  const deleteBooking = useDeleteBooking(booking.id);
+
+  const armConfirm = (target: BookingStatus) => {
+    setPendingConfirm(target);
+    hapticWarning();
+    if (confirmTimer.current) clearTimeout(confirmTimer.current);
+    confirmTimer.current = setTimeout(() => setPendingConfirm(null), 4000);
+  };
 
   const copyReference = async () => {
     await Clipboard.setStringAsync(booking.id);
@@ -458,6 +482,22 @@ export function BookingDetailContent({
 
   const communications = booking.communications ?? [];
 
+  // Hero facts — the "what & when" surfaced directly under the guest header so
+  // the most important info is visible before any action is taken.
+  const practitionerName = booking.practitioner_name?.trim() || null;
+  const whenLabel = formatBookingWhen(
+    booking.booking_date,
+    booking.booking_time,
+    booking.booking_end_time,
+  );
+  const serviceMeta = [
+    booking.service_variant_name?.trim() || null,
+    durationMinutes != null ? formatDurationLabel(durationMinutes) : null,
+    practitionerName ? `with ${practitionerName}` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
   // Full modify (service/staff/slot) — appointment bookings in live statuses,
   // mirroring web `canStaffModifyBooking` + the appointment modify branch.
   const isAppointmentBooking = !!(
@@ -498,6 +538,12 @@ export function BookingDetailContent({
   const canMessage = !!guestEmail || !!guestPhone;
   const canResend = !!guestEmail;
   const hasDeposit = booking.deposit_amount_pence != null || !!booking.deposit_status;
+  // Web parity: deposit actions (send link / record cash / waive / refund) show
+  // whenever the booking is active; cancelled bookings instead get a refund
+  // banner + a permanent-delete card.
+  const isCancelled = booking.status === 'Cancelled';
+  const showDepositActions = !isCancelled;
+  const showRefundBanner = isCancelled && (booking.deposit_amount_pence ?? 0) > 0;
 
   // Add-on snapshots + price breakdown (variant/base price + add-ons).
   const addons = booking.addons ?? [];
@@ -512,6 +558,16 @@ export function BookingDetailContent({
   const staffConfirmed = !!booking.staff_attendance_confirmed_at;
   const arrived = !!booking.client_arrived_at;
   const attendanceRelevant = !TERMINAL_STATUSES.has(booking.status) || booking.status === 'Completed';
+  // Web-parity gating: attendance controls hide on in-progress (Seated/Started),
+  // terminal statuses, and walk-ins. Once a booking is started, attendance and
+  // arrival are no longer actionable — the lifecycle has moved past them.
+  const showAttendanceConfirmToggle =
+    canShowConfirmStaffAttendanceConfirmationAction(booking) ||
+    canShowCancelStaffAttendanceConfirmationAction(booking);
+  const showArrivedToggle =
+    booking.source !== 'walk-in' &&
+    booking.status !== 'Seated' &&
+    !TERMINAL_STATUSES.has(booking.status);
 
   const toggleAttendance = (field: 'staff_attendance_confirmed' | 'client_arrived', next: boolean) => {
     attendance.mutate(
@@ -519,37 +575,50 @@ export function BookingDetailContent({
       {
         onSuccess: () => hapticSuccess(),
         onError: (error) => {
-          hapticWarning();
-          Alert.alert(
-            'Could not update',
-            error instanceof ApiError ? error.message : 'Please try again.',
-          );
+          toast.error(error instanceof ApiError ? error.message : 'Could not update attendance.');
         },
       },
     );
   };
 
+  // Resend confirmation — two-step (arm → confirm) since Alert is a web no-op.
   const handleResend = () => {
-    Alert.alert('Resend confirmation', 'Re-send the booking confirmation to the guest?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Resend',
-        onPress: () =>
-          resend.mutate(undefined, {
-            onSuccess: () => {
-              hapticSuccess();
-              Alert.alert('Confirmation resent');
-            },
-            onError: (error) => {
-              hapticWarning();
-              Alert.alert(
-                'Could not resend',
-                error instanceof ApiError ? error.message : 'Please try again.',
-              );
-            },
-          }),
+    if (!resendArmed) {
+      setResendArmed(true);
+      hapticWarning();
+      if (resendTimer.current) clearTimeout(resendTimer.current);
+      resendTimer.current = setTimeout(() => setResendArmed(false), 4000);
+      return;
+    }
+    setResendArmed(false);
+    if (resendTimer.current) clearTimeout(resendTimer.current);
+    resend.mutate(undefined, {
+      onSuccess: () => toast.success('Confirmation resent to the guest.'),
+      onError: (error) =>
+        toast.error(error instanceof ApiError ? error.message : 'Could not resend the confirmation.'),
+    });
+  };
+
+  // Permanent delete (cancelled bookings only) — two-step arm → confirm.
+  const handleDelete = () => {
+    if (!deleteArmed) {
+      setDeleteArmed(true);
+      hapticWarning();
+      if (deleteTimer.current) clearTimeout(deleteTimer.current);
+      deleteTimer.current = setTimeout(() => setDeleteArmed(false), 4000);
+      return;
+    }
+    setDeleteArmed(false);
+    if (deleteTimer.current) clearTimeout(deleteTimer.current);
+    deleteBooking.mutate(undefined, {
+      onSuccess: () => {
+        hapticSuccess();
+        toast.success('Booking deleted.');
+        onDeleted?.();
       },
-    ]);
+      onError: (error) =>
+        toast.error(error instanceof ApiError ? error.message : 'Could not delete the booking.'),
+    });
   };
 
   // Dietary + occasion are restaurant concepts — only table reservations
@@ -560,12 +629,15 @@ export function BookingDetailContent({
     !!booking.guest?.customer_profile_notes?.trim() ||
     (isTable && (!!booking.dietary_notes?.trim() || !!booking.occasion?.trim()));
 
-  const handleActionPress = (target: BookingStatus, label: string, destructive?: boolean) => {
+  const handleActionPress = (target: BookingStatus, _label: string, destructive?: boolean) => {
     if (destructive) {
-      Alert.alert(label, `Mark this booking as ${label.toLowerCase()}?`, [
-        { text: 'Keep booking', style: 'cancel' },
-        { text: label, style: 'destructive', onPress: () => onStatusChange(target) },
-      ]);
+      if (pendingConfirm === target) {
+        if (confirmTimer.current) clearTimeout(confirmTimer.current);
+        setPendingConfirm(null);
+        onStatusChange(target);
+      } else {
+        armConfirm(target);
+      }
       return;
     }
     onStatusChange(target);
@@ -573,17 +645,43 @@ export function BookingDetailContent({
 
   return (
     <View style={styles.container}>
-      {/* Guest header */}
+      {/* Hero — guest, status, then the "what & when" and contact */}
       <Card>
         <View style={styles.headerRow}>
-          <Avatar name={guestName} size={48} />
+          <Avatar name={guestName} size={52} />
           <View style={styles.headerText}>
             <View style={styles.nameRow}>
-              <Text variant="subheading" style={styles.guestName} numberOfLines={1}>
+              <Text variant="heading" style={styles.guestName} numberOfLines={1}>
                 {guestName}
               </Text>
               <StatusPill status={booking.status} isTableReservation={isTable} />
             </View>
+            <Text variant="caption" tone="muted">
+              {visitCount > 0
+                ? `${visitCount} previous visit${visitCount === 1 ? '' : 's'}`
+                : 'First visit'}
+            </Text>
+          </View>
+        </View>
+
+        {/* What & when — the hero facts */}
+        <View style={[styles.heroBlock, { borderTopColor: colors.border }]}>
+          <Text variant="subheading">{whenLabel}</Text>
+          {serviceMeta ? (
+            <Text variant="bodyMedium" tone="secondary">
+              {serviceMeta}
+            </Text>
+          ) : null}
+          {booking.deposit_status === 'Pending' ? (
+            <View style={styles.headerPillRow}>
+              <Badge label="Deposit pending" tone="warning" />
+            </View>
+          ) : null}
+        </View>
+
+        {/* Contact — tappable rows + quick actions */}
+        {guestPhone || guestEmail ? (
+          <View style={[styles.heroBlock, { borderTopColor: colors.border }]}>
             {guestPhone ? (
               <Pressable
                 accessibilityRole="button"
@@ -604,85 +702,71 @@ export function BookingDetailContent({
                 </Text>
               </Pressable>
             ) : null}
-            {visitCount > 0 ? (
-              <Text variant="caption" tone="muted">
-                {visitCount} previous visit{visitCount === 1 ? '' : 's'}
-              </Text>
-            ) : null}
-            {booking.deposit_status === 'Pending' ? (
-              <View style={styles.headerPillRow}>
-                <Badge label="Deposit pending" tone="warning" />
-              </View>
-            ) : null}
-          </View>
-        </View>
-        {guestPhone || guestEmail ? (
-          <View style={styles.contactRow}>
-            {guestPhone ? (
-              <Button
-                label="Call"
-                variant="secondary"
-                size="sm"
-                style={styles.contactBtn}
-                onPress={() => void Linking.openURL(`tel:${guestPhone.replace(/\s+/g, '')}`)}
-              />
-            ) : null}
-            {guestEmail ? (
-              <Button
-                label="Email"
-                variant="secondary"
-                size="sm"
-                style={styles.contactBtn}
-                onPress={() => void Linking.openURL(`mailto:${guestEmail}`)}
-              />
-            ) : null}
+            <View style={styles.contactRow}>
+              {guestPhone ? (
+                <Button
+                  label="Call"
+                  variant="secondary"
+                  size="sm"
+                  style={styles.contactBtn}
+                  onPress={() => void Linking.openURL(`tel:${guestPhone.replace(/\s+/g, '')}`)}
+                />
+              ) : null}
+              {guestEmail ? (
+                <Button
+                  label="Email"
+                  variant="secondary"
+                  size="sm"
+                  style={styles.contactBtn}
+                  onPress={() => void Linking.openURL(`mailto:${guestEmail}`)}
+                />
+              ) : null}
+            </View>
           </View>
         ) : null}
       </Card>
 
-      {/* Actions toolbar — straight under the header (web parity). Primary
-          transition first, then attendance/arrival, booking shortcuts, and
-          destructive actions last. */}
+      {/* Actions — prominent primary transition, then quick actions, then a
+          divided destructive row. Cancel & No-show share one destructive colour. */}
       <Card>
+        {primaryAction ? (
+          <Button
+            label={primaryAction.label}
+            variant="primary"
+            customColors={primaryActionColors(primaryAction.target)}
+            size="md"
+            fullWidth
+            loading={actionLoading}
+            onPress={() => handleActionPress(primaryAction.target, primaryAction.label)}
+            style={styles.primaryAction}
+          />
+        ) : null}
         <View style={styles.toolbarGrid}>
-          {primaryAction ? (
+          {showArrivedToggle ? (
             <View style={styles.toolbarCell}>
               <Button
-                label={primaryAction.label}
-                variant="primary"
-                customColors={primaryActionColors(primaryAction.target)}
+                label={arrived ? 'Clear arrived' : 'Arrived'}
+                variant="secondary"
+                customColors={arrived ? undefined : ACTION_COLORS.arrived}
                 size="sm"
                 fullWidth
-                loading={actionLoading}
-                onPress={() => handleActionPress(primaryAction.target, primaryAction.label)}
+                loading={attendance.isPending}
+                onPress={() => toggleAttendance('client_arrived', !arrived)}
               />
             </View>
           ) : null}
-          {attendanceRelevant && booking.status !== 'Completed' ? (
-            <>
-              <View style={styles.toolbarCell}>
-                <Button
-                  label={arrived ? 'Clear arrived' : 'Arrived'}
-                  variant="secondary"
-                  customColors={arrived ? undefined : ACTION_COLORS.arrived}
-                  size="sm"
-                  fullWidth
-                  loading={attendance.isPending}
-                  onPress={() => toggleAttendance('client_arrived', !arrived)}
-                />
-              </View>
-              <View style={styles.toolbarCell}>
-                <Button
-                  label={staffConfirmed ? 'Unconfirm' : 'Confirm attendance'}
-                  variant="secondary"
-                  customColors={staffConfirmed ? undefined : ACTION_COLORS.attendance}
-                  size="sm"
-                  fullWidth
-                  loading={attendance.isPending}
-                  onPress={() => toggleAttendance('staff_attendance_confirmed', !staffConfirmed)}
-                />
-              </View>
-            </>
+          {showAttendanceConfirmToggle ? (
+            <View style={styles.toolbarCell}>
+              <Button
+                label={staffConfirmed ? 'Unconfirm' : 'Confirm'}
+                variant="secondary"
+                customColors={staffConfirmed ? undefined : ACTION_COLORS.confirm}
+                size="sm"
+                fullWidth
+                loading={attendance.isPending}
+                onPress={() => toggleAttendance('staff_attendance_confirmed', !staffConfirmed)}
+              />
+            </View>
           ) : null}
           {canReschedule ? (
             <View style={styles.toolbarCell}>
@@ -724,50 +808,49 @@ export function BookingDetailContent({
               />
             </View>
           ) : null}
-          {revertAction ? (
-            <View style={styles.toolbarCell}>
-              <Button
-                label={revertAction.label}
-                variant="ghost"
-                size="sm"
-                fullWidth
-                loading={actionLoading}
-                onPress={() => handleActionPress(revertAction.target, revertAction.label)}
-              />
-            </View>
-          ) : null}
-          {destructiveActions.map((action) => (
-            <View key={`${action.target}-${action.label}`} style={styles.toolbarCell}>
-              <Button
-                label={action.label}
-                variant="danger"
-                customColors={action.target === 'No-Show' ? ACTION_COLORS.noShow : undefined}
-                size="sm"
-                fullWidth
-                loading={actionLoading}
-                onPress={() => handleActionPress(action.target, action.label, action.destructive)}
-              />
-            </View>
-          ))}
         </View>
+        {revertAction || destructiveActions.length > 0 ? (
+          <>
+            <View style={[styles.toolbarDivider, { backgroundColor: colors.border }]} />
+            <View style={styles.toolbarGrid}>
+              {revertAction ? (
+                <View style={styles.toolbarCell}>
+                  <Button
+                    label={
+                      pendingConfirm === revertAction.target ? 'Tap to confirm' : revertAction.label
+                    }
+                    variant="ghost"
+                    size="sm"
+                    fullWidth
+                    loading={actionLoading}
+                    onPress={() => handleActionPress(revertAction.target, revertAction.label, true)}
+                  />
+                </View>
+              ) : null}
+              {destructiveActions.map((action) => (
+                <View key={`${action.target}-${action.label}`} style={styles.toolbarCell}>
+                  <Button
+                    label={pendingConfirm === action.target ? 'Tap to confirm' : action.label}
+                    variant="danger"
+                    size="sm"
+                    fullWidth
+                    loading={actionLoading}
+                    onPress={() => handleActionPress(action.target, action.label, action.destructive)}
+                  />
+                </View>
+              ))}
+            </View>
+          </>
+        ) : null}
       </Card>
 
-      {/* When + details */}
+      {/* Details — secondary facts (the headline when/service/duration live in the hero) */}
       <Card>
         <Text variant="overline" tone="muted">
-          {isAppointmentVenue ? 'Appointment' : 'Booking'}
-        </Text>
-        <Text variant="subheading" style={styles.when}>
-          {formatBookingWhen(booking.booking_date, booking.booking_time, booking.booking_end_time)}
+          Details
         </Text>
         <View style={[styles.details, { borderTopColor: colors.border }]}>
           <DetailRow label="Party" value={partyLabel} />
-          {booking.service_variant_name ? (
-            <DetailRow label="Service" value={booking.service_variant_name} />
-          ) : null}
-          {durationMinutes != null ? (
-            <DetailRow label="Duration" value={formatDurationLabel(durationMinutes)} />
-          ) : null}
           {modelLabel ? <DetailRow label="Type" value={modelLabel} /> : null}
           {locationLabel(booking) ? (
             <DetailRow label="Location" value={locationLabel(booking)!} />
@@ -798,6 +881,14 @@ export function BookingDetailContent({
             <DetailRow
               label="Checked in"
               value={formatTimelineEventTime(booking.checked_in_at)}
+            />
+          ) : null}
+          {booking.created_at ? (
+            <DetailRow
+              label="Created"
+              value={`${formatTimelineEventTime(booking.created_at)}${
+                booking.created_by_name ? ` · ${booking.created_by_name}` : ''
+              }`}
             />
           ) : null}
           <Pressable
@@ -915,7 +1006,7 @@ export function BookingDetailContent({
       ) : null}
 
       {/* Payments & confirmation — deposit state, actions, resend (web parity) */}
-      {hasDeposit || canResend || booking.cancellation_deadline ? (
+      {showDepositActions || hasDeposit || canResend || booking.cancellation_deadline ? (
         <CollapsibleCard
           title="Payments & confirmation"
           summary={booking.deposit_status ?? null}
@@ -933,9 +1024,9 @@ export function BookingDetailContent({
                 </Text>
               </View>
             ) : null}
-            {hasDeposit ? (
+            {showDepositActions ? (
               <Button
-                label="Deposit actions"
+                label={hasDeposit ? 'Deposit actions' : 'Take deposit / payment'}
                 variant="secondary"
                 fullWidth
                 onPress={() =>
@@ -950,7 +1041,7 @@ export function BookingDetailContent({
             ) : null}
             {canResend ? (
               <Button
-                label="Resend confirmation"
+                label={resendArmed ? 'Tap to confirm resend' : 'Resend confirmation'}
                 variant="secondary"
                 fullWidth
                 loading={resend.isPending}
@@ -965,6 +1056,64 @@ export function BookingDetailContent({
             ) : null}
           </View>
         </CollapsibleCard>
+      ) : null}
+
+      {/* Refund banner — cancelled booking that still holds a deposit (web parity) */}
+      {showRefundBanner ? (
+        <Card>
+          <View style={styles.cardStack}>
+            <Text variant="overline" tone="muted">
+              Deposit refund
+            </Text>
+            <Text variant="bodyMedium">
+              {depositLabel ?? formatDeposit(booking.deposit_amount_pence)}
+              {booking.deposit_status ? ` · ${booking.deposit_status}` : ''}
+            </Text>
+            {booking.cancellation_deadline ? (
+              <Text variant="caption" tone="muted">
+                Guest could self-cancel until{' '}
+                {formatTimelineEventTime(booking.cancellation_deadline)}
+              </Text>
+            ) : null}
+            {booking.deposit_status === 'Paid' ? (
+              <Button
+                label="Refund deposit"
+                variant="danger"
+                fullWidth
+                onPress={() =>
+                  setDepositTarget({
+                    id: booking.id,
+                    guestName,
+                    amountPence: booking.deposit_amount_pence,
+                    status: booking.deposit_status,
+                  })
+                }
+              />
+            ) : null}
+          </View>
+        </Card>
+      ) : null}
+
+      {/* Permanent delete — cancelled bookings only (web "Remove from diary") */}
+      {isCancelled ? (
+        <Card>
+          <View style={styles.cardStack}>
+            <Text variant="overline" tone="danger">
+              Remove from diary
+            </Text>
+            <Text variant="bodySmall" tone="muted">
+              Permanently delete this cancelled booking and its communications log. This can&apos;t
+              be undone.
+            </Text>
+            <Button
+              label={deleteArmed ? 'Tap to confirm delete' : 'Delete permanently'}
+              variant="danger"
+              fullWidth
+              loading={deleteBooking.isPending}
+              onPress={handleDelete}
+            />
+          </View>
+        </Card>
       ) : null}
 
       {/* SMS / Email the guest — compose + sent log (web accordion parity) */}
@@ -1068,8 +1217,18 @@ const styles = StyleSheet.create({
   guestName: {
     flex: 1,
   },
-  when: {
-    marginTop: spacing.xs,
+  heroBlock: {
+    marginTop: spacing.md,
+    paddingTop: spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: spacing.xs,
+  },
+  primaryAction: {
+    marginBottom: spacing.sm,
+  },
+  toolbarDivider: {
+    height: StyleSheet.hairlineWidth,
+    marginVertical: spacing.sm,
   },
   details: {
     marginTop: spacing.md,
@@ -1135,6 +1294,9 @@ const styles = StyleSheet.create({
   },
   manage: {
     marginTop: spacing.sm,
+    gap: spacing.sm,
+  },
+  cardStack: {
     gap: spacing.sm,
   },
   addonName: {

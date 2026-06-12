@@ -3,7 +3,7 @@
  * Mirrors the web's BookingLogEmailSettingsPanel from ReportsView.tsx.
  */
 import { useEffect, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Switch, View } from 'react-native';
+import { ScrollView, StyleSheet, Switch, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/Input';
 import { Text } from '@/components/ui/Text';
 import { hapticTap } from '@/lib/haptics';
 import { useBookingLogEmailMutation } from '@/lib/queries/useBookingLogEmail';
+import { useToast } from '@/providers/ToastProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { BookingLogEmailConfig } from '@/types/reports';
@@ -48,6 +49,7 @@ export function BookingLogEmailCard({
   onSaved,
 }: BookingLogEmailCardProps) {
   const { colors } = useTheme();
+  const toast = useToast();
   const mutation = useBookingLogEmailMutation();
   const [draft, setDraft] = useState<BookingLogEmailConfig>(() =>
     normalizeConfig(config, defaultEmail),
@@ -88,12 +90,12 @@ export function BookingLogEmailCard({
     };
     try {
       await mutation.mutateAsync(payload);
-      Alert.alert('Saved', 'Daily booking log settings saved.');
+      toast.success('Daily booking log settings saved.');
       onSaved?.();
     } catch (err) {
       const msg =
         err instanceof Error ? err.message : 'Failed to save booking log email settings.';
-      Alert.alert('Error', msg);
+      toast.error(msg);
     }
   }
 

@@ -14,6 +14,11 @@ type UseCalendarGridOptions = {
   /** Inclusive range end (YYYY-MM-DD). */
   to: string;
   enabled?: boolean;
+  /**
+   * Poll interval (ms) for near-realtime parity — a second device's changes
+   * surface without a manual refresh. Omit to disable polling.
+   */
+  refetchInterval?: number;
 };
 
 /**
@@ -33,6 +38,8 @@ export function useCalendarGrid(options: UseCalendarGridOptions) {
   return useQuery({
     queryKey: queryKeys.calendar.grid(accessToken, calendarIds, from, to),
     enabled: queryEnabled,
+    // Only poll while the query is enabled (an active calendar/range).
+    refetchInterval: options.refetchInterval,
     queryFn: async (): Promise<CalendarGridResponse> => {
       if (!accessToken) {
         throw new Error('Missing access token');

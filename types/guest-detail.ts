@@ -21,6 +21,11 @@ export interface GuestDetailProfile {
   marketing_consent: boolean;
   marketing_consent_at: string | null;
   custom_fields: Record<string, unknown>;
+  /** Contact address (client-address services). Null when not captured. */
+  address_line1: string | null;
+  address_line2: string | null;
+  address_city: string | null;
+  address_postcode: string | null;
 }
 
 export interface GuestDetailStats {

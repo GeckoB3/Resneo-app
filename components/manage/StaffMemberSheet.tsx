@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -15,6 +15,7 @@ import {
   useResendInvite,
   useResetStaffPassword,
 } from '@/lib/queries/useTeamMutations';
+import { useToast } from '@/providers/ToastProvider';
 import { fonts, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { AssignablePractitioner, StaffRole, TeamMember } from '@/types/staff';
@@ -48,7 +49,10 @@ export function StaffMemberSheet({
   onDeleted,
 }: StaffMemberSheetProps) {
   const { colors } = useTheme();
+  const toast = useToast();
   const [tab, setTab] = useState<Tab>('actions');
+  // Inline two-step confirm for removing a member (Alert.alert confirm is a no-op on web).
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   // Role change
   const [pendingRole, setPendingRole] = useState<StaffRole>('staff');
@@ -80,6 +84,7 @@ export function StaffMemberSheet({
     setCalendarsDirty(false);
     setNewPassword('');
     setPasswordError(undefined);
+    setConfirmingDelete(false);
   }
 
   // Call handleOpen when sheet becomes visible with a member
@@ -100,30 +105,29 @@ export function StaffMemberSheet({
     try {
       const res = await resendInvite.mutateAsync(member.id);
       hapticSuccess();
-      Alert.alert('Invitation sent', res.message ?? 'A new sign-in link was emailed to them.');
+      toast.success(res.message ?? 'A new sign-in link was emailed to them.');
     } catch (err) {
       hapticError();
-      Alert.alert(
-        'Failed to resend',
-        err instanceof ApiError ? err.message : 'Could not resend invitation.',
-      );
+      toast.error(err instanceof ApiError ? err.message : 'Could not resend the invitation.');
     }
   }
 
   async function handleRoleChange() {
     if (!member) return;
     if (isSelf) {
-      Alert.alert('Not allowed', 'You cannot change your own role.');
+      toast.info('You cannot change your own role.');
       return;
     }
     try {
       await patchMember.mutateAsync({ id: member.id, body: { role: pendingRole } });
       hapticSuccess();
-      Alert.alert('Role updated', `${member.name ?? member.email} is now ${pendingRole === 'admin' ? 'an Admin' : 'a Staff member'}.`);
+      toast.success(
+        `${member.name ?? member.email} is now ${pendingRole === 'admin' ? 'an Admin' : 'a Staff member'}.`,
+      );
       handleClose();
     } catch (err) {
       hapticError();
-      Alert.alert('Failed', err instanceof ApiError ? err.message : 'Could not update role.');
+      toast.error(err instanceof ApiError ? err.message : 'Could not update the role.');
     }
   }
 
@@ -138,7 +142,7 @@ export function StaffMemberSheet({
       await resetPassword.mutateAsync({ id: member.id, body: { new_password: newPassword } });
       hapticSuccess();
       setNewPassword('');
-      Alert.alert('Password reset', `Password for ${member.email ?? 'this user'} has been updated.`);
+      toast.success(`Password for ${member.email ?? 'this user'} has been updated.`);
       handleClose();
     } catch (err) {
       hapticError();
@@ -155,32 +159,14 @@ export function StaffMemberSheet({
       });
       hapticSuccess();
       setCalendarsDirty(false);
-      Alert.alert('Calendars updated', 'Calendar assignments saved.');
+      toast.success('Calendar assignments saved.');
       handleClose();
     } catch (err) {
       hapticError();
-      Alert.alert(
-        'Failed',
+      toast.error(
         err instanceof ApiError ? err.message : 'Could not update calendar assignments.',
       );
     }
-  }
-
-  function confirmDelete() {
-    if (!member) return;
-    hapticWarning();
-    Alert.alert(
-      'Remove team member',
-      `Remove ${member.name ?? member.email ?? 'this person'} from the team? They will lose dashboard access immediately.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: () => void handleDelete(),
-        },
-      ],
-    );
   }
 
   async function handleDelete() {
@@ -188,11 +174,12 @@ export function StaffMemberSheet({
     try {
       await deleteStaff.mutateAsync(member.id);
       hapticSuccess();
+      setConfirmingDelete(false);
       onDeleted();
       onClose();
     } catch (err) {
       hapticError();
-      Alert.alert('Failed', err instanceof ApiError ? err.message : 'Could not remove member.');
+      toast.error(err instanceof ApiError ? err.message : 'Could not remove the member.');
     }
   }
 
@@ -271,16 +258,44 @@ export function StaffMemberSheet({
             {!isSelf && (
               <>
                 <View style={[styles.divider, { backgroundColor: colors.border }]} />
-                <Button
-                  label={deleteStaff.isPending ? 'Removing…' : 'Remove from team'}
-                  variant="danger"
-                  loading={deleteStaff.isPending}
-                  onPress={confirmDelete}
-                  fullWidth
-                />
-                <Text variant="caption" tone="muted">
-                  This will immediately revoke their dashboard access.
-                </Text>
+                {confirmingDelete ? (
+                  <>
+                    <Text variant="bodySmall" tone="danger">
+                      Remove {member.name ?? member.email ?? 'this person'} from the team? They
+                      will lose dashboard access immediately.
+                    </Text>
+                    <View style={styles.confirmRow}>
+                      <Button
+                        label="Cancel"
+                        variant="secondary"
+                        style={styles.flex1}
+                        onPress={() => setConfirmingDelete(false)}
+                      />
+                      <Button
+                        label={deleteStaff.isPending ? 'Removing…' : 'Remove'}
+                        variant="danger"
+                        style={styles.flex1}
+                        loading={deleteStaff.isPending}
+                        onPress={() => void handleDelete()}
+                      />
+                    </View>
+                  </>
+                ) : (
+                  <>
+                    <Button
+                      label="Remove from team"
+                      variant="danger"
+                      onPress={() => {
+                        hapticWarning();
+                        setConfirmingDelete(true);
+                      }}
+                      fullWidth
+                    />
+                    <Text variant="caption" tone="muted">
+                      This will immediately revoke their dashboard access.
+                    </Text>
+                  </>
+                )}
               </>
             )}
 
@@ -500,6 +515,13 @@ const styles = StyleSheet.create({
   },
   section: {
     gap: spacing.md,
+  },
+  confirmRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  flex1: {
+    flex: 1,
   },
   divider: {
     height: StyleSheet.hairlineWidth,

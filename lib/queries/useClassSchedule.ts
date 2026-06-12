@@ -167,8 +167,19 @@ export function useClassSessions(options: UseClassSessionsOptions) {
 // deposit fields.
 // ---------------------------------------------------------------------------
 
+/**
+ * Roster row — the shared {@link BookingListRow} plus `checked_in_at`, which
+ * the bookings/list payload returns for class attendees (the class check-in
+ * timestamp, distinct from `client_arrived_at`). The shared type in
+ * types/booking-list.ts is frozen during the parity push, so we widen it here.
+ */
+export type ClassRosterRow = BookingListRow & {
+  /** ISO timestamp the attendee was checked in for the class, if at all. */
+  checked_in_at?: string | null;
+};
+
 interface RosterResponse {
-  bookings: BookingListRow[];
+  bookings: ClassRosterRow[];
 }
 
 /** All bookings (attendees) for one class session, soonest booked first. */

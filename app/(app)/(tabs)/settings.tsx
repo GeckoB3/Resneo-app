@@ -3,19 +3,22 @@ import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 import * as WebBrowser from 'expo-web-browser';
 import { useRouter, type Href } from 'expo-router';
 import { useCallback, useState, type ReactNode } from 'react';
-import { Alert, Linking, Pressable, StyleSheet, View } from 'react-native';
+import { Linking, Pressable, StyleSheet, View } from 'react-native';
 
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { Screen } from '@/components/ui/Screen';
+import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { getApiUrl } from '@/lib/env';
 import { registerCurrentDeviceForPush } from '@/lib/push/registerDevice';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { useAuth } from '@/providers/AuthProvider';
+import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -163,9 +166,11 @@ export default function MoreScreen() {
   const router = useRouter();
   const { colors } = useTheme();
   const { session, signOut } = useAuth();
+  const toast = useToast();
   const { data: staffData, isLoading: staffLoading } = useStaffMe();
   const { venue, name: venueName, isLoading: venueLoading } = useVenueContext();
   const [pushBusy, setPushBusy] = useState(false);
+  const [signOutOpen, setSignOutOpen] = useState(false);
 
   const staff = staffData?.staff;
   const isAdmin = staff?.role === 'admin';
@@ -187,24 +192,27 @@ export default function MoreScreen() {
 
   // In-app browser tab (SFSafariViewController / Chrome Custom Tab) so web
   // content opens without bouncing the user out of the app.
-  const openWeb = useCallback((path: string) => {
-    const url = webDashboardUrl(path);
-    void WebBrowser.openBrowserAsync(url).catch(() =>
-      // Fallback to the system browser if the in-app tab is unavailable.
-      Linking.openURL(url).catch(() => Alert.alert('Could not open browser', url)),
-    );
-  }, []);
+  const openWeb = useCallback(
+    (path: string) => {
+      const url = webDashboardUrl(path);
+      void WebBrowser.openBrowserAsync(url).catch(() =>
+        // Fallback to the system browser if the in-app tab is unavailable.
+        Linking.openURL(url).catch(() => toast.error('Could not open the browser.')),
+      );
+    },
+    [toast],
+  );
 
   const handleRetryPush = useCallback(async () => {
     if (!accessToken) {
-      Alert.alert('Sign in required', 'Sign in before enabling push notifications.');
+      toast.info('Sign in before enabling push notifications.');
       return;
     }
     setPushBusy(true);
     try {
       const result = await registerCurrentDeviceForPush({ accessToken });
       if (result.registered) {
-        Alert.alert('Notifications enabled', 'This device is registered for push.');
+        toast.success('This device is registered for push.');
       } else {
         const message =
           result.reason === 'expo-go'
@@ -216,22 +224,15 @@ export default function MoreScreen() {
                 : result.reason === 'web'
                   ? 'Push notifications are not available on the web build.'
                   : 'Could not register this device for push.';
-        Alert.alert('Not registered', message);
+        toast.error(message);
       }
     } catch (error) {
       const message = error instanceof ApiError ? error.message : 'Push registration failed.';
-      Alert.alert('Push registration failed', message);
+      toast.error(message);
     } finally {
       setPushBusy(false);
     }
-  }, [accessToken]);
-
-  const confirmSignOut = useCallback(() => {
-    Alert.alert('Sign out?', 'You can sign back in with the same work email.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign out', style: 'destructive', onPress: () => void signOut() },
-    ]);
-  }, [signOut]);
+  }, [accessToken, toast]);
 
   if (staffLoading || venueLoading) {
     return (
@@ -472,7 +473,7 @@ export default function MoreScreen() {
 
       <Group>
         <Pressable
-          onPress={confirmSignOut}
+          onPress={() => setSignOutOpen(true)}
           accessibilityRole="button"
           accessibilityLabel="Sign out"
           style={({ pressed }) => [
@@ -488,6 +489,33 @@ export default function MoreScreen() {
       <Text variant="caption" tone="muted" style={styles.version}>
         Resneo v{appVersion}
       </Text>
+
+      {/* Sign-out confirm — a Sheet (not Alert.alert, which is a no-op on web). */}
+      <Sheet visible={signOutOpen} onClose={() => setSignOutOpen(false)}>
+        <View style={styles.signOutSheet}>
+          <Text variant="subheading">Sign out?</Text>
+          <Text variant="bodySmall" tone="secondary">
+            You can sign back in with the same work email.
+          </Text>
+          <View style={styles.signOutActions}>
+            <Button
+              label="Cancel"
+              variant="secondary"
+              style={styles.flex1}
+              onPress={() => setSignOutOpen(false)}
+            />
+            <Button
+              label="Sign out"
+              variant="danger"
+              style={styles.flex1}
+              onPress={() => {
+                setSignOutOpen(false);
+                void signOut();
+              }}
+            />
+          </View>
+        </View>
+      </Sheet>
     </Screen>
   );
 }
@@ -544,6 +572,17 @@ const styles = StyleSheet.create({
   signOutRow: {
     alignItems: 'center',
     paddingVertical: spacing.md,
+  },
+  signOutSheet: {
+    gap: spacing.md,
+  },
+  signOutActions: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    paddingTop: spacing.sm,
+  },
+  flex1: {
+    flex: 1,
   },
   version: {
     textAlign: 'center',

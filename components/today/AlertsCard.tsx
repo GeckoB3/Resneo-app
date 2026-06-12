@@ -29,7 +29,11 @@ export function AlertsCard({ alerts }: AlertsCardProps) {
             style={[styles.alert, { borderColor, backgroundColor: bgColor }]}
           >
             <SymbolView
-              name={isWarning ? 'exclamationmark.triangle.fill' : 'info.circle.fill'}
+              name={
+                isWarning
+                  ? { ios: 'exclamationmark.triangle.fill', android: 'warning', web: 'warning' }
+                  : { ios: 'info.circle.fill', android: 'info', web: 'info' }
+              }
               size={16}
               tintColor={borderColor}
             />

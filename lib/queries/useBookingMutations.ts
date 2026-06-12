@@ -21,7 +21,40 @@ function invalidateBookingCaches(
 }
 
 /**
+ * Optimistically patch the cached booking detail's status so the sheet/pill flip
+ * instantly. Returns the previous detail for rollback on error.
+ */
+async function optimisticStatusPatch(
+  queryClient: ReturnType<typeof useQueryClient>,
+  accessToken: string | null,
+  bookingId: string,
+  status: BookingStatus,
+): Promise<{ previous?: BookingDetail }> {
+  if (!accessToken) return {};
+  const key = queryKeys.bookings.detail(accessToken, bookingId);
+  await queryClient.cancelQueries({ queryKey: key });
+  const previous = queryClient.getQueryData<BookingDetail>(key);
+  if (previous) {
+    queryClient.setQueryData<BookingDetail>(key, { ...previous, status });
+  }
+  return { previous };
+}
+
+function rollbackDetail(
+  queryClient: ReturnType<typeof useQueryClient>,
+  accessToken: string | null,
+  bookingId: string,
+  context: { previous?: BookingDetail } | undefined,
+) {
+  if (accessToken && context?.previous) {
+    queryClient.setQueryData(queryKeys.bookings.detail(accessToken, bookingId), context.previous);
+  }
+}
+
+/**
  * PATCH /api/venue/bookings/[id] — update booking status (Confirm, Seated, etc.).
+ * Optimistically updates the cached detail so the status pill + action toolbar
+ * flip immediately, then reconciles with the server response.
  */
 export function useUpdateBookingStatus(bookingId: string) {
   const accessToken = useAccessToken();
@@ -38,10 +71,15 @@ export function useUpdateBookingStatus(bookingId: string) {
         body: JSON.stringify({ status }),
       });
     },
+    onMutate: (status) => optimisticStatusPatch(queryClient, accessToken, bookingId, status),
+    onError: (_error, _status, context) =>
+      rollbackDetail(queryClient, accessToken, bookingId, context),
     onSuccess: (data) => {
       if (accessToken) {
         queryClient.setQueryData(queryKeys.bookings.detail(accessToken, bookingId), data);
       }
+    },
+    onSettled: () => {
       invalidateBookingCaches(queryClient, accessToken, bookingId);
     },
   });
@@ -66,10 +104,15 @@ export function useCancelBooking(bookingId: string) {
         body: JSON.stringify({ status: 'Cancelled' }),
       });
     },
+    onMutate: () => optimisticStatusPatch(queryClient, accessToken, bookingId, 'Cancelled'),
+    onError: (_error, _vars, context) =>
+      rollbackDetail(queryClient, accessToken, bookingId, context),
     onSuccess: (data) => {
       if (accessToken) {
         queryClient.setQueryData(queryKeys.bookings.detail(accessToken, bookingId), data);
       }
+    },
+    onSettled: () => {
       invalidateBookingCaches(queryClient, accessToken, bookingId);
     },
   });
@@ -170,6 +213,19 @@ export interface ModifyAppointmentInput {
   service_item_id?: string;
   duration_minutes: number;
   service_variant_id?: string | null;
+  /**
+   * Full desired add-on set (REPLACE semantics — send every add-on the booking
+   * should end up with, not a delta). Matches the create-booking payload key
+   * (`addons: [{ addon_id }]`).
+   *
+   * NOTE: as of this writing the web PATCH /api/venue/bookings/[id] route does
+   * NOT yet consume `addons` on appointment modify (only POST create does). We
+   * send it for forward-compatibility AND fold the add-on duration into
+   * `duration_minutes` so the booking length is correct regardless. Verify the
+   * backend wires up `addons` on PATCH before relying on the snapshot rows
+   * updating.
+   */
+  addons?: { addon_id: string }[];
 }
 
 /** PATCH /api/venue/bookings/[id] — full appointment modify. */

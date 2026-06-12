@@ -1,7 +1,8 @@
 import * as WebBrowser from 'expo-web-browser';
-import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
+import { LoadingState } from '@/components/ui/LoadingState';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { radius, spacing } from '@/theme/index';
@@ -73,10 +74,7 @@ export function CommunicationPreviewSheet({
         keyboardShouldPersistTaps="handled">
         {loading ? (
           <View style={styles.centered}>
-            <ActivityIndicator color={colors.brand} size="large" />
-            <Text variant="bodySmall" tone="muted" style={styles.loadingText}>
-              Rendering preview…
-            </Text>
+            <LoadingState message="Rendering preview…" />
           </View>
         ) : error ? (
           <View style={[styles.errorBox, { backgroundColor: colors.dangerSurface, borderColor: colors.danger }]}>
@@ -219,9 +217,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: spacing['2xl'],
     gap: spacing.md,
-  },
-  loadingText: {
-    marginTop: spacing.sm,
   },
   errorBox: {
     borderRadius: radius.md,

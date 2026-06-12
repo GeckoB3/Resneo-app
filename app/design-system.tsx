@@ -7,14 +7,18 @@ import {
   Button,
   Card,
   Chip,
+  Dot,
   EmptyState,
+  IconButton,
   Input,
   Screen,
+  SearchBar,
   Segmented,
   Skeleton,
   StatusPill,
   Text,
 } from '@/components/ui';
+import { useToast } from '@/providers/ToastProvider';
 import {
   accent,
   brand,
@@ -36,6 +40,9 @@ export default function DesignSystemScreen() {
   const [chips, setChips] = useState<Record<string, boolean>>({ All: true });
   const [range, setRange] = useState<'day' | 'week' | 'month'>('day');
   const [text, setText] = useState('');
+  const [search, setSearch] = useState('');
+  const [compliance, setCompliance] = useState(false);
+  const toast = useToast();
 
   const typographyVariants = Object.keys(typography) as TypographyVariant[];
 
@@ -169,6 +176,77 @@ export default function DesignSystemScreen() {
               onPress={() => setChips((prev) => ({ ...prev, [label]: !prev[label] }))}
             />
           ))}
+        </View>
+      </Section>
+
+      {/* ---- New primitives (this pass) ---- */}
+      <Section title="Search bar">
+        <SearchBar
+          value={search}
+          onChangeText={setSearch}
+          placeholder="Search appointments"
+          right={
+            <>
+              <IconButton
+                icon={{ ios: 'arrow.up.arrow.down', android: 'swap_vert', web: 'swap_vert' }}
+                onPress={noop}
+                accessibilityLabel="Sort"
+                variant="bordered"
+              />
+              <IconButton
+                icon={{ ios: 'line.3.horizontal.decrease', android: 'filter_list', web: 'filter_list' }}
+                onPress={noop}
+                accessibilityLabel="Filter"
+                variant="bordered"
+                active
+              />
+            </>
+          }
+        />
+      </Section>
+
+      <Section title="Icon buttons">
+        <View style={styles.wrapRow}>
+          <IconButton icon={{ ios: 'plus', android: 'add', web: 'add' }} onPress={noop} accessibilityLabel="Add" variant="plain" />
+          <IconButton icon={{ ios: 'bell', android: 'notifications', web: 'notifications' }} onPress={noop} accessibilityLabel="Alerts" variant="tinted" />
+          <IconButton icon={{ ios: 'slider.horizontal.3', android: 'tune', web: 'tune' }} onPress={noop} accessibilityLabel="Adjust" variant="bordered" />
+          <IconButton icon={{ ios: 'checkmark', android: 'check', web: 'check' }} onPress={noop} accessibilityLabel="Done" variant="bordered" active />
+        </View>
+      </Section>
+
+      <Section title="Status dots">
+        <View style={styles.wrapRow}>
+          <Dot color={colors.success} />
+          <Dot color={colors.warning} size={10} />
+          <Dot color={colors.danger} size={12} />
+          <Dot color={colors.brand} size={8} />
+        </View>
+      </Section>
+
+      <Section title="Removable & tinted chips">
+        <View style={styles.wrapRow}>
+          <Chip
+            label="Needs compliance"
+            count={3}
+            selected={compliance}
+            selectedColor="#E11D48"
+            onPress={() => setCompliance((v) => !v)}
+            onRemove={compliance ? () => setCompliance(false) : undefined}
+          />
+        </View>
+      </Section>
+
+      <Section title="Toasts (replaces Alert.alert — works on web)">
+        <View style={styles.wrapRow}>
+          <Button label="Success" size="sm" variant="secondary" onPress={() => toast.success('Booking confirmed')} />
+          <Button label="Error" size="sm" variant="secondary" onPress={() => toast.error('That time isn’t available')} />
+          <Button label="Info" size="sm" variant="secondary" onPress={() => toast.info('Synced just now')} />
+          <Button
+            label="Undo"
+            size="sm"
+            variant="secondary"
+            onPress={() => toast.show({ message: 'Appointment moved to 14:30', actionLabel: 'Undo', onAction: noop })}
+          />
         </View>
       </Section>
 

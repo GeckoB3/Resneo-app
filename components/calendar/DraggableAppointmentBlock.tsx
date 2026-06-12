@@ -58,6 +58,10 @@ const RESIZE_MIN_BLOCK_HEIGHT = 48;
 const MIN_DURATION_MINUTES = DRAG_SNAP_MINUTES;
 const MAX_DURATION_MINUTES = 14 * 60;
 
+/** Stable empty-array defaults so the props don't churn identity each render. */
+const EMPTY_BUSY: { id: string; start: number; end: number }[] = [];
+const EMPTY_WORKING: { start: number; end: number }[] = [];
+
 // ---- Worklet helpers ---------------------------------------------------------
 
 function snapToGrid(minutes: number, snapInterval: number): number {
@@ -120,7 +124,42 @@ type DraggableAppointmentBlockProps = {
   onDragReschedule?: (bookingId: string, newTime: string) => void;
   /** Called on resize release with the new snapped duration (minutes). */
   onDragResize?: (bookingId: string, newDurationMinutes: number) => void;
+  /** Called when a drag/resize is refused for overlapping another block. */
+  onDragConflictReject?: () => void;
+  /** Other busy minute-ranges (bookings + blocks) for conflict detection. */
+  busyRanges?: { id: string; start: number; end: number }[];
+  /** The day's working-hour minute-ranges — a drop outside these is amber. */
+  workingRanges?: { start: number; end: number }[];
 };
+
+/** 0 = valid, 1 = outside working hours (allowed/amber), 2 = conflict (red). */
+type ConflictLevel = 0 | 1 | 2;
+
+/**
+ * Worklet conflict check for a proposed [start,end) minute-range. Overlapping
+ * another booking/block → 2 (red, refused). Fully inside working hours → 0.
+ * Otherwise → 1 (amber, allowed but flagged). Runs on the UI thread during drag.
+ */
+function evaluateConflict(
+  start: number,
+  end: number,
+  selfId: string,
+  busy: { id: string; start: number; end: number }[],
+  working: { start: number; end: number }[],
+): ConflictLevel {
+  'worklet';
+  for (let i = 0; i < busy.length; i += 1) {
+    const r = busy[i];
+    if (r == null || r.id === selfId) continue;
+    if (start < r.end && end > r.start) return 2;
+  }
+  if (working.length === 0) return 0;
+  for (let i = 0; i < working.length; i += 1) {
+    const w = working[i];
+    if (w != null && start >= w.start && end <= w.end) return 0;
+  }
+  return 1;
+}
 
 // ---- Component ---------------------------------------------------------------
 
@@ -146,6 +185,9 @@ export function DraggableAppointmentBlock({
   complianceFlag,
   onDragReschedule,
   onDragResize,
+  onDragConflictReject,
+  busyRanges = EMPTY_BUSY,
+  workingRanges = EMPTY_WORKING,
 }: DraggableAppointmentBlockProps) {
   const { colors } = useTheme();
 
@@ -164,16 +206,25 @@ export function DraggableAppointmentBlock({
   const heightOverride = useSharedValue(-1);
   /** True between a successful drop and the data refresh — keeps the new spot. */
   const settled = useSharedValue(false);
+  /** Live conflict level for the proposed slot — drives the badge colour. */
+  const conflict = useSharedValue<ConflictLevel>(0);
 
   // ---- React state for live labels (fed from the UI thread) ----
   const [liveTimeLabel, setLiveTimeLabel] = useState(() => startTime.slice(0, 5));
   const [liveDurLabel, setLiveDurLabel] = useState('');
   const [activeMode, setActiveMode] = useState<DragMode>(0);
+  const [liveConflict, setLiveConflict] = useState<ConflictLevel>(0);
 
   useAnimatedReaction(
-    () => ({ m: mode.value, mins: liveMinutes.value, dur: liveDurationMins.value }),
-    ({ m, mins, dur }) => {
+    () => ({
+      m: mode.value,
+      mins: liveMinutes.value,
+      dur: liveDurationMins.value,
+      c: conflict.value,
+    }),
+    ({ m, mins, dur, c }) => {
       runOnJS(setActiveMode)(m);
+      runOnJS(setLiveConflict)(c);
       if (m === 1) runOnJS(setLiveTimeLabel)(formatMinutesLabel(mins));
       if (m === 2) runOnJS(setLiveDurLabel)(formatDurationLabel(dur));
     },
@@ -234,6 +285,10 @@ export function DraggableAppointmentBlock({
   const jsHapticArm = useCallback(() => hapticSelect(), []);
   const jsHapticDrop = useCallback(() => hapticSuccess(), []);
   const jsHapticCancel = useCallback(() => hapticError(), []);
+  const jsConflictReject = useCallback(() => {
+    hapticError();
+    onDragConflictReject?.();
+  }, [onDragConflictReject]);
 
   const jsCommitMove = useCallback(
     (newTime: string) => onDragReschedule?.(id, newTime),
@@ -276,6 +331,7 @@ export function DraggableAppointmentBlock({
       if (!resizing && !dragEnabled) return;
       mode.value = resizing ? 2 : 1;
       settled.value = false;
+      conflict.value = 0;
       liveMinutes.value = originalMinutes;
       liveDurationMins.value = durationMinutes;
       if (!resizing) {
@@ -292,6 +348,14 @@ export function DraggableAppointmentBlock({
         );
         liveMinutes.value = snapped;
         translateY.value = (snapped - originalMinutes) * PX_PER_MINUTE;
+        // Proposed slot keeps the duration; flag overlap (red) / off-hours (amber).
+        conflict.value = evaluateConflict(
+          snapped,
+          snapped + durationMinutes,
+          id,
+          busyRanges,
+          workingRanges,
+        );
       } else if (mode.value === 2) {
         const deltaMins = event.translationY / PX_PER_MINUTE;
         const snapped = snapToGrid(durationMinutes + deltaMins, DRAG_SNAP_MINUTES);
@@ -301,6 +365,14 @@ export function DraggableAppointmentBlock({
         );
         liveDurationMins.value = clamped;
         heightOverride.value = clamped * PX_PER_MINUTE;
+        // Resizing keeps the start; flag overlap with the new tail.
+        conflict.value = evaluateConflict(
+          originalMinutes,
+          originalMinutes + clamped,
+          id,
+          busyRanges,
+          workingRanges,
+        );
       }
     })
     .onEnd(() => {
@@ -311,11 +383,21 @@ export function DraggableAppointmentBlock({
         if (newMinutes === originalMinutes) {
           // No-op drag — glide home.
           translateY.value = withSpring(0, SNAP_SPRING);
+          conflict.value = 0;
           mode.value = 0;
+          return;
+        }
+        if (conflict.value === 2) {
+          // Overlaps another block — refuse the drop and snap home.
+          translateY.value = withSpring(0, SNAP_SPRING);
+          conflict.value = 0;
+          mode.value = 0;
+          runOnJS(jsConflictReject)();
           return;
         }
         // Keep the dropped position; props re-sync after the mutation settles.
         settled.value = true;
+        conflict.value = 0;
         mode.value = 0;
         runOnJS(jsHapticDrop)();
         runOnJS(jsCommitMove)(minutesToTime(newMinutes));
@@ -323,10 +405,20 @@ export function DraggableAppointmentBlock({
         const newDuration = liveDurationMins.value;
         if (newDuration === durationMinutes) {
           heightOverride.value = withTiming(-1, { duration: 0 });
+          conflict.value = 0;
           mode.value = 0;
           return;
         }
+        if (conflict.value === 2) {
+          // New length overlaps the next block — refuse and snap back.
+          heightOverride.value = withTiming(-1, { duration: 0 });
+          conflict.value = 0;
+          mode.value = 0;
+          runOnJS(jsConflictReject)();
+          return;
+        }
         settled.value = true;
+        conflict.value = 0;
         mode.value = 0;
         runOnJS(jsHapticDrop)();
         runOnJS(jsCommitResize)(newDuration);
@@ -339,6 +431,7 @@ export function DraggableAppointmentBlock({
       if (!success && mode.value !== 0) {
         // Cancelled mid-drag (e.g. another gesture took over).
         mode.value = 0;
+        conflict.value = 0;
         scale.value = withSpring(1, SNAP_SPRING);
         translateY.value = withSpring(0, SNAP_SPRING);
         heightOverride.value = -1;
@@ -384,12 +477,23 @@ export function DraggableAppointmentBlock({
           },
           animatedWrapperStyle,
         ]}>
-        {/* Live badge — time while moving, duration while resizing. */}
+        {/* Live badge — time while moving, duration while resizing. Tints amber
+            when the slot is outside working hours, red on an overlap conflict. */}
         {activeMode !== 0 ? (
           <View
-            style={[styles.liveLabel, { backgroundColor: colors.brand }]}
+            style={[
+              styles.liveLabel,
+              {
+                backgroundColor:
+                  liveConflict === 2
+                    ? colors.danger
+                    : liveConflict === 1
+                      ? colors.warning
+                      : colors.brand,
+              },
+            ]}
             pointerEvents="none">
-            <Animated.Text style={[styles.liveLabelText, { color: colors.surface }]}>
+            <Animated.Text style={[styles.liveLabelText, { color: '#FFFFFF' }]}>
               {activeMode === 1 ? liveTimeLabel : liveDurLabel}
             </Animated.Text>
           </View>

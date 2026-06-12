@@ -1,5 +1,5 @@
 import { Stack, useRouter, type Href } from 'expo-router';
-import { Alert, Pressable, RefreshControl, SectionList, StyleSheet, Switch, View } from 'react-native';
+import { Pressable, RefreshControl, SectionList, StyleSheet, Switch, View } from 'react-native';
 
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -8,7 +8,7 @@ import { Screen } from '@/components/ui/Screen';
 import { ListSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
-import { hapticSuccess, hapticTap, hapticWarning } from '@/lib/haptics';
+import { hapticSuccess, hapticTap } from '@/lib/haptics';
 import { groupByDay } from '@/lib/notifications/groupByDay';
 import { parseNotificationRoute } from '@/lib/notifications/parseNotificationRoute';
 import { relativeTime } from '@/lib/notifications/relativeTime';
@@ -19,6 +19,7 @@ import {
   useUpdateLinkedNotificationPrefs,
 } from '@/lib/queries/useNotifications';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
+import { useToast } from '@/providers/ToastProvider';
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import {
@@ -137,6 +138,7 @@ function EmailPrefRow({
 
 function EmailPrefsSection() {
   const { colors } = useTheme();
+  const toast = useToast();
   const prefsQuery = useLinkedNotificationPrefs();
   const updatePrefs = useUpdateLinkedNotificationPrefs();
 
@@ -150,8 +152,7 @@ function EmailPrefsSection() {
       { [category]: next },
       {
         onError: () => {
-          hapticWarning();
-          Alert.alert('Save failed', 'Could not save that change. Please try again.');
+          toast.error('Could not save that change. Please try again.');
         },
       },
     );
@@ -209,6 +210,7 @@ function EmailPrefsSection() {
 export default function NotificationsScreen() {
   const router = useRouter();
   const { colors } = useTheme();
+  const toast = useToast();
   const query = useNotifications();
   const markRead = useMarkNotificationsRead();
   const staffQuery = useStaffMe();
@@ -229,9 +231,8 @@ export default function NotificationsScreen() {
     // Deep-link navigation.
     const route = parseNotificationRoute(notification.href);
     if (route?.type === 'calendar') {
-      // Navigate to the calendar tab. Full date-param deep-link deferred until
-      // the calendar screen accepts a URL ?date= param (out of this agent's scope).
-      router.push('/(app)/(tabs)/' as Href);
+      // Open the calendar tab on the notification's day (the screen reads ?date=).
+      router.push(`/(app)/(tabs)/?date=${route.date}` as Href);
     } else if (route?.type === 'settings') {
       // Settings / linked-accounts — navigate to more tab.
       router.push('/(app)/(tabs)/settings' as Href);
@@ -244,8 +245,7 @@ export default function NotificationsScreen() {
       { all: true },
       {
         onError: () => {
-          hapticWarning();
-          Alert.alert('Error', 'Could not mark notifications as read. Please try again.');
+          toast.error('Could not mark notifications as read. Please try again.');
         },
       },
     );

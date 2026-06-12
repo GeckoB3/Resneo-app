@@ -1,5 +1,5 @@
 import { useRouter, type Href } from 'expo-router';
-import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 
 import { BookingDetailContent } from '@/components/bookings/BookingDetailContent';
@@ -8,6 +8,7 @@ import { Sheet } from '@/components/ui/Sheet';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import { useToast } from '@/providers/ToastProvider';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useBookingDetail } from '@/lib/queries/useBookingDetail';
 import { useDashboardHome } from '@/lib/queries/useDashboardHome';
@@ -36,6 +37,7 @@ type BookingDetailSheetProps = {
 export function BookingDetailSheet({ bookingId, onClose, onOpenFull }: BookingDetailSheetProps) {
   const router = useRouter();
   const { colors } = useTheme();
+  const toast = useToast();
   const { venue } = useVenueContext();
   const detailQuery = useBookingDetail(bookingId ?? undefined);
   const dashboardQuery = useDashboardHome();
@@ -64,8 +66,7 @@ export function BookingDetailSheet({ bookingId, onClose, onOpenFull }: BookingDe
         }
       },
       onError: (error) => {
-        hapticWarning();
-        Alert.alert('Update failed', error instanceof ApiError ? error.message : 'Could not update booking');
+        toast.error(error instanceof ApiError ? error.message : 'Could not update booking.');
       },
     });
   };
@@ -140,6 +141,7 @@ export function BookingDetailSheet({ bookingId, onClose, onOpenFull }: BookingDe
             isAdmin={isAdmin}
             isAppointmentVenue={isAppointmentVenue}
             onStatusChange={handleStatusChange}
+            onDeleted={onClose}
           />
         </ScrollView>
       )}

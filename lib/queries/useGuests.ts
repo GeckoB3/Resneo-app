@@ -4,7 +4,11 @@ import { apiFetch } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
 import { queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
-import type { GuestListParams, GuestListResponse } from '@/types/guest-list';
+import type {
+  ContactCustomFieldsResponse,
+  GuestListParams,
+  GuestListResponse,
+} from '@/types/guest-list';
 
 function buildGuestListPath(params: GuestListParams): string {
   const searchParams = new URLSearchParams();
@@ -51,14 +55,23 @@ function buildGuestListPath(params: GuestListParams): string {
       searchParams.set('last_staff_id', params.last_staff_id.trim());
     }
 
-    // Last service
+    // Last service — the RPC returns zero rows when last_service_id is sent
+    // without last_service_kind, so always pair them (web parity).
     if (params.segment === 'last_service' && params.last_service_id?.trim()) {
       searchParams.set('last_service_id', params.last_service_id.trim());
+      if (params.last_service_kind) {
+        searchParams.set('last_service_kind', params.last_service_kind);
+      }
     }
   } else if (!params.segment && params.segmentTag?.trim()) {
     // Legacy support: segmentTag without segment
     searchParams.set('segment', 'tag');
     searchParams.set('segment_tag', params.segmentTag.trim());
+  }
+
+  // Opt-in: have rows carry per-contact custom_fields (used by the CSV export).
+  if (params.include_custom_fields) {
+    searchParams.set('include_custom_fields', '1');
   }
 
   return `/api/venue/guests?${searchParams.toString()}`;
@@ -90,6 +103,7 @@ export function useGuests(params: GuestListParams) {
       marketing: params.marketing ?? null,
       last_staff_id: params.last_staff_id ?? null,
       last_service_id: params.last_service_id ?? null,
+      last_service_kind: params.last_service_kind ?? null,
     }),
     enabled,
     // Keep the previous results on screen while a new search term loads, so the
@@ -100,6 +114,30 @@ export function useGuests(params: GuestListParams) {
         throw new Error('Missing access token');
       }
       return apiFetch<GuestListResponse>(buildGuestListPath(params), { accessToken });
+    },
+  });
+}
+
+/**
+ * Venue custom client field definitions (GET /api/venue/contacts/custom-fields).
+ * Used by the contacts CSV export to label and extract per-contact custom values.
+ * Cached for a while — definitions change rarely.
+ */
+export function useGuestCustomFields() {
+  const accessToken = useAccessToken();
+  const enabled = isBackendConfigured() && accessToken !== null;
+
+  return useQuery({
+    queryKey: [...queryKeys.guests.all(), 'customFields', accessToken ?? null],
+    enabled,
+    staleTime: 5 * 60_000,
+    queryFn: async (): Promise<ContactCustomFieldsResponse> => {
+      if (!accessToken) {
+        throw new Error('Missing access token');
+      }
+      return apiFetch<ContactCustomFieldsResponse>('/api/venue/contacts/custom-fields', {
+        accessToken,
+      });
     },
   });
 }

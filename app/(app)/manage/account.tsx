@@ -1,6 +1,6 @@
 import { Stack } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { Button } from '@/components/ui/Button';
@@ -15,6 +15,7 @@ import { queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { getSupabase } from '@/lib/supabase';
+import { useToast } from '@/providers/ToastProvider';
 import { spacing } from '@/theme/index';
 import type { StaffMe, StaffMeResponse } from '@/types/staff';
 
@@ -35,6 +36,7 @@ interface PatchStaffMeInput {
 export default function AccountScreen() {
   const accessToken = useAccessToken();
   const queryClient = useQueryClient();
+  const toast = useToast();
   const { data, isLoading } = useStaffMe();
   const staff = data?.staff ?? null;
 
@@ -83,12 +85,12 @@ export default function AccountScreen() {
       setPhone(row.phone ?? '');
       // Refresh cache so the More hub header and anywhere useStaffMe is used update
       void queryClient.invalidateQueries({ queryKey: queryKeys.staff.all() });
-      Alert.alert('Saved', 'Your profile has been updated.');
+      toast.success('Your profile has been updated.');
     },
     onError: (error) => {
       hapticError();
       const msg = error instanceof ApiError ? error.message : 'Could not save profile.';
-      Alert.alert('Save failed', msg);
+      toast.error(msg);
     },
   });
 
@@ -107,12 +109,12 @@ export default function AccountScreen() {
       hapticSuccess();
       setNewPassword('');
       setConfirmPassword('');
-      Alert.alert('Password updated', 'Your password has been changed. Sign in with the new password next time.');
+      toast.success('Password changed. Sign in with the new password next time.');
     },
     onError: (error) => {
       hapticError();
       const msg = error instanceof ApiError ? error.message : 'Password change failed.';
-      Alert.alert('Password change failed', msg);
+      toast.error(msg);
     },
   });
 

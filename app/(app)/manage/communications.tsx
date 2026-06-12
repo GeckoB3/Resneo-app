@@ -1,7 +1,6 @@
 import { Stack } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
-  Alert,
   Animated,
   Pressable,
   RefreshControl,
@@ -29,6 +28,7 @@ import {
   useUpdateCommunicationPolicies,
   useUpdateNotificationSettings,
 } from '@/lib/queries/useCommunications';
+import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { fonts, minTouchTarget, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -548,6 +548,7 @@ export default function CommunicationsScreen() {
   const showSmsLightBanner =
     venue?.pricing_tier === 'light' && !venue?.stripe_connected_account_id;
 
+  const toast = useToast();
   const policiesQuery = useCommunicationPolicies();
   const updatePolicies = useUpdateCommunicationPolicies();
   const settingsQuery = useNotificationSettings();
@@ -621,12 +622,13 @@ export default function CommunicationsScreen() {
       }
       hapticSuccess();
       setSaved(true);
+      toast.success('Communication settings saved.');
     } catch (e) {
       hapticWarning();
       const msg =
         e instanceof ApiError ? e.message : 'Could not save communication settings.';
       setSaveError(msg);
-      Alert.alert('Save failed', msg);
+      toast.error(msg);
     }
   }
 

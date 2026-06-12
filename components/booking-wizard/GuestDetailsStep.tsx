@@ -28,6 +28,10 @@ type GuestDetailsStepProps = {
   onContinue: () => void;
   /** When true, pre-fill fields are read-only (rebook flow). */
   readOnlyContact?: boolean;
+  /** Fired when an existing/known contact is picked — flags the booking as returning. */
+  onPickExistingContact?: () => void;
+  /** Fired when the user edits a contact field manually — clears the returning flag. */
+  onClearExistingContact?: () => void;
 };
 
 const SEARCH_DEBOUNCE_MS = 280;
@@ -44,7 +48,14 @@ function guestMeta(guest: GuestListItem): string {
 }
 
 /** Step 4 — find an existing guest or enter new contact details. */
-export function GuestDetailsStep({ value, onChange, onContinue, readOnlyContact = false }: GuestDetailsStepProps) {
+export function GuestDetailsStep({
+  value,
+  onChange,
+  onContinue,
+  readOnlyContact = false,
+  onPickExistingContact,
+  onClearExistingContact,
+}: GuestDetailsStepProps) {
   const { colors } = useTheme();
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<'name' | 'phone' | 'email', string>>>({});
   const [searchInput, setSearchInput] = useState('');
@@ -70,9 +81,16 @@ export function GuestDetailsStep({ value, onChange, onContinue, readOnlyContact 
       phone: guest.phone ?? '',
       email: guest.email ?? '',
     });
+    onPickExistingContact?.();
     setSearchInput('');
     setDebouncedSearch('');
     setFieldErrors({});
+  };
+
+  // Manual edits to a contact field break the "known contact" link → clear the flag.
+  const editContact = (patch: Partial<GuestDetails>) => {
+    onClearExistingContact?.();
+    onChange({ ...value, ...patch });
   };
 
   const handleContinue = () => {
@@ -158,7 +176,7 @@ export function GuestDetailsStep({ value, onChange, onContinue, readOnlyContact 
         editable={!readOnlyContact}
         error={fieldErrors.name}
         label="Name"
-        onChangeText={(name) => onChange({ ...value, name })}
+        onChangeText={(name) => editContact({ name })}
         placeholder="Guest name"
         value={value.name}
       />
@@ -168,7 +186,7 @@ export function GuestDetailsStep({ value, onChange, onContinue, readOnlyContact 
         error={fieldErrors.phone}
         keyboardType="phone-pad"
         label="Phone"
-        onChangeText={(phone) => onChange({ ...value, phone })}
+        onChangeText={(phone) => editContact({ phone })}
         placeholder="Phone number"
         textContentType="telephoneNumber"
         value={value.phone}
@@ -180,7 +198,7 @@ export function GuestDetailsStep({ value, onChange, onContinue, readOnlyContact 
         error={fieldErrors.email}
         keyboardType="email-address"
         label="Email (optional)"
-        onChangeText={(email) => onChange({ ...value, email })}
+        onChangeText={(email) => editContact({ email })}
         placeholder="Email address"
         textContentType="emailAddress"
         value={value.email}

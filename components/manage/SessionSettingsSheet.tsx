@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
 import { Sheet } from '@/components/ui/Sheet';
@@ -7,6 +7,7 @@ import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { hapticError, hapticSelect, hapticSuccess } from '@/lib/haptics';
 import { useUpdateSessionSettings } from '@/lib/queries/useTeamMutations';
+import { useToast } from '@/providers/ToastProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
@@ -34,6 +35,7 @@ export function SessionSettingsSheet({
   onClose,
 }: SessionSettingsSheetProps) {
   const { colors } = useTheme();
+  const toast = useToast();
   const [selected, setSelected] = useState(currentMinutes);
   const update = useUpdateSessionSettings();
 
@@ -50,15 +52,12 @@ export function SessionSettingsSheet({
       hapticSuccess();
       const label =
         TIMEOUT_OPTIONS.find((o) => o.minutes === selected)?.label ?? `${selected} minutes`;
-      Alert.alert('Saved', `Staff will be logged out after ${label} of inactivity.`, [
-        { text: 'OK', onPress: onClose },
-      ]);
+      // Toast + close fire off the resolved mutation — Alert.alert's callback is a no-op on web.
+      toast.success(`Staff will be logged out after ${label} of inactivity.`);
+      onClose();
     } catch (err) {
       hapticError();
-      Alert.alert(
-        'Could not save',
-        err instanceof ApiError ? err.message : 'Failed to update session settings.',
-      );
+      toast.error(err instanceof ApiError ? err.message : 'Failed to update session settings.');
     }
   }
 

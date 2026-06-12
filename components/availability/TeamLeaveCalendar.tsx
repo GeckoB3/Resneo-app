@@ -1,5 +1,5 @@
 import { addDays, format, isSameMonth, parseISO, startOfMonth, startOfWeek } from 'date-fns';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
@@ -16,7 +16,7 @@ import {
   getMonthRangeFromDate,
   formatMonthLabel,
 } from '@/lib/dates/venue-dates';
-import { hapticSelect } from '@/lib/haptics';
+import { hapticSelect, hapticWarning } from '@/lib/haptics';
 import { useTeamLeaveMonth } from '@/lib/queries/useTeamLeave';
 import { fonts, minTouchTarget, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -339,6 +339,28 @@ function LeavePeriodRow({
   const type = normalizeLeaveType(period.leave_type);
   const partial = isPartialDay(period);
 
+  // Two-step confirm — Alert.alert confirms are a no-op on web, so arm then confirm.
+  const [armed, setArmed] = useState(false);
+  const armTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (armTimer.current) clearTimeout(armTimer.current);
+    },
+    [],
+  );
+  const handleRemovePress = () => {
+    if (armed) {
+      if (armTimer.current) clearTimeout(armTimer.current);
+      setArmed(false);
+      onDelete(period.id);
+      return;
+    }
+    setArmed(true);
+    hapticWarning();
+    if (armTimer.current) clearTimeout(armTimer.current);
+    armTimer.current = setTimeout(() => setArmed(false), 4000);
+  };
+
   return (
     <View style={[styles.periodRow, { borderBottomColor: colors.border }]}>
       <View style={styles.periodBody}>
@@ -365,12 +387,12 @@ function LeavePeriodRow({
       <View style={styles.periodActions}>
         <Button label="Edit" variant="ghost" size="sm" onPress={() => onEdit(period)} />
         <Button
-          label="Remove"
+          label={armed ? 'Tap to confirm' : 'Remove'}
           variant="ghost"
           size="sm"
           loading={deleting}
           disabled={deleting}
-          onPress={() => onDelete(period.id)}
+          onPress={handleRemovePress}
         />
       </View>
     </View>

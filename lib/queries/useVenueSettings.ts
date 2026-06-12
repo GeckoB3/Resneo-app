@@ -1,6 +1,7 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
+import { isBackendConfigured } from '@/lib/env';
 import { queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 
@@ -57,15 +58,55 @@ export function useUpdateVenue() {
   });
 }
 
+/** One bookable calendar/practitioner column shown in the priority reorder list. */
+export interface FeatureFlagsCalendar {
+  id: string;
+  name: string;
+}
+
+/** Any-available-practitioner config returned by the feature-flags endpoint. */
+export interface AnyAvailablePractitionerConfig {
+  mode: 'priority' | 'random';
+  calendar_order: string[];
+}
+
 /** Response shape from GET/PATCH /api/venue/feature-flags. */
 export interface FeatureFlagsResponse {
   raw: VenueFeatureFlagsRaw;
   resolved: Record<string, boolean>;
-  any_available_practitioner_config?: {
-    mode: 'priority' | 'random';
-    calendar_order: string[];
-  };
-  calendars?: { id: string; name: string }[];
+  any_available_practitioner_config?: AnyAvailablePractitionerConfig;
+  calendars?: FeatureFlagsCalendar[];
+}
+
+/** Local query key for the feature-flags GET, scoped under the venue namespace so
+ *  the existing `queryKeys.venue.all()` invalidation (on PATCH) also refreshes it. */
+export const featureFlagsQueryKeys = {
+  detail: (accessToken?: string | null) =>
+    [...queryKeys.venue.all(), 'featureFlags', accessToken ?? null] as const,
+};
+
+/**
+ * GET /api/venue/feature-flags — resolved flags plus the any-available
+ * practitioner config (with saved `calendar_order`) and the venue's bookable
+ * `calendars` list, used to seed the priority reorder UI on the booking-settings
+ * screen. The same endpoint also responds to PATCH (see useUpdateFeatureFlags).
+ */
+export function useFeatureFlags() {
+  const accessToken = useAccessToken();
+  const enabled = isBackendConfigured() && accessToken !== null;
+
+  return useQuery({
+    queryKey: featureFlagsQueryKeys.detail(accessToken),
+    enabled,
+    queryFn: async (): Promise<FeatureFlagsResponse> => {
+      if (!accessToken) {
+        throw new Error('Missing access token');
+      }
+      return apiFetch<FeatureFlagsResponse>('/api/venue/feature-flags', {
+        accessToken,
+      });
+    },
+  });
 }
 
 /** PATCH /api/venue/feature-flags — per-venue feature flag overrides (admin only). */
@@ -84,8 +125,13 @@ export function useUpdateFeatureFlags() {
         body: JSON.stringify(patch),
       });
     },
-    onSuccess: () => {
+    onSuccess: (res) => {
+      // Seed the feature-flags cache from the PATCH response so the reorder UI
+      // reflects the freshly-saved calendar_order immediately (the response
+      // carries calendars + any_available_practitioner_config).
+      queryClient.setQueryData(featureFlagsQueryKeys.detail(accessToken), res);
       // Invalidate venue bootstrap so feature_flags.resolved is refreshed everywhere.
+      // This also re-validates the feature-flags detail key (same venue namespace).
       void queryClient.invalidateQueries({ queryKey: queryKeys.venue.all() });
     },
   });

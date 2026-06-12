@@ -1,12 +1,13 @@
 import { SymbolView } from 'expo-symbols';
 import { useState } from 'react';
-import { Alert, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/Button';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
-import { hapticError, hapticSelect, hapticSuccess, hapticWarning } from '@/lib/haptics';
+import { useToast } from '@/providers/ToastProvider';
+import { hapticSelect, hapticWarning } from '@/lib/haptics';
 import { useBulkAddTag } from '@/lib/queries/useContactsBulk';
 import { elevation, fonts, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -33,6 +34,7 @@ type SubSheet = 'tag' | 'message' | null;
  */
 export function BookingBulkBar({ selected, onClear, onMessageSelected }: BookingBulkBarProps) {
   const { colors } = useTheme();
+  const toast = useToast();
   const [subSheet, setSubSheet] = useState<SubSheet>(null);
   const [tagInput, setTagInput] = useState('');
 
@@ -58,18 +60,16 @@ export function BookingBulkBar({ selected, onClear, onMessageSelected }: Booking
     const tag = tagInput.trim();
     if (!tag) return;
     if (guestIds.length === 0) {
-      Alert.alert('No contacts', 'Selected bookings have no linked guest contacts.');
+      toast.error('Selected bookings have no linked guest contacts.');
       return;
     }
     try {
       await bulkAddTag.mutateAsync({ guest_ids: guestIds, tag });
-      hapticSuccess();
       setSubSheet(null);
-      Alert.alert('Tag added', `"${tag}" added to ${guestIds.length} contact${guestIds.length === 1 ? '' : 's'}.`);
+      toast.success(`"${tag}" added to ${guestIds.length} contact${guestIds.length === 1 ? '' : 's'}.`);
     } catch (err) {
-      hapticError();
       const msg = err instanceof Error ? err.message : 'Could not add tag.';
-      Alert.alert('Error', msg);
+      toast.error(msg);
     }
   }
 

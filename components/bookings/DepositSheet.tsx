@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Alert, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
 import { Sheet } from '@/components/ui/Sheet';
@@ -29,6 +29,8 @@ export function DepositSheet({ target, onClose }: DepositSheetProps) {
   const [pending, setPending] = useState<DepositAction | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [seededId, setSeededId] = useState<string | null>(null);
+  // Two-step refund confirm — Alert.alert is a no-op on react-native-web.
+  const [refundArmed, setRefundArmed] = useState(false);
 
   useEffect(() => {
     if (!target) {
@@ -40,6 +42,7 @@ export function DepositSheet({ target, onClose }: DepositSheetProps) {
     setSeededId(target.id);
     setPending(null);
     setError(null);
+    setRefundArmed(false);
   }, [target?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function run(action: DepositAction) {
@@ -58,10 +61,13 @@ export function DepositSheet({ target, onClose }: DepositSheetProps) {
   }
 
   function confirmRefund() {
-    Alert.alert('Refund deposit', 'Refund this deposit to the guest?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Refund', style: 'destructive', onPress: () => void run('refund') },
-    ]);
+    if (!refundArmed) {
+      hapticWarning();
+      setRefundArmed(true);
+      return;
+    }
+    setRefundArmed(false);
+    void run('refund');
   }
 
   const amount = formatPositivePence(target?.amountPence);
@@ -113,7 +119,7 @@ export function DepositSheet({ target, onClose }: DepositSheetProps) {
                 ) : null}
                 {target.status === 'Paid' ? (
                   <Button
-                    label="Refund"
+                    label={refundArmed ? 'Tap to confirm refund' : 'Refund'}
                     variant="danger"
                     onPress={confirmRefund}
                     loading={pending === 'refund'}

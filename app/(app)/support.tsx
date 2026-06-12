@@ -1,6 +1,6 @@
 import { Stack } from 'expo-router';
 import { useState } from 'react';
-import { Alert, Linking, ScrollView, StyleSheet, View } from 'react-native';
+import { Linking, ScrollView, StyleSheet, View } from 'react-native';
 import { useMutation } from '@tanstack/react-query';
 
 import { Button } from '@/components/ui/Button';
@@ -10,8 +10,9 @@ import { Screen } from '@/components/ui/Screen';
 import { Segmented } from '@/components/ui/Segmented';
 import { Text } from '@/components/ui/Text';
 import { ApiError, apiFetch } from '@/lib/api/client';
-import { hapticError, hapticSuccess } from '@/lib/haptics';
+import { hapticSuccess } from '@/lib/haptics';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
+import { useToast } from '@/providers/ToastProvider';
 import { spacing } from '@/theme/index';
 
 type SupportCategory = 'general' | 'billing' | 'technical' | 'feature_request';
@@ -37,6 +38,7 @@ interface SupportPayload {
  */
 export default function SupportScreen() {
   const accessToken = useAccessToken();
+  const toast = useToast();
 
   const [category, setCategory] = useState<SupportCategory>('general');
   const [subject, setSubject] = useState('');
@@ -61,15 +63,14 @@ export default function SupportScreen() {
       setSent(true);
     },
     onError: (error) => {
-      hapticError();
       const msg = error instanceof ApiError ? error.message : 'Failed to send message. Please try again.';
-      Alert.alert('Could not send', msg);
+      toast.error(msg);
     },
   });
 
   async function handleSubmit() {
     if (!subject.trim() || !message.trim()) {
-      Alert.alert('Missing fields', 'Please fill in a subject and message.');
+      toast.error('Please fill in a subject and message.');
       return;
     }
     await mutation.mutateAsync({

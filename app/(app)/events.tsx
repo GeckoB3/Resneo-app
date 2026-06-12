@@ -9,6 +9,7 @@ import { EventCard } from '@/components/events/EventCard';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
+import { LiveDot } from '@/components/ui/LiveDot';
 import { Screen } from '@/components/ui/Screen';
 import { Segmented } from '@/components/ui/Segmented';
 import { ListSkeleton } from '@/components/ui/Skeletons';
@@ -17,6 +18,7 @@ import { ApiError } from '@/lib/api/client';
 import { addDaysToDateStr } from '@/lib/dates/venue-dates';
 import { calendarDateInTimeZone } from '@/lib/queries/useBookingsList';
 import { experienceEventKeys, useExperienceEvents } from '@/lib/queries/useExperienceEvents';
+import { useVenueLiveSync } from '@/lib/realtime/useVenueLiveSync';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { spacing } from '@/theme/index';
 
@@ -38,6 +40,7 @@ const WEB_EVENT_MANAGER_URL = 'https://app.resneo.com/dashboard/event-manager';
 export default function EventsScreen() {
   const queryClient = useQueryClient();
   const { venue } = useVenueContext();
+  const venueId = venue?.id ?? null;
 
   const [filter, setFilter] = useState<FilterTab>('upcoming');
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -66,13 +69,31 @@ export default function EventsScreen() {
     void queryClient.invalidateQueries({ queryKey: experienceEventKeys.attendeesAll() });
   }, [query, queryClient]);
 
+  // Realtime refresh — same `bookings` table the web event-manager watches.
+  const liveState = useVenueLiveSync({
+    venueId,
+    onRefresh,
+    subscriptions: venueId ? [{ table: 'bookings', filter: `venue_id=eq.${venueId}` }] : [],
+    enabled: !!venueId,
+  });
+
   const openWebEventManager = useCallback(() => {
     void Linking.openURL(WEB_EVENT_MANAGER_URL);
   }, []);
 
   return (
     <Screen scroll={false} padded={false}>
-      <Stack.Screen options={{ title: 'Events' }} />
+      <Stack.Screen
+        options={{
+          title: 'Events',
+          headerRight: () =>
+            liveState !== 'idle' ? (
+              <View style={styles.liveWrap}>
+                <LiveDot state={liveState} />
+              </View>
+            ) : null,
+        }}
+      />
 
       <View style={styles.filterBar}>
         <Segmented<FilterTab>
@@ -129,7 +150,12 @@ export default function EventsScreen() {
                   onToggle={() =>
                     setExpandedId((current) => (current === event.id ? null : event.id))
                   }>
-                  <EventAttendees eventId={event.id} onOpenBooking={setDetailBookingId} />
+                  <EventAttendees
+                    eventId={event.id}
+                    eventName={event.name}
+                    eventDate={event.date}
+                    onOpenBooking={setDetailBookingId}
+                  />
                 </EventCard>
               ))}
 
@@ -183,5 +209,8 @@ const styles = StyleSheet.create({
   },
   spacer: {
     height: spacing.xl,
+  },
+  liveWrap: {
+    marginRight: spacing.sm,
   },
 });

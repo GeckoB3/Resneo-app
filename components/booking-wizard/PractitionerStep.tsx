@@ -1,8 +1,9 @@
 import { FlatList, StyleSheet, View } from 'react-native';
 
+import { Avatar } from '@/components/ui/Avatar';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
-import { Avatar } from '@/components/ui/Avatar';
+import { hapticSelect } from '@/lib/haptics';
 import { spacing } from '@/theme/index';
 import {
   ANY_AVAILABLE_PRACTITIONER_ID,
@@ -15,6 +16,8 @@ type PractitionerStepProps = {
   practitioners: AppointmentCatalogPractitioner[];
   /** The base service option (from ServicePickerStep). */
   serviceOption: AppointmentServiceOption;
+  /** Whether to surface an "Any available" pooled option (feature-flagged + 2+ staff). */
+  allowAnyAvailable: boolean;
   /** Called when the user picks a specific practitioner or "Any available". */
   onSelect: (option: AppointmentServiceOption) => void;
 };
@@ -23,27 +26,60 @@ type PractitionerRow = {
   id: string;
   name: string;
   isAnyAvailable: boolean;
+  /** Practitioner-scoped price (pence) for the row caption. */
+  pricePence: number | null;
+  /** Practitioner-scoped duration (minutes) for the row caption. */
+  durationMinutes: number | null;
   option: AppointmentServiceOption;
 };
 
-/** Step 1b — choose a practitioner when a service has 2+ staff. */
-export function PractitionerStep({ practitioners, serviceOption, onSelect }: PractitionerStepProps) {
+function formatPrice(pricePence: number | null): string | null {
+  if (pricePence == null) return null;
+  return `£${(pricePence / 100).toFixed(2)}`;
+}
+
+function rowCaption(row: PractitionerRow): string | null {
+  if (row.isAnyAvailable) {
+    return 'First available staff member will be assigned';
+  }
+  const parts: string[] = [];
+  if (row.durationMinutes != null) parts.push(`${row.durationMinutes} min`);
+  const price = formatPrice(row.pricePence);
+  if (price) parts.push(price);
+  return parts.length ? parts.join(' · ') : null;
+}
+
+/**
+ * Step — choose the practitioner for the selected service. Always shown after
+ * the service (unless a single practitioner / calendar-prefill resolves it).
+ * Each practitioner shows THEIR own price/duration; "Any available" appears on
+ * top only when the feature flag is on and 2+ staff offer the service.
+ */
+export function PractitionerStep({
+  practitioners,
+  serviceOption,
+  allowAnyAvailable,
+  onSelect,
+}: PractitionerStepProps) {
   const rows: PractitionerRow[] = [];
 
-  // "Any available" row first.
-  rows.push({
-    id: ANY_AVAILABLE_PRACTITIONER_ID,
-    name: 'Any available',
-    isAnyAvailable: true,
-    option: {
-      ...serviceOption,
-      practitionerId: ANY_AVAILABLE_PRACTITIONER_ID,
-      practitionerName: 'Any available',
-      candidatePractitionerIds: practitioners.map((p) => p.id),
-    },
-  });
+  if (allowAnyAvailable && practitioners.length >= 2) {
+    rows.push({
+      id: ANY_AVAILABLE_PRACTITIONER_ID,
+      name: 'Any available',
+      isAnyAvailable: true,
+      pricePence: null,
+      durationMinutes: null,
+      option: {
+        ...serviceOption,
+        practitionerId: ANY_AVAILABLE_PRACTITIONER_ID,
+        practitionerName: 'Any available',
+        candidatePractitionerIds: practitioners.map((p) => p.id),
+      },
+    });
+  }
 
-  // One row per practitioner that offers this service.
+  // One row per practitioner that offers this service, each with their own price.
   for (const practitioner of practitioners) {
     const service = practitioner.services.find((s) => s.id === serviceOption.serviceId);
     if (!service) continue;
@@ -51,6 +87,8 @@ export function PractitionerStep({ practitioners, serviceOption, onSelect }: Pra
       id: practitioner.id,
       name: practitioner.name,
       isAnyAvailable: false,
+      pricePence: service.price_pence,
+      durationMinutes: service.duration_minutes,
       option: {
         ...serviceOption,
         practitionerId: practitioner.id,
@@ -78,24 +116,38 @@ export function PractitionerStep({ practitioners, serviceOption, onSelect }: Pra
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.list}
         ItemSeparatorComponent={Separator}
-        renderItem={({ item }) => (
-          <Card padded onPress={() => onSelect(item.option)}>
-            <View style={styles.row}>
-              <Avatar
-                name={item.isAnyAvailable ? '?' : item.name}
-                size={36}
-              />
-              <View style={styles.rowText}>
-                <Text variant="bodyMedium">{item.name}</Text>
-                {item.isAnyAvailable ? (
-                  <Text variant="caption" tone="muted">
-                    First available staff member will be assigned
+        renderItem={({ item }) => {
+          const caption = rowCaption(item);
+          const price = item.isAnyAvailable ? null : formatPrice(item.pricePence);
+          return (
+            <Card
+              padded
+              onPress={() => {
+                hapticSelect();
+                onSelect(item.option);
+              }}>
+              <View
+                style={styles.row}
+                accessibilityRole="button"
+                accessibilityLabel={`${item.name}${caption ? `, ${caption}` : ''}`}>
+                <Avatar name={item.isAnyAvailable ? '?' : item.name} size={36} />
+                <View style={styles.rowText}>
+                  <Text variant="bodyMedium">{item.name}</Text>
+                  {caption ? (
+                    <Text variant="caption" tone="muted">
+                      {caption}
+                    </Text>
+                  ) : null}
+                </View>
+                {price ? (
+                  <Text variant="label" tone="brand">
+                    {price}
                   </Text>
                 ) : null}
               </View>
-            </View>
-          </Card>
-        )}
+            </Card>
+          );
+        }}
       />
     </View>
   );

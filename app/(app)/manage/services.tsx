@@ -1,7 +1,6 @@
 import { Stack } from 'expo-router';
 import { useState } from 'react';
 import {
-  Alert,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -23,6 +22,19 @@ import {
   VariantsEditorSheet,
   type VariantsEditorTarget,
 } from '@/components/manage/VariantsEditorSheet';
+import {
+  ServiceCustomAvailabilityEditor,
+  isScheduleEmpty,
+  toScheduleV2,
+  validateSchedule,
+} from '@/components/services/ServiceCustomAvailabilityEditor';
+import { ServiceLocationSection, isValidMeetingUrl, normalizeMeetingUrl } from '@/components/services/ServiceLocationSection';
+import {
+  ProcessingTimeBlocksEditor,
+  processingBlocksToDrafts,
+  validateProcessingBlocks,
+  type ProcessingBlockDraft,
+} from '@/components/services/ProcessingTimeBlocksEditor';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -46,11 +58,14 @@ import {
   useUpdateService,
 } from '@/lib/queries/useServicesManage';
 import { usePractitioners } from '@/lib/queries/usePractitioners';
+import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type {
   ManagedService,
+  ServiceCustomScheduleV2,
+  ServiceLocationType,
   ServicePaymentRequirement,
 } from '@/types/services-manage';
 
@@ -103,6 +118,15 @@ const DEFAULT_STAFF_MAY: StaffMayState = {
   deposit: false,
   colour: false,
 };
+
+/** Order-independent fingerprint of processing drafts, for change detection. */
+function processingFingerprint(drafts: ProcessingBlockDraft[]): string {
+  return JSON.stringify(
+    drafts
+      .map((d) => [Number(d.start) || 0, Number(d.duration) || 0])
+      .sort((a, b) => a[0]! - b[0]! || a[1]! - b[1]!),
+  );
+}
 
 // ---------------------------------------------------------------------------
 // ServiceRow
@@ -450,6 +474,7 @@ function AddonsTab({
 
 export default function ServicesScreen() {
   const { colors } = useTheme();
+  const toast = useToast();
   const { venue } = useVenueContext();
   const isAdmin = venue?.current_user_role === 'admin';
 
@@ -474,6 +499,8 @@ export default function ServicesScreen() {
     useState<AddonGroupEditorTarget | null>(null);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Service pending deletion — drives a Sheet confirm (Alert.alert is a no-op on web).
+  const [deleteTarget, setDeleteTarget] = useState<ManagedService | null>(null);
 
   // Sheet form state (shared between edit + create).
   const [name, setName] = useState('');
@@ -492,6 +519,21 @@ export default function ServicesScreen() {
   const [isActive, setIsActive] = useState(true);
   // Admin-only: staff override permissions
   const [staffMay, setStaffMay] = useState<StaffMayState>(DEFAULT_STAFF_MAY);
+  // Location / online-meeting
+  const [locationType, setLocationType] = useState<ServiceLocationType>('business_venue');
+  const [meetingUrl, setMeetingUrl] = useState('');
+  const [meetingInfo, setMeetingInfo] = useState('');
+  const [urlError, setUrlError] = useState<string | null>(null);
+  // Processing-time blocks (admin-only). Seeded from the service; only sent when changed.
+  const [processingDrafts, setProcessingDrafts] = useState<ProcessingBlockDraft[]>([]);
+  const [initialProcessingKey, setInitialProcessingKey] = useState('[]');
+  // Custom availability (stretch) — versioned schedule + enabled flag.
+  const [customAvailEnabled, setCustomAvailEnabled] = useState(false);
+  const [customSchedule, setCustomSchedule] = useState<ServiceCustomScheduleV2>({
+    version: 2,
+    rules: [],
+  });
+  const [initialCustomKey, setInitialCustomKey] = useState('disabled');
 
   const practitionersQuery = usePractitioners();
   const practitioners = (practitionersQuery.data?.practitioners ?? [])
@@ -532,6 +574,18 @@ export default function ServicesScreen() {
       deposit: service.staff_may_customize_deposit ?? false,
       colour: service.staff_may_customize_colour ?? false,
     });
+    setLocationType(service.location_type ?? 'business_venue');
+    setMeetingUrl(service.online_meeting_url ?? '');
+    setMeetingInfo(service.online_meeting_info ?? '');
+    setUrlError(null);
+    const seededProcessing = processingBlocksToDrafts(service.processing_time_blocks);
+    setProcessingDrafts(seededProcessing);
+    setInitialProcessingKey(processingFingerprint(seededProcessing));
+    const seededSchedule = toScheduleV2(service.custom_working_hours);
+    const seededEnabled = service.custom_availability_enabled === true;
+    setCustomAvailEnabled(seededEnabled);
+    setCustomSchedule(seededSchedule);
+    setInitialCustomKey(seededEnabled ? JSON.stringify(seededSchedule.rules) : 'disabled');
     setError(null);
     setEditTarget({ id: service.id, practitionerIds: linked });
   };
@@ -552,6 +606,15 @@ export default function ServicesScreen() {
     setPractitionerIds(practitioners.map((p) => p.id));
     setIsActive(true);
     setStaffMay(DEFAULT_STAFF_MAY);
+    setLocationType('business_venue');
+    setMeetingUrl('');
+    setMeetingInfo('');
+    setUrlError(null);
+    setProcessingDrafts([]);
+    setInitialProcessingKey('[]');
+    setCustomAvailEnabled(false);
+    setCustomSchedule({ version: 2, rules: [] });
+    setInitialCustomKey('disabled');
     setError(null);
     setCreating(true);
   };
@@ -600,6 +663,39 @@ export default function ServicesScreen() {
       setError('Select at least one calendar to offer this service.'); return;
     }
 
+    // Admin-only sections: location, processing time, custom availability.
+    let processingBlocks: ReturnType<typeof validateProcessingBlocks>['blocks'] | undefined;
+    let processingChanged = false;
+    let scheduleToSend: ServiceCustomScheduleV2 | null = null;
+    let customChanged = false;
+    if (isAdmin) {
+      // Location / online-meeting link
+      if (locationType === 'online' && !isValidMeetingUrl(meetingUrl)) {
+        setUrlError('Enter a valid http(s) link for the online service.');
+        setError('Fix the online meeting link before saving.');
+        return;
+      }
+      setUrlError(null);
+
+      // Processing-time blocks (validate against the service core duration)
+      const procResult = validateProcessingBlocks(processingDrafts, durationMinutes);
+      if (!procResult.ok) {
+        setError(procResult.error ?? 'Processing time is invalid.'); return;
+      }
+      processingBlocks = procResult.blocks;
+      processingChanged = processingFingerprint(processingDrafts) !== initialProcessingKey;
+
+      // Custom availability (stretch)
+      const scheduleErr = validateSchedule(customSchedule);
+      if (scheduleErr) { setError(scheduleErr); return; }
+      if (customAvailEnabled && isScheduleEmpty(customSchedule)) {
+        setError('Add at least one availability window, or turn off the custom schedule.'); return;
+      }
+      const currentCustomKey = customAvailEnabled ? JSON.stringify(customSchedule.rules) : 'disabled';
+      customChanged = currentCustomKey !== initialCustomKey;
+      scheduleToSend = customAvailEnabled ? customSchedule : null;
+    }
+
     const shared = {
       name: name.trim(),
       description: description.trim() || null,
@@ -623,8 +719,28 @@ export default function ServicesScreen() {
         staff_may_customize_price: staffMay.price,
         staff_may_customize_deposit: staffMay.deposit,
         staff_may_customize_colour: staffMay.colour,
+        // Location — always sent when admin so a switch back to venue/online clears
+        // the right fields server-side. The API ignores the meeting fields unless online.
+        location_type: locationType,
+        online_meeting_url: locationType === 'online' ? normalizeMeetingUrl(meetingUrl) || null : null,
+        online_meeting_info:
+          locationType === 'online' ? (meetingInfo.trim() || null) : null,
       } : {}),
     };
+
+    // Processing time + custom availability are REPLACE-semantics / paired-with-flag,
+    // so only include them when the user actually changed them.
+    const adminExtras = isAdmin
+      ? {
+          ...(processingChanged ? { processing_time_blocks: processingBlocks ?? [] } : {}),
+          ...(customChanged
+            ? {
+                custom_availability_enabled: customAvailEnabled,
+                custom_working_hours: scheduleToSend,
+              }
+            : {}),
+        }
+      : {};
 
     try {
       if (editTarget) {
@@ -634,11 +750,13 @@ export default function ServicesScreen() {
         await update.mutateAsync({
           id: editTarget.id,
           ...shared,
+          ...adminExtras,
           ...(linksChanged ? { practitioner_ids: practitionerIds } : {}),
         });
       } else {
         await create.mutateAsync({
           ...shared,
+          ...adminExtras,
           description: shared.description ?? undefined,
           price_pence: pricePence ?? undefined,
           deposit_pence: depositPence ?? undefined,
@@ -654,33 +772,28 @@ export default function ServicesScreen() {
   }
 
   function handleDeleteService(service: ManagedService) {
-    Alert.alert(
-      'Delete service',
-      `Delete "${service.name}"? This cannot be undone. The service will not be deleted if upcoming bookings exist.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            deleteService.mutate(service.id, {
-              onSuccess: () => {
-                hapticSuccess();
-                setExpandedId(null);
-              },
-              onError: (e) => {
-                hapticWarning();
-                const msg =
-                  e instanceof ApiError
-                    ? e.message
-                    : 'Could not delete the service. Please try again.';
-                Alert.alert('Could not delete', msg);
-              },
-            });
-          },
-        },
-      ],
-    );
+    // Open a Sheet confirm — Alert.alert's confirm never fires on web.
+    setDeleteTarget(service);
+  }
+
+  function runDeleteService() {
+    const service = deleteTarget;
+    if (!service) return;
+    deleteService.mutate(service.id, {
+      onSuccess: () => {
+        hapticSuccess();
+        setDeleteTarget(null);
+        setExpandedId(null);
+        toast.success(`"${service.name}" deleted.`);
+      },
+      onError: (e) => {
+        hapticWarning();
+        setDeleteTarget(null);
+        toast.error(
+          e instanceof ApiError ? e.message : 'Could not delete the service. Please try again.',
+        );
+      },
+    });
   }
 
   const openVariantsEditor = (service: ManagedService) =>
@@ -828,9 +941,8 @@ export default function ServicesScreen() {
               },
               onError: (e) => {
                 hapticWarning();
-                Alert.alert(
-                  'Could not save options',
-                  e instanceof ApiError ? e.message : 'Please try again.',
+                toast.error(
+                  e instanceof ApiError ? e.message : 'Could not save the options.',
                 );
               },
             },
@@ -856,9 +968,8 @@ export default function ServicesScreen() {
               },
               onError: (e) => {
                 hapticWarning();
-                Alert.alert(
-                  'Could not save add-ons',
-                  e instanceof ApiError ? e.message : 'Please try again.',
+                toast.error(
+                  e instanceof ApiError ? e.message : 'Could not save the add-ons.',
                 );
               },
             },
@@ -1072,13 +1183,43 @@ export default function ServicesScreen() {
                     />
                   </View>
                 ))}
-              </>
-            ) : null}
 
-            <Text variant="caption" tone="muted">
-              Custom availability windows and processing-time blocks are managed on the web
-              dashboard.
-            </Text>
+                {/* Location / online-meeting */}
+                <ServiceLocationSection
+                  locationType={locationType}
+                  onLocationTypeChange={setLocationType}
+                  meetingUrl={meetingUrl}
+                  onMeetingUrlChange={(v) => {
+                    setMeetingUrl(v);
+                    if (urlError) setUrlError(null);
+                  }}
+                  meetingInfo={meetingInfo}
+                  onMeetingInfoChange={setMeetingInfo}
+                  urlError={urlError}
+                />
+
+                {/* Processing-time blocks (gaps inside the appointment) */}
+                <ProcessingTimeBlocksEditor
+                  drafts={processingDrafts}
+                  onChange={setProcessingDrafts}
+                  durationMinutes={Number(duration) || 0}
+                  bufferMinutes={Number(buffer) || 0}
+                />
+
+                {/* Custom availability (per-weekday windows) */}
+                <ServiceCustomAvailabilityEditor
+                  enabled={customAvailEnabled}
+                  onEnabledChange={setCustomAvailEnabled}
+                  schedule={customSchedule}
+                  onScheduleChange={setCustomSchedule}
+                />
+              </>
+            ) : (
+              <Text variant="caption" tone="muted">
+                Location, processing-time blocks, and custom availability are managed by venue
+                admins on the web dashboard.
+              </Text>
+            )}
 
             {error ? (
               <Text variant="bodySmall" tone="danger">
@@ -1090,6 +1231,32 @@ export default function ServicesScreen() {
           <View style={styles.actions}>
             <Button label="Cancel" variant="secondary" style={styles.flex1} onPress={closeSheet} />
             <Button label="Save" style={styles.flex1} loading={saving} onPress={() => void handleSave()} />
+          </View>
+        </View>
+      </Sheet>
+
+      {/* Delete-service confirm — a Sheet, since Alert.alert's confirm is a no-op on web. */}
+      <Sheet visible={deleteTarget !== null} onClose={() => setDeleteTarget(null)}>
+        <View style={styles.deleteSheet}>
+          <Text variant="subheading">Delete service</Text>
+          <Text variant="bodySmall" tone="secondary">
+            Delete &quot;{deleteTarget?.name}&quot;? This cannot be undone. The service will not be
+            deleted if upcoming bookings exist.
+          </Text>
+          <View style={styles.actions}>
+            <Button
+              label="Cancel"
+              variant="secondary"
+              style={styles.flex1}
+              onPress={() => setDeleteTarget(null)}
+            />
+            <Button
+              label="Delete"
+              variant="danger"
+              style={styles.flex1}
+              loading={deleteService.isPending}
+              onPress={runDeleteService}
+            />
           </View>
         </View>
       </Sheet>
@@ -1293,5 +1460,8 @@ const styles = StyleSheet.create({
   },
   flex1: {
     flex: 1,
+  },
+  deleteSheet: {
+    gap: spacing.md,
   },
 });

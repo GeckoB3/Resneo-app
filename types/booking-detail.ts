@@ -94,6 +94,8 @@ export interface BookingDetail {
   /** Booking origin ("Online", "Phone", "Walk-in"…) — full GET spreads the row. */
   source?: string | null;
   created_at?: string;
+  /** Display name of who created the booking, when the API joins it (optional). */
+  created_by_name?: string | null;
   /** Guest self-service cancel cutoff (ISO timestamp). */
   cancellation_deadline?: string | null;
   /** Appointment anchors (model B / unified). */
@@ -101,6 +103,8 @@ export interface BookingDetail {
   service_item_id?: string | null;
   practitioner_id?: string | null;
   calendar_id?: string | null;
+  /** Practitioner/calendar display name when the API joins it (optional). */
+  practitioner_name?: string | null;
   service_variant_id?: string | null;
   /** Service delivery location (web 2026-06: online / client-address services). */
   location_type?: string | null;

@@ -7,7 +7,6 @@
  */
 import { useState } from 'react';
 import {
-  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -19,6 +18,7 @@ import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { usePatchPractitioner } from '@/lib/queries/useAvailabilityManage';
+import { useToast } from '@/providers/ToastProvider';
 import { fonts, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { BreakTimesByDayMap, TimeRange } from '@/types/availability-manage';
@@ -98,6 +98,7 @@ export function BreaksEditor({
   onClose,
 }: Props) {
   const { colors } = useTheme();
+  const toast = useToast();
   const patchPractitioner = usePatchPractitioner();
 
   const [dayBreaks, setDayBreaks] = useState<Record<string, [number, number][]>>(() => {
@@ -146,8 +147,7 @@ export function BreaksEditor({
     for (const wd of WEEKDAYS) {
       for (const [s, e] of dayBreaks[wd.key] ?? []) {
         if (e <= s) {
-          Alert.alert('Invalid break', `Break end time must be after start for ${wd.label}.`);
-          hapticWarning();
+          toast.error(`Break end time must be after start for ${wd.label}.`);
           return;
         }
       }
@@ -167,12 +167,10 @@ export function BreaksEditor({
       });
       hapticSuccess();
       onClose();
+      toast.success('Breaks saved.');
     } catch (e) {
       hapticWarning();
-      Alert.alert(
-        'Could not save',
-        e instanceof ApiError ? e.message : 'An error occurred. Please try again.',
-      );
+      toast.error(e instanceof ApiError ? e.message : 'Could not save. Please try again.');
     }
   }
 

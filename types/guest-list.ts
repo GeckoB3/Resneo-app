@@ -23,6 +23,11 @@ export interface GuestListItem {
   paid_deposit_pence?: number;
   marketing_opt_out?: boolean;
   marketing_consent?: boolean;
+  /**
+   * Per-contact custom field values, keyed by `field_key`. Only returned when the
+   * request sets `include_custom_fields=1` (used by the CSV export).
+   */
+  custom_fields?: Record<string, unknown>;
 }
 
 export interface GuestListResponse {
@@ -45,12 +50,48 @@ export interface GuestListParams {
   /** Date range for segment filters (ISO date strings). */
   date_from?: string;
   date_to?: string;
-  /** Marketing consent filter: 'opted_in' | 'opted_out' | 'no_record' */
+  /** Marketing consent filter: 'subscribed' | 'not_subscribed' (backend only accepts these). */
   marketing?: string;
   /** Staff member UUID for last_staff segment. */
   last_staff_id?: string;
   /** Service UUID for last_service segment. */
   last_service_id?: string;
+  /**
+   * Service kind for the last_service segment. The backend RPC returns zero rows
+   * when `last_service_id` is sent without this — 'service_item' for unified
+   * venues, 'appointment_service' otherwise.
+   */
+  last_service_kind?: 'service_item' | 'appointment_service';
   /** Identity scope: 'identified' | 'all' | 'anonymous' */
   filter?: string;
+  /** When true, send `include_custom_fields=1` so rows carry `custom_fields` (CSV export). */
+  include_custom_fields?: boolean;
 }
+
+/**
+ * Venue custom client field definition from GET /api/venue/contacts/custom-fields.
+ * Used by the CSV export to label/extract per-contact custom field values.
+ */
+export interface ContactCustomFieldDefinition {
+  id: string;
+  venue_id: string;
+  field_name: string;
+  field_key: string;
+  field_type: 'text' | 'number' | 'date' | 'boolean';
+  is_active: boolean;
+  created_at?: string;
+}
+
+export interface ContactCustomFieldsResponse {
+  fields: ContactCustomFieldDefinition[];
+}
+
+/**
+ * A row in the flattened A–Z contacts list. The list is a single FlatList of
+ * `header` and `contact` rows (NOT a SectionList — sticky SectionList headers
+ * crash on Android/Fabric). Sticky letter headers are driven by
+ * `stickyHeaderIndices` computed from where the `header` rows land.
+ */
+export type ContactListRow =
+  | { type: 'header'; letter: string; key: string }
+  | { type: 'contact'; guest: GuestListItem; key: string };

@@ -1,5 +1,5 @@
-import { useLocalSearchParams } from 'expo-router';
-import { Alert, ScrollView, StyleSheet } from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { ScrollView, StyleSheet } from 'react-native';
 
 import { BookingDetailContent } from '@/components/bookings/BookingDetailContent';
 import { ErrorState } from '@/components/ui/ErrorState';
@@ -12,11 +12,14 @@ import { useBookingDetail } from '@/lib/queries/useBookingDetail';
 import { useDashboardHome } from '@/lib/queries/useDashboardHome';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { isAppointmentExperience } from '@/lib/venue/venue-experience';
+import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import type { BookingStatus } from '@/types/booking-detail';
 
 export default function BookingDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const router = useRouter();
+  const toast = useToast();
   const bookingId = typeof id === 'string' ? id : undefined;
   const detailQuery = useBookingDetail(bookingId);
   const dashboardQuery = useDashboardHome();
@@ -57,8 +60,7 @@ export default function BookingDetailScreen() {
       },
       onError: (error) => {
         hapticWarning();
-        const message = error instanceof ApiError ? error.message : 'Could not update booking';
-        Alert.alert('Update failed', message);
+        toast.error(error instanceof ApiError ? error.message : 'Could not update booking.');
       },
     });
   };
@@ -102,6 +104,7 @@ export default function BookingDetailScreen() {
           isAdmin={isAdmin}
           isAppointmentVenue={isAppointmentVenue}
           onStatusChange={handleStatusChange}
+          onDeleted={() => router.back()}
         />
       </ScrollView>
     </Screen>

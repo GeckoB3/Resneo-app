@@ -1,8 +1,11 @@
+import { format, parseISO } from 'date-fns';
 import { type Href, useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert,
+  ActivityIndicator,
   FlatList,
+  Linking,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -11,6 +14,7 @@ import {
   View,
   type ListRenderItem,
 } from 'react-native';
+import Animated, { FadeInDown, LinearTransition } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
@@ -19,33 +23,53 @@ import {
   BulkTagSheet,
   MergeContactsSheet,
 } from '@/components/clients/BulkActionSheets';
+import { ContactAzRail } from '@/components/clients/ContactAzRail';
 import { ContactFilterSheet, type ContactFilterState, DEFAULT_FILTER_STATE } from '@/components/clients/ContactFilterSheet';
+import { ContactLetterHeader } from '@/components/clients/ContactLetterHeader';
+import { flattenContacts, isNameSort } from '@/components/clients/contactListData';
 import { CreateContactSheet } from '@/components/clients/CreateContactSheet';
 import { Avatar } from '@/components/ui/Avatar';
+import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Chip } from '@/components/ui/Chip';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Fab } from '@/components/ui/Fab';
-import { Input } from '@/components/ui/Input';
+import { IconButton } from '@/components/ui/IconButton';
 import { LiveDot } from '@/components/ui/LiveDot';
 import { Screen } from '@/components/ui/Screen';
+import { SearchBar } from '@/components/ui/SearchBar';
 import { ListSkeleton } from '@/components/ui/Skeletons';
+import { SwipeRow, type SwipeAction } from '@/components/ui/SwipeRow';
 import { Text } from '@/components/ui/Text';
 import { ApiError, apiFetch } from '@/lib/api/client';
 import { clientsScreenTitle } from '@/lib/booking/terminology';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
-import { useGuests } from '@/lib/queries/useGuests';
+import { useGuestCustomFields, useGuests } from '@/lib/queries/useGuests';
 import { useGuestTags } from '@/lib/queries/useGuestTags';
+import { queryKeys } from '@/lib/queries/keys';
 import { useVenueLiveSync } from '@/lib/realtime/useVenueLiveSync';
+import { isUnifiedSchedulingVenue } from '@/lib/venue/venue-experience';
+import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { elevation, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
-import type { GuestListItem, GuestListResponse } from '@/types/guest-list';
+import type {
+  ContactCustomFieldDefinition,
+  ContactListRow,
+  GuestListItem,
+  GuestListResponse,
+} from '@/types/guest-list';
 
 const SEARCH_DEBOUNCE_MS = 280;
 const MIN_SEARCH_LENGTH = 2;
 const PAGE_SIZE = 50;
+const MAX_ROW_TAGS = 3;
+/** Hard ceiling on exported rows so a runaway directory can't hang the share sheet. */
+const EXPORT_MAX_ROWS = 5000;
+const EXPORT_PAGE_SIZE = 250;
+/** Mirror useGuestDetail's default booking-history limit so the prefetch key matches. */
+const DETAIL_BOOKING_HISTORY_LIMIT = 80;
 
 const SORT_OPTIONS: { value: string; label: string }[] = [
   { value: 'last_visit_desc', label: 'Recent first' },
@@ -56,46 +80,89 @@ const SORT_OPTIONS: { value: string; label: string }[] = [
   { value: 'created_desc', label: 'Recently added' },
 ];
 
+const SEGMENT_LABELS: Record<string, string> = {
+  new: 'New this period',
+  upcoming: 'Upcoming visit',
+  visit: 'By last visit',
+  marketing: 'Marketing consent',
+  last_staff: 'By last staff',
+  last_service: 'By last service',
+  tag: 'By tag',
+};
+
+const IDENTITY_LABELS: Record<string, string> = {
+  all: 'All contacts',
+  anonymous: 'Anonymous only',
+};
+
+const MARKETING_LABELS: Record<string, string> = {
+  subscribed: 'Subscribed',
+  not_subscribed: 'Not subscribed',
+};
+
 function formatGuestName(guest: GuestListItem): string {
   if (guest.identifiability_tier === 'anonymous') return 'Anonymous guest';
   const parts = [guest.first_name, guest.last_name].filter(Boolean);
   return parts.length > 0 ? parts.join(' ') : 'Unnamed guest';
 }
 
-function formatNextBooking(guest: GuestListItem): string | null {
-  if (!guest.next_booking_date) {
-    return null;
+/** Compact "d MMM" calendar date, or the raw string if it won't parse. */
+function shortDate(dateStr: string): string {
+  try {
+    return format(parseISO(dateStr), 'd MMM');
+  } catch {
+    return dateStr;
   }
+}
+
+function formatNextBooking(guest: GuestListItem): string | null {
+  if (!guest.next_booking_date) return null;
   const time = guest.next_booking_time?.slice(0, 5);
-  return time ? `${guest.next_booking_date} · ${time}` : guest.next_booking_date;
+  const date = shortDate(guest.next_booking_date);
+  return time ? `${date} · ${time}` : date;
+}
+
+/** Serialise a custom-field value into a single CSV cell. */
+function customFieldCell(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
 }
 
 function GuestRow({
   guest,
   onPress,
+  onPressIn,
   onLongPress,
   selectionMode = false,
   selected = false,
 }: {
   guest: GuestListItem;
   onPress: () => void;
+  onPressIn?: () => void;
   onLongPress?: () => void;
   selectionMode?: boolean;
   selected?: boolean;
 }) {
   const { colors } = useTheme();
   const name = formatGuestName(guest);
+  const isAnonymous = guest.identifiability_tier === 'anonymous';
   const visits =
     guest.visit_count > 0 ? `${guest.visit_count} visit${guest.visit_count === 1 ? '' : 's'}` : null;
   const next = formatNextBooking(guest);
-  const stats = [visits, next ? `Next: ${next}` : null].filter(Boolean).join(' · ');
-  const isAnonymous = guest.identifiability_tier === 'anonymous';
+  const lastVisit = guest.last_visit_date ? `Last: ${shortDate(guest.last_visit_date)}` : null;
+  // Prefer the forward-looking "Next" pill; fall back to last visit.
+  const visitPill = next ? `Next: ${next}` : lastVisit;
+  const tags = guest.tags ?? [];
+  const shownTags = tags.slice(0, MAX_ROW_TAGS);
+  const overflowTags = tags.length - shownTags.length;
 
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityState={{ selected }}
       onPress={onPress}
+      onPressIn={onPressIn}
       onLongPress={onLongPress}
       style={({ pressed }) => [
         styles.row,
@@ -122,22 +189,42 @@ function GuestRow({
       ) : null}
       <Avatar name={name} size={44} />
       <View style={styles.rowText}>
-        <Text variant="bodyMedium" numberOfLines={1} tone={isAnonymous ? 'muted' : undefined}>
-          {name}
-        </Text>
+        <View style={styles.rowTitleRow}>
+          <Text
+            variant="bodyMedium"
+            numberOfLines={1}
+            tone={isAnonymous ? 'muted' : undefined}
+            style={styles.rowName}>
+            {name}
+          </Text>
+          {guest.no_show_count > 0 ? (
+            <Badge label={`${guest.no_show_count} no-show${guest.no_show_count === 1 ? '' : 's'}`} tone="warning" />
+          ) : null}
+        </View>
         {guest.phone ? (
           <Text variant="caption" tone="secondary" numberOfLines={1}>
             {guest.phone}
           </Text>
-        ) : null}
-        {guest.email ? (
+        ) : guest.email ? (
           <Text variant="caption" tone="muted" numberOfLines={1}>
             {guest.email}
           </Text>
         ) : null}
-        {stats ? (
+
+        {/* Tag chips (max 3 + overflow) */}
+        {shownTags.length > 0 ? (
+          <View style={styles.rowTags}>
+            {shownTags.map((tag) => (
+              <Badge key={tag} label={tag} tone="brand" />
+            ))}
+            {overflowTags > 0 ? <Badge label={`+${overflowTags}`} tone="neutral" /> : null}
+          </View>
+        ) : null}
+
+        {/* Visit / next-booking line */}
+        {visits || visitPill ? (
           <Text variant="caption" tone={next ? 'brand' : 'muted'} numberOfLines={1}>
-            {stats}
+            {[visits, visitPill].filter(Boolean).join(' · ')}
           </Text>
         ) : null}
       </View>
@@ -147,9 +234,11 @@ function GuestRow({
 
 export default function ClientsScreen() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const { terminology, venue } = useVenueContext();
+  const toast = useToast();
+  const { terminology, venue, bookingModel } = useVenueContext();
   const isAdmin = venue?.current_user_role === 'admin';
   const accessToken = useAccessToken();
   const screenTitle = clientsScreenTitle(terminology);
@@ -158,7 +247,8 @@ export default function ClientsScreen() {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [sort, setSort] = useState('last_visit_desc');
   const [page, setPage] = useState(0);
-  const [tagFilter, setTagFilter] = useState<string | null>(null);
+  // Accumulated rows across the pages fetched so far (infinite scroll).
+  const [loadedGuests, setLoadedGuests] = useState<GuestListItem[]>([]);
   const [filterState, setFilterState] = useState<ContactFilterState>(DEFAULT_FILTER_STATE);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [createSheetOpen, setCreateSheetOpen] = useState(false);
@@ -167,51 +257,124 @@ export default function ClientsScreen() {
   const [bulkSheet, setBulkSheet] = useState<'tag' | 'remove_tag' | 'message' | 'merge' | null>(null);
   const [exporting, setExporting] = useState(false);
 
+  const listRef = useRef<FlatList<ContactListRow>>(null);
+
   const selectionMode = selectedIds.length > 0;
+  const nameSort = isNameSort(sort);
+
+  // last_service_kind mirrors the web: 'service_item' for unified venues,
+  // 'appointment_service' otherwise. Without it the RPC returns zero rows.
+  const lastServiceKind: 'service_item' | 'appointment_service' = isUnifiedSchedulingVenue(
+    bookingModel,
+  )
+    ? 'service_item'
+    : 'appointment_service';
 
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearch(searchInput.trim());
-      setPage(0); // reset to first page on new search
     }, SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [searchInput]);
 
-  // Reset page when filter/sort changes
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setPage(0);
-  }, [sort, filterState]);
-
   const tagsQuery = useGuestTags();
   const tags = tagsQuery.data?.tags ?? [];
 
-  const guestsQuery = useGuests({
-    search: debouncedSearch.length >= MIN_SEARCH_LENGTH ? debouncedSearch : undefined,
-    page,
-    limit: PAGE_SIZE,
-    sort,
-    // Use filterState segment/tag
-    segment: filterState.segment !== 'all' ? filterState.segment : undefined,
-    segmentTag: filterState.segment === 'tag' ? filterState.segmentTag : (tagFilter ?? undefined),
-    filter: filterState.filter !== 'identified' ? filterState.filter : undefined,
-    date_from: filterState.date_from || undefined,
-    date_to: filterState.date_to || undefined,
-    marketing: filterState.marketing || undefined,
-  });
+  // Shared param source for the list query AND the CSV export, so export always
+  // matches exactly what's on screen.
+  const guestQueryParams = useMemo(
+    () => ({
+      search: debouncedSearch.length >= MIN_SEARCH_LENGTH ? debouncedSearch : undefined,
+      sort,
+      segment: filterState.segment !== 'all' ? filterState.segment : undefined,
+      segmentTag: filterState.segment === 'tag' ? filterState.segmentTag : undefined,
+      filter: filterState.filter !== 'identified' ? filterState.filter : undefined,
+      date_from: filterState.date_from || undefined,
+      date_to: filterState.date_to || undefined,
+      marketing: filterState.marketing || undefined,
+      last_staff_id: filterState.segment === 'last_staff' ? filterState.last_staff_id : undefined,
+      last_service_id:
+        filterState.segment === 'last_service' ? filterState.last_service_id : undefined,
+      last_service_kind:
+        filterState.segment === 'last_service' ? lastServiceKind : undefined,
+    }),
+    [debouncedSearch, sort, filterState, lastServiceKind],
+  );
+
+  // A stable identity for the active query params. Whenever it changes (sort,
+  // search, any filter facet) we reset infinite-scroll accumulation to page 0.
+  const queryParamsKey = useMemo(() => JSON.stringify(guestQueryParams), [guestQueryParams]);
+
+  // Reset pagination + the accumulated rows whenever the query params change.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPage(0);
+    setLoadedGuests([]);
+  }, [queryParamsKey]);
+
+  const guestsQuery = useGuests({ ...guestQueryParams, page, limit: PAGE_SIZE });
+
+  const totalCount = guestsQuery.data?.total_count ?? 0;
+  const responsePage = guestsQuery.data?.page;
+  const responseGuests = guestsQuery.data?.guests;
+
+  // Append each freshly-loaded page into the accumulator, de-duplicating by id.
+  // We only merge when the response's echoed page matches the page we asked for,
+  // so keepPreviousData's stale frames during a transition don't double-append.
+  useEffect(() => {
+    if (!responseGuests || responsePage == null || responsePage !== page) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setLoadedGuests((current) => {
+      if (page === 0) return responseGuests;
+      const seen = new Set(current.map((g) => g.id));
+      const additions = responseGuests.filter((g) => !seen.has(g.id));
+      return additions.length > 0 ? [...current, ...additions] : current;
+    });
+  }, [responseGuests, responsePage, page]);
+
+  const guests = loadedGuests;
+  const hasMore = guests.length < totalCount;
+  const isFetchingNextPage = page > 0 && guestsQuery.isFetching;
+
+  const loadNextPage = useCallback(() => {
+    if (guestsQuery.isFetching || !hasMore) return;
+    setPage((p) => p + 1);
+  }, [guestsQuery.isFetching, hasMore]);
 
   // Realtime: refresh the directory when the venue's guests change server-side.
   const venueId = venue?.id;
   const liveState = useVenueLiveSync({
     venueId,
     subscriptions: [{ table: 'guests', filter: venueId ? `venue_id=eq.${venueId}` : undefined }],
-    onRefresh: useCallback(() => void guestsQuery.refetch(), [guestsQuery]),
+    onRefresh: useCallback(() => {
+      // Reset to the first page so the realtime refresh reflects the new total.
+      setPage(0);
+      void guestsQuery.refetch();
+    }, [guestsQuery]),
     enabled: Boolean(venueId),
   });
 
   const openGuest = useCallback(
     (guestId: string) => router.push(`/client/${guestId}` as Href),
     [router],
+  );
+
+  // Warm the detail cache on press-in so the detail screen paints instantly.
+  const prefetchGuest = useCallback(
+    (guestId: string) => {
+      if (!accessToken) return;
+      void queryClient.prefetchQuery({
+        queryKey: queryKeys.guests.detail(accessToken, guestId, DETAIL_BOOKING_HISTORY_LIMIT),
+        queryFn: () => {
+          const params = new URLSearchParams({
+            booking_history_limit: String(DETAIL_BOOKING_HISTORY_LIMIT),
+          });
+          return apiFetch(`/api/venue/guests/${guestId}?${params.toString()}`, { accessToken });
+        },
+        staleTime: 30_000,
+      });
+    },
+    [accessToken, queryClient],
   );
 
   const toggleSelected = (guestId: string) => {
@@ -229,95 +392,350 @@ export default function ClientsScreen() {
 
   const selectAllOnPage = () => {
     const allIds = guests.map((g) => g.id);
-    const allSelected = allIds.every((id) => selectedIds.includes(id));
-    if (allSelected) {
-      setSelectedIds([]);
-    } else {
-      setSelectedIds(allIds);
-    }
+    const allSelected = allIds.length > 0 && allIds.every((id) => selectedIds.includes(id));
+    setSelectedIds(allSelected ? [] : allIds);
   };
-
-  const renderItem: ListRenderItem<GuestListItem> = ({ item }) => (
-    <GuestRow
-      guest={item}
-      selectionMode={selectionMode}
-      selected={selectedIds.includes(item.id)}
-      onPress={() => (selectionMode ? toggleSelected(item.id) : openGuest(item.id))}
-      onLongPress={() => toggleSelected(item.id)}
-    />
-  );
-
-  const guests = useMemo(() => guestsQuery.data?.guests ?? [], [guestsQuery.data]); // eslint-disable-line react-hooks/preserve-manual-memoization
-  const totalCount = guestsQuery.data?.total_count ?? 0;
-  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
   const selectedGuests = useMemo(
     () => guests.filter((guest) => selectedIds.includes(guest.id)),
     [guests, selectedIds],
   );
 
-  /** Export the current view (up to 250 contacts) as CSV via the share sheet. */
+  // Flatten loaded rows into header + contact rows for the A–Z list. For
+  // non-name sorts we still flatten (without headers) so renderItem is uniform.
+  const { rows, stickyHeaderIndices, letterIndex } = useMemo(() => {
+    if (nameSort) return flattenContacts(guests);
+    return {
+      rows: guests.map<ContactListRow>((guest) => ({
+        type: 'contact' as const,
+        guest,
+        key: guest.id,
+      })),
+      stickyHeaderIndices: [] as number[],
+      letterIndex: new Map<string, number>(),
+    };
+  }, [guests, nameSort]);
+
+  const presentLetters = useMemo(() => new Set(letterIndex.keys()), [letterIndex]);
+
+  // Jump the list to a letter's sticky header (A–Z rail). viewPosition 0 pins
+  // the header to the top; scrollToIndex needs getItemLayout (provided below).
+  const jumpToLetter = useCallback(
+    (letter: string) => {
+      const index = letterIndex.get(letter);
+      if (index == null) return;
+      listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0 });
+    },
+    [letterIndex],
+  );
+
+  const renderContactRow = useCallback(
+    (item: GuestListItem) => {
+      const swipeActions: SwipeAction[] = [];
+      if (item.phone) {
+        swipeActions.push({
+          key: 'call',
+          label: 'Call',
+          icon: { ios: 'phone.fill', android: 'call', web: 'call' },
+          color: colors.success,
+          onPress: () => void Linking.openURL(`tel:${item.phone}`),
+        });
+        swipeActions.push({
+          key: 'message',
+          label: 'Text',
+          icon: { ios: 'message.fill', android: 'sms', web: 'sms' },
+          color: colors.brand,
+          onPress: () => void Linking.openURL(`sms:${item.phone}`),
+        });
+      }
+
+      const row = (
+        <GuestRow
+          guest={item}
+          selectionMode={selectionMode}
+          selected={selectedIds.includes(item.id)}
+          onPress={() => (selectionMode ? toggleSelected(item.id) : openGuest(item.id))}
+          onPressIn={() => (selectionMode ? undefined : prefetchGuest(item.id))}
+          onLongPress={() => toggleSelected(item.id)}
+        />
+      );
+
+      return (
+        <Animated.View entering={FadeInDown.springify().damping(20)} layout={LinearTransition.springify()}>
+          {/* Swipe quick-actions are iOS-feel only; disabled in selection mode. */}
+          {!selectionMode && swipeActions.length > 0 ? (
+            <SwipeRow rightActions={swipeActions}>{row}</SwipeRow>
+          ) : (
+            row
+          )}
+        </Animated.View>
+      );
+    },
+    // toggleSelected/openGuest/prefetchGuest are stable enough for this list.
+    [colors.brand, colors.success, selectionMode, selectedIds, openGuest, prefetchGuest],
+  );
+
+  const renderItem: ListRenderItem<ContactListRow> = useCallback(
+    ({ item }) =>
+      item.type === 'header' ? (
+        <ContactLetterHeader letter={item.letter} />
+      ) : (
+        renderContactRow(item.guest)
+      ),
+    [renderContactRow],
+  );
+
+  // Precomputed cumulative offsets so getItemLayout is O(1) (not O(n) per call).
+  // Heights are approximate — rows are variable-height — which is fine: it only
+  // needs to put the A–Z rail's scrollToIndex jump in the right neighbourhood,
+  // and onScrollToIndexFailed is the safety net for not-yet-rendered targets.
+  const rowOffsets = useMemo(() => {
+    const offsets = new Array<number>(rows.length);
+    let running = 0;
+    for (let i = 0; i < rows.length; i += 1) {
+      offsets[i] = running;
+      running += rows[i].type === 'header' ? HEADER_ROW_HEIGHT : CONTACT_ROW_HEIGHT;
+    }
+    return offsets;
+  }, [rows]);
+
+  const getItemLayout = useCallback(
+    (_data: ArrayLike<ContactListRow> | null | undefined, index: number) => {
+      const length = rows[index]?.type === 'header' ? HEADER_ROW_HEIGHT : CONTACT_ROW_HEIGHT;
+      return { index, length, offset: rowOffsets[index] ?? 0 };
+    },
+    [rows, rowOffsets],
+  );
+
+  const keyExtractor = useCallback((item: ContactListRow) => item.key, []);
+
+  /**
+   * Export every contact in the CURRENT view as CSV, paging through results.
+   * Params come from the same source as the list query, so the export honours
+   * the active segment, identity scope, date range, marketing and search.
+   * Columns mirror the web ContactsDashboard export (split name, booking
+   * signals, marketing flags, plus a column per active custom field).
+   */
+  const customFieldsQuery = useGuestCustomFields();
   const handleExport = useCallback(async () => {
     if (!accessToken) return;
     setExporting(true);
     try {
-      const params = new URLSearchParams({ page: '0', limit: '250', sort });
-      if (debouncedSearch.length >= MIN_SEARCH_LENGTH) params.set('search', debouncedSearch);
-      if (tagFilter) {
-        params.set('segment', 'tag');
-        params.set('segment_tag', tagFilter);
+      // Fetch the active custom-field definitions so we can add a column each.
+      let activeFields: ContactCustomFieldDefinition[] = [];
+      try {
+        const cf =
+          customFieldsQuery.data ?? (await customFieldsQuery.refetch()).data ?? { fields: [] };
+        activeFields = (cf.fields ?? []).filter((f) => f.is_active);
+      } catch {
+        // Non-fatal: export the core columns without custom fields.
+        activeFields = [];
       }
-      const data = await apiFetch<GuestListResponse>(`/api/venue/guests?${params.toString()}`, {
-        accessToken,
-      });
+
+      const all: GuestListItem[] = [];
+      let exportPage = 0;
+      let truncated = false;
+      for (;;) {
+        const params = new URLSearchParams({
+          page: String(exportPage),
+          limit: String(EXPORT_PAGE_SIZE),
+          sort: guestQueryParams.sort,
+          include_custom_fields: '1',
+        });
+        if (guestQueryParams.search) params.set('search', guestQueryParams.search);
+        if (guestQueryParams.filter) params.set('filter', guestQueryParams.filter);
+        if (guestQueryParams.segment) params.set('segment', guestQueryParams.segment);
+        if (guestQueryParams.segmentTag) params.set('segment_tag', guestQueryParams.segmentTag);
+        if (guestQueryParams.date_from) params.set('date_from', guestQueryParams.date_from);
+        if (guestQueryParams.date_to) params.set('date_to', guestQueryParams.date_to);
+        if (guestQueryParams.segment === 'marketing' && guestQueryParams.marketing) {
+          params.set('marketing', guestQueryParams.marketing);
+        }
+        if (guestQueryParams.last_staff_id) params.set('last_staff_id', guestQueryParams.last_staff_id);
+        if (guestQueryParams.last_service_id) {
+          params.set('last_service_id', guestQueryParams.last_service_id);
+          if (guestQueryParams.last_service_kind) {
+            params.set('last_service_kind', guestQueryParams.last_service_kind);
+          }
+        }
+        const data = await apiFetch<GuestListResponse>(`/api/venue/guests?${params.toString()}`, {
+          accessToken,
+        });
+        const batch = data.guests ?? [];
+        all.push(...batch);
+        const reachedEnd = batch.length < EXPORT_PAGE_SIZE;
+        if (all.length >= EXPORT_MAX_ROWS) {
+          truncated = !reachedEnd;
+          break;
+        }
+        if (reachedEnd) break;
+        exportPage += 1;
+      }
+
       const esc = (value: string | null | undefined) => `"${(value ?? '').replace(/"/g, '""')}"`;
+      const header = [
+        'First name',
+        'Surname',
+        'Email',
+        'Phone',
+        'Tags',
+        'Visits',
+        'No-shows',
+        'Last visit',
+        'Total bookings',
+        'Upcoming',
+        'Cancelled',
+        'Paid deposits (£)',
+        'Marketing consent',
+        'Marketing opt-out',
+        ...activeFields.map((f) => `CF: ${f.field_name}`),
+      ]
+        .map(esc)
+        .join(',');
+
       const rows = [
-        'Name,Email,Phone,Visits,Last visit,Tags',
-        ...data.guests.map((g) =>
-          [
-            esc(formatGuestName(g)),
+        header,
+        ...all.slice(0, EXPORT_MAX_ROWS).map((g) => {
+          const cf = g.custom_fields ?? {};
+          return [
+            esc(g.first_name),
+            esc(g.last_name),
             esc(g.email),
             esc(g.phone),
-            String(g.visit_count ?? 0),
-            esc(g.last_visit_date),
             esc((g.tags ?? []).join('; ')),
-          ].join(','),
-        ),
+            String(g.visit_count ?? 0),
+            String(g.no_show_count ?? 0),
+            esc(g.last_visit_date),
+            String(g.total_bookings ?? 0),
+            String(g.upcoming_booking_count ?? 0),
+            String(g.cancelled_count ?? 0),
+            ((g.paid_deposit_pence ?? 0) / 100).toFixed(2),
+            g.marketing_consent ? 'yes' : 'no',
+            g.marketing_opt_out ? 'yes' : 'no',
+            ...activeFields.map((f) => esc(customFieldCell(cf[f.field_key]))),
+          ].join(',');
+        }),
       ];
       await Share.share({ title: 'Contacts export', message: rows.join('\n') });
+      if (truncated) {
+        toast.info(`Export capped at ${EXPORT_MAX_ROWS} contacts.`);
+      }
     } catch (e) {
-      Alert.alert('Export failed', e instanceof ApiError ? e.message : 'Please try again.');
+      toast.error(e instanceof ApiError ? e.message : 'Could not export contacts.');
     } finally {
       setExporting(false);
     }
-  }, [accessToken, sort, debouncedSearch, tagFilter]);
+  }, [accessToken, customFieldsQuery, guestQueryParams, toast]);
 
   const errorMessage =
     guestsQuery.error instanceof ApiError
       ? guestsQuery.error.message
       : guestsQuery.error?.message ?? 'Could not load clients.';
 
-  // Is the active filter set different from defaults?
+  // Active filter facets → removable summary chips (web parity).
+  const filterChips = useMemo(() => {
+    const chips: { key: string; label: string; clear: () => void }[] = [];
+    if (filterState.segment !== 'all') {
+      const segLabel = SEGMENT_LABELS[filterState.segment] ?? filterState.segment;
+      const tagSuffix =
+        filterState.segment === 'tag' && filterState.segmentTag ? `: ${filterState.segmentTag}` : '';
+      chips.push({
+        key: 'segment',
+        label: `${segLabel}${tagSuffix}`,
+        clear: () =>
+          setFilterState((s) => ({
+            ...s,
+            segment: 'all',
+            segmentTag: '',
+            date_from: '',
+            date_to: '',
+            marketing: '',
+            last_staff_id: '',
+            last_service_id: '',
+          })),
+      });
+    }
+    if (filterState.filter !== 'identified') {
+      chips.push({
+        key: 'identity',
+        label: IDENTITY_LABELS[filterState.filter] ?? filterState.filter,
+        clear: () => setFilterState((s) => ({ ...s, filter: 'identified' })),
+      });
+    }
+    if (filterState.segment === 'marketing' && filterState.marketing) {
+      chips.push({
+        key: 'marketing',
+        label: MARKETING_LABELS[filterState.marketing] ?? filterState.marketing,
+        clear: () => setFilterState((s) => ({ ...s, marketing: 'subscribed' })),
+      });
+    }
+    if (filterState.date_from || filterState.date_to) {
+      const from = filterState.date_from || '…';
+      const to = filterState.date_to || '…';
+      chips.push({
+        key: 'dates',
+        label: `${from} → ${to}`,
+        clear: () => setFilterState((s) => ({ ...s, date_from: '', date_to: '' })),
+      });
+    }
+    if (debouncedSearch.length >= MIN_SEARCH_LENGTH) {
+      chips.push({
+        key: 'search',
+        label: `“${debouncedSearch}”`,
+        clear: () => setSearchInput(''),
+      });
+    }
+    return chips;
+  }, [filterState, debouncedSearch]);
+
   const hasActiveFilter =
     filterState.segment !== 'all' ||
     filterState.filter !== 'identified' ||
     filterState.date_from !== '' ||
-    filterState.date_to !== '' ||
-    filterState.marketing !== '';
+    filterState.date_to !== '';
 
   const bulkBarBottom = Math.max(spacing.base, insets.bottom + spacing.xs);
+  // Keep the A–Z rail clear of the floating bulk bar when it's showing.
+  const railBottomInset = selectionMode ? 72 + bulkBarBottom : spacing.xl;
+
+  const listFooter = useMemo(() => {
+    if (guests.length === 0) return null;
+    if (isFetchingNextPage) {
+      return (
+        <View style={styles.footer}>
+          <ActivityIndicator color={colors.brand} />
+        </View>
+      );
+    }
+    if (!hasMore) {
+      return (
+        <View style={styles.footer}>
+          <Text variant="caption" tone="muted">
+            All {totalCount} {clientLabel}{totalCount === 1 ? '' : 's'} loaded
+          </Text>
+        </View>
+      );
+    }
+    return null;
+  }, [guests.length, isFetchingNextPage, hasMore, totalCount, clientLabel, colors.brand]);
 
   return (
     <Screen padded={false}>
       {/* Search box is rendered OUTSIDE the FlatList so its TextInput is never remounted. */}
       <View style={styles.header}>
-        <Input
-          autoCapitalize="none"
-          autoCorrect={false}
+        <SearchBar
+          value={searchInput}
           onChangeText={setSearchInput}
           placeholder={`Search ${clientLabel}s by name, phone, or email`}
-          returnKeyType="search"
-          value={searchInput}
+          right={
+            <IconButton
+              icon={{ ios: 'line.3.horizontal.decrease', android: 'filter_list', web: 'filter_list' }}
+              accessibilityLabel="Filter contacts"
+              variant="bordered"
+              active={hasActiveFilter}
+              onPress={() => setFilterSheetOpen(true)}
+            />
+          }
         />
         {searchInput.trim().length > 0 && searchInput.trim().length < MIN_SEARCH_LENGTH ? (
           <Text variant="caption" tone="muted">
@@ -325,7 +743,7 @@ export default function ClientsScreen() {
           </Text>
         ) : null}
 
-        {/* Sort + filter controls */}
+        {/* Sort controls */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -339,11 +757,6 @@ export default function ClientsScreen() {
               onPress={() => setSort(option.value)}
             />
           ))}
-          <Chip
-            label={hasActiveFilter ? 'Filters ●' : 'Filters'}
-            selected={hasActiveFilter}
-            onPress={() => setFilterSheetOpen(true)}
-          />
           {isAdmin ? (
             <Chip
               label={exporting ? 'Exporting…' : 'Export CSV'}
@@ -353,87 +766,90 @@ export default function ClientsScreen() {
           ) : null}
         </ScrollView>
 
-        {/* Tag filter chips (legacy quick-filter) */}
-        {tags.length > 0 ? (
+        {/* Active filter summary — removable chips */}
+        {filterChips.length > 0 ? (
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.filterRow}
             keyboardShouldPersistTaps="handled">
-            <Chip label="All tags" selected={tagFilter === null} onPress={() => setTagFilter(null)} />
-            {tags.map((tag) => (
-              <Chip
-                key={tag}
-                label={tag}
-                selected={tagFilter === tag}
-                onPress={() => setTagFilter((cur) => (cur === tag ? null : tag))}
-              />
+            {filterChips.map((chip) => (
+              <Chip key={chip.key} label={chip.label} selected onRemove={chip.clear} />
             ))}
           </ScrollView>
         ) : null}
 
-        {/* Total count + pagination controls */}
+        {/* Total count + live indicator */}
         {!guestsQuery.isLoading && totalCount > 0 ? (
-          <View style={styles.pageBar}>
-            <View style={styles.countRow}>
-              <LiveDot state={liveState} />
-              <Text variant="caption" tone="muted">
-                {totalCount} {clientLabel}{totalCount === 1 ? '' : 's'} · Page {page + 1} of {totalPages}
-              </Text>
-            </View>
-            <View style={styles.pageButtons}>
-              <Button
-                label="‹ Prev"
-                size="sm"
-                variant="ghost"
-                disabled={page === 0}
-                onPress={() => setPage((p) => Math.max(0, p - 1))}
-              />
-              <Button
-                label="Next ›"
-                size="sm"
-                variant="ghost"
-                disabled={page >= totalPages - 1}
-                onPress={() => setPage((p) => p + 1)}
-              />
-            </View>
+          <View style={styles.countRow}>
+            <LiveDot state={liveState} />
+            <Text variant="caption" tone="muted">
+              {guests.length} of {totalCount} {clientLabel}{totalCount === 1 ? '' : 's'}
+            </Text>
           </View>
         ) : null}
       </View>
 
-      {guestsQuery.isLoading ? (
+      {guestsQuery.isLoading && guests.length === 0 ? (
         <ListSkeleton avatar rows={7} />
-      ) : guestsQuery.isError ? (
+      ) : guestsQuery.isError && guests.length === 0 ? (
         <ErrorState message={errorMessage} onRetry={() => void guestsQuery.refetch()} />
       ) : (
-        <FlatList
-          contentContainerStyle={[
-            styles.listContent,
-            selectionMode ? { paddingBottom: 80 + bulkBarBottom } : undefined,
-          ]}
-          data={guests}
-          keyExtractor={(item) => item.id}
-          keyboardShouldPersistTaps="handled"
-          ItemSeparatorComponent={Separator}
-          refreshControl={
-            <RefreshControl
-              refreshing={guestsQuery.isRefetching}
-              onRefresh={() => void guestsQuery.refetch()}
-              tintColor={colors.brand}
+        <View style={styles.listWrap}>
+          <FlatList
+            ref={listRef}
+            contentContainerStyle={[
+              styles.listContent,
+              selectionMode ? { paddingBottom: 80 + bulkBarBottom } : undefined,
+            ]}
+            data={rows}
+            keyExtractor={keyExtractor}
+            keyboardShouldPersistTaps="handled"
+            getItemLayout={getItemLayout}
+            stickyHeaderIndices={nameSort ? stickyHeaderIndices : undefined}
+            onEndReached={loadNextPage}
+            onEndReachedThreshold={0.6}
+            // scrollToIndex can briefly miss before all rows render; fall back to
+            // an offset scroll then retry so the A–Z rail never throws.
+            onScrollToIndexFailed={(info) => {
+              listRef.current?.scrollToOffset({
+                offset: info.averageItemLength * info.index,
+                animated: true,
+              });
+            }}
+            refreshControl={
+              <RefreshControl
+                refreshing={guestsQuery.isRefetching && page === 0}
+                onRefresh={() => {
+                  setPage(0);
+                  void guestsQuery.refetch();
+                }}
+                tintColor={colors.brand}
+              />
+            }
+            ListEmptyComponent={
+              <EmptyState
+                title={`No ${screenTitle.toLowerCase()} found`}
+                message={
+                  debouncedSearch.length >= MIN_SEARCH_LENGTH
+                    ? `No ${screenTitle.toLowerCase()} match "${debouncedSearch}".`
+                    : `Your ${clientLabel} directory will appear here once you have ${clientLabel}s.`
+                }
+              />
+            }
+            ListFooterComponent={listFooter}
+            renderItem={renderItem}
+          />
+
+          {/* Right-edge A–Z jump rail — only for name sorts with loaded letters. */}
+          {nameSort && presentLetters.size > 1 ? (
+            <ContactAzRail
+              presentLetters={presentLetters}
+              onJump={jumpToLetter}
+              bottomInset={railBottomInset}
             />
-          }
-          ListEmptyComponent={
-            <EmptyState
-              title={`No ${screenTitle.toLowerCase()} found`}
-              message={
-                debouncedSearch.length >= MIN_SEARCH_LENGTH
-                  ? `No ${screenTitle.toLowerCase()} match "${debouncedSearch}".`
-                  : `Your ${clientLabel} directory will appear here once you have ${clientLabel}s.`
-              }
-            />
-          }
-          renderItem={renderItem}
-        />
+          ) : null}
+        </View>
       )}
 
       {/* Bulk action bar — long-press rows to select. */}
@@ -448,7 +864,7 @@ export default function ClientsScreen() {
             {selectedIds.length} selected
           </Text>
           <Button
-            label={guests.every((g) => selectedIds.includes(g.id)) ? 'Deselect all' : 'Select all'}
+            label={guests.length > 0 && guests.every((g) => selectedIds.includes(g.id)) ? 'Deselect all' : 'Select all'}
             size="sm"
             variant="ghost"
             onPress={selectAllOnPage}
@@ -516,10 +932,7 @@ export default function ClientsScreen() {
         visible={filterSheetOpen}
         onClose={() => setFilterSheetOpen(false)}
         value={filterState}
-        onApply={(state) => {
-          setFilterState(state);
-          setTagFilter(null); // clear legacy tag chip when advanced filter applied
-        }}
+        onApply={setFilterState}
         availableTags={tags}
       />
 
@@ -536,9 +949,9 @@ export default function ClientsScreen() {
   );
 }
 
-function Separator() {
-  return <View style={styles.separator} />;
-}
+/** Approximate row heights so the A–Z rail's scrollToIndex lands accurately. */
+const HEADER_ROW_HEIGHT = 32;
+const CONTACT_ROW_HEIGHT = 84;
 
 const styles = StyleSheet.create({
   header: {
@@ -550,13 +963,13 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     paddingRight: spacing.base,
   },
+  listWrap: {
+    flex: 1,
+  },
   listContent: {
     paddingHorizontal: spacing.base,
     paddingBottom: spacing.xl,
     flexGrow: 1,
-  },
-  separator: {
-    height: spacing.sm,
   },
   row: {
     flexDirection: 'row',
@@ -565,17 +978,36 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radius.md,
     padding: spacing.md,
+    marginBottom: spacing.sm,
   },
   rowText: {
     flex: 1,
     minWidth: 0,
-    gap: 2,
+    gap: 3,
+  },
+  rowTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  rowName: {
+    flexShrink: 1,
+  },
+  rowTags: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
   },
   selectCheck: {
     width: 24,
     height: 24,
     borderRadius: radius.sm,
     borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  footer: {
+    paddingVertical: spacing.base,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -593,15 +1025,6 @@ const styles = StyleSheet.create({
   bulkCount: {
     flex: 1,
     paddingLeft: spacing.sm,
-  },
-  pageBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  pageButtons: {
-    flexDirection: 'row',
-    gap: spacing.xs,
   },
   countRow: {
     flexDirection: 'row',

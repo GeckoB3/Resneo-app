@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
@@ -8,6 +8,8 @@ import { Segmented } from '@/components/ui/Segmented';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { hapticSelect } from '@/lib/haptics';
+import { usePractitioners } from '@/lib/queries/usePractitioners';
+import { useManagedServices } from '@/lib/queries/useServicesManage';
 import { spacing } from '@/theme/index';
 
 const SEGMENT_OPTIONS = [
@@ -16,6 +18,8 @@ const SEGMENT_OPTIONS = [
   { value: 'upcoming', label: 'Upcoming visit' },
   { value: 'visit', label: 'By last visit' },
   { value: 'marketing', label: 'Marketing consent' },
+  { value: 'last_staff', label: 'By last staff' },
+  { value: 'last_service', label: 'By last service' },
   { value: 'tag', label: 'By tag' },
 ] as const;
 
@@ -25,12 +29,33 @@ const IDENTITY_OPTIONS = [
   { value: 'anonymous', label: 'Anonymous only' },
 ] as const;
 
+// The backend only accepts `subscribed | not_subscribed` and silently defaults
+// to `subscribed` for anything else — so the previous opted_in/opted_out/no_record
+// options returned WRONG contacts. These two values are the only valid ones.
 const MARKETING_OPTIONS = [
-  { value: '', label: 'Any' },
-  { value: 'opted_in', label: 'Opted in' },
-  { value: 'opted_out', label: 'Opted out' },
-  { value: 'no_record', label: 'No record' },
+  { value: 'subscribed', label: 'Subscribed' },
+  { value: 'not_subscribed', label: 'Not subscribed' },
 ] as const;
+
+/** Migrate persisted/legacy marketing values onto the backend's two accepted ones. */
+function normaliseMarketing(value: string): string {
+  if (value === 'not_subscribed' || value === 'opted_out' || value === 'no_record') {
+    return 'not_subscribed';
+  }
+  // '' | 'subscribed' | 'opted_in' (and anything unknown) → subscribed default.
+  return 'subscribed';
+}
+
+/** Strict YYYY-MM-DD calendar check (rejects typos like 2025-13-40). */
+function isValidISODate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [y, m, d] = value.split('-').map(Number);
+  if (m! < 1 || m! > 12 || d! < 1 || d! > 31) return false;
+  const date = new Date(Date.UTC(y!, m! - 1, d!));
+  return (
+    date.getUTCFullYear() === y && date.getUTCMonth() === m! - 1 && date.getUTCDate() === d
+  );
+}
 
 export type ContactFilterState = {
   segment: string;
@@ -39,6 +64,8 @@ export type ContactFilterState = {
   date_from: string;
   date_to: string;
   marketing: string;
+  last_staff_id: string;
+  last_service_id: string;
 };
 
 export const DEFAULT_FILTER_STATE: ContactFilterState = {
@@ -48,6 +75,8 @@ export const DEFAULT_FILTER_STATE: ContactFilterState = {
   date_from: '',
   date_to: '',
   marketing: '',
+  last_staff_id: '',
+  last_service_id: '',
 };
 
 type ContactFilterSheetProps = {
@@ -59,7 +88,8 @@ type ContactFilterSheetProps = {
 };
 
 /**
- * Advanced filter sheet — Smart-list segments, identity scope, date range.
+ * Advanced filter sheet — Smart-list segments, identity scope, date range,
+ * marketing consent, and last-staff / last-service pickers.
  */
 export function ContactFilterSheet({
   visible,
@@ -71,8 +101,6 @@ export function ContactFilterSheet({
   const [draft, setDraft] = useState<ContactFilterState>(value);
 
   // Sync draft to the committed value whenever the sheet is opened.
-  // The previous code used `void handleVisible` which never called the function —
-  // it only discarded the function reference, so the draft was never refreshed.
   useEffect(() => {
     if (visible) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -81,7 +109,37 @@ export function ContactFilterSheet({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
+  const segmentNeedsDateRange = ['new', 'upcoming', 'visit', 'marketing'].includes(draft.segment);
+  const segmentNeedsMarketing = draft.segment === 'marketing';
+  const segmentNeedsTag = draft.segment === 'tag';
+  const segmentNeedsStaff = draft.segment === 'last_staff';
+  const segmentNeedsService = draft.segment === 'last_service';
+
+  // Roster + service catalog only fetched while a picker is on screen.
+  const practitionersQuery = usePractitioners({ enabled: visible && segmentNeedsStaff });
+  const servicesQuery = useManagedServices();
+  const practitioners = practitionersQuery.data?.practitioners ?? [];
+  const services = useMemo(
+    () => (servicesQuery.data?.services ?? []).filter((s) => s.is_active !== false),
+    [servicesQuery.data],
+  );
+
+  // Inline date validation — block Apply on a malformed range instead of
+  // silently dropping the typo at the backend.
+  const fromError = draft.date_from && !isValidISODate(draft.date_from) ? 'Use YYYY-MM-DD' : null;
+  const toError = draft.date_to && !isValidISODate(draft.date_to) ? 'Use YYYY-MM-DD' : null;
+  const rangeError =
+    !fromError &&
+    !toError &&
+    draft.date_from &&
+    draft.date_to &&
+    draft.date_from > draft.date_to
+      ? 'From date is after To date'
+      : null;
+  const dateValid = segmentNeedsDateRange ? !fromError && !toError && !rangeError : true;
+
   function handleApply() {
+    if (!dateValid) return;
     onApply(draft);
     onClose();
   }
@@ -92,10 +150,6 @@ export function ContactFilterSheet({
     onApply(reset);
     onClose();
   }
-
-  const segmentNeedsDateRange = ['new', 'upcoming', 'visit', 'marketing'].includes(draft.segment);
-  const segmentNeedsMarketing = draft.segment === 'marketing';
-  const segmentNeedsTag = draft.segment === 'tag';
 
   return (
     <Sheet visible={visible} onClose={onClose} maxHeight="92%">
@@ -116,10 +170,7 @@ export function ContactFilterSheet({
                 key={opt.value}
                 label={opt.label}
                 selected={draft.filter === opt.value}
-                onPress={() => {
-                  hapticSelect();
-                  setDraft((d) => ({ ...d, filter: opt.value }));
-                }}
+                onPress={() => setDraft((d) => ({ ...d, filter: opt.value }))}
               />
             ))}
           </View>
@@ -134,17 +185,20 @@ export function ContactFilterSheet({
                 key={opt.value}
                 label={opt.label}
                 selected={draft.segment === opt.value}
-                onPress={() => {
-                  hapticSelect();
+                onPress={() =>
                   setDraft((d) => ({
                     ...d,
                     segment: opt.value,
                     segmentTag: '',
                     date_from: '',
                     date_to: '',
-                    marketing: '',
-                  }));
-                }}
+                    // Default marketing to the backend's `subscribed` when the
+                    // marketing segment is chosen (web parity).
+                    marketing: opt.value === 'marketing' ? 'subscribed' : '',
+                    last_staff_id: '',
+                    last_service_id: '',
+                  }))
+                }
               />
             ))}
           </View>
@@ -161,10 +215,7 @@ export function ContactFilterSheet({
                     key={tag}
                     label={tag}
                     selected={draft.segmentTag === tag}
-                    onPress={() => {
-                      hapticSelect();
-                      setDraft((d) => ({ ...d, segmentTag: tag }));
-                    }}
+                    onPress={() => setDraft((d) => ({ ...d, segmentTag: tag }))}
                   />
                 ))}
               </View>
@@ -176,6 +227,70 @@ export function ContactFilterSheet({
               autoCapitalize="none"
               placeholder="e.g. vip"
             />
+          </View>
+        ) : null}
+
+        {/* Last staff picker */}
+        {segmentNeedsStaff ? (
+          <View style={styles.section}>
+            <Text variant="label">Last seen by</Text>
+            {practitionersQuery.isLoading ? (
+              <Text variant="caption" tone="muted">
+                Loading team…
+              </Text>
+            ) : practitioners.length === 0 ? (
+              <Text variant="caption" tone="muted">
+                No staff to filter by.
+              </Text>
+            ) : (
+              <View style={styles.chipRow}>
+                {practitioners.map((p) => (
+                  <Chip
+                    key={p.id}
+                    label={p.name}
+                    selected={draft.last_staff_id === p.id}
+                    onPress={() =>
+                      setDraft((d) => ({
+                        ...d,
+                        last_staff_id: d.last_staff_id === p.id ? '' : p.id,
+                      }))
+                    }
+                  />
+                ))}
+              </View>
+            )}
+          </View>
+        ) : null}
+
+        {/* Last service picker */}
+        {segmentNeedsService ? (
+          <View style={styles.section}>
+            <Text variant="label">Last service booked</Text>
+            {servicesQuery.isLoading ? (
+              <Text variant="caption" tone="muted">
+                Loading services…
+              </Text>
+            ) : services.length === 0 ? (
+              <Text variant="caption" tone="muted">
+                No services to filter by.
+              </Text>
+            ) : (
+              <View style={styles.chipRow}>
+                {services.map((s) => (
+                  <Chip
+                    key={s.id}
+                    label={s.name}
+                    selected={draft.last_service_id === s.id}
+                    onPress={() =>
+                      setDraft((d) => ({
+                        ...d,
+                        last_service_id: d.last_service_id === s.id ? '' : s.id,
+                      }))
+                    }
+                  />
+                ))}
+              </View>
+            )}
           </View>
         ) : null}
 
@@ -192,6 +307,7 @@ export function ContactFilterSheet({
                   placeholder="2025-01-01"
                   autoCapitalize="none"
                   keyboardType="numbers-and-punctuation"
+                  error={fromError ?? undefined}
                 />
               </View>
               <View style={styles.dateField}>
@@ -202,9 +318,15 @@ export function ContactFilterSheet({
                   placeholder="2025-12-31"
                   autoCapitalize="none"
                   keyboardType="numbers-and-punctuation"
+                  error={toError ?? undefined}
                 />
               </View>
             </View>
+            {rangeError ? (
+              <Text variant="caption" tone="danger">
+                {rangeError}
+              </Text>
+            ) : null}
           </View>
         ) : null}
 
@@ -214,7 +336,7 @@ export function ContactFilterSheet({
             <Text variant="label">Consent status</Text>
             <Segmented
               options={MARKETING_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
-              value={draft.marketing}
+              value={normaliseMarketing(draft.marketing)}
               onChange={(v) => {
                 hapticSelect();
                 setDraft((d) => ({ ...d, marketing: v }));
@@ -226,7 +348,7 @@ export function ContactFilterSheet({
 
       <View style={styles.actions}>
         <Button label="Reset" variant="ghost" style={styles.flex1} onPress={handleReset} />
-        <Button label="Apply" style={styles.flex2} onPress={handleApply} />
+        <Button label="Apply" style={styles.flex2} disabled={!dateValid} onPress={handleApply} />
       </View>
     </Sheet>
   );

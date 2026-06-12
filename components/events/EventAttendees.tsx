@@ -1,13 +1,16 @@
-import { useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
 import { StatusPill } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { IconButton } from '@/components/ui/IconButton';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { ACTION_COLORS } from '@/lib/booking/booking-action-colors';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useEventAttendees, useToggleAttendeeArrived } from '@/lib/queries/useExperienceEvents';
+import { buildAndShareCsv } from '@/lib/reports/csv-export';
+import { useToast } from '@/providers/ToastProvider';
 import { minTouchTarget, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { BookingListRow } from '@/types/booking-list';
@@ -15,9 +18,21 @@ import type { BookingListRow } from '@/types/booking-list';
 type EventAttendeesProps = {
   /** experience_events.id */
   eventId: string;
+  /** Event name + date for the CSV filename. */
+  eventName?: string;
+  eventDate?: string;
   /** Opens the full booking detail (BookingDetailSheet) for a ticket holder. */
   onOpenBooking: (bookingId: string) => void;
 };
+
+/** "14:03" style local time from an ISO timestamp, or '' when missing/invalid. */
+function timeCell(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime())
+    ? ''
+    : d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+}
 
 /** Same gate as the web event-manager's attendee Arrived/Clear actions. */
 function canToggleArrived(status: string): boolean {
@@ -40,11 +55,42 @@ function arrivedLabel(arrivedAt: string): string {
  * detail; Pending/Booked/Confirmed rows get the web-parity Arrived/Clear
  * toggle. Errors surface inline (no Alert-only feedback).
  */
-export function EventAttendees({ eventId, onOpenBooking }: EventAttendeesProps) {
+export function EventAttendees({
+  eventId,
+  eventName,
+  eventDate,
+  onOpenBooking,
+}: EventAttendeesProps) {
   const { colors } = useTheme();
+  const toast = useToast();
   const query = useEventAttendees(eventId);
   const toggleArrived = useToggleAttendeeArrived();
   const [actionError, setActionError] = useState<string | null>(null);
+
+  const rows = useMemo(() => query.data ?? [], [query.data]);
+  const onExport = useCallback(async () => {
+    if (rows.length === 0) {
+      toast.info('No attendees to export yet.');
+      return;
+    }
+    try {
+      const header = ['Guest', 'Status', 'Tickets', 'Arrived', 'Phone', 'Email'];
+      const csvRows = rows.map((row) => [
+        row.guest_name || 'Guest',
+        row.status ?? '',
+        String(row.party_size ?? ''),
+        timeCell(row.client_arrived_at),
+        row.guest_phone ?? '',
+        row.guest_email ?? '',
+      ]);
+      const slug = (eventName ?? 'event').replace(/[^a-z0-9]+/gi, '-');
+      const filename = `event-roster-${slug}-${eventDate ?? 'export'}.csv`;
+      await buildAndShareCsv(filename, [header, ...csvRows]);
+      toast.success('Roster export started.');
+    } catch {
+      toast.error('Could not export the roster.');
+    }
+  }, [rows, eventName, eventDate, toast]);
 
   const handleToggle = (row: BookingListRow, arrived: boolean) => {
     setActionError(null);
@@ -93,7 +139,7 @@ export function EventAttendees({ eventId, onOpenBooking }: EventAttendeesProps) 
     );
   }
 
-  const attendees = query.data ?? [];
+  const attendees = rows;
 
   if (attendees.length === 0) {
     return (
@@ -107,6 +153,18 @@ export function EventAttendees({ eventId, onOpenBooking }: EventAttendeesProps) 
 
   return (
     <View style={styles.list}>
+      <View style={styles.toolbar}>
+        <Text variant="caption" tone="muted">
+          {attendees.length} ticket holder{attendees.length === 1 ? '' : 's'}
+        </Text>
+        <IconButton
+          icon={{ ios: 'square.and.arrow.up', android: 'share', web: 'share' }}
+          accessibilityLabel="Export attendees as CSV"
+          tint={colors.brand}
+          iconSize={20}
+          onPress={() => void onExport()}
+        />
+      </View>
       {actionError ? (
         <Text variant="caption" tone="danger">
           {actionError}
@@ -189,6 +247,12 @@ const styles = StyleSheet.create({
   },
   list: {
     paddingTop: spacing.xs,
+  },
+  toolbar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingBottom: spacing.xs,
   },
   row: {
     flexDirection: 'row',

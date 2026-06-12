@@ -36,10 +36,16 @@ export function useMonthAvailability({
   enabled?: boolean;
 }) {
   const accessToken = useAccessToken();
-  const isAny = practitionerId === ANY_AVAILABLE_PRACTITIONER_ID;
-  // The API requires a concrete practitioner_id even in any-available mode.
+  const isAny =
+    practitionerId === ANY_AVAILABLE_PRACTITIONER_ID ||
+    (candidatePractitionerIds?.length ?? 0) > 0;
+  // Web parity (`appointmentCalendarUrl`): in any-available mode the request
+  // carries the SENTINEL practitioner_id plus `any_available=1`, so the server
+  // pools across all eligible staff. We must NOT pin to one candidate (e.g.
+  // `candidatePractitionerIds[0]`) — that computed green dates from a single
+  // practitioner and hid dates other staff could cover.
   const effectivePractitionerId = isAny
-    ? candidatePractitionerIds?.[0] ?? null
+    ? ANY_AVAILABLE_PRACTITIONER_ID
     : practitionerId ?? null;
   const addonsKey = addonIds && addonIds.length > 0 ? [...addonIds].sort().join(',') : null;
   const queryEnabled =
@@ -52,7 +58,7 @@ export function useMonthAvailability({
     queryKey: queryKeys.appointments.monthAvailability(
       accessToken,
       serviceId,
-      practitionerId,
+      effectivePractitionerId,
       year,
       month,
       variantId,

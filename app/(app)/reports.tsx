@@ -25,6 +25,7 @@ import { calendarDateInTimeZone } from '@/lib/queries/useBookingsList';
 import { useReports } from '@/lib/queries/useReports';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { buildAndShareCsv, aggregateSourcesByLabel } from '@/lib/reports/csv-export';
+import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { minTouchTarget, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -86,14 +87,17 @@ function CardHeader({
   exportDisabled?: boolean;
 }) {
   const { colors } = useTheme();
+  const toast = useToast();
   return (
     <View style={styles.cardHeader}>
       <Text variant="label">{title}</Text>
       {onExport ? (
         <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Export ${title} as CSV`}
           onPress={() => {
             if (exportDisabled) {
-              Alert.alert('Nothing to export', 'No data in this range for this report.');
+              toast.info('No data in this range for this report.');
               return;
             }
             hapticTap();
@@ -136,6 +140,7 @@ function DateChip({
 // ─── Main screen ─────────────────────────────────────────────────────────────
 export default function ReportsScreen() {
   const { colors } = useTheme();
+  const toast = useToast();
   const { venue } = useVenueContext();
   const staffQuery = useStaffMe();
   const isAdmin = staffQuery.data?.staff?.role === 'admin';
@@ -215,7 +220,8 @@ export default function ReportsScreen() {
         String(v),
       ]),
     ]);
-  }, [summary, data, isAppointmentVenue]);
+    toast.success('Export started.');
+  }, [summary, data, isAppointmentVenue, toast]);
 
   const exportReport2 = useCallback(async () => {
     if (!noShowSeries.length || !data) return;
@@ -228,7 +234,8 @@ export default function ReportsScreen() {
         String(row.rate_pct),
       ]),
     ]);
-  }, [noShowSeries, data]);
+    toast.success('Export started.');
+  }, [noShowSeries, data, toast]);
 
   const exportReport3 = useCallback(async () => {
     if (!cancellation || !data) return;
@@ -239,7 +246,8 @@ export default function ReportsScreen() {
       ['Auto-cancelled', String(cancellation.cancelled_auto)],
       ['Cancellation rate %', String(cancellation.cancellation_rate_pct)],
     ]);
-  }, [cancellation, data]);
+    toast.success('Export started.');
+  }, [cancellation, data, toast]);
 
   const exportReport4 = useCallback(async () => {
     if (!deposit || !data) return;
@@ -249,7 +257,8 @@ export default function ReportsScreen() {
       ['Refunded', String(deposit.total_refunded_pence), (deposit.total_refunded_pence / 100).toFixed(2)],
       ['Forfeited', String(deposit.total_forfeited_pence), (deposit.total_forfeited_pence / 100).toFixed(2)],
     ]);
-  }, [deposit, data]);
+    toast.success('Export started.');
+  }, [deposit, data, toast]);
 
   const exportReport7 = useCallback(async () => {
     if (!insights || !data) return;
@@ -281,7 +290,8 @@ export default function ReportsScreen() {
           ]
         : []),
     ]);
-  }, [insights, data]);
+    toast.success('Export started.');
+  }, [insights, data, toast]);
 
   const header = <Stack.Screen options={{ title: 'Reports' }} />;
 

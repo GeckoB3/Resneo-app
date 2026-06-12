@@ -1,10 +1,10 @@
-import { SymbolView } from 'expo-symbols';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 
 import { BookingDetailSheet } from '@/components/bookings/BookingDetailSheet';
+import { AllCalendarsDayGrid } from '@/components/calendar/AllCalendarsDayGrid';
 import { BlockEditSheet, type BlockTarget } from '@/components/calendar/BlockEditSheet';
 import { CalendarDayGrid } from '@/components/calendar/CalendarDayGrid';
 import { timeToMinutes } from '@/components/calendar/grid-layout';
@@ -17,15 +17,15 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Fab } from '@/components/ui/Fab';
+import { IconButton } from '@/components/ui/IconButton';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { Screen } from '@/components/ui/Screen';
 import { Segmented } from '@/components/ui/Segmented';
 import { Sheet } from '@/components/ui/Sheet';
-import { Snackbar } from '@/components/ui/Snackbar';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { newBookingActionLabel } from '@/lib/booking/terminology';
-import { hapticSelect, hapticSuccess, hapticWarning } from '@/lib/haptics';
+import { hapticSelect, hapticSuccess } from '@/lib/haptics';
 import {
   addDaysToDateStr,
   addMonthsToDateStr,
@@ -37,7 +37,6 @@ import {
   getMonthRangeFromDate,
   type DateRange,
 } from '@/lib/dates/venue-dates';
-import { useCalendarBlocks } from '@/lib/queries/useAvailabilityManage';
 import { useRescheduleBookingById } from '@/lib/queries/useBookingMutations';
 import {
   useCalendarStatusAction,
@@ -46,10 +45,13 @@ import {
 import { useCalendarGrid } from '@/lib/queries/useCalendarGrid';
 import { useComplianceBookingFlags } from '@/lib/queries/useCompliance';
 import { usePractitioners } from '@/lib/queries/usePractitioners';
+import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
-import { minTouchTarget, radius, spacing } from '@/theme/index';
+import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
+import type { CalendarGridDay } from '@/types/calendar-grid';
 import type { Practitioner } from '@/types/practitioner';
+import type { CalendarTimeBlock } from '@/components/calendar/CalendarDayGrid';
 
 type Scope = 'day' | 'week' | 'month';
 
@@ -70,6 +72,32 @@ function nowMinutesInTz(timeZone: string): number {
   const hour = Number(parts.find((p) => p.type === 'hour')?.value ?? '0');
   const minute = Number(parts.find((p) => p.type === 'minute')?.value ?? '0');
   return hour * 60 + minute;
+}
+
+/**
+ * Live "minutes since midnight" in the venue timezone, re-evaluated every 60s
+ * so the now-line advances. The interval only runs while `active` (the anchor
+ * day is today) — off-today days never need a ticking clock. Returns null when
+ * inactive so callers can hide the now-line.
+ */
+function useNowMinutes(timeZone: string, active: boolean): number | null {
+  // A monotonically-increasing tick that re-evaluates the clock each minute.
+  // We derive `minutes` from this during render (not via setState) so the
+  // effect only owns the timer — never a synchronous state write.
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    if (!active) return;
+    const id = setInterval(() => setTick((t) => t + 1), 60_000);
+    return () => clearInterval(id);
+  }, [active]);
+
+  return useMemo(() => {
+    if (!active) return null;
+    return nowMinutesInTz(timeZone);
+    // `tick` is an intentional dependency — it advances the clock each minute.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeZone, active, tick]);
 }
 
 /** What the add-action sheet was opened for. */
@@ -106,6 +134,9 @@ export default function CalendarScreen() {
     }
   }, [params.date]);
 
+  // `selectedId` is a calendar id, or the 'all' sentinel for the multi-calendar
+  // day view (reception parity). null falls back to the first calendar.
+  const ALL_CALENDARS = 'all' as const;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailBookingId, setDetailBookingId] = useState<string | null>(null);
   const [blockTarget, setBlockTarget] = useState<BlockTarget | null>(null);
@@ -122,42 +153,36 @@ export default function CalendarScreen() {
     });
   }, []);
 
-  // Undo state for the last reschedule (6s window).
-  const [undoState, setUndoState] = useState<{
-    target: RescheduleTarget;
-    durationChanged: boolean;
-  } | null>(null);
-  const undoTarget = undoState?.target ?? null;
-  const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const toast = useToast();
 
   // One mutation for drag commits AND undo — the booking id travels in the input.
   const rescheduleById = useRescheduleBookingById();
 
-  const showUndo = useCallback(
-    (previous: RescheduleTarget, meta: { durationChanged: boolean }) => {
-      if (undoTimer.current) clearTimeout(undoTimer.current);
-      setUndoState({ target: previous, durationChanged: meta.durationChanged });
-      undoTimer.current = setTimeout(() => setUndoState(null), 6000);
+  // Restore a booking to its previous slot (Undo on the reschedule toast).
+  const undoReschedule = useCallback(
+    (previous: RescheduleTarget, durationChanged: boolean) => {
+      rescheduleById.mutate({
+        bookingId: previous.id,
+        date: previous.date,
+        time: `${previous.time.slice(0, 5)}:00`,
+        ...(durationChanged && previous.durationMinutes != null
+          ? { durationMinutes: previous.durationMinutes }
+          : {}),
+      });
     },
-    [],
+    [rescheduleById],
   );
 
-  const handleUndo = useCallback(() => {
-    if (!undoState) return;
-    if (undoTimer.current) clearTimeout(undoTimer.current);
-    const { target, durationChanged } = undoState;
-    rescheduleById.mutate(
-      {
-        bookingId: target.id,
-        date: target.date,
-        time: `${target.time.slice(0, 5)}:00`,
-        ...(durationChanged && target.durationMinutes != null
-          ? { durationMinutes: target.durationMinutes }
-          : {}),
-      },
-      { onSettled: () => setUndoState(null) },
-    );
-  }, [undoState, rescheduleById]);
+  const showUndo = useCallback(
+    (previous: RescheduleTarget, meta: { durationChanged: boolean }) => {
+      toast.show({
+        message: `Moved ${previous.guestName}'s booking`,
+        actionLabel: 'Undo',
+        onAction: () => undoReschedule(previous, meta.durationChanged),
+      });
+    },
+    [toast, undoReschedule],
+  );
 
   const week = useMemo(() => getCalendarWeekFromDate(anchor), [anchor]);
   const range = useMemo<DateRange>(() => {
@@ -179,38 +204,40 @@ export default function CalendarScreen() {
     from: range.from,
     to: range.to,
     enabled: calendarIds.length > 0,
+    // Near-realtime: a second device's changes surface within ~60s (web has
+    // live sync; the app polls). Pull-to-refresh forces an immediate refetch.
+    refetchInterval: 60_000,
   });
 
-  // The calendar being viewed — one at a time, switched via the chips row.
+  // The calendar being viewed — one at a time, switched via the chips row, OR
+  // the 'all' multi-calendar day view. null falls back to the first calendar.
+  const isAllView =
+    selectedId === ALL_CALENDARS && scope === 'day' && practitioners.length > 1;
   const effectiveId =
-    selectedId && calendarIds.includes(selectedId) ? selectedId : calendarIds[0] ?? null;
+    selectedId && selectedId !== ALL_CALENDARS && calendarIds.includes(selectedId)
+      ? selectedId
+      : calendarIds[0] ?? null;
 
   const day = useMemo(() => {
     const calendar = gridQuery.data?.calendars.find((c) => c.calendarId === effectiveId);
     return calendar?.dates.find((d) => d.date === anchor) ?? null;
   }, [gridQuery.data, effectiveId, anchor]);
 
-  // Breaks/blocks for the visible range — rendered as non-bookable overlays.
-  const blocksQuery = useCalendarBlocks(range.from, range.to);
-
-  /** Build per-practitioner day blocks for a given calendarId and date. */
+  /**
+   * Build the day's non-bookable overlays for a calendar+date. One-off blocks
+   * come straight from the grid payload (`day.blocks` — same `calendar_blocks`
+   * source the old second query duplicated), so there's no redundant fetch.
+   * Recurring breaks are derived from the practitioner record.
+   */
   const getDayBlocks = useCallback(
-    (calId: string, dateStr: string) => {
-      const rows = blocksQuery.data?.blocks ?? [];
-      const oneOff = rows
-        .filter(
-          (b) =>
-            (b.practitioner_id ?? b.calendar_id) === calId &&
-            b.block_date === dateStr &&
-            !b.class_instance_id,
-        )
-        .map((b) => ({
-          id: b.id,
-          start: b.start_time,
-          end: b.end_time,
-          label: b.reason,
-          isEditable: true as const,
-        }));
+    (calId: string, dateStr: string, gridDay: CalendarGridDay | null): CalendarTimeBlock[] => {
+      const oneOff: CalendarTimeBlock[] = (gridDay?.blocks ?? []).map((b) => ({
+        id: b.id,
+        start: b.startTime,
+        end: b.endTime,
+        label: b.reason,
+        isEditable: true,
+      }));
 
       const practitioner = practitioners.find((p) => p.id === calId);
       const [y, m, d] = dateStr.split('-').map(Number);
@@ -221,17 +248,17 @@ export default function CalendarScreen() {
       const breakRanges = hasByDay
         ? byDay[String(weekday)] ?? byDay[dayNames[weekday]!] ?? []
         : practitioner?.break_times ?? [];
-      const breaks = breakRanges.map((range, index) => ({
+      const breaks: CalendarTimeBlock[] = breakRanges.map((range, index) => ({
         id: `break-${calId}-${index}`,
         start: range.start,
         end: range.end,
         label: 'Break',
-        isEditable: false as const,
+        isEditable: false,
       }));
 
       return [...oneOff, ...breaks];
     },
-    [blocksQuery.data, practitioners],
+    [practitioners],
   );
 
   /** date → total bookings across all calendars (for week strip + month grid). */
@@ -255,8 +282,15 @@ export default function CalendarScreen() {
     return map;
   }, [gridQuery.data, anchor]);
 
+  /** All-calendars total for the anchor date (badge on the "All" chip). */
+  const totalDayCount = useMemo(
+    () => Object.values(perPractitionerCounts).reduce((sum, n) => sum + n, 0),
+    [perPractitionerCounts],
+  );
+
   const isToday = anchor === today;
-  const nowMinutes = isToday ? nowMinutesInTz(timeZone) : null;
+  // Live now-line — re-ticks every 60s while viewing today (null otherwise).
+  const nowMinutes = useNowMinutes(timeZone, isToday);
 
   const label =
     scope === 'day'
@@ -287,6 +321,11 @@ export default function CalendarScreen() {
     },
     [effectiveId],
   );
+
+  /** Empty-slot tap in the multi-calendar view — carries the target column. */
+  const createAtFor = useCallback((practitionerId: string, time: string) => {
+    setAddSheetTarget({ kind: 'slot', time, practitionerId });
+  }, []);
 
   /** Look up a booking on the viewed calendar for the anchor date. */
   const findBookingOnAnchor = useCallback(
@@ -322,15 +361,13 @@ export default function CalendarScreen() {
         },
         {
           onSuccess: () => {
-            hapticSuccess();
+            // Drop haptic already fired in the drag worklet; just confirm + undo.
             removePending(input.bookingId);
             showUndo(input.previousTarget, { durationChanged: input.durationChanged });
           },
           onError: (error) => {
-            hapticWarning();
             removePending(input.bookingId);
-            Alert.alert(
-              input.durationChanged ? 'Resize failed' : 'Reschedule failed',
+            toast.error(
               error instanceof ApiError
                 ? error.message
                 : input.durationChanged
@@ -341,7 +378,7 @@ export default function CalendarScreen() {
         },
       );
     },
-    [anchor, rescheduleById, removePending, showUndo],
+    [anchor, rescheduleById, removePending, showUndo, toast],
   );
 
   const handleDragReschedule = useCallback(
@@ -391,22 +428,28 @@ export default function CalendarScreen() {
     [findBookingOnAnchor, anchor, commitDrag],
   );
 
+  // Drag dropped on a conflicting slot — the grid refuses the move; surface why.
+  const handleDragConflictReject = useCallback(() => {
+    toast.error("That time isn't available");
+  }, [toast]);
+
   const handleBlockTimeBlockPress = useCallback(
     (blockId: string) => {
-      const rows = blocksQuery.data?.blocks ?? [];
-      const block = rows.find((b) => b.id === blockId);
-      if (!block) return;
+      // One-off blocks come from the grid payload (`day.blocks`); practitioner +
+      // date are the current view context (no separate blocks fetch needed).
+      const block = day?.blocks.find((b) => b.id === blockId);
+      if (!block || !effectiveId) return;
       setBlockTarget({
         mode: 'edit',
         blockId: block.id,
-        practitionerId: block.practitioner_id ?? block.calendar_id ?? '',
-        date: block.block_date,
-        startTime: block.start_time,
-        endTime: block.end_time,
+        practitionerId: effectiveId,
+        date: anchor,
+        startTime: block.startTime,
+        endTime: block.endTime,
         reason: block.reason,
       });
     },
-    [blocksQuery.data],
+    [day, effectiveId, anchor],
   );
 
   // ---- Inline quick-status actions ----
@@ -424,17 +467,15 @@ export default function CalendarScreen() {
             removePending(bookingId);
           },
           onError: (error) => {
-            hapticWarning();
             removePending(bookingId);
-            Alert.alert(
-              'Update failed',
+            toast.error(
               error instanceof ApiError ? error.message : 'Could not update booking.',
             );
           },
         },
       );
     },
-    [calendarStatusAction, removePending],
+    [calendarStatusAction, removePending, toast],
   );
 
   const handleArrivalToggle = useCallback(
@@ -448,17 +489,15 @@ export default function CalendarScreen() {
             removePending(bookingId);
           },
           onError: (error) => {
-            hapticWarning();
             removePending(bookingId);
-            Alert.alert(
-              'Update failed',
+            toast.error(
               error instanceof ApiError ? error.message : 'Could not update attendance.',
             );
           },
         },
       );
     },
-    [calendarArrivalAction, removePending],
+    [calendarArrivalAction, removePending, toast],
   );
 
   // ---- Day data for the viewed calendar ----
@@ -466,9 +505,27 @@ export default function CalendarScreen() {
   const dayBookings = useMemo(() => day?.bookings ?? [], [day]);
 
   const dayBlocks = useMemo(
-    () => (effectiveId ? getDayBlocks(effectiveId, anchor) : []),
-    [getDayBlocks, effectiveId, anchor],
+    () => (effectiveId ? getDayBlocks(effectiveId, anchor, day) : []),
+    [getDayBlocks, effectiveId, anchor, day],
   );
+
+  // ---- Multi-calendar ("All") day view data ----
+  // One column per practitioner for the anchor date, sharing the time gutter.
+  const allCalendarsForDay = useMemo(() => {
+    if (!isAllView) return [];
+    return practitioners.map((p) => {
+      const calendar = gridQuery.data?.calendars.find((c) => c.calendarId === p.id);
+      const calDay = calendar?.dates.find((d) => d.date === anchor) ?? null;
+      return {
+        calendarId: p.id,
+        calendarName: p.name,
+        workingHours: calDay?.workingHours ?? [],
+        bookings: calDay?.bookings ?? [],
+        sessions: calDay?.sessions ?? [],
+        timeBlocks: getDayBlocks(p.id, anchor, calDay),
+      };
+    });
+  }, [isAllView, practitioners, gridQuery.data, anchor, getDayBlocks]);
 
   // Per-booking compliance flags for the visible day — gated on the feature
   // flag so non-compliance venues never hit the endpoint. Unfiltered ids so
@@ -489,11 +546,21 @@ export default function CalendarScreen() {
     (day?.workingHours?.length ?? 0) === 0 &&
     (day?.bookings?.length ?? 0) === 0;
 
+  const refreshing = gridQuery.isFetching && !gridQuery.isLoading;
+  const onRefresh = useCallback(() => void gridQuery.refetch(), [gridQuery]);
+
+  // Class/event capacity blocks from the grid payload (rendered indigo).
+  const daySessions = useMemo(() => day?.sessions ?? [], [day]);
+
   const dayGrid = (
     <CalendarDayGrid
+      // Remount when the viewed calendar or day changes so scroll-to-now
+      // re-runs (returning to today / switching practitioner re-scrolls).
+      key={`${effectiveId ?? 'none'}:${anchor}`}
       bookings={dayBookings}
       workingHours={day?.workingHours ?? []}
       timeBlocks={dayBlocks}
+      sessions={daySessions}
       nowMinutes={nowMinutes}
       onBlockPress={openDetail}
       onStatusChange={handleStatusChange}
@@ -504,6 +571,9 @@ export default function CalendarScreen() {
       onBlockTimeBlockPress={handleBlockTimeBlockPress}
       onDragReschedule={handleDragReschedule}
       onDragResize={handleDragResize}
+      onDragConflictReject={handleDragConflictReject}
+      refreshing={refreshing}
+      onRefresh={onRefresh}
     />
   );
 
@@ -543,7 +613,11 @@ export default function CalendarScreen() {
             <Segmented value={scope} onChange={setScope} options={SCOPE_OPTIONS} />
 
             <View style={styles.dateNav}>
-              <ChevButton dir="left" onPress={() => step(-1)} />
+              <IconButton
+                icon={{ ios: 'chevron.left', android: 'chevron_left', web: 'chevron_left' }}
+                accessibilityLabel="Previous"
+                onPress={() => step(-1)}
+              />
               {/* Label flexes, so the Today pill appearing never moves the arrows. */}
               <Pressable
                 onPress={goToday}
@@ -574,23 +648,41 @@ export default function CalendarScreen() {
                   </Pressable>
                 </Animated.View>
               ) : null}
-              <ChevButton dir="right" onPress={() => step(1)} />
+              <IconButton
+                icon={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }}
+                accessibilityLabel="Next"
+                onPress={() => step(1)}
+              />
             </View>
 
-            {/* Calendar switcher — one calendar at a time, chips to change. */}
+            {/* Calendar switcher — one calendar at a time, plus an "All" view
+                (day scope only) that shows every calendar side-by-side. */}
             {scope !== 'month' && practitioners.length > 1 ? (
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.chips}>
+                {scope === 'day' ? (
+                  <Chip
+                    label="All"
+                    count={totalDayCount}
+                    selected={isAllView}
+                    onPress={() => {
+                      if (!isAllView) {
+                        hapticSelect();
+                        setSelectedId(ALL_CALENDARS);
+                      }
+                    }}
+                  />
+                ) : null}
                 {practitioners.map((p) => (
                   <Chip
                     key={p.id}
                     label={p.name}
                     count={scope === 'day' ? perPractitionerCounts[p.id] : undefined}
-                    selected={p.id === effectiveId}
+                    selected={!isAllView && p.id === effectiveId}
                     onPress={() => {
-                      if (p.id !== effectiveId) {
+                      if (isAllView || p.id !== effectiveId) {
                         hapticSelect();
                         setSelectedId(p.id);
                       }
@@ -637,6 +729,17 @@ export default function CalendarScreen() {
               </View>
               {dayIsClosed ? <ClosedDayBanner /> : null}
               {dayGrid}
+            </View>
+          ) : isAllView ? (
+            <View style={styles.weekBody}>
+              <AllCalendarsDayGrid
+                calendars={allCalendarsForDay}
+                nowMinutes={nowMinutes}
+                onBlockPress={openDetail}
+                onEmptyPress={createAtFor}
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+              />
             </View>
           ) : (
             <View style={styles.weekBody}>
@@ -709,11 +812,8 @@ export default function CalendarScreen() {
         </View>
       </Sheet>
 
-      <Snackbar
-        message={undoTarget ? `Moved ${undoTarget.guestName}'s booking` : null}
-        actionLabel="Undo"
-        onAction={handleUndo}
-      />
+      {/* Reschedule undo + all error feedback now route through the toast host
+          (Alert.alert is a no-op on web; the manual Snackbar timer is gone). */}
       <BookingDetailSheet
         bookingId={detailBookingId}
         onClose={() => setDetailBookingId(null)}
@@ -742,28 +842,6 @@ function ClosedDayBanner() {
   );
 }
 
-function ChevButton({ dir, onPress }: { dir: 'left' | 'right'; onPress: () => void }) {
-  const { colors } = useTheme();
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={dir === 'left' ? 'Previous' : 'Next'}
-      hitSlop={8}
-      style={({ pressed }) => [styles.chevButton, { opacity: pressed ? 0.45 : 1 }]}>
-      <SymbolView
-        name={
-          dir === 'left'
-            ? { ios: 'chevron.left', android: 'chevron_left', web: 'chevron_left' }
-            : { ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }
-        }
-        tintColor={colors.text}
-        size={22}
-      />
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
   toolbar: {
     padding: spacing.base,
@@ -780,12 +858,6 @@ const styles = StyleSheet.create({
   dateLabel: {
     flex: 1,
     alignItems: 'center',
-  },
-  chevButton: {
-    minWidth: minTouchTarget,
-    minHeight: minTouchTarget,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   todayPill: {
     paddingHorizontal: spacing.md,

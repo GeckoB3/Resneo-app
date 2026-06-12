@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
@@ -15,6 +15,7 @@ import {
   useBulkRemoveTag,
   useMergeGuests,
 } from '@/lib/queries/useContactsBulk';
+import { useToast } from '@/providers/ToastProvider';
 import { spacing, radius } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { GuestListItem } from '@/types/guest-list';
@@ -150,6 +151,7 @@ export function BulkMessageSheet({
   onDone: DoneHandler;
 }) {
   const mutation = useBulkMarketingMessage();
+  const toast = useToast();
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
   const [channel, setChannel] = useState<'email' | 'sms' | 'both'>('email');
@@ -169,13 +171,14 @@ export function BulkMessageSheet({
         channel,
       });
       hapticSuccess();
-      onDone();
       const sent = result.sent ?? guestIds.length;
       const skipped = result.skipped ?? 0;
-      Alert.alert(
-        'Message queued',
+      // Result toast fires directly off the resolved mutation, then we close the
+      // selection — Alert.alert is a no-op on web so it gave zero feedback there.
+      toast.success(
         `${sent} contact${sent === 1 ? '' : 's'} messaged${skipped ? ` · ${skipped} skipped (no consent/contact info)` : ''}.`,
       );
+      onDone();
     } catch (e) {
       hapticWarning();
       setError(e instanceof ApiError ? e.message : 'Could not send the message.');
@@ -242,6 +245,7 @@ export function MergeContactsSheet({
 }) {
   const { colors } = useTheme();
   const mutation = useMergeGuests();
+  const toast = useToast();
   const [targetId, setTargetId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -269,8 +273,10 @@ export function MergeContactsSheet({
       };
       await mutation.mutateAsync(mergeInput);
       hapticSuccess();
+      // Toast fires off the resolved mutation, then close — never from an Alert
+      // callback (a no-op on web).
+      toast.success('Contacts merged. History now lives on the kept contact.');
       onDone();
-      Alert.alert('Contacts merged', 'Booking history now lives on the kept contact.');
     } catch (e) {
       hapticWarning();
       setError(e instanceof ApiError ? e.message : 'Could not merge the contacts.');

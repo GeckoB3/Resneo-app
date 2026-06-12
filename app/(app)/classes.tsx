@@ -1,13 +1,15 @@
 import { Stack } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
-import { SymbolView } from 'expo-symbols';
+import { useQueryClient } from '@tanstack/react-query';
 
 import { BookingDetailSheet } from '@/components/bookings/BookingDetailSheet';
 import { ClassRosterView } from '@/components/classes/ClassRosterView';
 import { ClassSessionCard } from '@/components/classes/ClassSessionCard';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
+import { IconButton } from '@/components/ui/IconButton';
+import { LiveDot } from '@/components/ui/LiveDot';
 import { Screen } from '@/components/ui/Screen';
 import { ListSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
@@ -19,10 +21,12 @@ import {
   formatRangeLabel,
   getWeekRangeFromDate,
 } from '@/lib/dates/venue-dates';
+import { queryKeys } from '@/lib/queries/keys';
 import { useClassSessions, type ClassSession } from '@/lib/queries/useClassSchedule';
 import { usePractitioners } from '@/lib/queries/usePractitioners';
+import { useVenueLiveSync } from '@/lib/realtime/useVenueLiveSync';
 import { useVenueContext } from '@/providers/VenueProvider';
-import { minTouchTarget, spacing } from '@/theme/index';
+import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
 /** Sessions grouped by calendar date, in feed order (soonest first). */
@@ -50,6 +54,8 @@ function groupByDate(sessions: ClassSession[]): { date: string; items: ClassSess
 export default function ClassesScreen() {
   const { colors } = useTheme();
   const { venue } = useVenueContext();
+  const queryClient = useQueryClient();
+  const venueId = venue?.id ?? null;
   const timeZone = venue?.timezone ?? 'Europe/London';
   const today = calendarDateInTimeZone(new Date(), timeZone);
 
@@ -60,6 +66,20 @@ export default function ClassesScreen() {
   const week = useMemo(() => getWeekRangeFromDate(weekStart, timeZone), [weekStart, timeZone]);
   const sessionsQuery = useClassSessions({ from: week.from, to: week.to });
   const practitionersQuery = usePractitioners();
+
+  // Realtime refresh — same `bookings` table the web class timetable watches.
+  // Sessions and the open roster both nest under queryKeys.bookings.all(), so a
+  // single invalidate refreshes the timetable and any selected session's roster.
+  const onLiveRefresh = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.bookings.all() });
+  }, [queryClient]);
+
+  const liveState = useVenueLiveSync({
+    venueId,
+    onRefresh: onLiveRefresh,
+    subscriptions: venueId ? [{ table: 'bookings', filter: `venue_id=eq.${venueId}` }] : [],
+    enabled: !!venueId,
+  });
 
   /** Instructor calendar column id → display name (best effort). */
   const calendarNameById = useMemo(() => {
@@ -81,7 +101,17 @@ export default function ClassesScreen() {
 
   return (
     <Screen scroll={false} padded={false}>
-      <Stack.Screen options={{ title: 'Classes' }} />
+      <Stack.Screen
+        options={{
+          title: 'Classes',
+          headerRight: () =>
+            liveState !== 'idle' ? (
+              <View style={styles.liveWrap}>
+                <LiveDot state={liveState} />
+              </View>
+            ) : null,
+        }}
+      />
 
       {selectedSession ? (
         <ClassRosterView
@@ -94,18 +124,12 @@ export default function ClassesScreen() {
         <>
           {/* Date navigation — rolling 7-day window */}
           <View style={[styles.navBar, { borderBottomColor: colors.border }]}>
-            <Pressable
-              accessibilityRole="button"
+            <IconButton
+              icon={{ ios: 'chevron.left', android: 'chevron_left', web: 'chevron_left' }}
               accessibilityLabel="Previous week"
-              hitSlop={8}
+              tint={colors.brand}
               onPress={() => setWeekStart(addDaysToDateStr(weekStart, -7))}
-              style={({ pressed }) => [styles.navBtn, { opacity: pressed ? 0.5 : 1 }]}>
-              <SymbolView
-                name={{ ios: 'chevron.left', android: 'chevron_left', web: 'chevron_left' }}
-                tintColor={colors.brand}
-                size={20}
-              />
-            </Pressable>
+            />
             <View style={styles.navCenter}>
               <Text variant="bodyMedium">{formatRangeLabel(week.from, week.to)}</Text>
               {!onToday ? (
@@ -124,18 +148,12 @@ export default function ClassesScreen() {
                 </Text>
               )}
             </View>
-            <Pressable
-              accessibilityRole="button"
+            <IconButton
+              icon={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }}
               accessibilityLabel="Next week"
-              hitSlop={8}
+              tint={colors.brand}
               onPress={() => setWeekStart(addDaysToDateStr(weekStart, 7))}
-              style={({ pressed }) => [styles.navBtn, { opacity: pressed ? 0.5 : 1 }]}>
-              <SymbolView
-                name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }}
-                tintColor={colors.brand}
-                size={20}
-              />
-            </Pressable>
+            />
           </View>
 
           {sessionsQuery.isLoading ? (
@@ -206,12 +224,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
     borderBottomWidth: 1,
   },
-  navBtn: {
-    minWidth: minTouchTarget,
-    minHeight: minTouchTarget,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   navCenter: {
     flex: 1,
     alignItems: 'center',
@@ -233,5 +245,8 @@ const styles = StyleSheet.create({
   },
   spacer: {
     height: spacing.xl,
+  },
+  liveWrap: {
+    marginRight: spacing.sm,
   },
 });

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -9,6 +9,7 @@ import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { hapticError, hapticSuccess } from '@/lib/haptics';
 import { useInviteStaff } from '@/lib/queries/useTeamMutations';
+import { useToast } from '@/providers/ToastProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { AssignablePractitioner, StaffRole } from '@/types/staff';
@@ -35,6 +36,7 @@ export function InviteStaffSheet({
   practitioners,
 }: InviteStaffSheetProps) {
   const { colors } = useTheme();
+  const toast = useToast();
   const invite = useInviteStaff();
 
   const [email, setEmail] = useState('');
@@ -89,12 +91,11 @@ export function InviteStaffSheet({
       });
       hapticSuccess();
       const sent = result.invite_email_sent;
-      Alert.alert(
-        'Invitation sent',
+      // Toast + close fire off the resolved mutation — Alert.alert is a no-op on web.
+      toast.success(
         sent
-          ? `An invite was sent to ${trimmedEmail}. They will receive a secure link to set their password.`
-          : `${trimmedEmail} was added to the team. If they already have an account they can sign in directly.`,
-        [{ text: 'OK' }],
+          ? `Invite sent to ${trimmedEmail}. They'll get a secure link to set their password.`
+          : `${trimmedEmail} was added to the team. They can sign in if they already have an account.`,
       );
       resetForm();
       onClose();
@@ -102,12 +103,7 @@ export function InviteStaffSheet({
       hapticError();
       const msg =
         err instanceof ApiError ? err.message : 'Failed to send invitation. Please try again.';
-      // Check for plan limit error
-      if (err instanceof ApiError && (err.body as { code?: string } | null | undefined)?.code === 'PLAN_STAFF_LIMIT') {
-        Alert.alert('Staff limit reached', msg, [{ text: 'OK' }]);
-      } else {
-        Alert.alert('Invite failed', msg, [{ text: 'OK' }]);
-      }
+      toast.error(msg);
     }
   }
 

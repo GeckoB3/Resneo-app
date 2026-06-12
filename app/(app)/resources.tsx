@@ -1,13 +1,13 @@
 import { Stack } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
-import { SymbolView } from 'expo-symbols';
 
 import { BookingDetailSheet } from '@/components/bookings/BookingDetailSheet';
 import { ResourceDaySection } from '@/components/resources/ResourceDaySection';
 import { Chip } from '@/components/ui/Chip';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
+import { IconButton } from '@/components/ui/IconButton';
 import { LiveDot } from '@/components/ui/LiveDot';
 import { Screen } from '@/components/ui/Screen';
 import { ListSkeleton } from '@/components/ui/Skeletons';
@@ -22,7 +22,7 @@ import {
 } from '@/lib/queries/useResources';
 import { useVenueLiveSync } from '@/lib/realtime/useVenueLiveSync';
 import { useVenueContext } from '@/providers/VenueProvider';
-import { minTouchTarget, radius, spacing } from '@/theme/index';
+import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
 /**
@@ -145,7 +145,13 @@ export default function ResourcesScreen() {
           {/* Date toolbar */}
           <View style={[styles.toolbar, { borderBottomColor: colors.border }]}>
             <View style={styles.dateNav}>
-              <ChevButton dir="left" onPress={() => setDate((d) => addDaysToDateStr(d, -1))} />
+              <IconButton
+                icon={{ ios: 'chevron.left', android: 'chevron_left', web: 'chevron_left' }}
+                accessibilityLabel="Previous day"
+                tint={colors.text}
+                iconSize={22}
+                onPress={() => setDate((d) => addDaysToDateStr(d, -1))}
+              />
               <Pressable
                 onPress={() => setDate(today)}
                 accessibilityRole="button"
@@ -173,7 +179,13 @@ export default function ResourcesScreen() {
                   </Text>
                 </Pressable>
               ) : null}
-              <ChevButton dir="right" onPress={() => setDate((d) => addDaysToDateStr(d, 1))} />
+              <IconButton
+                icon={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }}
+                accessibilityLabel="Next day"
+                tint={colors.text}
+                iconSize={22}
+                onPress={() => setDate((d) => addDaysToDateStr(d, 1))}
+              />
             </View>
 
             {/* Resource filter chips */}
@@ -247,32 +259,6 @@ export default function ResourcesScreen() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Sub-components
-// ---------------------------------------------------------------------------
-
-function ChevButton({ dir, onPress }: { dir: 'left' | 'right'; onPress: () => void }) {
-  const { colors } = useTheme();
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={dir === 'left' ? 'Previous day' : 'Next day'}
-      hitSlop={8}
-      style={({ pressed }) => [styles.chevButton, { opacity: pressed ? 0.45 : 1 }]}>
-      <SymbolView
-        name={
-          dir === 'left'
-            ? { ios: 'chevron.left', android: 'chevron_left', web: 'chevron_left' }
-            : { ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }
-        }
-        tintColor={colors.text}
-        size={22}
-      />
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
   toolbar: {
     padding: spacing.base,
@@ -295,12 +281,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs + 1,
     borderRadius: radius.pill,
     borderWidth: 1,
-  },
-  chevButton: {
-    minWidth: minTouchTarget,
-    minHeight: minTouchTarget,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   chips: {
     gap: spacing.sm,

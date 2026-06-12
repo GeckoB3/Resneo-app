@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import {
-  Alert,
   Platform,
   ScrollView,
   StyleSheet,
@@ -16,6 +15,7 @@ import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useCaptureComplianceRecord, useComplianceType } from '@/lib/queries/useCompliance';
+import { useToast } from '@/providers/ToastProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { ComplianceFormField } from '@/types/compliance';
@@ -193,6 +193,7 @@ export function ComplianceCaptureSheet({
   onCaptured,
 }: Props) {
   const { colors } = useTheme();
+  const toast = useToast();
   const [channel, setChannel] = useState<CaptureChannel>(initialChannel);
   const [responses, setResponses] = useState<Record<string, unknown>>({});
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -246,7 +247,7 @@ export function ComplianceCaptureSheet({
       {
         onSuccess: () => {
           hapticSuccess();
-          Alert.alert('Record captured', `${complianceTypeName} has been recorded.`);
+          toast.success(`${complianceTypeName} has been recorded.`);
           setResponses({});
           setFieldErrors({});
           onCaptured?.();
@@ -254,10 +255,7 @@ export function ComplianceCaptureSheet({
         },
         onError: (error) => {
           hapticWarning();
-          Alert.alert(
-            'Could not capture record',
-            error instanceof ApiError ? error.message : 'Please try again.',
-          );
+          toast.error(error instanceof ApiError ? error.message : 'Could not capture the record.');
         },
       },
     );

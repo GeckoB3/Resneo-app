@@ -1,9 +1,10 @@
 import { format, parseISO } from 'date-fns';
 import { useState } from 'react';
-import { Alert, Linking, Pressable, StyleSheet, View } from 'react-native';
+import { Linking, Pressable, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
@@ -14,6 +15,7 @@ import {
   useUploadGuestDocument,
 } from '@/lib/queries/useGuestDocuments';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
+import { useToast } from '@/providers/ToastProvider';
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
@@ -46,11 +48,14 @@ function formatDocDate(iso: string): string {
 export function DocumentsSection({ guestId }: DocumentsSectionProps) {
   const { colors } = useTheme();
   const accessToken = useAccessToken();
+  const toast = useToast();
   const docsQuery = useGuestDocuments(guestId);
   const uploadMutation = useUploadGuestDocument(guestId);
   const deleteMutation = useDeleteGuestDocument(guestId);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  // Document pending delete confirmation (Alert.alert is a no-op on web).
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; fileName: string } | null>(null);
 
   const documents = docsQuery.data?.documents ?? [];
 
@@ -61,10 +66,7 @@ export function DocumentsSection({ guestId }: DocumentsSectionProps) {
        
       const DocumentPicker = (await import('expo-document-picker').catch(() => null)) as any | null;
       if (!DocumentPicker) {
-        Alert.alert(
-          'Not available',
-          'Document picker is not installed. Please upload documents from the web dashboard.',
-        );
+        toast.info('Document picker unavailable. Upload from the web dashboard instead.');
         return;
       }
       const result = await DocumentPicker.getDocumentAsync({
@@ -96,38 +98,28 @@ export function DocumentsSection({ guestId }: DocumentsSectionProps) {
       const url = await fetchDocumentDownloadUrl(accessToken, guestId, docId);
       await Linking.openURL(url);
     } catch (e) {
-      Alert.alert('Download failed', e instanceof ApiError ? e.message : 'Could not download file.');
+      toast.error(e instanceof ApiError ? e.message : 'Could not download file.');
     } finally {
       setDownloadingId(null);
     }
   }
 
-  function handleDelete(docId: string, fileName: string) {
-    Alert.alert(
-      'Remove document',
-      `Remove "${fileName}"? This cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteMutation.mutateAsync(docId);
-              hapticSuccess();
-            } catch (e) {
-              Alert.alert(
-                'Remove failed',
-                e instanceof ApiError ? e.message : 'Could not remove document.',
-              );
-            }
-          },
-        },
-      ],
-    );
+  async function handleConfirmDelete() {
+    if (!pendingDelete) return;
+    const docId = pendingDelete.id;
+    try {
+      await deleteMutation.mutateAsync(docId);
+      hapticSuccess();
+      setPendingDelete(null);
+      toast.success('Document removed.');
+    } catch (e) {
+      hapticWarning();
+      toast.error(e instanceof ApiError ? e.message : 'Could not remove document.');
+    }
   }
 
   return (
+    <>
     <Card>
       <View style={styles.cardHeader}>
         <Text variant="label">Documents</Text>
@@ -181,7 +173,7 @@ export function DocumentsSection({ guestId }: DocumentsSectionProps) {
                   </Text>
                 </Pressable>
                 <Pressable
-                  onPress={() => handleDelete(doc.id, doc.file_name)}
+                  onPress={() => setPendingDelete({ id: doc.id, fileName: doc.file_name })}
                   style={({ pressed }) => [styles.docAction, pressed && { opacity: 0.6 }]}
                   accessibilityRole="button"
                   accessibilityLabel="Remove">
@@ -195,6 +187,31 @@ export function DocumentsSection({ guestId }: DocumentsSectionProps) {
         </View>
       )}
     </Card>
+
+      <Sheet visible={pendingDelete !== null} onClose={() => setPendingDelete(null)}>
+        <View style={styles.confirmBody}>
+          <Text variant="subheading">Remove document</Text>
+          <Text variant="bodySmall" tone="secondary">
+            Remove &ldquo;{pendingDelete?.fileName}&rdquo;? This cannot be undone.
+          </Text>
+          <View style={styles.confirmActions}>
+            <Button
+              label="Cancel"
+              variant="secondary"
+              style={styles.flex1}
+              onPress={() => setPendingDelete(null)}
+            />
+            <Button
+              label="Remove"
+              variant="danger"
+              style={styles.flex1}
+              loading={deleteMutation.isPending}
+              onPress={() => void handleConfirmDelete()}
+            />
+          </View>
+        </View>
+      </Sheet>
+    </>
   );
 }
 
@@ -238,5 +255,16 @@ const styles = StyleSheet.create({
     minHeight: 44,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  confirmBody: {
+    gap: spacing.md,
+  },
+  confirmActions: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    paddingTop: spacing.sm,
+  },
+  flex1: {
+    flex: 1,
   },
 });

@@ -22,6 +22,23 @@ export type GuestEditTarget = {
   marketingConsent: boolean;
   /** Explicit opt-out (tracked independently of consent). */
   marketingOptOut: boolean;
+  /** Contact address (client-address services). */
+  addressLine1: string;
+  addressLine2: string;
+  addressCity: string;
+  addressPostcode: string;
+};
+
+/**
+ * The PATCH /api/venue/guests/[guestId] endpoint accepts these address fields,
+ * but the shared `UpdateGuestInput` (lib/queries/useGuestMutations.ts) doesn't
+ * yet declare them — extend it locally until that type is widened.
+ */
+type AddressUpdate = {
+  address_line1?: string | null;
+  address_line2?: string | null;
+  address_city?: string | null;
+  address_postcode?: string | null;
 };
 
 type GuestEditSheetProps = {
@@ -48,6 +65,10 @@ export function GuestEditSheet({ target, onClose }: GuestEditSheetProps) {
   const [tags, setTags] = useState('');
   const [marketingConsent, setMarketingConsent] = useState(false);
   const [marketingOptOut, setMarketingOptOut] = useState(false);
+  const [addressLine1, setAddressLine1] = useState('');
+  const [addressLine2, setAddressLine2] = useState('');
+  const [addressCity, setAddressCity] = useState('');
+  const [addressPostcode, setAddressPostcode] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   // Seed form values when a new target is opened. Using useEffect avoids
@@ -63,12 +84,16 @@ export function GuestEditSheet({ target, onClose }: GuestEditSheetProps) {
       setTags(target.tags);
       setMarketingConsent(target.marketingConsent);
       setMarketingOptOut(target.marketingOptOut);
+      setAddressLine1(target.addressLine1);
+      setAddressLine2(target.addressLine2);
+      setAddressCity(target.addressCity);
+      setAddressPostcode(target.addressPostcode);
       setError(null);
     }
   }, [target?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  function buildPayload(t: GuestEditTarget): UpdateGuestInput {
-    const payload: UpdateGuestInput = {};
+  function buildPayload(t: GuestEditTarget): UpdateGuestInput & AddressUpdate {
+    const payload: UpdateGuestInput & AddressUpdate = {};
     const diff = (cur: string, orig: string): string | null | undefined =>
       cur.trim() === orig.trim() ? undefined : cur.trim() || null;
 
@@ -82,6 +107,15 @@ export function GuestEditSheet({ target, onClose }: GuestEditSheetProps) {
     if (e !== undefined) payload.email = e;
     const n = diff(notes, t.notes);
     if (n !== undefined) payload.customer_profile_notes = n;
+
+    const a1 = diff(addressLine1, t.addressLine1);
+    if (a1 !== undefined) payload.address_line1 = a1;
+    const a2 = diff(addressLine2, t.addressLine2);
+    if (a2 !== undefined) payload.address_line2 = a2;
+    const ac = diff(addressCity, t.addressCity);
+    if (ac !== undefined) payload.address_city = ac;
+    const ap = diff(addressPostcode, t.addressPostcode);
+    if (ap !== undefined) payload.address_postcode = ap;
 
     const nextTags = parseTags(tags);
     const origTags = parseTags(t.tags);
@@ -162,6 +196,38 @@ export function GuestEditSheet({ target, onClose }: GuestEditSheetProps) {
               multiline
               style={styles.multiline}
             />
+
+            {/* Address (optional — for client-address services) */}
+            <Input
+              label="Address line 1"
+              value={addressLine1}
+              onChangeText={setAddressLine1}
+              autoCapitalize="words"
+            />
+            <Input
+              label="Address line 2"
+              value={addressLine2}
+              onChangeText={setAddressLine2}
+              autoCapitalize="words"
+            />
+            <View style={styles.nameRow}>
+              <View style={styles.nameField}>
+                <Input
+                  label="City / town"
+                  value={addressCity}
+                  onChangeText={setAddressCity}
+                  autoCapitalize="words"
+                />
+              </View>
+              <View style={styles.nameField}>
+                <Input
+                  label="Postcode"
+                  value={addressPostcode}
+                  onChangeText={setAddressPostcode}
+                  autoCapitalize="characters"
+                />
+              </View>
+            </View>
 
             {/* Marketing consent — two independent toggles */}
             <View style={styles.switchRow}>

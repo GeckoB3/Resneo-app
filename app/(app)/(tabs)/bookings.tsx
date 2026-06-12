@@ -1,8 +1,6 @@
-import { SymbolView } from 'expo-symbols';
 import { useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import {
-  Alert,
   FlatList,
   Pressable,
   RefreshControl,
@@ -10,29 +8,36 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
+import Animated, { FadeInDown, LinearTransition } from 'react-native-reanimated';
 import { Sheet } from '@/components/ui/Sheet';
 import { Button } from '@/components/ui/Button';
 import { apiFetch , ApiError } from '@/lib/api/client';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
+import { useToast } from '@/providers/ToastProvider';
 
 import { BookingDetailSheet } from '@/components/bookings/BookingDetailSheet';
-import { BookingRow } from '@/components/bookings/BookingRow';
+import { BookingSwipeRow } from '@/components/bookings/BookingSwipeRow';
 import { BookingStatsBar } from '@/components/bookings/BookingStatsBar';
 import { BookingBulkBar } from '@/components/bookings/BookingBulkBar';
 import { BookingSortSheet } from '@/components/bookings/BookingSortSheet';
 import { BookingServiceFilterSheet } from '@/components/bookings/BookingServiceFilterSheet';
+import { BookingDateRangeSheet } from '@/components/bookings/BookingDateRangeSheet';
 import { Chip } from '@/components/ui/Chip';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Fab } from '@/components/ui/Fab';
+import { IconButton } from '@/components/ui/IconButton';
 import { Input } from '@/components/ui/Input';
 import { Screen } from '@/components/ui/Screen';
+import { SearchBar } from '@/components/ui/SearchBar';
 import { Segmented } from '@/components/ui/Segmented';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Text } from '@/components/ui/Text';
 
 import { newBookingActionLabel } from '@/lib/booking/terminology';
+import { inferBookingRowModel } from '@/lib/booking/infer-booking-row-model';
+import type { BookingModel } from '@/types/venue';
 import {
   addDaysToDateStr,
   addMonthsToDateStr,
@@ -44,26 +49,69 @@ import {
   getWeekRangeFromDate,
   type DateRange,
 } from '@/lib/dates/venue-dates';
-import { hapticSelect, hapticError, hapticSuccess } from '@/lib/haptics';
 import { useBookingsList } from '@/lib/queries/useBookingsList';
-import { useComplianceBookingFlags } from '@/lib/queries/useCompliance';
+import {
+  useComplianceBookingFlags,
+  type ComplianceBookingFlag,
+} from '@/lib/queries/useCompliance';
 import { LiveDot } from '@/components/ui/LiveDot';
 import { useBookingsRange } from '@/lib/queries/useBookingsRange';
 import { usePractitioners } from '@/lib/queries/usePractitioners';
 import { isAppointmentFromVenue } from '@/lib/venue/venue-experience';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { useVenueLiveSync } from '@/lib/realtime/useVenueLiveSync';
-import { minTouchTarget, radius, spacing } from '@/theme/index';
+import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { BookingListRow } from '@/types/booking-list';
 import type { SortKey, SortDir } from '@/components/bookings/BookingSortSheet';
 
-type Scope = 'day' | 'week' | 'month';
+type Scope = 'day' | 'week' | 'month' | 'custom';
 
 const SCOPE_OPTIONS: { value: Scope; label: string }[] = [
   { value: 'day', label: 'Day' },
   { value: 'week', label: 'Week' },
   { value: 'month', label: 'Month' },
+  { value: 'custom', label: 'Custom' },
+];
+
+/**
+ * Booking-model filter groups for the type chip row. Practitioner + unified
+ * appointments both surface as "Appointment" (mirrors bookingModelShortLabel).
+ * `models` lists the inferred BookingModel values a row may carry to match.
+ */
+type ModelFilterKey = 'appointment' | 'event' | 'class' | 'resource';
+
+const MODEL_FILTERS: { key: ModelFilterKey; label: string; models: BookingModel[] }[] = [
+  {
+    key: 'appointment',
+    label: 'Appointment',
+    models: ['practitioner_appointment', 'unified_scheduling'],
+  },
+  { key: 'event', label: 'Event', models: ['event_ticket'] },
+  { key: 'class', label: 'Class', models: ['class_session'] },
+  { key: 'resource', label: 'Resource', models: ['resource_booking'] },
+];
+
+/** Map an inferred BookingModel to its filter-group key (or null if ungrouped). */
+function modelFilterKeyFor(model: BookingModel): ModelFilterKey | null {
+  for (const group of MODEL_FILTERS) {
+    if (group.models.includes(model)) return group.key;
+  }
+  return null;
+}
+
+/** Parse a HH:mm[:ss] booking_time to an integer hour (0–23), or null. */
+function bookingHour(time: string | null | undefined): number | null {
+  if (!time) return null;
+  const hour = Number(time.slice(0, 2));
+  return Number.isFinite(hour) ? hour : null;
+}
+
+/** Preset day time-windows (inclusive start/end hour) for the day view filter. */
+const TIME_WINDOWS: { key: string; label: string; start: number; end: number }[] = [
+  { key: 'morning', label: 'Morning', start: 0, end: 11 },
+  { key: 'afternoon', label: 'Afternoon', start: 12, end: 16 },
+  { key: 'evening', label: 'Evening', start: 17, end: 23 },
 ];
 
 /** Confirmed = explicit status OR either attendance timestamp (web semantics). */
@@ -73,6 +121,11 @@ function isAttendanceConfirmed(b: BookingListRow): boolean {
     !!b.guest_attendance_confirmed_at ||
     !!b.staff_attendance_confirmed_at
   );
+}
+
+/** A booking "needs compliance" when it has a flag whose requirement isn't satisfied. */
+function needsCompliance(flag: ComplianceBookingFlag | undefined | null): boolean {
+  return !!flag && flag.state !== 'satisfied';
 }
 
 /** Status filters — order mirrors the web AppointmentBookingsDashboard (Pending is second). */
@@ -101,13 +154,17 @@ type ListRow =
   | { kind: 'header'; date: string; title: string }
   | { kind: 'booking'; booking: BookingListRow };
 
-function rangeFor(scope: Scope, anchor: string): DateRange {
+function rangeFor(scope: Scope, anchor: string, custom: DateRange | null): DateRange {
   if (scope === 'week') {
     const week = getWeekRangeFromDate(anchor);
     return { from: week.from, to: week.to };
   }
   if (scope === 'month') {
     return getMonthRangeFromDate(anchor);
+  }
+  if (scope === 'custom') {
+    // Fall back to the single anchor day until the user picks a range.
+    return custom ?? { from: anchor, to: anchor };
   }
   return { from: anchor, to: anchor };
 }
@@ -158,6 +215,7 @@ function BulkMessageSheet({
   onClose: () => void;
 }) {
   const accessToken = useAccessToken();
+  const toast = useToast();
   const [message, setMessage] = useState('');
   const [channel, setChannel] = useState<'email' | 'sms' | 'both'>('email');
   const [sending, setSending] = useState(false);
@@ -178,12 +236,11 @@ function BulkMessageSheet({
       }
     }
     setSending(false);
+    const total = bookings.length;
     if (failed > 0) {
-      hapticError();
-      Alert.alert('Partial send', `${bookings.length - failed} sent, ${failed} failed.`);
+      toast.error(`${total - failed} sent, ${failed} failed.`);
     } else {
-      hapticSuccess();
-      Alert.alert('Sent', `Message sent to ${bookings.length} guest${bookings.length === 1 ? '' : 's'}.`);
+      toast.success(`Message sent to ${total} guest${total === 1 ? '' : 's'}.`);
     }
     onClose();
   }
@@ -231,17 +288,30 @@ export default function BookingsScreen() {
   const { colors } = useTheme();
   const { venue, terminology, pricingTier, bookingModel, featureFlags } = useVenueContext();
   const complianceEnabled = featureFlags?.resolved?.compliance_records_enabled === true;
+  const enabledModels = useMemo(() => venue?.enabled_models ?? [], [venue?.enabled_models]);
+  const modelFilterEnabled = enabledModels.length > 0;
   const timeZone = venue?.timezone ?? 'Europe/London';
   const isAppointment = isAppointmentFromVenue(pricingTier, bookingModel);
   const venueId = venue?.id ?? null;
 
   const [scope, setScope] = useState<Scope>('day');
   const [anchor, setAnchor] = useState<string>(() => calendarDateInTimeZone(new Date(), timeZone));
+  // Stable "today" in the venue tz for seeding the custom-range inputs.
+  const today = useMemo(() => calendarDateInTimeZone(new Date(), timeZone), [timeZone]);
   const [status, setStatus] = useState<string>('All');
   const [search, setSearch] = useState('');
   const [practitionerFilter, setPractitionerFilter] = useState<string | null>(null);
   const [serviceFilter, setServiceFilter] = useState<string | null>(null);
+  const [modelFilter, setModelFilter] = useState<ModelFilterKey | null>(null);
+  const [needsComplianceOnly, setNeedsComplianceOnly] = useState(false);
   const [openBookingId, setOpenBookingId] = useState<string | null>(null);
+
+  // --- Custom date range (Custom scope) ---
+  const [customRange, setCustomRange] = useState<DateRange | null>(null);
+  const [rangeSheetOpen, setRangeSheetOpen] = useState(false);
+
+  // --- Day time-window filter (start/end hour, inclusive) on the day view ---
+  const [dayHourRange, setDayHourRange] = useState<{ start: number; end: number } | null>(null);
 
   // --- Sort state ---
   const [sortKey, setSortKey] = useState<SortKey>('time');
@@ -265,9 +335,12 @@ export default function BookingsScreen() {
     [practitionersQuery.data],
   );
 
-  const range = useMemo(() => rangeFor(scope, anchor), [scope, anchor]);
+  const range = useMemo(
+    () => rangeFor(scope, anchor, customRange),
+    [scope, anchor, customRange],
+  );
 
-  // Day uses the single-date endpoint (all statuses); week/month use the range endpoint.
+  // Day uses the single-date endpoint (all statuses); week/month/custom use the range endpoint.
   const dayQuery = useBookingsList({ date: anchor, timeZone, enabled: scope === 'day' });
   const rangeQuery = useBookingsRange({ from: range.from, to: range.to, enabled: scope !== 'day' });
   const activeQuery = scope === 'day' ? dayQuery : rangeQuery;
@@ -309,6 +382,24 @@ export default function BookingsScreen() {
       );
     }
 
+    // Booking-model type filter — group the inferred model and compare keys.
+    if (modelFilter) {
+      rows = rows.filter((b) => modelFilterKeyFor(inferBookingRowModel(b)) === modelFilter);
+    }
+
+    // Day time-window filter — keep rows whose hour is within [start, end] inclusive.
+    if (dayHourRange) {
+      rows = rows.filter((b) => {
+        const hour = bookingHour(b.booking_time);
+        return hour !== null && hour >= dayHourRange.start && hour <= dayHourRange.end;
+      });
+    }
+
+    // Needs-compliance filter — bookings whose compliance requirement is unmet.
+    if (needsComplianceOnly) {
+      rows = rows.filter((b) => needsCompliance(complianceFlags?.[b.id]));
+    }
+
     if (!term) {
       return rows;
     }
@@ -325,7 +416,25 @@ export default function BookingsScreen() {
         idNorm.includes(term.replace(/-/g, ''))
       );
     });
-  }, [rawRows, search, practitionerFilter, serviceFilter]);
+  }, [
+    rawRows,
+    search,
+    practitionerFilter,
+    serviceFilter,
+    modelFilter,
+    dayHourRange,
+    needsComplianceOnly,
+    complianceFlags,
+  ]);
+
+  // Count of loaded rows needing compliance — drives the chip tally + visibility.
+  const complianceNeedsCount = useMemo(() => {
+    if (!complianceEnabled || !complianceFlags) return 0;
+    return rawRows.reduce(
+      (n, b) => (needsCompliance(complianceFlags[b.id]) ? n + 1 : n),
+      0,
+    );
+  }, [complianceEnabled, complianceFlags, rawRows]);
 
   const counts = useMemo(() => {
     const map: Record<string, number> = {};
@@ -341,6 +450,29 @@ export default function BookingsScreen() {
     if (!option || option.key === 'All') return searchedRows;
     return searchedRows.filter(option.matches);
   }, [searchedRows, status]);
+
+  // Per-model tallies for the type chip row — counted before the model filter
+  // is applied so each chip shows the full count for its group (web parity).
+  const modelChips = useMemo(() => {
+    if (!modelFilterEnabled) return [];
+    const enabledKeys = new Set(
+      enabledModels.map((m) => modelFilterKeyFor(m)).filter((k): k is ModelFilterKey => k !== null),
+    );
+    const tally: Record<ModelFilterKey, number> = {
+      appointment: 0,
+      event: 0,
+      class: 0,
+      resource: 0,
+    };
+    for (const row of rawRows) {
+      const key = modelFilterKeyFor(inferBookingRowModel(row));
+      if (key) tally[key] += 1;
+    }
+    return MODEL_FILTERS.filter((g) => enabledKeys.has(g.key) || tally[g.key] > 0).map((g) => ({
+      ...g,
+      count: tally[g.key],
+    }));
+  }, [modelFilterEnabled, enabledModels, rawRows]);
 
   const showDateHeaders = scope !== 'day';
 
@@ -368,7 +500,11 @@ export default function BookingsScreen() {
       ? formatDayHeading(anchor)
       : scope === 'week'
         ? formatRangeLabel(range.from, range.to)
-        : formatMonthLabel(anchor);
+        : scope === 'custom'
+          ? customRange
+            ? formatRangeLabel(customRange.from, customRange.to)
+            : 'Pick a date range'
+          : formatMonthLabel(anchor);
 
   const step = useCallback(
     (direction: -1 | 1) => {
@@ -423,15 +559,17 @@ export default function BookingsScreen() {
         );
       }
       return (
-        <BookingRow
-          booking={item.booking}
-          isAppointment={isAppointment}
-          onPress={openBooking}
-          onLongPress={toggleSelect}
-          selected={selectedIds.has(item.booking.id)}
-          selectionMode={selectionMode}
-          complianceFlag={complianceFlags?.[item.booking.id]}
-        />
+        <Animated.View entering={FadeInDown.duration(180)} layout={LinearTransition.springify()}>
+          <BookingSwipeRow
+            booking={item.booking}
+            isAppointment={isAppointment}
+            onPress={openBooking}
+            onLongPress={toggleSelect}
+            selected={selectedIds.has(item.booking.id)}
+            selectionMode={selectionMode}
+            complianceFlag={complianceFlags?.[item.booking.id]}
+          />
+        </Animated.View>
       );
     },
     [
@@ -447,18 +585,50 @@ export default function BookingsScreen() {
 
   const isServiceFiltered = serviceFilter !== null;
 
+  // Any non-default list filter active (status chip stays out of scope so the
+  // stats bar / chip tallies keep tracking it). Search counts too.
+  const anyFilterActive =
+    search.trim().length > 0 ||
+    practitionerFilter !== null ||
+    serviceFilter !== null ||
+    modelFilter !== null ||
+    dayHourRange !== null ||
+    needsComplianceOnly;
+
+  const clearAllFilters = useCallback(() => {
+    setSearch('');
+    setPractitionerFilter(null);
+    setServiceFilter(null);
+    setModelFilter(null);
+    setDayHourRange(null);
+    setNeedsComplianceOnly(false);
+  }, []);
+
+  // Custom scope without a chosen range yet — prompt the picker instead of
+  // navigating days. Reset the day-window filter when leaving the day scope.
+  const handleScopeChange = useCallback((next: Scope) => {
+    setScope(next);
+    if (next !== 'day') {
+      setDayHourRange(null);
+    }
+    if (next === 'custom') {
+      setRangeSheetOpen((wasOpen) => wasOpen || customRange === null);
+    }
+  }, [customRange]);
+
   return (
     <Screen padded={false}>
       <ErrorBoundary label="appointments">
       <View style={[styles.toolbar, { borderBottomColor: colors.border }]}>
-        <Segmented value={scope} onChange={setScope} options={SCOPE_OPTIONS} />
+        <Segmented value={scope} onChange={handleScopeChange} options={SCOPE_OPTIONS} />
 
         <View style={styles.dateNav}>
-          <NavButton dir="left" onPress={() => step(-1)} />
+          {/* Custom range has no day-stepping — tap the label to edit the range. */}
+          {scope === 'custom' ? null : <NavButton dir="left" onPress={() => step(-1)} />}
           <Pressable
-            onPress={goToday}
+            onPress={scope === 'custom' ? () => setRangeSheetOpen(true) : goToday}
             accessibilityRole="button"
-            accessibilityHint="Jump to today"
+            accessibilityHint={scope === 'custom' ? 'Edit the date range' : 'Jump to today'}
             style={({ pressed }) => [styles.dateLabel, { opacity: pressed ? 0.55 : 1 }]}>
             <View style={styles.dateLabelInner}>
               <Text variant="subheading" numberOfLines={1}>
@@ -467,80 +637,74 @@ export default function BookingsScreen() {
               <LiveDot state={liveState} />
             </View>
           </Pressable>
-          <NavButton dir="right" onPress={() => step(1)} />
+          {scope === 'custom' ? null : <NavButton dir="right" onPress={() => step(1)} />}
         </View>
 
-        {/* Search + sort/service controls row */}
-        <View style={styles.searchRow}>
-          <View style={styles.searchInputWrap}>
-            <Input
-              placeholder="Search name, phone, email…"
-              value={search}
-              onChangeText={setSearch}
-              autoCapitalize="none"
-              autoCorrect={false}
-              returnKeyType="search"
-            />
-          </View>
-          <View style={styles.toolbarIcons}>
-            {/* Sort button */}
-            <Pressable
-              onPress={() => { hapticSelect(); setSortSheetOpen(true); }}
-              hitSlop={8}
-              accessibilityLabel="Sort bookings"
-              style={({ pressed }) => [
-                styles.iconButton,
-                {
-                  borderColor: sortKey !== 'time' ? colors.brand : colors.border,
-                  backgroundColor: sortKey !== 'time' ? colors.brandSubtle : colors.surface,
-                  opacity: pressed ? 0.7 : 1,
-                },
-              ]}>
-              <SymbolView
-                name={{ ios: 'arrow.up.arrow.down', android: 'sort', web: 'sort' }}
-                tintColor={sortKey !== 'time' ? colors.brand : colors.textSecondary}
-                size={16}
+        {/* Search + sort/service/walk-in controls — sort & filter live in the SearchBar's trailing slot. */}
+        <SearchBar
+          placeholder="Search name, phone, email…"
+          value={search}
+          onChangeText={setSearch}
+          right={
+            <View style={styles.toolbarIcons}>
+              <IconButton
+                icon={{ ios: 'arrow.up.arrow.down', android: 'sort', web: 'sort' }}
+                accessibilityLabel="Sort bookings"
+                variant="bordered"
+                active={sortKey !== 'time'}
+                iconSize={18}
+                onPress={() => setSortSheetOpen(true)}
               />
-            </Pressable>
-            {/* Service filter button */}
-            {isAppointment ? (
-              <Pressable
-                onPress={() => { hapticSelect(); setServiceSheetOpen(true); }}
-                hitSlop={8}
-                accessibilityLabel="Filter by service"
-                style={({ pressed }) => [
-                  styles.iconButton,
-                  {
-                    borderColor: isServiceFiltered ? colors.brand : colors.border,
-                    backgroundColor: isServiceFiltered ? colors.brandSubtle : colors.surface,
-                    opacity: pressed ? 0.7 : 1,
-                  },
-                ]}>
-                <SymbolView
-                  name={{ ios: 'line.3.horizontal.decrease.circle', android: 'filter_list', web: 'filter_list' }}
-                  tintColor={isServiceFiltered ? colors.brand : colors.textSecondary}
-                  size={16}
+              {isAppointment ? (
+                <IconButton
+                  icon={{
+                    ios: 'line.3.horizontal.decrease.circle',
+                    android: 'filter_list',
+                    web: 'filter_list',
+                  }}
+                  accessibilityLabel="Filter by service"
+                  variant="bordered"
+                  active={isServiceFiltered}
+                  iconSize={18}
+                  onPress={() => setServiceSheetOpen(true)}
                 />
-              </Pressable>
+              ) : null}
+              <IconButton
+                icon={{ ios: 'figure.walk', android: 'directions_walk', web: 'directions_walk' }}
+                accessibilityLabel="Start a walk-in"
+                variant="bordered"
+                iconSize={18}
+                onPress={() => router.push('/booking/new?intent=walk-in')}
+              />
+            </View>
+          }
+        />
+
+        {/* Removable filter chips — service + needs-compliance + clear-all. */}
+        {isServiceFiltered || anyFilterActive || (complianceEnabled && complianceNeedsCount > 0) ? (
+          <View style={styles.activeFilterRow}>
+            {isServiceFiltered ? (
+              <Chip
+                label="Service"
+                selected
+                onPress={() => setServiceFilter(null)}
+                onRemove={() => setServiceFilter(null)}
+              />
+            ) : null}
+            {complianceEnabled && complianceNeedsCount > 0 ? (
+              <Chip
+                label="Needs compliance"
+                count={complianceNeedsCount}
+                selected={needsComplianceOnly}
+                selectedColor="#E11D48"
+                onPress={() => setNeedsComplianceOnly((v) => !v)}
+                onRemove={needsComplianceOnly ? () => setNeedsComplianceOnly(false) : undefined}
+              />
+            ) : null}
+            {anyFilterActive ? (
+              <Chip label="Clear all" onPress={clearAllFilters} onRemove={clearAllFilters} />
             ) : null}
           </View>
-        </View>
-
-        {/* Active service filter badge */}
-        {isServiceFiltered ? (
-          <Pressable
-            onPress={() => { hapticSelect(); setServiceFilter(null); }}
-            style={({ pressed }) => [
-              styles.activeFilterBadge,
-              { backgroundColor: colors.brandSubtle, borderColor: colors.brand, opacity: pressed ? 0.7 : 1 },
-            ]}>
-            <Text variant="caption" color={colors.brand}>
-              Service filter active
-            </Text>
-            <Text variant="caption" color={colors.brand}>
-              ✕
-            </Text>
-          </Pressable>
         ) : null}
 
         <ScrollView
@@ -582,6 +746,58 @@ export default function BookingsScreen() {
             ))}
           </ScrollView>
         ) : null}
+
+        {/* Booking-model type filter — gated on the venue having enabled models. */}
+        {modelChips.length > 0 ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chips}>
+            <Chip
+              label="All types"
+              selected={modelFilter === null}
+              onPress={() => setModelFilter(null)}
+            />
+            {modelChips.map((g) => (
+              <Chip
+                key={g.key}
+                label={g.label}
+                count={g.count}
+                selected={modelFilter === g.key}
+                onPress={() => setModelFilter((cur) => (cur === g.key ? null : g.key))}
+              />
+            ))}
+          </ScrollView>
+        ) : null}
+
+        {/* Day time-window filter — preset hour-bands, day view only. Narrows
+            both the list and the stats bar (both derive from searchedRows). */}
+        {scope === 'day' ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chips}>
+            <Chip
+              label="All day"
+              selected={dayHourRange === null}
+              onPress={() => setDayHourRange(null)}
+            />
+            {TIME_WINDOWS.map((w) => {
+              const active =
+                dayHourRange?.start === w.start && dayHourRange?.end === w.end;
+              return (
+                <Chip
+                  key={w.key}
+                  label={w.label}
+                  selected={active}
+                  onPress={() =>
+                    setDayHourRange(active ? null : { start: w.start, end: w.end })
+                  }
+                />
+              );
+            })}
+          </ScrollView>
+        ) : null}
       </View>
 
       {activeQuery.isLoading ? (
@@ -608,10 +824,11 @@ export default function BookingsScreen() {
         />
       ) : (
         <>
-          {/* Stats bar — visible when there are bookings */}
-          {rawRows.length > 0 ? (
+          {/* Stats bar — totals follow the active practitioner/service/search
+              filters (web parity); only the status chip is excluded from stats. */}
+          {searchedRows.length > 0 ? (
             <View style={[styles.statsBarWrap, { borderBottomColor: colors.border }]}>
-              <BookingStatsBar rows={rawRows} />
+              <BookingStatsBar rows={searchedRows} />
             </View>
           ) : null}
 
@@ -631,6 +848,8 @@ export default function BookingsScreen() {
                     ? 'Nothing booked for this period yet.'
                     : `No ${(STATUS_FILTERS.find((o) => o.key === status)?.label ?? status).toLowerCase()} appointments for this period.`
                 }
+                actionLabel={newBookingActionLabel(terminology)}
+                onAction={() => router.push('/booking/new')}
               />
             }
             refreshControl={
@@ -688,6 +907,19 @@ export default function BookingsScreen() {
         selectedServiceId={serviceFilter}
         onSelect={setServiceFilter}
       />
+
+      {/* Custom date-range sheet */}
+      <BookingDateRangeSheet
+        visible={rangeSheetOpen}
+        onClose={() => setRangeSheetOpen(false)}
+        from={customRange?.from ?? null}
+        to={customRange?.to ?? null}
+        today={today}
+        onApply={(r) => {
+          setCustomRange(r);
+          setScope('custom');
+        }}
+      />
       </ErrorBoundary>
     </Screen>
   );
@@ -700,22 +932,17 @@ function ItemSeparator() {
 function NavButton({ dir, onPress }: { dir: 'left' | 'right'; onPress: () => void }) {
   const { colors } = useTheme();
   return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
+    <IconButton
+      icon={
+        dir === 'left'
+          ? { ios: 'chevron.left', android: 'chevron_left', web: 'chevron_left' }
+          : { ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }
+      }
       accessibilityLabel={dir === 'left' ? 'Previous' : 'Next'}
-      hitSlop={8}
-      style={({ pressed }) => [styles.navButton, { opacity: pressed ? 0.45 : 1 }]}>
-      <SymbolView
-        name={
-          dir === 'left'
-            ? { ios: 'chevron.left', android: 'chevron_left', web: 'chevron_left' }
-            : { ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }
-        }
-        tintColor={colors.text}
-        size={22}
-      />
-    </Pressable>
+      tint={colors.text}
+      iconSize={22}
+      onPress={onPress}
+    />
   );
 }
 
@@ -741,41 +968,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
   },
-  navButton: {
-    minWidth: minTouchTarget,
-    minHeight: minTouchTarget,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  searchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  searchInputWrap: {
-    flex: 1,
-  },
   toolbarIcons: {
     flexDirection: 'row',
     gap: spacing.sm,
   },
-  iconButton: {
-    width: 40,
-    height: 40,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  activeFilterBadge: {
+  activeFilterRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    flexWrap: 'wrap',
     gap: spacing.sm,
-    borderWidth: 1,
-    borderRadius: radius.pill,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    alignSelf: 'flex-start',
   },
   chips: {
     gap: spacing.sm,

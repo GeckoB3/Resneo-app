@@ -35,6 +35,10 @@ export function Text({ variant = 'body', tone = 'default', color, style, ...prop
 
   return (
     <RNText
+      // Honour Dynamic Type but cap the multiplier so tight line-heights and
+      // fixed-width columns (time gutters, segmented controls) don't clip at the
+      // largest accessibility sizes. Callers can override per-instance.
+      maxFontSizeMultiplier={1.3}
       style={[typography[variant], { color: color ?? toneColor[tone] }, style]}
       {...props}
     />

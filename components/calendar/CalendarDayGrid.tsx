@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   View,
@@ -23,9 +24,16 @@ import {
 } from '@/components/calendar/grid-layout';
 import { Text } from '@/components/ui/Text';
 import type { ComplianceBookingFlag } from '@/lib/queries/useCompliance';
-import { spacing } from '@/theme/index';
+import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
-import type { CalendarGridBooking, CalendarGridWorkingHours } from '@/types/calendar-grid';
+import type {
+  CalendarGridBooking,
+  CalendarGridSession,
+  CalendarGridWorkingHours,
+} from '@/types/calendar-grid';
+
+/** Indigo accent for class/event capacity blocks — distinct from booking hues. */
+const SESSION_ACCENT = '#6366F1';
 
 type PositionedBooking = {
   booking: CalendarGridBooking;
@@ -55,11 +63,23 @@ type PositionedTimeBlock = {
   timeLabel: string;
 };
 
+type PositionedSession = {
+  session: CalendarGridSession;
+  top: number;
+  height: number;
+  timeLabel: string;
+};
+
+/** Half-open minute range used for drag-conflict detection. */
+export type BusyRange = { start: number; end: number };
+
 type CalendarDayGridProps = {
   bookings: CalendarGridBooking[];
   workingHours: CalendarGridWorkingHours[];
   /** Breaks/blocks for this practitioner+day — render as non-bookable overlays. */
   timeBlocks?: CalendarTimeBlock[];
+  /** Class/event capacity blocks from the grid payload (rendered as indigo). */
+  sessions?: CalendarGridSession[];
   /** Current time in minutes-since-midnight, or null when not viewing today. */
   nowMinutes: number | null;
   onBlockPress: (bookingId: string) => void;
@@ -78,6 +98,11 @@ type CalendarDayGridProps = {
   onDragReschedule?: (bookingId: string, newTime: string) => void;
   /** Called when the user hold-drags the bottom edge to change duration. */
   onDragResize?: (bookingId: string, newDurationMinutes: number) => void;
+  /** Called when a drag/resize is refused for overlapping another block. */
+  onDragConflictReject?: () => void;
+  /** Pull-to-refresh — true while the grid query is refetching. */
+  refreshing?: boolean;
+  onRefresh?: () => void;
 };
 
 const DEFAULT_DURATION_MINUTES = 30;
@@ -89,6 +114,7 @@ export function CalendarDayGrid({
   bookings,
   workingHours,
   timeBlocks = [],
+  sessions = [],
   nowMinutes,
   onBlockPress,
   onStatusChange,
@@ -99,14 +125,28 @@ export function CalendarDayGrid({
   onBlockTimeBlockPress,
   onDragReschedule,
   onDragResize,
+  onDragConflictReject,
+  refreshing = false,
+  onRefresh,
 }: CalendarDayGridProps) {
   const { colors } = useTheme();
   const scrollRef = useRef<ScrollViewType | null>(null);
 
-  const { startHour, endHour, totalHeight, positioned, positionedBlocks } = useMemo(() => {
+  const {
+    startHour,
+    endHour,
+    totalHeight,
+    positioned,
+    positionedBlocks,
+    positionedSessions,
+    workingRanges,
+  } = useMemo(() => {
     const ranges: { start: number; end: number }[] = [];
+    const working: BusyRange[] = [];
     for (const wh of workingHours) {
-      ranges.push({ start: timeToMinutes(wh.start), end: timeToMinutes(wh.end) });
+      const r = { start: timeToMinutes(wh.start), end: timeToMinutes(wh.end) };
+      ranges.push(r);
+      working.push(r);
     }
 
     const rawBlocks = bookings.map((booking) => {
@@ -130,24 +170,36 @@ export function CalendarDayGrid({
       ranges.push({ start, end });
     }
 
+    const rawSessions = sessions
+      .map((session) => {
+        const start = timeToMinutes(session.startTime);
+        const end = timeToMinutes(session.endTime);
+        return { session, start, end };
+      })
+      .filter(({ start, end }) => end > start);
+    for (const { start, end } of rawSessions) {
+      ranges.push({ start, end });
+    }
+
     const bounds = computeGridBounds(ranges);
     const gridStartMin = bounds.startHour * 60;
     const total = (bounds.endHour - bounds.startHour) * 60 * PX_PER_MINUTE;
 
-    // True-to-duration positioning with a small visual minimum; the inflated
-    // visual extents feed the lane packer so cards that would collide render
-    // side-by-side (web lane model) instead of stacking.
-    const laneInputs: LaneInput[] = [];
-    const prelim = rawBlocks.map(({ booking, start, end }) => {
-      const top = (start - gridStartMin) * PX_PER_MINUTE;
-      const height = Math.max((end - start) * PX_PER_MINUTE, MIN_BLOCK_HEIGHT);
-      laneInputs.push({ id: booking.id, top, bottom: top + height });
-      return { booking, start, end, top, height };
-    });
+    // Pack lanes on TRUE minute ranges so non-overlapping short bookings stay
+    // full-width — the visual min-height is applied AFTER lane assignment so it
+    // never inflates extents into false overlaps (web lane model).
+    const laneInputs: LaneInput[] = rawBlocks.map(({ booking, start, end }) => ({
+      id: booking.id,
+      top: (start - gridStartMin) * PX_PER_MINUTE,
+      bottom: (end - gridStartMin) * PX_PER_MINUTE,
+    }));
     const lanes = computeLaneLayouts(laneInputs);
 
-    const blocks: PositionedBooking[] = prelim.map(({ booking, start, end, top, height }) => {
+    const blocks: PositionedBooking[] = rawBlocks.map(({ booking, start, end }) => {
       const lane = lanes.get(booking.id) ?? { laneIndex: 0, laneCount: 1 };
+      const top = (start - gridStartMin) * PX_PER_MINUTE;
+      // Visual floor for tappability — applied only now, post-lane-packing.
+      const height = Math.max((end - start) * PX_PER_MINUTE, MIN_BLOCK_HEIGHT);
       return {
         booking,
         top,
@@ -166,14 +218,23 @@ export function CalendarDayGrid({
       timeLabel: `${minutesToTime(start)}–${minutesToTime(end)}`,
     }));
 
+    const sessionItems: PositionedSession[] = rawSessions.map(({ session, start, end }) => ({
+      session,
+      top: (start - gridStartMin) * PX_PER_MINUTE,
+      height: Math.max((end - start) * PX_PER_MINUTE, MIN_BLOCK_HEIGHT),
+      timeLabel: `${minutesToTime(start)}–${minutesToTime(end)}`,
+    }));
+
     return {
       startHour: bounds.startHour,
       endHour: bounds.endHour,
       totalHeight: total,
       positioned: blocks,
       positionedBlocks: overlayBlocks,
+      positionedSessions: sessionItems,
+      workingRanges: working,
     };
-  }, [bookings, workingHours, timeBlocks]);
+  }, [bookings, workingHours, timeBlocks, sessions]);
 
   const hours = useMemo(
     () => Array.from({ length: endHour - startHour + 1 }, (_, i) => startHour + i),
@@ -185,7 +246,11 @@ export function CalendarDayGrid({
       ? (nowMinutes - startHour * 60) * PX_PER_MINUTE
       : null;
 
-  // Scroll to the current time once on mount (web parity: scroll-to-now).
+  // Scroll to the current time once per grid instance (web parity:
+  // scroll-to-now). The parent keys this grid on `${calendar}:${day}`, so it
+  // remounts — and this ref resets — when you switch calendar or return to
+  // today, re-running the scroll. The guard only blocks a repeat within the
+  // same instance (e.g. the 60s now-line tick nudging `nowTop`).
   const didAutoScroll = useRef(false);
   useEffect(() => {
     if (didAutoScroll.current || nowTop == null) return;
@@ -206,11 +271,38 @@ export function CalendarDayGrid({
     [startHour, onEmptyPress],
   );
 
+  // Busy minute-ranges (other bookings + blocks) for drag-conflict detection,
+  // keyed by booking id so a block can exclude itself. Recomputed only when the
+  // underlying data changes.
+  const busyRanges = useMemo<(BusyRange & { id: string })[]>(() => {
+    const out: (BusyRange & { id: string })[] = [];
+    for (const item of positioned) {
+      const start = timeToMinutes(item.booking.startTime);
+      out.push({ id: item.booking.id, start, end: start + item.durationMinutes });
+    }
+    for (const item of positionedBlocks) {
+      const start = timeToMinutes(item.block.start);
+      const end = timeToMinutes(item.block.end);
+      if (end > start) out.push({ id: item.block.id, start, end });
+    }
+    return out;
+  }, [positioned, positionedBlocks]);
+
   return (
     <ScrollView
       ref={scrollRef}
       contentContainerStyle={styles.scrollContent}
-      showsVerticalScrollIndicator={false}>
+      showsVerticalScrollIndicator={false}
+      refreshControl={
+        onRefresh ? (
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.brand}
+            colors={[colors.brand]}
+          />
+        ) : undefined
+      }>
       <View style={{ height: totalHeight }}>
         {/* Empty-area tap layer (blocks render above and capture their own taps). */}
         <Pressable
@@ -284,6 +376,36 @@ export function CalendarDayGrid({
           </Pressable>
         ))}
 
+        {/* Class / event capacity blocks (indigo) — read-only, distinct from
+            appointment bars. Render below the now-line and appointment layer. */}
+        {positionedSessions.map((item) => (
+          <View
+            key={item.session.id}
+            pointerEvents="none"
+            accessibilityLabel={`Class ${item.timeLabel}, ${item.session.bookedCount} of ${item.session.capacity} booked`}
+            style={[
+              styles.sessionBlock,
+              {
+                top: item.top,
+                height: item.height,
+                backgroundColor: `${SESSION_ACCENT}1F`,
+                borderColor: SESSION_ACCENT,
+              },
+            ]}>
+            <View style={[styles.sessionAccent, { backgroundColor: SESSION_ACCENT }]} />
+            <View style={styles.sessionBody}>
+              <Text variant="caption" numberOfLines={1} style={[styles.sessionLabel, { color: SESSION_ACCENT }]}>
+                {item.session.bookedCount}/{item.session.capacity} booked
+              </Text>
+              {item.height >= 40 ? (
+                <Text variant="caption" tone="muted" numberOfLines={1}>
+                  {item.timeLabel}
+                </Text>
+              ) : null}
+            </View>
+          </View>
+        ))}
+
         {/* Now indicator */}
         {nowTop != null ? (
           <View style={[styles.nowLine, { top: nowTop }]} pointerEvents="none">
@@ -319,6 +441,9 @@ export function CalendarDayGrid({
               complianceFlag={complianceFlags?.[item.booking.id]}
               onDragReschedule={onDragReschedule}
               onDragResize={onDragResize}
+              onDragConflictReject={onDragConflictReject}
+              busyRanges={busyRanges}
+              workingRanges={workingRanges}
             />
           ))}
         </View>
@@ -381,6 +506,28 @@ const styles = StyleSheet.create({
   editHint: {
     marginTop: 1,
     opacity: 0.6,
+  },
+  sessionBlock: {
+    position: 'absolute',
+    left: TIME_GUTTER_WIDTH + spacing.xs,
+    right: spacing.sm,
+    borderRadius: radius.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    overflow: 'hidden',
+  },
+  sessionAccent: {
+    width: 3,
+  },
+  sessionBody: {
+    flex: 1,
+    minWidth: 0,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    justifyContent: 'center',
+  },
+  sessionLabel: {
+    fontVariant: ['tabular-nums'],
   },
   nowLine: {
     position: 'absolute',

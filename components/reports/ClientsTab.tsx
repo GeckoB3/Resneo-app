@@ -4,13 +4,11 @@
  *
  * Lives inside the Reports screen under the "Clients" sub-tab.
  */
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   StyleSheet,
-  TextInput,
   View,
 } from 'react-native';
 
@@ -18,14 +16,16 @@ import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Input } from '@/components/ui/Input';
+import { SearchBar } from '@/components/ui/SearchBar';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
-import { hapticTap } from '@/lib/haptics';
+import { hapticTap, hapticWarning } from '@/lib/haptics';
 import { buildAndShareCsv } from '@/lib/reports/csv-export';
 import { useGuestDetail } from '@/lib/queries/useGuestDetail';
 import { useGuests } from '@/lib/queries/useGuests';
 import { useUpdateGuest, useEraseGuest } from '@/lib/queries/useGuestMutations';
 import { formatPence } from '@/lib/format';
+import { useToast } from '@/providers/ToastProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { GuestListItem } from '@/types/guest-list';
@@ -88,6 +88,7 @@ function GuestRow({
 
 function GuestDetail({ guestId, onErased }: { guestId: string; onErased: () => void }) {
   const { colors } = useTheme();
+  const toast = useToast();
   const detailQuery = useGuestDetail(guestId, { bookingHistoryLimit: 20 });
   const updateMutation = useUpdateGuest(guestId);
   const eraseMutation = useEraseGuest();
@@ -97,6 +98,16 @@ function GuestDetail({ guestId, onErased }: { guestId: string; onErased: () => v
   const [email, setEmail] = useState<string | null>(null);
   const [phone, setPhone] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+
+  // Two-step erase confirm — Alert.alert confirms never fire on web.
+  const [eraseArmed, setEraseArmed] = useState(false);
+  const eraseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (eraseTimer.current) clearTimeout(eraseTimer.current);
+    },
+    [],
+  );
 
   const guest = detailQuery.data?.guest;
   const stats = detailQuery.data?.stats;
@@ -122,40 +133,40 @@ function GuestDetail({ guestId, onErased }: { guestId: string; onErased: () => v
         phone: phone ?? undefined,
       });
       setEditing(false);
-      Alert.alert('Saved', 'Guest profile updated.');
+      toast.success('Guest profile updated.');
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to save guest.';
-      Alert.alert('Error', msg);
+      toast.error(msg);
     }
   }
 
-  function handleErase() {
-    Alert.alert(
-      'Erase guest data',
-      'This will permanently erase all personal data for this guest. This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Erase',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await eraseMutation.mutateAsync({ guestId });
-              Alert.alert('Erased', 'Guest data has been erased.');
-              onErased();
-            } catch (err) {
-              const msg = err instanceof Error ? err.message : 'Erase failed.';
-              Alert.alert('Error', msg);
-            }
-          },
-        },
-      ],
-    );
+  async function runErase() {
+    if (eraseTimer.current) clearTimeout(eraseTimer.current);
+    setEraseArmed(false);
+    try {
+      await eraseMutation.mutateAsync({ guestId });
+      toast.success('Guest data has been erased.');
+      onErased();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Erase failed.';
+      toast.error(msg);
+    }
+  }
+
+  function handleErasePress() {
+    if (eraseArmed) {
+      void runErase();
+      return;
+    }
+    setEraseArmed(true);
+    hapticWarning();
+    if (eraseTimer.current) clearTimeout(eraseTimer.current);
+    eraseTimer.current = setTimeout(() => setEraseArmed(false), 4000);
   }
 
   async function handleExportHistory() {
     if (history.length === 0) {
-      Alert.alert('Nothing to export', 'No booking history for this guest.');
+      toast.info('No booking history for this guest.');
       return;
     }
     const rows: string[][] = [
@@ -171,6 +182,7 @@ function GuestDetail({ guestId, onErased }: { guestId: string; onErased: () => v
     ];
     const name = [guest?.first_name, guest?.last_name].filter(Boolean).join('-') || guestId;
     await buildAndShareCsv(`guest-history-${name}.csv`, rows);
+    toast.success('Export started.');
   }
 
   if (detailQuery.isLoading) {
@@ -361,11 +373,11 @@ function GuestDetail({ guestId, onErased }: { guestId: string; onErased: () => v
           onPress={() => void handleExportHistory()}
         />
         <Button
-          label="Erase data"
+          label={eraseArmed ? 'Tap to confirm erase' : 'Erase data'}
           variant="danger"
           size="sm"
           loading={eraseMutation.isPending}
-          onPress={handleErase}
+          onPress={handleErasePress}
         />
       </View>
     </View>
@@ -375,7 +387,6 @@ function GuestDetail({ guestId, onErased }: { guestId: string; onErased: () => v
 // ─── ClientsTab (public) ─────────────────────────────────────────────────────
 
 export function ClientsTab() {
-  const { colors } = useTheme();
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -406,23 +417,12 @@ export function ClientsTab() {
   return (
     <View style={styles.container}>
       {/* Search bar */}
-      <TextInput
+      <SearchBar
         value={search}
         onChangeText={handleSearchChange}
+        onClear={() => handleSearchChange('')}
         placeholder="Search by name, email or phone…"
-        placeholderTextColor={colors.textMuted}
-        style={[
-          styles.searchBar,
-          {
-            color: colors.text,
-            backgroundColor: colors.surface,
-            borderColor: colors.border,
-          },
-        ]}
-        clearButtonMode="while-editing"
-        returnKeyType="search"
-        autoCapitalize="none"
-        autoCorrect={false}
+        containerStyle={styles.searchBar}
       />
 
       {/* Loading state */}
@@ -512,11 +512,6 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   searchBar: {
-    height: 44,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    paddingHorizontal: spacing.base,
-    fontSize: 16,
     marginBottom: spacing.xs,
   },
   totalLabel: {

@@ -1,7 +1,6 @@
 import { Stack, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
-  Alert,
   Linking,
   RefreshControl,
   ScrollView,
@@ -14,15 +13,19 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { ErrorState } from '@/components/ui/ErrorState';
+import { IconButton } from '@/components/ui/IconButton';
 import { Screen } from '@/components/ui/Screen';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { hapticSuccess, hapticTap, hapticWarning } from '@/lib/haptics';
 import {
+  useFeatureFlags,
   useUpdateFeatureFlags,
   useUpdateVenue,
+  type FeatureFlagsCalendar,
 } from '@/lib/queries/useVenueSettings';
+import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -41,6 +44,36 @@ import type {
 function isAppointmentsPlanTier(tier: string | null): boolean {
   return tier === 'light' || tier === 'plus' || tier === 'appointments';
 }
+
+/**
+ * Seed a calendar priority order from the saved `calendar_order`, then append any
+ * calendars not present in it (so newly-added calendars show at the end) and drop
+ * ids no longer in `calendars`. Mirrors the web settings section.
+ */
+function buildCalendarOrder(
+  calendars: FeatureFlagsCalendar[],
+  savedOrder: string[],
+): string[] {
+  const ids = new Set(calendars.map((c) => c.id));
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+  for (const id of savedOrder) {
+    if (ids.has(id) && !seen.has(id)) {
+      ordered.push(id);
+      seen.add(id);
+    }
+  }
+  for (const c of calendars) {
+    if (!seen.has(c.id)) {
+      ordered.push(c.id);
+      seen.add(c.id);
+    }
+  }
+  return ordered;
+}
+
+/** Stable empty array so the feature-flags loading state doesn't churn deps. */
+const EMPTY_CALENDARS: FeatureFlagsCalendar[] = [];
 
 // ---------------------------------------------------------------------------
 // Booking-model lists
@@ -244,6 +277,11 @@ interface FeatureFlagsCardProps {
 function FeatureFlagsCard({ resolvedFlags, rawFlags, disabled }: FeatureFlagsCardProps) {
   const { colors } = useTheme();
   const updateFlags = useUpdateFeatureFlags();
+  // GET feature-flags carries the bookable `calendars` list AND the saved
+  // any-available config (incl. calendar_order) — the venue bootstrap does not.
+  const featureFlags = useFeatureFlags();
+  const calendars = featureFlags.data?.calendars ?? EMPTY_CALENDARS;
+  const savedConfig = featureFlags.data?.any_available_practitioner_config;
   const [localResolved, setLocalResolved] =
     useState<ResolvedAppointmentsFeatureFlags>(resolvedFlags);
   const [localRaw, setLocalRaw] = useState<VenueFeatureFlagsRaw>(rawFlags);
@@ -255,6 +293,11 @@ function FeatureFlagsCard({ resolvedFlags, rawFlags, disabled }: FeatureFlagsCar
       ((rawFlags as { any_available_practitioner_config?: { mode?: string } })
         .any_available_practitioner_config?.mode as 'priority' | 'random') ?? 'priority',
   );
+  // Calendar priority order (array of calendar ids). Seeded from the saved order,
+  // with new calendars appended and removed calendars dropped.
+  const [order, setOrder] = useState<string[]>(() =>
+    buildCalendarOrder(calendars, savedConfig?.calendar_order ?? []),
+  );
   const [error, setError] = useState<string | null>(null);
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
 
@@ -262,20 +305,39 @@ function FeatureFlagsCard({ resolvedFlags, rawFlags, disabled }: FeatureFlagsCar
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLocalResolved(resolvedFlags);
-     
+
     setLocalRaw(rawFlags);
-     
+
     setWaitlistMode(waitlistModeFromRaw(rawFlags));
     const savedMode = (
       rawFlags as { any_available_practitioner_config?: { mode?: string } }
     ).any_available_practitioner_config?.mode;
     if (savedMode === 'priority' || savedMode === 'random') {
-       
+
       setAnyAvailableMode(savedMode);
     }
   }, [resolvedFlags, rawFlags]);
 
-  async function persist(patch: VenueFeatureFlagsRaw, successMsg?: string) {
+  // Re-seed the priority order whenever the calendars list or saved order
+  // changes (e.g. after a refetch following a save, or calendars added on web).
+  const orderSyncKey = `${calendars.map((c) => c.id).join(',')} ${(
+    savedConfig?.calendar_order ?? []
+  ).join(',')}`;
+  const [appliedOrderSyncKey, setAppliedOrderSyncKey] = useState(orderSyncKey);
+  if (orderSyncKey !== appliedOrderSyncKey) {
+    setAppliedOrderSyncKey(orderSyncKey);
+    setOrder(buildCalendarOrder(calendars, savedConfig?.calendar_order ?? []));
+  }
+
+  // Calendars in current priority order (drops ids not in the list).
+  const orderedCalendars = (() => {
+    const byId = new Map(calendars.map((c) => [c.id, c]));
+    return order
+      .map((id) => byId.get(id))
+      .filter((c): c is FeatureFlagsCalendar => Boolean(c));
+  })();
+
+  async function persist(patch: VenueFeatureFlagsRaw, successMsg?: string): Promise<boolean> {
     setError(null);
     setSavedMsg(null);
     // Optimistic local update
@@ -299,6 +361,7 @@ function FeatureFlagsCard({ resolvedFlags, rawFlags, disabled }: FeatureFlagsCar
       }
       hapticSuccess();
       setSavedMsg(successMsg ?? 'Setting saved.');
+      return true;
     } catch (e) {
       hapticWarning();
       // Revert optimistic update on error
@@ -311,6 +374,7 @@ function FeatureFlagsCard({ resolvedFlags, rawFlags, disabled }: FeatureFlagsCar
       } else {
         setError(e instanceof Error ? e.message : 'Could not save feature flag.');
       }
+      return false;
     }
   }
 
@@ -341,15 +405,44 @@ function FeatureFlagsCard({ resolvedFlags, rawFlags, disabled }: FeatureFlagsCar
     }
   }
 
-  function saveAnyAvailableMode(mode: 'priority' | 'random') {
-    hapticTap();
-    setAnyAvailableMode(mode);
+  function persistAnyAvailable(
+    mode: 'priority' | 'random',
+    calendarOrder: string[],
+    successMsg?: string,
+  ): Promise<boolean> {
     const patch: VenueFeatureFlagsRaw = {
       ...localRaw,
       any_available_practitioner: true,
-      any_available_practitioner_config: { mode, calendar_order: [] },
+      // Send the REAL ordered list of calendar ids. In random mode the order is
+      // unused, but we keep it so a later switch back to priority is preserved.
+      any_available_practitioner_config: { mode, calendar_order: calendarOrder },
     } as VenueFeatureFlagsRaw;
-    void persist(patch);
+    return persist(patch, successMsg);
+  }
+
+  function saveAnyAvailableMode(mode: 'priority' | 'random') {
+    hapticTap();
+    setAnyAvailableMode(mode);
+    void persistAnyAvailable(mode, order);
+  }
+
+  /** Swap a calendar with its neighbour (-1 up / +1 down) and persist. */
+  function moveCalendar(index: number, direction: -1 | 1) {
+    const target = index + direction;
+    if (target < 0 || target >= orderedCalendars.length) return;
+    hapticTap();
+    // orderedCalendars is the visible (filtered) order; rebuild `order` from it
+    // so dropped ids stay dropped after the move.
+    const prev = order;
+    const ids = orderedCalendars.map((c) => c.id);
+    const tmp = ids[index];
+    ids[index] = ids[target];
+    ids[target] = tmp;
+    setOrder(ids);
+    void persistAnyAvailable('priority', ids, 'Priority order saved.').then((ok) => {
+      // Roll back the optimistic reorder if the save failed.
+      if (!ok) setOrder(prev);
+    });
   }
 
   function saveWaitlistMode(mode: WaitlistMode) {
@@ -452,6 +545,96 @@ function FeatureFlagsCard({ resolvedFlags, rawFlags, disabled }: FeatureFlagsCar
                       />
                     );
                   })}
+
+                  {/* Priority reorder list — only when mode = priority */}
+                  {anyAvailableMode === 'priority' ? (
+                    <View style={styles.priorityBlock}>
+                      <Text
+                        variant="caption"
+                        tone="muted"
+                        style={styles.priorityHeading}
+                      >
+                        CALENDAR PRIORITY
+                      </Text>
+                      <Text variant="caption" tone="muted">
+                        Top of the list is checked first when a guest picks a time.
+                      </Text>
+
+                      {featureFlags.isLoading ? (
+                        <Text
+                          variant="caption"
+                          tone="muted"
+                          style={styles.priorityNote}
+                        >
+                          Loading calendars…
+                        </Text>
+                      ) : orderedCalendars.length === 0 ? (
+                        <Text
+                          variant="caption"
+                          tone="muted"
+                          style={styles.priorityNote}
+                        >
+                          Add active calendars under Calendar availability before
+                          setting a priority order.
+                        </Text>
+                      ) : (
+                        <View style={styles.priorityList}>
+                          {orderedCalendars.map((cal, index) => {
+                            const isFirst = index === 0;
+                            const isLastCal = index === orderedCalendars.length - 1;
+                            return (
+                              <View
+                                key={cal.id}
+                                style={[
+                                  styles.priorityRow,
+                                  {
+                                    borderColor: colors.border,
+                                    backgroundColor: colors.surfaceRaised,
+                                  },
+                                ]}
+                              >
+                                <Text
+                                  variant="bodyMedium"
+                                  numberOfLines={1}
+                                  style={styles.priorityName}
+                                >
+                                  {index + 1}. {cal.name}
+                                </Text>
+                                <View style={styles.priorityControls}>
+                                  <IconButton
+                                    icon={{
+                                      ios: 'chevron.up',
+                                      android: 'keyboard_arrow_up',
+                                      web: 'keyboard_arrow_up',
+                                    }}
+                                    variant="bordered"
+                                    size={36}
+                                    iconSize={18}
+                                    disabled={isSaving || isFirst}
+                                    onPress={() => moveCalendar(index, -1)}
+                                    accessibilityLabel={`Move ${cal.name} up`}
+                                  />
+                                  <IconButton
+                                    icon={{
+                                      ios: 'chevron.down',
+                                      android: 'keyboard_arrow_down',
+                                      web: 'keyboard_arrow_down',
+                                    }}
+                                    variant="bordered"
+                                    size={36}
+                                    iconSize={18}
+                                    disabled={isSaving || isLastCal}
+                                    onPress={() => moveCalendar(index, 1)}
+                                    accessibilityLabel={`Move ${cal.name} down`}
+                                  />
+                                </View>
+                              </View>
+                            );
+                          })}
+                        </View>
+                      )}
+                    </View>
+                  ) : null}
                 </View>
               ) : null}
 
@@ -549,6 +732,7 @@ function RadioRow({
 export default function BookingSettingsScreen() {
   const { venue, isLoading, refetch } = useVenueContext();
   const router = useRouter();
+  const toast = useToast();
   const update = useUpdateVenue();
   const isAdmin = venue?.current_user_role === 'admin';
   const appointmentsPlan = isAppointmentsPlanTier(venue?.pricing_tier ?? null);
@@ -679,8 +863,7 @@ export default function BookingSettingsScreen() {
       hapticWarning();
       // Revert on error
       setRequireLogin(!value);
-      Alert.alert(
-        'Could not save',
+      toast.error(
         e instanceof ApiError ? e.message : 'Could not update guest sign-in requirement.',
       );
     } finally {
@@ -1011,6 +1194,41 @@ const styles = StyleSheet.create({
     borderRadius: 9,
     borderWidth: 2,
     marginTop: 2,
+  },
+  priorityBlock: {
+    marginTop: spacing.sm,
+    gap: 2,
+  },
+  priorityHeading: {
+    letterSpacing: 0.5,
+  },
+  priorityNote: {
+    marginTop: spacing.xs,
+  },
+  priorityList: {
+    marginTop: spacing.xs,
+    gap: spacing.xs,
+  },
+  priorityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    paddingLeft: spacing.sm,
+    paddingRight: spacing.xs,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    minHeight: 44,
+  },
+  priorityName: {
+    flex: 1,
+    minWidth: 0,
+  },
+  priorityControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
   },
   spacer: {
     height: spacing.xl,

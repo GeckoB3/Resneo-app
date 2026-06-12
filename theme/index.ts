@@ -15,6 +15,7 @@ import type { TextStyle, ViewStyle } from 'react-native';
 // Spacing — multiples of 4 (see .cursorrules)
 // ---------------------------------------------------------------------------
 export const spacing = {
+  xxs: 2,
   xs: 4,
   sm: 8,
   md: 12,
@@ -100,8 +101,15 @@ export const lightColors = {
   // Text
   text: '#0F172A',
   textSecondary: '#475569',
-  textMuted: '#94A3B8',
+  // Darkened from #94A3B8 → meets WCAG AA on the pale surface for the small
+  // caption text used heavily in list rows.
+  textMuted: '#64748B',
   onColor: '#FFFFFF',
+  // Inverse surface — high-contrast floating chrome (toasts/snackbars). A dark
+  // bar in BOTH themes (iOS HUD convention), never the inverted white bar the
+  // old Snackbar produced in dark mode.
+  inverseSurface: '#1E293B',
+  onInverse: '#F8FAFC',
   // Status
   danger: '#DC2626',
   dangerSurface: '#FEE2E2',
@@ -144,8 +152,12 @@ export const darkColors: ThemeColors = {
   // Text
   text: '#F1F5F9',
   textSecondary: '#CBD5E1',
-  textMuted: '#7C8AA0',
+  textMuted: '#94A3B8',
   onColor: '#F1F5F9',
+  // Inverse surface — a slightly lifted dark bar so toasts read as elevated
+  // chrome rather than the jarring white bar the old Snackbar produced.
+  inverseSurface: '#283449',
+  onInverse: '#F1F5F9',
   // Status
   danger: '#F87171',
   dangerSurface: '#3B1A1A',

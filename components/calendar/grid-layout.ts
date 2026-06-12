@@ -11,9 +11,9 @@ export const SLOT_MINUTES = 30;
 export const TIME_GUTTER_WIDTH = 56;
 /**
  * Minimum visual height (px) for a block so very short appointments stay
- * tappable. Visual only — it never shifts positioning math, and inflated
- * extents feed the lane packer so the cards sit side-by-side instead of
- * stacking (web parity: SLOT_HEIGHT * 0.6).
+ * tappable. Visual only — applied AFTER lane assignment so it never inflates a
+ * block's extent into a false overlap (web parity: SLOT_HEIGHT * 0.6). Lane
+ * packing runs on true minute ranges; this floor is purely cosmetic.
  */
 export const MIN_BLOCK_HEIGHT = 30;
 /** Default opening when a day has no working hours. */
@@ -75,7 +75,7 @@ export function computeGridBounds(ranges: { start: number; end: number }[]): Gri
 
 export interface LaneInput {
   id: string;
-  /** Visual extent in px from the grid top (already min-height inflated). */
+  /** True extent in px from the grid top (NOT min-height inflated). */
   top: number;
   bottom: number;
 }

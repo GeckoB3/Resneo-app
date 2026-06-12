@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert, ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -8,6 +8,7 @@ import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { hapticError, hapticSuccess } from '@/lib/haptics';
 import { useChangeOwnPassword, usePatchStaffMe } from '@/lib/queries/useTeamMutations';
+import { useToast } from '@/providers/ToastProvider';
 import { spacing } from '@/theme/index';
 import type { StaffMe } from '@/types/staff';
 
@@ -22,6 +23,7 @@ type MyAccountSheetProps = {
  * (name, email, phone) and change their own password.
  */
 export function MyAccountSheet({ visible, staff, onClose }: MyAccountSheetProps) {
+  const toast = useToast();
   // Profile fields
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -87,19 +89,17 @@ export function MyAccountSheet({ visible, staff, onClose }: MyAccountSheetProps)
       await patchMe.mutateAsync(body);
       hapticSuccess();
       const emailChanged = !!body.email;
-      Alert.alert(
-        'Profile updated',
+      // Toast + close fire directly off the resolved mutation — Alert.alert's
+      // callback never runs on web, so the sheet would have stayed open there.
+      toast.success(
         emailChanged
-          ? 'Your profile was saved. Your sign-in email has been updated — please use the new address next time you log in.'
+          ? 'Profile saved. Use your new sign-in email next time you log in.'
           : 'Your profile has been saved.',
-        [{ text: 'OK', onPress: handleClose }],
       );
+      handleClose();
     } catch (err) {
       hapticError();
-      Alert.alert(
-        'Could not save',
-        err instanceof ApiError ? err.message : 'Failed to update profile.',
-      );
+      toast.error(err instanceof ApiError ? err.message : 'Failed to update profile.');
     }
   }
 
@@ -119,7 +119,7 @@ export function MyAccountSheet({ visible, staff, onClose }: MyAccountSheetProps)
       hapticSuccess();
       setNewPassword('');
       setConfirmPassword('');
-      Alert.alert('Password changed', 'Your new password is active.');
+      toast.success('Your new password is active.');
     } catch (err) {
       hapticError();
       setPasswordError(

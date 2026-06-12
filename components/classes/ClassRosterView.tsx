@@ -1,15 +1,18 @@
-import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
-import { SymbolView } from 'expo-symbols';
+import { useCallback, useMemo } from 'react';
+import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
 import { StatusPill } from '@/components/ui/Badge';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
+import { IconButton } from '@/components/ui/IconButton';
 import { ListSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { formatDayHeading } from '@/lib/dates/venue-dates';
 import { useClassRoster, type ClassSession } from '@/lib/queries/useClassSchedule';
+import { buildAndShareCsv } from '@/lib/reports/csv-export';
+import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { minTouchTarget, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -37,11 +40,22 @@ function formatDeposit(row: BookingListRow, currency: string): string | null {
   return row.deposit_status ? `${amount} deposit (${row.deposit_status})` : `${amount} deposit`;
 }
 
-function formatArrived(iso: string | null | undefined): string | null {
+/** "14:03" style local time, or null for missing/invalid timestamps. */
+function formatTime(iso: string | null | undefined): string | null {
   if (!iso) return null;
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return null;
-  return `Arrived ${date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`;
+  return date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatArrived(iso: string | null | undefined): string | null {
+  const time = formatTime(iso);
+  return time ? `Arrived ${time}` : null;
+}
+
+function formatCheckedIn(iso: string | null | undefined): string | null {
+  const time = formatTime(iso);
+  return time ? `Checked in ${time}` : null;
 }
 
 /**
@@ -63,10 +77,35 @@ export function ClassRosterView({
 }: ClassRosterViewProps) {
   const { colors } = useTheme();
   const { venue } = useVenueContext();
+  const toast = useToast();
   const currency = venue?.currency ?? 'GBP';
   const query = useClassRoster(session.classInstanceId);
 
-  const attendees = query.data?.bookings ?? [];
+  const attendees = useMemo(() => query.data?.bookings ?? [], [query.data]);
+
+  const onExport = useCallback(async () => {
+    if (attendees.length === 0) {
+      toast.info('No attendees to export yet.');
+      return;
+    }
+    try {
+      const header = ['Guest', 'Status', 'Party size', 'Checked in', 'Arrived', 'Phone', 'Email'];
+      const rows = attendees.map((row) => [
+        row.guest_name ?? 'Guest',
+        row.status ?? '',
+        String(row.party_size ?? ''),
+        formatTime(row.checked_in_at) ?? '',
+        formatTime(row.client_arrived_at) ?? '',
+        row.guest_phone ?? '',
+        row.guest_email ?? '',
+      ]);
+      const filename = `class-roster-${session.name.replace(/[^a-z0-9]+/gi, '-')}-${session.date}.csv`;
+      await buildAndShareCsv(filename, [header, ...rows]);
+      toast.success('Roster export started.');
+    } catch {
+      toast.error('Could not export the roster.');
+    }
+  }, [attendees, session.name, session.date, toast]);
   const activeSpots = attendees
     .filter((row) => row.status !== 'Cancelled')
     .reduce((sum, row) => sum + (row.party_size || 1), 0);
@@ -79,18 +118,13 @@ export function ClassRosterView({
     <View style={styles.root}>
       {/* Session header */}
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <Pressable
-          accessibilityRole="button"
+        <IconButton
+          icon={{ ios: 'chevron.left', android: 'arrow_back', web: 'arrow_back' }}
           accessibilityLabel="Back to timetable"
-          hitSlop={8}
+          tint={colors.brand}
+          iconSize={22}
           onPress={onBack}
-          style={({ pressed }) => [styles.backBtn, { opacity: pressed ? 0.5 : 1 }]}>
-          <SymbolView
-            name={{ ios: 'chevron.left', android: 'arrow_back', web: 'arrow_back' }}
-            tintColor={colors.brand}
-            size={22}
-          />
-        </Pressable>
+        />
         <View style={styles.headerText}>
           <Text variant="subheading" numberOfLines={1}>
             {session.name}
@@ -113,6 +147,14 @@ export function ClassRosterView({
             {capacityLabel}
           </Text>
         </View>
+        <IconButton
+          icon={{ ios: 'square.and.arrow.up', android: 'share', web: 'share' }}
+          accessibilityLabel="Export roster as CSV"
+          tint={colors.brand}
+          iconSize={20}
+          disabled={attendees.length === 0}
+          onPress={() => void onExport()}
+        />
       </View>
 
       {query.isLoading ? (
@@ -145,7 +187,8 @@ export function ClassRosterView({
           ) : (
             attendees.map((row) => {
               const deposit = formatDeposit(row, currency);
-              const arrived = formatArrived(row.client_arrived_at);
+              // Prefer the class check-in timestamp; fall back to arrived time.
+              const presence = formatCheckedIn(row.checked_in_at) ?? formatArrived(row.client_arrived_at);
               const contact = row.guest_phone ?? row.guest_email ?? null;
               return (
                 <Card
@@ -168,9 +211,9 @@ export function ClassRosterView({
                       {deposit}
                     </Text>
                   ) : null}
-                  {arrived ? (
+                  {presence ? (
                     <Text variant="caption" color={colors.success}>
-                      {arrived}
+                      {presence}
                     </Text>
                   ) : null}
                 </Card>
@@ -209,12 +252,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     borderBottomWidth: 1,
   },
-  backBtn: {
-    minWidth: minTouchTarget,
-    minHeight: minTouchTarget,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   headerText: {
     flex: 1,
     gap: 2,
@@ -224,7 +261,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
     borderRadius: radius.pill,
     borderWidth: 1,
-    marginRight: spacing.sm,
   },
   content: {
     padding: spacing.base,

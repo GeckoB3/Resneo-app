@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { Badge, type BadgeTone } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -11,6 +11,7 @@ import {
   useComplianceRecord,
   useVoidComplianceRecord,
 } from '@/lib/queries/useCompliance';
+import { useToast } from '@/providers/ToastProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { ComplianceFormField } from '@/types/compliance';
@@ -104,6 +105,7 @@ type Props = {
  */
 export function ComplianceRecordSheet({ visible, onClose, recordId, onChanged }: Props) {
   const { colors } = useTheme();
+  const toast = useToast();
   const [showVoidForm, setShowVoidForm] = useState(false);
   const [voidReason, setVoidReason] = useState('');
 
@@ -120,25 +122,18 @@ export function ComplianceRecordSheet({ visible, onClose, recordId, onChanged }:
     onClose();
   }
 
+  // Reveal the inline void form (which has its own reason + danger confirm).
+  // The old Alert.alert confirm step was a no-op on web.
   function handleVoidPress() {
     if (!record) return;
-    Alert.alert(
-      'Void this record?',
-      'Voiding is permanent. The record will remain in the audit trail but will no longer satisfy compliance.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Enter reason',
-          onPress: () => setShowVoidForm(true),
-        },
-      ],
-    );
+    setShowVoidForm(true);
   }
 
   function handleVoidSubmit() {
     if (!recordId) return;
     if (voidReason.trim().length === 0) {
-      Alert.alert('Reason required', 'Please enter a reason for voiding this record.');
+      // Reason input already enforces this via a disabled button; guard anyway.
+      toast.info('Please enter a reason for voiding this record.');
       return;
     }
     voidMutation.mutate(
@@ -148,14 +143,12 @@ export function ComplianceRecordSheet({ visible, onClose, recordId, onChanged }:
           hapticSuccess();
           setShowVoidForm(false);
           setVoidReason('');
+          toast.success('Record voided.');
           onChanged?.();
         },
         onError: (error) => {
           hapticWarning();
-          Alert.alert(
-            'Could not void record',
-            error instanceof ApiError ? error.message : 'Please try again.',
-          );
+          toast.error(error instanceof ApiError ? error.message : 'Could not void the record.');
         },
       },
     );

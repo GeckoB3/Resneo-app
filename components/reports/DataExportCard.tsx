@@ -4,7 +4,7 @@
  * using expo-file-system + expo-sharing (or RN Share.share() as fallback).
  */
 import { useState } from 'react';
-import { Alert, Platform, Share, StyleSheet, View } from 'react-native';
+import { Platform, Share, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -12,6 +12,7 @@ import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { isBackendConfigured, getApiUrl } from '@/lib/env';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
+import { useToast } from '@/providers/ToastProvider';
 import { spacing } from '@/theme/index';
 
 interface DataExportCardProps {
@@ -25,11 +26,12 @@ export function DataExportCard({
   clientLabel = 'Guest',
 }: DataExportCardProps) {
   const accessToken = useAccessToken();
+  const toast = useToast();
   const [downloading, setDownloading] = useState<'bookings' | 'guests' | null>(null);
 
   async function handleExport(type: 'bookings' | 'guests') {
     if (!accessToken || !isBackendConfigured()) {
-      Alert.alert('Not signed in', 'Please sign in to export data.');
+      toast.error('Please sign in to export data.');
       return;
     }
 
@@ -53,7 +55,7 @@ export function DataExportCard({
         } catch {
           // ignore parse error
         }
-        Alert.alert('Export failed', msg);
+        toast.error(msg);
         return;
       }
 
@@ -97,6 +99,7 @@ export function DataExportCard({
         a.download = filename;
         a.click();
         URL.revokeObjectURL(objectUrl);
+        toast.success('Export started.');
         return;
       }
 
@@ -109,7 +112,7 @@ export function DataExportCard({
           : err instanceof Error
             ? err.message
             : 'Export failed — please check your connection and try again.';
-      Alert.alert('Export failed', msg);
+      toast.error(msg);
     } finally {
       setDownloading(null);
     }

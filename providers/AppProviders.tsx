@@ -1,10 +1,12 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
+import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-context';
 
 import { queryClient } from '@/lib/queries/queryClient';
 import { AuthProvider } from '@/providers/AuthProvider';
 import { LinkedVenueProvider } from '@/providers/LinkedVenueProvider';
 import { PushNotificationsProvider } from '@/providers/PushNotificationsProvider';
+import { ToastProvider } from '@/providers/ToastProvider';
 import { VenueLiveSyncProvider } from '@/providers/VenueLiveSyncProvider';
 import { VenueProvider } from '@/providers/VenueProvider';
 
@@ -18,16 +20,20 @@ type AppProvidersProps = {
  */
 export function AppProviders({ children }: AppProvidersProps) {
   return (
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <VenueProvider>
-          <LinkedVenueProvider>
-            <VenueLiveSyncProvider>
-              <PushNotificationsProvider>{children}</PushNotificationsProvider>
-            </VenueLiveSyncProvider>
-          </LinkedVenueProvider>
-        </VenueProvider>
-      </AuthProvider>
-    </QueryClientProvider>
+    <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <VenueProvider>
+            <LinkedVenueProvider>
+              <VenueLiveSyncProvider>
+                <PushNotificationsProvider>
+                  <ToastProvider>{children}</ToastProvider>
+                </PushNotificationsProvider>
+              </VenueLiveSyncProvider>
+            </LinkedVenueProvider>
+          </VenueProvider>
+        </AuthProvider>
+      </QueryClientProvider>
+    </SafeAreaProvider>
   );
 }

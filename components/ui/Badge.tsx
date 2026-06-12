@@ -1,6 +1,7 @@
 import { StyleSheet, View, type ViewStyle } from 'react-native';
 
 import { Text } from '@/components/ui/Text';
+import { bookingStatusVisualForKey } from '@/lib/booking/booking-status-visual';
 import { fonts, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
@@ -40,25 +41,20 @@ export function Badge({ label, tone = 'neutral', solid = false }: BadgeProps) {
   );
 }
 
-/** Booking status → badge tone mapping, mirroring the web status palette. */
-const STATUS_TONE: Record<string, BadgeTone> = {
-  Pending: 'warning',
-  Booked: 'brand',
-  Confirmed: 'success',
-  Seated: 'accent',
-  Completed: 'neutral',
-  Cancelled: 'danger',
-  'No-Show': 'danger',
-};
-
 /** "Seated" is restaurant wording — appointment venues display "Started" (web parity). */
 const APPOINTMENT_STATUS_LABEL: Record<string, string> = {
   Seated: 'Started',
 };
 
 /**
- * Booking status pill. Appointments-first: `Seated` renders as "Started"
- * unless the booking is a genuine table reservation.
+ * Booking status pill. Colours come from the shared web palette
+ * (`bookingStatusVisualForKey`) — Pending orange, Booked sky, Confirmed navy,
+ * Seated/Started emerald — so the list/detail pills match the calendar bars and
+ * the web dashboard exactly. (The previous generic `STATUS_TONE` map had
+ * Confirmed/Booked/Seated colour-scrambled.)
+ *
+ * Appointments-first: `Seated` renders as "Started" unless the booking is a
+ * genuine table reservation.
  */
 export function StatusPill({
   status,
@@ -68,7 +64,19 @@ export function StatusPill({
   isTableReservation?: boolean;
 }) {
   const label = isTableReservation ? status : APPOINTMENT_STATUS_LABEL[status] ?? status;
-  return <Badge label={label} tone={STATUS_TONE[status] ?? 'neutral'} />;
+  const visual = bookingStatusVisualForKey(status);
+  return (
+    <View
+      style={[
+        styles.badge,
+        styles.statusPill,
+        { backgroundColor: visual.backgroundColor, borderColor: visual.borderColor },
+      ]}>
+      <Text variant="caption" color={visual.textColor} style={styles.label}>
+        {label}
+      </Text>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -77,6 +85,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,
     borderRadius: radius.pill,
+  },
+  statusPill: {
+    borderWidth: 1,
   },
   label: {
     fontFamily: fonts.semibold,

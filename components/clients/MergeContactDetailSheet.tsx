@@ -13,7 +13,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -31,6 +30,7 @@ import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useMergeGuests } from '@/lib/queries/useContactsBulk';
 import { useGuests } from '@/lib/queries/useGuests';
 import { useGuestDetail } from '@/lib/queries/useGuestDetail';
+import { useToast } from '@/providers/ToastProvider';
 import { minTouchTarget, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { GuestDetailProfile } from '@/types/guest-detail';
@@ -403,6 +403,7 @@ export function MergeContactDetailSheet({
 }: MergeContactDetailSheetProps) {
   const { colors } = useTheme();
   const mergeMutation = useMergeGuests();
+  const toast = useToast();
 
   // ── step state ──────────────────────────────────────────────────────────────
   const [step, setStep] = useState<MergeStep>(1);
@@ -471,11 +472,11 @@ export function MergeContactDetailSheet({
         field_map: buildFieldMap(choices),
       });
       hapticSuccess();
-      Alert.alert(
-        'Contacts merged',
-        `Booking history now lives on ${guestName(targetGuest ?? undefined)}.`,
-        [{ text: 'OK', onPress: () => onMerged(targetId) }],
-      );
+      // CRITICAL: navigation/refresh fires directly off the resolved mutation.
+      // Previously it was wired to an Alert OK button, which never fires on web
+      // (Alert.alert is a no-op there) — so the merge silently went nowhere.
+      toast.success(`Contacts merged onto ${guestName(targetGuest ?? undefined)}.`);
+      onMerged(targetId);
     } catch (e) {
       hapticWarning();
       const msg = e instanceof ApiError ? e.message : 'Merge failed. Please try again.';

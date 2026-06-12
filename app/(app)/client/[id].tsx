@@ -2,7 +2,6 @@ import { format, parseISO } from 'date-fns';
 import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import {
-  Alert,
   Linking,
   Pressable,
   RefreshControl,
@@ -13,6 +12,7 @@ import {
 
 import { BookingDetailSheet } from '@/components/bookings/BookingDetailSheet';
 import { CommunicationsSection } from '@/components/clients/CommunicationsSection';
+import { ComplianceSection } from '@/components/clients/ComplianceSection';
 import { CustomFieldsSection } from '@/components/clients/CustomFieldsSection';
 import { DocumentsSection } from '@/components/clients/DocumentsSection';
 import { GdprSection } from '@/components/clients/GdprSection';
@@ -36,6 +36,8 @@ import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useGuestDetail } from '@/lib/queries/useGuestDetail';
 import { useGuestTimeline, useSendGuestMessage, useUpdateGuest } from '@/lib/queries/useGuestMutations';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
+import { useToast } from '@/providers/ToastProvider';
+import { useVenueContext } from '@/providers/VenueProvider';
 import { minTouchTarget, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type {
@@ -142,12 +144,15 @@ function statTiles(stats: GuestDetailStats): { label: string; value: string }[] 
 export default function ClientDetailScreen() {
   const router = useRouter();
   const { colors } = useTheme();
+  const toast = useToast();
   const { id } = useLocalSearchParams<{ id: string }>();
   const guestId = typeof id === 'string' ? id : undefined;
   const detailQuery = useGuestDetail(guestId);
   const timelineQuery = useGuestTimeline(guestId);
   const staffQuery = useStaffMe();
   const isAdmin = staffQuery.data?.staff?.role === 'admin';
+  const { featureFlags } = useVenueContext();
+  const complianceEnabled = featureFlags?.resolved?.compliance_records_enabled === true;
 
   const updateGuest = useUpdateGuest(guestId ?? '');
   const sendMessage = useSendGuestMessage(guestId ?? '');
@@ -201,8 +206,18 @@ export default function ClientDetailScreen() {
 
   const { guest, stats, booking_history, communications, custom_field_definitions } = detailQuery.data;
   const name = formatGuestName(guest);
-  const canMessage = !!guest.email?.trim() || !!guest.phone?.trim();
-  const canCall = !!guest.phone?.trim();
+  const phone = guest.phone?.trim() ?? '';
+  const email = guest.email?.trim() ?? '';
+  const canMessage = !!email || !!phone;
+  const canCall = !!phone;
+  const canEmail = !!email;
+  const addressLines = [
+    guest.address_line1,
+    guest.address_line2,
+    [guest.address_city, guest.address_postcode].filter(Boolean).join(' '),
+  ]
+    .map((line) => line?.trim())
+    .filter((line): line is string => Boolean(line));
   const timelineEvents = timelineQuery.data?.events ?? [];
 
   const openEdit = () =>
@@ -216,14 +231,32 @@ export default function ClientDetailScreen() {
       tags: guest.tags.join(', '),
       marketingConsent: guest.marketing_consent,
       marketingOptOut: guest.marketing_opt_out,
+      addressLine1: guest.address_line1 ?? '',
+      addressLine2: guest.address_line2 ?? '',
+      addressCity: guest.address_city ?? '',
+      addressPostcode: guest.address_postcode ?? '',
     });
 
   const openMessage = () =>
     setMessageTarget({ id: guest.id, guestName: name, email: guest.email, phone: guest.phone });
 
+  /** Open an external URL, surfacing a toast if the handler is unavailable. */
+  const openLink = async (url: string, failure: string) => {
+    try {
+      await Linking.openURL(url);
+    } catch {
+      toast.error(failure);
+    }
+  };
+
   const handleCall = () => {
-    if (!guest.phone) return;
-    void Linking.openURL(`tel:${guest.phone}`);
+    if (!phone) return;
+    void openLink(`tel:${phone}`, 'Could not start a call.');
+  };
+
+  const handleEmail = () => {
+    if (!email) return;
+    void openLink(`mailto:${email}`, 'Could not open mail.');
   };
 
   const handleMarketingConsentChange = async (value: boolean) => {
@@ -232,7 +265,7 @@ export default function ClientDetailScreen() {
       hapticSuccess();
     } catch {
       hapticWarning();
-      Alert.alert('Save failed', 'Could not update marketing consent.');
+      toast.error('Could not update marketing consent.');
     }
   };
 
@@ -242,7 +275,7 @@ export default function ClientDetailScreen() {
       hapticSuccess();
     } catch {
       hapticWarning();
-      Alert.alert('Save failed', 'Could not update opt-out setting.');
+      toast.error('Could not update opt-out setting.');
     }
   };
 
@@ -269,18 +302,42 @@ export default function ClientDetailScreen() {
                 <Badge label={`${guest.no_show_count} no-show${guest.no_show_count === 1 ? '' : 's'}`} tone="warning" />
               ) : null}
             </View>
-            {guest.phone ? (
-              <Text variant="bodySmall" tone="secondary">
-                {guest.phone}
-              </Text>
+            {phone ? (
+              <Pressable
+                accessibilityRole="link"
+                accessibilityLabel={`Call ${phone}`}
+                onPress={handleCall}
+                hitSlop={6}>
+                <Text variant="bodySmall" tone="brand">
+                  {phone}
+                </Text>
+              </Pressable>
             ) : null}
-            {guest.email ? (
-              <Text variant="bodySmall" tone="secondary" numberOfLines={1}>
-                {guest.email}
-              </Text>
+            {email ? (
+              <Pressable
+                accessibilityRole="link"
+                accessibilityLabel={`Email ${email}`}
+                onPress={handleEmail}
+                hitSlop={6}>
+                <Text variant="bodySmall" tone="brand" numberOfLines={1}>
+                  {email}
+                </Text>
+              </Pressable>
             ) : null}
           </View>
         </View>
+
+        {/* Address — shown only when captured (client-address services). */}
+        {addressLines.length > 0 ? (
+          <Card>
+            <Text variant="label">Address</Text>
+            {addressLines.map((line, index) => (
+              <Text key={index} variant="bodySmall" tone="secondary">
+                {line}
+              </Text>
+            ))}
+          </Card>
+        ) : null}
 
         {/* Action row */}
         <View style={styles.actionRow}>
@@ -292,6 +349,15 @@ export default function ClientDetailScreen() {
               size="sm"
               style={styles.flex1}
               onPress={handleCall}
+            />
+          ) : null}
+          {canEmail ? (
+            <Button
+              label="Email"
+              variant="secondary"
+              size="sm"
+              style={styles.flex1}
+              onPress={handleEmail}
             />
           ) : null}
           {canMessage ? (
@@ -394,6 +460,9 @@ export default function ClientDetailScreen() {
 
         {/* Documents */}
         <DocumentsSection guestId={guestId} />
+
+        {/* Compliance — per-guest records + audit trail (feature-flagged, read-only) */}
+        {complianceEnabled ? <ComplianceSection guestId={guestId} /> : null}
 
         {/* Message history */}
         <CommunicationsSection communications={communications} />

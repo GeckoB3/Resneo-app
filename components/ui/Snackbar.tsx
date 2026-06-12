@@ -23,9 +23,9 @@ export function Snackbar({ message, actionLabel, onAction, bottomOffset = 96 }: 
       style={[
         styles.bar,
         elevation.raised,
-        { backgroundColor: colors.text, bottom: bottomOffset, pointerEvents: 'box-none' },
+        { backgroundColor: colors.inverseSurface, bottom: bottomOffset, pointerEvents: 'box-none' },
       ]}>
-      <Text variant="bodySmall" color={colors.background} numberOfLines={2} style={styles.message}>
+      <Text variant="bodySmall" color={colors.onInverse} numberOfLines={2} style={styles.message}>
         {message}
       </Text>
       {actionLabel && onAction ? (

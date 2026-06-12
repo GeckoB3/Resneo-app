@@ -11,7 +11,6 @@
  */
 import { useCallback, useMemo, useState } from 'react';
 import {
-  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -38,6 +37,7 @@ import type {
   OverridePeriod,
   PatchBlockInput,
 } from '@/lib/queries/useAvailabilityBlocks';
+import { useToast } from '@/providers/ToastProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
@@ -230,6 +230,8 @@ function BlockRow({
   isAdmin: boolean;
 }) {
   const { colors } = useTheme();
+  // Two-step inline confirm — Alert.alert's confirm is a no-op on web.
+  const [armed, setArmed] = useState(false);
   return (
     <Pressable
       onPress={() => isAdmin && onEdit(block)}
@@ -274,13 +276,19 @@ function BlockRow({
         <Pressable
           onPress={(e) => {
             e.stopPropagation?.();
-            onDelete(block.id);
+            if (armed) {
+              onDelete(block.id);
+              setArmed(false);
+            } else {
+              setArmed(true);
+            }
           }}
           hitSlop={8}
-          accessibilityLabel="Delete block"
+          accessibilityLabel={armed ? 'Confirm delete block' : 'Delete block'}
+          accessibilityRole="button"
           style={styles.blockRowDeleteBtn}>
           <Text variant="caption" tone="danger">
-            Delete
+            {armed ? 'Confirm' : 'Delete'}
           </Text>
         </Pressable>
       ) : null}
@@ -569,6 +577,7 @@ type AvailabilityBlocksSectionProps = {
 
 export function AvailabilityBlocksSection({ isAdmin }: AvailabilityBlocksSectionProps) {
   const { colors } = useTheme();
+  const toast = useToast();
   const { data: blocks = [], isLoading, refetch } = useAvailabilityBlocks();
   const deleteBlock = useDeleteBlock();
 
@@ -605,19 +614,19 @@ export function AvailabilityBlocksSection({ isAdmin }: AvailabilityBlocksSection
     setSheetVisible(true);
   }, [isAdmin]);
 
+  // The row arms its own two-step confirm (Alert.alert's confirm is a no-op on web),
+  // so this just runs the delete and reports the result.
   function confirmDelete(id: string) {
-    Alert.alert('Delete block', 'Remove this closure or exception?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: () => {
-          void deleteBlock.mutateAsync(id).catch(() => {
-            hapticError();
-          });
-        },
+    deleteBlock.mutate(id, {
+      onSuccess: () => {
+        hapticSuccess();
+        toast.success('Closure removed.');
       },
-    ]);
+      onError: () => {
+        hapticError();
+        toast.error('Could not remove the closure.');
+      },
+    });
   }
 
   return (

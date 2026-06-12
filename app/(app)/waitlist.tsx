@@ -2,7 +2,6 @@ import { Stack, useRouter, type Href } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -20,7 +19,7 @@ import { ListSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { formatDayHeading } from '@/lib/dates/venue-dates';
-import { hapticSuccess, hapticWarning } from '@/lib/haptics';
+import { hapticWarning } from '@/lib/haptics';
 import {
   useActOnWaitlistAlert,
   useDeleteWaitlistEntry,
@@ -29,6 +28,7 @@ import {
   useWaitlistAlerts,
 } from '@/lib/queries/useWaitlist';
 import { useVenueLiveSync } from '@/lib/realtime/useVenueLiveSync';
+import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -139,6 +139,7 @@ type FilterTab = 'active' | 'all';
 export default function WaitlistScreen() {
   const router = useRouter();
   const { colors } = useTheme();
+  const toast = useToast();
   const { venue } = useVenueContext();
   const venueId = venue?.id ?? null;
 
@@ -183,6 +184,31 @@ export default function WaitlistScreen() {
   // Per-entry loading tracking (fixes the "all cards freeze" bug)
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
 
+  // Two-step confirm for destructive actions. `Alert.alert` confirms are a
+  // no-op on react-native-web (the dev-preview path), so we arm a button (label
+  // flips to "Tap to confirm") and disarm after a few seconds if unconfirmed.
+  const [pendingConfirm, setPendingConfirm] = useState<string | null>(null);
+  const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const armConfirm = useCallback((token: string) => {
+    setPendingConfirm(token);
+    hapticWarning();
+    if (confirmTimer.current) clearTimeout(confirmTimer.current);
+    confirmTimer.current = setTimeout(() => setPendingConfirm(null), 4000);
+  }, []);
+
+  const clearConfirm = useCallback(() => {
+    if (confirmTimer.current) clearTimeout(confirmTimer.current);
+    setPendingConfirm(null);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (confirmTimer.current) clearTimeout(confirmTimer.current);
+    },
+    [],
+  );
+
   const startPending = (id: string) =>
     setPendingIds((s) => {
       const next = new Set(s);
@@ -196,118 +222,67 @@ export default function WaitlistScreen() {
       return next;
     });
 
-  const act = (id: string, status: WaitlistStatus, confirmText?: string) => {
-    const run = () => {
-      startPending(id);
-      update.mutate(
-        { id, status },
-        {
-          onSuccess: (data) => {
-            endPending(id);
-            if (status === 'cancelled') {
-              hapticWarning();
-            } else {
-              hapticSuccess();
-            }
-            // notify_failed warning
-            if (data.notify_failed) {
-              Alert.alert(
-                'Spot offered',
-                'We could not send email or SMS to the guest. Contact them directly.',
-                [{ text: 'OK' }],
-              );
-            }
-            if (status === 'confirmed' && data.booking_id) {
-              router.push(`/booking/${data.booking_id}` as Href);
-            }
-          },
-          onError: (error) => {
-            endPending(id);
-            hapticWarning();
-            Alert.alert(
-              'Could not update',
-              error instanceof ApiError ? error.message : 'Please try again.',
-            );
-          },
+  const act = (id: string, status: WaitlistStatus) => {
+    clearConfirm();
+    startPending(id);
+    update.mutate(
+      { id, status },
+      {
+        onSuccess: (data) => {
+          endPending(id);
+          if (status === 'cancelled') {
+            toast.info('Entry cancelled.');
+          } else if (status === 'offered') {
+            toast.success('Spot offered to the guest.');
+          } else {
+            toast.success('Booking confirmed.');
+          }
+          // notify_failed warning — Alert.alert is a web no-op, so toast it.
+          if (data.notify_failed) {
+            toast.error('Spot offered, but we could not email or SMS the guest. Contact them directly.');
+          }
+          if (status === 'confirmed' && data.booking_id) {
+            router.push(`/booking/${data.booking_id}` as Href);
+          }
         },
-      );
-    };
-
-    if (confirmText) {
-      Alert.alert(confirmText, undefined, [
-        { text: 'Back', style: 'cancel' },
-        {
-          text: confirmText,
-          style: status === 'cancelled' ? 'destructive' : 'default',
-          onPress: run,
+        onError: (error) => {
+          endPending(id);
+          toast.error(error instanceof ApiError ? error.message : 'Could not update. Please try again.');
         },
-      ]);
-    } else {
-      run();
-    }
+      },
+    );
   };
 
   const handleDelete = (id: string) => {
-    Alert.alert('Remove entry', 'Permanently remove this expired or cancelled entry?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Remove',
-        style: 'destructive',
-        onPress: () => {
-          startPending(id);
-          deleteMutation.mutate(id, {
-            onSuccess: () => {
-              endPending(id);
-              hapticSuccess();
-            },
-            onError: (error) => {
-              endPending(id);
-              hapticWarning();
-              Alert.alert(
-                'Could not remove',
-                error instanceof ApiError ? error.message : 'Please try again.',
-              );
-            },
-          });
-        },
+    clearConfirm();
+    startPending(id);
+    deleteMutation.mutate(id, {
+      onSuccess: () => {
+        endPending(id);
+        toast.success('Entry removed.');
       },
-    ]);
+      onError: (error) => {
+        endPending(id);
+        toast.error(error instanceof ApiError ? error.message : 'Could not remove. Please try again.');
+      },
+    });
   };
 
   const handleAlertAction = (alertId: string, action: 'offer' | 'dismiss') => {
-    const label = action === 'offer' ? 'Offer to guests' : 'Dismiss';
-    Alert.alert(
-      label,
-      action === 'dismiss'
-        ? 'Dismiss this open slot alert?'
-        : 'Offer this slot to matching waitlist guests?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: label,
-          style: action === 'dismiss' ? 'destructive' : 'default',
-          onPress: () => {
-            startPending(`alert-${alertId}`);
-            actOnAlert.mutate(
-              { id: alertId, action },
-              {
-                onSuccess: () => {
-                  endPending(`alert-${alertId}`);
-                  hapticSuccess();
-                },
-                onError: (error) => {
-                  endPending(`alert-${alertId}`);
-                  hapticWarning();
-                  Alert.alert(
-                    'Could not perform action',
-                    error instanceof ApiError ? error.message : 'Please try again.',
-                  );
-                },
-              },
-            );
-          },
+    clearConfirm();
+    startPending(`alert-${alertId}`);
+    actOnAlert.mutate(
+      { id: alertId, action },
+      {
+        onSuccess: () => {
+          endPending(`alert-${alertId}`);
+          toast.success(action === 'offer' ? 'Slot offered to matching guests.' : 'Alert dismissed.');
         },
-      ],
+        onError: (error) => {
+          endPending(`alert-${alertId}`);
+          toast.error(error instanceof ApiError ? error.message : 'Could not perform that action.');
+        },
+      },
     );
   };
 
@@ -421,10 +396,18 @@ export default function WaitlistScreen() {
                                 style={styles.actionBtn}
                               />
                               <Button
-                                label="Dismiss"
+                                label={
+                                  pendingConfirm === `alert-dismiss-${alert.id}`
+                                    ? 'Tap to confirm'
+                                    : 'Dismiss'
+                                }
                                 size="sm"
                                 variant="ghost"
-                                onPress={() => handleAlertAction(alert.id, 'dismiss')}
+                                onPress={() =>
+                                  pendingConfirm === `alert-dismiss-${alert.id}`
+                                    ? handleAlertAction(alert.id, 'dismiss')
+                                    : armConfirm(`alert-dismiss-${alert.id}`)
+                                }
                                 style={styles.actionBtn}
                               />
                             </>
@@ -551,19 +534,33 @@ export default function WaitlistScreen() {
                               ) : null}
                               {isOffered ? (
                                 <Button
-                                  label="Confirm"
+                                  label={
+                                    pendingConfirm === `confirm-${entry.id}`
+                                      ? 'Tap to confirm'
+                                      : 'Confirm'
+                                  }
                                   size="sm"
                                   onPress={() =>
-                                    act(entry.id, 'confirmed', 'Confirm booking')
+                                    pendingConfirm === `confirm-${entry.id}`
+                                      ? act(entry.id, 'confirmed')
+                                      : armConfirm(`confirm-${entry.id}`)
                                   }
                                   style={styles.actionBtn}
                                 />
                               ) : null}
                               <Button
-                                label="Cancel"
+                                label={
+                                  pendingConfirm === `cancel-${entry.id}`
+                                    ? 'Tap to confirm'
+                                    : 'Cancel'
+                                }
                                 size="sm"
                                 variant="ghost"
-                                onPress={() => act(entry.id, 'cancelled', 'Cancel entry')}
+                                onPress={() =>
+                                  pendingConfirm === `cancel-${entry.id}`
+                                    ? act(entry.id, 'cancelled')
+                                    : armConfirm(`cancel-${entry.id}`)
+                                }
                                 style={styles.actionBtn}
                               />
                             </View>
@@ -571,10 +568,18 @@ export default function WaitlistScreen() {
                           {canDelete ? (
                             <View style={styles.actions}>
                               <Button
-                                label="Remove"
+                                label={
+                                  pendingConfirm === `delete-${entry.id}`
+                                    ? 'Tap to confirm'
+                                    : 'Remove'
+                                }
                                 size="sm"
                                 variant="ghost"
-                                onPress={() => handleDelete(entry.id)}
+                                onPress={() =>
+                                  pendingConfirm === `delete-${entry.id}`
+                                    ? handleDelete(entry.id)
+                                    : armConfirm(`delete-${entry.id}`)
+                                }
                                 style={styles.actionBtn}
                               />
                             </View>

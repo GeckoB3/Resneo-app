@@ -1,5 +1,5 @@
 import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { AddonsStep } from '@/components/booking-wizard/AddonsStep';
@@ -31,7 +31,6 @@ import { useLinkedVenueContext } from '@/providers/LinkedVenueProvider';
 import { spacing } from '@/theme/index';
 import type { AppointmentSlot } from '@/types/appointment-availability';
 import {
-  ANY_AVAILABLE_PRACTITIONER_ID,
   type AppointmentCatalogPractitioner,
   type AppointmentCatalogVariant,
   type AppointmentServiceOption,
@@ -75,19 +74,23 @@ function isAppointmentVenue(
 /** Multi-step walk-in booking wizard for appointment venues (Phase 5A v1). */
 export default function NewBookingScreen() {
   const router = useRouter();
-  const { venue, isLoading: venueLoading } = useVenueContext();
+  const { venue, isLoading: venueLoading, featureFlags } = useVenueContext();
   const { ownerVenueId } = useLinkedVenueContext();
   const {
     guestId: guestIdParam,
     date: dateParam,
     practitionerId: practitionerIdParam,
     time: timeParam,
+    intent: intentParam,
   } = useLocalSearchParams<{
     guestId?: string;
     date?: string;
     practitionerId?: string;
     time?: string;
+    intent?: string;
   }>();
+  // Walk-in entry point (?intent=walk-in) — start the source toggle on Walk-in.
+  const isWalkInIntent = intentParam === 'walk-in';
   const prefilledGuestId =
     typeof guestIdParam === 'string' && guestIdParam.length > 0 ? guestIdParam : null;
   // Prefill from a calendar empty-slot tap (date / practitioner / time).
@@ -106,29 +109,79 @@ export default function NewBookingScreen() {
     venue?.pricing_tier,
     venue?.booking_model ?? null,
   );
+  const anyAvailableEnabled = Boolean(featureFlags?.resolved?.any_available_practitioner);
 
   const catalogQuery = useAppointmentCatalog(appointmentVenue ? venueId : null, { includeHidden: true });
   const prefillGuestQuery = useGuestDetail(prefilledGuestId);
 
-  const [stepIndex, setStepIndex] = useState(0);
-  // Whether THIS flow includes the practitioner-choice step. Captured once at
-  // service selection — deriving it from the live selection made the steps
-  // array shrink the moment a practitioner was picked, which double-skipped
-  // the next step (the "date picker never showed" bug).
-  const [includePractitionerStep, setIncludePractitionerStep] = useState(false);
+  // Keyed step machine — navigate by step KEY, never by raw index. The active
+  // step is the source of truth; the steps array is derived for the indicator
+  // and for computing next/previous, so a mid-flow change to which steps exist
+  // can never strand the user on a step missing its prerequisites.
+  const [currentStepKey, setCurrentStepKey] = useState<StepKey>('service');
   const [selectedService, setSelectedService] = useState<AppointmentServiceOption | null>(null);
+  // Whether THIS flow includes the practitioner-choice step. Captured at service
+  // selection (true when 2+ staff offer it and it wasn't pre-scoped) and cleared
+  // once a practitioner is chosen — deriving it from the live `selectedService`
+  // is ambiguous (a real-practitioner pick looks identical to the initial row).
+  const [needsPractitionerStep, setNeedsPractitionerStep] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(prefilledDate);
   const [selectedSlot, setSelectedSlot] = useState<AppointmentSlot | null>(null);
   const [selectedVariant, setSelectedVariant] = useState<AppointmentCatalogVariant | null>(null);
   const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
   const [durationOverride, setDurationOverride] = useState<number | null>(null);
-  const [source, setSource] = useState<'phone' | 'walk-in'>('phone');
+  const [source, setSource] = useState<'phone' | 'walk-in'>(isWalkInIntent ? 'walk-in' : 'phone');
+  // Staff "Require deposit" toggle (confirm step) + existing-contact flag — both
+  // feed the create payload to match the web (`require_deposit`/`returning_guest`).
+  const [requireDeposit, setRequireDeposit] = useState(false);
+  const [returningGuest, setReturningGuest] = useState(false);
   const today = calendarDateInTimeZone(new Date(), timeZone);
   const [monthAnchor, setMonthAnchor] = useState<string>(prefilledDate ?? today);
   const [guest, setGuest] = useState<GuestDetails>(EMPTY_GUEST);
   const [guestPrefilled, setGuestPrefilled] = useState(false);
   const [rebookApplied, setRebookApplied] = useState(false);
   const [rebookContactReadOnly, setRebookContactReadOnly] = useState(false);
+
+  // Practitioners able to perform the selected service.
+  const servicePractitioners: AppointmentCatalogPractitioner[] = useMemo(() => {
+    if (!selectedService || !catalogQuery.data) return [];
+    return catalogQuery.data.practitioners.filter((p) =>
+      p.services.some((s) => s.id === selectedService.serviceId),
+    );
+  }, [selectedService, catalogQuery.data]);
+
+  const addonGroups = selectedService?.addonGroups ?? [];
+  const hasAddons = addonGroups.length > 0;
+  const serviceVariants = selectedService?.variants ?? [];
+  const hasVariants = serviceVariants.length > 0;
+
+  // The ordered steps for THIS flow. Derived from the current selection — used
+  // only to render the indicator and to compute the next/previous KEY.
+  const steps: StepKey[] = useMemo(() => {
+    const includePractitioner = !!selectedService && needsPractitionerStep;
+    return [
+      'service',
+      ...(includePractitioner ? (['practitioner'] as StepKey[]) : []),
+      ...(hasVariants ? (['variant'] as StepKey[]) : []),
+      ...(hasAddons ? (['addons'] as StepKey[]) : []),
+      'date',
+      'time',
+      'guest',
+      'confirm',
+    ];
+  }, [selectedService, needsPractitionerStep, hasVariants, hasAddons]);
+
+  const goToStep = useCallback((key: StepKey) => setCurrentStepKey(key), []);
+
+  /** Advance to the next step KEY after `from` in the active steps array. */
+  const advanceFrom = useCallback(
+    (from: StepKey) => {
+      const index = steps.indexOf(from);
+      const next = index >= 0 ? steps[index + 1] : undefined;
+      if (next) setCurrentStepKey(next);
+    },
+    [steps],
+  );
 
   // Apply rebook bootstrap on mount (after catalog loads).
   const rebookApplyRef = useRef(false);
@@ -151,6 +204,8 @@ export default function NewBookingScreen() {
         }));
         setRebookContactReadOnly(true);
         setGuestPrefilled(true);
+        // Rebooking a known guest is a returning guest.
+        setReturningGuest(true);
       }
 
       // Pre-set initial date.
@@ -180,35 +235,21 @@ export default function NewBookingScreen() {
             };
             setSelectedService(serviceOption);
             // Apply variant if present and valid.
-            if (appt.variantId && service.variants) {
-              const variant = service.variants.find((v) => v.id === appt.variantId);
-              if (variant) setSelectedVariant(variant);
-            }
-            // Apply duration override if it differs from natural duration.
-            if (appt.durationMinutes != null && appt.durationMinutes !== service.duration_minutes) {
-              setDurationOverride(appt.durationMinutes);
-            }
-            // Jump ahead using the steps THIS service produces (a specific
-            // practitioner is known, so no practitioner step). If the service
-            // has variants but the rebook variant didn't resolve, land on the
-            // variant step so the user picks one; otherwise go to the date.
             const resolvedVariant =
               appt.variantId && service.variants
                 ? service.variants.find((v) => v.id === appt.variantId) ?? null
                 : null;
-            const jumpSteps: StepKey[] = [
-              'service',
-              ...((service.variants ?? []).length > 0 ? (['variant'] as StepKey[]) : []),
-              ...((service.addon_groups ?? []).length > 0 ? (['addons'] as StepKey[]) : []),
-              'date',
-              'time',
-              'guest',
-              'confirm',
-            ];
+            if (resolvedVariant) setSelectedVariant(resolvedVariant);
+            // Apply duration override if it differs from natural duration.
+            if (appt.durationMinutes != null && appt.durationMinutes !== service.duration_minutes) {
+              setDurationOverride(appt.durationMinutes);
+            }
+            // A specific practitioner is known, so skip the practitioner step.
+            // Land on the variant step when the service has variants but the
+            // rebook variant didn't resolve; otherwise jump to the date.
             const landOn: StepKey =
               (service.variants ?? []).length > 0 && !resolvedVariant ? 'variant' : 'date';
-            setIncludePractitionerStep(false);
-            setStepIndex(Math.max(0, jumpSteps.indexOf(landOn)));
+            setCurrentStepKey(landOn);
           }
         }
       }
@@ -240,6 +281,8 @@ export default function NewBookingScreen() {
       email: profile.email ?? '',
     });
     setGuestPrefilled(true);
+    // Prefilled from an existing guest profile → returning guest.
+    setReturningGuest(true);
   }, [prefillGuestQuery.data, guestPrefilled]);
 
   const isRestaurantCatalogFailure = useMemo(() => {
@@ -250,56 +293,39 @@ export default function NewBookingScreen() {
   }, [catalogQuery.error, catalogQuery.isError]);
 
   const handleBack = () => {
-    if (stepIndex === 0) {
+    const index = steps.indexOf(currentStepKey);
+    if (index <= 0) {
       router.back();
       return;
     }
-    setStepIndex((current) => Math.max(0, current - 1));
+    const previous = steps[index - 1];
+    if (previous) setCurrentStepKey(previous);
   };
 
   const handleBookingCreated = (bookingId: string) => {
     router.replace(`/booking/${bookingId}` as Href);
   };
 
-  const addonGroups = selectedService?.addonGroups ?? [];
-  const hasAddons = addonGroups.length > 0;
-  const serviceVariants = selectedService?.variants ?? [];
-  const hasVariants = serviceVariants.length > 0;
-
-  // Practitioners able to perform the selected service (for the choice step).
-  const servicePractitioners: AppointmentCatalogPractitioner[] = useMemo(() => {
-    if (!selectedService || !catalogQuery.data) return [];
-    return catalogQuery.data.practitioners.filter((p) =>
-      p.services.some((s) => s.id === selectedService.serviceId),
-    );
-  }, [selectedService, catalogQuery.data]);
-
-  const steps: StepKey[] = [
-    'service',
-    ...(includePractitionerStep ? (['practitioner'] as StepKey[]) : []),
-    ...(hasVariants ? (['variant'] as StepKey[]) : []),
-    ...(hasAddons ? (['addons'] as StepKey[]) : []),
-    'date',
-    'time',
-    'guest',
-    'confirm',
-  ];
-
-  // Safety net: never render a step whose prerequisites are missing — fall
-  // back to the step that supplies them instead of a blank screen.
-  let currentKey: StepKey = steps[stepIndex] ?? 'service';
-  if (currentKey !== 'service' && !selectedService) {
-    currentKey = 'service';
-  } else if (currentKey === 'confirm' && !selectedSlot) {
-    currentKey = selectedDate ? 'time' : 'date';
-  } else if (currentKey === 'time' && !selectedDate) {
-    currentKey = 'date';
+  // Resolve the active step against prerequisites — never render a step whose
+  // inputs are missing (e.g. after the steps array changed). Falls back to the
+  // earliest step that supplies the missing prerequisite.
+  let activeKey: StepKey = currentStepKey;
+  if (!steps.includes(activeKey)) {
+    activeKey = 'service';
   }
+  if (activeKey !== 'service' && !selectedService) {
+    activeKey = 'service';
+  } else if (activeKey === 'confirm' && !selectedSlot) {
+    activeKey = selectedDate ? 'time' : 'date';
+  } else if (activeKey === 'time' && !selectedDate) {
+    activeKey = 'date';
+  }
+
   const stepLabels = steps.map((key) => STEP_LABELS[key]);
+  const stepNumber = Math.max(0, steps.indexOf(activeKey));
   const selectedAddons = addonGroups
     .flatMap((group) => group.addons)
     .filter((addon) => selectedAddonIds.includes(addon.id));
-  const goNext = () => setStepIndex((current) => Math.min(steps.length - 1, current + 1));
 
   // Month availability for the date picker — hook must run unconditionally
   // (before the early returns below), gated via `enabled`.
@@ -312,7 +338,7 @@ export default function NewBookingScreen() {
     month: monthMonth ?? 1,
     variantId: selectedVariant?.id ?? null,
     addonIds: selectedAddonIds,
-    enabled: currentKey === 'date' && !!selectedService,
+    enabled: activeKey === 'date' && !!selectedService,
   });
   const availableDates = monthQuery.data ? new Set(monthQuery.data.available_dates) : null;
 
@@ -343,9 +369,9 @@ export default function NewBookingScreen() {
   return (
     <Screen>
       <View style={styles.container}>
-        <WizardStepIndicator currentStep={stepIndex} labels={stepLabels} />
+        <WizardStepIndicator currentStep={stepNumber} labels={stepLabels} />
 
-        {currentKey === 'service' ? (
+        {activeKey === 'service' ? (
           <ServicePickerStep
             catalog={catalogQuery.data}
             defaultPractitionerId={prefilledPractitionerId}
@@ -358,31 +384,39 @@ export default function NewBookingScreen() {
             isLoading={catalogQuery.isLoading}
             onRetry={() => void catalogQuery.refetch()}
             onSelect={(option) => {
-              // Capture once whether this flow needs a practitioner-choice step
-              // ("Any available" picked for a service with 2+ practitioners).
-              const practitionerCount = catalogQuery.data
-                ? catalogQuery.data.practitioners.filter((p) =>
-                    p.services.some((s) => s.id === option.serviceId),
-                  ).length
-                : 0;
-              setIncludePractitionerStep(
-                option.practitionerId === ANY_AVAILABLE_PRACTITIONER_ID &&
-                  practitionerCount >= 2,
-              );
               setSelectedService(option);
               setSelectedSlot(null);
               setSelectedVariant(null);
               setSelectedAddonIds([]);
               setDurationOverride(null);
-              setStepIndex(1);
+              setRequireDeposit(false);
+              // Decide whether this flow runs the practitioner-choice step:
+              // only when 2+ staff offer the service and it wasn't pre-scoped.
+              const practitioners = catalogQuery.data
+                ? catalogQuery.data.practitioners.filter((p) =>
+                    p.services.some((s) => s.id === option.serviceId),
+                  )
+                : [];
+              const needsPractitioner = !prefilledPractitionerId && practitioners.length >= 2;
+              setNeedsPractitionerStep(needsPractitioner);
+              if (needsPractitioner) {
+                goToStep('practitioner');
+              } else if ((option.variants ?? []).length > 0) {
+                goToStep('variant');
+              } else if ((option.addonGroups ?? []).length > 0) {
+                goToStep('addons');
+              } else {
+                goToStep('date');
+              }
             }}
           />
         ) : null}
 
-        {currentKey === 'practitioner' && selectedService && servicePractitioners.length >= 2 ? (
+        {activeKey === 'practitioner' && selectedService ? (
           <PractitionerStep
             practitioners={servicePractitioners}
             serviceOption={selectedService}
+            allowAnyAvailable={anyAvailableEnabled}
             onSelect={(option) => {
               setSelectedService(option);
               // The practitioner-specific option can carry different variants
@@ -391,12 +425,18 @@ export default function NewBookingScreen() {
               setSelectedVariant(null);
               setSelectedAddonIds([]);
               setSelectedSlot(null);
-              goNext();
+              if ((option.variants ?? []).length > 0) {
+                goToStep('variant');
+              } else if ((option.addonGroups ?? []).length > 0) {
+                goToStep('addons');
+              } else {
+                goToStep('date');
+              }
             }}
           />
         ) : null}
 
-        {currentKey === 'variant' && selectedService ? (
+        {activeKey === 'variant' && selectedService ? (
           <VariantStep
             serviceName={selectedService.serviceName}
             variants={serviceVariants}
@@ -405,20 +445,20 @@ export default function NewBookingScreen() {
               setSelectedVariant(variant);
               setSelectedSlot(null);
             }}
-            onContinue={goNext}
+            onContinue={() => advanceFrom('variant')}
           />
         ) : null}
 
-        {currentKey === 'addons' ? (
+        {activeKey === 'addons' ? (
           <AddonsStep
             groups={addonGroups}
             value={selectedAddonIds}
             onChange={setSelectedAddonIds}
-            onContinue={goNext}
+            onContinue={() => advanceFrom('addons')}
           />
         ) : null}
 
-        {currentKey === 'date' ? (
+        {activeKey === 'date' ? (
           <MonthDatePicker
             monthAnchor={monthAnchor}
             onChangeMonth={setMonthAnchor}
@@ -430,11 +470,19 @@ export default function NewBookingScreen() {
             }}
             availableDates={availableDates}
             isLoading={monthQuery.isLoading || monthQuery.isFetching}
-            onContinue={goNext}
+            onContinue={() => advanceFrom('date')}
+            source={source}
+            timeZone={timeZone}
+            onStartNow={(iso) => {
+              setMonthAnchor(iso);
+              setSelectedDate(iso);
+              setSelectedSlot(null);
+              goToStep('time');
+            }}
           />
         ) : null}
 
-        {currentKey === 'time' && selectedService && selectedDate ? (
+        {activeKey === 'time' && selectedService && selectedDate ? (
           <TimeSlotStep
             addonIds={selectedAddonIds}
             baseDurationMinutes={selectedVariant?.duration_minutes ?? selectedService.durationMinutes}
@@ -445,7 +493,7 @@ export default function NewBookingScreen() {
               setDurationOverride(minutes);
               setSelectedSlot(null);
             }}
-            onContinue={goNext}
+            onContinue={() => advanceFrom('time')}
             onSelectSlot={setSelectedSlot}
             ownerVenueId={ownerVenueId}
             practitionerId={selectedService.practitionerId}
@@ -454,19 +502,23 @@ export default function NewBookingScreen() {
             serviceId={selectedService.serviceId}
             variantId={selectedVariant?.id ?? null}
             venueId={venueId}
+            startNow={source === 'walk-in' && selectedDate === today}
+            timeZone={timeZone}
           />
         ) : null}
 
-        {currentKey === 'guest' ? (
+        {activeKey === 'guest' ? (
           <GuestDetailsStep
             onChange={setGuest}
-            onContinue={goNext}
+            onContinue={() => advanceFrom('guest')}
+            onPickExistingContact={() => setReturningGuest(true)}
+            onClearExistingContact={() => setReturningGuest(false)}
             readOnlyContact={rebookContactReadOnly}
             value={guest}
           />
         ) : null}
 
-        {currentKey === 'confirm' && selectedService && selectedDate && selectedSlot ? (
+        {activeKey === 'confirm' && selectedService && selectedDate && selectedSlot ? (
           <ConfirmStep
             addons={selectedAddons}
             date={selectedDate}
@@ -479,10 +531,14 @@ export default function NewBookingScreen() {
             slot={selectedSlot}
             source={source}
             variant={selectedVariant}
+            requireDeposit={requireDeposit}
+            onChangeRequireDeposit={setRequireDeposit}
+            returningGuest={returningGuest}
+            phoneDefaultCountry="GB"
           />
         ) : null}
 
-        {currentKey !== 'confirm' ? (
+        {activeKey !== 'confirm' ? (
           <Button label="Back" onPress={handleBack} variant="ghost" style={styles.backButton} />
         ) : null}
       </View>

@@ -10,7 +10,7 @@ import { LoadingState } from '@/components/ui/LoadingState';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
-import { hapticSuccess, hapticWarning } from '@/lib/haptics';
+import { hapticSelect, hapticSuccess, hapticWarning } from '@/lib/haptics';
 import {
   useAnyPractitionerAvailability,
   useAppointmentAvailability,
@@ -45,6 +45,10 @@ type TimeSlotStepProps = {
   selectedSlot: AppointmentSlot | null;
   onSelectSlot: (slot: AppointmentSlot) => void;
   onContinue: () => void;
+  /** Walk-in flow on today's date — offer a "Start now" shortcut to the nearest slot. */
+  startNow?: boolean;
+  /** Venue IANA timezone, for computing the current local time on "Start now". */
+  timeZone?: string;
 };
 
 function formatSlotTime(startTime: string): string {
@@ -53,6 +57,58 @@ function formatSlotTime(startTime: string): string {
   const suffix = hour >= 12 ? 'pm' : 'am';
   const hour12 = hour % 12 === 0 ? 12 : hour % 12;
   return `${hour12}:${minutes}${suffix}`;
+}
+
+/** First 5 chars (HH:mm) — pooled "any available" rows may repeat a clock time. */
+function slotStartKey(startTime: string): string {
+  return startTime.trim().slice(0, 5);
+}
+
+/**
+ * One button per clock time: pooled "any available" availability can list the
+ * same time under several practitioners, so collapse to the first practitioner
+ * per start time (the create still targets the kept slot's real practitioner).
+ */
+function dedupeSlotsByStartTime(slots: AppointmentSlot[]): AppointmentSlot[] {
+  const seen = new Set<string>();
+  const out: AppointmentSlot[] = [];
+  for (const slot of slots) {
+    const key = slotStartKey(slot.start_time);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(slot);
+  }
+  return out;
+}
+
+type SlotPeriod = { title: string; slots: AppointmentSlot[] };
+
+/** Split slots into Morning (<12) / Afternoon (12–16) / Evening (17+) sections. */
+function groupSlotsByPeriod(slots: AppointmentSlot[]): SlotPeriod[] {
+  const morning: AppointmentSlot[] = [];
+  const afternoon: AppointmentSlot[] = [];
+  const evening: AppointmentSlot[] = [];
+  for (const slot of slots) {
+    const hour = Number(slot.start_time.slice(0, 2));
+    if (hour < 12) morning.push(slot);
+    else if (hour < 17) afternoon.push(slot);
+    else evening.push(slot);
+  }
+  return [
+    { title: 'Morning', slots: morning },
+    { title: 'Afternoon', slots: afternoon },
+    { title: 'Evening', slots: evening },
+  ].filter((period) => period.slots.length > 0);
+}
+
+/** Current local time (HH:mm) in the venue timezone. */
+function venueLocalTime(timeZone: string): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date());
 }
 
 /** Step — available appointment slots for the chosen service/variant/add-ons and date. */
@@ -72,6 +128,8 @@ export function TimeSlotStep({
   selectedSlot,
   onSelectSlot,
   onContinue,
+  startNow = false,
+  timeZone = 'Europe/London',
 }: TimeSlotStepProps) {
   const { colors } = useTheme();
   const isAnyAvailable = practitionerId === ANY_AVAILABLE_PRACTITIONER_ID;
@@ -113,7 +171,14 @@ export function TimeSlotStep({
     );
   }, [singleQuery.data, practitionerId, serviceId]);
 
-  const slots = isAnyAvailable ? pooledQuery.slots : singleSlots;
+  // For pooled "any available" rows, collapse to one button per clock time so
+  // the same time under multiple practitioners doesn't show twice.
+  const slots = useMemo(
+    () => (isAnyAvailable ? dedupeSlotsByStartTime(pooledQuery.slots) : singleSlots),
+    [isAnyAvailable, pooledQuery.slots, singleSlots],
+  );
+
+  const periods = useMemo(() => groupSlotsByPeriod(slots), [slots]);
 
   // One-shot: when arriving from a calendar empty-slot tap, pre-select the
   // matching slot once availability loads (no-op if that time isn't free).
@@ -145,12 +210,29 @@ export function TimeSlotStep({
     return <ErrorState message={message} onRetry={retry} />;
   }
 
+  // Walk-in "Start now": pick the earliest slot at/after the venue's current
+  // local time (falls back to the first slot of the day if all have passed).
+  const handleStartNow = () => {
+    if (slots.length === 0) return;
+    const now = venueLocalTime(timeZone);
+    const match =
+      slots.find((slot) => slot.start_time.slice(0, 5) >= now) ?? slots[0];
+    if (match) {
+      hapticSelect();
+      onSelectSlot(match);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.titleRow}>
         <Text variant="heading">Choose a time</Text>
         {isFetching ? <ActivityIndicator color={colors.brand} /> : null}
       </View>
+
+      {startNow && slots.length > 0 ? (
+        <Button label="Start now" variant="secondary" fullWidth onPress={handleStartNow} />
+      ) : null}
 
       {/* Staff duration override — presets refetch the slot grid. */}
       <ScrollView
@@ -186,39 +268,51 @@ export function TimeSlotStep({
           />
         </View>
       ) : (
-        <ScrollView contentContainerStyle={styles.grid}>
-          {slots.map((slot) => {
-            const isSelected =
-              selectedSlot?.start_time === slot.start_time &&
-              selectedSlot.practitioner_id === slot.practitioner_id;
-            return (
-              <Pressable
-                key={`${slot.practitioner_id}-${slot.start_time}`}
-                accessibilityRole="button"
-                accessibilityState={{ selected: isSelected }}
-                onPress={() => onSelectSlot(slot)}
-                style={({ pressed }) => [
-                  styles.chip,
-                  {
-                    backgroundColor: isSelected ? colors.brand : colors.surface,
-                    borderColor: isSelected ? colors.brand : colors.border,
-                    opacity: pressed ? 0.85 : 1,
-                  },
-                ]}>
-                <Text variant="bodyMedium" color={isSelected ? colors.onBrand : colors.text}>
-                  {formatSlotTime(slot.start_time)}
-                </Text>
-                {isAnyAvailable ? (
-                  <Text
-                    variant="caption"
-                    color={isSelected ? colors.onBrand : colors.textMuted}
-                    numberOfLines={1}>
-                    {slot.practitioner_name}
-                  </Text>
-                ) : null}
-              </Pressable>
-            );
-          })}
+        <ScrollView contentContainerStyle={styles.periods} showsVerticalScrollIndicator={false}>
+          {periods.map((period) => (
+            <View key={period.title} style={styles.period}>
+              <Text variant="label" tone="secondary">
+                {period.title}
+              </Text>
+              <View style={styles.grid}>
+                {period.slots.map((slot) => {
+                  const isSelected =
+                    selectedSlot?.start_time === slot.start_time &&
+                    selectedSlot.practitioner_id === slot.practitioner_id;
+                  return (
+                    <Pressable
+                      key={`${slot.practitioner_id}-${slot.start_time}`}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: isSelected }}
+                      onPress={() => {
+                        hapticSelect();
+                        onSelectSlot(slot);
+                      }}
+                      style={({ pressed }) => [
+                        styles.chip,
+                        {
+                          backgroundColor: isSelected ? colors.brand : colors.surface,
+                          borderColor: isSelected ? colors.brand : colors.border,
+                          opacity: pressed ? 0.85 : 1,
+                        },
+                      ]}>
+                      <Text variant="bodyMedium" color={isSelected ? colors.onBrand : colors.text}>
+                        {formatSlotTime(slot.start_time)}
+                      </Text>
+                      {isAnyAvailable ? (
+                        <Text
+                          variant="caption"
+                          color={isSelected ? colors.onBrand : colors.textMuted}
+                          numberOfLines={1}>
+                          {slot.practitioner_name}
+                        </Text>
+                      ) : null}
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          ))}
         </ScrollView>
       )}
 
@@ -358,11 +452,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.md,
   },
+  periods: {
+    gap: spacing.lg,
+    paddingBottom: spacing.base,
+  },
+  period: {
+    gap: spacing.sm,
+  },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.sm,
-    paddingBottom: spacing.base,
   },
   chip: {
     minHeight: minTouchTarget,

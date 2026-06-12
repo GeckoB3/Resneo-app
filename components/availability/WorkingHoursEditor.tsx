@@ -6,7 +6,6 @@
  */
 import { useState } from 'react';
 import {
-  Alert,
   ScrollView,
   StyleSheet,
   Switch,
@@ -18,6 +17,7 @@ import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { usePatchPractitioner } from '@/lib/queries/useAvailabilityManage';
+import { useToast } from '@/providers/ToastProvider';
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { TimeRange, WorkingHoursMap } from '@/types/availability-manage';
@@ -115,6 +115,7 @@ export function WorkingHoursEditor({
   onClose,
 }: Props) {
   const { colors } = useTheme();
+  const toast = useToast();
   const patchPractitioner = usePatchPractitioner();
 
   const [days, setDays] = useState<Record<string, DayState>>(() => {
@@ -135,8 +136,7 @@ export function WorkingHoursEditor({
       const d = days[wd.key]!;
       if (d.open) {
         if (d.end <= d.start) {
-          Alert.alert('Invalid hours', `End time must be after start time for ${wd.label}.`);
-          hapticWarning();
+          toast.error(`End time must be after start time for ${wd.label}.`);
           return;
         }
         workingHours[wd.key] = [
@@ -150,12 +150,10 @@ export function WorkingHoursEditor({
       await patchPractitioner.mutateAsync({ id: practitionerId, working_hours: workingHours });
       hapticSuccess();
       onClose();
+      toast.success('Working hours saved.');
     } catch (e) {
       hapticWarning();
-      Alert.alert(
-        'Could not save',
-        e instanceof ApiError ? e.message : 'An error occurred. Please try again.',
-      );
+      toast.error(e instanceof ApiError ? e.message : 'Could not save. Please try again.');
     }
   }
 

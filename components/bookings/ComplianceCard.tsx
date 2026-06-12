@@ -1,15 +1,17 @@
 import * as Clipboard from 'expo-clipboard';
 import { useState } from 'react';
-import { Alert, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ComplianceCaptureSheet } from '@/components/compliance/ComplianceCaptureSheet';
 import { ComplianceRecordSheet } from '@/components/compliance/ComplianceRecordSheet';
 import { Badge, type BadgeTone } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
-import { hapticSuccess, hapticWarning } from '@/lib/haptics';
+import { useToast } from '@/providers/ToastProvider';
+import { hapticSuccess } from '@/lib/haptics';
 import {
   useBookingCompliance,
   useSendComplianceFormLink,
@@ -163,6 +165,7 @@ function AuditTrail({ events }: { events: ComplianceAuditEvent[] }) {
  */
 export function ComplianceCard({ bookingId, guestId, guestEmail, guestPhone }: ComplianceCardProps) {
   const { colors } = useTheme();
+  const toast = useToast();
   // Requirements come from the booking-scoped endpoint
   const bookingQuery = useBookingCompliance(bookingId);
   // All records + audit trail come from the guest-level endpoint (richer)
@@ -170,6 +173,8 @@ export function ComplianceCard({ bookingId, guestId, guestEmail, guestPhone }: C
   const sendLink = useSendComplianceFormLink();
   const [captureTarget, setCaptureTarget] = useState<CaptureTarget | null>(null);
   const [viewRecordId, setViewRecordId] = useState<string | null>(null);
+  // Channel chooser for the "Send link" action — a Sheet (Alert.alert is a web no-op).
+  const [sendTarget, setSendTarget] = useState<{ typeId: string; typeName: string } | null>(null);
   // Per-link pending tracking for send button
   const [sendingTypeId, setSendingTypeId] = useState<string | null>(null);
 
@@ -211,39 +216,34 @@ export function ComplianceCard({ bookingId, guestId, guestEmail, guestPhone }: C
           setSendingTypeId(null);
           if (sendVia === 'manual_copy') {
             void Clipboard.setStringAsync(result.public_url);
-            Alert.alert('Link copied', 'The form link is on your clipboard.');
+            toast.success('Form link copied to your clipboard.');
           } else {
-            Alert.alert(
-              result.dispatched ? 'Form link sent' : 'Form link issued',
-              result.reused ? 'An existing open link was re-used.' : undefined,
+            toast.success(
+              result.reused
+                ? 'An existing open link was re-used.'
+                : result.dispatched
+                  ? 'Form link sent to the guest.'
+                  : 'Form link issued.',
             );
           }
         },
         onError: (error) => {
-          hapticWarning();
           setSendingTypeId(null);
-          Alert.alert(
-            'Could not send link',
-            error instanceof ApiError ? error.message : 'Please try again.',
-          );
+          toast.error(error instanceof ApiError ? error.message : 'Could not send the link.');
         },
       },
     );
   };
 
   const promptSend = (complianceTypeId: string, typeName: string) => {
-    const options: { text: string; onPress: () => void }[] = [];
-    if (guestEmail) {
-      options.push({ text: 'Email', onPress: () => dispatch(complianceTypeId, 'email') });
-    }
-    if (guestPhone) {
-      options.push({ text: 'SMS', onPress: () => dispatch(complianceTypeId, 'sms') });
-    }
-    options.push({ text: 'Copy link', onPress: () => dispatch(complianceTypeId, 'manual_copy') });
-    Alert.alert(`Send ${typeName} form`, 'How should the guest receive the form link?', [
-      ...options,
-      { text: 'Cancel', style: 'cancel' as const, onPress: () => {} },
-    ]);
+    setSendTarget({ typeId: complianceTypeId, typeName });
+  };
+
+  const runSend = (sendVia: ComplianceSendVia) => {
+    if (!sendTarget) return;
+    const typeId = sendTarget.typeId;
+    setSendTarget(null);
+    dispatch(typeId, sendVia);
   };
 
   const refreshAll = () => {
@@ -416,6 +416,29 @@ export function ComplianceCard({ bookingId, guestId, guestEmail, guestPhone }: C
           refreshAll();
         }}
       />
+
+      {/* Send-link channel chooser — replaces the Alert action sheet (web no-op). */}
+      <Sheet visible={sendTarget !== null} onClose={() => setSendTarget(null)}>
+        <Text variant="subheading">Send {sendTarget?.typeName} form</Text>
+        <Text variant="bodySmall" tone="muted">
+          How should the guest receive the form link?
+        </Text>
+        <View style={styles.sendOptions}>
+          {guestEmail ? (
+            <Button label="Email" variant="primary" fullWidth onPress={() => runSend('email')} />
+          ) : null}
+          {guestPhone ? (
+            <Button label="SMS" variant="secondary" fullWidth onPress={() => runSend('sms')} />
+          ) : null}
+          <Button
+            label="Copy link"
+            variant="secondary"
+            fullWidth
+            onPress={() => runSend('manual_copy')}
+          />
+          <Button label="Cancel" variant="ghost" fullWidth onPress={() => setSendTarget(null)} />
+        </View>
+      </Sheet>
     </>
   );
 }
@@ -450,6 +473,10 @@ const styles = StyleSheet.create({
   },
   actionBtn: {
     flex: 1,
+  },
+  sendOptions: {
+    gap: spacing.sm,
+    marginTop: spacing.md,
   },
   recordRow: {
     flexDirection: 'row',
