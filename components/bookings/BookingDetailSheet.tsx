@@ -1,13 +1,20 @@
 import { useRouter, type Href } from 'expo-router';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Keyboard, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import Animated, { FadeInDown, FadeOutDown } from 'react-native-reanimated';
 import { SymbolView } from 'expo-symbols';
 
 import { BookingDetailContent } from '@/components/bookings/BookingDetailContent';
+import { SheetScrollProvider } from '@/components/bookings/sheet-scroll-context';
+import { Button } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Sheet } from '@/components/ui/Sheet';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import { primaryActionColors } from '@/lib/booking/booking-action-colors';
+import { bookingDetailActions } from '@/lib/booking/booking-status-actions';
+import { isTableReservationBooking } from '@/lib/booking/infer-booking-row-model';
 import { useToast } from '@/providers/ToastProvider';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useBookingDetail } from '@/lib/queries/useBookingDetail';
@@ -26,15 +33,42 @@ type BookingDetailSheetProps = {
   onClose: () => void;
   /** Optional — open the standalone full-screen detail (the dedicated route). */
   onOpenFull?: (bookingId: string) => void;
+  /**
+   * Service label from the list row that opened the sheet — keeps the service
+   * name in the hero for plain services the detail GET leaves unnamed.
+   */
+  fallbackServiceName?: string | null;
 };
+
+/** Tracks soft-keyboard visibility so the pinned action bar yields while typing. */
+function useKeyboardVisible() {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', () => setVisible(true));
+    const hide = Keyboard.addListener('keyboardDidHide', () => setVisible(false));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+  return visible;
+}
 
 /**
  * The full booking command-centre — the same {@link BookingDetailContent} the
  * dedicated `/booking/[id]` screen renders, surfaced inline as a tall,
  * scrollable bottom sheet so staff can open a booking from the calendar grid,
  * the bookings list, or a contact's history without losing their place.
+ *
+ * The most common next step — advancing the booking's status — is pinned to a
+ * bottom bar so it stays reachable however far the body is scrolled.
  */
-export function BookingDetailSheet({ bookingId, onClose, onOpenFull }: BookingDetailSheetProps) {
+export function BookingDetailSheet({
+  bookingId,
+  onClose,
+  onOpenFull,
+  fallbackServiceName,
+}: BookingDetailSheetProps) {
   const router = useRouter();
   const { colors } = useTheme();
   const toast = useToast();
@@ -44,6 +78,8 @@ export function BookingDetailSheet({ bookingId, onClose, onOpenFull }: BookingDe
   const staffQuery = useStaffMe();
   const updateStatus = useUpdateBookingStatus(bookingId ?? '');
   const isAdmin = staffQuery.data?.staff?.role === 'admin';
+  const scrollRef = useRef<ScrollView>(null);
+  const keyboardVisible = useKeyboardVisible();
 
   const payload = dashboardQuery.data;
   const isAppointmentVenue = payload
@@ -81,12 +117,19 @@ export function BookingDetailSheet({ bookingId, onClose, onOpenFull }: BookingDe
     onClose();
   };
 
+  const booking = detailQuery.data;
+  const isTable = booking ? isTableReservationBooking(booking) : false;
+  // The pinned bar surfaces only the forward transition (Confirm / Start /
+  // Complete); reverts and destructive actions stay in the scrollable body.
+  const primaryAction = booking
+    ? bookingDetailActions(booking.status, isTable).find((a) => a.kind === 'primary')
+    : undefined;
+  const showActionBar = !!primaryAction && !keyboardVisible;
+
   return (
     <Sheet visible={!!bookingId} onClose={onClose} fill maxHeight="94%">
       <View style={styles.header}>
-        <Text variant="subheading">
-          {isAppointmentVenue ? 'Appointment' : 'Booking'}
-        </Text>
+        <Text variant="subheading">{isAppointmentVenue ? 'Appointment' : 'Booking'}</Text>
         <View style={styles.headerActions}>
           <Pressable
             accessibilityRole="button"
@@ -119,7 +162,7 @@ export function BookingDetailSheet({ bookingId, onClose, onOpenFull }: BookingDe
         <View style={styles.stateBody}>
           <DetailSkeleton />
         </View>
-      ) : detailQuery.isError || !detailQuery.data ? (
+      ) : detailQuery.isError || !booking ? (
         <View style={styles.stateBody}>
           <ErrorState
             message={
@@ -131,19 +174,48 @@ export function BookingDetailSheet({ bookingId, onClose, onOpenFull }: BookingDe
           />
         </View>
       ) : (
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}>
-          <BookingDetailContent
-            actionLoading={updateStatus.isPending}
-            booking={detailQuery.data}
-            isAdmin={isAdmin}
-            isAppointmentVenue={isAppointmentVenue}
-            onStatusChange={handleStatusChange}
-            onDeleted={onClose}
-          />
-        </ScrollView>
+        <>
+          <SheetScrollProvider scrollRef={scrollRef}>
+            <ScrollView
+              ref={scrollRef}
+              style={styles.scroll}
+              contentContainerStyle={[
+                styles.scrollContent,
+                showActionBar && styles.scrollContentWithBar,
+              ]}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="interactive"
+              showsVerticalScrollIndicator={false}>
+              <BookingDetailContent
+                actionLoading={updateStatus.isPending}
+                booking={booking}
+                isAdmin={isAdmin}
+                isAppointmentVenue={isAppointmentVenue}
+                onStatusChange={handleStatusChange}
+                onDeleted={onClose}
+                showPrimaryAction={false}
+                fallbackServiceName={fallbackServiceName}
+              />
+            </ScrollView>
+          </SheetScrollProvider>
+
+          {showActionBar && primaryAction ? (
+            <Animated.View
+              entering={FadeInDown.duration(180)}
+              exiting={FadeOutDown.duration(120)}
+              style={[styles.actionBar, { borderTopColor: colors.border, backgroundColor: colors.surfaceRaised }]}>
+              <Button
+                label={primaryAction.label}
+                variant="primary"
+                customColors={primaryActionColors(primaryAction.target)}
+                size="lg"
+                fullWidth
+                loading={updateStatus.isPending}
+                onPress={() => handleStatusChange(primaryAction.target)}
+              />
+            </Animated.View>
+          ) : null}
+        </>
       )}
     </Sheet>
   );
@@ -171,9 +243,21 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: spacing.lg,
   },
+  scroll: {
+    flex: 1,
+  },
   scrollContent: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
     paddingBottom: spacing['2xl'],
+  },
+  scrollContentWithBar: {
+    // Clear the pinned action bar so the last card isn't hidden behind it.
+    paddingBottom: spacing['3xl'] + spacing.xl,
+  },
+  actionBar: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
 });

@@ -55,7 +55,10 @@
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
     "lint": "expo lint",
-    "icons": "node scripts/generate-icons.mjs"
+    "icons": "node scripts/generate-icons.mjs",
+    "play-icon": "node scripts/generate-play-icon.mjs",
+    "feature-graphic": "node scripts/generate-feature-graphic.mjs",
+    "screenshots": "node scripts/generate-screenshots.mjs"
   },
   "private": true
 }

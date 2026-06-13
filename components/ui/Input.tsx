@@ -23,6 +23,10 @@ type InputProps = TextInputProps & {
   error?: string;
   /** Helper text shown below when there is no error. */
   helper?: string;
+  /** Marks the field as mandatory — renders a red asterisk after the label. */
+  required?: boolean;
+  /** Marks the field as optional — renders a muted "(optional)" after the label. */
+  optional?: boolean;
   /** Optional adornment rendered inside the field, before the input. */
   leftIcon?: ReactNode;
   /**
@@ -46,6 +50,8 @@ export function Input({
   label,
   error,
   helper,
+  required = false,
+  optional = false,
   leftIcon,
   style,
   containerStyle,
@@ -80,6 +86,16 @@ export function Input({
       {label ? (
         <Text variant="label" tone="secondary">
           {label}
+          {required ? (
+            <Text variant="label" color={colors.danger}>
+              {' *'}
+            </Text>
+          ) : null}
+          {optional ? (
+            <Text variant="label" color={colors.textMuted}>
+              {' (optional)'}
+            </Text>
+          ) : null}
         </Text>
       ) : null}
       <Animated.View style={[styles.field, { backgroundColor: colors.surface }, animatedBorder]}>

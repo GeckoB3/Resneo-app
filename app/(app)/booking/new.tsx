@@ -4,9 +4,9 @@ import { StyleSheet, View } from 'react-native';
 
 import { AddonsStep } from '@/components/booking-wizard/AddonsStep';
 import { ConfirmStep } from '@/components/booking-wizard/ConfirmStep';
-import { MonthDatePicker } from '@/components/booking-wizard/MonthDatePicker';
 import type { GuestDetails } from '@/components/booking-wizard/GuestDetailsStep';
 import { GuestDetailsStep } from '@/components/booking-wizard/GuestDetailsStep';
+import { MonthDatePicker } from '@/components/booking-wizard/MonthDatePicker';
 import { PractitionerStep } from '@/components/booking-wizard/PractitionerStep';
 import { RestaurantWalkInForm } from '@/components/booking-wizard/RestaurantWalkInForm';
 import { ServicePickerStep } from '@/components/booking-wizard/ServicePickerStep';
@@ -22,6 +22,7 @@ import { useAppointmentCatalog } from '@/lib/queries/useAppointmentCatalog';
 import { calendarDateInTimeZone } from '@/lib/queries/useBookingsList';
 import { useGuestDetail } from '@/lib/queries/useGuestDetail';
 import { useMonthAvailability } from '@/lib/queries/useMonthAvailability';
+import { useManagedServices } from '@/lib/queries/useServicesManage';
 import {
   readAndClearRebookBootstrap,
   resetRebookBootstrapGuard,
@@ -50,11 +51,10 @@ const STEP_LABELS: Record<StepKey, string> = {
 };
 
 const EMPTY_GUEST: GuestDetails = {
-  name: '',
+  first_name: '',
+  last_name: '',
   phone: '',
   email: '',
-  dietary_notes: undefined,
-  occasion: undefined,
   special_requests: undefined,
 };
 
@@ -112,6 +112,10 @@ export default function NewBookingScreen() {
   const anyAvailableEnabled = Boolean(featureFlags?.resolved?.any_available_practitioner);
 
   const catalogQuery = useAppointmentCatalog(appointmentVenue ? venueId : null, { includeHidden: true });
+  // Staff service list — the reliable source of each service's booking window
+  // (min notice / same-day). The booking catalog omits min_booking_notice_hours
+  // for legacy venues, so we read it from here for every venue type.
+  const managedServicesQuery = useManagedServices();
   const prefillGuestQuery = useGuestDetail(prefilledGuestId);
 
   // Keyed step machine — navigate by step KEY, never by raw index. The active
@@ -125,7 +129,11 @@ export default function NewBookingScreen() {
   // once a practitioner is chosen — deriving it from the live `selectedService`
   // is ambiguous (a real-practitioner pick looks identical to the initial row).
   const [needsPractitionerStep, setNeedsPractitionerStep] = useState(false);
-  const [selectedDate, setSelectedDate] = useState<string | null>(prefilledDate);
+  // Default to today (or the prefilled date) so the date page opens with a
+  // selection and the Continue button is immediately enabled.
+  const [selectedDate, setSelectedDate] = useState<string | null>(
+    () => prefilledDate ?? calendarDateInTimeZone(new Date(), timeZone),
+  );
   const [selectedSlot, setSelectedSlot] = useState<AppointmentSlot | null>(null);
   const [selectedVariant, setSelectedVariant] = useState<AppointmentCatalogVariant | null>(null);
   const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
@@ -149,6 +157,36 @@ export default function NewBookingScreen() {
       p.services.some((s) => s.id === selectedService.serviceId),
     );
   }, [selectedService, catalogQuery.data]);
+
+  // Booking-window settings for the selected service (min notice / same-day).
+  // The staff availability endpoint returns past + inside-notice slots, so the
+  // time step filters with these. Prefer the managed-services value (present for
+  // every venue type), fall back to the catalog, then the web default (1h /
+  // same-day allowed). `?? ` preserves an explicit 0 (zero notice).
+  const selectedCatalogService = useMemo(() => {
+    if (!selectedService || !catalogQuery.data) return null;
+    for (const p of catalogQuery.data.practitioners) {
+      const svc = p.services.find((s) => s.id === selectedService.serviceId);
+      if (svc) return svc;
+    }
+    return null;
+  }, [selectedService, catalogQuery.data]);
+
+  const bookingWindow = useMemo(() => {
+    const managed = managedServicesQuery.data?.services.find(
+      (s) => s.id === selectedService?.serviceId,
+    );
+    return {
+      minNoticeHours:
+        managed?.min_booking_notice_hours ??
+        selectedCatalogService?.min_booking_notice_hours ??
+        1,
+      allowSameDay:
+        managed?.allow_same_day_booking ??
+        selectedCatalogService?.allow_same_day_booking ??
+        true,
+    };
+  }, [managedServicesQuery.data, selectedService?.serviceId, selectedCatalogService]);
 
   const addonGroups = selectedService?.addonGroups ?? [];
   const hasAddons = addonGroups.length > 0;
@@ -195,10 +233,10 @@ export default function NewBookingScreen() {
       // Pre-fill guest details from the rebook payload.
       if (bootstrap.guest) {
         const g = bootstrap.guest;
-        const fullName = [g.firstName, g.lastName].filter(Boolean).join(' ').trim();
         setGuest((prev) => ({
           ...prev,
-          name: fullName,
+          first_name: typeof g.firstName === 'string' ? g.firstName : '',
+          last_name: typeof g.lastName === 'string' ? g.lastName : '',
           phone: typeof g.phone === 'string' ? g.phone : '',
           email: typeof g.email === 'string' ? g.email : '',
         }));
@@ -246,7 +284,7 @@ export default function NewBookingScreen() {
             }
             // A specific practitioner is known, so skip the practitioner step.
             // Land on the variant step when the service has variants but the
-            // rebook variant didn't resolve; otherwise jump to the date.
+            // rebook variant didn't resolve; otherwise jump to date & time.
             const landOn: StepKey =
               (service.variants ?? []).length > 0 && !resolvedVariant ? 'variant' : 'date';
             setCurrentStepKey(landOn);
@@ -271,12 +309,12 @@ export default function NewBookingScreen() {
       return;
     }
     const profile = prefillGuestQuery.data.guest;
-    const fullName = [profile.first_name, profile.last_name].filter(Boolean).join(' ').trim();
     // React 19 lint flags setState-in-effect, but seeding once on async prefill is exactly
     // what effects are for here — no external system to subscribe to, no derivable initial value.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setGuest({
-      name: fullName,
+      first_name: profile.first_name ?? '',
+      last_name: profile.last_name ?? '',
       phone: profile.phone ?? '',
       email: profile.email ?? '',
     });
@@ -327,8 +365,8 @@ export default function NewBookingScreen() {
     .flatMap((group) => group.addons)
     .filter((addon) => selectedAddonIds.includes(addon.id));
 
-  // Month availability for the date picker — hook must run unconditionally
-  // (before the early returns below), gated via `enabled`.
+  // Month availability for the date picker — hook runs unconditionally (before
+  // the early returns below), gated via `enabled`.
   const [monthYear, monthMonth] = monthAnchor.split('-').map(Number);
   const monthQuery = useMonthAvailability({
     serviceId: selectedService?.serviceId ?? null,
@@ -338,6 +376,7 @@ export default function NewBookingScreen() {
     month: monthMonth ?? 1,
     variantId: selectedVariant?.id ?? null,
     addonIds: selectedAddonIds,
+    durationMinutes: durationOverride,
     enabled: activeKey === 'date' && !!selectedService,
   });
   const availableDates = monthQuery.data ? new Set(monthQuery.data.available_dates) : null;
@@ -383,12 +422,16 @@ export default function NewBookingScreen() {
             isError={catalogQuery.isError}
             isLoading={catalogQuery.isLoading}
             onRetry={() => void catalogQuery.refetch()}
-            onSelect={(option) => {
+            selectedServiceId={selectedService?.serviceId ?? null}
+            initialDurationOverride={durationOverride}
+            onSelect={(option, customDuration) => {
               setSelectedService(option);
               setSelectedSlot(null);
               setSelectedVariant(null);
               setSelectedAddonIds([]);
-              setDurationOverride(null);
+              // Custom duration is chosen here (web parity); variant services
+              // defer it to the variant step and pass null.
+              setDurationOverride(customDuration ?? null);
               setRequireDeposit(false);
               // Decide whether this flow runs the practitioner-choice step:
               // only when 2+ staff offer the service and it wasn't pre-scoped.
@@ -417,6 +460,7 @@ export default function NewBookingScreen() {
             practitioners={servicePractitioners}
             serviceOption={selectedService}
             allowAnyAvailable={anyAvailableEnabled}
+            durationOverride={durationOverride}
             onSelect={(option) => {
               setSelectedService(option);
               // The practitioner-specific option can carry different variants
@@ -441,11 +485,15 @@ export default function NewBookingScreen() {
             serviceName={selectedService.serviceName}
             variants={serviceVariants}
             selected={selectedVariant}
+            initialDurationOverride={durationOverride}
             onSelect={(variant) => {
               setSelectedVariant(variant);
               setSelectedSlot(null);
             }}
-            onContinue={() => advanceFrom('variant')}
+            onContinue={(customDuration) => {
+              setDurationOverride(customDuration);
+              advanceFrom('variant');
+            }}
           />
         ) : null}
 
@@ -472,6 +520,7 @@ export default function NewBookingScreen() {
             isLoading={monthQuery.isLoading || monthQuery.isFetching}
             onContinue={() => advanceFrom('date')}
             source={source}
+            onChangeSource={setSource}
             timeZone={timeZone}
             onStartNow={(iso) => {
               setMonthAnchor(iso);
@@ -485,14 +534,9 @@ export default function NewBookingScreen() {
         {activeKey === 'time' && selectedService && selectedDate ? (
           <TimeSlotStep
             addonIds={selectedAddonIds}
-            baseDurationMinutes={selectedVariant?.duration_minutes ?? selectedService.durationMinutes}
             candidatePractitionerIds={selectedService.candidatePractitionerIds}
             date={selectedDate}
             durationMinutes={durationOverride}
-            onChangeDuration={(minutes) => {
-              setDurationOverride(minutes);
-              setSelectedSlot(null);
-            }}
             onContinue={() => advanceFrom('time')}
             onSelectSlot={setSelectedSlot}
             ownerVenueId={ownerVenueId}
@@ -504,11 +548,14 @@ export default function NewBookingScreen() {
             venueId={venueId}
             startNow={source === 'walk-in' && selectedDate === today}
             timeZone={timeZone}
+            minBookingNoticeHours={bookingWindow.minNoticeHours}
+            allowSameDayBooking={bookingWindow.allowSameDay}
           />
         ) : null}
 
         {activeKey === 'guest' ? (
           <GuestDetailsStep
+            isWalkIn={source === 'walk-in'}
             onChange={setGuest}
             onContinue={() => advanceFrom('guest')}
             onPickExistingContact={() => setReturningGuest(true)}
@@ -524,7 +571,6 @@ export default function NewBookingScreen() {
             date={selectedDate}
             durationOverride={durationOverride}
             guest={guest}
-            onChangeSource={setSource}
             onSuccess={handleBookingCreated}
             ownerVenueId={ownerVenueId}
             service={selectedService}

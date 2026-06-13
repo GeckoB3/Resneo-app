@@ -3,14 +3,12 @@ import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { Segmented } from '@/components/ui/Segmented';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { formatPence } from '@/lib/format';
 import { hapticSelect, hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { normalizePhone } from '@/lib/phone/normalize';
 import { useCreateBooking } from '@/lib/queries/useCreateBooking';
-import { splitGuestName } from '@/lib/validation/walk-in-guest';
 import { fonts, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { AppointmentSlot } from '@/types/appointment-availability';
@@ -34,9 +32,9 @@ type ConfirmStepProps = {
   addons?: AppointmentCatalogAddon[];
   /** Staff base-duration override (minutes). */
   durationOverride?: number | null;
-  /** Phone bookings are slot-validated server-side; walk-ins skip the gate. */
+  /** Phone bookings are slot-validated server-side; walk-ins skip the gate.
+   *  Chosen on the date+time step; shown read-only here. */
   source: BookingSource;
-  onChangeSource: (source: BookingSource) => void;
   ownerVenueId?: string | null;
   onSuccess: (bookingId: string) => void;
   /** Staff "Require deposit" toggle state (only shown when the service has a deposit). */
@@ -161,7 +159,6 @@ export function ConfirmStep({
   addons = [],
   durationOverride = null,
   source,
-  onChangeSource,
   ownerVenueId,
   onSuccess,
   requireDeposit = false,
@@ -171,7 +168,9 @@ export function ConfirmStep({
 }: ConfirmStepProps) {
   const { colors } = useTheme();
   const createBooking = useCreateBooking();
-  const { first_name, last_name } = splitGuestName(guest.name);
+  const first_name = guest.first_name.trim();
+  const last_name = guest.last_name.trim();
+  const fullName = [first_name, last_name].filter(Boolean).join(' ');
   const [confirmation, setConfirmation] = useState<BookingConfirmation | null>(null);
   const [complianceError, setComplianceError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -199,9 +198,9 @@ export function ConfirmStep({
 
   // The web folds the appointment's free-text comment into `dietary_notes`
   // (DetailsStep maps "Comments or requests" → dietary_notes). Mirror that: the
-  // mobile "Special requests" box is the comment field, so it must NOT be
-  // silently dropped — send it under `dietary_notes` like the web.
-  const comment = (guest.special_requests ?? guest.dietary_notes ?? '').trim();
+  // mobile "Comments or requests" box is that field, so it must NOT be silently
+  // dropped — send it under `dietary_notes` like the web.
+  const comment = (guest.special_requests ?? '').trim();
 
   const buildPayload = (overrideCompliance?: boolean) => ({
     booking_date: date,
@@ -217,7 +216,6 @@ export function ConfirmStep({
     ...(addons.length ? { addons: addons.map((a) => ({ addon_id: a.id })) } : {}),
     ...(durationOverride != null ? { duration_minutes: durationOverride } : {}),
     ...(comment ? { dietary_notes: comment } : {}),
-    ...(guest.occasion ? { occasion: guest.occasion } : {}),
     // Staff "Require deposit": send when the service has a deposit and the toggle
     // is on (the web sends require_deposit under the same condition). Walk-ins
     // never charge a deposit.
@@ -242,7 +240,7 @@ export function ConfirmStep({
           deposit_amount_pence: response.deposit_amount_pence,
           cancellation_notice_hours: response.cancellation_notice_hours,
           service_name: `${service.serviceName}${variant ? ` · ${variant.name}` : ''}`,
-          guest_name: guest.name.trim(),
+          guest_name: fullName,
           date_label: formatSummaryDate(date),
           time_label: formatSummaryTime(slot.start_time),
           practitioner_name: practitionerName ?? '',
@@ -294,10 +292,9 @@ export function ConfirmStep({
         </View>
         <SummaryRow label="Date" value={formatSummaryDate(date)} />
         <SummaryRow label="Time" value={formatSummaryTime(slot.start_time)} />
-        <SummaryRow label="Guest" value={guest.name.trim()} />
-        <SummaryRow label="Phone" value={guest.phone.trim()} />
+        <SummaryRow label="Guest" value={fullName || '—'} />
+        {guest.phone.trim() ? <SummaryRow label="Phone" value={guest.phone.trim()} /> : null}
         {guest.email.trim() ? <SummaryRow label="Email" value={guest.email.trim()} /> : null}
-        {guest.occasion ? <SummaryRow label="Occasion" value={guest.occasion} /> : null}
         {comment ? <SummaryRow label="Comments" value={comment} /> : null}
 
         {addons.length > 0 ? (
@@ -339,14 +336,7 @@ export function ConfirmStep({
         <Text variant="label" tone="secondary">
           Booking type
         </Text>
-        <Segmented
-          options={[
-            { value: 'phone', label: 'Phone' },
-            { value: 'walk-in', label: 'Walk-in' },
-          ]}
-          value={source}
-          onChange={onChangeSource}
-        />
+        <Text variant="bodyMedium">{source === 'walk-in' ? 'Walk-in' : 'Phone'}</Text>
         <Text variant="caption" tone="muted">
           {source === 'phone'
             ? 'The slot is re-checked when you book.'

@@ -18,6 +18,9 @@ type PractitionerStepProps = {
   serviceOption: AppointmentServiceOption;
   /** Whether to surface an "Any available" pooled option (feature-flagged + 2+ staff). */
   allowAnyAvailable: boolean;
+  /** Staff duration override (minutes) chosen at the service step — shown in each
+   *  practitioner's caption in place of the service default. */
+  durationOverride?: number | null;
   /** Called when the user picks a specific practitioner or "Any available". */
   onSelect: (option: AppointmentServiceOption) => void;
 };
@@ -38,12 +41,15 @@ function formatPrice(pricePence: number | null): string | null {
   return `£${(pricePence / 100).toFixed(2)}`;
 }
 
-function rowCaption(row: PractitionerRow): string | null {
+function rowCaption(row: PractitionerRow, durationOverride: number | null): string | null {
   if (row.isAnyAvailable) {
     return 'First available staff member will be assigned';
   }
   const parts: string[] = [];
-  if (row.durationMinutes != null) parts.push(`${row.durationMinutes} min`);
+  // A staff custom duration (set on the service step) applies to every
+  // practitioner, so it wins over each one's service-default duration.
+  const duration = durationOverride ?? row.durationMinutes;
+  if (duration != null) parts.push(`${duration} min`);
   const price = formatPrice(row.pricePence);
   if (price) parts.push(price);
   return parts.length ? parts.join(' · ') : null;
@@ -59,6 +65,7 @@ export function PractitionerStep({
   practitioners,
   serviceOption,
   allowAnyAvailable,
+  durationOverride = null,
   onSelect,
 }: PractitionerStepProps) {
   const rows: PractitionerRow[] = [];
@@ -117,7 +124,7 @@ export function PractitionerStep({
         contentContainerStyle={styles.list}
         ItemSeparatorComponent={Separator}
         renderItem={({ item }) => {
-          const caption = rowCaption(item);
+          const caption = rowCaption(item, durationOverride);
           const price = item.isAnyAvailable ? null : formatPrice(item.pricePence);
           return (
             <Card

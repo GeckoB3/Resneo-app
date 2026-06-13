@@ -4,11 +4,11 @@ import {
   FlatList,
   Pressable,
   RefreshControl,
-  ScrollView,
   StyleSheet,
   View,
 } from 'react-native';
 import Animated, { FadeInDown, LinearTransition } from 'react-native-reanimated';
+import { SymbolView } from 'expo-symbols';
 import { Sheet } from '@/components/ui/Sheet';
 import { Button } from '@/components/ui/Button';
 import { apiFetch , ApiError } from '@/lib/api/client';
@@ -17,10 +17,9 @@ import { useToast } from '@/providers/ToastProvider';
 
 import { BookingDetailSheet } from '@/components/bookings/BookingDetailSheet';
 import { BookingSwipeRow } from '@/components/bookings/BookingSwipeRow';
-import { BookingStatsBar } from '@/components/bookings/BookingStatsBar';
 import { BookingBulkBar } from '@/components/bookings/BookingBulkBar';
 import { BookingSortSheet } from '@/components/bookings/BookingSortSheet';
-import { BookingServiceFilterSheet } from '@/components/bookings/BookingServiceFilterSheet';
+import { BookingFilterSheet, type FilterOption } from '@/components/bookings/BookingFilterSheet';
 import { BookingDateRangeSheet } from '@/components/bookings/BookingDateRangeSheet';
 import { Chip } from '@/components/ui/Chip';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -103,7 +102,8 @@ function modelFilterKeyFor(model: BookingModel): ModelFilterKey | null {
 /** Parse a HH:mm[:ss] booking_time to an integer hour (0–23), or null. */
 function bookingHour(time: string | null | undefined): number | null {
   if (!time) return null;
-  const hour = Number(time.slice(0, 2));
+  // Split on ':' rather than slice(0,2) so an unpadded "9:30:00" still parses.
+  const hour = Number(time.split(':')[0]);
   return Number.isFinite(hour) ? hour : null;
 }
 
@@ -318,8 +318,8 @@ export default function BookingsScreen() {
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [sortSheetOpen, setSortSheetOpen] = useState(false);
 
-  // --- Service filter sheet ---
-  const [serviceSheetOpen, setServiceSheetOpen] = useState(false);
+  // --- Unified filter sheet (status / staff / type / time / service / compliance) ---
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false);
 
   // --- Bulk selection ---
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -354,6 +354,15 @@ export default function BookingsScreen() {
   });
 
   const rawRows = useMemo(() => activeQuery.data?.bookings ?? [], [activeQuery.data]);
+
+  // Service label for the open booking's detail sheet. The detail GET omits the
+  // base service name for plain (non-variant) services, so hand the list row's
+  // resolved label through to keep the service visible in the hero.
+  const openServiceName = useMemo(() => {
+    if (!openBookingId) return null;
+    const row = rawRows.find((r) => r.id === openBookingId);
+    return row?.service_variant_name?.trim() || row?.booking_item_name?.trim() || null;
+  }, [openBookingId, rawRows]);
 
   // Per-booking compliance flags — a small dot on each row. Gated on the
   // compliance feature flag; built from all loaded rows for the period.
@@ -583,26 +592,57 @@ export default function BookingsScreen() {
     ],
   );
 
-  const isServiceFiltered = serviceFilter !== null;
-
-  // Any non-default list filter active (status chip stays out of scope so the
-  // stats bar / chip tallies keep tracking it). Search counts too.
-  const anyFilterActive =
-    search.trim().length > 0 ||
+  // Any sheet-managed filter active — drives the Filters button highlight and
+  // the in-sheet "Reset". Status is included now that it lives in the sheet.
+  const sheetFiltersActive =
+    status !== 'All' ||
     practitionerFilter !== null ||
     serviceFilter !== null ||
     modelFilter !== null ||
     dayHourRange !== null ||
     needsComplianceOnly;
 
-  const clearAllFilters = useCallback(() => {
-    setSearch('');
+  // Search counts too — shown as the removable summary chip row below the toolbar.
+  const anyFilterActive = sheetFiltersActive || search.trim().length > 0;
+
+  const resetSheetFilters = useCallback(() => {
+    setStatus('All');
     setPractitionerFilter(null);
     setServiceFilter(null);
     setModelFilter(null);
     setDayHourRange(null);
     setNeedsComplianceOnly(false);
   }, []);
+
+  const clearAllFilters = useCallback(() => {
+    setSearch('');
+    resetSheetFilters();
+  }, [resetSheetFilters]);
+
+  // Option lists for the unified sheet (status counts mirror the old chip row).
+  const statusOptions = useMemo<FilterOption[]>(
+    () =>
+      STATUS_FILTERS.map((option) => ({
+        key: option.key,
+        label: option.label,
+        count: option.key === 'All' ? searchedRows.length : (counts[option.key] ?? 0),
+      })),
+    [counts, searchedRows.length],
+  );
+  const typeOptions = useMemo<FilterOption[]>(
+    () => modelChips.map((g) => ({ key: g.key, label: g.label, count: g.count })),
+    [modelChips],
+  );
+
+  // Labels for the removable summary chips (resolve keys → display text).
+  const statusLabel = STATUS_FILTERS.find((o) => o.key === status)?.label ?? status;
+  const practitionerName = practitioners.find((p) => p.id === practitionerFilter)?.name;
+  const typeLabel = MODEL_FILTERS.find((g) => g.key === modelFilter)?.label;
+  const timeLabel = TIME_WINDOWS.find(
+    (w) => w.start === dayHourRange?.start && w.end === dayHourRange?.end,
+  )?.label;
+
+  const staffFilterAvailable = isAppointment && practitioners.length > 1;
 
   // Custom scope without a chosen range yet — prompt the picker instead of
   // navigating days. Reset the day-window filter when leaving the day scope.
@@ -640,7 +680,7 @@ export default function BookingsScreen() {
           {scope === 'custom' ? null : <NavButton dir="right" onPress={() => step(1)} />}
         </View>
 
-        {/* Search + sort/service/walk-in controls — sort & filter live in the SearchBar's trailing slot. */}
+        {/* Search + sort/filter controls — both live in the SearchBar's trailing slot. */}
         <SearchBar
           placeholder="Search name, phone, email…"
           value={search}
@@ -655,35 +695,59 @@ export default function BookingsScreen() {
                 iconSize={18}
                 onPress={() => setSortSheetOpen(true)}
               />
-              {isAppointment ? (
-                <IconButton
-                  icon={{
-                    ios: 'line.3.horizontal.decrease.circle',
-                    android: 'filter_list',
-                    web: 'filter_list',
-                  }}
-                  accessibilityLabel="Filter by service"
-                  variant="bordered"
-                  active={isServiceFiltered}
-                  iconSize={18}
-                  onPress={() => setServiceSheetOpen(true)}
-                />
-              ) : null}
               <IconButton
-                icon={{ ios: 'figure.walk', android: 'directions_walk', web: 'directions_walk' }}
-                accessibilityLabel="Start a walk-in"
+                icon={{
+                  ios: 'line.3.horizontal.decrease.circle',
+                  android: 'filter_list',
+                  web: 'filter_list',
+                }}
+                accessibilityLabel="Filter bookings"
                 variant="bordered"
+                active={sheetFiltersActive}
                 iconSize={18}
-                onPress={() => router.push('/booking/new?intent=walk-in')}
+                onPress={() => setFilterSheetOpen(true)}
               />
             </View>
           }
         />
 
-        {/* Removable filter chips — service + needs-compliance + clear-all. */}
-        {isServiceFiltered || anyFilterActive || (complianceEnabled && complianceNeedsCount > 0) ? (
+        {/* Active-filter summary — removable chips for whatever is applied, so the
+            applied filters stay visible now that the controls live in the sheet. */}
+        {anyFilterActive ? (
           <View style={styles.activeFilterRow}>
-            {isServiceFiltered ? (
+            {status !== 'All' ? (
+              <Chip
+                label={statusLabel}
+                selected
+                onPress={() => setStatus('All')}
+                onRemove={() => setStatus('All')}
+              />
+            ) : null}
+            {practitionerFilter !== null ? (
+              <Chip
+                label={practitionerName ?? 'Staff'}
+                selected
+                onPress={() => setPractitionerFilter(null)}
+                onRemove={() => setPractitionerFilter(null)}
+              />
+            ) : null}
+            {modelFilter !== null ? (
+              <Chip
+                label={typeLabel ?? 'Type'}
+                selected
+                onPress={() => setModelFilter(null)}
+                onRemove={() => setModelFilter(null)}
+              />
+            ) : null}
+            {dayHourRange !== null ? (
+              <Chip
+                label={timeLabel ?? 'Time'}
+                selected
+                onPress={() => setDayHourRange(null)}
+                onRemove={() => setDayHourRange(null)}
+              />
+            ) : null}
+            {serviceFilter !== null ? (
               <Chip
                 label="Service"
                 selected
@@ -691,112 +755,17 @@ export default function BookingsScreen() {
                 onRemove={() => setServiceFilter(null)}
               />
             ) : null}
-            {complianceEnabled && complianceNeedsCount > 0 ? (
+            {needsComplianceOnly ? (
               <Chip
                 label="Needs compliance"
-                count={complianceNeedsCount}
-                selected={needsComplianceOnly}
+                selected
                 selectedColor="#E11D48"
-                onPress={() => setNeedsComplianceOnly((v) => !v)}
-                onRemove={needsComplianceOnly ? () => setNeedsComplianceOnly(false) : undefined}
+                onPress={() => setNeedsComplianceOnly(false)}
+                onRemove={() => setNeedsComplianceOnly(false)}
               />
             ) : null}
-            {anyFilterActive ? (
-              <Chip label="Clear all" onPress={clearAllFilters} onRemove={clearAllFilters} />
-            ) : null}
+            <Chip label="Clear all" onPress={clearAllFilters} onRemove={clearAllFilters} />
           </View>
-        ) : null}
-
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.chips}>
-          {STATUS_FILTERS.map((option) => {
-            const count = option.key === 'All' ? searchedRows.length : (counts[option.key] ?? 0);
-            return (
-              <Chip
-                key={option.key}
-                label={option.label}
-                count={count}
-                selected={status === option.key}
-                onPress={() => setStatus(option.key)}
-              />
-            );
-          })}
-        </ScrollView>
-
-        {/* Staff filter — matches practitioner_id (model B) or calendar_id (unified). */}
-        {isAppointment && practitioners.length > 1 ? (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.chips}>
-            <Chip
-              label="All staff"
-              selected={practitionerFilter === null}
-              onPress={() => setPractitionerFilter(null)}
-            />
-            {practitioners.map((p) => (
-              <Chip
-                key={p.id}
-                label={p.name}
-                selected={practitionerFilter === p.id}
-                onPress={() => setPractitionerFilter((cur) => (cur === p.id ? null : p.id))}
-              />
-            ))}
-          </ScrollView>
-        ) : null}
-
-        {/* Booking-model type filter — gated on the venue having enabled models. */}
-        {modelChips.length > 0 ? (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.chips}>
-            <Chip
-              label="All types"
-              selected={modelFilter === null}
-              onPress={() => setModelFilter(null)}
-            />
-            {modelChips.map((g) => (
-              <Chip
-                key={g.key}
-                label={g.label}
-                count={g.count}
-                selected={modelFilter === g.key}
-                onPress={() => setModelFilter((cur) => (cur === g.key ? null : g.key))}
-              />
-            ))}
-          </ScrollView>
-        ) : null}
-
-        {/* Day time-window filter — preset hour-bands, day view only. Narrows
-            both the list and the stats bar (both derive from searchedRows). */}
-        {scope === 'day' ? (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.chips}>
-            <Chip
-              label="All day"
-              selected={dayHourRange === null}
-              onPress={() => setDayHourRange(null)}
-            />
-            {TIME_WINDOWS.map((w) => {
-              const active =
-                dayHourRange?.start === w.start && dayHourRange?.end === w.end;
-              return (
-                <Chip
-                  key={w.key}
-                  label={w.label}
-                  selected={active}
-                  onPress={() =>
-                    setDayHourRange(active ? null : { start: w.start, end: w.end })
-                  }
-                />
-              );
-            })}
-          </ScrollView>
         ) : null}
       </View>
 
@@ -823,44 +792,41 @@ export default function BookingsScreen() {
           onRetry={() => void activeQuery.refetch()}
         />
       ) : (
-        <>
-          {/* Stats bar — totals follow the active practitioner/service/search
-              filters (web parity); only the status chip is excluded from stats. */}
-          {searchedRows.length > 0 ? (
-            <View style={[styles.statsBarWrap, { borderBottomColor: colors.border }]}>
-              <BookingStatsBar rows={searchedRows} />
-            </View>
-          ) : null}
-
-          <FlatList
-            data={listRows}
-            keyExtractor={(item) =>
-              item.kind === 'header' ? `header-${item.date}` : item.booking.id
-            }
-            renderItem={renderItem}
-            contentContainerStyle={styles.listContent}
-            ItemSeparatorComponent={ItemSeparator}
-            ListEmptyComponent={
-              <EmptyState
-                title="No appointments"
-                message={
-                  status === 'All'
-                    ? 'Nothing booked for this period yet.'
-                    : `No ${(STATUS_FILTERS.find((o) => o.key === status)?.label ?? status).toLowerCase()} appointments for this period.`
-                }
-                actionLabel={newBookingActionLabel(terminology)}
-                onAction={() => router.push('/booking/new')}
-              />
-            }
-            refreshControl={
-              <RefreshControl
-                refreshing={activeQuery.isRefetching}
-                onRefresh={() => void activeQuery.refetch()}
-                tintColor={colors.brand}
-              />
-            }
-          />
-        </>
+        <FlatList
+          data={listRows}
+          keyExtractor={(item) =>
+            item.kind === 'header' ? `header-${item.date}` : item.booking.id
+          }
+          renderItem={renderItem}
+          contentContainerStyle={styles.listContent}
+          ItemSeparatorComponent={ItemSeparator}
+          ListEmptyComponent={
+            <EmptyState
+              icon={
+                <SymbolView
+                  name={{ ios: 'calendar', android: 'calendar_today', web: 'calendar_today' }}
+                  tintColor={colors.textMuted}
+                  size={44}
+                />
+              }
+              title="No appointments"
+              message={
+                status === 'All'
+                  ? 'Nothing booked for this period yet.'
+                  : `No ${(STATUS_FILTERS.find((o) => o.key === status)?.label ?? status).toLowerCase()} appointments for this period.`
+              }
+              actionLabel={newBookingActionLabel(terminology)}
+              onAction={() => router.push('/booking/new')}
+            />
+          }
+          refreshControl={
+            <RefreshControl
+              refreshing={activeQuery.isRefetching}
+              onRefresh={() => void activeQuery.refetch()}
+              tintColor={colors.brand}
+            />
+          }
+        />
       )}
 
       {/* FAB — hidden during selection mode to prevent accidental taps */}
@@ -874,6 +840,7 @@ export default function BookingsScreen() {
       <BookingDetailSheet
         bookingId={openBookingId}
         onClose={() => setOpenBookingId(null)}
+        fallbackServiceName={openServiceName}
       />
 
       {/* Bulk action tray */}
@@ -899,13 +866,33 @@ export default function BookingsScreen() {
         onToggleSortDir={() => setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))}
       />
 
-      {/* Service filter sheet */}
-      <BookingServiceFilterSheet
-        visible={serviceSheetOpen}
-        onClose={() => setServiceSheetOpen(false)}
+      {/* Unified filter sheet — status / staff / type / time / service / compliance */}
+      <BookingFilterSheet
+        visible={filterSheetOpen}
+        onClose={() => setFilterSheetOpen(false)}
+        statusOptions={statusOptions}
+        status={status}
+        onChangeStatus={setStatus}
+        practitioners={staffFilterAvailable ? practitioners : []}
+        practitionerFilter={practitionerFilter}
+        onChangePractitioner={setPractitionerFilter}
+        typeOptions={typeOptions}
+        typeFilter={modelFilter}
+        onChangeType={(key) => setModelFilter(key as ModelFilterKey | null)}
+        showTimeOfDay={scope === 'day'}
+        timeWindows={TIME_WINDOWS}
+        dayHourRange={dayHourRange}
+        onChangeDayHourRange={setDayHourRange}
+        showService={isAppointment}
         venueId={venueId}
-        selectedServiceId={serviceFilter}
-        onSelect={setServiceFilter}
+        serviceFilter={serviceFilter}
+        onChangeService={setServiceFilter}
+        showCompliance={complianceEnabled && complianceNeedsCount > 0}
+        complianceNeedsCount={complianceNeedsCount}
+        needsComplianceOnly={needsComplianceOnly}
+        onToggleCompliance={setNeedsComplianceOnly}
+        anyFilterActive={sheetFiltersActive}
+        onReset={resetSheetFilters}
       />
 
       {/* Custom date-range sheet */}
@@ -976,15 +963,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.sm,
-  },
-  chips: {
-    gap: spacing.sm,
-    paddingRight: spacing.base,
-  },
-  statsBarWrap: {
-    paddingHorizontal: spacing.base,
-    paddingVertical: spacing.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   listContent: {
     padding: spacing.base,

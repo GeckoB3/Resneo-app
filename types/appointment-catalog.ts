@@ -47,6 +47,11 @@ export interface AppointmentCatalogService {
   price_pence: number | null;
   deposit_pence: number | null;
   cancellation_notice_hours?: number;
+  /** Minimum lead time (hours) before a slot — same-day slots earlier than
+   *  now + this are not bookable. Mirrors the web booking window. */
+  min_booking_notice_hours?: number;
+  /** When false, today is not bookable at all (web booking window). */
+  allow_same_day_booking?: boolean;
   variants?: AppointmentCatalogVariant[];
   addon_groups?: AppointmentCatalogAddonGroup[];
 }

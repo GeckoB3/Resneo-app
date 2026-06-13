@@ -2,6 +2,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
+import { SymbolView } from 'expo-symbols';
 
 import { BookingDetailSheet } from '@/components/bookings/BookingDetailSheet';
 import { AllCalendarsDayGrid } from '@/components/calendar/AllCalendarsDayGrid';
@@ -604,6 +605,13 @@ export default function CalendarScreen() {
         />
       ) : practitioners.length === 0 ? (
         <EmptyState
+          icon={
+            <SymbolView
+              name={{ ios: 'person.2', android: 'group', web: 'group' }}
+              tintColor={colors.textMuted}
+              size={44}
+            />
+          }
           title="No practitioners yet"
           message="Add practitioners on the web dashboard and they'll appear here as calendars."
         />
@@ -624,7 +632,7 @@ export default function CalendarScreen() {
                 accessibilityRole="button"
                 accessibilityHint="Jump to today"
                 style={({ pressed }) => [styles.dateLabel, { opacity: pressed ? 0.55 : 1 }]}>
-                <Text variant="subheading" numberOfLines={1}>
+                <Text variant="heading" numberOfLines={1}>
                   {label}
                 </Text>
               </Pressable>
@@ -785,7 +793,7 @@ export default function CalendarScreen() {
                 closeAddSheet();
                 router.push({
                   pathname: '/booking/new',
-                  params: { date: anchor, time: nowTime, isWalkIn: '1' },
+                  params: { date: anchor, time: nowTime, intent: 'walk-in' },
                 });
               }}
             />

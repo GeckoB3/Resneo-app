@@ -202,6 +202,7 @@ export const queryKeys = {
       month?: number,
       variantId?: string | null,
       addonsKey?: string | null,
+      durationMinutes?: number | null,
     ) =>
       [
         ...queryKeys.appointments.all(),
@@ -213,6 +214,7 @@ export const queryKeys = {
         month ?? null,
         variantId ?? null,
         addonsKey ?? null,
+        durationMinutes ?? null,
       ] as const,
   },
 } as const;

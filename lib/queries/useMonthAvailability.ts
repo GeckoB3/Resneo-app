@@ -22,6 +22,7 @@ export function useMonthAvailability({
   month,
   variantId,
   addonIds,
+  durationMinutes,
   enabled = true,
 }: {
   serviceId: string | null | undefined;
@@ -33,6 +34,8 @@ export function useMonthAvailability({
   month: number;
   variantId?: string | null;
   addonIds?: string[];
+  /** Staff duration override (minutes) — narrows the dates to those that can fit it. */
+  durationMinutes?: number | null;
   enabled?: boolean;
 }) {
   const accessToken = useAccessToken();
@@ -63,6 +66,7 @@ export function useMonthAvailability({
       month,
       variantId,
       addonsKey,
+      durationMinutes ?? null,
     ),
     enabled: queryEnabled,
     queryFn: async (): Promise<MonthAvailabilityResponse> => {
@@ -77,6 +81,7 @@ export function useMonthAvailability({
       });
       if (isAny) search.set('any_available', '1');
       if (variantId) search.set('variant_id', variantId);
+      if (durationMinutes != null) search.set('duration_minutes', String(durationMinutes));
       for (const id of addonIds ?? []) {
         search.append('addon_ids', id);
       }

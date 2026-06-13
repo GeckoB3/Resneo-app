@@ -214,6 +214,11 @@ export function DraggableAppointmentBlock({
   const [liveDurLabel, setLiveDurLabel] = useState('');
   const [activeMode, setActiveMode] = useState<DragMode>(0);
   const [liveConflict, setLiveConflict] = useState<ConflictLevel>(0);
+  // Mirror the UI-thread height override into React so AppointmentBlock's
+  // density (which text rows fit) tracks the LIVE size while/after resizing.
+  // Without this the block grows but its content stays at the pre-resize row
+  // count, so the time line never appears even though there's now room for it.
+  const [renderHeightOverride, setRenderHeightOverride] = useState(-1);
 
   useAnimatedReaction(
     () => ({
@@ -221,10 +226,12 @@ export function DraggableAppointmentBlock({
       mins: liveMinutes.value,
       dur: liveDurationMins.value,
       c: conflict.value,
+      h: heightOverride.value,
     }),
-    ({ m, mins, dur, c }) => {
+    ({ m, mins, dur, c, h }) => {
       runOnJS(setActiveMode)(m);
       runOnJS(setLiveConflict)(c);
+      runOnJS(setRenderHeightOverride)(h);
       if (m === 1) runOnJS(setLiveTimeLabel)(formatMinutesLabel(mins));
       if (m === 2) runOnJS(setLiveDurLabel)(formatDurationLabel(dur));
     },
@@ -464,6 +471,9 @@ export function DraggableAppointmentBlock({
 
   const widthPct = 100 / laneCount;
   const leftPct = laneIndex * widthPct;
+  // The block is rendered at the override height while/after a resize; feed that
+  // same height to the content so its row density matches the visible size.
+  const densityHeight = renderHeightOverride >= 0 ? renderHeightOverride : height;
 
   return (
     <GestureDetector gesture={dragGesture}>
@@ -508,7 +518,7 @@ export function DraggableAppointmentBlock({
           clientArrivedAt={clientArrivedAt}
           staffAttendanceConfirmedAt={staffAttendanceConfirmedAt}
           guestAttendanceConfirmedAt={guestAttendanceConfirmedAt}
-          height={height}
+          height={densityHeight}
           laneIndex={laneIndex}
           laneCount={laneCount}
           onPress={onPress}

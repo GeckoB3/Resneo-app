@@ -5,20 +5,17 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Text } from '@/components/ui/Text';
 import { useGuests } from '@/lib/queries/useGuests';
-import { walkInGuestSchema } from '@/lib/validation/walk-in-guest';
+import { buildGuestSchema, type GuestField } from '@/lib/validation/walk-in-guest';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { GuestListItem } from '@/types/guest-list';
 
 export type GuestDetails = {
-  name: string;
+  first_name: string;
+  last_name: string;
   phone: string;
   email: string;
-  /** Optional dietary requirements (max 500 chars). */
-  dietary_notes?: string;
-  /** Occasion for the visit (max 200 chars). */
-  occasion?: string;
-  /** Any special requests (max 500 chars). */
+  /** Free-text comments / requests (folded into dietary_notes on submit, web parity). */
   special_requests?: string;
 };
 
@@ -26,6 +23,8 @@ type GuestDetailsStepProps = {
   value: GuestDetails;
   onChange: (value: GuestDetails) => void;
   onContinue: () => void;
+  /** Walk-in bookings have NO mandatory fields (web parity). */
+  isWalkIn?: boolean;
   /** When true, pre-fill fields are read-only (rebook flow). */
   readOnlyContact?: boolean;
   /** Fired when an existing/known contact is picked — flags the booking as returning. */
@@ -37,7 +36,7 @@ type GuestDetailsStepProps = {
 const SEARCH_DEBOUNCE_MS = 280;
 const MIN_SEARCH_LENGTH = 2;
 
-function guestName(guest: GuestListItem): string {
+function guestDisplayName(guest: GuestListItem): string {
   return [guest.first_name, guest.last_name].filter(Boolean).join(' ').trim() || 'Unnamed guest';
 }
 
@@ -47,17 +46,23 @@ function guestMeta(guest: GuestListItem): string {
   return [guest.phone, visits].filter(Boolean).join(' · ');
 }
 
-/** Step 4 — find an existing guest or enter new contact details. */
+/**
+ * Guest details — mirrors the web staff DetailsStep: separate First name +
+ * Surname, optional email, phone (required for phone bookings, optional for
+ * walk-ins), plus a comments box. Required fields carry a red asterisk; optional
+ * ones say "(optional)". An existing-guest search fills all four contact fields.
+ */
 export function GuestDetailsStep({
   value,
   onChange,
   onContinue,
+  isWalkIn = false,
   readOnlyContact = false,
   onPickExistingContact,
   onClearExistingContact,
 }: GuestDetailsStepProps) {
   const { colors } = useTheme();
-  const [fieldErrors, setFieldErrors] = useState<Partial<Record<'name' | 'phone' | 'email', string>>>({});
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<GuestField, string>>>({});
   const [searchInput, setSearchInput] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
 
@@ -77,7 +82,8 @@ export function GuestDetailsStep({
   const pickGuest = (guest: GuestListItem) => {
     onChange({
       ...value,
-      name: guestName(guest),
+      first_name: guest.first_name ?? '',
+      last_name: guest.last_name ?? '',
       phone: guest.phone ?? '',
       email: guest.email ?? '',
     });
@@ -94,13 +100,13 @@ export function GuestDetailsStep({
   };
 
   const handleContinue = () => {
-    const parsed = walkInGuestSchema.safeParse(value);
+    const parsed = buildGuestSchema(isWalkIn).safeParse(value);
     if (!parsed.success) {
-      const nextErrors: Partial<Record<'name' | 'phone' | 'email', string>> = {};
+      const nextErrors: Partial<Record<GuestField, string>> = {};
       for (const issue of parsed.error.issues) {
         const field = issue.path[0];
-        if (typeof field === 'string' && !nextErrors[field as 'name' | 'phone' | 'email']) {
-          nextErrors[field as 'name' | 'phone' | 'email'] = issue.message;
+        if (typeof field === 'string' && !nextErrors[field as GuestField]) {
+          nextErrors[field as GuestField] = issue.message;
         }
       }
       setFieldErrors(nextErrors);
@@ -121,6 +127,7 @@ export function GuestDetailsStep({
       {!readOnlyContact ? (
         <Input
           label="Find an existing guest"
+          optional
           placeholder="Search name or phone"
           value={searchInput}
           onChangeText={setSearchInput}
@@ -144,7 +151,7 @@ export function GuestDetailsStep({
                     { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? 0.85 : 1 },
                   ]}>
                   <Text variant="bodyMedium" numberOfLines={1}>
-                    {guestName(guest)}
+                    {guestDisplayName(guest)}
                   </Text>
                   {guestMeta(guest) ? (
                     <Text variant="caption" tone="muted" numberOfLines={1}>
@@ -170,15 +177,46 @@ export function GuestDetailsStep({
         </>
       ) : null}
 
+      <View style={styles.nameRow}>
+        <View style={styles.nameField}>
+          <Input
+            autoCapitalize="words"
+            autoComplete="given-name"
+            editable={!readOnlyContact}
+            error={fieldErrors.first_name}
+            label="First name"
+            optional
+            onChangeText={(first_name) => editContact({ first_name })}
+            placeholder="First name"
+            value={value.first_name}
+          />
+        </View>
+        <View style={styles.nameField}>
+          <Input
+            autoCapitalize="words"
+            autoComplete="family-name"
+            editable={!readOnlyContact}
+            error={fieldErrors.last_name}
+            label="Surname"
+            optional
+            onChangeText={(last_name) => editContact({ last_name })}
+            placeholder="Surname"
+            value={value.last_name}
+          />
+        </View>
+      </View>
       <Input
-        autoCapitalize="words"
-        autoComplete="name"
+        autoCapitalize="none"
+        autoComplete="email"
         editable={!readOnlyContact}
-        error={fieldErrors.name}
-        label="Name"
-        onChangeText={(name) => editContact({ name })}
-        placeholder="Guest name"
-        value={value.name}
+        error={fieldErrors.email}
+        keyboardType="email-address"
+        label="Email"
+        optional
+        onChangeText={(email) => editContact({ email })}
+        placeholder="you@example.com"
+        textContentType="emailAddress"
+        value={value.email}
       />
       <Input
         autoComplete="tel"
@@ -186,41 +224,27 @@ export function GuestDetailsStep({
         error={fieldErrors.phone}
         keyboardType="phone-pad"
         label="Phone"
+        optional={isWalkIn}
+        required={!isWalkIn}
         onChangeText={(phone) => editContact({ phone })}
         placeholder="Phone number"
         textContentType="telephoneNumber"
         value={value.phone}
       />
-      <Input
-        autoCapitalize="none"
-        autoComplete="email"
-        editable={!readOnlyContact}
-        error={fieldErrors.email}
-        keyboardType="email-address"
-        label="Email (optional)"
-        onChangeText={(email) => editContact({ email })}
-        placeholder="Email address"
-        textContentType="emailAddress"
-        value={value.email}
-      />
 
-      {/* Appointment wizard only — restaurant-specific fields (dietary,
-          occasion) live on RestaurantWalkInForm, not here. */}
-      <View style={styles.optionalSection}>
-        <Text variant="label" tone="secondary">
-          Notes (optional)
-        </Text>
-        <Input
-          label="Special requests"
-          placeholder="Anything the team should know"
-          value={value.special_requests ?? ''}
-          onChangeText={(special_requests) => onChange({ ...value, special_requests: special_requests || undefined })}
-          autoCapitalize="sentences"
-          maxLength={500}
-          multiline
-          numberOfLines={3}
-        />
-      </View>
+      <Input
+        label="Comments or requests"
+        optional
+        placeholder="Anything we should know (access needs, preferences, running late…)"
+        value={value.special_requests ?? ''}
+        onChangeText={(special_requests) =>
+          onChange({ ...value, special_requests: special_requests || undefined })
+        }
+        autoCapitalize="sentences"
+        maxLength={500}
+        multiline
+        numberOfLines={3}
+      />
 
       <Button label="Continue" fullWidth onPress={handleContinue} />
     </ScrollView>
@@ -254,7 +278,11 @@ const styles = StyleSheet.create({
     flex: 1,
     height: StyleSheet.hairlineWidth,
   },
-  optionalSection: {
+  nameRow: {
+    flexDirection: 'row',
     gap: spacing.md,
+  },
+  nameField: {
+    flex: 1,
   },
 });

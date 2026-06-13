@@ -1,23 +1,40 @@
-import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image } from 'expo-image';
+import { useState, type ReactNode } from 'react';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { SignInModeTabs, type SignInMode } from '@/components/auth/SignInModeTabs';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Screen } from '@/components/ui/Screen';
+import { Text } from '@/components/ui/Text';
 import { isBackendConfigured } from '@/lib/env';
 import { useAuth } from '@/providers/AuthProvider';
-import { spacing, typography } from '@/theme/index';
-import { useTheme } from '@/theme/useTheme';
+import { spacing } from '@/theme/index';
+
+// Full-colour RESNEO lockup (knot + wordmark) — the brand mark for the sign-in.
+const LOGO = require('../../assets/brand/logo-lockup.png');
 
 type SignInView = 'sign-in' | 'forgot-password' | 'magic-sent';
 
+/** Centred, brand-led shell shared by every sign-in view. */
+function AuthShell({ children }: { children: ReactNode }) {
+  return (
+    <Screen scroll keyboardAvoiding contentContainerStyle={styles.container}>
+      <View style={styles.inner}>
+        <View style={styles.logoWrap}>
+          <Image source={LOGO} style={styles.logo} contentFit="contain" accessibilityLabel="Resneo" />
+        </View>
+        {children}
+      </View>
+    </Screen>
+  );
+}
+
 /**
- * Staff sign-in — password or magic link, matching reserve-ni /login (staff default: Password tab).
+ * Staff sign-in — password or magic link, matching the web /login (staff default: Password tab).
  */
 export default function SignInScreen() {
-  const { colors } = useTheme();
   const { signInWithEmail, signInWithPassword, requestPasswordReset, initError } = useAuth();
 
   const [view, setView] = useState<SignInView>('sign-in');
@@ -31,7 +48,6 @@ export default function SignInScreen() {
   async function handlePasswordSignIn() {
     setError(null);
     setLoading(true);
-
     try {
       const result = await signInWithPassword(email, password);
       if (result.error) {
@@ -46,7 +62,6 @@ export default function SignInScreen() {
   async function handleMagicLink() {
     setError(null);
     setLoading(true);
-
     try {
       const result = await signInWithEmail(email);
       if (result.error) {
@@ -63,7 +78,6 @@ export default function SignInScreen() {
     setError(null);
     setSuccessMessage(null);
     setLoading(true);
-
     try {
       const result = await requestPasswordReset(email);
       if (result.error) {
@@ -78,67 +92,150 @@ export default function SignInScreen() {
 
   if (initError) {
     return (
-      <Screen>
-        <Text style={[styles.title, { color: colors.text }]}>Setup required</Text>
-        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-          Copy .env.example to .env.local and add your Supabase credentials before signing in.
+      <AuthShell>
+        <View style={styles.headerBlock}>
+          <Text variant="title" style={styles.center}>
+            Setup required
+          </Text>
+          <Text variant="bodySmall" tone="secondary" style={styles.center}>
+            Copy .env.example to .env.local and add your Supabase credentials before signing in.
+          </Text>
+        </View>
+        <Text variant="bodySmall" tone="danger" style={styles.center}>
+          {initError}
         </Text>
-        <Text style={[styles.inlineError, { color: colors.danger }]}>{initError}</Text>
-      </Screen>
+      </AuthShell>
     );
   }
 
   if (view === 'magic-sent') {
     return (
-      <Screen scroll>
-        <View style={styles.header}>
-          <Text style={[styles.title, { color: colors.text }]}>Check your email</Text>
-          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+      <AuthShell>
+        <View style={styles.headerBlock}>
+          <Text variant="title" style={styles.center}>
+            Check your email
+          </Text>
+          <Text variant="bodySmall" tone="secondary" style={styles.center}>
             We sent a sign-in link to {email.trim()}. Open it on this device to continue.
           </Text>
         </View>
 
         <Card>
-          <Text style={[styles.cardBody, { color: colors.textSecondary }]}>
+          <Text variant="bodySmall" tone="secondary">
             The link expires after a short time. If you do not see the email, check spam or try
             another sign-in method below.
           </Text>
         </Card>
 
-        <Button
-          label="Send another link"
-          variant="secondary"
-          style={styles.action}
-          onPress={() => {
-            setView('sign-in');
-            setMode('magic');
-            setError(null);
-          }}
-        />
-
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => {
-            setView('sign-in');
-            setMode('password');
-            setError(null);
-          }}
-          style={styles.textLinkWrap}>
-          <Text style={[styles.textLink, { color: colors.brand }]}>Sign in with password instead</Text>
-        </Pressable>
-      </Screen>
+        <View style={styles.formBlock}>
+          <Button
+            label="Send another link"
+            variant="secondary"
+            onPress={() => {
+              setView('sign-in');
+              setMode('magic');
+              setError(null);
+            }}
+          />
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => {
+              setView('sign-in');
+              setMode('password');
+              setError(null);
+            }}
+            style={styles.linkWrap}>
+            <Text variant="label" tone="brand">
+              Sign in with password instead
+            </Text>
+          </Pressable>
+        </View>
+      </AuthShell>
     );
   }
 
   if (view === 'forgot-password') {
     return (
-      <Screen scroll>
-        <View style={styles.header}>
-          <Text style={[styles.title, { color: colors.text }]}>Reset password</Text>
-          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-            Enter your email and we&apos;ll send you a link to choose a new password.
+      <AuthShell>
+        <View style={styles.headerBlock}>
+          <Text variant="title" style={styles.center}>
+            Reset password
+          </Text>
+          <Text variant="bodySmall" tone="secondary" style={styles.center}>
+            Enter your email and we will send you a link to choose a new password.
           </Text>
         </View>
+
+        <View style={styles.formBlock}>
+          <Input
+            label="Email"
+            value={email}
+            onChangeText={setEmail}
+            autoCapitalize="none"
+            autoComplete="email"
+            keyboardType="email-address"
+            placeholder="you@salon.com"
+            error={error ?? undefined}
+          />
+
+          {successMessage ? (
+            <Text variant="bodySmall" tone="success">
+              {successMessage}
+            </Text>
+          ) : null}
+
+          <Button
+            label={loading ? 'Sending…' : 'Send reset link'}
+            loading={loading}
+            onPress={() => {
+              void handleForgotPassword();
+            }}
+          />
+
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => {
+              setView('sign-in');
+              setError(null);
+              setSuccessMessage(null);
+            }}
+            style={styles.linkWrap}>
+            <Text variant="label" tone="brand">
+              Back to sign in
+            </Text>
+          </Pressable>
+        </View>
+      </AuthShell>
+    );
+  }
+
+  return (
+    <AuthShell>
+      <View style={styles.headerBlock}>
+        <Text variant="title" style={styles.center}>
+          Sign in
+        </Text>
+        <Text variant="bodySmall" tone="secondary" style={styles.center}>
+          For venue owners and staff. Use your work email.
+        </Text>
+      </View>
+
+      {!isBackendConfigured() ? (
+        <Card>
+          <Text variant="bodySmall" tone="secondary">
+            Backend env vars are missing — add .env.local before calling venue APIs.
+          </Text>
+        </Card>
+      ) : null}
+
+      <View style={styles.formBlock}>
+        <SignInModeTabs
+          mode={mode}
+          onModeChange={(next) => {
+            setMode(next);
+            setError(null);
+          }}
+        />
 
         <Input
           label="Email"
@@ -148,159 +245,89 @@ export default function SignInScreen() {
           autoComplete="email"
           keyboardType="email-address"
           placeholder="you@salon.com"
-          error={error ?? undefined}
+          error={mode === 'magic' ? (error ?? undefined) : undefined}
         />
 
-        {successMessage ? (
-          <Text style={[styles.success, { color: colors.success }]}>{successMessage}</Text>
-        ) : null}
+        {mode === 'password' ? (
+          <>
+            <Input
+              label="Password"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="password"
+              placeholder="Your password"
+              error={error ?? undefined}
+            />
 
-        <Button
-          label={loading ? 'Sending…' : 'Send reset link'}
-          loading={loading}
-          style={styles.action}
-          onPress={() => {
-            void handleForgotPassword();
-          }}
-        />
+            <Button
+              label={loading ? 'Signing in…' : 'Sign in'}
+              loading={loading}
+              onPress={() => {
+                void handlePasswordSignIn();
+              }}
+            />
 
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => {
-            setView('sign-in');
-            setError(null);
-            setSuccessMessage(null);
-          }}
-          style={styles.textLinkWrap}>
-          <Text style={[styles.textLink, { color: colors.brand }]}>Back to sign in</Text>
-        </Pressable>
-      </Screen>
-    );
-  }
-
-  return (
-    <Screen scroll>
-      <View style={styles.header}>
-        <Text style={[styles.title, { color: colors.text }]}>Resneo Staff</Text>
-        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-          Sign in with your work email. This app is for venue owners and staff only.
-        </Text>
-      </View>
-
-      {!isBackendConfigured() ? (
-        <Card style={styles.hintCard}>
-          <Text style={[styles.cardBody, { color: colors.textSecondary }]}>
-            Backend env vars are missing — add .env.local before calling venue APIs in later phases.
-          </Text>
-        </Card>
-      ) : null}
-
-      <SignInModeTabs
-        mode={mode}
-        onModeChange={(next) => {
-          setMode(next);
-          setError(null);
-        }}
-      />
-
-      <Input
-        label="Email"
-        value={email}
-        onChangeText={setEmail}
-        autoCapitalize="none"
-        autoComplete="email"
-        keyboardType="email-address"
-        placeholder="you@salon.com"
-        error={mode === 'magic' ? (error ?? undefined) : undefined}
-        containerStyle={styles.fieldGap}
-      />
-
-      {mode === 'password' ? (
-        <>
-          <Input
-            label="Password"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            autoComplete="password"
-            placeholder="Your password"
-            error={error ?? undefined}
-            containerStyle={styles.fieldGap}
-          />
-
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => {
+                setView('forgot-password');
+                setError(null);
+                setSuccessMessage(null);
+              }}
+              style={styles.linkWrap}>
+              <Text variant="label" tone="brand">
+                Forgot password?
+              </Text>
+            </Pressable>
+          </>
+        ) : (
           <Button
-            label={loading ? 'Signing in…' : 'Sign in'}
+            label={loading ? 'Sending…' : 'Send magic link'}
             loading={loading}
-            style={styles.action}
             onPress={() => {
-              void handlePasswordSignIn();
+              void handleMagicLink();
             }}
           />
-
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => {
-              setView('forgot-password');
-              setError(null);
-              setSuccessMessage(null);
-            }}
-            style={styles.textLinkWrap}>
-            <Text style={[styles.textLink, { color: colors.brand }]}>Forgot password?</Text>
-          </Pressable>
-        </>
-      ) : (
-        <Button
-          label={loading ? 'Sending…' : 'Send magic link'}
-          loading={loading}
-          style={styles.action}
-          onPress={() => {
-            void handleMagicLink();
-          }}
-        />
-      )}
-
-    </Screen>
+        )}
+      </View>
+    </AuthShell>
   );
 }
 
 const styles = StyleSheet.create({
-  header: {
-    marginBottom: spacing.xl,
+  container: {
+    flexGrow: 1,
+    justifyContent: 'center',
   },
-  title: {
-    ...typography.title,
+  inner: {
+    width: '100%',
+    maxWidth: 420,
+    alignSelf: 'center',
+    gap: spacing.lg,
+  },
+  logoWrap: {
+    alignItems: 'center',
     marginBottom: spacing.sm,
   },
-  subtitle: {
-    ...typography.body,
+  logo: {
+    width: 208,
+    height: 50,
   },
-  hintCard: {
-    marginBottom: spacing.base,
-  },
-  cardBody: {
-    ...typography.bodySmall,
-  },
-  fieldGap: {
-    marginTop: spacing.base,
-  },
-  action: {
-    marginTop: spacing.xl,
-  },
-  textLinkWrap: {
+  headerBlock: {
+    gap: spacing.xs,
     alignItems: 'center',
-    marginTop: spacing.base,
+  },
+  center: {
+    textAlign: 'center',
+  },
+  formBlock: {
+    gap: spacing.base,
+  },
+  linkWrap: {
+    alignItems: 'center',
     paddingVertical: spacing.sm,
-  },
-  textLink: {
-    ...typography.bodySmall,
-    fontWeight: '600',
-  },
-  inlineError: {
-    ...typography.bodySmall,
-    marginTop: spacing.base,
-  },
-  success: {
-    ...typography.bodySmall,
-    marginTop: spacing.base,
   },
 });

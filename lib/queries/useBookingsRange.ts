@@ -16,7 +16,13 @@ type UseBookingsRangeOptions = {
 
 /**
  * Loads bookings for a date range from GET /api/venue/bookings/list.
- * Uses `view=calendar` for a lighter payload suited to multi-day schedule views.
+ *
+ * NOTE: we deliberately do NOT pass `view=calendar` here. The list route strips
+ * Cancelled rows from `view=calendar` responses unless a `status=Cancelled`
+ * param is also sent — and since the app filters by status client-side, that
+ * would make the Cancelled filter permanently empty in week/month/custom scope.
+ * The full list shape is a superset of the calendar fields, so nothing else
+ * changes. (Web's own range fetch also omits `view=calendar`.)
  */
 export function useBookingsRange(options: UseBookingsRangeOptions) {
   const accessToken = useAccessToken();
@@ -34,7 +40,6 @@ export function useBookingsRange(options: UseBookingsRangeOptions) {
       const params = new URLSearchParams({
         from,
         to,
-        view: 'calendar',
       });
       return apiFetch<BookingsListResponse>(`/api/venue/bookings/list?${params}`, {
         accessToken,

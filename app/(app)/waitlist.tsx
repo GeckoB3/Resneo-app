@@ -532,22 +532,10 @@ export default function WaitlistScreen() {
                                   style={styles.actionBtn}
                                 />
                               ) : null}
-                              {isOffered ? (
-                                <Button
-                                  label={
-                                    pendingConfirm === `confirm-${entry.id}`
-                                      ? 'Tap to confirm'
-                                      : 'Confirm'
-                                  }
-                                  size="sm"
-                                  onPress={() =>
-                                    pendingConfirm === `confirm-${entry.id}`
-                                      ? act(entry.id, 'confirmed')
-                                      : armConfirm(`confirm-${entry.id}`)
-                                  }
-                                  style={styles.actionBtn}
-                                />
-                              ) : null}
+                              {/* No "Confirm" button: appointment waitlist entries
+                                  are completed server-side at the offer step, so a
+                                  client confirm always 400s. (Web shows no confirm
+                                  for appointment offers either.) */}
                               <Button
                                 label={
                                   pendingConfirm === `cancel-${entry.id}`

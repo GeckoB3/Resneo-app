@@ -106,8 +106,6 @@ type CalendarDayGridProps = {
 };
 
 const DEFAULT_DURATION_MINUTES = 30;
-// Correct for paddingTop of scrollContent when computing tap time.
-const PADDING_TOP = spacing.sm;
 
 /** Scrollable single-day, single-practitioner time grid. */
 export function CalendarDayGrid({
@@ -263,7 +261,9 @@ export function CalendarDayGrid({
 
   const handleBackgroundPress = useCallback(
     (event: GestureResponderEvent) => {
-      const y = event.nativeEvent.locationY - PADDING_TOP;
+      // locationY is relative to the inner grid View (which already sits below the
+      // scroll padding) — the same space the hour lines use, so no padding offset.
+      const y = event.nativeEvent.locationY;
       const minutes = startHour * 60 + y / PX_PER_MINUTE;
       const snapped = Math.round(minutes / TAP_SNAP_MINUTES) * TAP_SNAP_MINUTES;
       onEmptyPress(minutesToTime(Math.max(0, snapped)));

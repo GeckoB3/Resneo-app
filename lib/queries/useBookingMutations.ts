@@ -52,6 +52,26 @@ function rollbackDetail(
 }
 
 /**
+ * Seed the PATCH response into the cached detail. The bookings/[id] route returns
+ * a bare booking row (no nested guest/events/communications/addons), so we MERGE
+ * it onto the existing enriched detail instead of replacing — otherwise the sheet
+ * flashes an empty guest header / dropped timeline until the onSettled refetch
+ * lands. Keys absent from the bare row (the nested objects) are preserved.
+ */
+function seedDetailFromRow(
+  queryClient: ReturnType<typeof useQueryClient>,
+  accessToken: string | null,
+  bookingId: string,
+  data: BookingDetail,
+) {
+  if (!accessToken) return;
+  queryClient.setQueryData<BookingDetail>(
+    queryKeys.bookings.detail(accessToken, bookingId),
+    (prev) => (prev ? { ...prev, ...data } : data),
+  );
+}
+
+/**
  * PATCH /api/venue/bookings/[id] — update booking status (Confirm, Seated, etc.).
  * Optimistically updates the cached detail so the status pill + action toolbar
  * flip immediately, then reconciles with the server response.
@@ -74,11 +94,7 @@ export function useUpdateBookingStatus(bookingId: string) {
     onMutate: (status) => optimisticStatusPatch(queryClient, accessToken, bookingId, status),
     onError: (_error, _status, context) =>
       rollbackDetail(queryClient, accessToken, bookingId, context),
-    onSuccess: (data) => {
-      if (accessToken) {
-        queryClient.setQueryData(queryKeys.bookings.detail(accessToken, bookingId), data);
-      }
-    },
+    onSuccess: (data) => seedDetailFromRow(queryClient, accessToken, bookingId, data),
     onSettled: () => {
       invalidateBookingCaches(queryClient, accessToken, bookingId);
     },
@@ -107,11 +123,7 @@ export function useCancelBooking(bookingId: string) {
     onMutate: () => optimisticStatusPatch(queryClient, accessToken, bookingId, 'Cancelled'),
     onError: (_error, _vars, context) =>
       rollbackDetail(queryClient, accessToken, bookingId, context),
-    onSuccess: (data) => {
-      if (accessToken) {
-        queryClient.setQueryData(queryKeys.bookings.detail(accessToken, bookingId), data);
-      }
-    },
+    onSuccess: (data) => seedDetailFromRow(queryClient, accessToken, bookingId, data),
     onSettled: () => {
       invalidateBookingCaches(queryClient, accessToken, bookingId);
     },
@@ -142,6 +154,11 @@ export function useRescheduleBooking(bookingId: string) {
         body: JSON.stringify({
           booking_date: input.date,
           booking_time: input.time,
+          // Staff picked this time deliberately via the stepper sheet, so allow
+          // out-of-hours moves (otherwise the server 409s with no actionable
+          // reason). Overlaps are left to 409 here so an accidental double-book on
+          // a busy practitioner still surfaces "slot taken".
+          allow_outside_hours: true,
           ...(input.durationMinutes !== undefined
             ? { duration_minutes: input.durationMinutes }
             : {}),
@@ -149,9 +166,7 @@ export function useRescheduleBooking(bookingId: string) {
       });
     },
     onSuccess: (data) => {
-      if (accessToken) {
-        queryClient.setQueryData(queryKeys.bookings.detail(accessToken, bookingId), data);
-      }
+      seedDetailFromRow(queryClient, accessToken, bookingId, data);
       invalidateBookingCaches(queryClient, accessToken, bookingId);
     },
   });
@@ -183,6 +198,10 @@ export function useRescheduleBookingById() {
         body: JSON.stringify({
           booking_date: input.date,
           booking_time: input.time,
+          // Drag-to-reschedule: the grid already shows an amber "outside hours"
+          // warning before the drop, so honour the staff choice server-side.
+          allow_outside_hours: true,
+          allow_manual_overlap: true,
           ...(input.durationMinutes !== undefined
             ? { duration_minutes: input.durationMinutes }
             : {}),
@@ -190,9 +209,7 @@ export function useRescheduleBookingById() {
       });
     },
     onSuccess: (data, input) => {
-      if (accessToken) {
-        queryClient.setQueryData(queryKeys.bookings.detail(accessToken, input.bookingId), data);
-      }
+      seedDetailFromRow(queryClient, accessToken, input.bookingId, data);
       invalidateBookingCaches(queryClient, accessToken, input.bookingId);
     },
   });
@@ -218,12 +235,10 @@ export interface ModifyAppointmentInput {
    * should end up with, not a delta). Matches the create-booking payload key
    * (`addons: [{ addon_id }]`).
    *
-   * NOTE: as of this writing the web PATCH /api/venue/bookings/[id] route does
-   * NOT yet consume `addons` on appointment modify (only POST create does). We
-   * send it for forward-compatibility AND fold the add-on duration into
-   * `duration_minutes` so the booking length is correct regardless. Verify the
-   * backend wires up `addons` on PATCH before relying on the snapshot rows
-   * updating.
+   * The web PATCH /api/venue/bookings/[id] route consumes `addons` on appointment
+   * modify: it validates them against the service's groups, rewrites the
+   * booking_addons snapshots, and refreshes addons_total_*. The client also folds
+   * add-on minutes into `duration_minutes` so the wall-clock end time is correct.
    */
   addons?: { addon_id: string }[];
 }
@@ -245,9 +260,7 @@ export function useModifyAppointment(bookingId: string) {
       });
     },
     onSuccess: (data) => {
-      if (accessToken) {
-        queryClient.setQueryData(queryKeys.bookings.detail(accessToken, bookingId), data);
-      }
+      seedDetailFromRow(queryClient, accessToken, bookingId, data);
       invalidateBookingCaches(queryClient, accessToken, bookingId);
     },
   });

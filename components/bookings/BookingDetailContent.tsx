@@ -2,7 +2,8 @@ import * as Clipboard from 'expo-clipboard';
 import { format, parseISO } from 'date-fns';
 import { useRouter, type Href } from 'expo-router';
 import { useRef, useState } from 'react';
-import { Linking, Pressable, StyleSheet, View } from 'react-native';
+import { Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 
 import { ComplianceCard } from '@/components/bookings/ComplianceCard';
 import { DepositSheet, type DepositTarget } from '@/components/bookings/DepositSheet';
@@ -12,6 +13,7 @@ import {
   ModifyBookingSheet,
   type ModifyBookingTarget,
 } from '@/components/bookings/ModifyBookingSheet';
+import { useScrollIntoViewOnFocus } from '@/components/bookings/sheet-scroll-context';
 import { RescheduleSheet, type RescheduleTarget } from '@/components/calendar/RescheduleSheet';
 import { timeToMinutes } from '@/components/calendar/grid-layout';
 import { Avatar } from '@/components/ui/Avatar';
@@ -25,6 +27,7 @@ import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { ACTION_COLORS, primaryActionColors } from '@/lib/booking/booking-action-colors';
 import { bookingDetailActions } from '@/lib/booking/booking-status-actions';
+import { bookingStatusVisualForKey } from '@/lib/booking/booking-status-visual';
 import {
   bookingTimelineEventsForDisplay,
   formatTimelineEventTime,
@@ -44,6 +47,7 @@ import {
 } from '@/lib/queries/useBookingMutations';
 import { useGuestDetail } from '@/lib/queries/useGuestDetail';
 import { useUpdateGuest } from '@/lib/queries/useGuestMutations';
+import { useManagedServices } from '@/lib/queries/useServicesManage';
 import {
   canShowCancelStaffAttendanceConfirmationAction,
   canShowConfirmStaffAttendanceConfirmationAction,
@@ -54,6 +58,8 @@ import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { BookingDetail, BookingStatus } from '@/types/booking-detail';
 
+type SymbolName = SymbolViewProps['name'];
+
 type BookingDetailContentProps = {
   booking: BookingDetail;
   isAppointmentVenue?: boolean;
@@ -63,6 +69,18 @@ type BookingDetailContentProps = {
   actionLoading?: boolean;
   /** Called after a permanent delete so the host can dismiss/navigate away. */
   onDeleted?: () => void;
+  /**
+   * The sheet host surfaces the primary status action in a pinned bottom bar,
+   * so it hides the inline copy. The full-screen route keeps it inline.
+   */
+  showPrimaryAction?: boolean;
+  /**
+   * Service label from the originating list row. The detail GET only returns
+   * `service_variant_name` (null for plain services — the base name lives in the
+   * list's computed `booking_item_name`), so the host passes that through to keep
+   * the service name visible in the hero. Mirrors the web detail header.
+   */
+  fallbackServiceName?: string | null;
 };
 
 const TERMINAL_STATUSES = new Set<BookingStatus>(['Cancelled', 'Completed', 'No-Show']);
@@ -78,17 +96,22 @@ function formatGuestName(booking: BookingDetail): string {
   return 'Guest';
 }
 
-function formatBookingWhen(date: string, time: string, endTime?: string | null): string {
+/** "Friday 13 June" — the appointment's day, headline-style. */
+function formatBookingDateLabel(date: string, time: string): string {
   try {
-    const parsed = parseISO(`${date}T${time.slice(0, 5)}:00`);
-    const start = format(parsed, 'EEEE d MMMM · HH:mm');
-    if (endTime?.trim()) {
-      return `${start} – ${endTime.slice(0, 5)}`;
-    }
-    return start;
+    return format(parseISO(`${date}T${time.slice(0, 5)}:00`), 'EEEE d MMMM');
   } catch {
-    return `${date} · ${time.slice(0, 5)}`;
+    return date;
   }
+}
+
+/** "14:00 – 15:00" or just the start time when there's no end. */
+function formatBookingTimeRange(time: string, endTime?: string | null): string {
+  const start = time.slice(0, 5);
+  if (endTime?.trim()) {
+    return `${start} – ${endTime.slice(0, 5)}`;
+  }
+  return start;
 }
 
 const formatDeposit = formatPositivePence;
@@ -103,6 +126,76 @@ function DetailRow({ label, value }: { label: string; value: string }) {
         {value}
       </Text>
     </View>
+  );
+}
+
+/** Subtle, icon-led fact pill used along the hero's meta row. */
+function MetaChip({ icon, label }: { icon: SymbolName; label: string }) {
+  const { colors } = useTheme();
+  return (
+    <View style={[styles.metaChip, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+      <SymbolView name={icon} tintColor={colors.textSecondary} size={13} />
+      <Text variant="caption" tone="secondary" numberOfLines={1}>
+        {label}
+      </Text>
+    </View>
+  );
+}
+
+/** Circular icon + label — the row of quick actions under the contact block. */
+function QuickAction({
+  icon,
+  label,
+  onPress,
+  tint,
+}: {
+  icon: SymbolName;
+  label: string;
+  onPress: () => void;
+  tint?: string;
+}) {
+  const { colors } = useTheme();
+  const color = tint ?? colors.brand;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      onPress={onPress}
+      style={({ pressed }) => [styles.quickAction, { opacity: pressed ? 0.55 : 1 }]}>
+      <View style={[styles.quickActionIcon, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <SymbolView name={icon} tintColor={color} size={20} />
+      </View>
+      <Text variant="caption" tone="secondary" numberOfLines={1}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+/** Tappable contact line with a leading glyph (call/email). */
+function ContactRow({
+  icon,
+  value,
+  accessibilityLabel,
+  onPress,
+}: {
+  icon: SymbolName;
+  value: string;
+  accessibilityLabel: string;
+  onPress: () => void;
+}) {
+  const { colors } = useTheme();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      onPress={onPress}
+      style={({ pressed }) => [styles.contactLine, { opacity: pressed ? 0.55 : 1 }]}>
+      <SymbolView name={icon} tintColor={colors.brand} size={16} />
+      <Text variant="bodySmall" color={colors.brand} numberOfLines={1} style={styles.contactLineText}>
+        {value}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -241,6 +334,7 @@ function MessageGuestCompose({
     null,
   );
   const feedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { ref: composeRef, handleFocus } = useScrollIntoViewOnFocus();
 
   const showFeedback = (tone: 'success' | 'danger', text: string) => {
     if (feedbackTimer.current) clearTimeout(feedbackTimer.current);
@@ -285,7 +379,7 @@ function MessageGuestCompose({
   };
 
   return (
-    <View style={styles.composeBlock}>
+    <View style={styles.composeBlock} ref={composeRef}>
       <View style={styles.composeChannels}>
         {channels
           .filter((c) => c.enabled)
@@ -302,6 +396,7 @@ function MessageGuestCompose({
         placeholder="Write a message to the guest…"
         value={message}
         onChangeText={setMessage}
+        onFocus={handleFocus}
         multiline
         numberOfLines={3}
         textAlignVertical="top"
@@ -330,6 +425,7 @@ function GuestTagsEditor({ guestId, tags }: { guestId: string; tags: string[] })
   const toast = useToast();
   const update = useUpdateGuest(guestId);
   const [draft, setDraft] = useState('');
+  const { ref: tagRef, handleFocus } = useScrollIntoViewOnFocus();
 
   const commit = (next: string[]) => {
     update.mutate(
@@ -351,7 +447,7 @@ function GuestTagsEditor({ guestId, tags }: { guestId: string; tags: string[] })
   };
 
   return (
-    <View style={styles.tagsBlock}>
+    <View style={styles.tagsBlock} ref={tagRef}>
       <Text variant="caption" tone="muted">
         Tags
       </Text>
@@ -380,6 +476,7 @@ function GuestTagsEditor({ guestId, tags }: { guestId: string; tags: string[] })
             placeholder="Add tag"
             value={draft}
             onChangeText={setDraft}
+            onFocus={handleFocus}
             autoCapitalize="none"
             autoCorrect={false}
             returnKeyType="done"
@@ -406,11 +503,17 @@ export function BookingDetailContent({
   onStatusChange,
   actionLoading = false,
   onDeleted,
+  showPrimaryAction = true,
+  fallbackServiceName,
 }: BookingDetailContentProps) {
   const { colors } = useTheme();
   const router = useRouter();
   const toast = useToast();
   const { featureFlags } = useVenueContext();
+  // Resolve the service name from the staff service list when neither the detail
+  // nor the list row supplied it (covers entry points other than the bookings
+  // list — calendar, contacts, the full-screen route). Cached + staff-readable.
+  const managedServices = useManagedServices();
   const [rescheduleTarget, setRescheduleTarget] = useState<RescheduleTarget | null>(null);
   const [modifyTarget, setModifyTarget] = useState<ModifyBookingTarget | null>(null);
   const [depositTarget, setDepositTarget] = useState<DepositTarget | null>(null);
@@ -445,6 +548,9 @@ export function BookingDetailContent({
     copyTimer.current = setTimeout(() => setCopiedRef(false), 2000);
   };
 
+  const guestName = formatGuestName(booking);
+  const isTable = isTableReservationBooking(booking);
+
   const openEdit = () =>
     setEditTarget({
       id: booking.id,
@@ -459,8 +565,6 @@ export function BookingDetailContent({
       isTableReservation: isTable,
     });
 
-  const guestName = formatGuestName(booking);
-  const isTable = isTableReservationBooking(booking);
   const actions = bookingDetailActions(booking.status, isTable);
   const depositLabel = formatDeposit(booking.deposit_amount_pence);
   const tableNames = (booking.table_assignments ?? []).map((t) => t.name).join(', ');
@@ -485,18 +589,31 @@ export function BookingDetailContent({
   // Hero facts — the "what & when" surfaced directly under the guest header so
   // the most important info is visible before any action is taken.
   const practitionerName = booking.practitioner_name?.trim() || null;
-  const whenLabel = formatBookingWhen(
-    booking.booking_date,
-    booking.booking_time,
-    booking.booking_end_time,
-  );
-  const serviceMeta = [
-    booking.service_variant_name?.trim() || null,
-    durationMinutes != null ? formatDurationLabel(durationMinutes) : null,
+  const dateLabel = formatBookingDateLabel(booking.booking_date, booking.booking_time);
+  const timeRangeLabel = formatBookingTimeRange(booking.booking_time, booking.booking_end_time);
+  // Prefer the detail's variant name, then the list row's service label, then the
+  // service catalog by id (the detail GET omits the base name for plain services).
+  const catalogServiceName =
+    managedServices.data?.services.find(
+      (s) => s.id === (booking.service_item_id ?? booking.appointment_service_id),
+    )?.name?.trim() || null;
+  const serviceName =
+    booking.service_variant_name?.trim() ||
+    fallbackServiceName?.trim() ||
+    catalogServiceName ||
+    null;
+  const serviceLine = [
+    serviceName,
     practitionerName ? `with ${practitionerName}` : null,
   ]
     .filter(Boolean)
     .join(' · ');
+  const location = locationLabel(booking);
+  const locationIcon: SymbolName =
+    booking.location_type === 'online'
+      ? { ios: 'video.fill', android: 'videocam', web: 'videocam' }
+      : { ios: 'mappin.and.ellipse', android: 'place', web: 'place' };
+  const statusVisual = bookingStatusVisualForKey(booking.status);
 
   // Full modify (service/staff/slot) — appointment bookings in live statuses,
   // mirroring web `canStaffModifyBooking` + the appointment modify branch.
@@ -565,6 +682,7 @@ export function BookingDetailContent({
     canShowConfirmStaffAttendanceConfirmationAction(booking) ||
     canShowCancelStaffAttendanceConfirmationAction(booking);
   const showArrivedToggle =
+    !isTable &&
     booking.source !== 'walk-in' &&
     booking.status !== 'Seated' &&
     !TERMINAL_STATUSES.has(booking.status);
@@ -643,218 +761,279 @@ export function BookingDetailContent({
     onStatusChange(target);
   };
 
+  // Attendance toggles + (optionally) the primary action all live in one card;
+  // skip rendering it entirely when there's nothing actionable.
+  const showInlinePrimary = showPrimaryAction && !!primaryAction;
+  const showActionsCard =
+    showInlinePrimary ||
+    showArrivedToggle ||
+    showAttendanceConfirmToggle ||
+    !!revertAction ||
+    destructiveActions.length > 0;
+
+  const attendanceBadges =
+    attendanceRelevant && (guestConfirmed || staffConfirmed || arrived) ? (
+      <View style={styles.heroBadges}>
+        {guestConfirmed ? <Badge label="Guest confirmed" tone="success" /> : null}
+        {staffConfirmed ? <Badge label="Staff confirmed" tone="success" /> : null}
+        {arrived ? <Badge label="Arrived" tone="accent" /> : null}
+      </View>
+    ) : null;
+
   return (
     <View style={styles.container}>
-      {/* Hero — guest, status, then the "what & when" and contact */}
-      <Card>
-        <View style={styles.headerRow}>
-          <Avatar name={guestName} size={52} />
-          <View style={styles.headerText}>
-            <View style={styles.nameRow}>
-              <Text variant="heading" style={styles.guestName} numberOfLines={1}>
+      {/* Hero — identity, then the appointment at a glance, then contact + quick actions */}
+      <Card padded={false} style={styles.hero}>
+        <View style={[styles.heroAccent, { backgroundColor: statusVisual.backgroundColor }]} />
+        <View style={styles.heroInner}>
+          <View style={styles.headerRow}>
+            <Avatar name={guestName} size={52} />
+            <View style={styles.headerText}>
+              <Text variant="heading" numberOfLines={1}>
                 {guestName}
               </Text>
-              <StatusPill status={booking.status} isTableReservation={isTable} />
+              <Text variant="caption" tone="muted">
+                {visitCount > 0
+                  ? `${visitCount} previous visit${visitCount === 1 ? '' : 's'}`
+                  : 'First visit'}
+              </Text>
             </View>
-            <Text variant="caption" tone="muted">
-              {visitCount > 0
-                ? `${visitCount} previous visit${visitCount === 1 ? '' : 's'}`
-                : 'First visit'}
-            </Text>
+            <StatusPill status={booking.status} isTableReservation={isTable} />
           </View>
-        </View>
 
-        {/* What & when — the hero facts */}
-        <View style={[styles.heroBlock, { borderTopColor: colors.border }]}>
-          <Text variant="subheading">{whenLabel}</Text>
-          {serviceMeta ? (
-            <Text variant="bodyMedium" tone="secondary">
-              {serviceMeta}
-            </Text>
-          ) : null}
-          {booking.deposit_status === 'Pending' ? (
-            <View style={styles.headerPillRow}>
-              <Badge label="Deposit pending" tone="warning" />
-            </View>
-          ) : null}
-        </View>
-
-        {/* Contact — tappable rows + quick actions */}
-        {guestPhone || guestEmail ? (
+          {/* When & what */}
           <View style={[styles.heroBlock, { borderTopColor: colors.border }]}>
-            {guestPhone ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`Call ${guestName}`}
-                onPress={() => void Linking.openURL(`tel:${guestPhone.replace(/\s+/g, '')}`)}>
-                <Text variant="bodySmall" color={colors.brand}>
-                  {guestPhone}
-                </Text>
-              </Pressable>
+            <Text variant="overline" tone="muted">
+              {dateLabel}
+            </Text>
+            <Text variant="title" style={styles.heroTime}>
+              {timeRangeLabel}
+            </Text>
+            {serviceLine ? (
+              <Text variant="bodyMedium" tone="secondary">
+                {serviceLine}
+              </Text>
             ) : null}
-            {guestEmail ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`Email ${guestName}`}
-                onPress={() => void Linking.openURL(`mailto:${guestEmail}`)}>
-                <Text variant="bodySmall" color={colors.brand} numberOfLines={1}>
-                  {guestEmail}
-                </Text>
-              </Pressable>
+
+            <View style={styles.metaRow}>
+              {durationMinutes != null ? (
+                <MetaChip
+                  icon={{ ios: 'clock', android: 'schedule', web: 'schedule' }}
+                  label={formatDurationLabel(durationMinutes)}
+                />
+              ) : null}
+              <MetaChip
+                icon={{ ios: 'person.2.fill', android: 'group', web: 'group' }}
+                label={partyLabel}
+              />
+              {location ? <MetaChip icon={locationIcon} label={location} /> : null}
+              {modelLabel ? (
+                <MetaChip icon={{ ios: 'tag', android: 'sell', web: 'sell' }} label={modelLabel} />
+              ) : null}
+            </View>
+
+            {(booking.deposit_status === 'Pending' ||
+              (isTable && booking.occasion?.trim()) ||
+              attendanceBadges) ? (
+              <View style={styles.heroBadges}>
+                {booking.deposit_status === 'Pending' ? (
+                  <Badge label="Deposit pending" tone="warning" />
+                ) : null}
+                {isTable && booking.occasion?.trim() ? (
+                  <Badge label={booking.occasion} tone="accent" />
+                ) : null}
+                {guestConfirmed ? <Badge label="Guest confirmed" tone="success" /> : null}
+                {staffConfirmed ? <Badge label="Staff confirmed" tone="success" /> : null}
+                {arrived ? <Badge label="Arrived" tone="accent" /> : null}
+              </View>
             ) : null}
-            <View style={styles.contactRow}>
+          </View>
+
+          {/* Contact + quick actions */}
+          {guestPhone || guestEmail || canReschedule || canModify || booking.guest_id ? (
+            <View style={[styles.heroBlock, { borderTopColor: colors.border }]}>
               {guestPhone ? (
-                <Button
-                  label="Call"
-                  variant="secondary"
-                  size="sm"
-                  style={styles.contactBtn}
+                <ContactRow
+                  icon={{ ios: 'phone.fill', android: 'call', web: 'call' }}
+                  value={guestPhone}
+                  accessibilityLabel={`Call ${guestName}`}
                   onPress={() => void Linking.openURL(`tel:${guestPhone.replace(/\s+/g, '')}`)}
                 />
               ) : null}
               {guestEmail ? (
-                <Button
-                  label="Email"
-                  variant="secondary"
-                  size="sm"
-                  style={styles.contactBtn}
+                <ContactRow
+                  icon={{ ios: 'envelope.fill', android: 'mail', web: 'mail' }}
+                  value={guestEmail}
+                  accessibilityLabel={`Email ${guestName}`}
                   onPress={() => void Linking.openURL(`mailto:${guestEmail}`)}
                 />
               ) : null}
-            </View>
-          </View>
-        ) : null}
-      </Card>
 
-      {/* Actions — prominent primary transition, then quick actions, then a
-          divided destructive row. Cancel & No-show share one destructive colour. */}
-      <Card>
-        {primaryAction ? (
-          <Button
-            label={primaryAction.label}
-            variant="primary"
-            customColors={primaryActionColors(primaryAction.target)}
-            size="md"
-            fullWidth
-            loading={actionLoading}
-            onPress={() => handleActionPress(primaryAction.target, primaryAction.label)}
-            style={styles.primaryAction}
-          />
-        ) : null}
-        <View style={styles.toolbarGrid}>
-          {showArrivedToggle ? (
-            <View style={styles.toolbarCell}>
-              <Button
-                label={arrived ? 'Clear arrived' : 'Arrived'}
-                variant="secondary"
-                customColors={arrived ? undefined : ACTION_COLORS.arrived}
-                size="sm"
-                fullWidth
-                loading={attendance.isPending}
-                onPress={() => toggleAttendance('client_arrived', !arrived)}
-              />
-            </View>
-          ) : null}
-          {showAttendanceConfirmToggle ? (
-            <View style={styles.toolbarCell}>
-              <Button
-                label={staffConfirmed ? 'Unconfirm' : 'Confirm'}
-                variant="secondary"
-                customColors={staffConfirmed ? undefined : ACTION_COLORS.confirm}
-                size="sm"
-                fullWidth
-                loading={attendance.isPending}
-                onPress={() => toggleAttendance('staff_attendance_confirmed', !staffConfirmed)}
-              />
-            </View>
-          ) : null}
-          {canReschedule ? (
-            <View style={styles.toolbarCell}>
-              <Button
-                label="Reschedule"
-                variant="secondary"
-                size="sm"
-                fullWidth
-                onPress={() =>
-                  setRescheduleTarget({
-                    id: booking.id,
-                    guestName,
-                    date: booking.booking_date,
-                    time: booking.booking_time,
-                    durationMinutes,
-                  })
-                }
-              />
-            </View>
-          ) : null}
-          {canModify ? (
-            <View style={styles.toolbarCell}>
-              <Button label="Modify" variant="secondary" size="sm" fullWidth onPress={openModify} />
-            </View>
-          ) : null}
-          {booking.guest_id ? (
-            <View style={styles.toolbarCell}>
-              <Button
-                label="Rebook"
-                variant="secondary"
-                size="sm"
-                fullWidth
-                onPress={() =>
-                  router.push({
-                    pathname: '/booking/new',
-                    params: { guestId: booking.guest_id },
-                  })
-                }
-              />
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={styles.quickActions}>
+                {guestPhone ? (
+                  <QuickAction
+                    icon={{ ios: 'phone.fill', android: 'call', web: 'call' }}
+                    label="Call"
+                    onPress={() => void Linking.openURL(`tel:${guestPhone.replace(/\s+/g, '')}`)}
+                  />
+                ) : null}
+                {guestEmail ? (
+                  <QuickAction
+                    icon={{ ios: 'envelope.fill', android: 'mail', web: 'mail' }}
+                    label="Email"
+                    onPress={() => void Linking.openURL(`mailto:${guestEmail}`)}
+                  />
+                ) : null}
+                {canReschedule ? (
+                  <QuickAction
+                    icon={{ ios: 'calendar', android: 'event', web: 'event' }}
+                    label="Reschedule"
+                    onPress={() =>
+                      setRescheduleTarget({
+                        id: booking.id,
+                        guestName,
+                        date: booking.booking_date,
+                        time: booking.booking_time,
+                        durationMinutes,
+                      })
+                    }
+                  />
+                ) : null}
+                {canModify ? (
+                  <QuickAction
+                    icon={{ ios: 'slider.horizontal.3', android: 'tune', web: 'tune' }}
+                    label="Modify"
+                    onPress={openModify}
+                  />
+                ) : null}
+                {booking.guest_id ? (
+                  <QuickAction
+                    icon={{ ios: 'arrow.clockwise', android: 'autorenew', web: 'autorenew' }}
+                    label="Rebook"
+                    onPress={() =>
+                      router.push({
+                        pathname: '/booking/new',
+                        params: { guestId: booking.guest_id },
+                      })
+                    }
+                  />
+                ) : null}
+              </ScrollView>
             </View>
           ) : null}
         </View>
-        {revertAction || destructiveActions.length > 0 ? (
-          <>
-            <View style={[styles.toolbarDivider, { backgroundColor: colors.border }]} />
+      </Card>
+
+      {/* Status & attendance — primary transition (inline contexts only), then
+          arrived/confirm toggles, then a divided revert/destructive row. */}
+      {showActionsCard ? (
+        <Card>
+          {showInlinePrimary && primaryAction ? (
+            <Button
+              label={primaryAction.label}
+              variant="primary"
+              customColors={primaryActionColors(primaryAction.target)}
+              size="md"
+              fullWidth
+              loading={actionLoading}
+              onPress={() => handleActionPress(primaryAction.target, primaryAction.label)}
+              style={styles.primaryAction}
+            />
+          ) : null}
+          {showArrivedToggle || showAttendanceConfirmToggle ? (
             <View style={styles.toolbarGrid}>
-              {revertAction ? (
+              {showArrivedToggle ? (
                 <View style={styles.toolbarCell}>
                   <Button
-                    label={
-                      pendingConfirm === revertAction.target ? 'Tap to confirm' : revertAction.label
-                    }
-                    variant="ghost"
+                    label={arrived ? 'Clear arrived' : 'Arrived'}
+                    variant="secondary"
+                    customColors={arrived ? undefined : ACTION_COLORS.arrived}
                     size="sm"
                     fullWidth
-                    loading={actionLoading}
-                    onPress={() => handleActionPress(revertAction.target, revertAction.label, true)}
+                    loading={attendance.isPending}
+                    onPress={() => toggleAttendance('client_arrived', !arrived)}
                   />
                 </View>
               ) : null}
-              {destructiveActions.map((action) => (
-                <View key={`${action.target}-${action.label}`} style={styles.toolbarCell}>
+              {showAttendanceConfirmToggle ? (
+                <View style={styles.toolbarCell}>
                   <Button
-                    label={pendingConfirm === action.target ? 'Tap to confirm' : action.label}
-                    variant="danger"
+                    label={staffConfirmed ? 'Unconfirm' : 'Confirm'}
+                    variant="secondary"
+                    customColors={staffConfirmed ? undefined : ACTION_COLORS.confirm}
                     size="sm"
                     fullWidth
-                    loading={actionLoading}
-                    onPress={() => handleActionPress(action.target, action.label, action.destructive)}
+                    loading={attendance.isPending}
+                    onPress={() => toggleAttendance('staff_attendance_confirmed', !staffConfirmed)}
                   />
                 </View>
-              ))}
+              ) : null}
             </View>
-          </>
-        ) : null}
-      </Card>
-
-      {/* Details — secondary facts (the headline when/service/duration live in the hero) */}
-      <Card>
-        <Text variant="overline" tone="muted">
-          Details
-        </Text>
-        <View style={[styles.details, { borderTopColor: colors.border }]}>
-          <DetailRow label="Party" value={partyLabel} />
-          {modelLabel ? <DetailRow label="Type" value={modelLabel} /> : null}
-          {locationLabel(booking) ? (
-            <DetailRow label="Location" value={locationLabel(booking)!} />
           ) : null}
+          {revertAction || destructiveActions.length > 0 ? (
+            <>
+              {showInlinePrimary || showArrivedToggle || showAttendanceConfirmToggle ? (
+                <View style={[styles.toolbarDivider, { backgroundColor: colors.border }]} />
+              ) : null}
+              <View style={styles.toolbarGrid}>
+                {revertAction ? (
+                  <View style={styles.toolbarCell}>
+                    <Button
+                      label={
+                        pendingConfirm === revertAction.target ? 'Tap to confirm' : revertAction.label
+                      }
+                      variant="ghost"
+                      size="sm"
+                      fullWidth
+                      loading={actionLoading}
+                      onPress={() => handleActionPress(revertAction.target, revertAction.label, true)}
+                    />
+                  </View>
+                ) : null}
+                {destructiveActions.map((action) => (
+                  <View key={`${action.target}-${action.label}`} style={styles.toolbarCell}>
+                    <Button
+                      label={pendingConfirm === action.target ? 'Tap to confirm' : action.label}
+                      variant="danger"
+                      size="sm"
+                      fullWidth
+                      loading={actionLoading}
+                      onPress={() => handleActionPress(action.target, action.label, action.destructive)}
+                    />
+                  </View>
+                ))}
+              </View>
+            </>
+          ) : null}
+        </Card>
+      ) : null}
+
+      {/* Multi-service visit / group booking (web parity, read-only) */}
+      {booking.group_booking_id ? (
+        <GroupVisitCards
+          groupBookingId={booking.group_booking_id}
+          currentBookingId={booking.id}
+          bookingDate={booking.booking_date}
+          personLabel={booking.person_label}
+        />
+      ) : null}
+
+      {/* Details — secondary facts, collapsed by default (compact-first) */}
+      <CollapsibleCard
+        title="Details"
+        summary={[partyLabel, booking.deposit_status ?? (depositLabel ? 'Deposit' : null)]
+          .filter(Boolean)
+          .join(' · ')}>
+        <View style={styles.details}>
+          <DetailRow label="Party" value={partyLabel} />
+          {serviceName ? <DetailRow label="Service" value={serviceName} /> : null}
+          {practitionerName ? <DetailRow label="With" value={practitionerName} /> : null}
+          {modelLabel ? <DetailRow label="Type" value={modelLabel} /> : null}
+          {location ? <DetailRow label="Location" value={location} /> : null}
           {booking.area_name ? <DetailRow label="Area" value={booking.area_name} /> : null}
           {tableNames ? <DetailRow label="Table" value={tableNames} /> : null}
           {depositLabel || booking.deposit_status ? (
@@ -878,10 +1057,7 @@ export function BookingDetailContent({
           <DetailRow label="Visits" value={visitCount > 0 ? String(visitCount) : 'First visit'} />
           {booking.source ? <DetailRow label="Source" value={booking.source} /> : null}
           {booking.checked_in_at ? (
-            <DetailRow
-              label="Checked in"
-              value={formatTimelineEventTime(booking.checked_in_at)}
-            />
+            <DetailRow label="Checked in" value={formatTimelineEventTime(booking.checked_in_at)} />
           ) : null}
           {booking.created_at ? (
             <DetailRow
@@ -906,7 +1082,7 @@ export function BookingDetailContent({
         </View>
 
         {addons.length > 0 ? (
-          <View style={[styles.details, { borderTopColor: colors.border }]}>
+          <View style={[styles.details, styles.detailsDivided, { borderTopColor: colors.border }]}>
             <Text variant="caption" tone="muted">
               Add-ons
             </Text>
@@ -929,7 +1105,7 @@ export function BookingDetailContent({
         ) : null}
 
         {totalPrice != null && totalPrice > 0 ? (
-          <View style={[styles.details, { borderTopColor: colors.border }]}>
+          <View style={[styles.details, styles.detailsDivided, { borderTopColor: colors.border }]}>
             <View style={styles.detailRow}>
               <Text variant="label">Total</Text>
               <Text variant="label" tone="brand">
@@ -938,31 +1114,10 @@ export function BookingDetailContent({
             </View>
           </View>
         ) : null}
-
-        {attendanceRelevant && (guestConfirmed || staffConfirmed || arrived) ? (
-          <View style={styles.attendancePills}>
-            {guestConfirmed ? <Badge label="Guest confirmed" tone="success" /> : null}
-            {staffConfirmed ? <Badge label="Staff confirmed" tone="success" /> : null}
-            {arrived ? <Badge label="Arrived" tone="accent" /> : null}
-          </View>
-        ) : null}
-      </Card>
-
-      {/* Multi-service visit / group booking (web parity, read-only) */}
-      {booking.group_booking_id ? (
-        <GroupVisitCards
-          groupBookingId={booking.group_booking_id}
-          currentBookingId={booking.id}
-          bookingDate={booking.booking_date}
-          personLabel={booking.person_label}
-        />
-      ) : null}
+      </CollapsibleCard>
 
       {/* Notes — expanded when there's content, tucked away otherwise */}
-      <CollapsibleCard
-        title="Notes"
-        summary={hasNotes ? null : 'None'}
-        defaultExpanded={hasNotes}>
+      <CollapsibleCard title="Notes" summary={hasNotes ? null : 'None'} defaultExpanded={hasNotes}>
         <View style={styles.notesHeaderRow}>
           <Button label="Edit" variant="ghost" size="sm" onPress={openEdit} />
         </View>
@@ -978,11 +1133,6 @@ export function BookingDetailContent({
             No notes for this booking.
           </Text>
         )}
-        {isTable && booking.occasion?.trim() ? (
-          <View style={styles.occasionRow}>
-            <Badge label={`Occasion: ${booking.occasion}`} tone="accent" />
-          </View>
-        ) : null}
         {booking.guest ? (
           <GuestTagsEditor guestId={booking.guest.id} tags={booking.guest.tags ?? []} />
         ) : null}
@@ -1198,8 +1348,20 @@ const styles = StyleSheet.create({
   container: {
     gap: spacing.base,
   },
+  hero: {
+    overflow: 'hidden',
+    flexDirection: 'row',
+  },
+  heroAccent: {
+    width: 4,
+  },
+  heroInner: {
+    flex: 1,
+    padding: spacing.base,
+  },
   headerRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.md,
   },
   headerText: {
@@ -1207,21 +1369,65 @@ const styles = StyleSheet.create({
     minWidth: 0,
     gap: 2,
   },
-  nameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.sm,
-    marginBottom: 2,
-  },
-  guestName: {
-    flex: 1,
-  },
   heroBlock: {
-    marginTop: spacing.md,
-    paddingTop: spacing.md,
+    marginTop: spacing.base,
+    paddingTop: spacing.base,
     borderTopWidth: StyleSheet.hairlineWidth,
     gap: spacing.xs,
+  },
+  heroTime: {
+    marginTop: 2,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  metaChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    maxWidth: '100%',
+  },
+  heroBadges: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  contactLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  contactLineText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  quickActions: {
+    flexDirection: 'row',
+    gap: spacing.base,
+    paddingTop: spacing.md,
+    paddingRight: spacing.sm,
+  },
+  quickAction: {
+    alignItems: 'center',
+    gap: spacing.xs,
+    width: 64,
+  },
+  quickActionIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   primaryAction: {
     marginBottom: spacing.sm,
@@ -1231,10 +1437,12 @@ const styles = StyleSheet.create({
     marginVertical: spacing.sm,
   },
   details: {
-    marginTop: spacing.md,
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  detailsDivided: {
     paddingTop: spacing.md,
     borderTopWidth: StyleSheet.hairlineWidth,
-    gap: spacing.sm,
   },
   detailRow: {
     flexDirection: 'row',
@@ -1245,10 +1453,6 @@ const styles = StyleSheet.create({
   detailValue: {
     flexShrink: 1,
     textAlign: 'right',
-  },
-  headerPillRow: {
-    flexDirection: 'row',
-    marginTop: spacing.xs,
   },
   toolbarGrid: {
     flexDirection: 'row',
@@ -1303,12 +1507,6 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
-  attendancePills: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-    marginTop: spacing.md,
-  },
   historyBody: {
     marginTop: spacing.sm,
     gap: spacing.xs,
@@ -1324,17 +1522,6 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     gap: 1,
-  },
-  contactRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginTop: spacing.md,
-  },
-  contactBtn: {
-    flex: 1,
-  },
-  occasionRow: {
-    marginTop: spacing.sm,
   },
   tagsBlock: {
     marginTop: spacing.md,

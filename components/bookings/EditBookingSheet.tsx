@@ -109,91 +109,97 @@ export function EditBookingSheet({ target, onClose }: EditBookingSheetProps) {
   }
 
   return (
-    <Sheet visible={!!target} onClose={onClose} maxHeight="88%">
+    // `fill` mode gives the body a bounded height so the ScrollView below can be
+    // the scroll region. The Sheet lifts content above the keyboard, shrinking
+    // this body from the bottom — so the focused notes field scrolls into view
+    // instead of hiding behind the keyboard.
+    <Sheet visible={!!target} onClose={onClose} fill maxHeight="88%">
       {target && seededId === target.id ? (
         <View style={styles.body}>
-              <Text variant="overline" tone="muted">
-                Edit booking
-              </Text>
+          <Text variant="overline" tone="muted">
+            Edit booking
+          </Text>
 
-              <ScrollView
-                style={styles.scroll}
-                contentContainerStyle={styles.scrollBody}
-                keyboardShouldPersistTaps="handled">
-                <Text variant="label" tone="secondary">
-                  Guest
-                </Text>
-                <View style={styles.nameRow}>
-                  <View style={styles.nameField}>
-                    <Input label="First name" value={firstName} onChangeText={setFirstName} />
-                  </View>
-                  <View style={styles.nameField}>
-                    <Input label="Last name" value={lastName} onChangeText={setLastName} />
-                  </View>
-                </View>
-                <Input
-                  label="Phone"
-                  value={phone}
-                  onChangeText={setPhone}
-                  keyboardType="phone-pad"
-                  autoCapitalize="none"
-                />
-                <Input
-                  label="Email"
-                  value={email}
-                  onChangeText={setEmail}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
-
-                <Text variant="label" tone="secondary" style={styles.sectionGap}>
-                  Notes
-                </Text>
-                <Input
-                  label="Special requests"
-                  value={specialRequests}
-                  onChangeText={setSpecialRequests}
-                  multiline
-                  style={styles.multiline}
-                />
-                {target.isTableReservation ? (
-                  <>
-                    <Input
-                      label="Dietary notes"
-                      value={dietaryNotes}
-                      onChangeText={setDietaryNotes}
-                      multiline
-                      style={styles.multiline}
-                    />
-                    <Input label="Occasion" value={occasion} onChangeText={setOccasion} />
-                  </>
-                ) : null}
-                <Input
-                  label="Internal notes (staff only)"
-                  value={internalNotes}
-                  onChangeText={setInternalNotes}
-                  multiline
-                  style={styles.multiline}
-                />
-
-                {error ? (
-                  <Text variant="bodySmall" tone="danger">
-                    {error}
-                  </Text>
-                ) : null}
-              </ScrollView>
-
-              <View style={styles.actions}>
-                <Button label="Cancel" variant="secondary" onPress={onClose} style={styles.actionButton} />
-                <Button
-                  label="Save"
-                  onPress={() => void handleSave()}
-                  loading={mutation.isPending}
-                  disabled={!hasChanges}
-                  style={styles.actionButton}
-                />
+          <ScrollView
+            style={styles.scroll}
+            contentContainerStyle={styles.scrollBody}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
+            showsVerticalScrollIndicator={false}>
+            <Text variant="label" tone="secondary">
+              Guest
+            </Text>
+            <View style={styles.nameRow}>
+              <View style={styles.nameField}>
+                <Input label="First name" value={firstName} onChangeText={setFirstName} />
               </View>
+              <View style={styles.nameField}>
+                <Input label="Last name" value={lastName} onChangeText={setLastName} />
+              </View>
+            </View>
+            <Input
+              label="Phone"
+              value={phone}
+              onChangeText={setPhone}
+              keyboardType="phone-pad"
+              autoCapitalize="none"
+            />
+            <Input
+              label="Email"
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+
+            <Text variant="label" tone="secondary" style={styles.sectionGap}>
+              Notes
+            </Text>
+            <Input
+              label="Special requests"
+              value={specialRequests}
+              onChangeText={setSpecialRequests}
+              multiline
+              style={styles.multiline}
+            />
+            {target.isTableReservation ? (
+              <>
+                <Input
+                  label="Dietary notes"
+                  value={dietaryNotes}
+                  onChangeText={setDietaryNotes}
+                  multiline
+                  style={styles.multiline}
+                />
+                <Input label="Occasion" value={occasion} onChangeText={setOccasion} />
+              </>
+            ) : null}
+            <Input
+              label="Internal notes (staff only)"
+              value={internalNotes}
+              onChangeText={setInternalNotes}
+              multiline
+              style={styles.multiline}
+            />
+
+            {error ? (
+              <Text variant="bodySmall" tone="danger">
+                {error}
+              </Text>
+            ) : null}
+          </ScrollView>
+
+          <View style={styles.actions}>
+            <Button label="Cancel" variant="secondary" onPress={onClose} style={styles.actionButton} />
+            <Button
+              label="Save"
+              onPress={() => void handleSave()}
+              loading={mutation.isPending}
+              disabled={!hasChanges}
+              style={styles.actionButton}
+            />
+          </View>
         </View>
       ) : null}
     </Sheet>
@@ -202,14 +208,16 @@ export function EditBookingSheet({ target, onClose }: EditBookingSheetProps) {
 
 const styles = StyleSheet.create({
   body: {
+    flex: 1,
+    paddingHorizontal: spacing.lg,
     gap: spacing.md,
   },
   scroll: {
-    flexGrow: 0,
+    flex: 1,
   },
   scrollBody: {
     gap: spacing.md,
-    paddingBottom: spacing.sm,
+    paddingBottom: spacing.md,
   },
   nameRow: {
     flexDirection: 'row',

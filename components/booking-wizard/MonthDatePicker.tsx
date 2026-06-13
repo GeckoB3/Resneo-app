@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
+import { Segmented } from '@/components/ui/Segmented';
 import { Text } from '@/components/ui/Text';
 import { addMonthsToDateStr, formatMonthLabel } from '@/lib/dates/venue-dates';
 import { hapticSelect } from '@/lib/haptics';
@@ -47,6 +48,8 @@ type MonthDatePickerProps = {
   onContinue: () => void;
   /** Booking source — drives the walk-in "Start now" shortcut. */
   source?: 'phone' | 'walk-in';
+  /** When provided, renders a Phone / Walk-in toggle at the top of the page. */
+  onChangeSource?: (source: 'phone' | 'walk-in') => void;
   /** Venue IANA timezone, for computing "today" when starting a walk-in now. */
   timeZone?: string;
   /** Walk-in shortcut — jumps straight to today's slots at the current time. */
@@ -77,6 +80,7 @@ export function MonthDatePicker({
   isLoading = false,
   onContinue,
   source = 'phone',
+  onChangeSource,
   timeZone = 'Europe/London',
   onStartNow,
 }: MonthDatePickerProps) {
@@ -95,6 +99,17 @@ export function MonthDatePicker({
   return (
     <View style={styles.container}>
       <Text variant="heading">Choose a date</Text>
+
+      {onChangeSource ? (
+        <Segmented
+          options={[
+            { value: 'phone', label: 'Phone' },
+            { value: 'walk-in', label: 'Walk-in' },
+          ]}
+          value={source}
+          onChange={onChangeSource}
+        />
+      ) : null}
 
       {showStartNow ? (
         <Button

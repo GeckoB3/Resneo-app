@@ -1,14 +1,17 @@
+import { SymbolView } from 'expo-symbols';
 import { useMemo, useState } from 'react';
 import { FlatList, StyleSheet, View } from 'react-native';
 
+import { StaffDurationControl } from '@/components/booking-wizard/StaffDurationControl';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { LoadingState } from '@/components/ui/LoadingState';
+import { PressableScale } from '@/components/ui/PressableScale';
 import { SearchBar } from '@/components/ui/SearchBar';
 import { Text } from '@/components/ui/Text';
-import { hapticSelect } from '@/lib/haptics';
 import { spacing } from '@/theme/index';
+import { useTheme } from '@/theme/useTheme';
 import type {
   AppointmentCatalogResponse,
   AppointmentServiceOption,
@@ -20,13 +23,18 @@ type ServicePickerStepProps = {
   isError: boolean;
   errorMessage?: string;
   onRetry?: () => void;
-  onSelect: (option: AppointmentServiceOption) => void;
+  /** Selecting carries the per-service staff duration override (null = default). */
+  onSelect: (option: AppointmentServiceOption, durationOverride: number | null) => void;
   /**
    * Pre-filter to one practitioner (e.g. tapped on the calendar). When set, the
    * dedupe collapses to that practitioner's own offering so the next step targets
    * them directly without a practitioner-choice step.
    */
   defaultPractitionerId?: string | null;
+  /** Currently selected service id — seeds the duration pill on back-navigation. */
+  selectedServiceId?: string | null;
+  /** Existing override for the selected service — seeds the pill on back-navigation. */
+  initialDurationOverride?: number | null;
 };
 
 /** One UNIQUE service per row, carrying its cheapest price across practitioners. */
@@ -126,7 +134,10 @@ export function ServicePickerStep({
   onRetry,
   onSelect,
   defaultPractitionerId,
+  selectedServiceId,
+  initialDurationOverride,
 }: ServicePickerStepProps) {
+  const { colors } = useTheme();
   const practitioners = catalog?.practitioners ?? [];
   const effectivePractitioner =
     defaultPractitionerId && practitioners.some((p) => p.id === defaultPractitionerId)
@@ -137,6 +148,22 @@ export function ServicePickerStep({
     () => dedupeCatalogServices(catalog, effectivePractitioner),
     [catalog, effectivePractitioner],
   );
+
+  // Per-service staff duration overrides (minutes). Seeded from the active
+  // selection so going BACK to this step keeps a custom duration visible.
+  const [overrides, setOverrides] = useState<Record<string, number>>(() =>
+    selectedServiceId && initialDurationOverride != null
+      ? { [selectedServiceId]: initialDurationOverride }
+      : {},
+  );
+
+  const setOverride = (serviceId: string, minutes: number | null) =>
+    setOverrides((prev) => {
+      const next = { ...prev };
+      if (minutes == null) delete next[serviceId];
+      else next[serviceId] = minutes;
+      return next;
+    });
 
   const [search, setSearch] = useState('');
   const filteredRows = useMemo(() => {
@@ -186,33 +213,53 @@ export function ServicePickerStep({
           </Text>
         }
         renderItem={({ item }) => {
+          const option = item.option;
+          const hasVariants = (option.variants ?? []).length > 0;
+          const natural = option.durationMinutes;
+          const override = overrides[option.serviceId] ?? null;
+          const displayedDuration = override ?? natural;
           const price = formatFromPrice(item);
+          // Variant services choose their duration on the variant step (web parity).
+          const meta = hasVariants
+            ? `From ${natural} min · ${practitionerSummary(item)}`
+            : practitionerSummary(item);
           return (
-            <Card
-              padded
-              onPress={() => {
-                hapticSelect();
-                onSelect(item.option);
-              }}>
-              <View
-                style={styles.row}
-                accessibilityRole="button"
-                accessibilityLabel={`${item.option.serviceName}, ${item.option.durationMinutes} minutes${
-                  price ? `, ${price}` : ''
-                }`}>
-                <View style={styles.rowText}>
+            <Card padded={false}>
+              <View style={styles.row}>
+                <PressableScale
+                  haptic
+                  onPress={() => onSelect(option, hasVariants ? null : override)}
+                  accessibilityLabel={`${option.serviceName}, ${
+                    hasVariants ? `from ${natural}` : displayedDuration
+                  } minutes${price ? `, ${price}` : ''}`}
+                  style={styles.selectArea}>
                   <Text variant="bodyMedium" numberOfLines={1}>
-                    {item.option.serviceName}
+                    {option.serviceName}
                   </Text>
-                  <Text variant="caption" tone="muted">
-                    {item.option.durationMinutes} min · {practitionerSummary(item)}
+                  <Text variant="caption" tone="muted" numberOfLines={1}>
+                    {meta}
                   </Text>
+                </PressableScale>
+                <View style={styles.rowRight}>
+                  {price ? (
+                    <Text variant="label" tone="brand">
+                      {price}
+                    </Text>
+                  ) : null}
+                  {hasVariants ? (
+                    <SymbolView
+                      name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }}
+                      tintColor={colors.textMuted}
+                      size={16}
+                    />
+                  ) : (
+                    <StaffDurationControl
+                      naturalDuration={natural}
+                      override={override}
+                      onChange={(minutes) => setOverride(option.serviceId, minutes)}
+                    />
+                  )}
                 </View>
-                {price ? (
-                  <Text variant="label" tone="brand">
-                    {price}
-                  </Text>
-                ) : null}
               </View>
             </Card>
           );
@@ -243,12 +290,19 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.md,
+    gap: spacing.sm,
+    paddingLeft: spacing.base,
+    paddingRight: spacing.md,
+    paddingVertical: spacing.sm,
   },
-  rowText: {
+  selectArea: {
     flex: 1,
     minWidth: 0,
     gap: 2,
+    paddingVertical: spacing.sm,
+  },
+  rowRight: {
+    alignItems: 'flex-end',
+    gap: spacing.sm,
   },
 });

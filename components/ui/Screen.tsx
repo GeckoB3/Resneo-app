@@ -1,4 +1,11 @@
-import { ScrollView, StyleSheet, View, type ScrollViewProps } from 'react-native';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  View,
+  type ScrollViewProps,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { spacing } from '@/theme/index';
@@ -7,6 +14,11 @@ import { useTheme } from '@/theme/useTheme';
 type ScreenProps = ScrollViewProps & {
   scroll?: boolean;
   padded?: boolean;
+  /**
+   * Wrap content in a KeyboardAvoidingView so inputs and the primary action stay
+   * above the on-screen keyboard. Opt-in (forms) — most screens don't need it.
+   */
+  keyboardAvoiding?: boolean;
 };
 
 /**
@@ -16,6 +28,7 @@ type ScreenProps = ScrollViewProps & {
 export function Screen({
   scroll = false,
   padded = true,
+  keyboardAvoiding = false,
   style,
   contentContainerStyle,
   children,
@@ -23,26 +36,45 @@ export function Screen({
 }: ScreenProps) {
   const { colors } = useTheme();
   const paddingStyle = padded ? styles.padded : undefined;
+  // Let Android's native windowSoftInputMode (adjustResize) handle the inset;
+  // iOS needs an explicit padding behaviour.
+  const kavBehavior = Platform.OS === 'ios' ? 'padding' : undefined;
 
   if (scroll) {
+    const scrollView = (
+      <ScrollView
+        contentContainerStyle={[paddingStyle, contentContainerStyle]}
+        keyboardShouldPersistTaps="handled"
+        style={[styles.flex, style]}
+        {...props}>
+        {children}
+      </ScrollView>
+    );
     return (
       <SafeAreaView style={[styles.flex, { backgroundColor: colors.background }]} edges={['top']}>
-        <ScrollView
-          contentContainerStyle={[paddingStyle, contentContainerStyle]}
-          keyboardShouldPersistTaps="handled"
-          style={[styles.flex, style]}
-          {...props}>
-          {children}
-        </ScrollView>
+        {keyboardAvoiding ? (
+          <KeyboardAvoidingView style={styles.flex} behavior={kavBehavior}>
+            {scrollView}
+          </KeyboardAvoidingView>
+        ) : (
+          scrollView
+        )}
       </SafeAreaView>
     );
   }
 
+  const inner = <View style={styles.flex}>{children}</View>;
   return (
     <SafeAreaView
       style={[styles.flex, paddingStyle, { backgroundColor: colors.background }, style]}
       edges={['top']}>
-      <View style={styles.flex}>{children}</View>
+      {keyboardAvoiding ? (
+        <KeyboardAvoidingView style={styles.flex} behavior={kavBehavior}>
+          {inner}
+        </KeyboardAvoidingView>
+      ) : (
+        inner
+      )}
     </SafeAreaView>
   );
 }

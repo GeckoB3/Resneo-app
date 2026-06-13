@@ -15,6 +15,7 @@ import {
   type ListRenderItem,
 } from 'react-native';
 import Animated, { FadeInDown, LinearTransition } from 'react-native-reanimated';
+import { SymbolView } from 'expo-symbols';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
@@ -461,7 +462,7 @@ export default function ClientsScreen() {
       );
 
       return (
-        <Animated.View entering={FadeInDown.springify().damping(20)} layout={LinearTransition.springify()}>
+        <Animated.View entering={FadeInDown.duration(180)} layout={LinearTransition.springify()}>
           {/* Swipe quick-actions are iOS-feel only; disabled in selection mode. */}
           {!selectionMode && swipeActions.length > 0 ? (
             <SwipeRow rightActions={swipeActions}>{row}</SwipeRow>
@@ -829,6 +830,13 @@ export default function ClientsScreen() {
             }
             ListEmptyComponent={
               <EmptyState
+                icon={
+                  <SymbolView
+                    name={{ ios: 'person.2.fill', android: 'group', web: 'group' }}
+                    tintColor={colors.textMuted}
+                    size={44}
+                  />
+                }
                 title={`No ${screenTitle.toLowerCase()} found`}
                 message={
                   debouncedSearch.length >= MIN_SEARCH_LENGTH

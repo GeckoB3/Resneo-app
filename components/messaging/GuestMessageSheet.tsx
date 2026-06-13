@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Alert, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -8,6 +8,7 @@ import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
+import { useToast } from '@/providers/ToastProvider';
 import { spacing } from '@/theme/index';
 
 export type MessageChannel = 'email' | 'sms' | 'both';
@@ -44,6 +45,7 @@ export function GuestMessageSheet({ target, onSend, sending = false, onClose }: 
   const [message, setMessage] = useState('');
   const [channel, setChannel] = useState<MessageChannel>('both');
   const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
 
   const options = channelOptions(target?.email, target?.phone);
 
@@ -67,8 +69,11 @@ export function GuestMessageSheet({ target, onSend, sending = false, onClose }: 
       const result = await onSend({ message: message.trim(), channel });
       hapticSuccess();
       onClose();
+      // Alert.alert is a no-op on web; surface partial failures via the toast host.
       if (result.errors?.length) {
-        Alert.alert('Message sent (with warnings)', result.errors.join('\n'));
+        toast.info(`Message sent, with warnings: ${result.errors.join('; ')}`);
+      } else {
+        toast.success('Message sent.');
       }
     } catch (e) {
       hapticWarning();

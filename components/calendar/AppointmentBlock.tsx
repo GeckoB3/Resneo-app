@@ -18,7 +18,7 @@ import { fonts, radius } from '@/theme/index';
 // ---------------------------------------------------------------------------
 
 type Density = {
-  /** Rows of text to show: 1 = name, 2 = +time, 3 = +service, 4 = +status. */
+  /** Rows of text to show: 1 = name·time, 2 = +service, 3 = +time, 4 = +status. */
   rows: 1 | 2 | 3 | 4;
   /** How many quick-action buttons fit (0–2). */
   trayActions: 0 | 1 | 2;
@@ -234,31 +234,27 @@ export function AppointmentBlock({
             <Text numberOfLines={1} style={[styles.rowName, { color: palette.text }]}>
               {guestName}
             </Text>
-            {density.rows === 2 ? (
+            {/* Service name is prioritised over the time text: the bar's
+                position + height already encode when/how-long, so the service
+                is the more useful second line on a compact (2-row) block. */}
+            <Text numberOfLines={1} style={[styles.rowMeta, { color: subtleText }]}>
+              {serviceName || timeLabel}
+            </Text>
+            {density.rows >= 3 && serviceName ? (
               <Text numberOfLines={1} style={[styles.rowMeta, { color: subtleText }]}>
                 {timeLabel}
               </Text>
-            ) : (
-              <>
-                <Text numberOfLines={1} style={[styles.rowMeta, { color: subtleText }]}>
-                  {serviceName}
-                </Text>
-                <Text numberOfLines={1} style={[styles.rowMeta, { color: subtleText }]}>
-                  {timeLabel}
-                </Text>
-                {density.rows >= 4 ? (
-                  <View style={styles.statusChipRow}>
-                    <View
-                      style={[styles.statusChip, { backgroundColor: hexToRgba('#FFFFFF', 0.9) }]}>
-                      <View style={[styles.statusChipDot, { backgroundColor: palette.accent }]} />
-                      <Text numberOfLines={1} style={[styles.statusChipLabel, { color: palette.accent }]}>
-                        {statusLabel}
-                      </Text>
-                    </View>
-                  </View>
-                ) : null}
-              </>
-            )}
+            ) : null}
+            {density.rows >= 4 ? (
+              <View style={styles.statusChipRow}>
+                <View style={[styles.statusChip, { backgroundColor: hexToRgba('#FFFFFF', 0.9) }]}>
+                  <View style={[styles.statusChipDot, { backgroundColor: palette.accent }]} />
+                  <Text numberOfLines={1} style={[styles.statusChipLabel, { color: palette.accent }]}>
+                    {statusLabel}
+                  </Text>
+                </View>
+              </View>
+            ) : null}
           </>
         )}
       </View>
@@ -315,13 +311,13 @@ export function AppointmentBlock({
 const styles = StyleSheet.create({
   block: {
     flex: 1,
-    borderRadius: radius.sm,
+    borderRadius: radius.md,
     borderWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
     flexDirection: 'row',
   },
   accentStripe: {
-    width: 3,
+    width: 5,
   },
   complianceDot: {
     position: 'absolute',

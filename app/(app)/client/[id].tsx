@@ -27,7 +27,9 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
+import { QuickAction } from '@/components/ui/QuickAction';
 import { Screen } from '@/components/ui/Screen';
+import { SectionHeader } from '@/components/ui/SectionHeader';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
@@ -38,7 +40,7 @@ import { useGuestTimeline, useSendGuestMessage, useUpdateGuest } from '@/lib/que
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
-import { minTouchTarget, radius, spacing } from '@/theme/index';
+import { minTouchTarget, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type {
   GuestBookingHistoryRow,
@@ -69,14 +71,19 @@ function formatGuestName(guest: GuestDetailProfile): string {
 
 const formatCurrencyPence = (pence: number): string => formatPence(pence) ?? '—';
 
-function StatTile({ label, value }: { label: string; value: string }) {
+/** One column in the stats card — value over a muted caption label. */
+function StatColumn({ label, value, divider }: { label: string; value: string; divider: boolean }) {
   const { colors } = useTheme();
   return (
-    <View style={[styles.statTile, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-      <Text variant="overline" tone="muted">
+    <View
+      style={[
+        styles.statCol,
+        divider ? { borderLeftWidth: StyleSheet.hairlineWidth, borderLeftColor: colors.border } : null,
+      ]}>
+      <Text variant="heading">{value}</Text>
+      <Text variant="caption" tone="muted" numberOfLines={1}>
         {label}
       </Text>
-      <Text variant="title">{value}</Text>
     </View>
   );
 }
@@ -133,9 +140,9 @@ function statTiles(stats: GuestDetailStats): { label: string; value: string }[] 
   return [
     { label: 'Bookings', value: String(stats.total_bookings) },
     { label: 'No-shows', value: String(stats.no_shows) },
-    { label: 'Cancellations', value: String(stats.cancellations) },
+    { label: 'Cancelled', value: String(stats.cancellations) },
     {
-      label: 'Deposits paid',
+      label: 'Deposits',
       value: stats.total_deposit_pence_paid > 0 ? formatCurrencyPence(stats.total_deposit_pence_paid) : '—',
     },
   ];
@@ -290,42 +297,61 @@ export default function ClientDetailScreen() {
             tintColor={colors.brand}
           />
         }>
-        {/* Header */}
-        <View style={styles.header}>
-          <Avatar name={name} size={56} />
-          <View style={styles.headerText}>
-            <View style={styles.headerNameRow}>
-              <Text variant="title" numberOfLines={1} style={styles.headerName}>
-                {name}
+        {/* Profile hero — identity, tags, and quick contact actions */}
+        <Card>
+          <View style={styles.profile}>
+            <Avatar name={name} size={72} />
+            <Text variant="title" numberOfLines={1} style={styles.profileName}>
+              {name}
+            </Text>
+            {phone || email ? (
+              <Text variant="bodySmall" tone="muted" numberOfLines={1} style={styles.profileContact}>
+                {[phone, email].filter(Boolean).join('  ·  ')}
               </Text>
-              {guest.no_show_count > 0 ? (
-                <Badge label={`${guest.no_show_count} no-show${guest.no_show_count === 1 ? '' : 's'}`} tone="warning" />
+            ) : null}
+            {guest.tags.length > 0 || guest.no_show_count > 0 ? (
+              <View style={styles.tagRow}>
+                {guest.no_show_count > 0 ? (
+                  <Badge
+                    label={`${guest.no_show_count} no-show${guest.no_show_count === 1 ? '' : 's'}`}
+                    tone="warning"
+                  />
+                ) : null}
+                {guest.tags.map((tag) => (
+                  <Badge key={tag} label={tag} tone="brand" />
+                ))}
+              </View>
+            ) : null}
+            <View style={styles.quickRow}>
+              {canCall ? (
+                <QuickAction
+                  icon={{ ios: 'phone.fill', android: 'call', web: 'call' }}
+                  label="Call"
+                  onPress={handleCall}
+                />
               ) : null}
+              {canMessage ? (
+                <QuickAction
+                  icon={{ ios: 'message.fill', android: 'chat', web: 'chat' }}
+                  label="Message"
+                  onPress={openMessage}
+                />
+              ) : null}
+              {canEmail ? (
+                <QuickAction
+                  icon={{ ios: 'envelope.fill', android: 'mail', web: 'mail' }}
+                  label="Email"
+                  onPress={handleEmail}
+                />
+              ) : null}
+              <QuickAction
+                icon={{ ios: 'pencil', android: 'edit', web: 'edit' }}
+                label="Edit"
+                onPress={openEdit}
+              />
             </View>
-            {phone ? (
-              <Pressable
-                accessibilityRole="link"
-                accessibilityLabel={`Call ${phone}`}
-                onPress={handleCall}
-                hitSlop={6}>
-                <Text variant="bodySmall" tone="brand">
-                  {phone}
-                </Text>
-              </Pressable>
-            ) : null}
-            {email ? (
-              <Pressable
-                accessibilityRole="link"
-                accessibilityLabel={`Email ${email}`}
-                onPress={handleEmail}
-                hitSlop={6}>
-                <Text variant="bodySmall" tone="brand" numberOfLines={1}>
-                  {email}
-                </Text>
-              </Pressable>
-            ) : null}
           </View>
-        </View>
+        </Card>
 
         {/* Address — shown only when captured (client-address services). */}
         {addressLines.length > 0 ? (
@@ -339,53 +365,14 @@ export default function ClientDetailScreen() {
           </Card>
         ) : null}
 
-        {/* Action row */}
-        <View style={styles.actionRow}>
-          <Button label="Edit" variant="secondary" size="sm" style={styles.flex1} onPress={openEdit} />
-          {canCall ? (
-            <Button
-              label="Call"
-              variant="secondary"
-              size="sm"
-              style={styles.flex1}
-              onPress={handleCall}
-            />
-          ) : null}
-          {canEmail ? (
-            <Button
-              label="Email"
-              variant="secondary"
-              size="sm"
-              style={styles.flex1}
-              onPress={handleEmail}
-            />
-          ) : null}
-          {canMessage ? (
-            <Button
-              label="Message"
-              variant="secondary"
-              size="sm"
-              style={styles.flex1}
-              onPress={openMessage}
-            />
-          ) : null}
-        </View>
-
-        {/* Tags */}
-        {guest.tags.length > 0 ? (
-          <View style={styles.tagRow}>
-            {guest.tags.map((tag) => (
-              <Badge key={tag} label={tag} tone="brand" />
+        {/* Stats */}
+        <Card padded={false}>
+          <View style={styles.statsCard}>
+            {tiles.map((t, i) => (
+              <StatColumn key={t.label} label={t.label} value={t.value} divider={i > 0} />
             ))}
           </View>
-        ) : null}
-
-        {/* Stats */}
-        <View style={styles.statsRow}>
-          {tiles.map((t) => (
-            <StatTile key={t.label} label={t.label} value={t.value} />
-          ))}
-        </View>
+        </Card>
 
         {/* Notes */}
         <Card>
@@ -405,9 +392,7 @@ export default function ClientDetailScreen() {
         <Button label="New booking for this client" fullWidth onPress={handleNewBookingForClient} />
 
         {/* Booking history */}
-        <Text variant="heading" style={styles.sectionTitle}>
-          Booking history
-        </Text>
+        <SectionHeader title="Booking history" />
         {booking_history.length === 0 ? (
           <EmptyState
             title="No bookings yet"
@@ -431,9 +416,7 @@ export default function ClientDetailScreen() {
         )}
 
         {/* Marketing preferences (inline toggles with instant save) */}
-        <Text variant="heading" style={styles.sectionTitle}>
-          Record &amp; preferences
-        </Text>
+        <SectionHeader title="Record & preferences" />
         <MarketingPreferencesCard
           marketingConsent={guest.marketing_consent}
           marketingOptOut={guest.marketing_opt_out}
@@ -470,9 +453,7 @@ export default function ClientDetailScreen() {
         {/* Activity timeline */}
         {timelineEvents.length > 0 ? (
           <>
-            <Text variant="heading" style={styles.sectionTitle}>
-              Activity
-            </Text>
+            <SectionHeader title="Activity" />
             <Card>
               {timelineEvents.map((event) => (
                 <View key={event.id} style={styles.timelineRow}>
@@ -491,9 +472,7 @@ export default function ClientDetailScreen() {
         {/* Admin section — merge + GDPR (admin only) */}
         {isAdmin ? (
           <>
-            <Text variant="heading" style={styles.sectionTitle}>
-              Admin
-            </Text>
+            <SectionHeader title="Admin" />
             <Button
               label="Merge duplicate"
               variant="secondary"
@@ -556,59 +535,46 @@ const styles = StyleSheet.create({
     paddingBottom: spacing['3xl'],
     gap: spacing.base,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.base,
-  },
-  headerText: {
-    flex: 1,
-    minWidth: 0,
-    gap: 2,
-  },
-  headerNameRow: {
-    flexDirection: 'row',
+  profile: {
     alignItems: 'center',
     gap: spacing.sm,
-    flexWrap: 'wrap',
   },
-  headerName: {
-    flexShrink: 1,
+  profileName: {
+    textAlign: 'center',
+    maxWidth: '100%',
   },
-  actionRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  flex1: {
-    flex: 1,
+  profileContact: {
+    textAlign: 'center',
+    maxWidth: '100%',
   },
   tagRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    justifyContent: 'center',
     gap: spacing.sm,
+  },
+  quickRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: spacing.base,
+    marginTop: spacing.xs,
+  },
+  statsCard: {
+    flexDirection: 'row',
+  },
+  statCol: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: spacing.base,
+    gap: spacing.xs,
   },
   timelineRow: {
     paddingVertical: spacing.sm,
     gap: 2,
   },
-  statsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-  },
-  statTile: {
-    flexGrow: 1,
-    flexBasis: '47%',
-    padding: spacing.base,
-    borderRadius: radius.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    gap: spacing.xs,
-  },
   notesText: {
     marginTop: spacing.xs,
-  },
-  sectionTitle: {
-    marginTop: spacing.sm,
   },
   historyRow: {
     flexDirection: 'row',

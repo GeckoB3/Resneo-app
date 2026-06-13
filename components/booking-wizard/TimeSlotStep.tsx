@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
-import { Chip } from '@/components/ui/Chip';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Input } from '@/components/ui/Input';
@@ -21,8 +20,6 @@ import { useTheme } from '@/theme/useTheme';
 import type { AppointmentSlot } from '@/types/appointment-availability';
 import { ANY_AVAILABLE_PRACTITIONER_ID } from '@/types/appointment-catalog';
 
-const DURATION_PRESETS = [30, 45, 60, 90, 120];
-
 type TimeSlotStepProps = {
   date: string;
   serviceId: string;
@@ -35,11 +32,9 @@ type TimeSlotStepProps = {
   ownerVenueId?: string | null;
   /** HH:mm from a calendar empty-slot tap — auto-selects the matching slot once. */
   preferredTime?: string | null;
-  /** Base duration (service/variant) — labels the "Default" preset. */
-  baseDurationMinutes: number;
-  /** Staff override, or null for the service default. */
+  /** Staff duration override (minutes) chosen at the service/variant step, or
+   *  null for the service default. Scopes the availability query. */
   durationMinutes: number | null;
-  onChangeDuration: (minutes: number | null) => void;
   /** Venue id — needed for the waitlist-join fallback. */
   venueId: string;
   selectedSlot: AppointmentSlot | null;
@@ -49,9 +44,13 @@ type TimeSlotStepProps = {
   startNow?: boolean;
   /** Venue IANA timezone, for computing the current local time on "Start now". */
   timeZone?: string;
+  /** Minimum lead time (hours) — same-day slots earlier than now + this are hidden. */
+  minBookingNoticeHours?: number;
+  /** When false, today is not bookable: same-day slots are all hidden. */
+  allowSameDayBooking?: boolean;
 };
 
-function formatSlotTime(startTime: string): string {
+export function formatSlotTime(startTime: string): string {
   const [hours, minutes] = startTime.slice(0, 5).split(':');
   const hour = Number(hours);
   const suffix = hour >= 12 ? 'pm' : 'am';
@@ -69,7 +68,7 @@ function slotStartKey(startTime: string): string {
  * same time under several practitioners, so collapse to the first practitioner
  * per start time (the create still targets the kept slot's real practitioner).
  */
-function dedupeSlotsByStartTime(slots: AppointmentSlot[]): AppointmentSlot[] {
+export function dedupeSlotsByStartTime(slots: AppointmentSlot[]): AppointmentSlot[] {
   const seen = new Set<string>();
   const out: AppointmentSlot[] = [];
   for (const slot of slots) {
@@ -81,10 +80,10 @@ function dedupeSlotsByStartTime(slots: AppointmentSlot[]): AppointmentSlot[] {
   return out;
 }
 
-type SlotPeriod = { title: string; slots: AppointmentSlot[] };
+export type SlotPeriod = { title: string; slots: AppointmentSlot[] };
 
 /** Split slots into Morning (<12) / Afternoon (12–16) / Evening (17+) sections. */
-function groupSlotsByPeriod(slots: AppointmentSlot[]): SlotPeriod[] {
+export function groupSlotsByPeriod(slots: AppointmentSlot[]): SlotPeriod[] {
   const morning: AppointmentSlot[] = [];
   const afternoon: AppointmentSlot[] = [];
   const evening: AppointmentSlot[] = [];
@@ -102,13 +101,29 @@ function groupSlotsByPeriod(slots: AppointmentSlot[]): SlotPeriod[] {
 }
 
 /** Current local time (HH:mm) in the venue timezone. */
-function venueLocalTime(timeZone: string): string {
+export function venueLocalTime(timeZone: string): string {
   return new Intl.DateTimeFormat('en-GB', {
     timeZone,
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
   }).format(new Date());
+}
+
+/** Today's calendar date (YYYY-MM-DD) in the venue timezone. */
+function venueTodayDate(timeZone: string): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+}
+
+/** Parse HH:mm[:ss] to minutes since midnight (0 on malformed input). */
+function startMinutes(startTime: string): number {
+  const [h, m] = startTime.slice(0, 5).split(':').map(Number);
+  return (h ?? 0) * 60 + (m ?? 0);
 }
 
 /** Step — available appointment slots for the chosen service/variant/add-ons and date. */
@@ -121,15 +136,15 @@ export function TimeSlotStep({
   addonIds,
   ownerVenueId,
   preferredTime,
-  baseDurationMinutes,
   durationMinutes,
-  onChangeDuration,
   venueId,
   selectedSlot,
   onSelectSlot,
   onContinue,
   startNow = false,
   timeZone = 'Europe/London',
+  minBookingNoticeHours = 1,
+  allowSameDayBooking = true,
 }: TimeSlotStepProps) {
   const { colors } = useTheme();
   const isAnyAvailable = practitionerId === ANY_AVAILABLE_PRACTITIONER_ID;
@@ -178,7 +193,20 @@ export function TimeSlotStep({
     [isAnyAvailable, pooledQuery.slots, singleSlots],
   );
 
-  const periods = useMemo(() => groupSlotsByPeriod(slots), [slots]);
+  // Same-day cutoff (web parity): the staff availability endpoint deliberately
+  // returns past slots (skipPastSlotFilter), so we hide today's slots that are
+  // in the past or inside the minimum-notice window here. Future dates show all.
+  const isToday = date === venueTodayDate(timeZone);
+  const nowMinutes = startMinutes(venueLocalTime(timeZone));
+  const noticeMinutes = Math.max(0, minBookingNoticeHours) * 60;
+  const visibleSlots = useMemo(() => {
+    if (!isToday) return slots;
+    if (!allowSameDayBooking) return [];
+    const cutoff = nowMinutes + noticeMinutes;
+    return slots.filter((slot) => startMinutes(slot.start_time) >= cutoff);
+  }, [slots, isToday, allowSameDayBooking, nowMinutes, noticeMinutes]);
+
+  const periods = useMemo(() => groupSlotsByPeriod(visibleSlots), [visibleSlots]);
 
   // One-shot: when arriving from a calendar empty-slot tap, pre-select the
   // matching slot once availability loads (no-op if that time isn't free).
@@ -187,12 +215,12 @@ export function TimeSlotStep({
     if (appliedPreferredTime.current || !preferredTime || selectedSlot) {
       return;
     }
-    const match = slots.find((slot) => slot.start_time.slice(0, 5) === preferredTime);
+    const match = visibleSlots.find((slot) => slot.start_time.slice(0, 5) === preferredTime);
     if (match) {
       appliedPreferredTime.current = true;
       onSelectSlot(match);
     }
-  }, [slots, preferredTime, selectedSlot, onSelectSlot]);
+  }, [visibleSlots, preferredTime, selectedSlot, onSelectSlot]);
 
   const isLoading = isAnyAvailable ? pooledQuery.isLoading : singleQuery.isLoading;
   const isFetching = isAnyAvailable ? pooledQuery.isFetching : singleQuery.isFetching;
@@ -234,27 +262,7 @@ export function TimeSlotStep({
         <Button label="Start now" variant="secondary" fullWidth onPress={handleStartNow} />
       ) : null}
 
-      {/* Staff duration override — presets refetch the slot grid. */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.durationRow}>
-        <Chip
-          label={`Default (${baseDurationMinutes}m)`}
-          selected={durationMinutes == null}
-          onPress={() => onChangeDuration(null)}
-        />
-        {DURATION_PRESETS.filter((preset) => preset !== baseDurationMinutes).map((preset) => (
-          <Chip
-            key={preset}
-            label={`${preset}m`}
-            selected={durationMinutes === preset}
-            onPress={() => onChangeDuration(preset)}
-          />
-        ))}
-      </ScrollView>
-
-      {slots.length === 0 ? (
+      {visibleSlots.length === 0 ? (
         <View style={styles.emptyWrap}>
           <EmptyState
             title="No times available"
@@ -331,7 +339,7 @@ export function TimeSlotStep({
 }
 
 /** Collects guest details and adds them to the appointment waitlist. */
-function WaitlistJoinSheet({
+export function WaitlistJoinSheet({
   open,
   onClose,
   venueId,
@@ -473,10 +481,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-  },
-  durationRow: {
-    gap: spacing.sm,
-    paddingRight: spacing.base,
   },
   emptyWrap: {
     flex: 1,

@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Alert, StyleSheet, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -9,6 +9,7 @@ import { ApiError } from '@/lib/api/client';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useCreateBlock, useDeleteBlock } from '@/lib/queries/useAvailabilityManage';
 import { useUpdateBlock } from '@/lib/queries/useUpdateBlock';
+import { useToast } from '@/providers/ToastProvider';
 import { spacing } from '@/theme/index';
 
 export type BlockTarget =
@@ -61,7 +62,10 @@ export function BlockEditSheet({ target, onClose }: BlockEditSheetProps) {
   const [endTime, setEndTime] = useState('');
   const [reason, setReason] = useState('');
   const [timeError, setTimeError] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const deleteConfirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const toast = useToast();
   const createMutation = useCreateBlock();
   const updateMutation = useUpdateBlock();
   const deleteMutation = useDeleteBlock();
@@ -80,7 +84,15 @@ export function BlockEditSheet({ target, onClose }: BlockEditSheetProps) {
       setReason(target.reason ?? '');
     }
     setTimeError(null);
+    setConfirmingDelete(false);
   }, [target]);
+
+  useEffect(
+    () => () => {
+      if (deleteConfirmTimer.current) clearTimeout(deleteConfirmTimer.current);
+    },
+    [],
+  );
 
   function validate(): boolean {
     const { hours: sh, minutes: sm } = parseTime(startTime);
@@ -119,35 +131,30 @@ export function BlockEditSheet({ target, onClose }: BlockEditSheetProps) {
       onClose();
     } catch (e) {
       hapticWarning();
-      Alert.alert(
-        'Could not save block',
-        e instanceof ApiError ? e.message : 'Please try again.',
-      );
+      toast.error(e instanceof ApiError ? e.message : 'Could not save the block. Please try again.');
     }
   }
 
-  function handleDelete() {
+  // Two-step confirm (arm → confirm within 4s) — Alert.alert is a no-op on web.
+  async function handleDelete() {
     if (!target || target.mode !== 'edit') return;
-    Alert.alert('Delete block', 'Remove this time block?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await deleteMutation.mutateAsync(target.blockId);
-            hapticSuccess();
-            onClose();
-          } catch (e) {
-            hapticWarning();
-            Alert.alert(
-              'Could not delete',
-              e instanceof ApiError ? e.message : 'Please try again.',
-            );
-          }
-        },
-      },
-    ]);
+    if (!confirmingDelete) {
+      setConfirmingDelete(true);
+      hapticWarning();
+      if (deleteConfirmTimer.current) clearTimeout(deleteConfirmTimer.current);
+      deleteConfirmTimer.current = setTimeout(() => setConfirmingDelete(false), 4000);
+      return;
+    }
+    if (deleteConfirmTimer.current) clearTimeout(deleteConfirmTimer.current);
+    setConfirmingDelete(false);
+    try {
+      await deleteMutation.mutateAsync(target.blockId);
+      hapticSuccess();
+      onClose();
+    } catch (e) {
+      hapticWarning();
+      toast.error(e instanceof ApiError ? e.message : 'Could not delete the block. Please try again.');
+    }
   }
 
   const isEdit = target?.mode === 'edit';
@@ -210,9 +217,9 @@ export function BlockEditSheet({ target, onClose }: BlockEditSheetProps) {
         <View style={styles.actions}>
           {isEdit ? (
             <Button
-              label="Delete"
+              label={confirmingDelete ? 'Tap to confirm' : 'Delete'}
               variant="danger"
-              onPress={handleDelete}
+              onPress={() => void handleDelete()}
               loading={deleteMutation.isPending}
               disabled={isPending}
               style={styles.actionBtn}
