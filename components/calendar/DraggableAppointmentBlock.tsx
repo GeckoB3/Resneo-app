@@ -50,10 +50,11 @@ const HOLD_MS = 500;
 const HOLD_TOLERANCE_PX = 10;
 /** Spring config for snapping back on cancel/error. */
 const SNAP_SPRING = { damping: 22, stiffness: 280 };
-/** Touch zone at the bottom edge that resizes instead of moves (px). */
+/** Max touch zone at the bottom edge that resizes instead of moves (px). */
 const RESIZE_ZONE_HEIGHT = 22;
-/** Minimum block height to offer the resize zone. */
-const RESIZE_MIN_BLOCK_HEIGHT = 48;
+/** Tiny safety floor — the grid's MIN_BLOCK_HEIGHT (36) means every real block
+ *  clears this, so the duration grip shows on all bookings. */
+const RESIZE_MIN_BLOCK_HEIGHT = 28;
 /** Duration bounds (minutes). */
 const MIN_DURATION_MINUTES = DRAG_SNAP_MINUTES;
 const MAX_DURATION_MINUTES = 14 * 60;
@@ -193,6 +194,10 @@ export function DraggableAppointmentBlock({
 
   const dragEnabled = onDragReschedule != null;
   const resizeEnabled = onDragResize != null && height >= RESIZE_MIN_BLOCK_HEIGHT;
+  // Keep a usable "move" zone on short blocks: the resize strip is at most 40%
+  // of the block height (capped at RESIZE_ZONE_HEIGHT), so even a 36px bar keeps
+  // room above to grab for moving and ~14px at the very bottom to resize.
+  const resizeZoneHeight = Math.min(RESIZE_ZONE_HEIGHT, Math.round(height * 0.4));
 
   // ---- Shared animated values (UI thread) ----
   const mode = useSharedValue<DragMode>(0);
@@ -325,7 +330,7 @@ export function DraggableAppointmentBlock({
       'worklet';
       const touch = e.allTouches[0];
       startedInResizeZone.value =
-        resizeEnabled && touch != null && touch.y >= height - RESIZE_ZONE_HEIGHT;
+        resizeEnabled && touch != null && touch.y >= height - resizeZoneHeight;
       // Arming feedback: fill the hold-progress bar across the hold window.
       // It only becomes visible ~90ms in, so taps and scroll-grabs never flash.
       holdProgress.value = 0;

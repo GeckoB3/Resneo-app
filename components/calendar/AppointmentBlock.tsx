@@ -24,14 +24,23 @@ type Density = {
   trayActions: 0 | 1 | 2;
 };
 
-/** Decide visible rows + tray size from block height and lane squeeze. */
+/**
+ * Decide visible text rows + action-tray size from the block's height and how
+ * many overlap lanes share its column.
+ *
+ * The action tray shows on EVERY block tall enough for one compact button row
+ * beneath the name (≈ the grid's MIN_BLOCK_HEIGHT) — it is not reserved for tall
+ * blocks. How many actions fit (1 vs 2) is governed by WIDTH (lane count), since
+ * the buttons sit side-by-side, not by height. Text rows grow with the space
+ * left above the tray, so a row never collides with the buttons.
+ */
 export function pickBlockDensity(height: number, laneCount: number): Density {
-  const squeezed = laneCount >= 3;
-  if (height < 36) return { rows: 1, trayActions: 0 };
-  if (height < 48) return { rows: 2, trayActions: 0 };
-  if (height < 68) return { rows: 2, trayActions: squeezed ? 0 : 1 };
-  if (height < 96) return { rows: 3, trayActions: squeezed ? 0 : laneCount === 2 ? 1 : 2 };
-  return { rows: 4, trayActions: squeezed ? 1 : 2 };
+  // Two compact actions fit a full- or half-width column; 3+ lanes are too
+  // narrow, so only the primary action shows.
+  const trayActions: Density['trayActions'] = height >= 32 ? (laneCount >= 3 ? 1 : 2) : 0;
+  // Rows that fit in the space left above the tray (height − paddings − tray).
+  const rows: Density['rows'] = height >= 80 ? 4 : height >= 64 ? 3 : height >= 50 ? 2 : 1;
+  return { rows, trayActions };
 }
 
 // ---------------------------------------------------------------------------
@@ -94,8 +103,8 @@ export function pickTrayActions(params: {
 // Component
 // ---------------------------------------------------------------------------
 
-/** Reserved vertical space (px) for the tray row when it is shown. */
-const TRAY_HEIGHT = 22;
+/** Reserved vertical space (px) below the text for the compact action tray. */
+const TRAY_HEIGHT = 18;
 
 type AppointmentBlockProps = {
   id: string;
@@ -164,7 +173,7 @@ export function AppointmentBlock({
   const trayActions = trayEnabled
     ? pickTrayActions({ status, clientArrivedAt, max: density.trayActions })
     : [];
-  const showTray = trayActions.length > 0 || (trayEnabled && actionPending && height >= 48);
+  const showTray = trayActions.length > 0 || (trayEnabled && actionPending && height >= 32);
 
   function handleTrayAction(action: TrayAction) {
     if (action.kind === 'status') {
@@ -328,7 +337,8 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     minWidth: 0,
-    paddingVertical: 3,
+    paddingTop: 2,
+    paddingBottom: 2,
     paddingHorizontal: 7,
     gap: 1,
   },
@@ -370,15 +380,15 @@ const styles = StyleSheet.create({
   },
   tray: {
     position: 'absolute',
-    bottom: 3,
+    bottom: 2,
     right: 4,
     flexDirection: 'row',
     gap: 4,
     alignItems: 'center',
   },
   trayBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingHorizontal: 7,
+    paddingVertical: 1,
     borderRadius: radius.sm,
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
@@ -387,6 +397,6 @@ const styles = StyleSheet.create({
   trayBtnLabel: {
     fontFamily: fonts.semibold,
     fontSize: 11,
-    lineHeight: 15,
+    lineHeight: 13,
   },
 });

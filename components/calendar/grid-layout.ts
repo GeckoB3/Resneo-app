@@ -11,11 +11,12 @@ export const SLOT_MINUTES = 30;
 export const TIME_GUTTER_WIDTH = 56;
 /**
  * Minimum visual height (px) for a block so very short appointments stay
- * tappable. Visual only — applied AFTER lane assignment so it never inflates a
- * block's extent into a false overlap (web parity: SLOT_HEIGHT * 0.6). Lane
- * packing runs on true minute ranges; this floor is purely cosmetic.
+ * tappable AND have room for the guest name plus a compact action row. Visual
+ * only — applied AFTER lane assignment so it never inflates a block's extent
+ * into a false overlap. Lane packing runs on true minute ranges; this floor is
+ * purely cosmetic.
  */
-export const MIN_BLOCK_HEIGHT = 30;
+export const MIN_BLOCK_HEIGHT = 36;
 /** Default opening when a day has no working hours. */
 export const DEFAULT_START_HOUR = 8;
 export const DEFAULT_END_HOUR = 20;
