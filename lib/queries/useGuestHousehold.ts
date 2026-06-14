@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
-import { queryKeys } from '@/lib/queries/keys';
+import { keyScope, queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 
 export interface HouseholdMember {
@@ -22,7 +22,7 @@ export interface GuestHouseholdResponse {
 }
 
 const householdKey = (accessToken: string | null, guestId: string | null | undefined) =>
-  [...queryKeys.guests.all(), 'household', accessToken ?? null, guestId ?? null] as const;
+  [...queryKeys.guests.all(), 'household', keyScope(accessToken), guestId ?? null] as const;
 
 /** GET /api/venue/guests/[guestId]/household — fetch household links for a contact. */
 export function useGuestHousehold(guestId: string | null | undefined) {

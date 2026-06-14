@@ -22,8 +22,12 @@ export function setQueryAuthScope(scope: string | null): void {
   authScope = scope;
 }
 
-/** The auth segment for a key: the stable user id when known, else the token. */
-function keyScope(accessToken?: string | null): string | null {
+/**
+ * The auth segment for a key: the stable user id when known, else the token.
+ * Exported so hooks that hand-assemble a sub-key (rather than using a factory
+ * builder) scope consistently and also benefit from W1.6's refresh-stable cache.
+ */
+export function keyScope(accessToken?: string | null): string | null {
   if (authScope !== null) return authScope;
   return accessToken ?? null;
 }

@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
-import { queryKeys } from '@/lib/queries/keys';
+import { keyScope, queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 
 import type { OpeningHours, VenueFeatureFlagsRaw } from '@/types/venue';
@@ -82,7 +82,7 @@ export interface FeatureFlagsResponse {
  *  the existing `queryKeys.venue.all()` invalidation (on PATCH) also refreshes it. */
 export const featureFlagsQueryKeys = {
   detail: (accessToken?: string | null) =>
-    [...queryKeys.venue.all(), 'featureFlags', accessToken ?? null] as const,
+    [...queryKeys.venue.all(), 'featureFlags', keyScope(accessToken)] as const,
 };
 
 /**

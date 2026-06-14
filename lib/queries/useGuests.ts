@@ -2,7 +2,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
-import { queryKeys } from '@/lib/queries/keys';
+import { keyScope, queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import type {
   ContactCustomFieldsResponse,
@@ -128,7 +128,7 @@ export function useGuestCustomFields() {
   const enabled = isBackendConfigured() && accessToken !== null;
 
   return useQuery({
-    queryKey: [...queryKeys.guests.all(), 'customFields', accessToken ?? null],
+    queryKey: [...queryKeys.guests.all(), 'customFields', keyScope(accessToken)],
     enabled,
     staleTime: 5 * 60_000,
     queryFn: async (): Promise<ContactCustomFieldsResponse> => {

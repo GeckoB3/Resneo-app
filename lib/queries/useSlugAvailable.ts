@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
-import { queryKeys } from '@/lib/queries/keys';
+import { keyScope, queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 
 interface SlugAvailableResponse {
@@ -20,7 +20,7 @@ export function useSlugAvailable(slug: string | null | undefined) {
   const enabled = Boolean(norm && /^[a-z0-9-]{1,100}$/.test(norm) && accessToken);
 
   return useQuery({
-    queryKey: [...queryKeys.venue.all(), 'slugAvailable', norm, accessToken ?? null] as const,
+    queryKey: [...queryKeys.venue.all(), 'slugAvailable', norm, keyScope(accessToken)] as const,
     enabled,
     queryFn: async (): Promise<SlugAvailableResponse> => {
       if (!accessToken) throw new Error('Missing access token');
