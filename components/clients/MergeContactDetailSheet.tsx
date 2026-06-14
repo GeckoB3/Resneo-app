@@ -155,12 +155,16 @@ function buildMergedProfile(
   const customer_profile_notes = notesRaw.length > 0 ? notesRaw : null;
 
   // Custom fields: 'target' keeps only the survivor's values; 'source_overlay'
-  // starts from the survivor's keys then overlays the source's values, so
-  // source-only keys are preserved and matching keys take the source value.
+  // starts from the survivor's keys then overlays the source's NON-EMPTY values,
+  // so source-only keys are preserved and matching keys take the source value —
+  // but an empty/null source value never clobbers a filled survivor value.
   const targetCf = asCustomFields(target.custom_fields);
   const sourceCf = asCustomFields(source.custom_fields);
+  const sourceOverlay = Object.fromEntries(
+    Object.entries(sourceCf).filter(([, value]) => !isEmptyCfValue(value)),
+  );
   const custom_fields =
-    c.custom_fields === 'source_overlay' ? { ...targetCf, ...sourceCf } : { ...targetCf };
+    c.custom_fields === 'source_overlay' ? { ...targetCf, ...sourceOverlay } : { ...targetCf };
 
   return {
     first_name: pick(c.first_name, target.first_name, source.first_name) || null,

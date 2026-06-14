@@ -123,32 +123,40 @@ type RejectionTracking = {
   }) => void;
 };
 type GlobalWithRejection = {
-  HermesInternal?: { hasPromise?: () => boolean };
+  HermesInternal?: object;
   addEventListener?: (type: string, listener: (event: unknown) => void) => void;
 };
 
 /**
- * Report otherwise-unhandled promise rejections. On Hermes we enable the
- * `promise` polyfill's rejection tracking; on a JS runtime that exposes
- * `addEventListener` we listen for the `unhandledrejection` event instead.
+ * Report otherwise-unhandled promise rejections. Engine-aware:
+ *  - Web / any DOM-style runtime: listen for the `unhandledrejection` event.
+ *  - Non-Hermes JS engine (JSC): RN's `promise` polyfill is live, so enabling
+ *    its rejection tracker actually fires.
+ *  - Hermes (the SDK 56 default): the native Promise is used and the `promise`
+ *    polyfill tracker is a NO-OP, so we don't install it (that was the bug).
+ *    There, unhandled rejections are captured by Sentry's own native
+ *    integration when a DSN is configured, and surfaced via RN LogBox in dev.
  * Defensive: any failure here must not break startup.
  */
 function installUnhandledRejectionHandler(): void {
   const g = globalThis as unknown as GlobalWithRejection;
   try {
-    if (g.HermesInternal?.hasPromise?.()) {
+    if (typeof g.addEventListener === 'function') {
+      g.addEventListener('unhandledrejection', (event) => {
+        const reason = (event as { reason?: unknown })?.reason ?? event;
+        captureException(reason, { scope: 'unhandledrejection' });
+      });
+      return;
+    }
+    if (!g.HermesInternal) {
       // eslint-disable-next-line @typescript-eslint/no-var-requires, global-require
       const tracking = require('promise/setimmediate/rejection-tracking') as RejectionTracking;
       tracking.enable({
         allRejections: true,
         onUnhandled: (_id, err) => captureException(err, { scope: 'unhandledrejection' }),
       });
-    } else if (typeof g.addEventListener === 'function') {
-      g.addEventListener('unhandledrejection', (event) => {
-        const reason = (event as { reason?: unknown })?.reason ?? event;
-        captureException(reason, { scope: 'unhandledrejection' });
-      });
     }
+    // Hermes: handled by Sentry's native integration (when active) + LogBox.
   } catch {
     // swallow — best-effort; the global error handler below still catches sync crashes
   }
