@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { SymbolView } from 'expo-symbols';
+import { format, parseISO } from 'date-fns';
 
 import { BookingDetailSheet } from '@/components/bookings/BookingDetailSheet';
 import { AllCalendarsDayGrid } from '@/components/calendar/AllCalendarsDayGrid';
@@ -11,7 +12,7 @@ import { CalendarDayGrid } from '@/components/calendar/CalendarDayGrid';
 import { timeToMinutes } from '@/components/calendar/grid-layout';
 import { MonthGrid } from '@/components/calendar/MonthGrid';
 import { type RescheduleTarget } from '@/components/calendar/RescheduleSheet';
-import { WeekStrip } from '@/components/calendar/WeekStrip';
+import { WeekGrid, type WeekDayColumn } from '@/components/calendar/WeekGrid';
 import { Button } from '@/components/ui/Button';
 import { Chip } from '@/components/ui/Chip';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -290,8 +291,10 @@ export default function CalendarScreen() {
   );
 
   const isToday = anchor === today;
-  // Live now-line — re-ticks every 60s while viewing today (null otherwise).
-  const nowMinutes = useNowMinutes(timeZone, isToday);
+  // The now-line ticks while today is in view: the anchor day in day/month
+  // scope, or any day of the visible week in week scope.
+  const nowActive = scope === 'week' ? week.days.includes(today) : isToday;
+  const nowMinutes = useNowMinutes(timeZone, nowActive);
 
   const label =
     scope === 'day'
@@ -327,6 +330,16 @@ export default function CalendarScreen() {
   const createAtFor = useCallback((practitionerId: string, time: string) => {
     setAddSheetTarget({ kind: 'slot', time, practitionerId });
   }, []);
+
+  /** Empty-slot tap in the week grid — re-anchor to that day (keeps the same
+   *  week), then open the add sheet (the booking flow reads the anchor date). */
+  const createAtForDate = useCallback(
+    (date: string, time: string) => {
+      setAnchor(date);
+      setAddSheetTarget({ kind: 'slot', time, practitionerId: effectiveId ?? '' });
+    },
+    [effectiveId],
+  );
 
   /** Look up a booking on the viewed calendar for the anchor date. */
   const findBookingOnAnchor = useCallback(
@@ -528,6 +541,29 @@ export default function CalendarScreen() {
     });
   }, [isAllView, practitioners, gridQuery.data, anchor, getDayBlocks]);
 
+  // ---- Week view data ----
+  // Seven day-columns for the SELECTED calendar (one practitioner's week).
+  const weekColumns = useMemo<WeekDayColumn[]>(() => {
+    if (scope !== 'week') return [];
+    const calendar = gridQuery.data?.calendars.find((c) => c.calendarId === effectiveId);
+    const byDate = new Map((calendar?.dates ?? []).map((d) => [d.date, d]));
+    return week.days.map((date) => {
+      const data = byDate.get(date) ?? null;
+      const d = parseISO(`${date}T12:00:00.000Z`);
+      const weekday = d.getDay();
+      return {
+        date,
+        weekdayLabel: format(d, 'EEE'),
+        dayNumber: format(d, 'd'),
+        isToday: date === today,
+        isWeekend: weekday === 0 || weekday === 6,
+        workingHours: data?.workingHours ?? [],
+        bookings: data?.bookings ?? [],
+        sessions: data?.sessions ?? [],
+      };
+    });
+  }, [scope, gridQuery.data, effectiveId, week.days, today]);
+
   // Per-booking compliance flags for the visible day — gated on the feature
   // flag so non-compliance venues never hit the endpoint. Unfiltered ids so
   // the status filter doesn't churn the query key.
@@ -727,17 +763,19 @@ export default function CalendarScreen() {
             </ScrollView>
           ) : scope === 'week' ? (
             <View style={styles.weekBody}>
-              <View style={[styles.weekStripWrap, { borderBottomColor: colors.border }]}>
-                <WeekStrip
-                  days={week.days}
-                  selectedDate={anchor}
-                  today={today}
-                  counts={counts}
-                  onSelectDay={setAnchor}
-                />
-              </View>
-              {dayIsClosed ? <ClosedDayBanner /> : null}
-              {dayGrid}
+              <WeekGrid
+                days={weekColumns}
+                nowMinutes={nowMinutes}
+                onBlockPress={openDetail}
+                onEmptyPress={createAtForDate}
+                onDayPress={(date) => {
+                  hapticSelect();
+                  setAnchor(date);
+                  setScope('day');
+                }}
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+              />
             </View>
           ) : isAllView ? (
             <View style={styles.weekBody}>
@@ -880,10 +918,6 @@ const styles = StyleSheet.create({
   },
   weekBody: {
     flex: 1,
-  },
-  weekStripWrap: {
-    paddingHorizontal: spacing.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   closedBanner: {
     marginHorizontal: spacing.base,
