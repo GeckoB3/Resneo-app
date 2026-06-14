@@ -17,7 +17,7 @@ import { SearchBar } from '@/components/ui/SearchBar';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
-import { getApiUrl } from '@/lib/env';
+import { getWebUrl } from '@/lib/env';
 import { registerCurrentDeviceForPush } from '@/lib/push/registerDevice';
 import { useNotifications } from '@/lib/queries/useNotifications';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
@@ -32,13 +32,10 @@ import type { BookingModel } from '@/types/venue';
 /** Subscription/plan statuses that warrant a warning banner. */
 const WARN_PLAN_STATUSES = new Set(['past_due', 'canceled', 'cancelled', 'unpaid', 'expired']);
 
-/** The staff dashboard lives on the same host the app's API points at. */
+/** Resolve a staff-dashboard URL on the WEB origin (not the API origin). */
 function webDashboardUrl(path = '/dashboard'): string {
-  try {
-    return `${getApiUrl()}${path}`;
-  } catch {
-    return `https://reserve-ni.vercel.app${path}`;
-  }
+  const base = getWebUrl();
+  return base ? `${base}${path}` : `https://reserve-ni.vercel.app${path}`;
 }
 
 function formatStaffRole(role: StaffRole): string {

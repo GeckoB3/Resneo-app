@@ -50,6 +50,8 @@ export function useCreateWalkIn() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.bookings.all() });
       void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all() });
+      // Keep the calendar grid in sync with the new walk-in (see useCreateBooking).
+      void queryClient.invalidateQueries({ queryKey: queryKeys.calendar.all() });
     },
   });
 }

@@ -1,5 +1,7 @@
 import { QueryClient } from '@tanstack/react-query';
 
+import { ApiError } from '@/lib/api/client';
+
 /**
  * Shared TanStack Query client.
  * Default staleTime reduces refetches when switching tabs during a busy shift.
@@ -25,7 +27,15 @@ export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 30_000,
-      retry: 1,
+      // Retry transient failures once, but never auth/permission failures: a
+      // 401/403 won't fix itself on a second try and just delays the staff
+      // gate (staff/me) or the on-screen error.
+      retry: (failureCount, error) => {
+        if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+          return false;
+        }
+        return failureCount < 1;
+      },
     },
   },
 });

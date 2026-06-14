@@ -10,6 +10,7 @@ import { hapticSelect } from '@/lib/haptics';
 import type { VariantWriteInput } from '@/lib/queries/useServicesManage';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
+import type { ProcessingTimeBlock } from '@/types/services-manage';
 
 type DraftVariant = {
   /** Stable local key (existing id or a draft key). */
@@ -22,6 +23,9 @@ type DraftVariant = {
   price: string;
   deposit: string;
   isActive: boolean;
+  /** Carried through unchanged — not editable here, but must be preserved on
+   *  save or the API resets the variant's processing blocks (data loss). */
+  processingTimeBlocks: ProcessingTimeBlock[] | null;
 };
 
 export type VariantsEditorTarget = {
@@ -36,6 +40,7 @@ export type VariantsEditorTarget = {
     price_pence: number | null;
     deposit_pence: number | null;
     is_active?: boolean;
+    processing_time_blocks?: ProcessingTimeBlock[] | null;
   }[];
 };
 
@@ -58,6 +63,7 @@ function toDraft(target: VariantsEditorTarget): DraftVariant[] {
     price: penceToPoundsInput(variant.price_pence),
     deposit: penceToPoundsInput(variant.deposit_pence),
     isActive: variant.is_active !== false,
+    processingTimeBlocks: variant.processing_time_blocks ?? null,
   }));
 }
 
@@ -107,7 +113,7 @@ export function VariantsEditorSheet({ target, saving = false, onClose, onSave }:
     hapticSelect();
     const key = `draft-${draftCounter}`;
     setDraftCounter((n) => n + 1);
-    setDrafts((current) => [...current, { key, name: '', description: '', duration: '30', buffer: '0', price: '', deposit: '', isActive: true }]);
+    setDrafts((current) => [...current, { key, name: '', description: '', duration: '30', buffer: '0', price: '', deposit: '', isActive: true, processingTimeBlocks: null }]);
     setExpandedKey(key);
   };
 
@@ -153,6 +159,9 @@ export function VariantsEditorSheet({ target, saving = false, onClose, onSave }:
         price_pence: price,
         deposit_pence: deposit,
         is_active: draft.isActive,
+        // Preserve per-variant processing blocks (not edited here) so the API's
+        // replace-on-save doesn't wipe them.
+        processing_time_blocks: draft.processingTimeBlocks ?? [],
       });
     }
     onSave(result);

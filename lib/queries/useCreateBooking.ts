@@ -67,15 +67,12 @@ export function useCreateBooking() {
         body: JSON.stringify(payload),
       });
     },
-    onSuccess: (response) => {
+    onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.bookings.all() });
       void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all() });
-      // Pre-invalidate the detail cache so BookingDetailSheet hits fresh data immediately.
-      if (response.booking_id) {
-        void queryClient.invalidateQueries({
-          queryKey: queryKeys.bookings.detail(undefined, response.booking_id),
-        });
-      }
+      // A new booking must also refresh the calendar grid (day/week/month);
+      // it keys off calendar.* and otherwise shows stale until the 60s poll.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.calendar.all() });
     },
   });
 }

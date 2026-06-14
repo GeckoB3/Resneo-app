@@ -10,6 +10,7 @@ import {
 } from 'react';
 
 import { getAuthCallbackRedirectUrl } from '@/lib/auth/redirect';
+import { queryClient } from '@/lib/queries/queryClient';
 import { getSupabase } from '@/lib/supabase';
 import {
   signInEmailSchema,
@@ -166,6 +167,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
     if (error) {
       console.warn('[AuthProvider] signOut failed:', error.message);
     }
+    // Drop all cached venue data so a subsequent user can never transiently see
+    // the previous user's bookings/clients before their own queries load.
+    queryClient.clear();
   }, []);
 
   const value = useMemo<AuthContextValue>(

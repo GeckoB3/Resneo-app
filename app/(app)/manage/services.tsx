@@ -64,6 +64,7 @@ import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type {
   ManagedService,
+  ProcessingTimeBlock,
   ServiceCustomScheduleV2,
   ServiceLocationType,
   ServicePaymentRequirement,
@@ -801,7 +802,10 @@ export default function ServicesScreen() {
       serviceId: service.id,
       serviceName: service.name,
       variants: (service.variants ?? []).map((variant) => {
-        const sv = variant as typeof variant & { is_active?: boolean };
+        const sv = variant as typeof variant & {
+          is_active?: boolean;
+          processing_time_blocks?: ProcessingTimeBlock[] | null;
+        };
         return {
           id: variant.id,
           name: variant.name,
@@ -811,6 +815,8 @@ export default function ServicesScreen() {
           price_pence: variant.price_pence,
           deposit_pence: variant.deposit_pence,
           is_active: sv.is_active,
+          // Round-trip so the variant replace-on-save can't wipe these.
+          processing_time_blocks: sv.processing_time_blocks ?? null,
         };
       }),
     });

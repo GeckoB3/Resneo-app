@@ -40,6 +40,17 @@ export function getApiUrl(): string {
   return required(process.env.EXPO_PUBLIC_API_URL, 'EXPO_PUBLIC_API_URL');
 }
 
+/**
+ * Base URL of the staff WEB dashboard (Next.js). Prefers EXPO_PUBLIC_WEB_URL and
+ * falls back to EXPO_PUBLIC_API_URL for single-host deploys. Never has a trailing
+ * slash. Use this for "Manage on web" link-outs — they must target the dashboard
+ * origin, NOT the API origin (sending a user to `…/api/...` was the prior bug).
+ */
+export function getWebUrl(): string {
+  const raw = process.env.EXPO_PUBLIC_WEB_URL || process.env.EXPO_PUBLIC_API_URL || '';
+  return raw.replace(/\/$/, '');
+}
+
 export function getAppVersion(): string {
   return Constants.expoConfig?.version ?? '1.0.0';
 }

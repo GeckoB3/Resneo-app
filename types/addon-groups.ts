@@ -22,6 +22,8 @@ export interface VenueAddon {
   description?: string | null;
   additional_price_pence: number;
   additional_duration_minutes: number;
+  /** Internal cost to the business (reporting only; never shown to clients). */
+  cost_to_business_pence?: number | null;
   is_active: boolean;
   sort_order: number;
 }
@@ -44,6 +46,8 @@ export interface AddonItemInput {
   description?: string | null;
   additional_price_pence: number;
   additional_duration_minutes: number;
+  /** Internal cost to the business (reporting only). Omitted/null leaves it unset. */
+  cost_to_business_pence?: number | null;
   is_active: boolean;
   sort_order?: number;
 }

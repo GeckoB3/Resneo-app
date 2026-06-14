@@ -196,15 +196,29 @@ export function TimeSlotStep({
   // Same-day cutoff (web parity): the staff availability endpoint deliberately
   // returns past slots (skipPastSlotFilter), so we hide today's slots that are
   // in the past or inside the minimum-notice window here. Future dates show all.
-  const isToday = date === venueTodayDate(timeZone);
-  const nowMinutes = startMinutes(venueLocalTime(timeZone));
+  // "Now" must advance on a timer so the same-day cutoff keeps hiding slots as
+  // time passes — and so we never read the clock impurely during render. The
+  // lazy initializer seeds a correct first paint; the interval keeps it fresh.
+  const [now, setNow] = useState(() => ({
+    date: venueTodayDate(timeZone),
+    minutes: startMinutes(venueLocalTime(timeZone)),
+  }));
+  useEffect(() => {
+    const tick = () =>
+      setNow({ date: venueTodayDate(timeZone), minutes: startMinutes(venueLocalTime(timeZone)) });
+    tick();
+    const id = setInterval(tick, 30_000);
+    return () => clearInterval(id);
+  }, [timeZone]);
+
+  const isToday = date === now.date;
   const noticeMinutes = Math.max(0, minBookingNoticeHours) * 60;
   const visibleSlots = useMemo(() => {
     if (!isToday) return slots;
     if (!allowSameDayBooking) return [];
-    const cutoff = nowMinutes + noticeMinutes;
+    const cutoff = now.minutes + noticeMinutes;
     return slots.filter((slot) => startMinutes(slot.start_time) >= cutoff);
-  }, [slots, isToday, allowSameDayBooking, nowMinutes, noticeMinutes]);
+  }, [slots, isToday, allowSameDayBooking, now.minutes, noticeMinutes]);
 
   const periods = useMemo(() => groupSlotsByPeriod(visibleSlots), [visibleSlots]);
 
@@ -241,10 +255,12 @@ export function TimeSlotStep({
   // Walk-in "Start now": pick the earliest slot at/after the venue's current
   // local time (falls back to the first slot of the day if all have passed).
   const handleStartNow = () => {
-    if (slots.length === 0) return;
-    const now = venueLocalTime(timeZone);
-    const match =
-      slots.find((slot) => slot.start_time.slice(0, 5) >= now) ?? slots[0];
+    // Prefer what's actually shown (visibleSlots); fall back to the full set so
+    // a walk-in can still start when same-day notice has hidden everything.
+    const pool = visibleSlots.length > 0 ? visibleSlots : slots;
+    if (pool.length === 0) return;
+    const nowStr = venueLocalTime(timeZone);
+    const match = pool.find((slot) => slot.start_time.slice(0, 5) >= nowStr) ?? pool[0];
     if (match) {
       hapticSelect();
       onSelectSlot(match);

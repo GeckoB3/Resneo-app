@@ -36,17 +36,23 @@ export default function RootLayout() {
     Inter_800ExtraBold,
   });
 
+  // A font fetch can fail on a cold/offline start. Degrade to system fonts
+  // rather than throwing into the ErrorBoundary (which white-screens the app).
   useEffect(() => {
-    if (error) throw error;
+    if (error) {
+      console.warn('[fonts] Inter failed to load; falling back to system fonts.', error);
+    }
   }, [error]);
 
+  const fontsReady = loaded || !!error;
+
   useEffect(() => {
-    if (loaded) {
+    if (fontsReady) {
       SplashScreen.hideAsync();
     }
-  }, [loaded]);
+  }, [fontsReady]);
 
-  if (!loaded) {
+  if (!fontsReady) {
     return null;
   }
 

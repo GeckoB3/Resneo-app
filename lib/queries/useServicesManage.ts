@@ -7,6 +7,7 @@ import { useAccessToken } from '@/lib/queries/useAccessToken';
 import type {
   CreateServiceInput,
   ManagedServicesResponse,
+  ProcessingTimeBlock,
   UpdateServiceInput,
 } from '@/types/services-manage';
 
@@ -67,6 +68,12 @@ export interface VariantWriteInput {
   deposit_pence?: number | null;
   is_active?: boolean;
   sort_order?: number;
+  /**
+   * Per-variant internal processing gaps. REPLACE semantics — the API resets
+   * the column to [] when a variant omits this on save, so callers MUST send
+   * the existing value back (the editor doesn't expose it for editing).
+   */
+  processing_time_blocks?: ProcessingTimeBlock[] | null;
 }
 
 /**

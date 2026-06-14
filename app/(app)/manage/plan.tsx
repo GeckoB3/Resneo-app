@@ -30,6 +30,7 @@ import { Card } from '@/components/ui/Card';
 import { Screen } from '@/components/ui/Screen';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
+import { getWebUrl } from '@/lib/env';
 import { hapticError, hapticSuccess, hapticWarning } from '@/lib/haptics';
 import {
   useBillingPortalSession,
@@ -48,17 +49,6 @@ import type { BookingModel } from '@/types/venue';
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/**
- * Returns the web dashboard origin. Uses EXPO_PUBLIC_WEB_URL if set,
- * otherwise falls back to EXPO_PUBLIC_API_URL (common for monorepo deploys).
- */
-function getWebUrl(): string {
-  const webUrl = process.env.EXPO_PUBLIC_WEB_URL;
-  if (webUrl) return webUrl.replace(/\/$/, '');
-  const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? '';
-  return apiUrl.replace(/\/$/, '');
-}
 
 const MODEL_LABELS: Record<BookingModel, string> = {
   table_reservation: 'Tables',

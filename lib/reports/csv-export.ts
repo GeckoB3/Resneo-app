@@ -12,7 +12,7 @@
  * expo-file-system ships with expo-router (SDK 56), expo-sharing does not — it
  * would need to be added to package.json to get proper file-share behaviour.
  */
-import { Alert, Platform, Share } from 'react-native';
+import { Platform, Share } from 'react-native';
 
 function buildCsvText(rows: string[][]): string {
   return rows
@@ -65,8 +65,10 @@ export async function buildAndShareCsv(filename: string, rows: string[][]): Prom
       a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
-    } catch {
-      Alert.alert('Export', 'CSV download is not supported in this browser.');
+    } catch (err) {
+      // No React context here to toast from; Alert.alert is a no-op on web.
+      // Web is a dev-only target (production export uses the native share path).
+      console.error('[csv-export] browser download failed:', err);
     }
     return;
   }

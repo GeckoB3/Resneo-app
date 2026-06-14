@@ -36,20 +36,24 @@ export function PushNotificationsProvider({ children }: PushNotificationsProvide
   const router = useRouter();
   const { session } = useAuth();
   const accessToken = session?.access_token ?? null;
-  const registeredForTokenRef = useRef<string | null>(null);
+  const userId = session?.user?.id ?? null;
+  // Dedupe registration on the stable user id, NOT the access token — the token
+  // rotates ~hourly via autoRefreshToken and would otherwise re-register the
+  // device on every refresh.
+  const registeredForUserRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!accessToken) {
-      registeredForTokenRef.current = null;
+    if (!userId || !accessToken) {
+      registeredForUserRef.current = null;
       return;
     }
     if (!isBackendConfigured() || isExpoGoClient()) {
       return;
     }
-    if (registeredForTokenRef.current === accessToken) {
+    if (registeredForUserRef.current === userId) {
       return;
     }
-    registeredForTokenRef.current = accessToken;
+    registeredForUserRef.current = userId;
 
     void registerCurrentDeviceForPush({ accessToken })
       .then((result) => {
@@ -61,7 +65,7 @@ export function PushNotificationsProvider({ children }: PushNotificationsProvide
         // Push registration is best-effort — never let it take the app down.
         console.warn('[push] device registration failed:', error);
       });
-  }, [accessToken]);
+  }, [userId, accessToken]);
 
   useEffect(() => {
     if (isExpoGoClient()) {

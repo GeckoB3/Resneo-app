@@ -27,6 +27,7 @@ type DraftAddon = {
   name: string;
   description: string;
   price: string;
+  cost: string;
   duration: string;
   isActive: boolean;
 };
@@ -55,6 +56,7 @@ function toDraftAddon(addon: VenueAddon, keyOverride?: string): DraftAddon {
     name: addon.name,
     description: addon.description ?? '',
     price: penceToPoundsInput(addon.additional_price_pence),
+    cost: penceToPoundsInput(addon.cost_to_business_pence ?? null),
     duration: String(addon.additional_duration_minutes),
     isActive: addon.is_active,
   };
@@ -134,7 +136,7 @@ export function AddonGroupEditorSheet({ target, onClose }: Props) {
 
       // Web parity: seed one blank option row — the API requires at least one option.
       setAddons([
-        { key: 'new-addon-seed', name: '', description: '', price: '', duration: '0', isActive: true },
+        { key: 'new-addon-seed', name: '', description: '', price: '', cost: '', duration: '0', isActive: true },
       ]);
 
       setExpandedAddonKey('new-addon-seed');
@@ -180,7 +182,7 @@ export function AddonGroupEditorSheet({ target, onClose }: Props) {
     setAddonCounter((n) => n + 1);
     setAddons((cur) => [
       ...cur,
-      { key, name: '', description: '', price: '', duration: '0', isActive: true },
+      { key, name: '', description: '', price: '', cost: '', duration: '0', isActive: true },
     ]);
     setExpandedAddonKey(key);
   };
@@ -225,10 +227,12 @@ export function AddonGroupEditorSheet({ target, onClose }: Props) {
     const addonInputs: AddonItemInput[] = [];
     for (const draft of addons) {
       const pricePence = parsePoundsToPence(draft.price);
+      const costPence = parsePoundsToPence(draft.cost);
       const isBlankRow =
         !draft.name.trim() &&
         !draft.description.trim() &&
         (pricePence == null || pricePence === 0) &&
+        (costPence == null || costPence === 0) &&
         (!draft.duration.trim() || Number(draft.duration) === 0);
       if (isBlankRow) continue;
       if (!draft.name.trim()) {
@@ -238,6 +242,11 @@ export function AddonGroupEditorSheet({ target, onClose }: Props) {
       }
       if (pricePence === undefined) {
         setError(`"${draft.name.trim()}": price must be a valid amount.`);
+        setExpandedAddonKey(draft.key);
+        return;
+      }
+      if (costPence === undefined) {
+        setError(`"${draft.name.trim()}": cost to business must be a valid amount.`);
         setExpandedAddonKey(draft.key);
         return;
       }
@@ -253,6 +262,8 @@ export function AddonGroupEditorSheet({ target, onClose }: Props) {
         description: draft.description.trim() || null,
         additional_price_pence: pricePence ?? 0,
         additional_duration_minutes: dur,
+        // Preserve the internal cost-to-business figure (web parity); null clears it.
+        cost_to_business_pence: costPence ?? null,
         is_active: draft.isActive,
         // Explicit order — the API re-inserts options and sorts on this field.
         sort_order: addonInputs.length,
@@ -564,6 +575,13 @@ export function AddonGroupEditorSheet({ target, onClose }: Props) {
                           />
                         </View>
                       </View>
+                      <Input
+                        label="Cost to business (£)"
+                        helper="Optional — used in reports, never shown to clients."
+                        value={addon.cost}
+                        onChangeText={(v) => patchAddon(addon.key, { cost: v })}
+                        keyboardType="decimal-pad"
+                      />
                       <View style={styles.switchRow}>
                         <Text variant="bodySmall">Active</Text>
                         <Switch
