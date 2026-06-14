@@ -28,7 +28,7 @@ describe('layout constants', () => {
   it('exposes the grid/snap granularities and gutter width', () => {
     expect(SLOT_MINUTES).toBe(30);
     expect(TIME_GUTTER_WIDTH).toBe(56);
-    expect(MIN_BLOCK_HEIGHT).toBe(36);
+    expect(MIN_BLOCK_HEIGHT).toBe(40);
     expect(TAP_SNAP_MINUTES).toBe(15);
     expect(DRAG_SNAP_MINUTES).toBe(5);
   });

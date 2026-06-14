@@ -2,8 +2,8 @@ import { pickBlockDensity, pickTrayActions } from '@/components/calendar/Appoint
 
 describe('pickBlockDensity', () => {
   it('shows the action tray on every block at/above the grid min height', () => {
-    // MIN_BLOCK_HEIGHT is 36, so even the shortest real block gets a tray.
-    for (const h of [36, 40, 50, 64, 90, 120]) {
+    // MIN_BLOCK_HEIGHT is 40, so even the shortest real block gets a tray.
+    for (const h of [40, 50, 64, 90, 120]) {
       expect(pickBlockDensity(h, 1).trayActions).toBeGreaterThan(0);
     }
   });

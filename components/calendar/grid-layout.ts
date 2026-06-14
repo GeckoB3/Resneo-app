@@ -16,7 +16,7 @@ export const TIME_GUTTER_WIDTH = 56;
  * into a false overlap. Lane packing runs on true minute ranges; this floor is
  * purely cosmetic.
  */
-export const MIN_BLOCK_HEIGHT = 36;
+export const MIN_BLOCK_HEIGHT = 40;
 /** Default opening when a day has no working hours. */
 export const DEFAULT_START_HOUR = 8;
 export const DEFAULT_END_HOUR = 20;
