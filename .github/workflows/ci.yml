@@ -1,8 +1,11 @@
 name: CI
 
-# Lint + the Jest suite gate every PR. `npm run typecheck` (tsc) is run locally
-# / pre-push instead: it needs Expo's generated `expo-env.d.ts` + `.expo/types`,
-# which are gitignored and absent on a clean CI checkout.
+# Lint + the Jest suite + a typecheck gate every PR.
+#
+# `tsc` needs Expo's generated `expo-env.d.ts` + `.expo/types` (typed routes),
+# which are gitignored and absent on a clean checkout. The "Generate Expo types"
+# step regenerates them as a side effect of a web export (dummy public env is
+# fine — Supabase only throws when the client is first *used*, not at import).
 on:
   push:
     branches: [main, staging]
@@ -22,3 +25,11 @@ jobs:
         run: npm run lint
       - name: Test
         run: npm test -- --ci
+      - name: Generate Expo types
+        run: npx expo export --platform web --output-dir .expo-typecheck-export
+        env:
+          EXPO_PUBLIC_SUPABASE_URL: https://example.supabase.co
+          EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY: dummy-anon-key
+          EXPO_PUBLIC_API_URL: https://example.com
+      - name: Typecheck
+        run: npm run typecheck

@@ -7,6 +7,12 @@
     "icon": "./assets/images/icon.png",
     "scheme": "resneo",
     "userInterfaceStyle": "automatic",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/88e39a06-69cc-443e-ac83-71c24f35ea49"
+    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.resneo.app",
@@ -15,8 +21,10 @@
         "dark": "./assets/images/icon-dark.png",
         "tinted": "./assets/images/icon-tinted.png"
       },
+      "associatedDomains": ["applinks:reserve-ni.vercel.app"],
       "infoPlist": {
-        "NSUserNotificationsUsageDescription": "Resneo sends alerts when new bookings arrive or existing bookings change."
+        "NSUserNotificationsUsageDescription": "Resneo sends alerts when new bookings arrive or existing bookings change.",
+        "NSFaceIDUsageDescription": "Resneo can use Face ID to lock the app so client records stay private if your phone is left unlocked."
       }
     },
     "android": {
@@ -31,6 +39,20 @@
           "data": [
             {
               "scheme": "resneo"
+            }
+          ]
+        },
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ],
+          "data": [
+            {
+              "scheme": "https",
+              "host": "reserve-ni.vercel.app"
             }
           ]
         }
@@ -67,7 +89,9 @@
           "color": "#003B6F"
         }
       ],
-      "expo-sharing"
+      "expo-sharing",
+      "@sentry/react-native",
+      "expo-localization"
     ],
     "experiments": {
       "typedRoutes": true
