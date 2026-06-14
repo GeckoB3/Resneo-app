@@ -922,9 +922,13 @@ export function BookingDetailContent({
                       // the guest-id prefill when there's no appointment to repeat.
                       void (async () => {
                         const g = booking.guest;
-                        const hasAppointment = Boolean(
-                          booking.practitioner_id && booking.appointment_service_id,
-                        );
+                        // Mirror openModify's id fallbacks (calendar_id /
+                        // service_item_id) so unified-scheduling bookings rebook too.
+                        const practitionerId =
+                          booking.practitioner_id ?? booking.calendar_id ?? null;
+                        const serviceId =
+                          booking.appointment_service_id ?? booking.service_item_id ?? null;
+                        const hasAppointment = Boolean(practitionerId && serviceId);
                         if (hasAppointment || g) {
                           await writeRebookBootstrap({
                             v: 1,
@@ -937,8 +941,8 @@ export function BookingDetailContent({
                             ...(hasAppointment
                               ? {
                                   appointment: {
-                                    serviceId: booking.appointment_service_id as string,
-                                    practitionerId: booking.practitioner_id as string,
+                                    serviceId: serviceId as string,
+                                    practitionerId: practitionerId as string,
                                     variantId: booking.service_variant_id ?? null,
                                     durationMinutes: durationMinutes ?? null,
                                   },

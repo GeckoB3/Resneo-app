@@ -289,6 +289,12 @@ export default function NewBookingScreen() {
               (service.variants ?? []).length > 0 && !resolvedVariant ? 'variant' : 'date';
             setCurrentStepKey(landOn);
           }
+        } else {
+          // Catalog still loading — re-run when it arrives (deps include
+          // catalogQuery.data) instead of consuming the bootstrap now and
+          // losing the appointment pre-select. The payload is cached by
+          // readAndClearRebookBootstrap's module guard, so the re-read is safe.
+          return;
         }
       }
 

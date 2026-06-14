@@ -6,6 +6,30 @@ _Method: read‑only audit pass — three parallel code‑audit agents (app arch
 
 ---
 
+## Implementation status — 2026-06-14 · branch `feat/world-class-polish`
+
+A first implementation pass is committed: **tsc + lint clean, 254 unit tests green**, and the whole diff passed an adversarial review (no High‑severity regressions; the three data‑loss fixes were cross‑checked against the backend).
+
+**Shipped & verified**
+- **W1 reliability:** request timeout/abort (1.1); font‑load degrades to system fonts instead of crashing (1.2); calendar invalidates on create/walk‑in (1.3); dead detail‑invalidation removed (1.4); no retry on 401/403 (1.5); push dedupes on the stable user id (1.8); **sign‑out clears the query cache**.
+- **W2 correctness:** add‑on `cost_to_business_pence` (2.2) and per‑variant `processing_time_blocks` (2.1) round‑trips — the two silent data‑loss bugs, fixed; `EXPO_PUBLIC_WEB_URL` link‑outs (2.3); time‑slot "now" is timer‑driven + Start‑now respects the visible filter (2.6); CSV web no‑op removed (2.7). **2.4** was already correct (unblocked by backend #66). **2.5** needs **no app change** — slots are server‑generated and the server already applies the booking interval.
+- **W3 observability:** reporting seam + global uncaught‑error handler + user context (3.1, JS layer; the Sentry SDK is a drop‑in — see deferred).
+- **W4 tests:** Jest harness + **254 pure‑logic unit tests** (formatting, venue dates incl. DST, the booking‑status machine, calendar grid, time‑slot/CSV/timeline/terminology/model‑inference helpers) + **CI** (lint + test).
+- **W6 a11y:** ≥44pt touch targets (6.2); sheet grabber closes on tap; 9 audited label/role/colour‑only fixes (6.1/6.3).
+- **W7 parity:** **Rebook** completed — pre‑selects the same service/practitioner/variant + guest (cold‑catalog race fixed, id‑fallbacks honoured).
+
+**Deferred — needs a device, a backend deploy, an account, or a DSN to do _safely_; deliberately not shipped blind**
+- **W1.6** key the cache on a stable session id instead of the rotating JWT — a ~40‑file change whose cache‑correctness can't be verified without authed runtime testing. The shipped sign‑out cache‑clear removes the only correctness risk meanwhile, leaving just the minor hourly‑refetch cost.
+- **W1.7** offline mutation queue.
+- **W3** Sentry SDK activation (SDK + config plugin + DSN), analytics backend, **EAS dev build + the web Bearer deploy**, **on‑device QA matrix** (iOS + the S23) — all require accounts/devices/builds outside this environment.
+- **W4.2/4.3** component + e2e (Maestro) tests — RNTL queries don't bind under React 19.2 / RN 0.85 yet (renderer setup needed); the v4‑correct reanimated mock is staged for when they do.
+- **W5** on‑grid drag/resize, week‑matrix / tablet columns, motion system, empty‑state art.
+- **W6.4** i18n readiness; remaining **W7** edges (compliance template Bearer wiring, merge custom‑fields step).
+
+The workstream tables below remain the canonical backlog.
+
+---
+
 ## TL;DR — the thesis
 
 Resneo‑app is a **mature, disciplined codebase, not a prototype.** `tsc --noEmit` and `expo lint` pass clean; the bug hunt found **no Critical defects and no crash‑on‑device patterns**; the design system is genuinely polished; Bearer auth, optimistic mutations with rollback, realtime live‑sync, and loading/error/empty states are handled well across ~33 routes and 50+ venue API endpoints. The Reanimated‑worklet, Fabric‑focus, and `SymbolView` object‑form rules are followed throughout.
