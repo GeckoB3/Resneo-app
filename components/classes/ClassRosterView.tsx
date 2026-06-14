@@ -100,7 +100,11 @@ export function ClassRosterView({
         row.guest_email ?? '',
       ]);
       const filename = `class-roster-${session.name.replace(/[^a-z0-9]+/gi, '-')}-${session.date}.csv`;
-      await buildAndShareCsv(filename, [header, ...rows]);
+      const result = await buildAndShareCsv(filename, [header, ...rows]);
+      if (!result.ok) {
+        toast.error('Could not export the roster.');
+        return;
+      }
       toast.success('Roster export started.');
     } catch {
       toast.error('Could not export the roster.');

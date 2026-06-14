@@ -85,7 +85,11 @@ export function EventAttendees({
       ]);
       const slug = (eventName ?? 'event').replace(/[^a-z0-9]+/gi, '-');
       const filename = `event-roster-${slug}-${eventDate ?? 'export'}.csv`;
-      await buildAndShareCsv(filename, [header, ...csvRows]);
+      const result = await buildAndShareCsv(filename, [header, ...csvRows]);
+      if (!result.ok) {
+        toast.error('Could not export the roster.');
+        return;
+      }
       toast.success('Roster export started.');
     } catch {
       toast.error('Could not export the roster.');

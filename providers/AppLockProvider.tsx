@@ -235,6 +235,12 @@ export function AppLockProvider({ children }: AppLockProviderProps) {
 /**
  * Full-screen opaque cover shown while locked. Sits above app content (it's the
  * last child of the provider) so client records are never visible behind it.
+ *
+ * The overlay intentionally covers ALL content, including the Toast host: its
+ * high elevation paints above sibling toasts on Android, so a toast fired during
+ * the unlock flow would be hidden behind it. Unlock feedback therefore relies on
+ * the on-screen overlay UI (the spinner / "Unlock" retry button) plus haptics,
+ * never toasts.
  */
 function LockOverlay({ onUnlock, busy }: { onUnlock: () => void; busy: boolean }) {
   const { colors } = useTheme();
@@ -298,8 +304,10 @@ const styles = StyleSheet.create({
   overlay: {
     alignItems: 'center',
     justifyContent: 'center',
-    // Above sheets/modals within the app; the OS biometric prompt still sits
-    // above this, which is correct.
+    // Above sheets/modals AND the Toast host within the app; on Android this
+    // elevation paints over sibling toasts, so unlock feedback uses the overlay
+    // UI + haptics, not toasts. The OS biometric prompt still sits above this,
+    // which is correct.
     zIndex: 9999,
     elevation: 9999,
   },

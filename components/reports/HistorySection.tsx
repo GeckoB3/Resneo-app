@@ -190,7 +190,7 @@ export function HistorySection({
   // ── CSV exports ───────────────────────────────────────────────────────────
   const exportHistory = useCallback(async () => {
     if (!days.length) return;
-    await buildAndShareCsv(`history-${from}-${to}.csv`, [
+    const result = await buildAndShareCsv(`history-${from}-${to}.csv`, [
       ['Date', bookingsWord, coversBookedLabel, coversSeenLabel, 'No-shows', 'Deposits collected (£)'],
       ...days.map((day) => [
         day.date,
@@ -201,6 +201,10 @@ export function HistorySection({
         (day.deposit_paid_pence / 100).toFixed(2),
       ]),
     ]);
+    if (!result.ok) {
+      notify('notice', 'Could not export.');
+      return;
+    }
     notify('success', 'History CSV export started.');
   }, [days, from, to, bookingsWord, coversBookedLabel, coversSeenLabel, notify]);
 
@@ -212,7 +216,7 @@ export function HistorySection({
 
   const exportClients = useCallback(async () => {
     if (!clients.length) return;
-    await buildAndShareCsv('client-lifetime-value.csv', [
+    const result = await buildAndShareCsv('client-lifetime-value.csv', [
       ['Client', `Total ${bookingsWord.toLowerCase()}`, 'Visits', 'No-shows', 'Lifetime deposits (£)', 'Last visit'],
       ...clients.map((guest) => [
         [guest.first_name, guest.last_name].filter(Boolean).join(' ') || 'Anonymous',
@@ -223,6 +227,10 @@ export function HistorySection({
         guest.last_visit_date ?? '—',
       ]),
     ]);
+    if (!result.ok) {
+      notify('notice', 'Could not export.');
+      return;
+    }
     notify('success', 'Client lifetime value CSV export started.');
   }, [clients, bookingsWord, notify]);
 

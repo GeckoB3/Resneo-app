@@ -207,7 +207,7 @@ export default function ReportsScreen() {
   // ── Export helpers — hoisted before early returns so hook order is stable ─
   const exportReport1 = useCallback(async () => {
     if (!summary || !data) return;
-    await buildAndShareCsv(`report1-booking-summary-${data.from}-${data.to}.csv`, [
+    const result = await buildAndShareCsv(`report1-booking-summary-${data.from}-${data.to}.csv`, [
       ['Metric', 'Value'],
       ['Bookings created', String(summary.total_bookings_created)],
       [isAppointmentVenue ? 'Client places booked' : 'Covers booked', String(summary.covers_booked)],
@@ -220,12 +220,16 @@ export default function ReportsScreen() {
         String(v),
       ]),
     ]);
+    if (!result.ok) {
+      toast.error('Could not export the report.');
+      return;
+    }
     toast.success('Export started.');
   }, [summary, data, isAppointmentVenue, toast]);
 
   const exportReport2 = useCallback(async () => {
     if (!noShowSeries.length || !data) return;
-    await buildAndShareCsv(`report2-no-show-${data.from}-${data.to}.csv`, [
+    const result = await buildAndShareCsv(`report2-no-show-${data.from}-${data.to}.csv`, [
       ['Date', 'No-shows', 'Eligible', 'Rate %'],
       ...noShowSeries.map((row) => [
         row.period_start,
@@ -234,35 +238,47 @@ export default function ReportsScreen() {
         String(row.rate_pct),
       ]),
     ]);
+    if (!result.ok) {
+      toast.error('Could not export the report.');
+      return;
+    }
     toast.success('Export started.');
   }, [noShowSeries, data, toast]);
 
   const exportReport3 = useCallback(async () => {
     if (!cancellation || !data) return;
-    await buildAndShareCsv(`report3-cancellation-${data.from}-${data.to}.csv`, [
+    const result = await buildAndShareCsv(`report3-cancellation-${data.from}-${data.to}.csv`, [
       ['Metric', 'Value'],
       ['Bookings created', String(cancellation.total_bookings_created)],
       ['Client-initiated cancellations', String(cancellation.cancelled_guest_initiated)],
       ['Auto-cancelled', String(cancellation.cancelled_auto)],
       ['Cancellation rate %', String(cancellation.cancellation_rate_pct)],
     ]);
+    if (!result.ok) {
+      toast.error('Could not export the report.');
+      return;
+    }
     toast.success('Export started.');
   }, [cancellation, data, toast]);
 
   const exportReport4 = useCallback(async () => {
     if (!deposit || !data) return;
-    await buildAndShareCsv(`report4-deposits-${data.from}-${data.to}.csv`, [
+    const result = await buildAndShareCsv(`report4-deposits-${data.from}-${data.to}.csv`, [
       ['Metric', 'Pence', 'GBP'],
       ['Collected', String(deposit.total_collected_pence), (deposit.total_collected_pence / 100).toFixed(2)],
       ['Refunded', String(deposit.total_refunded_pence), (deposit.total_refunded_pence / 100).toFixed(2)],
       ['Forfeited', String(deposit.total_forfeited_pence), (deposit.total_forfeited_pence / 100).toFixed(2)],
     ]);
+    if (!result.ok) {
+      toast.error('Could not export the report.');
+      return;
+    }
     toast.success('Export started.');
   }, [deposit, data, toast]);
 
   const exportReport7 = useCallback(async () => {
     if (!insights || !data) return;
-    await buildAndShareCsv(`report7-team-services-${data.from}-${data.to}.csv`, [
+    const result = await buildAndShareCsv(`report7-team-services-${data.from}-${data.to}.csv`, [
       ['Practitioner', 'Bookings', 'Arrived/Completed'],
       ...insights.by_practitioner.map((row) => [
         row.practitioner_name,
@@ -290,6 +306,10 @@ export default function ReportsScreen() {
           ]
         : []),
     ]);
+    if (!result.ok) {
+      toast.error('Could not export the report.');
+      return;
+    }
     toast.success('Export started.');
   }, [insights, data, toast]);
 

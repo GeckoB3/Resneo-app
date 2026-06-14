@@ -210,12 +210,14 @@ export function useRescheduleBookingById() {
         body: JSON.stringify({
           booking_date: input.date,
           booking_time: input.time,
-          // Drag-to-reschedule / deliberate reassign: the grid shows an amber
-          // "outside hours" warning before a drag drop, and the chooser is an
-          // explicit staff choice, so honour it server-side rather than 409ing
-          // on out-of-hours / manual overlap.
+          // Out-of-hours is an explicit staff choice in both paths, so honour it.
           allow_outside_hours: true,
-          allow_manual_overlap: true,
+          // Manual overlap is only auto-allowed on the DRAG path, which already
+          // refuses hard overlaps client-side before committing. A reassign
+          // (practitionerId set) has NO pre-flight conflict check, so we must let
+          // the server 409 on a clash — otherwise moving onto an occupied slot
+          // would silently double-book and the "slot may be taken" error wouldn't fire.
+          allow_manual_overlap: input.practitionerId === undefined,
           ...(input.durationMinutes !== undefined
             ? { duration_minutes: input.durationMinutes }
             : {}),
