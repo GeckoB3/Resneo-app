@@ -9,7 +9,6 @@ import {
   View,
 } from 'react-native';
 import Animated, { FadeInDown, LinearTransition } from 'react-native-reanimated';
-import { SymbolView } from 'expo-symbols';
 import { Sheet } from '@/components/ui/Sheet';
 import { Button } from '@/components/ui/Button';
 import { apiFetch , ApiError } from '@/lib/api/client';
@@ -814,13 +813,7 @@ export default function BookingsScreen() {
           removeClippedSubviews={Platform.OS === 'android'}
           ListEmptyComponent={
             <EmptyState
-              icon={
-                <SymbolView
-                  name={{ ios: 'calendar', android: 'calendar_today', web: 'calendar_today' }}
-                  tintColor={colors.textMuted}
-                  size={44}
-                />
-              }
+              illustration="bookings"
               title="No appointments"
               message={
                 status === 'All'

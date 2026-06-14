@@ -15,7 +15,6 @@ import {
   type ListRenderItem,
 } from 'react-native';
 import Animated, { FadeInDown, LinearTransition } from 'react-native-reanimated';
-import { SymbolView } from 'expo-symbols';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
@@ -886,12 +885,10 @@ export default function ClientsScreen() {
             }
             ListEmptyComponent={
               <EmptyState
-                icon={
-                  <SymbolView
-                    name={{ ios: 'person.2.fill', android: 'group', web: 'group' }}
-                    tintColor={colors.textMuted}
-                    size={44}
-                  />
+                illustration={
+                  debouncedSearch.length >= MIN_SEARCH_LENGTH || hasActiveFilter
+                    ? 'search'
+                    : 'clients'
                 }
                 title={`No ${screenTitle.toLowerCase()} found`}
                 message={

@@ -650,6 +650,7 @@ export default function WaitlistScreen() {
             ListHeaderComponent={alertsHeader}
             ListEmptyComponent={
               <EmptyState
+                illustration="waitlist"
                 title={filter === 'active' ? 'No active entries' : 'No waitlist entries'}
                 message={
                   filter === 'active'
