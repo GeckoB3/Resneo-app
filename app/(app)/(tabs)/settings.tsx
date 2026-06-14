@@ -3,7 +3,7 @@ import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 import * as WebBrowser from 'expo-web-browser';
 import { useRouter, type Href } from 'expo-router';
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
-import { Linking, StyleSheet, View } from 'react-native';
+import { Linking, StyleSheet, Switch, View } from 'react-native';
 
 import { FeatureTile } from '@/components/more/FeatureTile';
 import { MoreHero } from '@/components/more/MoreHero';
@@ -21,6 +21,7 @@ import { getWebUrl } from '@/lib/env';
 import { registerCurrentDeviceForPush } from '@/lib/push/registerDevice';
 import { useNotifications } from '@/lib/queries/useNotifications';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
+import { useAppLock } from '@/providers/AppLockProvider';
 import { useAuth } from '@/providers/AuthProvider';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
@@ -141,8 +142,10 @@ export default function MoreScreen() {
   const { data: staffData, isLoading: staffLoading } = useStaffMe();
   const { venue, name: venueName, isLoading: venueLoading } = useVenueContext();
   const notificationsQuery = useNotifications();
+  const { appLockEnabled, setAppLockEnabled, supported: appLockSupported } = useAppLock();
   const [query, setQuery] = useState('');
   const [pushBusy, setPushBusy] = useState(false);
+  const [appLockBusy, setAppLockBusy] = useState(false);
   const [signOutOpen, setSignOutOpen] = useState(false);
 
   const staff = staffData?.staff;
@@ -198,6 +201,26 @@ export default function MoreScreen() {
       setPushBusy(false);
     }
   }, [accessToken, toast]);
+
+  // Toggle the opt-in biometric lock. Enabling prompts for Face ID/passcode
+  // (handled inside the provider); if the user cancels, the switch stays off.
+  const handleAppLockToggle = useCallback(
+    async (next: boolean) => {
+      setAppLockBusy(true);
+      try {
+        const ok = await setAppLockEnabled(next);
+        if (ok) {
+          toast.success(next ? 'Biometric lock turned on.' : 'Biometric lock turned off.');
+        } else if (next) {
+          // Auth was cancelled/failed, or the preference could not be saved.
+          toast.info('Biometric lock was not turned on.');
+        }
+      } finally {
+        setAppLockBusy(false);
+      }
+    },
+    [setAppLockEnabled, toast],
+  );
 
   // Build the full, role-aware index once. The grid, the grouped list and search
   // all derive from this single array.
@@ -393,6 +416,27 @@ export default function MoreScreen() {
               </Group>
             );
           })}
+
+          {/* Privacy & security — opt-in biometric app lock. Only shown when the
+              device actually has Face ID / fingerprint enrolled (W9.1). */}
+          {appLockSupported ? (
+            <Group title="Privacy & security">
+              <View style={styles.toggleRow}>
+                <View style={styles.toggleLabel}>
+                  <Text variant="bodyMedium">Require Face ID / biometric unlock</Text>
+                  <Text variant="caption" tone="muted">
+                    Lock the app when it returns from the background so client records stay private.
+                  </Text>
+                </View>
+                <Switch
+                  value={appLockEnabled}
+                  onValueChange={(v) => void handleAppLockToggle(v)}
+                  disabled={appLockBusy}
+                  accessibilityLabel="Require biometric unlock"
+                />
+              </View>
+            </Group>
+          ) : null}
         </>
       )}
 
@@ -479,6 +523,18 @@ const styles = StyleSheet.create({
   noResults: {
     alignItems: 'center',
     paddingVertical: spacing.xl,
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    padding: spacing.base,
+  },
+  toggleLabel: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
   },
   signOutRow: {
     flexDirection: 'row',

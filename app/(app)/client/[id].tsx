@@ -36,6 +36,7 @@ import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { formatPence } from '@/lib/format';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
+import { useScreenCaptureProtection } from '@/lib/security/useScreenCaptureProtection';
 import { useGuestDetail } from '@/lib/queries/useGuestDetail';
 import { useGuestTimeline, useSendGuestMessage, useUpdateGuest } from '@/lib/queries/useGuestMutations';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
@@ -186,6 +187,9 @@ export default function ClientDetailScreen() {
   const [messageTarget, setMessageTarget] = useState<GuestMessageTarget | null>(null);
   const [bookingDetailId, setBookingDetailId] = useState<string | null>(null);
   const [mergeOpen, setMergeOpen] = useState(false);
+
+  // Block screenshots / screen recording while this PII-heavy profile is open.
+  useScreenCaptureProtection('client-detail');
 
   const handleBookingPress = useCallback((bookingId: string) => {
     setBookingDetailId(bookingId);

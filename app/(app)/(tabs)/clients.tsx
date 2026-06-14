@@ -10,7 +10,6 @@ import {
   Pressable,
   RefreshControl,
   ScrollView,
-  Share,
   StyleSheet,
   View,
   type ListRenderItem,
@@ -46,6 +45,7 @@ import { SwipeRow, type SwipeAction } from '@/components/ui/SwipeRow';
 import { Text } from '@/components/ui/Text';
 import { ApiError, apiFetch } from '@/lib/api/client';
 import { clientsScreenTitle } from '@/lib/booking/terminology';
+import { buildAndShareCsv } from '@/lib/reports/csv-export';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { useGuestCustomFields, useGuests } from '@/lib/queries/useGuests';
 import { useGuestTags } from '@/lib/queries/useGuestTags';
@@ -544,7 +544,8 @@ export default function ClientsScreen() {
    */
   const customFieldsQuery = useGuestCustomFields();
   const handleExport = useCallback(async () => {
-    if (!accessToken) return;
+    // Guard re-entry: ignore taps while an export is already running.
+    if (!accessToken || exporting) return;
     setExporting(true);
     try {
       // Fetch the active custom-field definitions so we can add a column each.
@@ -619,39 +620,64 @@ export default function ClientsScreen() {
         .map(esc)
         .join(',');
 
-      const rows = [
-        header,
-        ...all.slice(0, EXPORT_MAX_ROWS).map((g) => {
+      // Build up to EXPORT_MAX_ROWS rows in chunks, yielding to the event loop
+      // between batches so a large directory export never blocks the UI thread
+      // long enough to freeze scrolling or drop the share-sheet animation (W9.4).
+      const exportRows = all.slice(0, EXPORT_MAX_ROWS);
+      const lines: string[] = [header];
+      const CHUNK = 500;
+      for (let i = 0; i < exportRows.length; i += CHUNK) {
+        const end = Math.min(i + CHUNK, exportRows.length);
+        for (let j = i; j < end; j += 1) {
+          const g = exportRows[j];
           const cf = g.custom_fields ?? {};
-          return [
-            esc(g.first_name),
-            esc(g.last_name),
-            esc(g.email),
-            esc(g.phone),
-            esc((g.tags ?? []).join('; ')),
-            String(g.visit_count ?? 0),
-            String(g.no_show_count ?? 0),
-            esc(g.last_visit_date),
-            String(g.total_bookings ?? 0),
-            String(g.upcoming_booking_count ?? 0),
-            String(g.cancelled_count ?? 0),
-            ((g.paid_deposit_pence ?? 0) / 100).toFixed(2),
-            g.marketing_consent ? 'yes' : 'no',
-            g.marketing_opt_out ? 'yes' : 'no',
-            ...activeFields.map((f) => esc(customFieldCell(cf[f.field_key]))),
-          ].join(',');
-        }),
-      ];
-      await Share.share({ title: 'Contacts export', message: rows.join('\n') });
+          lines.push(
+            [
+              esc(g.first_name),
+              esc(g.last_name),
+              esc(g.email),
+              esc(g.phone),
+              esc((g.tags ?? []).join('; ')),
+              String(g.visit_count ?? 0),
+              String(g.no_show_count ?? 0),
+              esc(g.last_visit_date),
+              String(g.total_bookings ?? 0),
+              String(g.upcoming_booking_count ?? 0),
+              String(g.cancelled_count ?? 0),
+              ((g.paid_deposit_pence ?? 0) / 100).toFixed(2),
+              g.marketing_consent ? 'yes' : 'no',
+              g.marketing_opt_out ? 'yes' : 'no',
+              ...activeFields.map((f) => esc(customFieldCell(cf[f.field_key]))),
+            ].join(','),
+          );
+        }
+        if (end < exportRows.length) {
+          await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        }
+      }
+
+      // Lines were built in yielding chunks above; the final join of the
+      // pre-built strings is cheap. Share via the file/Blob/share helper.
+      const csvText = lines.join('\n');
+      const result = await buildAndShareCsv('contacts-export.csv', [], csvText);
+
+      if (!result.ok) {
+        // W2.7: the web Blob-download / share failure is now surfaced here via
+        // the toast host instead of being swallowed with a bare console.error.
+        toast.error('Could not export contacts. Please try again.');
+        return;
+      }
       if (truncated) {
         toast.info(`Export capped at ${EXPORT_MAX_ROWS} contacts.`);
+      } else {
+        toast.success('Contacts export ready.');
       }
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : 'Could not export contacts.');
     } finally {
       setExporting(false);
     }
-  }, [accessToken, customFieldsQuery, guestQueryParams, toast]);
+  }, [accessToken, exporting, customFieldsQuery, guestQueryParams, toast]);
 
   const errorMessage =
     guestsQuery.error instanceof ApiError

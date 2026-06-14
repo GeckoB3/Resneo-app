@@ -14,18 +14,74 @@
  */
 import { Platform, Share } from 'react-native';
 
-function buildCsvText(rows: string[][]): string {
-  return rows
-    .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
-    .join('\n');
+/**
+ * Outcome of a share/download attempt. `buildAndShareCsv` resolves with this
+ * rather than throwing so existing fire-and-forget callers keep working, while
+ * callers with a toast host (e.g. the contacts export) can surface failures.
+ *
+ * W2.7: the web Blob-download path used to only `console.error` (no React
+ * context to toast from). It now reports back through this result instead.
+ */
+export type CsvShareResult =
+  | { ok: true }
+  | { ok: false; reason: 'web-download' | 'share'; message: string };
+
+/** How many CSV rows to join per synchronous chunk before yielding to the UI. */
+const CSV_CHUNK_ROWS = 500;
+
+/** Escape + comma-join a single row of cells into one CSV line. */
+function joinCsvRow(row: string[]): string {
+  return row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',');
+}
+
+/**
+ * Build the CSV body in chunks, yielding to the event loop between each batch so
+ * a large export (up to several thousand rows) never blocks the JS thread long
+ * enough to freeze scrolling or drop the share-sheet animation (W9.4).
+ *
+ * Equivalent output to a synchronous `rows.map(joinCsvRow).join('\n')`.
+ */
+export async function buildCsvTextChunked(
+  rows: string[][],
+  chunkSize: number = CSV_CHUNK_ROWS,
+): Promise<string> {
+  if (rows.length === 0) return '';
+  const lines: string[] = new Array(rows.length);
+  for (let i = 0; i < rows.length; i += chunkSize) {
+    const end = Math.min(i + chunkSize, rows.length);
+    for (let j = i; j < end; j += 1) {
+      lines[j] = joinCsvRow(rows[j]);
+    }
+    // Yield between chunks so touch/scroll/paint can interleave. Skipped on the
+    // final chunk to avoid a needless extra macrotask.
+    if (end < rows.length) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    }
+  }
+  return lines.join('\n');
 }
 
 /**
  * Write CSV rows to a temp file and open the OS share sheet.
- * Falls back gracefully when expo-sharing is not installed.
+ *
+ * Resolves with a {@link CsvShareResult}: `{ ok: true }` on success, or
+ * `{ ok: false, ... }` when the web download fails or the native share rejects.
+ * Never throws for those expected failures, so callers that ignore the return
+ * value behave exactly as before (no unhandled rejection).
+ *
+ * @param rows  Full CSV grid (header + body rows).
+ * @param csvText  Optional pre-built body (e.g. from `buildCsvTextChunked`) so a
+ *   large export isn't re-joined synchronously here. Built from `rows` if omitted.
  */
-export async function buildAndShareCsv(filename: string, rows: string[][]): Promise<void> {
-  const csvText = buildCsvText(rows);
+export async function buildAndShareCsv(
+  filename: string,
+  rows: string[][],
+  csvText?: string,
+): Promise<CsvShareResult> {
+  // Use the chunked builder by default so even reports that grow large don't
+  // block the JS thread. For small grids it completes in a single chunk with no
+  // extra yields, so the cost is negligible.
+  const body = csvText ?? (await buildCsvTextChunked(rows));
 
   // ── Try expo-file-system (legacy) + expo-sharing ─────────────────────────
   try {
@@ -40,7 +96,7 @@ export async function buildAndShareCsv(filename: string, rows: string[][]): Prom
       if (isAvailable && typeof FileSystem?.writeAsStringAsync === 'function') {
         const cacheDir = (FileSystem.cacheDirectory as string | null) ?? '';
         const uri = `${cacheDir}${filename}`;
-        await FileSystem.writeAsStringAsync(uri, csvText, {
+        await FileSystem.writeAsStringAsync(uri, body, {
           encoding: FileSystem.EncodingType?.UTF8 ?? 'utf8',
         });
         await Sharing.shareAsync(uri, {
@@ -48,7 +104,7 @@ export async function buildAndShareCsv(filename: string, rows: string[][]): Prom
           dialogTitle: `Export ${filename}`,
           UTI: 'public.comma-separated-values-text',
         });
-        return;
+        return { ok: true };
       }
     }
   } catch {
@@ -58,26 +114,34 @@ export async function buildAndShareCsv(filename: string, rows: string[][]): Prom
   // ── Web: Blob download ───────────────────────────────────────────────────
   if (Platform.OS === 'web') {
     try {
-      const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
+      const blob = new Blob([body], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
+      return { ok: true };
     } catch (err) {
-      // No React context here to toast from; Alert.alert is a no-op on web.
-      // Web is a dev-only target (production export uses the native share path).
+      // W2.7: surface the failure to the caller instead of only console.error,
+      // so a screen with a toast host can tell the user the download failed.
+      const message = err instanceof Error ? err.message : 'Browser download failed.';
       console.error('[csv-export] browser download failed:', err);
+      return { ok: false, reason: 'web-download', message };
     }
-    return;
   }
 
   // ── Native fallback: share as plain text ─────────────────────────────────
-  await Share.share({
-    title: filename,
-    message: csvText,
-  });
+  try {
+    await Share.share({
+      title: filename,
+      message: body,
+    });
+    return { ok: true };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Could not open the share sheet.';
+    return { ok: false, reason: 'share', message };
+  }
 }
 
 /** Aggregate booking source keys → display labels, same as web. */

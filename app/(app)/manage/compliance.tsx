@@ -15,6 +15,7 @@ import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
+import { useScreenCaptureProtection } from '@/lib/security/useScreenCaptureProtection';
 import {
   useComplianceDashboard,
   useResendFormLink,
@@ -148,6 +149,10 @@ export default function ComplianceScreen() {
   const isAdmin = staffQuery.data?.staff?.role === 'admin';
   const updateFlags = useUpdateFeatureFlags();
   const [enableError, setEnableError] = useState<string | null>(null);
+
+  // Block screenshots / recording while compliance PII (guest names, captured
+  // form responses in the sub-sheets) is on screen.
+  useScreenCaptureProtection('compliance');
 
   const handleEnableCompliance = () => {
     setEnableError(null);
