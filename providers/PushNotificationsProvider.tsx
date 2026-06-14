@@ -1,5 +1,6 @@
 import { type Href, useRouter } from 'expo-router';
 import { useEffect, useRef, type ReactNode } from 'react';
+import { Platform } from 'react-native';
 
 import { isBackendConfigured } from '@/lib/env';
 import { Notifications } from '@/lib/push/notificationsModule';
@@ -10,6 +11,87 @@ import { useAuth } from '@/providers/AuthProvider';
 type PushNotificationsProviderProps = {
   children: ReactNode;
 };
+
+/**
+ * Notification category id used for actionable buttons (View / Confirm).
+ * The SERVER must set this same id on the push payload so the OS renders the
+ * action buttons:
+ *   - Expo push: `{ "categoryIdentifier": "booking" }` (also `_category` legacy).
+ *   - iOS APNs:  aps.category = "booking"; Android: channel + category metadata.
+ */
+const BOOKING_CATEGORY_ID = 'booking';
+
+// Android notification channels. Android 8+ requires every notification to land
+// on a channel; importance/sound/vibration are fixed per-channel at creation
+// time (the user can later override them in system settings). The SERVER must
+// set the matching `channelId` on the push payload for the notification to use
+// the intended channel — otherwise it falls back to the default "Miscellaneous".
+const ANDROID_CHANNELS = {
+  bookingsNew: 'bookings-new',
+  bookingsChanged: 'bookings-changed',
+  reminders: 'reminders',
+} as const;
+
+/**
+ * Create the Android notification channels. No-op off Android. Defensive:
+ * setNotificationChannelAsync can reject on devices/permission states that do
+ * not support channels, so failures are swallowed.
+ */
+async function configureAndroidChannels(notifications: NonNullable<typeof Notifications>): Promise<void> {
+  if (Platform.OS !== 'android') return;
+  const { AndroidImportance, AndroidNotificationVisibility } = notifications;
+  try {
+    await notifications.setNotificationChannelAsync(ANDROID_CHANNELS.bookingsNew, {
+      name: 'New bookings',
+      importance: AndroidImportance.HIGH,
+      sound: 'default',
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#003B6F',
+      lockscreenVisibility: AndroidNotificationVisibility.PUBLIC,
+    });
+    await notifications.setNotificationChannelAsync(ANDROID_CHANNELS.bookingsChanged, {
+      name: 'Booking changes',
+      importance: AndroidImportance.DEFAULT,
+      sound: 'default',
+      lockscreenVisibility: AndroidNotificationVisibility.PUBLIC,
+    });
+    await notifications.setNotificationChannelAsync(ANDROID_CHANNELS.reminders, {
+      name: 'Reminders',
+      importance: AndroidImportance.DEFAULT,
+      sound: 'default',
+      lockscreenVisibility: AndroidNotificationVisibility.PUBLIC,
+    });
+  } catch (error) {
+    console.warn('[push] Android channel setup failed:', error);
+  }
+}
+
+/**
+ * Register the actionable "booking" category. Both buttons open the app (no
+ * destructive actions) so the tap routes to the booking detail screen. Defensive:
+ * swallow failures so an unsupported platform never breaks setup.
+ */
+async function configureNotificationCategories(
+  notifications: NonNullable<typeof Notifications>,
+): Promise<void> {
+  try {
+    await notifications.setNotificationCategoryAsync(BOOKING_CATEGORY_ID, [
+      { identifier: 'VIEW', buttonTitle: 'View', options: { opensAppToForeground: true } },
+      { identifier: 'CONFIRM', buttonTitle: 'Confirm', options: { opensAppToForeground: true } },
+    ]);
+  } catch (error) {
+    console.warn('[push] notification category setup failed:', error);
+  }
+}
+
+/** Clear the app-icon badge. Best-effort — unsupported platforms simply no-op. */
+async function clearBadge(notifications: NonNullable<typeof Notifications>): Promise<void> {
+  try {
+    await notifications.setBadgeCountAsync(0);
+  } catch (error) {
+    console.warn('[push] clearing badge failed:', error);
+  }
+}
 
 function extractBookingId(data: Record<string, unknown> | null | undefined): string | null {
   if (!data) return null;
@@ -75,42 +157,63 @@ export function PushNotificationsProvider({ children }: PushNotificationsProvide
     let subscription: { remove: () => void } | null = null;
     let cancelled = false;
 
+    // A notification was opened (tap or action button) — route to the booking
+    // and clear the app-icon badge now that the user has seen it. CONFIRM is
+    // treated as a routing-only action for now.
+    // TODO: wire CONFIRM to a real booking-status mutation once this provider
+    // has access to the booking-status hook + auth context (out of scope here).
+    const handleResponse = (notifications: NonNullable<typeof Notifications>, response: unknown) => {
+      const typed = response as {
+        actionIdentifier?: string;
+        notification: { request: { content: { data?: Record<string, unknown> | null } } };
+      };
+      const action = typed.actionIdentifier;
+      // The default tap, plus our VIEW / CONFIRM buttons, all route to the booking.
+      const routes =
+        action === notifications.DEFAULT_ACTION_IDENTIFIER ||
+        action === 'VIEW' ||
+        action === 'CONFIRM' ||
+        action === undefined;
+      if (!routes) return;
+      const bookingId = extractBookingId(typed.notification.request.content.data);
+      if (bookingId) {
+        router.push(`/booking/${bookingId}` as Href);
+      }
+      void clearBadge(notifications);
+    };
+
     void (async () => {
       try {
         // Statically bundled per-platform (null on web) — see notificationsModule.
         if (!Notifications) return;
         if (cancelled) return;
+        const notifications = Notifications;
 
-        Notifications.setNotificationHandler({
+        notifications.setNotificationHandler({
           handleNotification: async () => ({
             shouldShowBanner: true,
             shouldShowList: true,
             shouldPlaySound: true,
-            shouldSetBadge: false,
+            shouldSetBadge: true,
           }),
         });
 
-        subscription = Notifications.addNotificationResponseReceivedListener((response) => {
-          const data = response.notification.request.content.data as
-            | Record<string, unknown>
-            | null
-            | undefined;
-          const bookingId = extractBookingId(data);
-          if (bookingId) {
-            router.push(`/booking/${bookingId}` as Href);
-          }
+        await configureAndroidChannels(notifications);
+        await configureNotificationCategories(notifications);
+        if (cancelled) return;
+
+        subscription = notifications.addNotificationResponseReceivedListener((response) => {
+          handleResponse(notifications, response);
         });
 
         // Cold start: the tap that LAUNCHED the app isn't delivered to the
         // listener above — fetch it explicitly and route once.
-        const lastResponse = await Notifications.getLastNotificationResponseAsync();
+        const lastResponse = await notifications.getLastNotificationResponseAsync();
         if (!cancelled && lastResponse) {
-          const coldStartBookingId = extractBookingId(
-            lastResponse.notification.request.content.data as Record<string, unknown> | null,
-          );
-          if (coldStartBookingId) {
-            router.push(`/booking/${coldStartBookingId}` as Href);
-          }
+          handleResponse(notifications, lastResponse);
+        } else if (!cancelled) {
+          // Opened the app normally (no notification tap) — drop any stale badge.
+          void clearBadge(notifications);
         }
       } catch (error) {
         console.warn('[push] notification listener setup failed:', error);

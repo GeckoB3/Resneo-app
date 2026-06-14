@@ -1,0 +1,16 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "//": "TODO: replace <APPLE_TEAM_ID> with the 10-char Apple Developer Team ID (App Store Connect > Membership, or `eas credentials` > iOS). Final value looks like ABCDE12345.com.resneo.app",
+        "appIDs": ["<APPLE_TEAM_ID>.com.resneo.app"],
+        "components": [
+          {
+            "/": "/booking/*",
+            "comment": "Deep-links into a single booking detail screen."
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -41,6 +41,7 @@ import type { MergeFieldMap, MergedProfile } from '@/types/guest-merge';
 
 type FieldSource = 'target' | 'source';
 type TagsMode = 'union' | 'target' | 'source';
+type CustomFieldsMode = 'target' | 'source_overlay';
 type MergeStep = 1 | 2 | 3 | 4;
 
 interface FieldChoices {
@@ -51,6 +52,7 @@ interface FieldChoices {
   customer_profile_notes: FieldSource;
   tags: TagsMode;
   marketing: FieldSource;
+  custom_fields: CustomFieldsMode;
 }
 
 function defaultChoices(): FieldChoices {
@@ -62,6 +64,9 @@ function defaultChoices(): FieldChoices {
     customer_profile_notes: 'target',
     tags: 'union',
     marketing: 'target',
+    // Default to overlay so source-only custom-field values are never silently
+    // dropped on merge. Conflicting keys are surfaced to the admin below.
+    custom_fields: 'source_overlay',
   };
 }
 
@@ -82,6 +87,49 @@ function marketingLabel(optOut: boolean, consent: boolean): string {
   if (optOut) return 'Opted out';
   if (consent) return 'Subscribed';
   return 'No record';
+}
+
+/** Coerce a guest's custom_fields into a plain key→value record. */
+function asCustomFields(v: unknown): Record<string, unknown> {
+  return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+}
+
+/** True when a custom-field value is effectively empty (unset on that record). */
+function isEmptyCfValue(v: unknown): boolean {
+  return v == null || (typeof v === 'string' && v.trim().length === 0);
+}
+
+/** Stringify a custom-field value for display in the conflict list. */
+function cfDisplay(v: unknown): string {
+  if (isEmptyCfValue(v)) return '—';
+  if (typeof v === 'boolean') return v ? 'Yes' : 'No';
+  return String(v);
+}
+
+interface CustomFieldConflict {
+  key: string;
+  targetValue: unknown;
+  sourceValue: unknown;
+}
+
+/**
+ * Keys present on both records with differing, non-empty values. These are the
+ * cases where 'source_overlay' would overwrite a kept value, so they are
+ * surfaced to the admin before they confirm.
+ */
+function customFieldConflicts(
+  target: Record<string, unknown>,
+  source: Record<string, unknown>,
+): CustomFieldConflict[] {
+  const out: CustomFieldConflict[] = [];
+  for (const key of Object.keys(source)) {
+    if (!(key in target)) continue;
+    const sv = source[key];
+    const tv = target[key];
+    if (isEmptyCfValue(sv) || isEmptyCfValue(tv)) continue;
+    if (String(tv) !== String(sv)) out.push({ key, targetValue: tv, sourceValue: sv });
+  }
+  return out;
 }
 
 function buildMergedProfile(
@@ -106,6 +154,14 @@ function buildMergedProfile(
   const notesRaw = pick(c.customer_profile_notes, target.customer_profile_notes, source.customer_profile_notes);
   const customer_profile_notes = notesRaw.length > 0 ? notesRaw : null;
 
+  // Custom fields: 'target' keeps only the survivor's values; 'source_overlay'
+  // starts from the survivor's keys then overlays the source's values, so
+  // source-only keys are preserved and matching keys take the source value.
+  const targetCf = asCustomFields(target.custom_fields);
+  const sourceCf = asCustomFields(source.custom_fields);
+  const custom_fields =
+    c.custom_fields === 'source_overlay' ? { ...targetCf, ...sourceCf } : { ...targetCf };
+
   return {
     first_name: pick(c.first_name, target.first_name, source.first_name) || null,
     last_name: pick(c.last_name, target.last_name, source.last_name) || null,
@@ -115,6 +171,7 @@ function buildMergedProfile(
     tags,
     marketing_consent: c.marketing === 'target' ? target.marketing_consent : source.marketing_consent,
     marketing_opt_out: c.marketing === 'target' ? target.marketing_opt_out : source.marketing_opt_out,
+    custom_fields,
   };
 }
 
@@ -127,6 +184,7 @@ function buildFieldMap(c: FieldChoices): MergeFieldMap {
     customer_profile_notes: c.customer_profile_notes,
     tags: c.tags,
     marketing_consent: c.marketing,
+    custom_fields: c.custom_fields,
   };
 }
 
@@ -457,6 +515,31 @@ export function MergeContactDetailSheet({
     if (!targetGuest || !mergeFromGuest) return null;
     return buildMergedProfile(targetGuest, mergeFromGuest, choices);
   }, [targetGuest, mergeFromGuest, choices]);
+
+  // ── custom fields: definitions (for human labels) + conflicting keys ──────────
+  // Both records share the venue's field definitions, so either detail payload
+  // can supply the key→name map.
+  const customFieldNames = useMemo((): Record<string, string> => {
+    const defs = sourceDetailQuery.data?.custom_field_definitions ?? [];
+    const map: Record<string, string> = {};
+    for (const d of defs) map[d.field_key] = d.field_name;
+    return map;
+  }, [sourceDetailQuery.data]);
+
+  const cfConflicts = useMemo((): CustomFieldConflict[] => {
+    if (!targetGuest || !mergeFromGuest) return [];
+    return customFieldConflicts(
+      asCustomFields(targetGuest.custom_fields),
+      asCustomFields(mergeFromGuest.custom_fields),
+    );
+  }, [targetGuest, mergeFromGuest]);
+
+  const sourceOnlyCfCount = useMemo((): number => {
+    if (!targetGuest || !mergeFromGuest) return 0;
+    const t = asCustomFields(targetGuest.custom_fields);
+    const s = asCustomFields(mergeFromGuest.custom_fields);
+    return Object.keys(s).filter((k) => !isEmptyCfValue(s[k]) && isEmptyCfValue(t[k])).length;
+  }, [targetGuest, mergeFromGuest]);
 
   // ── submission ──────────────────────────────────────────────────────────────
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -800,6 +883,108 @@ export function MergeContactDetailSheet({
                 />
               </View>
             </View>
+
+            {/* Custom fields — only shown when either record carries values */}
+            {Object.keys(asCustomFields(targetGuest.custom_fields)).length > 0 ||
+            Object.keys(asCustomFields(mergeFromGuest.custom_fields)).length > 0 ? (
+              <View style={styles.fieldSection}>
+                <Text variant="label" tone="secondary">
+                  Custom fields
+                </Text>
+                <View style={styles.tagsOptions}>
+                  {(
+                    [
+                      {
+                        id: 'source_overlay' as const,
+                        title: 'Combine (merge-from wins conflicts)',
+                        sub: 'Keeps the survivor’s fields, adds any the other record has, and overwrites matching keys with the removed contact’s values.',
+                      },
+                      {
+                        id: 'target' as const,
+                        title: `${keepSide === 'current' ? 'This contact only' : 'Other contact only'}`,
+                        sub: 'Keeps only the surviving record’s custom-field values.',
+                      },
+                    ] satisfies { id: CustomFieldsMode; title: string; sub: string }[]
+                  ).map((opt) => (
+                    <Pressable
+                      key={opt.id}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected: choices.custom_fields === opt.id }}
+                      onPress={() => setChoices((c) => ({ ...c, custom_fields: opt.id }))}
+                      style={[
+                        styles.radioCard,
+                        {
+                          borderColor:
+                            choices.custom_fields === opt.id ? colors.brand : colors.border,
+                          backgroundColor:
+                            choices.custom_fields === opt.id
+                              ? colors.brandSubtle
+                              : colors.surfaceRaised,
+                        },
+                      ]}>
+                      <View style={styles.radioIndicatorRow}>
+                        <View
+                          style={[
+                            styles.radioOuter,
+                            {
+                              borderColor:
+                                choices.custom_fields === opt.id
+                                  ? colors.brand
+                                  : colors.borderStrong,
+                            },
+                          ]}>
+                          {choices.custom_fields === opt.id ? (
+                            <View style={[styles.radioInner, { backgroundColor: colors.brand }]} />
+                          ) : null}
+                        </View>
+                        <Text variant="label" style={styles.flex1}>
+                          {opt.title}
+                        </Text>
+                      </View>
+                      <Text variant="caption" tone="muted">
+                        {opt.sub}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+
+                {/* Surface conflicting keys so an overwrite is never silent. */}
+                {cfConflicts.length > 0 ? (
+                  <View
+                    style={[
+                      styles.warningBox,
+                      { backgroundColor: colors.warningSurface, borderColor: colors.warning },
+                    ]}>
+                    <Text variant="caption" tone="secondary" style={styles.cfConflictIntro}>
+                      {cfConflicts.length === 1
+                        ? '1 custom field differs between the records:'
+                        : `${cfConflicts.length} custom fields differ between the records:`}
+                    </Text>
+                    {cfConflicts.map((conf) => (
+                      <View key={conf.key} style={styles.cfConflictRow}>
+                        <Text variant="caption" tone="secondary">
+                          {customFieldNames[conf.key] ?? conf.key}
+                        </Text>
+                        <Text variant="caption" tone="muted">
+                          {`Keep: ${cfDisplay(conf.targetValue)}  ·  Remove: ${cfDisplay(conf.sourceValue)}`}
+                        </Text>
+                      </View>
+                    ))}
+                    <Text variant="caption" tone="muted" style={styles.cfConflictIntro}>
+                      {choices.custom_fields === 'source_overlay'
+                        ? 'The removed contact’s value will be kept for these fields.'
+                        : 'The surviving contact’s value will be kept for these fields.'}
+                    </Text>
+                  </View>
+                ) : sourceOnlyCfCount > 0 && choices.custom_fields === 'target' ? (
+                  <Text variant="caption" tone="muted">
+                    {sourceOnlyCfCount === 1
+                      ? '1 custom-field value from the removed contact will be dropped.'
+                      : `${sourceOnlyCfCount} custom-field values from the removed contact will be dropped.`}
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
           </View>
         ) : null}
 
@@ -873,6 +1058,21 @@ export function MergeContactDetailSheet({
                     Boolean(mergedProfile.marketing_consent),
                   )}
                 />
+                {mergedProfile.custom_fields &&
+                Object.keys(mergedProfile.custom_fields).length > 0 ? (
+                  <PreviewRow
+                    label="Custom fields"
+                    value={
+                      choices.custom_fields === 'source_overlay'
+                        ? `${Object.keys(mergedProfile.custom_fields).length} field${
+                            Object.keys(mergedProfile.custom_fields).length === 1 ? '' : 's'
+                          } (combined${cfConflicts.length > 0 ? `, ${cfConflicts.length} overwritten` : ''})`
+                        : `${Object.keys(mergedProfile.custom_fields).length} field${
+                            Object.keys(mergedProfile.custom_fields).length === 1 ? '' : 's'
+                          } (kept record only)`
+                    }
+                  />
+                ) : null}
               </View>
             </Card>
 
@@ -1087,6 +1287,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: radius.md,
     padding: spacing.md,
+  },
+
+  // custom-field conflict list (step 3)
+  cfConflictIntro: {
+    marginBottom: spacing.xs,
+  },
+  cfConflictRow: {
+    paddingVertical: spacing.xs / 2,
+    gap: 2,
   },
 
   // step 4 summary

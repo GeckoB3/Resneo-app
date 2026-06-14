@@ -11,6 +11,13 @@ export interface MergeFieldMap {
   customer_profile_notes?: 'target' | 'source';
   marketing_consent?: 'target' | 'source';
   tags?: 'union' | 'target' | 'source';
+  /**
+   * 'target' keeps only the surviving record's custom-field values;
+   * 'source_overlay' starts from the target's keys then overlays the source's
+   * values for any matching keys (source wins conflicts, source-only keys are
+   * preserved). Mirrors MergeContactsModal on web.
+   */
+  custom_fields?: 'target' | 'source_overlay';
 }
 
 export interface MergedProfile {
@@ -22,6 +29,8 @@ export interface MergedProfile {
   marketing_consent?: boolean;
   marketing_opt_out?: boolean;
   tags?: string[];
+  /** Resolved custom-field values for the surviving record. */
+  custom_fields?: Record<string, unknown>;
 }
 
 export interface MergeGuestsInput {
