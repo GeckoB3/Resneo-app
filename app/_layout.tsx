@@ -13,8 +13,10 @@ import { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
 
+import { AuthNoticeBridge } from '@/components/AuthNoticeBridge';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { useColorScheme } from '@/components/useColorScheme';
+import { initAnalytics } from '@/lib/analytics';
 import { captureException, initObservability } from '@/lib/observability';
 import { AppProviders } from '@/providers/AppProviders';
 import { useAuth } from '@/providers/AuthProvider';
@@ -27,6 +29,8 @@ export {
 SplashScreen.preventAutoHideAsync();
 // Single reporting choke point + global uncaught-error handler (see lib/observability).
 initObservability();
+// Product-analytics seam (console/no-op until a backend key is configured).
+initAnalytics();
 
 export default function RootLayout() {
   // Inter is the Resneo brand typeface (matches the web app). Loaded at startup
@@ -79,6 +83,9 @@ function RootLayoutNav() {
   return (
     <>
       <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
+      {/* Surfaces auth notices (e.g. session expiry) via the Toast host, which
+          lives under AppProviders above this nav. */}
+      <AuthNoticeBridge />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Protected guard={!!session}>
           <Stack.Screen name="(app)" />

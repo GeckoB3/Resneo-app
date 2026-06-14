@@ -5,10 +5,12 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
 
+import { ANALYTICS_EVENTS, identify, resetAnalytics, track } from '@/lib/analytics';
 import { getAuthCallbackRedirectUrl } from '@/lib/auth/redirect';
 import { setObservabilityUser } from '@/lib/observability';
 import { queryClient } from '@/lib/queries/queryClient';
@@ -23,6 +25,10 @@ type AuthContextValue = {
   user: User | null;
   isLoading: boolean;
   initError: string | null;
+  /** True when the session was lost unexpectedly (expiry/revocation), not via signOut(). */
+  sessionExpired: boolean;
+  /** Clear the sessionExpired flag once the notice has been shown. */
+  acknowledgeSessionExpiry: () => void;
   signInWithEmail: (email: string) => Promise<{ error: string | null }>;
   signInWithPassword: (email: string, password: string) => Promise<{ error: string | null }>;
   requestPasswordReset: (email: string) => Promise<{ error: string | null }>;
@@ -43,6 +49,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [initError, setInitError] = useState<string | null>(null);
+  const [sessionExpired, setSessionExpired] = useState(false);
+  // True only while an explicit signOut() is in flight, so the resulting
+  // SIGNED_OUT event isn't mistaken for an unexpected expiry/revocation.
+  const isExplicitSignOutRef = useRef(false);
 
   useEffect(() => {
     let supabase: SupabaseClient;
@@ -67,8 +77,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
         console.warn('[AuthProvider] getSession failed:', error.message);
       }
 
+      const userId = data.session?.user?.id ?? null;
       setSession(data.session ?? null);
-      setObservabilityUser(data.session?.user?.id ?? null);
+      setObservabilityUser(userId);
+      identify(userId);
       setIsLoading(false);
     }
 
@@ -76,9 +88,24 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      const userId = nextSession?.user?.id ?? null;
       setSession(nextSession);
-      setObservabilityUser(nextSession?.user?.id ?? null);
+      setObservabilityUser(userId);
+      identify(userId);
+
+      if (userId) {
+        if (event === 'SIGNED_IN') {
+          track(ANALYTICS_EVENTS.signInSucceeded);
+        }
+      } else if (event === 'SIGNED_OUT') {
+        // A SIGNED_OUT we didn't initiate means the refresh token was revoked
+        // or expired — flag it so the UI can prompt a friendly re-login.
+        if (!isExplicitSignOutRef.current) {
+          setSessionExpired(true);
+        }
+        isExplicitSignOutRef.current = false;
+      }
       setIsLoading(false);
     });
 
@@ -164,12 +191,19 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   }, []);
 
+  const acknowledgeSessionExpiry = useCallback(() => setSessionExpired(false), []);
+
   const signOut = useCallback(async () => {
+    // Mark this as a deliberate sign-out so the SIGNED_OUT event above isn't
+    // surfaced as a "session expired" notice.
+    isExplicitSignOutRef.current = true;
+    track(ANALYTICS_EVENTS.signedOut);
     const supabase = getSupabase();
     const { error } = await supabase.auth.signOut();
     if (error) {
       console.warn('[AuthProvider] signOut failed:', error.message);
     }
+    resetAnalytics();
     // Drop all cached venue data so a subsequent user can never transiently see
     // the previous user's bookings/clients before their own queries load.
     queryClient.clear();
@@ -181,12 +215,24 @@ export function AuthProvider({ children }: AuthProviderProps) {
       user: session?.user ?? null,
       isLoading,
       initError,
+      sessionExpired,
+      acknowledgeSessionExpiry,
       signInWithEmail,
       signInWithPassword,
       requestPasswordReset,
       signOut,
     }),
-    [session, isLoading, initError, signInWithEmail, signInWithPassword, requestPasswordReset, signOut],
+    [
+      session,
+      isLoading,
+      initError,
+      sessionExpired,
+      acknowledgeSessionExpiry,
+      signInWithEmail,
+      signInWithPassword,
+      requestPasswordReset,
+      signOut,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
