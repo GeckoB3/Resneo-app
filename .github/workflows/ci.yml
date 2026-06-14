@@ -1,0 +1,24 @@
+name: CI
+
+# Lint + the Jest suite gate every PR. `npm run typecheck` (tsc) is run locally
+# / pre-push instead: it needs Expo's generated `expo-env.d.ts` + `.expo/types`,
+# which are gitignored and absent on a clean CI checkout.
+on:
+  push:
+    branches: [main, staging]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Test
+        run: npm test -- --ci

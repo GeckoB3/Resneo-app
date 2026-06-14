@@ -14,3 +14,77 @@ jest.mock('expo-haptics', () => ({
   ImpactFeedbackStyle: { Light: 'light', Medium: 'medium', Heavy: 'heavy' },
   NotificationFeedbackType: { Success: 'success', Warning: 'warning', Error: 'error' },
 }));
+
+// react-native-reanimated's native part (worklets) is not initialized under
+// jest-expo, so importing any component that pulls it in (Button, Input, Sheet,
+// …) throws at module-load time. The library's own `/mock` entry transitively
+// loads worklets too (v4), so it throws the same way — we provide a small,
+// self-contained factory covering just the surface those components touch at
+// import / render time. Pure-logic suites that never import reanimated are
+// unaffected. This is enough to let *mixed* suites import a `.tsx` module and
+// exercise its render-free helpers; it does not attempt real animation.
+// eslint-disable-next-line no-undef
+jest.mock('react-native-reanimated', () => {
+  // eslint-disable-next-line no-undef
+  const React = require('react');
+  // eslint-disable-next-line no-undef
+  const { View, Text, ScrollView } = require('react-native');
+  const passthrough = (Component) =>
+    React.forwardRef((props, ref) => React.createElement(Component, { ...props, ref }));
+  const AnimatedView = passthrough(View);
+  const Animated = {
+    View: AnimatedView,
+    Text: passthrough(Text),
+    ScrollView: passthrough(ScrollView),
+    createAnimatedComponent: (Component) => passthrough(Component),
+  };
+  const ease = () => 0;
+  ease.ease = ease;
+  ease.inOut = () => ease;
+  ease.out = () => ease;
+  ease.in = () => ease;
+  return {
+    __esModule: true,
+    default: Animated,
+    ...Animated,
+    // Reanimated v4 shared values use .get()/.set() (plus legacy .value).
+    useSharedValue: (initial) => {
+      let current = initial;
+      return {
+        get value() {
+          return current;
+        },
+        set value(next) {
+          current = next;
+        },
+        get: () => current,
+        set: (next) => {
+          current = typeof next === 'function' ? next(current) : next;
+        },
+        modify: (fn) => {
+          current = typeof fn === 'function' ? fn(current) : current;
+        },
+        addListener: () => {},
+        removeListener: () => {},
+      };
+    },
+    useAnimatedStyle: (factory) => (typeof factory === 'function' ? factory() : {}),
+    useDerivedValue: (factory) => {
+      const value = typeof factory === 'function' ? factory() : undefined;
+      return { value, get: () => value, set: () => {} };
+    },
+    useAnimatedReaction: () => {},
+    useAnimatedRef: () => ({ current: null }),
+    withSpring: (toValue) => toValue,
+    withTiming: (toValue) => toValue,
+    withRepeat: (animation) => animation,
+    withDelay: (_delay, animation) => animation,
+    withSequence: (...animations) => animations[animations.length - 1],
+    cancelAnimation: () => {},
+    interpolate: () => 0,
+    interpolateColor: (_value, _input, output) => (Array.isArray(output) ? output[0] : output),
+    runOnJS: (fn) => fn,
+    runOnUI: (fn) => fn,
+    Easing: ease,
+  };
+});
