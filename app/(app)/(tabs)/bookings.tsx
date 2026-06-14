@@ -2,6 +2,7 @@ import { useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import {
   FlatList,
+  Platform,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -592,6 +593,12 @@ export default function BookingsScreen() {
     ],
   );
 
+  const keyExtractor = useCallback(
+    (item: ListRow) =>
+      item.kind === 'header' ? `header-${item.date}` : item.booking.id,
+    [],
+  );
+
   // Any sheet-managed filter active — drives the Filters button highlight and
   // the in-sheet "Reset". Status is included now that it lives in the sheet.
   const sheetFiltersActive =
@@ -795,12 +802,16 @@ export default function BookingsScreen() {
       ) : (
         <FlatList
           data={listRows}
-          keyExtractor={(item) =>
-            item.kind === 'header' ? `header-${item.date}` : item.booking.id
-          }
+          keyExtractor={keyExtractor}
           renderItem={renderItem}
           contentContainerStyle={styles.listContent}
           ItemSeparatorComponent={ItemSeparator}
+          // W8.4 virtualization tuning — mixed header/booking rows are
+          // variable-height (multi-line subtitles), so no getItemLayout.
+          initialNumToRender={12}
+          maxToRenderPerBatch={12}
+          windowSize={11}
+          removeClippedSubviews={Platform.OS === 'android'}
           ListEmptyComponent={
             <EmptyState
               icon={

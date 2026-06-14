@@ -1,6 +1,6 @@
 import { Stack } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, RefreshControl, SectionList, StyleSheet, View } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { BookingDetailSheet } from '@/components/bookings/BookingDetailSheet';
@@ -41,6 +41,11 @@ function groupByDate(sessions: ClassSession[]): { date: string; items: ClassSess
     }
   }
   return groups;
+}
+
+/** spacing.sm gap between session cards within a day group. */
+function CardSeparator() {
+  return <View style={styles.cardSeparator} />;
 }
 
 /**
@@ -93,8 +98,13 @@ export default function ClassesScreen() {
   const instructorNameFor = (session: ClassSession): string | null =>
     session.calendarId ? (calendarNameById.get(session.calendarId) ?? null) : null;
 
-  const groups = useMemo(
-    () => groupByDate(sessionsQuery.data ?? []),
+  // SectionList sections — one per calendar date, in feed order (soonest first).
+  const sections = useMemo(
+    () =>
+      groupByDate(sessionsQuery.data ?? []).map((group) => ({
+        date: group.date,
+        data: group.items,
+      })),
     [sessionsQuery.data],
   );
   const onToday = weekStart === today;
@@ -169,39 +179,46 @@ export default function ClassesScreen() {
                 onRetry={() => void sessionsQuery.refetch()}
               />
             </View>
+          ) : sections.length === 0 ? (
+            <View style={styles.stateWrap}>
+              <EmptyState
+                title="No class sessions"
+                message="There are no sessions in this week. Class types and schedules are set up on the web dashboard (Class timetable); sessions then appear here."
+              />
+            </View>
           ) : (
-            <ScrollView
+            <SectionList
+              sections={sections}
+              keyExtractor={(session) => session.classInstanceId}
+              renderSectionHeader={({ section }) => (
+                <Text variant="overline" tone="secondary" style={styles.dayHeading}>
+                  {section.date === today ? 'Today' : formatDayHeading(section.date)}
+                </Text>
+              )}
+              renderItem={({ item }) => (
+                <ClassSessionCard
+                  session={item}
+                  instructorName={instructorNameFor(item)}
+                  onPress={() => setSelectedSession(item)}
+                />
+              )}
+              // Reproduce the prior layout gaps: spacing.sm between cards in a
+              // day, spacing.base after each day group.
+              ItemSeparatorComponent={CardSeparator}
+              renderSectionFooter={() => <View style={styles.sectionGap} />}
+              ListFooterComponent={<View style={styles.spacer} />}
               contentContainerStyle={styles.content}
+              stickySectionHeadersEnabled={false}
+              initialNumToRender={8}
+              windowSize={11}
+              removeClippedSubviews
               refreshControl={
                 <RefreshControl
                   refreshing={sessionsQuery.isRefetching}
                   onRefresh={() => void sessionsQuery.refetch()}
                 />
-              }>
-              {groups.length === 0 ? (
-                <EmptyState
-                  title="No class sessions"
-                  message="There are no sessions in this week. Class types and schedules are set up on the web dashboard (Class timetable); sessions then appear here."
-                />
-              ) : (
-                groups.map((group) => (
-                  <View key={group.date} style={styles.dayGroup}>
-                    <Text variant="overline" tone="secondary" style={styles.dayHeading}>
-                      {group.date === today ? 'Today' : formatDayHeading(group.date)}
-                    </Text>
-                    {group.items.map((session) => (
-                      <ClassSessionCard
-                        key={session.classInstanceId}
-                        session={session}
-                        instructorName={instructorNameFor(session)}
-                        onPress={() => setSelectedSession(session)}
-                      />
-                    ))}
-                  </View>
-                ))
-              )}
-              <View style={styles.spacer} />
-            </ScrollView>
+              }
+            />
           )}
         </>
       )}
@@ -231,13 +248,16 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: spacing.base,
-    gap: spacing.base,
-  },
-  dayGroup: {
-    gap: spacing.sm,
   },
   dayHeading: {
-    marginBottom: spacing.xs,
+    // spacing.xs + spacing.sm reproduces the old group's heading→card gap.
+    marginBottom: spacing.xs + spacing.sm,
+  },
+  cardSeparator: {
+    height: spacing.sm,
+  },
+  sectionGap: {
+    height: spacing.base,
   },
   stateWrap: {
     flex: 1,

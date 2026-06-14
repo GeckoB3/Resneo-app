@@ -1,11 +1,12 @@
 import { format, parseISO } from 'date-fns';
 import { type Href, useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
   Linking,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -130,7 +131,7 @@ function customFieldCell(value: unknown): string {
   return String(value);
 }
 
-function GuestRow({
+function GuestRowBase({
   guest,
   onPress,
   onPressIn,
@@ -139,9 +140,9 @@ function GuestRow({
   selected = false,
 }: {
   guest: GuestListItem;
-  onPress: () => void;
-  onPressIn?: () => void;
-  onLongPress?: () => void;
+  onPress: (id: string) => void;
+  onPressIn?: (id: string) => void;
+  onLongPress?: (id: string) => void;
   selectionMode?: boolean;
   selected?: boolean;
 }) {
@@ -162,9 +163,9 @@ function GuestRow({
     <Pressable
       accessibilityRole="button"
       accessibilityState={{ selected }}
-      onPress={onPress}
-      onPressIn={onPressIn}
-      onLongPress={onLongPress}
+      onPress={() => onPress(guest.id)}
+      onPressIn={onPressIn ? () => onPressIn(guest.id) : undefined}
+      onLongPress={onLongPress ? () => onLongPress(guest.id) : undefined}
       style={({ pressed }) => [
         styles.row,
         {
@@ -177,7 +178,7 @@ function GuestRow({
       {selectionMode ? (
         <Pressable
           hitSlop={10}
-          onPress={onPress}
+          onPress={() => onPress(guest.id)}
           style={[
             styles.selectCheck,
             {
@@ -232,6 +233,9 @@ function GuestRow({
     </Pressable>
   );
 }
+
+/** Memoized so rows skip re-render while scrolling / selecting unrelated rows. */
+const GuestRow = memo(GuestRowBase);
 
 export default function ClientsScreen() {
   const router = useRouter();
@@ -378,13 +382,13 @@ export default function ClientsScreen() {
     [accessToken, queryClient],
   );
 
-  const toggleSelected = (guestId: string) => {
+  const toggleSelected = useCallback((guestId: string) => {
     setSelectedIds((current) =>
       current.includes(guestId)
         ? current.filter((id) => id !== guestId)
         : [...current, guestId],
     );
-  };
+  }, []);
 
   const clearSelection = () => {
     setSelectedIds([]);
@@ -430,6 +434,20 @@ export default function ClientsScreen() {
     [letterIndex],
   );
 
+  // Stable id-based row handlers — identity only changes when selectionMode
+  // flips, so memoized rows skip re-render while scrolling and while selecting
+  // other rows. (toggleSelected/openGuest/prefetchGuest are themselves stable.)
+  const handleRowPress = useCallback(
+    (id: string) => (selectionMode ? toggleSelected(id) : openGuest(id)),
+    [selectionMode, toggleSelected, openGuest],
+  );
+  const handleRowPressIn = useCallback(
+    (id: string) => {
+      if (!selectionMode) prefetchGuest(id);
+    },
+    [selectionMode, prefetchGuest],
+  );
+
   const renderContactRow = useCallback(
     (item: GuestListItem) => {
       const swipeActions: SwipeAction[] = [];
@@ -455,9 +473,9 @@ export default function ClientsScreen() {
           guest={item}
           selectionMode={selectionMode}
           selected={selectedIds.includes(item.id)}
-          onPress={() => (selectionMode ? toggleSelected(item.id) : openGuest(item.id))}
-          onPressIn={() => (selectionMode ? undefined : prefetchGuest(item.id))}
-          onLongPress={() => toggleSelected(item.id)}
+          onPress={handleRowPress}
+          onPressIn={handleRowPressIn}
+          onLongPress={toggleSelected}
         />
       );
 
@@ -472,8 +490,15 @@ export default function ClientsScreen() {
         </Animated.View>
       );
     },
-    // toggleSelected/openGuest/prefetchGuest are stable enough for this list.
-    [colors.brand, colors.success, selectionMode, selectedIds, openGuest, prefetchGuest],
+    [
+      colors.brand,
+      colors.success,
+      selectionMode,
+      selectedIds,
+      handleRowPress,
+      handleRowPressIn,
+      toggleSelected,
+    ],
   );
 
   const renderItem: ListRenderItem<ContactListRow> = useCallback(
@@ -810,6 +835,11 @@ export default function ClientsScreen() {
             stickyHeaderIndices={nameSort ? stickyHeaderIndices : undefined}
             onEndReached={loadNextPage}
             onEndReachedThreshold={0.6}
+            // W8.4 virtualization tuning — paired with getItemLayout above.
+            initialNumToRender={12}
+            maxToRenderPerBatch={12}
+            windowSize={11}
+            removeClippedSubviews={Platform.OS === 'android'}
             // scrollToIndex can briefly miss before all rows render; fall back to
             // an offset scroll then retry so the A–Z rail never throws.
             onScrollToIndexFailed={(info) => {

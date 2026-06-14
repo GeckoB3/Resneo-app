@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { ComplianceFlagDot } from '@/components/compliance/ComplianceFlagBadge';
@@ -54,7 +55,7 @@ function partyLabel(partySize: number, isAppointment: boolean): string | null {
 }
 
 /** A single booking in the list — time-led, tap opens detail, long-press enters selection mode. */
-export function BookingRow({
+function BookingRowBase({
   booking,
   isAppointment,
   onPress,
@@ -190,6 +191,9 @@ export function BookingRow({
     </PressableScale>
   );
 }
+
+/** Memoized so rows skip re-render while scrolling / selecting other rows. */
+export const BookingRow = memo(BookingRowBase);
 
 const styles = StyleSheet.create({
   row: {

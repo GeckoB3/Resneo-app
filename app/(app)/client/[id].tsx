@@ -2,12 +2,13 @@ import { format, parseISO } from 'date-fns';
 import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import {
+  FlatList,
   Linking,
   Pressable,
   RefreshControl,
-  ScrollView,
   StyleSheet,
   View,
+  type ListRenderItem,
 } from 'react-native';
 
 import { BookingDetailSheet } from '@/components/bookings/BookingDetailSheet';
@@ -40,7 +41,7 @@ import { useGuestTimeline, useSendGuestMessage, useUpdateGuest } from '@/lib/que
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
-import { minTouchTarget, spacing } from '@/theme/index';
+import { minTouchTarget, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type {
   GuestBookingHistoryRow,
@@ -88,14 +89,22 @@ function StatColumn({ label, value, divider }: { label: string; value: string; d
   );
 }
 
+/**
+ * One booking-history row. Rows are virtualized in a FlatList, so the Card
+ * chrome (surface, border, rounded corners) that used to wrap the whole list is
+ * applied per-row here: side borders on every row, top/bottom borders + rounded
+ * corners on the first/last, and a hairline divider between rows.
+ */
 function HistoryRow({
   booking,
   onPress,
-  divider,
+  isFirst,
+  isLast,
 }: {
   booking: GuestBookingHistoryRow;
   onPress: () => void;
-  divider: boolean;
+  isFirst: boolean;
+  isLast: boolean;
 }) {
   const { colors } = useTheme();
   const party =
@@ -108,7 +117,16 @@ function HistoryRow({
       onPress={onPress}
       style={({ pressed }) => [
         styles.historyRow,
-        divider ? { borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth } : null,
+        {
+          backgroundColor: colors.surfaceRaised,
+          borderColor: colors.border,
+          borderLeftWidth: StyleSheet.hairlineWidth,
+          borderRightWidth: StyleSheet.hairlineWidth,
+          // Hairline on every row: a divider between rows and the card's bottom edge.
+          borderBottomWidth: StyleSheet.hairlineWidth,
+        },
+        isFirst ? styles.historyRowFirst : null,
+        isLast ? styles.historyRowLast : null,
         pressed ? styles.pressed : null,
       ]}>
       <View style={styles.historyTime}>
@@ -286,19 +304,21 @@ export default function ClientDetailScreen() {
     }
   };
 
-  return (
-    <Screen padded={false} scroll={false}>
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        refreshControl={
-          <RefreshControl
-            refreshing={detailQuery.isRefetching}
-            onRefresh={() => void detailQuery.refetch()}
-            tintColor={colors.brand}
-          />
-        }>
-        {/* Profile hero — identity, tags, and quick contact actions */}
-        <Card>
+  const renderHistoryRow: ListRenderItem<GuestBookingHistoryRow> = ({ item, index }) => (
+    <HistoryRow
+      booking={item}
+      isFirst={index === 0}
+      isLast={index === booking_history.length - 1}
+      onPress={() => handleBookingPress(item.id)}
+    />
+  );
+
+  // Everything above the (virtualized) booking-history list. The booking rows
+  // are the FlatList data; the profile chrome + section header ride along here.
+  const listHeader = (
+    <View style={styles.headerStack}>
+      {/* Profile hero — identity, tags, and quick contact actions */}
+      <Card>
           <View style={styles.profile}>
             <Avatar name={name} size={72} />
             <Text variant="title" numberOfLines={1} style={styles.profileName}>
@@ -388,105 +408,122 @@ export default function ClientDetailScreen() {
           )}
         </Card>
 
-        {/* New booking CTA */}
-        <Button label="New booking for this client" fullWidth onPress={handleNewBookingForClient} />
+      {/* New booking CTA */}
+      <Button label="New booking for this client" fullWidth onPress={handleNewBookingForClient} />
 
-        {/* Booking history */}
-        <SectionHeader title="Booking history" />
-        {booking_history.length === 0 ? (
-          <EmptyState
-            title="No bookings yet"
-            message={
-              stats.days_as_customer > 0
-                ? `Client since ${stats.days_as_customer} day${stats.days_as_customer === 1 ? '' : 's'} ago.`
-                : 'This client has no booking history.'
-            }
-          />
-        ) : (
-          <Card padded={false}>
-            {booking_history.map((booking, index) => (
-              <HistoryRow
-                key={booking.id}
-                booking={booking}
-                divider={index < booking_history.length - 1}
-                onPress={() => handleBookingPress(booking.id)}
-              />
+      {/* Booking history */}
+      <SectionHeader title="Booking history" />
+      {booking_history.length === 0 ? (
+        <EmptyState
+          title="No bookings yet"
+          message={
+            stats.days_as_customer > 0
+              ? `Client since ${stats.days_as_customer} day${stats.days_as_customer === 1 ? '' : 's'} ago.`
+              : 'This client has no booking history.'
+          }
+        />
+      ) : null}
+    </View>
+  );
+
+  // Everything below the booking-history list (rendered after the rows). The
+  // activity timeline stays last — visually identical to the old ScrollView.
+  const listFooter = (
+    <View style={styles.footerStack}>
+      {/* Marketing preferences (inline toggles with instant save) */}
+      <SectionHeader title="Record & preferences" />
+      <MarketingPreferencesCard
+        marketingConsent={guest.marketing_consent}
+        marketingOptOut={guest.marketing_opt_out}
+        marketingConsentAt={guest.marketing_consent_at}
+        onConsentChange={(v) => void handleMarketingConsentChange(v)}
+        onOptOutChange={(v) => void handleMarketingOptOutChange(v)}
+        disabled={updateGuest.isPending}
+      />
+
+      {/* Custom client fields */}
+      {custom_field_definitions.length > 0 ? (
+        <CustomFieldsSection
+          guestId={guestId}
+          definitions={custom_field_definitions}
+          currentValues={guest.custom_fields}
+        />
+      ) : null}
+
+      {/* Household linking */}
+      <HouseholdSection
+        guestId={guestId}
+        onNavigateToGuest={(linkedId) => router.push(`/client/${linkedId}` as Href)}
+      />
+
+      {/* Documents */}
+      <DocumentsSection guestId={guestId} />
+
+      {/* Compliance — per-guest records + audit trail (feature-flagged, read-only) */}
+      {complianceEnabled ? <ComplianceSection guestId={guestId} /> : null}
+
+      {/* Message history */}
+      <CommunicationsSection communications={communications} />
+
+      {/* Activity timeline */}
+      {timelineEvents.length > 0 ? (
+        <>
+          <SectionHeader title="Activity" />
+          <Card>
+            {timelineEvents.map((event) => (
+              <View key={event.id} style={styles.timelineRow}>
+                <Text variant="bodySmall" numberOfLines={2}>
+                  {event.label}
+                </Text>
+                <Text variant="caption" tone="muted">
+                  {formatTimelineTime(event.occurred_at)}
+                </Text>
+              </View>
             ))}
           </Card>
-        )}
+        </>
+      ) : null}
 
-        {/* Marketing preferences (inline toggles with instant save) */}
-        <SectionHeader title="Record & preferences" />
-        <MarketingPreferencesCard
-          marketingConsent={guest.marketing_consent}
-          marketingOptOut={guest.marketing_opt_out}
-          marketingConsentAt={guest.marketing_consent_at}
-          onConsentChange={(v) => void handleMarketingConsentChange(v)}
-          onOptOutChange={(v) => void handleMarketingOptOutChange(v)}
-          disabled={updateGuest.isPending}
-        />
-
-        {/* Custom client fields */}
-        {custom_field_definitions.length > 0 ? (
-          <CustomFieldsSection
-            guestId={guestId}
-            definitions={custom_field_definitions}
-            currentValues={guest.custom_fields}
+      {/* Admin section — merge + GDPR (admin only) */}
+      {isAdmin ? (
+        <>
+          <SectionHeader title="Admin" />
+          <Button
+            label="Merge duplicate"
+            variant="secondary"
+            fullWidth
+            onPress={() => setMergeOpen(true)}
           />
-        ) : null}
+          <GdprSection
+            guestId={guestId}
+            guestName={name}
+            onErased={() => router.back()}
+          />
+        </>
+      ) : null}
+    </View>
+  );
 
-        {/* Household linking */}
-        <HouseholdSection
-          guestId={guestId}
-          onNavigateToGuest={(linkedId) => router.push(`/client/${linkedId}` as Href)}
-        />
-
-        {/* Documents */}
-        <DocumentsSection guestId={guestId} />
-
-        {/* Compliance — per-guest records + audit trail (feature-flagged, read-only) */}
-        {complianceEnabled ? <ComplianceSection guestId={guestId} /> : null}
-
-        {/* Message history */}
-        <CommunicationsSection communications={communications} />
-
-        {/* Activity timeline */}
-        {timelineEvents.length > 0 ? (
-          <>
-            <SectionHeader title="Activity" />
-            <Card>
-              {timelineEvents.map((event) => (
-                <View key={event.id} style={styles.timelineRow}>
-                  <Text variant="bodySmall" numberOfLines={2}>
-                    {event.label}
-                  </Text>
-                  <Text variant="caption" tone="muted">
-                    {formatTimelineTime(event.occurred_at)}
-                  </Text>
-                </View>
-              ))}
-            </Card>
-          </>
-        ) : null}
-
-        {/* Admin section — merge + GDPR (admin only) */}
-        {isAdmin ? (
-          <>
-            <SectionHeader title="Admin" />
-            <Button
-              label="Merge duplicate"
-              variant="secondary"
-              fullWidth
-              onPress={() => setMergeOpen(true)}
-            />
-            <GdprSection
-              guestId={guestId}
-              guestName={name}
-              onErased={() => router.back()}
-            />
-          </>
-        ) : null}
-      </ScrollView>
+  return (
+    <Screen padded={false} scroll={false}>
+      <FlatList
+        data={booking_history}
+        keyExtractor={(booking) => booking.id}
+        renderItem={renderHistoryRow}
+        ListHeaderComponent={listHeader}
+        ListFooterComponent={listFooter}
+        contentContainerStyle={styles.scrollContent}
+        initialNumToRender={12}
+        windowSize={11}
+        removeClippedSubviews
+        refreshControl={
+          <RefreshControl
+            refreshing={detailQuery.isRefetching}
+            onRefresh={() => void detailQuery.refetch()}
+            tintColor={colors.brand}
+          />
+        }
+      />
 
       <GuestEditSheet target={editTarget} onClose={() => setEditTarget(null)} />
       <GuestMessageSheet
@@ -533,7 +570,15 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: spacing.base,
     paddingBottom: spacing['3xl'],
+  },
+  // The list header/footer reproduce the old ScrollView's spacing.base gap
+  // between stacked cards; the booking rows themselves stay flush (one card).
+  headerStack: {
     gap: spacing.base,
+  },
+  footerStack: {
+    gap: spacing.base,
+    marginTop: spacing.base,
   },
   profile: {
     alignItems: 'center',
@@ -583,6 +628,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.base,
     paddingVertical: spacing.md,
     gap: spacing.md,
+  },
+  historyRowFirst: {
+    // Gap from the section header above + the card's top edge.
+    marginTop: spacing.base,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopLeftRadius: radius.card,
+    borderTopRightRadius: radius.card,
+  },
+  historyRowLast: {
+    borderBottomLeftRadius: radius.card,
+    borderBottomRightRadius: radius.card,
   },
   pressed: {
     opacity: 0.7,

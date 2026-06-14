@@ -1,6 +1,13 @@
 import { Stack } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { Linking, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import {
+  FlatList,
+  Linking,
+  RefreshControl,
+  StyleSheet,
+  View,
+  type ListRenderItem,
+} from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { BookingDetailSheet } from '@/components/bookings/BookingDetailSheet';
@@ -17,7 +24,11 @@ import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { addDaysToDateStr } from '@/lib/dates/venue-dates';
 import { calendarDateInTimeZone } from '@/lib/queries/useBookingsList';
-import { experienceEventKeys, useExperienceEvents } from '@/lib/queries/useExperienceEvents';
+import {
+  experienceEventKeys,
+  useExperienceEvents,
+  type ExperienceEventSummary,
+} from '@/lib/queries/useExperienceEvents';
 import { useVenueLiveSync } from '@/lib/realtime/useVenueLiveSync';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { spacing } from '@/theme/index';
@@ -29,6 +40,11 @@ const UPCOMING_DAYS = 365;
 const PAST_DAYS = 90;
 
 const WEB_EVENT_MANAGER_URL = 'https://app.resneo.com/dashboard/event-manager';
+
+/** spacing.sm gap between event cards (the old contentContainer gap). */
+function CardSeparator() {
+  return <View style={styles.cardSeparator} />;
+}
 
 /**
  * Staff Events screen — upcoming ticketed events with tickets sold vs
@@ -81,6 +97,23 @@ export default function EventsScreen() {
     void Linking.openURL(WEB_EVENT_MANAGER_URL);
   }, []);
 
+  const keyExtractor = useCallback((event: ExperienceEventSummary) => event.id, []);
+
+  const renderEvent: ListRenderItem<ExperienceEventSummary> = ({ item }) => (
+    <EventCard
+      event={item}
+      today={today}
+      expanded={expandedId === item.id}
+      onToggle={() => setExpandedId((current) => (current === item.id ? null : item.id))}>
+      <EventAttendees
+        eventId={item.id}
+        eventName={item.name}
+        eventDate={item.date}
+        onOpenBooking={setDetailBookingId}
+      />
+    </EventCard>
+  );
+
   return (
     <Screen scroll={false} padded={false}>
       <Stack.Screen
@@ -122,43 +155,27 @@ export default function EventsScreen() {
             onRetry={() => void query.refetch()}
           />
         </View>
+      ) : events.length === 0 ? (
+        <View style={styles.stateWrap}>
+          <EmptyState
+            title={filter === 'upcoming' ? 'No upcoming events' : 'No recent events'}
+            message={
+              filter === 'upcoming'
+                ? 'Active ticketed events will appear here with tickets sold and an attendee roster. Events are created on the web dashboard.'
+                : `No events ran in the past ${PAST_DAYS} days.`
+            }
+            actionLabel="Open web event manager"
+            onAction={openWebEventManager}
+          />
+        </View>
       ) : (
-        <ScrollView
-          contentContainerStyle={styles.content}
-          refreshControl={
-            <RefreshControl refreshing={query.isRefetching} onRefresh={onRefresh} />
-          }>
-          {events.length === 0 ? (
-            <EmptyState
-              title={filter === 'upcoming' ? 'No upcoming events' : 'No recent events'}
-              message={
-                filter === 'upcoming'
-                  ? 'Active ticketed events will appear here with tickets sold and an attendee roster. Events are created on the web dashboard.'
-                  : `No events ran in the past ${PAST_DAYS} days.`
-              }
-              actionLabel="Open web event manager"
-              onAction={openWebEventManager}
-            />
-          ) : (
+        <FlatList
+          data={events}
+          keyExtractor={keyExtractor}
+          renderItem={renderEvent}
+          ItemSeparatorComponent={CardSeparator}
+          ListFooterComponent={
             <>
-              {events.map((event) => (
-                <EventCard
-                  key={event.id}
-                  event={event}
-                  today={today}
-                  expanded={expandedId === event.id}
-                  onToggle={() =>
-                    setExpandedId((current) => (current === event.id ? null : event.id))
-                  }>
-                  <EventAttendees
-                    eventId={event.id}
-                    eventName={event.name}
-                    eventDate={event.date}
-                    onOpenBooking={setDetailBookingId}
-                  />
-                </EventCard>
-              ))}
-
               {/* Event CRUD is cookie-auth only on the web app — link out instead. */}
               <View style={styles.webNote}>
                 <Text variant="caption" tone="muted" style={styles.webNoteText}>
@@ -172,10 +189,17 @@ export default function EventsScreen() {
                   onPress={openWebEventManager}
                 />
               </View>
+              <View style={styles.spacer} />
             </>
-          )}
-          <View style={styles.spacer} />
-        </ScrollView>
+          }
+          contentContainerStyle={styles.content}
+          initialNumToRender={8}
+          windowSize={11}
+          removeClippedSubviews
+          refreshControl={
+            <RefreshControl refreshing={query.isRefetching} onRefresh={onRefresh} />
+          }
+        />
       )}
 
       <BookingDetailSheet
@@ -193,7 +217,9 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: spacing.base,
-    gap: spacing.sm,
+  },
+  cardSeparator: {
+    height: spacing.sm,
   },
   stateWrap: {
     flex: 1,
