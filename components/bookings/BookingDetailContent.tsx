@@ -1,7 +1,7 @@
 import * as Clipboard from 'expo-clipboard';
 import { format, parseISO } from 'date-fns';
 import { useRouter, type Href } from 'expo-router';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 
@@ -24,6 +24,7 @@ import { Chip } from '@/components/ui/Chip';
 import { CollapsibleCard } from '@/components/ui/CollapsibleCard';
 import { Input } from '@/components/ui/Input';
 import { Text } from '@/components/ui/Text';
+import { ANALYTICS_EVENTS, track } from '@/lib/analytics';
 import { ApiError } from '@/lib/api/client';
 import { ACTION_COLORS, primaryActionColors } from '@/lib/booking/booking-action-colors';
 import { bookingDetailActions } from '@/lib/booking/booking-status-actions';
@@ -534,6 +535,11 @@ export function BookingDetailContent({
   const attendance = useSetBookingAttendance(booking.id);
   const deleteBooking = useDeleteBooking(booking.id);
 
+  // Funnel: the booking detail opened (re-fires if the host swaps in a new id).
+  useEffect(() => {
+    track(ANALYTICS_EVENTS.bookingDetailOpened, { bookingId: booking.id });
+  }, [booking.id]);
+
   const armConfirm = (target: BookingStatus) => {
     setPendingConfirm(target);
     hapticWarning();
@@ -753,12 +759,14 @@ export function BookingDetailContent({
       if (pendingConfirm === target) {
         if (confirmTimer.current) clearTimeout(confirmTimer.current);
         setPendingConfirm(null);
+        track(ANALYTICS_EVENTS.bookingStatusChanged, { to: target });
         onStatusChange(target);
       } else {
         armConfirm(target);
       }
       return;
     }
+    track(ANALYTICS_EVENTS.bookingStatusChanged, { to: target });
     onStatusChange(target);
   };
 
