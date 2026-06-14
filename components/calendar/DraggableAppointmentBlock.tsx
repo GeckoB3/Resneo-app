@@ -303,7 +303,10 @@ export function DraggableAppointmentBlock({
   }, [onDragConflictReject]);
 
   const jsCommitMove = useCallback(
-    (newTime: string) => onDragReschedule?.(id, newTime),
+    // minutesToTime is a plain (non-worklet) function, so it MUST run here on
+    // the JS thread — calling it inside the gesture worklet crashes the app
+    // ("synchronously call a non-worklet function on the UI thread").
+    (newMinutes: number) => onDragReschedule?.(id, minutesToTime(newMinutes)),
     [id, onDragReschedule],
   );
   const jsCommitResize = useCallback(
@@ -412,7 +415,7 @@ export function DraggableAppointmentBlock({
         conflict.value = 0;
         mode.value = 0;
         runOnJS(jsHapticDrop)();
-        runOnJS(jsCommitMove)(minutesToTime(newMinutes));
+        runOnJS(jsCommitMove)(newMinutes);
       } else if (mode.value === 2) {
         const newDuration = liveDurationMins.value;
         if (newDuration === durationMinutes) {
