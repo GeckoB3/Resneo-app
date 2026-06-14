@@ -2,6 +2,7 @@ import { useRouter, type Href } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Keyboard, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import Animated, { FadeInDown, FadeOutDown } from 'react-native-reanimated';
+import { useReduceMotion, motionSafe } from '@/lib/motion';
 import { SymbolView } from 'expo-symbols';
 
 import { BookingDetailContent } from '@/components/bookings/BookingDetailContent';
@@ -71,6 +72,7 @@ export function BookingDetailSheet({
 }: BookingDetailSheetProps) {
   const router = useRouter();
   const { colors } = useTheme();
+  const reduceMotion = useReduceMotion();
   const toast = useToast();
   const { venue } = useVenueContext();
   const detailQuery = useBookingDetail(bookingId ?? undefined);
@@ -201,8 +203,8 @@ export function BookingDetailSheet({
 
           {showActionBar && primaryAction ? (
             <Animated.View
-              entering={FadeInDown.duration(180)}
-              exiting={FadeOutDown.duration(120)}
+              entering={motionSafe(FadeInDown.duration(180), reduceMotion)}
+              exiting={motionSafe(FadeOutDown.duration(120), reduceMotion)}
               style={[styles.actionBar, { borderTopColor: colors.border, backgroundColor: colors.surfaceRaised }]}>
               <Button
                 label={primaryAction.label}

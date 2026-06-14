@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import Animated, { FadeInDown, LinearTransition } from 'react-native-reanimated';
+import { useReduceMotion, motionSafe, layoutSafe } from '@/lib/motion';
 import { Sheet } from '@/components/ui/Sheet';
 import { Button } from '@/components/ui/Button';
 import { apiFetch , ApiError } from '@/lib/api/client';
@@ -286,6 +287,7 @@ function BulkMessageSheet({
 export default function BookingsScreen() {
   const router = useRouter();
   const { colors } = useTheme();
+  const reduceMotion = useReduceMotion();
   const { venue, terminology, pricingTier, bookingModel, featureFlags } = useVenueContext();
   const complianceEnabled = featureFlags?.resolved?.compliance_records_enabled === true;
   const enabledModels = useMemo(() => venue?.enabled_models ?? [], [venue?.enabled_models]);
@@ -568,7 +570,9 @@ export default function BookingsScreen() {
         );
       }
       return (
-        <Animated.View entering={FadeInDown.duration(180)} layout={LinearTransition.springify()}>
+        <Animated.View
+          entering={motionSafe(FadeInDown.duration(180), reduceMotion)}
+          layout={layoutSafe(LinearTransition.springify(), reduceMotion)}>
           <BookingSwipeRow
             booking={item.booking}
             isAppointment={isAppointment}
@@ -589,6 +593,7 @@ export default function BookingsScreen() {
       selectionMode,
       complianceFlags,
       colors.background,
+      reduceMotion,
     ],
   );
 

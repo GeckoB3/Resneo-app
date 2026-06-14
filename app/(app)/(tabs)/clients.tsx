@@ -15,6 +15,7 @@ import {
   type ListRenderItem,
 } from 'react-native';
 import Animated, { FadeInDown, LinearTransition } from 'react-native-reanimated';
+import { useReduceMotion, motionSafe, layoutSafe } from '@/lib/motion';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
@@ -240,6 +241,7 @@ export default function ClientsScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { colors } = useTheme();
+  const reduceMotion = useReduceMotion();
   const insets = useSafeAreaInsets();
   const toast = useToast();
   const { terminology, venue, bookingModel } = useVenueContext();
@@ -479,7 +481,9 @@ export default function ClientsScreen() {
       );
 
       return (
-        <Animated.View entering={FadeInDown.duration(180)} layout={LinearTransition.springify()}>
+        <Animated.View
+          entering={motionSafe(FadeInDown.duration(180), reduceMotion)}
+          layout={layoutSafe(LinearTransition.springify(), reduceMotion)}>
           {/* Swipe quick-actions are iOS-feel only; disabled in selection mode. */}
           {!selectionMode && swipeActions.length > 0 ? (
             <SwipeRow rightActions={swipeActions}>{row}</SwipeRow>
@@ -497,6 +501,7 @@ export default function ClientsScreen() {
       handleRowPress,
       handleRowPressIn,
       toggleSelected,
+      reduceMotion,
     ],
   );
 

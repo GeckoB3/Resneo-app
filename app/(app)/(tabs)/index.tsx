@@ -2,6 +2,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
+import { useReduceMotion, motionSafe } from '@/lib/motion';
 import { SymbolView } from 'expo-symbols';
 import { format, parseISO } from 'date-fns';
 
@@ -134,6 +135,7 @@ export default function CalendarScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ date?: string }>();
   const { colors } = useTheme();
+  const reduceMotion = useReduceMotion();
   const { venue, terminology, featureFlags } = useVenueContext();
   const timeZone = venue?.timezone ?? 'Europe/London';
   const complianceEnabled = featureFlags?.resolved?.compliance_records_enabled === true;
@@ -827,7 +829,9 @@ export default function CalendarScreen() {
                 </Text>
               </Pressable>
               {!isToday ? (
-                <Animated.View entering={FadeIn.duration(160)} exiting={FadeOut.duration(120)}>
+                <Animated.View
+                  entering={motionSafe(FadeIn.duration(160), reduceMotion)}
+                  exiting={motionSafe(FadeOut.duration(120), reduceMotion)}>
                   <Pressable
                     onPress={goToday}
                     accessibilityRole="button"
