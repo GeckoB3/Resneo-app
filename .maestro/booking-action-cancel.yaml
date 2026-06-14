@@ -1,0 +1,38 @@
+# Cancel a booking from the booking-detail screen.
+#
+# Assumes a booking detail is open (app/(app)/booking/[id].tsx rendering
+# components/bookings/BookingDetailContent.tsx). create-booking.yaml lands here
+# via router.replace('/booking/<id>'); smoke.yaml chains create → cancel.
+#
+# Cancel is a deliberate TWO-STEP confirm (Alert.alert is a no-op on RN-web, so
+# the app arms the button instead): the danger button reads "Cancel booking",
+# and after the first tap its label flips to "Tap to confirm" for ~4s. A second
+# tap commits the Cancelled status. Labels come from
+# lib/booking/booking-status-actions.ts ("Cancel booking" / destructive) and
+# BookingDetailContent's pendingConfirm state ("Tap to confirm").
+appId: com.resneo.app
+---
+# The detail hero shows the guest name + a StatusPill; the actions Card holds the
+# destructive "Cancel booking" button. Scroll it into view first (the button sits
+# below the hero on smaller screens).
+- assertVisible:
+    text: "Cancel booking"
+    optional: true
+- scrollUntilVisible:
+    element:
+      text: "Cancel booking"
+    direction: DOWN
+    timeout: 5000
+
+# First tap arms the confirm (haptic warning + label flip).
+- tapOn: "Cancel booking"
+- assertVisible: "Tap to confirm"
+
+# Second tap commits — the status mutation fires and the pill becomes "Cancelled".
+- tapOn: "Tap to confirm"
+
+# After cancelling, the booking is in a terminal state: the StatusPill reads
+# "Cancelled" and the cancelled-only "Remove from diary" / "Delete permanently"
+# card appears.
+- assertVisible:
+    text: "Cancelled|Delete permanently"

@@ -1,0 +1,40 @@
+# Staff sign-in (password) — gets the app from the auth screen to the Calendar tab.
+#
+# Selectors are the visible labels on app/(auth)/sign-in.tsx:
+#   - "Sign in" title + Password/Magic Link tabs (components/auth/SignInModeTabs.tsx)
+#   - "Email" / "Password" Input labels
+#   - "Sign in" primary Button
+# On success, Stack.Protected swaps to (app) and lands on the Calendar tab.
+#
+# Credentials come from Maestro env vars so no secrets live in the repo:
+#   maestro test --env EMAIL=you@salon.com --env PASSWORD=••• .maestro/login.yaml
+appId: com.resneo.app
+env:
+  EMAIL: ${EMAIL}
+  PASSWORD: ${PASSWORD}
+---
+- launchApp:
+    clearState: true
+- assertVisible: "Sign in"
+
+# Staff default is the Password tab, but tap it explicitly so the flow is
+# robust if a previous session left Magic Link selected.
+- tapOn: "Password"
+
+# Inputs are labelled "Email" and "Password". Maestro's tapOn by text targets
+# the visible label; the field below it receives focus.
+# TODO: add testID="sign-in-email" / "sign-in-password" to the Inputs for a
+# stable selector independent of the visible label text.
+- tapOn:
+    text: "Email"
+- inputText: ${EMAIL}
+- tapOn:
+    text: "Password"
+- inputText: ${PASSWORD}
+
+- hideKeyboard
+- tapOn: "Sign in"
+
+# Calendar is the default tab (app/(app)/(tabs)/_layout.tsx → index route).
+# The bottom tab bar shows the "Calendar" label.
+- assertVisible: "Calendar"
