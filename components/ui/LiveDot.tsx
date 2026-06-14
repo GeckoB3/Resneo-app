@@ -13,6 +13,8 @@ export function LiveDot({ state }: { state: LiveSyncState }) {
   if (state === 'idle') return null;
   return (
     <View
+      accessible={true}
+      accessibilityRole="image"
       style={[styles.dot, { backgroundColor: state === 'live' ? colors.success : colors.warning }]}
       accessibilityLabel={state === 'live' ? 'Live sync active' : 'Reconnecting'}
     />

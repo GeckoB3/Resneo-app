@@ -15,6 +15,7 @@ import 'react-native-reanimated';
 
 import { LoadingState } from '@/components/ui/LoadingState';
 import { useColorScheme } from '@/components/useColorScheme';
+import { captureException, initObservability } from '@/lib/observability';
 import { AppProviders } from '@/providers/AppProviders';
 import { useAuth } from '@/providers/AuthProvider';
 
@@ -24,6 +25,8 @@ export {
 } from 'expo-router';
 
 SplashScreen.preventAutoHideAsync();
+// Single reporting choke point + global uncaught-error handler (see lib/observability).
+initObservability();
 
 export default function RootLayout() {
   // Inter is the Resneo brand typeface (matches the web app). Loaded at startup
@@ -40,7 +43,7 @@ export default function RootLayout() {
   // rather than throwing into the ErrorBoundary (which white-screens the app).
   useEffect(() => {
     if (error) {
-      console.warn('[fonts] Inter failed to load; falling back to system fonts.', error);
+      captureException(error, { scope: 'fonts' });
     }
   }, [error]);
 

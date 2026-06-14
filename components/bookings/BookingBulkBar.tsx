@@ -139,6 +139,7 @@ export function BookingBulkBar({ selected, onClear, onMessageSelected }: Booking
         <View
           style={[styles.tagInputWrap, { borderColor: colors.border, backgroundColor: colors.surface }]}>
           <TextInput
+            accessibilityLabel="Tag name"
             placeholder="Enter tag name"
             placeholderTextColor={colors.textMuted}
             value={tagInput}

@@ -630,6 +630,7 @@ export default function CalendarScreen() {
               <Pressable
                 onPress={goToday}
                 accessibilityRole="button"
+                accessibilityLabel={label}
                 accessibilityHint="Jump to today"
                 style={({ pressed }) => [styles.dateLabel, { opacity: pressed ? 0.55 : 1 }]}>
                 <Text variant="heading" numberOfLines={1}>

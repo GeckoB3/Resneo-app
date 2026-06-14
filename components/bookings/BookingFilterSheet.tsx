@@ -137,7 +137,7 @@ export function BookingFilterSheet({
       <View style={styles.header}>
         <Text variant="subheading">Filters</Text>
         {anyFilterActive ? (
-          <Pressable onPress={onReset} hitSlop={8}>
+          <Pressable onPress={onReset} hitSlop={8} accessibilityRole="button">
             <Text variant="label" color={colors.brand}>
               Reset
             </Text>

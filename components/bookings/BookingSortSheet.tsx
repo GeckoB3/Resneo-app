@@ -67,6 +67,7 @@ export function BookingSortSheet({
             onToggleSortDir();
           }}
           hitSlop={8}
+          accessibilityRole="button"
           style={({ pressed }) => [
             styles.dirButton,
             { borderColor: colors.border, backgroundColor: colors.surface, opacity: pressed ? 0.7 : 1 },
@@ -88,6 +89,8 @@ export function BookingSortSheet({
                 onChangeSortKey(option.key);
                 onClose();
               }}
+              accessibilityRole="button"
+              accessibilityState={{ selected: isActive }}
               style={({ pressed }) => [
                 styles.row,
                 {

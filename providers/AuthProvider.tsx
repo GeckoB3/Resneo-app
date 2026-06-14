@@ -10,6 +10,7 @@ import {
 } from 'react';
 
 import { getAuthCallbackRedirectUrl } from '@/lib/auth/redirect';
+import { setObservabilityUser } from '@/lib/observability';
 import { queryClient } from '@/lib/queries/queryClient';
 import { getSupabase } from '@/lib/supabase';
 import {
@@ -67,6 +68,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
 
       setSession(data.session ?? null);
+      setObservabilityUser(data.session?.user?.id ?? null);
       setIsLoading(false);
     }
 
@@ -76,6 +78,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession);
+      setObservabilityUser(nextSession?.user?.id ?? null);
       setIsLoading(false);
     });
 

@@ -131,6 +131,7 @@ function FieldInput({
           {field.required ? ' *' : ''}
         </Text>
         <TextInput
+          accessibilityLabel={field.label}
           value={strVal}
           onChangeText={(t) => onChange(t)}
           placeholder="Type full name as signature"
@@ -157,6 +158,7 @@ function FieldInput({
         {field.required ? ' *' : ''}
       </Text>
       <TextInput
+        accessibilityLabel={field.label}
         value={strVal}
         onChangeText={(t) => onChange(t)}
         placeholder={field.placeholder ?? (field.type === 'date' ? 'DD/MM/YYYY' : undefined)}

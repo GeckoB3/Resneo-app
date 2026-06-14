@@ -48,6 +48,7 @@ import {
 import { useGuestDetail } from '@/lib/queries/useGuestDetail';
 import { useUpdateGuest } from '@/lib/queries/useGuestMutations';
 import { useManagedServices } from '@/lib/queries/useServicesManage';
+import { writeRebookBootstrap } from '@/lib/rebook-bootstrap';
 import {
   canShowCancelStaffAttendanceConfirmationAction,
   canShowConfirmStaffAttendanceConfirmationAction,
@@ -914,12 +915,45 @@ export function BookingDetailContent({
                   <QuickAction
                     icon={{ ios: 'arrow.clockwise', android: 'autorenew', web: 'autorenew' }}
                     label="Rebook"
-                    onPress={() =>
-                      router.push({
-                        pathname: '/booking/new',
-                        params: { guestId: booking.guest_id },
-                      })
-                    }
+                    onPress={() => {
+                      // Pre-select the same service/practitioner/variant (for an
+                      // appointment) AND the guest, via the one-shot rebook
+                      // bootstrap that /booking/new applies on mount. Falls back to
+                      // the guest-id prefill when there's no appointment to repeat.
+                      void (async () => {
+                        const g = booking.guest;
+                        const hasAppointment = Boolean(
+                          booking.practitioner_id && booking.appointment_service_id,
+                        );
+                        if (hasAppointment || g) {
+                          await writeRebookBootstrap({
+                            v: 1,
+                            guest: {
+                              firstName: g?.first_name ?? undefined,
+                              lastName: g?.last_name ?? undefined,
+                              email: g?.email ?? null,
+                              phone: g?.phone ?? null,
+                            },
+                            ...(hasAppointment
+                              ? {
+                                  appointment: {
+                                    serviceId: booking.appointment_service_id as string,
+                                    practitionerId: booking.practitioner_id as string,
+                                    variantId: booking.service_variant_id ?? null,
+                                    durationMinutes: durationMinutes ?? null,
+                                  },
+                                }
+                              : {}),
+                          });
+                          router.push({ pathname: '/booking/new' });
+                          return;
+                        }
+                        router.push({
+                          pathname: '/booking/new',
+                          params: { guestId: booking.guest_id },
+                        });
+                      })();
+                    }}
                   />
                 ) : null}
               </ScrollView>

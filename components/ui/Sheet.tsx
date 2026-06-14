@@ -102,7 +102,14 @@ export function Sheet({ visible, onClose, maxHeight = '90%', fill = false, child
             fill ? { height: maxHeight } : { maxHeight },
           ]}>
           <Animated.View style={[fill ? styles.contentFill : styles.content, animatedPad]}>
-            <View style={[styles.handle, { backgroundColor: colors.border }]} />
+            <Pressable
+              onPress={onClose}
+              accessibilityRole="button"
+              accessibilityLabel="Close"
+              hitSlop={12}
+              style={styles.handleHitArea}>
+              <View style={[styles.handle, { backgroundColor: colors.border }]} />
+            </Pressable>
             {children}
           </Animated.View>
         </SafeAreaView>
@@ -129,6 +136,11 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingTop: spacing.sm,
     gap: spacing.sm,
+  },
+  handleHitArea: {
+    alignSelf: 'center',
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.xl,
   },
   handle: {
     alignSelf: 'center',

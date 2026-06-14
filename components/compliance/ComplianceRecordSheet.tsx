@@ -283,6 +283,7 @@ export function ComplianceRecordSheet({ visible, onClose, recordId, onChanged }:
                     Reason for voiding *
                   </Text>
                   <TextInput
+                    accessibilityLabel="Reason for voiding"
                     value={voidReason}
                     onChangeText={setVoidReason}
                     placeholder="Enter reason…"

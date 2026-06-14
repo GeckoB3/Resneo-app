@@ -78,6 +78,8 @@ export function ComplianceFlagDot({
 
   return (
     <View
+      accessible={true}
+      accessibilityRole="image"
       style={[
         {
           width: size,
@@ -114,6 +116,8 @@ export function ComplianceFlagBadge({
         { backgroundColor: color + '22', borderColor: color + '55' },
       ]}>
       <View
+        accessibilityElementsHidden={true}
+        importantForAccessibility="no"
         style={{
           width: 6,
           height: 6,

@@ -668,6 +668,7 @@ export default function BookingsScreen() {
           <Pressable
             onPress={scope === 'custom' ? () => setRangeSheetOpen(true) : goToday}
             accessibilityRole="button"
+            accessibilityLabel={label}
             accessibilityHint={scope === 'custom' ? 'Edit the date range' : 'Jump to today'}
             style={({ pressed }) => [styles.dateLabel, { opacity: pressed ? 0.55 : 1 }]}>
             <View style={styles.dateLabelInner}>

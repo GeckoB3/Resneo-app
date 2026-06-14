@@ -65,11 +65,16 @@ export function Button({
   disabled,
   style,
   onPress,
+  hitSlop,
   ...props
 }: ButtonProps) {
   const { colors } = useTheme();
   const isDisabled = disabled || loading;
   const sizing = SIZES[size];
+  // Guarantee a >=44pt touch target even when the visual height is smaller
+  // (the compact `sm` size renders at 36pt). Callers can still override hitSlop.
+  const padV = Math.max(0, Math.ceil((minTouchTarget - sizing.height) / 2));
+  const autoHitSlop = padV > 0 ? { top: padV, bottom: padV } : undefined;
 
   // Spring scale + dip on press — tactile without being bouncy. A single
   // progress value drives both so they always stay in sync.
@@ -107,6 +112,7 @@ export function Button({
       accessibilityRole="button"
       accessibilityState={{ disabled: !!isDisabled, busy: loading }}
       disabled={isDisabled}
+      hitSlop={hitSlop ?? autoHitSlop}
       onPress={handlePress}
       onPressIn={() => {
         pressed.set(withSpring(1, PRESS_SPRING));

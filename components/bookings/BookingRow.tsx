@@ -86,7 +86,7 @@ export function BookingRow({
 
   return (
     <PressableScale
-      accessibilityLabel={`${formatTime(booking.booking_time)}, ${booking.guest_name}, ${bookingStatusDisplayLabel(booking.status, booking.booking_model === 'table_reservation')}`}
+      accessibilityLabel={`${formatTime(booking.booking_time)}, ${booking.guest_name}, ${bookingStatusDisplayLabel(booking.status, booking.booking_model === 'table_reservation')}${arrived ? ', arrived' : attendanceConfirmed ? ', confirmed' : ''}`}
       onPress={() => {
         if (selectionMode) {
           hapticSelect();
