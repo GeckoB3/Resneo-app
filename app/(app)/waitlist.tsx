@@ -1,11 +1,21 @@
 import { Stack, useRouter, type Href } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import {
   ActivityIndicator,
+  FlatList,
+  Platform,
   RefreshControl,
-  ScrollView,
   StyleSheet,
   View,
+  type ListRenderItem,
 } from 'react-native';
 
 import { Badge, type BadgeTone } from '@/components/ui/Badge';
@@ -130,6 +140,216 @@ function formatAlertSlot(date?: string, time?: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Shared 60s "now" tick (W8.3)
+// ---------------------------------------------------------------------------
+
+/**
+ * A single shared interval drives every visible expiry countdown. Components
+ * subscribe via `useSyncExternalStore`, so only the mounted `OfferCountdown`
+ * cells re-render each minute — never the whole list. The interval runs only
+ * while at least one countdown is subscribed.
+ */
+const nowTickStore = (() => {
+  let tick = 0;
+  let timer: ReturnType<typeof setInterval> | null = null;
+  const listeners = new Set<() => void>();
+
+  const subscribe = (listener: () => void) => {
+    listeners.add(listener);
+    if (timer === null) {
+      timer = setInterval(() => {
+        tick += 1;
+        listeners.forEach((l) => l());
+      }, 60_000);
+    }
+    return () => {
+      listeners.delete(listener);
+      if (listeners.size === 0 && timer !== null) {
+        clearInterval(timer);
+        timer = null;
+      }
+    };
+  };
+
+  return { subscribe, getSnapshot: () => tick };
+})();
+
+/**
+ * Expiry countdown text — its own memoized cell so the 60s tick re-renders only
+ * this line, leaving the surrounding row body untouched. Returns null when there
+ * is nothing to show (collapses like the previous inline conditional).
+ */
+const OfferCountdown = memo(function OfferCountdown({
+  expiresAt,
+}: {
+  expiresAt: string | null | undefined;
+}) {
+  // Subscribe to the shared minute tick so the label stays fresh.
+  useSyncExternalStore(nowTickStore.subscribe, nowTickStore.getSnapshot);
+  const label = offerExpiryLabel(expiresAt);
+  if (!label) return null;
+  return (
+    <Text variant="caption" tone="danger">
+      {label}
+    </Text>
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Waitlist entry row (W8.2)
+// ---------------------------------------------------------------------------
+
+type WaitlistEntryRowProps = {
+  entry: WaitlistEntry;
+  waitlistMode: string;
+  /** This entry has an in-flight mutation — show a spinner instead of actions. */
+  pending: boolean;
+  /** The Cancel/Remove buttons are "armed" (label flipped to "Tap to confirm"). */
+  cancelArmed: boolean;
+  deleteArmed: boolean;
+  onAct: (id: string, status: WaitlistStatus) => void;
+  onArmConfirm: (token: string) => void;
+  onDelete: (id: string) => void;
+};
+
+/**
+ * A single waitlist entry. Memoized so the shared 60s countdown tick (and other
+ * rows' pending/confirm changes) don't re-render this card's body — only the
+ * nested OfferCountdown updates each minute.
+ */
+const WaitlistEntryRow = memo(function WaitlistEntryRow({
+  entry,
+  waitlistMode,
+  pending,
+  cancelArmed,
+  deleteArmed,
+  onAct,
+  onArmConfirm,
+  onDelete,
+}: WaitlistEntryRowProps) {
+  const { colors } = useTheme();
+
+  const status = (entry.status ?? 'waiting') as string;
+  const stripColor = statusStripColor(status, colors);
+  const detail = detailLabel(entry);
+  const isWaiting = status === 'waiting';
+  const isOffered = status === 'offered';
+  const canDelete = isDeletable(entry);
+
+  // can_offer gating
+  const offerDisabled = isWaiting && entry.can_offer === false;
+
+  // joined-at
+  const joinedLabel = entry.created_at ? `Joined ${formatJoinedAt(entry.created_at)}` : null;
+
+  // Expiry countdown — only for notify_in_order mode (rendered as its own ticking cell).
+  const showExpiry = isOffered && waitlistMode === 'notify_in_order';
+
+  return (
+    <Card style={styles.entryCard} padded={false}>
+      {/* Left status strip */}
+      <View style={[styles.statusStrip, { backgroundColor: stripColor }]} />
+      <View style={styles.cardBody}>
+        <View style={styles.entryHeader}>
+          <Text variant="bodyMedium" numberOfLines={1} style={styles.entryName}>
+            {entryGuestName(entry)}
+          </Text>
+          <Badge
+            label={status === 'confirmed' ? 'Complete' : status}
+            tone={STATUS_TONE[status] ?? 'neutral'}
+          />
+        </View>
+        <Text variant="bodySmall" tone="secondary">
+          {whenLabel(entry)}
+        </Text>
+        {detail ? (
+          <Text variant="caption" tone="muted">
+            {detail}
+          </Text>
+        ) : null}
+        {entry.guest_phone ? (
+          <Text variant="caption" tone="muted">
+            {entry.guest_phone}
+          </Text>
+        ) : null}
+        {entry.guest_email ? (
+          <Text variant="caption" tone="muted">
+            {entry.guest_email}
+          </Text>
+        ) : null}
+        {joinedLabel ? (
+          <Text variant="caption" tone="muted">
+            {joinedLabel}
+          </Text>
+        ) : null}
+        {entry.notes ? (
+          <Text variant="caption" tone="muted">
+            &quot;{entry.notes}&quot;
+          </Text>
+        ) : null}
+        {/* offer_unavailable_reason */}
+        {offerDisabled && entry.offer_unavailable_reason ? (
+          <Text variant="caption" color={colors.warning}>
+            {entry.offer_unavailable_reason}
+          </Text>
+        ) : null}
+        {/* Expiry countdown (notify_in_order only) */}
+        {showExpiry ? <OfferCountdown expiresAt={entry.expires_at} /> : null}
+
+        {/* Action row */}
+        {pending ? (
+          <View style={styles.pendingRow}>
+            <ActivityIndicator size="small" color={colors.brand} />
+          </View>
+        ) : (
+          <>
+            {isWaiting || isOffered ? (
+              <View style={styles.actions}>
+                {isWaiting ? (
+                  <Button
+                    label="Offer"
+                    size="sm"
+                    disabled={offerDisabled}
+                    onPress={() => onAct(entry.id, 'offered')}
+                    style={styles.actionBtn}
+                  />
+                ) : null}
+                {/* No "Confirm" button: appointment waitlist entries
+                    are completed server-side at the offer step, so a
+                    client confirm always 400s. (Web shows no confirm
+                    for appointment offers either.) */}
+                <Button
+                  label={cancelArmed ? 'Tap to confirm' : 'Cancel'}
+                  size="sm"
+                  variant="ghost"
+                  onPress={() =>
+                    cancelArmed ? onAct(entry.id, 'cancelled') : onArmConfirm(`cancel-${entry.id}`)
+                  }
+                  style={styles.actionBtn}
+                />
+              </View>
+            ) : null}
+            {canDelete ? (
+              <View style={styles.actions}>
+                <Button
+                  label={deleteArmed ? 'Tap to confirm' : 'Remove'}
+                  size="sm"
+                  variant="ghost"
+                  onPress={() =>
+                    deleteArmed ? onDelete(entry.id) : onArmConfirm(`delete-${entry.id}`)
+                  }
+                  style={styles.actionBtn}
+                />
+              </View>
+            ) : null}
+          </>
+        )}
+      </View>
+    </Card>
+  );
+});
+
+// ---------------------------------------------------------------------------
 // Main screen
 // ---------------------------------------------------------------------------
 
@@ -144,16 +364,8 @@ export default function WaitlistScreen() {
   const venueId = venue?.id ?? null;
 
   const [filter, setFilter] = useState<FilterTab>('active');
-  // Tick every 60s so expiry countdowns update without a manual refresh.
-  const [, setTick] = useState(0);
-  const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  useEffect(() => {
-    tickRef.current = setInterval(() => setTick((n) => n + 1), 60_000);
-    return () => {
-      if (tickRef.current) clearInterval(tickRef.current);
-    };
-  }, []);
+  // Expiry countdowns self-update via a shared 60s tick (see OfferCountdown), so
+  // the whole list no longer re-renders every minute.
 
   const query = useWaitlist('appointment');
   const update = useUpdateWaitlistEntry();
@@ -209,20 +421,20 @@ export default function WaitlistScreen() {
     [],
   );
 
-  const startPending = (id: string) =>
+  const startPending = useCallback((id: string) =>
     setPendingIds((s) => {
       const next = new Set(s);
       next.add(id);
       return next;
-    });
-  const endPending = (id: string) =>
+    }), []);
+  const endPending = useCallback((id: string) =>
     setPendingIds((s) => {
       const next = new Set(s);
       next.delete(id);
       return next;
-    });
+    }), []);
 
-  const act = (id: string, status: WaitlistStatus) => {
+  const act = useCallback((id: string, status: WaitlistStatus) => {
     clearConfirm();
     startPending(id);
     update.mutate(
@@ -251,9 +463,9 @@ export default function WaitlistScreen() {
         },
       },
     );
-  };
+  }, [clearConfirm, startPending, endPending, update, toast, router]);
 
-  const handleDelete = (id: string) => {
+  const handleDelete = useCallback((id: string) => {
     clearConfirm();
     startPending(id);
     deleteMutation.mutate(id, {
@@ -266,9 +478,9 @@ export default function WaitlistScreen() {
         toast.error(error instanceof ApiError ? error.message : 'Could not remove. Please try again.');
       },
     });
-  };
+  }, [clearConfirm, startPending, endPending, deleteMutation, toast]);
 
-  const handleAlertAction = (alertId: string, action: 'offer' | 'dismiss') => {
+  const handleAlertAction = useCallback((alertId: string, action: 'offer' | 'dismiss') => {
     clearConfirm();
     startPending(`alert-${alertId}`);
     actOnAlert.mutate(
@@ -284,14 +496,98 @@ export default function WaitlistScreen() {
         },
       },
     );
-  };
+  }, [clearConfirm, startPending, endPending, actOnAlert, toast]);
 
   // Filter
-  const allEntries = query.data?.entries ?? [];
-  const displayedEntries =
-    filter === 'active' ? allEntries.filter(isActive) : allEntries;
+  const allEntries = useMemo(() => query.data?.entries ?? [], [query.data?.entries]);
+  const displayedEntries = useMemo(
+    () => (filter === 'active' ? allEntries.filter(isActive) : allEntries),
+    [filter, allEntries],
+  );
 
-  const alerts = alertsQuery.data?.alerts ?? [];
+  const alerts = useMemo(() => alertsQuery.data?.alerts ?? [], [alertsQuery.data?.alerts]);
+
+  const renderEntry = useCallback<ListRenderItem<WaitlistEntry>>(
+    ({ item }) => (
+      <WaitlistEntryRow
+        entry={item}
+        waitlistMode={waitlistMode}
+        pending={pendingIds.has(item.id)}
+        cancelArmed={pendingConfirm === `cancel-${item.id}`}
+        deleteArmed={pendingConfirm === `delete-${item.id}`}
+        onAct={act}
+        onArmConfirm={armConfirm}
+        onDelete={handleDelete}
+      />
+    ),
+    [waitlistMode, pendingIds, pendingConfirm, act, armConfirm, handleDelete],
+  );
+
+  const keyExtractor = useCallback((item: WaitlistEntry) => item.id, []);
+
+  // Staff-choose alerts panel — fixed content above the list (ListHeaderComponent).
+  const alertsHeader = useMemo(() => {
+    if (!isStaffChoose || alerts.length === 0) return null;
+    return (
+      <View style={styles.alertsSection}>
+        <Text variant="overline" tone="secondary" style={styles.sectionLabel}>
+          Open slot alerts
+        </Text>
+        {alerts.map((alert) => {
+          const alertPending = pendingIds.has(`alert-${alert.id}`);
+          return (
+            <Card key={alert.id} padded={false}>
+              <View style={[styles.alertStrip, { backgroundColor: colors.warning }]} />
+              <View style={styles.alertContent}>
+                <Text variant="bodyMedium">{alert.service_name ?? 'Open slot'}</Text>
+                <Text variant="bodySmall" tone="secondary">
+                  {formatAlertSlot(alert.slot_date, alert.slot_time)}
+                </Text>
+                {alert.practitioner_name ? (
+                  <Text variant="caption" tone="muted">
+                    {alert.practitioner_name}
+                  </Text>
+                ) : null}
+                <Text variant="caption" tone="muted">
+                  {alert.matching_waitlist_count}{' '}
+                  {alert.matching_waitlist_count === 1 ? 'guest' : 'guests'} waiting
+                </Text>
+                <View style={styles.actions}>
+                  {alertPending ? (
+                    <ActivityIndicator size="small" color={colors.brand} />
+                  ) : (
+                    <>
+                      <Button
+                        label="Offer"
+                        size="sm"
+                        onPress={() => handleAlertAction(alert.id, 'offer')}
+                        style={styles.actionBtn}
+                      />
+                      <Button
+                        label={
+                          pendingConfirm === `alert-dismiss-${alert.id}`
+                            ? 'Tap to confirm'
+                            : 'Dismiss'
+                        }
+                        size="sm"
+                        variant="ghost"
+                        onPress={() =>
+                          pendingConfirm === `alert-dismiss-${alert.id}`
+                            ? handleAlertAction(alert.id, 'dismiss')
+                            : armConfirm(`alert-dismiss-${alert.id}`)
+                        }
+                        style={styles.actionBtn}
+                      />
+                    </>
+                  )}
+                </View>
+              </View>
+            </Card>
+          );
+        })}
+      </View>
+    );
+  }, [isStaffChoose, alerts, pendingIds, pendingConfirm, colors.warning, colors.brand, handleAlertAction, armConfirm]);
 
   const liveColor =
     liveState === 'live'
@@ -346,83 +642,15 @@ export default function WaitlistScreen() {
             />
           </View>
 
-          <ScrollView
+          <FlatList
+            data={displayedEntries}
+            keyExtractor={keyExtractor}
+            renderItem={renderEntry}
             contentContainerStyle={styles.content}
-            refreshControl={
-              <RefreshControl
-                refreshing={query.isRefetching}
-                onRefresh={() => void query.refetch()}
-              />
-            }>
-            {/* Staff-choose alerts panel */}
-            {isStaffChoose && alerts.length > 0 ? (
-              <View style={styles.alertsSection}>
-                <Text
-                  variant="overline"
-                  tone="secondary"
-                  style={styles.sectionLabel}>
-                  Open slot alerts
-                </Text>
-                {alerts.map((alert) => {
-                  const alertPending = pendingIds.has(`alert-${alert.id}`);
-                  return (
-                    <Card key={alert.id} padded={false}>
-                      <View style={[styles.alertStrip, { backgroundColor: colors.warning }]} />
-                      <View style={styles.alertContent}>
-                        <Text variant="bodyMedium">
-                          {alert.service_name ?? 'Open slot'}
-                        </Text>
-                        <Text variant="bodySmall" tone="secondary">
-                          {formatAlertSlot(alert.slot_date, alert.slot_time)}
-                        </Text>
-                        {alert.practitioner_name ? (
-                          <Text variant="caption" tone="muted">
-                            {alert.practitioner_name}
-                          </Text>
-                        ) : null}
-                        <Text variant="caption" tone="muted">
-                          {alert.matching_waitlist_count}{' '}
-                          {alert.matching_waitlist_count === 1 ? 'guest' : 'guests'} waiting
-                        </Text>
-                        <View style={styles.actions}>
-                          {alertPending ? (
-                            <ActivityIndicator size="small" color={colors.brand} />
-                          ) : (
-                            <>
-                              <Button
-                                label="Offer"
-                                size="sm"
-                                onPress={() => handleAlertAction(alert.id, 'offer')}
-                                style={styles.actionBtn}
-                              />
-                              <Button
-                                label={
-                                  pendingConfirm === `alert-dismiss-${alert.id}`
-                                    ? 'Tap to confirm'
-                                    : 'Dismiss'
-                                }
-                                size="sm"
-                                variant="ghost"
-                                onPress={() =>
-                                  pendingConfirm === `alert-dismiss-${alert.id}`
-                                    ? handleAlertAction(alert.id, 'dismiss')
-                                    : armConfirm(`alert-dismiss-${alert.id}`)
-                                }
-                                style={styles.actionBtn}
-                              />
-                            </>
-                          )}
-                        </View>
-                      </View>
-                    </Card>
-                  );
-                })}
-              </View>
-            ) : null}
-
-            {/* Main list */}
-            {displayedEntries.length === 0 ? (
+            ListHeaderComponent={alertsHeader}
+            ListEmptyComponent={
               <EmptyState
+                illustration="waitlist"
                 title={filter === 'active' ? 'No active entries' : 'No waitlist entries'}
                 message={
                   filter === 'active'
@@ -430,157 +658,20 @@ export default function WaitlistScreen() {
                     : 'There is nothing in the waitlist history yet.'
                 }
               />
-            ) : (
-              displayedEntries.map((entry) => {
-                const status = (entry.status ?? 'waiting') as string;
-                const stripColor = statusStripColor(status, colors);
-                const detail = detailLabel(entry);
-                const isWaiting = status === 'waiting';
-                const isOffered = status === 'offered';
-                const canDelete = isDeletable(entry);
-                const entryPending = pendingIds.has(entry.id);
-
-                // can_offer gating
-                const offerDisabled = isWaiting && entry.can_offer === false;
-
-                // Expiry countdown — only for notify_in_order mode
-                const expiryLabel =
-                  isOffered && waitlistMode === 'notify_in_order'
-                    ? offerExpiryLabel(entry.expires_at)
-                    : null;
-
-                // joined-at
-                const joinedLabel = entry.created_at
-                  ? `Joined ${formatJoinedAt(entry.created_at)}`
-                  : null;
-
-                return (
-                  <Card key={entry.id} style={styles.entryCard} padded={false}>
-                    {/* Left status strip */}
-                    <View
-                      style={[styles.statusStrip, { backgroundColor: stripColor }]}
-                    />
-                    <View style={styles.cardBody}>
-                      <View style={styles.entryHeader}>
-                        <Text
-                          variant="bodyMedium"
-                          numberOfLines={1}
-                          style={styles.entryName}>
-                          {entryGuestName(entry)}
-                        </Text>
-                        <Badge
-                          label={status === 'confirmed' ? 'Complete' : status}
-                          tone={STATUS_TONE[status] ?? 'neutral'}
-                        />
-                      </View>
-                      <Text variant="bodySmall" tone="secondary">
-                        {whenLabel(entry)}
-                      </Text>
-                      {detail ? (
-                        <Text variant="caption" tone="muted">
-                          {detail}
-                        </Text>
-                      ) : null}
-                      {entry.guest_phone ? (
-                        <Text variant="caption" tone="muted">
-                          {entry.guest_phone}
-                        </Text>
-                      ) : null}
-                      {entry.guest_email ? (
-                        <Text variant="caption" tone="muted">
-                          {entry.guest_email}
-                        </Text>
-                      ) : null}
-                      {joinedLabel ? (
-                        <Text variant="caption" tone="muted">
-                          {joinedLabel}
-                        </Text>
-                      ) : null}
-                      {entry.notes ? (
-                        <Text variant="caption" tone="muted">
-                          &quot;{entry.notes}&quot;
-                        </Text>
-                      ) : null}
-                      {/* offer_unavailable_reason */}
-                      {offerDisabled && entry.offer_unavailable_reason ? (
-                        <Text variant="caption" color={colors.warning}>
-                          {entry.offer_unavailable_reason}
-                        </Text>
-                      ) : null}
-                      {/* Expiry countdown (notify_in_order only) */}
-                      {expiryLabel ? (
-                        <Text variant="caption" tone="danger">
-                          {expiryLabel}
-                        </Text>
-                      ) : null}
-
-                      {/* Action row */}
-                      {entryPending ? (
-                        <View style={styles.pendingRow}>
-                          <ActivityIndicator size="small" color={colors.brand} />
-                        </View>
-                      ) : (
-                        <>
-                          {isWaiting || isOffered ? (
-                            <View style={styles.actions}>
-                              {isWaiting ? (
-                                <Button
-                                  label="Offer"
-                                  size="sm"
-                                  disabled={offerDisabled}
-                                  onPress={() => act(entry.id, 'offered')}
-                                  style={styles.actionBtn}
-                                />
-                              ) : null}
-                              {/* No "Confirm" button: appointment waitlist entries
-                                  are completed server-side at the offer step, so a
-                                  client confirm always 400s. (Web shows no confirm
-                                  for appointment offers either.) */}
-                              <Button
-                                label={
-                                  pendingConfirm === `cancel-${entry.id}`
-                                    ? 'Tap to confirm'
-                                    : 'Cancel'
-                                }
-                                size="sm"
-                                variant="ghost"
-                                onPress={() =>
-                                  pendingConfirm === `cancel-${entry.id}`
-                                    ? act(entry.id, 'cancelled')
-                                    : armConfirm(`cancel-${entry.id}`)
-                                }
-                                style={styles.actionBtn}
-                              />
-                            </View>
-                          ) : null}
-                          {canDelete ? (
-                            <View style={styles.actions}>
-                              <Button
-                                label={
-                                  pendingConfirm === `delete-${entry.id}`
-                                    ? 'Tap to confirm'
-                                    : 'Remove'
-                                }
-                                size="sm"
-                                variant="ghost"
-                                onPress={() =>
-                                  pendingConfirm === `delete-${entry.id}`
-                                    ? handleDelete(entry.id)
-                                    : armConfirm(`delete-${entry.id}`)
-                                }
-                                style={styles.actionBtn}
-                              />
-                            </View>
-                          ) : null}
-                        </>
-                      )}
-                    </View>
-                  </Card>
-                );
-              })
-            )}
-            <View style={styles.spacer} />
-          </ScrollView>
+            }
+            ListFooterComponent={<View style={styles.spacer} />}
+            refreshControl={
+              <RefreshControl
+                refreshing={query.isRefetching}
+                onRefresh={() => void query.refetch()}
+              />
+            }
+            // W8.4 virtualization tuning — variable-height cards, so no getItemLayout.
+            initialNumToRender={10}
+            maxToRenderPerBatch={10}
+            windowSize={11}
+            removeClippedSubviews={Platform.OS === 'android'}
+          />
         </>
       )}
     </Screen>

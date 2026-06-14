@@ -1,0 +1,111 @@
+# Create a booking from the Calendar FAB through the wizard to confirmation.
+#
+# Assumes the app is already signed in and on the Calendar tab (run login.yaml
+# first, or use smoke.yaml which chains them). Drives the appointment booking
+# wizard in app/(app)/booking/new.tsx step by step.
+#
+# Wizard steps (WizardStepIndicator labels): Service → [Practitioner] → [Option]
+# → [Add-ons] → Date → Time → Guest → Confirm. Practitioner/Option/Add-ons steps
+# are conditional, so this flow only asserts the always-present steps and taps
+# the first available choice on each.
+appId: com.resneo.app
+env:
+  # A guest name to enter on the Guest step (first/last). Override per run if you
+  # want a recognisable test record.
+  GUEST_FIRST: ${GUEST_FIRST}
+  GUEST_LAST: ${GUEST_LAST}
+  GUEST_PHONE: ${GUEST_PHONE}
+---
+- assertVisible: "Calendar"
+
+# The floating action button has accessibilityLabel = newBookingActionLabel(),
+# which is "New <booking-term>" — default terminology makes this "New
+# reservation". It is venue-terminology dependent.
+# TODO: add testID="calendar-fab" to components/ui/Fab.tsx so this selector does
+# not depend on the venue's booking terminology.
+- tapOn:
+    text: "New reservation"
+
+# The add-action Sheet opens with the same primary label; tapping it routes to
+# /booking/new. (On an empty-slot tap the sheet title is "Add at HH:MM"; from the
+# FAB it is "Add to calendar".)
+- assertVisible: "Add to calendar"
+- tapOn:
+    text: "New reservation"
+    index: 1 # the Sheet's primary Button (the FAB itself is index 0)
+
+# ---- Service step ----
+- assertVisible: "Choose a service"
+# Tap the first service row. Service names are venue data, so match the row by
+# its accessibility label pattern rather than a fixed name.
+# TODO: add testID="service-option-0" to the first row in ServicePickerStep.
+- tapOn:
+    id: "service-option-.*"
+    optional: true
+- runFlow:
+    when:
+      notVisible: "Date"
+    commands:
+      # Fallback: if no testID is present yet, tap the first list item below the
+      # "Choose a service" heading by position.
+      - tapOn:
+          point: "50%,40%"
+
+# ---- Optional Practitioner / Option / Add-ons steps ----
+# Each, when present, shows a list then a "Continue" button. Tap Continue when it
+# appears; skip silently when the step was not part of this service's flow.
+- tapOn:
+    text: "Continue"
+    optional: true
+- tapOn:
+    text: "Continue"
+    optional: true
+
+# ---- Date step ----
+# MonthDatePicker defaults today's date selected, so Continue is enabled.
+- assertVisible: "Date"
+- tapOn:
+    text: "Continue"
+
+# ---- Time step ----
+# TimeSlotStep lists available slots; pick the first, then Continue.
+# TODO: add testID="time-slot-0" to the first slot in TimeSlotStep.
+- assertVisible: "Time"
+- tapOn:
+    id: "time-slot-.*"
+    optional: true
+- runFlow:
+    when:
+      notVisible: "Guest details"
+    commands:
+      - tapOn:
+          point: "50%,35%" # first slot chip as a fallback
+- tapOn:
+    text: "Continue"
+    optional: true
+
+# ---- Guest step ----
+- assertVisible: "Guest details"
+# Fields are labelled "First name", "Surname", "Phone" (GuestDetailsStep).
+# TODO: add testID="guest-first-name" / "guest-surname" / "guest-phone".
+- tapOn:
+    text: "First name"
+- inputText: ${GUEST_FIRST}
+- tapOn:
+    text: "Surname"
+- inputText: ${GUEST_LAST}
+- tapOn:
+    text: "Phone"
+- inputText: ${GUEST_PHONE}
+- hideKeyboard
+- tapOn: "Continue"
+
+# ---- Confirm step ----
+- assertVisible: "Review & confirm"
+- tapOn: "Create booking"
+
+# ConfirmStep swaps to a success view, then the wizard router.replace()s to
+# /booking/[id]. Either the inline "Booking confirmed" or the detail screen's
+# action confirms we created it.
+- assertVisible:
+    text: "Booking confirmed|View booking|Cancel booking"

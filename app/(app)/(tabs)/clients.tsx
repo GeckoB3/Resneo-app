@@ -1,21 +1,21 @@
 import { format, parseISO } from 'date-fns';
 import { type Href, useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
   Linking,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
-  Share,
   StyleSheet,
   View,
   type ListRenderItem,
 } from 'react-native';
 import Animated, { FadeInDown, LinearTransition } from 'react-native-reanimated';
-import { SymbolView } from 'expo-symbols';
+import { useReduceMotion, motionSafe, layoutSafe } from '@/lib/motion';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
@@ -45,6 +45,7 @@ import { SwipeRow, type SwipeAction } from '@/components/ui/SwipeRow';
 import { Text } from '@/components/ui/Text';
 import { ApiError, apiFetch } from '@/lib/api/client';
 import { clientsScreenTitle } from '@/lib/booking/terminology';
+import { buildAndShareCsv } from '@/lib/reports/csv-export';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { useGuestCustomFields, useGuests } from '@/lib/queries/useGuests';
 import { useGuestTags } from '@/lib/queries/useGuestTags';
@@ -130,7 +131,7 @@ function customFieldCell(value: unknown): string {
   return String(value);
 }
 
-function GuestRow({
+function GuestRowBase({
   guest,
   onPress,
   onPressIn,
@@ -139,9 +140,9 @@ function GuestRow({
   selected = false,
 }: {
   guest: GuestListItem;
-  onPress: () => void;
-  onPressIn?: () => void;
-  onLongPress?: () => void;
+  onPress: (id: string) => void;
+  onPressIn?: (id: string) => void;
+  onLongPress?: (id: string) => void;
   selectionMode?: boolean;
   selected?: boolean;
 }) {
@@ -162,9 +163,9 @@ function GuestRow({
     <Pressable
       accessibilityRole="button"
       accessibilityState={{ selected }}
-      onPress={onPress}
-      onPressIn={onPressIn}
-      onLongPress={onLongPress}
+      onPress={() => onPress(guest.id)}
+      onPressIn={onPressIn ? () => onPressIn(guest.id) : undefined}
+      onLongPress={onLongPress ? () => onLongPress(guest.id) : undefined}
       style={({ pressed }) => [
         styles.row,
         {
@@ -177,7 +178,7 @@ function GuestRow({
       {selectionMode ? (
         <Pressable
           hitSlop={10}
-          onPress={onPress}
+          onPress={() => onPress(guest.id)}
           style={[
             styles.selectCheck,
             {
@@ -233,10 +234,14 @@ function GuestRow({
   );
 }
 
+/** Memoized so rows skip re-render while scrolling / selecting unrelated rows. */
+const GuestRow = memo(GuestRowBase);
+
 export default function ClientsScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { colors } = useTheme();
+  const reduceMotion = useReduceMotion();
   const insets = useSafeAreaInsets();
   const toast = useToast();
   const { terminology, venue, bookingModel } = useVenueContext();
@@ -378,13 +383,13 @@ export default function ClientsScreen() {
     [accessToken, queryClient],
   );
 
-  const toggleSelected = (guestId: string) => {
+  const toggleSelected = useCallback((guestId: string) => {
     setSelectedIds((current) =>
       current.includes(guestId)
         ? current.filter((id) => id !== guestId)
         : [...current, guestId],
     );
-  };
+  }, []);
 
   const clearSelection = () => {
     setSelectedIds([]);
@@ -430,6 +435,20 @@ export default function ClientsScreen() {
     [letterIndex],
   );
 
+  // Stable id-based row handlers — identity only changes when selectionMode
+  // flips, so memoized rows skip re-render while scrolling and while selecting
+  // other rows. (toggleSelected/openGuest/prefetchGuest are themselves stable.)
+  const handleRowPress = useCallback(
+    (id: string) => (selectionMode ? toggleSelected(id) : openGuest(id)),
+    [selectionMode, toggleSelected, openGuest],
+  );
+  const handleRowPressIn = useCallback(
+    (id: string) => {
+      if (!selectionMode) prefetchGuest(id);
+    },
+    [selectionMode, prefetchGuest],
+  );
+
   const renderContactRow = useCallback(
     (item: GuestListItem) => {
       const swipeActions: SwipeAction[] = [];
@@ -455,14 +474,16 @@ export default function ClientsScreen() {
           guest={item}
           selectionMode={selectionMode}
           selected={selectedIds.includes(item.id)}
-          onPress={() => (selectionMode ? toggleSelected(item.id) : openGuest(item.id))}
-          onPressIn={() => (selectionMode ? undefined : prefetchGuest(item.id))}
-          onLongPress={() => toggleSelected(item.id)}
+          onPress={handleRowPress}
+          onPressIn={handleRowPressIn}
+          onLongPress={toggleSelected}
         />
       );
 
       return (
-        <Animated.View entering={FadeInDown.duration(180)} layout={LinearTransition.springify()}>
+        <Animated.View
+          entering={motionSafe(FadeInDown.duration(180), reduceMotion)}
+          layout={layoutSafe(LinearTransition.springify(), reduceMotion)}>
           {/* Swipe quick-actions are iOS-feel only; disabled in selection mode. */}
           {!selectionMode && swipeActions.length > 0 ? (
             <SwipeRow rightActions={swipeActions}>{row}</SwipeRow>
@@ -472,8 +493,16 @@ export default function ClientsScreen() {
         </Animated.View>
       );
     },
-    // toggleSelected/openGuest/prefetchGuest are stable enough for this list.
-    [colors.brand, colors.success, selectionMode, selectedIds, openGuest, prefetchGuest],
+    [
+      colors.brand,
+      colors.success,
+      selectionMode,
+      selectedIds,
+      handleRowPress,
+      handleRowPressIn,
+      toggleSelected,
+      reduceMotion,
+    ],
   );
 
   const renderItem: ListRenderItem<ContactListRow> = useCallback(
@@ -519,7 +548,8 @@ export default function ClientsScreen() {
    */
   const customFieldsQuery = useGuestCustomFields();
   const handleExport = useCallback(async () => {
-    if (!accessToken) return;
+    // Guard re-entry: ignore taps while an export is already running.
+    if (!accessToken || exporting) return;
     setExporting(true);
     try {
       // Fetch the active custom-field definitions so we can add a column each.
@@ -594,39 +624,64 @@ export default function ClientsScreen() {
         .map(esc)
         .join(',');
 
-      const rows = [
-        header,
-        ...all.slice(0, EXPORT_MAX_ROWS).map((g) => {
+      // Build up to EXPORT_MAX_ROWS rows in chunks, yielding to the event loop
+      // between batches so a large directory export never blocks the UI thread
+      // long enough to freeze scrolling or drop the share-sheet animation (W9.4).
+      const exportRows = all.slice(0, EXPORT_MAX_ROWS);
+      const lines: string[] = [header];
+      const CHUNK = 500;
+      for (let i = 0; i < exportRows.length; i += CHUNK) {
+        const end = Math.min(i + CHUNK, exportRows.length);
+        for (let j = i; j < end; j += 1) {
+          const g = exportRows[j];
           const cf = g.custom_fields ?? {};
-          return [
-            esc(g.first_name),
-            esc(g.last_name),
-            esc(g.email),
-            esc(g.phone),
-            esc((g.tags ?? []).join('; ')),
-            String(g.visit_count ?? 0),
-            String(g.no_show_count ?? 0),
-            esc(g.last_visit_date),
-            String(g.total_bookings ?? 0),
-            String(g.upcoming_booking_count ?? 0),
-            String(g.cancelled_count ?? 0),
-            ((g.paid_deposit_pence ?? 0) / 100).toFixed(2),
-            g.marketing_consent ? 'yes' : 'no',
-            g.marketing_opt_out ? 'yes' : 'no',
-            ...activeFields.map((f) => esc(customFieldCell(cf[f.field_key]))),
-          ].join(',');
-        }),
-      ];
-      await Share.share({ title: 'Contacts export', message: rows.join('\n') });
+          lines.push(
+            [
+              esc(g.first_name),
+              esc(g.last_name),
+              esc(g.email),
+              esc(g.phone),
+              esc((g.tags ?? []).join('; ')),
+              String(g.visit_count ?? 0),
+              String(g.no_show_count ?? 0),
+              esc(g.last_visit_date),
+              String(g.total_bookings ?? 0),
+              String(g.upcoming_booking_count ?? 0),
+              String(g.cancelled_count ?? 0),
+              ((g.paid_deposit_pence ?? 0) / 100).toFixed(2),
+              g.marketing_consent ? 'yes' : 'no',
+              g.marketing_opt_out ? 'yes' : 'no',
+              ...activeFields.map((f) => esc(customFieldCell(cf[f.field_key]))),
+            ].join(','),
+          );
+        }
+        if (end < exportRows.length) {
+          await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        }
+      }
+
+      // Lines were built in yielding chunks above; the final join of the
+      // pre-built strings is cheap. Share via the file/Blob/share helper.
+      const csvText = lines.join('\n');
+      const result = await buildAndShareCsv('contacts-export.csv', [], csvText);
+
+      if (!result.ok) {
+        // W2.7: the web Blob-download / share failure is now surfaced here via
+        // the toast host instead of being swallowed with a bare console.error.
+        toast.error('Could not export contacts. Please try again.');
+        return;
+      }
       if (truncated) {
         toast.info(`Export capped at ${EXPORT_MAX_ROWS} contacts.`);
+      } else {
+        toast.success('Contacts export ready.');
       }
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : 'Could not export contacts.');
     } finally {
       setExporting(false);
     }
-  }, [accessToken, customFieldsQuery, guestQueryParams, toast]);
+  }, [accessToken, exporting, customFieldsQuery, guestQueryParams, toast]);
 
   const errorMessage =
     guestsQuery.error instanceof ApiError
@@ -810,6 +865,11 @@ export default function ClientsScreen() {
             stickyHeaderIndices={nameSort ? stickyHeaderIndices : undefined}
             onEndReached={loadNextPage}
             onEndReachedThreshold={0.6}
+            // W8.4 virtualization tuning — paired with getItemLayout above.
+            initialNumToRender={12}
+            maxToRenderPerBatch={12}
+            windowSize={11}
+            removeClippedSubviews={Platform.OS === 'android'}
             // scrollToIndex can briefly miss before all rows render; fall back to
             // an offset scroll then retry so the A–Z rail never throws.
             onScrollToIndexFailed={(info) => {
@@ -830,12 +890,10 @@ export default function ClientsScreen() {
             }
             ListEmptyComponent={
               <EmptyState
-                icon={
-                  <SymbolView
-                    name={{ ios: 'person.2.fill', android: 'group', web: 'group' }}
-                    tintColor={colors.textMuted}
-                    size={44}
-                  />
+                illustration={
+                  debouncedSearch.length >= MIN_SEARCH_LENGTH || hasActiveFilter
+                    ? 'search'
+                    : 'clients'
                 }
                 title={`No ${screenTitle.toLowerCase()} found`}
                 message={

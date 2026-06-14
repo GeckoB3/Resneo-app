@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
-import { queryKeys } from '@/lib/queries/keys';
+import { keyScope, queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 
 export interface GuestDocumentRow {
@@ -19,7 +19,7 @@ export interface GuestDocumentsResponse {
 }
 
 const documentsKey = (accessToken: string | null, guestId: string | null | undefined) =>
-  [...queryKeys.guests.all(), 'documents', accessToken ?? null, guestId ?? null] as const;
+  [...queryKeys.guests.all(), 'documents', keyScope(accessToken), guestId ?? null] as const;
 
 /** GET /api/venue/guests/[guestId]/documents — list uploaded documents. */
 export function useGuestDocuments(guestId: string | null | undefined) {

@@ -5,10 +5,12 @@
  * single date, sharing a sticky left time-gutter and a single now-line. The
  * columns scroll horizontally; the gutter and grid lines stay put.
  *
- * Intentionally READ-ONLY — tapping a booking opens its detail and tapping an
- * empty slot starts a new booking on that column, but there's no drag/resize
- * here (the single-calendar grid remains the place for hold-drag editing). This
- * keeps the busiest view simple and avoids per-column gesture bookkeeping.
+ * Drag/resize is intentionally NOT done here — the single-calendar grid remains
+ * the place for hold-drag move/resize, which keeps the busiest view simple and
+ * avoids per-column gesture (worklet) bookkeeping. Cross-practitioner moves are
+ * instead reachable via a worklet-free LONG-PRESS on a block (onBlockLongPress),
+ * which the screen turns into a "Move to practitioner" chooser. Tapping a block
+ * still opens its detail; tapping an empty slot still starts a new booking.
  */
 
 import { useMemo } from 'react';
@@ -43,6 +45,9 @@ const COLUMN_GAP = spacing.xs;
 const PADDING_TOP = spacing.sm;
 const SESSION_ACCENT = '#6366F1';
 
+/** No-op for the inner card's onPress when the outer Pressable owns the tap. */
+const noop = (): void => {};
+
 /** One practitioner's day data, as assembled by the calendar screen. */
 export type AllCalendarColumn = {
   calendarId: string;
@@ -69,6 +74,12 @@ type AllCalendarsDayGridProps = {
   onBlockPress: (bookingId: string) => void;
   /** Empty-slot tap → carries the column's practitioner id + the snapped time. */
   onEmptyPress: (practitionerId: string, time: string) => void;
+  /**
+   * Long-press a booking → carries the booking id + the column (current
+   * practitioner) it sits in, so the screen can offer a "move to practitioner"
+   * chooser. Worklet-free (plain Pressable onLongPress) — no drag here.
+   */
+  onBlockLongPress?: (bookingId: string, fromPractitionerId: string) => void;
   refreshing?: boolean;
   onRefresh?: () => void;
 };
@@ -114,6 +125,7 @@ export function AllCalendarsDayGrid({
   nowMinutes,
   onBlockPress,
   onEmptyPress,
+  onBlockLongPress,
   refreshing = false,
   onRefresh,
 }: AllCalendarsDayGridProps) {
@@ -229,6 +241,7 @@ export function AllCalendarsDayGrid({
                     startHour={startHour}
                     onBlockPress={onBlockPress}
                     onEmptyPress={onEmptyPress}
+                    onBlockLongPress={onBlockLongPress}
                   />
                 ))}
               </View>
@@ -247,12 +260,14 @@ function DayColumn({
   startHour,
   onBlockPress,
   onEmptyPress,
+  onBlockLongPress,
 }: {
   column: AllCalendarColumn;
   gridStartMin: number;
   startHour: number;
   onBlockPress: (bookingId: string) => void;
   onEmptyPress: (practitionerId: string, time: string) => void;
+  onBlockLongPress?: (bookingId: string, fromPractitionerId: string) => void;
 }) {
   const { colors } = useTheme();
   const positioned = useMemo(
@@ -337,35 +352,60 @@ function DayColumn({
         </View>
       ))}
 
-      {/* Appointment blocks (tap → detail; read-only here, no drag) */}
+      {/* Appointment blocks: tap → detail. When reassignment is enabled, an
+          OUTER Pressable owns BOTH tap and long-press, and the inner card is
+          made non-interactive (pointerEvents="none") so it can't capture the
+          responder and swallow the long-press — the reliable nested-Pressable
+          pattern. Worklet-free; there's no drag/resize on this grid. The
+          read-only grid has no on-card tray, so disabling inner interactivity
+          loses nothing. */}
       {positioned.map((item) => {
         const widthPct = 100 / item.laneCount;
-        return (
-          <View
+        const wrapStyle = [
+          styles.blockWrap,
+          {
+            top: item.top,
+            height: item.height,
+            left: `${item.laneIndex * widthPct}%` as const,
+            width: `${widthPct}%` as const,
+          },
+        ];
+        const block = (noInnerPress: boolean) => (
+          <AppointmentBlock
+            id={item.booking.id}
+            guestName={item.booking.guestName}
+            serviceName={item.booking.serviceName}
+            timeLabel={item.timeLabel}
+            status={item.booking.status}
+            clientArrivedAt={item.booking.client_arrived_at}
+            staffAttendanceConfirmedAt={item.booking.staff_attendance_confirmed_at}
+            guestAttendanceConfirmedAt={item.booking.guest_attendance_confirmed_at}
+            height={item.height}
+            laneIndex={item.laneIndex}
+            laneCount={item.laneCount}
+            // The outer Pressable handles tap when long-press is enabled; the
+            // inner onPress is then unreachable (parent is the responder).
+            onPress={noInnerPress ? noop : onBlockPress}
+          />
+        );
+        return onBlockLongPress ? (
+          <Pressable
             key={item.booking.id}
-            style={[
-              styles.blockWrap,
-              {
-                top: item.top,
-                height: item.height,
-                left: `${item.laneIndex * widthPct}%`,
-                width: `${widthPct}%`,
-              },
-            ]}>
-            <AppointmentBlock
-              id={item.booking.id}
-              guestName={item.booking.guestName}
-              serviceName={item.booking.serviceName}
-              timeLabel={item.timeLabel}
-              status={item.booking.status}
-              clientArrivedAt={item.booking.client_arrived_at}
-              staffAttendanceConfirmedAt={item.booking.staff_attendance_confirmed_at}
-              guestAttendanceConfirmedAt={item.booking.guest_attendance_confirmed_at}
-              height={item.height}
-              laneIndex={item.laneIndex}
-              laneCount={item.laneCount}
-              onPress={onBlockPress}
-            />
+            accessibilityRole="button"
+            accessibilityLabel={`${item.timeLabel}, ${item.booking.guestName}`}
+            accessibilityHint="Tap to open. Touch and hold to move to another practitioner."
+            onPress={() => onBlockPress(item.booking.id)}
+            onLongPress={() => onBlockLongPress(item.booking.id, column.calendarId)}
+            delayLongPress={350}
+            style={wrapStyle}>
+            {/* Non-interactive so the outer Pressable owns tap + long-press. */}
+            <View style={StyleSheet.absoluteFill} pointerEvents="none">
+              {block(true)}
+            </View>
+          </Pressable>
+        ) : (
+          <View key={item.booking.id} style={wrapStyle}>
+            {block(false)}
           </View>
         );
       })}

@@ -1,6 +1,7 @@
-import { Component, type ReactNode } from 'react';
+import { Component, type ErrorInfo, type ReactNode } from 'react';
 
 import { ErrorState } from '@/components/ui/ErrorState';
+import { captureException } from '@/lib/observability';
 
 type ErrorBoundaryProps = {
   /** Shown in the fallback so the user knows what failed. */
@@ -25,7 +26,12 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     return { error };
   }
 
-  componentDidCatch(error: Error) {
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    captureException(error, {
+      scope: 'react-render',
+      label: this.props.label ?? 'root',
+      componentStack: errorInfo?.componentStack ?? null,
+    });
     if (__DEV__) {
       console.error(`[ErrorBoundary${this.props.label ? `:${this.props.label}` : ''}]`, error);
     }

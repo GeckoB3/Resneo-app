@@ -11,6 +11,7 @@ import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError, apiFetch } from '@/lib/api/client';
 import { hapticError, hapticSuccess, hapticWarning } from '@/lib/haptics';
+import { t } from '@/lib/i18n';
 import { queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
@@ -85,11 +86,11 @@ export default function AccountScreen() {
       setPhone(row.phone ?? '');
       // Refresh cache so the More hub header and anywhere useStaffMe is used update
       void queryClient.invalidateQueries({ queryKey: queryKeys.staff.all() });
-      toast.success('Your profile has been updated.');
+      toast.success(t('account.profile.saved'));
     },
     onError: (error) => {
       hapticError();
-      const msg = error instanceof ApiError ? error.message : 'Could not save profile.';
+      const msg = error instanceof ApiError ? error.message : t('account.profile.saveError');
       toast.error(msg);
     },
   });
@@ -109,11 +110,11 @@ export default function AccountScreen() {
       hapticSuccess();
       setNewPassword('');
       setConfirmPassword('');
-      toast.success('Password changed. Sign in with the new password next time.');
+      toast.success(t('account.password.changed'));
     },
     onError: (error) => {
       hapticError();
-      const msg = error instanceof ApiError ? error.message : 'Password change failed.';
+      const msg = error instanceof ApiError ? error.message : t('account.password.changeError');
       toast.error(msg);
     },
   });
@@ -145,12 +146,12 @@ export default function AccountScreen() {
   async function handleChangePassword() {
     setPasswordError(null);
     if (newPassword.length < 8) {
-      setPasswordError('Password must be at least 8 characters.');
+      setPasswordError(t('account.password.tooShort', { min: 8 }));
       hapticWarning();
       return;
     }
     if (newPassword !== confirmPassword) {
-      setPasswordError('Passwords do not match.');
+      setPasswordError(t('account.password.mismatch'));
       hapticWarning();
       return;
     }
@@ -159,7 +160,7 @@ export default function AccountScreen() {
 
   const hasProfileChanges = buildProfilePatch() !== null;
 
-  const header = <Stack.Screen options={{ title: 'Account settings' }} />;
+  const header = <Stack.Screen options={{ title: t('account.title') }} />;
 
   if (isLoading || !seeded) {
     return (
@@ -178,42 +179,42 @@ export default function AccountScreen() {
         {/* Profile section */}
         <Card>
           <Text variant="label" style={styles.sectionTitle}>
-            Your profile
+            {t('account.profile.title')}
           </Text>
           <Text variant="caption" tone="muted" style={styles.sectionDesc}>
-            Update how you appear in the dashboard, your sign-in email, and your contact number.
+            {t('account.profile.description')}
           </Text>
           <View style={styles.fields}>
             <Input
-              label="Display name"
+              label={t('account.profile.nameLabel')}
               value={name}
               onChangeText={setName}
-              placeholder="Your name"
+              placeholder={t('account.profile.namePlaceholder')}
               maxLength={200}
               autoCapitalize="words"
               returnKeyType="next"
             />
             <Input
-              label="Sign-in email"
+              label={t('account.profile.emailLabel')}
               value={email}
               onChangeText={setEmail}
-              placeholder="you@example.com"
+              placeholder={t('account.profile.emailPlaceholder')}
               keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
-              helper="This is the address you use to log in."
+              helper={t('account.profile.emailHelper')}
               returnKeyType="next"
             />
             <Input
-              label="Phone"
+              label={t('account.profile.phoneLabel')}
               value={phone}
               onChangeText={setPhone}
-              placeholder="e.g. +44 7700 900000"
+              placeholder={t('account.profile.phonePlaceholder')}
               keyboardType="phone-pad"
-              helper="Optional. Include country code."
+              helper={t('account.profile.phoneHelper')}
             />
             <Button
-              label="Save profile"
+              label={t('account.profile.save')}
               fullWidth
               loading={profileMutation.isPending}
               disabled={!hasProfileChanges}
@@ -225,33 +226,33 @@ export default function AccountScreen() {
         {/* Password section */}
         <Card>
           <Text variant="label" style={styles.sectionTitle}>
-            Password
+            {t('account.password.title')}
           </Text>
           <Text variant="caption" tone="muted" style={styles.sectionDesc}>
-            Change the password you use to sign in.
+            {t('account.password.description')}
           </Text>
           <View style={styles.fields}>
             <Input
-              label="New password"
+              label={t('account.password.newLabel')}
               value={newPassword}
               onChangeText={(v) => {
                 setNewPassword(v);
                 setPasswordError(null);
               }}
-              placeholder="Min 8 characters"
+              placeholder={t('account.password.newPlaceholder')}
               secureTextEntry
               autoCapitalize="none"
               autoCorrect={false}
               returnKeyType="next"
             />
             <Input
-              label="Confirm password"
+              label={t('account.password.confirmLabel')}
               value={confirmPassword}
               onChangeText={(v) => {
                 setConfirmPassword(v);
                 setPasswordError(null);
               }}
-              placeholder="Re-enter password"
+              placeholder={t('account.password.confirmPlaceholder')}
               secureTextEntry
               autoCapitalize="none"
               autoCorrect={false}
@@ -260,7 +261,7 @@ export default function AccountScreen() {
               onSubmitEditing={() => void handleChangePassword()}
             />
             <Button
-              label="Update password"
+              label={t('account.password.submit')}
               fullWidth
               loading={passwordMutation.isPending}
               disabled={!newPassword || !confirmPassword}

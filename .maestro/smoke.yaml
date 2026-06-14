@@ -1,0 +1,33 @@
+# Critical-path smoke test: login → calendar → create booking → open detail →
+# cancel. Chains the focused flows so the happy path is exercised end to end in
+# one run. This is the flow to run in a pre-release smoke check.
+#
+#   maestro test \
+#     --env EMAIL=you@salon.com --env PASSWORD=••• \
+#     --env GUEST_FIRST=Maestro --env GUEST_LAST=Smoke --env GUEST_PHONE=+447700900123 \
+#     .maestro/smoke.yaml
+#
+# Requires a DEV BUILD installed on a connected device/emulator (Expo Go cannot
+# run the native modules). See README.md in this folder.
+appId: com.resneo.app
+env:
+  EMAIL: ${EMAIL}
+  PASSWORD: ${PASSWORD}
+  GUEST_FIRST: ${GUEST_FIRST}
+  GUEST_LAST: ${GUEST_LAST}
+  GUEST_PHONE: ${GUEST_PHONE}
+---
+# 1. Sign in (clears state, lands on Calendar).
+- runFlow: login.yaml
+
+# 2 + 3. Create a booking via the FAB wizard; create-booking ends on the new
+# booking's detail screen (router.replace('/booking/<id>')).
+- runFlow: create-booking.yaml
+
+# 4. We are now on the booking detail (opened by step 3's navigation).
+- assertVisible:
+    text: "Cancel booking"
+    optional: true
+
+# 5. Cancel the booking (two-step arm → confirm) and assert the terminal state.
+- runFlow: booking-action-cancel.yaml

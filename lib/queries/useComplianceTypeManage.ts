@@ -3,7 +3,7 @@ import { useMemo } from 'react';
 
 import { ApiError, apiFetch } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
-import { queryKeys } from '@/lib/queries/keys';
+import { keyScope, queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { useComplianceDashboard, useComplianceFormLinks } from '@/lib/queries/useCompliance';
 
@@ -124,9 +124,9 @@ export interface DiscoveredComplianceTemplate {
 
 const complianceTemplateKeys = {
   recordsDiscovery: (accessToken: string | null) =>
-    [...queryKeys.compliance.all(), 'recordsDiscovery', accessToken ?? null] as const,
+    [...queryKeys.compliance.all(), 'recordsDiscovery', keyScope(accessToken)] as const,
   detail: (accessToken: string | null, typeId: string | null) =>
-    [...queryKeys.compliance.all(), 'type', accessToken ?? null, typeId ?? null] as const,
+    [...queryKeys.compliance.all(), 'type', keyScope(accessToken), typeId ?? null] as const,
 };
 
 // ---------------------------------------------------------------------------

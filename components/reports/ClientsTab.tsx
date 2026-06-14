@@ -181,7 +181,11 @@ function GuestDetail({ guestId, onErased }: { guestId: string; onErased: () => v
       ]),
     ];
     const name = [guest?.first_name, guest?.last_name].filter(Boolean).join('-') || guestId;
-    await buildAndShareCsv(`guest-history-${name}.csv`, rows);
+    const result = await buildAndShareCsv(`guest-history-${name}.csv`, rows);
+    if (!result.ok) {
+      toast.error('Could not export the report.');
+      return;
+    }
     toast.success('Export started.');
   }
 

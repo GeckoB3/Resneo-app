@@ -10,6 +10,7 @@ import {
 } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, { FadeInDown, FadeOutDown } from 'react-native-reanimated';
+import { useReduceMotion, motionSafe } from '@/lib/motion';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Text } from '@/components/ui/Text';
@@ -127,6 +128,7 @@ function ToastHost({
 }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const reduceMotion = useReduceMotion();
 
   if (!toast) return null;
 
@@ -139,8 +141,8 @@ function ToastHost({
       pointerEvents="box-none">
       <Animated.View
         key={toast.id}
-        entering={FadeInDown.springify().damping(20).stiffness(220)}
-        exiting={FadeOutDown.duration(160)}
+        entering={motionSafe(FadeInDown.springify().damping(20).stiffness(220), reduceMotion)}
+        exiting={motionSafe(FadeOutDown.duration(160), reduceMotion)}
         style={[styles.bar, elevation.raised, { backgroundColor: colors.inverseSurface }]}
         pointerEvents="auto">
         {icon && accent ? (

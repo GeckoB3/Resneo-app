@@ -38,6 +38,8 @@ import type {
 
 const GUTTER_WIDTH = 38;
 const HEADER_HEIGHT = 46;
+/** Gap below the sticky header so the first hour label/line isn't tucked under it. */
+const GRID_TOP_PAD = 8;
 const SESSION_ACCENT = '#6366F1';
 const DEFAULT_DURATION_MINUTES = 30;
 /** Week bars have no buttons, so they can be much shorter than day bars —
@@ -199,7 +201,7 @@ export function WeekGrid({
               key={hour}
               variant="caption"
               tone="muted"
-              style={[styles.gutterLabel, { top: (hour - startHour) * 60 * PX_PER_MINUTE - 6 }]}>
+              style={[styles.gutterLabel, { top: (hour - startHour) * 60 * PX_PER_MINUTE - 7 }]}>
               {hourLabel(hour)}
             </Text>
           ))}
@@ -207,6 +209,19 @@ export function WeekGrid({
 
         {/* Columns band with shared hour lines */}
         <View style={[styles.columnsArea, { height: totalHeight }]}>
+          {/* Subtle alternating hour bands (matches the day grid) for legibility. */}
+          {hours.slice(0, -1).map((hour, i) =>
+            i % 2 === 1 ? (
+              <View
+                key={`band-${hour}`}
+                pointerEvents="none"
+                style={[
+                  styles.hourBand,
+                  { top: (hour - startHour) * 60 * PX_PER_MINUTE, backgroundColor: colors.text },
+                ]}
+              />
+            ) : null,
+          )}
           {hours.map((hour) => (
             <View
               key={hour}
@@ -224,6 +239,7 @@ export function WeekGrid({
                 day={d}
                 gridStartMin={gridStartMin}
                 startHour={startHour}
+                endHour={endHour}
                 nowMinutes={nowMinutes}
                 onBlockPress={onBlockPress}
                 onEmptyPress={onEmptyPress}
@@ -236,11 +252,12 @@ export function WeekGrid({
   );
 }
 
-/** One day's column — working-hours shading, bookings, sessions, now-line. */
+/** One day's column — bookings, sessions, and the now-line on today. */
 function WeekDayCol({
   day,
   gridStartMin,
   startHour,
+  endHour,
   nowMinutes,
   onBlockPress,
   onEmptyPress,
@@ -248,6 +265,7 @@ function WeekDayCol({
   day: WeekDayColumn;
   gridStartMin: number;
   startHour: number;
+  endHour: number;
   nowMinutes: number | null;
   onBlockPress: (bookingId: string) => void;
   onEmptyPress: (date: string, time: string) => void;
@@ -257,21 +275,6 @@ function WeekDayCol({
   const positioned = useMemo(
     () => positionBookings(day.bookings, gridStartMin),
     [day.bookings, gridStartMin],
-  );
-
-  const workRegions = useMemo(
-    () =>
-      day.workingHours
-        .map((wh) => {
-          const start = timeToMinutes(wh.start);
-          const end = timeToMinutes(wh.end);
-          return {
-            top: (start - gridStartMin) * PX_PER_MINUTE,
-            height: Math.max(0, (end - start) * PX_PER_MINUTE),
-          };
-        })
-        .filter((r) => r.height > 0),
-    [day.workingHours, gridStartMin],
   );
 
   const sessions = useMemo(
@@ -290,7 +293,12 @@ function WeekDayCol({
     [day.sessions, gridStartMin],
   );
 
-  const nowTop = day.isToday && nowMinutes != null ? (nowMinutes - startHour * 60) * PX_PER_MINUTE : null;
+  // Clamp to the visible window so an out-of-hours "now" doesn't draw a stray
+  // dot/bar above or below the grid (the column has no overflow clip).
+  const nowTop =
+    day.isToday && nowMinutes != null && nowMinutes >= startHour * 60 && nowMinutes <= endHour * 60
+      ? (nowMinutes - startHour * 60) * PX_PER_MINUTE
+      : null;
 
   return (
     <View
@@ -301,15 +309,6 @@ function WeekDayCol({
           backgroundColor: day.isToday ? hexToRgba(colors.brand, 0.05) : 'transparent',
         },
       ]}>
-      {/* Working-hours shading — a faint band so each day's working window reads. */}
-      {workRegions.map((r, i) => (
-        <View
-          key={`wh-${i}`}
-          pointerEvents="none"
-          style={[styles.workShade, { top: r.top, height: r.height, backgroundColor: colors.surface }]}
-        />
-      ))}
-
       {/* Empty-slot tap layer (blocks render above). */}
       <Pressable
         style={StyleSheet.absoluteFill}
@@ -331,7 +330,7 @@ function WeekDayCol({
             styles.session,
             { top, height, backgroundColor: `${SESSION_ACCENT}22`, borderColor: SESSION_ACCENT },
           ]}>
-          {height >= 24 ? (
+          {height >= WEEK_MIN_BLOCK_HEIGHT ? (
             <Text variant="caption" numberOfLines={1} style={{ color: SESSION_ACCENT }}>
               {session.bookedCount}/{session.capacity}
             </Text>
@@ -363,7 +362,7 @@ function WeekDayCol({
         );
       })}
 
-      {/* Now-line — only on today's column. */}
+      {/* Now-line — only on today's column, only when "now" is within the window. */}
       {nowTop != null ? (
         <View pointerEvents="none" style={[styles.nowLine, { top: nowTop }]}>
           <View style={[styles.nowDot, { backgroundColor: colors.danger }]} />
@@ -385,7 +384,8 @@ function WeekBlock({ booking, height }: { booking: CalendarGridBooking; height: 
   return (
     <View style={[styles.block, { backgroundColor: palette.bg, borderColor: palette.border }]}>
       <View style={[styles.blockAccent, { backgroundColor: palette.accent }]} />
-      {height >= 24 ? (
+      {/* Always label the bar (down to the 18px floor) so short bookings aren't blank. */}
+      {height >= WEEK_MIN_BLOCK_HEIGHT ? (
         <View style={styles.blockBody}>
           <Text numberOfLines={1} style={[styles.blockName, { color: palette.text }]}>
             {booking.guestName}
@@ -430,6 +430,7 @@ const styles = StyleSheet.create({
   },
   bodyRow: {
     flexDirection: 'row',
+    marginTop: GRID_TOP_PAD,
   },
   gutter: {
     width: GUTTER_WIDTH,
@@ -450,6 +451,13 @@ const styles = StyleSheet.create({
     right: 0,
     height: StyleSheet.hairlineWidth,
   },
+  hourBand: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 60 * PX_PER_MINUTE,
+    opacity: 0.03,
+  },
   columnsRow: {
     flexDirection: 'row',
     flex: 1,
@@ -457,12 +465,6 @@ const styles = StyleSheet.create({
   column: {
     flex: 1,
     borderLeftWidth: StyleSheet.hairlineWidth,
-  },
-  workShade: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    opacity: 0.5,
   },
   session: {
     position: 'absolute',

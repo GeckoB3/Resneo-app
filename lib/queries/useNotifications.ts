@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
-import { queryKeys } from '@/lib/queries/keys';
+import { keyScope, queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import type {
   LinkedNotificationPrefs,
@@ -93,7 +93,7 @@ export function useMarkNotificationsRead() {
 // ---------------------------------------------------------------------------
 
 const notificationPrefsQueryKey = (accessToken: string | null) =>
-  [...queryKeys.notifications.all(), 'prefs', accessToken ?? null] as const;
+  [...queryKeys.notifications.all(), 'prefs', keyScope(accessToken)] as const;
 
 /** GET /api/venue/notifications/preferences — per-category email opt-in flags. */
 export function useLinkedNotificationPrefs() {

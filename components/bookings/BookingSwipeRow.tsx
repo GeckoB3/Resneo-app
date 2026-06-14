@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { memo, useCallback } from 'react';
 
 import { BookingRow } from '@/components/bookings/BookingRow';
 import { SwipeRow, type SwipeAction } from '@/components/ui/SwipeRow';
@@ -27,7 +27,7 @@ type BookingSwipeRowProps = {
  * opens the detail sheet, and these same transitions live in the detail toolbar.
  * Gesture feel can only be verified on a device build.
  */
-export function BookingSwipeRow({
+function BookingSwipeRowBase({
   booking,
   isAppointment,
   onPress,
@@ -93,3 +93,6 @@ export function BookingSwipeRow({
 
   return <SwipeRow rightActions={rightActions}>{row}</SwipeRow>;
 }
+
+/** Memoized so the bookings list skips re-rendering unchanged rows on scroll. */
+export const BookingSwipeRow = memo(BookingSwipeRowBase);

@@ -1,12 +1,15 @@
 import { Stack } from 'expo-router';
-import { useState } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 import {
+  FlatList,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Switch,
   View,
+  type ListRenderItem,
 } from 'react-native';
 
 import {
@@ -133,7 +136,7 @@ function processingFingerprint(drafts: ProcessingBlockDraft[]): string {
 // ServiceRow
 // ---------------------------------------------------------------------------
 
-function ServiceRow({
+function ServiceRowBase({
   service,
   expanded,
   isAdmin,
@@ -146,11 +149,11 @@ function ServiceRow({
   service: ManagedService;
   expanded: boolean;
   isAdmin: boolean;
-  onToggle: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
-  onEditVariants: () => void;
-  onEditAddons: () => void;
+  onToggle: (id: string) => void;
+  onEdit: (service: ManagedService) => void;
+  onDelete: (service: ManagedService) => void;
+  onEditVariants: (service: ManagedService) => void;
+  onEditAddons: (service: ManagedService) => void;
 }) {
   const { colors } = useTheme();
   const price = formatPence(service.price_pence);
@@ -161,7 +164,7 @@ function ServiceRow({
   return (
     <Card padded={false} style={styles.serviceCard}>
       <Pressable
-        onPress={onToggle}
+        onPress={() => onToggle(service.id)}
         accessibilityRole="button"
         style={({ pressed }) => [styles.serviceHeader, { opacity: pressed ? 0.55 : 1 }]}>
         <View style={[styles.colourDot, { backgroundColor: service.colour ?? colors.brand }]} />
@@ -241,7 +244,7 @@ function ServiceRow({
 
           {/* Action buttons — two rows to avoid truncation on narrow screens */}
           <View style={styles.editRow}>
-            <Button label="Edit" variant="secondary" size="sm" style={styles.editBtnFull} onPress={onEdit} />
+            <Button label="Edit" variant="secondary" size="sm" style={styles.editBtnFull} onPress={() => onEdit(service)} />
           </View>
           {isAdmin ? (
             <View style={styles.editRow}>
@@ -250,14 +253,14 @@ function ServiceRow({
                 variant="secondary"
                 size="sm"
                 style={styles.editBtn}
-                onPress={onEditVariants}
+                onPress={() => onEditVariants(service)}
               />
               <Button
                 label={addonGroups.length ? `Add-ons (${addonGroups.length})` : 'Add-ons'}
                 variant="secondary"
                 size="sm"
                 style={styles.editBtn}
-                onPress={onEditAddons}
+                onPress={() => onEditAddons(service)}
               />
             </View>
           ) : null}
@@ -266,7 +269,7 @@ function ServiceRow({
               label="Delete service"
               variant="ghost"
               size="sm"
-              onPress={onDelete}
+              onPress={() => onDelete(service)}
             />
           ) : null}
         </View>
@@ -274,6 +277,9 @@ function ServiceRow({
     </Card>
   );
 }
+
+/** Memoized so untouched rows don't re-render when another row expands/collapses. */
+const ServiceRow = memo(ServiceRowBase);
 
 // ---------------------------------------------------------------------------
 // Add-ons library tab
@@ -541,16 +547,23 @@ export default function ServicesScreen() {
     .filter((p) => p.is_active)
     .sort((a, b) => a.sort_order - b.sort_order);
 
-  const services = [...(query.data?.services ?? [])].sort(
-    (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.name.localeCompare(b.name),
+  const services = useMemo(
+    () =>
+      [...(query.data?.services ?? [])].sort(
+        (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.name.localeCompare(b.name),
+      ),
+    [query.data?.services],
   );
 
-  const linkedCalendarIds = (serviceId: string): string[] =>
-    (query.data?.practitioner_services ?? [])
-      .filter((link) => link.service_id === serviceId)
-      .map((link) => link.practitioner_id);
+  const linkedCalendarIds = useCallback(
+    (serviceId: string): string[] =>
+      (query.data?.practitioner_services ?? [])
+        .filter((link) => link.service_id === serviceId)
+        .map((link) => link.practitioner_id),
+    [query.data?.practitioner_services],
+  );
 
-  const openEdit = (service: ManagedService) => {
+  const openEdit = useCallback((service: ManagedService) => {
     const linked = linkedCalendarIds(service.id);
     setName(service.name);
     setDescription(service.description ?? '');
@@ -589,7 +602,7 @@ export default function ServicesScreen() {
     setInitialCustomKey(seededEnabled ? JSON.stringify(seededSchedule.rules) : 'disabled');
     setError(null);
     setEditTarget({ id: service.id, practitionerIds: linked });
-  };
+  }, [linkedCalendarIds]);
 
   const openCreate = () => {
     setName('');
@@ -772,10 +785,15 @@ export default function ServicesScreen() {
     }
   }
 
-  function handleDeleteService(service: ManagedService) {
+  const handleToggle = useCallback(
+    (id: string) => setExpandedId((cur) => (cur === id ? null : id)),
+    [],
+  );
+
+  const handleDeleteService = useCallback((service: ManagedService) => {
     // Open a Sheet confirm — Alert.alert's confirm never fires on web.
     setDeleteTarget(service);
-  }
+  }, []);
 
   function runDeleteService() {
     const service = deleteTarget;
@@ -797,7 +815,7 @@ export default function ServicesScreen() {
     });
   }
 
-  const openVariantsEditor = (service: ManagedService) =>
+  const openVariantsEditor = useCallback((service: ManagedService) =>
     setVariantsTarget({
       serviceId: service.id,
       serviceName: service.name,
@@ -819,19 +837,45 @@ export default function ServicesScreen() {
           processing_time_blocks: sv.processing_time_blocks ?? null,
         };
       }),
-    });
+    }), []);
 
-  const openAddonsEditor = (service: ManagedService) =>
+  const openAddonsEditor = useCallback((service: ManagedService) =>
     setAddonsTarget({
       serviceId: service.id,
       serviceName: service.name,
       linkedGroups: [...(service.addon_groups ?? [])]
         .sort((a, b) => (a.link_sort_order ?? 0) - (b.link_sort_order ?? 0))
         .map((entry) => ({ id: entry.group.id, name: entry.group.name })),
-    });
+    }), []);
 
   const sheetOpen = editTarget !== null || creating;
   const saving = update.isPending || create.isPending;
+
+  const renderServiceItem = useCallback<ListRenderItem<ManagedService>>(
+    ({ item }) => (
+      <ServiceRow
+        service={item}
+        expanded={expandedId === item.id}
+        isAdmin={isAdmin}
+        onToggle={handleToggle}
+        onEdit={openEdit}
+        onDelete={handleDeleteService}
+        onEditVariants={openVariantsEditor}
+        onEditAddons={openAddonsEditor}
+      />
+    ),
+    [
+      expandedId,
+      isAdmin,
+      handleToggle,
+      openEdit,
+      handleDeleteService,
+      openVariantsEditor,
+      openAddonsEditor,
+    ],
+  );
+
+  const keyExtractor = useCallback((item: ManagedService) => item.id, []);
 
   return (
     <Screen scroll={false} padded={false}>
@@ -875,17 +919,15 @@ export default function ServicesScreen() {
             />
           </View>
         ) : (
-          <ScrollView
+          <FlatList
+            data={services}
+            keyExtractor={keyExtractor}
+            renderItem={renderServiceItem}
             contentContainerStyle={styles.content}
-            refreshControl={
-              <RefreshControl
-                refreshing={query.isRefetching}
-                onRefresh={() => void query.refetch()}
-                tintColor={colors.brand}
-              />
-            }>
-            {isAdmin ? <Button label="New service" onPress={openCreate} fullWidth /> : null}
-            {services.length === 0 ? (
+            ListHeaderComponent={
+              isAdmin ? <Button label="New service" onPress={openCreate} fullWidth /> : null
+            }
+            ListEmptyComponent={
               <EmptyState
                 title="No services yet"
                 message={
@@ -894,23 +936,22 @@ export default function ServicesScreen() {
                     : 'No services have been created yet.'
                 }
               />
-            ) : (
-              services.map((service) => (
-                <ServiceRow
-                  key={service.id}
-                  service={service}
-                  expanded={expandedId === service.id}
-                  isAdmin={isAdmin}
-                  onToggle={() => setExpandedId((cur) => (cur === service.id ? null : service.id))}
-                  onEdit={() => openEdit(service)}
-                  onDelete={() => handleDeleteService(service)}
-                  onEditVariants={() => openVariantsEditor(service)}
-                  onEditAddons={() => openAddonsEditor(service)}
-                />
-              ))
-            )}
-            <View style={styles.spacer} />
-          </ScrollView>
+            }
+            ListFooterComponent={<View style={styles.spacer} />}
+            refreshControl={
+              <RefreshControl
+                refreshing={query.isRefetching}
+                onRefresh={() => void query.refetch()}
+                tintColor={colors.brand}
+              />
+            }
+            // W8.4 virtualization tuning — rows are variable-height (expandable),
+            // so no getItemLayout; these caps keep busy catalogues smooth.
+            initialNumToRender={10}
+            maxToRenderPerBatch={10}
+            windowSize={11}
+            removeClippedSubviews={Platform.OS === 'android'}
+          />
         )
       ) : null}
 

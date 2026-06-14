@@ -1,7 +1,8 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
+import { useReduceMotion, motionSafe } from '@/lib/motion';
 import { SymbolView } from 'expo-symbols';
 import { format, parseISO } from 'date-fns';
 
@@ -63,6 +64,23 @@ const SCOPE_OPTIONS: { value: Scope; label: string }[] = [
   { value: 'month', label: 'Month' },
 ];
 
+/**
+ * Viewport width (dp) at/above which the DAY view shows every practitioner's
+ * column side-by-side (multi-calendar grid) instead of one practitioner at a
+ * time. Tablets and landscape phones clear this; phone-portrait stays single.
+ */
+const WIDE_DAY_MIN_WIDTH = 700;
+/**
+ * Landscape phones can be narrower than a tablet but still wide enough for a few
+ * columns: treat "landscape AND at least this wide" as a wide viewport too.
+ */
+const WIDE_LANDSCAPE_MIN_WIDTH = 600;
+
+/** True on a tablet, or a landscape phone wide enough for multiple columns. */
+function isWideDayViewport(width: number, height: number): boolean {
+  return width >= WIDE_DAY_MIN_WIDTH || (width > height && width >= WIDE_LANDSCAPE_MIN_WIDTH);
+}
+
 /** Current wall-clock time (minutes since midnight) in the venue timezone. */
 function nowMinutesInTz(timeZone: string): number {
   const parts = new Intl.DateTimeFormat('en-GB', {
@@ -117,6 +135,7 @@ export default function CalendarScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ date?: string }>();
   const { colors } = useTheme();
+  const reduceMotion = useReduceMotion();
   const { venue, terminology, featureFlags } = useVenueContext();
   const timeZone = venue?.timezone ?? 'Europe/London';
   const complianceEnabled = featureFlags?.resolved?.compliance_records_enabled === true;
@@ -143,6 +162,13 @@ export default function CalendarScreen() {
   const [detailBookingId, setDetailBookingId] = useState<string | null>(null);
   const [blockTarget, setBlockTarget] = useState<BlockTarget | null>(null);
   const [addSheetTarget, setAddSheetTarget] = useState<AddSheetTarget | null>(null);
+  // Multi-calendar "move to practitioner" chooser — set by a long-press on a
+  // block in the side-by-side day grid. Carries the booking + its current
+  // column so the chooser can offer the OTHER practitioners.
+  const [reassignTarget, setReassignTarget] = useState<{
+    bookingId: string;
+    fromPractitionerId: string;
+  } | null>(null);
 
   // Pending action tracking for inline status tray + drag commits.
   const [pendingActionIds, setPendingActionIds] = useState<Set<string>>(new Set());
@@ -211,14 +237,36 @@ export default function CalendarScreen() {
     refetchInterval: 60_000,
   });
 
+  // Wide viewport (tablet / landscape) → the DAY view shows every practitioner
+  // side-by-side automatically, so the columns are visible without picking the
+  // "All" chip. Phone-portrait is unaffected (stays single-practitioner).
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const isWideViewport = isWideDayViewport(windowWidth, windowHeight);
+
   // The calendar being viewed — one at a time, switched via the chips row, OR
   // the 'all' multi-calendar day view. null falls back to the first calendar.
   const isAllView =
     selectedId === ALL_CALENDARS && scope === 'day' && practitioners.length > 1;
+  // Render the multi-practitioner columns when the user explicitly picks "All",
+  // OR when a wide viewport makes the side-by-side day layout the default. Both
+  // require day scope and more than one practitioner.
+  const showAllCalendars =
+    scope === 'day' &&
+    practitioners.length > 1 &&
+    (isAllView || isWideViewport);
   const effectiveId =
     selectedId && selectedId !== ALL_CALENDARS && calendarIds.includes(selectedId)
       ? selectedId
       : calendarIds[0] ?? null;
+
+  // The calendar-switcher chips let you pick one practitioner (or "All"). On a
+  // wide DAY viewport every column already shows side-by-side, so the switcher
+  // is redundant there and its selected-state would be misleading — hide it.
+  // Week scope always keeps it (it chooses whose week renders).
+  const showSwitcher =
+    practitioners.length > 1 &&
+    scope !== 'month' &&
+    !(scope === 'day' && isWideViewport);
 
   const day = useMemo(() => {
     const calendar = gridQuery.data?.calendars.find((c) => c.calendarId === effectiveId);
@@ -447,6 +495,97 @@ export default function CalendarScreen() {
     toast.error("That time isn't available");
   }, [toast]);
 
+  // ---- Cross-practitioner reassignment (multi-calendar long-press) ----
+  //
+  // Long-press a block in the side-by-side day grid → open a "move to
+  // practitioner" chooser. The PATCH keeps the same date/time and just changes
+  // the practitioner/calendar; the server re-validates the slot on the TARGET
+  // and 409s on a hard conflict, which we surface + leave the grid untouched
+  // (no optimistic grid mutation, so an error needs no manual rollback — the
+  // grid is a pure render of unchanged query data). Success invalidates
+  // calendar.all()/bookings.all() via the mutation, and an Undo moves it back.
+  const handleBlockLongPress = useCallback(
+    (bookingId: string, fromPractitionerId: string) => {
+      // Nothing to choose if there's only one practitioner.
+      if (practitioners.length <= 1) return;
+      hapticSelect();
+      setReassignTarget({ bookingId, fromPractitionerId });
+    },
+    [practitioners.length],
+  );
+
+  const closeReassign = useCallback(() => setReassignTarget(null), []);
+
+  // The Undo on a successful reassign re-runs the move back to the original
+  // column. To avoid a self-referential callback (a hooks-rule violation), the
+  // Undo dispatches through a ref that always points at the latest commit.
+  const commitReassignRef = useRef<
+    ((bookingId: string, toPractitionerId: string, undoTo: string | null) => void) | null
+  >(null);
+
+  const commitReassign = useCallback(
+    (bookingId: string, toPractitionerId: string, undoTo: string | null) => {
+      const booking = findBookingOnAnchor(bookingId);
+      if (!booking) {
+        toast.error('Could not find that booking. Pull to refresh.');
+        return;
+      }
+      const toName =
+        practitioners.find((p) => p.id === toPractitionerId)?.name ?? 'practitioner';
+      setPendingActionIds((prev) => new Set([...prev, bookingId]));
+      rescheduleById.mutate(
+        {
+          bookingId,
+          date: anchor,
+          // Reassign keeps the slot — send the booking's current start time.
+          time: `${booking.startTime.slice(0, 5)}:00`,
+          practitionerId: toPractitionerId,
+        },
+        {
+          onSuccess: () => {
+            hapticSuccess();
+            removePending(bookingId);
+            toast.show({
+              message: `Moved ${booking.guestName ?? 'booking'} to ${toName}`,
+              // Offer an Undo back to the original column (when known). The undo
+              // itself offers no further undo (undoTo: null).
+              ...(undoTo
+                ? {
+                    actionLabel: 'Undo',
+                    onAction: () => commitReassignRef.current?.(bookingId, undoTo, null),
+                  }
+                : {}),
+            });
+          },
+          onError: (error) => {
+            removePending(bookingId);
+            toast.error(
+              error instanceof ApiError
+                ? error.message
+                : `Could not move to ${toName}. That slot may be taken.`,
+            );
+          },
+        },
+      );
+    },
+    [findBookingOnAnchor, practitioners, anchor, rescheduleById, removePending, toast],
+  );
+
+  // Keep the ref pointed at the latest commit so the Undo dispatches correctly.
+  useEffect(() => {
+    commitReassignRef.current = commitReassign;
+  }, [commitReassign]);
+
+  const handleReassignPick = useCallback(
+    (toPractitionerId: string) => {
+      const target = reassignTarget;
+      closeReassign();
+      if (!target) return;
+      commitReassign(target.bookingId, toPractitionerId, target.fromPractitionerId);
+    },
+    [reassignTarget, closeReassign, commitReassign],
+  );
+
   const handleBlockTimeBlockPress = useCallback(
     (blockId: string) => {
       // One-off blocks come from the grid payload (`day.blocks`); practitioner +
@@ -523,10 +662,12 @@ export default function CalendarScreen() {
     [getDayBlocks, effectiveId, anchor, day],
   );
 
-  // ---- Multi-calendar ("All") day view data ----
+  // ---- Multi-calendar day view data ----
   // One column per practitioner for the anchor date, sharing the time gutter.
+  // Assembled whenever the side-by-side grid will render (explicit "All" chip
+  // OR a wide viewport).
   const allCalendarsForDay = useMemo(() => {
-    if (!isAllView) return [];
+    if (!showAllCalendars) return [];
     return practitioners.map((p) => {
       const calendar = gridQuery.data?.calendars.find((c) => c.calendarId === p.id);
       const calDay = calendar?.dates.find((d) => d.date === anchor) ?? null;
@@ -539,7 +680,7 @@ export default function CalendarScreen() {
         timeBlocks: getDayBlocks(p.id, anchor, calDay),
       };
     });
-  }, [isAllView, practitioners, gridQuery.data, anchor, getDayBlocks]);
+  }, [showAllCalendars, practitioners, gridQuery.data, anchor, getDayBlocks]);
 
   // ---- Week view data ----
   // Seven day-columns for the SELECTED calendar (one practitioner's week).
@@ -625,6 +766,20 @@ export default function CalendarScreen() {
 
   const addSheetSlot = addSheetTarget?.kind === 'slot' ? addSheetTarget : null;
 
+  // ---- "Move to practitioner" chooser content ----
+  // The booking being moved + the OTHER practitioners it can move to.
+  const reassignBooking = useMemo(
+    () => (reassignTarget ? findBookingOnAnchor(reassignTarget.bookingId) : null),
+    [reassignTarget, findBookingOnAnchor],
+  );
+  const reassignOptions = useMemo(
+    () =>
+      reassignTarget
+        ? practitioners.filter((p) => p.id !== reassignTarget.fromPractitionerId)
+        : [],
+    [reassignTarget, practitioners],
+  );
+
   return (
     <Screen padded={false}>
       <ErrorBoundary label="the calendar">
@@ -674,7 +829,9 @@ export default function CalendarScreen() {
                 </Text>
               </Pressable>
               {!isToday ? (
-                <Animated.View entering={FadeIn.duration(160)} exiting={FadeOut.duration(120)}>
+                <Animated.View
+                  entering={motionSafe(FadeIn.duration(160), reduceMotion)}
+                  exiting={motionSafe(FadeOut.duration(120), reduceMotion)}>
                   <Pressable
                     onPress={goToday}
                     accessibilityRole="button"
@@ -701,8 +858,9 @@ export default function CalendarScreen() {
             </View>
 
             {/* Calendar switcher — one calendar at a time, plus an "All" view
-                (day scope only) that shows every calendar side-by-side. */}
-            {scope !== 'month' && practitioners.length > 1 ? (
+                (day scope only) that shows every calendar side-by-side. Hidden
+                on a wide day viewport where all columns already show. */}
+            {showSwitcher ? (
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
@@ -777,13 +935,14 @@ export default function CalendarScreen() {
                 onRefresh={onRefresh}
               />
             </View>
-          ) : isAllView ? (
+          ) : showAllCalendars ? (
             <View style={styles.weekBody}>
               <AllCalendarsDayGrid
                 calendars={allCalendarsForDay}
                 nowMinutes={nowMinutes}
                 onBlockPress={openDetail}
                 onEmptyPress={createAtFor}
+                onBlockLongPress={handleBlockLongPress}
                 refreshing={refreshing}
                 onRefresh={onRefresh}
               />
@@ -859,6 +1018,40 @@ export default function CalendarScreen() {
         </View>
       </Sheet>
 
+      {/* "Move to practitioner" chooser — opened by a long-press on a block in
+          the side-by-side day grid. Picking a practitioner PATCHes the
+          reassignment (optimistic pending + rollback + Undo toast). */}
+      <Sheet visible={reassignTarget !== null} onClose={closeReassign}>
+        <Text variant="subheading">
+          {reassignBooking
+            ? `Move ${reassignBooking.guestName}`
+            : 'Move to practitioner'}
+        </Text>
+        <Text variant="caption" tone="muted">
+          {reassignBooking
+            ? `${reassignBooking.startTime.slice(0, 5)} · keeps the same time`
+            : 'Choose a practitioner to move this booking to.'}
+        </Text>
+        <View style={styles.reassignList}>
+          {reassignOptions.length === 0 ? (
+            <Text variant="body" tone="muted">
+              No other practitioners to move to.
+            </Text>
+          ) : (
+            reassignOptions.map((p) => (
+              <Button
+                key={p.id}
+                label={p.name}
+                variant="secondary"
+                fullWidth
+                onPress={() => handleReassignPick(p.id)}
+              />
+            ))
+          )}
+          <Button label="Cancel" variant="ghost" fullWidth onPress={closeReassign} />
+        </View>
+      </Sheet>
+
       {/* Reschedule undo + all error feedback now route through the toast host
           (Alert.alert is a no-op on web; the manual Snackbar timer is gone). */}
       <BookingDetailSheet
@@ -930,5 +1123,9 @@ const styles = StyleSheet.create({
   addSheetActions: {
     gap: spacing.sm,
     marginTop: spacing.md,
+  },
+  reassignList: {
+    gap: spacing.sm,
+    marginTop: spacing.sm,
   },
 });

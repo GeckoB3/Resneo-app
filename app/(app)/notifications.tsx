@@ -316,6 +316,7 @@ export default function NotificationsScreen() {
         <View style={styles.stateWrap}>
           {listHeader}
           <EmptyState
+            illustration="inbox"
             title="No notifications"
             message="Activity from your linked venues will appear here."
           />

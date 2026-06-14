@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { Screen } from '@/components/ui/Screen';
+import { ANALYTICS_EVENTS, track } from '@/lib/analytics';
 import { ApiError } from '@/lib/api/client';
 import { useAppointmentCatalog } from '@/lib/queries/useAppointmentCatalog';
 import { calendarDateInTimeZone } from '@/lib/queries/useBookingsList';
@@ -310,6 +311,11 @@ export default function NewBookingScreen() {
     };
   }, []);
 
+  // Funnel entry — the create-booking wizard opened (fire once on mount).
+  useEffect(() => {
+    track(ANALYTICS_EVENTS.createBookingStarted);
+  }, []);
+
   useEffect(() => {
     if (guestPrefilled || !prefillGuestQuery.data) {
       return;
@@ -347,6 +353,13 @@ export default function NewBookingScreen() {
   };
 
   const handleBookingCreated = (bookingId: string) => {
+    // Non-PII funnel completion: how the booking was created, not who for.
+    track(ANALYTICS_EVENTS.createBookingCompleted, {
+      mode: appointmentVenue ? 'appointment' : 'restaurant',
+      source,
+      hasVariant: !!selectedVariant,
+      addonCount: selectedAddonIds.length,
+    });
     router.replace(`/booking/${bookingId}` as Href);
   };
 

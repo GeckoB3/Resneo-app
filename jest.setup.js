@@ -6,11 +6,15 @@
  */
 
 // Silence the noisy New-Architecture / Reanimated startup logs in test output.
+// The real expo-haptics calls are async; lib/haptics.ts does `.catch()` on the
+// returned promise (fire-and-forget). The mocks must resolve a promise, not
+// return undefined, or pressing any haptic-enabled control throws
+// "Cannot read properties of undefined (reading 'catch')".
 // eslint-disable-next-line no-undef
 jest.mock('expo-haptics', () => ({
-  impactAsync: jest.fn(),
-  notificationAsync: jest.fn(),
-  selectionAsync: jest.fn(),
+  impactAsync: jest.fn(() => Promise.resolve()),
+  notificationAsync: jest.fn(() => Promise.resolve()),
+  selectionAsync: jest.fn(() => Promise.resolve()),
   ImpactFeedbackStyle: { Light: 'light', Medium: 'medium', Heavy: 'heavy' },
   NotificationFeedbackType: { Success: 'success', Warning: 'warning', Error: 'error' },
 }));

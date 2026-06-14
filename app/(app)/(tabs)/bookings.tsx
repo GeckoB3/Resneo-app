@@ -2,13 +2,14 @@ import { useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import {
   FlatList,
+  Platform,
   Pressable,
   RefreshControl,
   StyleSheet,
   View,
 } from 'react-native';
 import Animated, { FadeInDown, LinearTransition } from 'react-native-reanimated';
-import { SymbolView } from 'expo-symbols';
+import { useReduceMotion, motionSafe, layoutSafe } from '@/lib/motion';
 import { Sheet } from '@/components/ui/Sheet';
 import { Button } from '@/components/ui/Button';
 import { apiFetch , ApiError } from '@/lib/api/client';
@@ -286,6 +287,7 @@ function BulkMessageSheet({
 export default function BookingsScreen() {
   const router = useRouter();
   const { colors } = useTheme();
+  const reduceMotion = useReduceMotion();
   const { venue, terminology, pricingTier, bookingModel, featureFlags } = useVenueContext();
   const complianceEnabled = featureFlags?.resolved?.compliance_records_enabled === true;
   const enabledModels = useMemo(() => venue?.enabled_models ?? [], [venue?.enabled_models]);
@@ -568,7 +570,9 @@ export default function BookingsScreen() {
         );
       }
       return (
-        <Animated.View entering={FadeInDown.duration(180)} layout={LinearTransition.springify()}>
+        <Animated.View
+          entering={motionSafe(FadeInDown.duration(180), reduceMotion)}
+          layout={layoutSafe(LinearTransition.springify(), reduceMotion)}>
           <BookingSwipeRow
             booking={item.booking}
             isAppointment={isAppointment}
@@ -589,7 +593,14 @@ export default function BookingsScreen() {
       selectionMode,
       complianceFlags,
       colors.background,
+      reduceMotion,
     ],
+  );
+
+  const keyExtractor = useCallback(
+    (item: ListRow) =>
+      item.kind === 'header' ? `header-${item.date}` : item.booking.id,
+    [],
   );
 
   // Any sheet-managed filter active — drives the Filters button highlight and
@@ -795,21 +806,19 @@ export default function BookingsScreen() {
       ) : (
         <FlatList
           data={listRows}
-          keyExtractor={(item) =>
-            item.kind === 'header' ? `header-${item.date}` : item.booking.id
-          }
+          keyExtractor={keyExtractor}
           renderItem={renderItem}
           contentContainerStyle={styles.listContent}
           ItemSeparatorComponent={ItemSeparator}
+          // W8.4 virtualization tuning — mixed header/booking rows are
+          // variable-height (multi-line subtitles), so no getItemLayout.
+          initialNumToRender={12}
+          maxToRenderPerBatch={12}
+          windowSize={11}
+          removeClippedSubviews={Platform.OS === 'android'}
           ListEmptyComponent={
             <EmptyState
-              icon={
-                <SymbolView
-                  name={{ ios: 'calendar', android: 'calendar_today', web: 'calendar_today' }}
-                  tintColor={colors.textMuted}
-                  size={44}
-                />
-              }
+              illustration="bookings"
               title="No appointments"
               message={
                 status === 'All'

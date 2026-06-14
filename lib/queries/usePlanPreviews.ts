@@ -2,6 +2,7 @@ import { useQueries } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
+import { keyScope } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { billingKeys, type AppointmentsPlanPreview } from '@/lib/queries/useBillingStatus';
 
@@ -23,7 +24,7 @@ export function useAppointmentsPlanPreviews(
 
   const results = useQueries({
     queries: targetTiers.map((tier) => ({
-      queryKey: [...billingKeys.all, 'planPreview', accessToken ?? null, tier] as const,
+      queryKey: [...billingKeys.all, 'planPreview', keyScope(accessToken), tier] as const,
       enabled: queryEnabled,
       staleTime: 60_000,
       gcTime: 60_000,

@@ -1,13 +1,21 @@
 /**
  * Shared formatting — the ONE place money/duration strings come from.
  * (Five screens previously carried their own copies.)
+ *
+ * Locale/currency are read from the i18n layer ({@link getActiveFormatConfig})
+ * rather than hard-coded, so a locale change flows through to money/number
+ * formatting. The active config defaults to en-GB / GBP, keeping today's
+ * EN-only output byte-for-byte identical.
  */
+
+import { getActiveFormatConfig } from '@/lib/i18n';
 
 /** "£12.50" from pence; null/undefined → null so callers can hide the row. */
 export function formatPence(pence: number | null | undefined): string | null {
   if (pence == null) return null;
+  const { formatLocale, currency } = getActiveFormatConfig();
   try {
-    return new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(
+    return new Intl.NumberFormat(formatLocale, { style: 'currency', currency }).format(
       pence / 100,
     );
   } catch {

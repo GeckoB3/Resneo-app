@@ -173,10 +173,20 @@ export function useRescheduleBooking(bookingId: string) {
 }
 
 /**
- * PATCH /api/venue/bookings/[id] — reschedule where the booking id is part of
- * the mutation input. Used by drag-to-reschedule on the calendar grid, where
- * the target booking changes per gesture (a fixed-id hook would close over a
- * stale id).
+ * PATCH /api/venue/bookings/[id] — reschedule (and optionally reassign the
+ * practitioner) where the booking id is part of the mutation input. Used by
+ * drag-to-reschedule on the calendar grid AND by the multi-calendar "move to
+ * practitioner" chooser, where the target booking changes per action (a
+ * fixed-id hook would close over a stale id).
+ *
+ * `practitionerId` reassigns the booking to a different calendar/practitioner.
+ * The web PATCH route accepts `practitioner_id` standalone: `booking_date` /
+ * `booking_time` fall back to the booking's current values server-side when a
+ * reassign omits them, and the server routes the id to `calendar_id` or
+ * `practitioner_id` based on the booking's anchor — so the app just sends the
+ * column id. The server re-validates the slot on the TARGET practitioner and
+ * 409s on a hard conflict, which the caller surfaces; the grid is only mutated
+ * via the success invalidation, so a failed move leaves it untouched.
  */
 export function useRescheduleBookingById() {
   const accessToken = useAccessToken();
@@ -188,6 +198,8 @@ export function useRescheduleBookingById() {
       date: string;
       time: string;
       durationMinutes?: number;
+      /** New practitioner/calendar id — reassigns the booking when set. */
+      practitionerId?: string;
     }): Promise<BookingDetail> => {
       if (!accessToken) {
         throw new Error('Missing access token');
@@ -198,12 +210,19 @@ export function useRescheduleBookingById() {
         body: JSON.stringify({
           booking_date: input.date,
           booking_time: input.time,
-          // Drag-to-reschedule: the grid already shows an amber "outside hours"
-          // warning before the drop, so honour the staff choice server-side.
+          // Out-of-hours is an explicit staff choice in both paths, so honour it.
           allow_outside_hours: true,
-          allow_manual_overlap: true,
+          // Manual overlap is only auto-allowed on the DRAG path, which already
+          // refuses hard overlaps client-side before committing. A reassign
+          // (practitionerId set) has NO pre-flight conflict check, so we must let
+          // the server 409 on a clash — otherwise moving onto an occupied slot
+          // would silently double-book and the "slot may be taken" error wouldn't fire.
+          allow_manual_overlap: input.practitionerId === undefined,
           ...(input.durationMinutes !== undefined
             ? { duration_minutes: input.durationMinutes }
+            : {}),
+          ...(input.practitionerId !== undefined
+            ? { practitioner_id: input.practitionerId }
             : {}),
         }),
       });

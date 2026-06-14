@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
-import { queryKeys } from '@/lib/queries/keys';
+import { keyScope, queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import type {
   ComplianceDashboardData,
@@ -101,7 +101,7 @@ export function useComplianceType(typeId: string | null) {
   const enabled = isBackendConfigured() && accessToken !== null && !!typeId;
 
   return useQuery({
-    queryKey: [...queryKeys.compliance.all(), 'type', accessToken ?? null, typeId ?? null] as const,
+    queryKey: [...queryKeys.compliance.all(), 'type', keyScope(accessToken), typeId ?? null] as const,
     enabled,
     retry: false,
     queryFn: async (): Promise<ComplianceTypeWithVersion> => {
@@ -121,7 +121,7 @@ export function useComplianceRecord(recordId: string | null) {
   const enabled = isBackendConfigured() && accessToken !== null && !!recordId;
 
   return useQuery({
-    queryKey: [...queryKeys.compliance.all(), 'record', accessToken ?? null, recordId ?? null] as const,
+    queryKey: [...queryKeys.compliance.all(), 'record', keyScope(accessToken), recordId ?? null] as const,
     enabled,
     retry: false,
     queryFn: async (): Promise<ComplianceRecordDetailResponse> => {
@@ -217,7 +217,7 @@ export function useComplianceBookingFlags(bookingIds: string[]) {
     queryKey: [
       ...queryKeys.compliance.all(),
       'bookingFlags',
-      accessToken ?? null,
+      keyScope(accessToken),
       sortedKey,
     ] as const,
     enabled,
@@ -243,7 +243,7 @@ export function useGuestCompliance(guestId: string | null) {
   const enabled = isBackendConfigured() && accessToken !== null && !!guestId;
 
   return useQuery({
-    queryKey: [...queryKeys.compliance.all(), 'guest', accessToken ?? null, guestId ?? null] as const,
+    queryKey: [...queryKeys.compliance.all(), 'guest', keyScope(accessToken), guestId ?? null] as const,
     enabled,
     retry: false,
     queryFn: async (): Promise<GuestComplianceResponse | null> => {

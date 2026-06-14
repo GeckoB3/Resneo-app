@@ -8,6 +8,7 @@ import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Screen } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/Text';
+import { ANALYTICS_EVENTS, track } from '@/lib/analytics';
 import { isBackendConfigured } from '@/lib/env';
 import { useAuth } from '@/providers/AuthProvider';
 import { spacing } from '@/theme/index';
@@ -48,10 +49,12 @@ export default function SignInScreen() {
   async function handlePasswordSignIn() {
     setError(null);
     setLoading(true);
+    track(ANALYTICS_EVENTS.signInStarted, { method: 'password' });
     try {
       const result = await signInWithPassword(email, password);
       if (result.error) {
         setError(result.error);
+        track(ANALYTICS_EVENTS.signInFailed, { method: 'password', reason: result.error });
       }
       // Session update routes to (app) via Stack.Protected in root layout.
     } finally {
@@ -62,10 +65,12 @@ export default function SignInScreen() {
   async function handleMagicLink() {
     setError(null);
     setLoading(true);
+    track(ANALYTICS_EVENTS.signInStarted, { method: 'magic' });
     try {
       const result = await signInWithEmail(email);
       if (result.error) {
         setError(result.error);
+        track(ANALYTICS_EVENTS.signInFailed, { method: 'magic', reason: result.error });
         return;
       }
       setView('magic-sent');

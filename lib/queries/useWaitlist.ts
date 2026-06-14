@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
-import { queryKeys } from '@/lib/queries/keys';
+import { keyScope, queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import type {
   WaitlistAlertsResponse,
@@ -94,7 +94,7 @@ export function useWaitlistAlerts(enabled = true) {
   const queryEnabled = isBackendConfigured() && accessToken !== null && enabled;
 
   return useQuery({
-    queryKey: [...queryKeys.waitlist.all(), 'alerts', accessToken ?? null] as const,
+    queryKey: [...queryKeys.waitlist.all(), 'alerts', keyScope(accessToken)] as const,
     enabled: queryEnabled,
     queryFn: async (): Promise<WaitlistAlertsResponse> => {
       if (!accessToken) {

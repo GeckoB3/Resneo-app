@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
-import { queryKeys } from '@/lib/queries/keys';
+import { keyScope, queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 
 // ---------------------------------------------------------------------------
@@ -79,7 +79,7 @@ interface BlockResponse {
 
 /** Stable query key for the venue availability-blocks list. */
 function availabilityBlocksKey(accessToken?: string | null) {
-  return [...queryKeys.venue.all(), 'availabilityBlocks', accessToken ?? null] as const;
+  return [...queryKeys.venue.all(), 'availabilityBlocks', keyScope(accessToken)] as const;
 }
 
 function invalidateBlocks(queryClient: ReturnType<typeof useQueryClient>, accessToken?: string | null) {
