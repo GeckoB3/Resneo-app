@@ -30,6 +30,10 @@ Base URL for the reserve-ni **web backend** (Next.js). The mobile client calls `
 
 On a physical device, `localhost` points at the phone, not your PC — use your machine’s LAN IP or a deployed URL.
 
+### `EXPO_PUBLIC_WEB_URL`
+
+Origin of the staff **web dashboard**, used for "Manage on web" link-outs (plan, Stripe, settings). When unset it falls back to `EXPO_PUBLIC_API_URL` — fine for single-host deploys, but set it explicitly when the dashboard and API live on different origins, or those link-outs land on an API endpoint instead of the dashboard. Resolved by `getWebUrl()` in `lib/env.ts`; no trailing slash.
+
 ---
 
 ## Optional (future)
