@@ -1,6 +1,25 @@
-import { QueryClient } from '@tanstack/react-query';
+import NetInfo from '@react-native-community/netinfo';
+import { QueryClient, onlineManager } from '@tanstack/react-query';
 
 import { ApiError } from '@/lib/api/client';
+
+/**
+ * Make React Query aware of REAL device connectivity via NetInfo (W1.7).
+ *
+ * Without this, RN has no `navigator.onLine`, so React Query assumes it's always
+ * online: a mutation fired during signal loss is sent, stalls, and (with the
+ * request timeout from W1.1) fails — the tap is effectively lost. With NetInfo
+ * wired, React Query PAUSES mutations while offline and resumes them once
+ * connectivity returns — an in-session write queue that pairs with the
+ * OfflineBanner. We deliberately do NOT persist the mutation cache across app
+ * restarts (that could double-submit a paused booking after a kill); resilience
+ * is within-session only.
+ */
+onlineManager.setEventListener((setOnline) =>
+  NetInfo.addEventListener((state) => {
+    setOnline(Boolean(state.isConnected));
+  }),
+);
 
 /**
  * Shared TanStack Query client.

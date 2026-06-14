@@ -1,103 +1,129 @@
 /**
  * TanStack Query key factory — keeps cache keys consistent across hooks.
- * Include accessToken in auth-scoped keys so caches invalidate on sign-in/out.
+ *
+ * Auth-scoped keys are scoped by a STABLE per-user id (set via setQueryAuthScope
+ * from AuthProvider), NOT the raw access token. The Supabase token rotates on
+ * hourly auto-refresh; keying on it orphaned the ENTIRE cache every hour and
+ * forced a full refetch of every screen mid-shift (W1.6). Keying on the stable
+ * user id keeps the cache warm across refreshes while still isolating users.
+ * Before the scope is set (cold start, pre-session) we fall back to the token,
+ * and sign-out clears the cache (see AuthProvider) so users never share data.
+ *
+ * The key builders still take `accessToken` (callers pass it unchanged) — it's
+ * used only as the pre-session fallback; the stable scope takes precedence.
  */
+
+// Stable per-user cache scope (the Supabase user id). Set from AuthProvider on
+// auth-state change; null when signed out.
+let authScope: string | null = null;
+
+/** Set the stable cache scope (the Supabase user id). Call on auth change. */
+export function setQueryAuthScope(scope: string | null): void {
+  authScope = scope;
+}
+
+/** The auth segment for a key: the stable user id when known, else the token. */
+function keyScope(accessToken?: string | null): string | null {
+  if (authScope !== null) return authScope;
+  return accessToken ?? null;
+}
+
 export const queryKeys = {
   all: ['reserveNI'] as const,
 
   staff: {
     all: () => [...queryKeys.all, 'staff'] as const,
     me: (accessToken?: string | null) =>
-      [...queryKeys.staff.all(), 'me', accessToken ?? null] as const,
+      [...queryKeys.staff.all(), 'me', keyScope(accessToken)] as const,
   },
 
   venue: {
     all: () => [...queryKeys.all, 'venue'] as const,
     bootstrap: (accessToken?: string | null) =>
-      [...queryKeys.venue.all(), 'bootstrap', accessToken ?? null] as const,
+      [...queryKeys.venue.all(), 'bootstrap', keyScope(accessToken)] as const,
   },
 
   dashboard: {
     all: () => [...queryKeys.all, 'dashboard'] as const,
     home: (accessToken?: string | null) =>
-      [...queryKeys.dashboard.all(), 'home', accessToken ?? null] as const,
+      [...queryKeys.dashboard.all(), 'home', keyScope(accessToken)] as const,
     today: (accessToken?: string | null, date?: string) =>
-      [...queryKeys.dashboard.all(), 'today', accessToken ?? null, date ?? null] as const,
+      [...queryKeys.dashboard.all(), 'today', keyScope(accessToken), date ?? null] as const,
   },
 
   waitlist: {
     all: () => [...queryKeys.all, 'waitlist'] as const,
     list: (accessToken?: string | null, kind?: string | null) =>
-      [...queryKeys.waitlist.all(), accessToken ?? null, kind ?? null] as const,
+      [...queryKeys.waitlist.all(), keyScope(accessToken), kind ?? null] as const,
   },
 
   notifications: {
     all: () => [...queryKeys.all, 'notifications'] as const,
     list: (accessToken?: string | null) =>
-      [...queryKeys.notifications.all(), accessToken ?? null] as const,
+      [...queryKeys.notifications.all(), keyScope(accessToken)] as const,
   },
 
   services: {
     all: () => [...queryKeys.all, 'services'] as const,
     list: (accessToken?: string | null) =>
-      [...queryKeys.services.all(), accessToken ?? null] as const,
+      [...queryKeys.services.all(), keyScope(accessToken)] as const,
   },
 
   team: {
     all: () => [...queryKeys.all, 'team'] as const,
     list: (accessToken?: string | null) =>
-      [...queryKeys.team.all(), 'list', accessToken ?? null] as const,
+      [...queryKeys.team.all(), 'list', keyScope(accessToken)] as const,
     sessionSettings: (accessToken?: string | null) =>
-      [...queryKeys.team.all(), 'sessionSettings', accessToken ?? null] as const,
+      [...queryKeys.team.all(), 'sessionSettings', keyScope(accessToken)] as const,
   },
 
   communications: {
     all: () => [...queryKeys.all, 'communications'] as const,
     notificationSettings: (accessToken?: string | null) =>
-      [...queryKeys.communications.all(), 'notificationSettings', accessToken ?? null] as const,
+      [...queryKeys.communications.all(), 'notificationSettings', keyScope(accessToken)] as const,
     policies: (accessToken?: string | null) =>
-      [...queryKeys.communications.all(), 'policies', accessToken ?? null] as const,
+      [...queryKeys.communications.all(), 'policies', keyScope(accessToken)] as const,
   },
 
   compliance: {
     all: () => [...queryKeys.all, 'compliance'] as const,
     dashboard: (accessToken?: string | null) =>
-      [...queryKeys.compliance.all(), 'dashboard', accessToken ?? null] as const,
+      [...queryKeys.compliance.all(), 'dashboard', keyScope(accessToken)] as const,
     formLinks: (accessToken?: string | null) =>
-      [...queryKeys.compliance.all(), 'formLinks', accessToken ?? null] as const,
+      [...queryKeys.compliance.all(), 'formLinks', keyScope(accessToken)] as const,
     booking: (accessToken?: string | null, bookingId?: string | null) =>
-      [...queryKeys.compliance.all(), 'booking', accessToken ?? null, bookingId ?? null] as const,
+      [...queryKeys.compliance.all(), 'booking', keyScope(accessToken), bookingId ?? null] as const,
   },
 
   addonGroups: {
     all: () => [...queryKeys.all, 'addonGroups'] as const,
     list: (accessToken?: string | null) =>
-      [...queryKeys.addonGroups.all(), accessToken ?? null] as const,
+      [...queryKeys.addonGroups.all(), keyScope(accessToken)] as const,
   },
 
   reports: {
     all: () => [...queryKeys.all, 'reports'] as const,
     range: (accessToken?: string | null, from?: string | null, to?: string | null) =>
-      [...queryKeys.reports.all(), accessToken ?? null, from ?? null, to ?? null] as const,
+      [...queryKeys.reports.all(), keyScope(accessToken), from ?? null, to ?? null] as const,
   },
 
   availabilityManage: {
     all: () => [...queryKeys.all, 'availabilityManage'] as const,
     blocks: (accessToken?: string | null, from?: string | null, to?: string | null) =>
-      [...queryKeys.availabilityManage.all(), 'blocks', accessToken ?? null, from ?? null, to ?? null] as const,
+      [...queryKeys.availabilityManage.all(), 'blocks', keyScope(accessToken), from ?? null, to ?? null] as const,
     leave: (accessToken?: string | null, from?: string | null, to?: string | null) =>
-      [...queryKeys.availabilityManage.all(), 'leave', accessToken ?? null, from ?? null, to ?? null] as const,
+      [...queryKeys.availabilityManage.all(), 'leave', keyScope(accessToken), from ?? null, to ?? null] as const,
   },
 
   bookings: {
     all: () => [...queryKeys.all, 'bookings'] as const,
     list: (accessToken?: string | null, date?: string | null) =>
-      [...queryKeys.bookings.all(), 'list', accessToken ?? null, date ?? null] as const,
+      [...queryKeys.bookings.all(), 'list', keyScope(accessToken), date ?? null] as const,
     range: (accessToken?: string | null, from?: string | null, to?: string | null) =>
       [
         ...queryKeys.bookings.all(),
         'range',
-        accessToken ?? null,
+        keyScope(accessToken),
         from ?? null,
         to ?? null,
       ] as const,
@@ -105,14 +131,14 @@ export const queryKeys = {
       [
         ...queryKeys.bookings.all(),
         'detail',
-        accessToken ?? null,
+        keyScope(accessToken),
         bookingId ?? null,
       ] as const,
     groupVisit: (accessToken?: string | null, groupBookingId?: string | null) =>
       [
         ...queryKeys.bookings.all(),
         'groupVisit',
-        accessToken ?? null,
+        keyScope(accessToken),
         groupBookingId ?? null,
       ] as const,
   },
@@ -123,7 +149,7 @@ export const queryKeys = {
       [
         ...queryKeys.guests.all(),
         'list',
-        accessToken ?? null,
+        keyScope(accessToken),
         params ?? null,
       ] as const,
     detail: (
@@ -134,18 +160,18 @@ export const queryKeys = {
       [
         ...queryKeys.guests.all(),
         'detail',
-        accessToken ?? null,
+        keyScope(accessToken),
         guestId ?? null,
         bookingHistoryLimit ?? null,
       ] as const,
     timeline: (accessToken?: string | null, guestId?: string | null) =>
-      [...queryKeys.guests.all(), 'timeline', accessToken ?? null, guestId ?? null] as const,
+      [...queryKeys.guests.all(), 'timeline', keyScope(accessToken), guestId ?? null] as const,
   },
 
   practitioners: {
     all: () => [...queryKeys.all, 'practitioners'] as const,
     list: (accessToken?: string | null, ownerVenueId?: string | null) =>
-      [...queryKeys.practitioners.all(), 'list', accessToken ?? null, ownerVenueId ?? null] as const,
+      [...queryKeys.practitioners.all(), 'list', keyScope(accessToken), ownerVenueId ?? null] as const,
   },
 
   calendar: {
@@ -159,7 +185,7 @@ export const queryKeys = {
       [
         ...queryKeys.calendar.all(),
         'grid',
-        accessToken ?? null,
+        keyScope(accessToken),
         calendarIds ?? null,
         from ?? null,
         to ?? null,
@@ -184,7 +210,7 @@ export const queryKeys = {
       [
         ...queryKeys.appointments.all(),
         'availability',
-        accessToken ?? null,
+        keyScope(accessToken),
         date ?? null,
         serviceId ?? null,
         practitionerId ?? null,
@@ -207,7 +233,7 @@ export const queryKeys = {
       [
         ...queryKeys.appointments.all(),
         'monthAvailability',
-        accessToken ?? null,
+        keyScope(accessToken),
         serviceId ?? null,
         practitionerId ?? null,
         year ?? null,

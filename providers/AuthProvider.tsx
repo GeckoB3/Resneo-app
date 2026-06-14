@@ -13,6 +13,7 @@ import {
 import { ANALYTICS_EVENTS, identify, resetAnalytics, track } from '@/lib/analytics';
 import { getAuthCallbackRedirectUrl } from '@/lib/auth/redirect';
 import { setObservabilityUser } from '@/lib/observability';
+import { setQueryAuthScope } from '@/lib/queries/keys';
 import { queryClient } from '@/lib/queries/queryClient';
 import { getSupabase } from '@/lib/supabase';
 import {
@@ -80,6 +81,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const userId = data.session?.user?.id ?? null;
       setSession(data.session ?? null);
       setObservabilityUser(userId);
+      setQueryAuthScope(userId);
       identify(userId);
       setIsLoading(false);
     }
@@ -92,6 +94,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const userId = nextSession?.user?.id ?? null;
       setSession(nextSession);
       setObservabilityUser(userId);
+      setQueryAuthScope(userId);
       identify(userId);
 
       if (userId) {
