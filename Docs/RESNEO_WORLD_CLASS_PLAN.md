@@ -8,7 +8,52 @@ _Method: read-only audit pass — three parallel code-audit agents (app architec
 
 ---
 
-## Implementation status — current
+## ✅ Implementation complete — branch `feat/world-class-impl` (2026-06-14)
+
+**The entire implementable backlog below has now been built**, on branch `feat/world-class-impl` (16 commits, `0a8cb4e…929feb8`). The branch is **`tsc` + `expo lint` clean, 297 unit tests green** (18 suites, up from 265/13), and every batch passed an adversarial code-review subagent (all findings fixed — no High/Blocker issues outstanding). Work was sequenced in batches with a `tsc`+lint+test gate and a per-batch review.
+
+**Delivered this pass:**
+
+| Item | Status | Note |
+|---|---|---|
+| W1.6 cache-keying | ✅ | keys scoped by stable user id (set from AuthProvider), token fallback; **whole query layer** migrated incl. 13 inline-key hooks; `keys.test.ts` locks it in |
+| W1.7 offline resilience | ✅ | `onlineManager`↔NetInfo: mutations pause offline + resume on reconnect (in-session queue; no cross-restart persistence → no double-submit); buttons disable while pending |
+| W1.9 session-expiry UX | ✅ | unexpected `SIGNED_OUT` → "session expired" toast via `AuthNoticeBridge` |
+| W2.7 CSV web feedback | ✅ | `buildAndShareCsv` returns a result; callers toast on failure (no more silent/false success) |
+| W3.1 Sentry | ✅ (DSN ext.) | SDK installed + lazy-init behind the seam (gated on `EXPO_PUBLIC_SENTRY_DSN`); engine-aware unhandled-rejection handler. **Needs the DSN secret + a build to light up.** |
+| W3.2 analytics | ✅ | `lib/analytics` seam + funnel events (auth, create-booking, detail, status, reassign); backend-ready |
+| W3.5 OTA/release | 🟡→✅ config | `expo-updates` + `runtimeVersion` + per-profile EAS Update channels (build-gated) |
+| W3.6 global ErrorBoundary | ✅ | `componentDidCatch → captureException`; root boundary in AppProviders |
+| W4.2 component tests | ✅ | **plan assumption was wrong** — RNTL binds under React 19.2/RN 0.85 (`render()` is async); 12 component tests added |
+| W4.3 e2e | ✅ flows | Maestro flows for login→calendar→create→detail→cancel (run needs a device) |
+| W4.4 CI typecheck | ✅ | CI generates Expo types then runs `tsc` |
+| W5.2 tablet columns | ✅ | wide-viewport day view renders multi-practitioner columns |
+| W5.3 cross-practitioner reassign | ✅ | long-press "Move to practitioner" (worklet-free, safe) + conflict-guarded PATCH |
+| W5.4 Reduce Motion | ✅ | all decorative animations gated via `lib/motion` |
+| W5.5 empty-state art | ✅ | branded, theme-aware SVG illustration set |
+| W6.4 i18n readiness | ✅ | `lib/i18n` typed catalogue + locale-aware formatters + sample migration |
+| W7.2 merge data-loss | ✅ | custom-fields resolved on merge (overlay only fills, never clobbers with empty) |
+| W8.1–8.4 performance | ✅ | virtualized 5 screens, memoized rows, fixed waitlist tick, FlatList tuning |
+| W9.1 app-lock | ✅ | opt-in biometric gate (off by default, no lockout/loop) |
+| W9.2 screen-capture | ✅ | FLAG_SECURE on PII/compliance screens (focus-scoped) |
+| W9.4 GDPR export | ✅ | chunked/yielding CSV build + progress/feedback |
+| W10.2 channels+badges | ✅ | Android notification channels + badge management |
+| W10.3 actionable push | ✅ | View/Confirm notification categories |
+| W10.4 universal links | ✅ (host ext.) | app.json wired; AASA/assetlinks deliverables for the web team to host |
+| W4.1 rebook test | ✅ | covers the now-live appointment branch |
+
+**Remaining = external dependencies only (cannot be done in this environment, all flagged in code):**
+- ⛔ **Sentry DSN secret** (`EXPO_PUBLIC_SENTRY_DSN`) — code activates on a build once set.
+- ⛔ **A fresh EAS dev build** — 5 native modules were added (Sentry, local-auth, screen-capture, localization, updates); they need a rebuild to run on device.
+- ⛔ **On-device QA matrix (W3.4)** — biometric/app-lock, push channels/actions, drag/reassign gestures, screen-capture, OTA: all built but device-gated; `Docs/DEVICE_TEST_PLAN.md` + `.maestro/` are the scripts.
+- ⛔ **Backend Bearer deploy (W3.3) + W7.1 compliance create** — cross-repo; the app-side workaround already shipped.
+- ⛔ **Host the AASA/assetlinks files** on `reserve-ni.vercel.app/.well-known/` (templates in `Docs/universal-links/`).
+
+The original audit/status narrative is retained below for context.
+
+---
+
+## Implementation status — earlier passes
 
 Two implementation passes have landed on `main` since the plan was written. The original "Phase A" reliability/correctness/test work shipped (commits `a361433`, `0e93751`, `be34a6a`, `e2cc744`), and then — contrary to the plan's original sequencing — **the device-gated calendar interaction work (drag/resize + a real week matrix) was also built and shipped** (`e5d46b9`, `1ca5312`, `ab6f747`, `a6df648`). The codebase is **tsc + lint clean, 265 unit tests green** (`npm test` → 13 suites, 0 failures, ~3 s).
 
