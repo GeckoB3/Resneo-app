@@ -1,8 +1,12 @@
 /**
  * WorkingHoursEditor — per-weekday working hour editor for a single practitioner.
  *
- * Shows 7 rows (Sun–Sat). Each row has an "Open" toggle plus start/end time
- * steppers. Saves via usePatchPractitioner (PATCH /api/venue/practitioners).
+ * Shows 7 rows (Mon–Sun). Each row has an "Open" toggle plus one or more
+ * start/end time ranges (split shifts), with "+ Add split", per-range "Remove",
+ * and "Copy to other open days". Saves the FULL set of ranges per open day via
+ * usePatchPractitioner (PATCH /api/venue/practitioners).
+ *
+ * Web parity: _reference/Resneo/src/components/scheduling/WorkingHoursControl.tsx
  */
 import { useState } from 'react';
 import {
@@ -14,11 +18,12 @@ import {
 
 import { Button } from '@/components/ui/Button';
 import { Text } from '@/components/ui/Text';
+import { TimePickerField } from '@/components/ui/TimePickerField';
 import { ApiError } from '@/lib/api/client';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { usePatchPractitioner } from '@/lib/queries/useAvailabilityManage';
 import { useToast } from '@/providers/ToastProvider';
-import { spacing } from '@/theme/index';
+import { spacing, radius } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { TimeRange, WorkingHoursMap } from '@/types/availability-manage';
 
@@ -32,8 +37,11 @@ const WEEKDAYS = [
   { key: '0', label: 'Sunday' },
 ] as const;
 
-const STEP_MINUTES = 15;
-const MAX_MINUTES = 23 * 60 + 45;
+/** A range expressed in minutes-since-midnight for easy stepping/comparison. */
+type MinuteRange = { start: number; end: number };
+type DayState = { open: boolean; ranges: MinuteRange[] };
+
+const DEFAULT_RANGE: MinuteRange = { start: 9 * 60, end: 17 * 60 };
 
 function minutesToHhmm(minutes: number): string {
   const h = Math.floor(minutes / 60);
@@ -46,59 +54,19 @@ function hhmmToMinutes(hhmm: string): number {
   return (h ?? 0) * 60 + (m ?? 0);
 }
 
-function parseHours(wh: WorkingHoursMap | undefined, key: string): { open: boolean; start: number; end: number } {
+/** Read ALL ranges for a day (not just the first) so split shifts survive. */
+function parseHours(wh: WorkingHoursMap | undefined, key: string): DayState {
   const ranges = wh?.[key];
   if (!ranges || ranges.length === 0) {
-    return { open: false, start: 9 * 60, end: 17 * 60 };
+    return { open: false, ranges: [{ ...DEFAULT_RANGE }] };
   }
-  const first = ranges[0];
   return {
     open: true,
-    start: hhmmToMinutes(first?.start ?? '09:00'),
-    end: hhmmToMinutes(first?.end ?? '17:00'),
+    ranges: ranges.map((r) => ({
+      start: hhmmToMinutes(r?.start ?? '09:00'),
+      end: hhmmToMinutes(r?.end ?? '17:00'),
+    })),
   };
-}
-
-type DayState = { open: boolean; start: number; end: number };
-
-function TimeRow({
-  label,
-  value,
-  onDecrement,
-  onIncrement,
-}: {
-  label: string;
-  value: string;
-  onDecrement: () => void;
-  onIncrement: () => void;
-}) {
-  const { colors } = useTheme();
-  return (
-    <View style={styles.timeRow}>
-      <Text variant="caption" tone="secondary" style={styles.timeLabel}>
-        {label}
-      </Text>
-      <View style={styles.timeControl}>
-        <Button
-          label="−"
-          variant="secondary"
-          size="sm"
-          style={[styles.stepBtn, { borderColor: colors.border }]}
-          onPress={onDecrement}
-        />
-        <Text variant="label" style={styles.timeValue}>
-          {value}
-        </Text>
-        <Button
-          label="+"
-          variant="secondary"
-          size="sm"
-          style={[styles.stepBtn, { borderColor: colors.border }]}
-          onPress={onIncrement}
-        />
-      </View>
-    </View>
-  );
 }
 
 type Props = {
@@ -126,8 +94,57 @@ export function WorkingHoursEditor({
     return init;
   });
 
-  function updateDay(key: string, patch: Partial<DayState>) {
-    setDays((prev) => ({ ...prev, [key]: { ...prev[key]!, ...patch } }));
+  function setDayOpen(key: string, open: boolean) {
+    setDays((prev) => {
+      const cur = prev[key]!;
+      // Re-open with a sensible default range if none survived.
+      const ranges = cur.ranges.length > 0 ? cur.ranges : [{ ...DEFAULT_RANGE }];
+      return { ...prev, [key]: { open, ranges } };
+    });
+  }
+
+  function updateRange(key: string, index: number, patch: Partial<MinuteRange>) {
+    setDays((prev) => {
+      const cur = prev[key]!;
+      const ranges = cur.ranges.map((r, i) => (i === index ? { ...r, ...patch } : r));
+      return { ...prev, [key]: { ...cur, ranges } };
+    });
+  }
+
+  function addRange(key: string) {
+    setDays((prev) => {
+      const cur = prev[key]!;
+      return { ...prev, [key]: { ...cur, ranges: [...cur.ranges, { ...DEFAULT_RANGE }] } };
+    });
+  }
+
+  function removeRange(key: string, index: number) {
+    setDays((prev) => {
+      const cur = prev[key]!;
+      const ranges = cur.ranges.filter((_, i) => i !== index);
+      return {
+        ...prev,
+        [key]: { ...cur, ranges: ranges.length > 0 ? ranges : [{ ...DEFAULT_RANGE }] },
+      };
+    });
+  }
+
+  /** Clone an open day's ranges to every OTHER day that is currently open. */
+  function copyToOtherOpenDays(sourceKey: string) {
+    setDays((prev) => {
+      const source = prev[sourceKey]!;
+      if (!source.open) return prev;
+      const template = source.ranges.map((r) => ({ ...r }));
+      const next: Record<string, DayState> = { ...prev };
+      for (const wd of WEEKDAYS) {
+        if (wd.key === sourceKey) continue;
+        if (next[wd.key]!.open) {
+          next[wd.key] = { open: true, ranges: template.map((r) => ({ ...r })) };
+        }
+      }
+      return next;
+    });
+    hapticSuccess();
   }
 
   async function handleSave() {
@@ -135,13 +152,15 @@ export function WorkingHoursEditor({
     for (const wd of WEEKDAYS) {
       const d = days[wd.key]!;
       if (d.open) {
-        if (d.end <= d.start) {
-          toast.error(`End time must be after start time for ${wd.label}.`);
-          return;
+        for (const r of d.ranges) {
+          if (r.end <= r.start) {
+            toast.error(`End time must be after start time for ${wd.label}.`);
+            return;
+          }
         }
-        workingHours[wd.key] = [
-          { start: minutesToHhmm(d.start), end: minutesToHhmm(d.end) },
-        ] satisfies TimeRange[];
+        workingHours[wd.key] = d.ranges.map(
+          (r) => ({ start: minutesToHhmm(r.start), end: minutesToHhmm(r.end) }),
+        ) satisfies TimeRange[];
       } else {
         workingHours[wd.key] = [];
       }
@@ -163,44 +182,82 @@ export function WorkingHoursEditor({
         Working hours — {practitionerName}
       </Text>
 
+      <View
+        style={[
+          styles.infoNote,
+          { backgroundColor: colors.brandSubtle, borderColor: colors.brandBorder },
+        ]}>
+        <Text variant="caption" tone="secondary" style={styles.infoText}>
+          These hours are when this calendar can take bookings, but a time is only bookable where
+          it also falls within your venue&apos;s business hours. To open bookings earlier or later,
+          widen Settings → Business hours as well.
+        </Text>
+      </View>
+
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.list}>
         {WEEKDAYS.map((wd) => {
           const d = days[wd.key]!;
+          const canCopyElsewhere =
+            d.open && WEEKDAYS.some((o) => o.key !== wd.key && days[o.key]!.open);
           return (
             <View key={wd.key} style={[styles.dayRow, { borderBottomColor: colors.border }]}>
               <View style={styles.dayHeader}>
                 <Text variant="bodyMedium">{wd.label}</Text>
                 <Switch
                   value={d.open}
-                  onValueChange={(v) => updateDay(wd.key, { open: v })}
+                  onValueChange={(v) => setDayOpen(wd.key, v)}
                   trackColor={{ true: colors.brand, false: colors.border }}
                   thumbColor={colors.surfaceRaised}
                 />
               </View>
               {d.open ? (
-                <View style={styles.timePickers}>
-                  <TimeRow
-                    label="Start"
-                    value={minutesToHhmm(d.start)}
-                    onDecrement={() =>
-                      updateDay(wd.key, { start: Math.max(0, d.start - STEP_MINUTES) })
-                    }
-                    onIncrement={() =>
-                      updateDay(wd.key, { start: Math.min(MAX_MINUTES, d.start + STEP_MINUTES) })
-                    }
-                  />
-                  <TimeRow
-                    label="End"
-                    value={minutesToHhmm(d.end)}
-                    onDecrement={() =>
-                      updateDay(wd.key, { end: Math.max(0, d.end - STEP_MINUTES) })
-                    }
-                    onIncrement={() =>
-                      updateDay(wd.key, { end: Math.min(MAX_MINUTES, d.end + STEP_MINUTES) })
-                    }
-                  />
+                <View style={styles.dayBody}>
+                  {d.ranges.map((r, ri) => (
+                    <View key={ri} style={styles.rangeRow}>
+                      <TimePickerField
+                        value={r.start}
+                        onChange={(mins) => updateRange(wd.key, ri, { start: mins })}
+                        accessibilityLabel={`${wd.label} start time, range ${ri + 1}`}
+                      />
+                      <Text variant="caption" tone="muted" style={styles.toLabel}>
+                        to
+                      </Text>
+                      <TimePickerField
+                        value={r.end}
+                        onChange={(mins) => updateRange(wd.key, ri, { end: mins })}
+                        accessibilityLabel={`${wd.label} end time, range ${ri + 1}`}
+                      />
+                      {d.ranges.length > 1 ? (
+                        <Button
+                          label="Remove"
+                          variant="ghost"
+                          size="sm"
+                          customColors={{ background: 'transparent', text: colors.danger }}
+                          style={styles.inlineAction}
+                          onPress={() => removeRange(wd.key, ri)}
+                        />
+                      ) : null}
+                    </View>
+                  ))}
+                  <View style={styles.dayActions}>
+                    <Button
+                      label="+ Add split"
+                      variant="ghost"
+                      size="sm"
+                      style={styles.inlineAction}
+                      onPress={() => addRange(wd.key)}
+                    />
+                    {canCopyElsewhere ? (
+                      <Button
+                        label="Copy to other open days"
+                        variant="secondary"
+                        size="sm"
+                        onPress={() => copyToOtherOpenDays(wd.key)}
+                      />
+                    ) : null}
+                  </View>
                 </View>
               ) : (
                 <Text variant="caption" tone="muted" style={styles.closedLabel}>
@@ -230,6 +287,14 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: spacing.md,
   },
+  infoNote: {
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: spacing.md,
+  },
+  infoText: {
+    lineHeight: 18,
+  },
   list: {
     gap: 0,
   },
@@ -243,32 +308,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  timePickers: {
+  dayBody: {
     gap: spacing.sm,
     paddingLeft: spacing.sm,
   },
-  timeRow: {
+  rangeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  timeLabel: {
-    width: 40,
-  },
-  timeControl: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexWrap: 'wrap',
     gap: spacing.sm,
   },
-  stepBtn: {
-    width: 36,
-    minHeight: 36,
-    paddingHorizontal: 0,
+  toLabel: {
+    paddingHorizontal: spacing.xs,
   },
-  timeValue: {
-    minWidth: 50,
-    textAlign: 'center',
-    fontVariant: ['tabular-nums'],
+  dayActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  inlineAction: {
+    paddingHorizontal: spacing.sm,
   },
   closedLabel: {
     paddingLeft: spacing.sm,
