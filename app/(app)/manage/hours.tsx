@@ -1,6 +1,7 @@
 import { Stack } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AvailabilityBlocksSection } from '@/components/manage/AvailabilityBlocksSection';
 import { OpeningHoursEditor } from '@/components/manage/OpeningHoursEditor';
@@ -15,7 +16,33 @@ import { useUpdateOpeningHours } from '@/lib/queries/useVenueSettings';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
-import type { OpeningHours } from '@/types/venue';
+import type { OpeningHours, OpeningHoursDay } from '@/types/venue';
+
+/**
+ * Normalize a stored day to the canonical `{closed}` / `{periods}` shape. The
+ * backend (and `validate`) only accept those two; older venue rows may still
+ * hold a legacy day-level `{ open, close }`. The web canonicalizes on load
+ * (getDayConfig) — do the same here so an UNTOUCHED legacy day can't 400 the
+ * whole save and drop the admin's other edits.
+ */
+function canonicalDay(day: OpeningHoursDay | undefined): OpeningHoursDay | undefined {
+  if (!day) return day;
+  if ('closed' in day && day.closed === true) return { closed: true };
+  if ('periods' in day && Array.isArray(day.periods)) return day;
+  const legacy = day as unknown as { open?: string; close?: string };
+  if (legacy.open && legacy.close) return { periods: [{ open: legacy.open, close: legacy.close }] };
+  return day;
+}
+
+function canonicalizeOpeningHours(raw: OpeningHours | null | undefined): OpeningHours {
+  if (!raw) return {};
+  const out: OpeningHours = {};
+  for (const [key, day] of Object.entries(raw)) {
+    const canonical = canonicalDay(day);
+    if (canonical) out[key as keyof OpeningHours] = canonical;
+  }
+  return out;
+}
 
 function validate(hours: OpeningHours): string | null {
   for (const day of Object.values(hours)) {
@@ -39,6 +66,7 @@ function validate(hours: OpeningHours): string | null {
 export default function BusinessHoursScreen() {
   const { venue, isLoading, refetch } = useVenueContext();
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const update = useUpdateOpeningHours();
   const isAdmin = venue?.current_user_role === 'admin';
 
@@ -52,11 +80,12 @@ export default function BusinessHoursScreen() {
   useEffect(() => {
     if (venue && draft === null) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setDraft(venue.opening_hours ?? {});
+      setDraft(canonicalizeOpeningHours(venue.opening_hours));
     }
   }, [venue, draft]);
 
-  const original = JSON.stringify(venue?.opening_hours ?? {});
+  // Compare canonical-to-canonical so a legacy-shape venue isn't flagged dirty on load.
+  const original = JSON.stringify(canonicalizeOpeningHours(venue?.opening_hours));
   const hasChanges = draft !== null && JSON.stringify(draft) !== original;
 
   async function handleSave() {
@@ -112,6 +141,14 @@ export default function BusinessHoursScreen() {
         }>
 
         {/* ---- Weekly hours card ---- */}
+        <View style={styles.sectionHeader}>
+          <Text variant="heading">Weekly opening hours</Text>
+          <Text variant="bodySmall" tone="secondary">
+            Set the hours you are normally open each day. This is used for availability and guest
+            messaging — review carefully before publishing.
+          </Text>
+        </View>
+
         <Card style={hasChanges ? [styles.cardUnsaved, { borderColor: colors.warning }] : undefined}>
           {hasChanges ? (
             <Text variant="caption" tone="muted" style={styles.unsavedHint}>
@@ -139,21 +176,33 @@ export default function BusinessHoursScreen() {
           </Text>
         ) : null}
 
-        {isAdmin ? (
-          <Button
-            label="Save hours"
-            fullWidth
-            loading={update.isPending}
-            disabled={!hasChanges}
-            onPress={() => void handleSave()}
-          />
-        ) : null}
-
         {/* ---- Closures & Exceptions card ---- */}
         <AvailabilityBlocksSection isAdmin={isAdmin} />
 
         <View style={styles.spacer} />
       </ScrollView>
+
+      {/* Sticky save bar — keeps the explicit save action in reach while the
+          admin reviews the full week. Disabled until the draft is dirty. */}
+      {isAdmin ? (
+        <View
+          style={[
+            styles.stickyBar,
+            {
+              backgroundColor: colors.surfaceRaised,
+              borderTopColor: colors.border,
+              paddingBottom: spacing.md + insets.bottom,
+            },
+          ]}>
+          <Button
+            label="Save opening hours"
+            fullWidth
+            loading={update.isPending}
+            disabled={!hasChanges}
+            onPress={() => void handleSave()}
+          />
+        </View>
+      ) : null}
     </Screen>
   );
 }
@@ -163,6 +212,9 @@ const styles = StyleSheet.create({
     padding: spacing.base,
     gap: spacing.base,
   },
+  sectionHeader: {
+    gap: spacing.xs,
+  },
   cardUnsaved: {
     borderWidth: 2,
   },
@@ -171,5 +223,10 @@ const styles = StyleSheet.create({
   },
   spacer: {
     height: spacing.xl,
+  },
+  stickyBar: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: spacing.base,
+    paddingTop: spacing.md,
   },
 });

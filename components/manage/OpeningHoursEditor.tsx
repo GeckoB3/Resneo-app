@@ -3,8 +3,9 @@ import { Pressable, StyleSheet, Switch, View } from 'react-native';
 import { minutesToTime, timeToMinutes } from '@/components/calendar/grid-layout';
 import { Button } from '@/components/ui/Button';
 import { Text } from '@/components/ui/Text';
+import { TimePickerField } from '@/components/ui/TimePickerField';
 import { hapticSelect } from '@/lib/haptics';
-import { fonts, radius, spacing } from '@/theme/index';
+import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { OpeningHours, OpeningHoursDay, OpeningHoursPeriod } from '@/types/venue';
 
@@ -18,61 +19,27 @@ const DAYS: { key: '0' | '1' | '2' | '3' | '4' | '5' | '6'; label: string }[] = 
   { key: '0', label: 'Sunday' },
 ];
 
-const STEP_MINUTES = 15;
 const DEFAULT_PERIOD: OpeningHoursPeriod = { open: '09:00', close: '17:00' };
 
-function isOpen(day: OpeningHoursDay | undefined): day is { closed?: false; periods: OpeningHoursPeriod[] } {
-  return !!day && !('closed' in day && day.closed === true) && 'periods' in day && day.periods.length > 0;
+/**
+ * Normalise one day to its `periods`, tolerating legacy/foreign shapes.
+ * Mirrors the web's `getDayConfig` (OpeningHoursControl.tsx): a legacy
+ * day-level `{ open, close }` (no `periods` array) maps to a single period so
+ * it renders as open rather than silently falling back to "Closed".
+ */
+function dayPeriods(day: OpeningHoursDay | undefined): OpeningHoursPeriod[] {
+  if (!day) return [];
+  if ('closed' in day && day.closed === true) return [];
+  if ('periods' in day && Array.isArray(day.periods) && day.periods.length > 0) return day.periods;
+  const legacy = day as { open?: unknown; close?: unknown };
+  if (typeof legacy.open === 'string' && typeof legacy.close === 'string') {
+    return [{ open: legacy.open, close: legacy.close }];
+  }
+  return [];
 }
 
-function stepTime(time: string, delta: number): string {
-  const minutes = Math.min(23 * 60 + 45, Math.max(0, timeToMinutes(time) + delta));
-  return minutesToTime(minutes);
-}
-
-function TimeStepper({
-  value,
-  onChange,
-  label,
-}: {
-  value: string;
-  onChange: (next: string) => void;
-  label: string;
-}) {
-  const { colors } = useTheme();
-  return (
-    <View style={styles.timeStepper}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`Earlier ${label}`}
-        onPress={() => {
-          hapticSelect();
-          onChange(stepTime(value, -STEP_MINUTES));
-        }}
-        style={({ pressed }) => [
-          styles.stepBtn,
-          { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
-        ]}>
-        <Text style={[styles.stepSymbol, { color: colors.brand }]}>−</Text>
-      </Pressable>
-      <Text variant="bodyMedium" style={styles.timeValue}>
-        {value}
-      </Text>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`Later ${label}`}
-        onPress={() => {
-          hapticSelect();
-          onChange(stepTime(value, STEP_MINUTES));
-        }}
-        style={({ pressed }) => [
-          styles.stepBtn,
-          { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
-        ]}>
-        <Text style={[styles.stepSymbol, { color: colors.brand }]}>+</Text>
-      </Pressable>
-    </View>
-  );
+function isOpen(day: OpeningHoursDay | undefined): boolean {
+  return dayPeriods(day).length > 0;
 }
 
 type OpeningHoursEditorProps = {
@@ -84,8 +51,8 @@ type OpeningHoursEditorProps = {
 
 /**
  * Weekly opening-hours editor — per-day open/closed switch with 1–2 service
- * periods, 15-minute steppers and a "Copy to all open days" shortcut.
- * Pure controlled component (mockable).
+ * periods, native any-minute time pickers and a "Copy to other open days"
+ * shortcut. Pure controlled component (mockable).
  */
 export function OpeningHoursEditor({ value, onChange, editable = true }: OpeningHoursEditorProps) {
   const { colors } = useTheme();
@@ -128,11 +95,11 @@ export function OpeningHoursEditor({ value, onChange, editable = true }: Opening
     <View style={styles.container}>
       {DAYS.map(({ key, label }) => {
         const day = value[key];
-        const open = isOpen(day);
-        const periods = open ? day.periods : [];
+        const periods = dayPeriods(day);
+        const open = periods.length > 0;
         const otherOpenDays = openDayKeys.filter((k) => k !== key);
         return (
-          <View key={key} style={[styles.dayBlock, { borderBottomColor: colors.border }]}>
+          <View key={key} style={[styles.dayCard, { borderColor: colors.border }]}>
             <View style={styles.dayHeader}>
               <Text variant="bodyMedium" style={styles.dayLabel}>
                 {label}
@@ -142,36 +109,58 @@ export function OpeningHoursEditor({ value, onChange, editable = true }: Opening
                   {open ? periods.map((p) => `${p.open}–${p.close}`).join(', ') : 'Closed'}
                 </Text>
               ) : (
-                <Switch
-                  value={open}
-                  onValueChange={(next) =>
-                    setDay(key, next ? { periods: [DEFAULT_PERIOD] } : { closed: true })
-                  }
-                  accessibilityLabel={`${label} open`}
-                />
+                <View style={styles.switchRow}>
+                  <Text variant="bodySmall" tone={open ? 'secondary' : 'muted'} style={styles.switchLabel}>
+                    {open ? 'Open' : 'Closed'}
+                  </Text>
+                  <Switch
+                    value={open}
+                    onValueChange={(next) =>
+                      setDay(key, next ? { periods: [DEFAULT_PERIOD] } : { closed: true })
+                    }
+                    accessibilityLabel={`${label} open`}
+                  />
+                </View>
               )}
             </View>
+
+            {/* Copy to other open days — placed above the periods (mirrors web). */}
+            {editable && open && otherOpenDays.length > 0 ? (
+              <View style={styles.minTouchRow}>
+                <Button
+                  label="Copy to other open days"
+                  variant="secondary"
+                  size="sm"
+                  onPress={() => copyToAllOpenDays(key, periods)}
+                />
+              </View>
+            ) : null}
 
             {editable && open
               ? periods.map((period, index) => (
                   <View key={index} style={styles.periodRow}>
-                    <TimeStepper
-                      label={`${label} opening time`}
-                      value={period.open}
-                      onChange={(o) => setPeriod(key, periods, index, { ...period, open: o })}
+                    <TimePickerField
+                      accessibilityLabel={`${label} opening time`}
+                      value={timeToMinutes(period.open)}
+                      onChange={(mins) =>
+                        setPeriod(key, periods, index, { ...period, open: minutesToTime(mins) })
+                      }
                     />
                     <Text variant="caption" tone="muted">
                       to
                     </Text>
-                    <TimeStepper
-                      label={`${label} closing time`}
-                      value={period.close}
-                      onChange={(close) => setPeriod(key, periods, index, { ...period, close })}
+                    <TimePickerField
+                      accessibilityLabel={`${label} closing time`}
+                      value={timeToMinutes(period.close)}
+                      onChange={(mins) =>
+                        setPeriod(key, periods, index, { ...period, close: minutesToTime(mins) })
+                      }
                     />
                     {periods.length > 1 ? (
                       <Pressable
                         accessibilityRole="button"
                         accessibilityLabel={`Remove ${label} period`}
+                        hitSlop={8}
                         onPress={() =>
                           setDay(key, { periods: periods.filter((_, i) => i !== index) })
                         }
@@ -199,18 +188,6 @@ export function OpeningHoursEditor({ value, onChange, editable = true }: Opening
                 />
               </View>
             ) : null}
-
-            {/* Copy to all open days — only shown when at least one other day is open */}
-            {editable && open && otherOpenDays.length > 0 ? (
-              <View style={styles.minTouchRow}>
-                <Button
-                  label="Copy to all open days"
-                  variant="ghost"
-                  size="sm"
-                  onPress={() => copyToAllOpenDays(key, periods)}
-                />
-              </View>
-            ) : null}
           </View>
         );
       })}
@@ -220,12 +197,14 @@ export function OpeningHoursEditor({ value, onChange, editable = true }: Opening
 
 const styles = StyleSheet.create({
   container: {
-    gap: spacing.xs,
-  },
-  dayBlock: {
-    paddingVertical: spacing.sm,
     gap: spacing.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  // Rounded, bordered card per day (mirrors the web's SectionCard rows).
+  dayCard: {
+    padding: spacing.md,
+    gap: spacing.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radius.md,
   },
   dayHeader: {
     flexDirection: 'row',
@@ -236,34 +215,20 @@ const styles = StyleSheet.create({
   dayLabel: {
     flex: 1,
   },
+  switchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  switchLabel: {
+    minWidth: 52,
+    textAlign: 'right',
+  },
   periodRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.sm,
-  },
-  timeStepper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  timeValue: {
-    minWidth: 64, // Increased from 52 — prevents clipping of '23:45' on small fonts.
-    textAlign: 'center',
-    fontVariant: ['tabular-nums'],
-  },
-  stepBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stepSymbol: {
-    fontFamily: fonts.bold,
-    fontSize: 18,
-    lineHeight: 22,
   },
   removeBtn: {
     width: 32,
