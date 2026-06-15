@@ -179,7 +179,7 @@ export default function SignInScreen() {
             autoCapitalize="none"
             autoComplete="email"
             keyboardType="email-address"
-            placeholder="you@salon.com"
+            placeholder="you@email.com"
             error={error ?? undefined}
           />
 
@@ -220,9 +220,6 @@ export default function SignInScreen() {
         <Text variant="title" style={styles.center}>
           Sign in
         </Text>
-        <Text variant="bodySmall" tone="secondary" style={styles.center}>
-          For venue owners and staff. Use your work email.
-        </Text>
       </View>
 
       {!isBackendConfigured() ? (
@@ -249,7 +246,7 @@ export default function SignInScreen() {
           autoCapitalize="none"
           autoComplete="email"
           keyboardType="email-address"
-          placeholder="you@salon.com"
+          placeholder="you@email.com"
           error={mode === 'magic' ? (error ?? undefined) : undefined}
         />
 
