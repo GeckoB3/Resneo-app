@@ -51,6 +51,7 @@ import {
 import { useCalendarGrid } from '@/lib/queries/useCalendarGrid';
 import { useComplianceBookingFlags } from '@/lib/queries/useCompliance';
 import { usePractitioners } from '@/lib/queries/usePractitioners';
+import { useSchedule } from '@/lib/queries/useSchedule';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { radius, spacing } from '@/theme/index';
@@ -58,6 +59,7 @@ import { useTheme } from '@/theme/useTheme';
 import type { CalendarGridDay } from '@/types/calendar-grid';
 import type { Practitioner } from '@/types/practitioner';
 import type { CalendarTimeBlock } from '@/components/calendar/CalendarDayGrid';
+import type { CalendarScheduleBlock, ScheduleBlockDTO } from '@/types/schedule-blocks';
 
 type Scope = 'day' | 'week' | 'month';
 
@@ -82,6 +84,122 @@ const WIDE_LANDSCAPE_MIN_WIDTH = 600;
 /** True on a tablet, or a landscape phone wide enough for multiple columns. */
 function isWideDayViewport(width: number, height: number): boolean {
   return width >= WIDE_DAY_MIN_WIDTH || (width > height && width >= WIDE_LANDSCAPE_MIN_WIDTH);
+}
+
+// ---------------------------------------------------------------------------
+// Schedule feed -> calendar overlay blocks
+//
+// GET /api/venue/schedule returns a FLAT, venue-wide ScheduleBlockDTO[] for
+// CLASSES, EVENTS and RESOURCE bookings. This feed is DISJOINT from the grid's
+// `sessions`/event_sessions (the web draws the calendar's class/event capacity
+// blocks from THIS feed), so rendering both never double-counts.
+//
+// Class sessions arrive denormalised: one `ci-*` block per empty session AND
+// one `bk-*` block PER BOOKING for booked sessions (same as useClassSchedule's
+// dedupe). We collapse those to ONE block per class_instance so a busy class
+// doesn't stack N identical overlays. Events are already one row per event;
+// resource bookings are one row per booking (kept as-is).
+// ---------------------------------------------------------------------------
+
+/** Default accent per kind when the DTO carries no `accent_colour`. */
+const KIND_ACCENT: Record<ScheduleBlockDTO['kind'], string> = {
+  class_session: '#22C55E', // green
+  event_ticket: '#F59E0B', // amber
+  resource_booking: '#64748B', // slate
+};
+
+/** Kind-specific capacity / uptake line (null when not applicable). */
+function capacityLabelFor(dto: ScheduleBlockDTO): string | null {
+  if (dto.kind === 'class_session') {
+    return dto.class_capacity != null
+      ? `${dto.class_booked_spots ?? 0}/${dto.class_capacity} booked`
+      : null;
+  }
+  if (dto.kind === 'event_ticket') {
+    if (dto.event_capacity != null) {
+      return `${dto.event_party_total ?? dto.event_booking_count ?? 0}/${dto.event_capacity}`;
+    }
+    return dto.event_booking_count != null ? `${dto.event_booking_count} booked` : null;
+  }
+  // resource_booking
+  return dto.subtitle ?? null;
+}
+
+/** Normalize a raw DTO into the render-ready overlay block. */
+function toCalendarScheduleBlock(dto: ScheduleBlockDTO): CalendarScheduleBlock {
+  return {
+    id: dto.id,
+    kind: dto.kind,
+    startTime: dto.start_time,
+    endTime: dto.end_time,
+    title: dto.title,
+    subtitle: dto.subtitle ?? null,
+    accent: dto.accent_colour || KIND_ACCENT[dto.kind],
+    capacityLabel: capacityLabelFor(dto),
+  };
+}
+
+/**
+ * Collapse the feed to one block per class_instance (richest booked-count wins,
+ * mirroring useClassSchedule.dedupeClassSessions) so a busy class doesn't stack
+ * N identical overlays. Events/resources pass through untouched.
+ */
+function dedupeScheduleDTOs(blocks: ScheduleBlockDTO[]): ScheduleBlockDTO[] {
+  const classByInstance = new Map<string, ScheduleBlockDTO>();
+  const passthrough: ScheduleBlockDTO[] = [];
+  for (const block of blocks) {
+    if (block.kind === 'class_session' && block.class_instance_id) {
+      const existing = classByInstance.get(block.class_instance_id);
+      const score = block.class_booked_spots ?? -1;
+      const existingScore = existing ? existing.class_booked_spots ?? -1 : -2;
+      if (!existing || score > existingScore) {
+        classByInstance.set(block.class_instance_id, block);
+      }
+    } else {
+      passthrough.push(block);
+    }
+  }
+  return [...classByInstance.values(), ...passthrough];
+}
+
+/** Stable map key for a calendar column + date. */
+function scheduleKey(calendarId: string, date: string): string {
+  return `${calendarId} ${date}`;
+}
+
+/**
+ * Group blocks by `${calendarId} ${date}` (see {@link scheduleKey}) so each
+ * calendar column on a given date gets its own normalized list. Class
+ * instances are deduped first; events/resources pass through.
+ *
+ * Blocks with a null/missing `calendar_id` have no column to attach to (the web
+ * only renders staff columns), so they're dropped here -- the key never matches
+ * a real column. We count + log the omission (dev only) so it's visible during
+ * the device-gated QA rather than silent.
+ */
+function groupScheduleByCalendarDate(
+  blocks: ScheduleBlockDTO[],
+): Map<string, CalendarScheduleBlock[]> {
+  const map = new Map<string, CalendarScheduleBlock[]>();
+  let droppedNoColumn = 0;
+  for (const dto of dedupeScheduleDTOs(blocks)) {
+    if (!dto.calendar_id) {
+      // No staff column to attach to, so it can't render (matches the web,
+      // which only shows staff columns). Counted + logged below for device QA.
+      droppedNoColumn += 1;
+      continue;
+    }
+    const key = scheduleKey(dto.calendar_id, dto.date);
+    const list = map.get(key) ?? [];
+    list.push(toCalendarScheduleBlock(dto));
+    map.set(key, list);
+  }
+  if (droppedNoColumn > 0 && __DEV__) {
+    console.log(
+      `[calendar] skipped ${droppedNoColumn} schedule block(s) with no calendar_id (no column to render on).`,
+    );
+  }
+  return map;
 }
 
 /** Current wall-clock time (minutes since midnight) in the venue timezone. */
@@ -265,6 +383,25 @@ export default function CalendarScreen() {
     // live sync; the app polls). Pull-to-refresh forces an immediate refetch.
     refetchInterval: 60_000,
   });
+
+  // Venue-wide CLASS / EVENT / RESOURCE blocks for the visible range, from the
+  // /api/venue/schedule feed. Disjoint from the grid's `sessions`, so the
+  // calendar renders BOTH without double-counting. Same poll cadence as the
+  // grid. Enabled only once we have calendars (a venue with columns).
+  const scheduleQuery = useSchedule({
+    from: range.from,
+    to: range.to,
+    enabled: calendarIds.length > 0,
+    refetchInterval: 60_000,
+  });
+
+  // Group the flat feed by `${calendarId} ${date}` so each calendar column on a
+  // given date can pull its own list (class instances deduped; null-column
+  // blocks dropped — see groupScheduleByCalendarDate).
+  const scheduleByCalendarDate = useMemo(
+    () => groupScheduleByCalendarDate(scheduleQuery.data ?? []),
+    [scheduleQuery.data],
+  );
 
   // Wide viewport (tablet / landscape) → the DAY view shows every practitioner
   // side-by-side automatically, so the columns are visible without picking the
@@ -741,9 +878,11 @@ export default function CalendarScreen() {
         bookings: calDay?.bookings ?? [],
         sessions: calDay?.sessions ?? [],
         timeBlocks: getDayBlocks(p.id, anchor, calDay),
+        // This practitioner's class/event/resource blocks for the anchor date.
+        scheduleBlocks: scheduleByCalendarDate.get(scheduleKey(p.id, anchor)) ?? [],
       };
     });
-  }, [showAllCalendars, practitioners, gridQuery.data, anchor, getDayBlocks]);
+  }, [showAllCalendars, practitioners, gridQuery.data, anchor, getDayBlocks, scheduleByCalendarDate]);
 
   // ---- Week view data ----
   // Seven day-columns for the SELECTED calendar (one practitioner's week).
@@ -764,9 +903,13 @@ export default function CalendarScreen() {
         workingHours: data?.workingHours ?? [],
         bookings: data?.bookings ?? [],
         sessions: data?.sessions ?? [],
+        // The selected calendar's class/event/resource blocks for this day.
+        scheduleBlocks: effectiveId
+          ? scheduleByCalendarDate.get(scheduleKey(effectiveId, date)) ?? []
+          : [],
       };
     });
-  }, [scope, gridQuery.data, effectiveId, week.days, today]);
+  }, [scope, gridQuery.data, effectiveId, week.days, today, scheduleByCalendarDate]);
 
   // Per-booking compliance flags for the visible day — gated on the feature
   // flag so non-compliance venues never hit the endpoint. Unfiltered ids so
@@ -788,10 +931,25 @@ export default function CalendarScreen() {
     (day?.bookings?.length ?? 0) === 0;
 
   const refreshing = gridQuery.isFetching && !gridQuery.isLoading;
-  const onRefresh = useCallback(() => void gridQuery.refetch(), [gridQuery]);
+  // Pull-to-refresh refetches BOTH the grid and the schedule feed so a freshly
+  // added class/event/resource surfaces immediately alongside bookings.
+  const onRefresh = useCallback(() => {
+    void gridQuery.refetch();
+    void scheduleQuery.refetch();
+  }, [gridQuery, scheduleQuery]);
 
   // Class/event capacity blocks from the grid payload (rendered indigo).
   const daySessions = useMemo(() => day?.sessions ?? [], [day]);
+
+  // The viewed calendar's class/event/resource blocks (schedule feed) for the
+  // anchor date — read-only overlays, disjoint from `daySessions`.
+  const daySchedule = useMemo(
+    () =>
+      effectiveId
+        ? scheduleByCalendarDate.get(scheduleKey(effectiveId, anchor)) ?? []
+        : [],
+    [effectiveId, anchor, scheduleByCalendarDate],
+  );
 
   const dayGrid = (
     <CalendarDayGrid
@@ -802,6 +960,7 @@ export default function CalendarScreen() {
       workingHours={day?.workingHours ?? []}
       timeBlocks={dayBlocks}
       sessions={daySessions}
+      scheduleBlocks={daySchedule}
       nowMinutes={nowMinutes}
       onBlockPress={openDetail}
       onStatusChange={handleStatusChange}

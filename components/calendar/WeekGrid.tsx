@@ -35,6 +35,7 @@ import type {
   CalendarGridSession,
   CalendarGridWorkingHours,
 } from '@/types/calendar-grid';
+import type { CalendarScheduleBlock } from '@/types/schedule-blocks';
 
 const GUTTER_WIDTH = 38;
 const HEADER_HEIGHT = 46;
@@ -59,6 +60,8 @@ export type WeekDayColumn = {
   workingHours: CalendarGridWorkingHours[];
   bookings: CalendarGridBooking[];
   sessions: CalendarGridSession[];
+  /** Class/event/resource blocks (schedule feed) for this day's calendar. */
+  scheduleBlocks: CalendarScheduleBlock[];
 };
 
 type WeekGridProps = {
@@ -138,6 +141,9 @@ export function WeekGrid({
       }
       for (const s of day.sessions) {
         ranges.push({ start: timeToMinutes(s.startTime), end: timeToMinutes(s.endTime) });
+      }
+      for (const sb of day.scheduleBlocks) {
+        ranges.push({ start: timeToMinutes(sb.startTime), end: timeToMinutes(sb.endTime) });
       }
     }
     const bounds = computeGridBounds(ranges);
@@ -294,6 +300,22 @@ function WeekDayCol({
     [day.sessions, gridStartMin],
   );
 
+  const scheduleBlocks = useMemo(
+    () =>
+      day.scheduleBlocks
+        .map((block) => {
+          const start = timeToMinutes(block.startTime);
+          const end = timeToMinutes(block.endTime);
+          return {
+            block,
+            top: (start - gridStartMin) * PX_PER_MINUTE,
+            height: Math.max((end - start) * PX_PER_MINUTE, WEEK_MIN_BLOCK_HEIGHT),
+          };
+        })
+        .filter((s) => s.height > 0),
+    [day.scheduleBlocks, gridStartMin],
+  );
+
   // Clamp to the visible window so an out-of-hours "now" doesn't draw a stray
   // dot/bar above or below the grid (the column has no overflow clip).
   const nowTop =
@@ -334,6 +356,25 @@ function WeekDayCol({
           {height >= WEEK_MIN_BLOCK_HEIGHT ? (
             <Text variant="caption" numberOfLines={1} style={{ color: SESSION_ACCENT }}>
               {session.bookedCount}/{session.capacity}
+            </Text>
+          ) : null}
+        </View>
+      ))}
+
+      {/* Class / event / resource blocks from the schedule feed — read-only,
+          named, accent-coloured. Disjoint from `sessions` (different feed). */}
+      {scheduleBlocks.map(({ block, top, height }) => (
+        <View
+          key={block.id}
+          pointerEvents="none"
+          accessibilityLabel={block.title}
+          style={[
+            styles.session,
+            { top, height, backgroundColor: hexToRgba(block.accent, 0.13), borderColor: block.accent },
+          ]}>
+          {height >= WEEK_MIN_BLOCK_HEIGHT ? (
+            <Text variant="caption" numberOfLines={1} style={[styles.scheduleName, { color: block.accent }]}>
+              {block.title}
             </Text>
           ) : null}
         </View>
@@ -482,6 +523,10 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     paddingHorizontal: 2,
     justifyContent: 'center',
+  },
+  scheduleName: {
+    fontSize: 9,
+    lineHeight: 12,
   },
   blockWrap: {
     position: 'absolute',

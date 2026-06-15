@@ -178,6 +178,12 @@ export const queryKeys = {
       [...queryKeys.practitioners.all(), 'list', keyScope(accessToken), ownerVenueId ?? null] as const,
   },
 
+  schedule: {
+    all: () => [...queryKeys.all, 'schedule'] as const,
+    range: (accessToken?: string | null, from?: string | null, to?: string | null) =>
+      [...queryKeys.schedule.all(), keyScope(accessToken), from ?? null, to ?? null] as const,
+  },
+
   calendar: {
     all: () => [...queryKeys.all, 'calendar'] as const,
     grid: (

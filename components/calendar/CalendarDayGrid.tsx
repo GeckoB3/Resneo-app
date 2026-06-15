@@ -23,6 +23,7 @@ import {
   type LaneInput,
 } from '@/components/calendar/grid-layout';
 import { Text } from '@/components/ui/Text';
+import { hexToRgba } from '@/lib/color';
 import type { ComplianceBookingFlag } from '@/lib/queries/useCompliance';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -31,6 +32,7 @@ import type {
   CalendarGridSession,
   CalendarGridWorkingHours,
 } from '@/types/calendar-grid';
+import type { CalendarScheduleBlock } from '@/types/schedule-blocks';
 
 /** Indigo accent for class/event capacity blocks — distinct from booking hues. */
 const SESSION_ACCENT = '#6366F1';
@@ -70,6 +72,13 @@ type PositionedSession = {
   timeLabel: string;
 };
 
+type PositionedScheduleBlock = {
+  block: CalendarScheduleBlock;
+  top: number;
+  height: number;
+  timeLabel: string;
+};
+
 /** Half-open minute range used for drag-conflict detection. */
 export type BusyRange = { start: number; end: number };
 
@@ -80,6 +89,12 @@ type CalendarDayGridProps = {
   timeBlocks?: CalendarTimeBlock[];
   /** Class/event capacity blocks from the grid payload (rendered as indigo). */
   sessions?: CalendarGridSession[];
+  /**
+   * CLASS / EVENT / RESOURCE blocks from the /api/venue/schedule feed for this
+   * calendar+day — read-only, named, accent-coloured. Disjoint from `sessions`
+   * (different feed) so they never double-render.
+   */
+  scheduleBlocks?: CalendarScheduleBlock[];
   /** Current time in minutes-since-midnight, or null when not viewing today. */
   nowMinutes: number | null;
   onBlockPress: (bookingId: string) => void;
@@ -113,6 +128,7 @@ export function CalendarDayGrid({
   workingHours,
   timeBlocks = [],
   sessions = [],
+  scheduleBlocks = [],
   nowMinutes,
   onBlockPress,
   onStatusChange,
@@ -137,6 +153,7 @@ export function CalendarDayGrid({
     positioned,
     positionedBlocks,
     positionedSessions,
+    positionedScheduleBlocks,
     workingRanges,
   } = useMemo(() => {
     const ranges: { start: number; end: number }[] = [];
@@ -176,6 +193,17 @@ export function CalendarDayGrid({
       })
       .filter(({ start, end }) => end > start);
     for (const { start, end } of rawSessions) {
+      ranges.push({ start, end });
+    }
+
+    const rawScheduleBlocks = scheduleBlocks
+      .map((block) => {
+        const start = timeToMinutes(block.startTime);
+        const end = timeToMinutes(block.endTime);
+        return { block, start, end };
+      })
+      .filter(({ start, end }) => end > start);
+    for (const { start, end } of rawScheduleBlocks) {
       ranges.push({ start, end });
     }
 
@@ -223,6 +251,15 @@ export function CalendarDayGrid({
       timeLabel: `${minutesToTime(start)}–${minutesToTime(end)}`,
     }));
 
+    const scheduleItems: PositionedScheduleBlock[] = rawScheduleBlocks.map(
+      ({ block, start, end }) => ({
+        block,
+        top: (start - gridStartMin) * PX_PER_MINUTE,
+        height: Math.max((end - start) * PX_PER_MINUTE, MIN_BLOCK_HEIGHT),
+        timeLabel: `${minutesToTime(start)}–${minutesToTime(end)}`,
+      }),
+    );
+
     return {
       startHour: bounds.startHour,
       endHour: bounds.endHour,
@@ -230,9 +267,10 @@ export function CalendarDayGrid({
       positioned: blocks,
       positionedBlocks: overlayBlocks,
       positionedSessions: sessionItems,
+      positionedScheduleBlocks: scheduleItems,
       workingRanges: working,
     };
-  }, [bookings, workingHours, timeBlocks, sessions]);
+  }, [bookings, workingHours, timeBlocks, sessions, scheduleBlocks]);
 
   const hours = useMemo(
     () => Array.from({ length: endHour - startHour + 1 }, (_, i) => startHour + i),
@@ -398,6 +436,47 @@ export function CalendarDayGrid({
                 {item.session.bookedCount}/{item.session.capacity} booked
               </Text>
               {item.height >= 40 ? (
+                <Text variant="caption" tone="muted" numberOfLines={1}>
+                  {item.timeLabel}
+                </Text>
+              ) : null}
+            </View>
+          </View>
+        ))}
+
+        {/* Class / event / resource blocks from the schedule feed — read-only,
+            named, accent-coloured, with the capacity/uptake line when known.
+            Disjoint from `sessions` above (different feed), so both render
+            without double-counting. */}
+        {positionedScheduleBlocks.map((item) => (
+          <View
+            key={item.block.id}
+            pointerEvents="none"
+            accessibilityLabel={`${item.block.title}${
+              item.block.capacityLabel ? `, ${item.block.capacityLabel}` : ''
+            }, ${item.timeLabel}`}
+            style={[
+              styles.sessionBlock,
+              {
+                top: item.top,
+                height: item.height,
+                backgroundColor: hexToRgba(item.block.accent, 0.12),
+                borderColor: item.block.accent,
+              },
+            ]}>
+            <View style={[styles.sessionAccent, { backgroundColor: item.block.accent }]} />
+            <View style={styles.sessionBody}>
+              <Text
+                variant="caption"
+                numberOfLines={1}
+                style={[styles.sessionLabel, { color: item.block.accent }]}>
+                {item.block.title}
+              </Text>
+              {item.height >= 40 && item.block.capacityLabel ? (
+                <Text variant="caption" tone="muted" numberOfLines={1}>
+                  {item.block.capacityLabel}
+                </Text>
+              ) : item.height >= 40 ? (
                 <Text variant="caption" tone="muted" numberOfLines={1}>
                   {item.timeLabel}
                 </Text>

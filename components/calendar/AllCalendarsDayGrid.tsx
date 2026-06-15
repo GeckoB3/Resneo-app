@@ -31,6 +31,7 @@ import {
   type LaneInput,
 } from '@/components/calendar/grid-layout';
 import { Text } from '@/components/ui/Text';
+import { hexToRgba } from '@/lib/color';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type {
@@ -38,6 +39,7 @@ import type {
   CalendarGridSession,
   CalendarGridWorkingHours,
 } from '@/types/calendar-grid';
+import type { CalendarScheduleBlock } from '@/types/schedule-blocks';
 
 const DEFAULT_DURATION_MINUTES = 30;
 const COLUMN_WIDTH = 168;
@@ -56,6 +58,8 @@ export type AllCalendarColumn = {
   bookings: CalendarGridBooking[];
   sessions: CalendarGridSession[];
   timeBlocks: CalendarTimeBlock[];
+  /** Class/event/resource blocks (schedule feed) for this column's date. */
+  scheduleBlocks: CalendarScheduleBlock[];
 };
 
 type PositionedBooking = {
@@ -148,6 +152,9 @@ export function AllCalendarsDayGrid({
       }
       for (const s of cal.sessions) {
         ranges.push({ start: timeToMinutes(s.startTime), end: timeToMinutes(s.endTime) });
+      }
+      for (const sb of cal.scheduleBlocks) {
+        ranges.push({ start: timeToMinutes(sb.startTime), end: timeToMinutes(sb.endTime) });
       }
     }
     const bounds = computeGridBounds(ranges);
@@ -299,6 +306,18 @@ function DayColumn({
     [column.sessions],
   );
 
+  const scheduleBlocks = useMemo(
+    () =>
+      column.scheduleBlocks
+        .map((block) => {
+          const start = timeToMinutes(block.startTime);
+          const end = timeToMinutes(block.endTime);
+          return { block, start, end };
+        })
+        .filter(({ start, end }) => end > start),
+    [column.scheduleBlocks],
+  );
+
   return (
     <View style={[styles.column, { borderColor: colors.border }]}>
       {/* Empty-slot tap layer (blocks/overlays render above). */}
@@ -351,6 +370,38 @@ function DayColumn({
           </Text>
         </View>
       ))}
+
+      {/* Class / event / resource blocks from the schedule feed — read-only,
+          named, accent-coloured. Disjoint from `sessions` (different feed). */}
+      {scheduleBlocks.map(({ block, start, end }) => {
+        const height = Math.max((end - start) * PX_PER_MINUTE, MIN_BLOCK_HEIGHT);
+        return (
+          <View
+            key={block.id}
+            pointerEvents="none"
+            accessibilityLabel={`${block.title}${
+              block.capacityLabel ? `, ${block.capacityLabel}` : ''
+            }`}
+            style={[
+              styles.scheduleBlock,
+              {
+                top: (start - gridStartMin) * PX_PER_MINUTE,
+                height,
+                backgroundColor: hexToRgba(block.accent, 0.12),
+                borderColor: block.accent,
+              },
+            ]}>
+            <Text variant="caption" numberOfLines={1} style={{ color: block.accent }}>
+              {block.title}
+            </Text>
+            {height >= 40 && block.capacityLabel ? (
+              <Text variant="caption" tone="muted" numberOfLines={1}>
+                {block.capacityLabel}
+              </Text>
+            ) : null}
+          </View>
+        );
+      })}
 
       {/* Appointment blocks: tap → detail. When reassignment is enabled, an
           OUTER Pressable owns BOTH tap and long-press, and the inner card is
@@ -486,6 +537,19 @@ const styles = StyleSheet.create({
     right: spacing.xs,
     borderRadius: radius.sm,
     borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 2,
+    justifyContent: 'center',
+  },
+  scheduleBlock: {
+    position: 'absolute',
+    left: spacing.xs,
+    right: spacing.xs,
+    borderRadius: radius.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    // Heavier left edge = the accent bar (matches the day grid's session bar).
+    borderLeftWidth: 3,
+    overflow: 'hidden',
     paddingHorizontal: spacing.xs,
     paddingVertical: 2,
     justifyContent: 'center',
