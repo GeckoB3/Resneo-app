@@ -27,6 +27,7 @@ import {
 } from '@/components/calendar/grid-layout';
 import { Text } from '@/components/ui/Text';
 import { bookingCalendarBlockPalette } from '@/lib/booking/booking-status-visual';
+import { venueClosedRanges, type VenueDayHours } from '@/lib/calendar/venue-closures';
 import { hexToRgba } from '@/lib/color';
 import { fonts, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -62,6 +63,8 @@ export type WeekDayColumn = {
   sessions: CalendarGridSession[];
   /** Class/event/resource blocks (schedule feed) for this day's calendar. */
   scheduleBlocks: CalendarScheduleBlock[];
+  /** Venue open/closed state for this day → "Closed" shading. */
+  venueHours: VenueDayHours;
 };
 
 type WeekGridProps = {
@@ -316,6 +319,11 @@ function WeekDayCol({
     [day.scheduleBlocks, gridStartMin],
   );
 
+  const closedRanges = useMemo(
+    () => venueClosedRanges(day.venueHours, startHour * 60, endHour * 60),
+    [day.venueHours, startHour, endHour],
+  );
+
   // Clamp to the visible window so an out-of-hours "now" doesn't draw a stray
   // dot/bar above or below the grid (the column has no overflow clip).
   const nowTop =
@@ -343,6 +351,23 @@ function WeekDayCol({
           onEmptyPress(day.date, minutesToTime(Math.max(0, snapped)));
         }}
       />
+
+      {/* Venue-closed shading (out-of-hours / closed day) — faint band, behind
+          bookings; the column is too narrow for a label. */}
+      {closedRanges.map((r) => (
+        <View
+          key={`closed-${r.start}-${r.end}`}
+          pointerEvents="none"
+          style={[
+            styles.closedBand,
+            {
+              top: (r.start - startHour * 60) * PX_PER_MINUTE,
+              height: (r.end - r.start) * PX_PER_MINUTE,
+              backgroundColor: hexToRgba(colors.text, 0.06),
+            },
+          ]}
+        />
+      ))}
 
       {/* Class / event capacity blocks (indigo). */}
       {sessions.map(({ session, top, height }) => (
@@ -513,6 +538,11 @@ const styles = StyleSheet.create({
   column: {
     flex: 1,
     borderLeftWidth: StyleSheet.hairlineWidth,
+  },
+  closedBand: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
   },
   session: {
     position: 'absolute',

@@ -23,6 +23,7 @@ import {
   type LaneInput,
 } from '@/components/calendar/grid-layout';
 import { Text } from '@/components/ui/Text';
+import { venueClosedRanges, type VenueDayHours } from '@/lib/calendar/venue-closures';
 import { hexToRgba } from '@/lib/color';
 import type { ComplianceBookingFlag } from '@/lib/queries/useCompliance';
 import { radius, spacing } from '@/theme/index';
@@ -95,6 +96,8 @@ type CalendarDayGridProps = {
    * (different feed) so they never double-render.
    */
   scheduleBlocks?: CalendarScheduleBlock[];
+  /** Venue open/closed state for this date → shades the closed (out-of-hours) time. */
+  venueHours?: VenueDayHours;
   /** Current time in minutes-since-midnight, or null when not viewing today. */
   nowMinutes: number | null;
   onBlockPress: (bookingId: string) => void;
@@ -129,6 +132,7 @@ export function CalendarDayGrid({
   timeBlocks = [],
   sessions = [],
   scheduleBlocks = [],
+  venueHours,
   nowMinutes,
   onBlockPress,
   onStatusChange,
@@ -277,6 +281,12 @@ export function CalendarDayGrid({
     [startHour, endHour],
   );
 
+  // Venue-closed minute-ranges within the visible window (out-of-hours / closed day).
+  const closedRanges = useMemo(
+    () => venueClosedRanges(venueHours, startHour * 60, endHour * 60),
+    [venueHours, startHour, endHour],
+  );
+
   const nowTop =
     nowMinutes != null && nowMinutes >= startHour * 60 && nowMinutes <= endHour * 60
       ? (nowMinutes - startHour * 60) * PX_PER_MINUTE
@@ -380,6 +390,27 @@ export function CalendarDayGrid({
                     ]}
                   />
                 </>
+              ) : null}
+            </View>
+          );
+        })}
+
+        {/* Venue-closed shading — out-of-hours / closed-day time. A faint band
+            behind everything; pointerEvents none so a slot can still be tapped
+            to book anyway. */}
+        {closedRanges.map((r) => {
+          const top = (r.start - startHour * 60) * PX_PER_MINUTE;
+          const height = (r.end - r.start) * PX_PER_MINUTE;
+          return (
+            <View
+              key={`closed-${r.start}-${r.end}`}
+              pointerEvents="none"
+              accessibilityLabel={`Closed ${minutesToTime(r.start)}–${minutesToTime(r.end)}`}
+              style={[styles.closedBand, { top, height, backgroundColor: hexToRgba(colors.text, 0.06) }]}>
+              {height >= 26 ? (
+                <Text variant="caption" tone="muted" style={styles.closedLabel}>
+                  Closed
+                </Text>
               ) : null}
             </View>
           );
@@ -570,6 +601,16 @@ const styles = StyleSheet.create({
     right: 0,
     height: StyleSheet.hairlineWidth,
     opacity: 0.55,
+  },
+  closedBand: {
+    position: 'absolute',
+    left: TIME_GUTTER_WIDTH,
+    right: 0,
+  },
+  closedLabel: {
+    marginTop: 4,
+    marginLeft: spacing.sm,
+    opacity: 0.7,
   },
   blockedOverlay: {
     position: 'absolute',

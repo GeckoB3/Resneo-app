@@ -31,6 +31,7 @@ import {
   type LaneInput,
 } from '@/components/calendar/grid-layout';
 import { Text } from '@/components/ui/Text';
+import { venueClosedRanges, type VenueDayHours } from '@/lib/calendar/venue-closures';
 import { hexToRgba } from '@/lib/color';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -73,6 +74,8 @@ type PositionedBooking = {
 
 type AllCalendarsDayGridProps = {
   calendars: AllCalendarColumn[];
+  /** Venue open/closed state for the date (same across columns) → "Closed" shading. */
+  venueHours?: VenueDayHours;
   /** Current time in minutes-since-midnight, or null when not viewing today. */
   nowMinutes: number | null;
   onBlockPress: (bookingId: string) => void;
@@ -126,6 +129,7 @@ function positionColumn(
  */
 export function AllCalendarsDayGrid({
   calendars,
+  venueHours,
   nowMinutes,
   onBlockPress,
   onEmptyPress,
@@ -169,6 +173,13 @@ export function AllCalendarsDayGrid({
   const hours = useMemo(
     () => Array.from({ length: endHour - startHour + 1 }, (_, i) => startHour + i),
     [startHour, endHour],
+  );
+
+  // Venue-closed minute-ranges (out-of-hours / closed day) — venue-wide, so the
+  // same band shades across every column.
+  const closedRanges = useMemo(
+    () => venueClosedRanges(venueHours, startHour * 60, endHour * 60),
+    [venueHours, startHour, endHour],
   );
 
   const nowTop =
@@ -230,6 +241,24 @@ export function AllCalendarsDayGrid({
                   ]}
                 />
               ))}
+
+              {/* Venue-closed shading spanning all columns (out-of-hours / closed day). */}
+              {closedRanges.map((r) => {
+                const top = (r.start - startHour * 60) * PX_PER_MINUTE;
+                const height = (r.end - r.start) * PX_PER_MINUTE;
+                return (
+                  <View
+                    key={`closed-${r.start}-${r.end}`}
+                    pointerEvents="none"
+                    style={[styles.closedBand, { top, height, backgroundColor: hexToRgba(colors.text, 0.06) }]}>
+                    {height >= 26 ? (
+                      <Text variant="caption" tone="muted" style={styles.closedLabel}>
+                        Closed
+                      </Text>
+                    ) : null}
+                  </View>
+                );
+              })}
 
               {/* Now-line spanning all columns. */}
               {nowTop != null ? (
@@ -500,6 +529,16 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: StyleSheet.hairlineWidth,
+  },
+  closedBand: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+  },
+  closedLabel: {
+    marginTop: 4,
+    marginLeft: spacing.xs,
+    opacity: 0.7,
   },
   nowLine: {
     position: 'absolute',

@@ -11,6 +11,7 @@ import { AllCalendarsDayGrid } from '@/components/calendar/AllCalendarsDayGrid';
 import { BlockEditSheet, type BlockTarget } from '@/components/calendar/BlockEditSheet';
 import { CalendarDayGrid } from '@/components/calendar/CalendarDayGrid';
 import { minutesToTime, timeToMinutes } from '@/components/calendar/grid-layout';
+import { venueDayHours } from '@/lib/calendar/venue-closures';
 import { MonthGrid } from '@/components/calendar/MonthGrid';
 import { type RescheduleTarget } from '@/components/calendar/RescheduleSheet';
 import { WeekGrid, type WeekDayColumn } from '@/components/calendar/WeekGrid';
@@ -258,6 +259,8 @@ export default function CalendarScreen() {
   const { colors } = useTheme();
   const reduceMotion = useReduceMotion();
   const { venue, terminology, featureFlags } = useVenueContext();
+  // Weekly venue opening hours → drives the "Closed" shading on the grids.
+  const openingHours = venue?.opening_hours ?? null;
   const timeZone = venue?.timezone ?? 'Europe/London';
   const complianceEnabled = featureFlags?.resolved?.compliance_records_enabled === true;
   const today = calendarDateInTimeZone(new Date(), timeZone);
@@ -907,9 +910,11 @@ export default function CalendarScreen() {
         scheduleBlocks: effectiveId
           ? scheduleByCalendarDate.get(scheduleKey(effectiveId, date)) ?? []
           : [],
+        // Venue open/closed state for this day → "Closed" shading.
+        venueHours: venueDayHours(openingHours, date),
       };
     });
-  }, [scope, gridQuery.data, effectiveId, week.days, today, scheduleByCalendarDate]);
+  }, [scope, gridQuery.data, effectiveId, week.days, today, scheduleByCalendarDate, openingHours]);
 
   // Per-booking compliance flags for the visible day — gated on the feature
   // flag so non-compliance venues never hit the endpoint. Unfiltered ids so
@@ -951,6 +956,12 @@ export default function CalendarScreen() {
     [effectiveId, anchor, scheduleByCalendarDate],
   );
 
+  // Venue open/closed state for the anchor date (shared by the day + all-cal views).
+  const venueHoursForAnchor = useMemo(
+    () => venueDayHours(openingHours, anchor),
+    [openingHours, anchor],
+  );
+
   const dayGrid = (
     <CalendarDayGrid
       // Remount when the viewed calendar or day changes so scroll-to-now
@@ -961,6 +972,7 @@ export default function CalendarScreen() {
       timeBlocks={dayBlocks}
       sessions={daySessions}
       scheduleBlocks={daySchedule}
+      venueHours={venueHoursForAnchor}
       nowMinutes={nowMinutes}
       onBlockPress={openDetail}
       onStatusChange={handleStatusChange}
@@ -1161,6 +1173,7 @@ export default function CalendarScreen() {
             <View style={styles.weekBody}>
               <AllCalendarsDayGrid
                 calendars={allCalendarsForDay}
+                venueHours={venueHoursForAnchor}
                 nowMinutes={nowMinutes}
                 onBlockPress={openDetail}
                 onEmptyPress={createAtFor}
