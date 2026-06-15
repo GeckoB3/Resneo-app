@@ -310,13 +310,29 @@ export default function CalendarScreen() {
    */
   const getDayBlocks = useCallback(
     (calId: string, dateStr: string, gridDay: CalendarGridDay | null): CalendarTimeBlock[] => {
-      const oneOff: CalendarTimeBlock[] = (gridDay?.blocks ?? []).map((b) => ({
-        id: b.id,
-        start: b.startTime,
-        end: b.endTime,
-        label: b.reason,
-        isEditable: true,
-      }));
+      const oneOff: CalendarTimeBlock[] = (gridDay?.blocks ?? []).map((b) => {
+        // Only plain manual blocks are editable here; breaks, closures and
+        // class-session blocks are read-only (mirrors the web's
+        // isManualEditableBlock) so a break can't be dragged or deleted from the
+        // grid. The type also names the overlay when no reason is set.
+        const readOnlyType =
+          b.type === 'break' || b.type === 'closed' || b.type === 'class_session';
+        const typeLabel =
+          b.type === 'break'
+            ? 'Break'
+            : b.type === 'closed'
+              ? 'Closed'
+              : b.type === 'class_session'
+                ? 'Class'
+                : null;
+        return {
+          id: b.id,
+          start: b.startTime,
+          end: b.endTime,
+          label: b.reason?.trim() || typeLabel,
+          isEditable: !readOnlyType,
+        };
+      });
 
       const practitioner = practitioners.find((p) => p.id === calId);
       const [y, m, d] = dateStr.split('-').map(Number);

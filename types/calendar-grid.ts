@@ -25,7 +25,7 @@ export interface CalendarGridBlock {
   startTime: string;
   endTime: string;
   reason: string | null;
-  /** e.g. "break" | "closed". */
+  /** calendar_blocks.block_type — e.g. "manual" | "break" | "class_session" (plus "closed" for closures). */
   type: string;
 }
 
