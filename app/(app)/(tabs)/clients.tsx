@@ -347,11 +347,17 @@ export default function ClientsScreen() {
     setPage((p) => p + 1);
   }, [guestsQuery.isFetching, hasMore]);
 
-  // Realtime: refresh the directory when the venue's guests change server-side.
+  // Realtime: refresh the directory when the venue's guests OR bookings change
+  // server-side. Web watches both tables so a new/changed booking refreshes the
+  // contact's next-visit + stats (last_visit, visit_count, upcoming count).
   const venueId = venue?.id;
+  const venueFilter = venueId ? `venue_id=eq.${venueId}` : undefined;
   const liveState = useVenueLiveSync({
     venueId,
-    subscriptions: [{ table: 'guests', filter: venueId ? `venue_id=eq.${venueId}` : undefined }],
+    subscriptions: [
+      { table: 'guests', filter: venueFilter },
+      { table: 'bookings', filter: venueFilter },
+    ],
     onRefresh: useCallback(() => {
       // Reset to the first page so the realtime refresh reflects the new total.
       setPage(0);

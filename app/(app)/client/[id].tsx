@@ -18,6 +18,7 @@ import { CustomFieldsSection } from '@/components/clients/CustomFieldsSection';
 import { DocumentsSection } from '@/components/clients/DocumentsSection';
 import { GdprSection } from '@/components/clients/GdprSection';
 import { GuestEditSheet, type GuestEditTarget } from '@/components/clients/GuestEditSheet';
+import { GuestTagEditor } from '@/components/clients/GuestTagEditor';
 import { HouseholdSection } from '@/components/clients/HouseholdSection';
 import { MarketingPreferencesCard } from '@/components/clients/MarketingPreferencesCard';
 import { MergeContactDetailSheet } from '@/components/clients/MergeContactDetailSheet';
@@ -410,6 +411,15 @@ export default function ClientDetailScreen() {
               No notes — tap Edit to add
             </Text>
           )}
+        </Card>
+
+        {/* Inline tag editor — add/remove chips with a typeahead from venue tags */}
+        <Card>
+          <GuestTagEditor
+            tags={guest.tags}
+            onTagsChange={(next) => updateGuest.mutateAsync({ tags: next })}
+            disabled={updateGuest.isPending}
+          />
         </Card>
 
       {/* New booking CTA */}

@@ -3,6 +3,7 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
 import { Chip } from '@/components/ui/Chip';
+import { DatePickerField } from '@/components/ui/DatePickerField';
 import { Input } from '@/components/ui/Input';
 import { Segmented } from '@/components/ui/Segmented';
 import { Sheet } from '@/components/ui/Sheet';
@@ -46,15 +47,13 @@ function normaliseMarketing(value: string): string {
   return 'subscribed';
 }
 
-/** Strict YYYY-MM-DD calendar check (rejects typos like 2025-13-40). */
-function isValidISODate(value: string): boolean {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  const [y, m, d] = value.split('-').map(Number);
-  if (m! < 1 || m! > 12 || d! < 1 || d! > 31) return false;
-  const date = new Date(Date.UTC(y!, m! - 1, d!));
-  return (
-    date.getUTCFullYear() === y && date.getUTCMonth() === m! - 1 && date.getUTCDate() === d
-  );
+/** Today as YYYY-MM-DD — the picker's starting position when a bound is unset. */
+function todayIsoDate(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 export type ContactFilterState = {
@@ -115,6 +114,10 @@ export function ContactFilterSheet({
   const segmentNeedsStaff = draft.segment === 'last_staff';
   const segmentNeedsService = draft.segment === 'last_service';
 
+  // Picker's starting position when a bound is unset; recomputed each open.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const todayIso = useMemo(() => todayIsoDate(), [visible]);
+
   // Roster + service catalog only fetched while a picker is on screen.
   const practitionersQuery = usePractitioners({ enabled: visible && segmentNeedsStaff });
   const servicesQuery = useManagedServices();
@@ -124,19 +127,13 @@ export function ContactFilterSheet({
     [servicesQuery.data],
   );
 
-  // Inline date validation — block Apply on a malformed range instead of
-  // silently dropping the typo at the backend.
-  const fromError = draft.date_from && !isValidISODate(draft.date_from) ? 'Use YYYY-MM-DD' : null;
-  const toError = draft.date_to && !isValidISODate(draft.date_to) ? 'Use YYYY-MM-DD' : null;
+  // The native date picker can only emit a valid YYYY-MM-DD, so the only range
+  // problem left to guard is an inverted From/To — block Apply on that.
   const rangeError =
-    !fromError &&
-    !toError &&
-    draft.date_from &&
-    draft.date_to &&
-    draft.date_from > draft.date_to
+    draft.date_from && draft.date_to && draft.date_from > draft.date_to
       ? 'From date is after To date'
       : null;
-  const dateValid = segmentNeedsDateRange ? !fromError && !toError && !rangeError : true;
+  const dateValid = segmentNeedsDateRange ? !rangeError : true;
 
   function handleApply() {
     if (!dateValid) return;
@@ -300,25 +297,23 @@ export function ContactFilterSheet({
             <Text variant="label">Date range</Text>
             <View style={styles.dateRow}>
               <View style={styles.dateField}>
-                <Input
-                  label="From (YYYY-MM-DD)"
-                  value={draft.date_from}
-                  onChangeText={(v) => setDraft((d) => ({ ...d, date_from: v }))}
-                  placeholder="2025-01-01"
-                  autoCapitalize="none"
-                  keyboardType="numbers-and-punctuation"
-                  error={fromError ?? undefined}
+                <Text variant="caption" tone="muted">
+                  From
+                </Text>
+                <DatePickerField
+                  value={draft.date_from || todayIso}
+                  onChange={(iso) => setDraft((d) => ({ ...d, date_from: iso }))}
+                  accessibilityLabel="Filter from date"
                 />
               </View>
               <View style={styles.dateField}>
-                <Input
-                  label="To (YYYY-MM-DD)"
-                  value={draft.date_to}
-                  onChangeText={(v) => setDraft((d) => ({ ...d, date_to: v }))}
-                  placeholder="2025-12-31"
-                  autoCapitalize="none"
-                  keyboardType="numbers-and-punctuation"
-                  error={toError ?? undefined}
+                <Text variant="caption" tone="muted">
+                  To
+                </Text>
+                <DatePickerField
+                  value={draft.date_to || todayIso}
+                  onChange={(iso) => setDraft((d) => ({ ...d, date_to: iso }))}
+                  accessibilityLabel="Filter to date"
                 />
               </View>
             </View>
@@ -380,6 +375,8 @@ const styles = StyleSheet.create({
   },
   dateField: {
     flex: 1,
+    gap: spacing.xs,
+    alignItems: 'flex-start',
   },
   actions: {
     flexDirection: 'row',
