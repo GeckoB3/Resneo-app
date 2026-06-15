@@ -197,7 +197,11 @@ export function useRescheduleBookingById() {
       bookingId: string;
       date: string;
       time: string;
+      /** New end "HH:mm:ss" — pins the validated span to the booking's REAL bar. */
+      endTime?: string;
       durationMinutes?: number;
+      /** Defer the server's guest "booking changed" email so the app can prompt. */
+      deferGuestNotification?: boolean;
       /** New practitioner/calendar id — reassigns the booking when set. */
       practitionerId?: string;
     }): Promise<BookingDetail> => {
@@ -218,8 +222,19 @@ export function useRescheduleBookingById() {
           // the server 409 on a clash — otherwise moving onto an occupied slot
           // would silently double-book and the "slot may be taken" error wouldn't fire.
           allow_manual_overlap: input.practitionerId === undefined,
-          ...(input.durationMinutes !== undefined
-            ? { duration_minutes: input.durationMinutes }
+          // Send the booking's real end so the server validates the TRUE span.
+          // Without it the server recomputes the end from the catalogue-default
+          // duration (wider than the bar), which false-triggers a "Blocked time"
+          // 409 on a move that's visually clear of a calendar block.
+          ...(input.endTime
+            ? { booking_end_time: input.endTime }
+            : input.durationMinutes !== undefined
+              ? { duration_minutes: input.durationMinutes }
+              : {}),
+          // The app surfaces a Notify/Skip prompt after the move, so stop the
+          // server emailing the guest automatically on every drag.
+          ...(input.deferGuestNotification
+            ? { defer_modification_guest_notification: true }
             : {}),
           ...(input.practitionerId !== undefined
             ? { practitioner_id: input.practitionerId }
@@ -377,6 +392,31 @@ export function useResendConfirmation(bookingId: string) {
     },
     onSuccess: () => {
       invalidateBookingCaches(queryClient, accessToken, bookingId);
+    },
+  });
+}
+
+/**
+ * POST /api/venue/bookings/[id]/guest-modification-notify — send the DEFERRED
+ * "your booking changed" notification to the guest. Used after a drag-reschedule
+ * (which defers the auto-notification) when the user taps "Notify".
+ */
+export function useNotifyBookingModification() {
+  const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: { bookingId: string }): Promise<{ ok: boolean }> => {
+      if (!accessToken) {
+        throw new Error('Missing access token');
+      }
+      return apiFetch<{ ok: boolean }>(
+        `/api/venue/bookings/${input.bookingId}/guest-modification-notify`,
+        { accessToken, method: 'POST' },
+      );
+    },
+    onSuccess: (_data, input) => {
+      invalidateBookingCaches(queryClient, accessToken, input.bookingId);
     },
   });
 }

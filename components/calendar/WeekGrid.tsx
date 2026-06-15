@@ -156,6 +156,7 @@ export function WeekGrid({
 
   return (
     <ScrollView
+      style={styles.scroll}
       showsVerticalScrollIndicator={false}
       stickyHeaderIndices={[0]}
       contentContainerStyle={styles.scrollContent}
@@ -402,6 +403,12 @@ function WeekBlock({ booking, height }: { booking: CalendarGridBooking; height: 
 }
 
 const styles = StyleSheet.create({
+  // Fill the parent so the flex-1 day columns have a definite width to split
+  // across — without this the vertical ScrollView sizes to content width and
+  // the seven columns collapse into a thin strip beside the gutter.
+  scroll: {
+    flex: 1,
+  },
   scrollContent: {
     paddingBottom: spacing['3xl'] + spacing.xl,
   },

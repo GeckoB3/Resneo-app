@@ -10,7 +10,7 @@ import { BookingDetailSheet } from '@/components/bookings/BookingDetailSheet';
 import { AllCalendarsDayGrid } from '@/components/calendar/AllCalendarsDayGrid';
 import { BlockEditSheet, type BlockTarget } from '@/components/calendar/BlockEditSheet';
 import { CalendarDayGrid } from '@/components/calendar/CalendarDayGrid';
-import { timeToMinutes } from '@/components/calendar/grid-layout';
+import { minutesToTime, timeToMinutes } from '@/components/calendar/grid-layout';
 import { MonthGrid } from '@/components/calendar/MonthGrid';
 import { type RescheduleTarget } from '@/components/calendar/RescheduleSheet';
 import { WeekGrid, type WeekDayColumn } from '@/components/calendar/WeekGrid';
@@ -40,7 +40,10 @@ import {
   getMonthRangeFromDate,
   type DateRange,
 } from '@/lib/dates/venue-dates';
-import { useRescheduleBookingById } from '@/lib/queries/useBookingMutations';
+import {
+  useNotifyBookingModification,
+  useRescheduleBookingById,
+} from '@/lib/queries/useBookingMutations';
 import {
   useCalendarStatusAction,
   useCalendarArrivalAction,
@@ -185,32 +188,58 @@ export default function CalendarScreen() {
 
   // One mutation for drag commits AND undo — the booking id travels in the input.
   const rescheduleById = useRescheduleBookingById();
+  // Sends the deferred "booking changed" email when the user taps Notify.
+  const notifyModification = useNotifyBookingModification();
 
-  // Restore a booking to its previous slot (Undo on the reschedule toast).
+  // After a drag move/resize, prompt to notify the guest (or undo) — the server
+  // notification is deferred so the staff member chooses. Null when not showing.
+  const [moveNotice, setMoveNotice] = useState<{
+    bookingId: string;
+    guestName: string;
+    previous: RescheduleTarget;
+    durationChanged: boolean;
+  } | null>(null);
+
+  // Restore a booking to its previous slot AND length. Sends the original end so
+  // the revert validates the true span, and defers the email (an undone change
+  // shouldn't notify the guest).
   const undoReschedule = useCallback(
-    (previous: RescheduleTarget, durationChanged: boolean) => {
+    (previous: RescheduleTarget) => {
+      const endTime =
+        previous.durationMinutes != null
+          ? `${minutesToTime(timeToMinutes(previous.time) + previous.durationMinutes)}:00`
+          : undefined;
       rescheduleById.mutate({
         bookingId: previous.id,
         date: previous.date,
         time: `${previous.time.slice(0, 5)}:00`,
-        ...(durationChanged && previous.durationMinutes != null
-          ? { durationMinutes: previous.durationMinutes }
-          : {}),
+        ...(endTime ? { endTime } : {}),
+        deferGuestNotification: true,
       });
     },
     [rescheduleById],
   );
 
-  const showUndo = useCallback(
-    (previous: RescheduleTarget, meta: { durationChanged: boolean }) => {
-      toast.show({
-        message: `Moved ${previous.guestName}'s booking`,
-        actionLabel: 'Undo',
-        onAction: () => undoReschedule(previous, meta.durationChanged),
-      });
-    },
-    [toast, undoReschedule],
-  );
+  const closeMoveNotice = useCallback(() => setMoveNotice(null), []);
+
+  const handleNotifyMove = useCallback(() => {
+    if (!moveNotice) return;
+    const name = moveNotice.guestName;
+    notifyModification.mutate(
+      { bookingId: moveNotice.bookingId },
+      {
+        onSuccess: () => toast.success(`${name} notified of the change.`),
+        onError: () => toast.error('Could not notify the guest.'),
+      },
+    );
+    setMoveNotice(null);
+  }, [moveNotice, notifyModification, toast]);
+
+  const handleUndoMove = useCallback(() => {
+    if (!moveNotice) return;
+    undoReschedule(moveNotice.previous);
+    setMoveNotice(null);
+  }, [moveNotice, undoReschedule]);
 
   const week = useMemo(() => getCalendarWeekFromDate(anchor), [anchor]);
   const range = useMemo<DateRange>(() => {
@@ -409,7 +438,7 @@ export default function CalendarScreen() {
     (input: {
       bookingId: string;
       time: string;
-      durationMinutes?: number;
+      endTime?: string;
       previousTarget: RescheduleTarget;
       durationChanged: boolean;
     }) => {
@@ -419,13 +448,20 @@ export default function CalendarScreen() {
           bookingId: input.bookingId,
           date: anchor,
           time: input.time,
-          ...(input.durationMinutes != null ? { durationMinutes: input.durationMinutes } : {}),
+          ...(input.endTime ? { endTime: input.endTime } : {}),
+          // Defer the guest email — the move prompt below offers Notify/Skip.
+          deferGuestNotification: true,
         },
         {
           onSuccess: () => {
-            // Drop haptic already fired in the drag worklet; just confirm + undo.
+            // Drop haptic already fired in the drag worklet; confirm + prompt.
             removePending(input.bookingId);
-            showUndo(input.previousTarget, { durationChanged: input.durationChanged });
+            setMoveNotice({
+              bookingId: input.bookingId,
+              guestName: input.previousTarget.guestName,
+              previous: input.previousTarget,
+              durationChanged: input.durationChanged,
+            });
           },
           onError: (error) => {
             removePending(input.bookingId);
@@ -440,7 +476,7 @@ export default function CalendarScreen() {
         },
       );
     },
-    [anchor, rescheduleById, removePending, showUndo, toast],
+    [anchor, rescheduleById, removePending, toast],
   );
 
   const handleDragReschedule = useCallback(
@@ -450,15 +486,23 @@ export default function CalendarScreen() {
 
       const start = timeToMinutes(booking.startTime);
       const end = booking.endTime ? timeToMinutes(booking.endTime) : null;
+      const duration = end != null && end > start ? end - start : null;
+      // Preserve the duration and pin the validated end to the real bar so the
+      // server doesn't fall back to the wider catalogue default (false "Blocked time").
+      const endTime =
+        duration != null
+          ? `${minutesToTime(timeToMinutes(`${newTime}:00`) + duration)}:00`
+          : undefined;
       commitDrag({
         bookingId,
         time: `${newTime}:00`,
+        ...(endTime ? { endTime } : {}),
         previousTarget: {
           id: bookingId,
           guestName: booking.guestName ?? 'booking',
           date: anchor,
           time: booking.startTime,
-          durationMinutes: end != null && end > start ? end - start : null,
+          durationMinutes: duration,
         },
         durationChanged: false,
       });
@@ -473,10 +517,13 @@ export default function CalendarScreen() {
 
       const start = timeToMinutes(booking.startTime);
       const end = booking.endTime ? timeToMinutes(booking.endTime) : null;
+      // New end = same start + the resized duration; the server derives the new
+      // length from it and validates the true span.
+      const endTime = `${minutesToTime(start + newDurationMinutes)}:00`;
       commitDrag({
         bookingId,
         time: `${booking.startTime.slice(0, 5)}:00`,
-        durationMinutes: newDurationMinutes,
+        endTime,
         previousTarget: {
           id: bookingId,
           guestName: booking.guestName ?? 'booking',
@@ -1052,8 +1099,28 @@ export default function CalendarScreen() {
         </View>
       </Sheet>
 
-      {/* Reschedule undo + all error feedback now route through the toast host
-          (Alert.alert is a no-op on web; the manual Snackbar timer is gone). */}
+      {/* After a drag move/resize the guest notification is deferred, so prompt
+          the staff member: notify the guest of the new time/length, skip, or undo. */}
+      <Sheet visible={moveNotice !== null} onClose={closeMoveNotice}>
+        <Text variant="subheading">
+          {moveNotice?.durationChanged ? 'Duration updated' : 'Booking moved'}
+        </Text>
+        <Text variant="caption" tone="muted">
+          {moveNotice ? `Let ${moveNotice.guestName} know about the change?` : ''}
+        </Text>
+        <View style={styles.reassignList}>
+          <Button
+            label={moveNotice ? `Notify ${moveNotice.guestName}` : 'Notify guest'}
+            fullWidth
+            onPress={handleNotifyMove}
+          />
+          <Button label="Don't notify" variant="secondary" fullWidth onPress={closeMoveNotice} />
+          <Button label="Undo change" variant="ghost" fullWidth onPress={handleUndoMove} />
+        </View>
+      </Sheet>
+
+      {/* Error feedback routes through the toast host (Alert.alert is a no-op on
+          web; the manual Snackbar timer is gone). */}
       <BookingDetailSheet
         bookingId={detailBookingId}
         onClose={() => setDetailBookingId(null)}
