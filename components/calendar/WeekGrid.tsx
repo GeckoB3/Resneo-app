@@ -12,15 +12,8 @@
  * keeps it fast and legible.
  */
 
-import { useMemo, useState } from 'react';
-import {
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  useWindowDimensions,
-  View,
-} from 'react-native';
+import { useMemo } from 'react';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
 import {
   computeGridBounds,
@@ -136,14 +129,6 @@ export function WeekGrid({
 }: WeekGridProps) {
   const { colors } = useTheme();
 
-  // The sticky header (stickyHeaderIndices) does NOT inherit the ScrollView's
-  // width, so its flex-1 day cells collapse into a thin vertical column. Measure
-  // the grid width and pin the header + body rows to it so the seven columns
-  // spread across the screen (windowWidth is the pre-measure fallback).
-  const { width: windowWidth } = useWindowDimensions();
-  const [measuredWidth, setMeasuredWidth] = useState(0);
-  const contentWidth = measuredWidth || windowWidth;
-
   // One shared time scale across all seven columns so the gutter, hour lines
   // and now-line line up across the week.
   const { startHour, endHour, totalHeight, gridStartMin } = useMemo(() => {
@@ -179,31 +164,13 @@ export function WeekGrid({
   );
 
   return (
-    <ScrollView
-      style={styles.scroll}
-      onLayout={(e) => {
-        const w = Math.round(e.nativeEvent.layout.width);
-        setMeasuredWidth((prev) => (prev === w ? prev : w));
-      }}
-      showsVerticalScrollIndicator={false}
-      stickyHeaderIndices={[0]}
-      contentContainerStyle={styles.scrollContent}
-      refreshControl={
-        onRefresh ? (
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={colors.brand}
-            colors={[colors.brand]}
-          />
-        ) : undefined
-      }>
-      {/* Sticky day headers — always show which column is which day. */}
+    <View style={styles.root}>
+      {/* Day headers — a FIXED row ABOVE the scroll (always visible). Kept OUT of
+          the ScrollView: a sticky header doesn't inherit the ScrollView's width,
+          which collapsed its flex-1 day cells into a thin vertical column. As a
+          normal flex child of the column it spreads across the full width. */}
       <View
-        style={[
-          styles.headerRow,
-          { width: contentWidth, backgroundColor: colors.surface, borderBottomColor: colors.border },
-        ]}>
+        style={[styles.headerRow, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
         <View style={styles.headerGutter} />
         {days.map((d) => (
           <Pressable
@@ -226,7 +193,21 @@ export function WeekGrid({
         ))}
       </View>
 
-      <View style={[styles.bodyRow, { width: contentWidth }]}>
+      <ScrollView
+        style={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          onRefresh ? (
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.brand}
+              colors={[colors.brand]}
+            />
+          ) : undefined
+        }>
+        <View style={styles.bodyRow}>
         {/* Time gutter */}
         <View style={[styles.gutter, { height: totalHeight }]}>
           {hours.map((hour) => (
@@ -282,6 +263,7 @@ export function WeekGrid({
         </View>
       </View>
     </ScrollView>
+    </View>
   );
 }
 
@@ -492,9 +474,10 @@ function WeekBlock({ booking, height }: { booking: CalendarGridBooking; height: 
 }
 
 const styles = StyleSheet.create({
-  // Fill the parent so the flex-1 day columns have a definite width to split
-  // across — without this the vertical ScrollView sizes to content width and
-  // the seven columns collapse into a thin strip beside the gutter.
+  root: {
+    flex: 1,
+  },
+  // The body ScrollView fills the remaining height under the fixed header row.
   scroll: {
     flex: 1,
   },
