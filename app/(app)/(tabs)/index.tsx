@@ -1,7 +1,8 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
-import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, { FadeIn, FadeOut, runOnJS } from 'react-native-reanimated';
 import { useReduceMotion, motionSafe } from '@/lib/motion';
 import { SymbolView } from 'expo-symbols';
 import { format, parseISO } from 'date-fns';
@@ -22,6 +23,7 @@ import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Fab } from '@/components/ui/Fab';
 import { IconButton } from '@/components/ui/IconButton';
+import { LiveDot } from '@/components/ui/LiveDot';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { Screen } from '@/components/ui/Screen';
 import { Segmented } from '@/components/ui/Segmented';
@@ -53,11 +55,12 @@ import { useCalendarGrid } from '@/lib/queries/useCalendarGrid';
 import { useComplianceBookingFlags } from '@/lib/queries/useCompliance';
 import { usePractitioners } from '@/lib/queries/usePractitioners';
 import { useSchedule } from '@/lib/queries/useSchedule';
+import { useVenueLiveSync } from '@/lib/realtime/useVenueLiveSync';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
-import type { CalendarGridDay } from '@/types/calendar-grid';
+import type { CalendarGridBooking, CalendarGridDay } from '@/types/calendar-grid';
 import type { Practitioner } from '@/types/practitioner';
 import type { CalendarTimeBlock } from '@/components/calendar/CalendarDayGrid';
 import type { CalendarScheduleBlock, ScheduleBlockDTO } from '@/types/schedule-blocks';
@@ -69,6 +72,34 @@ const SCOPE_OPTIONS: { value: Scope; label: string }[] = [
   { value: 'week', label: 'Week' },
   { value: 'month', label: 'Month' },
 ];
+
+/**
+ * Client-side status filter pills for the calendar grid (web parity:
+ * CALENDAR_STATUS_FILTERS). `value` is the literal `bookings.status`; "Started"
+ * is the staff-facing label for the `Seated` status. Cancelled bookings are
+ * excluded from the calendar-grid payload (the API hides them from `view=
+ * calendar`), so there's no Cancelled pill — cancellations live on the
+ * Appointments tab.
+ */
+const STATUS_FILTERS = [
+  { value: 'all', label: 'All' },
+  { value: 'Pending', label: 'Pending' },
+  { value: 'Booked', label: 'Booked' },
+  { value: 'Confirmed', label: 'Confirmed' },
+  { value: 'Seated', label: 'Started' },
+  { value: 'Completed', label: 'Completed' },
+  { value: 'No-Show', label: 'No Show' },
+] as const;
+
+type StatusFilter = (typeof STATUS_FILTERS)[number]['value'];
+
+/** True when a booking should show under the active status filter. */
+function bookingMatchesStatusFilter(status: string, filter: StatusFilter): boolean {
+  return filter === 'all' || status === filter;
+}
+
+/** Minimal horizontal-swipe distance (dp) to step a day/week — web parity feel. */
+const SWIPE_STEP_THRESHOLD = 56;
 
 /**
  * Viewport width (dp) at/above which the DAY view shows every practitioner's
@@ -267,6 +298,9 @@ export default function CalendarScreen() {
 
   const [scope, setScope] = useState<Scope>('day');
   const [anchor, setAnchor] = useState<string>(today);
+  // Client-side status filter over the already-fetched grid data (web parity).
+  // Pure render-time filter — never touches the query key.
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
   // Deep-link support: a `?date=YYYY-MM-DD` param (e.g. from a notification)
   // jumps the diary to that day.
@@ -405,6 +439,30 @@ export default function CalendarScreen() {
     () => groupScheduleByCalendarDate(scheduleQuery.data ?? []),
     [scheduleQuery.data],
   );
+
+  // Realtime: a change on another device invalidates the grid promptly instead
+  // of waiting for the 60s poll above (which stays as a fallback). Mirrors the
+  // web calendar's channel — bookings + calendar blocks scoped to this venue.
+  // Refetches both the grid (bookings/blocks/sessions) and the schedule feed
+  // (classes/events/resources) so every overlay stays in sync.
+  const venueId = venue?.id ?? null;
+  const onLiveRefresh = useCallback(() => {
+    void gridQuery.refetch();
+    void scheduleQuery.refetch();
+  }, [gridQuery, scheduleQuery]);
+
+  const liveState = useVenueLiveSync({
+    venueId,
+    onRefresh: onLiveRefresh,
+    subscriptions: venueId
+      ? [
+          { table: 'bookings', filter: `venue_id=eq.${venueId}` },
+          { table: 'calendar_blocks', filter: `venue_id=eq.${venueId}` },
+          { table: 'practitioner_calendar_blocks', filter: `venue_id=eq.${venueId}` },
+        ]
+      : [],
+    enabled: !!venueId && calendarIds.length > 0,
+  });
 
   // Wide viewport (tablet / landscape) → the DAY view shows every practitioner
   // side-by-side automatically, so the columns are visible without picking the
@@ -548,6 +606,26 @@ export default function CalendarScreen() {
   );
 
   const goToday = useCallback(() => setAnchor(today), [today]);
+
+  // Horizontal swipe on the grid body → prev/next day (day scope) or week (week
+  // scope), reusing step(). HORIZONTAL-only: activeOffsetX arms the pan once the
+  // finger has moved sideways past the threshold, while failOffsetY yields to a
+  // vertical drag so the grid's own vertical scroll still works. The block
+  // hold-drag uses failOffsetX([-10,10]) (it only arms after a 500ms hold), so a
+  // quick sideways swipe never moves an appointment — it pages the date instead.
+  // Direction: swipe LEFT (negative translation) → next; swipe RIGHT → previous.
+  const swipeGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .activeOffsetX([-24, 24])
+        .failOffsetY([-14, 14])
+        .onEnd((event) => {
+          'worklet';
+          if (Math.abs(event.translationX) < SWIPE_STEP_THRESHOLD) return;
+          runOnJS(step)(event.translationX < 0 ? 1 : -1);
+        }),
+    [step],
+  );
 
   // Tap a block → full booking detail
   const openDetail = useCallback((id: string) => setDetailBookingId(id), []);
@@ -856,9 +934,24 @@ export default function CalendarScreen() {
     [calendarArrivalAction, removePending, toast],
   );
 
+  // ---- Status filter ----
+  // Stable client-side filter applied to the bookings each grid renders. Counts
+  // on the switcher chips stay UNfiltered (they show the day's true load), and
+  // the query is untouched — this only narrows what's drawn (web parity).
+  const filterBookings = useCallback(
+    (list: CalendarGridBooking[]): CalendarGridBooking[] =>
+      statusFilter === 'all'
+        ? list
+        : list.filter((b) => bookingMatchesStatusFilter(b.status, statusFilter)),
+    [statusFilter],
+  );
+
   // ---- Day data for the viewed calendar ----
 
-  const dayBookings = useMemo(() => day?.bookings ?? [], [day]);
+  const dayBookings = useMemo(
+    () => filterBookings(day?.bookings ?? []),
+    [day, filterBookings],
+  );
 
   const dayBlocks = useMemo(
     () => (effectiveId ? getDayBlocks(effectiveId, anchor, day) : []),
@@ -878,14 +971,14 @@ export default function CalendarScreen() {
         calendarId: p.id,
         calendarName: p.name,
         workingHours: calDay?.workingHours ?? [],
-        bookings: calDay?.bookings ?? [],
+        bookings: filterBookings(calDay?.bookings ?? []),
         sessions: calDay?.sessions ?? [],
         timeBlocks: getDayBlocks(p.id, anchor, calDay),
         // This practitioner's class/event/resource blocks for the anchor date.
         scheduleBlocks: scheduleByCalendarDate.get(scheduleKey(p.id, anchor)) ?? [],
       };
     });
-  }, [showAllCalendars, practitioners, gridQuery.data, anchor, getDayBlocks, scheduleByCalendarDate]);
+  }, [showAllCalendars, practitioners, gridQuery.data, anchor, getDayBlocks, scheduleByCalendarDate, filterBookings]);
 
   // ---- Week view data ----
   // Seven day-columns for the SELECTED calendar (one practitioner's week).
@@ -904,7 +997,7 @@ export default function CalendarScreen() {
         isToday: date === today,
         isWeekend: weekday === 0 || weekday === 6,
         workingHours: data?.workingHours ?? [],
-        bookings: data?.bookings ?? [],
+        bookings: filterBookings(data?.bookings ?? []),
         sessions: data?.sessions ?? [],
         // The selected calendar's class/event/resource blocks for this day.
         scheduleBlocks: effectiveId
@@ -914,7 +1007,7 @@ export default function CalendarScreen() {
         venueHours: venueDayHours(openingHours, date),
       };
     });
-  }, [scope, gridQuery.data, effectiveId, week.days, today, scheduleByCalendarDate, openingHours]);
+  }, [scope, gridQuery.data, effectiveId, week.days, today, scheduleByCalendarDate, openingHours, filterBookings]);
 
   // Per-booking compliance flags for the visible day — gated on the feature
   // flag so non-compliance venues never hit the endpoint. Unfiltered ids so
@@ -1043,7 +1136,15 @@ export default function CalendarScreen() {
       ) : (
         <>
           <View style={[styles.toolbar, { borderBottomColor: colors.border }]}>
-            <Segmented value={scope} onChange={setScope} options={SCOPE_OPTIONS} />
+            <View style={styles.scopeRow}>
+              <View style={styles.scopeControl}>
+                <Segmented value={scope} onChange={setScope} options={SCOPE_OPTIONS} />
+              </View>
+              {/* Realtime indicator — green live / amber reconnecting, hidden when
+                  idle (matches Resources/Contacts). Realtime invalidates the grid
+                  promptly; the 60s poll is the fallback. */}
+              <LiveDot state={liveState} />
+            </View>
 
             <View style={styles.dateNav}>
               <IconButton
@@ -1128,6 +1229,25 @@ export default function CalendarScreen() {
                 ))}
               </ScrollView>
             ) : null}
+
+            {/* Status filter — pure client-side filter over the already-fetched
+                grid bookings (web parity). Hidden in month scope (a count grid,
+                not an appointment list). */}
+            {scope !== 'month' ? (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.chips}>
+                {STATUS_FILTERS.map((s) => (
+                  <Chip
+                    key={s.value}
+                    label={s.label}
+                    selected={statusFilter === s.value}
+                    onPress={() => setStatusFilter(s.value)}
+                  />
+                ))}
+              </ScrollView>
+            ) : null}
           </View>
 
           {gridQuery.isLoading ? (
@@ -1154,21 +1274,25 @@ export default function CalendarScreen() {
               />
             </ScrollView>
           ) : scope === 'week' ? (
-            <View style={styles.weekBody}>
-              <WeekGrid
-                days={weekColumns}
-                nowMinutes={nowMinutes}
-                onBlockPress={openDetail}
-                onEmptyPress={createAtForDate}
-                onDayPress={(date) => {
-                  hapticSelect();
-                  setAnchor(date);
-                  setScope('day');
-                }}
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-              />
-            </View>
+            // Horizontal swipe pages prev/next week; vertical scroll + day-header
+            // taps still work (the pan is horizontal-only — see swipeGesture).
+            <GestureDetector gesture={swipeGesture}>
+              <View style={styles.weekBody}>
+                <WeekGrid
+                  days={weekColumns}
+                  nowMinutes={nowMinutes}
+                  onBlockPress={openDetail}
+                  onEmptyPress={createAtForDate}
+                  onDayPress={(date) => {
+                    hapticSelect();
+                    setAnchor(date);
+                    setScope('day');
+                  }}
+                  refreshing={refreshing}
+                  onRefresh={onRefresh}
+                />
+              </View>
+            </GestureDetector>
           ) : showAllCalendars ? (
             <View style={styles.weekBody}>
               <AllCalendarsDayGrid
@@ -1183,10 +1307,15 @@ export default function CalendarScreen() {
               />
             </View>
           ) : (
-            <View style={styles.weekBody}>
-              {dayIsClosed ? <ClosedDayBanner /> : null}
-              {dayGrid}
-            </View>
+            // Horizontal swipe pages prev/next day. The pan is horizontal-only,
+            // so vertical scroll and the hold-to-drag on blocks (which arms only
+            // after a 500ms hold + fails on sideways drift) are unaffected.
+            <GestureDetector gesture={swipeGesture}>
+              <View style={styles.weekBody}>
+                {dayIsClosed ? <ClosedDayBanner /> : null}
+                {dayGrid}
+              </View>
+            </GestureDetector>
           )}
 
           <Fab
@@ -1343,6 +1472,14 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.md,
     gap: spacing.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  scopeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  scopeControl: {
+    flex: 1,
   },
   dateNav: {
     flexDirection: 'row',
