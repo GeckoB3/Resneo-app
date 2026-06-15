@@ -21,7 +21,9 @@
         "dark": "./assets/images/icon-dark.png",
         "tinted": "./assets/images/icon-tinted.png"
       },
-      "associatedDomains": ["applinks:reserve-ni.vercel.app"],
+      "associatedDomains": [
+        "applinks:reserve-ni.vercel.app"
+      ],
       "infoPlist": {
         "NSUserNotificationsUsageDescription": "Resneo sends alerts when new bookings arrive or existing bookings change.",
         "NSFaceIDUsageDescription": "Resneo can use Face ID to lock the app so client records stay private if your phone is left unlocked."
@@ -92,7 +94,8 @@
       ],
       "expo-sharing",
       "@sentry/react-native",
-      "expo-localization"
+      "expo-localization",
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true
