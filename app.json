@@ -29,6 +29,7 @@
     },
     "android": {
       "package": "com.resneo.app",
+      "softwareKeyboardLayoutMode": "resize",
       "intentFilters": [
         {
           "action": "VIEW",

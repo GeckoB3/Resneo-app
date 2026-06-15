@@ -36,29 +36,27 @@ export function Screen({
 }: ScreenProps) {
   const { colors } = useTheme();
   const paddingStyle = padded ? styles.padded : undefined;
-  // Let Android's native windowSoftInputMode (adjustResize) handle the inset;
-  // iOS needs an explicit padding behaviour.
+  // Non-scroll keyboardAvoiding uses a KeyboardAvoidingView; iOS needs an
+  // explicit padding behaviour, Android relies on adjustResize.
   const kavBehavior = Platform.OS === 'ios' ? 'padding' : undefined;
 
   if (scroll) {
-    const scrollView = (
-      <ScrollView
-        contentContainerStyle={[paddingStyle, contentContainerStyle]}
-        keyboardShouldPersistTaps="handled"
-        style={[styles.flex, style]}
-        {...props}>
-        {children}
-      </ScrollView>
-    );
+    // For a scrollable form, the most reliable way to keep the FOCUSED input
+    // above the keyboard is the OS-native behaviour, not a KeyboardAvoidingView
+    // (which only pads the bottom and never scrolls the field into view):
+    //   · iOS → automaticallyAdjustKeyboardInsets scrolls the focused field up.
+    //   · Android → windowSoftInputMode=adjustResize (set in app.json) shrinks
+    //     the window so the ScrollView keeps the focused field visible.
     return (
       <SafeAreaView style={[styles.flex, { backgroundColor: colors.background }]} edges={['top']}>
-        {keyboardAvoiding ? (
-          <KeyboardAvoidingView style={styles.flex} behavior={kavBehavior}>
-            {scrollView}
-          </KeyboardAvoidingView>
-        ) : (
-          scrollView
-        )}
+        <ScrollView
+          contentContainerStyle={[paddingStyle, contentContainerStyle]}
+          keyboardShouldPersistTaps="handled"
+          automaticallyAdjustKeyboardInsets={keyboardAvoiding}
+          style={[styles.flex, style]}
+          {...props}>
+          {children}
+        </ScrollView>
       </SafeAreaView>
     );
   }
