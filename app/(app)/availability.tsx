@@ -48,6 +48,7 @@ import type {
   BreakTimesByDayMap,
   LeavePeriod,
   LeaveType,
+  TimeRange,
   WorkingHoursMap,
 } from '@/types/availability-manage';
 
@@ -185,6 +186,9 @@ export default function AvailabilityScreen() {
   const [editingBlockId, setEditingBlockId] = useState<string | null>(null);
   const [editingLeaveId, setEditingLeaveId] = useState<string | null>(null);
 
+  // Collapsible past-leave group (mirrors web's collapsible "Past blocks").
+  const [showPastLeave, setShowPastLeave] = useState(false);
+
   // Block/leave form
   const [practitionerId, setPractitionerId] = useState<string | null>(null);
   const [applyToAll, setApplyToAll] = useState(false);
@@ -223,6 +227,27 @@ export default function AvailabilityScreen() {
     setLeaveType('annual');
     setSheetError(null);
     setSheet(kind);
+  }
+
+  /**
+   * Calendar-first add: open the leave sheet prefilled with a tapped date range.
+   * Same fresh-create reset as `openSheet('leave')`, but keep the chosen dates
+   * (steppers below still work as a fine-adjust fallback).
+   */
+  function openCreateLeaveRange(startDate: string, endDate: string) {
+    setEditingBlockId(null);
+    setEditingLeaveId(null);
+    setPractitionerId(defaultPractitionerId());
+    setApplyToAll(false);
+    setDate(startDate);
+    setEndDate(endDate);
+    setBlockType('allday');
+    setStartMinutes(12 * 60);
+    setEndMinutes(13 * 60);
+    setReason('');
+    setLeaveType('annual');
+    setSheetError(null);
+    setSheet('leave');
   }
 
   function openEditBlock(id: string) {
@@ -398,7 +423,23 @@ export default function AvailabilityScreen() {
 
   // ---- Derived data ----------------------------------------------------------
   const blocks = (blocksQuery.data?.blocks ?? []).filter((b) => !b.class_instance_id);
-  const leave = leaveQuery.data?.periods ?? [];
+  const leave = useMemo(() => leaveQuery.data?.periods ?? [], [leaveQuery.data?.periods]);
+
+  // Upcoming first (asc), past collapsed behind a toggle (desc) — web parity.
+  const upcomingLeave = useMemo(
+    () =>
+      leave
+        .filter((p) => p.end_date >= today)
+        .sort((a, b) => a.start_date.localeCompare(b.start_date)),
+    [leave, today],
+  );
+  const pastLeave = useMemo(
+    () =>
+      leave
+        .filter((p) => p.end_date < today)
+        .sort((a, b) => b.start_date.localeCompare(a.start_date)),
+    [leave, today],
+  );
   const isLoading = blocksQuery.isLoading || leaveQuery.isLoading || practitionersQuery.isLoading;
   const isError = blocksQuery.isError || leaveQuery.isError;
   const saving =
@@ -408,6 +449,46 @@ export default function AvailabilityScreen() {
     updateLeave.isPending;
 
   const hoursTarget = practitioners.find((p) => p.id === hoursTargetId);
+
+  // Single leave row — shared by the Upcoming and Past groups below.
+  function renderLeaveRow(period: LeavePeriod) {
+    const isPartial = period.unavailable_start_time && period.unavailable_end_time;
+    return (
+      <View key={period.id} style={[styles.row, { borderBottomColor: colors.border }]}>
+        <View style={styles.rowBody}>
+          <Text variant="bodyMedium">
+            {formatDayHeading(period.start_date)}
+            {period.end_date !== period.start_date
+              ? ` → ${formatDayHeading(period.end_date)}`
+              : ''}
+          </Text>
+          <Text variant="caption" tone="muted" numberOfLines={2}>
+            {period.practitioner_name ?? practitionerName(period.practitioner_id)} ·{' '}
+            {leaveTypeLabel(period.leave_type)}
+            {isPartial
+              ? ` · ${period.unavailable_start_time?.slice(0, 5)}–${period.unavailable_end_time?.slice(0, 5)} (window)`
+              : ''}
+            {period.notes ? ` · ${period.notes}` : ''}
+          </Text>
+        </View>
+        <View style={styles.rowActions}>
+          <Button label="Edit" variant="ghost" size="sm" onPress={() => openEditLeave(period)} />
+          <Button
+            label={pendingConfirm === `leave-${period.id}` ? 'Tap to confirm' : 'Remove'}
+            variant="ghost"
+            size="sm"
+            loading={deletingLeaveIds.has(period.id)}
+            disabled={deletingLeaveIds.has(period.id)}
+            onPress={() =>
+              pendingConfirm === `leave-${period.id}`
+                ? void handleDeleteLeave(period.id)
+                : armConfirm(`leave-${period.id}`)
+            }
+          />
+        </View>
+      </View>
+    );
+  }
 
   // ---- Render ----------------------------------------------------------------
   return (
@@ -486,6 +567,7 @@ export default function AvailabilityScreen() {
             today={today}
             filterPractitionerId={filterPractitionerId}
             onEditLeave={openEditLeave}
+            onCreateRange={openCreateLeaveRange}
             onDeleteLeave={handleDeleteLeave}
             deletingLeaveIds={deletingLeaveIds}
           />
@@ -541,60 +623,46 @@ export default function AvailabilityScreen() {
             )}
           </Card>
 
-          {/* Leave card */}
+          {/* Leave card — upcoming first, past collapsed (web parity) */}
           <Card>
             <Text variant="label">Leave / Unavailability</Text>
             {leave.length === 0 ? (
               <EmptyState title="No leave booked" message="Leave periods will appear here." />
             ) : (
-              <View style={styles.list}>
-                {leave.map((period) => {
-                  const isPartial =
-                    period.unavailable_start_time && period.unavailable_end_time;
-                  return (
-                    <View key={period.id} style={[styles.row, { borderBottomColor: colors.border }]}>
-                      <View style={styles.rowBody}>
-                        <Text variant="bodyMedium">
-                          {formatDayHeading(period.start_date)}
-                          {period.end_date !== period.start_date
-                            ? ` → ${formatDayHeading(period.end_date)}`
-                            : ''}
-                        </Text>
-                        <Text variant="caption" tone="muted" numberOfLines={2}>
-                          {period.practitioner_name ?? practitionerName(period.practitioner_id)} ·{' '}
-                          {leaveTypeLabel(period.leave_type)}
-                          {isPartial
-                            ? ` · ${period.unavailable_start_time?.slice(0, 5)}–${period.unavailable_end_time?.slice(0, 5)} (window)`
-                            : ''}
-                          {period.notes ? ` · ${period.notes}` : ''}
-                        </Text>
-                      </View>
-                      <View style={styles.rowActions}>
-                        <Button
-                          label="Edit"
-                          variant="ghost"
-                          size="sm"
-                          onPress={() => openEditLeave(period)}
-                        />
-                        <Button
-                          label={
-                            pendingConfirm === `leave-${period.id}` ? 'Tap to confirm' : 'Remove'
-                          }
-                          variant="ghost"
-                          size="sm"
-                          loading={deletingLeaveIds.has(period.id)}
-                          disabled={deletingLeaveIds.has(period.id)}
-                          onPress={() =>
-                            pendingConfirm === `leave-${period.id}`
-                              ? void handleDeleteLeave(period.id)
-                              : armConfirm(`leave-${period.id}`)
-                          }
-                        />
-                      </View>
-                    </View>
-                  );
-                })}
-              </View>
+              <>
+                {upcomingLeave.length > 0 ? (
+                  <View style={styles.list}>
+                    <Text variant="caption" tone="secondary" style={styles.groupHeading}>
+                      Upcoming
+                    </Text>
+                    {upcomingLeave.map(renderLeaveRow)}
+                  </View>
+                ) : (
+                  <Text variant="caption" tone="muted" style={styles.groupHeading}>
+                    No upcoming leave.
+                  </Text>
+                )}
+
+                {pastLeave.length > 0 ? (
+                  <View style={styles.pastGroup}>
+                    <Pressable
+                      onPress={() => setShowPastLeave((v) => !v)}
+                      accessibilityRole="button"
+                      accessibilityState={{ expanded: showPastLeave }}
+                      style={styles.pastToggle}>
+                      <Text variant="caption" tone="secondary">
+                        Past ({pastLeave.length})
+                      </Text>
+                      <Text variant="caption" tone="muted">
+                        {showPastLeave ? '▴' : '▾'}
+                      </Text>
+                    </Pressable>
+                    {showPastLeave ? (
+                      <View style={styles.list}>{pastLeave.map(renderLeaveRow)}</View>
+                    ) : null}
+                  </View>
+                ) : null}
+              </>
             )}
           </Card>
 
@@ -837,6 +905,9 @@ export default function AvailabilityScreen() {
               (hoursTarget as unknown as { break_times_by_day?: BreakTimesByDayMap | null })
                 .break_times_by_day
             }
+            currentBreaks={
+              (hoursTarget as unknown as { break_times?: TimeRange[] | null }).break_times
+            }
             onClose={() => setSheet(null)}
           />
         ) : null}
@@ -868,6 +939,20 @@ const styles = StyleSheet.create({
   },
   list: {
     marginTop: spacing.xs,
+  },
+  groupHeading: {
+    marginTop: spacing.xs,
+    marginBottom: spacing.xs,
+  },
+  pastGroup: {
+    marginTop: spacing.sm,
+  },
+  pastToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: minTouchTarget,
+    paddingVertical: spacing.xs,
   },
   row: {
     flexDirection: 'row',

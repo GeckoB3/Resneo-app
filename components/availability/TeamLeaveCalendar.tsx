@@ -13,6 +13,7 @@ import { ApiError } from '@/lib/api/client';
 import {
   addMonthsToDateStr,
   formatDayHeading,
+  formatRangeLabel,
   getMonthRangeFromDate,
   formatMonthLabel,
 } from '@/lib/dates/venue-dates';
@@ -66,6 +67,8 @@ type TeamLeaveCalendarProps = {
   filterPractitionerId: string | null;
   /** Opens the existing leave edit sheet with this period. */
   onEditLeave: (period: LeavePeriod) => void;
+  /** Opens the leave create sheet prefilled with the tapped date range. */
+  onCreateRange: (startDate: string, endDate: string) => void;
   /** Existing page delete handler (confirm + mutation). */
   onDeleteLeave: (leaveId: string) => void;
   /** Per-id pending deletes from the page, to scope loading state. */
@@ -81,6 +84,7 @@ export function TeamLeaveCalendar({
   today,
   filterPractitionerId,
   onEditLeave,
+  onCreateRange,
   onDeleteLeave,
   deletingLeaveIds,
 }: TeamLeaveCalendarProps) {
@@ -91,6 +95,9 @@ export function TeamLeaveCalendar({
   const [monthAnchor, setMonthAnchor] = useState(() => getMonthRangeFromDate(today).from);
   const [view, setView] = useState<ViewMode>('calendar');
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  // In-progress date-range selection (calendar-first add; mirrors web handleDayClick).
+  const [rangeStart, setRangeStart] = useState<string | null>(null);
+  const [rangeEnd, setRangeEnd] = useState<string | null>(null);
 
   const monthRange = getMonthRangeFromDate(monthAnchor);
   const leaveQuery = useTeamLeaveMonth(monthRange.from, monthRange.to, filterPractitionerId);
@@ -126,11 +133,48 @@ export function TeamLeaveCalendar({
     hapticSelect();
     setMonthAnchor((prev) => getMonthRangeFromDate(addMonthsToDateStr(prev, offset)).from);
     setSelectedDate(null);
+    clearRange();
   }
 
-  function handleSelectDay(dateStr: string) {
+  function clearRange() {
+    setRangeStart(null);
+    setRangeEnd(null);
+  }
+
+  /**
+   * Tap-to-act on a calendar day (mirrors web `handleDayClick`):
+   * - a day with exactly ONE leave → edit that period;
+   * - otherwise drive a date-range selection (1st tap = start=end, tap same
+   *   again = clear, 2nd distinct tap = [start,end]) for a new leave.
+   * `selectedDate` still drives the "who is away" breakdown below.
+   */
+  function handleDayPress(dateStr: string) {
     hapticSelect();
     setSelectedDate((prev) => (prev === dateStr ? null : dateStr));
+
+    const onDay = periodsOnDay(periods, dateStr);
+    if (onDay.length === 1) {
+      clearRange();
+      onEditLeave(onDay[0]!);
+      return;
+    }
+
+    if (!rangeStart) {
+      setRangeStart(dateStr);
+      setRangeEnd(dateStr);
+    } else if (rangeStart === dateStr && rangeEnd === dateStr) {
+      clearRange();
+    } else {
+      const a = rangeStart <= dateStr ? rangeStart : dateStr;
+      const b = rangeStart <= dateStr ? dateStr : rangeStart;
+      setRangeStart(a);
+      setRangeEnd(b);
+    }
+  }
+
+  /** True when `dateStr` falls inside the in-progress range selection. */
+  function inRange(dateStr: string): boolean {
+    return Boolean(rangeStart && rangeEnd && dateStr >= rangeStart && dateStr <= rangeEnd);
   }
 
   // ---- Month grid cells ------------------------------------------------------
@@ -212,21 +256,23 @@ export function TeamLeaveCalendar({
                 const inMonth = isSameMonth(cell, monthDate);
                 const isToday = dateStr === today;
                 const isSelected = dateStr === selectedDate;
+                const isRange = inRange(dateStr);
                 const dayTypes = LEAVE_TYPE_ORDER.filter((t) => typesByDay[dateStr]?.has(t));
                 const awayCount = periodsOnDay(periods, dateStr).length;
 
                 return (
                   <Pressable
                     key={dateStr}
-                    onPress={() => handleSelectDay(dateStr)}
+                    onPress={() => handleDayPress(dateStr)}
                     accessibilityRole="button"
-                    accessibilityState={{ selected: isSelected }}
+                    accessibilityState={{ selected: isSelected || isRange }}
                     accessibilityLabel={`${format(cell, 'd MMMM')}, ${awayCount} ${awayCount === 1 ? 'leave period' : 'leave periods'}`}
                     style={({ pressed }) => [
                       styles.dayCell,
                       { borderColor: colors.border },
                       isToday ? { backgroundColor: colors.brandSubtle } : null,
-                      isSelected
+                      isRange ? { backgroundColor: colors.brandSubtle } : null,
+                      isSelected || isRange
                         ? { borderColor: colors.brand, borderWidth: 1.5, borderRadius: radius.sm }
                         : null,
                       pressed ? { opacity: 0.55 } : null,
@@ -261,6 +307,30 @@ export function TeamLeaveCalendar({
               </View>
             ))}
           </View>
+
+          {/* In-progress range selection → create leave prefilled (web parity) */}
+          {rangeStart && rangeEnd ? (
+            <View style={[styles.rangeBar, { borderTopColor: colors.border }]}>
+              <View style={styles.rangeActions}>
+                <Button
+                  label={`Add leave · ${formatRangeLabel(rangeStart, rangeEnd)}`}
+                  size="sm"
+                  style={styles.rangeAddBtn}
+                  onPress={() => {
+                    const start = rangeStart;
+                    const end = rangeEnd;
+                    clearRange();
+                    setSelectedDate(null);
+                    onCreateRange(start, end);
+                  }}
+                />
+                <Button label="Clear" variant="ghost" size="sm" onPress={clearRange} />
+              </View>
+              <Text variant="caption" tone="muted">
+                Tap another day to extend the range, or tap the same day again to clear.
+              </Text>
+            </View>
+          ) : null}
 
           {/* Selected day breakdown */}
           {selectedDate ? (
@@ -473,6 +543,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
+  },
+  rangeBar: {
+    marginTop: spacing.md,
+    paddingTop: spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: spacing.xs,
+  },
+  rangeActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  rangeAddBtn: {
+    flex: 1,
   },
   dayDetail: {
     marginTop: spacing.md,

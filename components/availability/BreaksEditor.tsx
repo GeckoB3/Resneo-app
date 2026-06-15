@@ -53,6 +53,31 @@ function parseDayBreaks(map: BreakTimesByDayMap | null | undefined, key: string)
   return ranges.map((r) => [hhmmToMinutes(r.start), hhmmToMinutes(r.end)]);
 }
 
+function hasPerDayBreaks(map: BreakTimesByDayMap | null | undefined): boolean {
+  return Boolean(map && typeof map === 'object' && !Array.isArray(map) && Object.keys(map).length > 0);
+}
+
+/**
+ * Seed initial per-day break state (mirrors web's `initialBreaksByDayFromPractitioner`):
+ * prefer stored per-day breaks; otherwise repeat the legacy every-day `break_times`
+ * onto every weekday so they show up (and don't get wiped on the next save).
+ */
+function initialDayBreaks(
+  byDay: BreakTimesByDayMap | null | undefined,
+  legacy: TimeRange[] | null | undefined,
+): Record<string, [number, number][]> {
+  const init: Record<string, [number, number][]> = {};
+  if (hasPerDayBreaks(byDay)) {
+    for (const wd of WEEKDAYS) init[wd.key] = parseDayBreaks(byDay, wd.key);
+    return init;
+  }
+  const daily = (Array.isArray(legacy) ? legacy : []).map(
+    (r) => [hhmmToMinutes(r.start), hhmmToMinutes(r.end)] as [number, number],
+  );
+  for (const wd of WEEKDAYS) init[wd.key] = daily.map((b) => [b[0], b[1]] as [number, number]);
+  return init;
+}
+
 function InlineStep({
   value,
   onDecrement,
@@ -88,6 +113,8 @@ type Props = {
   practitionerId: string;
   practitionerName: string;
   currentBreaksByDay?: BreakTimesByDayMap | null;
+  /** Legacy every-day breaks — seeded onto each weekday when no per-day map exists. */
+  currentBreaks?: TimeRange[] | null;
   onClose: () => void;
 };
 
@@ -95,19 +122,16 @@ export function BreaksEditor({
   practitionerId,
   practitionerName,
   currentBreaksByDay,
+  currentBreaks,
   onClose,
 }: Props) {
   const { colors } = useTheme();
   const toast = useToast();
   const patchPractitioner = usePatchPractitioner();
 
-  const [dayBreaks, setDayBreaks] = useState<Record<string, [number, number][]>>(() => {
-    const init: Record<string, [number, number][]> = {};
-    for (const wd of WEEKDAYS) {
-      init[wd.key] = parseDayBreaks(currentBreaksByDay, wd.key);
-    }
-    return init;
-  });
+  const [dayBreaks, setDayBreaks] = useState<Record<string, [number, number][]>>(() =>
+    initialDayBreaks(currentBreaksByDay, currentBreaks),
+  );
 
   function addBreak(dayKey: string) {
     setDayBreaks((prev) => ({
@@ -163,6 +187,8 @@ export function BreaksEditor({
     try {
       await patchPractitioner.mutateAsync({
         id: practitionerId,
+        // Clear the legacy every-day field so breaks don't double-apply (web parity).
+        break_times: [],
         break_times_by_day: breaksByDay,
       });
       hapticSuccess();
