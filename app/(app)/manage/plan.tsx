@@ -41,6 +41,7 @@ import {
   type BillingQuotePayload,
   type PlanStatus,
 } from '@/lib/queries/useBillingStatus';
+import { useSmsUsage } from '@/lib/queries/useSmsUsage';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -210,6 +211,10 @@ export default function PlanScreen() {
     isAdmin && !!venue?.stripe_connected_account_id,
   );
 
+  // Live SMS usage (admin-only route, Bearer-reachable). Degrades to the static
+  // allowance copy below when it errors (401/403) or returns null (non-SMS venue).
+  const { data: smsUsage, refetch: refetchSmsUsage } = useSmsUsage(isAdmin);
+
   const portalMutation = useBillingPortalSession();
   const changePlanMutation = useChangePlan();
   const stripeConnectLinkMutation = useStripeConnectLink();
@@ -231,11 +236,12 @@ export default function PlanScreen() {
       if (appStateRef.current.match(/inactive|background/) && nextState === 'active') {
         void refetchBilling();
         void refetchStripe();
+        void refetchSmsUsage();
       }
       appStateRef.current = nextState;
     });
     return () => sub.remove();
-  }, [refetchBilling, refetchStripe]);
+  }, [refetchBilling, refetchStripe, refetchSmsUsage]);
 
   // In-app browser tab (SFSafariViewController / Chrome Custom Tab), with a
   // system-browser fallback. Inline error if neither opens — no Alert.alert.
@@ -253,9 +259,9 @@ export default function PlanScreen() {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     refetchVenue();
-    await Promise.allSettled([refetchBilling(), refetchStripe()]);
+    await Promise.allSettled([refetchBilling(), refetchStripe(), refetchSmsUsage()]);
     setRefreshing(false);
-  }, [refetchBilling, refetchStripe, refetchVenue]);
+  }, [refetchBilling, refetchStripe, refetchSmsUsage, refetchVenue]);
 
   function handleManageBilling() {
     if (!isAdmin) return;
@@ -519,20 +525,46 @@ export default function PlanScreen() {
                 }
               />
             )}
-            <View>
-              <View style={styles.smsRow}>
-                <Text variant="bodySmall" tone="secondary">
-                  SMS allowance
+            {smsUsage ? (
+              <View style={styles.smsUsage}>
+                <UsageMeter
+                  label="SMS this period"
+                  used={smsUsage.messages_sent}
+                  total={smsUsage.messages_included}
+                  color={colors.brand}
+                />
+                <Text variant="caption" tone="muted">
+                  {smsUsage.messages_sent} / {smsUsage.messages_included} segments included
+                  {' · '}
+                  {smsUsage.remaining} left. Overage is £{smsUsage.billable_unit_gbp.toFixed(2)} per
+                  SMS segment.
                 </Text>
-                <Text variant="bodySmall" tone="muted">
-                  {smsIncluded} segments/month included
+                {smsUsage.overage_count > 0 && (
+                  <View style={[styles.overageBox, { backgroundColor: colors.warningSurface }]}>
+                    <Text variant="caption" color={colors.warning} style={styles.overageText}>
+                      {smsUsage.overage_count} segment{smsUsage.overage_count !== 1 ? 's' : ''} beyond
+                      your allowance — about £{(smsUsage.overage_amount_pence / 100).toFixed(2)},
+                      metered against the current billing period.
+                    </Text>
+                  </View>
+                )}
+              </View>
+            ) : (
+              <View>
+                <View style={styles.smsRow}>
+                  <Text variant="bodySmall" tone="secondary">
+                    SMS allowance
+                  </Text>
+                  <Text variant="bodySmall" tone="muted">
+                    {smsIncluded} segments/month included
+                  </Text>
+                </View>
+                <Text variant="caption" tone="muted">
+                  Overage is £{SMS_OVERAGE_GBP_PER_MESSAGE.toFixed(2)} per SMS segment. Live SMS
+                  usage isn’t available in the app yet — check the web dashboard (Settings → Plan).
                 </Text>
               </View>
-              <Text variant="caption" tone="muted">
-                Overage is £{SMS_OVERAGE_GBP_PER_MESSAGE.toFixed(2)} per SMS segment. Live SMS
-                usage isn’t available in the app yet — check the web dashboard (Settings → Plan).
-              </Text>
-            </View>
+            )}
           </View>
 
           {isAdmin && billingError && (
@@ -698,6 +730,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: spacing.xs,
+  },
+  smsUsage: {
+    gap: spacing.xs,
+  },
+  overageBox: {
+    padding: spacing.sm,
+    borderRadius: radius.sm,
+    marginTop: spacing.xs,
+  },
+  overageText: {
+    lineHeight: 18,
   },
   billingErrorBox: {
     flexDirection: 'row',

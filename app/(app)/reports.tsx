@@ -1,6 +1,6 @@
 import { Stack } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { Alert, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
 import { BaselineMetricsCard } from '@/components/reports/BaselineMetricsCard';
 import { BookingLogEmailCard } from '@/components/reports/BookingLogEmailCard';
@@ -11,6 +11,7 @@ import { SvgBarChart } from '@/components/reports/SvgBarChart';
 import { bookingStatusDisplayLabel } from '@/lib/booking/infer-booking-row-model';
 import { SvgLineChart } from '@/components/reports/SvgLineChart';
 import { Card } from '@/components/ui/Card';
+import { DatePickerField } from '@/components/ui/DatePickerField';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Screen } from '@/components/ui/Screen';
@@ -41,6 +42,13 @@ const RANGE_DAYS: Record<Exclude<RangeKey, 'custom'>, number> = {
 };
 
 const money = (pence: number): string => formatPence(pence) ?? '—';
+
+/** "YYYY-MM-DD" → a local-noon Date (noon avoids any tz day-boundary slip). */
+function ymdToLocalNoon(ymd: string): Date {
+  const [y, m, d] = ymd.split('-').map(Number);
+  if (!y || !m || !d) return new Date();
+  return new Date(y, m - 1, d, 12, 0, 0, 0);
+}
 
 // ─── StatRow ─────────────────────────────────────────────────────────────────
 function StatRow({
@@ -116,27 +124,6 @@ function CardHeader({
 
 // HorizontalBar replaced by SvgBarChart — see components/reports/SvgBarChart.tsx
 
-// ─── Date chip ───────────────────────────────────────────────────────────────
-function DateChip({
-  label,
-  onPress,
-}: {
-  label: string;
-  onPress: () => void;
-}) {
-  const { colors } = useTheme();
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.dateChip,
-        { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
-      ]}>
-      <Text variant="bodySmall">{label}</Text>
-    </Pressable>
-  );
-}
-
 // ─── Main screen ─────────────────────────────────────────────────────────────
 export default function ReportsScreen() {
   const { colors } = useTheme();
@@ -161,6 +148,12 @@ export default function ReportsScreen() {
 
   const query = useReports(appliedFrom, appliedTo, isAdmin);
 
+  // Native pickers take a Date for their bounds. Build them from the YYYY-MM-DD
+  // strings at local noon (avoids any tz day-boundary slip), memoised so the
+  // pickers don't see a new Date identity every render.
+  const todayDate = useMemo(() => ymdToLocalNoon(today), [today]);
+  const customFromDate = useMemo(() => ymdToLocalNoon(customFrom), [customFrom]);
+
   // When a preset is tapped, immediately apply the range
   function handlePresetChange(key: RangeKey) {
     setRangeKey(key);
@@ -173,9 +166,24 @@ export default function ReportsScreen() {
     }
   }
 
+  // YYYY-MM-DD compares chronologically as a plain string, so keep To ≥ From by
+  // clamping the other end whenever one date moves past it.
+  function handleCustomFromChange(iso: string) {
+    setCustomFrom(iso);
+    if (iso > customTo) setCustomTo(iso);
+  }
+
+  function handleCustomToChange(iso: string) {
+    setCustomTo(iso);
+    if (iso < customFrom) setCustomFrom(iso);
+  }
+
   function applyCustomRange() {
-    setAppliedFrom(customFrom);
-    setAppliedTo(customTo);
+    // Guard: never send an inverted range to the API.
+    const from = customFrom <= customTo ? customFrom : customTo;
+    const to = customFrom <= customTo ? customTo : customFrom;
+    setAppliedFrom(from);
+    setAppliedTo(to);
   }
 
   const data = query.data;
@@ -398,54 +406,33 @@ export default function ReportsScreen() {
           </Pressable>
         </View>
 
-        {/* Custom date inputs (shown when custom is selected) */}
+        {/* Custom date inputs (shown when custom is selected) — native OS pickers
+            so the range works on iOS and Android alike. */}
         {rangeKey === 'custom' ? (
           <View style={styles.customRange}>
-            <DateChip
-              label={`From: ${customFrom}`}
-              onPress={() => {
-                if (Platform.OS === 'ios') {
-                  Alert.prompt(
-                    'From date',
-                    'Enter date (YYYY-MM-DD)',
-                    (text) => {
-                      if (/^\d{4}-\d{2}-\d{2}$/.test(text)) setCustomFrom(text);
-                    },
-                    'plain-text',
-                    customFrom,
-                  );
-                } else {
-                  // Alert.prompt is iOS-only; on Android show an info alert instead.
-                  Alert.alert(
-                    'From date',
-                    `Current: ${customFrom}\n\nTo change the date use the 7-day / 30-day / 90-day presets, or type a YYYY-MM-DD date directly.`,
-                    [{ text: 'OK' }],
-                  );
-                }
-              }}
-            />
-            <DateChip
-              label={`To: ${customTo}`}
-              onPress={() => {
-                if (Platform.OS === 'ios') {
-                  Alert.prompt(
-                    'To date',
-                    'Enter date (YYYY-MM-DD)',
-                    (text) => {
-                      if (/^\d{4}-\d{2}-\d{2}$/.test(text)) setCustomTo(text);
-                    },
-                    'plain-text',
-                    customTo,
-                  );
-                } else {
-                  Alert.alert(
-                    'To date',
-                    `Current: ${customTo}\n\nTo change the date use the 7-day / 30-day / 90-day presets, or type a YYYY-MM-DD date directly.`,
-                    [{ text: 'OK' }],
-                  );
-                }
-              }}
-            />
+            <View style={styles.dateField}>
+              <Text variant="caption" tone="muted">
+                From
+              </Text>
+              <DatePickerField
+                value={customFrom}
+                onChange={handleCustomFromChange}
+                accessibilityLabel="Report range start date"
+                maximumDate={todayDate}
+              />
+            </View>
+            <View style={styles.dateField}>
+              <Text variant="caption" tone="muted">
+                To
+              </Text>
+              <DatePickerField
+                value={customTo}
+                onChange={handleCustomToChange}
+                accessibilityLabel="Report range end date"
+                minimumDate={customFromDate}
+                maximumDate={todayDate}
+              />
+            </View>
             <Pressable
               onPress={() => {
                 hapticTap();
@@ -915,22 +902,19 @@ const styles = StyleSheet.create({
   },
   customRange: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-end',
     gap: spacing.sm,
     flexWrap: 'wrap',
   },
-  dateChip: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    minHeight: minTouchTarget,
-    justifyContent: 'center',
+  dateField: {
+    gap: spacing.xs,
   },
   applyBtn: {
     paddingHorizontal: spacing.base,
     paddingVertical: spacing.sm,
     borderRadius: radius.md,
+    minHeight: minTouchTarget,
+    justifyContent: 'center',
   },
   content: {
     paddingHorizontal: spacing.base,
