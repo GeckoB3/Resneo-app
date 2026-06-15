@@ -11,6 +11,25 @@ import type {
   UpdateServiceInput,
 } from '@/types/services-manage';
 
+/**
+ * Per-service booking-start tuning (web parity, `booking_interval_minutes` +
+ * `booking_minute_marks`). Defined here rather than in `types/services-manage.ts`
+ * so the write paths can carry the fields; the API accepts them on POST + PATCH
+ * (`booking_interval_minutes` 1-60, `booking_minute_marks` ints 0-59 or null).
+ * @see _reference/Resneo/src/lib/appointments/booking-interval.ts
+ */
+export interface BookingStartFields {
+  /** Spacing (minutes, 1-60) of bookable start times, anchored to the top of the hour. */
+  booking_interval_minutes?: number;
+  /** Allowed start-minute offsets within the hour (0-59), or `null` for every interval mark. */
+  booking_minute_marks?: number[] | null;
+}
+
+/** POST body — the create input plus the optional booking-start tuning. */
+export type CreateServiceBody = CreateServiceInput & BookingStartFields;
+/** PATCH body — the update input plus the optional booking-start tuning. */
+export type UpdateServiceBody = UpdateServiceInput & BookingStartFields;
+
 function invalidateServices(queryClient: ReturnType<typeof useQueryClient>) {
   void queryClient.invalidateQueries({ queryKey: queryKeys.services.all() });
   // The public booking catalog mirrors service changes.
@@ -43,7 +62,7 @@ export function useUpdateService() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (input: UpdateServiceInput): Promise<unknown> => {
+    mutationFn: async (input: UpdateServiceBody): Promise<unknown> => {
       if (!accessToken) {
         throw new Error('Missing access token');
       }
@@ -164,7 +183,7 @@ export function useCreateService() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (input: CreateServiceInput): Promise<unknown> => {
+    mutationFn: async (input: CreateServiceBody): Promise<unknown> => {
       if (!accessToken) {
         throw new Error('Missing access token');
       }

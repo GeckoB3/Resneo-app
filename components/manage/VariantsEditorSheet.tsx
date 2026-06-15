@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 
+import {
+  ProcessingTimeBlocksEditor,
+  processingBlocksToDrafts,
+  validateProcessingBlocks,
+  type ProcessingBlockDraft,
+} from '@/components/services/ProcessingTimeBlocksEditor';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Sheet } from '@/components/ui/Sheet';
@@ -23,9 +29,9 @@ type DraftVariant = {
   price: string;
   deposit: string;
   isActive: boolean;
-  /** Carried through unchanged — not editable here, but must be preserved on
-   *  save or the API resets the variant's processing blocks (data loss). */
-  processingTimeBlocks: ProcessingTimeBlock[] | null;
+  /** Per-variant processing gaps, edited in place. Seeded from the persisted
+   *  blocks; validated + converted back to the API shape on save. */
+  processingDrafts: ProcessingBlockDraft[];
 };
 
 export type VariantsEditorTarget = {
@@ -63,7 +69,7 @@ function toDraft(target: VariantsEditorTarget): DraftVariant[] {
     price: penceToPoundsInput(variant.price_pence),
     deposit: penceToPoundsInput(variant.deposit_pence),
     isActive: variant.is_active !== false,
-    processingTimeBlocks: variant.processing_time_blocks ?? null,
+    processingDrafts: processingBlocksToDrafts(variant.processing_time_blocks),
   }));
 }
 
@@ -113,13 +119,28 @@ export function VariantsEditorSheet({ target, saving = false, onClose, onSave }:
     hapticSelect();
     const key = `draft-${draftCounter}`;
     setDraftCounter((n) => n + 1);
-    setDrafts((current) => [...current, { key, name: '', description: '', duration: '30', buffer: '0', price: '', deposit: '', isActive: true, processingTimeBlocks: null }]);
+    setDrafts((current) => [...current, { key, name: '', description: '', duration: '30', buffer: '0', price: '', deposit: '', isActive: true, processingDrafts: [] }]);
     setExpandedKey(key);
   };
 
   const removeOption = (key: string) => {
     setDrafts((current) => current.filter((d) => d.key !== key));
     if (expandedKey === key) setExpandedKey(null);
+  };
+
+  /** Move a variant up/down in display order — persisted via `sort_order` on save. */
+  const moveOption = (key: string, direction: -1 | 1) => {
+    hapticSelect();
+    setDrafts((current) => {
+      const index = current.findIndex((d) => d.key === key);
+      if (index < 0) return current;
+      const target = index + direction;
+      if (target < 0 || target >= current.length) return current;
+      const next = [...current];
+      const [moved] = next.splice(index, 1);
+      next.splice(target, 0, moved!);
+      return next;
+    });
   };
 
   function handleSave() {
@@ -150,6 +171,13 @@ export function VariantsEditorSheet({ target, saving = false, onClose, onSave }:
         setExpandedKey(draft.key);
         return;
       }
+      // Validate per-variant processing blocks against THIS variant's duration.
+      const proc = validateProcessingBlocks(draft.processingDrafts, duration);
+      if (!proc.ok) {
+        setError(`"${draft.name.trim()}": ${proc.error ?? 'processing time is invalid.'}`);
+        setExpandedKey(draft.key);
+        return;
+      }
       result.push({
         ...(draft.id ? { id: draft.id } : {}),
         name: draft.name.trim(),
@@ -159,9 +187,8 @@ export function VariantsEditorSheet({ target, saving = false, onClose, onSave }:
         price_pence: price,
         deposit_pence: deposit,
         is_active: draft.isActive,
-        // Preserve per-variant processing blocks (not edited here) so the API's
-        // replace-on-save doesn't wipe them.
-        processing_time_blocks: draft.processingTimeBlocks ?? [],
+        // Per-variant processing gaps (replace semantics on the API).
+        processing_time_blocks: proc.blocks ?? [],
       });
     }
     onSave(result);
@@ -193,8 +220,10 @@ export function VariantsEditorSheet({ target, saving = false, onClose, onSave }:
                   </Text>
                 ) : null}
 
-                {drafts.map((draft) => {
+                {drafts.map((draft, index) => {
                   const expanded = expandedKey === draft.key;
+                  const isFirst = index === 0;
+                  const isLast = index === drafts.length - 1;
                   return (
                     <View
                       key={draft.key}
@@ -202,24 +231,55 @@ export function VariantsEditorSheet({ target, saving = false, onClose, onSave }:
                         styles.optionCard,
                         { borderColor: expanded ? colors.brand : colors.border, backgroundColor: colors.surface },
                       ]}>
-                      <Pressable
-                        accessibilityRole="button"
-                        onPress={() => setExpandedKey(expanded ? null : draft.key)}
-                        style={({ pressed }) => [styles.optionHeader, { opacity: pressed ? 0.55 : 1 }]}>
-                        <View style={styles.optionText}>
-                          <Text variant="bodyMedium" numberOfLines={1}>
-                            {draft.name.trim() || 'New option'}
+                      <View style={styles.optionHeader}>
+                        <Pressable
+                          accessibilityRole="button"
+                          onPress={() => setExpandedKey(expanded ? null : draft.key)}
+                          style={({ pressed }) => [styles.optionHeaderMain, { opacity: pressed ? 0.55 : 1 }]}>
+                          <View style={styles.optionText}>
+                            <Text variant="bodyMedium" numberOfLines={1}>
+                              {draft.name.trim() || 'New option'}
+                            </Text>
+                            <Text variant="caption" tone="muted">
+                              {draft.duration || '—'} min
+                              {draft.price.trim() ? ` · £${draft.price.trim()}` : ''}
+                              {!draft.isActive ? ' · Inactive' : ''}
+                            </Text>
+                          </View>
+                          <Text variant="title" tone="muted">
+                            {expanded ? '▾' : '›'}
                           </Text>
-                          <Text variant="caption" tone="muted">
-                            {draft.duration || '—'} min
-                            {draft.price.trim() ? ` · £${draft.price.trim()}` : ''}
-                            {!draft.isActive ? ' · Inactive' : ''}
-                          </Text>
-                        </View>
-                        <Text variant="title" tone="muted">
-                          {expanded ? '▾' : '›'}
-                        </Text>
-                      </Pressable>
+                        </Pressable>
+                        {/* Reorder controls — persisted via sort_order on save. */}
+                        {drafts.length > 1 ? (
+                          <View style={styles.reorderCol}>
+                            <Pressable
+                              accessibilityRole="button"
+                              accessibilityLabel={`Move ${draft.name.trim() || 'option'} up`}
+                              accessibilityState={{ disabled: isFirst }}
+                              disabled={isFirst}
+                              hitSlop={6}
+                              onPress={() => moveOption(draft.key, -1)}
+                              style={styles.reorderBtn}>
+                              <Text variant="bodyMedium" color={isFirst ? colors.textMuted : colors.textSecondary}>
+                                ▲
+                              </Text>
+                            </Pressable>
+                            <Pressable
+                              accessibilityRole="button"
+                              accessibilityLabel={`Move ${draft.name.trim() || 'option'} down`}
+                              accessibilityState={{ disabled: isLast }}
+                              disabled={isLast}
+                              hitSlop={6}
+                              onPress={() => moveOption(draft.key, 1)}
+                              style={styles.reorderBtn}>
+                              <Text variant="bodyMedium" color={isLast ? colors.textMuted : colors.textSecondary}>
+                                ▼
+                              </Text>
+                            </Pressable>
+                          </View>
+                        ) : null}
+                      </View>
 
                       {expanded ? (
                         <View style={[styles.optionBody, { borderTopColor: colors.border }]}>
@@ -280,6 +340,13 @@ export function VariantsEditorSheet({ target, saving = false, onClose, onSave }:
                               onValueChange={(isActive) => patchDraft(draft.key, { isActive })}
                             />
                           </View>
+                          {/* Per-variant processing-time blocks (gaps inside this option). */}
+                          <ProcessingTimeBlocksEditor
+                            drafts={draft.processingDrafts}
+                            onChange={(processingDrafts) => patchDraft(draft.key, { processingDrafts })}
+                            durationMinutes={Number(draft.duration) || 0}
+                            bufferMinutes={Number(draft.buffer) || 0}
+                          />
                           <Button
                             label="Remove option"
                             variant="ghost"
@@ -335,6 +402,12 @@ const styles = StyleSheet.create({
   optionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    paddingRight: spacing.sm,
+  },
+  optionHeaderMain: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.md,
     padding: spacing.base,
   },
@@ -342,6 +415,15 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     gap: 1,
+  },
+  reorderCol: {
+    gap: spacing.xs,
+  },
+  reorderBtn: {
+    minWidth: 44,
+    minHeight: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   optionBody: {
     padding: spacing.base,

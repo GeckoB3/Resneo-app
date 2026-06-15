@@ -17,12 +17,15 @@ import {
   View,
 } from 'react-native';
 
+import { minutesToTime } from '@/components/calendar/grid-layout';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { DatePickerField } from '@/components/ui/DatePickerField';
 import { Input } from '@/components/ui/Input';
 import { Sheet } from '@/components/ui/Sheet';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Text } from '@/components/ui/Text';
+import { TimePickerField } from '@/components/ui/TimePickerField';
 import { hapticError, hapticSuccess, hapticWarning } from '@/lib/haptics';
 import {
   useAvailabilityBlocks,
@@ -88,10 +91,14 @@ interface DraftState {
 }
 
 function emptyDraft(): DraftState {
+  // Seed dates to today so the native pickers show a concrete, valid value the
+  // moment the sheet opens (an OS picker can't represent "empty"). The user
+  // adjusts from there; the rest stays blank/optional as before.
+  const today = new Date().toISOString().slice(0, 10);
   return {
     block_type: 'closed',
-    date_start: '',
-    date_end: '',
+    date_start: today,
+    date_end: today,
     time_start: '',
     time_end: '',
     reason: '',
@@ -195,6 +202,26 @@ function formatDateRange(b: AvailabilityBlock): string {
 
 function todayYmd(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+// --- HH:MM <-> minutes bridge for the native TimePickerField ----------------
+/** "HH:MM" → minutes since midnight; invalid/empty → fallback. */
+function timeToMinutes(hhmm: string, fallback = 540): number {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm.trim());
+  if (!m) return fallback;
+  const mins = Number(m[1]) * 60 + Number(m[2]);
+  return Number.isFinite(mins) ? Math.max(0, Math.min(23 * 60 + 59, mins)) : fallback;
+}
+
+/** Default times when first revealing an optional picker (09:00 open, 17:00 close). */
+const DEFAULT_OPEN_MINUTES = 9 * 60;
+const DEFAULT_CLOSE_MINUTES = 17 * 60;
+
+/** "YYYY-MM-DD" → a local noon Date (noon avoids tz day-boundary slip) for picker bounds. */
+function isoToLocalDate(iso: string): Date {
+  const [y, m, d] = iso.split('-').map(Number);
+  if (!y || !m || !d) return new Date();
+  return new Date(y, m - 1, d, 12, 0, 0, 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -338,6 +365,94 @@ function TypeSelector({
 }
 
 // ---------------------------------------------------------------------------
+// Time pickers (native) — required + optional variants
+// ---------------------------------------------------------------------------
+
+/** A labelled, always-present native time field (value stored as "HH:MM"). */
+function LabeledTimePicker({
+  label,
+  value,
+  fallbackMinutes,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  fallbackMinutes: number;
+  onChange: (hhmm: string) => void;
+}) {
+  return (
+    <View style={styles.fieldWrapper}>
+      <Text variant="label" tone="secondary">
+        {label}
+      </Text>
+      <TimePickerField
+        value={timeToMinutes(value, fallbackMinutes)}
+        onChange={(mins) => onChange(minutesToTime(mins))}
+        accessibilityLabel={label}
+      />
+    </View>
+  );
+}
+
+/**
+ * Optional native time field: shows a "Set time" button while empty (so the
+ * draft keeps the empty string the payload/validation expect), and the native
+ * picker plus a Clear control once a time is chosen.
+ */
+function OptionalTimePicker({
+  label,
+  value,
+  defaultMinutes,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  defaultMinutes: number;
+  onChange: (hhmm: string) => void;
+}) {
+  const { colors } = useTheme();
+  return (
+    <View style={styles.fieldWrapper}>
+      <Text variant="label" tone="secondary">
+        {label}
+      </Text>
+      {value ? (
+        <View style={styles.optionalTimeRow}>
+          <TimePickerField
+            value={timeToMinutes(value, defaultMinutes)}
+            onChange={(mins) => onChange(minutesToTime(mins))}
+            accessibilityLabel={label}
+          />
+          <Pressable
+            onPress={() => onChange('')}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={`Clear ${label}`}
+            style={styles.clearTimeBtn}>
+            <Text variant="caption" tone="muted">
+              Clear
+            </Text>
+          </Pressable>
+        </View>
+      ) : (
+        <Pressable
+          onPress={() => onChange(minutesToTime(defaultMinutes))}
+          accessibilityRole="button"
+          accessibilityLabel={`Set ${label}`}
+          style={({ pressed }) => [
+            styles.setTimeBtn,
+            { borderColor: colors.border, backgroundColor: colors.surface, opacity: pressed ? 0.7 : 1 },
+          ]}>
+          <Text variant="bodySmall" tone="secondary">
+            Set time
+          </Text>
+        </Pressable>
+      )}
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // BlockForm sheet
 // ---------------------------------------------------------------------------
 
@@ -357,6 +472,7 @@ function BlockForm({
 
   const [draft, setDraft] = useState<DraftState>(emptyDraft);
   const [error, setError] = useState<string | null>(null);
+  const today = todayYmd();
 
   // Sync draft whenever the sheet opens (editingBlock may change).
   const handleSheetVisible = useCallback(() => {
@@ -408,57 +524,68 @@ function BlockForm({
           {editingBlock ? 'Edit Block' : 'New Block'}
         </Text>
 
-        <TypeSelector value={pd.block_type} onChange={(t) => set({ block_type: t })} />
+        <TypeSelector
+          value={pd.block_type}
+          onChange={(t) =>
+            // Seed required period-1 times when first switching to amended hours so the
+            // shown defaults are actually in the draft (an OS picker can't be empty).
+            set(
+              t === 'amended_hours' && !pd.p1Open && !pd.p1Close
+                ? {
+                    block_type: t,
+                    p1Open: minutesToTime(DEFAULT_OPEN_MINUTES),
+                    p1Close: minutesToTime(DEFAULT_CLOSE_MINUTES),
+                  }
+                : { block_type: t },
+            )
+          }
+        />
 
-        {/* Date range */}
+        {/* Date range — native OS date pickers */}
         <View style={styles.row2}>
           <View style={styles.halfField}>
-            <Input
-              label="Start date"
-              value={pd.date_start}
-              onChangeText={(v) => set({ date_start: v, date_end: pd.date_end || v })}
-              placeholder="YYYY-MM-DD"
-              keyboardType="numbers-and-punctuation"
-              autoCapitalize="none"
-              maxLength={10}
+            <Text variant="label" tone="secondary">
+              Start date
+            </Text>
+            <DatePickerField
+              value={pd.date_start || today}
+              onChange={(v) =>
+                // Keep end ≥ start: mirror to end when empty or now behind start.
+                set({ date_start: v, date_end: !pd.date_end || pd.date_end < v ? v : pd.date_end })
+              }
+              accessibilityLabel="Closure start date"
             />
           </View>
           <View style={styles.halfField}>
-            <Input
-              label="End date"
-              value={pd.date_end}
-              onChangeText={(v) => set({ date_end: v })}
-              placeholder="YYYY-MM-DD"
-              keyboardType="numbers-and-punctuation"
-              autoCapitalize="none"
-              maxLength={10}
+            <Text variant="label" tone="secondary">
+              End date
+            </Text>
+            <DatePickerField
+              value={pd.date_end || pd.date_start || today}
+              onChange={(v) => set({ date_end: v })}
+              minimumDate={pd.date_start ? isoToLocalDate(pd.date_start) : undefined}
+              accessibilityLabel="Closure end date"
             />
           </View>
         </View>
 
-        {/* Partial-day times — closed only */}
+        {/* Partial-day times — closed only (optional native time pickers) */}
         {pd.block_type === 'closed' ? (
           <View style={styles.row2}>
             <View style={styles.halfField}>
-              <Input
+              <OptionalTimePicker
                 label="Start time (optional)"
                 value={pd.time_start}
-                onChangeText={(v) => set({ time_start: v })}
-                placeholder="HH:MM"
-                keyboardType="numbers-and-punctuation"
-                autoCapitalize="none"
-                maxLength={5}
+                defaultMinutes={DEFAULT_OPEN_MINUTES}
+                onChange={(v) => set({ time_start: v })}
               />
             </View>
             <View style={styles.halfField}>
-              <Input
+              <OptionalTimePicker
                 label="End time (optional)"
                 value={pd.time_end}
-                onChangeText={(v) => set({ time_end: v })}
-                placeholder="HH:MM"
-                keyboardType="numbers-and-punctuation"
-                autoCapitalize="none"
-                maxLength={5}
+                defaultMinutes={DEFAULT_CLOSE_MINUTES}
+                onChange={(v) => set({ time_end: v })}
               />
             </View>
           </View>
@@ -472,49 +599,37 @@ function BlockForm({
             </Text>
             <View style={styles.row2}>
               <View style={styles.halfField}>
-                <Input
+                <LabeledTimePicker
                   label="Period 1 open"
-                  value={pd.p1Open}
-                  onChangeText={(v) => set({ p1Open: v })}
-                  placeholder="HH:MM"
-                  keyboardType="numbers-and-punctuation"
-                  autoCapitalize="none"
-                  maxLength={5}
+                  value={pd.p1Open || minutesToTime(DEFAULT_OPEN_MINUTES)}
+                  fallbackMinutes={DEFAULT_OPEN_MINUTES}
+                  onChange={(v) => set({ p1Open: v })}
                 />
               </View>
               <View style={styles.halfField}>
-                <Input
+                <LabeledTimePicker
                   label="Period 1 close"
-                  value={pd.p1Close}
-                  onChangeText={(v) => set({ p1Close: v })}
-                  placeholder="HH:MM"
-                  keyboardType="numbers-and-punctuation"
-                  autoCapitalize="none"
-                  maxLength={5}
+                  value={pd.p1Close || minutesToTime(DEFAULT_CLOSE_MINUTES)}
+                  fallbackMinutes={DEFAULT_CLOSE_MINUTES}
+                  onChange={(v) => set({ p1Close: v })}
                 />
               </View>
             </View>
             <View style={styles.row2}>
               <View style={styles.halfField}>
-                <Input
+                <OptionalTimePicker
                   label="Period 2 open (opt.)"
                   value={pd.p2Open}
-                  onChangeText={(v) => set({ p2Open: v })}
-                  placeholder="HH:MM"
-                  keyboardType="numbers-and-punctuation"
-                  autoCapitalize="none"
-                  maxLength={5}
+                  defaultMinutes={DEFAULT_OPEN_MINUTES}
+                  onChange={(v) => set({ p2Open: v })}
                 />
               </View>
               <View style={styles.halfField}>
-                <Input
+                <OptionalTimePicker
                   label="Period 2 close (opt.)"
                   value={pd.p2Close}
-                  onChangeText={(v) => set({ p2Close: v })}
-                  placeholder="HH:MM"
-                  keyboardType="numbers-and-punctuation"
-                  autoCapitalize="none"
-                  maxLength={5}
+                  defaultMinutes={DEFAULT_CLOSE_MINUTES}
+                  onChange={(v) => set({ p2Close: v })}
                 />
               </View>
             </View>
@@ -812,6 +927,25 @@ const styles = StyleSheet.create({
   },
   fieldWrapper: {
     gap: spacing.sm,
+  },
+  optionalTimeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  clearTimeBtn: {
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.xs,
+  },
+  setTimeBtn: {
+    minHeight: 44,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    alignSelf: 'flex-start',
   },
   errorBanner: {
     borderWidth: 1,
