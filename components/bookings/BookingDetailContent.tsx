@@ -26,6 +26,7 @@ import { Input } from '@/components/ui/Input';
 import { Text } from '@/components/ui/Text';
 import { ANALYTICS_EVENTS, track } from '@/lib/analytics';
 import { ApiError } from '@/lib/api/client';
+import { calendarDateInTimeZone } from '@/lib/dates/venue-dates';
 import { ACTION_COLORS, primaryActionColors } from '@/lib/booking/booking-action-colors';
 import { bookingDetailActions } from '@/lib/booking/booking-status-actions';
 import { bookingStatusVisualForKey } from '@/lib/booking/booking-status-visual';
@@ -211,11 +212,17 @@ function GuestHistoryBody({
 }) {
   const router = useRouter();
   const { colors } = useTheme();
-  const detail = useGuestDetail(guestId, { bookingHistoryLimit: 10 });
+  // Fetch a few more than we list so "view all in Contacts" can be offered when
+  // the guest has a deeper history than the inline cap (web parity).
+  const HISTORY_FETCH_LIMIT = 25;
+  const HISTORY_VISIBLE_CAP = 10;
+  const detail = useGuestDetail(guestId, { bookingHistoryLimit: HISTORY_FETCH_LIMIT });
 
-  const history = (detail.data?.booking_history ?? [])
-    .filter((row) => row.id !== currentBookingId)
-    .slice(0, 5);
+  const otherVisits = (detail.data?.booking_history ?? []).filter(
+    (row) => row.id !== currentBookingId,
+  );
+  const history = otherVisits.slice(0, HISTORY_VISIBLE_CAP);
+  const hiddenCount = otherVisits.length - history.length;
 
   return (
     <View style={styles.historyBody}>
@@ -251,7 +258,7 @@ function GuestHistoryBody({
         ))
       )}
       <Button
-        label="View contact"
+        label={hiddenCount > 0 ? `View all in Contacts (${otherVisits.length})` : 'View contact'}
         variant="ghost"
         size="sm"
         onPress={() => router.push(`/client/${guestId}` as Href)}
@@ -287,6 +294,40 @@ function formatShortDate(value: string): string {
   } catch {
     return value;
   }
+}
+
+/** Current wall-clock time (minutes since midnight) in the venue timezone. */
+function nowMinutesInTz(timeZone: string): number {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(new Date());
+  const hour = Number(parts.find((p) => p.type === 'hour')?.value ?? '0');
+  const minute = Number(parts.find((p) => p.type === 'minute')?.value ?? '0');
+  return hour * 60 + minute;
+}
+
+/**
+ * Web parity (`canMarkNoShowForSlot`): no-show may only be marked once the
+ * booking's start time plus the venue's grace window has passed, in the venue
+ * timezone. Past days are always allowed; future days never are; on the booking
+ * day we compare wall-clock minutes. The backend still enforces this — the guard
+ * just keeps the UI from offering an action that would be rejected.
+ */
+function canMarkNoShowForSlot(
+  bookingDate: string,
+  bookingTime: string,
+  graceMinutes: number,
+  timeZone: string,
+): boolean {
+  const todayInVenue = calendarDateInTimeZone(new Date(), timeZone);
+  if (bookingDate < todayInVenue) return true;
+  if (bookingDate > todayInVenue) return false;
+  const [h, m] = bookingTime.slice(0, 5).split(':').map(Number);
+  const startMinutes = (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0);
+  return nowMinutesInTz(timeZone) >= startMinutes + graceMinutes;
 }
 
 /** Service delivery location — "Online" or the client's address (web parity). */
@@ -511,7 +552,7 @@ export function BookingDetailContent({
   const { colors } = useTheme();
   const router = useRouter();
   const toast = useToast();
-  const { featureFlags } = useVenueContext();
+  const { venue, featureFlags } = useVenueContext();
   // Resolve the service name from the staff service list when neither the detail
   // nor the list row supplied it (covers entry points other than the bookings
   // list — calendar, contacts, the full-screen route). Cached + staff-readable.
@@ -540,6 +581,34 @@ export function BookingDetailContent({
     track(ANALYTICS_EVENTS.bookingDetailOpened, { bookingId: booking.id });
   }, [booking.id]);
 
+  // No-show grace guard mirrors web `canMarkNoShowForSlot`: the action stays
+  // disabled until the booking start + the venue's grace window has elapsed.
+  // A 60s tick re-evaluates the clock so the action unlocks without a reopen.
+  const venueTimeZone = venue?.timezone?.trim() || 'Europe/London';
+  // Web clamps the configured grace to 10–60 (default 15) before gating.
+  const noShowGraceMinutes = Math.min(60, Math.max(10, venue?.no_show_grace_minutes ?? 15));
+  const [noShowTick, setNoShowTick] = useState(0);
+  const noShowAllowed = canMarkNoShowForSlot(
+    booking.booking_date,
+    booking.booking_time,
+    noShowGraceMinutes,
+    venueTimeZone,
+  );
+  // The guard only flips from disabled→enabled when the booking is today and
+  // grace hasn't lapsed; past/future days are decided. Run the minute clock only
+  // for that window — and only while a no-show is even offerable (Booked /
+  // Confirmed) — so terminal rows and other days never hold a timer.
+  const noShowPending =
+    !noShowAllowed &&
+    (booking.status === 'Booked' || booking.status === 'Confirmed') &&
+    booking.booking_date === calendarDateInTimeZone(new Date(), venueTimeZone);
+  useEffect(() => {
+    if (!noShowPending) return;
+    const id = setInterval(() => setNoShowTick((t) => t + 1), 60_000);
+    return () => clearInterval(id);
+    // noShowTick advances the clock each minute; re-running re-checks the guard.
+  }, [noShowPending, noShowTick]);
+
   const armConfirm = (target: BookingStatus) => {
     setPendingConfirm(target);
     hapticWarning();
@@ -556,6 +625,12 @@ export function BookingDetailContent({
   };
 
   const guestName = formatGuestName(booking);
+  // Contact this booking belongs to — drives "Open in Contacts" (web parity) and
+  // the guest-history "View contact" link. Falls back to the flat guest_id.
+  const guestProfileId = booking.guest?.id ?? booking.guest_id ?? null;
+  const openGuestContact = guestProfileId
+    ? () => router.push(`/client/${guestProfileId}` as Href)
+    : null;
   const isTable = isTableReservationBooking(booking);
 
   const openEdit = () =>
@@ -755,6 +830,14 @@ export function BookingDetailContent({
     (isTable && (!!booking.dietary_notes?.trim() || !!booking.occasion?.trim()));
 
   const handleActionPress = (target: BookingStatus, _label: string, destructive?: boolean) => {
+    // Web parity: no-show is rejected before the grace window lapses. Mirror the
+    // guard here so an armed button can't fire early (the backend also enforces).
+    if (target === 'No-Show' && !noShowAllowed) {
+      toast.error(
+        `No-show can only be marked ${noShowGraceMinutes} minutes after the booking start time.`,
+      );
+      return;
+    }
     if (destructive) {
       if (pendingConfirm === target) {
         if (confirmTimer.current) clearTimeout(confirmTimer.current);
@@ -798,9 +881,29 @@ export function BookingDetailContent({
           <View style={styles.headerRow}>
             <Avatar name={guestName} size={52} />
             <View style={styles.headerText}>
-              <Text variant="heading" numberOfLines={1}>
-                {guestName}
-              </Text>
+              <View style={styles.guestNameRow}>
+                <Text variant="heading" numberOfLines={1} style={styles.guestNameText}>
+                  {guestName}
+                </Text>
+                {openGuestContact ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Open ${guestName} in Contacts`}
+                    hitSlop={8}
+                    onPress={openGuestContact}
+                    style={({ pressed }) => [styles.openContact, { opacity: pressed ? 0.55 : 1 }]}>
+                    <SymbolView
+                      name={{
+                        ios: 'person.crop.circle',
+                        android: 'account_circle',
+                        web: 'account_circle',
+                      }}
+                      tintColor={colors.brand}
+                      size={20}
+                    />
+                  </Pressable>
+                ) : null}
+              </View>
               <Text variant="caption" tone="muted">
                 {visitCount > 0
                   ? `${visitCount} previous visit${visitCount === 1 ? '' : 's'}`
@@ -1040,19 +1143,31 @@ export function BookingDetailContent({
                     />
                   </View>
                 ) : null}
-                {destructiveActions.map((action) => (
-                  <View key={`${action.target}-${action.label}`} style={styles.toolbarCell}>
-                    <Button
-                      label={pendingConfirm === action.target ? 'Tap to confirm' : action.label}
-                      variant="danger"
-                      size="sm"
-                      fullWidth
-                      loading={actionLoading}
-                      onPress={() => handleActionPress(action.target, action.label, action.destructive)}
-                    />
-                  </View>
-                ))}
+                {destructiveActions.map((action) => {
+                  // No-show stays disabled until the venue's grace window lapses.
+                  const noShowGated = action.target === 'No-Show' && !noShowAllowed;
+                  return (
+                    <View key={`${action.target}-${action.label}`} style={styles.toolbarCell}>
+                      <Button
+                        label={pendingConfirm === action.target ? 'Tap to confirm' : action.label}
+                        variant="danger"
+                        size="sm"
+                        fullWidth
+                        disabled={noShowGated}
+                        loading={actionLoading}
+                        onPress={() =>
+                          handleActionPress(action.target, action.label, action.destructive)
+                        }
+                      />
+                    </View>
+                  );
+                })}
               </View>
+              {destructiveActions.some((a) => a.target === 'No-Show') && !noShowAllowed ? (
+                <Text variant="caption" tone="muted" style={styles.noShowHint}>
+                  No-show can be marked {noShowGraceMinutes} minutes after the start time.
+                </Text>
+              ) : null}
             </>
           ) : null}
         </Card>
@@ -1415,6 +1530,18 @@ const styles = StyleSheet.create({
     minWidth: 0,
     gap: 2,
   },
+  guestNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  guestNameText: {
+    flexShrink: 1,
+  },
+  openContact: {
+    paddingVertical: 4,
+    paddingHorizontal: 2,
+  },
   heroBlock: {
     marginTop: spacing.base,
     paddingTop: spacing.base,
@@ -1481,6 +1608,9 @@ const styles = StyleSheet.create({
   toolbarDivider: {
     height: StyleSheet.hairlineWidth,
     marginVertical: spacing.sm,
+  },
+  noShowHint: {
+    marginTop: spacing.sm,
   },
   details: {
     gap: spacing.sm,

@@ -1,5 +1,5 @@
-import { useRouter } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
   Platform,
@@ -66,6 +66,9 @@ import type { BookingListRow } from '@/types/booking-list';
 import type { SortKey, SortDir } from '@/components/bookings/BookingSortSheet';
 
 type Scope = 'day' | 'week' | 'month' | 'custom';
+
+/** Validates `?openBooking` / `?guest` deep-link ids before acting on them. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const SCOPE_OPTIONS: { value: Scope; label: string }[] = [
   { value: 'day', label: 'Day' },
@@ -286,6 +289,10 @@ function BulkMessageSheet({
 
 export default function BookingsScreen() {
   const router = useRouter();
+  // Deep-link params (web parity): `?openBooking=<id>` opens that booking's
+  // detail sheet; `?guest=<id>` scopes the list to one guest. Push targets and
+  // shared links rely on these.
+  const params = useLocalSearchParams<{ openBooking?: string; guest?: string }>();
   const { colors } = useTheme();
   const reduceMotion = useReduceMotion();
   const { venue, terminology, pricingTier, bookingModel, featureFlags } = useVenueContext();
@@ -307,6 +314,8 @@ export default function BookingsScreen() {
   const [modelFilter, setModelFilter] = useState<ModelFilterKey | null>(null);
   const [needsComplianceOnly, setNeedsComplianceOnly] = useState(false);
   const [openBookingId, setOpenBookingId] = useState<string | null>(null);
+  // Guest scope from the `?guest=` deep link — filters the list to one contact.
+  const [guestFilter, setGuestFilter] = useState<string | null>(null);
 
   // --- Custom date range (Custom scope) ---
   const [customRange, setCustomRange] = useState<DateRange | null>(null);
@@ -378,6 +387,11 @@ export default function BookingsScreen() {
     const term = search.trim().toLowerCase();
     let rows = rawRows;
 
+    // Guest scope (from `?guest=`) — narrow to a single contact's bookings.
+    if (guestFilter) {
+      rows = rows.filter((b) => b.guest_id === guestFilter);
+    }
+
     if (practitionerFilter) {
       rows = rows.filter(
         (b) => (b.practitioner_id ?? b.calendar_id) === practitionerFilter,
@@ -430,6 +444,7 @@ export default function BookingsScreen() {
   }, [
     rawRows,
     search,
+    guestFilter,
     practitionerFilter,
     serviceFilter,
     modelFilter,
@@ -535,6 +550,37 @@ export default function BookingsScreen() {
 
   const openBooking = useCallback((id: string) => setOpenBookingId(id), []);
 
+  // Consume `?openBooking` / `?guest` once each. The router keeps params around
+  // across re-renders, so track what we've handled and strip them after acting
+  // (mirrors the web, which deletes the param after opening the booking).
+  const consumedParamsRef = useRef<{ openBooking?: string; guest?: string }>({});
+  const openBookingParam = typeof params.openBooking === 'string' ? params.openBooking : null;
+  const guestParam = typeof params.guest === 'string' ? params.guest : null;
+  useEffect(() => {
+    const clear: Record<string, undefined> = {};
+
+    if (openBookingParam && consumedParamsRef.current.openBooking !== openBookingParam) {
+      consumedParamsRef.current.openBooking = openBookingParam;
+      if (UUID_RE.test(openBookingParam)) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot deep-link consume (guarded by consumedParamsRef)
+        setOpenBookingId(openBookingParam);
+      }
+      clear.openBooking = undefined;
+    }
+
+    if (guestParam && consumedParamsRef.current.guest !== guestParam) {
+      consumedParamsRef.current.guest = guestParam;
+      // Keep the guest scope sticky in state; the URL param itself is one-shot.
+      setGuestFilter(UUID_RE.test(guestParam) ? guestParam : null);
+      clear.guest = undefined;
+    }
+
+    if (Object.keys(clear).length > 0) {
+      // Strip the consumed params so a back/refresh doesn't re-trigger them.
+      router.setParams(clear);
+    }
+  }, [openBookingParam, guestParam, router]);
+
   const toggleSelect = useCallback((id: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -613,8 +659,16 @@ export default function BookingsScreen() {
     dayHourRange !== null ||
     needsComplianceOnly;
 
-  // Search counts too — shown as the removable summary chip row below the toolbar.
-  const anyFilterActive = sheetFiltersActive || search.trim().length > 0;
+  // Search + the guest deep-link scope count too — both shown as removable
+  // summary chips below the toolbar so an applied scope stays visible.
+  const anyFilterActive =
+    sheetFiltersActive || search.trim().length > 0 || guestFilter !== null;
+
+  // Name for the guest-scope chip — resolved from any loaded row for that guest.
+  const guestFilterName = useMemo(() => {
+    if (!guestFilter) return null;
+    return rawRows.find((b) => b.guest_id === guestFilter)?.guest_name ?? null;
+  }, [guestFilter, rawRows]);
 
   const resetSheetFilters = useCallback(() => {
     setStatus('All');
@@ -627,6 +681,7 @@ export default function BookingsScreen() {
 
   const clearAllFilters = useCallback(() => {
     setSearch('');
+    setGuestFilter(null);
     resetSheetFilters();
   }, [resetSheetFilters]);
 
@@ -727,6 +782,14 @@ export default function BookingsScreen() {
             applied filters stay visible now that the controls live in the sheet. */}
         {anyFilterActive ? (
           <View style={styles.activeFilterRow}>
+            {guestFilter !== null ? (
+              <Chip
+                label={guestFilterName ?? 'Guest'}
+                selected
+                onPress={() => setGuestFilter(null)}
+                onRemove={() => setGuestFilter(null)}
+              />
+            ) : null}
             {status !== 'All' ? (
               <Chip
                 label={statusLabel}
