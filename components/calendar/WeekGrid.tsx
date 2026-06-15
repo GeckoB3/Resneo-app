@@ -12,8 +12,15 @@
  * keeps it fast and legible.
  */
 
-import { useMemo } from 'react';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { useMemo, useState } from 'react';
+import {
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 
 import {
   computeGridBounds,
@@ -129,6 +136,14 @@ export function WeekGrid({
 }: WeekGridProps) {
   const { colors } = useTheme();
 
+  // The sticky header (stickyHeaderIndices) does NOT inherit the ScrollView's
+  // width, so its flex-1 day cells collapse into a thin vertical column. Measure
+  // the grid width and pin the header + body rows to it so the seven columns
+  // spread across the screen (windowWidth is the pre-measure fallback).
+  const { width: windowWidth } = useWindowDimensions();
+  const [measuredWidth, setMeasuredWidth] = useState(0);
+  const contentWidth = measuredWidth || windowWidth;
+
   // One shared time scale across all seven columns so the gutter, hour lines
   // and now-line line up across the week.
   const { startHour, endHour, totalHeight, gridStartMin } = useMemo(() => {
@@ -166,6 +181,10 @@ export function WeekGrid({
   return (
     <ScrollView
       style={styles.scroll}
+      onLayout={(e) => {
+        const w = Math.round(e.nativeEvent.layout.width);
+        setMeasuredWidth((prev) => (prev === w ? prev : w));
+      }}
       showsVerticalScrollIndicator={false}
       stickyHeaderIndices={[0]}
       contentContainerStyle={styles.scrollContent}
@@ -180,7 +199,11 @@ export function WeekGrid({
         ) : undefined
       }>
       {/* Sticky day headers — always show which column is which day. */}
-      <View style={[styles.headerRow, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
+      <View
+        style={[
+          styles.headerRow,
+          { width: contentWidth, backgroundColor: colors.surface, borderBottomColor: colors.border },
+        ]}>
         <View style={styles.headerGutter} />
         {days.map((d) => (
           <Pressable
@@ -203,7 +226,7 @@ export function WeekGrid({
         ))}
       </View>
 
-      <View style={styles.bodyRow}>
+      <View style={[styles.bodyRow, { width: contentWidth }]}>
         {/* Time gutter */}
         <View style={[styles.gutter, { height: totalHeight }]}>
           {hours.map((hour) => (
