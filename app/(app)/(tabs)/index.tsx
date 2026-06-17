@@ -61,10 +61,17 @@ import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
+import { LinkedBookingCreateSheet } from '@/components/linked/LinkedBookingCreateSheet';
+import { LinkedBookingDetailSheet } from '@/components/linked/LinkedBookingDetailSheet';
+import { LinkedBookingEditSheet } from '@/components/linked/LinkedBookingEditSheet';
+import { LinkedVenueCalendarGrid } from '@/components/linked/LinkedVenueCalendarGrid';
+import { useLinkedCalendar } from '@/lib/queries/useLinkedCalendar';
+import { useLinkedVenueContext } from '@/providers/LinkedVenueProvider';
 import type { CalendarGridBooking, CalendarGridDay } from '@/types/calendar-grid';
 import type { Practitioner } from '@/types/practitioner';
 import type { CalendarTimeBlock } from '@/components/calendar/CalendarDayGrid';
 import type { CalendarScheduleBlock, ScheduleBlockDTO } from '@/types/schedule-blocks';
+import type { LinkedBooking, LinkedVenueCalendar } from '@/types/linked-venues';
 
 type Scope = 'day' | 'week' | 'month';
 
@@ -73,6 +80,13 @@ const SCOPE_OPTIONS: { value: Scope; label: string }[] = [
   { value: 'week', label: 'Week' },
   { value: 'month', label: 'Month' },
 ];
+
+/** Active linked-venue sheet (view/edit/create a cross-venue booking). */
+type LinkedSheet =
+  | { kind: 'view'; booking: LinkedBooking }
+  | { kind: 'edit'; booking: LinkedBooking }
+  | { kind: 'create' }
+  | null;
 
 // NOTE: the calendar diary intentionally has NO status-filter pill row
 // (All / Pending / Booked / Confirmed / Started / Completed / No-Show). The
@@ -412,6 +426,37 @@ export default function CalendarScreen() {
 
   const calendarIds = useMemo(() => practitioners.map((p) => p.id), [practitioners]);
 
+  // ---- Linked venues (cross-venue calendars) ----
+  // Any accepted link that shares calendar visibility surfaces as a chip in the
+  // switcher row; picking one sets ownerVenueId and renders that venue's day via
+  // LinkedVenueCalendarGrid (grant-gated). ownerVenueId persists across launches.
+  const { ownerVenueId, setOwnerVenueId, clearOwnerVenue, reconcileOwnerVenue } =
+    useLinkedVenueContext();
+  const linkedQuery = useLinkedCalendar({ from: anchor, to: anchor });
+  const linkedVenues = useMemo<LinkedVenueCalendar[]>(
+    () => linkedQuery.data?.venues ?? [],
+    [linkedQuery.data?.venues],
+  );
+  const isLinkedActive = !!ownerVenueId;
+  const activeLinkedVenue = useMemo(
+    () => (ownerVenueId ? linkedVenues.find((v) => v.venueId === ownerVenueId) ?? null : null),
+    [ownerVenueId, linkedVenues],
+  );
+
+  // Validate a persisted linked selection against the live feed: if a link was
+  // revoked/suspended/deleted while the app was closed, the venue drops out of
+  // the linked-calendar response and we clear the stale context (falling back to
+  // the primary venue) rather than querying a venue we can no longer see. The
+  // feed lists every accessible linked venue regardless of bookings, so a quiet
+  // day is not mistaken for a lost link. `reconcileOwnerVenue` re-keys on
+  // `ownerVenueId`, so this also runs once hydration restores the saved id.
+  useEffect(() => {
+    if (!linkedQuery.isSuccess) return;
+    reconcileOwnerVenue(linkedVenues.map((v) => v.venueId));
+  }, [linkedQuery.isSuccess, linkedVenues, reconcileOwnerVenue]);
+
+  const [linkedSheet, setLinkedSheet] = useState<LinkedSheet>(null);
+
   const gridQuery = useCalendarGrid({
     calendarIds,
     from: range.from,
@@ -495,6 +540,13 @@ export default function CalendarScreen() {
     practitioners.length > 1 &&
     scope !== 'month' &&
     !(scope === 'day' && isWideViewport);
+
+  // Show the calendar-switcher row whenever there's something to pick: the
+  // primary switcher condition above, OR any linked venue exists / is active
+  // (so linked calendars are always reachable, even on a single-practitioner or
+  // wide-viewport venue where the primary switcher would otherwise hide).
+  const hasLinkedVenues = linkedVenues.length > 0 || isLinkedActive;
+  const showChips = scope !== 'month' && (hasLinkedVenues || showSwitcher);
 
   const day = useMemo(() => {
     const calendar = gridQuery.data?.calendars.find((c) => c.calendarId === effectiveId);
@@ -1150,7 +1202,16 @@ export default function CalendarScreen() {
           <View style={[styles.toolbar, { borderBottomColor: colors.border }]}>
             <View style={styles.scopeRow}>
               <View style={styles.scopeControl}>
-                <Segmented value={scope} onChange={setScope} options={SCOPE_OPTIONS} />
+                <Segmented
+                  value={scope}
+                  onChange={(s) => {
+                    // Linked calendars are day-only; switching to week/month exits
+                    // the linked context back to the primary venue.
+                    if (isLinkedActive && s !== 'day') clearOwnerVenue();
+                    setScope(s);
+                  }}
+                  options={SCOPE_OPTIONS}
+                />
               </View>
               {/* Realtime indicator — green live / amber reconnecting, hidden when
                   idle (matches Resources/Contacts). Realtime invalidates the grid
@@ -1212,19 +1273,20 @@ export default function CalendarScreen() {
             {/* Calendar switcher — one calendar at a time, plus an "All" view
                 (day scope only) that shows every calendar side-by-side. Hidden
                 on a wide day viewport where all columns already show. */}
-            {showSwitcher ? (
+            {showChips ? (
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.chips}>
-                {scope === 'day' ? (
+                {scope === 'day' && practitioners.length > 1 ? (
                   <Chip
                     label="All"
                     count={totalDayCount}
-                    selected={isAllView}
+                    selected={!isLinkedActive && isAllView}
                     onPress={() => {
-                      if (!isAllView) {
+                      if (isLinkedActive || !isAllView) {
                         hapticSelect();
+                        clearOwnerVenue();
                         setSelectedId(ALL_CALENDARS);
                       }
                     }}
@@ -1235,11 +1297,35 @@ export default function CalendarScreen() {
                     key={p.id}
                     label={p.name}
                     count={scope === 'day' ? perPractitionerCounts[p.id] : undefined}
-                    selected={!isAllView && p.id === effectiveId}
+                    selected={!isLinkedActive && !isAllView && p.id === effectiveId}
                     onPress={() => {
-                      if (isAllView || p.id !== effectiveId) {
+                      if (isLinkedActive || isAllView || p.id !== effectiveId) {
                         hapticSelect();
+                        clearOwnerVenue();
                         setSelectedId(p.id);
+                      }
+                    }}
+                  />
+                ))}
+                {/* Linked venues' calendars — amber-tinted when active. Selecting
+                    one sets the linked context (ownerVenueId) and renders that
+                    venue's day grid; day-only, so it forces day scope. */}
+                {linkedVenues.map((v) => (
+                  <Chip
+                    key={`linked:${v.venueId}`}
+                    label={v.venueName}
+                    count={
+                      scope === 'day'
+                        ? v.bookings.filter((b) => b.bookingDate === anchor).length
+                        : undefined
+                    }
+                    selected={ownerVenueId === v.venueId}
+                    selectedColor={colors.warning}
+                    onPress={() => {
+                      if (ownerVenueId !== v.venueId) {
+                        hapticSelect();
+                        setOwnerVenueId(v.venueId, v.venueName);
+                        if (scope !== 'day') setScope('day');
                       }
                     }}
                   />
@@ -1251,7 +1337,32 @@ export default function CalendarScreen() {
                 calendar diary (status filtering lives on the Bookings tab). */}
           </View>
 
-          {gridQuery.isLoading ? (
+          {isLinkedActive ? (
+            linkedQuery.isLoading ? (
+              <LoadingState message="Loading linked calendar…" />
+            ) : !activeLinkedVenue ? (
+              <View style={styles.weekBody}>
+                <EmptyState
+                  title="Linked venue unavailable"
+                  message="This linked calendar is no longer shared with you."
+                  actionLabel="Back to my calendar"
+                  onAction={clearOwnerVenue}
+                />
+              </View>
+            ) : (
+              <ScrollView contentContainerStyle={styles.linkedContent}>
+                <LinkedVenueCalendarGrid
+                  venue={activeLinkedVenue}
+                  nowMinutes={nowMinutes}
+                  refreshing={linkedQuery.isRefetching}
+                  onRefresh={() => void linkedQuery.refetch()}
+                  onViewBooking={(b) => setLinkedSheet({ kind: 'view', booking: b })}
+                  onEditBooking={(b) => setLinkedSheet({ kind: 'edit', booking: b })}
+                  onCreate={() => setLinkedSheet({ kind: 'create' })}
+                />
+              </ScrollView>
+            )
+          ) : gridQuery.isLoading ? (
             <LoadingState message="Loading appointments…" />
           ) : gridQuery.isError ? (
             <ErrorState
@@ -1319,10 +1430,14 @@ export default function CalendarScreen() {
             </GestureDetector>
           )}
 
-          <Fab
-            accessibilityLabel={newBookingActionLabel(terminology)}
-            onPress={() => setAddSheetTarget({ kind: 'fab' })}
-          />
+          {/* Linked calendars have their own per-grid "New booking" button
+              (grant-gated); the primary FAB is hidden while a linked venue is active. */}
+          {!isLinkedActive ? (
+            <Fab
+              accessibilityLabel={newBookingActionLabel(terminology)}
+              onPress={() => setAddSheetTarget({ kind: 'fab' })}
+            />
+          ) : null}
         </>
       )}
 
@@ -1459,6 +1574,38 @@ export default function CalendarScreen() {
         target={blockTarget}
         onClose={() => setBlockTarget(null)}
       />
+
+      {/* Linked cross-venue booking sheets — view (read-only, grant-gated),
+          edit (cancel only with create_edit_cancel), and create. Driven by the
+          active linked venue selected in the chip row. */}
+      <LinkedBookingDetailSheet
+        visible={linkedSheet?.kind === 'view'}
+        venueName={activeLinkedVenue?.venueName ?? ''}
+        visibility={activeLinkedVenue?.visibility ?? 'time_only'}
+        booking={linkedSheet?.kind === 'view' ? linkedSheet.booking : null}
+        onClose={() => setLinkedSheet(null)}
+      />
+      <LinkedBookingEditSheet
+        visible={linkedSheet?.kind === 'edit'}
+        venueName={activeLinkedVenue?.venueName ?? ''}
+        booking={linkedSheet?.kind === 'edit' ? linkedSheet.booking : null}
+        canCancel={activeLinkedVenue?.action === 'create_edit_cancel'}
+        onClose={() => setLinkedSheet(null)}
+        onSaved={() => {
+          setLinkedSheet(null);
+          void linkedQuery.refetch();
+        }}
+      />
+      <LinkedBookingCreateSheet
+        visible={linkedSheet?.kind === 'create'}
+        venue={linkedSheet?.kind === 'create' ? activeLinkedVenue : null}
+        date={anchor}
+        onClose={() => setLinkedSheet(null)}
+        onSaved={() => {
+          setLinkedSheet(null);
+          void linkedQuery.refetch();
+        }}
+      />
       </ErrorBoundary>
     </Screen>
   );
@@ -1485,6 +1632,11 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.md,
     gap: spacing.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  linkedContent: {
+    paddingHorizontal: spacing.base,
+    paddingTop: spacing.base,
+    paddingBottom: spacing['3xl'],
   },
   scopeRow: {
     flexDirection: 'row',

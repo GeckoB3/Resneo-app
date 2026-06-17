@@ -36,10 +36,14 @@ export function useLinkedVenues() {
   });
 }
 
-/** GET /api/venue/account-links/incoming — incoming requests + pending changes (banner feed). */
-export function useIncomingLinks() {
+/**
+ * GET /api/venue/account-links/incoming — incoming requests + pending changes
+ * (banner feed). The route is admin-only, so the global banner passes
+ * `enabled: isAdmin` to avoid a 403 round-trip for non-admin staff.
+ */
+export function useIncomingLinks(options?: { enabled?: boolean }) {
   const accessToken = useAccessToken();
-  const enabled = isBackendConfigured() && accessToken !== null;
+  const enabled = isBackendConfigured() && accessToken !== null && (options?.enabled ?? true);
 
   return useQuery({
     queryKey: queryKeys.linkedVenues.incoming(accessToken),

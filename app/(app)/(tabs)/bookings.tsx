@@ -5,6 +5,7 @@ import {
   Platform,
   Pressable,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   View,
 } from 'react-native';
@@ -65,6 +66,11 @@ import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { BookingListRow } from '@/types/booking-list';
 import type { SortKey, SortDir } from '@/components/bookings/BookingSortSheet';
+import { LinkedBookingDetailSheet } from '@/components/linked/LinkedBookingDetailSheet';
+import { LinkedBookingListRow } from '@/components/linked/LinkedBookingListRow';
+import { useLinkedCalendar } from '@/lib/queries/useLinkedCalendar';
+import { useLinkedVenueContext } from '@/providers/LinkedVenueProvider';
+import type { LinkedBooking, LinkedVenueCalendar } from '@/types/linked-venues';
 
 type Scope = 'day' | 'week' | 'month' | 'custom';
 
@@ -126,6 +132,42 @@ function isAttendanceConfirmed(b: BookingListRow): boolean {
     !!b.guest_attendance_confirmed_at ||
     !!b.staff_attendance_confirmed_at
   );
+}
+
+/** Which sources contribute rows to the list: own venue + any linked venues. */
+type VenueSelection = { own: boolean; linked: Set<string> };
+
+/** Linked rows are id-namespaced so the list tells them apart from own rows. */
+const LINKED_ROW_PREFIX = 'linked:';
+
+/** Map a linked venue's booking into a BookingListRow for the unified list. */
+function linkedToListRow(b: LinkedBooking, venue: LinkedVenueCalendar): BookingListRow {
+  const calendarName = venue.practitioners.find((p) => p.id === b.practitionerId)?.name ?? null;
+  return {
+    id: `${LINKED_ROW_PREFIX}${b.id}`,
+    booking_date: b.bookingDate,
+    booking_time: b.bookingTime,
+    party_size: b.partySize ?? 1,
+    status: b.status,
+    // time_only redacts the guest — fall back to the venue name as the label.
+    guest_name: b.guestName ?? venue.venueName,
+    guest_id: b.guestId ?? null,
+    guest_phone: b.guestPhone ?? null,
+    guest_email: b.guestEmail ?? null,
+    deposit_status: b.depositStatus ?? null,
+    deposit_amount_pence: b.depositAmountPence ?? null,
+    booking_model: b.bookingModel ?? null,
+    booking_item_name: b.serviceName ?? null,
+    practitioner_id: b.practitionerId ?? null,
+    calendar_id: b.calendarId ?? null,
+    calendar_name: calendarName,
+    appointment_service_id: b.appointmentServiceId ?? null,
+    service_item_id: b.serviceItemId ?? null,
+    guest_attendance_confirmed_at: b.guestAttendanceConfirmedAt ?? null,
+    staff_attendance_confirmed_at: b.staffAttendanceConfirmedAt ?? null,
+    client_arrived_at: b.clientArrivedAt ?? null,
+    source: b.source ?? null,
+  };
 }
 
 /** A booking "needs compliance" when it has a flag whose requirement isn't satisfied. */
@@ -369,6 +411,77 @@ export default function BookingsScreen() {
 
   const rawRows = useMemo(() => activeQuery.data?.bookings ?? [], [activeQuery.data]);
 
+  // ---- Linked venues' bookings (cross-venue) ----
+  // Fetch every accessible linked venue's bookings for the visible range and
+  // merge them into the list, controlled by the venue-selector chips. Selection
+  // defaults to the active linked context (ownerVenueId) when set, else own.
+  const { ownerVenueId } = useLinkedVenueContext();
+  const linkedQuery = useLinkedCalendar({ from: range.from, to: range.to });
+  const linkedVenues = useMemo<LinkedVenueCalendar[]>(
+    () => linkedQuery.data?.venues ?? [],
+    [linkedQuery.data?.venues],
+  );
+
+  const defaultVenueSel = useMemo<VenueSelection>(() => {
+    if (ownerVenueId && linkedVenues.some((v) => v.venueId === ownerVenueId)) {
+      return { own: false, linked: new Set([ownerVenueId]) };
+    }
+    return { own: true, linked: new Set<string>() };
+  }, [ownerVenueId, linkedVenues]);
+  const [venueSelOverride, setVenueSelOverride] = useState<VenueSelection | null>(null);
+  const venueSel = venueSelOverride ?? defaultVenueSel;
+
+  const selectAllVenues = useCallback(() => {
+    setVenueSelOverride({ own: true, linked: new Set(linkedVenues.map((v) => v.venueId)) });
+  }, [linkedVenues]);
+  const toggleOwnVenue = useCallback(() => {
+    setVenueSelOverride((prev) => {
+      const base = prev ?? defaultVenueSel;
+      if (base.own && base.linked.size === 0) return base; // keep ≥1 source selected
+      return { own: !base.own, linked: new Set(base.linked) };
+    });
+  }, [defaultVenueSel]);
+  const toggleLinkedVenue = useCallback(
+    (id: string) => {
+      setVenueSelOverride((prev) => {
+        const base = prev ?? defaultVenueSel;
+        const next = new Set(base.linked);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        if (!base.own && next.size === 0) return base; // keep ≥1 source selected
+        return { own: base.own, linked: next };
+      });
+    },
+    [defaultVenueSel],
+  );
+
+  // Selected-linked bookings → BookingListRow rows + a meta map for read-only
+  // detail routing (the list tap opens LinkedBookingDetailSheet).
+  const { linkedRows, linkedMetaById } = useMemo(() => {
+    const rows: BookingListRow[] = [];
+    const meta = new Map<string, { venue: LinkedVenueCalendar; booking: LinkedBooking }>();
+    for (const v of linkedVenues) {
+      if (!venueSel.linked.has(v.venueId)) continue;
+      for (const b of v.bookings) {
+        const row = linkedToListRow(b, v);
+        rows.push(row);
+        meta.set(row.id, { venue: v, booking: b });
+      }
+    }
+    return { linkedRows: rows, linkedMetaById: meta };
+  }, [linkedVenues, venueSel]);
+
+  // Own (unless deselected) + selected-linked rows feed every downstream memo.
+  const mergedRows = useMemo(
+    () => (venueSel.own ? [...rawRows, ...linkedRows] : linkedRows),
+    [venueSel.own, rawRows, linkedRows],
+  );
+
+  // Read-only linked-booking detail (list is view-only; manage on the Calendar tab).
+  const [linkedSheet, setLinkedSheet] = useState<
+    { venue: LinkedVenueCalendar; booking: LinkedBooking } | null
+  >(null);
+
   // Service label for the open booking's detail sheet. The detail GET omits the
   // base service name for plain (non-variant) services, so hand the list row's
   // resolved label through to keep the service visible in the hero.
@@ -388,7 +501,7 @@ export default function BookingsScreen() {
 
   const searchedRows = useMemo(() => {
     const term = search.trim().toLowerCase();
-    let rows = rawRows;
+    let rows = mergedRows;
 
     // Guest scope (from `?guest=`) — narrow to a single contact's bookings.
     if (guestFilter) {
@@ -445,7 +558,7 @@ export default function BookingsScreen() {
       );
     });
   }, [
-    rawRows,
+    mergedRows,
     search,
     guestFilter,
     practitionerFilter,
@@ -602,21 +715,26 @@ export default function BookingsScreen() {
     setBulkMessageBookings(bookings);
   }, []);
 
-  const selectedRows = useMemo(
-    () => filteredRows.filter((b) => selectedIds.has(b.id)),
-    [filteredRows, selectedIds],
+  // Bulk selection acts on OWN bookings only — linked rows are read-only here.
+  const ownFilteredRows = useMemo(
+    () => filteredRows.filter((b) => !b.id.startsWith(LINKED_ROW_PREFIX)),
+    [filteredRows],
   );
 
-  // Select-all over the currently-visible booking rows (filteredRows is the
-  // selectable set the bulk bar acts on).
+  const selectedRows = useMemo(
+    () => ownFilteredRows.filter((b) => selectedIds.has(b.id)),
+    [ownFilteredRows, selectedIds],
+  );
+
+  // Select-all over the currently-visible OWN booking rows (the bulk-bar set).
   const allSelected = useMemo(
-    () => filteredRows.length > 0 && filteredRows.every((b) => selectedIds.has(b.id)),
-    [filteredRows, selectedIds],
+    () => ownFilteredRows.length > 0 && ownFilteredRows.every((b) => selectedIds.has(b.id)),
+    [ownFilteredRows, selectedIds],
   );
 
   const toggleSelectAll = useCallback(() => {
-    setSelectedIds(allSelected ? new Set() : new Set(filteredRows.map((b) => b.id)));
-  }, [allSelected, filteredRows]);
+    setSelectedIds(allSelected ? new Set() : new Set(ownFilteredRows.map((b) => b.id)));
+  }, [allSelected, ownFilteredRows]);
 
   const renderItem = useCallback(
     ({ item }: { item: ListRow }) => {
@@ -629,19 +747,31 @@ export default function BookingsScreen() {
           </View>
         );
       }
+      const linkedMeta = linkedMetaById.get(item.booking.id);
       return (
         <Animated.View
           entering={motionSafe(FadeInDown.duration(180), reduceMotion)}
           layout={layoutSafe(LinearTransition.springify(), reduceMotion)}>
-          <BookingSwipeRow
-            booking={item.booking}
-            isAppointment={isAppointment}
-            onPress={openBooking}
-            onLongPress={toggleSelect}
-            selected={selectedIds.has(item.booking.id)}
-            selectionMode={selectionMode}
-            complianceFlag={complianceFlags?.[item.booking.id]}
-          />
+          {linkedMeta ? (
+            <LinkedBookingListRow
+              booking={linkedMeta.booking}
+              venueName={linkedMeta.venue.venueName}
+              visibility={linkedMeta.venue.visibility}
+              onPress={() =>
+                setLinkedSheet({ venue: linkedMeta.venue, booking: linkedMeta.booking })
+              }
+            />
+          ) : (
+            <BookingSwipeRow
+              booking={item.booking}
+              isAppointment={isAppointment}
+              onPress={openBooking}
+              onLongPress={toggleSelect}
+              selected={selectedIds.has(item.booking.id)}
+              selectionMode={selectionMode}
+              complianceFlag={complianceFlags?.[item.booking.id]}
+            />
+          )}
         </Animated.View>
       );
     },
@@ -654,6 +784,7 @@ export default function BookingsScreen() {
       complianceFlags,
       colors.background,
       reduceMotion,
+      linkedMetaById,
     ],
   );
 
@@ -791,6 +922,31 @@ export default function BookingsScreen() {
             </View>
           }
         />
+
+        {/* Venue selector — own venue + any linked venues. View all bookings
+            (incl. linked) or any combination. Only shown when links exist. */}
+        {linkedVenues.length > 0 ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.venueChips}>
+            <Chip
+              label="All"
+              selected={venueSel.own && linkedVenues.every((v) => venueSel.linked.has(v.venueId))}
+              onPress={selectAllVenues}
+            />
+            <Chip label="My venue" selected={venueSel.own} onPress={toggleOwnVenue} />
+            {linkedVenues.map((v) => (
+              <Chip
+                key={v.venueId}
+                label={v.venueName}
+                selected={venueSel.linked.has(v.venueId)}
+                selectedColor={colors.warning}
+                onPress={() => toggleLinkedVenue(v.venueId)}
+              />
+            ))}
+          </ScrollView>
+        ) : null}
 
         {/* Active-filter summary — removable chips for whatever is applied, so the
             applied filters stay visible now that the controls live in the sheet. */}
@@ -934,6 +1090,15 @@ export default function BookingsScreen() {
         fallbackServiceName={openServiceName}
       />
 
+      {/* Read-only detail for a linked venue's booking (manage on Calendar tab). */}
+      <LinkedBookingDetailSheet
+        visible={linkedSheet !== null}
+        venueName={linkedSheet?.venue.venueName ?? ''}
+        visibility={linkedSheet?.venue.visibility ?? 'time_only'}
+        booking={linkedSheet?.booking ?? null}
+        onClose={() => setLinkedSheet(null)}
+      />
+
       {/* Bulk action tray */}
       <BookingBulkBar
         selected={selectedRows}
@@ -1057,6 +1222,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.sm,
+  },
+  venueChips: {
+    gap: spacing.sm,
+    paddingVertical: spacing.xxs,
   },
   listContent: {
     padding: spacing.base,

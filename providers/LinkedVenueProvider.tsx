@@ -27,6 +27,14 @@ type LinkedVenueContextValue = {
   setOwnerVenueId: (venueId: string | null, venueName?: string | null) => void;
   /** Clear any active linked-venue context (e.g. on sign-out). */
   clearOwnerVenue: () => void;
+  /**
+   * Validate the active selection against the caller's live accessible venues.
+   * If a persisted `ownerVenueId` no longer maps to an accepted link (revoked,
+   * suspended, or deleted while the app was closed), the context is cleared so
+   * the user falls back to their primary venue instead of querying a venue they
+   * can no longer see. A no-op when nothing is active or the id is still valid.
+   */
+  reconcileOwnerVenue: (accessibleVenueIds: string[]) => void;
 };
 
 const LinkedVenueContext = createContext<LinkedVenueContextValue | null>(null);
@@ -108,6 +116,15 @@ export function LinkedVenueProvider({ children }: LinkedVenueProviderProps) {
     void writeStoredOwner(null);
   }, []);
 
+  const reconcileOwnerVenue = useCallback(
+    (accessibleVenueIds: string[]) => {
+      if (ownerVenueId && !accessibleVenueIds.includes(ownerVenueId)) {
+        clearOwnerVenue();
+      }
+    },
+    [ownerVenueId, clearOwnerVenue],
+  );
+
   // Drop the linked context on sign-out so it can't carry to the next user.
   useEffect(() => {
     const { data } = getSupabase().auth.onAuthStateChange((event) => {
@@ -127,8 +144,9 @@ export function LinkedVenueProvider({ children }: LinkedVenueProviderProps) {
       hydrated,
       setOwnerVenueId,
       clearOwnerVenue,
+      reconcileOwnerVenue,
     }),
-    [ownerVenueId, ownerVenueName, hydrated, setOwnerVenueId, clearOwnerVenue],
+    [ownerVenueId, ownerVenueName, hydrated, setOwnerVenueId, clearOwnerVenue, reconcileOwnerVenue],
   );
 
   return (

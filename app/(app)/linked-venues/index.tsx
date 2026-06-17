@@ -1,8 +1,9 @@
-import { Stack, useRouter, type Href } from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
-import { useMemo, useState } from 'react';
-import { RefreshControl, StyleSheet, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 
+import { AcceptInviteSheet } from '@/components/linked/AcceptInviteSheet';
 import { IncomingRequestSheet } from '@/components/linked/IncomingRequestSheet';
 import { InviteLinkSheet } from '@/components/linked/InviteLinkSheet';
 import { LinkRequestSheet } from '@/components/linked/LinkRequestSheet';
@@ -110,6 +111,33 @@ export default function LinkedVenuesScreen() {
   const [cancelLink, setCancelLink] = useState<AccountLinkView | null>(null);
   const [sendOpen, setSendOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [acceptOpen, setAcceptOpen] = useState(false);
+  // Token to seed the verify sheet with: the deep-link token on auto-open, null
+  // for a manual paste. Captured into state so a lingering `?invite=` param can't
+  // re-seed a later manual open.
+  const [acceptToken, setAcceptToken] = useState<string | null>(null);
+  const [invitePrefill, setInvitePrefill] = useState<{ slug: string; name: string } | null>(null);
+
+  // Receiving end of an invite: a deep link (`/linked-venues?invite=<token>`)
+  // opens the verify sheet once; manual paste opens it from the entry prompt.
+  const params = useLocalSearchParams<{ invite?: string }>();
+  const inviteParam = typeof params.invite === 'string' ? params.invite : null;
+  const inviteHandledRef = useRef(false);
+  useEffect(() => {
+    if (inviteParam && !inviteHandledRef.current) {
+      inviteHandledRef.current = true;
+      setInvitePrefill(null);
+      setAcceptToken(inviteParam);
+      setAcceptOpen(true);
+    }
+  }, [inviteParam]);
+
+  // A verified invite resolves to a venue → open the request editor pre-filled.
+  const handleInviteVerified = (venue: { slug: string; name: string }) => {
+    setAcceptOpen(false);
+    setInvitePrefill(venue);
+    setSendOpen(true);
+  };
 
   const links = useMemo<AccountLinkView[]>(() => query.data?.links ?? [], [query.data?.links]);
   const maxOutgoing = query.data?.maxOutgoingPending ?? 10;
@@ -252,6 +280,47 @@ export default function LinkedVenuesScreen() {
   const canCreate = eligibility?.canCreate ?? false;
   const eligibilityHint = !canCreate ? eligibility?.reason ?? null : null;
 
+  // Shared across the empty + populated layouts so the invite flow behaves
+  // identically in both. `prefill` is set when arriving from a verified invite.
+  const invitePrompt = canCreate ? (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Have an invite link?"
+      hitSlop={8}
+      onPress={() => {
+        setInvitePrefill(null);
+        setAcceptToken(null);
+        setAcceptOpen(true);
+      }}
+      style={({ pressed }) => [styles.invitePrompt, pressed ? styles.pressed : null]}>
+      <Text variant="label" tone="brand">
+        Have an invite link?
+      </Text>
+    </Pressable>
+  ) : null;
+
+  const sendSheet = (
+    <LinkRequestSheet
+      visible={sendOpen}
+      prefill={invitePrefill}
+      onClose={() => {
+        setSendOpen(false);
+        setInvitePrefill(null);
+      }}
+    />
+  );
+  const getInviteSheet = (
+    <InviteLinkSheet visible={inviteOpen} onClose={() => setInviteOpen(false)} />
+  );
+  const acceptInviteSheet = (
+    <AcceptInviteSheet
+      visible={acceptOpen}
+      initialToken={acceptToken}
+      onClose={() => setAcceptOpen(false)}
+      onVerified={handleInviteVerified}
+    />
+  );
+
   if (links.length === 0) {
     return (
       <Screen>
@@ -289,10 +358,12 @@ export default function LinkedVenuesScreen() {
             disabled={!canCreate}
             onPress={() => setInviteOpen(true)}
           />
+          {invitePrompt}
         </View>
 
-        <LinkRequestSheet visible={sendOpen} onClose={() => setSendOpen(false)} />
-        <InviteLinkSheet visible={inviteOpen} onClose={() => setInviteOpen(false)} />
+        {sendSheet}
+        {getInviteSheet}
+        {acceptInviteSheet}
       </Screen>
     );
   }
@@ -326,6 +397,8 @@ export default function LinkedVenuesScreen() {
           onPress={() => setInviteOpen(true)}
         />
       </View>
+
+      {invitePrompt}
 
       {eligibilityHint ? (
         <View style={[styles.notice, { backgroundColor: colors.warningSurface, borderColor: colors.warning }]}>
@@ -426,8 +499,9 @@ export default function LinkedVenuesScreen() {
         onClose={() => setCancelLink(null)}
       />
 
-      <LinkRequestSheet visible={sendOpen} onClose={() => setSendOpen(false)} />
-      <InviteLinkSheet visible={inviteOpen} onClose={() => setInviteOpen(false)} />
+      {sendSheet}
+      {getInviteSheet}
+      {acceptInviteSheet}
     </Screen>
   );
 }
@@ -478,5 +552,14 @@ const styles = StyleSheet.create({
   },
   flex1: {
     flex: 1,
+  },
+  invitePrompt: {
+    alignSelf: 'center',
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.base,
+  },
+  pressed: {
+    opacity: 0.6,
   },
 });
