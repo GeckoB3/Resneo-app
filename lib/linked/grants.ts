@@ -6,6 +6,7 @@
  */
 
 import type {
+  AccountLinkView,
   LinkActionLevel,
   LinkCalendarVisibility,
   LinkGrant,
@@ -266,4 +267,21 @@ export function classifyGrantChange(
     action,
     submitLabel,
   };
+}
+
+/**
+ * Links eligible for a COMBINED page / collective: accepted, with full calendar
+ * detail AND create/edit/cancel access in BOTH directions (the web create/invite
+ * write gate `fullMutualLinks`). A combined page can only include venues that
+ * grant full cross-venue write access to each other.
+ */
+export function fullMutualLinks(links: AccountLinkView[]): AccountLinkView[] {
+  return links.filter(
+    (l) =>
+      l.status === 'accepted' &&
+      l.iCan.calendar === 'full_details' &&
+      l.theyCan.calendar === 'full_details' &&
+      l.iCan.act === 'create_edit_cancel' &&
+      l.theyCan.act === 'create_edit_cancel',
+  );
 }

@@ -1,6 +1,13 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
+import {
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { FadeIn, FadeOut, runOnJS } from 'react-native-reanimated';
 import { useReduceMotion, motionSafe } from '@/lib/motion';
@@ -63,8 +70,8 @@ import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import { LinkedBookingCreateSheet } from '@/components/linked/LinkedBookingCreateSheet';
 import { LinkedBookingDetailSheet } from '@/components/linked/LinkedBookingDetailSheet';
-import { LinkedBookingEditSheet } from '@/components/linked/LinkedBookingEditSheet';
 import { LinkedVenueCalendarGrid } from '@/components/linked/LinkedVenueCalendarGrid';
+import { dedupeScheduleDTOs, toCalendarScheduleBlock } from '@/lib/calendar/schedule-block-view';
 import { useLinkedCalendar } from '@/lib/queries/useLinkedCalendar';
 import { useLinkedVenueContext } from '@/providers/LinkedVenueProvider';
 import type { CalendarGridBooking, CalendarGridDay } from '@/types/calendar-grid';
@@ -81,11 +88,14 @@ const SCOPE_OPTIONS: { value: Scope; label: string }[] = [
   { value: 'month', label: 'Month' },
 ];
 
-/** Active linked-venue sheet (view/edit/create a cross-venue booking). */
+/**
+ * Active linked-venue sheet (view/edit/create a cross-venue booking). Carries
+ * its own `venue` so the sheet works for either a single focused linked venue or
+ * one of several shown together in the "All" view.
+ */
 type LinkedSheet =
-  | { kind: 'view'; booking: LinkedBooking }
-  | { kind: 'edit'; booking: LinkedBooking }
-  | { kind: 'create' }
+  | { kind: 'detail'; venue: LinkedVenueCalendar; booking: LinkedBooking }
+  | { kind: 'create'; venue: LinkedVenueCalendar }
   | null;
 
 // NOTE: the calendar diary intentionally has NO status-filter pill row
@@ -149,66 +159,8 @@ function isWideDayViewport(width: number, height: number): boolean {
 // resource bookings are one row per booking (kept as-is).
 // ---------------------------------------------------------------------------
 
-/** Default accent per kind when the DTO carries no `accent_colour`. */
-const KIND_ACCENT: Record<ScheduleBlockDTO['kind'], string> = {
-  class_session: '#22C55E', // green
-  event_ticket: '#F59E0B', // amber
-  resource_booking: '#64748B', // slate
-};
-
-/** Kind-specific capacity / uptake line (null when not applicable). */
-function capacityLabelFor(dto: ScheduleBlockDTO): string | null {
-  if (dto.kind === 'class_session') {
-    return dto.class_capacity != null
-      ? `${dto.class_booked_spots ?? 0}/${dto.class_capacity} booked`
-      : null;
-  }
-  if (dto.kind === 'event_ticket') {
-    if (dto.event_capacity != null) {
-      return `${dto.event_party_total ?? dto.event_booking_count ?? 0}/${dto.event_capacity}`;
-    }
-    return dto.event_booking_count != null ? `${dto.event_booking_count} booked` : null;
-  }
-  // resource_booking
-  return dto.subtitle ?? null;
-}
-
-/** Normalize a raw DTO into the render-ready overlay block. */
-function toCalendarScheduleBlock(dto: ScheduleBlockDTO): CalendarScheduleBlock {
-  return {
-    id: dto.id,
-    kind: dto.kind,
-    startTime: dto.start_time,
-    endTime: dto.end_time,
-    title: dto.title,
-    subtitle: dto.subtitle ?? null,
-    accent: dto.accent_colour || KIND_ACCENT[dto.kind],
-    capacityLabel: capacityLabelFor(dto),
-  };
-}
-
-/**
- * Collapse the feed to one block per class_instance (richest booked-count wins,
- * mirroring useClassSchedule.dedupeClassSessions) so a busy class doesn't stack
- * N identical overlays. Events/resources pass through untouched.
- */
-function dedupeScheduleDTOs(blocks: ScheduleBlockDTO[]): ScheduleBlockDTO[] {
-  const classByInstance = new Map<string, ScheduleBlockDTO>();
-  const passthrough: ScheduleBlockDTO[] = [];
-  for (const block of blocks) {
-    if (block.kind === 'class_session' && block.class_instance_id) {
-      const existing = classByInstance.get(block.class_instance_id);
-      const score = block.class_booked_spots ?? -1;
-      const existingScore = existing ? existing.class_booked_spots ?? -1 : -2;
-      if (!existing || score > existingScore) {
-        classByInstance.set(block.class_instance_id, block);
-      }
-    } else {
-      passthrough.push(block);
-    }
-  }
-  return [...classByInstance.values(), ...passthrough];
-}
+// KIND_ACCENT / capacityLabelFor / toCalendarScheduleBlock / dedupeScheduleDTOs
+// live in lib/calendar/schedule-block-view.ts (shared with the linked grid).
 
 /** Stable map key for a calendar column + date. */
 function scheduleKey(calendarId: string, date: string): string {
@@ -1353,12 +1305,14 @@ export default function CalendarScreen() {
               <ScrollView contentContainerStyle={styles.linkedContent}>
                 <LinkedVenueCalendarGrid
                   venue={activeLinkedVenue}
+                  date={anchor}
                   nowMinutes={nowMinutes}
                   refreshing={linkedQuery.isRefetching}
                   onRefresh={() => void linkedQuery.refetch()}
-                  onViewBooking={(b) => setLinkedSheet({ kind: 'view', booking: b })}
-                  onEditBooking={(b) => setLinkedSheet({ kind: 'edit', booking: b })}
-                  onCreate={() => setLinkedSheet({ kind: 'create' })}
+                  onOpenBooking={(b) =>
+                    setLinkedSheet({ kind: 'detail', venue: activeLinkedVenue, booking: b })
+                  }
+                  onCreate={() => setLinkedSheet({ kind: 'create', venue: activeLinkedVenue })}
                 />
               </ScrollView>
             )
@@ -1406,18 +1360,63 @@ export default function CalendarScreen() {
               </View>
             </GestureDetector>
           ) : showAllCalendars ? (
-            <View style={styles.weekBody}>
-              <AllCalendarsDayGrid
-                calendars={allCalendarsForDay}
-                venueHours={venueHoursForAnchor}
-                nowMinutes={nowMinutes}
-                onBlockPress={openDetail}
-                onEmptyPress={createAtFor}
-                onBlockLongPress={handleBlockLongPress}
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-              />
-            </View>
+            isAllView && linkedVenues.length > 0 ? (
+              // The "All" chip includes linked calendars: the venue's own
+              // multi-column grid, then each linked venue's grid stacked below
+              // (vertical scroll). Pull-to-refresh refetches both feeds; each grid
+              // manages its own internal time-axis scroll within a capped height.
+              // (Gated on the explicit All pick so a wide-viewport auto-multi-
+              // column day — which isn't an "All" selection — is unchanged.)
+              <ScrollView
+                contentContainerStyle={styles.linkedContent}
+                refreshControl={
+                  <RefreshControl
+                    refreshing={refreshing || linkedQuery.isRefetching}
+                    onRefresh={() => {
+                      onRefresh();
+                      void linkedQuery.refetch();
+                    }}
+                    tintColor={colors.brand}
+                  />
+                }>
+                <Text variant="overline" tone="muted" style={styles.allSectionLabel}>
+                  Your calendars
+                </Text>
+                <View style={{ height: Math.max(460, Math.round(windowHeight * 0.6)) }}>
+                  <AllCalendarsDayGrid
+                    calendars={allCalendarsForDay}
+                    venueHours={venueHoursForAnchor}
+                    nowMinutes={nowMinutes}
+                    onBlockPress={openDetail}
+                    onEmptyPress={createAtFor}
+                    onBlockLongPress={handleBlockLongPress}
+                  />
+                </View>
+                {linkedVenues.map((v) => (
+                  <LinkedVenueCalendarGrid
+                    key={v.venueId}
+                    venue={v}
+                    date={anchor}
+                    nowMinutes={nowMinutes}
+                    onOpenBooking={(b) => setLinkedSheet({ kind: 'detail', venue: v, booking: b })}
+                    onCreate={() => setLinkedSheet({ kind: 'create', venue: v })}
+                  />
+                ))}
+              </ScrollView>
+            ) : (
+              <View style={styles.weekBody}>
+                <AllCalendarsDayGrid
+                  calendars={allCalendarsForDay}
+                  venueHours={venueHoursForAnchor}
+                  nowMinutes={nowMinutes}
+                  onBlockPress={openDetail}
+                  onEmptyPress={createAtFor}
+                  onBlockLongPress={handleBlockLongPress}
+                  refreshing={refreshing}
+                  onRefresh={onRefresh}
+                />
+              </View>
+            )
           ) : (
             // Horizontal swipe pages prev/next day. The pan is horizontal-only,
             // so vertical scroll and the hold-to-drag on blocks (which arms only
@@ -1575,30 +1574,20 @@ export default function CalendarScreen() {
         onClose={() => setBlockTarget(null)}
       />
 
-      {/* Linked cross-venue booking sheets — view (read-only, grant-gated),
-          edit (cancel only with create_edit_cancel), and create. Driven by the
-          active linked venue selected in the chip row. */}
+      {/* Linked cross-venue booking sheets — one rich expanded detail (read-only
+          or editable per the grant) and the create flow. Each carries its own
+          venue, so they work for a single focused linked venue or any of several
+          shown together in the "All" view. */}
       <LinkedBookingDetailSheet
-        visible={linkedSheet?.kind === 'view'}
-        venueName={activeLinkedVenue?.venueName ?? ''}
-        visibility={activeLinkedVenue?.visibility ?? 'time_only'}
-        booking={linkedSheet?.kind === 'view' ? linkedSheet.booking : null}
+        visible={linkedSheet?.kind === 'detail'}
+        venue={linkedSheet?.kind === 'detail' ? linkedSheet.venue : null}
+        booking={linkedSheet?.kind === 'detail' ? linkedSheet.booking : null}
         onClose={() => setLinkedSheet(null)}
-      />
-      <LinkedBookingEditSheet
-        visible={linkedSheet?.kind === 'edit'}
-        venueName={activeLinkedVenue?.venueName ?? ''}
-        booking={linkedSheet?.kind === 'edit' ? linkedSheet.booking : null}
-        canCancel={activeLinkedVenue?.action === 'create_edit_cancel'}
-        onClose={() => setLinkedSheet(null)}
-        onSaved={() => {
-          setLinkedSheet(null);
-          void linkedQuery.refetch();
-        }}
+        onSaved={() => void linkedQuery.refetch()}
       />
       <LinkedBookingCreateSheet
         visible={linkedSheet?.kind === 'create'}
-        venue={linkedSheet?.kind === 'create' ? activeLinkedVenue : null}
+        venue={linkedSheet?.kind === 'create' ? linkedSheet.venue : null}
         date={anchor}
         onClose={() => setLinkedSheet(null)}
         onSaved={() => {
@@ -1637,6 +1626,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.base,
     paddingTop: spacing.base,
     paddingBottom: spacing['3xl'],
+    gap: spacing.lg,
+  },
+  allSectionLabel: {
+    marginLeft: spacing.xs,
   },
   scopeRow: {
     flexDirection: 'row',

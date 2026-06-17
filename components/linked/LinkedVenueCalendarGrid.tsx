@@ -6,9 +6,13 @@ import {
   CalendarDayGrid,
   type CalendarTimeBlock,
 } from '@/components/calendar/CalendarDayGrid';
+import { minutesToTime } from '@/components/calendar/grid-layout';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Text } from '@/components/ui/Text';
+import { dedupeScheduleDTOs, toCalendarScheduleBlock } from '@/lib/calendar/schedule-block-view';
+import { type MinuteRange, type VenueDayHours } from '@/lib/calendar/venue-closures';
+import { hasAnyWorkingHours, openRangesForDate } from '@/lib/linked/working-hours';
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type {
@@ -16,6 +20,7 @@ import type {
   CalendarGridWorkingHours,
 } from '@/types/calendar-grid';
 import type { LinkedBooking, LinkedVenueCalendar } from '@/types/linked-venues';
+import type { CalendarScheduleBlock } from '@/types/schedule-blocks';
 
 function fmtTime(t: string | null | undefined): string {
   return (t ?? '').slice(0, 5);
@@ -42,25 +47,26 @@ function actionLabel(venue: LinkedVenueCalendar): string | null {
  *    `create_edit_cancel`    → appointment bars open the edit sheet; editable
  *                              (non-cancelled) bookings are draggable/resizable.
  *
- * The parent owns the sheets; this component only decides which callback to fire
- * per booking and whether drag is wired.
+ * The parent owns the sheets; this component only resolves which booking was
+ * tapped and whether drag is wired. The detail sheet itself gates view vs edit
+ * by the link grant, so a single `onOpenBooking` covers both.
  */
 export function LinkedVenueCalendarGrid({
   venue,
+  date,
   nowMinutes,
-  onViewBooking,
-  onEditBooking,
+  onOpenBooking,
   onCreate,
   refreshing,
   onRefresh,
 }: {
   venue: LinkedVenueCalendar;
+  /** The day being shown ("YYYY-MM-DD") — drives the working-hours window. */
+  date: string;
   /** Minutes-since-midnight for the now-line, or null when not today. */
   nowMinutes: number | null;
-  /** Open the read-only detail (time_only is handled via busy overlays, not this). */
-  onViewBooking: (booking: LinkedBooking) => void;
-  /** Open the edit sheet for an editable booking. */
-  onEditBooking: (booking: LinkedBooking) => void;
+  /** Open the booking's expanded detail (read-only or editable per the grant). */
+  onOpenBooking: (booking: LinkedBooking) => void;
   /** Start a new cross-venue booking (only shown for create_edit_cancel). */
   onCreate: () => void;
   refreshing?: boolean;
@@ -69,9 +75,6 @@ export function LinkedVenueCalendarGrid({
   const { colors } = useTheme();
 
   const timeOnly = venue.visibility === 'time_only';
-  const canEditAny =
-    venue.visibility === 'full_details' &&
-    (venue.action === 'edit_existing' || venue.action === 'create_edit_cancel');
   const canCreate = venue.action === 'create_edit_cancel';
 
   // Index bookings by id so the press handler can resolve the rich row.
@@ -81,10 +84,34 @@ export function LinkedVenueCalendarGrid({
     return map;
   }, [venue.bookings]);
 
-  // Working ranges: merge every practitioner's working hours so the grid spans
-  // the venue's whole day. (LinkedPractitioner.workingHours is opaque day-keyed
-  // template data we don't expand here; the grid auto-fits to the bookings.)
-  const workingHours: CalendarGridWorkingHours[] = useMemo(() => [], []);
+  // The linked venue's available hours for this day, unioned across its
+  // practitioners' working-hours templates. Drives the grid's visible window
+  // (workingHours) AND the "Closed" shading (venueHours) — mirroring the web's
+  // per-linked-column closure shading, which derives from the linked column's
+  // own working hours rather than the viewing venue's opening hours.
+  const openRanges = useMemo<MinuteRange[]>(() => {
+    const all: MinuteRange[] = [];
+    for (const p of venue.practitioners) all.push(...openRangesForDate(p.workingHours, date));
+    return all;
+  }, [venue.practitioners, date]);
+
+  const workingHours = useMemo<CalendarGridWorkingHours[]>(
+    () => openRanges.map((r) => ({ start: minutesToTime(r.start), end: minutesToTime(r.end) })),
+    [openRanges],
+  );
+
+  const hasTemplate = useMemo(
+    () => venue.practitioners.some((p) => hasAnyWorkingHours(p.workingHours)),
+    [venue.practitioners],
+  );
+
+  // Shade the closed hours: explicit open periods when the venue works today,
+  // fully closed when it has a template but no hours today, and unknown (no
+  // shading) when no template is available at all.
+  const venueHours = useMemo<VenueDayHours>(() => {
+    if (openRanges.length > 0) return { kind: 'open', periods: openRanges };
+    return hasTemplate ? { kind: 'closed' } : { kind: 'unknown' };
+  }, [openRanges, hasTemplate]);
 
   // time_only → grey, non-interactive busy overlays (lock styling, no tap).
   const timeBlocks: CalendarTimeBlock[] = useMemo(() => {
@@ -119,16 +146,18 @@ export function LinkedVenueCalendarGrid({
     });
   }, [timeOnly, venue.bookings, venue.practitioners]);
 
+  // full_details → the venue's classes / ticketed events / resource bookings for
+  // the day, rendered as read-only overlays via the same mapper the main
+  // calendar uses (class instances deduped). time_only never carries these.
+  const scheduleBlocks = useMemo<CalendarScheduleBlock[]>(() => {
+    if (timeOnly) return [];
+    const dtos = (venue.scheduleBlocks ?? []).filter((b) => b.date === date);
+    return dedupeScheduleDTOs(dtos).map(toCalendarScheduleBlock);
+  }, [timeOnly, venue.scheduleBlocks, date]);
+
   const handleBlockPress = (bookingId: string) => {
     const booking = bookingsById.get(bookingId);
-    if (!booking) return;
-    // editable here means the viewer's grant allows editing AND the booking is
-    // not cancelled (the server sets `editable` for full_details + edit grants).
-    if (canEditAny && booking.editable && booking.status !== 'Cancelled') {
-      onEditBooking(booking);
-    } else {
-      onViewBooking(booking);
-    }
+    if (booking) onOpenBooking(booking);
   };
 
   // Hold-drag move/resize is intentionally NOT wired: the web linked calendar
@@ -138,6 +167,16 @@ export function LinkedVenueCalendarGrid({
   // (DraggableAppointmentBlock: dragEnabled = draggable && onDragReschedule),
   // so time_only and read-only columns are non-interactive and editable columns
   // open the sheet on tap.
+
+  // Render the grid when there's anything to show — bookings, the venue's hours
+  // for today, a working-hours template (so a closed day shades correctly), or a
+  // create grant (so an empty bookable day can still be tapped to add a booking).
+  const hasGridContent =
+    venue.bookings.length > 0 ||
+    scheduleBlocks.length > 0 ||
+    openRanges.length > 0 ||
+    hasTemplate ||
+    canCreate;
 
   const pill = actionLabel(venue);
 
@@ -165,7 +204,7 @@ export function LinkedVenueCalendarGrid({
         ) : null}
       </View>
 
-      {venue.practitioners.length === 0 && venue.bookings.length === 0 ? (
+      {!hasGridContent ? (
         <Text variant="caption" tone="muted" style={styles.empty}>
           {timeOnly
             ? 'No busy time blocks for this day.'
@@ -176,7 +215,9 @@ export function LinkedVenueCalendarGrid({
           <CalendarDayGrid
             bookings={gridBookings}
             workingHours={workingHours}
+            venueHours={venueHours}
             timeBlocks={timeBlocks}
+            scheduleBlocks={scheduleBlocks}
             nowMinutes={nowMinutes}
             onBlockPress={handleBlockPress}
             onEmptyPress={() => {

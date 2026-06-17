@@ -1090,13 +1090,14 @@ export default function BookingsScreen() {
         fallbackServiceName={openServiceName}
       />
 
-      {/* Read-only detail for a linked venue's booking (manage on Calendar tab). */}
+      {/* Expanded detail for a linked venue's booking — read-only or editable
+          per the link grant (same rich sheet as the Calendar tab). */}
       <LinkedBookingDetailSheet
         visible={linkedSheet !== null}
-        venueName={linkedSheet?.venue.venueName ?? ''}
-        visibility={linkedSheet?.venue.visibility ?? 'time_only'}
+        venue={linkedSheet?.venue ?? null}
         booking={linkedSheet?.booking ?? null}
         onClose={() => setLinkedSheet(null)}
+        onSaved={() => void linkedQuery.refetch()}
       />
 
       {/* Bulk action tray */}

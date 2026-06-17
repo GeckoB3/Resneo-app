@@ -14,12 +14,14 @@ import type {
   InviteVerifyResponse,
   LinkGrant,
   LinkGrantPair,
+  LinkedNotificationPrefs,
   LinkResponse,
   MyCalendarsResponse,
   RespondLinkAction,
   VenueLookupResponse,
   VenueSearchResponse,
 } from '@/types/linked-venues';
+import { resolveLinkedNotificationPrefs } from '@/types/linked-venues';
 
 /** GET /api/venue/account-links — all links + eligibility for the current venue (admin, Bearer). */
 export function useLinkedVenues() {
@@ -338,6 +340,70 @@ export function useLinkedVenueAudit(linkId: string | null | undefined, filters: 
         `/api/venue/account-links/${linkId}/audit?${qs.toString()}`,
         { accessToken },
       );
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Per-venue email notification prefs for cross-venue activity (web §17.4)
+// ---------------------------------------------------------------------------
+
+/** GET /api/venue/notifications/preferences — this venue's linked-activity email prefs. */
+export function useLinkedNotificationPrefs() {
+  const accessToken = useAccessToken();
+  const enabled = isBackendConfigured() && accessToken !== null;
+
+  return useQuery({
+    queryKey: queryKeys.linkedVenues.notificationPrefs(accessToken),
+    enabled,
+    queryFn: async (): Promise<LinkedNotificationPrefs> => {
+      if (!accessToken) throw new Error('Missing access token');
+      const res = await apiFetch<{ prefs: unknown }>('/api/venue/notifications/preferences', {
+        accessToken,
+      });
+      return resolveLinkedNotificationPrefs(res.prefs);
+    },
+  });
+}
+
+/**
+ * PATCH /api/venue/notifications/preferences — toggle which cross-venue write
+ * events email this venue (admin-only server-side; in-app rows are unaffected).
+ * Optimistic: the switch flips immediately and rolls back on error.
+ */
+export function useUpdateLinkedNotificationPrefs() {
+  const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
+  const key = queryKeys.linkedVenues.notificationPrefs(accessToken);
+
+  return useMutation({
+    mutationFn: async (
+      patch: Partial<LinkedNotificationPrefs>,
+    ): Promise<LinkedNotificationPrefs> => {
+      if (!accessToken) throw new Error('Missing access token');
+      const res = await apiFetch<{ prefs: unknown }>('/api/venue/notifications/preferences', {
+        accessToken,
+        method: 'PATCH',
+        body: JSON.stringify(patch),
+      });
+      return resolveLinkedNotificationPrefs(res.prefs);
+    },
+    onMutate: async (patch) => {
+      await queryClient.cancelQueries({ queryKey: key });
+      const previous = queryClient.getQueryData<LinkedNotificationPrefs>(key);
+      if (previous) {
+        queryClient.setQueryData<LinkedNotificationPrefs>(key, { ...previous, ...patch });
+      }
+      return { previous };
+    },
+    onError: (_err, _patch, context) => {
+      if (context?.previous) queryClient.setQueryData(key, context.previous);
+    },
+    onSuccess: (prefs) => {
+      queryClient.setQueryData(key, prefs);
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: key });
     },
   });
 }

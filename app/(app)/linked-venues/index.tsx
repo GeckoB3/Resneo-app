@@ -5,6 +5,7 @@ import { Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 
 import { AcceptInviteSheet } from '@/components/linked/AcceptInviteSheet';
 import { IncomingRequestSheet } from '@/components/linked/IncomingRequestSheet';
+import { LinkedNotificationPrefsCard } from '@/components/linked/LinkedNotificationPrefsCard';
 import { InviteLinkSheet } from '@/components/linked/InviteLinkSheet';
 import { LinkRequestSheet } from '@/components/linked/LinkRequestSheet';
 import { LinkStatusBadge } from '@/components/linked/LinkStatusBadge';
@@ -475,6 +476,8 @@ export default function LinkedVenuesScreen() {
           ))}
         </Section>
       ) : null}
+
+      <LinkedNotificationPrefsCard />
 
       <IncomingRequestSheet
         link={reviewLink}

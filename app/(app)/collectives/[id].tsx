@@ -13,26 +13,14 @@ import { Screen } from '@/components/ui/Screen';
 import { Segmented } from '@/components/ui/Segmented';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import { fullMutualLinks } from '@/lib/linked/grants';
 import { useCollectives } from '@/lib/queries/useCollectives';
 import { useLinkedVenues } from '@/lib/queries/useLinkedVenues';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { spacing } from '@/theme/index';
 import type { CollectiveView } from '@/types/collectives';
-import type { AccountLinkView } from '@/types/linked-venues';
 
 type TabKey = 'page' | 'services' | 'members';
-
-/** Full-mutual links eligible to invite (matches the web write gate). */
-function fullMutualLinks(links: AccountLinkView[]): AccountLinkView[] {
-  return links.filter(
-    (l) =>
-      l.status === 'accepted' &&
-      l.iCan.calendar === 'full_details' &&
-      l.theyCan.calendar === 'full_details' &&
-      l.iCan.act === 'create_edit_cancel' &&
-      l.theyCan.act === 'create_edit_cancel',
-  );
-}
 
 export default function CollectiveDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();

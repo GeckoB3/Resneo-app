@@ -5,7 +5,6 @@ import { SymbolView } from 'expo-symbols';
 
 import { LinkedBookingCreateSheet } from '@/components/linked/LinkedBookingCreateSheet';
 import { LinkedBookingDetailSheet } from '@/components/linked/LinkedBookingDetailSheet';
-import { LinkedBookingEditSheet } from '@/components/linked/LinkedBookingEditSheet';
 import { LinkedVenueCalendarGrid } from '@/components/linked/LinkedVenueCalendarGrid';
 import { DatePickerField } from '@/components/ui/DatePickerField';
 import { Button } from '@/components/ui/Button';
@@ -36,8 +35,7 @@ function nowMinutesInTz(timeZone: string): number {
 }
 
 type SheetState =
-  | { kind: 'view'; venue: LinkedVenueCalendar; booking: LinkedBooking }
-  | { kind: 'edit'; venue: LinkedVenueCalendar; booking: LinkedBooking }
+  | { kind: 'detail'; venue: LinkedVenueCalendar; booking: LinkedBooking }
   | { kind: 'create'; venue: LinkedVenueCalendar }
   | null;
 
@@ -146,33 +144,21 @@ export default function LinkedCalendarScreen() {
         <LinkedVenueCalendarGrid
           key={v.venueId}
           venue={v}
+          date={date}
           nowMinutes={nowMinutes}
           refreshing={query.isRefetching}
           onRefresh={() => void query.refetch()}
-          onViewBooking={(booking) => setSheet({ kind: 'view', venue: v, booking })}
-          onEditBooking={(booking) => setSheet({ kind: 'edit', venue: v, booking })}
+          onOpenBooking={(booking) => setSheet({ kind: 'detail', venue: v, booking })}
           onCreate={() => setSheet({ kind: 'create', venue: v })}
         />
       ))}
 
       <LinkedBookingDetailSheet
-        visible={sheet?.kind === 'view'}
-        venueName={sheet?.kind === 'view' ? sheet.venue.venueName : ''}
-        visibility={sheet?.kind === 'view' ? sheet.venue.visibility : 'time_only'}
-        booking={sheet?.kind === 'view' ? sheet.booking : null}
+        visible={sheet?.kind === 'detail'}
+        venue={sheet?.kind === 'detail' ? sheet.venue : null}
+        booking={sheet?.kind === 'detail' ? sheet.booking : null}
         onClose={() => setSheet(null)}
-      />
-
-      <LinkedBookingEditSheet
-        visible={sheet?.kind === 'edit'}
-        venueName={sheet?.kind === 'edit' ? sheet.venue.venueName : ''}
-        booking={sheet?.kind === 'edit' ? sheet.booking : null}
-        canCancel={sheet?.kind === 'edit' ? sheet.venue.action === 'create_edit_cancel' : false}
-        onClose={() => setSheet(null)}
-        onSaved={() => {
-          setSheet(null);
-          void query.refetch();
-        }}
+        onSaved={() => void query.refetch()}
       />
 
       <LinkedBookingCreateSheet

@@ -4,6 +4,7 @@ import { SymbolView } from 'expo-symbols';
 
 import { Sheet } from '@/components/ui/Sheet';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { ErrorState } from '@/components/ui/ErrorState';
 import { PressableScale } from '@/components/ui/PressableScale';
 import { Text } from '@/components/ui/Text';
 import { summariseGrant } from '@/lib/linked/grants';
@@ -95,7 +96,16 @@ export function LinkedVenueSwitcherSheet({
           </View>
         </PressableScale>
 
-        {accessible.length === 0 ? (
+        {query.isError ? (
+          <ErrorState
+            message="Couldn’t load your linked venues."
+            onRetry={() => void query.refetch()}
+          />
+        ) : query.isLoading ? (
+          <Text variant="caption" tone="muted" style={styles.loading}>
+            Loading linked venues…
+          </Text>
+        ) : accessible.length === 0 ? (
           <EmptyState
             title="No linked calendars"
             message="When you’re linked to another venue with calendar access, it’ll appear here to switch into."
@@ -163,5 +173,9 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     gap: 2,
+  },
+  loading: {
+    paddingVertical: spacing.lg,
+    textAlign: 'center',
   },
 });

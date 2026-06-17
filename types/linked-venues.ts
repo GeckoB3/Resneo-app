@@ -6,6 +6,8 @@
  * never deals with the raw low/high column model — see Docs/LINKED_VENUES_IMPLEMENTATION_PLAN.md §2.
  */
 
+import type { ScheduleBlockDTO } from './schedule-blocks';
+
 // ---------------------------------------------------------------------------
 // Core enums
 // ---------------------------------------------------------------------------
@@ -327,7 +329,8 @@ export interface LinkedVenueCalendar {
   services: LinkedService[];
   resources: LinkedResource[];
   bookings: LinkedBooking[];
-  scheduleBlocks?: unknown[];
+  /** Classes / ticketed events / resource bookings shells (full_details only). */
+  scheduleBlocks?: ScheduleBlockDTO[];
 }
 
 export interface LinkedCalendarResponse {
@@ -378,4 +381,41 @@ export interface LinkedVenueSummary {
   linkId: string;
   /** What I can do to this venue's data. */
   grant: LinkGrant;
+}
+
+// ---------------------------------------------------------------------------
+// Per-venue email notification prefs for cross-venue activity (web §17.4)
+// ---------------------------------------------------------------------------
+
+/** Which cross-venue write events email this venue. In-app rows are unaffected. */
+export type LinkedNotificationCategory = 'cancel' | 'reschedule' | 'create' | 'notes';
+
+export type LinkedNotificationPrefs = Record<LinkedNotificationCategory, boolean>;
+
+/** All categories default OFF — opt-in, matching the web. */
+export const DEFAULT_LINKED_NOTIFICATION_PREFS: LinkedNotificationPrefs = {
+  cancel: false,
+  reschedule: false,
+  create: false,
+  notes: false,
+};
+
+/** Stable display order + copy for the toggle rows. */
+export const LINKED_NOTIFICATION_ROWS: { key: LinkedNotificationCategory; label: string }[] = [
+  { key: 'create', label: 'Creates a new booking' },
+  { key: 'reschedule', label: 'Reschedules a booking' },
+  { key: 'cancel', label: 'Cancels a booking' },
+  { key: 'notes', label: 'Edits booking notes or service' },
+];
+
+/** Merge a stored (possibly partial / malformed) prefs blob over the defaults. */
+export function resolveLinkedNotificationPrefs(raw: unknown): LinkedNotificationPrefs {
+  const out: LinkedNotificationPrefs = { ...DEFAULT_LINKED_NOTIFICATION_PREFS };
+  if (raw && typeof raw === 'object') {
+    const bag = raw as Record<string, unknown>;
+    for (const key of Object.keys(out) as LinkedNotificationCategory[]) {
+      if (typeof bag[key] === 'boolean') out[key] = bag[key] as boolean;
+    }
+  }
+  return out;
 }

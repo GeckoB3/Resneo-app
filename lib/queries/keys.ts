@@ -270,6 +270,8 @@ export const queryKeys = {
       [...queryKeys.linkedVenues.all(), 'invite', keyScope(accessToken), token ?? null] as const,
     myCalendars: (accessToken?: string | null) =>
       [...queryKeys.linkedVenues.all(), 'myCalendars', keyScope(accessToken)] as const,
+    notificationPrefs: (accessToken?: string | null) =>
+      [...queryKeys.linkedVenues.all(), 'notificationPrefs', keyScope(accessToken)] as const,
     audit: (accessToken?: string | null, linkId?: string | null, filtersKey?: string | null) =>
       [
         ...queryKeys.linkedVenues.all(),
