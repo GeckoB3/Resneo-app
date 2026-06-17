@@ -16,13 +16,11 @@ import {
 } from 'react-native';
 import Animated, { FadeInDown, LinearTransition } from 'react-native-reanimated';
 import { useReduceMotion, motionSafe, layoutSafe } from '@/lib/motion';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
   BulkMessageSheet,
   BulkRemoveTagSheet,
   BulkTagSheet,
-  MergeContactsSheet,
 } from '@/components/clients/BulkActionSheets';
 import { ContactAzRail } from '@/components/clients/ContactAzRail';
 import { ContactFilterSheet, type ContactFilterState, DEFAULT_FILTER_STATE } from '@/components/clients/ContactFilterSheet';
@@ -31,6 +29,7 @@ import { flattenContacts, isNameSort } from '@/components/clients/contactListDat
 import { CreateContactSheet } from '@/components/clients/CreateContactSheet';
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge } from '@/components/ui/Badge';
+import { BulkActionBar, BULK_ACTION_BAR_CLEARANCE } from '@/components/ui/BulkActionBar';
 import { Button } from '@/components/ui/Button';
 import { Chip } from '@/components/ui/Chip';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -54,7 +53,7 @@ import { useVenueLiveSync } from '@/lib/realtime/useVenueLiveSync';
 import { isUnifiedSchedulingVenue } from '@/lib/venue/venue-experience';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
-import { elevation, radius, spacing } from '@/theme/index';
+import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type {
   ContactCustomFieldDefinition,
@@ -242,7 +241,6 @@ export default function ClientsScreen() {
   const queryClient = useQueryClient();
   const { colors } = useTheme();
   const reduceMotion = useReduceMotion();
-  const insets = useSafeAreaInsets();
   const toast = useToast();
   const { terminology, venue, bookingModel } = useVenueContext();
   const isAdmin = venue?.current_user_role === 'admin';
@@ -260,8 +258,10 @@ export default function ClientsScreen() {
   const [createSheetOpen, setCreateSheetOpen] = useState(false);
   // Bulk selection (long-press a row to start).
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [bulkSheet, setBulkSheet] = useState<'tag' | 'remove_tag' | 'message' | 'merge' | null>(null);
+  const [bulkSheet, setBulkSheet] = useState<'tag' | 'remove_tag' | 'message' | null>(null);
   const [exporting, setExporting] = useState(false);
+  // Measured bulk-bar height — grows when its actions wrap to a second row.
+  const [bulkBarClearance, setBulkBarClearance] = useState(BULK_ACTION_BAR_CLEARANCE);
 
   const listRef = useRef<FlatList<ContactListRow>>(null);
 
@@ -312,10 +312,15 @@ export default function ClientsScreen() {
   const queryParamsKey = useMemo(() => JSON.stringify(guestQueryParams), [guestQueryParams]);
 
   // Reset pagination + the accumulated rows whenever the query params change.
+  // Also clear any bulk selection: the selected ids may no longer be in the
+  // new result set, so bulk-acting on them after a filter/search/sort change
+  // would target contacts that no longer match the view.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setPage(0);
     setLoadedGuests([]);
+    setSelectedIds([]);
+    setBulkSheet(null);
   }, [queryParamsKey]);
 
   const guestsQuery = useGuests({ ...guestQueryParams, page, limit: PAGE_SIZE });
@@ -407,11 +412,6 @@ export default function ClientsScreen() {
     const allSelected = allIds.length > 0 && allIds.every((id) => selectedIds.includes(id));
     setSelectedIds(allSelected ? [] : allIds);
   };
-
-  const selectedGuests = useMemo(
-    () => guests.filter((guest) => selectedIds.includes(guest.id)),
-    [guests, selectedIds],
-  );
 
   // Flatten loaded rows into header + contact rows for the A–Z list. For
   // non-name sorts we still flatten (without headers) so renderItem is uniform.
@@ -756,9 +756,8 @@ export default function ClientsScreen() {
     filterState.date_from !== '' ||
     filterState.date_to !== '';
 
-  const bulkBarBottom = Math.max(spacing.base, insets.bottom + spacing.xs);
   // Keep the A–Z rail clear of the floating bulk bar when it's showing.
-  const railBottomInset = selectionMode ? 72 + bulkBarBottom : spacing.xl;
+  const railBottomInset = selectionMode ? bulkBarClearance : spacing.xl;
 
   const listFooter = useMemo(() => {
     if (guests.length === 0) return null;
@@ -862,7 +861,7 @@ export default function ClientsScreen() {
             ref={listRef}
             contentContainerStyle={[
               styles.listContent,
-              selectionMode ? { paddingBottom: 80 + bulkBarBottom } : undefined,
+              selectionMode ? { paddingBottom: bulkBarClearance } : undefined,
             ]}
             data={rows}
             keyExtractor={keyExtractor}
@@ -925,47 +924,32 @@ export default function ClientsScreen() {
       )}
 
       {/* Bulk action bar — long-press rows to select. */}
-      {selectionMode ? (
-        <View
-          style={[
-            styles.bulkBar,
-            elevation.raised,
-            { backgroundColor: colors.surfaceRaised, borderColor: colors.border, bottom: bulkBarBottom },
-          ]}>
-          <Text variant="label" style={styles.bulkCount}>
-            {selectedIds.length} selected
-          </Text>
+      <BulkActionBar
+        count={selectedIds.length}
+        allSelected={guests.length > 0 && guests.every((g) => selectedIds.includes(g.id))}
+        onToggleSelectAll={selectAllOnPage}
+        onClear={clearSelection}
+        onHeightChange={setBulkBarClearance}>
+        {isAdmin ? (
+          <Button label="Tag" size="sm" variant="secondary" onPress={() => setBulkSheet('tag')} />
+        ) : null}
+        {isAdmin ? (
           <Button
-            label={guests.length > 0 && guests.every((g) => selectedIds.includes(g.id)) ? 'Deselect all' : 'Select all'}
+            label="Remove tag"
             size="sm"
-            variant="ghost"
-            onPress={selectAllOnPage}
+            variant="secondary"
+            onPress={() => setBulkSheet('remove_tag')}
           />
-          {isAdmin ? (
-            <Button label="Tag" size="sm" variant="secondary" onPress={() => setBulkSheet('tag')} />
-          ) : null}
-          {isAdmin ? (
-            <Button
-              label="Remove tag"
-              size="sm"
-              variant="secondary"
-              onPress={() => setBulkSheet('remove_tag')}
-            />
-          ) : null}
-          {isAdmin ? (
-            <Button
-              label="Message"
-              size="sm"
-              variant="secondary"
-              onPress={() => setBulkSheet('message')}
-            />
-          ) : null}
-          {isAdmin && selectedIds.length >= 2 && selectedIds.length <= 5 ? (
-            <Button label="Merge" size="sm" variant="secondary" onPress={() => setBulkSheet('merge')} />
-          ) : null}
-          <Button label="✕" size="sm" variant="ghost" onPress={clearSelection} />
-        </View>
-      ) : null}
+        ) : null}
+        {isAdmin ? (
+          <Button
+            label="Message"
+            size="sm"
+            variant="secondary"
+            onPress={() => setBulkSheet('message')}
+          />
+        ) : null}
+      </BulkActionBar>
 
       {/* FAB — create new contact */}
       {!selectionMode ? (
@@ -990,12 +974,6 @@ export default function ClientsScreen() {
       <BulkMessageSheet
         guestIds={selectedIds}
         open={bulkSheet === 'message'}
-        onClose={() => setBulkSheet(null)}
-        onDone={clearSelection}
-      />
-      <MergeContactsSheet
-        guests={selectedGuests}
-        open={bulkSheet === 'merge'}
         onClose={() => setBulkSheet(null)}
         onDone={clearSelection}
       />
@@ -1082,21 +1060,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.base,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  bulkBar: {
-    position: 'absolute',
-    left: spacing.base,
-    right: spacing.base,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    padding: spacing.sm,
-    borderRadius: radius.card,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  bulkCount: {
-    flex: 1,
-    paddingLeft: spacing.sm,
   },
   countRow: {
     flexDirection: 'row',

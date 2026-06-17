@@ -9,11 +9,25 @@ import {
   type DimensionValue,
   type KeyboardEvent,
 } from 'react-native';
-import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useReduceMotion } from '@/lib/motion';
 import { motion, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
+
+/** Drag the handle/header down past this many points to dismiss the sheet. */
+const DISMISS_DISTANCE = 96;
+/** …or fling it down faster than this (pt/s) for a shorter drag. */
+const DISMISS_VELOCITY = 800;
+const DRAG_SPRING = { damping: 24, stiffness: 320, mass: 0.7 };
 
 type SheetProps = {
   visible: boolean;
@@ -78,6 +92,7 @@ function useKeyboardInset(bottomInset: number) {
  */
 export function Sheet({ visible, onClose, maxHeight = '90%', fill = false, children }: SheetProps) {
   const { colors } = useTheme();
+  const reduceMotion = useReduceMotion();
   const insets = useSafeAreaInsets();
   const keyboardInset = useKeyboardInset(insets.bottom);
 
@@ -90,29 +105,79 @@ export function Sheet({ visible, onClose, maxHeight = '90%', fill = false, child
     paddingBottom: basePad + keyboardInset.value,
   }));
 
+  // Drag-to-dismiss: a downward pan on the handle/header translates the whole
+  // sheet down; releasing past a distance/velocity threshold closes it,
+  // otherwise it springs back. The translate lives on the OUTER sheet while the
+  // keyboard inset lives on the INNER padding, so the two never fight. The
+  // gesture is scoped to the handle region only, so scroll bodies in `fill`
+  // sheets keep working untouched.
+  const dragY = useSharedValue(0);
+
+  // Reset the drag offset whenever the sheet (re)opens, so a sheet dismissed by
+  // dragging doesn't reappear mid-slide on its next open.
+  useEffect(() => {
+    if (visible) dragY.set(0);
+  }, [visible, dragY]);
+
+  const settleBack = () => {
+    'worklet';
+    dragY.set(reduceMotion ? 0 : withSpring(0, DRAG_SPRING));
+  };
+
+  const panGesture = Gesture.Pan()
+    // Only engage on a deliberate downward drag — a tap still fires the
+    // Pressable's onPress (close), and horizontal movement is ignored.
+    .activeOffsetY(10)
+    .failOffsetY(-10)
+    .onChange((event) => {
+      // Only track downward drift; ignore upward pulls so the sheet can't lift
+      // off its resting edge.
+      dragY.set(Math.max(0, dragY.get() + event.changeY));
+    })
+    .onEnd((event) => {
+      if (event.translationY > DISMISS_DISTANCE || event.velocityY > DISMISS_VELOCITY) {
+        runOnJS(onClose)();
+      } else {
+        settleBack();
+      }
+    });
+
+  const sheetTransform = useAnimatedStyle(() => ({
+    transform: [{ translateY: dragY.get() }],
+  }));
+
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType={reduceMotion ? 'fade' : 'slide'}
+      onRequestClose={onClose}>
       <View style={[styles.root, { backgroundColor: colors.overlay }]}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Dismiss" />
-        <SafeAreaView
-          edges={['bottom']}
+        <Animated.View
           style={[
             styles.sheet,
             { backgroundColor: colors.surfaceRaised },
             fill ? { height: maxHeight } : { maxHeight },
+            sheetTransform,
           ]}>
-          <Animated.View style={[fill ? styles.contentFill : styles.content, animatedPad]}>
-            <Pressable
-              onPress={onClose}
-              accessibilityRole="button"
-              accessibilityLabel="Close"
-              hitSlop={12}
-              style={styles.handleHitArea}>
-              <View style={[styles.handle, { backgroundColor: colors.border }]} />
-            </Pressable>
-            {children}
-          </Animated.View>
-        </SafeAreaView>
+          <SafeAreaView edges={['bottom']} style={fill ? styles.safeFill : undefined}>
+            <Animated.View style={[fill ? styles.contentFill : styles.content, animatedPad]}>
+              <GestureDetector gesture={panGesture}>
+                <Pressable
+                  onPress={onClose}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close"
+                  accessibilityHint="Or drag down to dismiss"
+                  hitSlop={12}
+                  style={styles.handleHitArea}>
+                  <View style={[styles.handle, { backgroundColor: colors.border }]} />
+                </Pressable>
+              </GestureDetector>
+              {children}
+            </Animated.View>
+          </SafeAreaView>
+        </Animated.View>
       </View>
     </Modal>
   );
@@ -126,6 +191,11 @@ const styles = StyleSheet.create({
   sheet: {
     borderTopLeftRadius: radius.surface,
     borderTopRightRadius: radius.surface,
+  },
+  // `fill` sheets pin a fixed height on the outer wrapper; the SafeAreaView must
+  // fill it so the flex:1 content body expands to the full height.
+  safeFill: {
+    flex: 1,
   },
   content: {
     paddingTop: spacing.lg,

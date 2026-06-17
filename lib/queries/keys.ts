@@ -253,4 +253,58 @@ export const queryKeys = {
         durationMinutes ?? null,
       ] as const,
   },
+
+  linkedVenues: {
+    all: () => [...queryKeys.all, 'linkedVenues'] as const,
+    list: (accessToken?: string | null) =>
+      [...queryKeys.linkedVenues.all(), 'list', keyScope(accessToken)] as const,
+    detail: (accessToken?: string | null, linkId?: string | null) =>
+      [...queryKeys.linkedVenues.all(), 'detail', keyScope(accessToken), linkId ?? null] as const,
+    incoming: (accessToken?: string | null) =>
+      [...queryKeys.linkedVenues.all(), 'incoming', keyScope(accessToken)] as const,
+    search: (accessToken?: string | null, q?: string | null) =>
+      [...queryKeys.linkedVenues.all(), 'search', keyScope(accessToken), q ?? null] as const,
+    lookup: (accessToken?: string | null, slug?: string | null) =>
+      [...queryKeys.linkedVenues.all(), 'lookup', keyScope(accessToken), slug ?? null] as const,
+    invite: (accessToken?: string | null, token?: string | null) =>
+      [...queryKeys.linkedVenues.all(), 'invite', keyScope(accessToken), token ?? null] as const,
+    myCalendars: (accessToken?: string | null) =>
+      [...queryKeys.linkedVenues.all(), 'myCalendars', keyScope(accessToken)] as const,
+    audit: (accessToken?: string | null, linkId?: string | null, filtersKey?: string | null) =>
+      [
+        ...queryKeys.linkedVenues.all(),
+        'audit',
+        keyScope(accessToken),
+        linkId ?? null,
+        filtersKey ?? null,
+      ] as const,
+  },
+
+  linkedCalendar: {
+    all: () => [...queryKeys.all, 'linkedCalendar'] as const,
+    range: (accessToken?: string | null, from?: string | null, to?: string | null) =>
+      [...queryKeys.linkedCalendar.all(), keyScope(accessToken), from ?? null, to ?? null] as const,
+    guests: (accessToken?: string | null, venueId?: string | null, q?: string | null) =>
+      [
+        ...queryKeys.linkedCalendar.all(),
+        'guests',
+        keyScope(accessToken),
+        venueId ?? null,
+        q ?? null,
+      ] as const,
+    venueProfile: (accessToken?: string | null, venueId?: string | null) =>
+      [...queryKeys.linkedCalendar.all(), 'venueProfile', keyScope(accessToken), venueId ?? null] as const,
+  },
+
+  collectives: {
+    all: () => [...queryKeys.all, 'collectives'] as const,
+    list: (accessToken?: string | null) =>
+      [...queryKeys.collectives.all(), 'list', keyScope(accessToken)] as const,
+    detail: (accessToken?: string | null, collectiveId?: string | null) =>
+      [...queryKeys.collectives.all(), 'detail', keyScope(accessToken), collectiveId ?? null] as const,
+    catalogue: (accessToken?: string | null, collectiveId?: string | null) =>
+      [...queryKeys.collectives.all(), 'catalogue', keyScope(accessToken), collectiveId ?? null] as const,
+    slug: (accessToken?: string | null, slug?: string | null) =>
+      [...queryKeys.collectives.all(), 'slug', keyScope(accessToken), slug ?? null] as const,
+  },
 } as const;

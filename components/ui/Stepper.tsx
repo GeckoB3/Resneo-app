@@ -57,9 +57,31 @@ export function Stepper({
       <Text variant="label" tone="secondary">
         {label}
       </Text>
-      <View style={styles.stepperControl}>
+      {/*
+        Expose the control as a single "adjustable" element so VoiceOver/TalkBack
+        users can swipe up/down to change it and hear the current value, instead
+        of tabbing through two unlabelled +/− buttons. The visible buttons remain
+        for touch; they're hidden from the a11y tree to avoid duplicate stops.
+      */}
+      <View
+        accessibilityRole="adjustable"
+        accessibilityLabel={label}
+        accessibilityValue={{ text: value }}
+        accessibilityActions={[
+          { name: 'increment', label: 'Increase' },
+          { name: 'decrement', label: 'Decrease' },
+        ]}
+        onAccessibilityAction={(event) => {
+          if (event.nativeEvent.actionName === 'increment') onIncrement();
+          else if (event.nativeEvent.actionName === 'decrement') onDecrement();
+        }}
+        style={styles.stepperControl}>
         <StepButton symbol="−" onStep={onDecrement} />
-        <Text variant="subheading" style={styles.stepperValue}>
+        <Text
+          variant="subheading"
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          style={styles.stepperValue}>
           {value}
         </Text>
         <StepButton symbol="+" onStep={onIncrement} />
@@ -75,9 +97,10 @@ function StepButton({ symbol, onStep }: { symbol: string; onStep: () => void }) 
     <Pressable
       onPressIn={start}
       onPressOut={stop}
-      accessibilityRole="button"
-      accessibilityLabel={symbol === '+' ? 'Increase' : 'Decrease'}
-      accessibilityHint="Hold to change faster"
+      // The parent control is the single "adjustable" a11y element; hide these
+      // touch buttons from the a11y tree so screen readers don't double-stop.
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
       style={({ pressed }) => [
         styles.stepButton,
         { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? 0.7 : 1 },

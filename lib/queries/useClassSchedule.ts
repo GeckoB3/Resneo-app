@@ -4,14 +4,13 @@ import { apiFetch } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
 import { queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
-import type { BookingListRow } from '@/types/booking-list';
 
 // ---------------------------------------------------------------------------
 // Query keys — defined locally (keys.ts is shared and frozen for this feature).
-// Both keys nest under queryKeys.bookings.all() on purpose: every existing
-// booking mutation (status change, reschedule, delete in BookingDetailSheet)
-// already invalidates that prefix, so the roster and the session booked-counts
-// refresh automatically after staff act on an attendee's booking.
+// The sessions key nests under queryKeys.bookings.all() on purpose: every
+// existing booking mutation (status change, reschedule, delete in
+// BookingDetailSheet) already invalidates that prefix, so the session
+// booked-counts refresh automatically after staff act on an attendee's booking.
 // ---------------------------------------------------------------------------
 export const classScheduleKeys = {
   sessions: (accessToken?: string | null, from?: string | null, to?: string | null) =>
@@ -22,13 +21,6 @@ export const classScheduleKeys = {
       from ?? null,
       to ?? null,
     ] as const,
-  roster: (accessToken?: string | null, classInstanceId?: string | null) =>
-    [
-      ...queryKeys.bookings.all(),
-      'classRoster',
-      accessToken ?? null,
-      classInstanceId ?? null,
-    ] as const,
 };
 
 // ---------------------------------------------------------------------------
@@ -36,9 +28,10 @@ export const classScheduleKeys = {
 // schedule feed. Class sessions arrive as `kind: 'class_session'` blocks:
 // one `ci-*` block per session with no bookings, and one `bk-*` block PER
 // BOOKING for sessions that have bookings (the web calendar dedupes the same
-// way). The dedicated class routes (/api/venue/classes,
-// /api/venue/class-instances/*) are cookie-only, so this feed is the mobile
-// source of truth for the timetable.
+// way). This feed is the mobile source of truth for the timetable; the
+// per-session roster is loaded separately from the Bearer-capable
+// /api/venue/class-instances/[id]/attendees route (see useClassInstanceAttendees
+// in lib/queries/useClassesManage.ts).
 // ---------------------------------------------------------------------------
 
 /** Subset of the ScheduleBlockDTO returned by GET /api/venue/schedule. */
@@ -155,50 +148,6 @@ export function useClassSessions(options: UseClassSessionsOptions) {
         accessToken,
       });
       return dedupeClassSessions(data.blocks ?? []);
-    },
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Session roster — GET /api/venue/bookings/list?class_instance_id=<uuid>
-// (Bearer-capable). The web's dedicated roster route
-// (/api/venue/class-instances/[id]/attendees) is cookie-only, but this list
-// returns the same bookings with guest name/contact, status, party size and
-// deposit fields.
-// ---------------------------------------------------------------------------
-
-/**
- * Roster row — the shared {@link BookingListRow} plus `checked_in_at`, which
- * the bookings/list payload returns for class attendees (the class check-in
- * timestamp, distinct from `client_arrived_at`). The shared type in
- * types/booking-list.ts is frozen during the parity push, so we widen it here.
- */
-export type ClassRosterRow = BookingListRow & {
-  /** ISO timestamp the attendee was checked in for the class, if at all. */
-  checked_in_at?: string | null;
-};
-
-interface RosterResponse {
-  bookings: ClassRosterRow[];
-}
-
-/** All bookings (attendees) for one class session, soonest booked first. */
-export function useClassRoster(classInstanceId: string | null) {
-  const accessToken = useAccessToken();
-  const queryEnabled =
-    isBackendConfigured() && accessToken !== null && classInstanceId !== null;
-
-  return useQuery({
-    queryKey: classScheduleKeys.roster(accessToken, classInstanceId),
-    enabled: queryEnabled,
-    queryFn: async (): Promise<RosterResponse> => {
-      if (!accessToken || !classInstanceId) {
-        throw new Error('Missing access token or class instance');
-      }
-      const params = new URLSearchParams({ class_instance_id: classInstanceId });
-      return apiFetch<RosterResponse>(`/api/venue/bookings/list?${params}`, {
-        accessToken,
-      });
     },
   });
 }

@@ -8,6 +8,7 @@ import {
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
 import { hapticSelect } from '@/lib/haptics';
+import { useReduceMotion } from '@/lib/motion';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -45,6 +46,7 @@ export function PressableScale({
   accessibilityState,
   style,
 }: PressableScaleProps) {
+  const reduceMotion = useReduceMotion();
   const pressed = useSharedValue(0);
 
   const animatedStyle = useAnimatedStyle(() => ({
@@ -64,8 +66,8 @@ export function PressableScale({
         onPress?.();
       }}
       onLongPress={onLongPress}
-      onPressIn={() => pressed.set(withSpring(1, PRESS_SPRING))}
-      onPressOut={() => pressed.set(withSpring(0, PRESS_SPRING))}
+      onPressIn={() => pressed.set(reduceMotion ? 0 : withSpring(1, PRESS_SPRING))}
+      onPressOut={() => pressed.set(reduceMotion ? 0 : withSpring(0, PRESS_SPRING))}
       style={[animatedStyle, style]}>
       {children}
     </AnimatedPressable>

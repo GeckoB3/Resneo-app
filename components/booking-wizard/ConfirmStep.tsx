@@ -37,6 +37,8 @@ type ConfirmStepProps = {
   source: BookingSource;
   ownerVenueId?: string | null;
   onSuccess: (bookingId: string) => void;
+  /** Reset the wizard to step 1 for a back-to-back booking (front-desk flow). */
+  onBookAnother?: () => void;
   /** Staff "Require deposit" toggle state (only shown when the service has a deposit). */
   requireDeposit?: boolean;
   onChangeRequireDeposit?: (value: boolean) => void;
@@ -95,9 +97,11 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
 function BookingConfirmationView({
   confirmation,
   onViewBooking,
+  onBookAnother,
 }: {
   confirmation: BookingConfirmation;
   onViewBooking: () => void;
+  onBookAnother?: () => void;
 }) {
   const { colors } = useTheme();
 
@@ -144,7 +148,17 @@ function BookingConfirmationView({
         ) : null}
       </Card>
 
-      <Button label="View booking" fullWidth onPress={onViewBooking} />
+      <View style={styles.confirmationActions}>
+        <Button label="View booking" fullWidth onPress={onViewBooking} />
+        {onBookAnother ? (
+          <Button
+            label="Book another"
+            variant="secondary"
+            fullWidth
+            onPress={onBookAnother}
+          />
+        ) : null}
+      </View>
     </ScrollView>
   );
 }
@@ -161,6 +175,7 @@ export function ConfirmStep({
   source,
   ownerVenueId,
   onSuccess,
+  onBookAnother,
   requireDeposit = false,
   onChangeRequireDeposit,
   returningGuest = false,
@@ -270,6 +285,7 @@ export function ConfirmStep({
       <BookingConfirmationView
         confirmation={confirmation}
         onViewBooking={() => onSuccess(confirmation.booking_id)}
+        onBookAnother={onBookAnother}
       />
     );
   }
@@ -424,6 +440,9 @@ const styles = StyleSheet.create({
   },
   confirmationHeader: {
     gap: spacing.xs,
+  },
+  confirmationActions: {
+    gap: spacing.md,
   },
   serviceHeader: {
     gap: spacing.xs,

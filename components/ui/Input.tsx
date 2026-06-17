@@ -15,6 +15,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { Text } from '@/components/ui/Text';
+import { useReduceMotion } from '@/lib/motion';
 import { minTouchTarget, motion, radius, spacing, typography } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
@@ -60,24 +61,23 @@ export function Input({
   ...props
 }: InputProps) {
   const { colors } = useTheme();
+  const reduceMotion = useReduceMotion();
   const focus = useSharedValue(0);
 
   const animatedBorder = useAnimatedStyle(() => ({
     borderColor: error
       ? colors.danger
-      : interpolateColor(focus.value, [0, 1], [colors.border, colors.brand]),
+      : interpolateColor(focus.get(), [0, 1], [colors.border, colors.brand]),
   }));
 
   const handleFocus: NonNullable<TextInputProps['onFocus']> = (e) => {
-    // Reanimated shared values are intentionally mutable; the lint rule doesn't know that.
-    // eslint-disable-next-line react-hooks/immutability
-    focus.value = withTiming(1, { duration: motion.fast });
+    // Reduce-motion: flip the focus ring instantly; otherwise fade it in.
+    focus.set(reduceMotion ? 1 : withTiming(1, { duration: motion.fast }));
     onFocus?.(e);
   };
 
   const handleBlur: NonNullable<TextInputProps['onBlur']> = (e) => {
-    // eslint-disable-next-line react-hooks/immutability
-    focus.value = withTiming(0, { duration: motion.fast });
+    focus.set(reduceMotion ? 0 : withTiming(0, { duration: motion.fast }));
     onBlur?.(e);
   };
 

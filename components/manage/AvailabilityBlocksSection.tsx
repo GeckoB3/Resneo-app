@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 
 import { minutesToTime } from '@/components/calendar/grid-layout';
+import { ClosuresCalendar } from '@/components/manage/ClosuresCalendar';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { DatePickerField } from '@/components/ui/DatePickerField';
@@ -202,6 +203,13 @@ function formatDateRange(b: AvailabilityBlock): string {
 
 function todayYmd(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+/** "16 Jun" from a YYYY-MM-DD string (for the calendar CTA label). */
+function formatShortDay(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  if (!y || !m || !d) return iso;
+  return new Date(y, m - 1, d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 }
 
 // --- HH:MM <-> minutes bridge for the native TimePickerField ----------------
@@ -459,10 +467,13 @@ function OptionalTimePicker({
 function BlockForm({
   visible,
   editingBlock,
+  prefill,
   onClose,
 }: {
   visible: boolean;
   editingBlock: AvailabilityBlock | null;
+  /** Date(s) tapped on the calendar to pre-fill a new closure. */
+  prefill: { date_start: string; date_end: string } | null;
   onClose: () => void;
 }) {
   const { colors } = useTheme();
@@ -474,11 +485,17 @@ function BlockForm({
   const [error, setError] = useState<string | null>(null);
   const today = todayYmd();
 
-  // Sync draft whenever the sheet opens (editingBlock may change).
+  // Sync draft whenever the sheet opens (editingBlock / prefill may change).
   const handleSheetVisible = useCallback(() => {
-    setDraft(editingBlock ? draftFromBlock(editingBlock) : emptyDraft());
+    setDraft(
+      editingBlock
+        ? draftFromBlock(editingBlock)
+        : prefill
+          ? { ...emptyDraft(), date_start: prefill.date_start, date_end: prefill.date_end }
+          : emptyDraft(),
+    );
     setError(null);
-  }, [editingBlock]);
+  }, [editingBlock, prefill]);
 
   const pd = draft;
   const set = useCallback(
@@ -702,6 +719,35 @@ export function AvailabilityBlocksSection({ isAdmin }: AvailabilityBlocksSection
 
   const today = todayYmd();
 
+  // Calendar month + tap-to-select range (web-parity closures picker).
+  const [monthAnchor, setMonthAnchor] = useState<string>(today);
+  const [selectedStart, setSelectedStart] = useState<string | null>(null);
+  const [selectedEnd, setSelectedEnd] = useState<string | null>(null);
+  const [prefill, setPrefill] = useState<{ date_start: string; date_end: string } | null>(null);
+
+  const clearSelection = useCallback(() => {
+    setSelectedStart(null);
+    setSelectedEnd(null);
+  }, []);
+
+  // Tap an empty day → select it; tap a second day → range; tap the same single
+  // selected day → clear (matches the web calendar's range behaviour).
+  const handleSelectDay = useCallback(
+    (iso: string) => {
+      if (!selectedStart || (selectedEnd && selectedStart !== selectedEnd)) {
+        setSelectedStart(iso);
+        setSelectedEnd(iso);
+      } else if (selectedStart === iso && selectedEnd === iso) {
+        clearSelection();
+      } else {
+        const [a, b] = selectedStart < iso ? [selectedStart, iso] : [iso, selectedStart];
+        setSelectedStart(a);
+        setSelectedEnd(b);
+      }
+    },
+    [selectedStart, selectedEnd, clearSelection],
+  );
+
   const upcoming = useMemo(
     () =>
       blocks
@@ -720,12 +766,16 @@ export function AvailabilityBlocksSection({ isAdmin }: AvailabilityBlocksSection
 
   function openCreate() {
     setEditingBlock(null);
+    setPrefill(
+      selectedStart ? { date_start: selectedStart, date_end: selectedEnd ?? selectedStart } : null,
+    );
     setSheetVisible(true);
   }
 
   const openEdit = useCallback((b: AvailabilityBlock) => {
     if (!isAdmin) return;
     setEditingBlock(b);
+    setPrefill(null);
     setSheetVisible(true);
   }, [isAdmin]);
 
@@ -754,9 +804,6 @@ export function AvailabilityBlocksSection({ isAdmin }: AvailabilityBlocksSection
             One-off closures, amended hours, and capacity changes.
           </Text>
         </View>
-        {isAdmin ? (
-          <Button label="Add" size="sm" onPress={openCreate} style={styles.addBtn} />
-        ) : null}
       </View>
 
       {/* Content */}
@@ -768,11 +815,41 @@ export function AvailabilityBlocksSection({ isAdmin }: AvailabilityBlocksSection
         </View>
       ) : (
         <>
+          <View style={styles.calendarPad}>
+            <ClosuresCalendar
+              blocks={blocks}
+              monthAnchor={monthAnchor}
+              onChangeMonth={setMonthAnchor}
+              today={today}
+              selectedStart={selectedStart}
+              selectedEnd={selectedEnd}
+              onSelectDay={handleSelectDay}
+              onSelectBlock={openEdit}
+              isAdmin={isAdmin}
+            />
+            {isAdmin ? (
+              <Button
+                label={
+                  selectedStart
+                    ? `Add closure · ${formatShortDay(selectedStart)}${
+                        selectedEnd && selectedEnd !== selectedStart
+                          ? ` – ${formatShortDay(selectedEnd)}`
+                          : ''
+                      }`
+                    : 'Add closure'
+                }
+                fullWidth
+                onPress={openCreate}
+                style={styles.calendarCta}
+              />
+            ) : null}
+          </View>
+
           {upcoming.length === 0 ? (
             <View style={styles.emptyPad}>
               <Text variant="bodySmall" tone="muted" style={styles.emptyText}>
                 No upcoming closures or exceptions.
-                {isAdmin ? ' Tap Add to create one.' : ''}
+                {isAdmin ? ' Tap a date on the calendar to add one.' : ''}
               </Text>
             </View>
           ) : (
@@ -818,8 +895,11 @@ export function AvailabilityBlocksSection({ isAdmin }: AvailabilityBlocksSection
       <BlockForm
         visible={sheetVisible}
         editingBlock={editingBlock}
+        prefill={prefill}
         onClose={() => {
           setSheetVisible(false);
+          setPrefill(null);
+          clearSelection();
           void refetch();
         }}
       />
@@ -843,8 +923,13 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: spacing.xs,
   },
-  addBtn: {
-    alignSelf: 'flex-start',
+  calendarPad: {
+    paddingHorizontal: spacing.base,
+    paddingBottom: spacing.base,
+    gap: spacing.base,
+  },
+  calendarCta: {
+    marginTop: spacing.xs,
   },
   skeletonPad: {
     padding: spacing.base,

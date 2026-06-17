@@ -11,7 +11,10 @@ import { Text } from '@/components/ui/Text';
 import { ANALYTICS_EVENTS, track } from '@/lib/analytics';
 import { isBackendConfigured } from '@/lib/env';
 import { useAuth } from '@/providers/AuthProvider';
-import { spacing } from '@/theme/index';
+import { minTouchTarget, spacing } from '@/theme/index';
+
+/** Generous tap area for the small secondary text links. */
+const LINK_HIT_SLOP = { top: 8, bottom: 8, left: 12, right: 12 };
 
 // Full-colour RESNEO lockup (knot + wordmark) — the brand mark for the sign-in.
 const LOGO = require('../../assets/brand/logo-lockup.png');
@@ -144,6 +147,7 @@ export default function SignInScreen() {
           />
           <Pressable
             accessibilityRole="button"
+            hitSlop={LINK_HIT_SLOP}
             onPress={() => {
               setView('sign-in');
               setMode('password');
@@ -199,6 +203,7 @@ export default function SignInScreen() {
 
           <Pressable
             accessibilityRole="button"
+            hitSlop={LINK_HIT_SLOP}
             onPress={() => {
               setView('sign-in');
               setError(null);
@@ -274,6 +279,7 @@ export default function SignInScreen() {
 
             <Pressable
               accessibilityRole="button"
+              hitSlop={LINK_HIT_SLOP}
               onPress={() => {
                 setView('forgot-password');
                 setError(null);
@@ -329,7 +335,9 @@ const styles = StyleSheet.create({
     gap: spacing.base,
   },
   linkWrap: {
+    minHeight: minTouchTarget,
     alignItems: 'center',
+    justifyContent: 'center',
     paddingVertical: spacing.sm,
   },
 });

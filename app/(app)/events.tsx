@@ -2,7 +2,6 @@ import { Stack } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import {
   FlatList,
-  Linking,
   RefreshControl,
   StyleSheet,
   View,
@@ -13,14 +12,14 @@ import { useQueryClient } from '@tanstack/react-query';
 import { BookingDetailSheet } from '@/components/bookings/BookingDetailSheet';
 import { EventAttendees } from '@/components/events/EventAttendees';
 import { EventCard } from '@/components/events/EventCard';
-import { Button } from '@/components/ui/Button';
+import { EventManagerSheet } from '@/components/events/EventManagerSheet';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
+import { IconButton } from '@/components/ui/IconButton';
 import { LiveDot } from '@/components/ui/LiveDot';
 import { Screen } from '@/components/ui/Screen';
 import { Segmented } from '@/components/ui/Segmented';
 import { ListSkeleton } from '@/components/ui/Skeletons';
-import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { addDaysToDateStr } from '@/lib/dates/venue-dates';
 import { calendarDateInTimeZone } from '@/lib/queries/useBookingsList';
@@ -32,6 +31,7 @@ import {
 import { useVenueLiveSync } from '@/lib/realtime/useVenueLiveSync';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { spacing } from '@/theme/index';
+import { useTheme } from '@/theme/useTheme';
 
 type FilterTab = 'upcoming' | 'past';
 
@@ -39,28 +39,28 @@ type FilterTab = 'upcoming' | 'past';
 const UPCOMING_DAYS = 365;
 const PAST_DAYS = 90;
 
-const WEB_EVENT_MANAGER_URL = 'https://app.resneo.com/dashboard/event-manager';
-
 /** spacing.sm gap between event cards (the old contentContainer gap). */
 function CardSeparator() {
   return <View style={styles.cardSeparator} />;
 }
 
 /**
- * Staff Events screen — upcoming ticketed events with tickets sold vs
- * capacity, plus a per-event attendee roster that taps through to the full
- * booking detail. Read + arrived-toggle only: the event-manager CRUD routes
- * (create/edit/delete/cancel) are cookie-only on the web app, so those
- * actions stay on the web dashboard (inline note below the list).
+ * Staff Events screen — ticketed events with tickets sold vs capacity, plus a
+ * per-event attendee roster that taps through to the full booking detail and an
+ * Arrived toggle. Event setup (create/edit/delete, ticket tiers, admin cancel)
+ * is available in-app via the {@link EventManagerSheet} (header action) — the
+ * experience-events routes are Bearer-capable.
  */
 export default function EventsScreen() {
   const queryClient = useQueryClient();
+  const { colors } = useTheme();
   const { venue } = useVenueContext();
   const venueId = venue?.id ?? null;
 
   const [filter, setFilter] = useState<FilterTab>('upcoming');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [detailBookingId, setDetailBookingId] = useState<string | null>(null);
+  const [managerOpen, setManagerOpen] = useState(false);
 
   const today = calendarDateInTimeZone(new Date(), venue?.timezone);
   const range = useMemo(
@@ -85,17 +85,19 @@ export default function EventsScreen() {
     void queryClient.invalidateQueries({ queryKey: experienceEventKeys.attendeesAll() });
   }, [query, queryClient]);
 
-  // Realtime refresh — same `bookings` table the web event-manager watches.
+  // Realtime refresh — the same two tables the web event-manager watches:
+  // `experience_events` (event CRUD) and `bookings` (ticket sales / arrivals).
   const liveState = useVenueLiveSync({
     venueId,
     onRefresh,
-    subscriptions: venueId ? [{ table: 'bookings', filter: `venue_id=eq.${venueId}` }] : [],
+    subscriptions: venueId
+      ? [
+          { table: 'experience_events', filter: `venue_id=eq.${venueId}` },
+          { table: 'bookings', filter: `venue_id=eq.${venueId}` },
+        ]
+      : [],
     enabled: !!venueId,
   });
-
-  const openWebEventManager = useCallback(() => {
-    void Linking.openURL(WEB_EVENT_MANAGER_URL);
-  }, []);
 
   const keyExtractor = useCallback((event: ExperienceEventSummary) => event.id, []);
 
@@ -119,12 +121,18 @@ export default function EventsScreen() {
       <Stack.Screen
         options={{
           title: 'Events',
-          headerRight: () =>
-            liveState !== 'idle' ? (
-              <View style={styles.liveWrap}>
-                <LiveDot state={liveState} />
-              </View>
-            ) : null,
+          headerRight: () => (
+            <View style={styles.headerActions}>
+              {liveState !== 'idle' ? <LiveDot state={liveState} /> : null}
+              <IconButton
+                icon={{ ios: 'slider.horizontal.3', android: 'tune', web: 'tune' }}
+                accessibilityLabel="Manage events"
+                tint={colors.brand}
+                iconSize={22}
+                onPress={() => setManagerOpen(true)}
+              />
+            </View>
+          ),
         }}
       />
 
@@ -161,11 +169,11 @@ export default function EventsScreen() {
             title={filter === 'upcoming' ? 'No upcoming events' : 'No recent events'}
             message={
               filter === 'upcoming'
-                ? 'Active ticketed events will appear here with tickets sold and an attendee roster. Events are created on the web dashboard.'
+                ? 'Ticketed events appear here with tickets sold and an attendee roster. Create your first event to get started.'
                 : `No events ran in the past ${PAST_DAYS} days.`
             }
-            actionLabel="Open web event manager"
-            onAction={openWebEventManager}
+            actionLabel={filter === 'upcoming' ? 'New event' : undefined}
+            onAction={filter === 'upcoming' ? () => setManagerOpen(true) : undefined}
           />
         </View>
       ) : (
@@ -174,24 +182,7 @@ export default function EventsScreen() {
           keyExtractor={keyExtractor}
           renderItem={renderEvent}
           ItemSeparatorComponent={CardSeparator}
-          ListFooterComponent={
-            <>
-              {/* Event CRUD is cookie-auth only on the web app — link out instead. */}
-              <View style={styles.webNote}>
-                <Text variant="caption" tone="muted" style={styles.webNoteText}>
-                  Creating, editing, cancelling events and ticket setup are managed on the
-                  web dashboard.
-                </Text>
-                <Button
-                  label="Open web event manager"
-                  size="sm"
-                  variant="ghost"
-                  onPress={openWebEventManager}
-                />
-              </View>
-              <View style={styles.spacer} />
-            </>
-          }
+          ListFooterComponent={<View style={styles.spacer} />}
           contentContainerStyle={styles.content}
           initialNumToRender={8}
           windowSize={11}
@@ -206,6 +197,8 @@ export default function EventsScreen() {
         bookingId={detailBookingId}
         onClose={() => setDetailBookingId(null)}
       />
+
+      <EventManagerSheet visible={managerOpen} onClose={() => setManagerOpen(false)} />
     </Screen>
   );
 }
@@ -225,18 +218,13 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: spacing.base,
   },
-  webNote: {
-    marginTop: spacing.md,
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  webNoteText: {
-    textAlign: 'center',
-  },
   spacer: {
     height: spacing.xl,
   },
-  liveWrap: {
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
     marginRight: spacing.sm,
   },
 });

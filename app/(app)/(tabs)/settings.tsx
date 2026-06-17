@@ -16,9 +16,7 @@ import { Screen } from '@/components/ui/Screen';
 import { SearchBar } from '@/components/ui/SearchBar';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
-import { ApiError } from '@/lib/api/client';
 import { getWebUrl } from '@/lib/env';
-import { registerCurrentDeviceForPush } from '@/lib/push/registerDevice';
 import { useNotifications } from '@/lib/queries/useNotifications';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { useAppLock } from '@/providers/AppLockProvider';
@@ -65,7 +63,7 @@ const TILE = {
   orange: '#EA580C',
 };
 
-type DestKind = 'route' | 'web' | 'action';
+type DestKind = 'route' | 'web';
 type DestGroup = 'workspace' | 'manage' | 'bookingTypes' | 'app' | 'account';
 
 /** One navigable surface — the single source of truth for the grid, the grouped
@@ -80,8 +78,6 @@ type Destination = {
   kind: DestKind;
   /** Route path (kind 'route') or web dashboard path (kind 'web'). */
   target?: string;
-  /** Built-in action (kind 'action'). */
-  action?: 'push';
   /** Show in the "Quick actions" grid. */
   featured?: boolean;
   /** Opens an external surface — shows the "open" glyph. */
@@ -137,20 +133,18 @@ function Group({ title, children }: { title?: string; children: ReactNode }) {
 export default function MoreScreen() {
   const router = useRouter();
   const { colors } = useTheme();
-  const { session, signOut } = useAuth();
+  const { signOut } = useAuth();
   const toast = useToast();
   const { data: staffData, isLoading: staffLoading } = useStaffMe();
   const { venue, name: venueName, isLoading: venueLoading } = useVenueContext();
   const notificationsQuery = useNotifications();
   const { appLockEnabled, setAppLockEnabled, supported: appLockSupported } = useAppLock();
   const [query, setQuery] = useState('');
-  const [pushBusy, setPushBusy] = useState(false);
   const [appLockBusy, setAppLockBusy] = useState(false);
   const [signOutOpen, setSignOutOpen] = useState(false);
 
   const staff = staffData?.staff;
   const isAdmin = staff?.role === 'admin';
-  const accessToken = session?.access_token ?? null;
   const appVersion = Constants.expoConfig?.version ?? '—';
   const unreadCount = notificationsQuery.data?.unreadCount ?? 0;
 
@@ -170,37 +164,6 @@ export default function MoreScreen() {
     },
     [toast],
   );
-
-  const handleRetryPush = useCallback(async () => {
-    if (!accessToken) {
-      toast.info('Sign in before enabling push notifications.');
-      return;
-    }
-    setPushBusy(true);
-    try {
-      const result = await registerCurrentDeviceForPush({ accessToken });
-      if (result.registered) {
-        toast.success('This device is registered for push.');
-      } else {
-        const message =
-          result.reason === 'expo-go'
-            ? 'Push notifications are not available in Expo Go. Use a development build to test push.'
-            : result.reason === 'denied'
-              ? 'Permission was denied. Enable notifications for Resneo in system Settings, then try again.'
-              : result.reason === 'simulator'
-                ? 'Push tokens are only available on a real device.'
-                : result.reason === 'web'
-                  ? 'Push notifications are not available on the web build.'
-                  : 'Could not register this device for push.';
-        toast.error(message);
-      }
-    } catch (error) {
-      const message = error instanceof ApiError ? error.message : 'Push registration failed.';
-      toast.error(message);
-    } finally {
-      setPushBusy(false);
-    }
-  }, [accessToken, toast]);
 
   // Toggle the opt-in biometric lock. Enabling prompts for Face ID/passcode
   // (handled inside the provider); if the user cancels, the switch stays off.
@@ -225,7 +188,6 @@ export default function MoreScreen() {
   // Build the full, role-aware index once. The grid, the grouped list and search
   // all derive from this single array.
   const destinations = useMemo<Destination[]>(() => {
-    const slug = venue?.slug;
     const enabledModels = new Set<BookingModel>([
       ...(venue?.active_booking_models ?? []),
       ...(venue?.enabled_models ?? []),
@@ -252,13 +214,16 @@ export default function MoreScreen() {
       list.push({ id: 'venue-profile', label: 'Venue profile', hint: 'Name, contact details & address', icon: { ios: 'building.2.fill', android: 'storefront', web: 'storefront' }, tile: TILE.teal, group: 'manage', kind: 'route', target: '/manage/venue-profile' });
     }
     list.push({ id: 'hours', label: 'Business hours', hint: 'Weekly opening hours', icon: { ios: 'clock.fill', android: 'access_time', web: 'access_time' }, tile: TILE.sky, group: 'manage', kind: 'route', target: '/manage/hours' });
+    list.push({ id: 'linked-calendar', label: 'Linked calendar', hint: 'View bookings at venues linked to yours', icon: { ios: 'calendar', android: 'calendar_month', web: 'calendar_month' }, tile: TILE.teal, group: 'manage', kind: 'route', target: '/linked-venues/calendar' });
     if (isAdmin) {
       list.push({ id: 'team', label: 'Team', hint: 'Staff logins & roles', icon: { ios: 'person.2.fill', android: 'group', web: 'group' }, tile: TILE.emerald, group: 'manage', kind: 'route', target: '/manage/team' });
       list.push({ id: 'booking-settings', label: 'Booking settings', hint: 'Booking types & guest accounts', icon: { ios: 'slider.horizontal.3', android: 'tune', web: 'tune' }, tile: TILE.slate, group: 'manage', kind: 'route', target: '/manage/booking-settings' });
       list.push({ id: 'communications', label: 'Communications', hint: 'Confirmations, reminders & alerts', icon: { ios: 'envelope.fill', android: 'mail', web: 'mail' }, tile: TILE.amber, group: 'manage', kind: 'route', target: '/manage/communications' });
       list.push({ id: 'compliance', label: 'Compliance', hint: 'Forms, records & expiries', icon: { ios: 'checkmark.shield.fill', android: 'verified_user', web: 'verified_user' }, tile: TILE.emerald, group: 'manage', kind: 'route', target: '/manage/compliance' });
       list.push({ id: 'plan', label: 'Plan & payments', hint: 'Subscription tier & Stripe', icon: { ios: 'creditcard.fill', android: 'credit_card', web: 'credit_card' }, tile: TILE.violet, group: 'manage', kind: 'route', target: '/manage/plan' });
-      list.push({ id: 'booking-page', label: 'Booking page', hint: slug ? 'Preview your public booking page' : 'Public page, branding & widget', icon: { ios: 'globe', android: 'public', web: 'public' }, tile: TILE.indigo, group: 'manage', kind: 'web', target: slug ? `/book/${slug}` : '/dashboard/settings', external: true });
+      list.push({ id: 'booking-page', label: 'Booking page', hint: 'Branding, colours, fonts & public tabs', icon: { ios: 'globe', android: 'public', web: 'public' }, tile: TILE.indigo, group: 'manage', kind: 'route', target: '/manage/booking-page' });
+      list.push({ id: 'linked-venues', label: 'Linked venues', hint: 'Share calendars & cross-venue bookings', icon: { ios: 'link', android: 'link', web: 'link' }, tile: TILE.teal, group: 'manage', kind: 'route', target: '/linked-venues' });
+      list.push({ id: 'collectives', label: 'Venue collectives', hint: 'A combined booking page across linked venues', icon: { ios: 'person.2.wave.2.fill', android: 'groups', web: 'groups' }, tile: TILE.sky, group: 'manage', kind: 'route', target: '/collectives' });
     }
 
     // Booking types — only the models this venue has enabled (admin only).
@@ -271,7 +236,7 @@ export default function MoreScreen() {
 
     // App.
     list.push({ id: 'support', label: 'Support', hint: 'Contact the Resneo team', icon: { ios: 'questionmark.circle.fill', android: 'help', web: 'help' }, tile: TILE.teal, group: 'app', kind: 'route', target: '/support' });
-    list.push({ id: 'push', label: 'Push notifications', hint: 'Re-register this device for push', icon: { ios: 'bell.badge.fill', android: 'notifications_active', web: 'notifications_active' }, tile: TILE.rose, group: 'app', kind: 'action', action: 'push' });
+    list.push({ id: 'push', label: 'Push notifications', hint: 'Alerts this device shows & what for', icon: { ios: 'bell.badge.fill', android: 'notifications_active', web: 'notifications_active' }, tile: TILE.rose, group: 'app', kind: 'route', target: '/manage/notification-preferences' });
     list.push({ id: 'web-dashboard', label: 'Web dashboard', hint: 'Open the full dashboard in your browser', icon: { ios: 'desktopcomputer', android: 'computer', web: 'computer' }, tile: TILE.slate, group: 'app', kind: 'web', target: '/dashboard', external: true });
 
     return list;
@@ -281,9 +246,8 @@ export default function MoreScreen() {
     (dest: Destination) => {
       if (dest.kind === 'route' && dest.target) router.push(dest.target as Href);
       else if (dest.kind === 'web' && dest.target) openWeb(dest.target);
-      else if (dest.kind === 'action' && dest.action === 'push') void handleRetryPush();
     },
-    [router, openWeb, handleRetryPush],
+    [router, openWeb],
   );
 
   const trimmedQuery = query.trim().toLowerCase();
@@ -296,10 +260,6 @@ export default function MoreScreen() {
   }, [destinations, trimmedQuery]);
 
   const featured = useMemo(() => destinations.filter((d) => d.featured), [destinations]);
-
-  /** Live hint override — the push row reflects in-flight registration. */
-  const hintFor = (dest: Destination) =>
-    dest.id === 'push' && pushBusy ? 'Registering…' : dest.hint;
 
   if (staffLoading || venueLoading) {
     return (
@@ -363,7 +323,7 @@ export default function MoreScreen() {
                 icon={dest.icon}
                 tile={dest.tile}
                 label={dest.label}
-                hint={hintFor(dest)}
+                hint={dest.hint}
                 external={dest.external}
                 onPress={() => handlePress(dest)}
               />
@@ -408,7 +368,7 @@ export default function MoreScreen() {
                     icon={dest.icon}
                     tile={dest.tile}
                     label={dest.label}
-                    hint={hintFor(dest)}
+                    hint={dest.hint}
                     external={dest.external}
                     onPress={() => handlePress(dest)}
                   />

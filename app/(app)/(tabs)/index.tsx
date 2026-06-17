@@ -14,6 +14,7 @@ import { CalendarDayGrid } from '@/components/calendar/CalendarDayGrid';
 import { minutesToTime, timeToMinutes } from '@/components/calendar/grid-layout';
 import { venueDayHours } from '@/lib/calendar/venue-closures';
 import { MonthGrid } from '@/components/calendar/MonthGrid';
+import { MonthPickerSheet } from '@/components/calendar/MonthPickerSheet';
 import { type RescheduleTarget } from '@/components/calendar/RescheduleSheet';
 import { WeekGrid, type WeekDayColumn } from '@/components/calendar/WeekGrid';
 import { Button } from '@/components/ui/Button';
@@ -73,29 +74,30 @@ const SCOPE_OPTIONS: { value: Scope; label: string }[] = [
   { value: 'month', label: 'Month' },
 ];
 
+// NOTE: the calendar diary intentionally has NO status-filter pill row
+// (All / Pending / Booked / Confirmed / Started / Completed / No-Show). The
+// diary shows the day's real schedule; status filtering belongs on the Bookings
+// tab, not here. Do not re-add a CALENDAR_STATUS_FILTERS row to this page.
+
 /**
- * Client-side status filter pills for the calendar grid (web parity:
- * CALENDAR_STATUS_FILTERS). `value` is the literal `bookings.status`; "Started"
- * is the staff-facing label for the `Seated` status. Cancelled bookings are
- * excluded from the calendar-grid payload (the API hides them from `view=
- * calendar`), so there's no Cancelled pill — cancellations live on the
- * Appointments tab.
+ * Statuses whose bookings may be hold-dragged / resized (web parity:
+ * Pending|Booked|Confirmed|Seated — surfaced as "Started" in the UI). A
+ * Completed/No-Show/Cancelled booking is never movable; the drag handlers
+ * refuse it up front and the block's gesture is disabled to match.
  */
-const STATUS_FILTERS = [
-  { value: 'all', label: 'All' },
-  { value: 'Pending', label: 'Pending' },
-  { value: 'Booked', label: 'Booked' },
-  { value: 'Confirmed', label: 'Confirmed' },
-  { value: 'Seated', label: 'Started' },
-  { value: 'Completed', label: 'Completed' },
-  { value: 'No-Show', label: 'No Show' },
-] as const;
+const MOVABLE_BOOKING_STATUSES = new Set(['Pending', 'Booked', 'Confirmed', 'Seated']);
 
-type StatusFilter = (typeof STATUS_FILTERS)[number]['value'];
-
-/** True when a booking should show under the active status filter. */
-function bookingMatchesStatusFilter(status: string, filter: StatusFilter): boolean {
-  return filter === 'all' || status === filter;
+/**
+ * A grid booking is movable when its status is in the movable set and it is not
+ * a resource booking. The calendar-grid payload doesn't type a `resource_id`
+ * (resource bookings reach the grid as read-only schedule blocks, never as
+ * draggable appointment bars), so the resource check is a defensive runtime
+ * read that stays correct if the payload ever carries one.
+ */
+function isMovableBooking(booking: CalendarGridBooking): boolean {
+  if (!MOVABLE_BOOKING_STATUSES.has(booking.status)) return false;
+  const resourceId = (booking as { resource_id?: string | null }).resource_id;
+  return resourceId == null;
 }
 
 /** Minimal horizontal-swipe distance (dp) to step a day/week — web parity feel. */
@@ -298,9 +300,6 @@ export default function CalendarScreen() {
 
   const [scope, setScope] = useState<Scope>('day');
   const [anchor, setAnchor] = useState<string>(today);
-  // Client-side status filter over the already-fetched grid data (web parity).
-  // Pure render-time filter — never touches the query key.
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
   // Deep-link support: a `?date=YYYY-MM-DD` param (e.g. from a notification)
   // jumps the diary to that day.
@@ -320,6 +319,8 @@ export default function CalendarScreen() {
   const [detailBookingId, setDetailBookingId] = useState<string | null>(null);
   const [blockTarget, setBlockTarget] = useState<BlockTarget | null>(null);
   const [addSheetTarget, setAddSheetTarget] = useState<AddSheetTarget | null>(null);
+  // Month-picker sheet (date jump) — opened by tapping the header date label.
+  const [monthPickerOpen, setMonthPickerOpen] = useState(false);
   // Multi-calendar "move to practitioner" chooser — set by a long-press on a
   // block in the side-by-side day grid. Carries the booking + its current
   // column so the chooser can offer the OTHER practitioners.
@@ -554,12 +555,19 @@ export default function CalendarScreen() {
     [practitioners],
   );
 
-  /** date → total bookings across all calendars (for week strip + month grid). */
+  /**
+   * date → total bookings across all calendars (for week strip + month grid).
+   * Excludes No-Show so the per-day badge matches the web's
+   * buildMonthDayScheduleCounts (which drops Cancelled + No-Show). Cancelled is
+   * already absent from the calendar-grid payload, so No-Show is the only filter
+   * needed here.
+   */
   const counts = useMemo(() => {
     const map: Record<string, number> = {};
     for (const calendar of gridQuery.data?.calendars ?? []) {
       for (const d of calendar.dates) {
-        map[d.date] = (map[d.date] ?? 0) + d.bookings.length;
+        const visible = d.bookings.filter((b) => b.status !== 'No-Show').length;
+        map[d.date] = (map[d.date] ?? 0) + visible;
       }
     }
     return map;
@@ -606,6 +614,15 @@ export default function CalendarScreen() {
   );
 
   const goToday = useCallback(() => setAnchor(today), [today]);
+
+  // Date jump from the month-picker sheet: anchor to the tapped day in day view
+  // (the most useful target for an arbitrary jump) and close the picker.
+  const jumpToDate = useCallback((date: string) => {
+    hapticSelect();
+    setAnchor(date);
+    setScope('day');
+    setMonthPickerOpen(false);
+  }, []);
 
   // Horizontal swipe on the grid body → prev/next day (day scope) or week (week
   // scope), reusing step(). HORIZONTAL-only: activeOffsetX arms the pan once the
@@ -717,6 +734,10 @@ export default function CalendarScreen() {
     (bookingId: string, newTime: string) => {
       const booking = findBookingOnAnchor(bookingId);
       if (!booking || newTime === booking.startTime.slice(0, 5)) return;
+      // Web parity: only Pending|Booked|Confirmed|Seated are movable, and a
+      // resource booking is never moved here. The block's gesture is already
+      // disabled for these, so this is a defensive backstop.
+      if (!isMovableBooking(booking)) return;
 
       const start = timeToMinutes(booking.startTime);
       const end = booking.endTime ? timeToMinutes(booking.endTime) : null;
@@ -748,6 +769,8 @@ export default function CalendarScreen() {
     (bookingId: string, newDurationMinutes: number) => {
       const booking = findBookingOnAnchor(bookingId);
       if (!booking) return;
+      // Same movability gate as reschedule (web parity).
+      if (!isMovableBooking(booking)) return;
 
       const start = timeToMinutes(booking.startTime);
       const end = booking.endTime ? timeToMinutes(booking.endTime) : null;
@@ -934,24 +957,9 @@ export default function CalendarScreen() {
     [calendarArrivalAction, removePending, toast],
   );
 
-  // ---- Status filter ----
-  // Stable client-side filter applied to the bookings each grid renders. Counts
-  // on the switcher chips stay UNfiltered (they show the day's true load), and
-  // the query is untouched — this only narrows what's drawn (web parity).
-  const filterBookings = useCallback(
-    (list: CalendarGridBooking[]): CalendarGridBooking[] =>
-      statusFilter === 'all'
-        ? list
-        : list.filter((b) => bookingMatchesStatusFilter(b.status, statusFilter)),
-    [statusFilter],
-  );
-
   // ---- Day data for the viewed calendar ----
 
-  const dayBookings = useMemo(
-    () => filterBookings(day?.bookings ?? []),
-    [day, filterBookings],
-  );
+  const dayBookings = useMemo(() => day?.bookings ?? [], [day]);
 
   const dayBlocks = useMemo(
     () => (effectiveId ? getDayBlocks(effectiveId, anchor, day) : []),
@@ -971,14 +979,14 @@ export default function CalendarScreen() {
         calendarId: p.id,
         calendarName: p.name,
         workingHours: calDay?.workingHours ?? [],
-        bookings: filterBookings(calDay?.bookings ?? []),
+        bookings: calDay?.bookings ?? [],
         sessions: calDay?.sessions ?? [],
         timeBlocks: getDayBlocks(p.id, anchor, calDay),
         // This practitioner's class/event/resource blocks for the anchor date.
         scheduleBlocks: scheduleByCalendarDate.get(scheduleKey(p.id, anchor)) ?? [],
       };
     });
-  }, [showAllCalendars, practitioners, gridQuery.data, anchor, getDayBlocks, scheduleByCalendarDate, filterBookings]);
+  }, [showAllCalendars, practitioners, gridQuery.data, anchor, getDayBlocks, scheduleByCalendarDate]);
 
   // ---- Week view data ----
   // Seven day-columns for the SELECTED calendar (one practitioner's week).
@@ -997,7 +1005,7 @@ export default function CalendarScreen() {
         isToday: date === today,
         isWeekend: weekday === 0 || weekday === 6,
         workingHours: data?.workingHours ?? [],
-        bookings: filterBookings(data?.bookings ?? []),
+        bookings: data?.bookings ?? [],
         sessions: data?.sessions ?? [],
         // The selected calendar's class/event/resource blocks for this day.
         scheduleBlocks: effectiveId
@@ -1007,7 +1015,7 @@ export default function CalendarScreen() {
         venueHours: venueDayHours(openingHours, date),
       };
     });
-  }, [scope, gridQuery.data, effectiveId, week.days, today, scheduleByCalendarDate, openingHours, filterBookings]);
+  }, [scope, gridQuery.data, effectiveId, week.days, today, scheduleByCalendarDate, openingHours]);
 
   // Per-booking compliance flags for the visible day — gated on the feature
   // flag so non-compliance venues never hit the endpoint. Unfiltered ids so
@@ -1061,6 +1069,10 @@ export default function CalendarScreen() {
       // re-runs (returning to today / switching practitioner re-scrolls).
       key={`${effectiveId ?? 'none'}:${anchor}`}
       bookings={dayBookings}
+      // Drag-conflict math sees the UNFILTERED day so a status-filtered (hidden)
+      // booking still blocks an overlapping drop. Sessions + scheduleBlocks are
+      // folded in by the grid, so classes/events/resources block too.
+      conflictBookings={day?.bookings ?? []}
       workingHours={day?.workingHours ?? []}
       timeBlocks={dayBlocks}
       sessions={daySessions}
@@ -1152,12 +1164,17 @@ export default function CalendarScreen() {
                 accessibilityLabel="Previous"
                 onPress={() => step(-1)}
               />
-              {/* Label flexes, so the Today pill appearing never moves the arrows. */}
+              {/* Label flexes, so the Today pill appearing never moves the arrows.
+                  Tapping it opens the month-picker sheet to jump to any date; the
+                  separate Today pill (shown when off-today) returns to today. */}
               <Pressable
-                onPress={goToday}
+                onPress={() => {
+                  hapticSelect();
+                  setMonthPickerOpen(true);
+                }}
                 accessibilityRole="button"
                 accessibilityLabel={label}
-                accessibilityHint="Jump to today"
+                accessibilityHint="Pick a date to jump to"
                 style={({ pressed }) => [styles.dateLabel, { opacity: pressed ? 0.55 : 1 }]}>
                 <Text variant="heading" numberOfLines={1}>
                   {label}
@@ -1230,24 +1247,8 @@ export default function CalendarScreen() {
               </ScrollView>
             ) : null}
 
-            {/* Status filter — pure client-side filter over the already-fetched
-                grid bookings (web parity). Hidden in month scope (a count grid,
-                not an appointment list). */}
-            {scope !== 'month' ? (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.chips}>
-                {STATUS_FILTERS.map((s) => (
-                  <Chip
-                    key={s.value}
-                    label={s.label}
-                    selected={statusFilter === s.value}
-                    onPress={() => setStatusFilter(s.value)}
-                  />
-                ))}
-              </ScrollView>
-            ) : null}
+            {/* No status-filter pill row here — intentionally omitted on the
+                calendar diary (status filtering lives on the Bookings tab). */}
           </View>
 
           {gridQuery.isLoading ? (
@@ -1435,6 +1436,18 @@ export default function CalendarScreen() {
           <Button label="Undo change" variant="ghost" fullWidth onPress={handleUndoMove} />
         </View>
       </Sheet>
+
+      {/* Date-jump month picker — tap the header date label to open. Reuses the
+          month grid (with its own month stepper) so any date is a couple of taps
+          away. Selecting a day anchors the day view to it and closes. */}
+      <MonthPickerSheet
+        visible={monthPickerOpen}
+        anchor={anchor}
+        today={today}
+        counts={counts}
+        onSelectDay={jumpToDate}
+        onClose={() => setMonthPickerOpen(false)}
+      />
 
       {/* Error feedback routes through the toast host (Alert.alert is a no-op on
           web; the manual Snackbar timer is gone). */}

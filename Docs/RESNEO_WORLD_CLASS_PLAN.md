@@ -1,5 +1,7 @@
 # Resneo App — Path to World-Class (Improvement Plan)
 
+> **2026-06-16 update:** A fresh 9-agent world-class review supersedes this plan's open items for current state — see **`Docs/APP_GAP_REPORT_R6.md`** for the prioritized fix plan (Waves A–D). The 2026-06-14 W1–W10 backlog below was largely shipped; R6 is the authoritative list of remaining gaps.
+
 _Original audit: 2026-06-14 · **Status refreshed: 2026-06-14** after a full verification pass (5 read-only audit subagents re-checked every item against the live source on `main`, HEAD `a6df648`)._
 
 _Method: read-only audit pass — three parallel code-audit agents (app architecture, web-reference parity, bug/quality hunt) + a design-system visual review on web preview + targeted source verification, then a second verification pass that re-graded every workstream item and scouted out-of-plan best-in-class gaps. **Live authenticated runtime testing was not performed**: the Expo web bundle (origin `localhost:8081`) cannot reach the staging venue API because those routes send no CORS headers for a browser origin (they are only ever called from native devices). Login itself works (Supabase auth → 200); the staff-access gate then stalls. **On-device QA is therefore a required step, not optional — see W3.4.** Every file:line below is from static analysis._

@@ -83,8 +83,30 @@ type PositionedScheduleBlock = {
 /** Half-open minute range used for drag-conflict detection. */
 export type BusyRange = { start: number; end: number };
 
+/** Statuses that occupy the practitioner's wall for conflict math (web parity:
+ *  Cancelled/No-Show bookings are excluded). Mutability (which bookings may be
+ *  dragged) is a stricter set — see MOVABLE_STATUSES. */
+const CONFLICT_IGNORED_STATUSES = new Set(['Cancelled', 'No-Show']);
+
+/**
+ * Statuses whose blocks may be hold-dragged / resized (web parity:
+ * Pending|Booked|Confirmed|Seated — the app shows "Seated" as "Started"). A
+ * Completed/No-Show/Cancelled block is rendered but its gesture is disabled, so
+ * the move can't even start. The parent ALSO refuses these in its drag handlers.
+ */
+const MOVABLE_STATUSES = new Set(['Pending', 'Booked', 'Confirmed', 'Seated']);
+
 type CalendarDayGridProps = {
   bookings: CalendarGridBooking[];
+  /**
+   * UNFILTERED booking set for drag-conflict detection only. The visible
+   * `bookings` may be narrowed by the status filter, but the overlap guard must
+   * still see hidden bookings (web parity: conflict uses the full grid set).
+   * Falls back to `bookings` when not supplied. Sessions + scheduleBlocks are
+   * also folded into the busy ranges, so the guard sees classes/events/resources
+   * too — not just appointments + manual blocks.
+   */
+  conflictBookings?: CalendarGridBooking[];
   workingHours: CalendarGridWorkingHours[];
   /** Breaks/blocks for this practitioner+day — render as non-bookable overlays. */
   timeBlocks?: CalendarTimeBlock[];
@@ -128,6 +150,7 @@ const DEFAULT_DURATION_MINUTES = 30;
 /** Scrollable single-day, single-practitioner time grid. */
 export function CalendarDayGrid({
   bookings,
+  conflictBookings,
   workingHours,
   timeBlocks = [],
   sessions = [],
@@ -319,22 +342,44 @@ export function CalendarDayGrid({
     [startHour, onEmptyPress],
   );
 
-  // Busy minute-ranges (other bookings + blocks) for drag-conflict detection,
-  // keyed by booking id so a block can exclude itself. Recomputed only when the
-  // underlying data changes.
+  // Busy minute-ranges for drag-conflict detection, keyed by id so a dragged
+  // block can exclude itself. Built from the FULL picture — NOT the visible
+  // (status-filtered) `positioned` list — so the overlap guard sees:
+  //   · every booking on the day (conflictBookings, unfiltered; falls back to
+  //     the visible set when the parent doesn't supply it), minus Cancelled/
+  //     No-Show which don't hold the wall (web parity),
+  //   · manual time blocks (breaks/leave),
+  //   · class/event capacity sessions, and
+  //   · class/event/resource schedule blocks.
+  // The status filter therefore stays PURELY visual — it hides blocks from view
+  // without hiding them from conflict math.
   const busyRanges = useMemo<(BusyRange & { id: string })[]>(() => {
     const out: (BusyRange & { id: string })[] = [];
-    for (const item of positioned) {
-      const start = timeToMinutes(item.booking.startTime);
-      out.push({ id: item.booking.id, start, end: start + item.durationMinutes });
+    const conflictSource = conflictBookings ?? bookings;
+    for (const booking of conflictSource) {
+      if (CONFLICT_IGNORED_STATUSES.has(booking.status)) continue;
+      const start = timeToMinutes(booking.startTime);
+      let end = booking.endTime ? timeToMinutes(booking.endTime) : start + DEFAULT_DURATION_MINUTES;
+      if (end <= start) end = start + DEFAULT_DURATION_MINUTES;
+      out.push({ id: booking.id, start, end });
     }
-    for (const item of positionedBlocks) {
-      const start = timeToMinutes(item.block.start);
-      const end = timeToMinutes(item.block.end);
-      if (end > start) out.push({ id: item.block.id, start, end });
+    for (const block of timeBlocks) {
+      const start = timeToMinutes(block.start);
+      const end = timeToMinutes(block.end);
+      if (end > start) out.push({ id: block.id, start, end });
+    }
+    for (const session of sessions) {
+      const start = timeToMinutes(session.startTime);
+      const end = timeToMinutes(session.endTime);
+      if (end > start) out.push({ id: session.id, start, end });
+    }
+    for (const block of scheduleBlocks) {
+      const start = timeToMinutes(block.startTime);
+      const end = timeToMinutes(block.endTime);
+      if (end > start) out.push({ id: block.id, start, end });
     }
     return out;
-  }, [positioned, positionedBlocks]);
+  }, [conflictBookings, bookings, timeBlocks, sessions, scheduleBlocks]);
 
   return (
     <ScrollView
@@ -535,6 +580,7 @@ export function CalendarDayGrid({
               serviceName={item.booking.serviceName}
               timeLabel={item.timeLabel}
               status={item.booking.status}
+              draggable={MOVABLE_STATUSES.has(item.booking.status)}
               clientArrivedAt={item.booking.client_arrived_at}
               staffAttendanceConfirmedAt={item.booking.staff_attendance_confirmed_at}
               guestAttendanceConfirmedAt={item.booking.guest_attendance_confirmed_at}

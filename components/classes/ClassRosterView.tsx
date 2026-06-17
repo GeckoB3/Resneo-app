@@ -1,7 +1,8 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
-import { StatusPill } from '@/components/ui/Badge';
+import { Badge, StatusPill } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
@@ -10,13 +11,20 @@ import { ListSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { formatDayHeading } from '@/lib/dates/venue-dates';
-import { useClassRoster, type ClassSession } from '@/lib/queries/useClassSchedule';
+import { hapticSuccess, hapticWarning } from '@/lib/haptics';
+import { type ClassSession } from '@/lib/queries/useClassSchedule';
+import {
+  useCheckInAll,
+  useCheckInAttendee,
+  useClassInstanceAttendees,
+  useNoShowAttendee,
+} from '@/lib/queries/useClassesManage';
 import { buildAndShareCsv } from '@/lib/reports/csv-export';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { minTouchTarget, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
-import type { BookingListRow } from '@/types/booking-list';
+import type { ClassAttendee } from '@/types/classes-manage';
 
 type ClassRosterViewProps = {
   session: ClassSession;
@@ -33,7 +41,7 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
   USD: '$',
 };
 
-function formatDeposit(row: BookingListRow, currency: string): string | null {
+function formatDeposit(row: ClassAttendee, currency: string): string | null {
   if (row.deposit_amount_pence == null || row.deposit_amount_pence <= 0) return null;
   const symbol = CURRENCY_SYMBOLS[currency] ?? `${currency} `;
   const amount = `${symbol}${(row.deposit_amount_pence / 100).toFixed(2)}`;
@@ -48,26 +56,22 @@ function formatTime(iso: string | null | undefined): string | null {
   return date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 }
 
-function formatArrived(iso: string | null | undefined): string | null {
-  const time = formatTime(iso);
-  return time ? `Arrived ${time}` : null;
-}
-
 function formatCheckedIn(iso: string | null | undefined): string | null {
   const time = formatTime(iso);
   return time ? `Checked in ${time}` : null;
 }
 
 /**
- * Roster for one class session — attendees with status, contact and deposit
- * info, sourced from the Bearer-capable
- * GET /api/venue/bookings/list?class_instance_id=… Tapping an attendee opens
- * the existing booking detail sheet, where status / attendance / cancel
- * actions already work over Bearer routes.
+ * Roster for one class session — attendees with status, contact, deposit and
+ * a reliable check-in timestamp, sourced from the Bearer-capable
+ * GET /api/venue/class-instances/[id]/attendees (the bookings/list roster does
+ * NOT select `checked_in_at`).
  *
- * Class-specific roster actions (check in, no-show with course sync, check in
- * all, cancel the session) use cookie-only API routes, so they stay on the web
- * dashboard — noted inline below the list.
+ * Staff can Check in / No-show each attendee and Check in all via the dedicated
+ * attendee routes. Those are gated by the class-commerce plan flag, so a 403 is
+ * caught and surfaced as a clear, non-fatal note rather than crashing. Tapping
+ * an attendee still opens the existing booking detail sheet for confirm / start
+ * / cancel over the shared Bearer booking routes.
  */
 export function ClassRosterView({
   session,
@@ -79,9 +83,81 @@ export function ClassRosterView({
   const { venue } = useVenueContext();
   const toast = useToast();
   const currency = venue?.currency ?? 'GBP';
-  const query = useClassRoster(session.classInstanceId);
+  const query = useClassInstanceAttendees(session.classInstanceId);
 
-  const attendees = useMemo(() => query.data?.bookings ?? [], [query.data]);
+  const checkIn = useCheckInAttendee();
+  const noShow = useNoShowAttendee();
+  const checkInAll = useCheckInAll();
+
+  // Set once a check-in/no-show route returns 403 (commerce flag off). The
+  // attendance actions stay hidden after that so staff aren't offered a
+  // capability the plan doesn't include.
+  const [commerceLocked, setCommerceLocked] = useState(false);
+  // The booking_id with an in-flight attendance mutation (drives a spinner).
+  const [pendingBookingId, setPendingBookingId] = useState<string | null>(null);
+
+  const attendees = useMemo(() => query.data?.attendees ?? [], [query.data]);
+
+  /** Translate a thrown error into a toast; latch the commerce lock on 403. */
+  const handleAttendanceError = useCallback(
+    (e: unknown, fallback: string) => {
+      hapticWarning();
+      if (e instanceof ApiError && e.status === 403) {
+        setCommerceLocked(true);
+        toast.error('Class check-in is not included in this plan. Manage it on the web dashboard.');
+        return;
+      }
+      toast.error(e instanceof ApiError ? e.message : fallback);
+    },
+    [toast],
+  );
+
+  const onCheckIn = useCallback(
+    (row: ClassAttendee) => {
+      setPendingBookingId(row.booking_id);
+      checkIn.mutate(
+        { classInstanceId: session.classInstanceId, bookingId: row.booking_id },
+        {
+          onSuccess: () => {
+            hapticSuccess();
+            toast.success(`${row.guest_name} checked in.`);
+          },
+          onError: (e) => handleAttendanceError(e, 'Could not check in this guest.'),
+          onSettled: () => setPendingBookingId(null),
+        },
+      );
+    },
+    [checkIn, session.classInstanceId, toast, handleAttendanceError],
+  );
+
+  const onNoShow = useCallback(
+    (row: ClassAttendee) => {
+      setPendingBookingId(row.booking_id);
+      noShow.mutate(
+        { classInstanceId: session.classInstanceId, bookingId: row.booking_id },
+        {
+          onSuccess: () => {
+            hapticSuccess();
+            toast.success(`${row.guest_name} marked as no-show.`);
+          },
+          onError: (e) => handleAttendanceError(e, 'Could not mark this guest as no-show.'),
+          onSettled: () => setPendingBookingId(null),
+        },
+      );
+    },
+    [noShow, session.classInstanceId, toast, handleAttendanceError],
+  );
+
+  const onCheckInAll = useCallback(() => {
+    checkInAll.mutate(session.classInstanceId, {
+      onSuccess: (result) => {
+        hapticSuccess();
+        const count = result?.checked_in ?? 0;
+        toast.success(count > 0 ? `Checked in ${count} guest${count === 1 ? '' : 's'}.` : 'Everyone is already checked in.');
+      },
+      onError: (e) => handleAttendanceError(e, 'Could not check everyone in.'),
+    });
+  }, [checkInAll, session.classInstanceId, toast, handleAttendanceError]);
 
   const onExport = useCallback(async () => {
     if (attendees.length === 0) {
@@ -89,13 +165,12 @@ export function ClassRosterView({
       return;
     }
     try {
-      const header = ['Guest', 'Status', 'Party size', 'Checked in', 'Arrived', 'Phone', 'Email'];
+      const header = ['Guest', 'Status', 'Party size', 'Checked in', 'Phone', 'Email'];
       const rows = attendees.map((row) => [
         row.guest_name ?? 'Guest',
         row.status ?? '',
         String(row.party_size ?? ''),
         formatTime(row.checked_in_at) ?? '',
-        formatTime(row.client_arrived_at) ?? '',
         row.guest_phone ?? '',
         row.guest_email ?? '',
       ]);
@@ -110,13 +185,18 @@ export function ClassRosterView({
       toast.error('Could not export the roster.');
     }
   }, [attendees, session.name, session.date, toast]);
-  const activeSpots = attendees
-    .filter((row) => row.status !== 'Cancelled')
-    .reduce((sum, row) => sum + (row.party_size || 1), 0);
+
+  const activeAttendees = attendees.filter((row) => row.status !== 'Cancelled');
+  const activeSpots = activeAttendees.reduce((sum, row) => sum + (row.party_size || 1), 0);
   const capacityLabel =
     session.capacity != null && session.capacity > 0
       ? `${activeSpots} / ${session.capacity} booked`
       : `${activeSpots} booked`;
+
+  // "Check in all" is useful only when at least one active guest is not yet in.
+  const anyCheckable = !commerceLocked && activeAttendees.some(
+    (row) => row.status !== 'No Show' && !row.checked_in_at,
+  );
 
   return (
     <View style={styles.root}>
@@ -183,6 +263,16 @@ export function ClassRosterView({
               onRefresh={() => void query.refetch()}
             />
           }>
+          {anyCheckable ? (
+            <Button
+              label="Check in all"
+              variant="secondary"
+              fullWidth
+              loading={checkInAll.isPending}
+              onPress={onCheckInAll}
+            />
+          ) : null}
+
           {attendees.length === 0 ? (
             <EmptyState
               title="No bookings yet"
@@ -191,19 +281,26 @@ export function ClassRosterView({
           ) : (
             attendees.map((row) => {
               const deposit = formatDeposit(row, currency);
-              // Prefer the class check-in timestamp; fall back to arrived time.
-              const presence = formatCheckedIn(row.checked_in_at) ?? formatArrived(row.client_arrived_at);
+              const presence = formatCheckedIn(row.checked_in_at);
               const contact = row.guest_phone ?? row.guest_email ?? null;
+              const isCancelled = row.status === 'Cancelled';
+              const isNoShow = row.status === 'No Show';
+              const isCheckedIn = !!row.checked_in_at;
+              const rowBusy = pendingBookingId === row.booking_id;
+              // Attendance buttons only when the action is meaningful and the
+              // commerce gate hasn't 403'd.
+              const showActions = !commerceLocked && !isCancelled;
               return (
                 <Card
-                  key={row.id}
+                  key={row.booking_id}
                   style={styles.attendeeCard}
-                  onPress={() => onOpenBooking(row.id)}
+                  onPress={() => onOpenBooking(row.booking_id)}
                   accessibilityLabel={`Open booking for ${row.guest_name}`}>
                   <View style={styles.attendeeHeader}>
                     <Text variant="bodyMedium" numberOfLines={1} style={styles.attendeeName}>
                       {row.guest_name}
                     </Text>
+                    {isCheckedIn ? <Badge label="Checked in" tone="success" /> : null}
                     <StatusPill status={row.status} />
                   </View>
                   <Text variant="caption" tone="secondary">
@@ -220,21 +317,44 @@ export function ClassRosterView({
                       {presence}
                     </Text>
                   ) : null}
+
+                  {showActions ? (
+                    <View style={styles.attendeeActions}>
+                      <Button
+                        label={isCheckedIn ? 'Checked in' : 'Check in'}
+                        variant="secondary"
+                        size="sm"
+                        style={styles.flex1}
+                        disabled={isCheckedIn || rowBusy}
+                        loading={rowBusy && checkIn.isPending}
+                        onPress={() => onCheckIn(row)}
+                      />
+                      <Button
+                        label="No-show"
+                        variant="ghost"
+                        size="sm"
+                        style={styles.flex1}
+                        disabled={isNoShow || rowBusy}
+                        loading={rowBusy && noShow.isPending}
+                        onPress={() => onNoShow(row)}
+                      />
+                    </View>
+                  ) : null}
                 </Card>
               );
             })
           )}
 
-          {/* Capability note — these routes are cookie-only on the API. */}
+          {/* Capability note. */}
           <View
             style={[
               styles.note,
               { backgroundColor: colors.surface, borderColor: colors.border },
             ]}>
             <Text variant="caption" tone="secondary">
-              Tap an attendee to update their booking (confirm, start, no-show or cancel).
-              Class check-in and cancelling the whole session are managed on the web
-              dashboard.
+              {commerceLocked
+                ? 'Class check-in is not included in this plan — manage attendance on the web dashboard. Tap an attendee to update their booking (confirm, start or cancel).'
+                : 'Tap an attendee to update their booking (confirm, start or cancel). Cancelling the whole session is managed on the web dashboard.'}
             </Text>
           </View>
           <View style={styles.spacer} />
@@ -281,6 +401,14 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   attendeeName: {
+    flex: 1,
+  },
+  attendeeActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  flex1: {
     flex: 1,
   },
   note: {

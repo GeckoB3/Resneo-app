@@ -18,6 +18,8 @@ type GdprSectionProps = {
   guestName: string;
   /** Called after successful erasure — typically navigate back to the contacts list. */
   onErased: () => void;
+  /** Drop the outer Card chrome (e.g. when nested inside a CollapsibleCard). */
+  bare?: boolean;
 };
 
 /**
@@ -26,7 +28,7 @@ type GdprSectionProps = {
  * is a no-op on react-native-web (the dev-preview path), so the old Alert-based
  * flow meant the erase button did nothing there.
  */
-export function GdprSection({ guestId, guestName, onErased }: GdprSectionProps) {
+export function GdprSection({ guestId, guestName, onErased, bare = false }: GdprSectionProps) {
   const accessToken = useAccessToken();
   const eraseMutation = useEraseGuest();
   const toast = useToast();
@@ -67,36 +69,40 @@ export function GdprSection({ guestId, guestName, onErased }: GdprSectionProps) 
     }
   }
 
+  const body = (
+    <>
+      <Text variant="label" style={styles.title}>
+        GDPR (admin)
+      </Text>
+      <Text variant="bodySmall" tone="secondary" style={styles.description}>
+        Export a structured JSON copy of all personal data, or permanently anonymise this contact
+        (GDPR Art. 17 right to erasure).
+      </Text>
+
+      <View style={styles.actions}>
+        <Button
+          label={exporting ? 'Exporting…' : 'Export data (JSON)'}
+          variant="secondary"
+          size="sm"
+          loading={exporting}
+          onPress={() => void handleExport()}
+          style={styles.flex1}
+        />
+        <Button
+          label="Erase data"
+          variant="danger"
+          size="sm"
+          loading={eraseMutation.isPending}
+          onPress={() => setConfirmStep(1)}
+          style={styles.flex1}
+        />
+      </View>
+    </>
+  );
+
   return (
     <>
-      <Card>
-        <Text variant="label" style={styles.title}>
-          GDPR (admin)
-        </Text>
-        <Text variant="bodySmall" tone="secondary" style={styles.description}>
-          Export a structured JSON copy of all personal data, or permanently anonymise this contact
-          (GDPR Art. 17 right to erasure).
-        </Text>
-
-        <View style={styles.actions}>
-          <Button
-            label={exporting ? 'Exporting…' : 'Export data (JSON)'}
-            variant="secondary"
-            size="sm"
-            loading={exporting}
-            onPress={() => void handleExport()}
-            style={styles.flex1}
-          />
-          <Button
-            label="Erase data"
-            variant="danger"
-            size="sm"
-            loading={eraseMutation.isPending}
-            onPress={() => setConfirmStep(1)}
-            style={styles.flex1}
-          />
-        </View>
-      </Card>
+      {bare ? body : <Card>{body}</Card>}
 
       <Sheet visible={confirmStep !== 0} onClose={() => setConfirmStep(0)}>
         <View style={styles.sheetBody}>

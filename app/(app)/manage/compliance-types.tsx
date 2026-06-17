@@ -1,5 +1,6 @@
 import { Stack } from 'expo-router';
-import { useState } from 'react';
+import * as WebBrowser from 'expo-web-browser';
+import { useCallback, useState } from 'react';
 import { Linking, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ComplianceTypeEditorSheet } from '@/components/compliance/ComplianceTypeEditorSheet';
@@ -17,15 +18,24 @@ import { Screen } from '@/components/ui/Screen';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import { getWebUrl } from '@/lib/env';
 import {
   useComplianceTemplateDetailsList,
   useDiscoveredComplianceTemplates,
 } from '@/lib/queries/useComplianceTypeManage';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
+import { useToast } from '@/providers/ToastProvider';
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
-const WEB_TEMPLATES_URL = 'https://app.resneo.com/dashboard/settings?tab=compliance';
+/** Web Settings → Compliance tab, where templates are managed. */
+const WEB_TEMPLATES_PATH = '/dashboard/settings?tab=compliance';
+
+/** Resolve a staff-dashboard URL on the configured WEB origin (prod fallback). */
+function webDashboardUrl(path: string): string {
+  const base = getWebUrl();
+  return base ? `${base}${path}` : `https://app.resneo.com${path}`;
+}
 
 /**
  * Compliance templates — list + edit the venue's compliance form templates
@@ -36,8 +46,20 @@ const WEB_TEMPLATES_URL = 'https://app.resneo.com/dashboard/settings?tab=complia
  */
 export default function ComplianceTypesScreen() {
   const { colors } = useTheme();
+  const toast = useToast();
   const staffQuery = useStaffMe();
   const isAdmin = staffQuery.data?.staff?.role === 'admin';
+
+  // In-app browser tab on the configured web origin (system-browser fallback).
+  const openWeb = useCallback(
+    (path: string) => {
+      const url = webDashboardUrl(path);
+      void WebBrowser.openBrowserAsync(url).catch(() =>
+        Linking.openURL(url).catch(() => toast.error('Could not open the browser.')),
+      );
+    },
+    [toast],
+  );
 
   const discovery = useDiscoveredComplianceTemplates();
   const details = useComplianceTemplateDetailsList(discovery.templates.map((t) => t.id));
@@ -181,7 +203,7 @@ export default function ComplianceTypesScreen() {
               label="Open the web dashboard"
               variant="ghost"
               size="sm"
-              onPress={() => void Linking.openURL(WEB_TEMPLATES_URL)}
+              onPress={() => openWeb(WEB_TEMPLATES_PATH)}
               style={styles.webBtn}
             />
           </Card>

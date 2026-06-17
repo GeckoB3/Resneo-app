@@ -3,6 +3,7 @@ import { Pressable, StyleSheet } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
 import { hapticTap } from '@/lib/haptics';
+import { useReduceMotion } from '@/lib/motion';
 import { elevation, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
@@ -24,6 +25,7 @@ type FabProps = {
  */
 export function Fab({ onPress, accessibilityLabel }: FabProps) {
   const { colors } = useTheme();
+  const reduceMotion = useReduceMotion();
   const scale = useSharedValue(1);
 
   const animatedStyle = useAnimatedStyle(() => ({
@@ -35,10 +37,10 @@ export function Fab({ onPress, accessibilityLabel }: FabProps) {
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       onPressIn={() => {
-        scale.set(withSpring(0.9, PRESS_SPRING));
+        scale.set(reduceMotion ? 1 : withSpring(0.9, PRESS_SPRING));
       }}
       onPressOut={() => {
-        scale.set(withSpring(1, PRESS_SPRING));
+        scale.set(reduceMotion ? 1 : withSpring(1, PRESS_SPRING));
       }}
       onPress={() => {
         hapticTap();

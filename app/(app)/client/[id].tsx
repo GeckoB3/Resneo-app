@@ -27,8 +27,10 @@ import { Avatar } from '@/components/ui/Avatar';
 import { Badge, StatusPill } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { CollapsibleCard } from '@/components/ui/CollapsibleCard';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
+import { LiveDot } from '@/components/ui/LiveDot';
 import { QuickAction } from '@/components/ui/QuickAction';
 import { Screen } from '@/components/ui/Screen';
 import { SectionHeader } from '@/components/ui/SectionHeader';
@@ -41,6 +43,7 @@ import { useScreenCaptureProtection } from '@/lib/security/useScreenCaptureProte
 import { useGuestDetail } from '@/lib/queries/useGuestDetail';
 import { useGuestTimeline, useSendGuestMessage, useUpdateGuest } from '@/lib/queries/useGuestMutations';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
+import { useVenueLiveSync } from '@/lib/realtime/useVenueLiveSync';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { minTouchTarget, radius, spacing } from '@/theme/index';
@@ -178,11 +181,32 @@ export default function ClientDetailScreen() {
   const timelineQuery = useGuestTimeline(guestId);
   const staffQuery = useStaffMe();
   const isAdmin = staffQuery.data?.staff?.role === 'admin';
-  const { featureFlags } = useVenueContext();
+  const { featureFlags, venue } = useVenueContext();
   const complianceEnabled = featureFlags?.resolved?.compliance_records_enabled === true;
 
   const updateGuest = useUpdateGuest(guestId ?? '');
   const sendMessage = useSendGuestMessage(guestId ?? '');
+
+  // Realtime: keep THIS open profile fresh. The list screen subscribes venue-wide;
+  // here we watch the same tables (a new/changed booking moves the contact's stats
+  // and history; a guest edit changes the profile/tags) but scope the refresh work
+  // to this screen's two queries instead of refetching the whole directory. The
+  // hook adds a per-instance channel suffix, so this never collides with the list's
+  // venue-wide channel when both happen to be mounted.
+  const venueId = venue?.id;
+  const venueFilter = venueId ? `venue_id=eq.${venueId}` : undefined;
+  const liveState = useVenueLiveSync({
+    venueId,
+    subscriptions: [
+      { table: 'bookings', filter: venueFilter },
+      { table: 'guests', filter: venueFilter },
+    ],
+    onRefresh: useCallback(() => {
+      void detailQuery.refetch();
+      void timelineQuery.refetch();
+    }, [detailQuery, timelineQuery]),
+    enabled: Boolean(venueId && guestId),
+  });
 
   const [editTarget, setEditTarget] = useState<GuestEditTarget | null>(null);
   const [messageTarget, setMessageTarget] = useState<GuestMessageTarget | null>(null);
@@ -249,6 +273,14 @@ export default function ClientDetailScreen() {
     .map((line) => line?.trim())
     .filter((line): line is string => Boolean(line));
   const timelineEvents = timelineQuery.data?.events ?? [];
+
+  // One-line hint for the collapsed "Marketing preferences" card — mirrors the
+  // web's recordSummaryHint (opt-out wins, else consent, else nothing recorded).
+  const marketingSummary = guest.marketing_opt_out
+    ? 'Opted out'
+    : guest.marketing_consent
+      ? 'Consented'
+      : 'No consent';
 
   const openEdit = () =>
     setEditTarget({
@@ -426,7 +458,7 @@ export default function ClientDetailScreen() {
       <Button label="New booking for this client" fullWidth onPress={handleNewBookingForClient} />
 
       {/* Booking history */}
-      <SectionHeader title="Booking history" />
+      <SectionHeader title="Booking history" action={<LiveDot state={liveState} />} />
       {booking_history.length === 0 ? (
         <EmptyState
           title="No bookings yet"
@@ -441,11 +473,14 @@ export default function ClientDetailScreen() {
   );
 
   // Everything below the booking-history list (rendered after the rows). The
-  // activity timeline stays last — visually identical to the old ScrollView.
+  // secondary sections collapse into tap-to-expand cards (web accordion parity),
+  // so a contact with history is no longer one very long unconditional scroll —
+  // and the destructive Erase action is tucked inside the collapsed Admin card.
   const listFooter = (
     <View style={styles.footerStack}>
+      <SectionHeader title="More details" />
+
       {/* Marketing preferences (inline toggles with instant save) */}
-      <SectionHeader title="Record & preferences" />
       <MarketingPreferencesCard
         marketingConsent={guest.marketing_consent}
         marketingOptOut={guest.marketing_opt_out}
@@ -453,6 +488,8 @@ export default function ClientDetailScreen() {
         onConsentChange={(v) => void handleMarketingConsentChange(v)}
         onOptOutChange={(v) => void handleMarketingOptOutChange(v)}
         disabled={updateGuest.isPending}
+        collapsible
+        summary={marketingSummary}
       />
 
       {/* Custom client fields */}
@@ -461,6 +498,7 @@ export default function ClientDetailScreen() {
           guestId={guestId}
           definitions={custom_field_definitions}
           currentValues={guest.custom_fields}
+          collapsible
         />
       ) : null}
 
@@ -468,52 +506,54 @@ export default function ClientDetailScreen() {
       <HouseholdSection
         guestId={guestId}
         onNavigateToGuest={(linkedId) => router.push(`/client/${linkedId}` as Href)}
+        collapsible
       />
 
       {/* Documents */}
-      <DocumentsSection guestId={guestId} />
+      <DocumentsSection guestId={guestId} collapsible />
 
       {/* Compliance — per-guest records + audit trail (feature-flagged, read-only) */}
       {complianceEnabled ? <ComplianceSection guestId={guestId} /> : null}
 
-      {/* Message history */}
-      <CommunicationsSection communications={communications} />
+      {/* Message history — default-opens when there is history (web parity) */}
+      <CommunicationsSection communications={communications} collapsible />
 
       {/* Activity timeline */}
       {timelineEvents.length > 0 ? (
-        <>
-          <SectionHeader title="Activity" />
-          <Card>
-            {timelineEvents.map((event) => (
-              <View key={event.id} style={styles.timelineRow}>
-                <Text variant="bodySmall" numberOfLines={2}>
-                  {event.label}
-                </Text>
-                <Text variant="caption" tone="muted">
-                  {formatTimelineTime(event.occurred_at)}
-                </Text>
-              </View>
-            ))}
-          </Card>
-        </>
+        <CollapsibleCard
+          title="Activity"
+          summary={`${timelineEvents.length} event${timelineEvents.length === 1 ? '' : 's'}`}>
+          {timelineEvents.map((event) => (
+            <View key={event.id} style={styles.timelineRow}>
+              <Text variant="bodySmall" numberOfLines={2}>
+                {event.label}
+              </Text>
+              <Text variant="caption" tone="muted">
+                {formatTimelineTime(event.occurred_at)}
+              </Text>
+            </View>
+          ))}
+        </CollapsibleCard>
       ) : null}
 
-      {/* Admin section — merge + GDPR (admin only) */}
+      {/* Admin section — merge + GDPR (admin only). Collapsed by default so the
+          destructive "Erase data" is not an always-visible bottom-of-screen CTA. */}
       {isAdmin ? (
-        <>
-          <SectionHeader title="Admin" />
+        <CollapsibleCard title="Admin" summary="Merge & data tools">
           <Button
             label="Merge duplicate"
             variant="secondary"
             fullWidth
             onPress={() => setMergeOpen(true)}
+            style={styles.adminMergeButton}
           />
           <GdprSection
             guestId={guestId}
             guestName={name}
             onErased={() => router.back()}
+            bare
           />
-        </>
+        </CollapsibleCard>
       ) : null}
     </View>
   );
@@ -631,6 +671,9 @@ const styles = StyleSheet.create({
   timelineRow: {
     paddingVertical: spacing.sm,
     gap: 2,
+  },
+  adminMergeButton: {
+    marginBottom: spacing.base,
   },
   notesText: {
     marginTop: spacing.xs,

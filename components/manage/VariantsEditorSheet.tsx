@@ -16,7 +16,7 @@ import { hapticSelect } from '@/lib/haptics';
 import type { VariantWriteInput } from '@/lib/queries/useServicesManage';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
-import type { ProcessingTimeBlock } from '@/types/services-manage';
+import type { ProcessingTimeBlock, ServicePaymentRequirement } from '@/types/services-manage';
 
 type DraftVariant = {
   /** Stable local key (existing id or a draft key). */
@@ -37,6 +37,14 @@ type DraftVariant = {
 export type VariantsEditorTarget = {
   serviceId: string;
   serviceName: string;
+  /**
+   * The parent service's online-payment requirement. `full_payment` requires
+   * every ACTIVE option to carry a price > 0 (web parity:
+   * appointment-service-form-to-payload.ts:53-72) — otherwise an active £0
+   * option would offer a £0 online charge. `payment_requirement` itself is
+   * edited on the main service sheet, so it's passed in read-only here.
+   */
+  paymentRequirement: ServicePaymentRequirement;
   variants: {
     id: string;
     name: string;
@@ -168,6 +176,13 @@ export function VariantsEditorSheet({ target, saving = false, onClose, onSave }:
       const deposit = parsePoundsToPence(draft.deposit);
       if (price === undefined || deposit === undefined) {
         setError(`"${draft.name.trim()}": price and deposit must be valid amounts.`);
+        setExpandedKey(draft.key);
+        return;
+      }
+      // Money-correctness (web parity): under full online payment, every ACTIVE
+      // option must charge a price > 0, or it would offer a £0 online charge.
+      if (target?.paymentRequirement === 'full_payment' && draft.isActive && !(price != null && price > 0)) {
+        setError(`Option "${draft.name.trim()}": set a price — full online payment applies to each option.`);
         setExpandedKey(draft.key);
         return;
       }

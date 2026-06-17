@@ -6,6 +6,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { BookingDetailSheet } from '@/components/bookings/BookingDetailSheet';
 import { ClassRosterView } from '@/components/classes/ClassRosterView';
 import { ClassSessionCard } from '@/components/classes/ClassSessionCard';
+import { ClassTypesManagerSheet } from '@/components/classes/ClassTypesManagerSheet';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { IconButton } from '@/components/ui/IconButton';
@@ -67,6 +68,7 @@ export default function ClassesScreen() {
   const [weekStart, setWeekStart] = useState(today);
   const [selectedSession, setSelectedSession] = useState<ClassSession | null>(null);
   const [detailBookingId, setDetailBookingId] = useState<string | null>(null);
+  const [managerOpen, setManagerOpen] = useState(false);
 
   const week = useMemo(() => getWeekRangeFromDate(weekStart, timeZone), [weekStart, timeZone]);
   const sessionsQuery = useClassSessions({ from: week.from, to: week.to });
@@ -114,12 +116,17 @@ export default function ClassesScreen() {
       <Stack.Screen
         options={{
           title: 'Classes',
-          headerRight: () =>
-            liveState !== 'idle' ? (
-              <View style={styles.liveWrap}>
-                <LiveDot state={liveState} />
-              </View>
-            ) : null,
+          headerRight: () => (
+            <View style={styles.headerActions}>
+              {liveState !== 'idle' ? <LiveDot state={liveState} /> : null}
+              <IconButton
+                icon={{ ios: 'slider.horizontal.3', android: 'tune', web: 'tune' }}
+                accessibilityLabel="Manage class types"
+                tint={colors.brand}
+                onPress={() => setManagerOpen(true)}
+              />
+            </View>
+          ),
         }}
       />
 
@@ -183,7 +190,9 @@ export default function ClassesScreen() {
             <View style={styles.stateWrap}>
               <EmptyState
                 title="No class sessions"
-                message="There are no sessions in this week. Class types and schedules are set up on the web dashboard (Class timetable); sessions then appear here."
+                message="There are no sessions in this week. Add a class, schedule sessions, or set up a weekly rule — they'll appear here."
+                actionLabel="Manage classes"
+                onAction={() => setManagerOpen(true)}
               />
             </View>
           ) : (
@@ -228,6 +237,9 @@ export default function ClassesScreen() {
         bookingId={detailBookingId}
         onClose={() => setDetailBookingId(null)}
       />
+
+      {/* In-app class-types manager (create/edit/schedule), reached from the header. */}
+      <ClassTypesManagerSheet visible={managerOpen} onClose={() => setManagerOpen(false)} />
     </Screen>
   );
 }
@@ -266,7 +278,10 @@ const styles = StyleSheet.create({
   spacer: {
     height: spacing.xl,
   },
-  liveWrap: {
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
     marginRight: spacing.sm,
   },
 });

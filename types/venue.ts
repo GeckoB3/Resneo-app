@@ -1,4 +1,7 @@
+import type { BookingPageConfig } from '@/lib/booking/bookingPageConfig';
 import type { StaffRole } from '@/types/staff';
+
+export type { BookingPageConfig };
 
 /** Primary booking models exposed by a venue. */
 export type BookingModel =
@@ -85,4 +88,10 @@ export interface VenueBootstrap {
   cover_photo_url?: string | null;
   cuisine_type?: string | null;
   plan_status?: string | null;
+  /**
+   * Public booking-page branding blob (colours, fonts, copy, tab visibility,
+   * per-service photos). Edited by the in-app booking-page editor; the server
+   * re-sanitises + merges it on PATCH /api/venue.
+   */
+  booking_page_config?: BookingPageConfig | null;
 }

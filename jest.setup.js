@@ -47,6 +47,19 @@ jest.mock('react-native-reanimated', () => {
   ease.inOut = () => ease;
   ease.out = () => ease;
   ease.in = () => ease;
+  // Chainable no-op builder for layout/entering animations
+  // (e.g. LinearTransition.duration(200).springify()).
+  const layoutAnim = () => {
+    const obj = {};
+    const chain = () => obj;
+    for (const m of [
+      'duration', 'delay', 'springify', 'easing', 'withInitialValues',
+      'damping', 'stiffness', 'mass', 'build', 'reduceMotion',
+    ]) {
+      obj[m] = chain;
+    }
+    return obj;
+  };
   return {
     __esModule: true,
     default: Animated,
@@ -90,5 +103,9 @@ jest.mock('react-native-reanimated', () => {
     runOnJS: (fn) => fn,
     runOnUI: (fn) => fn,
     Easing: ease,
+    useReducedMotion: () => false,
+    LinearTransition: layoutAnim(),
+    FadeIn: layoutAnim(),
+    FadeOut: layoutAnim(),
   };
 });

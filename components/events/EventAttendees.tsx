@@ -7,13 +7,17 @@ import { IconButton } from '@/components/ui/IconButton';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { ACTION_COLORS } from '@/lib/booking/booking-action-colors';
+import { formatPence } from '@/lib/format';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
-import { useEventAttendees, useToggleAttendeeArrived } from '@/lib/queries/useExperienceEvents';
+import {
+  useEventAttendees,
+  useToggleAttendeeArrived,
+  type EventAttendee,
+} from '@/lib/queries/useExperienceEvents';
 import { buildAndShareCsv } from '@/lib/reports/csv-export';
 import { useToast } from '@/providers/ToastProvider';
 import { minTouchTarget, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
-import type { BookingListRow } from '@/types/booking-list';
 
 type EventAttendeesProps = {
   /** experience_events.id */
@@ -26,12 +30,11 @@ type EventAttendeesProps = {
 };
 
 /** "14:03" style local time from an ISO timestamp, or '' when missing/invalid. */
-function timeCell(iso: string | null | undefined): string {
+/** Arrived timestamp for the CSV — full UTC ISO, matching the web export. */
+function arrivedCsvCell(iso: string | null | undefined): string {
   if (!iso) return '';
   const d = new Date(iso);
-  return Number.isNaN(d.getTime())
-    ? ''
-    : d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  return Number.isNaN(d.getTime()) ? '' : d.toISOString();
 }
 
 /** Same gate as the web event-manager's attendee Arrived/Clear actions. */
@@ -39,9 +42,34 @@ function canToggleArrived(status: string): boolean {
   return status === 'Pending' || status === 'Booked' || status === 'Confirmed';
 }
 
-function contactLine(row: BookingListRow): string | null {
+function contactLine(row: EventAttendee): string | null {
   const parts = [row.guest_email, row.guest_phone].filter(Boolean);
   return parts.length > 0 ? parts.join(' · ') : null;
+}
+
+/** "General ×2 · VIP ×1" from the per-type ticket lines, or null when none. */
+function ticketLineSummary(row: EventAttendee): string | null {
+  const lines = row.ticket_lines.filter((line) => line.label.trim() && line.qty > 0);
+  if (lines.length === 0) return null;
+  return lines.map((line) => `${line.label} ×${line.qty}`).join(' · ');
+}
+
+/** "£5.00 deposit (Paid)" style line, or null when there's no deposit. */
+function depositSummary(row: EventAttendee): string | null {
+  if (row.deposit_amount_pence == null || row.deposit_amount_pence <= 0) {
+    return row.deposit_status ? `Deposit · ${row.deposit_status}` : null;
+  }
+  const amount = formatPence(row.deposit_amount_pence) ?? '';
+  if (!amount) return row.deposit_status ? `Deposit · ${row.deposit_status}` : null;
+  return row.deposit_status ? `${amount} deposit · ${row.deposit_status}` : `${amount} deposit`;
+}
+
+/** CSV cell for the per-type ticket lines, e.g. "General x2; VIP x1". */
+function ticketLinesCell(row: EventAttendee): string {
+  return row.ticket_lines
+    .filter((line) => line.label.trim() && line.qty > 0)
+    .map((line) => `${line.label} x${line.qty}`)
+    .join('; ');
 }
 
 function arrivedLabel(arrivedAt: string): string {
@@ -74,14 +102,27 @@ export function EventAttendees({
       return;
     }
     try {
-      const header = ['Guest', 'Status', 'Tickets', 'Arrived', 'Phone', 'Email'];
+      // 8-column parity with the web event-manager export
+      // (Guest/Email/Phone/Qty/Status/Deposit pence/Ticket lines/Arrived).
+      const header = [
+        'Guest',
+        'Email',
+        'Phone',
+        'Qty',
+        'Status',
+        'Deposit (pence)',
+        'Ticket lines',
+        'Arrived (UTC)',
+      ];
       const csvRows = rows.map((row) => [
         row.guest_name || 'Guest',
-        row.status ?? '',
-        String(row.party_size ?? ''),
-        timeCell(row.client_arrived_at),
-        row.guest_phone ?? '',
         row.guest_email ?? '',
+        row.guest_phone ?? '',
+        String(row.party_size ?? ''),
+        row.status ?? '',
+        row.deposit_amount_pence != null ? String(row.deposit_amount_pence) : '',
+        ticketLinesCell(row),
+        arrivedCsvCell(row.client_arrived_at),
       ]);
       const slug = (eventName ?? 'event').replace(/[^a-z0-9]+/gi, '-');
       const filename = `event-roster-${slug}-${eventDate ?? 'export'}.csv`;
@@ -96,10 +137,10 @@ export function EventAttendees({
     }
   }, [rows, eventName, eventDate, toast]);
 
-  const handleToggle = (row: BookingListRow, arrived: boolean) => {
+  const handleToggle = (row: EventAttendee, arrived: boolean) => {
     setActionError(null);
     toggleArrived.mutate(
-      { bookingId: row.id, arrived },
+      { bookingId: row.booking_id, arrived },
       {
         onSuccess: () => {
           hapticSuccess();
@@ -177,18 +218,20 @@ export function EventAttendees({
       {attendees.map((row) => {
         const isArrived = Boolean(row.client_arrived_at);
         const rowBusy =
-          toggleArrived.isPending && toggleArrived.variables?.bookingId === row.id;
+          toggleArrived.isPending && toggleArrived.variables?.bookingId === row.booking_id;
         const tickets = `${row.party_size} ticket${row.party_size === 1 ? '' : 's'}`;
+        const ticketLines = ticketLineSummary(row);
+        const deposit = depositSummary(row);
         const contact = contactLine(row);
 
         return (
           <View
-            key={row.id}
+            key={row.booking_id}
             style={[styles.row, { borderBottomColor: colors.border }]}>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={`Open booking for ${row.guest_name}`}
-              onPress={() => onOpenBooking(row.id)}
+              accessibilityLabel={`Open booking for ${row.guest_name ?? 'guest'}`}
+              onPress={() => onOpenBooking(row.booking_id)}
               style={({ pressed }) => [styles.rowMain, pressed && { opacity: 0.7 }]}>
               <View style={styles.rowHeader}>
                 <Text variant="bodyMedium" numberOfLines={1} style={styles.rowName}>
@@ -202,6 +245,16 @@ export function EventAttendees({
                   ? ` · ${arrivedLabel(row.client_arrived_at)}`
                   : ''}
               </Text>
+              {ticketLines ? (
+                <Text variant="caption" tone="muted" numberOfLines={2}>
+                  {ticketLines}
+                </Text>
+              ) : null}
+              {deposit ? (
+                <Text variant="caption" tone="muted" numberOfLines={1}>
+                  {deposit}
+                </Text>
+              ) : null}
               {contact ? (
                 <Text variant="caption" tone="muted" numberOfLines={1}>
                   {contact}

@@ -1,9 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { apiFetch } from '@/lib/api/client';
+import { ApiError, apiFetch } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
 import { keyScope, queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
+
+/**
+ * Storage upload timeout. Longer than apiFetch's 15s default because document
+ * uploads carry the full file payload over a signed URL; without an abort a
+ * stalled PUT never rejects, so the upload button spins until the OS socket
+ * times out.
+ */
+const UPLOAD_TIMEOUT_MS = 60_000;
 
 export interface GuestDocumentRow {
   id: string;
@@ -83,16 +91,35 @@ export function useUploadGuestDocument(guestId: string) {
         },
       );
 
-      // Step 2: PUT the file bytes to the signed URL
+      // Step 2: PUT the file bytes to the signed URL. Time-box it with an
+      // AbortController (mirrors apiFetch) so a stalled upload rejects instead
+      // of spinning until the OS socket times out.
       const fileResponse = await fetch(fileUri);
       const blob = await fileResponse.blob();
-      const putRes = await fetch(signRes.signed_url, {
-        method: 'PUT',
-        body: blob,
-        headers: { 'Content-Type': signInput.mime_type },
-      });
+      const controller = new AbortController();
+      let timedOut = false;
+      const timeoutId = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, UPLOAD_TIMEOUT_MS);
+      let putRes: Response;
+      try {
+        putRes = await fetch(signRes.signed_url, {
+          method: 'PUT',
+          body: blob,
+          headers: { 'Content-Type': signInput.mime_type },
+          signal: controller.signal,
+        });
+      } catch (err) {
+        if (timedOut) {
+          throw new ApiError('Upload timed out. Check your connection and try again.', 408);
+        }
+        throw err;
+      } finally {
+        clearTimeout(timeoutId);
+      }
       if (!putRes.ok) {
-        throw new Error('Upload to storage failed');
+        throw new ApiError('Upload to storage failed', putRes.status);
       }
 
       // Step 3: Mark upload as complete

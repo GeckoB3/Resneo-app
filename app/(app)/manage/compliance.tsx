@@ -1,6 +1,7 @@
 import { Linking, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
 import { Stack, useRouter, type Href } from 'expo-router';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 
 
 import { ComplianceCaptureSheet } from '@/components/compliance/ComplianceCaptureSheet';
@@ -14,6 +15,7 @@ import { Sheet } from '@/components/ui/Sheet';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import { getWebUrl } from '@/lib/env';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useScreenCaptureProtection } from '@/lib/security/useScreenCaptureProtection';
 import {
@@ -32,6 +34,15 @@ import type { ComplianceMissingRow } from '@/types/compliance';
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/** Web Settings → Compliance tab, where templates are managed. */
+const WEB_COMPLIANCE_PATH = '/dashboard/settings?tab=compliance';
+
+/** Resolve a staff-dashboard URL on the configured WEB origin (prod fallback). */
+function webDashboardUrl(path: string): string {
+  const base = getWebUrl();
+  return base ? `${base}${path}` : `https://app.resneo.com${path}`;
+}
 
 /** DD/MM/YYYY — consistent format matching the web. Handles bare date and timestamps. */
 function formatComplianceDate(iso: string | null | undefined): string {
@@ -143,6 +154,18 @@ export default function ComplianceScreen() {
   const [pendingResendId, setPendingResendId] = useState<string | null>(null);
   const [pendingRevokeId, setPendingRevokeId] = useState<string | null>(null);
   const [pendingSendKey, setPendingSendKey] = useState<string | null>(null);
+
+  // In-app browser tab (SFSafariViewController / Chrome Custom Tab) on the
+  // configured web origin, with a system-browser fallback — no full app exit.
+  const openWeb = useCallback(
+    (path: string) => {
+      const url = webDashboardUrl(path);
+      void WebBrowser.openBrowserAsync(url).catch(() =>
+        Linking.openURL(url).catch(() => toast.error('Could not open the browser.')),
+      );
+    },
+    [toast],
+  );
 
   // Enable-compliance flow — admins can switch the feature flag on in-app.
   const staffQuery = useStaffMe();
@@ -612,9 +635,7 @@ export default function ComplianceScreen() {
             label="Manage compliance types on the web"
             variant="ghost"
             size="sm"
-            onPress={() =>
-              void Linking.openURL('https://app.resneo.com/dashboard/settings?tab=compliance')
-            }
+            onPress={() => openWeb(WEB_COMPLIANCE_PATH)}
             style={styles.webLink}
           />
           <View style={styles.spacer} />

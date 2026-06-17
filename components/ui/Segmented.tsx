@@ -4,6 +4,7 @@ import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-na
 
 import { Text } from '@/components/ui/Text';
 import { hapticSelect } from '@/lib/haptics';
+import { useReduceMotion } from '@/lib/motion';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
@@ -32,11 +33,13 @@ const THUMB_SPRING = { damping: 28, stiffness: 380, mass: 0.7 };
  */
 export function Segmented<T extends string>({ options, value, onChange }: SegmentedProps<T>) {
   const { colors } = useTheme();
+  const reduceMotion = useReduceMotion();
   const [trackWidth, setTrackWidth] = useState(0);
 
   const count = options.length;
   const index = Math.max(0, options.findIndex((option) => option.value === value));
   const segmentWidth = trackWidth > 0 ? (trackWidth - PAD * 2 - GAP * (count - 1)) / count : 0;
+  const selectedLabel = options[index]?.label ?? '';
 
   const translateX = useSharedValue(0);
   // Snap (don't animate) into place on first layout; spring on later changes.
@@ -44,13 +47,14 @@ export function Segmented<T extends string>({ options, value, onChange }: Segmen
   useEffect(() => {
     if (segmentWidth <= 0) return;
     const target = index * (segmentWidth + GAP);
-    if (hasPositioned.current) {
+    // Snap on first layout, or whenever reduce-motion is on; spring otherwise.
+    if (hasPositioned.current && !reduceMotion) {
       translateX.set(withSpring(target, THUMB_SPRING));
     } else {
       translateX.set(target);
       hasPositioned.current = true;
     }
-  }, [index, segmentWidth, translateX]);
+  }, [index, segmentWidth, translateX, reduceMotion]);
 
   const thumbAnimation = useAnimatedStyle(() => ({
     transform: [{ translateX: translateX.get() }],
@@ -58,8 +62,12 @@ export function Segmented<T extends string>({ options, value, onChange }: Segmen
 
   return (
     <View
+      accessibilityRole="tablist"
+      accessibilityValue={{ text: selectedLabel }}
       onLayout={(event) => setTrackWidth(event.nativeEvent.layout.width)}
       style={[styles.track, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+      {/* Each segment is a "tab"; the active one reports its selected state +
+          value so VoiceOver/TalkBack announce e.g. "Week, selected, tab". */}
       {segmentWidth > 0 ? (
         <Animated.View
           style={[
@@ -79,8 +87,9 @@ export function Segmented<T extends string>({ options, value, onChange }: Segmen
         return (
           <Pressable
             key={option.value}
-            accessibilityRole="button"
+            accessibilityRole="tab"
             accessibilityState={{ selected: isActive }}
+            accessibilityValue={isActive ? { text: selectedLabel } : undefined}
             onPress={() => {
               if (!isActive) {
                 hapticSelect();

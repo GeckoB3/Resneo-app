@@ -70,7 +70,9 @@
     "icons": "node scripts/generate-icons.mjs",
     "play-icon": "node scripts/generate-play-icon.mjs",
     "feature-graphic": "node scripts/generate-feature-graphic.mjs",
-    "screenshots": "node scripts/generate-screenshots.mjs"
+    "screenshots": "node scripts/generate-screenshots.mjs",
+    "app-store": "node scripts/generate-app-store.mjs",
+    "app-store:ipad": "node scripts/generate-ipad.mjs"
   },
   "private": true
 }

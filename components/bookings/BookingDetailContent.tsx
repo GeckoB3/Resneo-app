@@ -23,10 +23,13 @@ import { Card } from '@/components/ui/Card';
 import { Chip } from '@/components/ui/Chip';
 import { CollapsibleCard } from '@/components/ui/CollapsibleCard';
 import { Input } from '@/components/ui/Input';
+import { MetaChip } from '@/components/ui/MetaChip';
+import { QuickAction } from '@/components/ui/QuickAction';
 import { Text } from '@/components/ui/Text';
 import { ANALYTICS_EVENTS, track } from '@/lib/analytics';
 import { ApiError } from '@/lib/api/client';
 import { calendarDateInTimeZone } from '@/lib/dates/venue-dates';
+import { canMarkNoShowForSlot, clampNoShowGraceMinutes } from '@/lib/booking/no-show-grace';
 import { ACTION_COLORS, primaryActionColors } from '@/lib/booking/booking-action-colors';
 import { bookingDetailActions } from '@/lib/booking/booking-status-actions';
 import { bookingStatusVisualForKey } from '@/lib/booking/booking-status-visual';
@@ -129,49 +132,6 @@ function DetailRow({ label, value }: { label: string; value: string }) {
         {value}
       </Text>
     </View>
-  );
-}
-
-/** Subtle, icon-led fact pill used along the hero's meta row. */
-function MetaChip({ icon, label }: { icon: SymbolName; label: string }) {
-  const { colors } = useTheme();
-  return (
-    <View style={[styles.metaChip, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-      <SymbolView name={icon} tintColor={colors.textSecondary} size={13} />
-      <Text variant="caption" tone="secondary" numberOfLines={1}>
-        {label}
-      </Text>
-    </View>
-  );
-}
-
-/** Circular icon + label — the row of quick actions under the contact block. */
-function QuickAction({
-  icon,
-  label,
-  onPress,
-  tint,
-}: {
-  icon: SymbolName;
-  label: string;
-  onPress: () => void;
-  tint?: string;
-}) {
-  const { colors } = useTheme();
-  const color = tint ?? colors.brand;
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      onPress={onPress}
-      style={({ pressed }) => [styles.quickAction, { opacity: pressed ? 0.55 : 1 }]}>
-      <View style={[styles.quickActionIcon, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-        <SymbolView name={icon} tintColor={color} size={20} />
-      </View>
-      <Text variant="caption" tone="secondary" numberOfLines={1}>
-        {label}
-      </Text>
-    </Pressable>
   );
 }
 
@@ -294,40 +254,6 @@ function formatShortDate(value: string): string {
   } catch {
     return value;
   }
-}
-
-/** Current wall-clock time (minutes since midnight) in the venue timezone. */
-function nowMinutesInTz(timeZone: string): number {
-  const parts = new Intl.DateTimeFormat('en-GB', {
-    timeZone,
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).formatToParts(new Date());
-  const hour = Number(parts.find((p) => p.type === 'hour')?.value ?? '0');
-  const minute = Number(parts.find((p) => p.type === 'minute')?.value ?? '0');
-  return hour * 60 + minute;
-}
-
-/**
- * Web parity (`canMarkNoShowForSlot`): no-show may only be marked once the
- * booking's start time plus the venue's grace window has passed, in the venue
- * timezone. Past days are always allowed; future days never are; on the booking
- * day we compare wall-clock minutes. The backend still enforces this — the guard
- * just keeps the UI from offering an action that would be rejected.
- */
-function canMarkNoShowForSlot(
-  bookingDate: string,
-  bookingTime: string,
-  graceMinutes: number,
-  timeZone: string,
-): boolean {
-  const todayInVenue = calendarDateInTimeZone(new Date(), timeZone);
-  if (bookingDate < todayInVenue) return true;
-  if (bookingDate > todayInVenue) return false;
-  const [h, m] = bookingTime.slice(0, 5).split(':').map(Number);
-  const startMinutes = (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0);
-  return nowMinutesInTz(timeZone) >= startMinutes + graceMinutes;
 }
 
 /** Service delivery location — "Online" or the client's address (web parity). */
@@ -586,7 +512,7 @@ export function BookingDetailContent({
   // A 60s tick re-evaluates the clock so the action unlocks without a reopen.
   const venueTimeZone = venue?.timezone?.trim() || 'Europe/London';
   // Web clamps the configured grace to 10–60 (default 15) before gating.
-  const noShowGraceMinutes = Math.min(60, Math.max(10, venue?.no_show_grace_minutes ?? 15));
+  const noShowGraceMinutes = clampNoShowGraceMinutes(venue?.no_show_grace_minutes);
   const [noShowTick, setNoShowTick] = useState(0);
   const noShowAllowed = canMarkNoShowForSlot(
     booking.booking_date,
@@ -729,6 +655,15 @@ export function BookingDetailContent({
 
   const primaryAction = actions.find((a) => a.kind === 'primary');
   const revertAction = actions.find((a) => a.kind === 'revert');
+  // Reverts (undos) apply on the first tap — no arm/confirm — mirroring the web's
+  // `isBookingInstantRevertTransition`: Undo confirm (Confirmed→Booked), Undo
+  // Start (Seated→Booked, appointments only), Reopen (Completed→Seated) and Undo
+  // No-Show (No-Show→Booked). Table "Unseat" (Seated→Booked on a reservation) is
+  // the one revert that keeps a confirm, matching web. Only the genuinely
+  // destructive actions (No-Show, Cancel) still arm→confirm.
+  const revertIsInstant =
+    !!revertAction &&
+    (booking.status !== 'Seated' || revertAction.target !== 'Booked' || !isTable);
   const destructiveActions = actions.filter((a) => a.kind === 'destructive');
   const timelineEvents = bookingTimelineEventsForDisplay(booking.events ?? []);
 
@@ -1133,13 +1068,17 @@ export function BookingDetailContent({
                   <View style={styles.toolbarCell}>
                     <Button
                       label={
-                        pendingConfirm === revertAction.target ? 'Tap to confirm' : revertAction.label
+                        !revertIsInstant && pendingConfirm === revertAction.target
+                          ? 'Tap to confirm'
+                          : revertAction.label
                       }
                       variant="ghost"
                       size="sm"
                       fullWidth
                       loading={actionLoading}
-                      onPress={() => handleActionPress(revertAction.target, revertAction.label, true)}
+                      onPress={() =>
+                        handleActionPress(revertAction.target, revertAction.label, !revertIsInstant)
+                      }
                     />
                   </View>
                 ) : null}
@@ -1557,16 +1496,6 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     marginTop: spacing.sm,
   },
-  metaChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.pill,
-    borderWidth: StyleSheet.hairlineWidth,
-    maxWidth: '100%',
-  },
   heroBadges: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1588,19 +1517,6 @@ const styles = StyleSheet.create({
     gap: spacing.base,
     paddingTop: spacing.md,
     paddingRight: spacing.sm,
-  },
-  quickAction: {
-    alignItems: 'center',
-    gap: spacing.xs,
-    width: 64,
-  },
-  quickActionIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: radius.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   primaryAction: {
     marginBottom: spacing.sm,

@@ -132,6 +132,41 @@ export default function AppLayout() {
           presentation: 'modal',
         }}
       />
+      <Stack.Screen
+        name="linked-venues/index"
+        options={{
+          headerShown: true,
+          title: 'Linked venues',
+        }}
+      />
+      <Stack.Screen
+        name="linked-venues/[id]"
+        options={{
+          headerShown: true,
+          title: 'Linked venue',
+        }}
+      />
+      <Stack.Screen
+        name="linked-venues/calendar"
+        options={{
+          headerShown: true,
+          title: 'Linked calendar',
+        }}
+      />
+      <Stack.Screen
+        name="collectives/index"
+        options={{
+          headerShown: true,
+          title: 'Venue collectives',
+        }}
+      />
+      <Stack.Screen
+        name="collectives/[id]"
+        options={{
+          headerShown: true,
+          title: 'Collective',
+        }}
+      />
     </Stack>
   );
 }

@@ -34,17 +34,14 @@ export interface ResourceListItem {
 }
 
 /**
- * Loads the venue's bookable resources.
+ * Loads the venue's bookable resources for the day view (name/colour/active only).
  *
- * The web page uses GET /api/venue/resources, but that route is cookie-only
- * (`createClient()`), so it cannot be called with mobile Bearer auth. Instead
- * we use GET /api/venue/practitioners?roster=1 (Bearer-capable via
- * `createVenueRouteClient`), which returns every unified calendar including
- * resource columns, and keep only `calendar_type === 'resource'` rows.
- *
- * Note: this exposes name/colour/active state only — slot pricing, payment
- * requirement and weekly hours are exclusive to the cookie-only resources
- * route and stay web-only.
+ * This deliberately reads GET /api/venue/practitioners?roster=1, which returns
+ * every unified calendar (including resource columns) — enough for the day-view
+ * column list and cheaper than the full record. It is NOT an auth limitation:
+ * GET /api/venue/resources is Bearer-capable (`createVenueRouteClient`) and
+ * `useResourcesManageList` (lib/queries/useResourcesManage.ts) uses it for the
+ * full shape (slot grid, pricing, payment, weekly hours) in the editing flow.
  */
 export function useResourcesList() {
   const accessToken = useAccessToken();

@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
@@ -38,6 +38,9 @@ export function useCalendarGrid(options: UseCalendarGridOptions) {
   return useQuery({
     queryKey: queryKeys.calendar.grid(accessToken, calendarIds, from, to),
     enabled: queryEnabled,
+    // Keep the prior day/range on screen while the next loads — stepping the
+    // calendar date dims rather than flashing a full skeleton.
+    placeholderData: keepPreviousData,
     // Only poll while the query is enabled (an active calendar/range).
     refetchInterval: options.refetchInterval,
     queryFn: async (): Promise<CalendarGridResponse> => {

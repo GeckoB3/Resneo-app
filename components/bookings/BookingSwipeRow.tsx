@@ -3,8 +3,10 @@ import { memo, useCallback } from 'react';
 import { BookingRow } from '@/components/bookings/BookingRow';
 import { SwipeRow, type SwipeAction } from '@/components/ui/SwipeRow';
 import { useToast } from '@/providers/ToastProvider';
+import { useVenueContext } from '@/providers/VenueProvider';
 import { ApiError } from '@/lib/api/client';
 import { bookingStatusVisualForKey } from '@/lib/booking/booking-status-visual';
+import { canMarkNoShowForSlot, clampNoShowGraceMinutes } from '@/lib/booking/no-show-grace';
 import { useUpdateBookingStatus } from '@/lib/queries/useBookingMutations';
 import type { ComplianceBookingFlag } from '@/lib/queries/useCompliance';
 import type { BookingListRow } from '@/types/booking-list';
@@ -37,6 +39,7 @@ function BookingSwipeRowBase({
   complianceFlag,
 }: BookingSwipeRowProps) {
   const toast = useToast();
+  const { venue } = useVenueContext();
   const updateStatus = useUpdateBookingStatus(booking.id);
 
   const transition = useCallback(
@@ -64,7 +67,20 @@ function BookingSwipeRowBase({
         onPress: () => transition('Booked', 'Booking confirmed.'),
       });
     }
-    if (booking.status === 'Booked' || booking.status === 'Confirmed') {
+    // No-show is only offered once the start + grace window has elapsed — the same
+    // guard the detail toolbar uses — so the swipe can't flip a future booking to
+    // No-Show and then bounce back when the server rejects it.
+    const venueTimeZone = venue?.timezone?.trim() || 'Europe/London';
+    const noShowAllowed =
+      (booking.status === 'Booked' || booking.status === 'Confirmed') &&
+      booking.booking_time != null &&
+      canMarkNoShowForSlot(
+        booking.booking_date,
+        booking.booking_time,
+        clampNoShowGraceMinutes(venue?.no_show_grace_minutes),
+        venueTimeZone,
+      );
+    if (noShowAllowed) {
       rightActions.push({
         key: 'no-show',
         label: 'No-show',

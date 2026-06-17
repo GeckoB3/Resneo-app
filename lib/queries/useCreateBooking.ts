@@ -2,9 +2,17 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
 import { queryKeys } from '@/lib/queries/keys';
+import { experienceEventKeys } from '@/lib/queries/useExperienceEvents';
+import { resourceQueryKeys } from '@/lib/queries/useResources';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
+import type { BookingTicketLine } from '@/types/booking-offerings';
 
-/** POST /api/venue/bookings — staff walk-in / phone create body (appointment subset). */
+/**
+ * POST /api/venue/bookings — staff walk-in / phone create body.
+ *
+ * One endpoint serves every booking model; the server infers the model from
+ * which anchor ids are present (appointment vs class vs event vs resource).
+ */
 export interface CreateBookingPayload {
   booking_date: string;
   booking_time: string;
@@ -17,6 +25,16 @@ export interface CreateBookingPayload {
   appointment_service_id?: string;
   service_variant_id?: string;
   addons?: { addon_id: string }[];
+  /** Class booking — the scheduled session/occurrence id. */
+  class_instance_id?: string;
+  /** Event booking — the occurrence id (+ ticket_lines). */
+  experience_event_id?: string;
+  /** Event booking — one line per ticket type (party_size must equal the sum). */
+  ticket_lines?: BookingTicketLine[];
+  /** Resource booking — the resource id (+ booking_end_time). */
+  resource_id?: string;
+  /** Resource booking — end time HH:mm (start is booking_time). */
+  booking_end_time?: string;
   source?: 'phone' | 'walk-in';
   owner_venue_id?: string;
   /** Staff override for this booking's duration (minutes). */
@@ -73,6 +91,12 @@ export function useCreateBooking() {
       // A new booking must also refresh the calendar grid (day/week/month);
       // it keys off calendar.* and otherwise shows stale until the 60s poll.
       void queryClient.invalidateQueries({ queryKey: queryKeys.calendar.all() });
+      // Class/event/resource bookings surface on their own screens (and the
+      // merged schedule feed), which sit under separate cache roots — refresh
+      // them too so a new class/event/resource booking shows immediately.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.schedule.all() });
+      void queryClient.invalidateQueries({ queryKey: experienceEventKeys.all });
+      void queryClient.invalidateQueries({ queryKey: resourceQueryKeys.all() });
     },
   });
 }

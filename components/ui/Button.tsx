@@ -13,6 +13,7 @@ import {
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
 import { hapticTap } from '@/lib/haptics';
+import { useReduceMotion } from '@/lib/motion';
 import { fonts, minTouchTarget, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
@@ -69,6 +70,7 @@ export function Button({
   ...props
 }: ButtonProps) {
   const { colors } = useTheme();
+  const reduceMotion = useReduceMotion();
   const isDisabled = disabled || loading;
   const sizing = SIZES[size];
   // Guarantee a >=44pt touch target even when the visual height is smaller
@@ -94,13 +96,25 @@ export function Button({
     ghost: { backgroundColor: 'transparent', text: colors.brand, borderColor: 'transparent' },
     danger: { backgroundColor: colors.danger, text: colors.onDanger, borderColor: colors.danger },
   };
-  const v = customColors
+  const resolved = customColors
     ? {
         backgroundColor: customColors.background,
         text: customColors.text,
         borderColor: customColors.border ?? customColors.background,
       }
     : variantStyles[variant];
+  // Disabled: don't just dim the variant (white-on-navy at 0.45 opacity fails
+  // AA). Swap to explicit muted fill/text/border tokens that keep readable
+  // contrast in both themes. `loading` keeps the variant colours so the spinner
+  // stays on-brand. ghost variants have no fill — keep them transparent.
+  const showDisabledFill = isDisabled && !loading;
+  const v = showDisabledFill
+    ? {
+        backgroundColor: variant === 'ghost' ? 'transparent' : colors.surface,
+        text: colors.textMuted,
+        borderColor: variant === 'ghost' ? 'transparent' : colors.border,
+      }
+    : resolved;
 
   function handlePress(event: GestureResponderEvent) {
     if (haptic) hapticTap();
@@ -115,10 +129,10 @@ export function Button({
       hitSlop={hitSlop ?? autoHitSlop}
       onPress={handlePress}
       onPressIn={() => {
-        pressed.set(withSpring(1, PRESS_SPRING));
+        pressed.set(reduceMotion ? 0 : withSpring(1, PRESS_SPRING));
       }}
       onPressOut={() => {
-        pressed.set(withSpring(0, PRESS_SPRING));
+        pressed.set(reduceMotion ? 0 : withSpring(0, PRESS_SPRING));
       }}
       style={[
         styles.base,
@@ -132,7 +146,6 @@ export function Button({
           alignSelf: fullWidth ? 'stretch' : undefined,
         },
         pressAnimation,
-        isDisabled ? styles.disabled : null,
         style,
       ]}
       {...props}>
@@ -154,9 +167,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  disabled: {
-    opacity: 0.45,
   },
   content: {
     flexDirection: 'row',

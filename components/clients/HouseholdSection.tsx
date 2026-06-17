@@ -4,6 +4,7 @@ import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { CollapsibleCard } from '@/components/ui/CollapsibleCard';
 import { SearchBar } from '@/components/ui/SearchBar';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
@@ -19,6 +20,9 @@ import type { GuestListItem } from '@/types/guest-list';
 type HouseholdSectionProps = {
   guestId: string;
   onNavigateToGuest?: (guestId: string) => void;
+  /** Render inside a tap-to-expand CollapsibleCard instead of a plain Card. */
+  collapsible?: boolean;
+  defaultExpanded?: boolean;
 };
 
 function memberName(g: GuestListItem): string {
@@ -32,7 +36,12 @@ function memberName(g: GuestListItem): string {
  * contact-search pattern the merge wizard uses — the old flow asked the user to
  * paste a raw UUID, which nobody has to hand.
  */
-export function HouseholdSection({ guestId, onNavigateToGuest }: HouseholdSectionProps) {
+export function HouseholdSection({
+  guestId,
+  onNavigateToGuest,
+  collapsible = false,
+  defaultExpanded = false,
+}: HouseholdSectionProps) {
   const { colors } = useTheme();
   const toast = useToast();
   const householdQuery = useGuestHousehold(guestId);
@@ -86,56 +95,78 @@ export function HouseholdSection({ guestId, onNavigateToGuest }: HouseholdSectio
     }
   }
 
+  const memberCount = households.reduce((sum, h) => sum + h.members.length, 0);
+  const summary = householdQuery.isLoading
+    ? null
+    : households.length === 0
+      ? 'Not linked'
+      : `${memberCount} member${memberCount === 1 ? '' : 's'}`;
+
+  const list =
+    householdQuery.isLoading ? (
+      <Text variant="caption" tone="muted">
+        Loading…
+      </Text>
+    ) : households.length === 0 ? (
+      <Text variant="bodySmall" tone="muted" style={styles.emptyText}>
+        Not linked to a household yet. Tap &ldquo;Link member&rdquo; to connect this contact with another.
+      </Text>
+    ) : (
+      households.map((h) => (
+        <View key={h.id} style={[styles.householdBlock, { borderColor: colors.border }]}>
+          {h.name ? (
+            <Text variant="caption" tone="secondary" style={styles.householdName}>
+              {h.name}
+            </Text>
+          ) : null}
+          {h.members.map((m) => (
+            <Pressable
+              key={m.guest_id}
+              style={styles.memberRow}
+              onPress={() => onNavigateToGuest?.(m.guest_id)}
+              accessibilityRole="button">
+              <Avatar name={m.name ?? 'Guest'} size={32} />
+              <View style={styles.memberText}>
+                <Text variant="bodySmall">{m.name ?? 'Unnamed'}</Text>
+                {m.is_primary ? (
+                  <Text variant="caption" tone="brand">
+                    Primary
+                  </Text>
+                ) : null}
+              </View>
+            </Pressable>
+          ))}
+        </View>
+      ))
+    );
+
   return (
     <>
-      <Card>
-        <View style={styles.cardHeader}>
-          <Text variant="label">Household</Text>
+      {collapsible ? (
+        <CollapsibleCard title="Household" summary={summary} defaultExpanded={defaultExpanded}>
+          {list}
           <Button
             label="Link member"
-            variant="ghost"
+            variant="secondary"
             size="sm"
             onPress={() => setSheetOpen(true)}
+            style={styles.linkButton}
           />
-        </View>
-
-        {householdQuery.isLoading ? (
-          <Text variant="caption" tone="muted">
-            Loading…
-          </Text>
-        ) : households.length === 0 ? (
-          <Text variant="bodySmall" tone="muted" style={styles.emptyText}>
-            Not linked to a household yet. Tap &ldquo;Link member&rdquo; to connect this contact with another.
-          </Text>
-        ) : (
-          households.map((h) => (
-            <View key={h.id} style={[styles.householdBlock, { borderColor: colors.border }]}>
-              {h.name ? (
-                <Text variant="caption" tone="secondary" style={styles.householdName}>
-                  {h.name}
-                </Text>
-              ) : null}
-              {h.members.map((m) => (
-                <Pressable
-                  key={m.guest_id}
-                  style={styles.memberRow}
-                  onPress={() => onNavigateToGuest?.(m.guest_id)}
-                  accessibilityRole="button">
-                  <Avatar name={m.name ?? 'Guest'} size={32} />
-                  <View style={styles.memberText}>
-                    <Text variant="bodySmall">{m.name ?? 'Unnamed'}</Text>
-                    {m.is_primary ? (
-                      <Text variant="caption" tone="brand">
-                        Primary
-                      </Text>
-                    ) : null}
-                  </View>
-                </Pressable>
-              ))}
-            </View>
-          ))
-        )}
-      </Card>
+        </CollapsibleCard>
+      ) : (
+        <Card>
+          <View style={styles.cardHeader}>
+            <Text variant="label">Household</Text>
+            <Button
+              label="Link member"
+              variant="ghost"
+              size="sm"
+              onPress={() => setSheetOpen(true)}
+            />
+          </View>
+          {list}
+        </Card>
+      )}
 
       <Sheet visible={sheetOpen} onClose={closeSheet} maxHeight="88%">
         <View style={styles.sheetBody}>
@@ -238,6 +269,10 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     marginTop: spacing.xs,
+  },
+  linkButton: {
+    marginTop: spacing.sm,
+    alignSelf: 'flex-start',
   },
   householdBlock: {
     borderWidth: StyleSheet.hairlineWidth,

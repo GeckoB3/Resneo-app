@@ -4,6 +4,8 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-n
 
 import { BookingDetailSheet } from '@/components/bookings/BookingDetailSheet';
 import { ResourceDaySection } from '@/components/resources/ResourceDaySection';
+import { ResourceManagerSheet } from '@/components/resources/ResourceManagerSheet';
+import { Button } from '@/components/ui/Button';
 import { Chip } from '@/components/ui/Chip';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
@@ -31,8 +33,9 @@ import { useTheme } from '@/theme/useTheme';
  * opens the shared {@link BookingDetailSheet}.
  *
  * Mirrors the web /dashboard/resource-timeline "Bookings" panel for staff
- * daily work. Resource setup (create/edit, pricing, weekly hours, exceptions)
- * stays on the web dashboard — those API routes are cookie-only.
+ * daily work. Resource setup (create/edit, pricing, weekly hours) is available
+ * in-app via the {@link ResourceManagerSheet} (header action) — the
+ * /api/venue/resources routes are Bearer-capable.
  */
 export default function ResourcesScreen() {
   const { colors } = useTheme();
@@ -44,6 +47,7 @@ export default function ResourcesScreen() {
   const [date, setDate] = useState(today);
   const [resourceFilter, setResourceFilter] = useState<string | null>(null);
   const [detailBookingId, setDetailBookingId] = useState<string | null>(null);
+  const [managerOpen, setManagerOpen] = useState(false);
 
   const resourcesQuery = useResourcesList();
   const bookingsQuery = useResourceDayBookings(date);
@@ -111,12 +115,18 @@ export default function ResourcesScreen() {
       <Stack.Screen
         options={{
           title: 'Resources',
-          headerRight: () =>
-            liveState !== 'idle' ? (
-              <View style={styles.liveWrap}>
-                <LiveDot state={liveState} />
-              </View>
-            ) : null,
+          headerRight: () => (
+            <View style={styles.headerActions}>
+              {liveState !== 'idle' ? <LiveDot state={liveState} /> : null}
+              <IconButton
+                icon={{ ios: 'slider.horizontal.3', android: 'tune', web: 'tune' }}
+                accessibilityLabel="Manage resources"
+                tint={colors.brand}
+                iconSize={22}
+                onPress={() => setManagerOpen(true)}
+              />
+            </View>
+          ),
         }}
       />
 
@@ -137,7 +147,12 @@ export default function ResourcesScreen() {
         <View style={styles.stateWrap}>
           <EmptyState
             title="No resources yet"
-            message="Create courts, rooms, or equipment on the web dashboard (Resource timeline) and they'll appear here."
+            message="Create courts, rooms, or equipment to start taking resource bookings — they'll appear here."
+          />
+          <Button
+            label="New resource"
+            onPress={() => setManagerOpen(true)}
+            style={styles.emptyAction}
           />
         </View>
       ) : (
@@ -241,10 +256,6 @@ export default function ResourcesScreen() {
                 />
               ))}
 
-              <Text variant="caption" tone="muted" style={styles.webNote}>
-                Add or edit resources — pricing, weekly hours, exceptions and payments — on the
-                web dashboard (Resource timeline).
-              </Text>
               <View style={styles.spacer} />
             </ScrollView>
           )}
@@ -255,6 +266,8 @@ export default function ResourcesScreen() {
         bookingId={detailBookingId}
         onClose={() => setDetailBookingId(null)}
       />
+
+      <ResourceManagerSheet visible={managerOpen} onClose={() => setManagerOpen(false)} />
     </Screen>
   );
 }
@@ -290,18 +303,21 @@ const styles = StyleSheet.create({
     padding: spacing.base,
     gap: spacing.sm,
   },
-  webNote: {
-    marginTop: spacing.sm,
-    textAlign: 'center',
-  },
   spacer: {
     height: spacing.xl,
   },
   stateWrap: {
     flex: 1,
     padding: spacing.base,
+    gap: spacing.base,
   },
-  liveWrap: {
+  emptyAction: {
+    alignSelf: 'center',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
     marginRight: spacing.sm,
   },
 });

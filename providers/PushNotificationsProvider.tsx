@@ -135,17 +135,32 @@ export function PushNotificationsProvider({ children }: PushNotificationsProvide
     if (registeredForUserRef.current === userId) {
       return;
     }
+    // Latch in-flight so a re-render doesn't fire a second concurrent attempt —
+    // but a FAILED attempt clears the latch below so it retries (the old code
+    // latched before the async resolved, so a transient failure meant the device
+    // never registered for the rest of the session).
     registeredForUserRef.current = userId;
 
     void registerCurrentDeviceForPush({ accessToken })
       .then((result) => {
-        if (!result.registered && result.reason) {
-          console.info('[push] not registered:', result.reason);
+        if (!result.registered) {
+          if (result.reason) console.info('[push] not registered:', result.reason);
+          // Permanent non-registration (Expo Go / simulator / web / denied) stays
+          // latched; a transient failure clears it so a later effect run (e.g. the
+          // next ~hourly token refresh) retries.
+          const retriable = result.reason === 'error' || result.reason === 'no-token';
+          if (retriable && registeredForUserRef.current === userId) {
+            registeredForUserRef.current = null;
+          }
         }
       })
       .catch((error) => {
-        // Push registration is best-effort — never let it take the app down.
+        // Push registration is best-effort — never let it take the app down. A
+        // thrown error is transient (network), so clear the latch to retry later.
         console.warn('[push] device registration failed:', error);
+        if (registeredForUserRef.current === userId) {
+          registeredForUserRef.current = null;
+        }
       });
   }, [userId, accessToken]);
 

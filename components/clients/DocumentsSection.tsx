@@ -4,6 +4,7 @@ import { Linking, Pressable, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { CollapsibleCard } from '@/components/ui/CollapsibleCard';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
@@ -21,6 +22,9 @@ import { useTheme } from '@/theme/useTheme';
 
 type DocumentsSectionProps = {
   guestId: string;
+  /** Render inside a tap-to-expand CollapsibleCard instead of a plain Card. */
+  collapsible?: boolean;
+  defaultExpanded?: boolean;
 };
 
 function formatFileSize(bytes: number | null | undefined): string {
@@ -45,7 +49,11 @@ function formatDocDate(iso: string): string {
  * Note: expo-document-picker is used for file selection if available.
  * The import is dynamic so the component degrades gracefully if not installed.
  */
-export function DocumentsSection({ guestId }: DocumentsSectionProps) {
+export function DocumentsSection({
+  guestId,
+  collapsible = false,
+  defaultExpanded = false,
+}: DocumentsSectionProps) {
   const { colors } = useTheme();
   const accessToken = useAccessToken();
   const toast = useToast();
@@ -118,20 +126,18 @@ export function DocumentsSection({ guestId }: DocumentsSectionProps) {
     }
   }
 
-  return (
-    <>
-    <Card>
-      <View style={styles.cardHeader}>
-        <Text variant="label">Documents</Text>
-        <Button
-          label={uploadMutation.isPending ? 'Uploading…' : 'Upload'}
-          variant="secondary"
-          size="sm"
-          loading={uploadMutation.isPending}
-          onPress={() => void handlePickAndUpload()}
-        />
-      </View>
+  const uploadButton = (
+    <Button
+      label={uploadMutation.isPending ? 'Uploading…' : 'Upload'}
+      variant="secondary"
+      size="sm"
+      loading={uploadMutation.isPending}
+      onPress={() => void handlePickAndUpload()}
+    />
+  );
 
+  const body = (
+    <>
       {uploadError ? (
         <Text variant="bodySmall" tone="danger" style={styles.errorText}>
           {uploadError}
@@ -186,7 +192,32 @@ export function DocumentsSection({ guestId }: DocumentsSectionProps) {
           ))}
         </View>
       )}
-    </Card>
+    </>
+  );
+
+  const docCount = documents.length;
+  const summary = docsQuery.isLoading
+    ? null
+    : docCount === 0
+      ? 'None'
+      : `${docCount} file${docCount === 1 ? '' : 's'}`;
+
+  return (
+    <>
+    {collapsible ? (
+      <CollapsibleCard title="Documents" summary={summary} defaultExpanded={defaultExpanded}>
+        {body}
+        <View style={styles.uploadRow}>{uploadButton}</View>
+      </CollapsibleCard>
+    ) : (
+      <Card>
+        <View style={styles.cardHeader}>
+          <Text variant="label">Documents</Text>
+          {uploadButton}
+        </View>
+        {body}
+      </Card>
+    )}
 
       <Sheet visible={pendingDelete !== null} onClose={() => setPendingDelete(null)}>
         <View style={styles.confirmBody}>
@@ -227,6 +258,10 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     marginTop: spacing.xs,
+  },
+  uploadRow: {
+    marginTop: spacing.sm,
+    alignItems: 'flex-start',
   },
   docList: {
     marginTop: spacing.xs,

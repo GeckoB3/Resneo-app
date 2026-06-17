@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Switch, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { CollapsibleCard } from '@/components/ui/CollapsibleCard';
 import { Input } from '@/components/ui/Input';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
@@ -15,6 +16,9 @@ type CustomFieldsSectionProps = {
   guestId: string;
   definitions: CustomClientFieldDefinition[];
   currentValues: Record<string, unknown>;
+  /** Render inside a tap-to-expand CollapsibleCard instead of a plain Card. */
+  collapsible?: boolean;
+  defaultExpanded?: boolean;
 };
 
 /**
@@ -25,6 +29,8 @@ export function CustomFieldsSection({
   guestId,
   definitions,
   currentValues,
+  collapsible = false,
+  defaultExpanded = false,
 }: CustomFieldsSectionProps) {
   const updateMutation = useUpdateGuest(guestId);
   const activeFields = definitions.filter((d) => d.is_active);
@@ -32,16 +38,22 @@ export function CustomFieldsSection({
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
-  // Reset local state when the guest changes. We intentionally depend only on
-  // guestId (not currentValues) because currentValues is a new object reference
-  // on every render and would cause an infinite re-run of this effect.
+  // Stable primitive snapshot of the incoming values. currentValues is a new
+  // object reference every render, so depending on it directly would loop; the
+  // hash only changes when the underlying content does.
+  const currentValuesHash = useMemo(() => JSON.stringify(currentValues), [currentValues]);
+
+  // Reseed local state when the guest changes OR when the underlying values
+  // change content (e.g. a merge wizard / GuestEditSheet updated custom fields
+  // while this profile was open). Reconciling on the content hash prevents a
+  // later Save here from writing back a stale snapshot and reverting that edit.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setValues({ ...currentValues });
     setSaved(false);
     setError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [guestId]);
+  }, [guestId, currentValuesHash]);
 
   if (activeFields.length === 0) return null;
 
@@ -62,12 +74,8 @@ export function CustomFieldsSection({
     }
   }
 
-  return (
-    <Card>
-      <Text variant="label" style={styles.title}>
-        Custom fields
-      </Text>
-
+  const body = (
+    <>
       <View style={styles.fields}>
         {activeFields.map((field) => {
           const val = values[field.field_key];
@@ -125,6 +133,26 @@ export function CustomFieldsSection({
         onPress={() => void handleSave()}
         style={styles.saveButton}
       />
+    </>
+  );
+
+  if (collapsible) {
+    return (
+      <CollapsibleCard
+        title="Custom fields"
+        summary={`${activeFields.length} field${activeFields.length === 1 ? '' : 's'}`}
+        defaultExpanded={defaultExpanded}>
+        {body}
+      </CollapsibleCard>
+    );
+  }
+
+  return (
+    <Card>
+      <Text variant="label" style={styles.title}>
+        Custom fields
+      </Text>
+      {body}
     </Card>
   );
 }

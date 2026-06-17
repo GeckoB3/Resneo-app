@@ -41,6 +41,7 @@ import {
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { CollapsibleCard } from '@/components/ui/CollapsibleCard';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Input } from '@/components/ui/Input';
@@ -173,6 +174,13 @@ const PAYMENT_OPTIONS: { value: ServicePaymentRequirement; label: string; hint: 
   { value: 'full_payment', label: 'Pay in full online', hint: 'Full price taken at booking' },
 ];
 
+/** Short label for a service's delivery location (collapsed-section summary). */
+const LOCATION_TYPE_LABELS: Record<ServiceLocationType, string> = {
+  business_venue: 'At your venue',
+  client_address: "At the client's address",
+  online: 'Online',
+};
+
 /** The seven staff_may_customize_* flags shown in admin-only form section. */
 const STAFF_MAY_FIELDS: { key: keyof StaffMayState; label: string }[] = [
   { key: 'name', label: 'Display name' },
@@ -267,9 +275,6 @@ function BookingIntervalEditor({
 
   return (
     <View style={styles.intervalCard}>
-      <Text variant="overline" tone="muted">
-        Booking interval &amp; start times
-      </Text>
       <Text variant="caption" tone="muted">
         How often a booking can start. Times are anchored to the top of each hour and apply to this
         service&apos;s online bookable slots.
@@ -482,10 +487,16 @@ function ServiceRowBase({
             </View>
           ) : null}
 
-          {/* Action buttons — two rows to avoid truncation on narrow screens */}
-          <View style={styles.editRow}>
-            <Button label="Edit" variant="secondary" size="sm" style={styles.editBtnFull} onPress={() => onEdit(service)} />
-          </View>
+          {/* Action buttons — admin-only. The "Offered by" calendar list edits
+              every practitioner's links wholesale, so non-admins get a read-only
+              catalog (consistent with Options / Add-ons / Delete already being
+              admin-gated). Closes the privilege hole where a non-admin could
+              re-link calendars they don't manage. */}
+          {isAdmin ? (
+            <View style={styles.editRow}>
+              <Button label="Edit" variant="secondary" size="sm" style={styles.editBtnFull} onPress={() => onEdit(service)} />
+            </View>
+          ) : null}
           {isAdmin ? (
             <View style={styles.editRow}>
               <Button
@@ -934,6 +945,28 @@ export default function ServicesScreen() {
     if (paymentReq === 'full_payment' && !(pricePence != null && pricePence > 0)) {
       setError('Enter a price greater than zero to take full payment online.'); return;
     }
+    // When the service carries options (variants), the API charges per active
+    // option, so under full_payment every ACTIVE option must have a price > 0 —
+    // mirror the web rule (appointment-service-form-to-payload.ts:53-72) here so
+    // we surface a named inline error instead of relying on the server 400.
+    // Variants are edited in a separate sheet, so read them off the saved service.
+    if (paymentReq === 'full_payment' && editTarget) {
+      const editing = services.find((s) => s.id === editTarget.id);
+      const variants = editing?.variants ?? [];
+      if (variants.length > 0) {
+        const offending = variants.find((variant) => {
+          const v = variant as typeof variant & { is_active?: boolean };
+          return v.is_active !== false && !(v.price_pence != null && v.price_pence > 0);
+        });
+        if (offending) {
+          setError(
+            `Option "${offending.name}": set a price — full online payment applies to each option. ` +
+              'Update it under Options.',
+          );
+          return;
+        }
+      }
+    }
     if (practitionerIds.length === 0) {
       setError('Select at least one calendar to offer this service.'); return;
     }
@@ -1098,6 +1131,9 @@ export default function ServicesScreen() {
     setVariantsTarget({
       serviceId: service.id,
       serviceName: service.name,
+      // Thread the service's payment requirement so the options editor can enforce
+      // the full_payment "every active option needs a price > 0" rule (web parity).
+      paymentRequirement: service.payment_requirement ?? 'none',
       variants: (service.variants ?? []).map((variant) => {
         const sv = variant as typeof variant & {
           is_active?: boolean;
@@ -1155,6 +1191,24 @@ export default function ServicesScreen() {
   );
 
   const keyExtractor = useCallback((item: ManagedService) => item.id, []);
+
+  // One-line summaries for the collapsed advanced sections in the service sheet.
+  // Pure presentation — derived from the live form state, never persisted.
+  const bookingRulesSummary = `${advanceDays || '—'}d ahead · ${noticeHours || '0'}h notice${
+    sameDay ? '' : ' · no same-day'
+  }`;
+  const staffMayCount = STAFF_MAY_FIELDS.reduce((n, { key }) => n + (staffMay[key] ? 1 : 0), 0);
+  const staffMaySummary =
+    staffMayCount === 0 ? 'None' : `${staffMayCount} of ${STAFF_MAY_FIELDS.length} allowed`;
+  const locationSummary = LOCATION_TYPE_LABELS[locationType];
+  const bookingIntervalSummary = `Every ${normalizeBookingIntervalMinutes(bookingInterval)} min${
+    bookingMinuteMarks !== null ? ' · restricted' : ''
+  }`;
+  const processingSummary =
+    processingDrafts.length === 0
+      ? 'None'
+      : `${processingDrafts.length} period${processingDrafts.length === 1 ? '' : 's'}`;
+  const customAvailSummary = customAvailEnabled ? 'On' : 'Off';
 
   return (
     <Screen scroll={false} padded={false}>
@@ -1403,37 +1457,40 @@ export default function ServicesScreen() {
               </View>
             ) : null}
 
-            {/* Guest booking rules */}
-            <Text variant="overline" tone="muted">Guest booking rules</Text>
-            <View style={styles.moneyRow}>
-              <View style={styles.moneyField}>
+            {/* Guest booking rules — collapsed; touched rarely after first setup. */}
+            <CollapsibleCard title="Guest booking rules" summary={bookingRulesSummary}>
+              <View style={styles.sectionStack}>
+                <View style={styles.moneyRow}>
+                  <View style={styles.moneyField}>
+                    <Input
+                      label="Book ahead (days)"
+                      value={advanceDays}
+                      onChangeText={setAdvanceDays}
+                      keyboardType="number-pad"
+                    />
+                  </View>
+                  <View style={styles.moneyField}>
+                    <Input
+                      label="Min notice (hours)"
+                      value={noticeHours}
+                      onChangeText={setNoticeHours}
+                      keyboardType="number-pad"
+                    />
+                  </View>
+                </View>
                 <Input
-                  label="Book ahead (days)"
-                  value={advanceDays}
-                  onChangeText={setAdvanceDays}
+                  label="Cancellation notice (hours)"
+                  helper="Refund cut-off for deposits and online payments."
+                  value={cancelHours}
+                  onChangeText={setCancelHours}
                   keyboardType="number-pad"
                 />
+                <View style={styles.switchRow}>
+                  <Text variant="bodyMedium">Allow same-day bookings</Text>
+                  <Switch value={sameDay} onValueChange={setSameDay} />
+                </View>
               </View>
-              <View style={styles.moneyField}>
-                <Input
-                  label="Min notice (hours)"
-                  value={noticeHours}
-                  onChangeText={setNoticeHours}
-                  keyboardType="number-pad"
-                />
-              </View>
-            </View>
-            <Input
-              label="Cancellation notice (hours)"
-              helper="Refund cut-off for deposits and online payments."
-              value={cancelHours}
-              onChangeText={setCancelHours}
-              keyboardType="number-pad"
-            />
-            <View style={styles.switchRow}>
-              <Text variant="bodyMedium">Allow same-day bookings</Text>
-              <Switch value={sameDay} onValueChange={setSameDay} />
-            </View>
+            </CollapsibleCard>
 
             {/* Colour */}
             <Text variant="overline" tone="muted">Calendar colour</Text>
@@ -1500,65 +1557,82 @@ export default function ServicesScreen() {
               <Switch value={isActive} onValueChange={setIsActive} />
             </View>
 
-            {/* Admin-only: staff override permissions */}
+            {/* Admin-only advanced sections — each collapsed by default so the
+                common fields above stay reachable without scrolling. The save
+                payload, replace-array semantics and validation are unchanged;
+                only the presentation is regrouped behind CollapsibleCards. */}
             {isAdmin ? (
               <>
-                <Text variant="overline" tone="muted">Staff override permissions</Text>
-                <Text variant="caption" tone="muted">
-                  Allow staff members with their own calendar to override these fields for their
-                  calendar only.
-                </Text>
-                {STAFF_MAY_FIELDS.map(({ key, label }) => (
-                  <View key={key} style={styles.switchRow}>
-                    <Text variant="bodyMedium">{label}</Text>
-                    <Switch
-                      value={staffMay[key]}
-                      onValueChange={(v) =>
-                        setStaffMay((prev) => ({ ...prev, [key]: v }))
-                      }
-                    />
+                {/* Staff override permissions */}
+                <CollapsibleCard title="Staff override permissions" summary={staffMaySummary}>
+                  <View style={styles.sectionStack}>
+                    <Text variant="caption" tone="muted">
+                      Allow staff members with their own calendar to override these fields for their
+                      calendar only.
+                    </Text>
+                    {STAFF_MAY_FIELDS.map(({ key, label }) => (
+                      <View key={key} style={styles.switchRow}>
+                        <Text variant="bodyMedium">{label}</Text>
+                        <Switch
+                          value={staffMay[key]}
+                          onValueChange={(v) =>
+                            setStaffMay((prev) => ({ ...prev, [key]: v }))
+                          }
+                        />
+                      </View>
+                    ))}
                   </View>
-                ))}
+                </CollapsibleCard>
 
                 {/* Location / online-meeting */}
-                <ServiceLocationSection
-                  locationType={locationType}
-                  onLocationTypeChange={setLocationType}
-                  meetingUrl={meetingUrl}
-                  onMeetingUrlChange={(v) => {
-                    setMeetingUrl(v);
-                    if (urlError) setUrlError(null);
-                  }}
-                  meetingInfo={meetingInfo}
-                  onMeetingInfoChange={setMeetingInfo}
-                  urlError={urlError}
-                />
+                <CollapsibleCard title="Location" summary={locationSummary}>
+                  <ServiceLocationSection
+                    locationType={locationType}
+                    onLocationTypeChange={setLocationType}
+                    meetingUrl={meetingUrl}
+                    onMeetingUrlChange={(v) => {
+                      setMeetingUrl(v);
+                      if (urlError) setUrlError(null);
+                    }}
+                    meetingInfo={meetingInfo}
+                    onMeetingInfoChange={setMeetingInfo}
+                    urlError={urlError}
+                  />
+                </CollapsibleCard>
 
                 {/* Booking interval + per-hour start marks */}
-                <BookingIntervalEditor
-                  intervalMinutes={bookingInterval}
-                  minuteMarks={bookingMinuteMarks}
-                  onChange={({ intervalMinutes, minuteMarks }) => {
-                    setBookingInterval(intervalMinutes);
-                    setBookingMinuteMarks(minuteMarks);
-                  }}
-                />
+                <CollapsibleCard
+                  title="Booking interval &amp; start times"
+                  summary={bookingIntervalSummary}>
+                  <BookingIntervalEditor
+                    intervalMinutes={bookingInterval}
+                    minuteMarks={bookingMinuteMarks}
+                    onChange={({ intervalMinutes, minuteMarks }) => {
+                      setBookingInterval(intervalMinutes);
+                      setBookingMinuteMarks(minuteMarks);
+                    }}
+                  />
+                </CollapsibleCard>
 
                 {/* Processing-time blocks (gaps inside the appointment) */}
-                <ProcessingTimeBlocksEditor
-                  drafts={processingDrafts}
-                  onChange={setProcessingDrafts}
-                  durationMinutes={Number(duration) || 0}
-                  bufferMinutes={Number(buffer) || 0}
-                />
+                <CollapsibleCard title="Processing time" summary={processingSummary}>
+                  <ProcessingTimeBlocksEditor
+                    drafts={processingDrafts}
+                    onChange={setProcessingDrafts}
+                    durationMinutes={Number(duration) || 0}
+                    bufferMinutes={Number(buffer) || 0}
+                  />
+                </CollapsibleCard>
 
                 {/* Custom availability (per-weekday windows) */}
-                <ServiceCustomAvailabilityEditor
-                  enabled={customAvailEnabled}
-                  onEnabledChange={setCustomAvailEnabled}
-                  schedule={customSchedule}
-                  onScheduleChange={setCustomSchedule}
-                />
+                <CollapsibleCard title="Custom availability" summary={customAvailSummary}>
+                  <ServiceCustomAvailabilityEditor
+                    enabled={customAvailEnabled}
+                    onEnabledChange={setCustomAvailEnabled}
+                    schedule={customSchedule}
+                    onScheduleChange={setCustomSchedule}
+                  />
+                </CollapsibleCard>
               </>
             ) : (
               <Text variant="caption" tone="muted">
@@ -1735,6 +1809,11 @@ const styles = StyleSheet.create({
   sheetBody: {
     gap: spacing.md,
     paddingBottom: spacing.sm,
+  },
+  // Vertical rhythm for inputs/rows inside a CollapsibleCard body (the card body
+  // is a single View, so the sheet-level `gap` doesn't reach these children).
+  sectionStack: {
+    gap: spacing.md,
   },
   multiline: {
     minHeight: 72,

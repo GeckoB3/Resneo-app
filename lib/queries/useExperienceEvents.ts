@@ -4,7 +4,6 @@ import { apiFetch } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
 import { queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
-import type { BookingListRow, BookingsListResponse } from '@/types/booking-list';
 
 /**
  * Local query keys for the events feature. lib/queries/keys.ts is frozen
@@ -85,6 +84,79 @@ function toEventSummary(block: ScheduleBlock): ExperienceEventSummary {
   };
 }
 
+/** One per-ticket-type line on an attendee row (e.g. "General" × 2). */
+export interface EventAttendeeTicketLine {
+  label: string;
+  qty: number;
+}
+
+/**
+ * One attendee row from GET /api/venue/experience-events/[id]/attendees
+ * (Bearer-capable). Richer than the bookings/list row: it carries per-ticket
+ * lines and the deposit so the roster can show the same breakdown as the web
+ * event-manager.
+ * @see _reference/Resneo/src/app/api/venue/experience-events/[id]/attendees/route.ts
+ */
+export interface EventAttendee {
+  booking_id: string;
+  status: string;
+  party_size: number;
+  deposit_amount_pence: number | null;
+  deposit_status: string | null;
+  booking_date: string | null;
+  booking_time: string | null;
+  /** ISO timestamp the guest was marked arrived, or null. */
+  client_arrived_at: string | null;
+  guest_name: string | null;
+  guest_email: string | null;
+  guest_phone: string | null;
+  /** Per-ticket-type breakdown — `qty` mirrors the route's `quantity`. */
+  ticket_lines: EventAttendeeTicketLine[];
+}
+
+/** Raw row shape from the attendees route (before the qty rename). */
+interface RawEventAttendee {
+  booking_id: string;
+  status: string;
+  party_size: number;
+  deposit_amount_pence?: number | null;
+  deposit_status?: string | null;
+  booking_date?: string | null;
+  booking_time?: string | null;
+  client_arrived_at?: string | null;
+  guest_name?: string | null;
+  guest_email?: string | null;
+  guest_phone?: string | null;
+  ticket_lines?: Array<{ label?: string | null; quantity?: number | null }> | null;
+}
+
+interface EventAttendeesResponse {
+  event_id: string;
+  attendees: RawEventAttendee[];
+}
+
+function toEventAttendee(raw: RawEventAttendee): EventAttendee {
+  return {
+    booking_id: raw.booking_id,
+    status: raw.status,
+    party_size: raw.party_size ?? 0,
+    deposit_amount_pence: raw.deposit_amount_pence ?? null,
+    deposit_status: raw.deposit_status ?? null,
+    booking_date: raw.booking_date ?? null,
+    booking_time: raw.booking_time ?? null,
+    client_arrived_at: raw.client_arrived_at ?? null,
+    guest_name: raw.guest_name ?? null,
+    guest_email: raw.guest_email ?? null,
+    guest_phone: raw.guest_phone ?? null,
+    ticket_lines: Array.isArray(raw.ticket_lines)
+      ? raw.ticket_lines.map((line) => ({
+          label: line.label ?? '',
+          qty: line.quantity ?? 0,
+        }))
+      : [],
+  };
+}
+
 type UseExperienceEventsOptions = {
   /** Inclusive range start (YYYY-MM-DD). */
   from: string;
@@ -95,9 +167,10 @@ type UseExperienceEventsOptions = {
 
 /**
  * Active ticketed events in a date range, with tickets sold / capacity /
- * arrived stats. Sourced from GET /api/venue/schedule (Bearer) — the
- * event-manager CRUD routes are cookie-only, so the app reads events from
- * the schedule feed instead. Sorted by date then start time, ascending.
+ * arrived stats. Sourced from GET /api/venue/schedule (Bearer): it aggregates
+ * booking stats per event in one call, so the read-only Events list avoids a
+ * fan-out over the (also Bearer-capable) event-manager CRUD routes. Sorted by
+ * date then start time, ascending.
  */
 export function useExperienceEvents(options: UseExperienceEventsOptions) {
   const accessToken = useAccessToken();
@@ -128,9 +201,11 @@ export function useExperienceEvents(options: UseExperienceEventsOptions) {
 }
 
 /**
- * Ticket-holder roster for one event — every booking row carrying this
- * experience_event_id, via GET /api/venue/bookings/list?experience_event_id=
- * (Bearer-capable; verified in the reference route).
+ * Ticket-holder roster for one event, via the dedicated
+ * GET /api/venue/experience-events/[id]/attendees (Bearer-capable). Returns the
+ * rich per-attendee shape — per-ticket lines + deposit — that the web
+ * event-manager renders, which bookings/list does not expose.
+ * @see _reference/Resneo/src/app/api/venue/experience-events/[id]/attendees/route.ts
  */
 export function useEventAttendees(eventId: string | null) {
   const accessToken = useAccessToken();
@@ -139,15 +214,15 @@ export function useEventAttendees(eventId: string | null) {
   return useQuery({
     queryKey: experienceEventKeys.attendees(accessToken, eventId),
     enabled,
-    queryFn: async (): Promise<BookingListRow[]> => {
+    queryFn: async (): Promise<EventAttendee[]> => {
       if (!accessToken || !eventId) {
         throw new Error('Missing access token');
       }
-      const params = new URLSearchParams({ experience_event_id: eventId });
-      const data = await apiFetch<BookingsListResponse>(`/api/venue/bookings/list?${params}`, {
-        accessToken,
-      });
-      return data.bookings ?? [];
+      const data = await apiFetch<EventAttendeesResponse>(
+        `/api/venue/experience-events/${eventId}/attendees`,
+        { accessToken },
+      );
+      return (data.attendees ?? []).map(toEventAttendee);
     },
   });
 }

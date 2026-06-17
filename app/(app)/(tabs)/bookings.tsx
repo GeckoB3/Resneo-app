@@ -19,6 +19,7 @@ import { useToast } from '@/providers/ToastProvider';
 import { BookingDetailSheet } from '@/components/bookings/BookingDetailSheet';
 import { BookingSwipeRow } from '@/components/bookings/BookingSwipeRow';
 import { BookingBulkBar } from '@/components/bookings/BookingBulkBar';
+import { BULK_ACTION_BAR_CLEARANCE } from '@/components/ui/BulkActionBar';
 import { BookingSortSheet } from '@/components/bookings/BookingSortSheet';
 import { BookingFilterSheet, type FilterOption } from '@/components/bookings/BookingFilterSheet';
 import { BookingDateRangeSheet } from '@/components/bookings/BookingDateRangeSheet';
@@ -335,6 +336,8 @@ export default function BookingsScreen() {
   // --- Bulk selection ---
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkMessageBookings, setBulkMessageBookings] = useState<BookingListRow[]>([]);
+  // Measured bulk-bar height — grows when its actions wrap to a second row.
+  const [bulkBarClearance, setBulkBarClearance] = useState(BULK_ACTION_BAR_CLEARANCE);
   const selectionMode = selectedIds.size > 0;
 
   const practitionersQuery = usePractitioners();
@@ -604,6 +607,17 @@ export default function BookingsScreen() {
     [filteredRows, selectedIds],
   );
 
+  // Select-all over the currently-visible booking rows (filteredRows is the
+  // selectable set the bulk bar acts on).
+  const allSelected = useMemo(
+    () => filteredRows.length > 0 && filteredRows.every((b) => selectedIds.has(b.id)),
+    [filteredRows, selectedIds],
+  );
+
+  const toggleSelectAll = useCallback(() => {
+    setSelectedIds(allSelected ? new Set() : new Set(filteredRows.map((b) => b.id)));
+  }, [allSelected, filteredRows]);
+
   const renderItem = useCallback(
     ({ item }: { item: ListRow }) => {
       if (item.kind === 'header') {
@@ -871,7 +885,11 @@ export default function BookingsScreen() {
           data={listRows}
           keyExtractor={keyExtractor}
           renderItem={renderItem}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[
+            styles.listContent,
+            // Keep the last rows clear of the floating bulk bar while selecting.
+            selectionMode ? { paddingBottom: bulkBarClearance } : null,
+          ]}
           ItemSeparatorComponent={ItemSeparator}
           // W8.4 virtualization tuning — mixed header/booking rows are
           // variable-height (multi-line subtitles), so no getItemLayout.
@@ -919,8 +937,11 @@ export default function BookingsScreen() {
       {/* Bulk action tray */}
       <BookingBulkBar
         selected={selectedRows}
+        allSelected={allSelected}
+        onToggleSelectAll={toggleSelectAll}
         onClear={clearSelection}
         onMessageSelected={handleMessageSelected}
+        onHeightChange={setBulkBarClearance}
       />
 
       {/* Bulk message compose sheet */}

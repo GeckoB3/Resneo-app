@@ -8,7 +8,13 @@ import { useAccessToken } from '@/lib/queries/useAccessToken';
 import type { BookingDetail } from '@/types/booking-detail';
 
 /**
- * Loads full booking detail. Prefetches the lightweight /summary route for faster first paint.
+ * Loads full booking detail. Prefetches the lightweight /summary route for faster
+ * first paint — but under its OWN cache key, surfaced only via `placeholderData`.
+ * If the summary shared the full-detail key, a status mutation's `seedDetailFromRow`
+ * (which merges a bare PATCH row onto whatever is cached) could land on the partial
+ * summary base and strand the nested guest/timeline fields until the next refetch.
+ * Keeping the summary on a separate key guarantees the full-detail key is only ever
+ * populated by the full fetch (or a merge onto a full base).
  */
 export function useBookingDetail(bookingId: string | undefined) {
   const accessToken = useAccessToken();
@@ -21,7 +27,7 @@ export function useBookingDetail(bookingId: string | undefined) {
     }
 
     void queryClient.prefetchQuery({
-      queryKey: queryKeys.bookings.detail(accessToken, bookingId),
+      queryKey: [...queryKeys.bookings.detail(accessToken, bookingId), 'summary'],
       queryFn: async (): Promise<BookingDetail> =>
         apiFetch<BookingDetail>(`/api/venue/bookings/${bookingId}/summary`, { accessToken }),
     });
@@ -30,7 +36,15 @@ export function useBookingDetail(bookingId: string | undefined) {
   return useQuery({
     queryKey: queryKeys.bookings.detail(accessToken, bookingId ?? null),
     enabled,
-    // Summary prefetch may populate cache first — always fetch full detail afterward.
+    // Summary prefetch lives on its own key — show it for first paint without ever
+    // writing it to the full-detail key.
+    placeholderData: () =>
+      accessToken && bookingId
+        ? queryClient.getQueryData<BookingDetail>([
+            ...queryKeys.bookings.detail(accessToken, bookingId),
+            'summary',
+          ])
+        : undefined,
     staleTime: 0,
     queryFn: async (): Promise<BookingDetail> => {
       if (!accessToken || !bookingId) {

@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
@@ -46,6 +46,9 @@ export function useBookingsList(options: UseBookingsListOptions = {}) {
   return useQuery({
     queryKey: queryKeys.bookings.list(accessToken, date),
     enabled: queryEnabled,
+    // Keep the prior day's bookings on screen while the next day loads — stepping
+    // the date dims rather than flashing a full skeleton.
+    placeholderData: keepPreviousData,
     queryFn: async (): Promise<BookingsListResponse> => {
       if (!accessToken) {
         throw new Error('Missing access token');

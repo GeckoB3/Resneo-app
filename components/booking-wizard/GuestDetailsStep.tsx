@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -161,7 +161,20 @@ export function GuestDetailsStep({
                 </Pressable>
               ))}
             </View>
-          ) : debouncedSearch.length >= MIN_SEARCH_LENGTH && !guestsQuery.isFetching ? (
+          ) : debouncedSearch.length >= MIN_SEARCH_LENGTH && guestsQuery.isFetching ? (
+            // Loading affordance — on a slow link the search would otherwise
+            // appear to do nothing until results pop in. (results is empty here
+            // because keepPreviousData has no prior page for a first search.)
+            <View
+              style={[styles.loadingRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
+              accessibilityRole="progressbar"
+              accessibilityLabel="Searching guests">
+              <ActivityIndicator size="small" color={colors.brand} />
+              <Text variant="caption" tone="muted">
+                Searching…
+              </Text>
+            </View>
+          ) : debouncedSearch.length >= MIN_SEARCH_LENGTH ? (
             <Text variant="caption" tone="muted">
               No matching guests — enter details below.
             </Text>
@@ -268,6 +281,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.base,
     paddingVertical: spacing.md,
     gap: 2,
+  },
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.base,
+    paddingVertical: spacing.md,
   },
   divider: {
     flexDirection: 'row',

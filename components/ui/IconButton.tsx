@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, type StyleProp, type ViewStyle } from 'react-nat
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
 import { hapticTap } from '@/lib/haptics';
+import { useReduceMotion } from '@/lib/motion';
 import { minTouchTarget, radius } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
@@ -47,6 +48,7 @@ export function IconButton({
   style,
 }: IconButtonProps) {
   const { colors } = useTheme();
+  const reduceMotion = useReduceMotion();
   const pressed = useSharedValue(0);
 
   const animatedStyle = useAnimatedStyle(() => ({
@@ -74,8 +76,8 @@ export function IconButton({
         if (haptic) hapticTap();
         onPress();
       }}
-      onPressIn={() => pressed.set(withSpring(1, PRESS_SPRING))}
-      onPressOut={() => pressed.set(withSpring(0, PRESS_SPRING))}
+      onPressIn={() => pressed.set(reduceMotion ? 0 : withSpring(1, PRESS_SPRING))}
+      onPressOut={() => pressed.set(reduceMotion ? 0 : withSpring(0, PRESS_SPRING))}
       style={[
         styles.base,
         { width: size, height: size, backgroundColor: bg, borderColor, borderWidth: variant === 'bordered' ? 1 : 0 },

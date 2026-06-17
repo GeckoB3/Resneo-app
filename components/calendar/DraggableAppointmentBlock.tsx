@@ -102,6 +102,13 @@ type DraggableAppointmentBlockProps = {
   serviceName: string;
   timeLabel: string;
   status: string;
+  /**
+   * Whether this block may be hold-dragged / resized at all. When false the
+   * gesture is disabled outright (not merely rejected on release), so a
+   * Completed/No-Show/Cancelled or resource booking can't start a move. Defaults
+   * to true to preserve behaviour for callers that don't gate it.
+   */
+  draggable?: boolean;
   clientArrivedAt?: string | null;
   staffAttendanceConfirmedAt?: string | null;
   guestAttendanceConfirmedAt?: string | null;
@@ -170,6 +177,7 @@ export function DraggableAppointmentBlock({
   serviceName,
   timeLabel,
   status,
+  draggable = true,
   clientArrivedAt,
   staffAttendanceConfirmedAt,
   guestAttendanceConfirmedAt,
@@ -192,8 +200,10 @@ export function DraggableAppointmentBlock({
 }: DraggableAppointmentBlockProps) {
   const { colors } = useTheme();
 
-  const dragEnabled = onDragReschedule != null;
-  const resizeEnabled = onDragResize != null && height >= RESIZE_MIN_BLOCK_HEIGHT;
+  // Non-movable blocks (Completed/No-Show/Cancelled/resource) gate out BOTH the
+  // move and resize affordances — `draggable` is the single switch.
+  const dragEnabled = draggable && onDragReschedule != null;
+  const resizeEnabled = draggable && onDragResize != null && height >= RESIZE_MIN_BLOCK_HEIGHT;
   // Keep a usable "move" zone on short blocks: the resize strip is at most 40%
   // of the block height (capped at RESIZE_ZONE_HEIGHT), so even a 36px bar keeps
   // room above to grab for moving and ~14px at the very bottom to resize.

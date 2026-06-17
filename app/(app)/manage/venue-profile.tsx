@@ -1,6 +1,8 @@
 import { Image } from 'expo-image';
 import * as Linking from 'expo-linking';
-import { Stack } from 'expo-router';
+import { SymbolView } from 'expo-symbols';
+import * as WebBrowser from 'expo-web-browser';
+import { Stack, useRouter, type Href } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
@@ -15,10 +17,13 @@ import { Button } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Input } from '@/components/ui/Input';
 import { Screen } from '@/components/ui/Screen';
+import { SearchBar } from '@/components/ui/SearchBar';
 import { Segmented } from '@/components/ui/Segmented';
+import { Sheet } from '@/components/ui/Sheet';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import { getWebUrl } from '@/lib/env';
 import { hapticSelect, hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { buildAddress, parseAddress } from '@/lib/venue/addressFormat';
 import { isValidWebsiteUrlInput } from '@/lib/validation/url';
@@ -31,7 +36,7 @@ import {
   useUploadVenueCover,
 } from '@/lib/queries/useVenueImageUpload';
 import { useVenueContext } from '@/providers/VenueProvider';
-import { spacing, radius } from '@/theme/index';
+import { minTouchTarget, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
 // ------------------------------------------------------------------
@@ -43,6 +48,64 @@ type SlugHint = 'idle' | 'checking' | 'current' | 'available' | 'taken' | 'inval
 // Helpers
 // ------------------------------------------------------------------
 const SLUG_RE = /^[a-z0-9-]+$/;
+
+/** Web Profile-tab hand-offs (tools that still live on the web dashboard). */
+const WEB_TABLE_MGMT_PATH = '/dashboard/availability?tab=table';
+const WEB_IMPORT_PATH = '/dashboard/import';
+
+/** Resolve a staff-dashboard URL on the configured WEB origin (prod fallback). */
+function webDashboardUrl(path: string): string {
+  const base = getWebUrl();
+  return base ? `${base}${path}` : `https://app.resneo.com${path}`;
+}
+
+/**
+ * Curated IANA zones — the fallback when `Intl.supportedValuesOf('timeZone')`
+ * is unavailable (older engines). UK/Ireland first (the app's primary market),
+ * then the rest of the common world zones.
+ */
+const CURATED_TIMEZONES = [
+  'Europe/London',
+  'Europe/Dublin',
+  'Europe/Paris',
+  'Europe/Berlin',
+  'Europe/Madrid',
+  'Europe/Rome',
+  'Europe/Amsterdam',
+  'Europe/Lisbon',
+  'Europe/Brussels',
+  'Europe/Zurich',
+  'Europe/Athens',
+  'Europe/Istanbul',
+  'Europe/Moscow',
+  'UTC',
+  'America/New_York',
+  'America/Chicago',
+  'America/Denver',
+  'America/Los_Angeles',
+  'America/Toronto',
+  'America/Sao_Paulo',
+  'Africa/Johannesburg',
+  'Asia/Dubai',
+  'Asia/Kolkata',
+  'Asia/Singapore',
+  'Asia/Hong_Kong',
+  'Asia/Tokyo',
+  'Australia/Sydney',
+  'Pacific/Auckland',
+] as const;
+
+/** All IANA zones the picker offers (engine list when available, else curated). */
+const IANA_TIMEZONES: string[] = (() => {
+  const supported = (
+    Intl as unknown as { supportedValuesOf?: (key: string) => string[] }
+  ).supportedValuesOf?.('timeZone');
+  const list = supported && supported.length > 0 ? supported : [...CURATED_TIMEZONES];
+  return [...list].sort((a, b) => a.localeCompare(b));
+})();
+
+/** Fast membership check used to validate the saved value. */
+const IANA_TIMEZONE_SET = new Set(IANA_TIMEZONES);
 
 /** Price band options — matches the web Profile tab select (£/££/£££, empty = not set). */
 const PRICE_BANDS = [
@@ -93,6 +156,7 @@ function buildPayloadFingerprint(fields: {
 /** Venue profile & contact details — full parity with web Settings → Profile tab (admin). */
 export default function VenueProfileScreen() {
   const { venue, isLoading } = useVenueContext();
+  const router = useRouter();
   const update = useUpdateVenue();
   const uploadLogo = useUploadVenueLogo();
   const uploadCover = useUploadVenueCover();
@@ -130,6 +194,11 @@ export default function VenueProfileScreen() {
   const [noShowError, setNoShowError] = useState<string | null>(null);
   const [slugFieldError, setSlugFieldError] = useState<string | null>(null);
   const [kitchenEmailError, setKitchenEmailError] = useState<string | null>(null);
+  const [timezoneError, setTimezoneError] = useState<string | null>(null);
+
+  // Timezone picker (searchable Sheet of IANA zones — replaces free text).
+  const [tzPickerOpen, setTzPickerOpen] = useState(false);
+  const [tzQuery, setTzQuery] = useState('');
 
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
@@ -308,6 +377,7 @@ export default function VenueProfileScreen() {
     setNoShowError(null);
     setSlugFieldError(null);
     setKitchenEmailError(null);
+    setTimezoneError(null);
 
     if (!name.trim()) {
       setNameError('Business name is required.');
@@ -337,6 +407,11 @@ export default function VenueProfileScreen() {
     }
     if (kitchenEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(kitchenEmail.trim())) {
       setKitchenEmailError('Enter a valid email address.');
+      ok = false;
+    }
+    const tz = timezone.trim();
+    if (!tz || !IANA_TIMEZONE_SET.has(tz)) {
+      setTimezoneError('Choose a timezone from the list.');
       ok = false;
     }
     return ok;
@@ -412,6 +487,29 @@ export default function VenueProfileScreen() {
       setError(e instanceof ApiError ? e.message : 'Could not save venue details. Please try again.');
     }
   }
+
+  // Timezone picker handlers.
+  const openTzPicker = useCallback(() => {
+    hapticSelect();
+    setTzQuery('');
+    setTzPickerOpen(true);
+  }, []);
+
+  const selectTimezone = useCallback((zone: string) => {
+    hapticSelect();
+    setTimezone(zone);
+    setTimezoneError(null);
+    setTzPickerOpen(false);
+  }, []);
+
+  // In-app browser tab on the configured web origin (system-browser fallback);
+  // inline error if neither opens — keeps the user inside the app.
+  const openWeb = useCallback((path: string) => {
+    const url = webDashboardUrl(path);
+    void WebBrowser.openBrowserAsync(url).catch(() =>
+      Linking.openURL(url).catch(() => setError(`Could not open the browser: ${url}`)),
+    );
+  }, []);
 
   // ------------------------------------------------------------------
   // Image upload handlers
@@ -501,6 +599,7 @@ export default function VenueProfileScreen() {
   const hintInfo = slugHintText();
 
   return (
+    <>
     <Screen scroll={false} padded={false}>
       {header}
       <KeyboardAvoidingView
@@ -682,16 +781,45 @@ export default function VenueProfileScreen() {
             error={noShowError ?? undefined}
           />
 
-          <Input
-            label="Timezone"
-            value={timezone}
-            onChangeText={setTimezone}
-            autoCapitalize="none"
-            autoCorrect={false}
-            maxLength={50}
-            placeholder="Europe/London"
-            helper="IANA timezone string (e.g. Europe/London, America/New_York). Controls appointment slot times."
-          />
+          <View style={styles.tzField}>
+            <Text variant="label" tone="secondary">
+              Timezone
+            </Text>
+            <Pressable
+              onPress={openTzPicker}
+              accessibilityRole="button"
+              accessibilityLabel={`Timezone, ${timezone || 'not set'}. Tap to change.`}
+              style={[
+                styles.tzTrigger,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: timezoneError ? colors.danger : colors.border,
+                },
+              ]}>
+              <Text
+                variant="body"
+                color={timezone ? colors.text : colors.textMuted}
+                style={styles.tzTriggerText}
+                numberOfLines={1}>
+                {timezone || 'Choose a timezone'}
+              </Text>
+              <SymbolView
+                name={{ ios: 'chevron.up.chevron.down', android: 'unfold_more', web: 'unfold_more' }}
+                tintColor={colors.textMuted}
+                size={16}
+              />
+            </Pressable>
+            {timezoneError ? (
+              <Text variant="caption" tone="danger">
+                {timezoneError}
+              </Text>
+            ) : (
+              <Text variant="caption" tone="muted">
+                IANA timezone (e.g. Europe/London, America/New_York). Controls appointment slot
+                times.
+              </Text>
+            )}
+          </View>
 
           {/* Images section */}
           <SectionHeader title="Branding" />
@@ -717,23 +845,21 @@ export default function VenueProfileScreen() {
             </Text>
           ) : null}
 
-          <Pressable
-            onPress={() => void Linking.openURL('https://app.resneo.com/dashboard/settings')}
-            hitSlop={8}
-          >
-            <Text variant="caption" tone="muted" style={styles.webLink}>
-              For full booking-page branding (colours, fonts, gallery) open the web dashboard →
-            </Text>
-          </Pressable>
+          <Button
+            label="Edit booking page branding"
+            variant="secondary"
+            onPress={() => router.push('/manage/booking-page' as Href)}
+          />
+          <Text variant="caption" tone="muted" style={styles.webLink}>
+            Brand colours, fonts, announcement, social links and public tabs.
+          </Text>
 
           {/* Table management — web Profile tab parity (restaurant venues; tool lives on the web) */}
           {!isAppointments ? (
             <>
               <SectionHeader title="Table management & availability" />
               <Pressable
-                onPress={() =>
-                  void Linking.openURL('https://app.resneo.com/dashboard/availability?tab=table')
-                }
+                onPress={() => openWeb(WEB_TABLE_MGMT_PATH)}
                 hitSlop={8}
               >
                 <Text variant="bodySmall" tone="secondary">
@@ -758,7 +884,7 @@ export default function VenueProfileScreen() {
             label="Open Data Import on the web"
             variant="secondary"
             fullWidth
-            onPress={() => void Linking.openURL('https://app.resneo.com/dashboard/import')}
+            onPress={() => openWeb(WEB_IMPORT_PATH)}
           />
 
           {/* Feedback */}
@@ -786,6 +912,16 @@ export default function VenueProfileScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
     </Screen>
+
+    <TimezonePickerSheet
+      visible={tzPickerOpen}
+      current={timezone}
+      query={tzQuery}
+      onQueryChange={setTzQuery}
+      onSelect={selectTimezone}
+      onClose={() => setTzPickerOpen(false)}
+    />
+    </>
   );
 }
 
@@ -798,6 +934,91 @@ function SectionHeader({ title }: { title: string }) {
     <Text variant="subheading" style={styles.sectionHeader}>
       {title}
     </Text>
+  );
+}
+
+interface TimezonePickerSheetProps {
+  visible: boolean;
+  current: string;
+  query: string;
+  onQueryChange: (q: string) => void;
+  onSelect: (zone: string) => void;
+  onClose: () => void;
+}
+
+/** Searchable IANA timezone picker — replaces the old free-text field. */
+function TimezonePickerSheet({
+  visible,
+  current,
+  query,
+  onQueryChange,
+  onSelect,
+  onClose,
+}: TimezonePickerSheetProps) {
+  const { colors } = useTheme();
+
+  // Always offer the current value even if the engine list omits it (legacy).
+  const base =
+    current && !IANA_TIMEZONE_SET.has(current)
+      ? [current, ...IANA_TIMEZONES]
+      : IANA_TIMEZONES;
+  const q = query.trim().toLowerCase();
+  const matches = q
+    ? base.filter((z) => z.toLowerCase().includes(q))
+    : base;
+
+  return (
+    <Sheet visible={visible} onClose={onClose} maxHeight="80%">
+      <Text variant="subheading">Timezone</Text>
+      <SearchBar
+        value={query}
+        onChangeText={onQueryChange}
+        placeholder="Search zones (e.g. London, New_York)"
+        autoFocus
+      />
+      <ScrollView
+        style={styles.tzList}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag">
+        {matches.length === 0 ? (
+          <Text variant="bodySmall" tone="muted" style={styles.tzEmpty}>
+            No matching timezones.
+          </Text>
+        ) : (
+          matches.map((zone) => {
+            const selected = zone === current;
+            return (
+              <Pressable
+                key={zone}
+                onPress={() => onSelect(zone)}
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
+                accessibilityLabel={zone}
+                style={({ pressed }) => [
+                  styles.tzRow,
+                  { borderBottomColor: colors.border },
+                  pressed && { backgroundColor: colors.surface },
+                ]}>
+                <Text
+                  variant="body"
+                  color={selected ? colors.brand : colors.text}
+                  style={styles.tzRowText}
+                  numberOfLines={1}>
+                  {zone}
+                </Text>
+                {selected ? (
+                  <SymbolView
+                    name={{ ios: 'checkmark', android: 'check', web: 'check' }}
+                    tintColor={colors.brand}
+                    size={16}
+                  />
+                ) : null}
+              </Pressable>
+            );
+          })
+        )}
+      </ScrollView>
+    </Sheet>
   );
 }
 
@@ -901,6 +1122,45 @@ const styles = StyleSheet.create({
   webLink: {
     textAlign: 'center',
     textDecorationLine: 'underline',
+  },
+  tzField: {
+    gap: spacing.sm,
+  },
+  tzTrigger: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: minTouchTarget,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.base,
+    paddingVertical: spacing.md,
+    gap: spacing.sm,
+  },
+  tzTriggerText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  tzList: {
+    maxHeight: 360,
+  },
+  tzEmpty: {
+    paddingVertical: spacing.lg,
+    textAlign: 'center',
+  },
+  tzRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: minTouchTarget,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.xs,
+    gap: spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  tzRowText: {
+    flex: 1,
+    minWidth: 0,
   },
   spacer: {
     height: spacing.xl,

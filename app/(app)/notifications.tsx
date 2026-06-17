@@ -233,9 +233,10 @@ export default function NotificationsScreen() {
     if (route?.type === 'calendar') {
       // Open the calendar tab on the notification's day (the screen reads ?date=).
       router.push(`/(app)/(tabs)/?date=${route.date}` as Href);
-    } else if (route?.type === 'settings') {
-      // Settings / linked-accounts — navigate to more tab.
-      router.push('/(app)/(tabs)/settings' as Href);
+    } else if (route?.type === 'linked-venues' && isAdmin) {
+      // Link activity → the native Linked Venues hub (admin-only). Non-admins
+      // stay on the feed, which is the mobile home for this activity.
+      router.push('/linked-venues' as Href);
     }
   };
 

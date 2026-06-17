@@ -39,10 +39,8 @@ import type {
   LaneCommunicationPolicies,
   LaneMessagePolicy,
   MessageChannel,
-  PostVisitTiming,
   VenueNotificationSettings,
 } from '@/types/communications';
-import { POST_VISIT_TIMING_OPTIONS } from '@/types/communications';
 
 /**
  * Per-message definitions — ported from the web `CommunicationTemplatesSection`
@@ -244,45 +242,6 @@ function HoursStepper({
       <Text variant="bodySmall" tone="muted">
         {suffix}
       </Text>
-    </View>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// PostVisitTimingPicker — selects a timing bucket for post_visit_timing.
-// ---------------------------------------------------------------------------
-function PostVisitTimingPicker({
-  value,
-  onChange,
-  disabled,
-}: {
-  value: string;
-  onChange: (v: PostVisitTiming) => void;
-  disabled: boolean;
-}) {
-  return (
-    <View style={styles.timingPickerRow}>
-      <Text variant="bodySmall" tone="muted">
-        Send
-      </Text>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.timingPickerScroll}>
-        {POST_VISIT_TIMING_OPTIONS.map((opt) => (
-          <Chip
-            key={opt.value}
-            label={opt.label}
-            selected={value === opt.value}
-            onPress={() => {
-              if (!disabled) {
-                hapticSelect();
-                onChange(opt.value);
-              }
-            }}
-          />
-        ))}
-      </ScrollView>
     </View>
   );
 }
@@ -768,21 +727,6 @@ export default function CommunicationsScreen() {
                 onValueChange={(v) => patchStaff('staff_cancellation_alert', v)}
               />
             </View>
-
-            {/* post_visit_timing — hours-after bucket for post-visit thank-you */}
-            {staffDraft.post_visit_enabled ? (
-              <View style={styles.timingPickerBlock}>
-                <Text variant="bodyMedium">Post-visit thank you timing</Text>
-                <Text variant="caption" tone="muted">
-                  When to send the post-visit thank-you email
-                </Text>
-                <PostVisitTimingPicker
-                  value={staffDraft.post_visit_timing ?? '4_hours_after'}
-                  onChange={(v) => patchStaff('post_visit_timing', v)}
-                  disabled={!isAdmin}
-                />
-              </View>
-            ) : null}
           </View>
         </Card>
 
@@ -979,20 +923,6 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     gap: 1,
-  },
-  timingPickerBlock: {
-    gap: spacing.sm,
-    paddingTop: spacing.sm,
-  },
-  timingPickerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    marginTop: spacing.xs,
-  },
-  timingPickerScroll: {
-    gap: spacing.sm,
-    flexDirection: 'row',
   },
   infoBanner: {
     borderRadius: radius.md,

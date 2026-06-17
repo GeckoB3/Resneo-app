@@ -1,11 +1,13 @@
 import { SymbolView } from 'expo-symbols';
 import { useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
+import Animated, { FadeIn, LinearTransition } from 'react-native-reanimated';
 
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
 import { hapticSelect } from '@/lib/haptics';
-import { spacing } from '@/theme/index';
+import { layoutSafe, motionSafe, useReduceMotion } from '@/lib/motion';
+import { motion, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
 type CollapsibleCardProps = {
@@ -31,6 +33,7 @@ export function CollapsibleCard({
   children,
 }: CollapsibleCardProps) {
   const { colors } = useTheme();
+  const reduceMotion = useReduceMotion();
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [hasExpanded, setHasExpanded] = useState(defaultExpanded);
 
@@ -40,35 +43,48 @@ export function CollapsibleCard({
     setHasExpanded(true);
   };
 
+  // Keep the body mounted once seen (for non-lazy sections, so toggling is
+  // cheap) but only render it into layout when expanded — a gated
+  // `LinearTransition` on the card content then tweens the height as the body
+  // appears/disappears, and a gated `FadeIn` softens the body itself. Both
+  // collapse to instant when reduce-motion is on.
+  const showBody = expanded || (!lazy && hasExpanded);
+
   return (
     <Card>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={title}
-        accessibilityState={{ expanded }}
-        onPress={toggle}
-        style={({ pressed }) => [styles.header, { opacity: pressed ? 0.55 : 1 }]}>
-        <Text variant="label">{title}</Text>
-        <View style={styles.headerRight}>
-          {summary ? (
-            <Text variant="caption" tone="muted" numberOfLines={1} style={styles.summary}>
-              {summary}
-            </Text>
-          ) : null}
-          <SymbolView
-            name={
-              expanded
-                ? { ios: 'chevron.down', android: 'expand_more', web: 'expand_more' }
-                : { ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }
-            }
-            tintColor={colors.textMuted}
-            size={16}
-          />
-        </View>
-      </Pressable>
-      {expanded || (!lazy && hasExpanded) ? (
-        <View style={[styles.body, !expanded && styles.bodyHidden]}>{children}</View>
-      ) : null}
+      <Animated.View layout={layoutSafe(LinearTransition.duration(motion.normal), reduceMotion)}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={title}
+          accessibilityState={{ expanded }}
+          onPress={toggle}
+          style={({ pressed }) => [styles.header, { opacity: pressed ? 0.55 : 1 }]}>
+          <Text variant="label">{title}</Text>
+          <View style={styles.headerRight}>
+            {summary ? (
+              <Text variant="caption" tone="muted" numberOfLines={1} style={styles.summary}>
+                {summary}
+              </Text>
+            ) : null}
+            <SymbolView
+              name={
+                expanded
+                  ? { ios: 'chevron.down', android: 'expand_more', web: 'expand_more' }
+                  : { ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }
+              }
+              tintColor={colors.textMuted}
+              size={16}
+            />
+          </View>
+        </Pressable>
+        {showBody ? (
+          <Animated.View
+            entering={motionSafe(FadeIn.duration(motion.fast), reduceMotion)}
+            style={[styles.body, !expanded && styles.bodyHidden]}>
+            {children}
+          </Animated.View>
+        ) : null}
+      </Animated.View>
     </Card>
   );
 }

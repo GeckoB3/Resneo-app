@@ -45,6 +45,9 @@ type MonthDatePickerProps = {
   /** Dates with at least one bookable slot; null while loading. */
   availableDates: Set<string> | null;
   isLoading?: boolean;
+  /** Gate "Continue" — false while the selected date has no bookable slots, so
+   *  the user can't advance onto an empty "No times available" screen. */
+  canContinue?: boolean;
   onContinue: () => void;
   /** Booking source — drives the walk-in "Start now" shortcut. */
   source?: 'phone' | 'walk-in';
@@ -54,6 +57,10 @@ type MonthDatePickerProps = {
   timeZone?: string;
   /** Walk-in shortcut — jumps straight to today's slots at the current time. */
   onStartNow?: (todayIso: string) => void;
+  /** Heading copy (default "Choose a date"). */
+  title?: string;
+  /** Hint under the grid when dates are available (default the service copy). */
+  availabilityHint?: string;
 };
 
 /** Today's calendar date (YYYY-MM-DD) in the venue's timezone. */
@@ -78,11 +85,14 @@ export function MonthDatePicker({
   onSelectDate,
   availableDates,
   isLoading = false,
+  canContinue = true,
   onContinue,
   source = 'phone',
   onChangeSource,
   timeZone = 'Europe/London',
   onStartNow,
+  title = 'Choose a date',
+  availabilityHint = 'Green dates have open times for this service.',
 }: MonthDatePickerProps) {
   const { colors } = useTheme();
   const cells = useMemo(() => buildMonthCells(monthAnchor), [monthAnchor]);
@@ -98,7 +108,7 @@ export function MonthDatePicker({
 
   return (
     <View style={styles.container}>
-      <Text variant="heading">Choose a date</Text>
+      <Text variant="heading">{title}</Text>
 
       {onChangeSource ? (
         <Segmented
@@ -216,11 +226,16 @@ export function MonthDatePicker({
         </Text>
       ) : (
         <Text variant="caption" tone="muted" style={styles.hint}>
-          Green dates have open times for this service.
+          {availabilityHint}
         </Text>
       )}
 
-      <Button label="Continue" fullWidth onPress={onContinue} disabled={!selectedDate} />
+      <Button
+        label="Continue"
+        fullWidth
+        onPress={onContinue}
+        disabled={!selectedDate || !canContinue}
+      />
     </View>
   );
 }

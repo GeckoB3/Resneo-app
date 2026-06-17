@@ -124,7 +124,11 @@ export async function apiFetch<T>(
       signal: controller.signal,
       headers: {
         Accept: 'application/json',
-        ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+        // Let the platform set the multipart boundary for FormData uploads
+        // (collective page-asset uploads); only force JSON for plain bodies.
+        ...(init.body && !(init.body instanceof FormData)
+          ? { 'Content-Type': 'application/json' }
+          : {}),
         ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
         ...headers,
       },

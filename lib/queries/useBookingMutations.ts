@@ -18,6 +18,11 @@ function invalidateBookingCaches(
   void queryClient.invalidateQueries({ queryKey: queryKeys.guests.all() });
   // Keep the calendar grid in sync after status/reschedule changes.
   void queryClient.invalidateQueries({ queryKey: queryKeys.calendar.all() });
+  // A booking can be surfaced via the schedule feed (class/event/resource rosters)
+  // or originate from a waitlist offer — refresh those so a status change made from
+  // the detail sheet doesn't leave a stale roster/waitlist row during a polling gap.
+  void queryClient.invalidateQueries({ queryKey: queryKeys.schedule.all() });
+  void queryClient.invalidateQueries({ queryKey: queryKeys.waitlist.all() });
 }
 
 /**

@@ -10,8 +10,15 @@ interface UploadImageResponse {
   url: string;
 }
 
+type ImageUploadRoute =
+  | '/api/venue/logo'
+  | '/api/venue/cover'
+  | '/api/venue/gallery'
+  | '/api/venue/team-photo'
+  | '/api/venue/service-photo';
+
 async function uploadImageToRoute(
-  route: '/api/venue/logo' | '/api/venue/cover',
+  route: ImageUploadRoute,
   fileUri: string,
   mimeType: string,
   accessToken: string,
@@ -90,6 +97,58 @@ export function useUploadVenueLogo() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.venue.all() });
+    },
+  });
+}
+
+/**
+ * Booking-page photo uploaders — each POSTs the image to its storage route and
+ * returns the public URL. They do NOT touch the venue record: the caller writes
+ * the returned URL into `booking_page_config` (gallery / service_photos /
+ * team_profiles) via `useUpdateBookingPageConfig`, then that PATCH refreshes the
+ * venue. (Routes are admin-only + Bearer.)
+ */
+export function useUploadGalleryPhoto() {
+  const accessToken = useAccessToken();
+  return useMutation({
+    mutationFn: async ({ uri, mimeType }: { uri: string; mimeType: string }): Promise<string> => {
+      if (!accessToken) throw new Error('Missing access token');
+      return uploadImageToRoute('/api/venue/gallery', uri, mimeType, accessToken);
+    },
+  });
+}
+
+export function useUploadTeamPhoto() {
+  const accessToken = useAccessToken();
+  return useMutation({
+    mutationFn: async ({ uri, mimeType }: { uri: string; mimeType: string }): Promise<string> => {
+      if (!accessToken) throw new Error('Missing access token');
+      return uploadImageToRoute('/api/venue/team-photo', uri, mimeType, accessToken);
+    },
+  });
+}
+
+export function useUploadServicePhoto() {
+  const accessToken = useAccessToken();
+  return useMutation({
+    mutationFn: async ({ uri, mimeType }: { uri: string; mimeType: string }): Promise<string> => {
+      if (!accessToken) throw new Error('Missing access token');
+      return uploadImageToRoute('/api/venue/service-photo', uri, mimeType, accessToken);
+    },
+  });
+}
+
+/** DELETE /api/venue/service-photo — removes the storage object for a service photo URL. */
+export function useDeleteServicePhoto() {
+  const accessToken = useAccessToken();
+  return useMutation({
+    mutationFn: async (url: string): Promise<unknown> => {
+      if (!accessToken) throw new Error('Missing access token');
+      return apiFetch('/api/venue/service-photo', {
+        accessToken,
+        method: 'DELETE',
+        body: JSON.stringify({ url }),
+      });
     },
   });
 }

@@ -2,6 +2,7 @@ import { format, parseISO } from 'date-fns';
 import { StyleSheet, Switch, View } from 'react-native';
 
 import { Card } from '@/components/ui/Card';
+import { CollapsibleCard } from '@/components/ui/CollapsibleCard';
 import { Text } from '@/components/ui/Text';
 import { spacing } from '@/theme/index';
 
@@ -12,6 +13,11 @@ type MarketingPreferencesCardProps = {
   onConsentChange: (value: boolean) => void;
   onOptOutChange: (value: boolean) => void;
   disabled?: boolean;
+  /** Render inside a tap-to-expand CollapsibleCard instead of a plain Card. */
+  collapsible?: boolean;
+  /** One-line summary shown on the collapsed header (collapsible mode only). */
+  summary?: string | null;
+  defaultExpanded?: boolean;
 };
 
 function formatConsentDate(iso: string | null): string | null {
@@ -34,15 +40,14 @@ export function MarketingPreferencesCard({
   onConsentChange,
   onOptOutChange,
   disabled = false,
+  collapsible = false,
+  summary = null,
+  defaultExpanded = false,
 }: MarketingPreferencesCardProps) {
   const consentDate = formatConsentDate(marketingConsentAt);
 
-  return (
-    <Card>
-      <Text variant="label" style={styles.title}>
-        Marketing preferences
-      </Text>
-
+  const body = (
+    <>
       <View style={styles.row}>
         <View style={styles.labelBlock}>
           <Text variant="bodySmall">Marketing consent</Text>
@@ -89,6 +94,26 @@ export function MarketingPreferencesCard({
           No consent recorded. Contact may still receive transactional messages.
         </Text>
       )}
+    </>
+  );
+
+  if (collapsible) {
+    return (
+      <CollapsibleCard
+        title="Marketing preferences"
+        summary={summary}
+        defaultExpanded={defaultExpanded}>
+        {body}
+      </CollapsibleCard>
+    );
+  }
+
+  return (
+    <Card>
+      <Text variant="label" style={styles.title}>
+        Marketing preferences
+      </Text>
+      {body}
     </Card>
   );
 }

@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
@@ -33,6 +33,10 @@ export function useBookingsRange(options: UseBookingsRangeOptions) {
   return useQuery({
     queryKey: queryKeys.bookings.range(accessToken, from, to),
     enabled: queryEnabled,
+    // Keep the prior range's data on screen while the next loads, so stepping
+    // week→week (or to a cached-then-stale range) dims instead of flashing a full
+    // skeleton. `isFetching` still signals the in-flight refresh.
+    placeholderData: keepPreviousData,
     queryFn: async (): Promise<BookingsListResponse> => {
       if (!accessToken) {
         throw new Error('Missing access token');

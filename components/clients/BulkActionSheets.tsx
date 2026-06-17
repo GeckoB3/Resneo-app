@@ -1,7 +1,6 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
-import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Segmented } from '@/components/ui/Segmented';
@@ -13,13 +12,9 @@ import {
   useBulkAddTag,
   useBulkMarketingMessage,
   useBulkRemoveTag,
-  useMergeGuests,
 } from '@/lib/queries/useContactsBulk';
 import { useToast } from '@/providers/ToastProvider';
-import { spacing, radius } from '@/theme/index';
-import { useTheme } from '@/theme/useTheme';
-import type { GuestListItem } from '@/types/guest-list';
-import type { MergeGuestsInput } from '@/types/guest-merge';
+import { spacing } from '@/theme/index';
 
 type DoneHandler = () => void;
 
@@ -231,122 +226,6 @@ export function BulkMessageSheet({
   );
 }
 
-/** Merge selected contacts — pick which one survives. */
-export function MergeContactsSheet({
-  guests,
-  open,
-  onClose,
-  onDone,
-}: {
-  guests: GuestListItem[];
-  open: boolean;
-  onClose: () => void;
-  onDone: DoneHandler;
-}) {
-  const { colors } = useTheme();
-  const mutation = useMergeGuests();
-  const toast = useToast();
-  const [targetId, setTargetId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const effectiveTarget = targetId ?? guests[0]?.id ?? null;
-
-  async function handleMerge() {
-    if (!effectiveTarget) return;
-    const sources = guests.map((g) => g.id).filter((id) => id !== effectiveTarget);
-    if (sources.length === 0) return;
-    setError(null);
-    try {
-      const targetGuest = guests.find((g) => g.id === effectiveTarget);
-      // Build a basic merged_profile from the target (field-level resolution
-      // for a full wizard is in MergeContactDetailSheet on the detail screen).
-      const mergeInput: MergeGuestsInput = {
-        target_guest_id: effectiveTarget,
-        source_guest_ids: sources,
-        merged_profile: {
-          first_name: targetGuest?.first_name,
-          last_name: targetGuest?.last_name,
-          email: targetGuest?.email,
-          phone: targetGuest?.phone,
-          tags: targetGuest?.tags,
-        },
-      };
-      await mutation.mutateAsync(mergeInput);
-      hapticSuccess();
-      // Toast fires off the resolved mutation, then close — never from an Alert
-      // callback (a no-op on web).
-      toast.success('Contacts merged. History now lives on the kept contact.');
-      onDone();
-    } catch (e) {
-      hapticWarning();
-      setError(e instanceof ApiError ? e.message : 'Could not merge the contacts.');
-    }
-  }
-
-  return (
-    <Sheet visible={open} onClose={onClose}>
-      <View style={styles.body}>
-        <Text variant="overline" tone="muted">
-          Merge {guests.length} contacts
-        </Text>
-        <Text variant="bodySmall" tone="secondary">
-          Choose which contact to keep — the others’ bookings and history move onto it.
-        </Text>
-        {guests.map((guest) => {
-          const name =
-            [guest.first_name, guest.last_name].filter(Boolean).join(' ') || 'Unnamed guest';
-          const isTarget = guest.id === effectiveTarget;
-          return (
-            <Pressable
-              key={guest.id}
-              accessibilityRole="radio"
-              accessibilityState={{ selected: isTarget }}
-              onPress={() => setTargetId(guest.id)}
-              style={[
-                styles.mergeRow,
-                {
-                  borderColor: isTarget ? colors.brand : colors.border,
-                  backgroundColor: isTarget ? colors.surfaceRaised : colors.surface,
-                },
-              ]}>
-              <Avatar name={name} size={36} />
-              <View style={styles.mergeText}>
-                <Text variant="bodyMedium" numberOfLines={1}>
-                  {name}
-                </Text>
-                <Text variant="caption" tone="muted" numberOfLines={1}>
-                  {guest.visit_count} visit{guest.visit_count === 1 ? '' : 's'}
-                  {guest.email ? ` · ${guest.email}` : ''}
-                </Text>
-              </View>
-              {isTarget ? (
-                <Text variant="caption" tone="brand">
-                  Keep
-                </Text>
-              ) : null}
-            </Pressable>
-          );
-        })}
-        {error ? (
-          <Text variant="bodySmall" tone="danger">
-            {error}
-          </Text>
-        ) : null}
-        <View style={styles.actions}>
-          <Button label="Cancel" variant="secondary" style={styles.flex1} onPress={onClose} />
-          <Button
-            label="Merge"
-            variant="danger"
-            style={styles.flex1}
-            loading={mutation.isPending}
-            onPress={() => void handleMerge()}
-          />
-        </View>
-      </View>
-    </Sheet>
-  );
-}
-
 const styles = StyleSheet.create({
   body: {
     gap: spacing.md,
@@ -361,18 +240,5 @@ const styles = StyleSheet.create({
   },
   flex1: {
     flex: 1,
-  },
-  mergeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    borderWidth: 1,
-    borderRadius: radius.md,
-    padding: spacing.md,
-  },
-  mergeText: {
-    flex: 1,
-    minWidth: 0,
-    gap: 1,
   },
 });

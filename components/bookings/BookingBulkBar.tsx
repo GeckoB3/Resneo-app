@@ -1,25 +1,31 @@
 import { SymbolView } from 'expo-symbols';
 import { useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { StyleSheet, TextInput, View } from 'react-native';
 
+import { BulkActionBar } from '@/components/ui/BulkActionBar';
 import { Button } from '@/components/ui/Button';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { useToast } from '@/providers/ToastProvider';
 import { hapticSelect, hapticWarning } from '@/lib/haptics';
 import { useBulkAddTag } from '@/lib/queries/useContactsBulk';
-import { elevation, fonts, radius, spacing } from '@/theme/index';
+import { fonts, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { BookingListRow } from '@/types/booking-list';
 
 type BookingBulkBarProps = {
   /** The set of currently selected booking rows. */
   selected: BookingListRow[];
+  /** True when every selectable booking row is selected. */
+  allSelected: boolean;
+  /** Toggle select-all / deselect-all for the visible booking rows. */
+  onToggleSelectAll: () => void;
   /** Called when the user dismisses selection mode. */
   onClear: () => void;
   /** Called after a message sheet is requested so the parent can open a per-booking sheet. */
   onMessageSelected: (bookings: BookingListRow[]) => void;
+  /** Reports the bar's bottom-inset clearance so the list can pad clear of it. */
+  onHeightChange?: (clearance: number) => void;
 };
 
 type SubSheet = 'tag' | 'message' | null;
@@ -32,7 +38,14 @@ type SubSheet = 'tag' | 'message' | null;
  * - Message delegates up to the parent via onMessageSelected so it can open
  *   a per-booking compose sheet for each selected booking.
  */
-export function BookingBulkBar({ selected, onClear, onMessageSelected }: BookingBulkBarProps) {
+export function BookingBulkBar({
+  selected,
+  allSelected,
+  onToggleSelectAll,
+  onClear,
+  onMessageSelected,
+  onHeightChange,
+}: BookingBulkBarProps) {
   const { colors } = useTheme();
   const toast = useToast();
   const [subSheet, setSubSheet] = useState<SubSheet>(null);
@@ -75,60 +88,39 @@ export function BookingBulkBar({ selected, onClear, onMessageSelected }: Booking
 
   return (
     <>
-      <SafeAreaView
-        edges={['bottom']}
-        style={[styles.trayWrap, { backgroundColor: colors.surfaceRaised, borderColor: colors.border }]}
-        pointerEvents="box-none">
-        <View style={[styles.tray, elevation.raised]}>
-          {/* Count + clear */}
-          <Pressable
-            onPress={() => {
-              hapticSelect();
-              onClear();
-            }}
-            hitSlop={8}
-            accessibilityLabel="Clear selection"
-            style={({ pressed }) => [styles.clearBtn, { opacity: pressed ? 0.6 : 1 }]}>
+      <BulkActionBar
+        count={selected.length}
+        allSelected={allSelected}
+        onToggleSelectAll={onToggleSelectAll}
+        onClear={onClear}
+        onHeightChange={onHeightChange}>
+        <Button
+          label="Tag"
+          variant="secondary"
+          size="sm"
+          onPress={openTagSheet}
+          leftIcon={
             <SymbolView
-              name={{ ios: 'xmark.circle.fill', android: 'cancel', web: 'cancel' }}
-              tintColor={colors.textSecondary}
-              size={18}
+              name={{ ios: 'tag', android: 'label', web: 'label' }}
+              tintColor={colors.text}
+              size={14}
             />
-            <Text variant="label" tone="secondary">
-              {selected.length} selected
-            </Text>
-          </Pressable>
-
-          <View style={styles.actions}>
-            <Button
-              label="Tag"
-              variant="secondary"
-              size="sm"
-              onPress={openTagSheet}
-              leftIcon={
-                <SymbolView
-                  name={{ ios: 'tag', android: 'label', web: 'label' }}
-                  tintColor={colors.text}
-                  size={14}
-                />
-              }
+          }
+        />
+        <Button
+          label="Message"
+          variant="secondary"
+          size="sm"
+          onPress={openMessageSheet}
+          leftIcon={
+            <SymbolView
+              name={{ ios: 'message', android: 'chat_bubble', web: 'chat' }}
+              tintColor={colors.text}
+              size={14}
             />
-            <Button
-              label="Message"
-              variant="secondary"
-              size="sm"
-              onPress={openMessageSheet}
-              leftIcon={
-                <SymbolView
-                  name={{ ios: 'message', android: 'chat_bubble', web: 'chat' }}
-                  tintColor={colors.text}
-                  size={14}
-                />
-              }
-            />
-          </View>
-        </View>
-      </SafeAreaView>
+          }
+        />
+      </BulkActionBar>
 
       {/* Add tag sub-sheet */}
       <Sheet visible={subSheet === 'tag'} onClose={() => setSubSheet(null)}>
@@ -174,29 +166,6 @@ export function BookingBulkBar({ selected, onClear, onMessageSelected }: Booking
 }
 
 const styles = StyleSheet.create({
-  trayWrap: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  tray: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.base,
-    paddingVertical: spacing.md,
-  },
-  clearBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  actions: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
   tagInputWrap: {
     borderWidth: 1,
     borderRadius: radius.md,

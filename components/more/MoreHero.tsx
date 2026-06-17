@@ -3,19 +3,13 @@ import { useState } from 'react';
 import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { Defs, LinearGradient, RadialGradient, Rect, Stop, Svg } from 'react-native-svg';
 
+import { Avatar } from '@/components/ui/Avatar';
 import { PressableScale } from '@/components/ui/PressableScale';
 import { Text } from '@/components/ui/Text';
 import { accent, brand, fonts, radius, spacing } from '@/theme/index';
 
 /** Notification-badge red — pops against the navy hero in both themes. */
 const BADGE_BG = '#FF4D4F';
-
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return '?';
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
 
 type MoreHeroProps = {
   name: string;
@@ -107,8 +101,8 @@ export function MoreHero({
         accessibilityLabel="Account settings"
         accessibilityHint="Opens your profile and account settings"
         style={styles.identity}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{initials(name)}</Text>
+        <View style={styles.avatarRing}>
+          <Avatar name={name} size={52} />
         </View>
         <View style={styles.identityText}>
           <Text variant="title" color="#FFFFFF" numberOfLines={1}>
@@ -193,20 +187,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.md,
   },
-  avatar: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.16)',
+  // A soft white hairline frames the shared Avatar so its deterministic tint
+  // reads as a deliberate disc against the navy gradient.
+  avatarRing: {
+    borderRadius: 28,
+    padding: 2,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.28)',
-  },
-  avatarText: {
-    color: '#FFFFFF',
-    fontFamily: fonts.semibold,
-    fontSize: 19,
+    backgroundColor: 'rgba(255, 255, 255, 0.10)',
   },
   identityText: {
     flex: 1,
