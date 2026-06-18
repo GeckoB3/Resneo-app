@@ -40,7 +40,7 @@
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://njualfobtudvlugqkqho.supabase.co",
         "EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY": "sb_publishable_faW-RDRK2CE3M7_MXCtCEQ_2-_o5myN",
-        "EXPO_PUBLIC_API_URL": "https://resneo.com",
+        "EXPO_PUBLIC_API_URL": "https://www.resneo.com",
         "EXPO_PUBLIC_SENTRY_DSN": "https://b1cbcc3c520d8a60245d49fecea1c8e3@o4511587664003072.ingest.de.sentry.io/4511587670949968"
       }
     }

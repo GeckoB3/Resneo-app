@@ -22,6 +22,7 @@
         "tinted": "./assets/images/icon-tinted.png"
       },
       "associatedDomains": [
+        "applinks:www.resneo.com",
         "applinks:resneo.com",
         "applinks:reserve-ni.vercel.app"
       ],
@@ -55,6 +56,10 @@
             "DEFAULT"
           ],
           "data": [
+            {
+              "scheme": "https",
+              "host": "www.resneo.com"
+            },
             {
               "scheme": "https",
               "host": "resneo.com"
