@@ -1,20 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
+import { WaitlistJoinSheet } from '@/components/waitlist/WaitlistJoinSheet';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
-import { Input } from '@/components/ui/Input';
 import { LoadingState } from '@/components/ui/LoadingState';
-import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
-import { ApiError } from '@/lib/api/client';
-import { hapticSelect, hapticSuccess, hapticWarning } from '@/lib/haptics';
+import { hapticSelect } from '@/lib/haptics';
 import {
   useAnyPractitionerAvailability,
   useAppointmentAvailability,
 } from '@/lib/queries/useAppointmentAvailability';
-import { useJoinWaitlist } from '@/lib/queries/useJoinWaitlist';
 import { minTouchTarget, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { AppointmentSlot } from '@/types/appointment-availability';
@@ -354,117 +351,13 @@ export function TimeSlotStep({
   );
 }
 
-/** Collects guest details and adds them to the appointment waitlist. */
-export function WaitlistJoinSheet({
-  open,
-  onClose,
-  venueId,
-  serviceId,
-  practitionerId,
-  date,
-}: {
-  open: boolean;
-  onClose: () => void;
-  venueId: string;
-  serviceId: string;
-  practitionerId?: string;
-  date: string;
-}) {
-  const join = useJoinWaitlist();
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
-  const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [joined, setJoined] = useState(false);
-
-  const handleClose = () => {
-    setJoined(false);
-    onClose();
-  };
-
-  async function handleJoin() {
-    setError(null);
-    if (!firstName.trim() || !lastName.trim() || !email.trim() || !phone.trim()) {
-      setError('Name, email and phone are all required for the waitlist.');
-      return;
-    }
-    try {
-      await join.mutateAsync({
-        venue_id: venueId,
-        service_id: serviceId,
-        desired_date: date,
-        ...(practitionerId ? { practitioner_id: practitionerId } : {}),
-        first_name: firstName.trim(),
-        last_name: lastName.trim(),
-        guest_email: email.trim(),
-        guest_phone: phone.trim(),
-      });
-      hapticSuccess();
-      // Confirm INSIDE the sheet (Alert.alert is a no-op on web, and firing it
-      // after onClose left no visible feedback at all).
-      setJoined(true);
-    } catch (e) {
-      hapticWarning();
-      setError(e instanceof ApiError ? e.message : 'Could not join the waitlist.');
-    }
-  }
-
-  if (joined) {
-    return (
-      <Sheet visible={open} onClose={handleClose}>
-        <View style={styles.waitlistBody}>
-          <Text variant="subheading">Added to waitlist</Text>
-          <Text variant="bodySmall" tone="muted">
-            The guest will be offered a slot if one opens up.
-          </Text>
-          <Button label="Done" fullWidth onPress={handleClose} />
-        </View>
-      </Sheet>
-    );
-  }
-
-  return (
-    <Sheet visible={open} onClose={handleClose} maxHeight="88%">
-      <View style={styles.waitlistBody}>
-        <Text variant="overline" tone="muted">
-          Join waitlist
-        </Text>
-        <View style={styles.waitlistNames}>
-          <View style={styles.waitlistNameField}>
-            <Input label="First name" value={firstName} onChangeText={setFirstName} />
-          </View>
-          <View style={styles.waitlistNameField}>
-            <Input label="Last name" value={lastName} onChangeText={setLastName} />
-          </View>
-        </View>
-        <Input
-          label="Email"
-          value={email}
-          onChangeText={setEmail}
-          keyboardType="email-address"
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-        <Input label="Phone" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
-        {error ? (
-          <Text variant="bodySmall" tone="danger">
-            {error}
-          </Text>
-        ) : null}
-        <View style={styles.waitlistActions}>
-          <Button label="Cancel" variant="secondary" style={styles.waitlistBtn} onPress={handleClose} />
-          <Button
-            label="Add to waitlist"
-            style={styles.waitlistBtn}
-            loading={join.isPending}
-            onPress={() => void handleJoin()}
-          />
-        </View>
-      </View>
-    </Sheet>
-  );
-}
+/**
+ * Re-exported for back-compat: the add-to-waitlist sheet now lives in
+ * `components/waitlist/WaitlistJoinSheet.tsx` (lifted so the Waitlist screen can
+ * reuse it with service/date/practitioner pickers). It also gained an optional
+ * preferred-time window + notes field.
+ */
+export { WaitlistJoinSheet } from '@/components/waitlist/WaitlistJoinSheet';
 
 const styles = StyleSheet.create({
   container: {
@@ -501,22 +394,5 @@ const styles = StyleSheet.create({
   emptyWrap: {
     flex: 1,
     gap: spacing.md,
-  },
-  waitlistBody: {
-    gap: spacing.md,
-  },
-  waitlistNames: {
-    flexDirection: 'row',
-    gap: spacing.md,
-  },
-  waitlistNameField: {
-    flex: 1,
-  },
-  waitlistActions: {
-    flexDirection: 'row',
-    gap: spacing.md,
-  },
-  waitlistBtn: {
-    flex: 1,
   },
 });

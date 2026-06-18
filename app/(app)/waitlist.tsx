@@ -23,10 +23,12 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
+import { IconButton } from '@/components/ui/IconButton';
 import { Screen } from '@/components/ui/Screen';
 import { Segmented } from '@/components/ui/Segmented';
 import { ListSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
+import { WaitlistJoinSheet } from '@/components/waitlist/WaitlistJoinSheet';
 import { ApiError } from '@/lib/api/client';
 import { formatDayHeading } from '@/lib/dates/venue-dates';
 import { hapticWarning } from '@/lib/haptics';
@@ -106,19 +108,24 @@ function isDeletable(entry: WaitlistEntry): boolean {
 }
 
 /**
- * "Offer expires in 2h 10m" countdown for offered entries.
- * Bug fix: result is computed once and stored — not called twice on the same render.
+ * "Offer expires in 2h 10m (14:35)" countdown for offered entries.
+ *
+ * Appends the absolute clock time (web parity — the web shows the hard deadline)
+ * so staff see both the urgency and the exact cut-off at a glance. Result is
+ * computed once and stored — not called twice on the same render.
  */
 function offerExpiryLabel(expiresAt: string | null | undefined): string | null {
   if (!expiresAt) return null;
-  const remainingMs = new Date(expiresAt).getTime() - Date.now();
+  const expiry = new Date(expiresAt);
+  const remainingMs = expiry.getTime() - Date.now();
   if (Number.isNaN(remainingMs)) return null;
-  if (remainingMs <= 0) return 'Offer expired';
+  const absolute = expiry.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  if (remainingMs <= 0) return `Offer expired (${absolute})`;
   const totalMinutes = Math.round(remainingMs / 60_000);
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
   const span = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
-  return `Offer expires in ${span}`;
+  return `Offer expires in ${span} (${absolute})`;
 }
 
 function formatJoinedAt(iso: string): string {
@@ -210,6 +217,8 @@ type WaitlistEntryRowProps = {
   onAct: (id: string, status: WaitlistStatus) => void;
   onArmConfirm: (token: string) => void;
   onDelete: (id: string) => void;
+  /** Jump to the booking created when a confirmed entry has a booking_id. */
+  onOpenBooking: (bookingId: string) => void;
 };
 
 /**
@@ -226,6 +235,7 @@ const WaitlistEntryRow = memo(function WaitlistEntryRow({
   onAct,
   onArmConfirm,
   onDelete,
+  onOpenBooking,
 }: WaitlistEntryRowProps) {
   const { colors } = useTheme();
 
@@ -235,6 +245,11 @@ const WaitlistEntryRow = memo(function WaitlistEntryRow({
   const isWaiting = status === 'waiting';
   const isOffered = status === 'offered';
   const canDelete = isDeletable(entry);
+
+  // Confirmed entries with a resulting booking become a tap-through to that
+  // appointment (web parity for the "Complete" rows under the All filter).
+  const confirmedBookingId =
+    status === 'confirmed' && entry.booking_id ? entry.booking_id : null;
 
   // can_offer gating
   const offerDisabled = isWaiting && entry.can_offer === false;
@@ -246,7 +261,10 @@ const WaitlistEntryRow = memo(function WaitlistEntryRow({
   const showExpiry = isOffered && waitlistMode === 'notify_in_order';
 
   return (
-    <Card style={styles.entryCard} padded={false}>
+    <Card
+      style={styles.entryCard}
+      padded={false}
+      onPress={confirmedBookingId ? () => onOpenBooking(confirmedBookingId) : undefined}>
       {/* Left status strip */}
       <View style={[styles.statusStrip, { backgroundColor: stripColor }]} />
       <View style={styles.cardBody}>
@@ -342,6 +360,12 @@ const WaitlistEntryRow = memo(function WaitlistEntryRow({
                 />
               </View>
             ) : null}
+            {/* Confirmed → tap the card to open the resulting booking. */}
+            {confirmedBookingId ? (
+              <Text variant="caption" tone="brand" style={styles.viewBookingHint}>
+                Tap to view booking
+              </Text>
+            ) : null}
           </>
         )}
       </View>
@@ -366,6 +390,10 @@ export default function WaitlistScreen() {
   const [filter, setFilter] = useState<FilterTab>('active');
   // Expiry countdowns self-update via a shared 60s tick (see OfferCountdown), so
   // the whole list no longer re-renders every minute.
+
+  // Staff add-to-waitlist sheet (header "Add" action) — picker mode so staff can
+  // choose a service/date/practitioner without walking the wizard's empty-slot.
+  const [addOpen, setAddOpen] = useState(false);
 
   const query = useWaitlist('appointment');
   const update = useUpdateWaitlistEntry();
@@ -507,6 +535,13 @@ export default function WaitlistScreen() {
 
   const alerts = useMemo(() => alertsQuery.data?.alerts ?? [], [alertsQuery.data?.alerts]);
 
+  const openBooking = useCallback(
+    (bookingId: string) => {
+      router.push(`/booking/${bookingId}` as Href);
+    },
+    [router],
+  );
+
   const renderEntry = useCallback<ListRenderItem<WaitlistEntry>>(
     ({ item }) => (
       <WaitlistEntryRow
@@ -518,9 +553,10 @@ export default function WaitlistScreen() {
         onAct={act}
         onArmConfirm={armConfirm}
         onDelete={handleDelete}
+        onOpenBooking={openBooking}
       />
     ),
-    [waitlistMode, pendingIds, pendingConfirm, act, armConfirm, handleDelete],
+    [waitlistMode, pendingIds, pendingConfirm, act, armConfirm, handleDelete, openBooking],
   );
 
   const keyExtractor = useCallback((item: WaitlistEntry) => item.id, []);
@@ -603,15 +639,27 @@ export default function WaitlistScreen() {
       <Stack.Screen
         options={{
           title: 'Waitlist',
-          headerRight: () =>
-            liveState !== 'idle' ? (
-              <View style={styles.liveRow}>
-                <View style={[styles.liveDot, { backgroundColor: liveColor }]} />
-                <Text variant="caption" color={liveColor}>
-                  {liveLabel}
-                </Text>
-              </View>
-            ) : null,
+          headerRight: () => (
+            <View style={styles.headerRight}>
+              {liveState !== 'idle' ? (
+                <View style={styles.liveRow}>
+                  <View style={[styles.liveDot, { backgroundColor: liveColor }]} />
+                  <Text variant="caption" color={liveColor}>
+                    {liveLabel}
+                  </Text>
+                </View>
+              ) : null}
+              {venueId ? (
+                <IconButton
+                  icon={{ ios: 'plus', android: 'add', web: 'add' }}
+                  onPress={() => setAddOpen(true)}
+                  accessibilityLabel="Add guest to waitlist"
+                  size={36}
+                  iconSize={20}
+                />
+              ) : null}
+            </View>
+          ),
         }}
       />
 
@@ -674,6 +722,15 @@ export default function WaitlistScreen() {
           />
         </>
       )}
+
+      {venueId ? (
+        <WaitlistJoinSheet
+          open={addOpen}
+          onClose={() => setAddOpen(false)}
+          venueId={venueId}
+          showPickers
+        />
+      ) : null}
     </Screen>
   );
 }
@@ -761,11 +818,19 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: spacing.base,
   },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginRight: spacing.xs,
+  },
   liveRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
-    marginRight: spacing.sm,
+  },
+  viewBookingHint: {
+    marginTop: spacing.sm,
   },
   liveDot: {
     width: 7,

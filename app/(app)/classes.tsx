@@ -1,18 +1,21 @@
 import { Stack } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
-import { Pressable, RefreshControl, SectionList, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Pressable, RefreshControl, ScrollView, SectionList, StyleSheet, View } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { BookingDetailSheet } from '@/components/bookings/BookingDetailSheet';
+import { ClassMonthGrid } from '@/components/classes/ClassMonthGrid';
 import { ClassRosterView } from '@/components/classes/ClassRosterView';
 import { ClassSessionCard } from '@/components/classes/ClassSessionCard';
 import { ClassTypesManagerSheet } from '@/components/classes/ClassTypesManagerSheet';
 import { Button } from '@/components/ui/Button';
+import { Chip } from '@/components/ui/Chip';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { IconButton } from '@/components/ui/IconButton';
 import { LiveDot } from '@/components/ui/LiveDot';
 import { Screen } from '@/components/ui/Screen';
+import { Segmented } from '@/components/ui/Segmented';
 import { ListSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
@@ -21,9 +24,11 @@ import {
   calendarDateInTimeZone,
   formatDayHeading,
   formatRangeLabel,
+  getMonthRangeFromDate,
   getWeekRangeFromDate,
 } from '@/lib/dates/venue-dates';
 import { queryKeys } from '@/lib/queries/keys';
+import { useManagedClasses } from '@/lib/queries/useClassesManage';
 import { useClassSessions, type ClassSession } from '@/lib/queries/useClassSchedule';
 import { usePractitioners } from '@/lib/queries/usePractitioners';
 import { useVenueLiveSync } from '@/lib/realtime/useVenueLiveSync';
@@ -50,6 +55,18 @@ function CardSeparator() {
   return <View style={styles.cardSeparator} />;
 }
 
+/** One metric in the timetable stats bar. */
+function Stat({ value, label }: { value: number; label: string }) {
+  return (
+    <View style={styles.stat}>
+      <Text variant="bodyMedium">{value}</Text>
+      <Text variant="caption" tone="muted" numberOfLines={1}>
+        {label}
+      </Text>
+    </View>
+  );
+}
+
 /**
  * Class timetable — upcoming class sessions in a rolling 7-day window with a
  * per-session roster. Sessions come from the Bearer-capable
@@ -67,14 +84,25 @@ export default function ClassesScreen() {
   const timeZone = venue?.timezone ?? 'Europe/London';
   const today = calendarDateInTimeZone(new Date(), timeZone);
 
+  const [view, setView] = useState<'agenda' | 'month'>('agenda');
   const [weekStart, setWeekStart] = useState(today);
+  const [monthAnchor, setMonthAnchor] = useState(today);
+  // Selected class-type filter (by class-type id); null = all types.
+  const [classTypeFilterId, setClassTypeFilterId] = useState<string | null>(null);
+  // Selected day in the month view; null = the whole month.
+  const [monthSelectedDate, setMonthSelectedDate] = useState<string | null>(null);
   const [selectedSession, setSelectedSession] = useState<ClassSession | null>(null);
   const [detailBookingId, setDetailBookingId] = useState<string | null>(null);
   const [managerOpen, setManagerOpen] = useState(false);
 
   const week = useMemo(() => getWeekRangeFromDate(weekStart, timeZone), [weekStart, timeZone]);
-  const sessionsQuery = useClassSessions({ from: week.from, to: week.to });
+  const month = useMemo(() => getMonthRangeFromDate(monthAnchor), [monthAnchor]);
+  // Agenda reads the 7-day window; the month view its own month range.
+  const range = view === 'month' ? month : week;
+  const sessionsQuery = useClassSessions({ from: range.from, to: range.to });
   const practitionersQuery = usePractitioners();
+  // Class types power the filter chips + the stats bar. Cheap, cached feed.
+  const managedQuery = useManagedClasses();
 
   // Realtime refresh — same `bookings` table the web class timetable watches.
   // Sessions and the open roster both nest under queryKeys.bookings.all(), so a
@@ -102,15 +130,66 @@ export default function ClassesScreen() {
   const instructorNameFor = (session: ClassSession): string | null =>
     session.calendarId ? (calendarNameById.get(session.calendarId) ?? null) : null;
 
-  // SectionList sections — one per calendar date, in feed order (soonest first).
+  // Active class types → filter chips. The schedule feed exposes the class-type
+  // NAME (not id) per session, so we filter by name (web filters by id over the
+  // richer instances feed; matching by name is equivalent on the merged feed).
+  const classTypes = useMemo(
+    () =>
+      [...(managedQuery.data?.class_types ?? [])]
+        .filter((ct) => ct.is_active !== false)
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [managedQuery.data?.class_types],
+  );
+  const filterName = useMemo(
+    () => classTypes.find((ct) => ct.id === classTypeFilterId)?.name ?? null,
+    [classTypes, classTypeFilterId],
+  );
+  // Auto-reset the filter if the selected type is gone (web parity).
+  useEffect(() => {
+    if (classTypeFilterId && !classTypes.some((ct) => ct.id === classTypeFilterId)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear a now-stale filter selection
+      setClassTypeFilterId(null);
+    }
+  }, [classTypeFilterId, classTypes]);
+
+  const filteredSessions = useMemo(() => {
+    const all = sessionsQuery.data ?? [];
+    return filterName ? all.filter((s) => s.name === filterName) : all;
+  }, [sessionsQuery.data, filterName]);
+
+  // Stats bar (web `ClassTimetableStatsRow`): active types, sessions in the next
+  // 7 days, upcoming sessions in view, total booked spots in view. Computed from
+  // the in-view (filtered) feed + the class-type list.
+  const stats = useMemo(() => {
+    const next7 = addDaysToDateStr(today, 7);
+    const upcoming = filteredSessions.filter((s) => s.date >= today);
+    return {
+      activeTypes: filterName ? 1 : classTypes.length,
+      next7: upcoming.filter((s) => s.date < next7).length,
+      upcoming: upcoming.length,
+      bookedSpots: filteredSessions.reduce((sum, s) => sum + (s.bookedSpots ?? 0), 0),
+    };
+  }, [filteredSessions, classTypes.length, filterName, today]);
+
+  // Agenda sections — one per calendar date, in feed order (soonest first).
   const sections = useMemo(
     () =>
-      groupByDate(sessionsQuery.data ?? []).map((group) => ({
+      groupByDate(filteredSessions).map((group) => ({
         date: group.date,
         data: group.items,
       })),
-    [sessionsQuery.data],
+    [filteredSessions],
   );
+
+  // Month view: the agenda below the grid shows the selected day, else all month
+  // sessions grouped by day.
+  const monthSections = useMemo(() => {
+    const list = monthSelectedDate
+      ? filteredSessions.filter((s) => s.date === monthSelectedDate)
+      : filteredSessions;
+    return groupByDate(list).map((group) => ({ date: group.date, data: group.items }));
+  }, [filteredSessions, monthSelectedDate]);
+
   const onToday = weekStart === today;
 
   return (
@@ -139,39 +218,89 @@ export default function ClassesScreen() {
             </View>
           </View>
 
-          {/* Date navigation — rolling 7-day window */}
-          <View style={[styles.navBar, { borderBottomColor: colors.border }]}>
-            <IconButton
-              icon={{ ios: 'chevron.left', android: 'chevron_left', web: 'chevron_left' }}
-              accessibilityLabel="Previous week"
-              tint={colors.brand}
-              onPress={() => setWeekStart(addDaysToDateStr(weekStart, -7))}
-            />
-            <View style={styles.navCenter}>
-              <Text variant="bodyMedium">{formatRangeLabel(week.from, week.to)}</Text>
-              {!onToday ? (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Back to today"
-                  hitSlop={12}
-                  onPress={() => setWeekStart(today)}>
-                  <Text variant="caption" tone="brand">
-                    Back to today
-                  </Text>
-                </Pressable>
-              ) : (
-                <Text variant="caption" tone="muted">
-                  Next 7 days
-                </Text>
-              )}
-            </View>
-            <IconButton
-              icon={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }}
-              accessibilityLabel="Next week"
-              tint={colors.brand}
-              onPress={() => setWeekStart(addDaysToDateStr(weekStart, 7))}
+          {/* Agenda | Month toggle */}
+          <View style={styles.toggleBar}>
+            <Segmented<'agenda' | 'month'>
+              options={[
+                { value: 'agenda', label: 'Agenda' },
+                { value: 'month', label: 'Month' },
+              ]}
+              value={view}
+              onChange={(next) => {
+                setView(next);
+                setMonthSelectedDate(null);
+              }}
             />
           </View>
+
+          {/* Stats bar (web parity): active types · next 7 days · upcoming · booked */}
+          <View style={styles.statsRow}>
+            <Stat value={stats.activeTypes} label="Active types" />
+            <Stat value={stats.next7} label="Next 7 days" />
+            <Stat value={stats.upcoming} label="Upcoming" />
+            <Stat value={stats.bookedSpots} label="Booked" />
+          </View>
+
+          {/* Per-class-type filter chips */}
+          {classTypes.length > 0 ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.filterRow}>
+              <Chip
+                label="All"
+                selected={classTypeFilterId === null}
+                onPress={() => setClassTypeFilterId(null)}
+              />
+              {classTypes.map((ct) => (
+                <Chip
+                  key={ct.id}
+                  label={ct.name}
+                  selectedColor={ct.colour ?? undefined}
+                  selected={classTypeFilterId === ct.id}
+                  onPress={() =>
+                    setClassTypeFilterId(classTypeFilterId === ct.id ? null : ct.id)
+                  }
+                />
+              ))}
+            </ScrollView>
+          ) : null}
+
+          {/* Date navigation — agenda only (the month view has its own nav) */}
+          {view === 'agenda' ? (
+            <View style={[styles.navBar, { borderBottomColor: colors.border }]}>
+              <IconButton
+                icon={{ ios: 'chevron.left', android: 'chevron_left', web: 'chevron_left' }}
+                accessibilityLabel="Previous week"
+                tint={colors.brand}
+                onPress={() => setWeekStart(addDaysToDateStr(weekStart, -7))}
+              />
+              <View style={styles.navCenter}>
+                <Text variant="bodyMedium">{formatRangeLabel(week.from, week.to)}</Text>
+                {!onToday ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Back to today"
+                    hitSlop={12}
+                    onPress={() => setWeekStart(today)}>
+                    <Text variant="caption" tone="brand">
+                      Back to today
+                    </Text>
+                  </Pressable>
+                ) : (
+                  <Text variant="caption" tone="muted">
+                    Next 7 days
+                  </Text>
+                )}
+              </View>
+              <IconButton
+                icon={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }}
+                accessibilityLabel="Next week"
+                tint={colors.brand}
+                onPress={() => setWeekStart(addDaysToDateStr(weekStart, 7))}
+              />
+            </View>
+          ) : null}
 
           {sessionsQuery.isLoading ? (
             <ListSkeleton />
@@ -186,19 +315,40 @@ export default function ClassesScreen() {
                 onRetry={() => void sessionsQuery.refetch()}
               />
             </View>
-          ) : sections.length === 0 ? (
-            <View style={styles.stateWrap}>
-              <EmptyState
-                title="No class sessions"
-                message="There are no sessions in this week. Add a class, schedule sessions, or set up a weekly rule — they'll appear here."
-                actionLabel="Manage classes"
-                onAction={() => setManagerOpen(true)}
-              />
-            </View>
           ) : (
             <SectionList
-              sections={sections}
+              sections={view === 'month' ? monthSections : sections}
               keyExtractor={(session) => session.classInstanceId}
+              ListHeaderComponent={
+                view === 'month' ? (
+                  <ClassMonthGrid
+                    monthAnchor={monthAnchor}
+                    onChangeMonth={(next) => {
+                      setMonthAnchor(next);
+                      setMonthSelectedDate(null);
+                    }}
+                    today={today}
+                    sessions={filteredSessions}
+                    selectedDate={monthSelectedDate}
+                    onSelectDate={setMonthSelectedDate}
+                    isLoading={sessionsQuery.isRefetching}
+                  />
+                ) : null
+              }
+              ListEmptyComponent={
+                <View style={styles.stateWrap}>
+                  <EmptyState
+                    title="No class sessions"
+                    message={
+                      view === 'month'
+                        ? 'No sessions in this month. Add a class, schedule sessions, or set up a weekly rule.'
+                        : "There are no sessions in this week. Add a class, schedule sessions, or set up a weekly rule — they'll appear here."
+                    }
+                    actionLabel="Manage classes"
+                    onAction={() => setManagerOpen(true)}
+                  />
+                </View>
+              }
               renderSectionHeader={({ section }) => (
                 <Text variant="overline" tone="secondary" style={styles.dayHeading}>
                   {section.date === today ? 'Today' : formatDayHeading(section.date)}
@@ -245,6 +395,27 @@ export default function ClassesScreen() {
 }
 
 const styles = StyleSheet.create({
+  toggleBar: {
+    paddingHorizontal: spacing.base,
+    paddingBottom: spacing.sm,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.base,
+    paddingBottom: spacing.sm,
+  },
+  stat: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 1,
+  },
+  filterRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.base,
+    paddingBottom: spacing.sm,
+  },
   navBar: {
     flexDirection: 'row',
     alignItems: 'center',

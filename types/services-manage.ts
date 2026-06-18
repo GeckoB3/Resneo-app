@@ -57,6 +57,12 @@ export type ServiceCustomRule =
  */
 export interface ManagedService {
   id: string;
+  /**
+   * Staff member who created the service. Non-admin staff may edit/delete ONLY
+   * services they created (web parity — the API enforces the same rule and the
+   * row carries `created_by_staff_id`). Null for legacy/admin-created rows.
+   */
+  created_by_staff_id?: string | null;
   name: string;
   description?: string | null;
   duration_minutes: number;
@@ -95,10 +101,24 @@ export interface ManagedService {
   addon_groups?: AppointmentCatalogAddonGroup[];
 }
 
-/** Calendar↔service link row from GET (table `practitioner_services`). */
+/**
+ * Calendar↔service link row from GET (table `practitioner_services`). The GET
+ * route returns the row verbatim (`select('*')`), so it also carries the
+ * per-calendar override columns a non-admin staff member set via
+ * PATCH /api/venue/practitioner-service-overrides. All `custom_*` fields are
+ * `null` when no override applies (the venue base then wins).
+ * @see mergeServiceWithOverride
+ */
 export interface PractitionerServiceLink {
   practitioner_id: string;
   service_id: string;
+  custom_name?: string | null;
+  custom_description?: string | null;
+  custom_duration_minutes?: number | null;
+  custom_buffer_minutes?: number | null;
+  custom_price_pence?: number | null;
+  custom_deposit_pence?: number | null;
+  custom_colour?: string | null;
 }
 
 export interface ManagedServicesResponse {

@@ -2,6 +2,7 @@ import { Stack, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
   Linking,
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -145,21 +146,30 @@ const MODEL_LABELS: Record<string, string> = {
 
 type WaitlistMode = 'notify_in_order' | 'staff_choose' | 'notify_all';
 
+/**
+ * Mode metadata mirrored from the web `WAITLIST_MODE_LABELS`
+ * (`C:\Resneo/src/lib/booking/waitlist-config.ts`) so the in-app selector reads
+ * identically to Settings → Features on the web dashboard. Order matches the
+ * web `APPOINTMENT_WAITLIST_MODES` (staff_choose first).
+ */
 const WAITLIST_MODES: { mode: WaitlistMode; title: string; description: string }[] = [
-  {
-    mode: 'notify_in_order',
-    title: 'Notify in order',
-    description: 'Guests on the waitlist are offered the slot one at a time, in join order.',
-  },
   {
     mode: 'staff_choose',
     title: 'Staff choose',
-    description: 'Staff pick which waitlist guest to offer the slot to.',
+    description:
+      'When a slot opens, staff see a banner and choose who to offer it to — or use Offer appointment for the first matching guest.',
+  },
+  {
+    mode: 'notify_in_order',
+    title: 'First in line — notify in order',
+    description:
+      'The first matching guest is notified by email and SMS. If they do not book within 30 minutes, the next guest is notified. The slot stays open on your booking page throughout.',
   },
   {
     mode: 'notify_all',
-    title: 'Notify everyone',
-    description: 'All waitlisted guests are notified at once — first to accept wins.',
+    title: 'Offer to all',
+    description:
+      'Every matching guest is notified at once. The slot stays open — whoever books first gets it.',
   },
 ];
 
@@ -685,22 +695,22 @@ function RadioRow({
   disabled?: boolean;
 }) {
   const { colors } = useTheme();
+  // Pressable (not Button): the shared Button only renders its `label` prop and
+  // ignores children, so the radio's title/hint must live in a plain Pressable.
   return (
-    <Button
-      label=""
-      variant="secondary"
-      style={[
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityRole="radio"
+      accessibilityState={{ checked: selected, disabled: !!disabled }}
+      style={({ pressed }) => [
         styles.radioRow,
         {
           borderColor: selected ? colors.brand : colors.border,
           backgroundColor: selected ? colors.brandSubtle : colors.surfaceRaised,
+          opacity: disabled ? 0.6 : pressed ? 0.85 : 1,
         },
       ]}
-      disabled={disabled}
-      haptic={false}
-      onPress={onPress}
-      accessibilityRole="radio"
-      accessibilityState={{ checked: selected }}
     >
       <View style={styles.radioInner} pointerEvents="none">
         <View
@@ -721,7 +731,7 @@ function RadioRow({
           </Text>
         </View>
       </View>
-    </Button>
+    </Pressable>
   );
 }
 

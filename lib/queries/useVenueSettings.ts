@@ -34,6 +34,10 @@ export interface UpdateVenueInput {
   active_booking_models?: string[];
   enabled_models?: string[];
   require_account_login_for_bookings?: boolean;
+  /** Email the owner when a new booking comes in (Communications owner-alert). */
+  owner_booking_notification_enabled?: boolean;
+  /** Recipient for the owner booking alert; empty/null falls back to the venue email server-side. */
+  owner_booking_notification_email?: string | null;
 }
 
 /** PATCH /api/venue — update venue profile basics; refreshes the bootstrap. */

@@ -1,5 +1,5 @@
-import { Stack } from 'expo-router';
-import { memo, useCallback, useMemo, useState } from 'react';
+import { Stack, useLocalSearchParams } from 'expo-router';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
   Platform,
@@ -34,6 +34,10 @@ import {
   validateSchedule,
 } from '@/components/services/ServiceCustomAvailabilityEditor';
 import { ComplianceRequirementsEditor } from '@/components/compliance/ComplianceRequirementsEditor';
+import {
+  StaffServiceOverrideSheet,
+  type OverrideCalendarChoice,
+} from '@/components/manage/StaffServiceOverrideSheet';
 import { ServiceLocationSection, isValidMeetingUrl, normalizeMeetingUrl } from '@/components/services/ServiceLocationSection';
 import {
   ProcessingTimeBlocksEditor,
@@ -63,8 +67,14 @@ import {
   useUpdateService,
   type VariantWriteInput,
 } from '@/lib/queries/useServicesManage';
-import { usePractitioners } from '@/lib/queries/usePractitioners';
+import { useCreateHostCalendar, usePractitioners } from '@/lib/queries/usePractitioners';
 import { useSetupStatus } from '@/lib/queries/useSetupStatus';
+import { useStaffMe } from '@/lib/queries/useStaffMe';
+import {
+  nextCalendarServiceIds,
+  useToggleCalendarService,
+} from '@/lib/queries/useToggleCalendarService';
+import { staffMayCustomizeAny } from '@/lib/services/service-override';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { radius, spacing } from '@/theme/index';
@@ -382,20 +392,43 @@ function BookingIntervalEditor({
 // ServiceRow
 // ---------------------------------------------------------------------------
 
+/** Per-calendar offer state for the non-admin "Offer on your calendars" toggles. */
+type OfferCalendar = { id: string; name: string; enabled: boolean };
+
 function ServiceRowBase({
   service,
   expanded,
   isAdmin,
+  canManage,
+  offerCalendars,
+  canOverride,
+  togglingKey,
   onToggle,
   onEdit,
   onDelete,
+  onToggleCalendar,
+  onOverride,
 }: {
   service: ManagedService;
   expanded: boolean;
   isAdmin: boolean;
+  /** Admin, or the non-admin creator of this service — may Edit/Delete it. */
+  canManage: boolean;
+  /**
+   * Non-admin self-service "Offer on your calendars" toggles (the staff
+   * member's managed calendars + whether each currently offers this service).
+   * Empty for admins (they manage links in the form's "Offered by" section).
+   */
+  offerCalendars: OfferCalendar[];
+  /** Non-admin may set per-calendar field overrides (service permits + offers). */
+  canOverride: boolean;
+  /** `${serviceId}:${calendarId}` currently saving a toggle, or null. */
+  togglingKey: string | null;
   onToggle: (id: string) => void;
   onEdit: (service: ManagedService) => void;
   onDelete: (service: ManagedService) => void;
+  onToggleCalendar: (serviceId: string, calendarId: string, nextEnabled: boolean) => void;
+  onOverride: (service: ManagedService) => void;
 }) {
   const { colors } = useTheme();
   const price = formatPence(service.price_pence);
@@ -486,17 +519,53 @@ function ServiceRowBase({
             </View>
           ) : null}
 
-          {/* Action buttons — admin-only. The "Offered by" calendar list edits
-              every practitioner's links wholesale, so non-admins get a read-only
-              catalog (consistent with Options / Add-ons / Delete already being
-              admin-gated). Closes the privilege hole where a non-admin could
-              re-link calendars they don't manage. */}
-          {isAdmin ? (
+          {/* Non-admin self-service: "Offer on your calendars" toggles (web
+              parity). Each toggle replaces the FULL service set for that one
+              calendar via PUT /api/venue/practitioner-services, scoped to
+              calendars the staff member manages — so the old re-link privilege
+              hole stays closed (admins still edit every link in the form). */}
+          {!isAdmin && offerCalendars.length > 0 ? (
+            <View style={styles.offerBox}>
+              <Text variant="overline" tone="muted">
+                Offer on your calendars
+              </Text>
+              {offerCalendars.map((cal) => (
+                <View
+                  key={cal.id}
+                  style={[styles.offerRow, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+                  <Text variant="bodySmall" numberOfLines={1} style={styles.offerName}>
+                    {cal.name}
+                  </Text>
+                  <Switch
+                    value={cal.enabled}
+                    disabled={togglingKey === `${service.id}:${cal.id}`}
+                    onValueChange={(next) => onToggleCalendar(service.id, cal.id, next)}
+                    accessibilityLabel={`Offer ${service.name} on ${cal.name}`}
+                  />
+                </View>
+              ))}
+            </View>
+          ) : null}
+
+          {/* Per-calendar field overrides — non-admin, when the service permits
+              customisation and the staff member offers it. */}
+          {!isAdmin && canOverride ? (
+            <Button
+              label="Edit your settings"
+              variant="secondary"
+              size="sm"
+              onPress={() => onOverride(service)}
+            />
+          ) : null}
+
+          {/* Edit/Delete — admins, or the non-admin who created this service
+              (created_by_staff_id-scoped, matching the API's own enforcement). */}
+          {canManage ? (
             <View style={styles.editRow}>
               <Button label="Edit" variant="secondary" size="sm" style={styles.editBtnFull} onPress={() => onEdit(service)} />
             </View>
           ) : null}
-          {isAdmin ? (
+          {canManage ? (
             <Button
               label="Delete service"
               variant="ghost"
@@ -720,13 +789,32 @@ export default function ServicesScreen() {
   // compliance feature flag (resolved server-side) and admin role.
   const complianceEnabled = venue?.feature_flags?.resolved?.compliance_records_enabled ?? false;
 
+  // Staff identity for non-admin self-service (web parity: currentStaffId +
+  // linkedPractitionerIds). A non-admin may create services on calendars they
+  // manage, edit/delete only ones they created, toggle offer-on-my-calendar, and
+  // set per-calendar field overrides.
+  const staffMe = useStaffMe();
+  const currentStaffId = staffMe.data?.staff?.id ?? null;
+  const managedCalendarIds = useMemo(
+    () => staffMe.data?.staff?.linked_calendar_ids ?? [],
+    [staffMe.data?.staff?.linked_calendar_ids],
+  );
+
   const query = useManagedServices();
   const update = useUpdateService();
   const create = useCreateService();
   const deleteService = useDeleteService();
+  const toggleCalendarService = useToggleCalendarService();
+  const createCalendar = useCreateHostCalendar();
 
-  const [activeTab, setActiveTab] = useState<ActiveTab>('services');
+  // Deep link: `?tab=services&service=<id>` opens straight to a pre-expanded
+  // service (web parity with the add-ons "Used by" link). Read once on mount.
+  const params = useLocalSearchParams<{ tab?: string; service?: string }>();
+  const initialTab: ActiveTab = params.tab === 'addons' ? 'addons' : 'services';
+  const [activeTab, setActiveTab] = useState<ActiveTab>(initialTab);
   const [includeInactiveAddons, setIncludeInactiveAddons] = useState(false);
+  // FlatList ref so a "Used by" jump (or the deep link) can scroll to the row.
+  const listRef = useRef<FlatList<ManagedService>>(null);
 
   // Always load addon groups (needed for both the link sheet and the add-ons tab).
   const addonGroupsQuery = useAddonGroups(true, includeInactiveAddons);
@@ -742,6 +830,15 @@ export default function ServicesScreen() {
   const [error, setError] = useState<string | null>(null);
   // Service pending deletion — drives a Sheet confirm (Alert.alert is a no-op on web).
   const [deleteTarget, setDeleteTarget] = useState<ManagedService | null>(null);
+  // Non-admin per-calendar field overrides (StaffServiceOverrideSheet).
+  const [overrideService, setOverrideService] = useState<ManagedService | null>(null);
+  const [overrideCalendarId, setOverrideCalendarId] = useState<string | null>(null);
+  // `${serviceId}:${calendarId}` currently saving an offer toggle, or null.
+  const [togglingKey, setTogglingKey] = useState<string | null>(null);
+  // Inline "Add calendar" from the form (admin only): name draft + open flag.
+  const [addCalendarOpen, setAddCalendarOpen] = useState(false);
+  const [newCalendarName, setNewCalendarName] = useState('');
+  const [addCalendarError, setAddCalendarError] = useState<string | null>(null);
 
   // Sheet form state (shared between edit + create).
   const [name, setName] = useState('');
@@ -804,13 +901,137 @@ export default function ServicesScreen() {
     [query.data?.services],
   );
 
-  const linkedCalendarIds = useCallback(
-    (serviceId: string): string[] =>
-      (query.data?.practitioner_services ?? [])
-        .filter((link) => link.service_id === serviceId)
-        .map((link) => link.practitioner_id),
+  /** Expand a service and scroll its row into view (web parity with `?service=`). */
+  const focusService = useCallback(
+    (serviceId: string) => {
+      setActiveTab('services');
+      setExpandedId(serviceId);
+      const index = services.findIndex((s) => s.id === serviceId);
+      if (index >= 0) {
+        // viewPosition 0.1 keeps the expanded row near the top with a little gap.
+        requestAnimationFrame(() => {
+          try {
+            listRef.current?.scrollToIndex({ index, viewPosition: 0.1, animated: true });
+          } catch {
+            // scrollToIndex can throw before layout; the expand alone is enough.
+          }
+        });
+      }
+    },
+    [services],
+  );
+
+  // Honour a `?service=` deep link once the list has loaded.
+  const deepLinkServiceId = typeof params.service === 'string' ? params.service : null;
+  const deepLinkHandled = useRef(false);
+  useEffect(() => {
+    if (deepLinkHandled.current || !deepLinkServiceId || services.length === 0) return;
+    if (services.some((s) => s.id === deepLinkServiceId)) {
+      deepLinkHandled.current = true;
+      // Defer out of the synchronous effect so the focus/scroll runs after layout.
+      requestAnimationFrame(() => focusService(deepLinkServiceId));
+    }
+  }, [deepLinkServiceId, services, focusService]);
+
+  const practitionerServices = useMemo(
+    () => query.data?.practitioner_services ?? [],
     [query.data?.practitioner_services],
   );
+
+  const linkedCalendarIds = useCallback(
+    (serviceId: string): string[] =>
+      practitionerServices
+        .filter((link) => link.service_id === serviceId)
+        .map((link) => link.practitioner_id),
+    [practitionerServices],
+  );
+
+  // --- Non-admin self-service gating (web parity: AppointmentServicesView) ----
+
+  /**
+   * Calendars eligible for the form's "Offered by" picker. Admins pick from the
+   * full active roster; a non-admin may only link calendars they manage
+   * (`calendarsForServiceForm`). `practitioners` is already active-only and
+   * staff-assignable (resources excluded by the GET query).
+   */
+  const calendarsForServiceForm = useMemo(
+    () =>
+      isAdmin ? practitioners : practitioners.filter((p) => managedCalendarIds.includes(p.id)),
+    [isAdmin, practitioners, managedCalendarIds],
+  );
+
+  /** Admins manage every service; a non-admin manages only ones they created. */
+  const canManageService = useCallback(
+    (service: ManagedService): boolean => {
+      if (isAdmin) return true;
+      return (
+        managedCalendarIds.length > 0 &&
+        Boolean(currentStaffId) &&
+        service.created_by_staff_id === currentStaffId
+      );
+    },
+    [isAdmin, managedCalendarIds.length, currentStaffId],
+  );
+
+  /** True when the staff member offers `serviceId` on at least one managed calendar. */
+  const staffOffersService = useCallback(
+    (serviceId: string): boolean =>
+      managedCalendarIds.some((calId) =>
+        practitionerServices.some(
+          (link) => link.practitioner_id === calId && link.service_id === serviceId,
+        ),
+      ),
+    [managedCalendarIds, practitionerServices],
+  );
+
+  /** The per-calendar override link for one calendar+service, if any. */
+  const linkForServiceCalendar = useCallback(
+    (serviceId: string, calendarId: string | null) => {
+      if (!calendarId) return null;
+      return (
+        practitionerServices.find(
+          (link) => link.practitioner_id === calendarId && link.service_id === serviceId,
+        ) ?? null
+      );
+    },
+    [practitionerServices],
+  );
+
+  /** Managed-calendar offer toggles for the row (non-admins only). */
+  const offerCalendarsForService = useCallback(
+    (serviceId: string): OfferCalendar[] => {
+      if (isAdmin) return [];
+      return managedCalendarIds
+        .map((calId) => {
+          const cal = practitioners.find((p) => p.id === calId);
+          if (!cal) return null;
+          return {
+            id: calId,
+            name: cal.name,
+            enabled: practitionerServices.some(
+              (link) => link.practitioner_id === calId && link.service_id === serviceId,
+            ),
+          };
+        })
+        .filter((c): c is OfferCalendar => c !== null);
+    },
+    [isAdmin, managedCalendarIds, practitioners, practitionerServices],
+  );
+
+  /** Calendar choices passed to the override sheet (managed calendars, named). */
+  const overrideCalendarChoices = useMemo<OverrideCalendarChoice[]>(
+    () =>
+      managedCalendarIds
+        .map((id) => {
+          const cal = practitioners.find((p) => p.id === id);
+          return cal ? { id, name: cal.name } : null;
+        })
+        .filter((c): c is OverrideCalendarChoice => c !== null),
+    [managedCalendarIds, practitioners],
+  );
+
+  /** Non-admins may create when they manage at least one calendar (web parity). */
+  const canCreate = isAdmin || (managedCalendarIds.length > 0 && calendarsForServiceForm.length > 0);
 
   const openEdit = useCallback((service: ManagedService) => {
     const linked = linkedCalendarIds(service.id);
@@ -885,7 +1106,9 @@ export default function ServicesScreen() {
     setBookingInterval(DEFAULT_BOOKING_INTERVAL_MINUTES);
     setBookingMinuteMarks(null);
     setInitialBookingStartKey(bookingStartFingerprint(DEFAULT_BOOKING_INTERVAL_MINUTES, null));
-    setPractitionerIds(practitioners.map((p) => p.id));
+    // Default to every calendar the user can offer this on — the full roster for
+    // an admin, only the staff member's managed calendars otherwise (web parity).
+    setPractitionerIds(calendarsForServiceForm.map((p) => p.id));
     setIsActive(true);
     setStaffMay(DEFAULT_STAFF_MAY);
     setLocationType('business_venue');
@@ -1135,6 +1358,77 @@ export default function ServicesScreen() {
     setDeleteTarget(service);
   }, []);
 
+  /**
+   * Non-admin "Offer on your calendars" toggle. PUT replaces the full service
+   * set for ONE calendar, so we send the calendar's existing set with the one
+   * service added/removed (web parity: toggleStaffServiceCalendar). A 409 means
+   * removing a service that still has upcoming bookings on that calendar.
+   */
+  const handleToggleCalendar = useCallback(
+    (serviceId: string, calendarId: string, nextEnabled: boolean) => {
+      const current = practitionerServices
+        .filter((link) => link.practitioner_id === calendarId)
+        .map((link) => link.service_id);
+      const next = nextCalendarServiceIds(current, serviceId, nextEnabled);
+      const key = `${serviceId}:${calendarId}`;
+      setTogglingKey(key);
+      toggleCalendarService.mutate(
+        { practitioner_id: calendarId, service_ids: next },
+        {
+          onSuccess: () => {
+            hapticSuccess();
+            setTogglingKey(null);
+          },
+          onError: (e) => {
+            hapticWarning();
+            setTogglingKey(null);
+            toast.error(
+              e instanceof ApiError ? e.message : 'Could not update which calendars offer this.',
+            );
+          },
+        },
+      );
+    },
+    [practitionerServices, toggleCalendarService, toast],
+  );
+
+  const handleOpenOverride = useCallback(
+    (service: ManagedService) => {
+      setOverrideCalendarId(managedCalendarIds[0] ?? null);
+      setOverrideService(service);
+    },
+    [managedCalendarIds],
+  );
+
+  /**
+   * Inline "Add calendar" from the form's "Offered by" section (admin only):
+   * POST a new practitioner column, then auto-select it so the service saves
+   * linked to it (web parity: handleCreateCalendar). A plan-limit hit surfaces as
+   * a 403 ApiError (upgrade_required).
+   */
+  async function handleCreateCalendar() {
+    const trimmed = newCalendarName.trim();
+    if (!trimmed) {
+      setAddCalendarError('Enter a calendar name.');
+      return;
+    }
+    setAddCalendarError(null);
+    try {
+      const created = await createCalendar.mutateAsync({ name: trimmed });
+      hapticSuccess();
+      setPractitionerIds((current) =>
+        current.includes(created.id) ? current : [...current, created.id],
+      );
+      setNewCalendarName('');
+      setAddCalendarOpen(false);
+    } catch (e) {
+      hapticWarning();
+      setAddCalendarError(
+        e instanceof ApiError ? e.message : 'Could not add the calendar. Please try again.',
+      );
+    }
+  }
+
   function runDeleteService() {
     const service = deleteTarget;
     if (!service) return;
@@ -1162,17 +1456,43 @@ export default function ServicesScreen() {
   const usesVariants = isAdmin && variantDrafts.length > 0;
 
   const renderServiceItem = useCallback<ListRenderItem<ManagedService>>(
-    ({ item }) => (
-      <ServiceRow
-        service={item}
-        expanded={expandedId === item.id}
-        isAdmin={isAdmin}
-        onToggle={handleToggle}
-        onEdit={openEdit}
-        onDelete={handleDeleteService}
-      />
-    ),
-    [expandedId, isAdmin, handleToggle, openEdit, handleDeleteService],
+    ({ item }) => {
+      const isExpanded = expandedId === item.id;
+      // Per-row self-service data is only needed for the expanded, non-admin row;
+      // computing it lazily keeps collapsed rows cheap.
+      const offerCalendars = !isAdmin && isExpanded ? offerCalendarsForService(item.id) : [];
+      const canOverride =
+        !isAdmin && isExpanded && staffMayCustomizeAny(item) && staffOffersService(item.id);
+      return (
+        <ServiceRow
+          service={item}
+          expanded={isExpanded}
+          isAdmin={isAdmin}
+          canManage={canManageService(item)}
+          offerCalendars={offerCalendars}
+          canOverride={canOverride}
+          togglingKey={togglingKey}
+          onToggle={handleToggle}
+          onEdit={openEdit}
+          onDelete={handleDeleteService}
+          onToggleCalendar={handleToggleCalendar}
+          onOverride={handleOpenOverride}
+        />
+      );
+    },
+    [
+      expandedId,
+      isAdmin,
+      canManageService,
+      offerCalendarsForService,
+      staffOffersService,
+      togglingKey,
+      handleToggle,
+      openEdit,
+      handleDeleteService,
+      handleToggleCalendar,
+      handleOpenOverride,
+    ],
   );
 
   const keyExtractor = useCallback((item: ManagedService) => item.id, []);
@@ -1246,18 +1566,38 @@ export default function ServicesScreen() {
           </View>
         ) : (
           <FlatList
+            ref={listRef}
             data={services}
             keyExtractor={keyExtractor}
             renderItem={renderServiceItem}
             contentContainerStyle={styles.content}
+            // Rows are variable-height, so a scrollToIndex before the row has
+            // rendered can fail — fall back to an approximate offset, then retry.
+            onScrollToIndexFailed={(info) => {
+              listRef.current?.scrollToOffset({
+                offset: info.averageItemLength * info.index,
+                animated: true,
+              });
+              setTimeout(() => {
+                try {
+                  listRef.current?.scrollToIndex({
+                    index: info.index,
+                    viewPosition: 0.1,
+                    animated: true,
+                  });
+                } catch {
+                  // Best-effort; the row is already expanded.
+                }
+              }, 80);
+            }}
             ListHeaderComponent={
-              isAdmin ? <Button label="New service" onPress={openCreate} fullWidth /> : null
+              canCreate ? <Button label="New service" onPress={openCreate} fullWidth /> : null
             }
             ListEmptyComponent={
               <EmptyState
                 title="No services yet"
                 message={
-                  isAdmin
+                  canCreate
                     ? 'Create your first service to start taking appointments.'
                     : 'No services have been created yet.'
                 }
@@ -1289,10 +1629,7 @@ export default function ServicesScreen() {
           includeInactive={includeInactiveAddons}
           setIncludeInactive={setIncludeInactiveAddons}
           serviceNameById={new Map(services.map((s) => [s.id, s.name] as const))}
-          onPressService={(serviceId) => {
-            setActiveTab('services');
-            setExpandedId(serviceId);
-          }}
+          onPressService={focusService}
           onEdit={(target) => {
             setAddonEditorContext('library');
             setAddonGroupEditorTarget(target);
@@ -1556,10 +1893,18 @@ export default function ServicesScreen() {
               })}
             </View>
 
-            {/* Offered by */}
+            {/* Offered by — admins pick from the full roster; a non-admin may
+                only toggle calendars they manage. Links the service already has
+                on other calendars stay in `practitionerIds` (seeded on open) and
+                are preserved on save, so a non-admin edit never strips them. */}
             <Text variant="overline" tone="muted">Offered by</Text>
+            {!isAdmin ? (
+              <Text variant="caption" tone="muted">
+                You can offer this on the calendars you manage.
+              </Text>
+            ) : null}
             <View style={styles.calendarWrap}>
-              {practitioners.map((practitioner) => {
+              {calendarsForServiceForm.map((practitioner) => {
                 const selected = practitionerIds.includes(practitioner.id);
                 return (
                   <Pressable
@@ -1591,6 +1936,20 @@ export default function ServicesScreen() {
                 );
               })}
             </View>
+            {/* Inline "Add calendar" (admin only) — create a new calendar column
+                without leaving the form; the new id is auto-selected on success. */}
+            {isAdmin ? (
+              <Button
+                label="New calendar"
+                variant="ghost"
+                size="sm"
+                onPress={() => {
+                  setNewCalendarName('');
+                  setAddCalendarError(null);
+                  setAddCalendarOpen(true);
+                }}
+              />
+            ) : null}
 
             <View style={styles.switchRow}>
               <Text variant="bodyMedium">Active (visible to clients)</Text>
@@ -1738,6 +2097,60 @@ export default function ServicesScreen() {
           </View>
         </View>
       </Sheet>
+
+      {/* Non-admin per-calendar field overrides (web parity:
+          StaffServiceOverrideModal). Renders only the fields the admin permitted
+          and diffs each to the venue base on save. */}
+      <StaffServiceOverrideSheet
+        visible={overrideService !== null}
+        onClose={() => {
+          setOverrideService(null);
+          setOverrideCalendarId(null);
+        }}
+        service={overrideService}
+        calendarChoices={overrideCalendarChoices}
+        selectedCalendarId={overrideCalendarId}
+        onSelectCalendar={setOverrideCalendarId}
+        link={
+          overrideService
+            ? linkForServiceCalendar(
+                overrideService.id,
+                overrideCalendarId ?? managedCalendarIds[0] ?? null,
+              )
+            : null
+        }
+      />
+
+      {/* Inline "Add calendar" sheet (admin only) — minimal name input. */}
+      <Sheet visible={addCalendarOpen} onClose={() => setAddCalendarOpen(false)}>
+        <View style={styles.deleteSheet}>
+          <Text variant="subheading">New calendar</Text>
+          <Text variant="bodySmall" tone="secondary">
+            Create a bookable calendar column. It will be selected for this service automatically.
+          </Text>
+          <Input
+            label="Calendar name"
+            value={newCalendarName}
+            onChangeText={setNewCalendarName}
+            maxLength={200}
+            error={addCalendarError ?? undefined}
+          />
+          <View style={styles.actions}>
+            <Button
+              label="Cancel"
+              variant="secondary"
+              style={styles.flex1}
+              onPress={() => setAddCalendarOpen(false)}
+            />
+            <Button
+              label="Add calendar"
+              style={styles.flex1}
+              loading={createCalendar.isPending}
+              onPress={() => void handleCreateCalendar()}
+            />
+          </View>
+        </View>
+      </Sheet>
     </Screen>
   );
 }
@@ -1812,6 +2225,25 @@ const styles = StyleSheet.create({
   },
   editBtnFull: {
     flex: 1,
+  },
+  // Non-admin "Offer on your calendars" toggles in the expanded row.
+  offerBox: {
+    gap: spacing.xs,
+  },
+  offerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.base,
+    minHeight: 48,
+  },
+  offerName: {
+    flex: 1,
+    minWidth: 0,
   },
   // Add-ons tab
   addonGroupRow: {

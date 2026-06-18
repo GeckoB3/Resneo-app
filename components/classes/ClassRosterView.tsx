@@ -7,6 +7,8 @@ import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { IconButton } from '@/components/ui/IconButton';
+import { Input } from '@/components/ui/Input';
+import { Sheet } from '@/components/ui/Sheet';
 import { ListSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
@@ -14,6 +16,7 @@ import { formatDayHeading } from '@/lib/dates/venue-dates';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { type ClassSession } from '@/lib/queries/useClassSchedule';
 import {
+  useCancelClassInstance,
   useCheckInAll,
   useCheckInAttendee,
   useClassInstanceAttendees,
@@ -82,12 +85,20 @@ export function ClassRosterView({
   const { colors } = useTheme();
   const { venue } = useVenueContext();
   const toast = useToast();
+  const isAdmin = venue?.current_user_role === 'admin';
   const currency = venue?.currency ?? 'GBP';
   const query = useClassInstanceAttendees(session.classInstanceId);
 
   const checkIn = useCheckInAttendee();
   const noShow = useNoShowAttendee();
   const checkInAll = useCheckInAll();
+  const cancelInstance = useCancelClassInstance();
+
+  // Admin cancel-and-notify for the whole session (web parity: this lives in the
+  // roster header on web). Distinct from per-attendee no-show: it cancels active
+  // bookings, refunds per policy and notifies guests.
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
 
   // Set once a check-in/no-show route returns 403 (commerce flag off). The
   // attendance actions stay hidden after that so staff aren't offered a
@@ -186,6 +197,34 @@ export function ClassRosterView({
     }
   }, [attendees, session.name, session.date, toast]);
 
+  const onCancelSession = useCallback(() => {
+    const reason = cancelReason.trim();
+    cancelInstance.mutate(
+      { classInstanceId: session.classInstanceId, cancel_reason: reason || undefined },
+      {
+        onSuccess: (result) => {
+          hapticSuccess();
+          setCancelOpen(false);
+          setCancelReason('');
+          const n = result.bookings_cancelled ?? 0;
+          toast.success(
+            n > 0
+              ? `Session cancelled. ${n} booking${n === 1 ? '' : 's'} refunded and notified.`
+              : 'Session cancelled.',
+          );
+          // Leave the roster — the session is gone.
+          onBack();
+        },
+        onError: (e) => {
+          hapticWarning();
+          toast.error(
+            e instanceof ApiError ? e.message : 'Could not cancel the session. Please try again.',
+          );
+        },
+      },
+    );
+  }, [cancelReason, cancelInstance, session.classInstanceId, toast, onBack]);
+
   const activeAttendees = attendees.filter((row) => row.status !== 'Cancelled');
   const activeSpots = activeAttendees.reduce((sum, row) => sum + (row.party_size || 1), 0);
   const capacityLabel =
@@ -199,6 +238,7 @@ export function ClassRosterView({
   );
 
   return (
+    <>
     <View style={styles.root}>
       {/* Session header */}
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
@@ -239,6 +279,18 @@ export function ClassRosterView({
           disabled={attendees.length === 0}
           onPress={() => void onExport()}
         />
+        {isAdmin ? (
+          <IconButton
+            icon={{ ios: 'xmark.circle', android: 'cancel', web: 'cancel' }}
+            accessibilityLabel="Cancel session and notify guests"
+            tint={colors.danger}
+            iconSize={20}
+            onPress={() => {
+              setCancelReason('');
+              setCancelOpen(true);
+            }}
+          />
+        ) : null}
       </View>
 
       {query.isLoading ? (
@@ -354,13 +406,59 @@ export function ClassRosterView({
             <Text variant="caption" tone="secondary">
               {commerceLocked
                 ? 'Class check-in is not included in this plan — manage attendance on the web dashboard. Tap an attendee to update their booking (confirm, start or cancel).'
-                : 'Tap an attendee to update their booking (confirm, start or cancel). Cancelling the whole session is managed on the web dashboard.'}
+                : isAdmin
+                  ? 'Tap an attendee to update their booking (confirm, start or cancel). Use the ✕ in the header to cancel the whole session and notify guests.'
+                  : 'Tap an attendee to update their booking (confirm, start or cancel).'}
             </Text>
           </View>
           <View style={styles.spacer} />
         </ScrollView>
       )}
     </View>
+
+      {/* Admin cancel-and-notify for the whole session (web parity). A Sheet —
+          Alert.alert's confirm is a no-op on web. */}
+      <Sheet
+        visible={cancelOpen}
+        onClose={() => {
+          if (!cancelInstance.isPending) setCancelOpen(false);
+        }}>
+        <View style={styles.cancelSheet}>
+          <Text variant="subheading">Cancel session</Text>
+          <Text variant="bodySmall" tone="secondary">
+            Cancel &quot;{session.name}&quot; on {formatDayHeading(session.date)} at{' '}
+            {session.startTime}?{' '}
+            {activeSpots > 0
+              ? `${activeSpots} booking(s) will be cancelled, refunded per your policy, and the guests notified.`
+              : 'This frees the calendar slot and notifies any booked guests.'}
+          </Text>
+          <Input
+            label="Reason for guests"
+            optional
+            value={cancelReason}
+            onChangeText={setCancelReason}
+            maxLength={500}
+            placeholder="e.g. Instructor unavailable"
+          />
+          <View style={styles.cancelActions}>
+            <Button
+              label="Keep session"
+              variant="secondary"
+              style={styles.flex1}
+              disabled={cancelInstance.isPending}
+              onPress={() => setCancelOpen(false)}
+            />
+            <Button
+              label="Cancel session"
+              variant="danger"
+              style={styles.flex1}
+              loading={cancelInstance.isPending}
+              onPress={onCancelSession}
+            />
+          </View>
+        </View>
+      </Sheet>
+    </>
   );
 }
 
@@ -423,5 +521,12 @@ const styles = StyleSheet.create({
   },
   spacer: {
     height: spacing.xl,
+  },
+  cancelSheet: {
+    gap: spacing.md,
+  },
+  cancelActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
   },
 });

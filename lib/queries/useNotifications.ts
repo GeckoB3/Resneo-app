@@ -11,6 +11,13 @@ import type {
 } from '@/types/notifications';
 import { DEFAULT_LINKED_NOTIFICATION_PREFS } from '@/types/notifications';
 
+/** Poll cadence for the notification feed + the More-tab unread badge — matches
+ *  the web bell's 60s `setInterval` (`NotificationBell.tsx` `POLL_MS = 60_000`).
+ *  A lightweight Supabase realtime subscription (postgres_changes INSERT on the
+ *  notifications table, invalidating this key) remains a follow-up for
+ *  seconds-latency cross-venue updates; the poll keeps the feed current today. */
+const NOTIFICATIONS_POLL_MS = 60_000;
+
 /** GET /api/venue/notifications — feed + unread count (Bearer). */
 export function useNotifications() {
   const accessToken = useAccessToken();
@@ -19,6 +26,11 @@ export function useNotifications() {
   return useQuery({
     queryKey: queryKeys.notifications.list(accessToken),
     enabled,
+    // Keep the feed + tab badge current without user action (web parity).
+    // Don't poll while the app is backgrounded — saves battery/data and avoids
+    // refetch storms on resume.
+    refetchInterval: NOTIFICATIONS_POLL_MS,
+    refetchIntervalInBackground: false,
     queryFn: async (): Promise<NotificationsResponse> => {
       if (!accessToken) {
         throw new Error('Missing access token');

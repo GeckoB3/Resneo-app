@@ -1,8 +1,10 @@
 import { Stack } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
+import { View } from 'react-native';
 
 import { StaffRequired } from '@/components/auth/StaffRequired';
 import { LoadingState } from '@/components/ui/LoadingState';
+import { WaitlistAvailabilityBanner } from '@/components/waitlist/WaitlistAvailabilityBanner';
 import { useColorScheme } from '@/components/useColorScheme';
 import { ApiError } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
@@ -91,7 +93,10 @@ export default function AppLayout() {
   }
 
   return (
-    <Stack
+    <View style={{ flex: 1 }}>
+      {/* Cross-dashboard waitlist open-slot alerts (renders null unless in staff_choose mode with a match). */}
+      <WaitlistAvailabilityBanner />
+      <Stack
       screenOptions={{
         headerShown: false,
         // Themed, Inter-set headers — match the tab screens (system default otherwise).
@@ -175,6 +180,7 @@ export default function AppLayout() {
           title: 'Collective',
         }}
       />
-    </Stack>
+      </Stack>
+    </View>
   );
 }

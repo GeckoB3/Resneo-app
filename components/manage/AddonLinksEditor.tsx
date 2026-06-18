@@ -2,6 +2,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
 import { Text } from '@/components/ui/Text';
+import { formatPence } from '@/lib/format';
 import { hapticSelect } from '@/lib/haptics';
 import { fonts, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -111,10 +112,16 @@ export function AddonLinksEditor({
       ) : (
         links.map((linkRow, index) => {
           const group = groupById.get(linkRow.id);
+          // Web parity (AddonGroupsSection): preview the group's active options
+          // inline so the admin sees the contents without opening the editor.
+          const visibleAddons = group
+            ? (addonsByGroup[group.id] ?? []).filter((a) => a.is_active)
+            : [];
           return (
             <View
               key={linkRow.id}
-              style={[styles.linkedRow, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+              style={[styles.linkedCard, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+            <View style={styles.linkedHeaderRow}>
               <View style={styles.groupText}>
                 <Text variant="bodyMedium" numberOfLines={1}>
                   {group?.name ?? linkRow.name}
@@ -170,6 +177,23 @@ export function AddonLinksEditor({
                   ✕
                 </Text>
               </Pressable>
+            </View>
+
+            {visibleAddons.length > 0 ? (
+              <View style={[styles.optionPreview, { borderTopColor: colors.border }]}>
+                {visibleAddons.map((addon) => (
+                  <Text key={addon.id} variant="caption" tone="muted" numberOfLines={1}>
+                    • {addon.name}
+                    {addon.additional_price_pence > 0
+                      ? ` +${formatPence(addon.additional_price_pence)}`
+                      : ''}
+                    {addon.additional_duration_minutes > 0
+                      ? ` +${addon.additional_duration_minutes}min`
+                      : ''}
+                  </Text>
+                ))}
+              </View>
+            ) : null}
             </View>
           );
         })
@@ -229,15 +253,23 @@ const styles = StyleSheet.create({
   root: {
     gap: spacing.sm,
   },
-  linkedRow: {
+  linkedCard: {
+    borderWidth: 1,
+    borderRadius: radius.md,
+  },
+  linkedHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
-    borderWidth: 1,
-    borderRadius: radius.md,
     paddingVertical: spacing.sm,
     paddingLeft: spacing.base,
     paddingRight: spacing.xs,
+  },
+  optionPreview: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: spacing.base,
+    paddingVertical: spacing.sm,
+    gap: 2,
   },
   availableRow: {
     flexDirection: 'row',

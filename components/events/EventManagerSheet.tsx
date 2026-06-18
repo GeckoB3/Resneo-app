@@ -1,3 +1,5 @@
+import * as Clipboard from 'expo-clipboard';
+import * as WebBrowser from 'expo-web-browser';
 import { useCallback, useMemo, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
@@ -16,6 +18,7 @@ import { ListSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { formatDayHeading } from '@/lib/dates/venue-dates';
+import { getWebUrl } from '@/lib/env';
 import { formatPence } from '@/lib/format';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useCancelEvent, useDeleteEvent, useManagedEvents } from '@/lib/queries/useEventsManage';
@@ -61,6 +64,22 @@ export function EventManagerSheet({ visible, onClose }: EventManagerSheetProps) 
   const query = useManagedEvents();
   const deleteEvent = useDeleteEvent();
   const cancelEvent = useCancelEvent();
+
+  // Public booking page link (web parity: the event manager's copy/open link).
+  // Guests buy tickets on the venue-level /book/[slug] page; the same link is
+  // copyable in Settings → Booking page, lifted here so it's one tap from events.
+  const slug = venue?.slug ?? null;
+  const publicUrl = slug ? `${getWebUrl() || 'https://app.resneo.com'}/book/${slug}` : null;
+  const handleCopyLink = useCallback(async () => {
+    if (!publicUrl) return;
+    await Clipboard.setStringAsync(publicUrl);
+    hapticSuccess();
+    toast.success('Booking link copied.');
+  }, [publicUrl, toast]);
+  const handleOpenLink = useCallback(() => {
+    if (!publicUrl) return;
+    void WebBrowser.openBrowserAsync(publicUrl).catch(() => undefined);
+  }, [publicUrl]);
 
   const [editorTarget, setEditorTarget] = useState<EventEditorTarget | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ManagedEvent | null>(null);
@@ -129,12 +148,32 @@ export function EventManagerSheet({ visible, onClose }: EventManagerSheetProps) 
       <Sheet visible={visible} onClose={onClose} maxHeight="92%" fill>
         <View style={styles.header}>
           <Text variant="subheading">Events</Text>
-          <IconButton
-            icon={{ ios: 'xmark', android: 'close', web: 'close' }}
-            accessibilityLabel="Close"
-            tint={colors.textSecondary}
-            onPress={onClose}
-          />
+          <View style={styles.headerActions}>
+            {publicUrl ? (
+              <>
+                <IconButton
+                  icon={{ ios: 'doc.on.doc', android: 'content_copy', web: 'content_copy' }}
+                  accessibilityLabel="Copy booking link"
+                  tint={colors.brand}
+                  iconSize={20}
+                  onPress={() => void handleCopyLink()}
+                />
+                <IconButton
+                  icon={{ ios: 'safari', android: 'open_in_new', web: 'open_in_new' }}
+                  accessibilityLabel="Open booking page"
+                  tint={colors.brand}
+                  iconSize={20}
+                  onPress={handleOpenLink}
+                />
+              </>
+            ) : null}
+            <IconButton
+              icon={{ ios: 'xmark', android: 'close', web: 'close' }}
+              accessibilityLabel="Close"
+              tint={colors.textSecondary}
+              onPress={onClose}
+            />
+          </View>
         </View>
 
         {query.isLoading ? (
@@ -364,6 +403,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: spacing.md,
     paddingHorizontal: spacing.lg,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
   },
   rosterTitle: {
     flex: 1,

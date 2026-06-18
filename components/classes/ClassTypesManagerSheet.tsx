@@ -1,3 +1,4 @@
+import { useRouter, type Href } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
@@ -21,6 +22,7 @@ import { ApiError } from '@/lib/api/client';
 import { formatDayHeading } from '@/lib/dates/venue-dates';
 import { formatPence } from '@/lib/format';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
+import { useClassCommerceEnabled } from '@/lib/queries/useClassProducts';
 import {
   useCancelClassInstance,
   useDeleteClassEntity,
@@ -89,9 +91,13 @@ function ruleSummary(rule: ManagedClassTimetableEntry): string {
 export function ClassTypesManagerSheet({ visible, onClose }: ClassTypesManagerSheetProps) {
   const { colors } = useTheme();
   const toast = useToast();
+  const router = useRouter();
   const { venue } = useVenueContext();
   const isAdmin = venue?.current_user_role === 'admin';
   const staffMe = useStaffMe();
+  // Class products (credit packs / courses / memberships) — gated on the same
+  // merged flag the web header uses to show its "Class products" link.
+  const classCommerceEnabled = useClassCommerceEnabled();
 
   const query = useManagedClasses();
   const deleteEntity = useDeleteClassEntity();
@@ -376,6 +382,18 @@ export function ClassTypesManagerSheet({ visible, onClose }: ClassTypesManagerSh
                 onPress={() => {
                   setGenerateWeeks('8');
                   setGenerateOpen(true);
+                }}
+              />
+            ) : null}
+
+            {classCommerceEnabled ? (
+              <Button
+                label="Class products"
+                variant="secondary"
+                fullWidth
+                onPress={() => {
+                  onClose();
+                  router.push('/manage/class-products' as Href);
                 }}
               />
             ) : null}

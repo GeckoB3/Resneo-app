@@ -28,6 +28,7 @@ import {
   useUpdateCommunicationPolicies,
   useUpdateNotificationSettings,
 } from '@/lib/queries/useCommunications';
+import { useUpdateVenue } from '@/lib/queries/useVenueSettings';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { fonts, minTouchTarget, radius, spacing } from '@/theme/index';
@@ -177,6 +178,17 @@ function defaultPolicy(def: MessageDef): LaneMessagePolicy {
     smsCustomMessage: null,
     ...(def.timing ? { [def.timing.field]: def.timing.default } : {}),
   };
+}
+
+/**
+ * Loose email check matching the web "New booking alert" validation exactly
+ * (`CommunicationTemplatesSection` `commitOwnerAlertEmail`). An empty value is
+ * allowed — the server falls back to the venue profile email.
+ */
+const OWNER_ALERT_EMAIL_RE = /^\S+@\S+\.\S+$/;
+function isValidOwnerAlertEmail(value: string): boolean {
+  const trimmed = value.trim();
+  return trimmed === '' || OWNER_ALERT_EMAIL_RE.test(trimmed);
 }
 
 // ---------------------------------------------------------------------------
@@ -448,6 +460,93 @@ function MessageCard({
 }
 
 // ---------------------------------------------------------------------------
+// OwnerAlertCard — venue-level "New booking alert" (email-only). Mirrors the
+// web `CommunicationTemplatesSection` "Business notifications → New booking
+// alert" card: a Switch (owner_booking_notification_enabled) plus a recipient
+// Input (owner_booking_notification_email) shown only when enabled, defaulting
+// its placeholder to the venue profile email.
+// ---------------------------------------------------------------------------
+function OwnerAlertCard({
+  enabled,
+  email,
+  venueEmail,
+  isAdmin,
+  error,
+  onToggle,
+  onChangeEmail,
+}: {
+  enabled: boolean;
+  email: string;
+  venueEmail: string | null | undefined;
+  isAdmin: boolean;
+  error: string | null;
+  onToggle: (next: boolean) => void;
+  onChangeEmail: (next: string) => void;
+}) {
+  const trimmedVenueEmail = venueEmail?.trim() || '';
+  const helper = trimmedVenueEmail
+    ? `Leave blank to use your venue email (${trimmedVenueEmail}).`
+    : 'No venue email is set in Profile — enter an address here to receive alerts.';
+
+  return (
+    <Card>
+      <Text variant="label">Business notifications</Text>
+      <Text variant="caption" tone="muted" style={styles.sectionSub}>
+        Alerts sent to you and your team rather than to guests.
+      </Text>
+
+      <View style={styles.staffSection}>
+        <View style={styles.settingRow}>
+          <View style={styles.settingText}>
+            <Text variant="bodyMedium">New booking alert</Text>
+            <Text variant="caption" tone="muted">
+              Email the business whenever a booking is made, so you and your staff know
+              straight away. Sent by email only.
+            </Text>
+          </View>
+          <Switch
+            value={enabled}
+            disabled={!isAdmin}
+            accessibilityLabel="New booking alert"
+            onValueChange={(next) => {
+              hapticSelect();
+              onToggle(next);
+            }}
+          />
+        </View>
+
+        {enabled ? (
+          isAdmin ? (
+            <Input
+              label="Notification email"
+              value={email}
+              placeholder={trimmedVenueEmail || 'name@business.com'}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              inputMode="email"
+              textContentType="emailAddress"
+              onChangeText={onChangeEmail}
+              error={error ?? undefined}
+              helper={helper}
+            />
+          ) : (
+            <View style={styles.settingText}>
+              <Text variant="label" tone="secondary">
+                Notification email
+              </Text>
+              <Text variant="bodySmall" tone="muted">
+                {email.trim() || trimmedVenueEmail || '—'}
+              </Text>
+            </View>
+          )
+        ) : null}
+      </View>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // SMS Light-plan banner
 // ---------------------------------------------------------------------------
 function SmsLightBanner() {
@@ -496,7 +595,7 @@ const PREVIEW_CLOSED: PreviewSheetState = {
  * parity: enable, channels, timing, optional template lines) + staff alerts.
  */
 export default function CommunicationsScreen() {
-  const { venue, featureFlags } = useVenueContext();
+  const { venue, featureFlags, refetch: refetchVenue } = useVenueContext();
   const { colors } = useTheme();
   const isAdmin = venue?.current_user_role === 'admin';
   const waitlistEnabled = featureFlags?.resolved?.waitlist_v2 === true;
@@ -512,10 +611,19 @@ export default function CommunicationsScreen() {
   const updatePolicies = useUpdateCommunicationPolicies();
   const settingsQuery = useNotificationSettings();
   const updateSettings = useUpdateNotificationSettings();
+  const updateVenue = useUpdateVenue();
   const previewMutation = usePreviewCommunication();
 
   const [lane, setLane] = useState<LaneCommunicationPolicies | null>(null);
   const [staffDraft, setStaffDraft] = useState<VenueNotificationSettings | null>(null);
+  // Owner "New booking alert" draft (venue-level, PATCH /api/venue). Seeded from
+  // the bootstrap on first load alongside lane/staffDraft.
+  const [ownerAlertEnabled, setOwnerAlertEnabled] = useState(
+    venue?.owner_booking_notification_enabled ?? false,
+  );
+  const [ownerAlertEmail, setOwnerAlertEmail] = useState(
+    venue?.owner_booking_notification_email ?? '',
+  );
   const [seeded, setSeeded] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -528,12 +636,19 @@ export default function CommunicationsScreen() {
     if (policiesQuery.data && settingsQuery.data && !seeded) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setSeeded(true);
-       
+
+      // NOTE: the app is appointments-first and intentionally edits ONLY the
+      // `appointments_other` lane. The web's restaurant `table` comm-lane (and
+      // its lane switcher) is an intentional exclusion (R7 domain-15 Low) — do
+      // not re-add a lane tablist unless a restaurant/table tier ships here.
       setLane(policiesQuery.data.appointments_other ?? {});
-       
+
       setStaffDraft(settingsQuery.data);
+      // Re-sync the owner-alert draft from the (now-loaded) bootstrap.
+      setOwnerAlertEnabled(venue?.owner_booking_notification_enabled ?? false);
+      setOwnerAlertEmail(venue?.owner_booking_notification_email ?? '');
     }
-  }, [policiesQuery.data, settingsQuery.data, seeded]);
+  }, [policiesQuery.data, settingsQuery.data, seeded, venue]);
 
   const defs = waitlistEnabled ? [...MESSAGE_DEFS, WAITLIST_DEF] : MESSAGE_DEFS;
 
@@ -553,6 +668,17 @@ export default function CommunicationsScreen() {
     setSaved(false);
   };
 
+  // Owner-alert change detection (compare trimmed email so whitespace-only edits
+  // don't arm Save, matching the web's trim-before-compare).
+  const ownerAlertEnabledChanged =
+    ownerAlertEnabled !== (venue?.owner_booking_notification_enabled ?? false);
+  const ownerAlertEmailChanged =
+    ownerAlertEmail.trim() !== (venue?.owner_booking_notification_email ?? '').trim();
+  const ownerAlertChanged = ownerAlertEnabledChanged || ownerAlertEmailChanged;
+  // Block Save while the (enabled) recipient is an invalid address. Empty is OK.
+  const ownerAlertEmailInvalid = ownerAlertEnabled && !isValidOwnerAlertEmail(ownerAlertEmail);
+  const ownerAlertError = ownerAlertEmailInvalid ? 'Enter a valid email address.' : null;
+
   const laneChanged =
     !!lane &&
     !!policiesQuery.data &&
@@ -561,10 +687,17 @@ export default function CommunicationsScreen() {
     !!staffDraft &&
     !!settingsQuery.data &&
     JSON.stringify(staffDraft) !== JSON.stringify(settingsQuery.data);
-  const hasChanges = laneChanged || staffChanged;
+  const hasChanges = laneChanged || staffChanged || ownerAlertChanged;
 
   async function handleSave() {
     if (!lane || !staffDraft || !settingsQuery.data) return;
+    // Don't save an invalid owner-alert recipient (Save is also disabled below,
+    // but guard here too in case it's invoked programmatically).
+    if (ownerAlertEmailInvalid) {
+      hapticWarning();
+      setSaveError('Enter a valid notification email address.');
+      return;
+    }
     setSaveError(null);
     try {
       if (laneChanged) {
@@ -578,6 +711,21 @@ export default function CommunicationsScreen() {
           }
         }
         await updateSettings.mutateAsync(changes);
+      }
+      if (ownerAlertChanged) {
+        // Send only what changed; empty email → null so the server falls back to
+        // the venue profile email (web parity).
+        await updateVenue.mutateAsync({
+          ...(ownerAlertEnabledChanged
+            ? { owner_booking_notification_enabled: ownerAlertEnabled }
+            : {}),
+          ...(ownerAlertEmailChanged
+            ? { owner_booking_notification_email: ownerAlertEmail.trim() || null }
+            : {}),
+        });
+        // Refresh the bootstrap so the seeded values reflect what we just saved
+        // (placeholder/helper + change detection read from VenueProvider).
+        refetchVenue();
       }
       hapticSuccess();
       setSaved(true);
@@ -652,7 +800,8 @@ export default function CommunicationsScreen() {
     return null;
   }
 
-  const isSaving = updatePolicies.isPending || updateSettings.isPending;
+  const isSaving =
+    updatePolicies.isPending || updateSettings.isPending || updateVenue.isPending;
 
   return (
     <Screen scroll={false} padded={false}>
@@ -730,6 +879,23 @@ export default function CommunicationsScreen() {
           </View>
         </Card>
 
+        {/* Business notifications — "New booking alert" owner email (web parity) */}
+        <OwnerAlertCard
+          enabled={ownerAlertEnabled}
+          email={ownerAlertEmail}
+          venueEmail={venue?.email}
+          isAdmin={!!isAdmin}
+          error={ownerAlertError}
+          onToggle={(next) => {
+            setOwnerAlertEnabled(next);
+            setSaved(false);
+          }}
+          onChangeEmail={(next) => {
+            setOwnerAlertEmail(next);
+            setSaved(false);
+          }}
+        />
+
         {saveError ? (
           <Text variant="bodySmall" tone="danger">
             {saveError}
@@ -750,8 +916,16 @@ export default function CommunicationsScreen() {
         <View style={styles.spacer} />
       </ScrollView>
 
-      {/* Sticky save bar — visible only when there are unsaved changes */}
-      {isAdmin ? <StickyBar hasChanges={hasChanges} isSaving={isSaving} onSave={handleSave} /> : null}
+      {/* Sticky save bar — armed by unsaved changes; Save blocked while the
+          owner-alert email is invalid (the inline field error explains why). */}
+      {isAdmin ? (
+        <StickyBar
+          hasChanges={hasChanges}
+          isSaving={isSaving}
+          saveDisabled={ownerAlertEmailInvalid}
+          onSave={handleSave}
+        />
+      ) : null}
 
       {/* Preview sheet */}
       <CommunicationPreviewSheet
@@ -775,10 +949,14 @@ function StickyBar({
   hasChanges,
   isSaving,
   onSave,
+  saveDisabled = false,
 }: {
   hasChanges: boolean;
   isSaving: boolean;
   onSave: () => void;
+  /** Keeps the bar visible (it's armed by hasChanges) but blocks Save — e.g. a
+   *  validation error elsewhere on the screen. */
+  saveDisabled?: boolean;
 }) {
   const { colors } = useTheme();
   // Use useState to hold the Animated.Value so it is stable across renders
@@ -814,7 +992,7 @@ function StickyBar({
         label={isSaving ? 'Saving…' : 'Save changes'}
         fullWidth
         loading={isSaving}
-        disabled={!hasChanges || isSaving}
+        disabled={!hasChanges || isSaving || saveDisabled}
         onPress={onSave}
       />
     </Animated.View>
@@ -907,6 +1085,9 @@ const styles = StyleSheet.create({
   multiline: {
     minHeight: 64,
     textAlignVertical: 'top',
+  },
+  sectionSub: {
+    marginTop: 2,
   },
   staffSection: {
     marginTop: spacing.sm,
