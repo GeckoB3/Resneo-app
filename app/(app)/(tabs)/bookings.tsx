@@ -6,6 +6,7 @@ import {
   Pressable,
   RefreshControl,
   StyleSheet,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import Animated, { FadeInDown, LinearTransition } from 'react-native-reanimated';
@@ -37,6 +38,7 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { Text } from '@/components/ui/Text';
 
 import { newBookingActionLabel } from '@/lib/booking/terminology';
+import { collapseMultiServiceVisits } from '@/lib/booking/collapseMultiServiceVisits';
 import { inferBookingRowModel } from '@/lib/booking/infer-booking-row-model';
 import type { BookingModel } from '@/types/venue';
 import {
@@ -131,6 +133,31 @@ function isAttendanceConfirmed(b: BookingListRow): boolean {
     !!b.guest_attendance_confirmed_at ||
     !!b.staff_attendance_confirmed_at
   );
+}
+
+/** Summary-tile counts for the stats strip (mirrors the web dashboard `stats`). */
+export type BookingSummary = {
+  total: number;
+  confirmed: number;
+  completed: number;
+  noShows: number;
+};
+
+/**
+ * Day-shape totals from the in-range rows — Total / Confirmed / Completed /
+ * No-shows. Pure so it can be unit-tested; mirrors the web AppointmentBookings
+ * dashboard `stats` memo (confirmed via {@link isAttendanceConfirmed}).
+ */
+export function computeBookingSummary(rows: BookingListRow[]): BookingSummary {
+  let confirmed = 0;
+  let completed = 0;
+  let noShows = 0;
+  for (const b of rows) {
+    if (isAttendanceConfirmed(b)) confirmed += 1;
+    if (b.status === 'Completed') completed += 1;
+    if (b.status === 'No-Show') noShows += 1;
+  }
+  return { total: rows.length, confirmed, completed, noShows };
 }
 
 /** Which sources contribute rows to the list: own venue + any linked venues. */
@@ -337,6 +364,10 @@ export default function BookingsScreen() {
   const params = useLocalSearchParams<{ openBooking?: string; guest?: string }>();
   const { colors } = useTheme();
   const reduceMotion = useReduceMotion();
+  // Four summary tiles need room — hide the strip on narrow phones so the
+  // toolbar doesn't crowd. ~340dp fits four compact tiles comfortably.
+  const { width: viewportWidth } = useWindowDimensions();
+  const showSummary = viewportWidth >= 340;
   const { venue, terminology, pricingTier, bookingModel, featureFlags } = useVenueContext();
   const complianceEnabled = featureFlags?.resolved?.compliance_records_enabled === true;
   const enabledModels = useMemo(() => venue?.enabled_models ?? [], [venue?.enabled_models]);
@@ -591,6 +622,20 @@ export default function BookingsScreen() {
     complianceFlags,
   ]);
 
+  // Collapse multi-service visits (shared group_booking_id, no per-person label)
+  // to a single representative row BEFORE counting/grouping, so one guest's
+  // back-to-back services show as one bar and don't inflate the summary counts.
+  // Group bookings (people with a person_label) and standalone rows pass through.
+  // The detail still shows every segment via useGroupVisit/GroupVisitCards.
+  const collapsedRows = useMemo(
+    () => collapseMultiServiceVisits(searchedRows),
+    [searchedRows],
+  );
+
+  // Summary stats strip — Total / Confirmed / Completed / No-shows over the
+  // collapsed, searched rows (the set the user is looking at).
+  const summary = useMemo(() => computeBookingSummary(collapsedRows), [collapsedRows]);
+
   // Count of loaded rows needing compliance — drives the chip tally + visibility.
   const complianceNeedsCount = useMemo(() => {
     if (!complianceEnabled || !complianceFlags) return 0;
@@ -604,16 +649,16 @@ export default function BookingsScreen() {
     const map: Record<string, number> = {};
     for (const option of STATUS_FILTERS) {
       if (option.key === 'All') continue;
-      map[option.key] = searchedRows.filter(option.matches).length;
+      map[option.key] = collapsedRows.filter(option.matches).length;
     }
     return map;
-  }, [searchedRows]);
+  }, [collapsedRows]);
 
   const filteredRows = useMemo(() => {
     const option = STATUS_FILTERS.find((o) => o.key === status);
-    if (!option || option.key === 'All') return searchedRows;
-    return searchedRows.filter(option.matches);
-  }, [searchedRows, status]);
+    if (!option || option.key === 'All') return collapsedRows;
+    return collapsedRows.filter(option.matches);
+  }, [collapsedRows, status]);
 
   // Per-model tallies for the type chip row — counted before the model filter
   // is applied so each chip shows the full count for its group (web parity).
@@ -858,9 +903,9 @@ export default function BookingsScreen() {
       STATUS_FILTERS.map((option) => ({
         key: option.key,
         label: option.label,
-        count: option.key === 'All' ? searchedRows.length : (counts[option.key] ?? 0),
+        count: option.key === 'All' ? collapsedRows.length : (counts[option.key] ?? 0),
       })),
-    [counts, searchedRows.length],
+    [counts, collapsedRows.length],
   );
   const typeOptions = useMemo<FilterOption[]>(
     () => modelChips.map((g) => ({ key: g.key, label: g.label, count: g.count })),
@@ -1010,6 +1055,12 @@ export default function BookingsScreen() {
           </View>
         ) : null}
       </View>
+
+      {/* Summary stats strip — Total / Confirmed / Completed / No-shows for the
+          current scope (web parity). Hidden while selecting and on narrow phones. */}
+      {showSummary && !selectionMode && !activeQuery.isLoading && !activeQuery.isError ? (
+        <BookingSummaryStats summary={summary} />
+      ) : null}
 
       {activeQuery.isLoading ? (
         <View style={styles.listContent}>
@@ -1180,6 +1231,35 @@ function ItemSeparator() {
   return <View style={styles.separator} />;
 }
 
+/** Compact Total / Confirmed / Completed / No-shows tiles below the toolbar. */
+function BookingSummaryStats({ summary }: { summary: BookingSummary }) {
+  const { colors } = useTheme();
+  const tiles: { key: string; label: string; value: number; tint?: string }[] = [
+    { key: 'total', label: 'Total', value: summary.total },
+    { key: 'confirmed', label: 'Confirmed', value: summary.confirmed, tint: colors.success },
+    { key: 'completed', label: 'Completed', value: summary.completed },
+    { key: 'noShows', label: 'No-shows', value: summary.noShows, tint: summary.noShows > 0 ? colors.danger : undefined },
+  ];
+  return (
+    <View
+      style={[styles.summaryRow, { borderBottomColor: colors.border }]}
+      accessibilityLabel={`${summary.total} total, ${summary.confirmed} confirmed, ${summary.completed} completed, ${summary.noShows} no-shows`}>
+      {tiles.map((tile) => (
+        <View
+          key={tile.key}
+          style={[styles.summaryTile, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <Text variant="subheading" style={{ color: tile.tint ?? colors.text }}>
+            {tile.value}
+          </Text>
+          <Text variant="caption" tone="muted" numberOfLines={1}>
+            {tile.label}
+          </Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function NavButton({ dir, onPress }: { dir: 'left' | 'right'; onPress: () => void }) {
   const { colors } = useTheme();
   return (
@@ -1227,6 +1307,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.sm,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.base,
+    paddingVertical: spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  summaryTile: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.xs,
+    borderRadius: radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    gap: 2,
   },
   listContent: {
     padding: spacing.base,

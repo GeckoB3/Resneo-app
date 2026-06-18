@@ -1,59 +1,31 @@
 import { StyleSheet, View } from 'react-native';
 
-import { Card } from '@/components/ui/Card';
-import { Text } from '@/components/ui/Text';
+import { StatTile } from '@/components/ui/StatTile';
 import { spacing } from '@/theme/index';
 
-import type { DashboardTodayStats } from '@/types/dashboard';
-
-type KpiProps = {
-  label: string;
-  value: string;
-  hint?: string;
-  hint2?: string;
-};
-
-function Kpi({ label, value, hint, hint2 }: KpiProps) {
-  return (
-    <Card style={styles.kpi}>
-      <Text variant="caption" tone="muted" numberOfLines={1}>
-        {label}
-      </Text>
-      <Text variant="display" numberOfLines={1} style={styles.kpiValue}>
-        {value}
-      </Text>
-      {hint ? (
-        <Text variant="caption" tone="muted" numberOfLines={1}>
-          {hint}
-        </Text>
-      ) : null}
-      {hint2 ? (
-        <Text variant="caption" tone="muted" numberOfLines={1}>
-          {hint2}
-        </Text>
-      ) : null}
-    </Card>
-  );
-}
+import type { DashboardForecastDay, DashboardTodayStats } from '@/types/dashboard';
 
 type KpiGridProps = {
   today: DashboardTodayStats;
   isAppointment: boolean;
+  /** 7-day forecast — feeds the inline sparkline on the primary "Today" tile. */
+  forecast?: DashboardForecastDay[];
 };
 
-export function KpiGrid({ today, isAppointment }: KpiGridProps) {
-
+export function KpiGrid({ today, isAppointment, forecast }: KpiGridProps) {
   const bookings = today.bookings;
   const confirmed = today.confirmed;
   const pending = today.pending;
   const seated = today.seated;
 
-  const attendancePct =
-    bookings > 0 ? Math.round((confirmed / bookings) * 100) : null;
+  const attendancePct = bookings > 0 ? Math.round((confirmed / bookings) * 100) : null;
 
-  // "Today" tile
+  // Sparkline series — appointments trend on bookings, dining on covers (web parity).
+  const spark = (forecast ?? []).map((f) => (isAppointment ? f.bookings : f.covers));
+
+  // "Today" / "Covers today" tile (primary — carries the trend sparkline).
   const todayValue = String(isAppointment ? bookings : today.covers);
-  const todayHint = isAppointment
+  const todayCaption = isAppointment
     ? bookings > 0
       ? `${confirmed}/${bookings} confirmed`
       : undefined
@@ -63,50 +35,46 @@ export function KpiGrid({ today, isAppointment }: KpiGridProps) {
 
   // "Confirmed" tile
   const confirmedValue = bookings > 0 ? `${confirmed}/${bookings}` : '—';
-  const confirmedHint =
-    bookings > 0 && attendancePct != null
-      ? `${attendancePct}% of bookings`
-      : 'No bookings today';
-  const confirmedHint2 =
+  const confirmedCaption =
+    bookings > 0 && attendancePct != null ? `${attendancePct}% of bookings` : 'No bookings today';
+  const confirmedExtra =
     pending > 0 || seated > 0
-      ? [
-          seated > 0 ? `${seated} seated` : '',
-          pending > 0 ? `${pending} pending` : '',
-        ]
+      ? [seated > 0 ? `${seated} seated` : '', pending > 0 ? `${pending} pending` : '']
           .filter(Boolean)
           .join(' · ')
       : undefined;
 
-  const nextLabel = today.next_booking ? today.next_booking.time : '—';
-  const nextHint = today.next_booking
+  const nextValue = today.next_booking ? today.next_booking.time : '—';
+  const nextCaption = today.next_booking
     ? isAppointment
       ? 'next appointment'
       : `party of ${today.next_booking.party_size}`
-    : isAppointment
-    ? 'no upcoming'
     : 'no upcoming';
 
   return (
     <View style={styles.grid}>
-      <Kpi
+      <StatTile
+        style={styles.kpi}
         label={isAppointment ? 'Today' : 'Covers today'}
         value={todayValue}
-        hint={todayHint}
+        caption={todayCaption}
+        sparkline={spark.length >= 2 ? spark : undefined}
       />
-      <Kpi
-        label={isAppointment ? 'Confirmed' : 'Confirmed'}
+      <StatTile
+        style={styles.kpi}
+        label="Confirmed"
         value={confirmedValue}
-        hint={confirmedHint}
-        hint2={confirmedHint2}
+        caption={confirmedExtra ? `${confirmedCaption} · ${confirmedExtra}` : confirmedCaption}
       />
       {!isAppointment ? (
-        <Kpi
+        <StatTile
+          style={styles.kpi}
           label="Arriving soon"
           value={String(today.arriving_within_30_min)}
-          hint="next 30 min"
+          caption="next 30 min"
         />
       ) : null}
-      <Kpi label="Next up" value={nextLabel} hint={nextHint} />
+      <StatTile style={styles.kpi} label="Next up" value={nextValue} caption={nextCaption} />
     </View>
   );
 }
@@ -121,9 +89,5 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     flexBasis: '46%',
     minWidth: 140,
-    gap: 2,
-  },
-  kpiValue: {
-    fontVariant: ['tabular-nums'],
   },
 });

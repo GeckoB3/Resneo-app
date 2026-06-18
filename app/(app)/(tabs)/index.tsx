@@ -18,12 +18,13 @@ import { BookingDetailSheet } from '@/components/bookings/BookingDetailSheet';
 import { AllCalendarsDayGrid, type AllCalendarColumn } from '@/components/calendar/AllCalendarsDayGrid';
 import { BlockEditSheet, type BlockTarget } from '@/components/calendar/BlockEditSheet';
 import { CalendarDayGrid } from '@/components/calendar/CalendarDayGrid';
-import { minutesToTime, timeToMinutes } from '@/components/calendar/grid-layout';
+import { minutesToTime, timeToMinutes, type GridWindowOverride } from '@/components/calendar/grid-layout';
 import { venueDayHours } from '@/lib/calendar/venue-closures';
-import { MonthGrid } from '@/components/calendar/MonthGrid';
+import { MonthGrid, type MonthDayDatum } from '@/components/calendar/MonthGrid';
 import { MonthPickerSheet } from '@/components/calendar/MonthPickerSheet';
 import { type RescheduleTarget } from '@/components/calendar/RescheduleSheet';
 import { WeekGrid, type WeekDayColumn } from '@/components/calendar/WeekGrid';
+import { WeekMatrixGrid } from '@/components/calendar/WeekMatrixGrid';
 import { Button } from '@/components/ui/Button';
 import { Chip } from '@/components/ui/Chip';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -61,7 +62,13 @@ import {
 } from '@/lib/queries/useCalendarQuickActions';
 import { useCalendarGrid } from '@/lib/queries/useCalendarGrid';
 import { useComplianceBookingFlags } from '@/lib/queries/useCompliance';
+import {
+  usePersistedCalendarPrefs,
+  pruneStaleSelectedId,
+  type CalendarPrefs,
+} from '@/lib/queries/usePersistedCalendarPrefs';
 import { usePractitioners } from '@/lib/queries/usePractitioners';
+import { useResourcesManageList } from '@/lib/queries/useResourcesManage';
 import { useSchedule } from '@/lib/queries/useSchedule';
 import { useVenueLiveSync } from '@/lib/realtime/useVenueLiveSync';
 import { useToast } from '@/providers/ToastProvider';
@@ -275,6 +282,25 @@ export default function CalendarScreen() {
   const [scope, setScope] = useState<Scope>('day');
   const [anchor, setAnchor] = useState<string>(today);
 
+  // `selectedId` is a calendar id, or the 'all' sentinel for the multi-calendar
+  // day view (reception parity). null falls back to the first calendar.
+  const ALL_CALENDARS = 'all' as const;
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  // Visible-window override (web parity: From/Until). null edges auto-fit. Held
+  // locally and persisted via the F5 prefs hook; threaded into every grid.
+  const [windowOverride, setWindowOverride] = useState<GridWindowOverride | null>(null);
+
+  // ---- Persisted per-user calendar prefs (F5, SecureStore) ----
+  // Stores { scope, selectedId, startHourOverride, endHourOverride } per venue so
+  // the screen restores the user's last view on cold start. Local state above is
+  // the live source of truth; we hydrate it ONCE when the persisted value lands,
+  // then write back on every user change. A stale selected-calendar id (a
+  // practitioner deleted while the app was closed) is pruned against the live
+  // calendar ids — same guard `reconcileOwnerVenue` applies to linked venues.
+  const calendarPrefs = usePersistedCalendarPrefs(venue?.id ?? null);
+  const prefsHydratedRef = useRef(false);
+
   // Deep-link support: a `?date=YYYY-MM-DD` param (e.g. from a notification)
   // jumps the diary to that day.
   useEffect(() => {
@@ -285,11 +311,6 @@ export default function CalendarScreen() {
       setScope('day');
     }
   }, [params.date]);
-
-  // `selectedId` is a calendar id, or the 'all' sentinel for the multi-calendar
-  // day view (reception parity). null falls back to the first calendar.
-  const ALL_CALENDARS = 'all' as const;
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailBookingId, setDetailBookingId] = useState<string | null>(null);
   const [blockTarget, setBlockTarget] = useState<BlockTarget | null>(null);
   const [addSheetTarget, setAddSheetTarget] = useState<AddSheetTarget | null>(null);
@@ -386,6 +407,60 @@ export default function CalendarScreen() {
 
   const calendarIds = useMemo(() => practitioners.map((p) => p.id), [practitioners]);
 
+  // Hydrate the persisted prefs into local state ONCE, after both the prefs read
+  // resolves AND the live calendars are known (so the stale-id guard can run).
+  // A `?date=` deep-link is an explicit intent that wins over a stored scope, so
+  // we skip the stored scope when one was provided. Runs at most once per mount.
+  const hasDateDeepLink = typeof params.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(params.date);
+  const { hydrated: prefsHydrated, prefs: storedPrefs, setPrefs: persistPrefs } = calendarPrefs;
+  useEffect(() => {
+    if (prefsHydratedRef.current) return;
+    if (!prefsHydrated) return;
+    // Wait for calendars before pruning a stored id (unless there are genuinely
+    // none — a venue with zero practitioners — in which case there's nothing to
+    // prune against and we still hydrate scope/window).
+    if (calendarIds.length === 0 && practitionersQuery.isLoading) return;
+    prefsHydratedRef.current = true;
+
+    const pruned = pruneStaleSelectedId(storedPrefs, calendarIds, ALL_CALENDARS);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot hydration of persisted prefs
+    if (!hasDateDeepLink) setScope(pruned.scope);
+    setSelectedId(pruned.selectedId);
+    if (pruned.startHourOverride != null || pruned.endHourOverride != null) {
+      setWindowOverride({
+        startHour: pruned.startHourOverride,
+        endHour: pruned.endHourOverride,
+      });
+    }
+    // If the prune dropped a stale id, persist the corrected value back so the
+    // dead id doesn't linger in storage.
+    if (pruned !== storedPrefs) {
+      persistPrefs({ selectedId: pruned.selectedId });
+    }
+  }, [
+    prefsHydrated,
+    storedPrefs,
+    persistPrefs,
+    calendarIds,
+    practitionersQuery.isLoading,
+    hasDateDeepLink,
+    ALL_CALENDARS,
+  ]);
+
+  // Persist scope / selected calendar / window whenever the user changes them.
+  // Gated on `prefsHydratedRef` so the initial defaults never overwrite a stored
+  // value before hydration runs. `persistPrefs` is a stable callback (useCallback
+  // in the hook) and merges a partial, so this is a cheap idempotent write.
+  useEffect(() => {
+    if (!prefsHydratedRef.current) return;
+    persistPrefs({
+      scope,
+      selectedId,
+      startHourOverride: windowOverride?.startHour ?? null,
+      endHourOverride: windowOverride?.endHour ?? null,
+    } satisfies Partial<CalendarPrefs>);
+  }, [persistPrefs, scope, selectedId, windowOverride]);
+
   // ---- Linked venues (cross-venue calendars) ----
   // Any accepted link that shares calendar visibility surfaces as a chip in the
   // switcher row; picking one sets ownerVenueId and renders that venue's day via
@@ -454,6 +529,16 @@ export default function CalendarScreen() {
     [scheduleQuery.data],
   );
 
+  // Full resource records (display_on_calendar_id + name) — drives the empty-slot
+  // quick menu's "Book <resource>" section, filtered to resources hosted on the
+  // tapped column (web parity: `resourcesHere`). Cached + shared with the
+  // resource setup flow; only the active ones can be booked.
+  const resourcesQuery = useResourcesManageList();
+  const activeResources = useMemo(
+    () => (resourcesQuery.data ?? []).filter((r) => r.is_active),
+    [resourcesQuery.data],
+  );
+
   // Realtime: a change on another device invalidates the grid promptly instead
   // of waiting for the 60s poll above (which stays as a fallback). Mirrors the
   // web calendar's channel — bookings + calendar blocks scoped to this venue.
@@ -488,6 +573,10 @@ export default function CalendarScreen() {
   // the 'all' multi-calendar day view. null falls back to the first calendar.
   const isAllView =
     selectedId === ALL_CALENDARS && scope === 'day' && practitioners.length > 1;
+  // Week-scope "All" → the whole-team week matrix (practitioner rows × 7 days),
+  // rendered by WeekMatrixGrid instead of the single-practitioner WeekGrid.
+  const isWeekAllView =
+    selectedId === ALL_CALENDARS && scope === 'week' && practitioners.length > 1;
   // Render the multi-practitioner columns when the user explicitly picks "All",
   // OR when a wide viewport makes the side-by-side day layout the default. Both
   // require day scope and more than one practitioner.
@@ -592,6 +681,74 @@ export default function CalendarScreen() {
     }
     return map;
   }, [gridQuery.data]);
+
+  /**
+   * date → rich month-grid datum (per-type counts + linked count + open/closed
+   * status) for the displayed month. Appointments come from the grid (No-Show
+   * excluded), classes/events/resources from the deduped schedule feed, linked
+   * from the linked-calendar feed, and the open/closed status from the venue's
+   * weekly hours. Drives the MonthGrid dots / heatmap / Open-Closed label / "+N".
+   */
+  const monthDayData = useMemo<Record<string, MonthDayDatum>>(() => {
+    const map: Record<string, MonthDayDatum> = {};
+    const ensure = (date: string): MonthDayDatum => {
+      let d = map[date];
+      if (!d) {
+        const hours = venueDayHours(openingHours, date).kind;
+        d = {
+          appointments: 0,
+          classes: 0,
+          events: 0,
+          resources: 0,
+          linked: 0,
+          status: hours === 'closed' ? 'closed' : hours === 'open' ? 'open' : 'unknown',
+        };
+        map[date] = d;
+      }
+      return d;
+    };
+
+    // Seed EVERY in-month date so empty days still carry their Open/Closed status
+    // (the label only shows on empty in-month days). The grid fetches the full
+    // month range in month scope, so this covers exactly the displayed month.
+    {
+      const monthRange = getMonthRangeFromDate(anchor);
+      let cursor = monthRange.from;
+      // Guard against an unbounded loop on malformed bounds (max 31 days).
+      for (let i = 0; i < 31 && cursor <= monthRange.to; i += 1) {
+        ensure(cursor);
+        cursor = addDaysToDateStr(cursor, 1);
+      }
+    }
+
+    // Appointments (calendar-grid), No-Show excluded.
+    for (const calendar of gridQuery.data?.calendars ?? []) {
+      for (const day of calendar.dates) {
+        const n = day.bookings.filter((b) => b.status !== 'No-Show').length;
+        if (n > 0) ensure(day.date).appointments += n;
+      }
+    }
+
+    // Classes / events / resources (schedule feed) — dedupe class instances so a
+    // busy class counts once (mirrors the grid overlay dedupe).
+    for (const dto of dedupeScheduleDTOs(scheduleQuery.data ?? [])) {
+      const d = ensure(dto.date);
+      if (dto.kind === 'class_session') d.classes += 1;
+      else if (dto.kind === 'event_ticket') d.events += 1;
+      else if (dto.kind === 'resource_booking') d.resources += 1;
+    }
+
+    // Linked-venue bookings per date → the "+N" chip. Counted across all linked
+    // venues for the date (month scope is own-venue for the grids, but the count
+    // hint is cheap and useful here).
+    for (const v of linkedVenues) {
+      for (const b of v.bookings) {
+        if (b.bookingDate) ensure(b.bookingDate).linked += 1;
+      }
+    }
+
+    return map;
+  }, [gridQuery.data, scheduleQuery.data, linkedVenues, openingHours, anchor]);
 
   /** practitionerId → bookings on the anchor date (badges on the switcher chips). */
   const perPractitionerCounts = useMemo(() => {
@@ -1116,6 +1273,28 @@ export default function CalendarScreen() {
     });
   }, [scope, gridQuery.data, effectiveId, week.days, today, scheduleByCalendarDate, openingHours]);
 
+  // ---- Whole-team week matrix data (week-scope "All") ----
+  // Practitioner rows + 7 day-column headers. The cell counts are derived inside
+  // WeekMatrixGrid straight from gridQuery.data, so this only supplies labels.
+  const weekMatrixCalendars = useMemo(
+    () => practitioners.map((p) => ({ id: p.id, name: p.name })),
+    [practitioners],
+  );
+  const weekMatrixDays = useMemo(() => {
+    if (scope !== 'week') return [];
+    return week.days.map((date) => {
+      const d = parseISO(`${date}T12:00:00.000Z`);
+      const weekday = d.getDay();
+      return {
+        date,
+        weekdayLabel: format(d, 'EEE'),
+        dayNumber: format(d, 'd'),
+        isToday: date === today,
+        isWeekend: weekday === 0 || weekday === 6,
+      };
+    });
+  }, [scope, week.days, today]);
+
   // Per-booking compliance flags for the visible day — gated on the feature
   // flag so non-compliance venues never hit the endpoint. Unfiltered ids so
   // the status filter doesn't churn the query key.
@@ -1177,6 +1356,7 @@ export default function CalendarScreen() {
       sessions={daySessions}
       scheduleBlocks={daySchedule}
       venueHours={venueHoursForAnchor}
+      windowOverride={windowOverride}
       nowMinutes={nowMinutes}
       onBlockPress={openDetail}
       onStatusChange={handleStatusChange}
@@ -1203,6 +1383,33 @@ export default function CalendarScreen() {
   const closeAddSheet = useCallback(() => setAddSheetTarget(null), []);
 
   const addSheetSlot = addSheetTarget?.kind === 'slot' ? addSheetTarget : null;
+
+  // Resources hosted on the tapped slot's calendar column → "Book <resource>"
+  // entries in the empty-slot menu (web parity: `resourcesHere`). Empty when the
+  // FAB opened the sheet, or when no resource is displayed on that column.
+  const slotResources = useMemo(
+    () =>
+      addSheetSlot
+        ? activeResources.filter((r) => r.display_on_calendar_id === addSheetSlot.practitionerId)
+        : [],
+    [addSheetSlot, activeResources],
+  );
+
+  // Route to the resource booking flow with the resource pre-selected and the
+  // tapped day prefilled (web parity: book a resource straight from the slot).
+  // The resource flow reads `?resourceId`/`?tab=resource`; the date primes the
+  // wizard's anchor day. (Exact slot time isn't a resource-flow param yet — the
+  // user picks the length+time on the resource's own availability grid.)
+  const bookResourceAtSlot = useCallback(
+    (resourceId: string) => {
+      closeAddSheet();
+      router.push({
+        pathname: '/booking/new',
+        params: { tab: 'resource', resourceId, date: anchor },
+      });
+    },
+    [closeAddSheet, router, anchor],
+  );
 
   // ---- "Move to practitioner" chooser content ----
   // The booking being moved + the OTHER practitioners it can move to.
@@ -1265,6 +1472,14 @@ export default function CalendarScreen() {
                   idle (matches Resources/Contacts). Realtime invalidates the grid
                   promptly; the 60s poll is the fallback. */}
               <LiveDot state={liveState} />
+              {/* Quick jump to the "Today" home (KPI / day-at-a-glance), distinct
+                  from the in-grid Today pill that re-anchors the diary to today. */}
+              <IconButton
+                icon={{ ios: 'sun.max', android: 'wb_sunny', web: 'wb_sunny' }}
+                accessibilityLabel="Open Today overview"
+                variant="bordered"
+                onPress={() => router.push('/today')}
+              />
             </View>
 
             <View style={styles.dateNav}>
@@ -1318,21 +1533,22 @@ export default function CalendarScreen() {
               />
             </View>
 
-            {/* Calendar switcher — one calendar at a time, plus an "All" view
-                (day scope only) that shows every calendar side-by-side. Hidden
-                on a wide day viewport where all columns already show. */}
+            {/* Calendar switcher — one calendar at a time, plus an "All" view.
+                In DAY scope "All" shows every calendar side-by-side; in WEEK
+                scope it shows the whole-team week matrix. Hidden on a wide day
+                viewport where all columns already show. */}
             {showChips ? (
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.chips}>
-                {scope === 'day' && practitioners.length > 1 ? (
+                {(scope === 'day' || scope === 'week') && practitioners.length > 1 ? (
                   <Chip
                     label="All"
-                    count={totalDayCount}
-                    selected={!isLinkedActive && isAllView}
+                    count={scope === 'day' ? totalDayCount : undefined}
+                    selected={!isLinkedActive && (isAllView || isWeekAllView)}
                     onPress={() => {
-                      if (isLinkedActive || !isAllView) {
+                      if (isLinkedActive || selectedId !== ALL_CALENDARS) {
                         hapticSelect();
                         clearOwnerVenue();
                         setSelectedId(ALL_CALENDARS);
@@ -1345,9 +1561,11 @@ export default function CalendarScreen() {
                     key={p.id}
                     label={p.name}
                     count={scope === 'day' ? perPractitionerCounts[p.id] : undefined}
-                    selected={!isLinkedActive && !isAllView && p.id === effectiveId}
+                    selected={
+                      !isLinkedActive && !isAllView && !isWeekAllView && p.id === effectiveId
+                    }
                     onPress={() => {
-                      if (isLinkedActive || isAllView || p.id !== effectiveId) {
+                      if (isLinkedActive || isAllView || isWeekAllView || p.id !== effectiveId) {
                         hapticSelect();
                         clearOwnerVenue();
                         setSelectedId(p.id);
@@ -1483,13 +1701,39 @@ export default function CalendarScreen() {
               <MonthGrid
                 anchor={anchor}
                 today={today}
-                counts={counts}
+                dayData={monthDayData}
                 onSelectDay={(date) => {
                   setAnchor(date);
                   setScope('day');
                 }}
               />
             </ScrollView>
+          ) : scope === 'week' && isWeekAllView ? (
+            // Whole-team week matrix: practitioner rows × 7 day columns, read-only.
+            // Horizontal swipe still pages weeks; tapping a day header or a cell
+            // drills into that day's full Day view.
+            <GestureDetector gesture={swipeGesture}>
+              <View style={styles.weekBody}>
+                <WeekMatrixGrid
+                  calendars={weekMatrixCalendars}
+                  days={weekMatrixDays}
+                  grid={gridQuery.data}
+                  onDayPress={(date) => {
+                    hapticSelect();
+                    setAnchor(date);
+                    setScope('day');
+                  }}
+                  onCellPress={(calendarId, date) => {
+                    hapticSelect();
+                    setAnchor(date);
+                    setSelectedId(calendarId);
+                    setScope('day');
+                  }}
+                  refreshing={refreshing}
+                  onRefresh={onRefresh}
+                />
+              </View>
+            </GestureDetector>
           ) : scope === 'week' ? (
             // Horizontal swipe pages prev/next week; vertical scroll + day-header
             // taps still work (the pan is horizontal-only — see swipeGesture).
@@ -1497,6 +1741,7 @@ export default function CalendarScreen() {
               <View style={styles.weekBody}>
                 <WeekGrid
                   days={weekColumns}
+                  windowOverride={windowOverride}
                   nowMinutes={nowMinutes}
                   onBlockPress={openDetail}
                   onEmptyPress={createAtForDate}
@@ -1521,6 +1766,7 @@ export default function CalendarScreen() {
               <AllCalendarsDayGrid
                 calendars={allColumnsForDay}
                 venueHours={venueHoursForAnchor}
+                windowOverride={windowOverride}
                 nowMinutes={nowMinutes}
                 onBlockPress={handleAllBlockPress}
                 onEmptyPress={handleAllEmptyPress}
@@ -1576,20 +1822,31 @@ export default function CalendarScreen() {
               });
             }}
           />
-          {addSheetTarget?.kind === 'fab' ? (
-            <Button
-              label="Walk-in"
-              variant="secondary"
-              fullWidth
-              onPress={() => {
-                closeAddSheet();
-                router.push({
-                  pathname: '/booking/new',
-                  params: { date: anchor, time: nowTime, intent: 'walk-in' },
-                });
-              }}
-            />
-          ) : (
+          {/* Walk-in — slot-aware: starts at the TAPPED slot time when a slot
+              opened the sheet, else "now" (FAB). Web parity: the slot menu offers
+              a Walk-in at that exact time, not the current time. */}
+          <Button
+            label="Walk-in"
+            variant="secondary"
+            fullWidth
+            onPress={() => {
+              const slot = addSheetSlot;
+              closeAddSheet();
+              router.push({
+                pathname: '/booking/new',
+                params: slot
+                  ? {
+                      date: anchor,
+                      practitionerId: slot.practitionerId,
+                      time: slot.time,
+                      intent: 'walk-in',
+                    }
+                  : { date: anchor, time: nowTime, intent: 'walk-in' },
+              });
+            }}
+          />
+          {/* Block time — slot only (the FAB has no target column/time). */}
+          {addSheetSlot ? (
             <Button
               label="Block time"
               variant="secondary"
@@ -1597,17 +1854,36 @@ export default function CalendarScreen() {
               onPress={() => {
                 const slot = addSheetSlot;
                 closeAddSheet();
-                if (slot) {
-                  setBlockTarget({
-                    mode: 'create',
-                    practitionerId: slot.practitionerId,
-                    date: anchor,
-                    startTime: slot.time,
-                  });
-                }
+                setBlockTarget({
+                  mode: 'create',
+                  practitionerId: slot.practitionerId,
+                  date: anchor,
+                  startTime: slot.time,
+                });
               }}
             />
-          )}
+          ) : null}
+
+          {/* "Book <resource>" — one button per resource hosted on the tapped
+              column (web parity: `resourcesHere`). Routes to the resource flow
+              with the resource pre-selected and the day prefilled. */}
+          {slotResources.length > 0 ? (
+            <>
+              <Text variant="caption" tone="muted" style={styles.addSheetSectionLabel}>
+                Book a resource
+              </Text>
+              {slotResources.map((r) => (
+                <Button
+                  key={r.id}
+                  label={`Book ${r.name}`}
+                  variant="secondary"
+                  fullWidth
+                  onPress={() => bookResourceAtSlot(r.id)}
+                />
+              ))}
+            </>
+          ) : null}
+
           <Button label="Cancel" variant="ghost" fullWidth onPress={closeAddSheet} />
         </View>
       </Sheet>
@@ -1675,6 +1951,11 @@ export default function CalendarScreen() {
         today={today}
         counts={counts}
         onSelectDay={jumpToDate}
+        // Visible-window (From/Until) control lives in this sheet (web parity:
+        // the toolbar date panel embeds the time-range picker). Persisted per
+        // venue via the F5 hook by the scope/selectedId/window effect above.
+        windowOverride={windowOverride}
+        onWindowChange={setWindowOverride}
         onClose={() => setMonthPickerOpen(false)}
       />
 
@@ -1776,6 +2057,9 @@ const styles = StyleSheet.create({
   addSheetActions: {
     gap: spacing.sm,
     marginTop: spacing.md,
+  },
+  addSheetSectionLabel: {
+    marginTop: spacing.xs,
   },
   reassignList: {
     gap: spacing.sm,

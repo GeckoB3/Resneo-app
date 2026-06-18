@@ -1,5 +1,5 @@
 import Constants from 'expo-constants';
-import { SymbolView, type SymbolViewProps } from 'expo-symbols';
+import { SymbolView } from 'expo-symbols';
 import * as WebBrowser from 'expo-web-browser';
 import { useRouter, type Href } from 'expo-router';
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
@@ -17,6 +17,11 @@ import { SearchBar } from '@/components/ui/SearchBar';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { getWebUrl } from '@/lib/env';
+import {
+  buildDestinations,
+  LIST_GROUPS,
+  type Destination,
+} from '@/lib/navigation/more-destinations';
 import { useNotifications } from '@/lib/queries/useNotifications';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { useAppLock } from '@/providers/AppLockProvider';
@@ -48,67 +53,6 @@ function greetingFor(date = new Date()): string {
   if (hour < 17) return 'Good afternoon';
   return 'Good evening';
 }
-
-/** Icon-tile hues — a curated ramp so each destination feels distinct. */
-const TILE = {
-  amber: '#D97706',
-  teal: '#0D9488',
-  sky: '#0369A1',
-  navy: '#003B6F',
-  indigo: '#4F46E5',
-  emerald: '#059669',
-  rose: '#BE123C',
-  slate: '#475569',
-  violet: '#7C3AED',
-  orange: '#EA580C',
-};
-
-type DestKind = 'route' | 'web';
-type DestGroup = 'workspace' | 'manage' | 'bookingTypes' | 'app' | 'account';
-
-/** One navigable surface — the single source of truth for the grid, the grouped
- *  list and search. Role/enablement filtering happens where the list is built. */
-type Destination = {
-  id: string;
-  label: string;
-  hint: string;
-  icon: SymbolViewProps['name'];
-  tile: string;
-  group: DestGroup;
-  kind: DestKind;
-  /** Route path (kind 'route') or web dashboard path (kind 'web'). */
-  target?: string;
-  /** Show in the "Quick actions" grid. */
-  featured?: boolean;
-  /** Opens an external surface — shows the "open" glyph. */
-  external?: boolean;
-};
-
-/** Groups rendered as inset lists, in order. (workspace → grid; account → hero.) */
-const LIST_GROUPS: { key: DestGroup; title: string }[] = [
-  { key: 'manage', title: 'Manage' },
-  { key: 'bookingTypes', title: 'Booking types' },
-  { key: 'app', title: 'App' },
-];
-
-/**
- * Secondary booking models. Classes/Events/Resources have in-app screens;
- * setup & products still live on the web. Tables remain web-only.
- */
-const SECONDARY_MODEL_ROWS: {
-  model: BookingModel;
-  label: string;
-  hint: string;
-  appRoute?: string;
-  webPath: string;
-  icon: SymbolViewProps['name'];
-  tile: string;
-}[] = [
-  { model: 'class_session', label: 'Classes', hint: 'Timetable & session rosters', appRoute: '/classes', webPath: '/dashboard/class-timetable', icon: { ios: 'figure.run', android: 'fitness_center', web: 'fitness_center' }, tile: TILE.emerald },
-  { model: 'event_ticket', label: 'Events', hint: 'Events & attendee rosters', appRoute: '/events', webPath: '/dashboard/event-manager', icon: { ios: 'ticket.fill', android: 'confirmation_number', web: 'confirmation_number' }, tile: TILE.violet },
-  { model: 'resource_booking', label: 'Resources', hint: 'Resource day view', appRoute: '/resources', webPath: '/dashboard/resource-timeline', icon: { ios: 'shippingbox.fill', android: 'inventory_2', web: 'inventory_2' }, tile: TILE.slate },
-  { model: 'table_reservation', label: 'Tables', hint: 'Table & floor plan setup', webPath: '/dashboard/tables', icon: { ios: 'fork.knife', android: 'restaurant', web: 'restaurant' }, tile: TILE.orange },
-];
 
 /** Uppercase section header sitting above its inset group. */
 function Group({ title, children }: { title?: string; children: ReactNode }) {
@@ -185,62 +129,22 @@ export default function MoreScreen() {
     [setAppLockEnabled, toast],
   );
 
-  // Build the full, role-aware index once. The grid, the grouped list and search
-  // all derive from this single array.
+  // Build the full, role- and eligibility-aware index once. The grid, the
+  // grouped list and search all derive from this single array. Gating lives in
+  // the pure `buildDestinations` builder (unit-tested separately).
   const destinations = useMemo<Destination[]>(() => {
     const enabledModels = new Set<BookingModel>([
       ...(venue?.active_booking_models ?? []),
       ...(venue?.enabled_models ?? []),
       ...(venue?.booking_model ? [venue.booking_model] : []),
     ]);
-
-    const list: Destination[] = [];
-
-    // Account — reached via the hero; indexed here so search can surface it.
-    list.push({ id: 'account', label: 'Account settings', hint: 'Name, sign-in email, phone & password', icon: { ios: 'person.circle.fill', android: 'account_circle', web: 'account_circle' }, tile: TILE.navy, group: 'account', kind: 'route', target: '/manage/account' });
-
-    // Workspace — the daily-driver tools surfaced in the quick-actions grid.
-    list.push({ id: 'today', label: 'Today', hint: 'KPIs, forecast & arrivals', icon: { ios: 'sun.max.fill', android: 'wb_sunny', web: 'wb_sunny' }, tile: TILE.amber, group: 'workspace', kind: 'route', target: '/today', featured: true });
-    if (isAdmin) {
-      list.push({ id: 'reports', label: 'Reports', hint: 'Bookings, no-shows, deposits & insights', icon: { ios: 'chart.bar.fill', android: 'bar_chart', web: 'bar_chart' }, tile: TILE.indigo, group: 'workspace', kind: 'route', target: '/reports', featured: true });
-    }
-    list.push({ id: 'waitlist', label: 'Waitlist', hint: 'Offer & confirm waiting clients', icon: { ios: 'hourglass', android: 'hourglass_empty', web: 'hourglass_empty' }, tile: TILE.teal, group: 'workspace', kind: 'route', target: '/waitlist', featured: true });
-    list.push({ id: 'availability', label: 'Calendar availability', hint: 'Block time & book leave', icon: { ios: 'calendar', android: 'edit_calendar', web: 'edit_calendar' }, tile: TILE.sky, group: 'workspace', kind: 'route', target: '/availability', featured: true });
-    list.push({ id: 'notifications', label: 'Notifications', hint: 'In-app notification feed', icon: { ios: 'bell.fill', android: 'notifications', web: 'notifications' }, tile: TILE.rose, group: 'workspace', kind: 'route', target: '/notifications' });
-
-    // Manage — venue configuration.
-    list.push({ id: 'services', label: 'Services', hint: 'Review & edit your appointment services', icon: { ios: 'scissors', android: 'content_cut', web: 'content_cut' }, tile: TILE.navy, group: 'manage', kind: 'route', target: '/manage/services' });
-    if (isAdmin) {
-      list.push({ id: 'venue-profile', label: 'Venue profile', hint: 'Name, contact details & address', icon: { ios: 'building.2.fill', android: 'storefront', web: 'storefront' }, tile: TILE.teal, group: 'manage', kind: 'route', target: '/manage/venue-profile' });
-    }
-    list.push({ id: 'hours', label: 'Business hours', hint: 'Weekly opening hours', icon: { ios: 'clock.fill', android: 'access_time', web: 'access_time' }, tile: TILE.sky, group: 'manage', kind: 'route', target: '/manage/hours' });
-    list.push({ id: 'linked-calendar', label: 'Linked calendar', hint: 'View bookings at venues linked to yours', icon: { ios: 'calendar', android: 'calendar_month', web: 'calendar_month' }, tile: TILE.teal, group: 'manage', kind: 'route', target: '/linked-venues/calendar' });
-    if (isAdmin) {
-      list.push({ id: 'team', label: 'Team', hint: 'Staff logins & roles', icon: { ios: 'person.2.fill', android: 'group', web: 'group' }, tile: TILE.emerald, group: 'manage', kind: 'route', target: '/manage/team' });
-      list.push({ id: 'booking-settings', label: 'Booking settings', hint: 'Booking types & guest accounts', icon: { ios: 'slider.horizontal.3', android: 'tune', web: 'tune' }, tile: TILE.slate, group: 'manage', kind: 'route', target: '/manage/booking-settings' });
-      list.push({ id: 'communications', label: 'Communications', hint: 'Confirmations, reminders & alerts', icon: { ios: 'envelope.fill', android: 'mail', web: 'mail' }, tile: TILE.amber, group: 'manage', kind: 'route', target: '/manage/communications' });
-      list.push({ id: 'compliance', label: 'Compliance', hint: 'Forms, records & expiries', icon: { ios: 'checkmark.shield.fill', android: 'verified_user', web: 'verified_user' }, tile: TILE.emerald, group: 'manage', kind: 'route', target: '/manage/compliance' });
-      list.push({ id: 'plan', label: 'Plan & payments', hint: 'Subscription tier & Stripe', icon: { ios: 'creditcard.fill', android: 'credit_card', web: 'credit_card' }, tile: TILE.violet, group: 'manage', kind: 'route', target: '/manage/plan' });
-      list.push({ id: 'refer-earn', label: 'Refer & Earn', hint: 'Share your link & track rewards', icon: { ios: 'gift.fill', android: 'card_giftcard', web: 'card_giftcard' }, tile: TILE.rose, group: 'manage', kind: 'route', target: '/manage/refer-earn' });
-      list.push({ id: 'booking-page', label: 'Booking page', hint: 'Branding, colours, fonts & public tabs', icon: { ios: 'globe', android: 'public', web: 'public' }, tile: TILE.indigo, group: 'manage', kind: 'route', target: '/manage/booking-page' });
-      list.push({ id: 'linked-venues', label: 'Linked venues', hint: 'Share calendars & cross-venue bookings', icon: { ios: 'link', android: 'link', web: 'link' }, tile: TILE.teal, group: 'manage', kind: 'route', target: '/linked-venues' });
-      list.push({ id: 'collectives', label: 'Venue collectives', hint: 'A combined booking page across linked venues', icon: { ios: 'person.2.wave.2.fill', android: 'groups', web: 'groups' }, tile: TILE.sky, group: 'manage', kind: 'route', target: '/collectives' });
-    }
-
-    // Booking types — only the models this venue has enabled (admin only).
-    if (isAdmin) {
-      for (const row of SECONDARY_MODEL_ROWS) {
-        if (!enabledModels.has(row.model)) continue;
-        list.push({ id: `model-${row.model}`, label: row.label, hint: row.hint, icon: row.icon, tile: row.tile, group: 'bookingTypes', kind: row.appRoute ? 'route' : 'web', target: row.appRoute ?? row.webPath, external: !row.appRoute });
-      }
-    }
-
-    // App.
-    list.push({ id: 'support', label: 'Support', hint: 'Contact the Resneo team', icon: { ios: 'questionmark.circle.fill', android: 'help', web: 'help' }, tile: TILE.teal, group: 'app', kind: 'route', target: '/support' });
-    list.push({ id: 'push', label: 'Push notifications', hint: 'Alerts this device shows & what for', icon: { ios: 'bell.badge.fill', android: 'notifications_active', web: 'notifications_active' }, tile: TILE.rose, group: 'app', kind: 'route', target: '/manage/notification-preferences' });
-    list.push({ id: 'web-dashboard', label: 'Web dashboard', hint: 'Open the full dashboard in your browser', icon: { ios: 'desktopcomputer', android: 'computer', web: 'computer' }, tile: TILE.slate, group: 'app', kind: 'web', target: '/dashboard', external: true });
-
-    return list;
+    return buildDestinations({
+      isAdmin,
+      enabledModels,
+      pricingTier: venue?.pricing_tier,
+      complianceEnabled: venue?.feature_flags?.resolved?.compliance_records_enabled === true,
+      waitlistEnabled: venue?.feature_flags?.resolved?.waitlist_v2 === true,
+    });
   }, [isAdmin, venue]);
 
   const handlePress = useCallback(
@@ -256,7 +160,9 @@ export default function MoreScreen() {
     if (!trimmedQuery) return [];
     return destinations.filter(
       (d) =>
-        d.label.toLowerCase().includes(trimmedQuery) || d.hint.toLowerCase().includes(trimmedQuery),
+        d.label.toLowerCase().includes(trimmedQuery) ||
+        d.hint.toLowerCase().includes(trimmedQuery) ||
+        d.keywords?.some((k) => k.toLowerCase().includes(trimmedQuery)),
     );
   }, [destinations, trimmedQuery]);
 

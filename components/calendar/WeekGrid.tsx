@@ -23,6 +23,7 @@ import {
   PX_PER_MINUTE,
   TAP_SNAP_MINUTES,
   timeToMinutes,
+  type GridWindowOverride,
   type LaneInput,
 } from '@/components/calendar/grid-layout';
 import type { CalendarTimeBlock } from '@/components/calendar/CalendarDayGrid';
@@ -77,6 +78,11 @@ export type WeekDayColumn = {
 type WeekGridProps = {
   /** Seven days, Monday→Sunday, for the selected calendar. */
   days: WeekDayColumn[];
+  /**
+   * User's visible-window override (web parity: From/Until). Widens the shared
+   * time scale to the pinned window without clipping any booking outside it.
+   */
+  windowOverride?: GridWindowOverride | null;
   /** Minutes-since-midnight for the now-line, or null when today isn't in view. */
   nowMinutes: number | null;
   onBlockPress: (bookingId: string) => void;
@@ -127,6 +133,7 @@ function positionBookings(
 
 export function WeekGrid({
   days,
+  windowOverride,
   nowMinutes,
   onBlockPress,
   onEmptyPress,
@@ -161,14 +168,14 @@ export function WeekGrid({
         if (end > start) ranges.push({ start, end });
       }
     }
-    const bounds = computeGridBounds(ranges);
+    const bounds = computeGridBounds(ranges, windowOverride);
     return {
       startHour: bounds.startHour,
       endHour: bounds.endHour,
       totalHeight: (bounds.endHour - bounds.startHour) * 60 * PX_PER_MINUTE,
       gridStartMin: bounds.startHour * 60,
     };
-  }, [days]);
+  }, [days, windowOverride]);
 
   const hours = useMemo(
     () => Array.from({ length: endHour - startHour + 1 }, (_, i) => startHour + i),

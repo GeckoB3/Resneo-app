@@ -28,6 +28,7 @@ import {
   TAP_SNAP_MINUTES,
   TIME_GUTTER_WIDTH,
   timeToMinutes,
+  type GridWindowOverride,
   type LaneInput,
 } from '@/components/calendar/grid-layout';
 import { Text } from '@/components/ui/Text';
@@ -90,6 +91,11 @@ type AllCalendarsDayGridProps = {
   calendars: AllCalendarColumn[];
   /** Venue open/closed state for the date (same across columns) → "Closed" shading. */
   venueHours?: VenueDayHours;
+  /**
+   * User's visible-window override (web parity: From/Until). Widens the shared
+   * time scale across all columns without clipping any booking outside it.
+   */
+  windowOverride?: GridWindowOverride | null;
   /** Current time in minutes-since-midnight, or null when not viewing today. */
   nowMinutes: number | null;
   onBlockPress: (bookingId: string) => void;
@@ -144,6 +150,7 @@ function positionColumn(
 export function AllCalendarsDayGrid({
   calendars,
   venueHours,
+  windowOverride,
   nowMinutes,
   onBlockPress,
   onEmptyPress,
@@ -175,14 +182,14 @@ export function AllCalendarsDayGrid({
         ranges.push({ start: timeToMinutes(sb.startTime), end: timeToMinutes(sb.endTime) });
       }
     }
-    const bounds = computeGridBounds(ranges);
+    const bounds = computeGridBounds(ranges, windowOverride);
     return {
       startHour: bounds.startHour,
       endHour: bounds.endHour,
       totalHeight: (bounds.endHour - bounds.startHour) * 60 * PX_PER_MINUTE,
       gridStartMin: bounds.startHour * 60,
     };
-  }, [calendars]);
+  }, [calendars, windowOverride]);
 
   const hours = useMemo(
     () => Array.from({ length: endHour - startHour + 1 }, (_, i) => startHour + i),

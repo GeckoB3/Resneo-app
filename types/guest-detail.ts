@@ -53,6 +53,17 @@ export interface GuestBookingHistoryRow {
   practitioner_name: string | null;
   service_name: string | null;
   area_name: string | null;
+  /**
+   * Anchor ids the GET route already returns (route maps them at
+   * `guests/[guestId]` ~L333-339) — used to pre-seed a per-visit rebook. The app
+   * just hadn't surfaced them. practitioner_id/calendar_id are the practitioner
+   * anchors; appointment_service_id/service_item_id the service anchors.
+   */
+  practitioner_id?: string | null;
+  appointment_service_id?: string | null;
+  calendar_id?: string | null;
+  service_item_id?: string | null;
+  service_variant_id?: string | null;
 }
 
 /** Custom client field definition from the venue setup. */

@@ -51,22 +51,77 @@ export function hourLabel(hour: number): string {
 export type GridBounds = { startHour: number; endHour: number };
 
 /**
+ * A user's visible-window preference (Calendar 02). Hours are 0–24; either side
+ * may be null to leave that edge auto-fitted. Mirrors the web's
+ * `startHourOverride`/`endHourOverride` persisted per venue.
+ */
+export type GridWindowOverride = {
+  /** Preferred first hour (0–23), or null to auto-fit the start. */
+  startHour?: number | null;
+  /** Preferred last hour (1–24), or null to auto-fit the end. */
+  endHour?: number | null;
+};
+
+/**
  * Pick grid start/end hours that contain every supplied minute-range (working
  * hours + bookings), so nothing is clipped. Falls back to the default window.
+ *
+ * An optional `override` lets the user pin the visible window (web parity:
+ * From/Until selects). The override is applied NON-DESTRUCTIVELY: it can only
+ * WIDEN the window, never clip content — the resolved window is the union of the
+ * content bounds and the override. So pinning 09:00–14:00 forces at least that
+ * window even on an empty day, but a booking at 16:00 still expands the end so it
+ * can never be hidden off-grid. A null edge leaves that side auto-fitted.
+ *
+ * When there are no content ranges, a supplied override edge replaces the
+ * corresponding default so an empty day honours the user's preferred window.
  */
-export function computeGridBounds(ranges: { start: number; end: number }[]): GridBounds {
+export function computeGridBounds(
+  ranges: { start: number; end: number }[],
+  override?: GridWindowOverride | null,
+): GridBounds {
+  const ovStart = normalizeOverrideHour(override?.startHour, 0, 23);
+  const ovEnd = normalizeOverrideHour(override?.endHour, 1, 24);
+
+  let startHour: number;
+  let endHour: number;
+
   if (ranges.length === 0) {
-    return { startHour: DEFAULT_START_HOUR, endHour: DEFAULT_END_HOUR };
+    // No content: the override (when present) defines the window; otherwise the
+    // default day window.
+    startHour = ovStart ?? DEFAULT_START_HOUR;
+    endHour = ovEnd ?? DEFAULT_END_HOUR;
+  } else {
+    let minStart = Infinity;
+    let maxEnd = -Infinity;
+    for (const range of ranges) {
+      minStart = Math.min(minStart, range.start);
+      maxEnd = Math.max(maxEnd, range.end);
+    }
+    const contentStart = Math.max(0, Math.floor(minStart / 60));
+    const contentEnd = Math.min(24, Math.ceil(maxEnd / 60));
+    // Override WIDENS only: take the earlier start and the later end so a pinned
+    // window can never clip a booking that falls outside it.
+    startHour = ovStart != null ? Math.min(ovStart, contentStart) : contentStart;
+    endHour = ovEnd != null ? Math.max(ovEnd, contentEnd) : contentEnd;
   }
-  let minStart = Infinity;
-  let maxEnd = -Infinity;
-  for (const range of ranges) {
-    minStart = Math.min(minStart, range.start);
-    maxEnd = Math.max(maxEnd, range.end);
-  }
-  const startHour = Math.max(0, Math.floor(minStart / 60));
-  const endHour = Math.min(24, Math.ceil(maxEnd / 60));
+
+  // Guarantee a sane, in-grid, at-least-one-hour window.
+  startHour = Math.max(0, Math.min(23, startHour));
+  endHour = Math.min(24, endHour);
   return { startHour, endHour: Math.max(endHour, startHour + 1) };
+}
+
+/** Coerce an override hour to an integer within [min, max], or null if unusable. */
+function normalizeOverrideHour(
+  value: number | null | undefined,
+  min: number,
+  max: number,
+): number | null {
+  if (value == null || Number.isNaN(value)) return null;
+  const rounded = Math.round(value);
+  if (rounded < min || rounded > max) return null;
+  return rounded;
 }
 
 // ---------------------------------------------------------------------------

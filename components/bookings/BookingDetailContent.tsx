@@ -53,7 +53,8 @@ import {
 import { useGuestDetail } from '@/lib/queries/useGuestDetail';
 import { useUpdateGuest } from '@/lib/queries/useGuestMutations';
 import { useManagedServices } from '@/lib/queries/useServicesManage';
-import { writeRebookBootstrap } from '@/lib/rebook-bootstrap';
+import { writeRebookBootstrap, type RebookBootstrapPayload } from '@/lib/rebook-bootstrap';
+import type { GuestBookingHistoryRow } from '@/types/guest-detail';
 import {
   canShowCancelStaffAttendanceConfirmationAction,
   canShowConfirmStaffAttendanceConfirmationAction,
@@ -162,6 +163,24 @@ function ContactRow({
   );
 }
 
+/**
+ * Appointment rebook block from a guest-history row, or null when the row isn't
+ * a repeatable appointment (events/classes/resources pick a fresh slot). Mirrors
+ * the practitioner/service id fallbacks used by the detail's Rebook action.
+ */
+function historyRowAppointment(
+  row: GuestBookingHistoryRow,
+): RebookBootstrapPayload['appointment'] | null {
+  const practitionerId = row.practitioner_id ?? row.calendar_id ?? null;
+  const serviceId = row.appointment_service_id ?? row.service_item_id ?? null;
+  if (!practitionerId || !serviceId) return null;
+  return {
+    serviceId,
+    practitionerId,
+    variantId: row.service_variant_id ?? null,
+  };
+}
+
 /** Other visits for this guest — loaded lazily on first expand. */
 function GuestHistoryBody({
   guestId,
@@ -178,11 +197,30 @@ function GuestHistoryBody({
   const HISTORY_VISIBLE_CAP = 10;
   const detail = useGuestDetail(guestId, { bookingHistoryLimit: HISTORY_FETCH_LIMIT });
 
+  const guest = detail.data?.guest;
   const otherVisits = (detail.data?.booking_history ?? []).filter(
     (row) => row.id !== currentBookingId,
   );
   const history = otherVisits.slice(0, HISTORY_VISIBLE_CAP);
   const hiddenCount = otherVisits.length - history.length;
+
+  /** Rebook a past visit — re-seed its service/practitioner (when it has one) + guest. */
+  const handleRebookRow = (row: GuestBookingHistoryRow) => {
+    void (async () => {
+      const appointment = historyRowAppointment(row);
+      await writeRebookBootstrap({
+        v: 1,
+        guest: {
+          firstName: guest?.first_name ?? undefined,
+          lastName: guest?.last_name ?? undefined,
+          email: guest?.email ?? null,
+          phone: guest?.phone ?? null,
+        },
+        ...(appointment ? { appointment } : {}),
+      });
+      router.push({ pathname: '/booking/new' });
+    })();
+  };
 
   return (
     <View style={styles.historyBody}>
@@ -210,10 +248,18 @@ function GuestHistoryBody({
                 {row.booking_time ? ` · ${row.booking_time.slice(0, 5)}` : ''}
               </Text>
             </View>
-            <StatusPill
-              status={row.status}
-              isTableReservation={row.booking_model === 'table_reservation'}
-            />
+            <View style={styles.historyTrailing}>
+              <StatusPill
+                status={row.status}
+                isTableReservation={row.booking_model === 'table_reservation'}
+              />
+              <Button
+                label="Rebook"
+                variant="ghost"
+                size="sm"
+                onPress={() => handleRebookRow(row)}
+              />
+            </View>
           </Pressable>
         ))
       )}
@@ -1006,6 +1052,31 @@ export function BookingDetailContent({
                     }}
                   />
                 ) : null}
+                {booking.guest_id ? (
+                  <QuickAction
+                    icon={{ ios: 'plus.circle', android: 'add_circle', web: 'add_circle' }}
+                    label="New for guest"
+                    onPress={() => {
+                      // Blank new booking pre-seeded with ONLY this guest's
+                      // contact (no service/practitioner) so staff can pick a
+                      // fresh offering. The bootstrap omits `appointment`; the
+                      // guest field is the only required part of the payload.
+                      void (async () => {
+                        const g = booking.guest;
+                        await writeRebookBootstrap({
+                          v: 1,
+                          guest: {
+                            firstName: g?.first_name ?? undefined,
+                            lastName: g?.last_name ?? undefined,
+                            email: g?.email ?? null,
+                            phone: g?.phone ?? null,
+                          },
+                        });
+                        router.push({ pathname: '/booking/new' });
+                      })();
+                    }}
+                  />
+                ) : null}
               </ScrollView>
             </View>
           ) : null}
@@ -1614,6 +1685,11 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     gap: 1,
+  },
+  historyTrailing: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
   tagsBlock: {
     marginTop: spacing.md,

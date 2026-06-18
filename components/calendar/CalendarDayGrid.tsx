@@ -20,6 +20,7 @@ import {
   TAP_SNAP_MINUTES,
   TIME_GUTTER_WIDTH,
   timeToMinutes,
+  type GridWindowOverride,
   type LaneInput,
 } from '@/components/calendar/grid-layout';
 import { Text } from '@/components/ui/Text';
@@ -120,6 +121,12 @@ type CalendarDayGridProps = {
   scheduleBlocks?: CalendarScheduleBlock[];
   /** Venue open/closed state for this date → shades the closed (out-of-hours) time. */
   venueHours?: VenueDayHours;
+  /**
+   * User's visible-window override (web parity: From/Until). Widens the grid to
+   * the pinned window without ever clipping a booking outside it. Null/omitted →
+   * auto-fit only.
+   */
+  windowOverride?: GridWindowOverride | null;
   /** Current time in minutes-since-midnight, or null when not viewing today. */
   nowMinutes: number | null;
   onBlockPress: (bookingId: string) => void;
@@ -165,6 +172,7 @@ export function CalendarDayGrid({
   sessions = [],
   scheduleBlocks = [],
   venueHours,
+  windowOverride,
   nowMinutes,
   onBlockPress,
   onStatusChange,
@@ -244,7 +252,7 @@ export function CalendarDayGrid({
       ranges.push({ start, end });
     }
 
-    const bounds = computeGridBounds(ranges);
+    const bounds = computeGridBounds(ranges, windowOverride);
     const gridStartMin = bounds.startHour * 60;
     const total = (bounds.endHour - bounds.startHour) * 60 * PX_PER_MINUTE;
 
@@ -307,7 +315,7 @@ export function CalendarDayGrid({
       positionedScheduleBlocks: scheduleItems,
       workingRanges: working,
     };
-  }, [bookings, workingHours, timeBlocks, sessions, scheduleBlocks]);
+  }, [bookings, workingHours, timeBlocks, sessions, scheduleBlocks, windowOverride]);
 
   const hours = useMemo(
     () => Array.from({ length: endHour - startHour + 1 }, (_, i) => startHour + i),

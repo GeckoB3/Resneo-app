@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { MonthGrid } from '@/components/calendar/MonthGrid';
+import { TimeRangeControl } from '@/components/calendar/TimeRangeControl';
+import { type GridWindowOverride } from '@/components/calendar/grid-layout';
 import { IconButton } from '@/components/ui/IconButton';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
@@ -18,6 +20,13 @@ type MonthPickerSheetProps = {
   counts: Record<string, number>;
   /** Selecting a day jumps the calendar to it (the caller also closes the sheet). */
   onSelectDay: (date: string) => void;
+  /**
+   * Current visible-window override. When `onWindowChange` is also supplied the
+   * sheet renders a From/Until control beneath the grid (web parity); omit both
+   * to hide it (e.g. on surfaces with no grid to clamp).
+   */
+  windowOverride?: GridWindowOverride | null;
+  onWindowChange?: (next: GridWindowOverride | null) => void;
   onClose: () => void;
 };
 
@@ -36,6 +45,8 @@ export function MonthPickerSheet({
   today,
   counts,
   onSelectDay,
+  windowOverride,
+  onWindowChange,
   onClose,
 }: MonthPickerSheetProps) {
   // The month the grid is showing — any date within it. Seeded from the anchor
@@ -67,6 +78,13 @@ export function MonthPickerSheet({
         />
       </View>
       <MonthGrid anchor={displayMonth} today={today} counts={counts} onSelectDay={onSelectDay} />
+
+      {/* Visible-window (From/Until) control — clamps the day/week grid to a
+          preferred window, persisted per venue by the caller. Hidden when the
+          caller wires no handler. */}
+      {onWindowChange ? (
+        <TimeRangeControl value={windowOverride ?? null} onChange={onWindowChange} />
+      ) : null}
     </Sheet>
   );
 }

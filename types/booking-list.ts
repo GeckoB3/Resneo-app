@@ -21,6 +21,12 @@ export interface BookingListRow {
   deposit_amount_pence?: number | null;
   /** Group booking UUID — present for multi-guest visits. */
   group_booking_id?: string | null;
+  /**
+   * Per-person label on group people visits ("Person 1", a name…). Returned by
+   * the list route; lets `collapseMultiServiceVisits` tell a multi-service visit
+   * (no label) from a group booking (each person labelled).
+   */
+  person_label?: string | null;
   booking_model?: string | null;
   booking_item_name?: string | null;
   /** Appointment anchors — practitioner venues use practitioner_id, unified use calendar_id. */

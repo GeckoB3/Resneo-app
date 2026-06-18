@@ -7,6 +7,7 @@ import { Dot } from '@/components/ui/Dot';
 import { PressableScale } from '@/components/ui/PressableScale';
 import { Text } from '@/components/ui/Text';
 import { hapticSelect } from '@/lib/haptics';
+import { formatPence } from '@/lib/format';
 import {
   bookingDisplayVisualKey,
   bookingStatusVisualForKey,
@@ -76,6 +77,13 @@ function BookingRowBase({
     .filter(Boolean)
     .join(' · ');
   const showDeposit = booking.deposit_status && !HIDDEN_DEPOSIT.has(booking.deposit_status);
+  // Web parity: show the amount alongside the status on the pill when known
+  // ("£20.00 · Paid"), falling back to the bare status when there's no figure.
+  const depositAmount = formatPence(booking.deposit_amount_pence);
+  const depositText =
+    depositAmount && booking.deposit_status
+      ? `${depositAmount} · ${booking.deposit_status}`
+      : booking.deposit_status;
   const attendanceConfirmed =
     !!booking.guest_attendance_confirmed_at || !!booking.staff_attendance_confirmed_at;
   const arrived = !!booking.client_arrived_at;
@@ -184,7 +192,7 @@ function BookingRowBase({
           </View>
         ) : showDeposit ? (
           <Text variant="caption" tone="muted" numberOfLines={1}>
-            {booking.deposit_status}
+            {depositText}
           </Text>
         ) : null}
       </View>

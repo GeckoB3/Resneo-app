@@ -176,6 +176,96 @@ describe('computeGridBounds', () => {
 });
 
 // ---------------------------------------------------------------------------
+// computeGridBounds with a visible-window OVERRIDE (Calendar 02 From/Until).
+// The override only ever WIDENS the window — it must never clip content.
+// ---------------------------------------------------------------------------
+describe('computeGridBounds — window override', () => {
+  it('uses the override window verbatim on an empty day', () => {
+    expect(computeGridBounds([], { startHour: 9, endHour: 14 })).toEqual({
+      startHour: 9,
+      endHour: 14,
+    });
+  });
+
+  it('falls back to the default window when both override edges are null', () => {
+    expect(computeGridBounds([], { startHour: null, endHour: null })).toEqual({
+      startHour: DEFAULT_START_HOUR,
+      endHour: DEFAULT_END_HOUR,
+    });
+  });
+
+  it('honours one override edge and defaults the other on an empty day', () => {
+    expect(computeGridBounds([], { startHour: 6 })).toEqual({
+      startHour: 6,
+      endHour: DEFAULT_END_HOUR,
+    });
+    expect(computeGridBounds([], { endHour: 22 })).toEqual({
+      startHour: DEFAULT_START_HOUR,
+      endHour: 22,
+    });
+  });
+
+  it('widens to the override even when content is narrower', () => {
+    // Content 10:00–11:00 but the user pinned 09:00–14:00 → show the full pin.
+    expect(
+      computeGridBounds([{ start: 600, end: 660 }], { startHour: 9, endHour: 14 }),
+    ).toEqual({ startHour: 9, endHour: 14 });
+  });
+
+  it('NEVER clips content that falls outside the override (override widens only)', () => {
+    // Pin 09:00–14:00 but a booking runs 15:00–16:00 → the end must expand to 16.
+    expect(
+      computeGridBounds([{ start: 900, end: 960 }], { startHour: 9, endHour: 14 }),
+    ).toEqual({ startHour: 9, endHour: 16 });
+    // A booking before the pinned start (07:00) likewise lowers the start to 7.
+    expect(
+      computeGridBounds([{ start: 420, end: 480 }], { startHour: 9, endHour: 14 }),
+    ).toEqual({ startHour: 7, endHour: 14 });
+  });
+
+  it('takes the earlier start / later end of content vs override per edge', () => {
+    // Content 08:00–18:00, pin 09:00–14:00 → union is 08:00–18:00 (content wins
+    // both edges here because it's wider).
+    expect(
+      computeGridBounds([{ start: 480, end: 1080 }], { startHour: 9, endHour: 14 }),
+    ).toEqual({ startHour: 8, endHour: 18 });
+  });
+
+  it('ignores out-of-range / NaN override hours (treated as null)', () => {
+    expect(computeGridBounds([], { startHour: -3, endHour: 99 })).toEqual({
+      startHour: DEFAULT_START_HOUR,
+      endHour: DEFAULT_END_HOUR,
+    });
+    expect(computeGridBounds([], { startHour: Number.NaN, endHour: Number.NaN })).toEqual({
+      startHour: DEFAULT_START_HOUR,
+      endHour: DEFAULT_END_HOUR,
+    });
+  });
+
+  it('rounds fractional override hours to the nearest hour', () => {
+    expect(computeGridBounds([], { startHour: 8.6, endHour: 17.4 })).toEqual({
+      startHour: 9,
+      endHour: 17,
+    });
+  });
+
+  it('still guarantees a ≥1h window when an override would collapse it', () => {
+    // A degenerate pin (start 10, end 10 is out of range for end<start guard) —
+    // end auto-fits, start pins; the floor keeps it at least one hour.
+    const bounds = computeGridBounds([], { startHour: 23 });
+    expect(bounds.endHour).toBeGreaterThan(bounds.startHour);
+  });
+
+  it('treats a null/undefined override exactly like the no-override call', () => {
+    const ranges = [{ start: 600, end: 660 }];
+    const plain = computeGridBounds(ranges);
+    expect(computeGridBounds(ranges, null)).toEqual(plain);
+    expect(computeGridBounds(ranges, undefined)).toEqual(plain);
+    expect(computeGridBounds(ranges, {})).toEqual(plain);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // computeLaneLayouts — overlapping blocks split into side-by-side lanes.
 // Inputs are px extents (top/bottom) measured from the grid top.
 // ---------------------------------------------------------------------------
