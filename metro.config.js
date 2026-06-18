@@ -38,4 +38,15 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
   }
 };
 
+// Keep co-located test files (e.g. app/**/X.test.tsx) OUT of the native bundle.
+// Expo Router's require.context scans the whole app/ dir, so without this it
+// bundles test files — pulling in @testing-library/react-native, which imports
+// the Node "console" module and breaks the native bundle. Jest is unaffected
+// (it doesn't use Metro). Merge with any existing default blockList.
+const testFileBlockList = [/.*\.(test|spec)\.[jt]sx?$/, /[\\/]__tests__[\\/].*/];
+config.resolver.blockList =
+  config.resolver.blockList == null
+    ? testFileBlockList
+    : [].concat(config.resolver.blockList, testFileBlockList);
+
 module.exports = config;
