@@ -8,24 +8,35 @@ import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { useComplianceDashboard, useComplianceFormLinks } from '@/lib/queries/useCompliance';
 
 /**
- * Compliance TEMPLATE (type) management — the Bearer-accessible subset of the
- * web dashboard's Settings → Compliance → Templates & types surface.
+ * Compliance TEMPLATE (type) management — the admin-facing subset of the web
+ * dashboard's Settings → Compliance → Templates & types surface.
  *
- * Bearer capability of /api/venue/compliance/types* (verified in the reference
- * repo, _reference/Resneo/src/app/api/venue/compliance):
- *  - GET   /types/[id]            createVenueRouteClient → Bearer OK (detail + current form schema)
- *  - PATCH /types/[id]            createVenueRouteClient → Bearer OK (admin; non-schema fields incl. is_active)
- *  - GET   /types (list)          bare createClient()    → cookie-only, 401 from the app
- *  - POST  /types (create)        bare createClient()    → cookie-only
- *  - POST  /types/[id]/archive    bare createClient()    → cookie-only (PATCH is_active works instead)
- *  - POST  /types/[id]/restore    bare createClient()    → cookie-only (PATCH is_active works instead)
- *  - GET/POST /types/[id]/versions bare createClient()   → cookie-only (form-field editing is web-only)
- *  - GET /library, POST /library/[slug]/clone             → cookie-only (template library is web-only)
+ * Auth: every /api/venue/compliance/types* route (and the library routes) now
+ * uses createVenueRouteClient(request), which is Bearer + cookie capable —
+ * verified in the live web working copy at C:\Resneo
+ * (src/app/api/venue/compliance). The app can therefore call all of these
+ * directly with a Bearer access token; none are cookie-only anymore:
+ *  - GET   /types[?include_archived=true]  list (any staff). Each row carries
+ *                                          current_version_number +
+ *                                          service_requirement_count +
+ *                                          record_count (listComplianceTypesWithCounts).
+ *  - POST  /types                          create a custom type (admin)
+ *  - GET   /types/[id]                     detail + current form schema (any staff)
+ *  - PATCH /types/[id]                     edit non-schema fields incl. is_active (admin)
+ *  - POST  /types/[id]/archive | /restore  soft archive / restore (admin)
+ *  - GET   /types/[id]/versions            list versions (any staff)
+ *  - POST  /types/[id]/versions            publish a new form-field version (admin)
+ *  - GET   /library                        built-in template library (any staff)
+ *  - POST  /library/[slug]/clone           clone a library template into the venue (admin)
  *
- * Because the list route is cookie-only, the app discovers template ids from
- * Bearer-accessible payloads instead: the compliance dashboard, outstanding
- * form links and the venue's captured records. Each discovered id is then
- * hydrated through GET /types/[id].
+ * Because the list route is now directly callable, the id-discovery approach in
+ * useDiscoveredComplianceTemplates below (deriving ids from the dashboard /
+ * form-links / records payloads) can be replaced by a direct
+ * GET /types?include_archived=true query. The hooks that exercise the
+ * create / version / library / clone / list routes (useCreateComplianceTemplate,
+ * useCreateComplianceVersion, useComplianceLibrary, useCloneComplianceTemplate,
+ * useComplianceTemplatesList) are tracked under the R7 compliance domain build;
+ * today this file ships only the detail + PATCH hooks plus the discovery fallback.
  */
 
 // ---------------------------------------------------------------------------
@@ -152,11 +163,12 @@ function isPlanGate(error: unknown): boolean {
 const FALLBACK_NAME = 'Compliance template';
 
 /**
- * Discover the venue's compliance templates from Bearer-accessible payloads:
- * dashboard rows, outstanding form links and captured records. The cookie-only
- * GET /types list cannot be called from the app, so templates that have never
- * been used and have no current activity will not appear — the UI should say
- * the complete list lives on the web dashboard.
+ * Discover the venue's compliance templates from already-loaded compliance
+ * payloads: dashboard rows, outstanding form links and captured records. This
+ * predates GET /types being Bearer-callable and is a fallback only — it misses
+ * templates that have never been used and have no current activity. Prefer a
+ * direct GET /types?include_archived=true list query (see the header note);
+ * this hook can be retired once useComplianceTemplatesList lands.
  */
 export function useDiscoveredComplianceTemplates() {
   const accessToken = useAccessToken();
@@ -286,9 +298,10 @@ export function useComplianceTemplateDetailsList(typeIds: string[]) {
 
 /**
  * PATCH /api/venue/compliance/types/[id] — admin-only edit of a template's
- * non-schema settings. Also used for archive/restore via `is_active` (the
- * dedicated /archive and /restore routes are cookie-only, but the same
- * `is_active` flag is what every read path checks).
+ * non-schema settings. Also archives/restores via `is_active` — the flag every
+ * read path checks. The dedicated /archive and /restore routes are Bearer-capable
+ * too now (see the header note) and could be wired up under the R7 build; this
+ * hook keeps using `is_active` because it already round-trips the updated row.
  */
 export function useUpdateComplianceTemplate() {
   const accessToken = useAccessToken();

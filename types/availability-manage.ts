@@ -81,4 +81,8 @@ export interface PatchPractitionerInput {
   break_times_by_day?: BreakTimesByDayMap | null;
   name?: string;
   is_active?: boolean;
+  /** Reorder position in the bookable-calendars list. */
+  sort_order?: number;
+  /** Per-calendar booking-link slug. */
+  slug?: string | null;
 }

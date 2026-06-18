@@ -1,8 +1,7 @@
 import { useMemo } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
-import { Segmented } from '@/components/ui/Segmented';
 import { Text } from '@/components/ui/Text';
 import { addDaysToDateStr, addMonthsToDateStr, formatMonthLabel } from '@/lib/dates/venue-dates';
 import { hapticSelect } from '@/lib/haptics';
@@ -13,14 +12,6 @@ const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
 /** Weeks-ahead quick-pick offsets for staff booking (web parity: +2 … +6). */
 const WEEK_OFFSETS = [2, 3, 4, 5, 6] as const;
-
-/** Compact label for a quick-pick date, e.g. "Mon 1 Jul". */
-function formatShortDate(iso: string): string {
-  // Parse as a local calendar date (noon avoids any TZ/DST drift on the label).
-  const [y, m, d] = iso.split('-').map(Number);
-  const date = new Date(y ?? 1970, (m ?? 1) - 1, d ?? 1, 12);
-  return date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
-}
 
 type Cell = { iso: string; day: number; inMonth: boolean };
 
@@ -60,13 +51,11 @@ type MonthDatePickerProps = {
    *  the user can't advance onto an empty "No times available" screen. */
   canContinue?: boolean;
   onContinue: () => void;
-  /** Booking source — drives the walk-in "Start now" shortcut. */
+  /** Booking source — drives the walk-in "Start Appointment Now" shortcut. */
   source?: 'phone' | 'walk-in';
-  /** When provided, renders a Phone / Walk-in toggle at the top of the page. */
-  onChangeSource?: (source: 'phone' | 'walk-in') => void;
   /** Venue IANA timezone, for computing "today" when starting a walk-in now. */
   timeZone?: string;
-  /** Walk-in shortcut — jumps straight to today's slots at the current time. */
+  /** Walk-in shortcut — books the appointment at the current time (no slot pick). */
   onStartNow?: (todayIso: string) => void;
   /** Heading copy (default "Choose a date"). */
   title?: string;
@@ -101,7 +90,6 @@ export function MonthDatePicker({
   canContinue = true,
   onContinue,
   source = 'phone',
-  onChangeSource,
   timeZone = 'Europe/London',
   onStartNow,
   title = 'Choose a date',
@@ -131,27 +119,20 @@ export function MonthDatePicker({
     <View style={styles.container}>
       <Text variant="heading">{title}</Text>
 
-      {onChangeSource ? (
-        <Segmented
-          options={[
-            { value: 'phone', label: 'Phone' },
-            { value: 'walk-in', label: 'Walk-in' },
-          ]}
-          value={source}
-          onChange={onChangeSource}
-        />
-      ) : null}
-
       {showStartNow ? (
         <Button
-          label="Start now"
-          variant="secondary"
+          label="Start Appointment Now"
+          variant="primary"
           fullWidth
           onPress={() => onStartNow?.(venueToday(timeZone))}
         />
       ) : null}
 
-      <View style={styles.monthNav}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}>
+        <View style={styles.monthNav}>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Previous month"
@@ -249,7 +230,7 @@ export function MonthDatePicker({
               <Pressable
                 key={weeks}
                 accessibilityRole="button"
-                accessibilityLabel={`In ${weeks} weeks, ${formatShortDate(iso)}`}
+                accessibilityLabel={`In ${weeks} weeks`}
                 accessibilityState={{ selected: isSelected }}
                 onPress={() => {
                   hapticSelect();
@@ -268,27 +249,22 @@ export function MonthDatePicker({
                 <Text variant="label" color={isSelected ? colors.onBrand : colors.text}>
                   +{weeks} wk
                 </Text>
-                <Text
-                  variant="caption"
-                  color={isSelected ? colors.onBrand : colors.textMuted}
-                  numberOfLines={1}>
-                  {formatShortDate(iso)}
-                </Text>
               </Pressable>
             );
           })}
         </View>
       ) : null}
 
-      {!isLoading && !monthHasAvailability ? (
-        <Text variant="caption" tone="muted" style={styles.hint}>
-          No open times this month. Try another month{showStartNow ? ' or start a walk-in now' : ''}.
-        </Text>
-      ) : (
-        <Text variant="caption" tone="muted" style={styles.hint}>
-          {availabilityHint}
-        </Text>
-      )}
+        {!isLoading && !monthHasAvailability ? (
+          <Text variant="caption" tone="muted" style={styles.hint}>
+            No open times this month. Try another month{showStartNow ? ' or start the appointment now' : ''}.
+          </Text>
+        ) : (
+          <Text variant="caption" tone="muted" style={styles.hint}>
+            {availabilityHint}
+          </Text>
+        )}
+      </ScrollView>
 
       <Button
         label="Continue"
@@ -303,7 +279,17 @@ export function MonthDatePicker({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    gap: spacing.sm,
+  },
+  // The calendar + shortcuts + hint scroll between the pinned heading/walk-in
+  // button and the pinned "Continue", so the picker always fits and "Continue"
+  // stays reachable on short screens (other wizard steps follow the same shape).
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
     gap: spacing.md,
+    paddingBottom: spacing.sm,
   },
   monthNav: {
     flexDirection: 'row',
@@ -353,7 +339,6 @@ const styles = StyleSheet.create({
     flexBasis: 0,
     minWidth: 64,
     alignItems: 'center',
-    gap: 2,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.xs,
     borderWidth: 1,

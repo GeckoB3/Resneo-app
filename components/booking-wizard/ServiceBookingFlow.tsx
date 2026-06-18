@@ -9,7 +9,7 @@ import { GuestDetailsStep } from '@/components/booking-wizard/GuestDetailsStep';
 import { MonthDatePicker } from '@/components/booking-wizard/MonthDatePicker';
 import { PractitionerStep } from '@/components/booking-wizard/PractitionerStep';
 import { ServicePickerStep } from '@/components/booking-wizard/ServicePickerStep';
-import { TimeSlotStep } from '@/components/booking-wizard/TimeSlotStep';
+import { TimeSlotStep, venueLocalTime } from '@/components/booking-wizard/TimeSlotStep';
 import { VariantStep } from '@/components/booking-wizard/VariantStep';
 import { WizardStepIndicator } from '@/components/booking-wizard/WizardStepIndicator';
 import { Button } from '@/components/ui/Button';
@@ -29,6 +29,7 @@ import { useLinkedVenueContext } from '@/providers/LinkedVenueProvider';
 import { spacing } from '@/theme/index';
 import type { AppointmentSlot } from '@/types/appointment-availability';
 import {
+  ANY_AVAILABLE_PRACTITIONER_ID,
   type AppointmentCatalogPractitioner,
   type AppointmentCatalogVariant,
   type AppointmentServiceOption,
@@ -208,6 +209,40 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
       if (next) setCurrentStepKey(next);
     },
     [steps],
+  );
+
+  // Walk-in "Start Appointment Now" (web parity: the staff walk-in button on the
+  // date/time step). Books the chosen service at the current venue-local time
+  // WITHOUT picking a slot — synthesise a slot at "now" and skip straight to the
+  // (optional) guest step. The create posts source:'walk-in', so the server
+  // stamps it "Started" and it lands on the calendar immediately.
+  const startWalkInNow = useCallback(
+    (todayIso: string) => {
+      if (!selectedService) return;
+      const nowTime = venueLocalTime(timeZone); // HH:mm in the venue timezone
+      const duration =
+        durationOverride ?? selectedVariant?.duration_minutes ?? selectedService.durationMinutes;
+      // An "Any available" pick carries a sentinel id — resolve a concrete
+      // practitioner so the booking targets a real column on the calendar.
+      const practitionerId =
+        selectedService.practitionerId === ANY_AVAILABLE_PRACTITIONER_ID
+          ? selectedService.candidatePractitionerIds?.[0] ?? selectedService.practitionerId
+          : selectedService.practitionerId;
+      const nowSlot: AppointmentSlot = {
+        practitioner_id: practitionerId,
+        practitioner_name: selectedService.practitionerName ?? '',
+        service_id: selectedService.serviceId,
+        service_name: selectedService.serviceName,
+        start_time: `${nowTime}:00`,
+        duration_minutes: duration,
+        price_pence: (selectedVariant?.price_pence ?? selectedService.pricePence) ?? null,
+      };
+      setMonthAnchor(todayIso);
+      setSelectedDate(todayIso);
+      setSelectedSlot(nowSlot);
+      goToStep('guest');
+    },
+    [selectedService, selectedVariant, durationOverride, timeZone, goToStep],
   );
 
   // Apply rebook bootstrap on mount (after catalog loads).
@@ -556,14 +591,8 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           onContinue={() => advanceFrom('date')}
           weekShortcuts
           source={source}
-          onChangeSource={setSource}
           timeZone={timeZone}
-          onStartNow={(iso) => {
-            setMonthAnchor(iso);
-            setSelectedDate(iso);
-            setSelectedSlot(null);
-            goToStep('time');
-          }}
+          onStartNow={startWalkInNow}
         />
       ) : null}
 

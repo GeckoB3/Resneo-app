@@ -86,6 +86,9 @@ jest.mock('react-native-reanimated', () => {
       };
     },
     useAnimatedStyle: (factory) => (typeof factory === 'function' ? factory() : {}),
+    // Returns the resolved prop object once (no animation) so animated SVG
+    // components (e.g. the shimmer Skeleton) render their first frame in tests.
+    useAnimatedProps: (factory) => (typeof factory === 'function' ? factory() : {}),
     useDerivedValue: (factory) => {
       const value = typeof factory === 'function' ? factory() : undefined;
       return { value, get: () => value, set: () => {} };

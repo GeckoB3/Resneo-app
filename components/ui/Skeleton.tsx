@@ -1,12 +1,13 @@
 import { useEffect } from 'react';
-import { type DimensionValue, type StyleProp, type ViewStyle } from 'react-native';
+import { View, type DimensionValue, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, {
   Easing,
-  useAnimatedStyle,
+  useAnimatedProps,
   useSharedValue,
   withRepeat,
   withTiming,
 } from 'react-native-reanimated';
+import { Defs, LinearGradient, Rect, Stop, Svg } from 'react-native-svg';
 
 import { useReduceMotion } from '@/lib/motion';
 import { radius as radiusTokens } from '@/theme/index';
@@ -19,41 +20,85 @@ type SkeletonProps = {
   style?: StyleProp<ViewStyle>;
 };
 
-/** Pulsing placeholder block shown while content loads. */
-export function Skeleton({ width = '100%', height = 16, radius = radiusTokens.sm, style }: SkeletonProps) {
+const AnimatedLinearGradient = Animated.createAnimatedComponent(LinearGradient);
+
+/** Width of the moving highlight band, as a fraction of the block width. */
+const BAND = 0.4;
+const SHIMMER_DURATION = 1100;
+
+/**
+ * Skeleton — a loading placeholder block.
+ *
+ * Reduce-motion (or the rare zero-width measure): render a calm, static
+ * mid-tone block — no SVG, no animation. This early return is split into its own
+ * branch BEFORE the animated component mounts so no animation hooks run in that
+ * path (and the static block is what reduce-motion users see).
+ *
+ * Otherwise: a left→right shimmer built from a `react-native-svg` `LinearGradient`
+ * whose stops sweep across the block, driven by a single looping Reanimated shared
+ * value (UI thread). No `expo-linear-gradient` — the gradient rides the already
+ * present `react-native-svg` dependency.
+ */
+export function Skeleton({
+  width = '100%',
+  height = 16,
+  radius = radiusTokens.sm,
+  style,
+}: SkeletonProps) {
   const { colors } = useTheme();
   const reduceMotion = useReduceMotion();
-  // Rest at a static mid-opacity when reduce-motion is on; the pulse animates
-  // from this baseline otherwise so the first frame matches the static block.
-  const opacity = useSharedValue(0.7);
+
+  // Static block for reduce-motion users — calm, legible, and animation-free.
+  if (reduceMotion) {
+    return (
+      <View
+        accessibilityElementsHidden
+        importantForAccessibility="no"
+        style={[{ width, height, borderRadius: radius, backgroundColor: colors.skeleton }, style]}
+      />
+    );
+  }
+
+  return <ShimmerSkeleton width={width} height={height} radius={radius} style={style} />;
+}
+
+function ShimmerSkeleton({ width, height, radius, style }: Required<Omit<SkeletonProps, 'style'>> & { style?: StyleProp<ViewStyle> }) {
+  const { colors } = useTheme();
+  // 0 → 1 sweeps the highlight band from off-left to off-right and loops.
+  const progress = useSharedValue(0);
 
   useEffect(() => {
-    // Reduce-motion: skip the infinite pulse entirely and stay at a calm,
-    // legible mid-opacity block (no withRepeat → no continuous animation).
-    if (reduceMotion) {
-      opacity.set(0.7);
-      return;
-    }
-    // Gentle fade in/out loop to signal "loading" without distracting motion.
-    opacity.set(0.5);
-    opacity.set(
-      withRepeat(
-        withTiming(1, { duration: 800, easing: Easing.inOut(Easing.ease) }),
-        -1,
-        true,
-      ),
+    progress.set(
+      withRepeat(withTiming(1, { duration: SHIMMER_DURATION, easing: Easing.inOut(Easing.ease) }), -1, false),
     );
-  }, [opacity, reduceMotion]);
+  }, [progress]);
 
-  const animatedStyle = useAnimatedStyle(() => ({ opacity: opacity.get() }));
+  // Sweep the gradient's x window across [-BAND, 1 + BAND] in object-bounding-box
+  // units so the highlight enters from the left and exits the right each loop.
+  const animatedProps = useAnimatedProps(() => {
+    const t = progress.get();
+    const start = -BAND + t * (1 + BAND);
+    return {
+      x1: `${start}`,
+      x2: `${start + BAND}`,
+    };
+  });
 
   return (
-    <Animated.View
-      style={[
-        { width, height, borderRadius: radius, backgroundColor: colors.skeleton },
-        animatedStyle,
-        style,
-      ]}
-    />
+    <View
+      accessibilityElementsHidden
+      importantForAccessibility="no"
+      style={[{ width, height, borderRadius: radius, overflow: 'hidden', backgroundColor: colors.skeleton }, style]}>
+      <Svg width="100%" height="100%">
+        <Defs>
+          <AnimatedLinearGradient id="skeletonShimmer" y1="0" y2="0" animatedProps={animatedProps}>
+            <Stop offset="0" stopColor={colors.skeleton} stopOpacity="0" />
+            <Stop offset="0.5" stopColor={colors.surfaceRaised} stopOpacity="0.65" />
+            <Stop offset="1" stopColor={colors.skeleton} stopOpacity="0" />
+          </AnimatedLinearGradient>
+        </Defs>
+        <Rect x="0" y="0" width="100%" height="100%" fill="url(#skeletonShimmer)" />
+      </Svg>
+    </View>
   );
 }

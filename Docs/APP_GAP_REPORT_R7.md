@@ -2,6 +2,39 @@
 
 **Date:** 2026-06-17 · **Scope:** staff/venue-operator parity with the web dashboard (/dashboard/*, /email-templates, settings). Out of scope: customer booking flow, marketing/SEO pages, super-admin. **Method:** code-level comparison of the app against the web mirror at _reference/Resneo (the authed web dashboard cannot be driven live: CORS + light-only preview + no Android emulator), with an adversarial verification pass on every claimed gap. **North Star:** a staff user can do almost everything in the app that the web allows, with a beautiful, intuitive UI.
 
+---
+
+## 🛠 Implementation status (live tracker)
+
+> Branch: `feat/r7-parity-implementation`. Verification gate per wave: `npm run typecheck` + `npm run lint` + `npm test` (230+ tests). Full-stack authorized (web repo `C:\Resneo` may be edited to unblock routes). Native-module items (Stripe capture, drawn signature, QR) are implemented and flagged **⚙️ needs device smoke-test**. Documented intentional exclusions (restaurant tables/floor-plan, public/customer surfaces) are **out of scope** by design.
+>
+> Legend: ⬜ not started · 🔧 in progress · ✅ done & verified · ⚙️ done, needs device test · ⏭️ intentionally skipped
+
+| # | Domain | Parity (start) | Gaps C/H/M/L | Status | Notes |
+|---|--------|----------------|--------------|--------|-------|
+| F | Foundations (shared types + primitives) | — | — | ✅ | venue.ts + practitioner/availability types widened; `ApiError` 409 `acknowledge` threading; SecureStore `usePersistedCalendarPrefs`; new `SectionCard`/`HelpTooltip`/`StatTile`+`MiniSparkline`/`CompliancePill`/shimmer `Skeleton`/`PhoneInput`; +35 tests. No new deps. |
+| B | Backend prerequisites (`C:\Resneo`) | — | — | ✅⚠️ | B1 overrides + B2 practitioner-services → Bearer; B3 `referrals` GET created; web typecheck clean. **Uncommitted in `C:\Resneo` — needs your commit + deploy.** Audit's other backend prereqs were already done (stale premise). |
+| 01 | Navigation & IA | strong | 0/1/3/2 | ⬜ | |
+| 02 | Calendar / Diary | strong | 0/0/5/2 | ⬜ | |
+| 03 | Bookings — list & detail | strong | 0/0/2/6 | ⬜ | |
+| 04 | New booking wizard | partial | 2/1/4/2 | ⬜ | group + multi-service + Stripe |
+| 05 | Clients / Contacts / Import | strong | 0/1/1/5 | ⬜ | |
+| 06 | Classes & Events | strong | 0/2/1/5 | ⬜ | class-commerce |
+| 07 | Resources / Floor-plan / Tables | strong | 0/0/0/4 | ⬜ | tables suite ⏭️ |
+| 08 | Availability / Hours / Closures | partial | 1/1/2/3 | ⬜ | bookable-calendar mgmt |
+| 09 | Waitlist | strong | 0/2/2/2 | ⬜ | |
+| 10 | Home / Reports / Referrals | partial | 0/1/2/7 | ⬜ | |
+| 11 | Services & Add-ons | strong | 0/2/3/3 | ⬜ | |
+| 12 | Booking Page / Widget | partial | 0/1/3/3 | ⬜ | |
+| 13 | Compliance & Intake Forms | partial | 3/4/3/2 | ⬜ | weakest; authoring stack |
+| 14 | Settings / Account / Plan / Team | strong | 1/1/3/2 | ⬜ | venue deletion |
+| 15 | Communications / Templates | strong | 0/1/1/1 | ⬜ | |
+| 16 | Linked Venues & Collectives | strong | 0/0/1/4 | ⬜ | |
+| 17 | Auth / Onboarding / Support | partial | 0/2/2/2 | ⬜ | set-password, onboarding |
+| 18 | Design Language & UX | strong | 0/0/0/5 | ⬜ | folded into Foundations |
+
+_Execution plan & wave sequencing: `Docs/audit-r7/EXECUTION_PLAN.md`. Updated as each wave lands._
+
 ## Executive summary
 
 The Resneo mobile app is a mature, broadly feature-complete staff client. Across 18 audited domains, 12 are at **strong** parity and 6 are **partial**; none are weak or stub-level. The day-to-day operational core — Calendar/Diary, Bookings list & detail, Clients, Classes & Events, Resources, Waitlist, Settings/Account/Team, Communications, and Linked Venues — all rate strong, with most remaining gaps being polish (UI density, stats strips, tooltips) rather than missing capability. The app is not a thin companion: it owns full in-app CRUD for the booking page, services with inline variants/add-ons, resource scheduling with a date-exceptions calendar, business-hours closures, push-notification preferences, and a complete linked-venues/collectives surface. The headline finding is the same as prior rounds — the app's risk is concentrated in a handful of correctness/coverage gaps, not in breadth.

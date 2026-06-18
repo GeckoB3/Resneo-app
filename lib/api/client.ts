@@ -7,6 +7,18 @@ export interface ApiErrorBody {
   code?: string;
   details?: unknown;
   fallback?: boolean;
+  /**
+   * Set on a 409 from booking-impact endpoints (opening-hours / practitioners
+   * PATCH) when narrowing hours would orphan existing bookings. The caller
+   * re-runs the request with `acknowledge: true` to proceed knowingly.
+   */
+  requires_confirmation?: boolean;
+  /** Human-readable summary of the affected bookings (shown in the armed-confirm UI). */
+  message?: string;
+  /** How many upcoming bookings fall outside the new hours. */
+  affected_count?: number;
+  /** A small sample of the affected bookings for the confirm copy. */
+  affected_bookings?: unknown;
 }
 
 export function isApiErrorBody(body: unknown): body is ApiErrorBody {
@@ -15,6 +27,29 @@ export function isApiErrorBody(body: unknown): body is ApiErrorBody {
     body !== null &&
     'error' in body &&
     typeof (body as ApiErrorBody).error === 'string'
+  );
+}
+
+/** The 409 booking-impact body — `{ requires_confirmation, message?, … }` with no `error` key. */
+export interface RequiresConfirmationBody {
+  requires_confirmation: true;
+  message?: string;
+  affected_count?: number;
+  affected_bookings?: unknown;
+}
+
+/**
+ * Narrow an `ApiError.body` to the 409 "requires confirmation" shape. The
+ * orphan-check 409 carries `requires_confirmation: true` (and no `error` field),
+ * so `isApiErrorBody` does NOT match it — use this guard instead.
+ */
+export function isRequiresConfirmationBody(
+  body: unknown,
+): body is RequiresConfirmationBody {
+  return (
+    typeof body === 'object' &&
+    body !== null &&
+    (body as { requires_confirmation?: unknown }).requires_confirmation === true
   );
 }
 

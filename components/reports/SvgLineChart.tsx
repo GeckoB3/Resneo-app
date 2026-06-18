@@ -59,7 +59,12 @@ const Y_GRID_LINES = 4;
 const TOUCH_AREA_WIDTH = 32; // invisible tap zone around each point
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-function buildLinePath(points: { x: number; y: number }[]): string {
+/**
+ * Build a smooth (mid-point cubic) SVG path through the given points. Exported so
+ * the compact `MiniSparkline` (StatTile) can reuse the exact same curve drawing
+ * without duplicating it — read-only reuse, behaviour unchanged for this chart.
+ */
+export function buildLinePath(points: { x: number; y: number }[]): string {
   if (points.length === 0) return '';
   if (points.length === 1) return `M${points[0].x},${points[0].y}`;
 
@@ -73,7 +78,8 @@ function buildLinePath(points: { x: number; y: number }[]): string {
   return d;
 }
 
-function buildAreaPath(
+/** Close a line path down to `chartBottom` to form a fillable area. Exported for MiniSparkline reuse. */
+export function buildAreaPath(
   points: { x: number; y: number }[],
   chartBottom: number,
 ): string {

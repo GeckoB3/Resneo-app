@@ -219,17 +219,29 @@ export function useDeleteLeave() {
   });
 }
 
+/**
+ * Input to {@link usePatchPractitioner}: the practitioner patch plus an optional
+ * `acknowledge` flag. Narrowing a calendar's working hours can orphan upcoming
+ * bookings; the route replies 409 `{ requires_confirmation, message }` unless the
+ * caller re-runs with `acknowledge: true`, which threads
+ * `?acknowledge_affected_bookings=true`.
+ */
+export type PatchPractitionerWithAck = PatchPractitionerInput & { acknowledge?: boolean };
+
 /** PATCH /api/venue/practitioners — update working hours and/or breaks. */
 export function usePatchPractitioner() {
   const accessToken = useAccessToken();
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ id, ...patch }: PatchPractitionerInput): Promise<unknown> => {
+    mutationFn: async ({ acknowledge, id, ...patch }: PatchPractitionerWithAck): Promise<unknown> => {
       if (!accessToken) {
         throw new Error('Missing access token');
       }
-      return apiFetch<unknown>('/api/venue/practitioners', {
+      const path = acknowledge
+        ? '/api/venue/practitioners?acknowledge_affected_bookings=true'
+        : '/api/venue/practitioners';
+      return apiFetch<unknown>(path, {
         accessToken,
         method: 'PATCH',
         body: JSON.stringify({ id, ...patch }),

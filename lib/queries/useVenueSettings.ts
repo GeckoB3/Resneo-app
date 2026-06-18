@@ -137,17 +137,28 @@ export function useUpdateFeatureFlags() {
   });
 }
 
+/**
+ * Input to {@link useUpdateOpeningHours}: the weekly hours plus an optional
+ * `acknowledge` flag. Narrowing hours can orphan upcoming bookings; the route
+ * replies 409 `{ requires_confirmation, message }` unless the caller re-runs
+ * with `acknowledge: true`, which threads `?acknowledge_affected_bookings=true`.
+ */
+export type UpdateOpeningHoursInput = OpeningHours & { acknowledge?: boolean };
+
 /** PATCH /api/venue/opening-hours — replace weekly hours (admin only). */
 export function useUpdateOpeningHours() {
   const accessToken = useAccessToken();
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (hours: OpeningHours): Promise<unknown> => {
+    mutationFn: async ({ acknowledge, ...hours }: UpdateOpeningHoursInput): Promise<unknown> => {
       if (!accessToken) {
         throw new Error('Missing access token');
       }
-      return apiFetch<unknown>('/api/venue/opening-hours', {
+      const path = acknowledge
+        ? '/api/venue/opening-hours?acknowledge_affected_bookings=true'
+        : '/api/venue/opening-hours';
+      return apiFetch<unknown>(path, {
         accessToken,
         method: 'PATCH',
         body: JSON.stringify(hours),
