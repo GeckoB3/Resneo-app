@@ -1,9 +1,8 @@
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { RefreshControl, StyleSheet, View } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 
-import { LinkedBookingCreateSheet } from '@/components/linked/LinkedBookingCreateSheet';
 import { LinkedBookingDetailSheet } from '@/components/linked/LinkedBookingDetailSheet';
 import { LinkedVenueCalendarGrid } from '@/components/linked/LinkedVenueCalendarGrid';
 import { DatePickerField } from '@/components/ui/DatePickerField';
@@ -36,7 +35,6 @@ function nowMinutesInTz(timeZone: string): number {
 
 type SheetState =
   | { kind: 'detail'; venue: LinkedVenueCalendar; booking: LinkedBooking }
-  | { kind: 'create'; venue: LinkedVenueCalendar }
   | null;
 
 /**
@@ -48,6 +46,7 @@ type SheetState =
  */
 export default function LinkedCalendarScreen() {
   const { colors } = useTheme();
+  const router = useRouter();
   const { venue } = useVenueContext();
   const timeZone = venue?.timezone ?? 'Europe/London';
   const today = calendarDateInTimeZone(new Date(), timeZone);
@@ -137,19 +136,35 @@ export default function LinkedCalendarScreen() {
     <Screen
       scroll
       padded={false}
-      contentContainerStyle={styles.content}>
+      contentContainerStyle={styles.content}
+      refreshControl={
+        <RefreshControl
+          refreshing={query.isRefetching}
+          onRefresh={() => void query.refetch()}
+          tintColor={colors.brand}
+          colors={[colors.brand]}
+        />
+      }>
       {header}
 
+      {/* Each grid renders `embedded` (full height, no own vertical scroll) so
+          this Screen's ScrollView owns the single vertical scroll — otherwise
+          each grid's own ScrollView swallows the pan and the venues below the
+          first become unreachable. The Screen owns pull-to-refresh. */}
       {venues.map((v) => (
         <LinkedVenueCalendarGrid
           key={v.venueId}
+          embedded
           venue={v}
           date={date}
           nowMinutes={nowMinutes}
-          refreshing={query.isRefetching}
-          onRefresh={() => void query.refetch()}
           onOpenBooking={(booking) => setSheet({ kind: 'detail', venue: v, booking })}
-          onCreate={() => setSheet({ kind: 'create', venue: v })}
+          onCreate={() =>
+            router.push({
+              pathname: '/booking/new',
+              params: { ownerVenueId: v.venueId, ownerVenueName: v.venueName, date },
+            })
+          }
         />
       ))}
 
@@ -159,17 +174,6 @@ export default function LinkedCalendarScreen() {
         booking={sheet?.kind === 'detail' ? sheet.booking : null}
         onClose={() => setSheet(null)}
         onSaved={() => void query.refetch()}
-      />
-
-      <LinkedBookingCreateSheet
-        visible={sheet?.kind === 'create'}
-        venue={sheet?.kind === 'create' ? sheet.venue : null}
-        date={date}
-        onClose={() => setSheet(null)}
-        onSaved={() => {
-          setSheet(null);
-          void query.refetch();
-        }}
       />
     </Screen>
   );

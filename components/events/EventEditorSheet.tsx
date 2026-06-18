@@ -1,4 +1,5 @@
 import { format } from 'date-fns';
+import { Image } from 'expo-image';
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 
@@ -193,6 +194,8 @@ export function EventEditorSheet({ target, onClose, onSaved }: EventEditorSheetP
   const [endMinutes, setEndMinutes] = useState(20 * 60);
   const [capacity, setCapacity] = useState('20');
   const [imageUrl, setImageUrl] = useState('');
+  // Hides the banner preview when the remote image fails to load (web parity).
+  const [imageError, setImageError] = useState(false);
   const [tickets, setTickets] = useState<TicketDraft[]>([blankTicket()]);
   const [calendarId, setCalendarId] = useState<string | null>(null);
   const [advanceDays, setAdvanceDays] = useState('90');
@@ -247,6 +250,7 @@ export function EventEditorSheet({ target, onClose, onSaved }: EventEditorSheetP
       setEndMinutes(hhmmToMinutes(ev.end_time));
       setCapacity(String(ev.capacity));
       setImageUrl(ev.image_url ?? '');
+      setImageError(false);
       setTickets(
         ev.ticket_types.length > 0
           ? [...ev.ticket_types]
@@ -275,6 +279,7 @@ export function EventEditorSheet({ target, onClose, onSaved }: EventEditorSheetP
       setEndMinutes(20 * 60);
       setCapacity('20');
       setImageUrl('');
+      setImageError(false);
       setTickets([blankTicket()]);
       setCalendarId(null);
       setAdvanceDays('90');
@@ -470,7 +475,7 @@ export function EventEditorSheet({ target, onClose, onSaved }: EventEditorSheetP
   }
 
   return (
-    <Sheet visible={target !== null} onClose={onClose} maxHeight="92%">
+    <Sheet visible={target !== null} onClose={onClose} maxHeight="92%" fill>
       <View style={styles.bodyWrap}>
         <Text variant="overline" tone="muted">
           {editing ? 'Edit event' : 'New event'}
@@ -523,10 +528,25 @@ export function EventEditorSheet({ target, onClose, onSaved }: EventEditorSheetP
             optional
             helper="A link to the event's banner image."
             value={imageUrl}
-            onChangeText={setImageUrl}
+            onChangeText={(v) => {
+              setImageUrl(v);
+              if (imageError) setImageError(false);
+            }}
             autoCapitalize="none"
             keyboardType="url"
           />
+          {/^https?:\/\//i.test(imageUrl.trim()) && !imageError ? (
+            <View style={styles.imagePreviewWrap}>
+              <Text variant="caption" tone="muted">Preview</Text>
+              <Image
+                source={{ uri: imageUrl.trim() }}
+                style={[styles.imagePreview, { borderColor: colors.border }]}
+                contentFit="cover"
+                onError={() => setImageError(true)}
+                accessibilityLabel="Event banner preview"
+              />
+            </View>
+          ) : null}
 
           {/* Repeats (create only — edit is always a single date) */}
           {!editing ? (
@@ -857,10 +877,12 @@ export function EventEditorSheet({ target, onClose, onSaved }: EventEditorSheetP
 
 const styles = StyleSheet.create({
   bodyWrap: {
+    flex: 1,
+    paddingHorizontal: spacing.lg,
     gap: spacing.md,
   },
   scroll: {
-    flexGrow: 0,
+    flex: 1,
   },
   body: {
     gap: spacing.md,
@@ -869,6 +891,15 @@ const styles = StyleSheet.create({
   multiline: {
     minHeight: 72,
     textAlignVertical: 'top',
+  },
+  imagePreviewWrap: {
+    gap: spacing.xs,
+  },
+  imagePreview: {
+    width: '100%',
+    height: 160,
+    borderRadius: radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   pickerRow: {
     flexDirection: 'row',

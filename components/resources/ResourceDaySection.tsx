@@ -1,6 +1,7 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Badge, StatusPill } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
 import type { ResourceDayBookingRow, ResourceListItem } from '@/lib/queries/useResources';
@@ -41,15 +42,30 @@ type ResourceDaySectionProps = {
   /** This resource's bookings for the selected day, sorted by start time. */
   bookings: ResourceDayBookingRow[];
   onPressBooking: (bookingId: string) => void;
+  /** Book a slot on this resource (web's "Book this resource"). */
+  onBook?: (resourceId: string) => void;
+  /** Open the editor for this resource's setup (slot grid, pricing, hours). */
+  onEdit?: (resourceId: string) => void;
 };
 
 /**
- * One resource's day: header (colour dot, name, active state, count) and the
- * day's bookings as tappable rows — time, guest, status. Mirrors the web
- * resource-timeline "Bookings" panel as a simple list (no drag/drop).
+ * One resource's day: header (colour dot, name, active state, count), optional
+ * Book / Edit actions, and the day's bookings as tappable rows — time, guest,
+ * status. Mirrors the web resource-timeline panel (list, no drag/drop).
  */
-export function ResourceDaySection({ resource, bookings, onPressBooking }: ResourceDaySectionProps) {
+export function ResourceDaySection({
+  resource,
+  bookings,
+  onPressBooking,
+  onBook,
+  onEdit,
+}: ResourceDaySectionProps) {
   const { colors } = useTheme();
+
+  // Booking a resource needs an active, bookable column (the booking flow only
+  // offers active resources); editing is always available.
+  const canBook = Boolean(onBook) && resource.is_active;
+  const showActions = canBook || Boolean(onEdit);
 
   return (
     <Card padded={false}>
@@ -67,6 +83,29 @@ export function ResourceDaySection({ resource, bookings, onPressBooking }: Resou
             : `${bookings.length} ${bookings.length === 1 ? 'booking' : 'bookings'}`}
         </Text>
       </View>
+
+      {showActions ? (
+        <View style={[styles.actions, { borderTopColor: colors.border }]}>
+          {canBook ? (
+            <Button
+              label="Book"
+              variant="secondary"
+              size="sm"
+              style={styles.actionBtn}
+              onPress={() => onBook!(resource.id)}
+            />
+          ) : null}
+          {onEdit ? (
+            <Button
+              label="Edit"
+              variant="ghost"
+              size="sm"
+              style={styles.actionBtn}
+              onPress={() => onEdit(resource.id)}
+            />
+          ) : null}
+        </View>
+      ) : null}
 
       {bookings.length === 0 ? (
         <View style={[styles.emptyRow, { borderTopColor: colors.border }]}>
@@ -131,6 +170,16 @@ const styles = StyleSheet.create({
     borderRadius: 5,
   },
   name: {
+    flex: 1,
+  },
+  actions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: spacing.base,
+    paddingVertical: spacing.sm,
+  },
+  actionBtn: {
     flex: 1,
   },
   emptyRow: {

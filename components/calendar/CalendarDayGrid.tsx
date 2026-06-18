@@ -143,6 +143,15 @@ type CalendarDayGridProps = {
   /** Pull-to-refresh — true while the grid query is refetching. */
   refreshing?: boolean;
   onRefresh?: () => void;
+  /**
+   * Render at full intrinsic height inside a plain View instead of the grid's
+   * own vertical ScrollView, letting a PARENT scroll container own the vertical
+   * scroll. Stacking this grid's same-axis ScrollView inside another vertical
+   * ScrollView (the calendar's "All incl. linked" view, the linked-calendar
+   * screen) makes the parent unscrollable and hides the grids below it.
+   * `refreshing`/`onRefresh` are then owned by the parent and ignored here.
+   */
+  embedded?: boolean;
 };
 
 const DEFAULT_DURATION_MINUTES = 30;
@@ -169,6 +178,7 @@ export function CalendarDayGrid({
   onDragConflictReject,
   refreshing = false,
   onRefresh,
+  embedded = false,
 }: CalendarDayGridProps) {
   const { colors } = useTheme();
   const scrollRef = useRef<ScrollViewType | null>(null);
@@ -381,21 +391,9 @@ export function CalendarDayGrid({
     return out;
   }, [conflictBookings, bookings, timeBlocks, sessions, scheduleBlocks]);
 
-  return (
-    <ScrollView
-      ref={scrollRef}
-      contentContainerStyle={styles.scrollContent}
-      showsVerticalScrollIndicator={false}
-      refreshControl={
-        onRefresh ? (
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={colors.brand}
-            colors={[colors.brand]}
-          />
-        ) : undefined
-      }>
+  // The time grid itself: one full-day-height layer holding the hour lines,
+  // closed-time shading, the now-line and the positioned appointment blocks.
+  const grid = (
       <View style={{ height: totalHeight }}>
         {/* Empty-area tap layer (blocks render above and capture their own taps). */}
         <Pressable
@@ -604,6 +602,32 @@ export function CalendarDayGrid({
           ))}
         </View>
       </View>
+  );
+
+  // Embedded: hand vertical scrolling to the parent. A grid that keeps its own
+  // vertical ScrollView when stacked inside another vertical ScrollView swallows
+  // the parent's pan, leaving the grids below it unreachable. Horizontal column
+  // scrolling, where present, is orthogonal and unaffected.
+  if (embedded) {
+    return <View style={styles.embeddedContent}>{grid}</View>;
+  }
+
+  return (
+    <ScrollView
+      ref={scrollRef}
+      contentContainerStyle={styles.scrollContent}
+      showsVerticalScrollIndicator={false}
+      refreshControl={
+        onRefresh ? (
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.brand}
+            colors={[colors.brand]}
+          />
+        ) : undefined
+      }>
+      {grid}
     </ScrollView>
   );
 }
@@ -612,6 +636,10 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingTop: spacing.sm,
     paddingBottom: spacing['3xl'] + spacing.xl,
+  },
+  embeddedContent: {
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.md,
   },
   hourRow: {
     position: 'absolute',

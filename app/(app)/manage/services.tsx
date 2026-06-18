@@ -17,14 +17,16 @@ import {
   type AddonGroupEditorTarget,
 } from '@/components/manage/AddonGroupEditorSheet';
 import {
-  AddonLinksSheet,
+  AddonLinksEditor,
   addonSelectionRuleLabel,
-  type AddonLinksTarget,
-} from '@/components/manage/AddonLinksSheet';
+  type AddonLink,
+} from '@/components/manage/AddonLinksEditor';
 import {
-  VariantsEditorSheet,
-  type VariantsEditorTarget,
-} from '@/components/manage/VariantsEditorSheet';
+  VariantsEditor,
+  buildVariantsPayload,
+  variantDraftsFromService,
+  type DraftVariant,
+} from '@/components/manage/VariantsEditor';
 import {
   ServiceCustomAvailabilityEditor,
   isScheduleEmpty,
@@ -50,16 +52,15 @@ import { Sheet } from '@/components/ui/Sheet';
 import { ListSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
-import { formatPence, parsePoundsToPence, penceToPoundsInput } from '@/lib/format';
+import { formatPence, formatPositivePence, parsePoundsToPence, penceToPoundsInput } from '@/lib/format';
 import { hapticSelect, hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useAddonGroups } from '@/lib/queries/useAddonGroups';
 import {
   useCreateService,
   useDeleteService,
   useManagedServices,
-  useReplaceServiceAddonLinks,
-  useReplaceServiceVariants,
   useUpdateService,
+  type VariantWriteInput,
 } from '@/lib/queries/useServicesManage';
 import { usePractitioners } from '@/lib/queries/usePractitioners';
 import { useSetupStatus } from '@/lib/queries/useSetupStatus';
@@ -69,7 +70,6 @@ import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type {
   ManagedService,
-  ProcessingTimeBlock,
   ServiceCustomScheduleV2,
   ServiceLocationType,
   ServicePaymentRequirement,
@@ -388,8 +388,6 @@ function ServiceRowBase({
   onToggle,
   onEdit,
   onDelete,
-  onEditVariants,
-  onEditAddons,
 }: {
   service: ManagedService;
   expanded: boolean;
@@ -397,12 +395,12 @@ function ServiceRowBase({
   onToggle: (id: string) => void;
   onEdit: (service: ManagedService) => void;
   onDelete: (service: ManagedService) => void;
-  onEditVariants: (service: ManagedService) => void;
-  onEditAddons: (service: ManagedService) => void;
 }) {
   const { colors } = useTheme();
   const price = formatPence(service.price_pence);
-  const deposit = formatPence(service.deposit_pence);
+  // Positive-only: non-deposit services now persist deposit_pence: 0 (web parity),
+  // so format with the zero-hiding helper to avoid a misleading "Deposit £0.00" row.
+  const deposit = formatPositivePence(service.deposit_pence);
   const variants = service.variants ?? [];
   const addonGroups = service.addon_groups ?? [];
 
@@ -495,24 +493,6 @@ function ServiceRowBase({
           {isAdmin ? (
             <View style={styles.editRow}>
               <Button label="Edit" variant="secondary" size="sm" style={styles.editBtnFull} onPress={() => onEdit(service)} />
-            </View>
-          ) : null}
-          {isAdmin ? (
-            <View style={styles.editRow}>
-              <Button
-                label={variants.length ? `Options (${variants.length})` : 'Options'}
-                variant="secondary"
-                size="sm"
-                style={styles.editBtn}
-                onPress={() => onEditVariants(service)}
-              />
-              <Button
-                label={addonGroups.length ? `Add-ons (${addonGroups.length})` : 'Add-ons'}
-                variant="secondary"
-                size="sm"
-                style={styles.editBtn}
-                onPress={() => onEditAddons(service)}
-              />
             </View>
           ) : null}
           {isAdmin ? (
@@ -740,8 +720,6 @@ export default function ServicesScreen() {
   const update = useUpdateService();
   const create = useCreateService();
   const deleteService = useDeleteService();
-  const replaceVariants = useReplaceServiceVariants();
-  const replaceAddonLinks = useReplaceServiceAddonLinks();
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('services');
   const [includeInactiveAddons, setIncludeInactiveAddons] = useState(false);
@@ -751,10 +729,11 @@ export default function ServicesScreen() {
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
-  const [variantsTarget, setVariantsTarget] = useState<VariantsEditorTarget | null>(null);
-  const [addonsTarget, setAddonsTarget] = useState<AddonLinksTarget | null>(null);
   const [addonGroupEditorTarget, setAddonGroupEditorTarget] =
     useState<AddonGroupEditorTarget | null>(null);
+  // Which surface opened the add-on group editor — when 'form', new groups are
+  // auto-linked into the service being edited (web parity); 'library' just refreshes.
+  const [addonEditorContext, setAddonEditorContext] = useState<'form' | 'library'>('library');
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Service pending deletion — drives a Sheet confirm (Alert.alert is a no-op on web).
@@ -798,6 +777,11 @@ export default function ServicesScreen() {
     rules: [],
   });
   const [initialCustomKey, setInitialCustomKey] = useState('disabled');
+  // Service options (variants) + linked add-on groups — edited inline in the form
+  // and sent with the create/update payload (admin only; replace semantics on the API).
+  const [variantDrafts, setVariantDrafts] = useState<DraftVariant[]>([]);
+  const [expandedVariantKey, setExpandedVariantKey] = useState<string | null>(null);
+  const [addonLinks, setAddonLinks] = useState<AddonLink[]>([]);
 
   // Stripe-connected state for the deposit/full-payment warning (web parity).
   const setupStatus = useSetupStatus(isAdmin);
@@ -869,6 +853,14 @@ export default function ServicesScreen() {
     setCustomAvailEnabled(seededEnabled);
     setCustomSchedule(seededSchedule);
     setInitialCustomKey(seededEnabled ? JSON.stringify(seededSchedule.rules) : 'disabled');
+    // Seed inline options + add-on links from the service (replace-on-save fidelity).
+    setVariantDrafts(variantDraftsFromService(service.variants ?? []));
+    setExpandedVariantKey(null);
+    setAddonLinks(
+      [...(service.addon_groups ?? [])]
+        .sort((a, b) => (a.link_sort_order ?? 0) - (b.link_sort_order ?? 0))
+        .map((entry) => ({ id: entry.group.id, name: entry.group.name })),
+    );
     setError(null);
     setEditTarget({ id: service.id, practitionerIds: linked });
   }, [linkedCalendarIds]);
@@ -901,6 +893,9 @@ export default function ServicesScreen() {
     setCustomAvailEnabled(false);
     setCustomSchedule({ version: 2, rules: [] });
     setInitialCustomKey('disabled');
+    setVariantDrafts([]);
+    setExpandedVariantKey(null);
+    setAddonLinks([]);
     setError(null);
     setCreating(true);
   };
@@ -912,18 +907,46 @@ export default function ServicesScreen() {
 
   async function handleSave() {
     setError(null);
-    const durationMinutes = Number(duration);
-    const bufferMinutes = Number(buffer || '0');
+    // Options (variants) drive the parent service's duration/buffer/price when present.
+    const usesVariants = isAdmin && variantDrafts.length > 0;
+
+    // Validate + build the options first so the parent fields can derive from the
+    // primary (first active, else first) option — web parity with
+    // appointment-service-form-to-payload.ts. This also enforces the full-payment
+    // "every active option needs a price > 0" rule with a named inline error.
+    let builtVariants: VariantWriteInput[] = [];
+    if (isAdmin) {
+      const vr = buildVariantsPayload(variantDrafts, paymentReq);
+      if (!vr.ok) {
+        if (vr.key) setExpandedVariantKey(vr.key);
+        setError(vr.error);
+        return;
+      }
+      builtVariants = vr.variants;
+    }
+    const primaryVariant = usesVariants
+      ? (builtVariants.find((v) => v.is_active) ?? builtVariants[0] ?? null)
+      : null;
+
     const advance = Number(advanceDays);
     const notice = Number(noticeHours);
     const cancel = Number(cancelHours);
 
     if (!name.trim()) { setError('Name is required.'); return; }
-    if (!Number.isInteger(durationMinutes) || durationMinutes < 5 || durationMinutes > 480) {
-      setError('Duration must be 5–480 minutes.'); return;
-    }
-    if (!Number.isInteger(bufferMinutes) || bufferMinutes < 0 || bufferMinutes > 120) {
-      setError('Buffer must be 0–120 minutes.'); return;
+
+    // Base duration/buffer apply (and are validated) only for a single fixed offering;
+    // with options the parent inherits them from the primary option.
+    const durationMinutes = primaryVariant ? primaryVariant.duration_minutes : Number(duration);
+    const bufferMinutes = primaryVariant
+      ? (primaryVariant.buffer_minutes ?? 0)
+      : Number(buffer || '0');
+    if (!usesVariants) {
+      if (!Number.isInteger(durationMinutes) || durationMinutes < 5 || durationMinutes > 480) {
+        setError('Duration must be 5–480 minutes.'); return;
+      }
+      if (!Number.isInteger(bufferMinutes) || bufferMinutes < 0 || bufferMinutes > 120) {
+        setError('Buffer must be 0–120 minutes.'); return;
+      }
     }
     if (!Number.isInteger(advance) || advance < 1 || advance > 365) {
       setError('Max advance booking must be 1–365 days.'); return;
@@ -934,50 +957,33 @@ export default function ServicesScreen() {
     if (!Number.isInteger(cancel) || cancel < 0 || cancel > 168) {
       setError('Cancellation notice must be 0–168 hours.'); return;
     }
-    const pricePence = parsePoundsToPence(price);
+    const basePricePence = parsePoundsToPence(price);
     const depositPence = parsePoundsToPence(deposit);
-    if (pricePence === undefined || depositPence === undefined) {
+    if (basePricePence === undefined || depositPence === undefined) {
       setError('Price and deposit must be valid amounts.'); return;
     }
+    // Parent price comes from the primary option when using options (web parity).
+    const pricePence = usesVariants ? (primaryVariant?.price_pence ?? null) : basePricePence;
     if (paymentReq === 'deposit' && !(depositPence != null && depositPence > 0)) {
       setError('Enter a deposit amount greater than zero for the deposit option.'); return;
     }
-    if (paymentReq === 'full_payment' && !(pricePence != null && pricePence > 0)) {
+    // Full online payment: a single offering needs a base price > 0; with options,
+    // buildVariantsPayload already enforced a price > 0 on every active option.
+    if (paymentReq === 'full_payment' && !usesVariants && !(pricePence != null && pricePence > 0)) {
       setError('Enter a price greater than zero to take full payment online.'); return;
-    }
-    // When the service carries options (variants), the API charges per active
-    // option, so under full_payment every ACTIVE option must have a price > 0 —
-    // mirror the web rule (appointment-service-form-to-payload.ts:53-72) here so
-    // we surface a named inline error instead of relying on the server 400.
-    // Variants are edited in a separate sheet, so read them off the saved service.
-    if (paymentReq === 'full_payment' && editTarget) {
-      const editing = services.find((s) => s.id === editTarget.id);
-      const variants = editing?.variants ?? [];
-      if (variants.length > 0) {
-        const offending = variants.find((variant) => {
-          const v = variant as typeof variant & { is_active?: boolean };
-          return v.is_active !== false && !(v.price_pence != null && v.price_pence > 0);
-        });
-        if (offending) {
-          setError(
-            `Option "${offending.name}": set a price — full online payment applies to each option. ` +
-              'Update it under Options.',
-          );
-          return;
-        }
-      }
     }
     if (practitionerIds.length === 0) {
       setError('Select at least one calendar to offer this service.'); return;
     }
 
     // Admin-only sections: location, processing time, custom availability, booking interval.
-    let processingBlocks: ReturnType<typeof validateProcessingBlocks>['blocks'] | undefined;
-    let processingChanged = false;
     let scheduleToSend: ServiceCustomScheduleV2 | null = null;
     let customChanged = false;
     let bookingStart: { booking_interval_minutes: number; booking_minute_marks: number[] | null } | null = null;
     let bookingStartChanged = false;
+    // Parent processing blocks: cleared ([]) when options drive timing — each option
+    // carries its own; otherwise sent only when the base editor changed them.
+    let processingToSend: ReturnType<typeof validateProcessingBlocks>['blocks'] | undefined;
     if (isAdmin) {
       // Booking interval + per-hour start marks. An empty restriction collapses to
       // "unrestricted" (null) here, mirroring the web's non-blocking warning — the
@@ -994,13 +1000,19 @@ export default function ServicesScreen() {
       }
       setUrlError(null);
 
-      // Processing-time blocks (validate against the service core duration)
-      const procResult = validateProcessingBlocks(processingDrafts, durationMinutes);
-      if (!procResult.ok) {
-        setError(procResult.error ?? 'Processing time is invalid.'); return;
+      // Processing-time blocks. With options the parent has none (clear to []);
+      // otherwise validate against the core duration and send only when changed.
+      if (usesVariants) {
+        processingToSend = [];
+      } else {
+        const procResult = validateProcessingBlocks(processingDrafts, durationMinutes);
+        if (!procResult.ok) {
+          setError(procResult.error ?? 'Processing time is invalid.'); return;
+        }
+        if (processingFingerprint(processingDrafts) !== initialProcessingKey) {
+          processingToSend = procResult.blocks ?? [];
+        }
       }
-      processingBlocks = procResult.blocks;
-      processingChanged = processingFingerprint(processingDrafts) !== initialProcessingKey;
 
       // Custom availability (stretch)
       const scheduleErr = validateSchedule(customSchedule);
@@ -1013,13 +1025,19 @@ export default function ServicesScreen() {
       scheduleToSend = customAvailEnabled ? customSchedule : null;
     }
 
+    // Web parity (appointment-service-form-to-payload.ts): only persist a deposit
+    // when "Custom deposit" is the chosen payment mode. Any other choice zeroes it
+    // so a value typed earlier can't linger on the service after switching mode
+    // (which would otherwise show a phantom deposit and confuse refund logic).
+    const depositToSend = paymentReq === 'deposit' ? (depositPence ?? 0) : 0;
+
     const shared = {
       name: name.trim(),
       description: description.trim() || null,
       duration_minutes: durationMinutes,
       buffer_minutes: bufferMinutes,
       price_pence: pricePence ?? null,
-      deposit_pence: depositPence ?? null,
+      deposit_pence: depositToSend,
       payment_requirement: paymentReq,
       colour,
       is_active: isActive,
@@ -1045,11 +1063,17 @@ export default function ServicesScreen() {
       } : {}),
     };
 
-    // Processing time + custom availability are REPLACE-semantics / paired-with-flag,
-    // so only include them when the user actually changed them.
+    // Admin-only relations + replace-semantics sections. Variants + add-on links go
+    // out with every admin save (web parity) so the inline edits actually persist —
+    // the API replaces each array wholesale and the seeds carry existing ids.
     const adminExtras = isAdmin
       ? {
-          ...(processingChanged ? { processing_time_blocks: processingBlocks ?? [] } : {}),
+          variants: builtVariants,
+          addon_group_links: addonLinks.map((g, index) => ({
+            addon_group_id: g.id,
+            sort_order: index,
+          })),
+          ...(processingToSend !== undefined ? { processing_time_blocks: processingToSend } : {}),
           ...(customChanged
             ? {
                 custom_availability_enabled: customAvailEnabled,
@@ -1085,7 +1109,7 @@ export default function ServicesScreen() {
           ...adminExtras,
           description: shared.description ?? undefined,
           price_pence: pricePence ?? undefined,
-          deposit_pence: depositPence ?? undefined,
+          deposit_pence: depositToSend,
           practitioner_ids: practitionerIds,
         });
       }
@@ -1127,44 +1151,11 @@ export default function ServicesScreen() {
     });
   }
 
-  const openVariantsEditor = useCallback((service: ManagedService) =>
-    setVariantsTarget({
-      serviceId: service.id,
-      serviceName: service.name,
-      // Thread the service's payment requirement so the options editor can enforce
-      // the full_payment "every active option needs a price > 0" rule (web parity).
-      paymentRequirement: service.payment_requirement ?? 'none',
-      variants: (service.variants ?? []).map((variant) => {
-        const sv = variant as typeof variant & {
-          is_active?: boolean;
-          processing_time_blocks?: ProcessingTimeBlock[] | null;
-        };
-        return {
-          id: variant.id,
-          name: variant.name,
-          description: variant.description ?? null,
-          duration_minutes: variant.duration_minutes,
-          buffer_minutes: variant.buffer_minutes ?? null,
-          price_pence: variant.price_pence,
-          deposit_pence: variant.deposit_pence,
-          is_active: sv.is_active,
-          // Round-trip so the variant replace-on-save can't wipe these.
-          processing_time_blocks: sv.processing_time_blocks ?? null,
-        };
-      }),
-    }), []);
-
-  const openAddonsEditor = useCallback((service: ManagedService) =>
-    setAddonsTarget({
-      serviceId: service.id,
-      serviceName: service.name,
-      linkedGroups: [...(service.addon_groups ?? [])]
-        .sort((a, b) => (a.link_sort_order ?? 0) - (b.link_sort_order ?? 0))
-        .map((entry) => ({ id: entry.group.id, name: entry.group.name })),
-    }), []);
-
   const sheetOpen = editTarget !== null || creating;
   const saving = update.isPending || create.isPending;
+  // Admin "multiple options" mode — hides the base duration/price fields and the
+  // parent processing-time editor, which the options below supersede (web parity).
+  const usesVariants = isAdmin && variantDrafts.length > 0;
 
   const renderServiceItem = useCallback<ListRenderItem<ManagedService>>(
     ({ item }) => (
@@ -1175,19 +1166,9 @@ export default function ServicesScreen() {
         onToggle={handleToggle}
         onEdit={openEdit}
         onDelete={handleDeleteService}
-        onEditVariants={openVariantsEditor}
-        onEditAddons={openAddonsEditor}
       />
     ),
-    [
-      expandedId,
-      isAdmin,
-      handleToggle,
-      openEdit,
-      handleDeleteService,
-      openVariantsEditor,
-      openAddonsEditor,
-    ],
+    [expandedId, isAdmin, handleToggle, openEdit, handleDeleteService],
   );
 
   const keyExtractor = useCallback((item: ManagedService) => item.id, []);
@@ -1209,6 +1190,14 @@ export default function ServicesScreen() {
       ? 'None'
       : `${processingDrafts.length} period${processingDrafts.length === 1 ? '' : 's'}`;
   const customAvailSummary = customAvailEnabled ? 'On' : 'Off';
+  const optionsSummary =
+    variantDrafts.length === 0
+      ? 'One fixed offering'
+      : `${variantDrafts.length} option${variantDrafts.length === 1 ? '' : 's'}`;
+  const addonsSummary =
+    addonLinks.length === 0
+      ? 'None'
+      : `${addonLinks.length} group${addonLinks.length === 1 ? '' : 's'}`;
 
   return (
     <Screen scroll={false} padded={false}>
@@ -1300,71 +1289,40 @@ export default function ServicesScreen() {
             setActiveTab('services');
             setExpandedId(serviceId);
           }}
-          onEdit={(target) => setAddonGroupEditorTarget(target)}
-          onCreate={() => setAddonGroupEditorTarget({ mode: 'create' })}
+          onEdit={(target) => {
+            setAddonEditorContext('library');
+            setAddonGroupEditorTarget(target);
+          }}
+          onCreate={() => {
+            setAddonEditorContext('library');
+            setAddonGroupEditorTarget({ mode: 'create' });
+          }}
         />
       ) : null}
 
-      {/* Options (variants) editor */}
-      <VariantsEditorSheet
-        target={variantsTarget}
-        saving={replaceVariants.isPending}
-        onClose={() => setVariantsTarget(null)}
-        onSave={(variants) => {
-          if (!variantsTarget) return;
-          replaceVariants.mutate(
-            { id: variantsTarget.serviceId, variants },
-            {
-              onSuccess: () => {
-                hapticSuccess();
-                setVariantsTarget(null);
-              },
-              onError: (e) => {
-                hapticWarning();
-                toast.error(
-                  e instanceof ApiError ? e.message : 'Could not save the options.',
-                );
-              },
-            },
-          );
-        }}
-      />
-
-      {/* Add-on group links editor */}
-      <AddonLinksSheet
-        target={addonsTarget}
-        groups={addonGroupsQuery.data?.groups ?? []}
-        addonsByGroup={addonGroupsQuery.data?.addons_by_group ?? {}}
-        saving={replaceAddonLinks.isPending}
-        onClose={() => setAddonsTarget(null)}
-        onSave={(groupIds) => {
-          if (!addonsTarget) return;
-          replaceAddonLinks.mutate(
-            { id: addonsTarget.serviceId, addonGroupIds: groupIds },
-            {
-              onSuccess: () => {
-                hapticSuccess();
-                setAddonsTarget(null);
-              },
-              onError: (e) => {
-                hapticWarning();
-                toast.error(
-                  e instanceof ApiError ? e.message : 'Could not save the add-ons.',
-                );
-              },
-            },
-          );
-        }}
-      />
-
-      {/* Add-on group create/edit sheet */}
+      {/* Add-on group create/edit sheet — opened from the Add-ons tab (library) or
+          inline from the service form (auto-links a newly created group). */}
       <AddonGroupEditorSheet
         target={addonGroupEditorTarget}
         onClose={() => setAddonGroupEditorTarget(null)}
+        onSaved={(result, mode) => {
+          if (addonEditorContext !== 'form') return;
+          // Keep the service form's linked list in step with the edit.
+          setAddonLinks((current) => {
+            if (mode === 'create') {
+              return current.some((l) => l.id === result.group.id)
+                ? current
+                : [...current, { id: result.group.id, name: result.group.name }];
+            }
+            return current.map((l) =>
+              l.id === result.group.id ? { ...l, name: result.group.name } : l,
+            );
+          });
+        }}
       />
 
       {/* Service edit / create sheet */}
-      <Sheet visible={sheetOpen} onClose={closeSheet} maxHeight="92%">
+      <Sheet visible={sheetOpen} onClose={closeSheet} maxHeight="92%" fill>
         <View style={styles.sheetBodyWrap}>
           <Text variant="overline" tone="muted">
             {editTarget ? 'Edit service' : 'New service'}
@@ -1383,24 +1341,87 @@ export default function ServicesScreen() {
               style={styles.multiline}
               maxLength={1000}
             />
-            <View style={styles.moneyRow}>
-              <View style={styles.moneyField}>
-                <Input
-                  label="Duration (mins)"
-                  value={duration}
-                  onChangeText={setDuration}
-                  keyboardType="number-pad"
-                />
+            {!usesVariants ? (
+              <View style={styles.moneyRow}>
+                <View style={styles.moneyField}>
+                  <Input
+                    label="Duration (mins)"
+                    value={duration}
+                    onChangeText={setDuration}
+                    keyboardType="number-pad"
+                  />
+                </View>
+                <View style={styles.moneyField}>
+                  <Input
+                    label="Buffer (mins)"
+                    value={buffer}
+                    onChangeText={setBuffer}
+                    keyboardType="number-pad"
+                  />
+                </View>
               </View>
-              <View style={styles.moneyField}>
-                <Input
-                  label="Buffer (mins)"
-                  value={buffer}
-                  onChangeText={setBuffer}
-                  keyboardType="number-pad"
-                />
-              </View>
-            </View>
+            ) : (
+              <Text variant="caption" tone="muted">
+                Duration, buffer and price are set per option below.
+              </Text>
+            )}
+
+            {/* Service options (variants) + Add-ons — admin only, web parity: both
+                save with the service in a single create/update payload. */}
+            {isAdmin ? (
+              <>
+                <CollapsibleCard
+                  title="Service options"
+                  summary={optionsSummary}
+                  defaultExpanded={variantDrafts.length > 0}>
+                  <View style={styles.sectionStack}>
+                    <Text variant="caption" tone="muted">
+                      Add options when guests must pick a version first (e.g. 30 vs 60 minutes) — each
+                      has its own duration, price and deposit. Leave empty for one fixed offering.
+                    </Text>
+                    <VariantsEditor
+                      drafts={variantDrafts}
+                      onChange={setVariantDrafts}
+                      paymentRequirement={paymentReq}
+                      firstOptionSeed={{
+                        duration,
+                        buffer,
+                        price,
+                        deposit: paymentReq === 'deposit' ? deposit : '',
+                      }}
+                      expandedKey={expandedVariantKey}
+                      onExpandedKeyChange={setExpandedVariantKey}
+                    />
+                  </View>
+                </CollapsibleCard>
+
+                <CollapsibleCard
+                  title="Add-ons"
+                  summary={addonsSummary}
+                  defaultExpanded={addonLinks.length > 0}>
+                  <AddonLinksEditor
+                    links={addonLinks}
+                    onChange={setAddonLinks}
+                    groups={addonGroupsQuery.data?.groups ?? []}
+                    addonsByGroup={addonGroupsQuery.data?.addons_by_group ?? {}}
+                    isLoading={addonGroupsQuery.isLoading}
+                    error={
+                      addonGroupsQuery.isError
+                        ? 'Could not load the add-on library. Pull to refresh and try again.'
+                        : null
+                    }
+                    onCreateGroup={() => {
+                      setAddonEditorContext('form');
+                      setAddonGroupEditorTarget({ mode: 'create' });
+                    }}
+                    onEditGroup={(group, addons) => {
+                      setAddonEditorContext('form');
+                      setAddonGroupEditorTarget({ mode: 'edit', group, addons });
+                    }}
+                  />
+                </CollapsibleCard>
+              </>
+            ) : null}
 
             {/* Online payment */}
             <Text variant="overline" tone="muted">Online payment</Text>
@@ -1436,16 +1457,31 @@ export default function ServicesScreen() {
                 </Pressable>
               );
             })}
-            <View style={styles.moneyRow}>
-              <View style={styles.moneyField}>
-                <Input label="Price (£)" value={price} onChangeText={setPrice} keyboardType="decimal-pad" />
+            {!usesVariants || paymentReq === 'deposit' ? (
+              <View style={styles.moneyRow}>
+                {!usesVariants ? (
+                  <View style={styles.moneyField}>
+                    <Input label="Price (£)" value={price} onChangeText={setPrice} keyboardType="decimal-pad" />
+                  </View>
+                ) : null}
+                {paymentReq === 'deposit' ? (
+                  <View style={styles.moneyField}>
+                    <Input
+                      label={usesVariants ? 'Default deposit (£)' : 'Deposit (£)'}
+                      helper={usesVariants ? 'Used when an option leaves its deposit blank.' : undefined}
+                      value={deposit}
+                      onChangeText={setDeposit}
+                      keyboardType="decimal-pad"
+                    />
+                  </View>
+                ) : null}
               </View>
-              {paymentReq === 'deposit' ? (
-                <View style={styles.moneyField}>
-                  <Input label="Deposit (£)" value={deposit} onChangeText={setDeposit} keyboardType="decimal-pad" />
-                </View>
-              ) : null}
-            </View>
+            ) : null}
+            {usesVariants && paymentReq === 'full_payment' ? (
+              <Text variant="caption" tone="muted">
+                Each option offered to clients needs its own price — that&apos;s what they pay online.
+              </Text>
+            ) : null}
 
             {/* Stripe-not-connected warning when an online payment is required (web parity). */}
             {paymentReq !== 'none' && !stripeConnected ? (
@@ -1614,15 +1650,18 @@ export default function ServicesScreen() {
                   />
                 </CollapsibleCard>
 
-                {/* Processing-time blocks (gaps inside the appointment) */}
-                <CollapsibleCard title="Processing time" summary={processingSummary}>
-                  <ProcessingTimeBlocksEditor
-                    drafts={processingDrafts}
-                    onChange={setProcessingDrafts}
-                    durationMinutes={Number(duration) || 0}
-                    bufferMinutes={Number(buffer) || 0}
-                  />
-                </CollapsibleCard>
+                {/* Processing-time blocks (gaps inside the appointment). Hidden when
+                    the service uses options — each option carries its own. */}
+                {!usesVariants ? (
+                  <CollapsibleCard title="Processing time" summary={processingSummary}>
+                    <ProcessingTimeBlocksEditor
+                      drafts={processingDrafts}
+                      onChange={setProcessingDrafts}
+                      durationMinutes={Number(duration) || 0}
+                      bufferMinutes={Number(buffer) || 0}
+                    />
+                  </CollapsibleCard>
+                ) : null}
 
                 {/* Custom availability (per-weekday windows) */}
                 <CollapsibleCard title="Custom availability" summary={customAvailSummary}>
@@ -1650,7 +1689,12 @@ export default function ServicesScreen() {
 
           <View style={styles.actions}>
             <Button label="Cancel" variant="secondary" style={styles.flex1} onPress={closeSheet} />
-            <Button label="Save" style={styles.flex1} loading={saving} onPress={() => void handleSave()} />
+            <Button
+              label={editTarget ? 'Save changes' : 'Create service'}
+              style={styles.flex1}
+              loading={saving}
+              onPress={() => void handleSave()}
+            />
           </View>
         </View>
       </Sheet>
@@ -1752,9 +1796,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.sm,
   },
-  editBtn: {
-    flex: 1,
-  },
   editBtnFull: {
     flex: 1,
   },
@@ -1799,12 +1840,19 @@ const styles = StyleSheet.create({
   spacer: {
     height: spacing.xl,
   },
-  // Sheet
+  // Sheet — `fill` mode pins the sheet to a fixed height and gives the SafeArea
+  // + content wrappers `flex: 1`. The body claims that height (flex: 1) so the
+  // ScrollView between the header and the pinned actions can scroll internally;
+  // without this the long form expands past the sheet and the Save button (a
+  // sibling of the ScrollView) is pushed off-screen. `fill` strips the content
+  // wrapper's horizontal padding, so the body restores it here.
   sheetBodyWrap: {
+    flex: 1,
     gap: spacing.md,
+    paddingHorizontal: spacing.lg,
   },
   sheetScroll: {
-    flexGrow: 0,
+    flex: 1,
   },
   sheetBody: {
     gap: spacing.md,

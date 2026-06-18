@@ -33,10 +33,10 @@ import {
   useResourceAvailability,
   useResourceOptions,
 } from '@/lib/queries/useBookableOfferings';
+import { useBookingFormVenue } from '@/lib/queries/useBookingFormVenue';
 import { calendarDateInTimeZone } from '@/lib/queries/useBookingsList';
 import { useGuestDetail } from '@/lib/queries/useGuestDetail';
 import { useLinkedVenueContext } from '@/providers/LinkedVenueProvider';
-import { useVenueContext } from '@/providers/VenueProvider';
 import { spacing } from '@/theme/index';
 import type { ResourceOption, ResourceSlot } from '@/types/booking-offerings';
 
@@ -57,14 +57,18 @@ type ResourceBookingFlowProps = { onCreated: (bookingId: string) => void };
 /** Book a time slot on a resource (web-parity resource flow). */
 export function ResourceBookingFlow({ onCreated }: ResourceBookingFlowProps) {
   const router = useRouter();
-  const { venue } = useVenueContext();
+  const { venueId, timeZone } = useBookingFormVenue();
   const { ownerVenueId } = useLinkedVenueContext();
-  const { guestId: guestIdParam } = useLocalSearchParams<{ guestId?: string }>();
+  const { guestId: guestIdParam, resourceId: resourceIdParam } = useLocalSearchParams<{
+    guestId?: string;
+    resourceId?: string;
+  }>();
   const prefilledGuestId =
     typeof guestIdParam === 'string' && guestIdParam.length > 0 ? guestIdParam : null;
+  // "Book this resource" deep-links here with the resource pre-selected.
+  const prefilledResourceId =
+    typeof resourceIdParam === 'string' && resourceIdParam.length > 0 ? resourceIdParam : null;
 
-  const venueId = venue?.id ?? null;
-  const timeZone = venue?.timezone ?? 'Europe/London';
   const today = calendarDateInTimeZone(new Date(), timeZone);
 
   const optionsQuery = useResourceOptions(venueId);
@@ -79,6 +83,7 @@ export function ResourceBookingFlow({ onCreated }: ResourceBookingFlowProps) {
   const [guest, setGuest] = useState<GuestDetails>(EMPTY_GUEST);
   const [guestPrefilled, setGuestPrefilled] = useState(false);
   const [returningGuest, setReturningGuest] = useState(false);
+  const [resourcePrefilled, setResourcePrefilled] = useState(false);
 
   useEffect(() => {
     if (guestPrefilled || !prefillGuestQuery.data) return;
@@ -93,6 +98,18 @@ export function ResourceBookingFlow({ onCreated }: ResourceBookingFlowProps) {
     setGuestPrefilled(true);
     setReturningGuest(true);
   }, [prefillGuestQuery.data, guestPrefilled]);
+
+  // Pre-select the deep-linked resource once the offerings load, then jump to the
+  // date step. Runs once (guarded) so the user can still go Back to the picker.
+  useEffect(() => {
+    if (resourcePrefilled || !prefilledResourceId || !optionsQuery.data) return;
+    const match = optionsQuery.data.resources.find((r) => r.id === prefilledResourceId);
+    if (!match) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSelectedResource(match);
+    setStep('date');
+    setResourcePrefilled(true);
+  }, [optionsQuery.data, prefilledResourceId, resourcePrefilled]);
 
   const resources = optionsQuery.data?.resources ?? [];
   const durationOptions = useMemo(
@@ -195,6 +212,7 @@ export function ResourceBookingFlow({ onCreated }: ResourceBookingFlowProps) {
           availableDates={null}
           canContinue={!!selectedDate}
           onContinue={() => setStep('duration')}
+          weekShortcuts
           timeZone={timeZone}
         />
         <Button label="Back" onPress={goBack} variant="ghost" style={styles.back} />

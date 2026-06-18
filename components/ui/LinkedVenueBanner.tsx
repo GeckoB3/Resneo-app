@@ -1,69 +1,30 @@
 import { useRouter, type Href } from 'expo-router';
-import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text } from 'react-native';
 
-import { LinkedVenueSwitcherSheet } from '@/components/linked/LinkedVenueSwitcherSheet';
 import { useIncomingLinks } from '@/lib/queries/useLinkedVenues';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
-import { useLinkedVenueContext } from '@/providers/LinkedVenueProvider';
 import { spacing, typography } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
 /**
- * A thin global banner above the tabs with two jobs (active context wins):
+ * A thin global banner above the tabs: an admin nudge when other venues have
+ * sent link requests waiting on a response — tapping opens the linked-venues
+ * hub. Renders nothing otherwise (incl. for non-admin staff).
  *
- *  1. Active linked-venue context (cross-venue / chair rental): the venue name,
- *     a tap to open the venue switcher, and "Use primary venue" to clear it.
- *  2. Otherwise, an admin nudge when other venues have sent link requests that
- *     are waiting on a response — tapping opens the linked-venues hub.
- *
- * A no-op (renders nothing) when no linked venue is active and there are no
- * incoming requests (or the viewer is not an admin).
+ * There is intentionally no "acting as linked venue" context bar: the active
+ * linked venue is already conveyed by the calendar's amber venue chip and the
+ * "Linked" badge on each linked grid, and you switch venues from those chips
+ * (or the Bookings filter sheet) — so a global context bar is redundant.
  */
 export function LinkedVenueBanner() {
   const { colors } = useTheme();
   const router = useRouter();
-  const { ownerVenueId, ownerVenueName, clearOwnerVenue } = useLinkedVenueContext();
-  const [switcherOpen, setSwitcherOpen] = useState(false);
 
   const staffQuery = useStaffMe();
   const isAdmin = staffQuery.data?.staff?.role === 'admin';
   // Admin-only route — gate the fetch so non-admin staff don't 403 every session.
   const incomingQuery = useIncomingLinks({ enabled: isAdmin });
   const incomingCount = incomingQuery.data?.incomingRequests.length ?? 0;
-
-  if (ownerVenueId) {
-    return (
-      <>
-        <View
-          style={[styles.banner, { backgroundColor: colors.surface, borderColor: colors.brand }]}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`Acting as ${ownerVenueName ?? 'a linked venue'} — switch venue`}
-            hitSlop={8}
-            onPress={() => setSwitcherOpen(true)}
-            style={({ pressed }) => [styles.context, pressed ? styles.pressed : null]}>
-            <Text style={[styles.label, { color: colors.textSecondary }]} numberOfLines={1}>
-              Linked venue ·{' '}
-              <Text style={[styles.name, { color: colors.text }]}>
-                {ownerVenueName ?? 'Linked venue'}
-              </Text>
-            </Text>
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Return to primary venue"
-            hitSlop={8}
-            onPress={clearOwnerVenue}
-            style={({ pressed }) => [styles.link, pressed ? styles.pressed : null]}>
-            <Text style={[styles.linkText, { color: colors.brand }]}>Use primary venue</Text>
-          </Pressable>
-        </View>
-
-        <LinkedVenueSwitcherSheet visible={switcherOpen} onClose={() => setSwitcherOpen(false)} />
-      </>
-    );
-  }
 
   if (isAdmin && incomingCount > 0) {
     const label =
@@ -102,11 +63,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     gap: spacing.sm,
   },
-  context: {
-    flex: 1,
-    minHeight: 44,
-    justifyContent: 'center',
-  },
   incoming: {
     minHeight: 48,
   },
@@ -115,15 +71,6 @@ const styles = StyleSheet.create({
   },
   label: {
     ...typography.caption,
-  },
-  name: {
-    ...typography.caption,
-    fontWeight: '600',
-  },
-  link: {
-    minHeight: 44,
-    justifyContent: 'center',
-    paddingHorizontal: spacing.xs,
   },
   linkText: {
     ...typography.bodySmall,

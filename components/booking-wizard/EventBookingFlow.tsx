@@ -28,11 +28,11 @@ import {
 } from '@/lib/booking/booking-format';
 import { formatPence } from '@/lib/format';
 import { normalizePhone } from '@/lib/phone/normalize';
+import { useBookingFormVenue } from '@/lib/queries/useBookingFormVenue';
 import { useEventOfferings } from '@/lib/queries/useBookableOfferings';
 import { calendarDateInTimeZone } from '@/lib/queries/useBookingsList';
 import { useGuestDetail } from '@/lib/queries/useGuestDetail';
 import { useLinkedVenueContext } from '@/providers/LinkedVenueProvider';
-import { useVenueContext } from '@/providers/VenueProvider';
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { EventAvailabilitySlot, EventOfferingSummary } from '@/types/booking-offerings';
@@ -55,14 +55,12 @@ type EventBookingFlowProps = { onCreated: (bookingId: string) => void };
 export function EventBookingFlow({ onCreated }: EventBookingFlowProps) {
   const router = useRouter();
   const { colors } = useTheme();
-  const { venue } = useVenueContext();
+  const { venueId, timeZone } = useBookingFormVenue();
   const { ownerVenueId } = useLinkedVenueContext();
   const { guestId: guestIdParam } = useLocalSearchParams<{ guestId?: string }>();
   const prefilledGuestId =
     typeof guestIdParam === 'string' && guestIdParam.length > 0 ? guestIdParam : null;
 
-  const venueId = venue?.id ?? null;
-  const timeZone = venue?.timezone ?? 'Europe/London';
   const today = calendarDateInTimeZone(new Date(), timeZone);
 
   const offeringsQuery = useEventOfferings(venueId, { from: today });

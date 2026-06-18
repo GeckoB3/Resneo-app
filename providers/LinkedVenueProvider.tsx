@@ -37,7 +37,12 @@ type LinkedVenueContextValue = {
   reconcileOwnerVenue: (accessibleVenueIds: string[]) => void;
 };
 
-const LinkedVenueContext = createContext<LinkedVenueContextValue | null>(null);
+/**
+ * Exported so a screen can re-provide an *overridden* owner venue for its
+ * subtree only (e.g. the new-booking form targeting a specific linked venue via
+ * a route param) without mutating the global persisted selection.
+ */
+export const LinkedVenueContext = createContext<LinkedVenueContextValue | null>(null);
 
 const STORAGE_KEY = 'reserveni.linked.ownerVenue';
 

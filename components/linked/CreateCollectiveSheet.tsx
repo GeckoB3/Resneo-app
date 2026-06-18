@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { StyleSheet, TextInput, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -9,7 +9,7 @@ import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { useCreateCollective, useSlugAvailable } from '@/lib/queries/useCollectives';
 import { useToast } from '@/providers/ToastProvider';
-import { radius, spacing } from '@/theme/index';
+import { fonts, motion, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { AccountLinkView } from '@/types/linked-venues';
 
@@ -41,9 +41,20 @@ export function CreateCollectiveSheet({
   const toast = useToast();
   const create = useCreateCollective();
 
+  const nameRef = useRef<TextInput>(null);
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
   const [invited, setInvited] = useState<string[]>([]);
+
+  // Mirror the web modal's autoFocus on the name field. A raw `autoFocus` won't
+  // fire here — the Sheet keeps its content mounted and only toggles the Modal —
+  // so focus imperatively once the sheet has slid in (focusing mid-animation is
+  // dropped on the new architecture).
+  useEffect(() => {
+    if (!visible) return;
+    const t = setTimeout(() => nameRef.current?.focus(), motion.slow);
+    return () => clearTimeout(t);
+  }, [visible]);
 
   const slugQuery = useSlugAvailable(slug);
   const slugState = slug.trim() ? slugQuery.data ?? null : null;
@@ -59,6 +70,19 @@ export function CreateCollectiveSheet({
       cur.includes(venueId) ? cur.filter((v) => v !== venueId) : [...cur, venueId],
     );
 
+  const resetForm = () => {
+    setName('');
+    setSlug('');
+    setInvited([]);
+  };
+
+  // The web modal unmounts on close (a fresh form next open); the always-mounted
+  // sheet mirrors that by clearing the form on every dismiss path.
+  const handleClose = () => {
+    resetForm();
+    onClose();
+  };
+
   const handleCreate = () => {
     create.mutate(
       {
@@ -69,9 +93,7 @@ export function CreateCollectiveSheet({
       {
         onSuccess: () => {
           toast.success('Venue collective created.');
-          setName('');
-          setSlug('');
-          setInvited([]);
+          resetForm();
           onCreated();
         },
         onError: (err) =>
@@ -89,7 +111,7 @@ export function CreateCollectiveSheet({
   const eligible = useMemo(() => eligibleLinks, [eligibleLinks]);
 
   return (
-    <Sheet visible={visible} onClose={onClose}>
+    <Sheet visible={visible} onClose={handleClose}>
       <View style={styles.container}>
         <Text variant="subheading">Create a venue collective</Text>
         <Text variant="bodySmall" tone="secondary">
@@ -97,6 +119,7 @@ export function CreateCollectiveSheet({
         </Text>
 
         <Input
+          ref={nameRef}
           label="Collective name"
           value={name}
           onChangeText={setName}
@@ -135,8 +158,11 @@ export function CreateCollectiveSheet({
         <View style={[styles.notice, { backgroundColor: colors.surface }]}>
           <Text variant="caption" tone="muted">
             Your combined page works like a single venue — one services menu and one team across all
-            members. After creating it, use Manage combined page to choose which services to offer,
-            assign calendars from any venue, and design the page.
+            members. After creating it, use{' '}
+            <Text variant="caption" tone="muted" style={styles.emphasis}>
+              Manage combined page
+            </Text>{' '}
+            to choose which services to offer, assign calendars from any venue, and design the page.
           </Text>
         </View>
 
@@ -187,7 +213,7 @@ export function CreateCollectiveSheet({
             variant="secondary"
             style={styles.flex1}
             disabled={create.isPending}
-            onPress={onClose}
+            onPress={handleClose}
           />
           <Button
             label="Create collective"
@@ -234,6 +260,9 @@ const styles = StyleSheet.create({
   notice: {
     borderRadius: radius.md,
     padding: spacing.md,
+  },
+  emphasis: {
+    fontFamily: fonts.medium,
   },
   inviteBlock: {
     gap: spacing.xs,

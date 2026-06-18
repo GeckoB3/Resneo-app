@@ -26,11 +26,11 @@ import {
 } from '@/lib/booking/booking-format';
 import { formatDurationMinutes } from '@/lib/format';
 import { normalizePhone } from '@/lib/phone/normalize';
+import { useBookingFormVenue } from '@/lib/queries/useBookingFormVenue';
 import { useClassOfferings } from '@/lib/queries/useBookableOfferings';
 import { calendarDateInTimeZone } from '@/lib/queries/useBookingsList';
 import { useGuestDetail } from '@/lib/queries/useGuestDetail';
 import { useLinkedVenueContext } from '@/providers/LinkedVenueProvider';
-import { useVenueContext } from '@/providers/VenueProvider';
 import { spacing } from '@/theme/index';
 import type { ClassAvailabilitySlot, ClassOfferingSummary } from '@/types/booking-offerings';
 
@@ -52,14 +52,12 @@ type ClassBookingFlowProps = { onCreated: (bookingId: string) => void };
 /** Book a guest onto a scheduled class session (web-parity class flow). */
 export function ClassBookingFlow({ onCreated }: ClassBookingFlowProps) {
   const router = useRouter();
-  const { venue } = useVenueContext();
+  const { venueId, timeZone } = useBookingFormVenue();
   const { ownerVenueId } = useLinkedVenueContext();
   const { guestId: guestIdParam } = useLocalSearchParams<{ guestId?: string }>();
   const prefilledGuestId =
     typeof guestIdParam === 'string' && guestIdParam.length > 0 ? guestIdParam : null;
 
-  const venueId = venue?.id ?? null;
-  const timeZone = venue?.timezone ?? 'Europe/London';
   const today = calendarDateInTimeZone(new Date(), timeZone);
 
   const offeringsQuery = useClassOfferings(venueId, { from: today });

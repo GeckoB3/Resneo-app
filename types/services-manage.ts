@@ -110,9 +110,10 @@ export type ServicePaymentRequirement = 'none' | 'deposit' | 'full_payment';
 
 /**
  * Partial update for PATCH /api/venue/appointment-services.
- * IMPORTANT: never include `variants` or `addon_group_links` here — the API
- * replaces those arrays wholesale, so sending `[]` would wipe them. Omitting
- * the fields preserves the current values.
+ * NOTE: `variants` and `addon_group_links` are carried by `UpdateServiceBody`
+ * (via `ServiceRelationsFields`), not here. The API replaces each array wholesale
+ * when present, so callers must send the COMPLETE set; omit a field to leave that
+ * relation untouched.
  */
 export interface UpdateServiceInput {
   id: string;

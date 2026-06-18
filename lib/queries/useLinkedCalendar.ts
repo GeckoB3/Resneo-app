@@ -11,7 +11,7 @@
  * invalidate the calendar range on settle (matches the web `await load()`).
  */
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
 import { getApiUrl, isBackendConfigured } from '@/lib/env';
@@ -46,6 +46,10 @@ export function useLinkedCalendar(params: { from: string; to: string }) {
   return useQuery({
     queryKey: queryKeys.linkedCalendar.range(accessToken, from, to),
     enabled,
+    // Keep the prior day/range on screen while the next loads — stepping the
+    // date (or switching day↔week) dims rather than flashing a full loader,
+    // matching the primary calendar grid (useCalendarGrid).
+    placeholderData: keepPreviousData,
     // Cross-venue write activity arrives via account_link_notifications
     // realtime; this poll is the belt-and-braces fallback (§9 realtime/poll).
     refetchInterval: 60_000,

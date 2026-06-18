@@ -2,6 +2,7 @@ import { Linking, RefreshControl, ScrollView, StyleSheet, View } from 'react-nat
 import * as WebBrowser from 'expo-web-browser';
 import { Stack, useRouter, type Href } from 'expo-router';
 import { useCallback, useState } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 
 import { ComplianceCaptureSheet } from '@/components/compliance/ComplianceCaptureSheet';
@@ -129,6 +130,7 @@ type CaptureTarget = {
 type ComplianceAction =
   | { kind: 'resend'; id: string; guestName: string }
   | { kind: 'revoke'; id: string; guestName: string }
+  | { kind: 'disable' }
   | {
       kind: 'send';
       key: string;
@@ -142,6 +144,7 @@ type ComplianceAction =
 export default function ComplianceScreen() {
   const router = useRouter();
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const toast = useToast();
   const dashboard = useComplianceDashboard();
   const resend = useResendFormLink();
@@ -226,7 +229,7 @@ export default function ComplianceScreen() {
           }
         />
         {isAdmin ? (
-          <View style={styles.enableBlock}>
+          <View style={[styles.enableBlock, { paddingBottom: insets.bottom + spacing.xl }]}>
             <Button
               label="Enable compliance"
               fullWidth
@@ -347,6 +350,30 @@ export default function ComplianceScreen() {
         toast.error(err instanceof ApiError ? err.message : 'Could not revoke the link.');
       },
     });
+  };
+
+  // Disable compliance — admins flip the feature flag off. The dashboard is
+  // flag-gated server-side, so the refetch 403s and the screen falls back to
+  // the "Enable compliance" view. Templates and records are retained.
+  const runDisable = () => {
+    if (action?.kind !== 'disable') return;
+    setAction(null);
+    updateFlags.mutate(
+      { compliance_records_enabled: false },
+      {
+        onSuccess: () => {
+          hapticSuccess();
+          toast.success('Compliance disabled.');
+          void dashboard.refetch();
+        },
+        onError: (err) => {
+          hapticWarning();
+          toast.error(
+            err instanceof ApiError ? err.message : 'Could not disable compliance.',
+          );
+        },
+      },
+    );
   };
 
   const runSend = (send_via: 'email' | 'sms') => {
@@ -638,6 +665,17 @@ export default function ComplianceScreen() {
             onPress={() => openWeb(WEB_COMPLIANCE_PATH)}
             style={styles.webLink}
           />
+          {isAdmin ? (
+            <Button
+              label="Disable compliance"
+              variant="ghost"
+              size="sm"
+              loading={updateFlags.isPending}
+              customColors={{ background: 'transparent', text: colors.danger }}
+              onPress={() => setAction({ kind: 'disable' })}
+              style={styles.webLink}
+            />
+          ) : null}
           <View style={styles.spacer} />
         </ScrollView>
       </Screen>
@@ -683,6 +721,28 @@ export default function ComplianceScreen() {
                 />
               </View>
             </>
+          ) : action?.kind === 'disable' ? (
+            <>
+              <Text variant="subheading">Disable compliance?</Text>
+              <Text variant="bodySmall" tone="secondary">
+                Staff will no longer see check-ins, expiries or per-booking requirements.
+                Your templates and saved records are kept and return if you re-enable it.
+              </Text>
+              <View style={styles.sheetActions}>
+                <Button
+                  label="Keep enabled"
+                  variant="secondary"
+                  style={styles.flex1}
+                  onPress={() => setAction(null)}
+                />
+                <Button
+                  label="Disable"
+                  variant="danger"
+                  style={styles.flex1}
+                  onPress={runDisable}
+                />
+              </View>
+            </>
           ) : action ? (
             <>
               <Text variant="subheading">
@@ -724,7 +784,6 @@ const styles = StyleSheet.create({
   enableBlock: {
     gap: spacing.sm,
     paddingHorizontal: spacing.base,
-    paddingBottom: spacing.xl,
   },
   todayCard: {
     // Override Card default surface color for the "act now" emphasis — done via inline style above

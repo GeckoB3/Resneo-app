@@ -7,6 +7,7 @@ import { BookingDetailSheet } from '@/components/bookings/BookingDetailSheet';
 import { ClassRosterView } from '@/components/classes/ClassRosterView';
 import { ClassSessionCard } from '@/components/classes/ClassSessionCard';
 import { ClassTypesManagerSheet } from '@/components/classes/ClassTypesManagerSheet';
+import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { IconButton } from '@/components/ui/IconButton';
@@ -51,11 +52,12 @@ function CardSeparator() {
 
 /**
  * Class timetable — upcoming class sessions in a rolling 7-day window with a
- * per-session roster. Data comes from the Bearer-capable
- * GET /api/venue/schedule feed (the dedicated /api/venue/classes routes are
- * cookie-only, web dashboard only). Tapping an attendee opens the existing
- * booking detail sheet, so staff actions (confirm/start/no-show/cancel) reuse
- * the Bearer booking routes.
+ * per-session roster. Sessions come from the Bearer-capable
+ * GET /api/venue/schedule feed; tapping an attendee opens the existing booking
+ * detail sheet, so staff actions (confirm/start/no-show/cancel) reuse the Bearer
+ * booking routes. Creating and managing class types, sessions and weekly rules
+ * is done in-app via the header "+" → {@link ClassTypesManagerSheet}; the
+ * dedicated /api/venue/classes routes it calls are Bearer-capable too.
  */
 export default function ClassesScreen() {
   const { colors } = useTheme();
@@ -113,22 +115,10 @@ export default function ClassesScreen() {
 
   return (
     <Screen scroll={false} padded={false}>
-      <Stack.Screen
-        options={{
-          title: 'Classes',
-          headerRight: () => (
-            <View style={styles.headerActions}>
-              {liveState !== 'idle' ? <LiveDot state={liveState} /> : null}
-              <IconButton
-                icon={{ ios: 'slider.horizontal.3', android: 'tune', web: 'tune' }}
-                accessibilityLabel="Manage class types"
-                tint={colors.brand}
-                onPress={() => setManagerOpen(true)}
-              />
-            </View>
-          ),
-        }}
-      />
+      {/* The (app) Stack hides the OS header for this route, so the title, the
+          live indicator and the create/manage entry point live in-body below
+          (the old headerRight was never rendered → no way to add a class). */}
+      <Stack.Screen options={{ title: 'Classes' }} />
 
       {selectedSession ? (
         <ClassRosterView
@@ -139,6 +129,16 @@ export default function ClassesScreen() {
         />
       ) : (
         <>
+          {/* In-body screen header — title, live-sync dot, and the always-visible
+              "New class" action that opens the create/manage sheet. */}
+          <View style={styles.screenHeader}>
+            <Text variant="subheading">Classes</Text>
+            <View style={styles.headerActions}>
+              {liveState !== 'idle' ? <LiveDot state={liveState} /> : null}
+              <Button label="New class" size="sm" onPress={() => setManagerOpen(true)} />
+            </View>
+          </View>
+
           {/* Date navigation — rolling 7-day window */}
           <View style={[styles.navBar, { borderBottomColor: colors.border }]}>
             <IconButton
@@ -278,10 +278,17 @@ const styles = StyleSheet.create({
   spacer: {
     height: spacing.xl,
   },
+  screenHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.base,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.sm,
+  },
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    marginRight: spacing.sm,
   },
 });

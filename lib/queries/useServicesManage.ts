@@ -25,10 +25,28 @@ export interface BookingStartFields {
   booking_minute_marks?: number[] | null;
 }
 
-/** POST body — the create input plus the optional booking-start tuning. */
-export type CreateServiceBody = CreateServiceInput & BookingStartFields;
-/** PATCH body — the update input plus the optional booking-start tuning. */
-export type UpdateServiceBody = UpdateServiceInput & BookingStartFields;
+/** One add-on-group link sent with the service payload (replace semantics on the API). */
+export interface AddonGroupLinkWriteInput {
+  addon_group_id: string;
+  sort_order?: number;
+}
+
+/**
+ * Variants + add-on links travel inline with the service create/update payload
+ * (web parity — `appointment-service-form-to-payload.ts`). The API replaces each
+ * array wholesale (admin only), so callers MUST send the complete set. Omit a
+ * field entirely to leave that relation untouched.
+ * @see VariantWriteInput
+ */
+export interface ServiceRelationsFields {
+  variants?: VariantWriteInput[];
+  addon_group_links?: AddonGroupLinkWriteInput[];
+}
+
+/** POST body — the create input plus booking-start tuning and inline relations. */
+export type CreateServiceBody = CreateServiceInput & BookingStartFields & ServiceRelationsFields;
+/** PATCH body — the update input plus booking-start tuning and inline relations. */
+export type UpdateServiceBody = UpdateServiceInput & BookingStartFields & ServiceRelationsFields;
 
 function invalidateServices(queryClient: ReturnType<typeof useQueryClient>) {
   void queryClient.invalidateQueries({ queryKey: queryKeys.services.all() });
@@ -93,65 +111,6 @@ export interface VariantWriteInput {
    * the existing value back (the editor doesn't expose it for editing).
    */
   processing_time_blocks?: ProcessingTimeBlock[] | null;
-}
-
-/**
- * PATCH /api/venue/appointment-services with the FULL `variants` array.
- * The API replaces the set wholesale (admin only) — callers must always send
- * every variant that should remain, in display order.
- */
-export function useReplaceServiceVariants() {
-  const accessToken = useAccessToken();
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (input: { id: string; variants: VariantWriteInput[] }): Promise<unknown> => {
-      if (!accessToken) {
-        throw new Error('Missing access token');
-      }
-      return apiFetch<unknown>('/api/venue/appointment-services', {
-        accessToken,
-        method: 'PATCH',
-        body: JSON.stringify({
-          id: input.id,
-          variants: input.variants.map((variant, index) => ({
-            ...variant,
-            sort_order: variant.sort_order ?? index,
-          })),
-        }),
-      });
-    },
-    onSuccess: () => invalidateServices(queryClient),
-  });
-}
-
-/**
- * PATCH /api/venue/appointment-services with the FULL `addon_group_links` array
- * (replace semantics, admin only) — links the service to add-on groups.
- */
-export function useReplaceServiceAddonLinks() {
-  const accessToken = useAccessToken();
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (input: { id: string; addonGroupIds: string[] }): Promise<unknown> => {
-      if (!accessToken) {
-        throw new Error('Missing access token');
-      }
-      return apiFetch<unknown>('/api/venue/appointment-services', {
-        accessToken,
-        method: 'PATCH',
-        body: JSON.stringify({
-          id: input.id,
-          addon_group_links: input.addonGroupIds.map((addon_group_id, index) => ({
-            addon_group_id,
-            sort_order: index,
-          })),
-        }),
-      });
-    },
-    onSuccess: () => invalidateServices(queryClient),
-  });
 }
 
 /**

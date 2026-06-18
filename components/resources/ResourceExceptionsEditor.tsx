@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { StyleSheet, Switch, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { minutesToTime, timeToMinutes } from '@/components/calendar/grid-layout';
+import { ResourceExceptionsCalendar } from '@/components/resources/ResourceExceptionsCalendar';
 import { Button } from '@/components/ui/Button';
-import { DatePickerField } from '@/components/ui/DatePickerField';
 import { Segmented } from '@/components/ui/Segmented';
 import { Text } from '@/components/ui/Text';
 import { TimePickerField } from '@/components/ui/TimePickerField';
@@ -23,7 +23,7 @@ export type ResourceExceptionValue = ResourceExceptionsMap[string];
 /** Whether this day's override is a full closure or amended (custom) hours. */
 type ExceptionKind = 'closed' | 'custom';
 
-/** Today's local date as "YYYY-MM-DD" (default for the add-date picker). */
+/** Today's local date as "YYYY-MM-DD" (default month + today highlight). */
 function todayIso(): string {
   const now = new Date();
   const y = now.getFullYear();
@@ -53,22 +53,12 @@ function eachDateInRangeInclusive(start: string, end: string): string[] {
   return out;
 }
 
-/** "YYYY-MM-DD" → "d MMM yyyy"-ish label without pulling a formatter into the row. */
+/** "YYYY-MM-DD" → "d MMM yyyy"-ish label for the editor panel header. */
 function formatDateLabel(iso: string): string {
   const [y, m, d] = iso.split('-').map(Number);
   if (!y || !m || !d) return iso;
   const date = new Date(y, m - 1, d, 12, 0, 0, 0);
   return date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
-}
-
-/** Human summary of one exception value for the list row. */
-function describeException(value: ResourceExceptionValue): string {
-  if ('closed' in value) return 'Closed all day';
-  const range = value.periods[0];
-  if (!range) return 'Amended hours';
-  const extra = value.periods.length - 1;
-  const suffix = extra > 0 ? ` (+${extra} more — edit on web)` : '';
-  return `Open ${range.start} – ${range.end}${suffix}`;
 }
 
 /**
@@ -118,7 +108,7 @@ export function resourceExceptionsToJSON(map: ResourceExceptionsMap): ResourceEx
 }
 
 const KIND_OPTIONS: { value: ExceptionKind; label: string }[] = [
-  { value: 'closed', label: 'Closed all day' },
+  { value: 'closed', label: 'Closed' },
   { value: 'custom', label: 'Amended hours' },
 ];
 
@@ -128,219 +118,260 @@ type ResourceExceptionsEditorProps = {
 };
 
 /**
- * Date-specific availability overrides for a resource — a list of existing
- * exceptions (each "Closed all day" or an amended single range, with a remove
- * control) plus an "Add date exception" composer (date + closed/amended toggle,
- * and a start/end range when amended).
+ * Date-specific availability overrides for a resource — a month-grid calendar
+ * (tap a day to select it or a range, tap a marked day to edit it) plus an
+ * inline editor panel that switches between "add" mode (apply a closure/amended
+ * hours to the selected range) and "edit" mode (change or remove an existing
+ * day). A direct port of the web resource-timeline date-exceptions flow.
  *
- * Single-range-per-day for amended hours, mirroring {@link ResourceWeekHoursEditor}.
- * The web equivalent is a month-grid calendar; on mobile a date-picker + list is
- * the leaner fit.
+ * Single-range-per-day for amended hours (mirroring the weekly-hours editor);
+ * any extra split-shift ranges set on web are preserved untouched on save.
  *
- * @see _reference/Resneo/src/app/dashboard/resource-timeline/ResourceExceptionsCalendar.tsx
+ * @see _reference/Resneo/src/app/dashboard/resource-timeline/ResourceTimelineView.tsx
  */
 export function ResourceExceptionsEditor({ value, onChange }: ResourceExceptionsEditorProps) {
   const { colors } = useTheme();
+  const today = todayIso();
 
-  // Add-row composer state.
-  const [draftDate, setDraftDate] = useState(todayIso);
+  // Calendar month + tap-to-select range (web `exceptionMonth` / range state).
+  const [monthAnchor, setMonthAnchor] = useState(today);
+  const [rangeStart, setRangeStart] = useState<string | null>(null);
+  const [rangeEnd, setRangeEnd] = useState<string | null>(null);
+  // The day open in the edit panel (null = add mode).
+  const [editingDay, setEditingDay] = useState<string | null>(null);
+  // Shared closure/amended draft (web `formExceptionType` / start / end).
   const [draftKind, setDraftKind] = useState<ExceptionKind>('closed');
   const [draftStart, setDraftStart] = useState('09:00');
   const [draftEnd, setDraftEnd] = useState('17:00');
-  // Optional multi-day range: when on, apply the value across draftDate→draftEndDate
-  // inclusive (web `applyExceptionRange`), instead of a single date.
-  const [rangeMode, setRangeMode] = useState(false);
-  const [draftEndDate, setDraftEndDate] = useState(todayIso);
-  const [rangeError, setRangeError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const entries = Object.keys(value)
-    .sort()
-    .map((date) => ({ date, exception: value[date]! }));
+  // Guard against a stale editing day (e.g. after the parent re-seeds with a
+  // different resource): only treat it as editing when the day still exists.
+  const isEditing = editingDay != null && value[editingDay] != null;
+  const editingValue = isEditing ? value[editingDay] : undefined;
+  // Extra split-shift ranges on the edited day, surfaced so the user knows
+  // saving amended hours here edits range #1 and keeps the rest.
+  const editingExtraCount =
+    editingValue && 'periods' in editingValue ? editingValue.periods.length - 1 : 0;
 
-  // Extra split-shift ranges on the date being composed, surfaced so the user knows
-  // updating amended hours here edits range #1 and keeps the rest.
-  const draftExisting = value[draftDate];
-  const draftExtraCount =
-    draftExisting && 'periods' in draftExisting ? draftExisting.periods.length - 1 : 0;
-
-  const addException = () => {
-    setRangeError(null);
-
-    // Multi-day range — set one flat value across every date start→end inclusive
-    // (matches the web; per-date split-shift ranges are intentionally replaced).
-    if (rangeMode) {
-      const dates = eachDateInRangeInclusive(draftDate, draftEndDate);
-      if (dates.length === 0) {
-        setRangeError('End date must be on or after the start date.');
-        return;
+  // Tap a day: edit it if it has an exception, otherwise advance the range
+  // selection (start → end → restart) — mirrors web `handleExceptionDayClick`.
+  const handleDayClick = (ymd: string) => {
+    setError(null);
+    const ex = value[ymd];
+    if (ex) {
+      setEditingDay(ymd);
+      setRangeStart(null);
+      setRangeEnd(null);
+      if ('closed' in ex) {
+        setDraftKind('closed');
+      } else {
+        setDraftKind('custom');
+        setDraftStart(ex.periods[0]?.start ?? '09:00');
+        setDraftEnd(ex.periods[0]?.end ?? '17:00');
       }
-      if (dates.length > MAX_EXCEPTION_RANGE_DAYS) {
-        setRangeError(`Date range can’t exceed ${MAX_EXCEPTION_RANGE_DAYS} days.`);
-        return;
-      }
-      const rangeValue: ResourceExceptionValue =
-        draftKind === 'closed'
-          ? { closed: true }
-          : { periods: [{ start: draftStart, end: draftEnd }] };
-      const next = { ...value };
-      for (const dateKey of dates) {
-        next[dateKey] = rangeValue;
-      }
-      hapticSelect();
-      onChange(next);
       return;
     }
+    setEditingDay(null);
+    if (!rangeStart) {
+      setRangeStart(ymd);
+      setRangeEnd(null);
+      return;
+    }
+    if (!rangeEnd) {
+      const [a, b] = ymd < rangeStart ? [ymd, rangeStart] : [rangeStart, ymd];
+      setRangeStart(a);
+      setRangeEnd(b);
+      return;
+    }
+    setRangeStart(ymd);
+    setRangeEnd(null);
+  };
 
+  // True when the draft's amended end is at or before its start.
+  const customTimesInvalid =
+    draftKind === 'custom' && timeToMinutes(draftEnd) <= timeToMinutes(draftStart);
+
+  // Apply the draft to every day in the selected range (web `applyExceptionRange`).
+  const applyRange = () => {
+    setError(null);
+    if (!rangeStart) {
+      setError('Tap a day on the calendar to select it (tap a second day for a range), then Apply.');
+      return;
+    }
+    const end = rangeEnd ?? rangeStart;
+    const dates = eachDateInRangeInclusive(rangeStart, end);
+    if (dates.length === 0) {
+      setError('End date must be on or after the start date.');
+      return;
+    }
+    if (dates.length > MAX_EXCEPTION_RANGE_DAYS) {
+      setError(`Date range can’t exceed ${MAX_EXCEPTION_RANGE_DAYS} days.`);
+      return;
+    }
+    if (customTimesInvalid) {
+      setError('Amended end time must be after the start time.');
+      return;
+    }
+    const rangeValue: ResourceExceptionValue =
+      draftKind === 'closed' ? { closed: true } : { periods: [{ start: draftStart, end: draftEnd }] };
+    const next = { ...value };
+    for (const dateKey of dates) {
+      next[dateKey] = rangeValue;
+    }
+    hapticSelect();
+    onChange(next);
+    setRangeStart(null);
+    setRangeEnd(null);
+  };
+
+  // Save changes to the day being edited (web `saveExceptionEdit`), keeping any
+  // extra split-shift ranges after the edited first range.
+  const saveEdit = () => {
+    if (!editingDay) return;
+    setError(null);
+    if (customTimesInvalid) {
+      setError('Amended end time must be after the start time.');
+      return;
+    }
     let next: ResourceExceptionValue;
     if (draftKind === 'closed') {
       next = { closed: true };
     } else {
-      // If this date already had extra split-shift ranges, keep them after the
-      // edited first range so an update here never drops range #2+.
-      const existing = value[draftDate];
-      const preserved =
-        existing && 'periods' in existing ? existing.periods.slice(1) : [];
+      const existing = value[editingDay];
+      const preserved = existing && 'periods' in existing ? existing.periods.slice(1) : [];
       next = { periods: [{ start: draftStart, end: draftEnd }, ...preserved] };
     }
     hapticSelect();
-    onChange({ ...value, [draftDate]: next });
+    onChange({ ...value, [editingDay]: next });
+    setEditingDay(null);
   };
 
-  const removeException = (date: string) => {
+  const removeDay = (date: string) => {
     const next = { ...value };
     delete next[date];
     hapticSelect();
     onChange(next);
+    if (editingDay === date) setEditingDay(null);
   };
+
+  const clearSelection = () => {
+    setRangeStart(null);
+    setRangeEnd(null);
+    setError(null);
+  };
+
+  // Range summary shown in the add panel (web's "start → end" / "single day" hint).
+  const rangeSummary = rangeStart
+    ? rangeEnd && rangeEnd !== rangeStart
+      ? `${formatDateLabel(rangeStart)} – ${formatDateLabel(rangeEnd)}`
+      : `${formatDateLabel(rangeStart)} · tap another day for a range`
+    : 'Tap a day on the calendar to select it.';
+
+  const customTimeRow =
+    draftKind === 'custom' ? (
+      <View style={styles.periodRow}>
+        <TimePickerField
+          accessibilityLabel="Amended start time"
+          value={timeToMinutes(draftStart)}
+          onChange={(mins) => setDraftStart(minutesToTime(mins))}
+        />
+        <Text variant="caption" tone="muted">
+          to
+        </Text>
+        <TimePickerField
+          accessibilityLabel="Amended end time"
+          value={timeToMinutes(draftEnd)}
+          onChange={(mins) => setDraftEnd(minutesToTime(mins))}
+        />
+      </View>
+    ) : null;
 
   return (
     <View style={styles.container}>
-      {entries.length === 0 ? (
-        <Text variant="bodySmall" tone="muted">
-          No date exceptions. Add one below to close or change hours on a specific date.
-        </Text>
-      ) : (
-        <View style={styles.list}>
-          {entries.map(({ date, exception }) => (
-            <View key={date} style={[styles.exceptionRow, { borderColor: colors.border }]}>
-              <View style={styles.exceptionText}>
-                <Text variant="bodyMedium">{formatDateLabel(date)}</Text>
-                <Text variant="caption" tone="muted">
-                  {describeException(exception)}
-                </Text>
-              </View>
-              <Button
-                label="Remove"
-                variant="danger"
-                size="sm"
-                onPress={() => removeException(date)}
-              />
+      <ResourceExceptionsCalendar
+        monthAnchor={monthAnchor}
+        onChangeMonth={setMonthAnchor}
+        exceptions={value}
+        rangeStart={rangeStart}
+        rangeEnd={rangeEnd}
+        editingDay={isEditing ? editingDay : null}
+        today={today}
+        onDayClick={handleDayClick}
+      />
+
+      {isEditing ? (
+        /* Edit mode — change or remove the tapped day. */
+        <View style={[styles.panel, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+          <View style={styles.panelHeader}>
+            <View style={styles.panelHeaderText}>
+              <Text variant="overline" tone="muted">
+                Editing
+              </Text>
+              <Text variant="bodyMedium">{formatDateLabel(editingDay!)}</Text>
             </View>
-          ))}
+            <Button label="Close" variant="ghost" size="sm" onPress={() => setEditingDay(null)} />
+          </View>
+          <Segmented options={KIND_OPTIONS} value={draftKind} onChange={setDraftKind} />
+          {customTimeRow}
+          {editingExtraCount > 0 ? (
+            <Text variant="caption" tone="muted">
+              {`This date has +${editingExtraCount} more time range${
+                editingExtraCount > 1 ? 's' : ''
+              } set on web — they're kept; this edits the first range.`}
+            </Text>
+          ) : null}
+          {error ? (
+            <Text variant="caption" tone="danger">
+              {error}
+            </Text>
+          ) : null}
+          <View style={styles.panelActions}>
+            <Button label="Save changes" size="sm" style={styles.flex1} onPress={saveEdit} />
+            <Button
+              label="Remove"
+              variant="danger"
+              size="sm"
+              style={styles.flex1}
+              onPress={() => removeDay(editingDay!)}
+            />
+          </View>
+        </View>
+      ) : (
+        /* Add mode — apply a closure / amended hours to the selected range. */
+        <View style={[styles.panel, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+          <Text variant="label" tone="secondary">
+            Add closure or amended hours
+          </Text>
+          <Text variant="caption" tone="muted">
+            {rangeSummary}
+          </Text>
+          <Segmented options={KIND_OPTIONS} value={draftKind} onChange={setDraftKind} />
+          {customTimeRow}
+          {error ? (
+            <Text variant="caption" tone="danger">
+              {error}
+            </Text>
+          ) : null}
+          <View style={styles.panelActions}>
+            <Button
+              label="Apply"
+              size="sm"
+              style={styles.flex1}
+              disabled={!rangeStart}
+              onPress={applyRange}
+            />
+            <Button
+              label="Clear"
+              variant="secondary"
+              size="sm"
+              style={styles.flex1}
+              disabled={!rangeStart}
+              onPress={clearSelection}
+            />
+          </View>
         </View>
       )}
-
-      {/* Add-date composer */}
-      <View style={[styles.addCard, { borderColor: colors.border }]}>
-        <Text variant="label" tone="secondary">
-          Add date exception
-        </Text>
-        <View style={styles.addRow}>
-          <Text variant="bodySmall" tone="muted" style={styles.addRowLabel}>
-            {rangeMode ? 'From' : 'Date'}
-          </Text>
-          <DatePickerField
-            accessibilityLabel="Exception date"
-            value={draftDate}
-            onChange={(next) => {
-              setDraftDate(next);
-              setRangeError(null);
-              // Keep the end on/after the new start so the range stays valid.
-              if (rangeMode && draftEndDate < next) setDraftEndDate(next);
-            }}
-            minimumDate={new Date()}
-          />
-        </View>
-
-        <View style={styles.addRow}>
-          <Text variant="bodySmall" tone="muted" style={styles.addRowLabel}>
-            Apply across a date range
-          </Text>
-          <Switch
-            value={rangeMode}
-            onValueChange={(on) => {
-              setRangeMode(on);
-              setRangeError(null);
-              if (on && draftEndDate < draftDate) setDraftEndDate(draftDate);
-            }}
-            accessibilityLabel="Apply across a date range"
-          />
-        </View>
-
-        {rangeMode ? (
-          <View style={styles.addRow}>
-            <Text variant="bodySmall" tone="muted" style={styles.addRowLabel}>
-              To
-            </Text>
-            <DatePickerField
-              accessibilityLabel="Exception end date"
-              value={draftEndDate}
-              onChange={(next) => {
-                setDraftEndDate(next);
-                setRangeError(null);
-              }}
-              minimumDate={new Date()}
-            />
-          </View>
-        ) : null}
-
-        <Segmented options={KIND_OPTIONS} value={draftKind} onChange={setDraftKind} />
-
-        {draftKind === 'custom' ? (
-          <View style={styles.periodRow}>
-            <TimePickerField
-              accessibilityLabel="Amended start time"
-              value={timeToMinutes(draftStart)}
-              onChange={(mins) => setDraftStart(minutesToTime(mins))}
-            />
-            <Text variant="caption" tone="muted">
-              to
-            </Text>
-            <TimePickerField
-              accessibilityLabel="Amended end time"
-              value={timeToMinutes(draftEnd)}
-              onChange={(mins) => setDraftEnd(minutesToTime(mins))}
-            />
-          </View>
-        ) : null}
-
-        {!rangeMode && draftKind === 'custom' && draftExtraCount > 0 ? (
-          <Text variant="caption" tone="muted">
-            {`This date has +${draftExtraCount} more time range${
-              draftExtraCount > 1 ? 's' : ''
-            } set on web — they're kept; this edits the first range.`}
-          </Text>
-        ) : null}
-
-        {rangeError ? (
-          <Text variant="caption" tone="danger">
-            {rangeError}
-          </Text>
-        ) : null}
-
-        <Button
-          label={
-            rangeMode
-              ? 'Apply to date range'
-              : value[draftDate]
-                ? 'Update this date'
-                : 'Add exception'
-          }
-          variant="secondary"
-          size="sm"
-          onPress={addException}
-        />
-      </View>
     </View>
   );
 }
@@ -349,36 +380,28 @@ const styles = StyleSheet.create({
   container: {
     gap: spacing.sm,
   },
-  list: {
-    gap: spacing.sm,
-  },
-  exceptionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.sm,
+  panel: {
     padding: spacing.md,
+    gap: spacing.sm,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radius.md,
   },
-  exceptionText: {
+  panelHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  panelHeaderText: {
     flex: 1,
     minWidth: 0,
     gap: 1,
   },
-  addCard: {
-    padding: spacing.md,
-    gap: spacing.sm,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radius.md,
-  },
-  addRow: {
+  panelActions: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.md,
+    gap: spacing.sm,
   },
-  addRowLabel: {
+  flex1: {
     flex: 1,
   },
   periodRow: {

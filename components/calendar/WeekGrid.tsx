@@ -25,6 +25,7 @@ import {
   timeToMinutes,
   type LaneInput,
 } from '@/components/calendar/grid-layout';
+import type { CalendarTimeBlock } from '@/components/calendar/CalendarDayGrid';
 import { Text } from '@/components/ui/Text';
 import { bookingCalendarBlockPalette } from '@/lib/booking/booking-status-visual';
 import { venueClosedRanges, type VenueDayHours } from '@/lib/calendar/venue-closures';
@@ -63,6 +64,12 @@ export type WeekDayColumn = {
   sessions: CalendarGridSession[];
   /** Class/event/resource blocks (schedule feed) for this day's calendar. */
   scheduleBlocks: CalendarScheduleBlock[];
+  /**
+   * Non-bookable "busy" overlays for this day — e.g. a `time_only` linked
+   * venue's redacted bookings, which carry no detail to show as a bar. Optional:
+   * the primary venue's week omits it (breaks/blocks live in the Day view).
+   */
+  timeBlocks?: CalendarTimeBlock[];
   /** Venue open/closed state for this day → "Closed" shading. */
   venueHours: VenueDayHours;
 };
@@ -147,6 +154,11 @@ export function WeekGrid({
       }
       for (const sb of day.scheduleBlocks) {
         ranges.push({ start: timeToMinutes(sb.startTime), end: timeToMinutes(sb.endTime) });
+      }
+      for (const tb of day.timeBlocks ?? []) {
+        const start = timeToMinutes(tb.start);
+        const end = timeToMinutes(tb.end);
+        if (end > start) ranges.push({ start, end });
       }
     }
     const bounds = computeGridBounds(ranges);
@@ -324,6 +336,21 @@ function WeekDayCol({
     [day.scheduleBlocks, gridStartMin],
   );
 
+  const busyBlocks = useMemo(() => {
+    const out: { block: CalendarTimeBlock; top: number; height: number }[] = [];
+    for (const block of day.timeBlocks ?? []) {
+      const start = timeToMinutes(block.start);
+      const end = timeToMinutes(block.end);
+      if (end <= start) continue;
+      out.push({
+        block,
+        top: (start - gridStartMin) * PX_PER_MINUTE,
+        height: Math.max((end - start) * PX_PER_MINUTE, WEEK_MIN_BLOCK_HEIGHT),
+      });
+    }
+    return out;
+  }, [day.timeBlocks, gridStartMin]);
+
   const closedRanges = useMemo(
     () => venueClosedRanges(day.venueHours, startHour * 60, endHour * 60),
     [day.venueHours, startHour, endHour],
@@ -372,6 +399,25 @@ function WeekDayCol({
             },
           ]}
         />
+      ))}
+
+      {/* Busy / blocked time (e.g. a time_only linked venue's redacted
+          bookings) — grey, non-interactive, behind the booking layer. */}
+      {busyBlocks.map(({ block, top, height }) => (
+        <View
+          key={block.id}
+          pointerEvents="none"
+          accessibilityLabel={block.label ?? 'Busy'}
+          style={[
+            styles.busy,
+            { top, height, backgroundColor: hexToRgba(colors.text, 0.1), borderColor: colors.border },
+          ]}>
+          {height >= WEEK_MIN_BLOCK_HEIGHT ? (
+            <Text variant="caption" tone="muted" numberOfLines={1} style={styles.busyLabel}>
+              Busy
+            </Text>
+          ) : null}
+        </View>
       ))}
 
       {/* Class / event capacity blocks (indigo). */}
@@ -549,6 +595,20 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
+  },
+  busy: {
+    position: 'absolute',
+    left: 1,
+    right: 1,
+    borderRadius: 3,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+    paddingHorizontal: 2,
+    justifyContent: 'center',
+  },
+  busyLabel: {
+    fontSize: 9,
+    lineHeight: 12,
   },
   session: {
     position: 'absolute',

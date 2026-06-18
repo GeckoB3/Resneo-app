@@ -1,10 +1,13 @@
-import { Stack } from 'expo-router';
+import { Stack, useRouter, type Href } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
 import { BookingDetailSheet } from '@/components/bookings/BookingDetailSheet';
 import { ResourceDaySection } from '@/components/resources/ResourceDaySection';
-import { ResourceManagerSheet } from '@/components/resources/ResourceManagerSheet';
+import {
+  ResourceManagerSheet,
+  type ResourceManagerInitialAction,
+} from '@/components/resources/ResourceManagerSheet';
 import { Button } from '@/components/ui/Button';
 import { Chip } from '@/components/ui/Chip';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -39,6 +42,7 @@ import { useTheme } from '@/theme/useTheme';
  */
 export default function ResourcesScreen() {
   const { colors } = useTheme();
+  const router = useRouter();
   const { venue } = useVenueContext();
   const venueId = venue?.id ?? null;
   const timeZone = venue?.timezone ?? undefined;
@@ -48,6 +52,29 @@ export default function ResourcesScreen() {
   const [resourceFilter, setResourceFilter] = useState<string | null>(null);
   const [detailBookingId, setDetailBookingId] = useState<string | null>(null);
   const [managerOpen, setManagerOpen] = useState(false);
+  // When set, the manager opens straight into create / a specific resource's editor.
+  const [managerAction, setManagerAction] = useState<ResourceManagerInitialAction | null>(null);
+
+  const openManager = useCallback((action: ResourceManagerInitialAction | null) => {
+    setManagerAction(action);
+    setManagerOpen(true);
+  }, []);
+
+  const closeManager = useCallback(() => {
+    setManagerOpen(false);
+    setManagerAction(null);
+  }, []);
+
+  // Book a slot on a resource: close the manager (if open) and route to the
+  // resource booking flow with it pre-selected.
+  const bookResource = useCallback(
+    (resourceId: string) => {
+      setManagerOpen(false);
+      setManagerAction(null);
+      router.push(`/booking/new?type=resource&resourceId=${resourceId}` as Href);
+    },
+    [router],
+  );
 
   const resourcesQuery = useResourcesList();
   const bookingsQuery = useResourceDayBookings(date);
@@ -123,7 +150,7 @@ export default function ResourcesScreen() {
                 accessibilityLabel="Manage resources"
                 tint={colors.brand}
                 iconSize={22}
-                onPress={() => setManagerOpen(true)}
+                onPress={() => openManager(null)}
               />
             </View>
           ),
@@ -151,7 +178,7 @@ export default function ResourcesScreen() {
           />
           <Button
             label="New resource"
-            onPress={() => setManagerOpen(true)}
+            onPress={() => openManager({ type: 'create' })}
             style={styles.emptyAction}
           />
         </View>
@@ -159,6 +186,16 @@ export default function ResourcesScreen() {
         <>
           {/* Date toolbar */}
           <View style={[styles.toolbar, { borderBottomColor: colors.border }]}>
+            <View style={styles.toolbarTop}>
+              <Text variant="overline" tone="muted">
+                {resources.length} {resources.length === 1 ? 'resource' : 'resources'}
+              </Text>
+              <Button
+                label="New resource"
+                size="sm"
+                onPress={() => openManager({ type: 'create' })}
+              />
+            </View>
             <View style={styles.dateNav}>
               <IconButton
                 icon={{ ios: 'chevron.left', android: 'chevron_left', web: 'chevron_left' }}
@@ -253,6 +290,8 @@ export default function ResourcesScreen() {
                   resource={resource}
                   bookings={bookingsByResource.get(resource.id) ?? []}
                   onPressBooking={setDetailBookingId}
+                  onBook={bookResource}
+                  onEdit={(id) => openManager({ type: 'edit', resourceId: id })}
                 />
               ))}
 
@@ -267,7 +306,12 @@ export default function ResourcesScreen() {
         onClose={() => setDetailBookingId(null)}
       />
 
-      <ResourceManagerSheet visible={managerOpen} onClose={() => setManagerOpen(false)} />
+      <ResourceManagerSheet
+        visible={managerOpen}
+        onClose={closeManager}
+        initialAction={managerAction}
+        onBookResource={bookResource}
+      />
     </Screen>
   );
 }
@@ -278,6 +322,12 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.md,
     gap: spacing.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  toolbarTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
   },
   dateNav: {
     flexDirection: 'row',

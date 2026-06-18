@@ -299,7 +299,7 @@ export function ClassTypeEditorSheet({
   }
 
   return (
-    <Sheet visible={target !== null} onClose={onClose} maxHeight="92%">
+    <Sheet visible={target !== null} onClose={onClose} maxHeight="92%" fill>
       <View style={styles.bodyWrap}>
         <Text variant="overline" tone="muted">
           {editing ? 'Edit class' : 'New class'}
@@ -609,10 +609,12 @@ export function ClassTypeEditorSheet({
 
 const styles = StyleSheet.create({
   bodyWrap: {
+    flex: 1,
+    paddingHorizontal: spacing.lg,
     gap: spacing.md,
   },
   scroll: {
-    flexGrow: 0,
+    flex: 1,
   },
   body: {
     gap: spacing.md,

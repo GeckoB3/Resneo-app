@@ -5,7 +5,6 @@ import {
   Platform,
   Pressable,
   RefreshControl,
-  ScrollView,
   StyleSheet,
   View,
 } from 'react-native';
@@ -413,8 +412,8 @@ export default function BookingsScreen() {
 
   // ---- Linked venues' bookings (cross-venue) ----
   // Fetch every accessible linked venue's bookings for the visible range and
-  // merge them into the list, controlled by the venue-selector chips. Selection
-  // defaults to the active linked context (ownerVenueId) when set, else own.
+  // merge them into the list, controlled by the filter sheet's Calendars section.
+  // Selection defaults to the active linked context (ownerVenueId) when set, else own.
   const { ownerVenueId } = useLinkedVenueContext();
   const linkedQuery = useLinkedCalendar({ from: range.from, to: range.to });
   const linkedVenues = useMemo<LinkedVenueCalendar[]>(
@@ -430,6 +429,29 @@ export default function BookingsScreen() {
   }, [ownerVenueId, linkedVenues]);
   const [venueSelOverride, setVenueSelOverride] = useState<VenueSelection | null>(null);
   const venueSel = venueSelOverride ?? defaultVenueSel;
+
+  // The new-booking entry point follows the active linked context. When a
+  // linked venue is active it's only offered if the link grants creation
+  // (`create_edit_cancel`); the full booking form then opens scoped to it
+  // (mirrors the native flow — same form, different owner venue).
+  const activeLinkedVenue = useMemo(
+    () => (ownerVenueId ? linkedVenues.find((v) => v.venueId === ownerVenueId) ?? null : null),
+    [ownerVenueId, linkedVenues],
+  );
+  const canCreateBooking = !activeLinkedVenue || activeLinkedVenue.action === 'create_edit_cancel';
+  const goToNewBooking = useCallback(() => {
+    if (activeLinkedVenue) {
+      router.push({
+        pathname: '/booking/new',
+        params: {
+          ownerVenueId: activeLinkedVenue.venueId,
+          ownerVenueName: activeLinkedVenue.venueName,
+        },
+      });
+    } else {
+      router.push('/booking/new');
+    }
+  }, [router, activeLinkedVenue]);
 
   const selectAllVenues = useCallback(() => {
     setVenueSelOverride({ own: true, linked: new Set(linkedVenues.map((v) => v.venueId)) });
@@ -923,31 +945,6 @@ export default function BookingsScreen() {
           }
         />
 
-        {/* Venue selector — own venue + any linked venues. View all bookings
-            (incl. linked) or any combination. Only shown when links exist. */}
-        {linkedVenues.length > 0 ? (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.venueChips}>
-            <Chip
-              label="All"
-              selected={venueSel.own && linkedVenues.every((v) => venueSel.linked.has(v.venueId))}
-              onPress={selectAllVenues}
-            />
-            <Chip label="My venue" selected={venueSel.own} onPress={toggleOwnVenue} />
-            {linkedVenues.map((v) => (
-              <Chip
-                key={v.venueId}
-                label={v.venueName}
-                selected={venueSel.linked.has(v.venueId)}
-                selectedColor={colors.warning}
-                onPress={() => toggleLinkedVenue(v.venueId)}
-              />
-            ))}
-          </ScrollView>
-        ) : null}
-
         {/* Active-filter summary — removable chips for whatever is applied, so the
             applied filters stay visible now that the controls live in the sheet. */}
         {anyFilterActive ? (
@@ -1062,8 +1059,8 @@ export default function BookingsScreen() {
                   ? 'Nothing booked for this period yet.'
                   : `No ${(STATUS_FILTERS.find((o) => o.key === status)?.label ?? status).toLowerCase()} appointments for this period.`
               }
-              actionLabel={newBookingActionLabel(terminology)}
-              onAction={() => router.push('/booking/new')}
+              actionLabel={canCreateBooking ? newBookingActionLabel(terminology) : undefined}
+              onAction={canCreateBooking ? goToNewBooking : undefined}
             />
           }
           refreshControl={
@@ -1076,11 +1073,12 @@ export default function BookingsScreen() {
         />
       )}
 
-      {/* FAB — hidden during selection mode to prevent accidental taps */}
-      {!selectionMode ? (
+      {/* FAB — hidden during selection mode, and when the active linked venue
+          does not grant booking creation. */}
+      {!selectionMode && canCreateBooking ? (
         <Fab
           accessibilityLabel={newBookingActionLabel(terminology)}
-          onPress={() => router.push('/booking/new')}
+          onPress={goToNewBooking}
         />
       ) : null}
 
@@ -1126,10 +1124,16 @@ export default function BookingsScreen() {
         onToggleSortDir={() => setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))}
       />
 
-      {/* Unified filter sheet — status / staff / type / time / service / compliance */}
+      {/* Unified filter sheet — calendars / status / staff / type / time / service / compliance */}
       <BookingFilterSheet
         visible={filterSheetOpen}
         onClose={() => setFilterSheetOpen(false)}
+        linkedVenues={linkedVenues}
+        venueOwnSelected={venueSel.own}
+        selectedLinkedVenueIds={venueSel.linked}
+        onSelectAllVenues={selectAllVenues}
+        onToggleOwnVenue={toggleOwnVenue}
+        onToggleLinkedVenue={toggleLinkedVenue}
         statusOptions={statusOptions}
         status={status}
         onChangeStatus={setStatus}
@@ -1223,10 +1227,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.sm,
-  },
-  venueChips: {
-    gap: spacing.sm,
-    paddingVertical: spacing.xxs,
   },
   listContent: {
     padding: spacing.base,

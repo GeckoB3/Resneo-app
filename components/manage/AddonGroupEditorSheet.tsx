@@ -15,7 +15,13 @@ import {
 } from '@/lib/queries/useAddonGroups';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
-import type { AddonGroupInput, AddonItemInput, VenueAddon, VenueAddonGroup } from '@/types/addon-groups';
+import type {
+  AddonGroupInput,
+  AddonGroupUpsertResponse,
+  AddonItemInput,
+  VenueAddon,
+  VenueAddonGroup,
+} from '@/types/addon-groups';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -43,6 +49,8 @@ export type AddonGroupEditorTarget =
 type Props = {
   target: AddonGroupEditorTarget | null;
   onClose: () => void;
+  /** Reports the saved group so a caller (the service form) can auto-link it. */
+  onSaved?: (result: AddonGroupUpsertResponse, mode: 'create' | 'edit') => void;
 };
 
 // ---------------------------------------------------------------------------
@@ -76,7 +84,7 @@ const SELECTION_TYPES = [
  * Handles the group metadata + inline add-on list.
  * Admin-only — the parent screen must ensure isAdmin before opening.
  */
-export function AddonGroupEditorSheet({ target, onClose }: Props) {
+export function AddonGroupEditorSheet({ target, onClose, onSaved }: Props) {
   const { colors } = useTheme();
   const createMutation = useCreateAddonGroup();
   const updateMutation = useUpdateAddonGroup();
@@ -293,12 +301,12 @@ export function AddonGroupEditorSheet({ target, onClose }: Props) {
     };
 
     try {
-      if (target?.mode === 'edit') {
-        await updateMutation.mutateAsync({ id: target.group.id, group: groupInput });
-      } else {
-        await createMutation.mutateAsync({ group: groupInput });
-      }
+      const result =
+        target?.mode === 'edit'
+          ? await updateMutation.mutateAsync({ id: target.group.id, group: groupInput })
+          : await createMutation.mutateAsync({ group: groupInput });
       hapticSuccess();
+      onSaved?.(result, target?.mode === 'edit' ? 'edit' : 'create');
       onClose();
     } catch (e) {
       hapticWarning();
@@ -336,7 +344,7 @@ export function AddonGroupEditorSheet({ target, onClose }: Props) {
   const seeded = target && seededId === (target.mode === 'create' ? '__create__' : (target as Extract<AddonGroupEditorTarget, {mode:'edit'}>).group?.id);
 
   return (
-    <Sheet visible={!!target} onClose={onClose} maxHeight="92%">
+    <Sheet visible={!!target} onClose={onClose} maxHeight="92%" fill>
       {seeded ? (
         <View style={styles.body}>
           <View style={styles.header}>
@@ -626,8 +634,13 @@ export function AddonGroupEditorSheet({ target, onClose }: Props) {
 }
 
 const styles = StyleSheet.create({
+  // `fill` Sheet (fixed height): the body claims that height so the ScrollView
+  // scrolls between the header and the pinned actions, keeping Save reachable on
+  // long add-on lists. `fill` strips the wrapper's horizontal padding — restore it.
   body: {
+    flex: 1,
     gap: spacing.md,
+    paddingHorizontal: spacing.lg,
   },
   header: {
     flexDirection: 'row',
@@ -642,7 +655,7 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   scroll: {
-    flexGrow: 0,
+    flex: 1,
   },
   scrollBody: {
     gap: spacing.md,

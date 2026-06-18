@@ -27,6 +27,7 @@ import {
   useGenerateInstances,
   useManagedClasses,
 } from '@/lib/queries/useClassesManage';
+import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { minTouchTarget, spacing } from '@/theme/index';
@@ -75,26 +76,45 @@ function ruleSummary(rule: ManagedClassTimetableEntry): string {
 }
 
 /**
- * In-app class-types manager — opened from a header action on /classes. Lists
+ * In-app class-types manager — opened from the header "+" on /classes. Lists
  * each class type with its session defaults, payment rule and calendar column,
- * with Edit, "New class", "Schedule session" and Delete. Also surfaces the next
- * few upcoming sessions per class with an Edit affordance (instance PATCH).
+ * with Edit, "New class", "Schedule session", "Weekly rule" and Delete, plus the
+ * next few upcoming sessions per class (Edit / Cancel / Remove).
  *
- * Editing class types is admin-only on the API (PATCH `class_type` → 403 for
- * non-admins), so the create/edit/delete affordances are admin-gated here;
- * scheduling sessions stays available to scoped staff. Replaces the previous
- * "manage on the web dashboard" dead-end.
+ * Permissions mirror the web class timetable: admins manage every class; other
+ * staff create/edit/delete and schedule classes only on the calendars assigned
+ * to them ({@link staffManagesClassType}), which the API enforces too. Cancel-
+ * with-guest-notification and generating sessions from rules stay admin-only.
  */
 export function ClassTypesManagerSheet({ visible, onClose }: ClassTypesManagerSheetProps) {
   const { colors } = useTheme();
   const toast = useToast();
   const { venue } = useVenueContext();
   const isAdmin = venue?.current_user_role === 'admin';
+  const staffMe = useStaffMe();
 
   const query = useManagedClasses();
   const deleteEntity = useDeleteClassEntity();
   const cancelInstance = useCancelClassInstance();
   const generate = useGenerateInstances();
+
+  // Web parity: admins manage every class; other staff manage classes only on
+  // the calendars assigned to them. `linked_calendar_ids` here is the same set
+  // the web dashboard calls `linkedPractitionerIds`, and the API enforces the
+  // same scope on every write.
+  const linkedCalendarIds = useMemo(
+    () => (isAdmin ? [] : staffMe.data?.staff.linked_calendar_ids ?? []),
+    [isAdmin, staffMe.data],
+  );
+  const canManageClasses = isAdmin || linkedCalendarIds.length > 0;
+  const staffManagesClassType = useCallback(
+    (ct: ManagedClassType): boolean => {
+      if (isAdmin) return true;
+      const calId = ct.instructor_calendar_id ?? ct.instructor_id ?? null;
+      return calId != null && linkedCalendarIds.includes(calId);
+    },
+    [isAdmin, linkedCalendarIds],
+  );
 
   const [editorTarget, setEditorTarget] = useState<ClassTypeEditorTarget | null>(null);
   const [scheduleTarget, setScheduleTarget] = useState<ClassScheduleTarget | null>(null);
@@ -120,11 +140,13 @@ export function ClassTypesManagerSheet({ visible, onClose }: ClassTypesManagerSh
   );
 
   // Team calendar columns for the picker: unified calendars, else legacy practitioners.
+  // Non-admins may only place classes on calendars assigned to them (web parity).
   const calendarColumns = useMemo<ClassCalendarColumn[]>(() => {
     const unified = query.data?.unified_calendars ?? [];
     const cols = unified.length > 0 ? unified : query.data?.practitioners ?? [];
-    return [...cols].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
-  }, [query.data?.unified_calendars, query.data?.practitioners]);
+    const scoped = isAdmin ? cols : cols.filter((c) => linkedCalendarIds.includes(c.id));
+    return [...scoped].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+  }, [query.data?.unified_calendars, query.data?.practitioners, isAdmin, linkedCalendarIds]);
 
   const calendarNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -329,12 +351,20 @@ export function ClassTypesManagerSheet({ visible, onClose }: ClassTypesManagerSh
                 tintColor={colors.brand}
               />
             }>
-            {isAdmin ? (
+            {canManageClasses ? (
               <Button
                 label="New class"
                 fullWidth
                 onPress={() => setEditorTarget({ mode: 'create' })}
               />
+            ) : null}
+
+            {!isAdmin ? (
+              <Text variant="caption" tone="muted">
+                {linkedCalendarIds.length === 0
+                  ? "Your account isn't linked to a calendar yet. Ask an admin to assign one before you can manage classes."
+                  : 'You can create, edit and schedule classes on the calendars assigned to you. Cancelling a class with guest notifications is admin-only.'}
+              </Text>
             ) : null}
 
             {isAdmin && hasRules ? (
@@ -354,7 +384,7 @@ export function ClassTypesManagerSheet({ visible, onClose }: ClassTypesManagerSh
               <EmptyState
                 title="No classes yet"
                 message={
-                  isAdmin
+                  canManageClasses
                     ? 'Create your first class type, then schedule sessions for it.'
                     : 'No class types have been created yet. A venue admin can add them.'
                 }
@@ -414,7 +444,7 @@ export function ClassTypesManagerSheet({ visible, onClose }: ClassTypesManagerSh
                                 numberOfLines={1}>
                                 {ruleSummary(rule)}
                               </Text>
-                              {isAdmin ? (
+                              {staffManagesClassType(ct) ? (
                                 <View style={styles.sessionActions}>
                                   <Button
                                     label="Edit"
@@ -451,34 +481,36 @@ export function ClassTypesManagerSheet({ visible, onClose }: ClassTypesManagerSh
                               {(inst.booked_spots ?? 0) > 0 ? ` · ${inst.booked_spots} booked` : ''}
                             </Text>
                             <View style={styles.sessionActions}>
-                              <Button
-                                label="Edit"
-                                variant="ghost"
-                                size="sm"
-                                onPress={() =>
-                                  setScheduleTarget({ mode: 'edit', classType: ct, instance: inst })
-                                }
-                              />
+                              {staffManagesClassType(ct) ? (
+                                <Button
+                                  label="Edit"
+                                  variant="ghost"
+                                  size="sm"
+                                  onPress={() =>
+                                    setScheduleTarget({ mode: 'edit', classType: ct, instance: inst })
+                                  }
+                                />
+                              ) : null}
                               {isAdmin ? (
-                                <>
-                                  <Button
-                                    label="Cancel"
-                                    variant="ghost"
-                                    size="sm"
-                                    customColors={{ background: 'transparent', text: colors.danger }}
-                                    onPress={() => {
-                                      setCancelReason('');
-                                      setCancelTarget({ classType: ct, instance: inst });
-                                    }}
-                                  />
-                                  <Button
-                                    label="Remove"
-                                    variant="ghost"
-                                    size="sm"
-                                    customColors={{ background: 'transparent', text: colors.danger }}
-                                    onPress={() => setRemoveSessionTarget({ classType: ct, instance: inst })}
-                                  />
-                                </>
+                                <Button
+                                  label="Cancel"
+                                  variant="ghost"
+                                  size="sm"
+                                  customColors={{ background: 'transparent', text: colors.danger }}
+                                  onPress={() => {
+                                    setCancelReason('');
+                                    setCancelTarget({ classType: ct, instance: inst });
+                                  }}
+                                />
+                              ) : null}
+                              {staffManagesClassType(ct) ? (
+                                <Button
+                                  label="Remove"
+                                  variant="ghost"
+                                  size="sm"
+                                  customColors={{ background: 'transparent', text: colors.danger }}
+                                  onPress={() => setRemoveSessionTarget({ classType: ct, instance: inst })}
+                                />
                               ) : null}
                             </View>
                           </View>
@@ -486,15 +518,15 @@ export function ClassTypesManagerSheet({ visible, onClose }: ClassTypesManagerSh
                       </View>
                     ) : null}
 
-                    <View style={styles.actionsRow}>
-                      <Button
-                        label="Schedule session"
-                        variant="secondary"
-                        size="sm"
-                        style={styles.flex1}
-                        onPress={() => setScheduleTarget({ mode: 'schedule', classType: ct })}
-                      />
-                      {isAdmin ? (
+                    {staffManagesClassType(ct) ? (
+                      <View style={styles.actionsRow}>
+                        <Button
+                          label="Schedule session"
+                          variant="secondary"
+                          size="sm"
+                          style={styles.flex1}
+                          onPress={() => setScheduleTarget({ mode: 'schedule', classType: ct })}
+                        />
                         <Button
                           label="Weekly rule"
                           variant="secondary"
@@ -502,9 +534,9 @@ export function ClassTypesManagerSheet({ visible, onClose }: ClassTypesManagerSh
                           style={styles.flex1}
                           onPress={() => setRuleTarget({ mode: 'create', classType: ct })}
                         />
-                      ) : null}
-                    </View>
-                    {isAdmin ? (
+                      </View>
+                    ) : null}
+                    {staffManagesClassType(ct) ? (
                       <View style={styles.actionsRow}>
                         <Button
                           label="Edit"

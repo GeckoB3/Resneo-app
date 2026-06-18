@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
 import {
@@ -27,9 +27,22 @@ import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { Resource } from '@/types/resources-manage';
 
+/**
+ * Open the manager straight into a sub-flow: a fresh "New resource" form, or the
+ * editor for a specific resource (by id). Lets the resources page surface "New
+ * resource" / per-resource "Edit" as one tap instead of opening the list first.
+ */
+export type ResourceManagerInitialAction =
+  | { type: 'create' }
+  | { type: 'edit'; resourceId: string };
+
 type ResourceManagerSheetProps = {
   visible: boolean;
   onClose: () => void;
+  /** When set, the editor opens to this on the next time the sheet becomes visible. */
+  initialAction?: ResourceManagerInitialAction | null;
+  /** Book a slot on this resource — the parent closes the sheet and routes to the flow. */
+  onBookResource?: (resourceId: string) => void;
 };
 
 /** Payment summary line, mirroring the web resource payment rule. */
@@ -49,7 +62,12 @@ function paymentSummary(resource: Resource): string {
  * host calendar, plus Edit, Delete and "New resource". Replaces the previous
  * "create or edit on the web dashboard" dead-end.
  */
-export function ResourceManagerSheet({ visible, onClose }: ResourceManagerSheetProps) {
+export function ResourceManagerSheet({
+  visible,
+  onClose,
+  initialAction = null,
+  onBookResource,
+}: ResourceManagerSheetProps) {
   const { colors } = useTheme();
   const toast = useToast();
 
@@ -60,7 +78,31 @@ export function ResourceManagerSheet({ visible, onClose }: ResourceManagerSheetP
   const [editorTarget, setEditorTarget] = useState<ResourceEditorTarget | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Resource | null>(null);
 
-  const resources = query.data ?? [];
+  const resources = useMemo(() => query.data ?? [], [query.data]);
+
+  // Consume `initialAction` once per open: jump straight to the create form, or to
+  // a specific resource's editor (waiting for the list to load to resolve the id).
+  // The ref guard stops it re-opening the editor after the user closes it.
+  const consumedActionRef = useRef<ResourceManagerInitialAction | null>(null);
+  useEffect(() => {
+    if (!visible) {
+      consumedActionRef.current = null;
+      return;
+    }
+    if (!initialAction || consumedActionRef.current === initialAction) return;
+    if (initialAction.type === 'create') {
+      consumedActionRef.current = initialAction;
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- open the editor in response to the sheet opening with an initialAction
+      setEditorTarget({ mode: 'create' });
+      return;
+    }
+    // edit: resolve the full record from the loaded list before opening.
+    const match = resources.find((r) => r.id === initialAction.resourceId);
+    if (match) {
+      consumedActionRef.current = initialAction;
+      setEditorTarget({ mode: 'edit', resource: match });
+    }
+  }, [visible, initialAction, resources]);
   const hostCalendars = useMemo(() => hostCalendarsQuery.data ?? [], [hostCalendarsQuery.data]);
 
   const hostNameById = useMemo(() => {
@@ -178,6 +220,24 @@ export function ResourceManagerSheet({ visible, onClose }: ResourceManagerSheetP
                         {paymentSummary(resource)}
                       </Text>
                     </View>
+
+                    {!resource.display_on_calendar_id ? (
+                      // Web parity: a resource with no host column isn't visible on
+                      // any calendar — offer the one-tap fix.
+                      <Button
+                        label="Set calendar"
+                        variant="primary"
+                        size="sm"
+                        onPress={() => setEditorTarget({ mode: 'edit', resource })}
+                      />
+                    ) : resource.is_active !== false && onBookResource ? (
+                      <Button
+                        label="Book this resource"
+                        variant="secondary"
+                        size="sm"
+                        onPress={() => onBookResource(resource.id)}
+                      />
+                    ) : null}
 
                     <View style={styles.actionsRow}>
                       <Button

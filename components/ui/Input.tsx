@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react';
+import { forwardRef, type ReactNode } from 'react';
 import {
   StyleSheet,
   TextInput,
@@ -47,19 +47,22 @@ type InputProps = TextInputProps & {
  * then instantly dismisses. A shared-value update stays on the UI thread, so
  * the TextInput keeps focus.
  */
-export function Input({
-  label,
-  error,
-  helper,
-  required = false,
-  optional = false,
-  leftIcon,
-  style,
-  containerStyle,
-  onFocus,
-  onBlur,
-  ...props
-}: InputProps) {
+export const Input = forwardRef<TextInput, InputProps>(function Input(
+  {
+    label,
+    error,
+    helper,
+    required = false,
+    optional = false,
+    leftIcon,
+    style,
+    containerStyle,
+    onFocus,
+    onBlur,
+    ...props
+  },
+  ref,
+) {
   const { colors } = useTheme();
   const reduceMotion = useReduceMotion();
   const focus = useSharedValue(0);
@@ -101,6 +104,7 @@ export function Input({
       <Animated.View style={[styles.field, { backgroundColor: colors.surface }, animatedBorder]}>
         {leftIcon ? <View style={styles.icon}>{leftIcon}</View> : null}
         <TextInput
+          ref={ref}
           placeholderTextColor={colors.textMuted}
           style={[styles.input, { color: colors.text }, style]}
           {...props}
@@ -119,7 +123,7 @@ export function Input({
       ) : null}
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   wrapper: {

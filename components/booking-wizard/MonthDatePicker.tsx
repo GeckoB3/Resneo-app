@@ -4,12 +4,23 @@ import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { Button } from '@/components/ui/Button';
 import { Segmented } from '@/components/ui/Segmented';
 import { Text } from '@/components/ui/Text';
-import { addMonthsToDateStr, formatMonthLabel } from '@/lib/dates/venue-dates';
+import { addDaysToDateStr, addMonthsToDateStr, formatMonthLabel } from '@/lib/dates/venue-dates';
 import { hapticSelect } from '@/lib/haptics';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
 const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+
+/** Weeks-ahead quick-pick offsets for staff booking (web parity: +2 … +6). */
+const WEEK_OFFSETS = [2, 3, 4, 5, 6] as const;
+
+/** Compact label for a quick-pick date, e.g. "Mon 1 Jul". */
+function formatShortDate(iso: string): string {
+  // Parse as a local calendar date (noon avoids any TZ/DST drift on the label).
+  const [y, m, d] = iso.split('-').map(Number);
+  const date = new Date(y ?? 1970, (m ?? 1) - 1, d ?? 1, 12);
+  return date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+}
 
 type Cell = { iso: string; day: number; inMonth: boolean };
 
@@ -61,6 +72,8 @@ type MonthDatePickerProps = {
   title?: string;
   /** Hint under the grid when dates are available (default the service copy). */
   availabilityHint?: string;
+  /** Staff quick-pick: show "+2 … +6 wk" jump buttons below the grid (web parity). */
+  weekShortcuts?: boolean;
 };
 
 /** Today's calendar date (YYYY-MM-DD) in the venue's timezone. */
@@ -93,9 +106,17 @@ export function MonthDatePicker({
   onStartNow,
   title = 'Choose a date',
   availabilityHint = 'Green dates have open times for this service.',
+  weekShortcuts = false,
 }: MonthDatePickerProps) {
   const { colors } = useTheme();
   const cells = useMemo(() => buildMonthCells(monthAnchor), [monthAnchor]);
+  // Quick-pick dates N weeks ahead of today (staff convenience — jump straight
+  // to a future week without paging the calendar). Computed from `today` so the
+  // offsets respect the venue's timezone.
+  const weekJumps = useMemo(
+    () => WEEK_OFFSETS.map((weeks) => ({ weeks, iso: addDaysToDateStr(today, weeks * 7) })),
+    [today],
+  );
   const currentMonth = monthAnchor.slice(0, 7);
   const canGoBack = currentMonth > today.slice(0, 7);
   // Empty-state hint: the month finished loading but no date is bookable.
@@ -220,6 +241,45 @@ export function MonthDatePicker({
         })}
       </View>
 
+      {weekShortcuts ? (
+        <View style={styles.shortcuts}>
+          {weekJumps.map(({ weeks, iso }) => {
+            const isSelected = iso === selectedDate;
+            return (
+              <Pressable
+                key={weeks}
+                accessibilityRole="button"
+                accessibilityLabel={`In ${weeks} weeks, ${formatShortDate(iso)}`}
+                accessibilityState={{ selected: isSelected }}
+                onPress={() => {
+                  hapticSelect();
+                  // Page the calendar to the jumped date's month, then select it.
+                  onChangeMonth(iso);
+                  onSelectDate(iso);
+                }}
+                style={({ pressed }) => [
+                  styles.shortcut,
+                  {
+                    backgroundColor: isSelected ? colors.brand : colors.surface,
+                    borderColor: isSelected ? colors.brand : colors.border,
+                    opacity: pressed ? 0.7 : 1,
+                  },
+                ]}>
+                <Text variant="label" color={isSelected ? colors.onBrand : colors.text}>
+                  +{weeks} wk
+                </Text>
+                <Text
+                  variant="caption"
+                  color={isSelected ? colors.onBrand : colors.textMuted}
+                  numberOfLines={1}>
+                  {formatShortDate(iso)}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : null}
+
       {!isLoading && !monthHasAvailability ? (
         <Text variant="caption" tone="muted" style={styles.hint}>
           No open times this month. Try another month{showStartNow ? ' or start a walk-in now' : ''}.
@@ -282,6 +342,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: radius.sm,
+  },
+  shortcuts: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  shortcut: {
+    flexGrow: 1,
+    flexBasis: 0,
+    minWidth: 64,
+    alignItems: 'center',
+    gap: 2,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.xs,
+    borderWidth: 1,
+    borderRadius: radius.md,
   },
   outsideMonth: {
     opacity: 0.35,

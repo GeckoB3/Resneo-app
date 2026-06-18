@@ -15,6 +15,8 @@ export type FilterOption = { key: string; label: string; count?: number };
 
 type Practitioner = { id: string; name: string };
 type TimeWindow = { key: string; label: string; start: number; end: number };
+/** A selectable calendar source — own venue's bookings live alongside these. */
+type VenueChip = { venueId: string; venueName: string };
 
 /** Rose tint shared with the inline "Needs compliance" chip. */
 const COMPLIANCE_TINT = '#E11D48';
@@ -22,6 +24,15 @@ const COMPLIANCE_TINT = '#E11D48';
 type BookingFilterSheetProps = {
   visible: boolean;
   onClose: () => void;
+
+  // Calendars — own venue + any linked venues. Pass an empty linkedVenues to
+  // hide the section (no links shared with this account).
+  linkedVenues: VenueChip[];
+  venueOwnSelected: boolean;
+  selectedLinkedVenueIds: Set<string>;
+  onSelectAllVenues: () => void;
+  onToggleOwnVenue: () => void;
+  onToggleLinkedVenue: (venueId: string) => void;
 
   // Status (always shown)
   statusOptions: FilterOption[];
@@ -101,6 +112,12 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 export function BookingFilterSheet({
   visible,
   onClose,
+  linkedVenues,
+  venueOwnSelected,
+  selectedLinkedVenueIds,
+  onSelectAllVenues,
+  onToggleOwnVenue,
+  onToggleLinkedVenue,
   statusOptions,
   status,
   onChangeStatus,
@@ -132,6 +149,10 @@ export function BookingFilterSheet({
   const catalogQuery = useAppointmentCatalog(visible && showService ? venueId : null);
   const services = useMemo(() => extractServices(catalogQuery.data), [catalogQuery.data]);
 
+  // "All" = own venue plus every linked venue selected (mirrors the old chip row).
+  const allVenuesSelected =
+    venueOwnSelected && linkedVenues.every((v) => selectedLinkedVenueIds.has(v.venueId));
+
   return (
     <Sheet visible={visible} onClose={onClose}>
       <View style={styles.header}>
@@ -149,6 +170,22 @@ export function BookingFilterSheet({
         style={{ maxHeight: height * 0.62 }}
         contentContainerStyle={styles.body}
         showsVerticalScrollIndicator={false}>
+        {linkedVenues.length > 0 ? (
+          <Section title="Calendars">
+            <Chip label="All" selected={allVenuesSelected} onPress={onSelectAllVenues} />
+            <Chip label="My venue" selected={venueOwnSelected} onPress={onToggleOwnVenue} />
+            {linkedVenues.map((v) => (
+              <Chip
+                key={v.venueId}
+                label={v.venueName}
+                selected={selectedLinkedVenueIds.has(v.venueId)}
+                selectedColor={colors.warning}
+                onPress={() => onToggleLinkedVenue(v.venueId)}
+              />
+            ))}
+          </Section>
+        ) : null}
+
         <Section title="Status">
           {statusOptions.map((option) => (
             <Chip

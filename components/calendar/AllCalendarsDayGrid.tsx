@@ -51,7 +51,7 @@ const SESSION_ACCENT = '#6366F1';
 /** No-op for the inner card's onPress when the outer Pressable owns the tap. */
 const noop = (): void => {};
 
-/** One practitioner's day data, as assembled by the calendar screen. */
+/** One calendar's day data (a practitioner, or a linked venue), as assembled by the calendar screen. */
 export type AllCalendarColumn = {
   calendarId: string;
   calendarName: string;
@@ -61,6 +61,20 @@ export type AllCalendarColumn = {
   timeBlocks: CalendarTimeBlock[];
   /** Class/event/resource blocks (schedule feed) for this column's date. */
   scheduleBlocks: CalendarScheduleBlock[];
+  /**
+   * This column's own open/closed hours for the date. A linked venue's hours
+   * differ from the host venue's, so closed-shading is resolved per column;
+   * falls back to the grid-level `venueHours` prop when omitted (own columns).
+   */
+  venueHours?: VenueDayHours;
+  /**
+   * A linked venue's column (cross-venue). Tinted with `accent`, and the
+   * "hold to move to another practitioner" long-press is disabled (you can't
+   * reassign across venues).
+   */
+  linked?: boolean;
+  /** Header / column accent colour (e.g. amber for a linked venue). */
+  accent?: string;
 };
 
 type PositionedBooking = {
@@ -175,32 +189,14 @@ export function AllCalendarsDayGrid({
     [startHour, endHour],
   );
 
-  // Venue-closed minute-ranges (out-of-hours / closed day) — venue-wide, so the
-  // same band shades across every column.
-  const closedRanges = useMemo(
-    () => venueClosedRanges(venueHours, startHour * 60, endHour * 60),
-    [venueHours, startHour, endHour],
-  );
-
   const nowTop =
     nowMinutes != null && nowMinutes >= startHour * 60 && nowMinutes <= endHour * 60
       ? (nowMinutes - startHour * 60) * PX_PER_MINUTE
       : null;
 
-  return (
-    <ScrollView
-      showsVerticalScrollIndicator={false}
-      contentContainerStyle={styles.scrollContent}
-      refreshControl={
-        onRefresh ? (
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={colors.brand}
-            colors={[colors.brand]}
-          />
-        ) : undefined
-      }>
+  // The multi-column body: a sticky time gutter beside the horizontally
+  // scrolling practitioner columns, sharing one time scale (full day height).
+  const body = (
       <View style={styles.row}>
         {/* Sticky time gutter — hour labels shared by every column. */}
         <View style={[styles.gutter, { height: totalHeight + PADDING_TOP }]}>
@@ -220,13 +216,27 @@ export function AllCalendarsDayGrid({
           <View>
             {/* Column headers (practitioner names) */}
             <View style={styles.headerRow}>
-              {calendars.map((cal) => (
-                <View key={cal.calendarId} style={[styles.headerCell, { borderColor: colors.border }]}>
-                  <Text variant="label" numberOfLines={1}>
-                    {cal.calendarName}
-                  </Text>
-                </View>
-              ))}
+              {calendars.map((cal) => {
+                // Linked venues read amber (matching the linked chip); own
+                // practitioner columns stay neutral.
+                const tint = cal.linked ? cal.accent ?? colors.warning : null;
+                return (
+                  <View
+                    key={cal.calendarId}
+                    style={[
+                      styles.headerCell,
+                      { borderColor: tint ?? colors.border },
+                      tint ? { backgroundColor: hexToRgba(tint, 0.1) } : null,
+                    ]}>
+                    <Text
+                      variant="label"
+                      numberOfLines={1}
+                      style={tint ? { color: tint } : undefined}>
+                      {cal.calendarName}
+                    </Text>
+                  </View>
+                );
+              })}
             </View>
 
             <View style={{ height: totalHeight }}>
@@ -241,24 +251,6 @@ export function AllCalendarsDayGrid({
                   ]}
                 />
               ))}
-
-              {/* Venue-closed shading spanning all columns (out-of-hours / closed day). */}
-              {closedRanges.map((r) => {
-                const top = (r.start - startHour * 60) * PX_PER_MINUTE;
-                const height = (r.end - r.start) * PX_PER_MINUTE;
-                return (
-                  <View
-                    key={`closed-${r.start}-${r.end}`}
-                    pointerEvents="none"
-                    style={[styles.closedBand, { top, height, backgroundColor: hexToRgba(colors.text, 0.06) }]}>
-                    {height >= 26 ? (
-                      <Text variant="caption" tone="muted" style={styles.closedLabel}>
-                        Closed
-                      </Text>
-                    ) : null}
-                  </View>
-                );
-              })}
 
               {/* Now-line spanning all columns. */}
               {nowTop != null ? (
@@ -275,6 +267,14 @@ export function AllCalendarsDayGrid({
                     column={cal}
                     gridStartMin={gridStartMin}
                     startHour={startHour}
+                    // Closed-shading is per column: a linked venue's hours differ
+                    // from the host's, so each column shades its OWN closed time
+                    // (own columns fall back to the grid-level venueHours).
+                    closedRanges={venueClosedRanges(
+                      cal.venueHours ?? venueHours,
+                      startHour * 60,
+                      endHour * 60,
+                    )}
                     onBlockPress={onBlockPress}
                     onEmptyPress={onEmptyPress}
                     onBlockLongPress={onBlockLongPress}
@@ -285,6 +285,23 @@ export function AllCalendarsDayGrid({
           </View>
         </ScrollView>
       </View>
+  );
+
+  return (
+    <ScrollView
+      showsVerticalScrollIndicator={false}
+      contentContainerStyle={styles.scrollContent}
+      refreshControl={
+        onRefresh ? (
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.brand}
+            colors={[colors.brand]}
+          />
+        ) : undefined
+      }>
+      {body}
     </ScrollView>
   );
 }
@@ -294,6 +311,7 @@ function DayColumn({
   column,
   gridStartMin,
   startHour,
+  closedRanges,
   onBlockPress,
   onEmptyPress,
   onBlockLongPress,
@@ -301,6 +319,8 @@ function DayColumn({
   column: AllCalendarColumn;
   gridStartMin: number;
   startHour: number;
+  /** This column's out-of-hours / closed-day minute ranges (already resolved). */
+  closedRanges: { start: number; end: number }[];
   onBlockPress: (bookingId: string) => void;
   onEmptyPress: (practitionerId: string, time: string) => void;
   onBlockLongPress?: (bookingId: string, fromPractitionerId: string) => void;
@@ -347,8 +367,36 @@ function DayColumn({
     [column.scheduleBlocks],
   );
 
+  // Linked columns read amber (matching the linked chip) with a faint wash.
+  const accent = column.linked ? column.accent ?? colors.warning : null;
+
   return (
-    <View style={[styles.column, { borderColor: colors.border }]}>
+    <View
+      style={[
+        styles.column,
+        { borderColor: accent ?? colors.border },
+        accent ? { backgroundColor: hexToRgba(accent, 0.05) } : null,
+      ]}>
+      {/* Per-column venue-closed shading (out-of-hours / closed day). Each column
+          shades its OWN hours so a linked venue's closures stay accurate even
+          when they differ from the host venue's. */}
+      {closedRanges.map((r) => {
+        const top = (r.start - startHour * 60) * PX_PER_MINUTE;
+        const height = (r.end - r.start) * PX_PER_MINUTE;
+        return (
+          <View
+            key={`closed-${r.start}-${r.end}`}
+            pointerEvents="none"
+            style={[styles.closedBand, { top, height, backgroundColor: hexToRgba(colors.text, 0.06) }]}>
+            {height >= 26 ? (
+              <Text variant="caption" tone="muted" style={styles.closedLabel}>
+                Closed
+              </Text>
+            ) : null}
+          </View>
+        );
+      })}
+
       {/* Empty-slot tap layer (blocks/overlays render above). */}
       <Pressable
         style={StyleSheet.absoluteFill}
@@ -468,7 +516,9 @@ function DayColumn({
             onPress={noInnerPress ? noop : onBlockPress}
           />
         );
-        return onBlockLongPress ? (
+        // Cross-practitioner "hold to move" is for own columns only — a linked
+        // venue's bookings can't be reassigned here, so those tap to open only.
+        return onBlockLongPress && !column.linked ? (
           <Pressable
             key={item.booking.id}
             accessibilityRole="button"

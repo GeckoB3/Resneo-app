@@ -23,6 +23,7 @@ export function useMonthAvailability({
   variantId,
   addonIds,
   durationMinutes,
+  ownerVenueId,
   enabled = true,
 }: {
   serviceId: string | null | undefined;
@@ -36,6 +37,8 @@ export function useMonthAvailability({
   addonIds?: string[];
   /** Staff duration override (minutes) — narrows the dates to those that can fit it. */
   durationMinutes?: number | null;
+  /** Linked owner venue — scopes the month calendar to a linked venue. */
+  ownerVenueId?: string | null;
   enabled?: boolean;
 }) {
   const accessToken = useAccessToken();
@@ -58,16 +61,19 @@ export function useMonthAvailability({
     Boolean(serviceId && effectivePractitionerId);
 
   return useQuery({
-    queryKey: queryKeys.appointments.monthAvailability(
-      accessToken,
-      serviceId,
-      effectivePractitionerId,
-      year,
-      month,
-      variantId,
-      addonsKey,
-      durationMinutes ?? null,
-    ),
+    queryKey: [
+      ...queryKeys.appointments.monthAvailability(
+        accessToken,
+        serviceId,
+        effectivePractitionerId,
+        year,
+        month,
+        variantId,
+        addonsKey,
+        durationMinutes ?? null,
+      ),
+      ownerVenueId ?? null,
+    ] as const,
     enabled: queryEnabled,
     queryFn: async (): Promise<MonthAvailabilityResponse> => {
       if (!accessToken || !serviceId || !effectivePractitionerId) {
@@ -82,6 +88,7 @@ export function useMonthAvailability({
       if (isAny) search.set('any_available', '1');
       if (variantId) search.set('variant_id', variantId);
       if (durationMinutes != null) search.set('duration_minutes', String(durationMinutes));
+      if (ownerVenueId) search.set('owner_venue_id', ownerVenueId);
       for (const id of addonIds ?? []) {
         search.append('addon_ids', id);
       }

@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/Button';
 import { ANALYTICS_EVENTS, track } from '@/lib/analytics';
 import { ApiError } from '@/lib/api/client';
 import { useAppointmentCatalog } from '@/lib/queries/useAppointmentCatalog';
+import { useBookingFormVenue } from '@/lib/queries/useBookingFormVenue';
 import { calendarDateInTimeZone } from '@/lib/queries/useBookingsList';
 import { useGuestDetail } from '@/lib/queries/useGuestDetail';
 import { useMonthAvailability } from '@/lib/queries/useMonthAvailability';
@@ -24,7 +25,6 @@ import {
   readAndClearRebookBootstrap,
   resetRebookBootstrapGuard,
 } from '@/lib/rebook-bootstrap';
-import { useVenueContext } from '@/providers/VenueProvider';
 import { useLinkedVenueContext } from '@/providers/LinkedVenueProvider';
 import { spacing } from '@/theme/index';
 import type { AppointmentSlot } from '@/types/appointment-availability';
@@ -67,7 +67,7 @@ type ServiceBookingFlowProps = {
  */
 export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
   const router = useRouter();
-  const { venue, featureFlags } = useVenueContext();
+  const { venueId, timeZone, anyAvailableEnabled, isLinked } = useBookingFormVenue();
   const { ownerVenueId } = useLinkedVenueContext();
   const {
     guestId: guestIdParam,
@@ -96,11 +96,11 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
   const prefilledTime =
     typeof timeParam === 'string' && /^\d{2}:\d{2}$/.test(timeParam) ? timeParam : null;
 
-  const venueId = venue?.id ?? null;
-  const timeZone = venue?.timezone ?? 'Europe/London';
-  const anyAvailableEnabled = Boolean(featureFlags?.resolved?.any_available_practitioner);
-
-  const catalogQuery = useAppointmentCatalog(venueId, { includeHidden: true });
+  // Catalog comes from the public, venue_id-keyed endpoint — for a linked venue
+  // we pass its id, not our own. `include_hidden` (staff-only add-on groups) is
+  // honoured only for an authenticated session on the SAME venue, so it's off
+  // when booking into a linked venue.
+  const catalogQuery = useAppointmentCatalog(venueId, { includeHidden: !isLinked });
   // Staff service list — the reliable source of each service's booking window
   // (min notice / same-day). The booking catalog omits min_booking_notice_hours
   // for legacy venues, so we read it from here for every venue type.
@@ -398,6 +398,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
     variantId: selectedVariant?.id ?? null,
     addonIds: selectedAddonIds,
     durationMinutes: durationOverride,
+    ownerVenueId,
     enabled: activeKey === 'date' && !!selectedService,
   });
   const availableDates = monthQuery.data ? new Set(monthQuery.data.available_dates) : null;
@@ -553,6 +554,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           isLoading={monthQuery.isLoading || monthQuery.isFetching}
           canContinue={!selectedDateUnavailable}
           onContinue={() => advanceFrom('date')}
+          weekShortcuts
           source={source}
           onChangeSource={setSource}
           timeZone={timeZone}

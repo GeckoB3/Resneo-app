@@ -135,14 +135,38 @@ export default function CollectivesScreen() {
         under one brand.
       </Text>
 
-      {collectives.length === 0 ? (
-        <Card>
-          <Text variant="bodySmall" tone="muted">
-            {eligibleLinks.length === 0
-              ? 'A combined page needs a link granting create/edit/cancel access in both directions. Create one first from Linked venues.'
-              : 'No venue collectives yet. Create one to offer a combined booking page.'}
+      {/* Create — hidden once already in a live collective (one per venue); disabled
+          until a full create/edit/cancel link exists. Mirrors the web panel header. */}
+      {!hasLiveCollective ? (
+        <Button
+          label="Create venue collective"
+          variant="primary"
+          fullWidth
+          disabled={eligibleLinks.length === 0}
+          onPress={() => setCreateOpen(true)}
+        />
+      ) : null}
+
+      {/* Why the create button is disabled. Shown whenever it's visible (no live
+          collective) but disabled (no full create/edit/cancel link) — the web
+          shows the same amber note rather than just a tooltip. */}
+      {!hasLiveCollective && eligibleLinks.length === 0 ? (
+        <View style={[styles.amberNote, { backgroundColor: colors.warningSurface }]}>
+          <Text variant="caption" color={colors.warning}>
+            To create a combined page you need a link granting create, edit & cancel access in both
+            directions (full calendar detail, no calendar limits). Open Linked venues, choose the
+            link, tap Edit permissions, and set both directions to create/edit/cancel.
           </Text>
-        </Card>
+        </View>
+      ) : null}
+
+      {collectives.length === 0 ? (
+        // The amber note above already explains the no-eligible-link case.
+        eligibleLinks.length === 0 ? null : (
+          <Text variant="bodySmall" tone="muted">
+            No venue collectives yet. Create one to offer a combined booking page.
+          </Text>
+        )
       ) : (
         collectives.map((c) => (
           <CollectiveCard
@@ -161,25 +185,6 @@ export default function CollectivesScreen() {
           />
         ))
       )}
-
-      {/* Create — hidden once already in a live collective (one per venue). */}
-      {!hasLiveCollective ? (
-        <View style={styles.createBlock}>
-          <Button
-            label="Create venue collective"
-            variant="primary"
-            fullWidth
-            disabled={eligibleLinks.length === 0}
-            onPress={() => setCreateOpen(true)}
-          />
-          {eligibleLinks.length === 0 ? (
-            <Text variant="caption" tone="muted">
-              You need at least one link granting create/edit/cancel access both ways. Set one up
-              from Linked venues first.
-            </Text>
-          ) : null}
-        </View>
-      ) : null}
 
       <CreateCollectiveSheet
         visible={createOpen}
@@ -293,9 +298,7 @@ function CollectiveCard({
             </>
           ) : collective.isHost ? (
             <Button label="Manage combined page" variant="primary" size="sm" disabled={busy} onPress={onManage} />
-          ) : (
-            <Button label="View details" variant="secondary" size="sm" onPress={onManage} />
-          )}
+          ) : null}
           {isActiveMember && !collective.isHost ? (
             <Button label="Leave" variant="ghost" size="sm" disabled={busy} onPress={onLeave} />
           ) : null}
@@ -338,9 +341,9 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     paddingTop: spacing.xs,
   },
-  createBlock: {
-    gap: spacing.xs,
-    paddingTop: spacing.sm,
+  amberNote: {
+    borderRadius: radius.md,
+    padding: spacing.md,
   },
   flex1: {
     flex: 1,

@@ -1,0 +1,98 @@
+## 05. Clients / Contacts / Guests & Import
+
+**Parity:** Strong — every per-contact and directory capability is at near-complete parity (and the app exceeds web in several places), with one deliberate, large exclusion: the desktop-grade CSV/Excel import wizard.
+
+The contact directory, search/filter/sort, individual-contact CRUD, tags, custom fields, documents, household, marketing, compliance, communications, merge, GDPR export/erase, bulk actions and filtered CSV export all map closely to the web staff dashboard — and the app is functionally **ahead** in a handful of spots (it can edit a full postal address that the web shows read-only, adds an A–Z jump rail, instant-save marketing toggles, swipe-to-call/text, infinite scroll, bulk remove-tag, and screen-capture protection on the PII profile). The single material gap is the multi-step **CSV/Excel import wizard** (`ImportHub` + Upload→Map→Review→References→Validate→Importing), which is entirely absent — there are zero references to `/api/import/*` anywhere in `app/`, `lib/`, or `components/` — and is replaced by an explicit "Open Data Import on the web" link in Settings → Business profile. Remaining differences are secondary and confirmed: bulk Message uses a consent-gated marketing broadcast vs web's per-guest fan-out, the filter sheet shows labels without web's per-option helper hints, and there is no page-size control (infinite scroll, fixed `PAGE_SIZE=50`). All seven candidate gaps were verified real; no false positives.
+
+### Screen-by-screen
+
+| Surface | Web | App | Parity | Notes |
+| --- | --- | --- | --- | --- |
+| Contact directory / list | `ContactsDashboard.tsx` (`ContactRow`, list body ~L1794–1937) | `app/(app)/(tabs)/clients.tsx` (`GuestRow`, FlatList, `PAGE_SIZE=50` L67) | Strong | App adds A–Z rail, infinite scroll, swipe-to-call/text, realtime LiveDot, press-in prefetch; navigates to full-screen detail vs web accordion. |
+| Search | `ContactsDashboard.tsx` (`OperationsToolbarGuestSearchPanel`) | `clients.tsx` (`SearchBar`, `SEARCH_DEBOUNCE_MS=280`, `MIN_SEARCH_LENGTH=2`) | Full | Both debounce ~300ms, search name/phone/email via same endpoint, removable chip + clear. App enforces a visible 2-char minimum. |
+| Filters (who-to-include + smart lists + dates/staff/service/marketing) | `ContactsDashboard.tsx` (`ContactsToolbarOptionPopover` "Filters", `CONTACT_SHOW_OPTIONS` L58–74) | `components/clients/ContactFilterSheet.tsx` | Strong | Same identity scope + 7 segments + date/staff/service/tag/marketing. App restricts marketing to the two backend-valid values; omits web's per-option hint copy. |
+| Sort | `ContactsDashboard.tsx` (`CONTACTS_SORT_OPTIONS` popover) | `clients.tsx` (`SORT_OPTIONS` chip row) | Full | Identical sort set (recent/oldest visit, name A–Z/Z–A, most visits, recently added); app surfaces as always-visible chip row. |
+| Active-filter summary chips | `ContactsDashboard.tsx` (`contactsSummaryContent`) | `clients.tsx` (`filterChips`) | Full | Both render removable summary chips + total + page/loaded count; "All N loaded" footer (clients.tsx L775). |
+| Create contact | `CreateContactModal.tsx` | `components/clients/CreateContactSheet.tsx` (+ `useCreateGuest.ts`) | Full | Field-for-field match: first/last/email/phone, same maxLengths, dedupe-by-email-then-phone via `POST /api/venue/guests`, same identity gating. |
+| Contact profile / detail | `ContactDetailPanel.tsx` | `app/(app)/client/[id].tsx` | Strong | Identity hero, call/email/message, visits/stats, notes, inline tags, booking history, marketing, custom fields, household, documents, compliance, communications, merge, GDPR. App can also **edit** address (web render-only). |
+| Edit contact (identity, address, notes, tags, marketing) | `ContactDetailPanel.tsx` (inline first/last/email/phone only; address render-only L490–499) | `components/clients/GuestEditSheet.tsx` (+ `MarketingPreferencesCard`, `GuestTagEditor`) | Strong | App's single sheet covers identity + tags + notes + marketing **plus** `address_line1/2/address_city/address_postcode` (L38–41, L112–118). App is functionally ahead. |
+| Tags editor (per-contact) | `GuestTagEditor.tsx` | `components/clients/GuestTagEditor.tsx` | Strong | Add/remove chips with venue-tag typeahead, PATCH tags. App also offers comma-separated entry in the edit sheet. |
+| Custom client fields | `CustomerProfileNotesCard` + `custom_field_definitions` | `components/clients/CustomFieldsSection.tsx` (+ `useGuests include_custom_fields`) | Strong | Renders active definitions (text/number/boolean/date), inline edit + save via `custom_fields` PATCH, exports as CSV columns. |
+| Documents | `ContactDocumentsSection.tsx` | `components/clients/DocumentsSection.tsx` (+ `useGuestDocuments.ts`) | Strong | List/upload (signed-URL 3-step)/download/delete with size, date, category; degrades gracefully if `expo-document-picker` unavailable. |
+| Household / relationships | `ContactHouseholdSection.tsx` | `components/clients/HouseholdSection.tsx` (+ `useGuestHousehold.ts`) | Strong | Lists households + members, link by name search, navigate to a member. By-name picker is a usability win over pasting UUIDs. |
+| Marketing preferences | `ContactMarketingSection.tsx` | `components/clients/MarketingPreferencesCard.tsx` | Full | Two toggles (consent + opt-out), consent timestamp, guidance. App saves instantly on toggle; both PATCH same fields. App shows stronger opt-out warning. |
+| Compliance records (per contact) | `ContactComplianceSection.tsx` (records + audit only, no booking-requirements panel) | `components/clients/ComplianceSection.tsx` (read-only L118–126) | Strong | At parity — both read-only, gated by `compliance_records_enabled`; tap-to-view via `ComplianceRecordSheet`. Neither captures/sends-link here. |
+| Communications / message log + send | `ContactDetailPanel.tsx` ("Messages & privacy" accordion) | `client/[id].tsx` (`CommunicationsSection` + `GuestMessageSheet`) | Strong | Both list history + send SMS/email with channel select. App routes via `GuestMessageSheet` → `/api/venue/guests/[id]/message`; web inlines composer. |
+| Merge duplicate contacts | `MergeContactsModal.tsx` | `components/clients/MergeContactDetailSheet.tsx` (+ `useMergeGuests` → `/api/venue/guests/merge`) | Strong | Admin-only merge wizard on both, opened from detail; both navigate to the surviving contact after merge. |
+| GDPR export + erase | `ContactGdprSection.tsx` + `EraseGuestDataModal` | `components/clients/GdprSection.tsx` | Full | App combines JSON export (Share sheet) + two-step erase in one admin section. Same endpoints (`/export-guest`, `/erase-guest`). |
+| Bulk actions | `ContactsDashboard.tsx` (`runBulkAddTag`, `runBulkContactMessage` L693–756) | `components/clients/BulkActionSheets.tsx` + `BulkActionBar`; `useContactsBulk.ts` | Strong | Multi-select Add-tag + Bulk-message on both. App **adds** bulk Remove-tag. Bulk Message semantics differ (see gaps). Neither has bulk delete/export-selected. |
+| CSV export (filtered) | `ContactsDashboard.tsx` (`exportFilteredCsv`) | `clients.tsx` (`handleExport`, `EXPORT_PAGE_SIZE=250` L71) | Full | Identical column set incl. one column per active custom field. App adds a 5000-row cap + toast + chunked build; web caps at 120 pages. Admin-gated. |
+| CSV/Excel import wizard | `_reference/Resneo/src/app/dashboard/import/*` + `/api/import/sessions` | absent (link-out: `venue-profile.tsx` L876–887, `WEB_IMPORT_PATH='/dashboard/import'`) | Missing | Full AI-assisted ETL on web; **none** in app (zero `/api/import/*` references). Deliberate scope exclusion. |
+| Import session list / management (`ImportHub`) | `dashboard/import/ImportHub.tsx` (L100–230) | absent | Missing | Web lists prior sessions with status, counts, "Undo available until", Continue/Resume/Report-CSV/Undo/Delete. No app equivalent. |
+| Pagination / page-size control | `ContactsDashboard.tsx` (25/50/100/250 per page, "Page X of Y · N total" L1912–1936) | `clients.tsx` (infinite scroll, fixed `PAGE_SIZE=50`, "All N loaded" footer L775) | Partial | Intentionally different paradigm for mobile; no page-size choice or page index, but shows "X of N" + "All loaded". |
+| Screen-capture protection on PII profile | n/a | `client/[id].tsx` (`useScreenCaptureProtection('client-detail')` L217) | App-only | Blocks screenshots/recording while a PII-heavy profile is open — mobile-only hardening, no web counterpart. |
+
+The **directory** is a faithful mobile reimagining of the web list: both show avatar/initials, name, phone + email, visit and no-show counts, last-visit, a next-booking pill, tag chips with overflow, and a selection model. The app trades web's classic prev/next pager for infinite scroll (`onEndReached`/`loadNextPage` L871–872) and adds an A–Z jump rail (`ContactAzRail`), swipe-to-call/text, a realtime `LiveDot`, and press-in prefetch. Web expands detail in-place via an accordion; the app navigates to a full-screen route.
+
+The **filter sheet** (`ContactFilterSheet.tsx`) is at strong parity but worth calling out for correctness: it deliberately limits marketing to the only two backend-valid values, `subscribed` / `not_subscribed`, via `normaliseMarketing()` (L42–48) — the inline comment notes the previous `opted_in/opted_out/no_record` options returned the wrong contacts because the backend silently defaulted unknowns to `subscribed`. Its `SEGMENT_OPTIONS` and `IDENTITY_OPTIONS` (L16–31) render label-only chips/segments; the web's `CONTACT_SHOW_OPTIONS` carries a one-line hint per option that the app omits.
+
+The **edit sheet** is the clearest "app ahead of web" case. `GuestEditSheet.tsx` writes `address_line1`, `address_line2`, `address_city`, and `address_postcode` (L38–41, L112–118) through `PATCH /api/venue/guests/[id]`, whereas the web `ContactDetailPanel` renders address strictly read-only (L490–499, no inputs) and scatters identity/notes/marketing edits across separate inline widgets — the app consolidates all of it into one sheet.
+
+**Bulk actions** mostly match, but the Message action diverges by design: `useBulkMarketingMessage` (`useContactsBulk.ts` L52–73) sends one `POST /api/venue/contacts/bulk {action:'marketing_message'}` with `subject` + `body` + a `channel` of `email`/`sms`/`both`, consent-gated so only subscribed contacts on a matching channel receive it; web fans out a per-guest `/api/venue/guests/[id]/message` over `Promise.all` (L693–756). Different audience model, payload, endpoint, and channel options.
+
+### Gaps & deficiencies
+
+#### High
+
+- **CSV/Excel contact import is entirely absent in the app** — _function · high_
+  - **Web:** Admins import clients (and bookings/staff) from CSV/Excel via a 6-step wizard: upload (auto kind-detection + report reshape), AI column mapping (drag-drop, split combined columns, create custom fields, free-text AI instructions), review, reference resolution (create services/staff), async validation with row-level issue triage, then import with imported counts, a downloadable report CSV, and a 24-hour undo.
+  - **App:** Absent. Zero references to `/api/import/*` anywhere in `app/`, `lib/`, or `components/`. Settings → Business profile shows a "Data import" section that only links out to the web tool.
+  - **Evidence:** `_reference/Resneo/src/app/dashboard/import/ImportHub.tsx`; `_reference/Resneo/src/app/dashboard/import/[sessionId]/{upload,map,review,references,validate,importing}/`; `_reference/Resneo/src/app/api/import/sessions/`; `app/(app)/manage/venue-profile.tsx` (L876–887, `WEB_IMPORT_PATH='/dashboard/import'`)
+  - **Fix:** Treat as a deliberate v1 scope exclusion — the wizard is desktop-grade (drag-drop, multi-file, AI mapping, async jobs) and a poor fit for a phone; keep the link-out. If a mobile MVP is ever wanted, scope to the simplest path only: single-file "clients" CSV upload + auto/AI map + validate + import using the existing `/api/import/sessions` endpoints, reusing `useGuests`/`useCreateGuest` patterns — do NOT port reshape/references/staff-creation. At minimum, surface the link-out from the Contacts tab (e.g. an overflow action), not only Business profile.
+
+#### Medium
+
+- **No import session history / status / undo surface in the app** — _function · medium_
+  - **Web:** `ImportHub` lists prior import sessions with status pills, imported-client/booking counts, an "Undo available until" notice, and Continue/Resume/Report-CSV/Undo/Delete actions (`POST /api/import/sessions/[id]/undo`), so a mistaken import can be reverted within 24h from anywhere.
+  - **App:** Absent — no way to see or undo a recent import from the app; a staffer on mobile who needs to undo a bad import must find a desktop.
+  - **Evidence:** `_reference/Resneo/src/app/dashboard/import/ImportHub.tsx` (L100–230, Undo button → `/api/import/sessions/[id]/undo`); `app/(app)/manage/venue-profile.tsx` (link-out only)
+  - **Fix:** Low-effort, high-value subset — add a read-only "Recent imports" list (plus an Undo button) under the Data import section of `app/(app)/manage/venue-profile.tsx`, backed by `GET /api/import/sessions` and `POST /api/import/sessions/[id]/undo`. Gives mobile admins the safety net without porting the whole wizard.
+
+#### Low
+
+- **Filter sheet omits the web's explanatory helper hints per option** — _content · low_
+  - **Web:** Each "Who to include" choice carries a one-line plain-English hint (e.g. "People with a name plus email or phone you can reach.", "Everyone we can recognise. Anonymous walk-ins stay hidden."), and date/staff/service/marketing sections have contextual guidance.
+  - **App:** Chips/segments render labels only with no per-option hint text. App segment labels are fairly self-explanatory ("New this period", "By last visit", "Upcoming visit", "By last staff"), which softens discoverability, but the web copy is absent.
+  - **Evidence:** `_reference/Resneo/src/app/dashboard/contacts/ContactsDashboard.tsx` (`CONTACT_SHOW_OPTIONS` hints L58–74); `components/clients/ContactFilterSheet.tsx` (`IDENTITY_OPTIONS`/`SEGMENT_OPTIONS` label-only, L16–31, no hint rendering)
+  - **Fix:** Add optional hint lines under the selected segment / identity option in `ContactFilterSheet.tsx`, mirroring the web copy from `CONTACT_SHOW_OPTIONS` and the segment hints. Cheap content-only parity improvement.
+
+- **Bulk message semantics differ (marketing broadcast vs per-guest message)** — _function · low_
+  - **Web:** Bulk "Message" fans out an individual `/api/venue/guests/[id]/message` to each selected guest (same single-channel `GuestMessageChannel` as single-contact messaging), reporting per-recipient success/failure (`runBulkContactMessage` `Promise.all` over `selectedIds`).
+  - **App:** Bulk "Message" sends a marketing broadcast via `useBulkMarketingMessage` → `POST /api/venue/contacts/bulk {action:'marketing_message'}` with `subject` + `body` and a channel of `email`/`sms`/`both`; only consented contacts on a matching channel receive it; reports sent/skipped counts. Different audience model (consent-gated), payload, endpoint, and channel options.
+  - **Evidence:** `_reference/Resneo/src/app/dashboard/contacts/ContactsDashboard.tsx` (`runBulkContactMessage` L693–756); `components/clients/BulkActionSheets.tsx` (`BulkMessageSheet` L137–227); `lib/queries/useContactsBulk.ts` (`useBulkMarketingMessage` L52–73)
+  - **Fix:** Confirm with product which semantics the directory's bulk Message should have. If it should match web (transactional-style fan-out respecting each contact's reachability rather than marketing-consent gating), switch `BulkMessageSheet` to loop `/api/venue/guests/[id]/message`; otherwise document the intended divergence.
+
+- **No page-size control and no explicit page/total position indicator** — _function · low_
+  - **Web:** Directory lets the user pick 25/50/100/250 per page (persisted to `localStorage`) and always shows "Page X of Y · N total" plus prev/next.
+  - **App:** Infinite scroll with a fixed 50-row page (`PAGE_SIZE=50`); shows an "All N loaded" footer (clients.tsx L775) and an "X of N clients" count, but no page-size choice or page index.
+  - **Evidence:** `_reference/Resneo/src/app/dashboard/contacts/ContactsDashboard.tsx` (`CONTACTS_PAGE_SIZE_OPTIONS` `[25,50,100,250]`, pagination footer L1912–1936); `app/(app)/(tabs)/clients.tsx` (`PAGE_SIZE=50` L67, `onEndReached` L871, `listFooter` L775)
+  - **Fix:** Intentional mobile pattern — infinite scroll is correct. No action needed beyond confirming the "X of N" count and "All loaded" footer remain (they do). Flagged for completeness.
+
+- **Contact compliance is view-only on mobile (no capture / send-link)** — _function · low_
+  - **Web:** The contact-panel compliance section renders records + audit only (no capture/send-link, no booking-requirements panel), gated by `compliance_records_enabled`. Capture/requirements live on the booking surface.
+  - **App:** Same — records list + collapsible audit, tap-to-view via `ComplianceRecordSheet`, no capture/send-link.
+  - **Evidence:** `_reference/Resneo/src/components/dashboard/contacts/ContactComplianceSection.tsx` (wraps dashboard `ComplianceSection` with no booking context); `components/clients/ComplianceSection.tsx` (L118–126, read-only intent gated on `compliance_records_enabled`)
+  - **Fix:** This is at parity (web's contact compliance is also read-only). No action required; documented to confirm the app's read-only compliance here is intentional and correct, not a regression.
+
+### Investigated — not a gap
+
+_No items were dismissed during this audit — all seven candidate gaps were verified as real._
+
+### Recommended work (ordered)
+
+1. **Surface the import link-out from the Contacts tab.** Add an overflow/menu action in `app/(app)/(tabs)/clients.tsx` that opens `WEB_IMPORT_PATH` (`/dashboard/import`), so admins discover import where they manage contacts — not only buried in Settings → Business profile. _(Low effort; addresses the High gap's discoverability without building the wizard.)_
+2. **Add a read-only "Recent imports" list + Undo to Business profile.** Under the Data import section of `app/(app)/manage/venue-profile.tsx`, render sessions from `GET /api/import/sessions` with status, imported counts and "Undo available until", plus an Undo button calling `POST /api/import/sessions/[id]/undo`. Gives mobile admins the 24h safety net cheaply. _(Medium gap; new read-only hook + small UI.)_
+3. **Decide and align bulk-Message semantics.** Confirm with product whether the directory bulk Message should be a marketing broadcast (current) or a per-guest fan-out (web). If aligning to web, change `BulkMessageSheet` (`components/clients/BulkActionSheets.tsx`) to loop `/api/venue/guests/[id]/message` per `selectedId`; otherwise add an in-sheet note clarifying it only reaches consented contacts. _(Low; either a behavioural change or a copy clarification.)_
+4. **Add per-option hint copy to the filter sheet.** In `components/clients/ContactFilterSheet.tsx`, render an optional hint line under the selected identity/segment option, mirroring web's `CONTACT_SHOW_OPTIONS` and segment hints. _(Low; content-only.)_
+5. **If a mobile import MVP is ever prioritized,** scope it to a single-file "clients" CSV upload → auto/AI map → validate → import path against the existing `/api/import/sessions` endpoints, reusing `useGuests`/`useCreateGuest` — explicitly excluding reshape, reference resolution and staff/service creation. _(High effort; only if product wants it — default is to keep the link-out.)_
+6. **No action on page-size and contact-compliance read-only** — both are intentional, at-parity mobile decisions confirmed during this audit; listed only so future "web parity" passes don't re-open them.

@@ -6,13 +6,20 @@ import {
   CalendarDayGrid,
   type CalendarTimeBlock,
 } from '@/components/calendar/CalendarDayGrid';
-import { minutesToTime } from '@/components/calendar/grid-layout';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Text } from '@/components/ui/Text';
-import { dedupeScheduleDTOs, toCalendarScheduleBlock } from '@/lib/calendar/schedule-block-view';
 import { type MinuteRange, type VenueDayHours } from '@/lib/calendar/venue-closures';
-import { hasAnyWorkingHours, openRangesForDate } from '@/lib/linked/working-hours';
+import {
+  linkedActionLabel,
+  linkedBusyBlock,
+  linkedGridBooking,
+  linkedHasTemplate,
+  linkedOpenRanges,
+  linkedScheduleBlocksForDate,
+  linkedVenueDayHours,
+  rangesToWorkingHours,
+} from '@/lib/linked/linked-calendar-view';
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type {
@@ -21,18 +28,6 @@ import type {
 } from '@/types/calendar-grid';
 import type { LinkedBooking, LinkedVenueCalendar } from '@/types/linked-venues';
 import type { CalendarScheduleBlock } from '@/types/schedule-blocks';
-
-function fmtTime(t: string | null | undefined): string {
-  return (t ?? '').slice(0, 5);
-}
-
-/** Per-action pill label mirroring the web `VenueCalendarBlock` header. */
-function actionLabel(venue: LinkedVenueCalendar): string | null {
-  if (venue.visibility === 'time_only') return 'Time blocks only';
-  if (venue.action === 'none') return 'View only';
-  if (venue.action === 'edit_existing') return 'Edit existing';
-  return null; // create_edit_cancel — the "New booking" button conveys this
-}
 
 /**
  * Grant-gated adapter that renders ONE linked venue's day onto the shared
@@ -59,6 +54,7 @@ export function LinkedVenueCalendarGrid({
   onCreate,
   refreshing,
   onRefresh,
+  embedded,
 }: {
   venue: LinkedVenueCalendar;
   /** The day being shown ("YYYY-MM-DD") — drives the working-hours window. */
@@ -71,89 +67,78 @@ export function LinkedVenueCalendarGrid({
   onCreate: () => void;
   refreshing?: boolean;
   onRefresh?: () => void;
+  /**
+   * Render the inner grid at full height (no internal scroll, no 420px cap) so
+   * a PARENT scroll container owns vertical scrolling. Set when several of
+   * these stack in one outer ScrollView (the "All incl. linked" calendar view,
+   * the linked-calendar screen) — otherwise each grid's own ScrollView would
+   * swallow the parent's pan and the venues below the first stay unreachable.
+   */
+  embedded?: boolean;
 }) {
   const { colors } = useTheme();
 
   const timeOnly = venue.visibility === 'time_only';
   const canCreate = venue.action === 'create_edit_cancel';
 
-  // Index bookings by id so the press handler can resolve the rich row.
+  // Only this date's bookings — the feed may carry a wider range (the calendar's
+  // week view fetches the whole week through the same hook), so the day grid
+  // narrows to the rendered day. A single-day feed makes this a no-op.
+  const dayBookings = useMemo(
+    () => venue.bookings.filter((b) => b.bookingDate === date),
+    [venue.bookings, date],
+  );
+
+  // Index this day's bookings by id so the press handler can resolve the rich row.
   const bookingsById = useMemo(() => {
     const map = new Map<string, LinkedBooking>();
-    for (const b of venue.bookings) map.set(b.id, b);
+    for (const b of dayBookings) map.set(b.id, b);
     return map;
-  }, [venue.bookings]);
+  }, [dayBookings]);
 
   // The linked venue's available hours for this day, unioned across its
   // practitioners' working-hours templates. Drives the grid's visible window
   // (workingHours) AND the "Closed" shading (venueHours) — mirroring the web's
   // per-linked-column closure shading, which derives from the linked column's
   // own working hours rather than the viewing venue's opening hours.
-  const openRanges = useMemo<MinuteRange[]>(() => {
-    const all: MinuteRange[] = [];
-    for (const p of venue.practitioners) all.push(...openRangesForDate(p.workingHours, date));
-    return all;
-  }, [venue.practitioners, date]);
+  const openRanges = useMemo<MinuteRange[]>(() => linkedOpenRanges(venue, date), [venue, date]);
 
   const workingHours = useMemo<CalendarGridWorkingHours[]>(
-    () => openRanges.map((r) => ({ start: minutesToTime(r.start), end: minutesToTime(r.end) })),
+    () => rangesToWorkingHours(openRanges),
     [openRanges],
   );
 
-  const hasTemplate = useMemo(
-    () => venue.practitioners.some((p) => hasAnyWorkingHours(p.workingHours)),
-    [venue.practitioners],
-  );
+  const hasTemplate = useMemo(() => linkedHasTemplate(venue), [venue]);
 
   // Shade the closed hours: explicit open periods when the venue works today,
   // fully closed when it has a template but no hours today, and unknown (no
   // shading) when no template is available at all.
-  const venueHours = useMemo<VenueDayHours>(() => {
-    if (openRanges.length > 0) return { kind: 'open', periods: openRanges };
-    return hasTemplate ? { kind: 'closed' } : { kind: 'unknown' };
-  }, [openRanges, hasTemplate]);
+  const venueHours = useMemo<VenueDayHours>(
+    () => linkedVenueDayHours(openRanges, hasTemplate),
+    [openRanges, hasTemplate],
+  );
 
   // time_only → grey, non-interactive busy overlays (lock styling, no tap).
   const timeBlocks: CalendarTimeBlock[] = useMemo(() => {
     if (!timeOnly) return [];
-    return venue.bookings.map((b) => ({
-      id: b.id,
-      start: fmtTime(b.bookingTime),
-      end: fmtTime(b.bookingEndTime) || fmtTime(b.bookingTime),
-      label: `${venue.venueName} — busy`,
-      isEditable: false,
-    }));
-  }, [timeOnly, venue.bookings, venue.venueName]);
+    return dayBookings.map((b) => linkedBusyBlock(b, venue.venueName));
+  }, [timeOnly, dayBookings, venue.venueName]);
 
   // full_details → appointment bars. Tap routes to edit (editable) or read-only
   // detail (everything else). Drag is wired only for editable columns; the grid
   // additionally gates drag on movable statuses.
   const gridBookings: CalendarGridBooking[] = useMemo(() => {
     if (timeOnly) return [];
-    return venue.bookings.map((b) => {
-      const pracName = venue.practitioners.find((p) => p.id === b.practitionerId)?.name;
-      return {
-        id: b.id,
-        guestName: b.guestName ?? b.serviceName ?? 'Booking',
-        serviceName: pracName ? `${b.serviceName ?? ''}${b.serviceName ? ' · ' : ''}${pracName}` : b.serviceName ?? '',
-        startTime: fmtTime(b.bookingTime),
-        endTime: fmtTime(b.bookingEndTime),
-        status: b.status,
-        client_arrived_at: b.clientArrivedAt ?? null,
-        staff_attendance_confirmed_at: b.staffAttendanceConfirmedAt ?? null,
-        guest_attendance_confirmed_at: b.guestAttendanceConfirmedAt ?? null,
-      };
-    });
-  }, [timeOnly, venue.bookings, venue.practitioners]);
+    return dayBookings.map((b) => linkedGridBooking(b, venue.practitioners));
+  }, [timeOnly, dayBookings, venue.practitioners]);
 
   // full_details → the venue's classes / ticketed events / resource bookings for
   // the day, rendered as read-only overlays via the same mapper the main
   // calendar uses (class instances deduped). time_only never carries these.
   const scheduleBlocks = useMemo<CalendarScheduleBlock[]>(() => {
     if (timeOnly) return [];
-    const dtos = (venue.scheduleBlocks ?? []).filter((b) => b.date === date);
-    return dedupeScheduleDTOs(dtos).map(toCalendarScheduleBlock);
-  }, [timeOnly, venue.scheduleBlocks, date]);
+    return linkedScheduleBlocksForDate(venue, date);
+  }, [timeOnly, venue, date]);
 
   const handleBlockPress = (bookingId: string) => {
     const booking = bookingsById.get(bookingId);
@@ -172,13 +157,13 @@ export function LinkedVenueCalendarGrid({
   // for today, a working-hours template (so a closed day shades correctly), or a
   // create grant (so an empty bookable day can still be tapped to add a booking).
   const hasGridContent =
-    venue.bookings.length > 0 ||
+    dayBookings.length > 0 ||
     scheduleBlocks.length > 0 ||
     openRanges.length > 0 ||
     hasTemplate ||
     canCreate;
 
-  const pill = actionLabel(venue);
+  const pill = linkedActionLabel(venue);
 
   return (
     <View style={styles.card}>
@@ -211,8 +196,9 @@ export function LinkedVenueCalendarGrid({
             : 'This venue has no bookings for this day.'}
         </Text>
       ) : (
-        <View style={styles.gridWrap}>
+        <View style={embedded ? undefined : styles.gridWrap}>
           <CalendarDayGrid
+            embedded={embedded}
             bookings={gridBookings}
             workingHours={workingHours}
             venueHours={venueHours}

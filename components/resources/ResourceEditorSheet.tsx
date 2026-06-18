@@ -120,6 +120,23 @@ function resourceHoursOutsideCalendar(
 const CALENDAR_RESTRICTION_WARNING =
   'This resource has hours outside the selected calendar. It will only be bookable when venue, calendar, and resource hours all allow it.';
 
+/**
+ * True when a save error reads like a host-calendar clash — the server's 409s
+ * ("another resource … overlaps", or the column "already has" bookings/classes/
+ * events "during times when this resource" is available). This is the most common
+ * reason a create fails on an active venue, so we use it to steer the user toward
+ * a dedicated, conflict-free column rather than leaving a dead-end error.
+ */
+function isCalendarConflictError(message: string): boolean {
+  const m = message.toLowerCase();
+  return (
+    m.includes('overlap') ||
+    m.includes('already has') ||
+    m.includes('during times when this resource') ||
+    m.includes('another resource on this calendar')
+  );
+}
+
 /** What the sheet is editing: a brand-new resource, or an existing one. */
 export type ResourceEditorTarget =
   | { mode: 'create' }
@@ -259,8 +276,12 @@ export function ResourceEditorSheet({
     } else {
       setName('');
       setResourceType('');
-      // Default to the first host so the required field starts valid.
-      setHostId(hostCalendars[0]?.id ?? null);
+      // Do NOT auto-target an existing column. The first team calendar is usually
+      // a busy practitioner calendar, and the server rejects a resource whose
+      // weekly hours clash with that column's bookings/classes/events (409). Start
+      // unset so the user consciously picks a free column or — recommended —
+      // creates a dedicated one. Matches the web form, which also defaults to none.
+      setHostId(null);
       setSlot('30');
       // Shortest booking follows the start-time step by default (Advanced off).
       setMinMinutes(String(syncedMinBookingMinutesFromSlot(30, MIN_BOOKING_FLOOR)));
@@ -277,8 +298,7 @@ export function ResourceEditorSheet({
       setWeek(defaultResourceWeekHours());
       setExceptions({});
     }
-    // hostCalendars intentionally excluded: only re-seed when the target changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Re-seed only when the target changes (open / switch between create & edit).
   }, [target]);
 
   const saving = create.isPending || update.isPending;
@@ -455,12 +475,24 @@ export function ResourceEditorSheet({
       onClose();
     } catch (e) {
       hapticWarning();
-      setError(e instanceof ApiError ? e.message : 'Could not save the resource.');
+      const message = e instanceof ApiError ? e.message : 'Could not save the resource.';
+      setError(message);
+      // A calendar clash (409) is the most common create failure: the chosen
+      // column already has bookings/classes/events at the resource's hours. Open
+      // the "new calendar" form (prefilled with the resource name) so an admin can
+      // give it a dedicated, conflict-free column in one step.
+      if (isAdmin && isCalendarConflictError(message)) {
+        setShowAddCalendar(true);
+        if (!newCalendarName.trim()) setNewCalendarName(name.trim());
+      }
     }
   }
 
+  // Show extra "use a dedicated column" guidance under a calendar-clash error.
+  const showConflictHint = error !== null && isCalendarConflictError(error);
+
   return (
-    <Sheet visible={target !== null} onClose={onClose} maxHeight="92%">
+    <Sheet visible={target !== null} onClose={onClose} maxHeight="92%" fill>
       <View style={styles.bodyWrap}>
         <Text variant="overline" tone="muted">
           {editing ? 'Edit resource' : 'New resource'}
@@ -507,13 +539,16 @@ export function ResourceEditorSheet({
           {/* Host calendar — required single-select */}
           <Text variant="overline" tone="muted">Show on calendar</Text>
           <Text variant="caption" tone="muted">
-            The team calendar this resource&apos;s bookings appear on.
+            Each resource appears on a team calendar column. Give it its own column to avoid
+            clashing with staff bookings — two resources can share a column only when their
+            weekly hours don&apos;t overlap.
           </Text>
-          {hostOptions.length === 0 ? (
+          {hostOptions.length === 0 && !isAdmin ? (
             <Text variant="bodySmall" tone="danger">
-              No calendars are available. Add a team calendar first.
+              No calendars are available. Ask an admin to create a team calendar first.
             </Text>
-          ) : (
+          ) : null}
+          {hostOptions.length > 0 ? (
             <View style={styles.columnWrap}>
               {hostOptions.map((column) => {
                 const selected = hostId === column.id;
@@ -541,9 +576,10 @@ export function ResourceEditorSheet({
                 );
               })}
             </View>
-          )}
+          ) : null}
 
-          {/* Inline "Add calendar" — admin only (web :1286). */}
+          {/* Inline "Add calendar" — admin only (web :1286). On create this is the
+              recommended path: a dedicated, empty column never clashes with bookings. */}
           {isAdmin ? (
             <View style={[styles.addCalendarCard, { borderColor: colors.border }]}>
               {showAddCalendar ? (
@@ -584,12 +620,21 @@ export function ResourceEditorSheet({
                 </>
               ) : (
                 <Button
-                  label="Add calendar"
-                  variant="secondary"
+                  label={
+                    hostOptions.length === 0
+                      ? 'Create a calendar for this resource'
+                      : 'New calendar for this resource'
+                  }
+                  // Prominent while nothing's chosen yet (the recommended path);
+                  // a quiet secondary once a column is already selected.
+                  variant={hostId ? 'secondary' : 'primary'}
                   size="sm"
                   onPress={() => {
                     setShowAddCalendar(true);
                     setCalendarError(null);
+                    // Prefill the column name from the resource name so one tap
+                    // creates e.g. "Court 1" → its own "Court 1" calendar column.
+                    if (!newCalendarName.trim()) setNewCalendarName(name.trim());
                   }}
                 />
               )}
@@ -753,14 +798,28 @@ export function ResourceEditorSheet({
           {/* Date exceptions */}
           <Text variant="overline" tone="muted">Date exceptions (optional)</Text>
           <Text variant="caption" tone="muted">
-            Close or change hours on specific dates (holidays, one-off events).
+            Closures or special hours on specific dates (holidays, one-off events). Tap a day to
+            select it (tap a second day for a range), or tap a marked day to edit it.
           </Text>
-          <ResourceExceptionsEditor value={exceptions} onChange={setExceptions} />
+          <ResourceExceptionsEditor
+            key={editing ? editing.id : 'new'}
+            value={exceptions}
+            onChange={setExceptions}
+          />
 
           {error ? (
-            <Text variant="bodySmall" tone="danger">
-              {error}
-            </Text>
+            <View style={styles.errorBlock}>
+              <Text variant="bodySmall" tone="danger">
+                {error}
+              </Text>
+              {showConflictHint ? (
+                <Text variant="caption" tone="muted">
+                  {isAdmin
+                    ? 'Tip: give this resource its own calendar column (use “New calendar for this resource” above) so its hours don’t clash with staff bookings, classes, or events.'
+                    : 'Ask an admin to put this resource on its own calendar column, or narrow its weekly hours so they don’t clash with what’s already booked.'}
+                </Text>
+              ) : null}
+            </View>
           ) : null}
         </ScrollView>
 
@@ -780,10 +839,12 @@ export function ResourceEditorSheet({
 
 const styles = StyleSheet.create({
   bodyWrap: {
+    flex: 1,
+    paddingHorizontal: spacing.lg,
     gap: spacing.md,
   },
   scroll: {
-    flexGrow: 0,
+    flex: 1,
   },
   body: {
     gap: spacing.md,
@@ -815,6 +876,9 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     borderRadius: radius.md,
     borderWidth: StyleSheet.hairlineWidth,
+  },
+  errorBlock: {
+    gap: spacing.xs,
   },
   addCalendarCard: {
     padding: spacing.md,

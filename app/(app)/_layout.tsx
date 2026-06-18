@@ -33,7 +33,8 @@ function useStaffGateStatus(): StaffGateStatus {
     // Once we have a profile, stay 'staff' through background refetches.
     // Gating on isFetching unmounted the whole Stack mid-session (e.g. the
     // More tab mounting a fresh useStaffMe observer), which reset navigation
-    // back to the Calendar tab.
+    // back to the Calendar tab. useStaffMe also carries its data across the
+    // token-refresh re-key (keepPreviousData) so a refresh never empties this.
     if (staffQuery.data) {
       return 'staff';
     }
