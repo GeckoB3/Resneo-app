@@ -2,6 +2,9 @@ import { Image } from 'expo-image';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Switch, View } from 'react-native';
 
+import { BookingPagePreview } from '@/components/bookingPage/BookingPagePreview';
+import { CoverCropperSheet } from '@/components/bookingPage/CoverCropperSheet';
+import { LogoFramingSheet } from '@/components/bookingPage/LogoFramingSheet';
 import { CombinedPageGallery } from '@/components/linked/CombinedPageGallery';
 import { CombinedPageTeamProfiles } from '@/components/linked/CombinedPageTeamProfiles';
 import { Button } from '@/components/ui/Button';
@@ -23,6 +26,8 @@ import {
   primaryNeedsDarkText,
   readableTextColor,
   type BookingFontPreset,
+  type BookingPageCoverCropBox,
+  type BookingPageImageFraming,
 } from '@/lib/booking/bookingPageConfig';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import {
@@ -45,9 +50,11 @@ type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 /**
  * Assemble the editor-owned `bookingPageConfig` keys from raw field values.
- * Excludes the image keys (cover_photo_url / logo are saved via their own
+ * Excludes the image URL keys (cover_photo_url / logo are saved via their own
  * endpoints) and gallery (its own sheet on the venue editor; here gallery is
- * not editor-owned). The server merges key-by-key, so omitted keys are preserved.
+ * not editor-owned). Includes the logo/cover crop framing (logo_crop /
+ * cover_crop_box), which the server stores in the same config and merges
+ * key-by-key, so omitted keys are preserved.
  */
 function assembleConfig(raw: {
   primary: string;
@@ -63,6 +70,8 @@ function assembleConfig(raw: {
   showTeam: boolean;
   showAbout: boolean;
   coverFullWidth: boolean;
+  logoCrop: BookingPageImageFraming | null;
+  coverCropBox: BookingPageCoverCropBox | null;
 }): CombinedBookingPageConfig {
   return {
     brand_primary: normalizeHexColor(raw.primary),
@@ -80,24 +89,30 @@ function assembleConfig(raw: {
     show_team_tab: raw.showTeam,
     show_about_tab: raw.showAbout,
     cover_full_width: raw.coverFullWidth,
+    // `null` round-trips identically to an absent crop (whole image). The
+    // framing helpers normalise a centred/full-frame selection back to null.
+    logo_crop: raw.logoCrop,
+    cover_crop_box: raw.coverCropBox,
   };
 }
 
 /**
  * Combined-page config editor (Flow 11/12, host only). Parity with the
- * single-venue `manage/booking-page.tsx`: page name, address (dedicated vs adopt
- * a member's slug), brand colours, font preset, logo + cover upload, announcement,
- * about + social links, tab toggles. Branding/content autosaves (debounced) via
- * `useUpdateCollective` (config merged non-destructively); images persist
- * immediately via `useUploadPageAsset`.
+ * single-venue `manage/booking-page.tsx`: a live booking-page preview at the top,
+ * page name, address (dedicated vs adopt a member's slug), brand colours, font
+ * preset, logo + cover upload with crop/reposition framing, announcement, about +
+ * social links, tab toggles. Branding/content autosaves (debounced) via
+ * `useUpdateCollective` (config merged non-destructively, including the
+ * logo_crop / cover_crop_box framing); images persist immediately via
+ * `useUploadPageAsset`.
  *
  * Includes the photo gallery (CombinedPageGallery) and per-calendar team
  * profiles (CombinedPageTeamProfiles), both saved non-destructively against the
  * stored bookingPageConfig.
  *
- * Deferred: logo/cover crop framing (logo_crop / cover_crop_box) — these need a
- * bespoke native image cropper with no equivalent yet, so they are intentionally
- * out of scope here; the rest of the web editor's surface is implemented.
+ * Logo/cover crop framing reuses the single-venue editor's native sheets
+ * (LogoFramingSheet / CoverCropperSheet); the chosen boxes are saved in the
+ * config payload and feed the live preview.
  */
 export function CombinedPageConfigEditor({
   collective,
@@ -143,6 +158,14 @@ export function CombinedPageConfigEditor({
   const [logoUrl, setLogoUrl] = useState<string | null>(collective.branding?.logo_url ?? null);
   const [coverUrl, setCoverUrl] = useState<string | null>(cfg.cover_photo_url ?? null);
 
+  // Crop framing (config keys; autosaved with the rest of the config).
+  const [logoCrop, setLogoCrop] = useState<BookingPageImageFraming | null>(cfg.logo_crop ?? null);
+  const [coverCropBox, setCoverCropBox] = useState<BookingPageCoverCropBox | null>(
+    cfg.cover_crop_box ?? null,
+  );
+  // Which framing sheet is open (mirrors the single-venue editor's openSheet).
+  const [openSheet, setOpenSheet] = useState<null | 'logoFraming' | 'coverCrop'>(null);
+
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const lastSavedJsonRef = useRef<string | null>(null);
 
@@ -166,6 +189,8 @@ export function CombinedPageConfigEditor({
     setCoverFullWidth(c.cover_full_width === true);
     setLogoUrl(collective.branding?.logo_url ?? null);
     setCoverUrl(c.cover_photo_url ?? null);
+    setLogoCrop(c.logo_crop ?? null);
+    setCoverCropBox(c.cover_crop_box ?? null);
     setNameSave('idle');
     setSaveStatus('idle');
     lastSavedJsonRef.current = JSON.stringify(
@@ -183,6 +208,8 @@ export function CombinedPageConfigEditor({
         showTeam: c.show_team_tab === true,
         showAbout: c.show_about_tab === true,
         coverFullWidth: c.cover_full_width === true,
+        logoCrop: c.logo_crop ?? null,
+        coverCropBox: c.cover_crop_box ?? null,
       }),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -199,9 +226,10 @@ export function CombinedPageConfigEditor({
       assembleConfig({
         primary, accent, fontPreset, announcement, about,
         instagram, facebook, tiktok, x, showServices, showTeam, showAbout, coverFullWidth,
+        logoCrop, coverCropBox,
       }),
     [primary, accent, fontPreset, announcement, about, instagram, facebook, tiktok, x,
-      showServices, showTeam, showAbout, coverFullWidth],
+      showServices, showTeam, showAbout, coverFullWidth, logoCrop, coverCropBox],
   );
   const editorConfigJson = useMemo(() => JSON.stringify(editorConfig), [editorConfig]);
 
@@ -284,9 +312,11 @@ export function CombinedPageConfigEditor({
       if (kind === 'logo') {
         await update.mutateAsync({ collectiveId: collective.id, payload: { logoUrl: url } });
         setLogoUrl(url);
+        setLogoCrop(null); // a new logo invalidates the old framing
       } else {
         await update.mutateAsync({ collectiveId: collective.id, payload: { coverPhotoUrl: url } });
         setCoverUrl(url);
+        setCoverCropBox(null); // a new cover invalidates the old crop
       }
       hapticSuccess();
       onChanged();
@@ -303,8 +333,13 @@ export function CombinedPageConfigEditor({
         collectiveId: collective.id,
         payload: kind === 'logo' ? { logoUrl: '' } : { coverPhotoUrl: '' },
       });
-      if (kind === 'logo') setLogoUrl(null);
-      else setCoverUrl(null);
+      if (kind === 'logo') {
+        setLogoUrl(null);
+        setLogoCrop(null);
+      } else {
+        setCoverUrl(null);
+        setCoverCropBox(null);
+      }
       hapticSuccess();
       onChanged();
       toast.success(kind === 'logo' ? 'Logo removed.' : 'Cover photo removed.');
@@ -325,6 +360,22 @@ export function CombinedPageConfigEditor({
 
   return (
     <View style={styles.root}>
+      {/* Live preview — reflects the editor's current state (assembled config +
+          normalised colours + crop framing), exactly like the single-venue
+          booking-page editor. */}
+      <BookingPagePreview
+        venueName={name}
+        logoUrl={logoUrl}
+        coverUrl={coverUrl}
+        coverFullWidth={editorConfig.cover_full_width ?? false}
+        coverCropBox={editorConfig.cover_crop_box ?? null}
+        logoCrop={editorConfig.logo_crop ?? null}
+        primary={normalizedPrimary || null}
+        accent={normalizedAccent || null}
+        fontPreset={fontPreset}
+        announcement={announcement}
+      />
+
       {saveLabel ? (
         <Text
           variant="caption"
@@ -514,6 +565,8 @@ export function CombinedPageConfigEditor({
           removing={update.isPending}
           onUpload={() => void handleUpload('logo')}
           onRemove={() => void handleRemove('logo')}
+          adjustLabel="Reposition"
+          onAdjust={() => setOpenSheet('logoFraming')}
         />
         <ImageRow
           label="Cover photo"
@@ -522,6 +575,8 @@ export function CombinedPageConfigEditor({
           removing={update.isPending}
           onUpload={() => void handleUpload('cover')}
           onRemove={() => void handleRemove('cover')}
+          adjustLabel="Crop"
+          onAdjust={() => setOpenSheet('coverCrop')}
         />
         <Text variant="label" tone="secondary">
           Cover layout
@@ -578,6 +633,29 @@ export function CombinedPageConfigEditor({
           Colours must be a 6-digit hex like #003b6f — fix to keep saving.
         </Text>
       ) : null}
+
+      {/* Crop / reposition sheets (reused from the single-venue editor). Saving a
+          box updates local state → autosaves with the config + feeds the preview. */}
+      <LogoFramingSheet
+        visible={openSheet === 'logoFraming'}
+        imageUrl={logoUrl}
+        value={logoCrop}
+        onClose={() => setOpenSheet(null)}
+        onSave={(next) => {
+          setLogoCrop(next);
+          setOpenSheet(null);
+        }}
+      />
+      <CoverCropperSheet
+        visible={openSheet === 'coverCrop'}
+        imageUrl={coverUrl}
+        value={coverCropBox}
+        onClose={() => setOpenSheet(null)}
+        onSave={(next) => {
+          setCoverCropBox(next);
+          setOpenSheet(null);
+        }}
+      />
     </View>
   );
 }
@@ -702,6 +780,8 @@ function ImageRow({
   removing,
   onUpload,
   onRemove,
+  adjustLabel,
+  onAdjust,
 }: {
   label: string;
   imageUrl: string | null;
@@ -709,6 +789,8 @@ function ImageRow({
   removing: boolean;
   onUpload: () => void;
   onRemove: () => void;
+  adjustLabel?: string;
+  onAdjust?: () => void;
 }) {
   const { colors } = useTheme();
   return (
@@ -732,6 +814,9 @@ function ImageRow({
             loading={uploading}
             onPress={onUpload}
           />
+          {imageUrl && adjustLabel && onAdjust ? (
+            <Button label={adjustLabel} variant="secondary" size="sm" onPress={onAdjust} />
+          ) : null}
           {imageUrl ? (
             <Button label="Remove" variant="ghost" size="sm" loading={removing} onPress={onRemove} />
           ) : null}

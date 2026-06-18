@@ -13,6 +13,7 @@ import {
   View,
 } from 'react-native';
 
+import { RecentImportsSection } from '@/components/manage/RecentImportsSection';
 import { Button } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Input } from '@/components/ui/Input';
@@ -890,6 +891,11 @@ export default function VenueProfileScreen() {
             fullWidth
             onPress={() => openWeb(WEB_IMPORT_PATH)}
           />
+
+          {/* Read-only recent-imports list + 24h-undo window (Domain 05). The
+              backend list/undo routes are cookie-only, so this degrades to a
+              "manage on the web" note when unreachable with a Bearer token. */}
+          <RecentImportsSection onOpenWeb={openWeb} webImportPath={WEB_IMPORT_PATH} />
 
           {/* Feedback */}
           {error ? (

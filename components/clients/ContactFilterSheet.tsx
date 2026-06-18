@@ -13,22 +13,71 @@ import { usePractitioners } from '@/lib/queries/usePractitioners';
 import { useManagedServices } from '@/lib/queries/useServicesManage';
 import { spacing } from '@/theme/index';
 
+// Per-option helper hints mirror the web `CONTACTS_SEGMENT_OPTIONS` descriptions
+// (src/lib/guests/contacts-constants.ts) so the mobile filter explains each
+// smart list the same way the dashboard does. Shown under the selected option.
 const SEGMENT_OPTIONS = [
-  { value: 'all', label: 'Everyone' },
-  { value: 'new', label: 'New this period' },
-  { value: 'upcoming', label: 'Upcoming visit' },
-  { value: 'visit', label: 'By last visit' },
-  { value: 'marketing', label: 'Marketing consent' },
-  { value: 'last_staff', label: 'By last staff' },
-  { value: 'last_service', label: 'By last service' },
-  { value: 'tag', label: 'By tag' },
+  { value: 'all', label: 'Everyone', hint: 'No extra rules. Show everyone allowed by Who to include above.' },
+  {
+    value: 'new',
+    label: 'New this period',
+    hint: 'Added within your dates below. Leave dates blank to use this calendar month through today.',
+  },
+  {
+    value: 'upcoming',
+    label: 'Upcoming visit',
+    hint: 'Must have a future booking in the date range below. Leave dates blank to look one year ahead from today.',
+  },
+  {
+    value: 'visit',
+    label: 'By last visit',
+    hint: 'Only contacts with a saved last visit date in the range below (completed visits through today). Set at least one date.',
+  },
+  {
+    value: 'marketing',
+    label: 'Marketing consent',
+    hint: 'Filter by subscribed or not. Optionally narrow by when consent was recorded.',
+  },
+  {
+    value: 'last_staff',
+    label: 'By last staff',
+    hint: 'Their latest booking used this staff member. Optionally narrow by when that booking happened.',
+  },
+  {
+    value: 'last_service',
+    label: 'By last service',
+    hint: 'Their latest booking included this service. Optionally narrow by when that booking happened.',
+  },
+  {
+    value: 'tag',
+    label: 'By tag',
+    hint: 'Show contacts who have a specific tag. Pick a suggestion or type any tag; matching is not case sensitive.',
+  },
 ] as const;
 
+// Identity-scope hints mirror the web `CONTACT_SHOW_OPTIONS` hint copy
+// (ContactsDashboard.tsx) — labels stay app-native, hints are at parity.
 const IDENTITY_OPTIONS = [
-  { value: 'identified', label: 'With contact details' },
-  { value: 'all', label: 'All' },
-  { value: 'anonymous', label: 'Anonymous only' },
+  {
+    value: 'identified',
+    label: 'With contact details',
+    hint: 'People with a name plus email or phone you can reach.',
+  },
+  { value: 'all', label: 'All', hint: 'Everyone we can recognise. Anonymous walk-ins stay hidden.' },
+  {
+    value: 'anonymous',
+    label: 'Anonymous only',
+    hint: 'Guests without saved contact details (useful for reviewing anonymous visits).',
+  },
 ] as const;
+
+/** Resolve the hint copy for the currently-selected option in an option list. */
+function selectedHint(
+  options: ReadonlyArray<{ value: string; hint: string }>,
+  value: string,
+): string | null {
+  return options.find((o) => o.value === value)?.hint ?? null;
+}
 
 // The backend only accepts `subscribed | not_subscribed` and silently defaults
 // to `subscribed` for anything else — so the previous opted_in/opted_out/no_record
@@ -171,6 +220,11 @@ export function ContactFilterSheet({
               />
             ))}
           </View>
+          {selectedHint(IDENTITY_OPTIONS, draft.filter) ? (
+            <Text variant="caption" tone="muted">
+              {selectedHint(IDENTITY_OPTIONS, draft.filter)}
+            </Text>
+          ) : null}
         </View>
 
         {/* Smart-list segment */}
@@ -199,6 +253,11 @@ export function ContactFilterSheet({
               />
             ))}
           </View>
+          {selectedHint(SEGMENT_OPTIONS, draft.segment) ? (
+            <Text variant="caption" tone="muted">
+              {selectedHint(SEGMENT_OPTIONS, draft.segment)}
+            </Text>
+          ) : null}
         </View>
 
         {/* Tag picker for tag segment */}

@@ -4,6 +4,11 @@
  * See Docs/LINKED_VENUES_IMPLEMENTATION_PLAN.md §2.6 / Appendix B.
  */
 
+import type {
+  BookingPageCoverCropBox,
+  BookingPageImageFraming,
+} from '@/lib/booking/bookingPageConfig';
+
 // ---------------------------------------------------------------------------
 // Enums
 // ---------------------------------------------------------------------------
@@ -36,8 +41,10 @@ export interface CombinedBookingPageConfig {
   brand_primary?: string | null;
   brand_accent?: string | null;
   font_preset?: string | null;
-  logo_crop?: { x: number; y: number; zoom: number } | null;
-  cover_crop_box?: { x: number; y: number; w: number; h: number; ar: number } | null;
+  // Crop framing shares the canonical booking-page types so the single-venue
+  // editor's croppers + preview wire in directly (the host editor reuses them).
+  logo_crop?: BookingPageImageFraming | null;
+  cover_crop_box?: BookingPageCoverCropBox | null;
   cover_photo_url?: string | null;
   cover_full_width?: boolean;
   about?: string | null;

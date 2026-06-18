@@ -12,6 +12,7 @@ import { LinkStatusBadge } from '@/components/linked/LinkStatusBadge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { ConfirmSheet } from '@/components/ui/ConfirmSheet';
+import { Dot } from '@/components/ui/Dot';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { ListSkeleton } from '@/components/ui/Skeletons';
@@ -89,6 +90,52 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       </Text>
       <Card padded={false}>{children}</Card>
     </View>
+  );
+}
+
+/**
+ * First-run explainer for the zero-links empty state (web §19.6 parity). Replaces
+ * the plain EmptyState with the web card's three data-sharing bullets so a new
+ * admin understands the model before sending a request. Copy is ported verbatim
+ * from the web card. No dismiss-persistence — it only shows while there are zero
+ * links (so it self-hides as soon as the first link exists).
+ */
+function OnboardingExplainer() {
+  const { colors } = useTheme();
+  const bullets = [
+    'You stay the sole owner of your bookings and clients — linking shares access, never data.',
+    'You choose, per direction, what each venue can see and do — down to specific calendars.',
+    'Either venue can reduce access or unlink at any time; nothing is shared after that.',
+  ];
+  return (
+    <Card style={styles.explainer}>
+      <View style={styles.explainerHead}>
+        <View style={[styles.explainerIcon, { backgroundColor: colors.brandSubtle }]}>
+          <SymbolView
+            name={{ ios: 'link', android: 'link', web: 'link' }}
+            tintColor={colors.brand}
+            size={22}
+          />
+        </View>
+        <Text variant="subheading" style={styles.flex1}>
+          Work alongside another venue
+        </Text>
+      </View>
+      <Text variant="bodySmall" tone="secondary">
+        Linking lets two venues see each other’s calendars and (if you choose) manage each other’s
+        bookings — ideal for chair-rental, co-located practitioners or a shared brand.
+      </Text>
+      <View style={styles.bullets}>
+        {bullets.map((b) => (
+          <View key={b} style={styles.bulletRow}>
+            <Dot color={colors.brand} size={6} style={styles.bulletDot} />
+            <Text variant="bodySmall" tone="secondary" style={styles.flex1}>
+              {b}
+            </Text>
+          </View>
+        ))}
+      </View>
+    </Card>
   );
 }
 
@@ -324,19 +371,9 @@ export default function LinkedVenuesScreen() {
 
   if (links.length === 0) {
     return (
-      <Screen>
+      <Screen scroll padded={false} contentContainerStyle={styles.emptyContent}>
         <Stack.Screen options={{ title: 'Linked venues' }} />
-        <EmptyState
-          icon={
-            <SymbolView
-              name={{ ios: 'link', android: 'link', web: 'link' }}
-              tintColor={colors.brand}
-              size={40}
-            />
-          }
-          title="No linked venues yet"
-          message="When another venue sends you a link request, it’ll appear here to review. You can then share calendars and manage each other’s bookings."
-        />
+        <OnboardingExplainer />
         <View style={styles.emptyActions}>
           {eligibilityHint ? (
             <View
@@ -549,9 +586,41 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.md,
   },
+  emptyContent: {
+    paddingHorizontal: spacing.base,
+    paddingTop: spacing.base,
+    paddingBottom: spacing['3xl'],
+    gap: spacing.lg,
+  },
   emptyActions: {
     gap: spacing.md,
     paddingBottom: spacing.lg,
+  },
+  explainer: {
+    gap: spacing.md,
+  },
+  explainerHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  explainerIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bullets: {
+    gap: spacing.sm,
+  },
+  bulletRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+  },
+  bulletDot: {
+    marginTop: 6,
   },
   flex1: {
     flex: 1,

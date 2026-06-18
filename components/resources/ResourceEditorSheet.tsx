@@ -16,6 +16,7 @@ import {
 } from '@/components/resources/ResourceWeekHoursEditor';
 import { timeToMinutes } from '@/components/calendar/grid-layout';
 import { Button } from '@/components/ui/Button';
+import { HelpTooltip } from '@/components/ui/HelpTooltip';
 import { Input } from '@/components/ui/Input';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
@@ -119,6 +120,18 @@ function resourceHoursOutsideCalendar(
 /** Web `RESOURCE_CALENDAR_LIMIT_WARNING`. */
 const CALENDAR_RESTRICTION_WARNING =
   'This resource has hours outside the selected calendar. It will only be bookable when venue, calendar, and resource hours all allow it.';
+
+/**
+ * Per-field help copy ported verbatim from the web resource form
+ * (`_reference/Resneo/src/lib/help/resource-booking-tooltips.ts`). Surfaced via a
+ * tappable {@link HelpTooltip} next to the slot-interval + shortest-booking labels
+ * so the longer explanation is available without crowding the inline helper text.
+ */
+const RESOURCE_SLOT_INTERVAL_HELP =
+  'How often a guest may start a booking: start times move forward in steps of this many minutes from the beginning of each open period (e.g. 60 = on the hour only; 30 = on the hour and :30). This is not extra buffer after a booking ends—if a session ends between grid times, that gap can stay empty until the next allowed start. Online pricing uses the same step: total price = (price per step) × (booking length ÷ this many minutes).';
+
+const RESOURCE_MIN_BOOKING_HELP =
+  'Shortest session length you allow for availability checks. By default it matches the start-time step; use “Advanced” only when you want a finer grid but a longer minimum (e.g. start every 15 minutes, book at least 60). Guest duration choices increase from this value in steps of the start-time step.';
 
 /**
  * True when a save error reads like a host-calendar clash — the server's 409s
@@ -643,13 +656,22 @@ export function ResourceEditorSheet({
 
           {/* Booking rules */}
           <Text variant="overline" tone="muted">Booking rules</Text>
-          <Input
-            label="Start times every (mins)"
-            helper="Spacing of bookable start times."
-            value={slot}
-            onChangeText={onSlotChange}
-            keyboardType="number-pad"
-          />
+          <View style={styles.labelledField}>
+            <View style={styles.labelRow}>
+              <Text variant="label" tone="secondary">Start times every (mins)</Text>
+              <HelpTooltip
+                title="Start times every (mins)"
+                accessibilityLabel="Help: start times every (mins)">
+                {RESOURCE_SLOT_INTERVAL_HELP}
+              </HelpTooltip>
+            </View>
+            <Input
+              helper="Spacing of bookable start times."
+              value={slot}
+              onChangeText={onSlotChange}
+              keyboardType="number-pad"
+            />
+          </View>
           <View style={styles.switchRow}>
             <View style={styles.advancedLabel}>
               <Text variant="bodyMedium">Longer minimum than start-time step</Text>
@@ -662,9 +684,16 @@ export function ResourceEditorSheet({
             <Switch value={advancedMin} onValueChange={onToggleAdvancedMin} />
           </View>
           <View style={styles.row}>
-            <View style={styles.field}>
+            <View style={[styles.field, styles.labelledField]}>
+              <View style={styles.labelRow}>
+                <Text variant="label" tone="secondary">Shortest (mins)</Text>
+                <HelpTooltip
+                  title="Shortest booking (mins)"
+                  accessibilityLabel="Help: shortest booking (mins)">
+                  {RESOURCE_MIN_BOOKING_HELP}
+                </HelpTooltip>
+              </View>
               <Input
-                label="Shortest (mins)"
                 helper={advancedMin ? undefined : 'Matches the start-time step.'}
                 value={minMinutes}
                 onChangeText={setMinMinutes}
@@ -871,6 +900,15 @@ const styles = StyleSheet.create({
   },
   disabledInput: {
     opacity: 0.5,
+  },
+  labelledField: {
+    gap: spacing.sm,
+  },
+  labelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.xs,
   },
   warningBanner: {
     padding: spacing.md,

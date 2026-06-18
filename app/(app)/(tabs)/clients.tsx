@@ -1,5 +1,7 @@
 import { format, parseISO } from 'date-fns';
+import * as ExpoLinking from 'expo-linking';
 import { type Href, useRouter } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
 import { useQueryClient } from '@tanstack/react-query';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -43,6 +45,7 @@ import { ListSkeleton } from '@/components/ui/Skeletons';
 import { SwipeRow, type SwipeAction } from '@/components/ui/SwipeRow';
 import { Text } from '@/components/ui/Text';
 import { ApiError, apiFetch } from '@/lib/api/client';
+import { getWebUrl } from '@/lib/env';
 import { clientsScreenTitle } from '@/lib/booking/terminology';
 import { buildAndShareCsv } from '@/lib/reports/csv-export';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
@@ -71,6 +74,20 @@ const EXPORT_MAX_ROWS = 5000;
 const EXPORT_PAGE_SIZE = 250;
 /** Mirror useGuestDetail's default booking-history limit so the prefetch key matches. */
 const DETAIL_BOOKING_HISTORY_LIMIT = 80;
+
+/**
+ * Web Data-import hub path. The CSV/Excel import wizard is desktop-grade and a
+ * deliberate v1 scope exclusion on mobile (Domain 05) — the Contacts tab surfaces
+ * a discoverable link-out to it (admin-only) rather than porting the wizard.
+ * Exported for the import link-out test.
+ */
+export const WEB_IMPORT_PATH = '/dashboard/import';
+
+/** Resolve a staff-dashboard URL on the configured WEB origin (prod fallback). */
+export function webDashboardUrl(path: string): string {
+  const base = getWebUrl();
+  return base ? `${base}${path}` : `https://app.resneo.com${path}`;
+}
 
 const SORT_OPTIONS: { value: string; label: string }[] = [
   { value: 'last_visit_desc', label: 'Recent first' },
@@ -375,6 +392,18 @@ export default function ClientsScreen() {
     (guestId: string) => router.push(`/client/${guestId}` as Href),
     [router],
   );
+
+  // Open the web Data-import hub in an in-app browser tab (system-browser
+  // fallback). Admin-gated at the call sites. The native CSV importer is out of
+  // scope for v1 (Domain 05) — this is the discoverable link-out from Contacts.
+  const openImport = useCallback(() => {
+    const url = webDashboardUrl(WEB_IMPORT_PATH);
+    void WebBrowser.openBrowserAsync(url).catch(() =>
+      ExpoLinking.openURL(url).catch(() =>
+        toast.error('Could not open the import tool. Please try again.'),
+      ),
+    );
+  }, [toast]);
 
   // Warm the detail cache on press-in so the detail screen paints instantly.
   const prefetchGuest = useCallback(
@@ -825,6 +854,9 @@ export default function ClientsScreen() {
               onPress={() => void handleExport()}
             />
           ) : null}
+          {isAdmin ? (
+            <Chip label="Import contacts" selected={false} onPress={openImport} />
+          ) : null}
         </ScrollView>
 
         {/* Active filter summary — removable chips */}
@@ -904,7 +936,20 @@ export default function ClientsScreen() {
                 message={
                   debouncedSearch.length >= MIN_SEARCH_LENGTH
                     ? `No ${screenTitle.toLowerCase()} match "${debouncedSearch}".`
-                    : `Your ${clientLabel} directory will appear here once you have ${clientLabel}s.`
+                    : `Your ${clientLabel} directory will appear here once you have ${clientLabel}s. You can import them from a CSV export of your previous system.`
+                }
+                // Surface the import link-out where admins discover an empty
+                // directory — but only when nothing is being searched/filtered
+                // (an empty *search* result shouldn't suggest importing).
+                actionLabel={
+                  isAdmin && debouncedSearch.length < MIN_SEARCH_LENGTH && !hasActiveFilter
+                    ? 'Import contacts'
+                    : undefined
+                }
+                onAction={
+                  isAdmin && debouncedSearch.length < MIN_SEARCH_LENGTH && !hasActiveFilter
+                    ? openImport
+                    : undefined
                 }
               />
             }

@@ -133,7 +133,24 @@ export function BulkRemoveTagSheet({
   );
 }
 
-/** Send a marketing email/SMS to all selected contacts (consent respected server-side). */
+/**
+ * Send a marketing email/SMS to all selected contacts (consent respected server-side).
+ *
+ * INTENTIONAL DIVERGENCE FROM WEB (Domain 05, R7 audit — confirmed, documented):
+ * the web directory's bulk "Message" fans out a per-guest transactional message
+ * (`POST /api/venue/guests/[id]/message`) over `Promise.all`, reaching anyone with
+ * an email/phone on file regardless of marketing consent. The app instead sends a
+ * single consent-gated marketing broadcast (`POST /api/venue/contacts/bulk`
+ * {action:'marketing_message'}). We keep the broadcast semantics on mobile because:
+ *   1. it is consent-safe by construction (only subscribed contacts on a matching
+ *      channel receive it) — a per-guest fan-out would silently message
+ *      non-consented contacts, a marketing-compliance regression;
+ *   2. it is one request, not N (no partial-failure fan-out to reconcile on a
+ *      flaky mobile connection); and
+ *   3. per-contact transactional messaging already lives on the contact detail
+ *      screen via `GuestMessageSheet` for staff who need to reach one person.
+ * The consent semantics are surfaced to the user via the in-sheet note below.
+ */
 export function BulkMessageSheet({
   guestIds,
   open,
@@ -195,8 +212,15 @@ export function BulkMessageSheet({
           value={channel}
           onChange={setChannel}
         />
-        <Input label="Subject" value={subject} onChangeText={setSubject} maxLength={200} />
         <Input
+          testID="bulk-msg-subject"
+          label="Subject"
+          value={subject}
+          onChangeText={setSubject}
+          maxLength={200}
+        />
+        <Input
+          testID="bulk-msg-body"
           label="Message"
           value={body}
           onChangeText={setBody}
@@ -205,7 +229,9 @@ export function BulkMessageSheet({
           style={styles.multiline}
         />
         <Text variant="caption" tone="muted">
-          Only contacts with marketing consent and a matching channel receive it.
+          This sends a marketing broadcast: only contacts who have given marketing
+          consent and have a matching {channel === 'both' ? 'email or phone' : channel}{' '}
+          on file will receive it. To message one person directly, open their profile.
         </Text>
         {error ? (
           <Text variant="bodySmall" tone="danger">
