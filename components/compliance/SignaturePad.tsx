@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-reanimated';
@@ -24,32 +24,11 @@ function strokeToPath(points: Point[]): string {
   return d;
 }
 
-/**
- * Serialise the captured strokes to a self-contained SVG data URL. The server
- * stores `SignatureResponse.data` as an opaque string (and, for drawn
- * signatures captured via the public form, uploads it to the compliance-files
- * bucket), so an `image/svg+xml` data URL is a valid, dependency-free payload —
- * no native rasterisation module required.
- */
-function strokesToDataUrl(strokes: Point[][], width: number): string {
-  const w = Math.max(1, Math.round(width));
-  const paths = strokes
-    .map((s) => strokeToPath(s))
-    .filter(Boolean)
-    .map(
-      (d) =>
-        `<path d="${d}" fill="none" stroke="#0f172a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>`,
-    )
-    .join('');
-  const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${PAD_HEIGHT}" ` +
-    `viewBox="0 0 ${w} ${PAD_HEIGHT}">${paths}</svg>`;
-  // encodeURIComponent keeps the URL valid without a base64 dependency.
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-}
-
 type Props = {
-  /** Emits an SVG data URL on each completed stroke, or null when cleared. */
+  /**
+   * Emits a PNG data URL (`data:image/png;base64,…`) on each completed stroke,
+   * or null when cleared. The caller wraps this in `{ method:'drawn', data, signed_at }`.
+   */
   onChange: (dataUrl: string | null) => void;
   disabled?: boolean;
   accessibilityLabel?: string;
@@ -58,7 +37,9 @@ type Props = {
 /**
  * A draw-with-your-finger signature pad built on react-native-svg +
  * react-native-gesture-handler (both already deps — no new native module). The
- * caller wraps the emitted data URL in `{ method:'drawn', data, signed_at }`.
+ * rendered <Svg> is rasterised to a base64 PNG via react-native-svg's built-in
+ * `toDataURL` ref method so the emitted payload matches the server's accepted
+ * `data:image/(png|jpeg);base64,…` signature format.
  */
 export function SignaturePad({ onChange, disabled, accessibilityLabel }: Props) {
   const { colors } = useTheme();
@@ -66,6 +47,30 @@ export function SignaturePad({ onChange, disabled, accessibilityLabel }: Props) 
   // Committed strokes + the one currently being drawn.
   const [strokes, setStrokes] = useState<Point[][]>([]);
   const [current, setCurrent] = useState<Point[]>([]);
+  const svgRef = useRef<Svg>(null);
+
+  /**
+   * Rasterise the current <Svg> to a PNG and emit a data URL. `toDataURL` is
+   * callback-based and returns base64 WITHOUT the data prefix (v15), so we add it
+   * back. We wrap it in a Promise so callers can await a settled capture; the
+   * rAF defers until the freshly-committed stroke has painted into the view.
+   */
+  const captureToPng = useCallback((): Promise<string | null> => {
+    const node = svgRef.current;
+    if (!node || typeof node.toDataURL !== 'function') return Promise.resolve(null);
+    return new Promise<string | null>((resolve) => {
+      requestAnimationFrame(() => {
+        const inner = svgRef.current;
+        if (!inner || typeof inner.toDataURL !== 'function') {
+          resolve(null);
+          return;
+        }
+        inner.toDataURL((base64) => {
+          resolve(base64 ? `data:image/png;base64,${base64}` : null);
+        });
+      });
+    });
+  }, []);
 
   const begin = useCallback((x: number, y: number) => {
     setCurrent([{ x, y }]);
@@ -78,14 +83,14 @@ export function SignaturePad({ onChange, disabled, accessibilityLabel }: Props) 
   const commit = useCallback(() => {
     setCurrent((pending) => {
       if (pending.length === 0) return [];
-      setStrokes((prevStrokes) => {
-        const next = [...prevStrokes, pending];
-        onChange(strokesToDataUrl(next, width || 1));
-        return next;
+      setStrokes((prevStrokes) => [...prevStrokes, pending]);
+      // Capture after the new stroke has painted; emit the PNG data URL.
+      void captureToPng().then((dataUrl) => {
+        if (dataUrl) onChange(dataUrl);
       });
       return [];
     });
-  }, [onChange, width]);
+  }, [captureToPng, onChange]);
 
   const clear = useCallback(() => {
     setStrokes([]);
@@ -123,7 +128,7 @@ export function SignaturePad({ onChange, disabled, accessibilityLabel }: Props) 
             { backgroundColor: colors.surface, borderColor: colors.border, opacity: disabled ? 0.5 : 1 },
           ]}>
           {width > 0 ? (
-            <Svg width={width} height={PAD_HEIGHT}>
+            <Svg ref={svgRef} width={width} height={PAD_HEIGHT}>
               {allStrokes.map((s, i) => (
                 <Path
                   key={i}

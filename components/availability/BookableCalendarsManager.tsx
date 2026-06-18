@@ -73,7 +73,9 @@ function sortByOrder(rows: Practitioner[]): Practitioner[] {
 function isCalendarLimitError(e: unknown): boolean {
   if (!(e instanceof ApiError)) return false;
   if (e.status !== 403) return false;
-  const body = e.body as { code?: string; error?: string } | undefined;
+  const body = e.body as { code?: string; error?: string; upgrade_required?: boolean } | undefined;
+  // The real route signals the calendar cap with `upgrade_required: true` (no `code`).
+  if (body?.upgrade_required === true) return true;
   const code = body?.code?.toLowerCase() ?? '';
   const msg = (body?.error ?? e.message ?? '').toLowerCase();
   return code.includes('upgrade') || code.includes('limit') || msg.includes('plan') || msg.includes('upgrade') || msg.includes('limit');
@@ -128,13 +130,20 @@ function CalendarCard({
   const [copied, setCopied] = useState(false);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Re-seed editable fields when the underlying record changes (e.g. refetch).
-  useEffect(() => {
+  // Re-seed editable drafts when the underlying record changes (e.g. refetch)
+  // without clobbering in-progress edits — the "adjust state during render"
+  // pattern (avoids setState-in-effect cascading renders).
+  const [prevSavedName, setPrevSavedName] = useState(savedName);
+  if (prevSavedName !== savedName) {
+    setPrevSavedName(savedName);
     setNameDraft(savedName);
-  }, [savedName]);
-  useEffect(() => {
-    setSlugDraft(calendar.slug ?? '');
-  }, [calendar.slug]);
+  }
+  const seedSlug = calendar.slug ?? '';
+  const [prevSeedSlug, setPrevSeedSlug] = useState(seedSlug);
+  if (prevSeedSlug !== seedSlug) {
+    setPrevSeedSlug(seedSlug);
+    setSlugDraft(seedSlug);
+  }
   useEffect(
     () => () => {
       if (copyTimer.current) clearTimeout(copyTimer.current);

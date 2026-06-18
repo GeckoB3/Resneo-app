@@ -219,21 +219,28 @@ export function validateFormSchemaForType(
 /** A drawn or typed signature answer (mirrors the web `SignatureResponse`). */
 export interface SignatureResponse {
   method: 'drawn' | 'typed';
-  /** For typed signatures: the typed name. For drawn: a data URL (pre-upload). */
+  /**
+   * For typed signatures: the typed name. For drawn: a base64 PNG/JPEG data URL
+   * (`data:image/png;base64,…`) the server validates and uploads pre-upload.
+   */
   data?: string;
   /** Set server-side after a drawn signature is uploaded to the compliance-files bucket. */
   storage_path?: string;
   signed_at: string;
 }
 
-/** An uploaded-file answer (mirrors the web `FileResponse`). */
+/**
+ * An uploaded-file answer (mirrors the web `FileResponse`). `storage_path` is
+ * REQUIRED — it can only be produced by a server upload, and the only upload
+ * endpoint is the public, code-scoped form. Staff capture therefore cannot
+ * synthesise a valid file response; the capture sheet renders `file` fields
+ * disabled and directs staff to the client's form link instead.
+ */
 export interface FileResponse {
-  storage_path?: string;
+  storage_path: string;
   file_name: string;
   mime_type: string;
   file_size_bytes: number;
-  /** Local document-picker URI before any server upload (staff capture v1). */
-  uri?: string;
 }
 
 // ─── Result derivation (spec §4.4) ──────────────────────────────────────────────

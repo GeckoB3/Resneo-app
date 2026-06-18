@@ -18,7 +18,6 @@ import { ApiError } from '@/lib/api/client';
 import { renderInlineMarkdown } from '@/lib/compliance/markdown';
 import {
   seedDefaultResponses,
-  type FileResponse,
   type SignatureResponse,
 } from '@/lib/compliance/form-schema';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
@@ -156,7 +155,7 @@ function FieldInput({
   }
 
   if (field.type === 'file') {
-    return <FileFieldInput field={field} value={value} onChange={onChange} />;
+    return <FileFieldInput field={field} />;
   }
 
   if (field.type === 'date') {
@@ -266,77 +265,30 @@ function SignatureFieldInput({
   );
 }
 
-/** File field → expo-document-picker; stores file metadata as a FileResponse. */
-function FileFieldInput({
-  field,
-  value,
-  onChange,
-}: {
-  field: ComplianceFormField;
-  value: unknown;
-  onChange: (val: unknown) => void;
-}) {
+/**
+ * File field — DISABLED in staff capture (web parity with FormRenderer's FileField,
+ * which is disabled whenever no upload URL is available). A valid file response
+ * needs a server `storage_path`, and the only upload endpoint is the public,
+ * code-scoped form — so staff cannot attach files here. We render a disabled
+ * control with a hint pointing at the client's form link and emit NO value.
+ */
+function FileFieldInput({ field }: { field: ComplianceFormField }) {
   const { colors } = useTheme();
-  const toast = useToast();
-  const file = (value ?? null) as FileResponse | null;
-  const [picking, setPicking] = useState(false);
-
-  async function pick() {
-    setPicking(true);
-    try {
-      // Dynamic import — degrade gracefully if the native module is unavailable.
-
-      const DocumentPicker = (await import('expo-document-picker').catch(() => null)) as any | null;
-      if (!DocumentPicker) {
-        toast.info('File picker unavailable. Capture this via a client form link instead.');
-        return;
-      }
-      const result = await DocumentPicker.getDocumentAsync({
-        copyToCacheDirectory: true,
-        multiple: false,
-        type: ['application/pdf', 'image/*'],
-      });
-      if (result.canceled || !result.assets?.[0]) return;
-      const asset = result.assets[0];
-      onChange({
-        file_name: asset.name ?? 'document',
-        mime_type: asset.mimeType ?? 'application/octet-stream',
-        file_size_bytes: asset.size ?? 0,
-        uri: asset.uri,
-      } satisfies FileResponse);
-    } catch {
-      toast.error('Could not attach the file.');
-    } finally {
-      setPicking(false);
-    }
-  }
 
   return (
     <View style={styles.fieldRow}>
       <FieldHeader field={field} />
-      {file ? (
-        <View
-          style={[styles.fileRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Text variant="bodySmall" numberOfLines={1} style={styles.fileName}>
-            {file.file_name}
-          </Text>
-          <Button
-            label="Remove"
-            variant="ghost"
-            size="sm"
-            onPress={() => onChange(undefined)}
-          />
-        </View>
-      ) : (
-        <Button
-          label={picking ? 'Choosing…' : 'Attach file'}
-          variant="secondary"
-          size="sm"
-          loading={picking}
-          onPress={() => void pick()}
-          style={styles.attachBtn}
-        />
-      )}
+      <View
+        accessibilityLabel={`${field.label} — file upload`}
+        accessibilityState={{ disabled: true }}
+        style={[
+          styles.fileDisabled,
+          { backgroundColor: colors.surface, borderColor: colors.border, opacity: 0.6 },
+        ]}>
+        <Text variant="bodySmall" tone="muted">
+          File uploads are collected via the form link sent to the client.
+        </Text>
+      </View>
     </View>
   );
 }
@@ -349,10 +301,12 @@ function FileFieldInput({
  *  - staff_web     → staff enters details (all fields including staff-only)
  *  - client_walkin → client self-completes on a venue device (staff-only fields hidden)
  *
- * Capture fidelity matches the web FormRenderer: drawn/typed signatures emit the
- * `{ method, data, signed_at }` object, files are attached via the document
- * picker, date fields use the native picker (YYYY-MM-DD), and the schema's
- * description / intro markdown / help text + default values are honoured.
+ * Capture fidelity matches the web FormRenderer: drawn signatures emit a base64
+ * PNG data URL and typed signatures emit `{ method, data, signed_at }`, date
+ * fields use the native picker (YYYY-MM-DD), and the schema's description / intro
+ * markdown / help text + default values are honoured. `file` fields are rendered
+ * disabled (web parity) — uploads are only possible via the client's public form
+ * link, so staff are directed there rather than capturing files in-sheet.
  */
 export function ComplianceCaptureSheet({
   visible,
@@ -395,6 +349,13 @@ export function ComplianceCaptureSheet({
     const errors: Record<string, string> = {};
     for (const field of visibleFields) {
       if (!field.required) continue;
+      // File uploads can only be captured via the public form (no staff upload
+      // endpoint). A required file field is never satisfiable here, so direct
+      // staff to the client's form link rather than letting submit 400.
+      if (field.type === 'file') {
+        errors[field.id] = "File uploads can't be captured here — send the client's form link.";
+        continue;
+      }
       const val = responses[field.id];
       const isEmpty =
         val == null ||
@@ -637,23 +598,11 @@ const styles = StyleSheet.create({
   chipBtn: {
     marginRight: spacing.sm,
   },
-  fileRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  fileDisabled: {
     borderWidth: 1,
     borderRadius: radius.md,
-    paddingLeft: spacing.base,
-    paddingRight: spacing.xs,
-    paddingVertical: spacing.xs,
-    gap: spacing.sm,
-  },
-  fileName: {
-    flex: 1,
-    minWidth: 0,
-  },
-  attachBtn: {
-    alignSelf: 'flex-start',
+    paddingHorizontal: spacing.base,
+    paddingVertical: spacing.md,
   },
   fieldError: {
     marginTop: spacing.xs,

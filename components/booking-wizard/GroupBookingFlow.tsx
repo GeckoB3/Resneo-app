@@ -138,6 +138,13 @@ export function GroupBookingFlow({
     .flatMap((g) => g.addons)
     .filter((a) => draftAddonIds.includes(a.id));
 
+  // Any at-home (`client_address`) attendee makes the organiser step collect a
+  // visit address (web parity — the server marks it mandatory for those services).
+  const collectClientAddress = useMemo(
+    () => people.some((p) => p.locationType === 'client_address'),
+    [people],
+  );
+
   const [my, mm] = draftMonthAnchor.split('-').map(Number);
   const monthQuery = useMonthAvailability({
     serviceId: draftService?.serviceId ?? null,
@@ -201,6 +208,7 @@ export function GroupBookingFlow({
       pricePence: basePrice,
       addonIds: draftAddonIds.length ? draftAddonIds : undefined,
       addonTotalPence,
+      locationType: draftService.locationType,
     };
     setPeople((prev) => [...prev, person]);
     resetDraft();
@@ -235,6 +243,16 @@ export function GroupBookingFlow({
         },
         source,
         people,
+        // At-home attendees: thread the visit address collected on the organiser
+        // step (buildGroupPayload drops empty fields via clientAddressPayloadFields).
+        address: collectClientAddress
+          ? {
+              client_address_line1: organiser.address_line1,
+              client_address_line2: organiser.address_line2,
+              client_address_city: organiser.address_city,
+              client_address_postcode: organiser.address_postcode,
+            }
+          : null,
       });
       return {
         ...base,
@@ -245,7 +263,7 @@ export function GroupBookingFlow({
         ...(overrideCompliance ? { override_compliance: true } : {}),
       };
     },
-    [organiser, venueId, source, people, ownerVenueId, returningGuest],
+    [organiser, venueId, source, people, ownerVenueId, returningGuest, collectClientAddress],
   );
 
   const handleCreate = useCallback(
@@ -610,6 +628,7 @@ export function GroupBookingFlow({
           onContinue={() => setStep('confirm')}
           onPickExistingContact={() => setReturningGuest(true)}
           onClearExistingContact={() => setReturningGuest(false)}
+          collectClientAddress={collectClientAddress}
         />
         <Button label="Back" variant="ghost" onPress={() => setStep('review')} style={styles.back} />
       </View>

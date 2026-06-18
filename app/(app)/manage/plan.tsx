@@ -53,9 +53,6 @@ import type { BookingModel } from '@/types/venue';
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Standard free-trial length at signup (days) — web `SIGNUP_TRIAL_DAYS`. */
-const STANDARD_SIGNUP_TRIAL_DAYS = 14;
-
 const MODEL_LABELS: Record<BookingModel, string> = {
   table_reservation: 'Tables',
   practitioner_appointment: 'Appointments',
@@ -396,16 +393,6 @@ export default function PlanScreen() {
   // backend includes it; when present, we swap the trial banner for comp copy.
   const isFreeAccess = isSuperuserFreeBillingAccess(billing?.billing_access_source);
 
-  // Trial-days breakdown line (web TrialBreakdownBanner parity). We can compute
-  // the standard signup-trial length (constant) and the observed total window
-  // from the current period; the referral-bonus split + referrer name are NOT
-  // exposed by the Bearer status route, so that portion is intentionally omitted.
-  const observedTrialDays =
-    isTrial && periodStart && periodEnd
-      ? Math.max(0, Math.round((Date.parse(periodEnd) - Date.parse(periodStart)) / 86_400_000))
-      : 0;
-  const trialTotalDays = Math.max(STANDARD_SIGNUP_TRIAL_DAYS, observedTrialDays);
-
   return (
     <Screen scroll={false} padded={false}>
       {header}
@@ -428,17 +415,13 @@ export default function PlanScreen() {
           />
         )}
 
-        {/* Trial countdown + breakdown (hidden under complimentary access) */}
+        {/* Trial countdown (hidden under complimentary access) */}
         {isTrial && !isFreeAccess && (
           <StatusBanner
             tone="brand"
             message={
               `Free trial — ${trialDaysLeft} day${trialDaysLeft !== 1 ? 's' : ''} remaining ` +
-              `(first charge on ${formatDate(periodEnd)}). ` +
-              `Trial breakdown: ${STANDARD_SIGNUP_TRIAL_DAYS} days standard signup trial` +
-              (trialTotalDays > STANDARD_SIGNUP_TRIAL_DAYS
-                ? ` (${trialTotalDays} days total with any referral bonus applied).`
-                : '.')
+              `(first charge on ${formatDate(periodEnd)}).`
             }
           />
         )}

@@ -101,8 +101,9 @@ export function PractitionerStep({
         practitionerId: practitioner.id,
         practitionerName: practitioner.name,
         candidatePractitionerIds: undefined,
-        // Use the practitioner-scoped service attributes (price/duration may differ).
+        // Use the practitioner-scoped service attributes (price/duration/buffer may differ).
         durationMinutes: service.duration_minutes,
+        buffer_minutes: service.buffer_minutes,
         pricePence: service.price_pence,
         depositPence: service.deposit_pence ?? null,
         addonGroups: service.addon_groups ?? [],

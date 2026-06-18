@@ -50,15 +50,13 @@ export default function AccountScreen() {
     },
   });
 
-  // Seed form from loaded staff data (run once).
+  // Seed the form once when async staff data first arrives — the "adjust state
+  // during render" pattern (avoids setState-in-effect cascading renders).
   const [seeded, setSeeded] = useState(false);
-  useEffect(() => {
-    if (staff && !seeded) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      form.seed(staff);
-      setSeeded(true);
-    }
-  }, [staff, seeded, form]);
+  if (staff && !seeded) {
+    setSeeded(true);
+    form.seed(staff);
+  }
 
   async function handleSaveProfile() {
     const result = await form.saveProfile();

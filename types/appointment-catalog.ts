@@ -78,6 +78,9 @@ export interface AppointmentServiceOption {
   serviceId: string;
   serviceName: string;
   durationMinutes: number;
+  /** Gap after the service before the next one — folds into the multi-service chain's
+   *  consecutive-start check (the server validates each start = prev end + buffer). */
+  buffer_minutes?: number;
   pricePence: number | null;
   depositPence: number | null;
   /** A real practitioner id, or ANY_AVAILABLE_PRACTITIONER_ID for pooled rows. */

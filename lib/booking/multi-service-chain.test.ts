@@ -1,3 +1,4 @@
+import { timeToMinutes } from '@/lib/booking/booking-format';
 import {
   buildGroupPayload,
   buildMultiServicePayload,
@@ -60,6 +61,43 @@ describe('recomputeMultiServiceChain', () => {
       '09:00',
     );
     expect(chain[1]!.startTime).toBe('09:50');
+  });
+
+  // Regression: the FIRST chained segment must carry its REAL buffer (not the
+  // previously-hardcoded 0). `seedMultiServiceChain` in ServiceBookingFlow now
+  // seeds bufferMinutes from the option/variant; the server validates each later
+  // segment's start as prev.start + prev.duration + prev.buffer, so a non-zero
+  // first-service buffer must push segment 2 out or the create 400s
+  // ("Services must be consecutive").
+  it('honours a NON-ZERO buffer on the FIRST segment for segment-2 start', () => {
+    const chain = recomputeMultiServiceChain(
+      [
+        seg({ serviceId: 'first', durationMinutes: 30, bufferMinutes: 15 }),
+        seg({ serviceId: 'second', durationMinutes: 45, bufferMinutes: 0 }),
+      ],
+      '09:00',
+    );
+    // 09:00 + 30 min duration + 15 min buffer = 09:45.
+    expect(chain[0]!.startTime).toBe('09:00');
+    expect(chain[1]!.startTime).toBe('09:45');
+    // The buffer survives onto the segment so the server's check sees it.
+    expect(chain[0]!.bufferMinutes).toBe(15);
+  });
+
+  it('first-segment buffer is the gap the server expects (start = prev end + buffer)', () => {
+    const firstStart = '10:00';
+    const firstDuration = 60;
+    const firstBuffer = 10;
+    const chain = recomputeMultiServiceChain(
+      [
+        seg({ serviceId: 'a', durationMinutes: firstDuration, bufferMinutes: firstBuffer }),
+        seg({ serviceId: 'b', durationMinutes: 20, bufferMinutes: 0 }),
+      ],
+      firstStart,
+    );
+    const expectedSecondStartMin =
+      timeToMinutes(chain[0]!.startTime) + firstDuration + firstBuffer;
+    expect(timeToMinutes(chain[1]!.startTime)).toBe(expectedSecondStartMin);
   });
 });
 

@@ -159,7 +159,7 @@ describe('BookableCalendarsManager', () => {
   it('shows an upgrade notice when create hits the plan calendar limit (403)', async () => {
     mockCreateMutateAsync.mockRejectedValueOnce(
       new ApiError('Upgrade your plan to add more calendars.', 403, {
-        code: 'upgrade_required',
+        upgrade_required: true,
         error: 'Upgrade your plan to add more calendars.',
       }),
     );

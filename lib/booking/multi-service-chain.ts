@@ -15,6 +15,7 @@
  */
 
 import { minutesToTime, timeToMinutes } from '@/lib/booking/booking-format';
+import type { ServiceLocationType } from '@/types/services-manage';
 
 /** A single service in a multi-service (back-to-back) visit for one client. */
 export interface MultiServiceSegment {
@@ -73,6 +74,9 @@ export interface GroupPerson {
   pricePence: number | null;
   addonIds?: string[];
   addonTotalPence?: number;
+  /** Where this attendee's service is delivered; 'client_address' makes the group
+   *  flow collect a visit address. App-internal — not serialized into the payload. */
+  locationType?: ServiceLocationType;
 }
 
 export type BookingSource = 'phone' | 'walk-in';

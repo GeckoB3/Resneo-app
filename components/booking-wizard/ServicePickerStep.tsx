@@ -81,6 +81,7 @@ export function dedupeCatalogServices(
             serviceId: service.id,
             serviceName: service.name,
             durationMinutes: service.duration_minutes,
+            buffer_minutes: service.buffer_minutes,
             pricePence: service.price_pence,
             depositPence: service.deposit_pence ?? null,
             // The chosen practitioner is decided on the practitioner step; this

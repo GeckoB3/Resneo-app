@@ -8,7 +8,10 @@ import { GroupBookingFlow } from '@/components/booking-wizard/GroupBookingFlow';
 import type { GuestDetails } from '@/components/booking-wizard/GuestDetailsStep';
 import { GuestDetailsStep } from '@/components/booking-wizard/GuestDetailsStep';
 import { MonthDatePicker } from '@/components/booking-wizard/MonthDatePicker';
-import { MultiServiceReviewStep } from '@/components/booking-wizard/MultiServiceReviewStep';
+import {
+  MAX_MULTI_SERVICE_SEGMENTS,
+  MultiServiceReviewStep,
+} from '@/components/booking-wizard/MultiServiceReviewStep';
 import { PractitionerStep } from '@/components/booking-wizard/PractitionerStep';
 import { ServicePickerStep } from '@/components/booking-wizard/ServicePickerStep';
 import { TimeSlotStep, venueLocalTime } from '@/components/booking-wizard/TimeSlotStep';
@@ -293,6 +296,11 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
       .filter((a) => selectedAddonIds.includes(a.id));
     const addonMinutes = chosenAddons.reduce((s, a) => s + a.additional_duration_minutes, 0);
     const addonPence = chosenAddons.reduce((s, a) => s + a.additional_price_pence, 0);
+    // The server validates each appended segment's start as prev end + prev buffer
+    // using the REAL resolved buffer, so the first segment MUST carry its true
+    // buffer (variant override wins, else the service's) — not a hardcoded 0, or a
+    // first service with a non-zero buffer yields a 400 "must be consecutive".
+    const bufferMinutes = selectedVariant?.buffer_minutes ?? selectedService.buffer_minutes ?? 0;
     const seg: MultiServiceSegment = {
       serviceId: selectedService.serviceId,
       serviceName: selectedService.serviceName,
@@ -301,7 +309,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
       practitionerName: selectedSlot.practitioner_name ?? selectedService.practitionerName ?? '',
       startTime: selectedSlot.start_time.slice(0, 5),
       durationMinutes: baseDuration + addonMinutes,
-      bufferMinutes: 0,
+      bufferMinutes,
       pricePence: (selectedVariant?.price_pence ?? selectedService.pricePence) ?? null,
       addonIds: selectedAddonIds.length ? selectedAddonIds : undefined,
       addonTotalPence: addonPence,
@@ -316,6 +324,9 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
       setMultiServiceError(null);
       setMultiServiceSegments((prev) => {
         if (!prev || prev.length === 0 || !visitPractitioner) return prev;
+        // Defensive cap — the UI hides the toggle at MAX, but never append past it
+        // (the server rejects services.length > 4).
+        if (prev.length >= MAX_MULTI_SERVICE_SEGMENTS) return prev;
         const svc = visitPractitioner.services.find((s) => s.id === serviceId);
         if (!svc) {
           setMultiServiceError('That service is not offered by this practitioner.');
@@ -392,6 +403,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
               serviceId: service.id,
               serviceName: service.name,
               durationMinutes: service.duration_minutes,
+              buffer_minutes: service.buffer_minutes,
               pricePence: service.price_pence,
               depositPence: service.deposit_pence ?? null,
               practitionerId: practitioner.id,

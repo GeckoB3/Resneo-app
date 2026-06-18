@@ -195,14 +195,18 @@ describe('capture payload shapes', () => {
     expect(typeof typed.signed_at).toBe('string');
   });
 
-  it('a drawn signature carries a data URL under method:"drawn"', () => {
+  it('a drawn signature carries a base64 PNG data URL under method:"drawn"', () => {
+    // The server only accepts ^data:(image/(png|jpeg));base64,… — SignaturePad
+    // rasterises the <Svg> to a PNG via toDataURL, so the wire shape is a PNG URL.
     const drawn: SignatureResponse = {
       method: 'drawn',
-      data: 'data:image/svg+xml;utf8,%3Csvg%3E%3C/svg%3E',
+      data: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
       signed_at: new Date().toISOString(),
     };
     expect(drawn.method).toBe('drawn');
-    expect(drawn.data?.startsWith('data:image/svg+xml')).toBe(true);
+    expect(drawn.data?.startsWith('data:image/png;base64,')).toBe(true);
+    // Must match the server's accepted format exactly.
+    expect(drawn.data).toMatch(/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/);
   });
 
   it('date answers are YYYY-MM-DD (server /^\\d{4}-\\d{2}-\\d{2}$/)', () => {
