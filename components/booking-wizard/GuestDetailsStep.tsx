@@ -350,7 +350,7 @@ export function GuestDetailsStep({
         autoCapitalize="sentences"
         maxLength={500}
         multiline
-        numberOfLines={3}
+        numberOfLines={2}
       />
 
       <Button label="Continue" fullWidth onPress={handleContinue} />
@@ -363,7 +363,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   container: {
-    gap: spacing.base,
+    gap: spacing.md,
     paddingBottom: spacing.xl,
   },
   results: {
@@ -402,6 +402,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   addressBlock: {
-    gap: spacing.base,
+    gap: spacing.md,
   },
 });

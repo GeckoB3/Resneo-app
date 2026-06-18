@@ -288,7 +288,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    gap: spacing.md,
+    gap: spacing.sm,
     paddingBottom: spacing.sm,
   },
   monthNav: {
@@ -320,7 +320,9 @@ const styles = StyleSheet.create({
   },
   cellWrap: {
     width: `${100 / 7}%`,
-    aspectRatio: 1.05,
+    // Flatter than square so all 6 weeks fit with less scrolling (touch target
+    // stays ~38px tall, comfortable for date taps).
+    aspectRatio: 1.25,
     padding: 2,
   },
   cell: {

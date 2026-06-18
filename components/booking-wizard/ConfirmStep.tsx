@@ -102,10 +102,12 @@ function formatSummaryTime(startTime: string): string {
 function SummaryRow({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.row}>
-      <Text variant="caption" tone="muted">
+      <Text variant="caption" tone="muted" style={styles.rowLabel}>
         {label}
       </Text>
-      <Text variant="bodyMedium">{value}</Text>
+      <Text variant="bodyMedium" style={styles.rowValue}>
+        {value}
+      </Text>
     </View>
   );
 }
@@ -484,17 +486,6 @@ export function ConfirmStep({
           </View>
         ) : null}
       </Card>
-      <View style={styles.sourceBlock}>
-        <Text variant="label" tone="secondary">
-          Booking type
-        </Text>
-        <Text variant="bodyMedium">{source === 'walk-in' ? 'Walk-in' : 'Phone'}</Text>
-        <Text variant="caption" tone="muted">
-          {source === 'phone'
-            ? 'The slot is re-checked when you book.'
-            : 'Walk-ins can be booked outside normal hours.'}
-        </Text>
-      </View>
 
       {hasDeposit && source !== 'walk-in' && onChangeRequireDeposit ? (
         <Pressable
@@ -567,7 +558,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContainer: {
-    gap: spacing.lg,
+    gap: spacing.md,
     paddingBottom: spacing.xl,
   },
   confirmationContainer: {
@@ -581,14 +572,24 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   serviceHeader: {
-    gap: spacing.xs,
-    paddingBottom: spacing.md,
-    marginBottom: spacing.md,
+    gap: 2,
+    paddingBottom: spacing.sm,
+    marginBottom: spacing.sm,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   row: {
-    gap: 2,
-    marginBottom: spacing.md,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    gap: spacing.base,
+    marginBottom: spacing.sm,
+  },
+  rowLabel: {
+    flexShrink: 0,
+  },
+  rowValue: {
+    flexShrink: 1,
+    textAlign: 'right',
   },
   addonsBlock: {
     gap: spacing.xs,
@@ -623,9 +624,6 @@ const styles = StyleSheet.create({
   },
   cancellationNote: {
     marginTop: spacing.sm,
-  },
-  sourceBlock: {
-    gap: spacing.sm,
   },
   depositToggle: {
     flexDirection: 'row',
