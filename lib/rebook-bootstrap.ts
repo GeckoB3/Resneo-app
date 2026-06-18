@@ -30,6 +30,19 @@ export interface RebookBootstrapPayload {
     variantId?: string | null;
     durationMinutes?: number | null;
   };
+  /** Resource surface rebook — pre-select the resource + duration (web parity). */
+  resource?: {
+    resourceId: string;
+    durationMinutes?: number | null;
+  };
+  /** Class surface rebook — pre-select the class type (session is chosen fresh). */
+  class?: {
+    classTypeId: string;
+  };
+  /** Event surface rebook — pre-select the event series (occurrence chosen fresh). */
+  event?: {
+    eventId: string;
+  };
   guest: RebookGuestPrefill;
   /** Default date for the date picker (YYYY-MM-DD). */
   initialDate?: string;

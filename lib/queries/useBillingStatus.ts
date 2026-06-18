@@ -38,6 +38,24 @@ export type PlanStatus =
   | 'incomplete'
   | null;
 
+/**
+ * How the venue's access is paid for. Mirrors the web
+ * `lib/billing/billing-access-source.ts`: `'stripe'` (normal subscription) or
+ * `'superuser_free'` (comped by a platform superuser — no ResNeo charges).
+ *
+ * NOTE: the live `GET /api/venue/billing/status` route does NOT currently return
+ * this field — on the web it is read from the DB in the SSR Settings page and
+ * passed as a prop, not surfaced through this Bearer endpoint. It is declared
+ * here (optional) so the Plan screen can render the complimentary-access branch
+ * the moment the backend starts including it; until then it stays `undefined`.
+ */
+export type BillingAccessSource = 'stripe' | 'superuser_free';
+
+/** True when the venue's access is a platform superuser comp (no charges). */
+export function isSuperuserFreeBillingAccess(source: string | null | undefined): boolean {
+  return (source ?? '').toLowerCase().trim() === 'superuser_free';
+}
+
 export interface BillingStatus {
   venue_id: string;
   pricing_tier: string;
@@ -49,6 +67,11 @@ export interface BillingStatus {
   calendar_count: number | null;
   billing_quote: BillingQuotePayload;
   has_default_payment_method: boolean;
+  /**
+   * Optional — see {@link BillingAccessSource}. Not returned by the current
+   * status route; present defensively for the complimentary-access copy.
+   */
+  billing_access_source?: BillingAccessSource | string | null;
 }
 
 export interface StripeConnectStatus {

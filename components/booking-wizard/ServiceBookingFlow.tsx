@@ -4,9 +4,11 @@ import { StyleSheet, View } from 'react-native';
 
 import { AddonsStep } from '@/components/booking-wizard/AddonsStep';
 import { ConfirmStep } from '@/components/booking-wizard/ConfirmStep';
+import { GroupBookingFlow } from '@/components/booking-wizard/GroupBookingFlow';
 import type { GuestDetails } from '@/components/booking-wizard/GuestDetailsStep';
 import { GuestDetailsStep } from '@/components/booking-wizard/GuestDetailsStep';
 import { MonthDatePicker } from '@/components/booking-wizard/MonthDatePicker';
+import { MultiServiceReviewStep } from '@/components/booking-wizard/MultiServiceReviewStep';
 import { PractitionerStep } from '@/components/booking-wizard/PractitionerStep';
 import { ServicePickerStep } from '@/components/booking-wizard/ServicePickerStep';
 import { TimeSlotStep, venueLocalTime } from '@/components/booking-wizard/TimeSlotStep';
@@ -15,6 +17,10 @@ import { WizardStepIndicator } from '@/components/booking-wizard/WizardStepIndic
 import { Button } from '@/components/ui/Button';
 import { ANALYTICS_EVENTS, track } from '@/lib/analytics';
 import { ApiError } from '@/lib/api/client';
+import {
+  type MultiServiceSegment,
+  recomputeMultiServiceChain,
+} from '@/lib/booking/multi-service-chain';
 import { useAppointmentCatalog } from '@/lib/queries/useAppointmentCatalog';
 import { useBookingFormVenue } from '@/lib/queries/useBookingFormVenue';
 import { calendarDateInTimeZone } from '@/lib/queries/useBookingsList';
@@ -35,7 +41,16 @@ import {
   type AppointmentServiceOption,
 } from '@/types/appointment-catalog';
 
-type StepKey = 'service' | 'practitioner' | 'variant' | 'addons' | 'date' | 'time' | 'guest' | 'confirm';
+type StepKey =
+  | 'service'
+  | 'practitioner'
+  | 'variant'
+  | 'addons'
+  | 'date'
+  | 'time'
+  | 'multi_service'
+  | 'guest'
+  | 'confirm';
 
 const STEP_LABELS: Record<StepKey, string> = {
   service: 'Service',
@@ -44,6 +59,7 @@ const STEP_LABELS: Record<StepKey, string> = {
   addons: 'Add-ons',
   date: 'Date',
   time: 'Time',
+  multi_service: 'Services',
   guest: 'Guest',
   confirm: 'Confirm',
 };
@@ -139,6 +155,14 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
   const [guestPrefilled, setGuestPrefilled] = useState(false);
   const [rebookApplied, setRebookApplied] = useState(false);
   const [rebookContactReadOnly, setRebookContactReadOnly] = useState(false);
+  // Multi-service (back-to-back) visit: the chained segments for ONE client.
+  // null until a slot is picked (when the venue supports the multi-service step).
+  const [multiServiceSegments, setMultiServiceSegments] = useState<MultiServiceSegment[] | null>(
+    null,
+  );
+  const [multiServiceError, setMultiServiceError] = useState<string | null>(null);
+  // Group mode (multiple distinct attendees) hands off to GroupBookingFlow.
+  const [groupMode, setGroupMode] = useState(false);
 
   // Practitioners able to perform the selected service.
   const servicePractitioners: AppointmentCatalogPractitioner[] = useMemo(() => {
@@ -187,6 +211,10 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
   // only to render the indicator and to compute the next/previous KEY.
   const steps: StepKey[] = useMemo(() => {
     const includePractitioner = !!selectedService && needsPractitionerStep;
+    // The multi-service review sits between Time and Guest. It only exists once a
+    // slot has been chosen (segments seeded), so a single-service booking never
+    // sees it unless the user chooses to add more.
+    const includeMultiService = (multiServiceSegments?.length ?? 0) > 0;
     return [
       'service',
       ...(includePractitioner ? (['practitioner'] as StepKey[]) : []),
@@ -194,10 +222,11 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
       ...(hasAddons ? (['addons'] as StepKey[]) : []),
       'date',
       'time',
+      ...(includeMultiService ? (['multi_service'] as StepKey[]) : []),
       'guest',
       'confirm',
     ];
-  }, [selectedService, needsPractitionerStep, hasVariants, hasAddons]);
+  }, [selectedService, needsPractitionerStep, hasVariants, hasAddons, multiServiceSegments]);
 
   const goToStep = useCallback((key: StepKey) => setCurrentStepKey(key), []);
 
@@ -244,6 +273,81 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
     },
     [selectedService, selectedVariant, durationOverride, timeZone, goToStep],
   );
+
+  // ── Multi-service (back-to-back) visit ────────────────────────────────────
+  // The concrete practitioner the whole visit is with — resolved from the chosen
+  // slot ("Any available" rows pick the slot's real practitioner). Used to offer
+  // "Add another service" with that same practitioner only (server requires it).
+  const visitPractitioner: AppointmentCatalogPractitioner | null = useMemo(() => {
+    if (!catalogQuery.data || !selectedSlot) return null;
+    return catalogQuery.data.practitioners.find((p) => p.id === selectedSlot.practitioner_id) ?? null;
+  }, [catalogQuery.data, selectedSlot]);
+
+  /** Build the first chain segment from the picked service + slot. */
+  const seedMultiServiceChain = useCallback((): MultiServiceSegment[] | null => {
+    if (!selectedService || !selectedSlot) return null;
+    const baseDuration =
+      durationOverride ?? selectedVariant?.duration_minutes ?? selectedService.durationMinutes;
+    const chosenAddons = addonGroups
+      .flatMap((g) => g.addons)
+      .filter((a) => selectedAddonIds.includes(a.id));
+    const addonMinutes = chosenAddons.reduce((s, a) => s + a.additional_duration_minutes, 0);
+    const addonPence = chosenAddons.reduce((s, a) => s + a.additional_price_pence, 0);
+    const seg: MultiServiceSegment = {
+      serviceId: selectedService.serviceId,
+      serviceName: selectedService.serviceName,
+      serviceVariantId: selectedVariant?.id ?? null,
+      practitionerId: selectedSlot.practitioner_id,
+      practitionerName: selectedSlot.practitioner_name ?? selectedService.practitionerName ?? '',
+      startTime: selectedSlot.start_time.slice(0, 5),
+      durationMinutes: baseDuration + addonMinutes,
+      bufferMinutes: 0,
+      pricePence: (selectedVariant?.price_pence ?? selectedService.pricePence) ?? null,
+      addonIds: selectedAddonIds.length ? selectedAddonIds : undefined,
+      addonTotalPence: addonPence,
+      addonTotalMinutes: addonMinutes,
+    };
+    return recomputeMultiServiceChain([seg], seg.startTime);
+  }, [selectedService, selectedSlot, selectedVariant, durationOverride, addonGroups, selectedAddonIds]);
+
+  /** Append another service (same practitioner) to the chain and recompute starts. */
+  const addServiceToChain = useCallback(
+    (serviceId: string) => {
+      setMultiServiceError(null);
+      setMultiServiceSegments((prev) => {
+        if (!prev || prev.length === 0 || !visitPractitioner) return prev;
+        const svc = visitPractitioner.services.find((s) => s.id === serviceId);
+        if (!svc) {
+          setMultiServiceError('That service is not offered by this practitioner.');
+          return prev;
+        }
+        const nextSeg: MultiServiceSegment = {
+          serviceId: svc.id,
+          serviceName: svc.name,
+          serviceVariantId: null,
+          practitionerId: visitPractitioner.id,
+          practitionerName: visitPractitioner.name,
+          startTime: '00:00',
+          durationMinutes: svc.duration_minutes,
+          bufferMinutes: svc.buffer_minutes ?? 0,
+          pricePence: svc.price_pence,
+        };
+        const firstStart = prev[0]!.startTime;
+        return recomputeMultiServiceChain([...prev, nextSeg], firstStart);
+      });
+    },
+    [visitPractitioner],
+  );
+
+  const removeServiceFromChain = useCallback((index: number) => {
+    setMultiServiceError(null);
+    setMultiServiceSegments((prev) => {
+      if (!prev || prev.length <= 1) return prev;
+      const firstStart = prev[0]!.startTime;
+      const next = prev.filter((_, i) => i !== index);
+      return recomputeMultiServiceChain(next, firstStart);
+    });
+  }, []);
 
   // Apply rebook bootstrap on mount (after catalog loads).
   const rebookApplyRef = useRef(false);
@@ -294,6 +398,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
               practitionerName: practitioner.name,
               addonGroups: service.addon_groups ?? [],
               variants: service.variants ?? [],
+              locationType: service.location_type,
             };
             setSelectedService(serviceOption);
             // Apply variant if present and valid.
@@ -383,6 +488,8 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
     // form when "Book another" was reached from a `?guestId=` deep link.
     setGuestPrefilled(true);
     setRebookContactReadOnly(false);
+    setMultiServiceSegments(null);
+    setMultiServiceError(null);
     setSelectedDate(calendarDateInTimeZone(new Date(), timeZone));
     setMonthAnchor(calendarDateInTimeZone(new Date(), timeZone));
     setSource(isWalkInIntent ? 'walk-in' : 'phone');
@@ -410,6 +517,8 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
   if (activeKey !== 'service' && !selectedService) {
     activeKey = 'service';
   } else if (activeKey === 'confirm' && !selectedSlot) {
+    activeKey = selectedDate ? 'time' : 'date';
+  } else if (activeKey === 'multi_service' && !selectedSlot) {
     activeKey = selectedDate ? 'time' : 'date';
   } else if (activeKey === 'time' && !selectedDate) {
     activeKey = 'date';
@@ -475,12 +584,30 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
 
   if (!venueId) return null;
 
+  // Group mode hands off entirely to the self-contained group sub-flow. It owns
+  // its own state machine + create call; exiting returns to the single flow.
+  if (groupMode) {
+    return (
+      <GroupBookingFlow
+        catalog={catalogQuery.data}
+        venueId={venueId}
+        timeZone={timeZone}
+        anyAvailableEnabled={anyAvailableEnabled}
+        ownerVenueId={ownerVenueId}
+        source={source}
+        onCreated={(bookingId) => onCreated(bookingId)}
+        onExitGroup={() => setGroupMode(false)}
+      />
+    );
+  }
+
   return (
     <View style={styles.container}>
       <WizardStepIndicator currentStep={stepNumber} labels={stepLabels} />
 
       {activeKey === 'service' ? (
-        <ServicePickerStep
+        <>
+          <ServicePickerStep
           catalog={catalogQuery.data}
           defaultPractitionerId={prefilledPractitionerId}
           errorMessage={
@@ -522,6 +649,13 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
             }
           }}
         />
+          <Button
+            label="Book for a group"
+            variant="secondary"
+            onPress={() => setGroupMode(true)}
+            style={styles.groupButton}
+          />
+        </>
       ) : null}
 
       {activeKey === 'practitioner' && selectedService ? (
@@ -602,7 +736,18 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           candidatePractitionerIds={selectedService.candidatePractitionerIds}
           date={selectedDate}
           durationMinutes={durationOverride}
-          onContinue={() => advanceFrom('time')}
+          onContinue={() => {
+            // Seed a 1-segment chain and route through the multi-service review,
+            // so staff can append back-to-back services before guest details.
+            const chain = seedMultiServiceChain();
+            if (chain) {
+              setMultiServiceSegments(chain);
+              setMultiServiceError(null);
+              goToStep('multi_service');
+            } else {
+              advanceFrom('time');
+            }
+          }}
           onSelectSlot={setSelectedSlot}
           ownerVenueId={ownerVenueId}
           practitionerId={selectedService.practitionerId}
@@ -618,6 +763,23 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
         />
       ) : null}
 
+      {activeKey === 'multi_service' && multiServiceSegments && multiServiceSegments.length > 0 ? (
+        <MultiServiceReviewStep
+          segments={multiServiceSegments}
+          visitPractitioner={visitPractitioner}
+          onAddService={addServiceToChain}
+          onRemoveSegment={removeServiceFromChain}
+          onContinue={() => advanceFrom('multi_service')}
+          onBack={() => {
+            // Drop back to slot selection and discard the chain (web parity).
+            setMultiServiceSegments(null);
+            setMultiServiceError(null);
+            goToStep('time');
+          }}
+          errorMessage={multiServiceError}
+        />
+      ) : null}
+
       {activeKey === 'guest' ? (
         <GuestDetailsStep
           isWalkIn={source === 'walk-in'}
@@ -626,6 +788,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           onPickExistingContact={() => setReturningGuest(true)}
           onClearExistingContact={() => setReturningGuest(false)}
           readOnlyContact={rebookContactReadOnly}
+          collectClientAddress={selectedService?.locationType === 'client_address'}
           value={guest}
         />
       ) : null}
@@ -647,10 +810,15 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           onChangeRequireDeposit={setRequireDeposit}
           returningGuest={returningGuest}
           phoneDefaultCountry="GB"
+          venueId={venueId}
+          collectClientAddress={selectedService?.locationType === 'client_address'}
+          multiServiceSegments={
+            multiServiceSegments && multiServiceSegments.length > 1 ? multiServiceSegments : null
+          }
         />
       ) : null}
 
-      {activeKey !== 'confirm' ? (
+      {activeKey !== 'confirm' && activeKey !== 'multi_service' ? (
         <Button label="Back" onPress={handleBack} variant="ghost" style={styles.backButton} />
       ) : null}
     </View>
@@ -664,6 +832,9 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xl,
   },
   backButton: {
+    marginTop: spacing.sm,
+  },
+  groupButton: {
     marginTop: spacing.sm,
   },
 });

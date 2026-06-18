@@ -16,6 +16,7 @@ import {
 import { Button } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Input } from '@/components/ui/Input';
+import { PhoneInput } from '@/components/ui/PhoneInput';
 import { Screen } from '@/components/ui/Screen';
 import { SearchBar } from '@/components/ui/SearchBar';
 import { Segmented } from '@/components/ui/Segmented';
@@ -25,6 +26,7 @@ import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { getWebUrl } from '@/lib/env';
 import { hapticSelect, hapticSuccess, hapticWarning } from '@/lib/haptics';
+import { normalizePhone } from '@/lib/phone/normalize';
 import { buildAddress, parseAddress } from '@/lib/venue/addressFormat';
 import { isValidWebsiteUrlInput } from '@/lib/validation/url';
 import { isAppointmentPlanTier } from '@/lib/venue/venue-experience';
@@ -141,7 +143,9 @@ function buildPayloadFingerprint(fields: {
       town: fields.addrTown.trim(),
       postcode: fields.addrPostcode.trim(),
     }),
-    phone: fields.phone.trim(),
+    // Normalise so a freshly-normalised edited value compares equal to the stored
+    // (already-E.164) value and the dirty check doesn't flag a phantom change.
+    phone: normalizePhone(fields.phone),
     email: fields.email.trim(),
     website_url: fields.website.trim(),
     slug: fields.slug.trim().toLowerCase(),
@@ -449,7 +453,8 @@ export default function VenueProfileScreen() {
     });
     if (newAddr !== prevAddr) patch.address = newAddr;
 
-    if (phone.trim() !== (venue.phone ?? '')) patch.phone = phone.trim();
+    const normalisedPhone = normalizePhone(phone);
+    if (normalisedPhone !== (venue.phone ?? '')) patch.phone = normalisedPhone;
     if (email.trim() !== (venue.email ?? '')) patch.email = email.trim();
     if (website.trim() !== (venue.website_url ?? '')) patch.website_url = website.trim();
 
@@ -664,14 +669,13 @@ export default function VenueProfileScreen() {
           {/* Contact */}
           <SectionHeader title="Contact" />
 
-          <Input
+          <PhoneInput
             label="Phone"
             value={phone}
             onChangeText={setPhone}
-            keyboardType="phone-pad"
-            maxLength={24}
             placeholder="+44 7700 900123"
             helper="Include the country code to ensure the number is valid (e.g. +44 for UK)."
+            optional
           />
           <Input
             label="Email"

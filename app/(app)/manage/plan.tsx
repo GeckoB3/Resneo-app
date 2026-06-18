@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 
+import { DeleteVenueSheet } from '@/components/manage/DeleteVenueSheet';
 import { PlanChangeSection } from '@/components/plan/PlanChangeSection';
 import { StripeConnectCard } from '@/components/plan/StripeConnectCard';
 import { UsageMeter } from '@/components/plan/UsageMeter';
@@ -33,6 +34,7 @@ import { Text } from '@/components/ui/Text';
 import { getWebUrl } from '@/lib/env';
 import { hapticError, hapticSuccess, hapticWarning } from '@/lib/haptics';
 import {
+  isSuperuserFreeBillingAccess,
   useBillingPortalSession,
   useBillingStatus,
   useChangePlan,
@@ -50,6 +52,9 @@ import type { BookingModel } from '@/types/venue';
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/** Standard free-trial length at signup (days) — web `SIGNUP_TRIAL_DAYS`. */
+const STANDARD_SIGNUP_TRIAL_DAYS = 14;
 
 const MODEL_LABELS: Record<BookingModel, string> = {
   table_reservation: 'Tables',
@@ -224,6 +229,7 @@ export default function PlanScreen() {
   const [portalUnavailable, setPortalUnavailable] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [showDeleteVenue, setShowDeleteVenue] = useState(false);
   // Stable "now" per mount — render-time Date.now() violates react-hooks/purity
   // (same pattern as the web SettingsView's currentTimeMs).
   const [nowMs] = useState(() => Date.now());
@@ -385,6 +391,21 @@ export default function PlanScreen() {
 
   const trialDaysLeft = daysRemaining(periodEnd, nowMs);
 
+  // Complimentary (superuser-comped) access — web parity. The status route does
+  // not surface `billing_access_source` today, so this stays false until the
+  // backend includes it; when present, we swap the trial banner for comp copy.
+  const isFreeAccess = isSuperuserFreeBillingAccess(billing?.billing_access_source);
+
+  // Trial-days breakdown line (web TrialBreakdownBanner parity). We can compute
+  // the standard signup-trial length (constant) and the observed total window
+  // from the current period; the referral-bonus split + referrer name are NOT
+  // exposed by the Bearer status route, so that portion is intentionally omitted.
+  const observedTrialDays =
+    isTrial && periodStart && periodEnd
+      ? Math.max(0, Math.round((Date.parse(periodEnd) - Date.parse(periodStart)) / 86_400_000))
+      : 0;
+  const trialTotalDays = Math.max(STANDARD_SIGNUP_TRIAL_DAYS, observedTrialDays);
+
   return (
     <Screen scroll={false} padded={false}>
       {header}
@@ -397,11 +418,28 @@ export default function PlanScreen() {
         {/* Success banner (resume / plan change / portal sync) */}
         {successMsg && <StatusBanner tone="success" message={successMsg} />}
 
-        {/* Trial countdown */}
-        {isTrial && (
+        {/* Complimentary access (superuser-comped) — web parity. Replaces the
+            trial/billing copy when the venue's access source is a platform comp. */}
+        {isFreeAccess && (
           <StatusBanner
             tone="brand"
-            message={`Free trial — ${trialDaysLeft} day${trialDaysLeft !== 1 ? 's' : ''} remaining (ends ${formatDate(periodEnd)})`}
+            title="Complimentary ResNeo access"
+            message="Your venue has complimentary access to ResNeo — there are no subscription charges while this is active. Billing actions are disabled."
+          />
+        )}
+
+        {/* Trial countdown + breakdown (hidden under complimentary access) */}
+        {isTrial && !isFreeAccess && (
+          <StatusBanner
+            tone="brand"
+            message={
+              `Free trial — ${trialDaysLeft} day${trialDaysLeft !== 1 ? 's' : ''} remaining ` +
+              `(first charge on ${formatDate(periodEnd)}). ` +
+              `Trial breakdown: ${STANDARD_SIGNUP_TRIAL_DAYS} days standard signup trial` +
+              (trialTotalDays > STANDARD_SIGNUP_TRIAL_DAYS
+                ? ` (${trialTotalDays} days total with any referral bonus applied).`
+                : '.')
+            }
           />
         )}
 
@@ -662,8 +700,41 @@ export default function PlanScreen() {
           />
         )}
 
+        {/* Danger zone — self-serve venue deletion (admin only, web parity). */}
+        {isAdmin && (
+          <Card>
+            <View style={styles.cardHeader}>
+              <Text variant="label" color={colors.danger}>
+                Danger zone
+              </Text>
+            </View>
+            <Text variant="subheading" style={styles.tierName}>
+              Delete this venue
+            </Text>
+            <Text variant="bodySmall" tone="secondary">
+              Schedule a 30-day grace-period deletion of this venue and all of its data. You can
+              cancel any time before the grace period ends.
+            </Text>
+            <View style={styles.actions}>
+              <Button
+                label="Delete this venue…"
+                variant="danger"
+                fullWidth
+                onPress={() => setShowDeleteVenue(true)}
+              />
+            </View>
+          </Card>
+        )}
+
         <View style={styles.spacer} />
       </ScrollView>
+
+      {/* Venue-deletion danger-zone sheet (type-to-confirm; admin only). */}
+      <DeleteVenueSheet
+        visible={showDeleteVenue}
+        venueName={venue.name ?? ''}
+        onClose={() => setShowDeleteVenue(false)}
+      />
     </Screen>
   );
 }

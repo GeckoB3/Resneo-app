@@ -66,6 +66,8 @@ export const en = {
       phoneLabel: 'Phone',
       phonePlaceholder: 'e.g. +44 7700 900000',
       phoneHelper: 'Optional. Include country code.',
+      emailRequired: 'Email is required.',
+      emailInvalid: 'Enter a valid email address.',
       save: 'Save profile',
       saved: 'Your profile has been updated.',
       saveError: 'Could not save profile.',

@@ -70,10 +70,31 @@ export interface ComplianceFormField {
   staff_only?: boolean;
   options?: { value: string; label: string }[];
   placeholder?: string;
+  /** Per-field guidance shown under the label (web FormRenderer L117). */
+  help_text?: string;
+  /**
+   * Seed value applied when capturing. Date fields accept the literal `'today'`
+   * which resolves to the submission date; multiselect uses a string[].
+   */
+  default_value?: string | string[];
+  /** Optional per-field max length (text/textarea). */
+  max_length?: number;
+}
+
+/** Pass/fail result mapping carried on the form schema for `pass_fail` types. */
+export interface ComplianceResultMapping {
+  field: string;
+  pass_values: string[];
+  fail_values: string[];
 }
 
 export interface ComplianceFormSchema {
+  schema_version?: string;
+  title?: string;
+  description?: string;
+  intro_markdown?: string;
   fields: ComplianceFormField[];
+  result_mapping?: ComplianceResultMapping;
 }
 
 /** GET /api/venue/compliance/types/[id] response */

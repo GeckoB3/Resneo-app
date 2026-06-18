@@ -1,4 +1,4 @@
-import { Stack } from 'expo-router';
+import { Stack, useRouter, type Href } from 'expo-router';
 import { useState } from 'react';
 import {
   Pressable,
@@ -8,8 +8,10 @@ import {
   View,
 } from 'react-native';
 
+import { planDisplayName, planStaffLimit } from '@/components/plan/planConstants';
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
@@ -27,6 +29,7 @@ import { useSessionSettings } from '@/lib/queries/useSessionSettings';
 import { useStaffList } from '@/lib/queries/useStaffList';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { usePractitioners } from '@/lib/queries/usePractitioners';
+import { useVenueContext } from '@/providers/VenueProvider';
 import { fonts, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { AssignablePractitioner, TeamMember } from '@/types/staff';
@@ -34,11 +37,16 @@ import type { AssignablePractitioner, TeamMember } from '@/types/staff';
 /** Team logins & roles — full in-app management for admins, My Account for all staff. */
 export default function TeamScreen() {
   const { colors } = useTheme();
+  const router = useRouter();
 
   // Use staff/me for a reliable role check (avoids VenueProvider dual-source-of-truth bug).
   const { data: staffMeData, isLoading: staffMeLoading } = useStaffMe();
   const staffMe = staffMeData?.staff ?? null;
   const isAdmin = staffMe?.role === 'admin';
+
+  // Plan seat cap — read the tier from the venue bootstrap (web parity).
+  const { venue } = useVenueContext();
+  const pricingTier = venue?.pricing_tier ?? null;
 
   const query = useStaffList(isAdmin);
   const practitionersQuery = usePractitioners({ enabled: isAdmin });
@@ -51,6 +59,12 @@ export default function TeamScreen() {
   const [showSecurity, setShowSecurity] = useState(false);
 
   const members = query.data?.staff ?? [];
+
+  // Seat-cap enforcement — Light=1, Plus=5, Pro/restaurant=∞ (web parity).
+  // When the cap is reached we hide the invite FAB and show an upgrade nudge so
+  // an admin can't fill in an invite the server would reject.
+  const staffCap = planStaffLimit(pricingTier);
+  const staffPlanLimitReached = staffCap !== Infinity && members.length >= staffCap;
 
   // Map practitioners to AssignablePractitioner for components
   const assignablePractitioners: AssignablePractitioner[] = (
@@ -177,6 +191,26 @@ export default function TeamScreen() {
                 </Card>
               )}
 
+              {/* Plan seat-cap nudge (web parity amber banner) */}
+              {staffPlanLimitReached && (
+                <View
+                  style={[
+                    styles.capBox,
+                    { backgroundColor: colors.warningSurface, borderColor: colors.warning },
+                  ]}>
+                  <Text variant="bodySmall" color={colors.warning} style={styles.capText}>
+                    {planDisplayName(pricingTier)} allows up to {staffCap} team login
+                    {staffCap === 1 ? '' : 's'}. To invite more people, upgrade to Appointments Pro.
+                  </Text>
+                  <Button
+                    label="Upgrade plan"
+                    variant="secondary"
+                    size="sm"
+                    onPress={() => router.push('/manage/plan' as Href)}
+                  />
+                </View>
+              )}
+
               {/* Role permissions info box */}
               <View
                 style={[
@@ -230,8 +264,8 @@ export default function TeamScreen() {
         </ScrollView>
       )}
 
-      {/* FAB — admin invite */}
-      {isAdmin && (
+      {/* FAB — admin invite (hidden once the plan seat cap is reached) */}
+      {isAdmin && !staffPlanLimitReached && (
         <Fab
           onPress={() => setShowInvite(true)}
           accessibilityLabel="Invite staff member"
@@ -243,6 +277,7 @@ export default function TeamScreen() {
         visible={showInvite}
         onClose={() => setShowInvite(false)}
         practitioners={assignablePractitioners}
+        onUpgrade={() => router.push('/manage/plan' as Href)}
       />
 
       {/* Member management sheet */}
@@ -436,6 +471,16 @@ const styles = StyleSheet.create({
   rowDivider: {
     height: StyleSheet.hairlineWidth,
     marginLeft: spacing.base + 40 + spacing.md,
+  },
+  capBox: {
+    borderRadius: radius.md,
+    borderWidth: 1,
+    padding: spacing.base,
+    gap: spacing.sm,
+    alignItems: 'flex-start',
+  },
+  capText: {
+    lineHeight: 18,
   },
   infoBox: {
     borderRadius: radius.md,

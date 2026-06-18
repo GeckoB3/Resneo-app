@@ -3,11 +3,12 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { PhoneInput } from '@/components/ui/PhoneInput';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
-import { ApiError } from '@/lib/api/client';
 import { hapticError, hapticSuccess } from '@/lib/haptics';
-import { useChangeOwnPassword, usePatchStaffMe } from '@/lib/queries/useTeamMutations';
+import { useStaffAccountForm } from '@/lib/queries/useStaffAccountForm';
+import { getSupabase } from '@/lib/supabase';
 import { useToast } from '@/providers/ToastProvider';
 import { spacing } from '@/theme/index';
 import type { StaffMe } from '@/types/staff';
@@ -21,110 +22,74 @@ type MyAccountSheetProps = {
 /**
  * Bottom sheet allowing any staff member to edit their own profile
  * (name, email, phone) and change their own password.
+ *
+ * Shares its form logic (validation, phone E.164 normalisation, the email-change
+ * session refresh) with the dedicated account screen via `useStaffAccountForm`.
  */
 export function MyAccountSheet({ visible, staff, onClose }: MyAccountSheetProps) {
   const toast = useToast();
-  // Profile fields
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
-  const [emailError, setEmailError] = useState<string | undefined>();
-  const patchMe = usePatchStaffMe();
 
-  // Password change
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [passwordError, setPasswordError] = useState<string | undefined>();
-  const changePassword = useChangeOwnPassword();
+  const form = useStaffAccountForm({
+    staff,
+    onEmailChanged: async () => {
+      // Mint a fresh token so the session matches the new sign-in email.
+      await getSupabase().auth.refreshSession();
+    },
+    messages: {
+      profileSaved: (emailChanged) =>
+        emailChanged
+          ? 'Profile saved. Use your new sign-in email next time you log in.'
+          : 'Your profile has been saved.',
+      passwordChanged: 'Your new password is active.',
+      profileError: 'Failed to update profile.',
+      passwordError: 'Password change failed.',
+      emailRequired: 'Email is required',
+      emailInvalid: 'Enter a valid email address',
+      passwordTooShort: 'Password must be at least 8 characters',
+      passwordMismatch: 'Passwords do not match',
+    },
+  });
 
-  // Seed form when sheet opens
+  // Seed form when sheet opens.
   const [prevVisible, setPrevVisible] = useState(false);
   if (visible !== prevVisible) {
     setPrevVisible(visible);
     if (visible && staff) {
-      setName(staff.name ?? '');
-      setEmail(staff.email ?? '');
-      setPhone(staff.phone ?? '');
-      setEmailError(undefined);
-      setNewPassword('');
-      setConfirmPassword('');
-      setPasswordError(undefined);
+      form.seed(staff);
+      form.resetPasswordFields();
     }
   }
 
   function handleClose() {
-    setNewPassword('');
-    setConfirmPassword('');
-    setPasswordError(undefined);
+    form.resetPasswordFields();
     onClose();
   }
 
   async function handleSaveProfile() {
-    if (!staff) return;
-
-    const trimmedEmail = email.trim().toLowerCase();
-    if (!trimmedEmail) {
-      setEmailError('Email is required');
-      return;
-    }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
-      setEmailError('Enter a valid email address');
-      return;
-    }
-    setEmailError(undefined);
-
-    const body: { name?: string; email?: string; phone?: string } = {};
-    const trimmedName = name.trim();
-    if (trimmedName !== (staff.name ?? '')) body.name = trimmedName;
-    if (trimmedEmail !== staff.email.toLowerCase()) body.email = trimmedEmail;
-    const trimmedPhone = phone.trim();
-    if (trimmedPhone !== (staff.phone ?? '')) body.phone = trimmedPhone || '';
-
-    if (Object.keys(body).length === 0) {
-      handleClose();
-      return;
-    }
-
-    try {
-      await patchMe.mutateAsync(body);
+    const result = await form.saveProfile();
+    if (result.status === 'saved') {
       hapticSuccess();
-      const emailChanged = !!body.email;
       // Toast + close fire directly off the resolved mutation — Alert.alert's
       // callback never runs on web, so the sheet would have stayed open there.
-      toast.success(
-        emailChanged
-          ? 'Profile saved. Use your new sign-in email next time you log in.'
-          : 'Your profile has been saved.',
-      );
+      toast.success(result.message);
       handleClose();
-    } catch (err) {
+    } else if (result.status === 'noop') {
+      handleClose();
+    } else if (result.status === 'error') {
       hapticError();
-      toast.error(err instanceof ApiError ? err.message : 'Failed to update profile.');
+      toast.error(result.message);
     }
+    // 'invalid' → inline emailError already set by the hook; keep the sheet open.
   }
 
   async function handleChangePassword() {
-    setPasswordError(undefined);
-    if (newPassword.length < 8) {
-      setPasswordError('Password must be at least 8 characters');
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setPasswordError('Passwords do not match');
-      return;
-    }
-
-    try {
-      await changePassword.mutateAsync({ new_password: newPassword });
+    const result = await form.changeOwnPassword();
+    if (result.status === 'changed') {
       hapticSuccess();
-      setNewPassword('');
-      setConfirmPassword('');
-      toast.success('Your new password is active.');
-    } catch (err) {
+      toast.success(result.message);
+    } else if (result.status === 'error') {
       hapticError();
-      setPasswordError(
-        err instanceof ApiError ? err.message : 'Password change failed.',
-      );
+      // passwordError already set inline by the hook.
     }
   }
 
@@ -149,37 +114,39 @@ export function MyAccountSheet({ visible, staff, onClose }: MyAccountSheetProps)
 
           <Input
             label="Display name"
-            value={name}
-            onChangeText={setName}
+            value={form.name}
+            onChangeText={form.setName}
             placeholder="Your name"
-            editable={!patchMe.isPending}
+            editable={!form.patchMe.isPending}
           />
 
           <Input
             label="Sign-in email *"
-            value={email}
-            onChangeText={setEmail}
+            value={form.email}
+            onChangeText={(v) => {
+              form.setEmail(v);
+              form.setEmailError(null);
+            }}
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
             placeholder="your@email.com"
-            error={emailError}
-            editable={!patchMe.isPending}
+            error={form.emailError ?? undefined}
+            editable={!form.patchMe.isPending}
           />
 
-          <Input
+          <PhoneInput
             label="Phone"
-            value={phone}
-            onChangeText={setPhone}
-            keyboardType="phone-pad"
+            value={form.phone}
+            onChangeText={form.setPhone}
             placeholder="+44 7700 000000"
             helper="International format, e.g. +44 7700 000000"
-            editable={!patchMe.isPending}
+            optional
           />
 
           <Button
-            label={patchMe.isPending ? 'Saving…' : 'Save profile'}
-            loading={patchMe.isPending}
+            label={form.patchMe.isPending ? 'Saving…' : 'Save profile'}
+            loading={form.patchMe.isPending}
             onPress={() => void handleSaveProfile()}
             fullWidth
           />
@@ -191,29 +158,29 @@ export function MyAccountSheet({ visible, staff, onClose }: MyAccountSheetProps)
 
           <Input
             label="New password"
-            value={newPassword}
-            onChangeText={setNewPassword}
+            value={form.newPassword}
+            onChangeText={form.setNewPassword}
             secureTextEntry
             placeholder="Min 8 characters"
-            editable={!changePassword.isPending}
+            editable={!form.changePassword.isPending}
           />
 
           <Input
             label="Confirm password"
-            value={confirmPassword}
-            onChangeText={setConfirmPassword}
+            value={form.confirmPassword}
+            onChangeText={form.setConfirmPassword}
             secureTextEntry
             placeholder="Re-enter password"
-            error={passwordError}
-            editable={!changePassword.isPending}
+            error={form.passwordError ?? undefined}
+            editable={!form.changePassword.isPending}
           />
 
           <Button
-            label={changePassword.isPending ? 'Updating…' : 'Update password'}
-            loading={changePassword.isPending}
+            label={form.changePassword.isPending ? 'Updating…' : 'Update password'}
+            loading={form.changePassword.isPending}
             onPress={() => void handleChangePassword()}
             fullWidth
-            disabled={newPassword.length < 8 || confirmPassword.length < 8}
+            disabled={form.newPassword.length < 8 || form.confirmPassword.length < 8}
           />
         </View>
       </ScrollView>

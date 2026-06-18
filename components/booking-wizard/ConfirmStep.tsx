@@ -5,10 +5,17 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import {
+  buildMultiServicePayload,
+  chainTotalMinutes,
+  chainTotalPence,
+  type MultiServiceSegment,
+} from '@/lib/booking/multi-service-chain';
 import { formatPence } from '@/lib/format';
 import { hapticSelect, hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { normalizePhone } from '@/lib/phone/normalize';
 import { useCreateBooking } from '@/lib/queries/useCreateBooking';
+import { useCreateMultiServiceBooking } from '@/lib/queries/useCreateMultiServiceBooking';
 import { fonts, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { AppointmentSlot } from '@/types/appointment-availability';
@@ -46,6 +53,16 @@ type ConfirmStepProps = {
   returningGuest?: boolean;
   /** Default dialling country for phone normalisation (matches the web). */
   phoneDefaultCountry?: string;
+  /** Effective venue id — required for the multi-service create endpoint. */
+  venueId?: string | null;
+  /** When the chosen service is at-home, send the collected client address. */
+  collectClientAddress?: boolean;
+  /**
+   * The full chained segments when this is a multi-service (back-to-back) visit
+   * (length > 1). When set, the confirm posts ONE create-multi-service call
+   * instead of the single-booking create. null/undefined → single booking.
+   */
+  multiServiceSegments?: MultiServiceSegment[] | null;
 };
 
 interface BookingConfirmation {
@@ -180,9 +197,14 @@ export function ConfirmStep({
   onChangeRequireDeposit,
   returningGuest = false,
   phoneDefaultCountry = 'GB',
+  venueId,
+  collectClientAddress = false,
+  multiServiceSegments = null,
 }: ConfirmStepProps) {
   const { colors } = useTheme();
   const createBooking = useCreateBooking();
+  const createMultiService = useCreateMultiServiceBooking();
+  const isMultiService = (multiServiceSegments?.length ?? 0) > 1;
   const first_name = guest.first_name.trim();
   const last_name = guest.last_name.trim();
   const fullName = [first_name, last_name].filter(Boolean).join(' ');
@@ -206,8 +228,14 @@ export function ConfirmStep({
   const baseDuration =
     durationOverride ?? (variant ? variant.duration_minutes : service.durationMinutes);
   const baseDeposit = variant ? variant.deposit_pence : service.depositPence;
-  const totalPrice = basePrice + addonsPrice;
-  const totalDuration = baseDuration + addonsDuration;
+  // A multi-service visit totals across all chained segments; a single booking
+  // totals just this service (+ its add-ons).
+  const totalPrice = isMultiService
+    ? chainTotalPence(multiServiceSegments!)
+    : basePrice + addonsPrice;
+  const totalDuration = isMultiService
+    ? chainTotalMinutes(multiServiceSegments!)
+    : baseDuration + addonsDuration;
   const hasDeposit = baseDeposit != null && baseDeposit > 0;
   const depositLabel = hasDeposit ? formatMoney(baseDeposit!) : null;
 
@@ -216,6 +244,20 @@ export function ConfirmStep({
   // mobile "Comments or requests" box is that field, so it must NOT be silently
   // dropped — send it under `dietary_notes` like the web.
   const comment = (guest.special_requests ?? '').trim();
+
+  // At-home (`client_address`) services: thread the address collected in the
+  // guest step, mirroring the web's `clientAddressPayloadFields`.
+  const addressFields =
+    collectClientAddress && guest.address_line1?.trim()
+      ? {
+          client_address_line1: guest.address_line1.trim(),
+          ...(guest.address_line2?.trim() ? { client_address_line2: guest.address_line2.trim() } : {}),
+          ...(guest.address_city?.trim() ? { client_address_city: guest.address_city.trim() } : {}),
+          ...(guest.address_postcode?.trim()
+            ? { client_address_postcode: guest.address_postcode.trim() }
+            : {}),
+        }
+      : {};
 
   const buildPayload = (overrideCompliance?: boolean) => ({
     booking_date: date,
@@ -240,14 +282,103 @@ export function ConfirmStep({
     source,
     ...(ownerVenueId ? { owner_venue_id: ownerVenueId } : {}),
     ...(overrideCompliance ? { override_compliance: true } : {}),
+    ...addressFields,
   });
+
+  /** Build the create-multi-service body from the chained segments. */
+  const buildMultiPayload = () =>
+    buildMultiServicePayload({
+      venueId: venueId ?? '',
+      bookingDate: date,
+      contact: {
+        first_name,
+        last_name,
+        phone: normalizePhone(guest.phone, phoneDefaultCountry),
+        email: guest.email.trim() || undefined,
+        dietary_notes: comment || undefined,
+      },
+      source,
+      segments: multiServiceSegments ?? [],
+      address: collectClientAddress
+        ? {
+            client_address_line1: guest.address_line1,
+            client_address_line2: guest.address_line2,
+            client_address_city: guest.address_city,
+            client_address_postcode: guest.address_postcode,
+          }
+        : null,
+    });
+
+  const handleCreateError = (error: unknown) => {
+    const apiError = error instanceof ApiError ? error : null;
+    const body = apiError?.body as { error?: string; message?: string } | null | undefined;
+    const errorCode = body?.error;
+    if (apiError?.status === 409 && errorCode === 'COMPLIANCE_REQUIREMENT_UNMET') {
+      hapticWarning();
+      const detail = body?.message ?? 'A compliance requirement is unmet for this guest.';
+      setComplianceError(detail);
+      return;
+    }
+    hapticWarning();
+    // Inline (not Alert.alert — a no-op on react-native-web): the message
+    // stays visible above the button while the user adjusts and retries.
+    setSubmitError(apiError ? apiError.message : 'Could not create booking. Please try again.');
+  };
 
   const handleConfirm = (overrideCompliance?: boolean) => {
     setComplianceError(null);
     setSubmitError(null);
+
+    if (isMultiService) {
+      // The create-multi-service route requires first + last name (unlike the
+      // single create). Guard so staff get an inline prompt, not a raw 400.
+      if (!first_name || !last_name) {
+        hapticWarning();
+        setSubmitError('Enter a first and last name for a multi-service visit.');
+        return;
+      }
+      createMultiService.mutate(buildMultiPayload(), {
+        onSuccess: (res) => {
+          hapticSuccess();
+          // ── Stripe in-app capture extension point (DEFERRED) ───────────────
+          // The multi-service create returns `client_secret` + `stripe_account_id`
+          // when a deposit/full payment is owed; the web advances to a Stripe
+          // PaymentSheet here. We keep the payment-link model (backend emails the
+          // link). Wire `@stripe/stripe-react-native` PaymentSheet here once
+          // Stripe Connect is provisioned for the app — see the single-create note.
+          const primary = res.primary_booking_id ?? res.booking_ids[0];
+          if (!primary) {
+            setSubmitError('Could not create booking. Please try again.');
+            return;
+          }
+          setConfirmation({
+            booking_id: primary,
+            requires_deposit: res.requires_deposit,
+            deposit_amount_pence: res.total_deposit_pence,
+            cancellation_notice_hours: res.cancellation_notice_hours,
+            service_name: `${multiServiceSegments!.length} services`,
+            guest_name: fullName,
+            date_label: formatSummaryDate(date),
+            time_label: formatSummaryTime(multiServiceSegments![0]!.startTime),
+            practitioner_name: multiServiceSegments![0]!.practitionerName ?? '',
+          });
+        },
+        onError: handleCreateError,
+      });
+      return;
+    }
+
     createBooking.mutate(buildPayload(overrideCompliance), {
       onSuccess: (response) => {
         hapticSuccess();
+        // ── Stripe in-app capture extension point (DEFERRED) ─────────────────
+        // When `response.client_secret` + `stripe_account_id` are returned (an
+        // online deposit/full payment), the web presents a Stripe PaymentSheet
+        // before confirming. We keep the payment-link model: the backend emails
+        // `payment_url`. To enable in-app capture, present
+        // `@stripe/stripe-react-native` PaymentSheet here, then fall through to
+        // setConfirmation on payment success. Gated on Stripe Connect config
+        // (publishable key + connected-account id) not provisioned in this env.
         setConfirmation({
           booking_id: response.booking_id,
           payment_url: response.payment_url,
@@ -261,21 +392,7 @@ export function ConfirmStep({
           practitioner_name: practitionerName ?? '',
         });
       },
-      onError: (error) => {
-        const apiError = error instanceof ApiError ? error : null;
-        const body = apiError?.body as { error?: string; message?: string } | null | undefined;
-        const errorCode = body?.error;
-        if (apiError?.status === 409 && errorCode === 'COMPLIANCE_REQUIREMENT_UNMET') {
-          hapticWarning();
-          const detail = body?.message ?? 'A compliance requirement is unmet for this guest.';
-          setComplianceError(detail);
-          return;
-        }
-        hapticWarning();
-        // Inline (not Alert.alert — a no-op on react-native-web): the message
-        // stays visible above the button while the user adjusts and retries.
-        setSubmitError(apiError ? apiError.message : 'Could not create booking. Please try again.');
-      },
+      onError: handleCreateError,
     });
   };
 
@@ -299,21 +416,40 @@ export function ConfirmStep({
       <Card>
         <View style={[styles.serviceHeader, { borderBottomColor: colors.border }]}>
           <Text variant="subheading">
-            {service.serviceName}
-            {variant ? ` · ${variant.name}` : ''}
+            {isMultiService
+              ? `${multiServiceSegments!.length} services`
+              : `${service.serviceName}${variant ? ` · ${variant.name}` : ''}`}
           </Text>
           <Text variant="bodySmall" tone="muted">
             {totalDuration} min · {practitionerName}
           </Text>
         </View>
+        {isMultiService ? (
+          <View style={[styles.addonsBlock, { borderTopColor: 'transparent', paddingTop: 0 }]}>
+            {multiServiceSegments!.map((seg, i) => (
+              <View key={`${seg.serviceId}-${i}`} style={styles.addonLine}>
+                <Text variant="bodySmall">
+                  {formatSummaryTime(seg.startTime)} · {seg.serviceName}
+                </Text>
+                {seg.pricePence != null ? (
+                  <Text variant="bodySmall" tone="muted">
+                    {formatMoney(seg.pricePence)}
+                  </Text>
+                ) : null}
+              </View>
+            ))}
+          </View>
+        ) : null}
         <SummaryRow label="Date" value={formatSummaryDate(date)} />
-        <SummaryRow label="Time" value={formatSummaryTime(slot.start_time)} />
+        {!isMultiService ? (
+          <SummaryRow label="Time" value={formatSummaryTime(slot.start_time)} />
+        ) : null}
         <SummaryRow label="Guest" value={fullName || '—'} />
         {guest.phone.trim() ? <SummaryRow label="Phone" value={guest.phone.trim()} /> : null}
         {guest.email.trim() ? <SummaryRow label="Email" value={guest.email.trim()} /> : null}
         {comment ? <SummaryRow label="Comments" value={comment} /> : null}
 
-        {addons.length > 0 ? (
+        {addons.length > 0 && !isMultiService ? (
           <View style={[styles.addonsBlock, { borderTopColor: colors.border }]}>
             <Text variant="caption" tone="muted">
               Add-ons
@@ -417,9 +553,9 @@ export function ConfirmStep({
       ) : null}
 
       <Button
-        label="Create booking"
+        label={isMultiService ? 'Create visit' : 'Create booking'}
         fullWidth
-        loading={createBooking.isPending}
+        loading={createBooking.isPending || createMultiService.isPending}
         onPress={() => handleConfirm()}
       />
     </ScrollView>

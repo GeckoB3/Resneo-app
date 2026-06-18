@@ -250,3 +250,30 @@ export function usePatchPractitioner() {
     onSuccess: () => invalidatePractitioners(queryClient),
   });
 }
+
+/**
+ * DELETE /api/venue/practitioners — remove a bookable-calendar column (admin
+ * only, Bearer). Additive sibling to {@link usePatchPractitioner}; the route
+ * DELETE already exists in `C:\Resneo` (it unassigns linked staff and may clear
+ * the practitioner on existing bookings). Sends the id in the body, matching the
+ * web `BookableCalendarsPanel` delete call. Other errors (e.g. last-calendar
+ * guard) surface as a structured `ApiError`.
+ */
+export function useDeletePractitioner() {
+  const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (practitionerId: string): Promise<unknown> => {
+      if (!accessToken) {
+        throw new Error('Missing access token');
+      }
+      return apiFetch<unknown>('/api/venue/practitioners', {
+        accessToken,
+        method: 'DELETE',
+        body: JSON.stringify({ id: practitionerId }),
+      });
+    },
+    onSuccess: () => invalidatePractitioners(queryClient),
+  });
+}

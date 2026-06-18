@@ -17,17 +17,17 @@
 | 01 | Navigation & IA | strong | 0/1/3/2 | ⬜ | |
 | 02 | Calendar / Diary | strong | 0/0/5/2 | ⬜ | |
 | 03 | Bookings — list & detail | strong | 0/0/2/6 | ⬜ | |
-| 04 | New booking wizard | partial | 2/1/4/2 | ⬜ | group + multi-service + Stripe |
+| 04 | New booking wizard | partial | 2/1/4/2 | ✅⚙️ | multi-service + group (public `/create-multi-service` & `/create-group`, server-side rollback); client-address, `?tab=` deep-link+reset, rebook resource shapes, resource date dots. **Stripe High DEFERRED** (needs Connect config + product call; extension point left). +30 tests |
 | 05 | Clients / Contacts / Import | strong | 0/1/1/5 | ⬜ | |
 | 06 | Classes & Events | strong | 0/2/1/5 | ⬜ | class-commerce |
 | 07 | Resources / Floor-plan / Tables | strong | 0/0/0/4 | ⬜ | tables suite ⏭️ |
-| 08 | Availability / Hours / Closures | partial | 1/1/2/3 | ⬜ | bookable-calendar mgmt |
+| 08 | Availability / Hours / Closures | partial | 1/1/2/3 | ✅ | `BookableCalendarsManager` (create/reorder/slug+copy/activate/delete + plan-limit 403); 409 "Save anyway" armed-confirm; non-admin leave lock; reduced-capacity yield/scope; days-off banner. +13 tests |
 | 09 | Waitlist | strong | 0/2/2/2 | ⬜ | |
 | 10 | Home / Reports / Referrals | partial | 0/1/2/7 | ⬜ | |
 | 11 | Services & Add-ons | strong | 0/2/3/3 | ⬜ | |
 | 12 | Booking Page / Widget | partial | 0/1/3/3 | ⬜ | |
-| 13 | Compliance & Intake Forms | partial | 3/4/3/2 | ⬜ | weakest; authoring stack |
-| 14 | Settings / Account / Plan / Team | strong | 1/1/3/2 | ⬜ | venue deletion |
+| 13 | Compliance & Intake Forms | partial | 3/4/3/2 | ✅⚙️ | Full authoring: type create + mobile field builder + per-service requirements editor + general-settings (7 ctrls) + library clone + real templates list (Bearer; stale docstring fixed); capture: drawn-signature (svg+gesture) + file picker + intro/help/defaults + date picker. +57 tests. ⚙️ device-test signature/file capture |
+| 14 | Settings / Account / Plan / Team | strong | 1/1/3/2 | ✅ | `DeleteVenueSheet` (type-to-confirm) + cancel; staff seat-cap + upgrade nudge (`planStaffLimit`); phone E.164 (`PhoneInput`); shared `useStaffAccountForm`. Trial-breakdown Low scoped down (backend doesn't expose via Bearer). Embed/QR merged into Wave 2. +14 tests |
 | 15 | Communications / Templates | strong | 0/1/1/1 | ⬜ | |
 | 16 | Linked Venues & Collectives | strong | 0/0/1/4 | ⬜ | |
 | 17 | Auth / Onboarding / Support | partial | 0/2/2/2 | ⬜ | set-password, onboarding |

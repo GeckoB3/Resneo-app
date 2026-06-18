@@ -1,5 +1,5 @@
-import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { ClassBookingFlow } from '@/components/booking-wizard/ClassBookingFlow';
@@ -93,11 +93,13 @@ function NewBookingForm() {
   const form = useBookingFormVenue();
   const {
     type: typeParam,
+    tab: tabParam,
     practitionerId: practitionerIdParam,
     time: timeParam,
     intent: intentParam,
   } = useLocalSearchParams<{
     type?: string;
+    tab?: string;
     practitionerId?: string;
     time?: string;
     intent?: string;
@@ -107,6 +109,22 @@ function NewBookingForm() {
   useEffect(() => {
     track(ANALYTICS_EVENTS.createBookingStarted);
   }, []);
+
+  // Reset-to-start: re-entering the booking screen (focus) bumps a token that
+  // keys the flow subtree, remounting it so stale wizard state never persists
+  // across opens (web parity: `resetToStart`/`resetKey` on nav reselect). Skip
+  // the very first focus so the initial mount isn't double-remounted.
+  const [resetKey, setResetKey] = useState(0);
+  const firstFocusRef = useRef(true);
+  useFocusEffect(
+    useCallback(() => {
+      if (firstFocusRef.current) {
+        firstFocusRef.current = false;
+        return;
+      }
+      setResetKey((k) => k + 1);
+    }, []),
+  );
 
   // The tabs to show, derived from the effective venue's enabled booking models
   // (own venue, or the linked venue's resolved mode).
@@ -135,11 +153,18 @@ function NewBookingForm() {
   const [activeTab, setActiveTab] = useState<BookingFlowType | null>(null);
 
   // The tab to render: the user's choice when still valid, else a sensible
-  // default — an explicit ?type=, an appointment deep-link (calendar tap /
-  // walk-in intent) → Appointments, else the venue's primary model.
+  // default — `?tab=` / `?type=`, an appointment deep-link (calendar tap /
+  // walk-in intent) → Appointments, else the venue's primary model. `?tab=` is
+  // the persisted/shareable param (web parity); `?type=` is the legacy prefill.
   const resolvedTab = useMemo<BookingFlowType | null>(() => {
     if (tabs.length === 0) return null;
     if (activeTab && tabs.includes(activeTab)) return activeTab;
+
+    const tabFromParam =
+      typeof tabParam === 'string' && VALID_TYPE_PARAMS.includes(tabParam as BookingFlowType)
+        ? (tabParam as BookingFlowType)
+        : null;
+    if (tabFromParam && tabs.includes(tabFromParam)) return tabFromParam;
 
     const fromParam =
       typeof typeParam === 'string' && VALID_TYPE_PARAMS.includes(typeParam as BookingFlowType)
@@ -152,7 +177,18 @@ function NewBookingForm() {
 
     const primaryTab = modelToTab(form.bookingModel);
     return tabs.includes(primaryTab) ? primaryTab : tabs[0]!;
-  }, [tabs, activeTab, typeParam, practitionerIdParam, timeParam, intentParam, form.bookingModel]);
+  }, [tabs, activeTab, tabParam, typeParam, practitionerIdParam, timeParam, intentParam, form.bookingModel]);
+
+  // Sync the active tab to the URL so it persists across re-opens and is
+  // shareable (web parity: `router.replace ?tab=`). `setParams` doesn't push a
+  // history entry, so Back still leaves the screen rather than cycling tabs.
+  const handleTabChange = useCallback(
+    (next: BookingFlowType) => {
+      setActiveTab(next);
+      router.setParams({ tab: next });
+    },
+    [router],
+  );
 
   const handleCreated = (bookingId: string) => {
     router.replace(`/booking/${bookingId}` as Href);
@@ -216,9 +252,11 @@ function NewBookingForm() {
     <Screen>
       <View style={styles.container}>
         {tabs.length > 1 ? (
-          <BookingTypeTabs tabs={tabs} active={tab} onChange={setActiveTab} />
+          <BookingTypeTabs tabs={tabs} active={tab} onChange={handleTabChange} />
         ) : null}
-        <View style={styles.flow}>
+        {/* Key on the tab + reset token: switching tabs or re-entering the
+            screen remounts the flow so each starts from a clean step 1. */}
+        <View key={`${tab}-${resetKey}`} style={styles.flow}>
           {tab === 'service' ? <ServiceBookingFlow onCreated={handleCreated} /> : null}
           {tab === 'class' ? <ClassBookingFlow onCreated={handleCreated} /> : null}
           {tab === 'event' ? <EventBookingFlow onCreated={handleCreated} /> : null}

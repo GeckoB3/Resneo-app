@@ -17,9 +17,10 @@ import {
 } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
+import { ConfirmSheet } from '@/components/ui/ConfirmSheet';
 import { Text } from '@/components/ui/Text';
 import { TimePickerField } from '@/components/ui/TimePickerField';
-import { ApiError } from '@/lib/api/client';
+import { ApiError, isRequiresConfirmationBody } from '@/lib/api/client';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { usePatchPractitioner } from '@/lib/queries/useAvailabilityManage';
 import { useToast } from '@/providers/ToastProvider';
@@ -94,6 +95,13 @@ export function WorkingHoursEditor({
     return init;
   });
 
+  // "Save anyway?" — narrowing this calendar's hours can orphan upcoming
+  // bookings; the route replies 409 `{ requires_confirmation, message }`. We
+  // keep the validated payload so the confirm can re-save with `acknowledge`.
+  const [ackConfirm, setAckConfirm] = useState<{ message: string; payload: WorkingHoursMap } | null>(
+    null,
+  );
+
   function setDayOpen(key: string, open: boolean) {
     setDays((prev) => {
       const cur = prev[key]!;
@@ -147,7 +155,8 @@ export function WorkingHoursEditor({
     hapticSuccess();
   }
 
-  async function handleSave() {
+  /** Build + validate the working-hours payload from the current day state, or null on error. */
+  function buildWorkingHours(): WorkingHoursMap | null {
     const workingHours: WorkingHoursMap = {};
     for (const wd of WEEKDAYS) {
       const d = days[wd.key]!;
@@ -155,7 +164,7 @@ export function WorkingHoursEditor({
         for (const r of d.ranges) {
           if (r.end <= r.start) {
             toast.error(`End time must be after start time for ${wd.label}.`);
-            return;
+            return null;
           }
         }
         workingHours[wd.key] = d.ranges.map(
@@ -165,12 +174,49 @@ export function WorkingHoursEditor({
         workingHours[wd.key] = [];
       }
     }
+    return workingHours;
+  }
+
+  async function handleSave() {
+    const workingHours = buildWorkingHours();
+    if (!workingHours) return;
     try {
       await patchPractitioner.mutateAsync({ id: practitionerId, working_hours: workingHours });
       hapticSuccess();
       onClose();
       toast.success('Working hours saved.');
     } catch (e) {
+      // 409 with requires_confirmation → ask, then re-save acknowledged.
+      if (e instanceof ApiError && e.status === 409 && isRequiresConfirmationBody(e.body)) {
+        hapticWarning();
+        setAckConfirm({
+          message:
+            e.body.message ??
+            'Some upcoming bookings fall outside the new hours. Save these hours anyway?',
+          payload: workingHours,
+        });
+        return;
+      }
+      hapticWarning();
+      toast.error(e instanceof ApiError ? e.message : 'Could not save. Please try again.');
+    }
+  }
+
+  /** User confirmed the orphan-bookings warning — re-save with the acknowledge flag. */
+  async function handleConfirmAck() {
+    if (!ackConfirm) return;
+    try {
+      await patchPractitioner.mutateAsync({
+        id: practitionerId,
+        working_hours: ackConfirm.payload,
+        acknowledge: true,
+      });
+      setAckConfirm(null);
+      hapticSuccess();
+      onClose();
+      toast.success('Working hours saved.');
+    } catch (e) {
+      setAckConfirm(null);
       hapticWarning();
       toast.error(e instanceof ApiError ? e.message : 'Could not save. Please try again.');
     }
@@ -278,6 +324,20 @@ export function WorkingHoursEditor({
           onPress={() => void handleSave()}
         />
       </View>
+
+      {/* "Save anyway?" — orphan-bookings confirmation (409 requires_confirmation). */}
+      <ConfirmSheet
+        visible={ackConfirm != null}
+        title="Save these hours anyway?"
+        message={ackConfirm?.message}
+        confirmLabel="Save anyway"
+        destructive={false}
+        loading={patchPractitioner.isPending}
+        onConfirm={() => void handleConfirmAck()}
+        onClose={() => {
+          if (!patchPractitioner.isPending) setAckConfirm(null);
+        }}
+      />
     </View>
   );
 }

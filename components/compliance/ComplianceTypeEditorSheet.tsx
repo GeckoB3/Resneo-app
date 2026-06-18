@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useReducer, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { Badge } from '@/components/ui/Badge';
@@ -9,6 +9,18 @@ import { Segmented } from '@/components/ui/Segmented';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import {
+  emptyBuilderState,
+  fieldBuilderReducer,
+  type FieldBuilderState,
+} from '@/lib/compliance/field-builder';
+import {
+  COMPLIANCE_RESULT_TYPES,
+  parseFormSchema,
+  validateFormSchemaForType,
+  type ComplianceField,
+  type ComplianceResultType,
+} from '@/lib/compliance/form-schema';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import {
   COMPLIANCE_TYPE_CAPTURE_METHODS,
@@ -16,19 +28,21 @@ import {
   FORM_LINK_EXPIRY_MAX,
   FORM_LINK_EXPIRY_MIN,
   useComplianceTemplateDetail,
+  useCreateComplianceTemplate,
+  useCreateComplianceVersion,
   useUpdateComplianceTemplate,
   VALIDITY_DAYS_MAX,
   type ComplianceTypeCaptureMethod,
   type ComplianceTypeCategory,
 } from '@/lib/queries/useComplianceTypeManage';
+import { useToast } from '@/providers/ToastProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
+import { ComplianceFieldEditor } from './ComplianceFieldEditor';
 import {
   CAPTURE_METHOD_LABELS,
   CATEGORY_LABELS,
-  FIELD_TYPE_LABELS,
-  RESULT_TYPE_DESCRIPTIONS,
   RESULT_TYPE_LABELS,
   validityLabel,
 } from './complianceTypeLabels';
@@ -41,77 +55,145 @@ const VALIDITY_OPTIONS: { value: ValidityMode; label: string }[] = [
   { value: 'days', label: 'Expires after' },
 ];
 
+/** Web builder's parenthetical result-type labels (aligns app ↔ web copy). */
+const RESULT_TYPE_DROPDOWN_LABELS: Record<ComplianceResultType, string> = {
+  pass_fail: 'Pass / fail (staff decide a result)',
+  signed: 'Signed (requires a signature)',
+  completed: 'Completed (no result)',
+  file_uploaded: 'File upload (requires a file)',
+};
+
 type Props = {
   visible: boolean;
+  /** A type id to edit, or null to CREATE a new type (when `mode === 'create'`). */
   typeId: string | null;
+  /** 'create' opens the empty builder; otherwise edits the given typeId. */
+  mode?: 'create' | 'edit';
   /** Admins can edit + archive; everyone else gets a read-only view. */
   canEdit: boolean;
   onClose: () => void;
+  /** Fired after a successful create/version save so the list can refetch. */
+  onSaved?: () => void;
 };
 
 /**
- * Compliance template editor — the Bearer-accessible subset of the web's
- * form-builder page. Edits the template's settings (name, category, validity,
- * capture methods, description, link expiry) and archives/restores via
- * PATCH /api/venue/compliance/types/[id]. Form FIELDS are immutable versions
- * created by the web form builder (cookie-only route), so they render
- * read-only here with a "manage on the web dashboard" note.
+ * Compliance template editor — the in-app form builder. Creates a new type
+ * (POST /types) or edits an existing one's settings (PATCH /types/[id]) and form
+ * fields (POST /types/[id]/versions). Form fields are edited with a real mobile
+ * field builder (add/edit/reorder/delete, options, intro markdown, pass/fail
+ * result mapping). Non-admins get a read-only summary.
  */
-export function ComplianceTypeEditorSheet({ visible, typeId, canEdit, onClose }: Props) {
+export function ComplianceTypeEditorSheet({
+  visible,
+  typeId,
+  mode = 'edit',
+  canEdit,
+  onClose,
+  onSaved,
+}: Props) {
   const { colors } = useTheme();
-  const detail = useComplianceTemplateDetail(visible ? typeId : null);
-  const update = useUpdateComplianceTemplate();
+  const toast = useToast();
+  const isCreate = mode === 'create';
 
-  // --- Form state, hydrated once per opened template ---
-  const [hydratedTypeId, setHydratedTypeId] = useState<string | null>(null);
+  const detail = useComplianceTemplateDetail(visible && !isCreate ? typeId : null);
+  const update = useUpdateComplianceTemplate();
+  const createType = useCreateComplianceTemplate();
+  const createVersion = useCreateComplianceVersion();
+
+  // --- Meta form state, hydrated once per opened template ---
+  const [hydratedKey, setHydratedKey] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [category, setCategory] = useState<ComplianceTypeCategory>('test');
+  const [resultType, setResultType] = useState<ComplianceResultType>('completed');
   const [validityMode, setValidityMode] = useState<ValidityMode>('lifetime');
   const [validityDaysText, setValidityDaysText] = useState('180');
-  const [captureMethods, setCaptureMethods] = useState<ComplianceTypeCaptureMethod[]>([]);
-  const [description, setDescription] = useState('');
+  const [captureMethods, setCaptureMethods] = useState<ComplianceTypeCaptureMethod[]>([
+    'staff_in_venue',
+    'client_online',
+  ]);
   const [expiryDaysText, setExpiryDaysText] = useState('');
   const [errors, setErrors] = useState<string[]>([]);
   const [confirmingArchive, setConfirmingArchive] = useState(false);
   const [pendingAction, setPendingAction] = useState<'save' | 'archive' | null>(null);
 
-  // Derived-state hydration (guarded render-time setState — same pattern as
-  // SessionSettingsSheet; avoids an effect and never loops).
-  if (visible && detail.data && hydratedTypeId !== detail.data.type.id) {
-    const t = detail.data.type;
-    setName(t.name);
-    setCategory(
-      (COMPLIANCE_TYPE_CATEGORIES as readonly string[]).includes(t.category)
-        ? (t.category as ComplianceTypeCategory)
-        : 'test',
-    );
-    setValidityMode(
-      t.validity_period_days == null ? 'lifetime' : t.validity_period_days === 0 ? 'per_visit' : 'days',
-    );
-    setValidityDaysText(
-      t.validity_period_days != null && t.validity_period_days > 0
-        ? String(t.validity_period_days)
-        : '180',
-    );
-    setCaptureMethods(
-      (t.capture_methods ?? []).filter((m): m is ComplianceTypeCaptureMethod =>
-        (COMPLIANCE_TYPE_CAPTURE_METHODS as readonly string[]).includes(m),
-      ),
-    );
-    setDescription(t.description ?? '');
-    setExpiryDaysText(t.form_link_expiry_days != null ? String(t.form_link_expiry_days) : '');
+  // --- Field builder state (reducer) ---
+  const [builder, dispatch] = useReducer(fieldBuilderReducer, emptyBuilderState);
+
+  // Hydration key distinguishes create-mode from each edited type.
+  const targetKey = isCreate ? '__create__' : detail.data?.type.id ?? null;
+
+  if (visible && targetKey && hydratedKey !== targetKey) {
+    if (isCreate) {
+      setName('');
+      setCategory('test');
+      setResultType('completed');
+      setValidityMode('lifetime');
+      setValidityDaysText('180');
+      setCaptureMethods(['staff_in_venue', 'client_online']);
+      setExpiryDaysText('');
+      dispatch({ type: 'hydrate', state: emptyBuilderState });
+    } else if (detail.data) {
+      const t = detail.data.type;
+      setName(t.name);
+      setCategory(
+        (COMPLIANCE_TYPE_CATEGORIES as readonly string[]).includes(t.category)
+          ? (t.category as ComplianceTypeCategory)
+          : 'test',
+      );
+      setResultType(
+        (COMPLIANCE_RESULT_TYPES as readonly string[]).includes(t.result_type)
+          ? (t.result_type as ComplianceResultType)
+          : 'completed',
+      );
+      setValidityMode(
+        t.validity_period_days == null
+          ? 'lifetime'
+          : t.validity_period_days === 0
+            ? 'per_visit'
+            : 'days',
+      );
+      setValidityDaysText(
+        t.validity_period_days != null && t.validity_period_days > 0
+          ? String(t.validity_period_days)
+          : '180',
+      );
+      setCaptureMethods(
+        (t.capture_methods ?? []).filter((m): m is ComplianceTypeCaptureMethod =>
+          (COMPLIANCE_TYPE_CAPTURE_METHODS as readonly string[]).includes(m),
+        ),
+      );
+      setExpiryDaysText(t.form_link_expiry_days != null ? String(t.form_link_expiry_days) : '');
+      // Hydrate the field builder from the current version's schema.
+      const raw = detail.data.version?.form_schema;
+      const parsed = raw ? parseFormSchema(raw) : null;
+      const hydrated: FieldBuilderState =
+        parsed && parsed.ok
+          ? {
+              fields: parsed.schema.fields,
+              description: parsed.schema.description ?? '',
+              introMarkdown: parsed.schema.intro_markdown ?? '',
+              resultMapping: parsed.schema.result_mapping,
+            }
+          : {
+              // Fall back to the loosely-typed stored fields so a legacy schema
+              // still renders rather than wiping the builder.
+              fields: (raw?.fields ?? []) as ComplianceField[],
+              description: raw?.description ?? '',
+              introMarkdown: raw?.intro_markdown ?? '',
+              resultMapping: undefined,
+            };
+      dispatch({ type: 'hydrate', state: hydrated });
+    }
     setErrors([]);
     setConfirmingArchive(false);
-    setHydratedTypeId(t.id);
+    setHydratedKey(targetKey);
   }
-  if (!visible && hydratedTypeId !== null) {
-    // Reset so the next open re-hydrates from fresh server state.
-    setHydratedTypeId(null);
+  if (!visible && hydratedKey !== null) {
+    setHydratedKey(null);
   }
 
-  const type = detail.data?.type ?? null;
-  const version = detail.data?.version ?? null;
-  const fields = version?.form_schema?.fields ?? [];
+  const type = isCreate ? null : detail.data?.type ?? null;
+  const version = isCreate ? null : detail.data?.version ?? null;
   const isArchived = type ? !type.is_active : false;
 
   function toggleCaptureMethod(method: ComplianceTypeCaptureMethod) {
@@ -120,15 +202,16 @@ export function ComplianceTypeEditorSheet({ visible, typeId, canEdit, onClose }:
     );
   }
 
-  function validate(): { ok: boolean; validityDays: number | null; expiryDays: number | null } {
+  /** Validate meta + schema. Returns parsed numeric fields + the built schema. */
+  function validateAll(): {
+    ok: boolean;
+    validityDays: number | null;
+    expiryDays: number | null;
+  } {
     const problems: string[] = [];
 
-    if (!name.trim()) {
-      problems.push('Give the template a name.');
-    }
-    if (captureMethods.length === 0) {
-      problems.push('Choose at least one capture method.');
-    }
+    if (!name.trim()) problems.push('Give the template a name.');
+    if (captureMethods.length === 0) problems.push('Choose at least one capture method.');
 
     let validityDays: number | null = null;
     if (validityMode === 'per_visit') {
@@ -145,11 +228,7 @@ export function ComplianceTypeEditorSheet({ visible, typeId, canEdit, onClose }:
     let expiryDays: number | null = null;
     if (expiryDaysText.trim() !== '') {
       const parsed = Number(expiryDaysText.trim());
-      if (
-        !Number.isInteger(parsed) ||
-        parsed < FORM_LINK_EXPIRY_MIN ||
-        parsed > FORM_LINK_EXPIRY_MAX
-      ) {
+      if (!Number.isInteger(parsed) || parsed < FORM_LINK_EXPIRY_MIN || parsed > FORM_LINK_EXPIRY_MAX) {
         problems.push(
           `Form link expiry must be between ${FORM_LINK_EXPIRY_MIN} and ${FORM_LINK_EXPIRY_MAX} days.`,
         );
@@ -158,26 +237,78 @@ export function ComplianceTypeEditorSheet({ visible, typeId, canEdit, onClose }:
       }
     }
 
+    if (builder.fields.length === 0) {
+      problems.push('Add at least one form field.');
+    } else {
+      // Run the ported cross-field schema validation against the result type.
+      const schema = buildSchema();
+      const validation = validateFormSchemaForType(schema, resultType);
+      problems.push(...validation.errors);
+    }
+
     setErrors(problems);
     return { ok: problems.length === 0, validityDays, expiryDays };
   }
 
+  function buildSchema() {
+    return {
+      schema_version: '1.0' as const,
+      title: name.trim() || 'Untitled form',
+      description: builder.description.trim() || undefined,
+      intro_markdown: builder.introMarkdown.trim() || undefined,
+      fields: builder.fields,
+      result_mapping: resultType === 'pass_fail' ? builder.resultMapping : undefined,
+    };
+  }
+
   function handleSave() {
-    if (!type) return;
-    const { ok, validityDays, expiryDays } = validate();
+    const { ok, validityDays, expiryDays } = validateAll();
     if (!ok) {
       hapticWarning();
       return;
     }
-
+    const schema = buildSchema();
     setPendingAction('save');
+
+    if (isCreate) {
+      createType.mutate(
+        {
+          name: name.trim(),
+          category,
+          description: builder.description.trim() ? builder.description.trim() : null,
+          result_type: resultType,
+          validity_period_days: validityDays,
+          capture_methods: captureMethods,
+          form_link_expiry_days: expiryDays,
+          form_schema: schema,
+        },
+        {
+          onSuccess: () => {
+            setPendingAction(null);
+            hapticSuccess();
+            toast.success(`${name.trim()} created.`);
+            onSaved?.();
+            onClose();
+          },
+          onError: (error) => {
+            setPendingAction(null);
+            hapticWarning();
+            setErrors([error instanceof ApiError ? error.message : 'Could not create the type.']);
+          },
+        },
+      );
+      return;
+    }
+
+    if (!type) return;
+    // Edit: PATCH non-schema settings, then publish a new form version.
     update.mutate(
       {
         typeId: type.id,
         patch: {
           name: name.trim(),
           category,
-          description: description.trim() ? description.trim() : null,
+          description: builder.description.trim() ? builder.description.trim() : null,
           validity_period_days: validityDays,
           capture_methods: captureMethods,
           form_link_expiry_days: expiryDays,
@@ -185,22 +316,36 @@ export function ComplianceTypeEditorSheet({ visible, typeId, canEdit, onClose }:
       },
       {
         onSuccess: () => {
-          setPendingAction(null);
-          hapticSuccess();
-          onClose();
+          createVersion.mutate(
+            { typeId: type.id, formSchema: schema },
+            {
+              onSuccess: () => {
+                setPendingAction(null);
+                hapticSuccess();
+                toast.success('Template saved.');
+                onSaved?.();
+                onClose();
+              },
+              onError: (error) => {
+                setPendingAction(null);
+                hapticWarning();
+                setErrors([
+                  error instanceof ApiError ? error.message : 'Could not save the form fields.',
+                ]);
+              },
+            },
+          );
         },
         onError: (error) => {
           setPendingAction(null);
           hapticWarning();
-          setErrors([
-            error instanceof ApiError ? error.message : 'Could not save the template.',
-          ]);
+          setErrors([error instanceof ApiError ? error.message : 'Could not save the template.']);
         },
       },
     );
   }
 
-  /** Archive/restore via PATCH is_active — the dedicated routes are web-only. */
+  /** Archive/restore via PATCH is_active. */
   function handleArchiveToggle() {
     if (!type) return;
     setPendingAction('archive');
@@ -211,21 +356,24 @@ export function ComplianceTypeEditorSheet({ visible, typeId, canEdit, onClose }:
           setPendingAction(null);
           setConfirmingArchive(false);
           hapticSuccess();
+          onSaved?.();
         },
         onError: (error) => {
           setPendingAction(null);
           setConfirmingArchive(false);
           hapticWarning();
-          setErrors([
-            error instanceof ApiError ? error.message : 'Could not update the template.',
-          ]);
+          setErrors([error instanceof ApiError ? error.message : 'Could not update the template.']);
         },
       },
     );
   }
 
-  const saving = update.isPending && pendingAction === 'save';
+  const saving =
+    pendingAction === 'save' &&
+    (createType.isPending || update.isPending || createVersion.isPending);
   const archiving = update.isPending && pendingAction === 'archive';
+  const loadingDetail = !isCreate && detail.isLoading;
+  const detailError = !isCreate && (detail.isError || !type);
 
   return (
     <Sheet visible={visible} onClose={onClose} fill maxHeight="92%">
@@ -233,15 +381,17 @@ export function ComplianceTypeEditorSheet({ visible, typeId, canEdit, onClose }:
       <View style={styles.header}>
         <View style={styles.headerTop}>
           <Text variant="subheading" numberOfLines={1} style={styles.headerTitle}>
-            {type?.name ?? 'Compliance template'}
+            {isCreate ? 'New compliance type' : type?.name ?? 'Compliance template'}
           </Text>
           {version ? <Badge label={`v${version.version_number}`} tone="neutral" /> : null}
           {isArchived ? <Badge label="Archived" tone="warning" /> : null}
         </View>
         <Text variant="bodySmall" tone="muted">
-          {canEdit
-            ? 'Edit the template settings. Form fields are managed on the web dashboard.'
-            : 'Only venue admins can edit compliance templates.'}
+          {!canEdit
+            ? 'Only venue admins can edit compliance templates.'
+            : isCreate
+              ? 'Build the form clients or staff will complete.'
+              : 'Edit the settings and form fields. Saving publishes a new version.'}
         </Text>
       </View>
 
@@ -249,15 +399,13 @@ export function ComplianceTypeEditorSheet({ visible, typeId, canEdit, onClose }:
         style={styles.body}
         contentContainerStyle={styles.bodyContent}
         keyboardShouldPersistTaps="handled">
-        {detail.isLoading ? (
+        {loadingDetail ? (
           <Text variant="bodySmall" tone="muted">
             Loading template…
           </Text>
-        ) : detail.isError || !type ? (
+        ) : detailError ? (
           <Text variant="bodySmall" tone="danger">
-            {detail.error instanceof ApiError
-              ? detail.error.message
-              : 'Could not load the template.'}
+            {detail.error instanceof ApiError ? detail.error.message : 'Could not load the template.'}
           </Text>
         ) : canEdit ? (
           <>
@@ -286,25 +434,35 @@ export function ComplianceTypeEditorSheet({ visible, typeId, canEdit, onClose }:
               </View>
             </View>
 
-            {/* Result type — immutable after creation (matches the web builder) */}
+            {/* Result type — editable on create, immutable on edit (web parity) */}
             <View style={styles.fieldBlock}>
               <Text variant="label" tone="secondary">
                 Result type
               </Text>
-              <View
-                style={[
-                  styles.readonlyBox,
-                  { backgroundColor: colors.surface, borderColor: colors.border },
-                ]}>
-                <Text variant="body">{RESULT_TYPE_LABELS[type.result_type] ?? type.result_type}</Text>
-                {RESULT_TYPE_DESCRIPTIONS[type.result_type] ? (
-                  <Text variant="caption" tone="muted">
-                    {RESULT_TYPE_DESCRIPTIONS[type.result_type]}
-                  </Text>
-                ) : null}
-              </View>
+              {isCreate ? (
+                <View style={styles.chipWrap}>
+                  {COMPLIANCE_RESULT_TYPES.map((r) => (
+                    <Chip
+                      key={r}
+                      label={RESULT_TYPE_DROPDOWN_LABELS[r]}
+                      selected={resultType === r}
+                      onPress={() => setResultType(r)}
+                    />
+                  ))}
+                </View>
+              ) : (
+                <View
+                  style={[
+                    styles.readonlyBox,
+                    { backgroundColor: colors.surface, borderColor: colors.border },
+                  ]}>
+                  <Text variant="body">{RESULT_TYPE_DROPDOWN_LABELS[resultType]}</Text>
+                </View>
+              )}
               <Text variant="caption" tone="muted">
-                Result type can&apos;t change after creation.
+                {isCreate
+                  ? 'Determines how the record result is recorded.'
+                  : "Result type can't change after creation."}
               </Text>
             </View>
 
@@ -357,104 +515,30 @@ export function ComplianceTypeEditorSheet({ visible, typeId, canEdit, onClose }:
               helper="How long a client form link stays valid. Leave blank for the venue default."
             />
 
-            <Input
-              label="Description (optional)"
-              value={description}
-              onChangeText={setDescription}
-              multiline
-              numberOfLines={3}
+            {/* Form field builder */}
+            <View
+              style={[styles.builderDivider, { borderTopColor: colors.border }]}
+              accessibilityRole="none"
+            />
+            <ComplianceFieldEditor
+              state={builder}
+              dispatch={dispatch}
+              isPassFail={resultType === 'pass_fail'}
             />
           </>
         ) : (
           /* Read-only summary for non-admins */
-          <View
-            style={[
-              styles.readonlyBox,
-              { backgroundColor: colors.surface, borderColor: colors.border },
-            ]}>
-            <ReadonlyRow label="Category" value={CATEGORY_LABELS[type.category] ?? type.category} />
-            <ReadonlyRow
-              label="Result type"
-              value={RESULT_TYPE_LABELS[type.result_type] ?? type.result_type}
-            />
-            <ReadonlyRow label="Validity" value={validityLabel(type.validity_period_days)} />
-            <ReadonlyRow
-              label="Captured by"
-              value={
-                (type.capture_methods ?? [])
-                  .map((m) => CAPTURE_METHOD_LABELS[m] ?? m)
-                  .join(', ') || '—'
-              }
-            />
-            <ReadonlyRow
-              label="Form link expiry"
-              value={
-                type.form_link_expiry_days != null
-                  ? `${type.form_link_expiry_days} days`
-                  : 'Venue default'
-              }
-            />
-            {type.description ? <ReadonlyRow label="Description" value={type.description} /> : null}
-          </View>
+          <ReadonlySummary
+            type={type!}
+            version={version}
+            fields={builder.fields}
+          />
         )}
-
-        {/* Form fields — read-only; versions are created in the web form builder */}
-        {type && !detail.isLoading ? (
-          <View style={styles.fieldBlock}>
-            <Text variant="label" tone="secondary">
-              Form fields{version ? ` (v${version.version_number})` : ''}
-            </Text>
-            {fields.length === 0 ? (
-              <Text variant="caption" tone="muted">
-                This template has no form fields.
-              </Text>
-            ) : (
-              <View
-                style={[
-                  styles.readonlyBox,
-                  { backgroundColor: colors.surface, borderColor: colors.border },
-                ]}>
-                {fields.map((field, index) => (
-                  <View
-                    key={field.id}
-                    style={[
-                      styles.fieldRow,
-                      index > 0 && { borderTopColor: colors.border, borderTopWidth: StyleSheet.hairlineWidth },
-                    ]}>
-                    <View style={styles.fieldRowText}>
-                      <Text variant="bodySmall" numberOfLines={2}>
-                        {field.label}
-                      </Text>
-                      <Text variant="caption" tone="muted">
-                        {FIELD_TYPE_LABELS[field.type] ?? field.type}
-                        {field.required ? ' · required' : ''}
-                        {field.staff_only ? ' · staff only' : ''}
-                      </Text>
-                    </View>
-                  </View>
-                ))}
-              </View>
-            )}
-            <View
-              style={[
-                styles.webNote,
-                { backgroundColor: colors.brandSubtle, borderColor: colors.brandBorder },
-              ]}>
-              <Text variant="caption" tone="secondary">
-                Form fields are saved as immutable versions by the form builder on the web
-                dashboard — they can&apos;t be edited in the app.
-              </Text>
-            </View>
-          </View>
-        ) : null}
 
         {/* Inline errors — never Alert-only feedback */}
         {errors.length > 0 ? (
           <View
-            style={[
-              styles.errorBox,
-              { backgroundColor: colors.dangerSurface, borderColor: colors.danger },
-            ]}>
+            style={[styles.errorBox, { backgroundColor: colors.dangerSurface, borderColor: colors.danger }]}>
             {errors.map((e) => (
               <Text key={e} variant="caption" tone="danger">
                 {e}
@@ -463,14 +547,14 @@ export function ComplianceTypeEditorSheet({ visible, typeId, canEdit, onClose }:
           </View>
         ) : null}
 
-        {/* Archive / restore — admin only */}
-        {canEdit && type && !detail.isLoading ? (
+        {/* Archive / restore — admin only, edit mode only */}
+        {canEdit && !isCreate && type ? (
           <View style={styles.archiveBlock}>
             {confirmingArchive && !isArchived ? (
               <>
                 <Text variant="caption" tone="muted">
-                  Archiving hides this template from capture and new requirements. Existing
-                  records are kept.
+                  Archiving hides this template from capture and new requirements. Existing records
+                  are kept.
                 </Text>
                 <View style={styles.archiveRow}>
                   <Button
@@ -498,11 +582,8 @@ export function ComplianceTypeEditorSheet({ visible, typeId, canEdit, onClose }:
                 size="sm"
                 loading={archiving}
                 onPress={() => {
-                  if (isArchived) {
-                    handleArchiveToggle();
-                  } else {
-                    setConfirmingArchive(true);
-                  }
+                  if (isArchived) handleArchiveToggle();
+                  else setConfirmingArchive(true);
                 }}
               />
             )}
@@ -514,10 +595,7 @@ export function ComplianceTypeEditorSheet({ visible, typeId, canEdit, onClose }:
 
       {/* Footer */}
       <View
-        style={[
-          styles.footer,
-          { borderTopColor: colors.border, backgroundColor: colors.surfaceRaised },
-        ]}>
+        style={[styles.footer, { borderTopColor: colors.border, backgroundColor: colors.surfaceRaised }]}>
         <Button
           label={canEdit ? 'Cancel' : 'Close'}
           variant="secondary"
@@ -526,16 +604,94 @@ export function ComplianceTypeEditorSheet({ visible, typeId, canEdit, onClose }:
         />
         {canEdit ? (
           <Button
-            label="Save changes"
+            label={isCreate ? 'Create type' : 'Save changes'}
             variant="primary"
             loading={saving}
-            disabled={detail.isLoading || detail.isError || !type}
+            disabled={loadingDetail || detailError}
             onPress={handleSave}
             style={styles.footerBtnPrimary}
           />
         ) : null}
       </View>
     </Sheet>
+  );
+}
+
+function ReadonlySummary({
+  type,
+  version,
+  fields,
+}: {
+  type: {
+    category: string;
+    result_type: string;
+    validity_period_days: number | null;
+    capture_methods: string[];
+    form_link_expiry_days: number | null;
+    description: string | null;
+  };
+  version: { version_number: number } | null;
+  fields: ComplianceField[];
+}) {
+  const { colors } = useTheme();
+  return (
+    <>
+      <View style={[styles.readonlyBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <ReadonlyRow label="Category" value={CATEGORY_LABELS[type.category] ?? type.category} />
+        <ReadonlyRow
+          label="Result type"
+          value={RESULT_TYPE_LABELS[type.result_type] ?? type.result_type}
+        />
+        <ReadonlyRow label="Validity" value={validityLabel(type.validity_period_days)} />
+        <ReadonlyRow
+          label="Captured by"
+          value={
+            (type.capture_methods ?? []).map((m) => CAPTURE_METHOD_LABELS[m] ?? m).join(', ') || '—'
+          }
+        />
+        <ReadonlyRow
+          label="Form link expiry"
+          value={type.form_link_expiry_days != null ? `${type.form_link_expiry_days} days` : 'Venue default'}
+        />
+        {type.description ? <ReadonlyRow label="Description" value={type.description} /> : null}
+      </View>
+
+      <View style={styles.fieldBlock}>
+        <Text variant="label" tone="secondary">
+          Form fields{version ? ` (v${version.version_number})` : ''}
+        </Text>
+        {fields.length === 0 ? (
+          <Text variant="caption" tone="muted">
+            This template has no form fields.
+          </Text>
+        ) : (
+          <View style={[styles.readonlyBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            {fields.map((field, index) => (
+              <View
+                key={field.id}
+                style={[
+                  styles.fieldRow,
+                  index > 0 && {
+                    borderTopColor: colors.border,
+                    borderTopWidth: StyleSheet.hairlineWidth,
+                  },
+                ]}>
+                <View style={styles.fieldRowText}>
+                  <Text variant="bodySmall" numberOfLines={2}>
+                    {field.label}
+                  </Text>
+                  <Text variant="caption" tone="muted">
+                    {field.type}
+                    {field.required ? ' · required' : ''}
+                    {field.staff_only ? ' · staff only' : ''}
+                  </Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+      </View>
+    </>
   );
 }
 
@@ -604,10 +760,9 @@ const styles = StyleSheet.create({
     minWidth: 0,
     gap: 1,
   },
-  webNote: {
-    borderRadius: radius.md,
-    borderWidth: 1,
-    padding: spacing.md,
+  builderDivider: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    marginTop: spacing.sm,
   },
   errorBox: {
     borderRadius: radius.md,

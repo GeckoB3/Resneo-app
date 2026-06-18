@@ -33,6 +33,7 @@ import {
   toScheduleV2,
   validateSchedule,
 } from '@/components/services/ServiceCustomAvailabilityEditor';
+import { ComplianceRequirementsEditor } from '@/components/compliance/ComplianceRequirementsEditor';
 import { ServiceLocationSection, isValidMeetingUrl, normalizeMeetingUrl } from '@/components/services/ServiceLocationSection';
 import {
   ProcessingTimeBlocksEditor,
@@ -715,6 +716,9 @@ export default function ServicesScreen() {
   const toast = useToast();
   const { venue } = useVenueContext();
   const isAdmin = venue?.current_user_role === 'admin';
+  // Per-service compliance requirements editor is gated on the venue's
+  // compliance feature flag (resolved server-side) and admin role.
+  const complianceEnabled = venue?.feature_flags?.resolved?.compliance_records_enabled ?? false;
 
   const query = useManagedServices();
   const update = useUpdateService();
@@ -1679,6 +1683,16 @@ export default function ServicesScreen() {
                 admins on the web dashboard.
               </Text>
             )}
+
+            {/* Per-service compliance requirements — admin only, edit-mode only
+                (needs a saved service id), and gated on the venue's compliance
+                feature flag. Hidden entirely otherwise. */}
+            {isAdmin && complianceEnabled && editTarget ? (
+              <ComplianceRequirementsEditor
+                serviceId={editTarget.id}
+                complianceEnabled={complianceEnabled}
+              />
+            ) : null}
 
             {error ? (
               <Text variant="bodySmall" tone="danger">

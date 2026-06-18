@@ -1,8 +1,8 @@
 import { Stack } from 'expo-router';
-import * as WebBrowser from 'expo-web-browser';
-import { useCallback, useState } from 'react';
-import { Linking, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { useState } from 'react';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
+import { ComplianceLibrarySheet } from '@/components/compliance/ComplianceLibrarySheet';
 import { ComplianceTypeEditorSheet } from '@/components/compliance/ComplianceTypeEditorSheet';
 import {
   CATEGORY_LABELS,
@@ -18,56 +18,50 @@ import { Screen } from '@/components/ui/Screen';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
-import { getWebUrl } from '@/lib/env';
-import {
-  useComplianceTemplateDetailsList,
-  useDiscoveredComplianceTemplates,
-} from '@/lib/queries/useComplianceTypeManage';
+import { useComplianceTemplatesList } from '@/lib/queries/useComplianceTypeManage';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
-import { useToast } from '@/providers/ToastProvider';
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
-/** Web Settings → Compliance tab, where templates are managed. */
-const WEB_TEMPLATES_PATH = '/dashboard/settings?tab=compliance';
+/** A plan-gate is a 403 (no compliance entitlement) or 402 (payment required). */
+function isPlanGate(error: unknown): boolean {
+  return error instanceof ApiError && (error.status === 403 || error.status === 402);
+}
 
-/** Resolve a staff-dashboard URL on the configured WEB origin (prod fallback). */
-function webDashboardUrl(path: string): string {
-  const base = getWebUrl();
-  return base ? `${base}${path}` : `https://app.resneo.com${path}`;
+/** Format a per-type count suffix, e.g. "2 services · 14 records". */
+function countSummary(serviceCount?: number, recordCount?: number): string | null {
+  const parts: string[] = [];
+  if (typeof serviceCount === 'number') {
+    parts.push(`${serviceCount} service${serviceCount === 1 ? '' : 's'}`);
+  }
+  if (typeof recordCount === 'number') {
+    parts.push(`${recordCount} record${recordCount === 1 ? '' : 's'}`);
+  }
+  return parts.length ? parts.join(' · ') : null;
 }
 
 /**
- * Compliance templates — list + edit the venue's compliance form templates
- * (types). The web list/create/library/form-builder routes are cookie-only,
- * so this screen lists templates discovered from Bearer-accessible compliance
- * activity and edits them via the Bearer PATCH route; everything else points
- * to the web dashboard inline.
+ * Compliance templates — list + create + edit the venue's compliance form types.
+ * Uses the real GET /types list (complete, incl. never-used + archived, with
+ * service/record counts). Admins can create a custom type, add one from the
+ * starter library, and edit fields via the in-app form builder.
  */
 export default function ComplianceTypesScreen() {
   const { colors } = useTheme();
-  const toast = useToast();
   const staffQuery = useStaffMe();
   const isAdmin = staffQuery.data?.staff?.role === 'admin';
 
-  // In-app browser tab on the configured web origin (system-browser fallback).
-  const openWeb = useCallback(
-    (path: string) => {
-      const url = webDashboardUrl(path);
-      void WebBrowser.openBrowserAsync(url).catch(() =>
-        Linking.openURL(url).catch(() => toast.error('Could not open the browser.')),
-      );
-    },
-    [toast],
-  );
-
-  const discovery = useDiscoveredComplianceTemplates();
-  const details = useComplianceTemplateDetailsList(discovery.templates.map((t) => t.id));
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const list = useComplianceTemplatesList(true);
+  const [editorTarget, setEditorTarget] = useState<
+    { mode: 'create' } | { mode: 'edit'; id: string } | null
+  >(null);
+  const [libraryOpen, setLibraryOpen] = useState(false);
 
   const header = <Stack.Screen options={{ title: 'Compliance templates' }} />;
+  const types = list.data?.types ?? [];
+  const planGated = isPlanGate(list.error);
 
-  if (discovery.isLoading) {
+  if (list.isLoading) {
     return (
       <Screen padded={false}>
         {header}
@@ -76,7 +70,7 @@ export default function ComplianceTypesScreen() {
     );
   }
 
-  if (discovery.planGated) {
+  if (planGated) {
     return (
       <Screen>
         {header}
@@ -92,17 +86,15 @@ export default function ComplianceTypesScreen() {
     );
   }
 
-  if (discovery.isError) {
+  if (list.isError) {
     return (
       <Screen>
         {header}
         <ErrorState
           message={
-            discovery.error instanceof ApiError
-              ? discovery.error.message
-              : 'Could not load compliance templates.'
+            list.error instanceof ApiError ? list.error.message : 'Could not load compliance templates.'
           }
-          onRetry={discovery.refetch}
+          onRetry={() => void list.refetch()}
         />
       </Screen>
     );
@@ -115,41 +107,52 @@ export default function ComplianceTypesScreen() {
         <ScrollView
           contentContainerStyle={styles.content}
           refreshControl={
-            <RefreshControl refreshing={discovery.isRefetching} onRefresh={discovery.refetch} />
+            <RefreshControl refreshing={list.isRefetching} onRefresh={() => void list.refetch()} />
           }>
           <Text variant="caption" tone="muted">
             The kinds of records this venue collects — patch tests, consent forms, intake
             questionnaires.{!isAdmin ? ' Only admins can edit templates.' : ''}
           </Text>
 
-          {discovery.discoveryIncomplete ? (
-            <Text variant="caption" tone="danger">
-              Some compliance data could not be loaded — this list may be missing templates.
-            </Text>
+          {isAdmin ? (
+            <View style={styles.actionsRow}>
+              <Button
+                label="Create custom type"
+                size="sm"
+                style={styles.actionBtn}
+                onPress={() => setEditorTarget({ mode: 'create' })}
+              />
+              <Button
+                label="Add from library"
+                variant="secondary"
+                size="sm"
+                style={styles.actionBtn}
+                onPress={() => setLibraryOpen(true)}
+              />
+            </View>
           ) : null}
 
-          {discovery.templates.length === 0 ? (
-            <Card>
-              <Text variant="bodyMedium">No templates found</Text>
-              <Text variant="bodySmall" tone="secondary" style={styles.emptyText}>
-                The app finds templates through this venue&apos;s compliance activity (captured
-                records, outstanding forms and upcoming bookings). Templates that have never been
-                used — and the full list — are on the web dashboard.
-              </Text>
-            </Card>
+          {types.length === 0 ? (
+            <EmptyState
+              title="No compliance types yet"
+              message={
+                isAdmin
+                  ? 'Create a custom type or add one from the library to start collecting records.'
+                  : 'No compliance types have been set up yet.'
+              }
+            />
           ) : (
             <Card>
               <Text variant="label">Templates</Text>
               <View style={styles.list}>
-                {discovery.templates.map((template, index) => {
-                  const detailQuery = details[index];
-                  const detail = detailQuery?.data;
+                {types.map((t) => {
+                  const counts = countSummary(t.service_requirement_count, t.record_count);
                   return (
                     <Pressable
-                      key={template.id}
+                      key={t.id}
                       accessibilityRole="button"
-                      accessibilityLabel={`Edit ${detail?.type.name ?? template.name}`}
-                      onPress={() => setSelectedId(template.id)}
+                      accessibilityLabel={`${isAdmin ? 'Edit' : 'View'} ${t.name}`}
+                      onPress={() => setEditorTarget({ mode: 'edit', id: t.id })}
                       style={({ pressed }) => [
                         styles.row,
                         pressed && { backgroundColor: colors.surface },
@@ -157,27 +160,25 @@ export default function ComplianceTypesScreen() {
                       <View style={styles.rowText}>
                         <View style={styles.rowTitle}>
                           <Text variant="bodyMedium" numberOfLines={1} style={styles.rowName}>
-                            {detail?.type.name ?? template.name}
+                            {t.name}
                           </Text>
-                          {detail && !detail.type.is_active ? (
-                            <Badge label="Archived" tone="warning" />
-                          ) : null}
+                          {!t.is_active ? <Badge label="Archived" tone="warning" /> : null}
                         </View>
                         <Text variant="caption" tone="muted" numberOfLines={2}>
-                          {detail
-                            ? [
-                                CATEGORY_LABELS[detail.type.category] ?? detail.type.category,
-                                RESULT_TYPE_LABELS[detail.type.result_type] ??
-                                  detail.type.result_type,
-                                validityLabel(detail.type.validity_period_days),
-                                detail.version ? `v${detail.version.version_number}` : null,
-                              ]
-                                .filter(Boolean)
-                                .join(' · ')
-                            : detailQuery?.isError
-                              ? 'Could not load details'
-                              : 'Loading details…'}
+                          {[
+                            CATEGORY_LABELS[t.category] ?? t.category,
+                            RESULT_TYPE_LABELS[t.result_type] ?? t.result_type,
+                            validityLabel(t.validity_period_days),
+                            t.current_version_number ? `v${t.current_version_number}` : null,
+                          ]
+                            .filter(Boolean)
+                            .join(' · ')}
                         </Text>
+                        {counts ? (
+                          <Text variant="caption" tone="muted">
+                            {counts}
+                          </Text>
+                        ) : null}
                       </View>
                       <Text variant="bodyMedium" tone="muted">
                         ›
@@ -189,34 +190,23 @@ export default function ComplianceTypesScreen() {
             </Card>
           )}
 
-          {/* Web-only capabilities — cookie-authenticated routes the app can't call */}
-          <Card style={{ backgroundColor: colors.brandSubtle, borderColor: colors.brandBorder }}>
-            <Text variant="label" color={colors.brand}>
-              On the web dashboard
-            </Text>
-            <Text variant="bodySmall" tone="secondary" style={styles.webNoteText}>
-              Creating new templates, adding from the template library, editing form fields
-              (versions) and the complete template list are managed on the web dashboard. The app
-              can edit a template&apos;s settings and archive or restore it.
-            </Text>
-            <Button
-              label="Open the web dashboard"
-              variant="ghost"
-              size="sm"
-              onPress={() => openWeb(WEB_TEMPLATES_PATH)}
-              style={styles.webBtn}
-            />
-          </Card>
-
           <View style={styles.spacer} />
         </ScrollView>
       </Screen>
 
       <ComplianceTypeEditorSheet
-        visible={selectedId !== null}
-        typeId={selectedId}
+        visible={editorTarget !== null}
+        mode={editorTarget?.mode ?? 'edit'}
+        typeId={editorTarget?.mode === 'edit' ? editorTarget.id : null}
         canEdit={isAdmin}
-        onClose={() => setSelectedId(null)}
+        onClose={() => setEditorTarget(null)}
+        onSaved={() => void list.refetch()}
+      />
+
+      <ComplianceLibrarySheet
+        visible={libraryOpen}
+        onClose={() => setLibraryOpen(false)}
+        onCloned={() => void list.refetch()}
       />
     </>
   );
@@ -226,6 +216,13 @@ const styles = StyleSheet.create({
   content: {
     padding: spacing.base,
     gap: spacing.base,
+  },
+  actionsRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  actionBtn: {
+    flex: 1,
   },
   list: {
     marginTop: spacing.sm,
@@ -249,16 +246,6 @@ const styles = StyleSheet.create({
   rowName: {
     flexShrink: 1,
     minWidth: 0,
-  },
-  emptyText: {
-    marginTop: spacing.xs,
-  },
-  webNoteText: {
-    marginTop: spacing.xs,
-  },
-  webBtn: {
-    alignSelf: 'flex-start',
-    marginTop: spacing.sm,
   },
   spacer: {
     height: spacing.xl,

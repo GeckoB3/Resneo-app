@@ -415,12 +415,24 @@ export default function ComplianceScreen() {
               onRefresh={() => void dashboard.refetch()}
             />
           }>
-          <Button
-            label="Compliance templates"
-            variant="secondary"
-            size="sm"
-            onPress={() => router.push('/manage/compliance-types' as Href)}
-          />
+          <View style={styles.manageRow}>
+            <Button
+              label="Compliance templates"
+              variant="secondary"
+              size="sm"
+              style={styles.flex1}
+              onPress={() => router.push('/manage/compliance-types' as Href)}
+            />
+            {isAdmin ? (
+              <Button
+                label="Settings"
+                variant="secondary"
+                size="sm"
+                style={styles.flex1}
+                onPress={() => router.push('/manage/compliance-settings' as Href)}
+              />
+            ) : null}
+          </View>
 
           {allClear ? (
             <EmptyState
@@ -784,6 +796,10 @@ const styles = StyleSheet.create({
   enableBlock: {
     gap: spacing.sm,
     paddingHorizontal: spacing.base,
+  },
+  manageRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
   },
   todayCard: {
     // Override Card default surface color for the "act now" emphasis — done via inline style above

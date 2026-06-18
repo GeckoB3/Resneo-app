@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
-import { Badge, type BadgeTone } from '@/components/ui/Badge';
+import { Badge, CompliancePill, type ComplianceTone } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
@@ -30,17 +30,17 @@ function formatDate(iso: string | null | undefined): string {
   return d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
-function recordStatusBadge(record: {
+function recordStatusPill(record: {
   status: string;
   expires_at: string | null;
   voided_at: string | null;
-}): { label: string; tone: BadgeTone } {
-  if (record.voided_at || record.status === 'voided') return { label: 'Voided', tone: 'neutral' };
-  if (record.status === 'expired') return { label: 'Expired', tone: 'danger' };
+}): { label: string; tone: ComplianceTone } {
+  if (record.voided_at || record.status === 'voided') return { label: 'Voided', tone: 'voided' };
+  if (record.status === 'expired') return { label: 'Expired', tone: 'expired' };
   if (record.expires_at && new Date(record.expires_at).getTime() <= Date.now()) {
-    return { label: 'Expired', tone: 'danger' };
+    return { label: 'Expired', tone: 'expired' };
   }
-  return { label: 'Current', tone: 'success' };
+  return { label: 'Current', tone: 'current' };
 }
 
 /** Render a field response value to a human-readable string. */
@@ -154,7 +154,7 @@ export function ComplianceRecordSheet({ visible, onClose, recordId, onChanged }:
     );
   }
 
-  const statusBadge = record ? recordStatusBadge(record) : null;
+  const statusPill = record ? recordStatusPill(record) : null;
 
   return (
     <Sheet visible={visible} onClose={handleClose} fill maxHeight="90%">
@@ -163,7 +163,7 @@ export function ComplianceRecordSheet({ visible, onClose, recordId, onChanged }:
           <Text variant="subheading" numberOfLines={1} style={styles.headerTitle}>
             Compliance record
           </Text>
-          {statusBadge ? <Badge label={statusBadge.label} tone={statusBadge.tone} /> : null}
+          {statusPill ? <CompliancePill label={statusPill.label} tone={statusPill.tone} /> : null}
         </View>
       </View>
 

@@ -7,10 +7,11 @@ import { AvailabilityBlocksSection } from '@/components/manage/AvailabilityBlock
 import { OpeningHoursEditor } from '@/components/manage/OpeningHoursEditor';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { ConfirmSheet } from '@/components/ui/ConfirmSheet';
 import { Screen } from '@/components/ui/Screen';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
-import { ApiError } from '@/lib/api/client';
+import { ApiError, isRequiresConfirmationBody } from '@/lib/api/client';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useUpdateOpeningHours } from '@/lib/queries/useVenueSettings';
 import { useVenueContext } from '@/providers/VenueProvider';
@@ -77,6 +78,12 @@ export default function BusinessHoursScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // "Save anyway?" — when narrowing hours orphans upcoming bookings the route
+  // replies 409 `{ requires_confirmation, message }`. We surface the message in
+  // a ConfirmSheet and re-save with `acknowledge: true`. (Alert.alert's confirm
+  // is a no-op on web, so this uses the Sheet — web parity with window.confirm.)
+  const [ackConfirm, setAckConfirm] = useState<{ message: string } | null>(null);
+
   useEffect(() => {
     if (venue && draft === null) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -87,6 +94,14 @@ export default function BusinessHoursScreen() {
   // Compare canonical-to-canonical so a legacy-shape venue isn't flagged dirty on load.
   const original = JSON.stringify(canonicalizeOpeningHours(venue?.opening_hours));
   const hasChanges = draft !== null && JSON.stringify(draft) !== original;
+
+  function markSaved() {
+    hapticSuccess();
+    setSaved(true);
+    // Auto-clear the success message after 2500 ms so it doesn't linger indefinitely.
+    if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+    savedTimerRef.current = setTimeout(() => setSaved(false), 2500);
+  }
 
   async function handleSave() {
     if (!draft) return;
@@ -100,12 +115,32 @@ export default function BusinessHoursScreen() {
     }
     try {
       await update.mutateAsync(draft);
-      hapticSuccess();
-      setSaved(true);
-      // Auto-clear the success message after 2500 ms so it doesn't linger indefinitely.
-      if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
-      savedTimerRef.current = setTimeout(() => setSaved(false), 2500);
+      markSaved();
     } catch (e) {
+      // 409 with requires_confirmation → ask, then re-save acknowledged.
+      if (e instanceof ApiError && e.status === 409 && isRequiresConfirmationBody(e.body)) {
+        hapticWarning();
+        setAckConfirm({
+          message:
+            e.body.message ??
+            'Some upcoming bookings fall outside the new hours. Save these hours anyway?',
+        });
+        return;
+      }
+      hapticWarning();
+      setError(e instanceof ApiError ? e.message : 'Could not save opening hours.');
+    }
+  }
+
+  /** User confirmed the orphan-bookings warning — re-save with the acknowledge flag. */
+  async function handleConfirmAck() {
+    if (!draft) return;
+    try {
+      await update.mutateAsync({ ...draft, acknowledge: true });
+      setAckConfirm(null);
+      markSaved();
+    } catch (e) {
+      setAckConfirm(null);
       hapticWarning();
       setError(e instanceof ApiError ? e.message : 'Could not save opening hours.');
     }
@@ -203,6 +238,20 @@ export default function BusinessHoursScreen() {
           />
         </View>
       ) : null}
+
+      {/* "Save anyway?" — orphan-bookings confirmation (409 requires_confirmation). */}
+      <ConfirmSheet
+        visible={ackConfirm != null}
+        title="Save these hours anyway?"
+        message={ackConfirm?.message}
+        confirmLabel="Save anyway"
+        destructive={false}
+        loading={update.isPending}
+        onConfirm={() => void handleConfirmAck()}
+        onClose={() => {
+          if (!update.isPending) setAckConfirm(null);
+        }}
+      />
     </Screen>
   );
 }

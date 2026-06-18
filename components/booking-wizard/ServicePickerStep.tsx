@@ -90,6 +90,7 @@ export function dedupeCatalogServices(
             practitionerName: practitioner.name,
             addonGroups: service.addon_groups ?? [],
             variants: service.variants ?? [],
+            locationType: service.location_type,
           },
           fromPricePence: price,
           multiplePractitioners: false,

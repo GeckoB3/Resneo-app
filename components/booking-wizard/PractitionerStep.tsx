@@ -107,6 +107,7 @@ export function PractitionerStep({
         depositPence: service.deposit_pence ?? null,
         addonGroups: service.addon_groups ?? [],
         variants: service.variants ?? [],
+        locationType: service.location_type ?? serviceOption.locationType,
       },
     });
   }

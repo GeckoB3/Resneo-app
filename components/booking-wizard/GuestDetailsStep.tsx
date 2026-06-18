@@ -17,6 +17,11 @@ export type GuestDetails = {
   email: string;
   /** Free-text comments / requests (folded into dietary_notes on submit, web parity). */
   special_requests?: string;
+  /** Service-delivery address for at-home (`client_address`) services. */
+  address_line1?: string;
+  address_line2?: string;
+  address_city?: string;
+  address_postcode?: string;
 };
 
 type GuestDetailsStepProps = {
@@ -31,6 +36,12 @@ type GuestDetailsStepProps = {
   onPickExistingContact?: () => void;
   /** Fired when the user edits a contact field manually — clears the returning flag. */
   onClearExistingContact?: () => void;
+  /**
+   * When true, the chosen service is delivered at the client's address — show an
+   * address fieldset (line1/town/postcode required). Mirrors the web DetailsStep
+   * `collectClientAddress`.
+   */
+  collectClientAddress?: boolean;
 };
 
 const SEARCH_DEBOUNCE_MS = 280;
@@ -52,6 +63,9 @@ function guestMeta(guest: GuestListItem): string {
  * walk-ins), plus a comments box. Required fields carry a red asterisk; optional
  * ones say "(optional)". An existing-guest search fills all four contact fields.
  */
+/** Address fields whose presence is gated when collecting a client address. */
+type AddressField = 'address_line1' | 'address_city' | 'address_postcode';
+
 export function GuestDetailsStep({
   value,
   onChange,
@@ -60,9 +74,11 @@ export function GuestDetailsStep({
   readOnlyContact = false,
   onPickExistingContact,
   onClearExistingContact,
+  collectClientAddress = false,
 }: GuestDetailsStepProps) {
   const { colors } = useTheme();
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<GuestField, string>>>({});
+  const [addressErrors, setAddressErrors] = useState<Partial<Record<AddressField, string>>>({});
   const [searchInput, setSearchInput] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
 
@@ -101,6 +117,7 @@ export function GuestDetailsStep({
 
   const handleContinue = () => {
     const parsed = buildGuestSchema(isWalkIn).safeParse(value);
+    let ok = true;
     if (!parsed.success) {
       const nextErrors: Partial<Record<GuestField, string>> = {};
       for (const issue of parsed.error.issues) {
@@ -110,9 +127,25 @@ export function GuestDetailsStep({
         }
       }
       setFieldErrors(nextErrors);
-      return;
+      ok = false;
+    } else {
+      setFieldErrors({});
     }
-    setFieldErrors({});
+
+    // At-home services need an address. Staff walk-ins keep it optional so an
+    // in-person booking is never blocked (web parity with `addressSchemaFields`).
+    if (collectClientAddress && !isWalkIn) {
+      const nextAddrErrors: Partial<Record<AddressField, string>> = {};
+      if (!value.address_line1?.trim()) nextAddrErrors.address_line1 = 'Address line 1 is required';
+      if (!value.address_city?.trim()) nextAddrErrors.address_city = 'Town or city is required';
+      if (!value.address_postcode?.trim()) nextAddrErrors.address_postcode = 'Postcode is required';
+      setAddressErrors(nextAddrErrors);
+      if (Object.keys(nextAddrErrors).length > 0) ok = false;
+    } else {
+      setAddressErrors({});
+    }
+
+    if (!ok) return;
     onContinue();
   };
 
@@ -245,6 +278,67 @@ export function GuestDetailsStep({
         value={value.phone}
       />
 
+      {collectClientAddress ? (
+        <View style={styles.addressBlock}>
+          <Text variant="label" tone="secondary">
+            Service address
+          </Text>
+          <Text variant="caption" tone="muted">
+            Where should the practitioner travel to for this appointment?
+          </Text>
+          <Input
+            autoCapitalize="words"
+            autoComplete="address-line1"
+            error={addressErrors.address_line1}
+            label="Address line 1"
+            required={!isWalkIn}
+            optional={isWalkIn}
+            onChangeText={(address_line1) => onChange({ ...value, address_line1 })}
+            placeholder="Street address"
+            textContentType="streetAddressLine1"
+            value={value.address_line1 ?? ''}
+          />
+          <Input
+            autoCapitalize="words"
+            autoComplete="address-line2"
+            label="Address line 2"
+            optional
+            onChangeText={(address_line2) => onChange({ ...value, address_line2 })}
+            placeholder="Flat, building (optional)"
+            textContentType="streetAddressLine2"
+            value={value.address_line2 ?? ''}
+          />
+          <View style={styles.nameRow}>
+            <View style={styles.nameField}>
+              <Input
+                autoCapitalize="words"
+                error={addressErrors.address_city}
+                label="Town or city"
+                required={!isWalkIn}
+                optional={isWalkIn}
+                onChangeText={(address_city) => onChange({ ...value, address_city })}
+                placeholder="Town or city"
+                textContentType="addressCity"
+                value={value.address_city ?? ''}
+              />
+            </View>
+            <View style={styles.nameField}>
+              <Input
+                autoCapitalize="characters"
+                error={addressErrors.address_postcode}
+                label="Postcode"
+                required={!isWalkIn}
+                optional={isWalkIn}
+                onChangeText={(address_postcode) => onChange({ ...value, address_postcode })}
+                placeholder="Postcode"
+                textContentType="postalCode"
+                value={value.address_postcode ?? ''}
+              />
+            </View>
+          </View>
+        </View>
+      ) : null}
+
       <Input
         label="Comments or requests"
         optional
@@ -306,5 +400,8 @@ const styles = StyleSheet.create({
   },
   nameField: {
     flex: 1,
+  },
+  addressBlock: {
+    gap: spacing.base,
   },
 });

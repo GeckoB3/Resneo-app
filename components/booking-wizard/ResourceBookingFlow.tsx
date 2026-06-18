@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
 import {
@@ -30,9 +30,14 @@ import {
 import { formatDurationMinutes } from '@/lib/format';
 import { normalizePhone } from '@/lib/phone/normalize';
 import {
+  readAndClearRebookBootstrap,
+  resetRebookBootstrapGuard,
+} from '@/lib/rebook-bootstrap';
+import {
   useResourceAvailability,
   useResourceOptions,
 } from '@/lib/queries/useBookableOfferings';
+import { useResourceMonthAvailability } from '@/lib/queries/useResourceMonthAvailability';
 import { useBookingFormVenue } from '@/lib/queries/useBookingFormVenue';
 import { calendarDateInTimeZone } from '@/lib/queries/useBookingsList';
 import { useGuestDetail } from '@/lib/queries/useGuestDetail';
@@ -103,13 +108,70 @@ export function ResourceBookingFlow({ onCreated }: ResourceBookingFlowProps) {
   // date step. Runs once (guarded) so the user can still go Back to the picker.
   useEffect(() => {
     if (resourcePrefilled || !prefilledResourceId || !optionsQuery.data) return;
-    const match = optionsQuery.data.resources.find((r) => r.id === prefilledResourceId);
-    if (!match) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setSelectedResource(match);
+    setSelectedResource(optionsQuery.data.resources.find((r) => r.id === prefilledResourceId) ?? null);
     setStep('date');
     setResourcePrefilled(true);
   }, [optionsQuery.data, prefilledResourceId, resourcePrefilled]);
+
+  // Rebook bootstrap (resource surface) — pre-select the resource + duration and
+  // pre-fill the guest, then land on the date step. Guarded module-level read so
+  // it's consumed once; deep-link `?resourceId=` wins if both are present.
+  const rebookApplyRef = useRef(false);
+  useEffect(() => {
+    if (rebookApplyRef.current || resourcePrefilled || prefilledResourceId) return;
+    if (!optionsQuery.data) return;
+    void (async () => {
+      const bootstrap = await readAndClearRebookBootstrap();
+      if (!bootstrap) {
+        rebookApplyRef.current = true;
+        return;
+      }
+      if (bootstrap.guest) {
+        const g = bootstrap.guest;
+        setGuest((prev) => ({
+          ...prev,
+          first_name: typeof g.firstName === 'string' ? g.firstName : prev.first_name,
+          last_name: typeof g.lastName === 'string' ? g.lastName : prev.last_name,
+          phone: typeof g.phone === 'string' ? g.phone : prev.phone,
+          email: typeof g.email === 'string' ? g.email : prev.email,
+        }));
+        setGuestPrefilled(true);
+        setReturningGuest(true);
+      }
+      const resourceBootstrap = bootstrap.resource;
+      if (resourceBootstrap && optionsQuery.data) {
+        const match = optionsQuery.data.resources.find((r) => r.id === resourceBootstrap.resourceId);
+        if (match) {
+          setSelectedResource(match);
+          // Honour the prior duration only if it's a valid option for this resource.
+          const options = resourceDurationOptions(
+            match.min_booking_minutes,
+            match.max_booking_minutes,
+            match.slot_interval_minutes,
+          );
+          const wanted = resourceBootstrap.durationMinutes;
+          if (wanted != null && options.includes(wanted)) {
+            setDurationMinutes(wanted);
+          }
+          if (bootstrap.initialDate && /^\d{4}-\d{2}-\d{2}$/.test(bootstrap.initialDate)) {
+            setSelectedDate(bootstrap.initialDate);
+            setMonthAnchor(bootstrap.initialDate);
+          }
+          setStep('date');
+          setResourcePrefilled(true);
+        }
+      }
+      rebookApplyRef.current = true;
+    })();
+  }, [optionsQuery.data, prefilledResourceId, resourcePrefilled]);
+
+  // Clean up the one-shot guard when the flow unmounts so a later open is fresh.
+  useEffect(() => {
+    return () => {
+      resetRebookBootstrapGuard();
+    };
+  }, []);
 
   const resources = optionsQuery.data?.resources ?? [];
   const durationOptions = useMemo(
@@ -133,6 +195,22 @@ export function ResourceBookingFlow({ onCreated }: ResourceBookingFlowProps) {
     if (!selectedResource) return [];
     return availabilityQuery.data?.resources.find((r) => r.id === selectedResource.id)?.slots ?? [];
   }, [availabilityQuery.data, selectedResource]);
+
+  // Month-level availability dots for the date step. The date is chosen before a
+  // duration, so query in "any valid duration" mode (web parity); once a length
+  // is picked the time step does the precise per-slot filtering.
+  const [resMonthYear, resMonthMonth] = monthAnchor.split('-').map(Number);
+  const monthAvailabilityQuery = useResourceMonthAvailability({
+    venueId,
+    resourceId: selectedResource?.id ?? null,
+    year: resMonthYear ?? new Date().getFullYear(),
+    month: resMonthMonth ?? 1,
+    durationMinutes: null,
+    enabled: step === 'date' && !!selectedResource,
+  });
+  const resourceAvailableDates = monthAvailabilityQuery.data
+    ? new Set(monthAvailabilityQuery.data.available_dates)
+    : null;
 
   const endTime =
     selectedSlot && durationMinutes ? addMinutesToTime(selectedSlot.start_time, durationMinutes) : null;
@@ -209,7 +287,8 @@ export function ResourceBookingFlow({ onCreated }: ResourceBookingFlowProps) {
             setSelectedDate(iso);
             setSelectedSlot(null);
           }}
-          availableDates={null}
+          availableDates={resourceAvailableDates}
+          isLoading={monthAvailabilityQuery.isLoading || monthAvailabilityQuery.isFetching}
           canContinue={!!selectedDate}
           onContinue={() => setStep('duration')}
           weekShortcuts

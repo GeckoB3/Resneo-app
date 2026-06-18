@@ -3,6 +3,8 @@
  * @see _reference/reserve-ni/src/lib/availability/appointment-catalog.ts
  */
 
+import type { ServiceLocationType } from '@/types/services-manage';
+
 export interface AppointmentCatalogVariant {
   id: string;
   name: string;
@@ -52,6 +54,8 @@ export interface AppointmentCatalogService {
   min_booking_notice_hours?: number;
   /** When false, today is not bookable at all (web booking window). */
   allow_same_day_booking?: boolean;
+  /** Where the service is delivered; 'client_address' makes the guest step collect an address. */
+  location_type?: ServiceLocationType;
   variants?: AppointmentCatalogVariant[];
   addon_groups?: AppointmentCatalogAddonGroup[];
 }
@@ -81,6 +85,8 @@ export interface AppointmentServiceOption {
   practitionerName: string;
   addonGroups: AppointmentCatalogAddonGroup[];
   variants: AppointmentCatalogVariant[];
+  /** Where the service is delivered; 'client_address' triggers the address fieldset. */
+  locationType?: ServiceLocationType;
   /** Real practitioner ids backing an "any available" row (slots are merged client-side). */
   candidatePractitionerIds?: string[];
 }

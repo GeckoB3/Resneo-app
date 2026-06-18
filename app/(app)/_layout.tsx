@@ -103,6 +103,13 @@ export default function AppLayout() {
       }}>
       <Stack.Screen name="(tabs)" />
       <Stack.Screen
+        name="availability/calendars"
+        options={{
+          headerShown: true,
+          title: 'Calendars',
+        }}
+      />
+      <Stack.Screen
         name="booking/[id]"
         options={{
           headerShown: true,

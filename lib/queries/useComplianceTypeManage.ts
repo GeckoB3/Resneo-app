@@ -2,6 +2,10 @@ import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/rea
 import { useMemo } from 'react';
 
 import { ApiError, apiFetch } from '@/lib/api/client';
+import type {
+  ComplianceFormSchema as BuilderFormSchema,
+  ComplianceResultType,
+} from '@/lib/compliance/form-schema';
 import { isBackendConfigured } from '@/lib/env';
 import { keyScope, queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
@@ -11,32 +15,26 @@ import { useComplianceDashboard, useComplianceFormLinks } from '@/lib/queries/us
  * Compliance TEMPLATE (type) management — the admin-facing subset of the web
  * dashboard's Settings → Compliance → Templates & types surface.
  *
- * Auth: every /api/venue/compliance/types* route (and the library routes) now
- * uses createVenueRouteClient(request), which is Bearer + cookie capable —
- * verified in the live web working copy at C:\Resneo
- * (src/app/api/venue/compliance). The app can therefore call all of these
- * directly with a Bearer access token; none are cookie-only anymore:
+ * Auth: every /api/venue/compliance route (types, versions, library, clone,
+ * requirements) uses `createVenueRouteClient(request)` on the web — Bearer +
+ * cookie capable — so the app calls them all directly with a Bearer access
+ * token. (None are cookie-only; the previous note here was stale.) Routes used
+ * by this file, all verified in C:\Resneo/src/app/api/venue/compliance:
  *  - GET   /types[?include_archived=true]  list (any staff). Each row carries
  *                                          current_version_number +
  *                                          service_requirement_count +
  *                                          record_count (listComplianceTypesWithCounts).
- *  - POST  /types                          create a custom type (admin)
+ *  - POST  /types                          create a custom type (admin) → { type, version }
  *  - GET   /types/[id]                     detail + current form schema (any staff)
  *  - PATCH /types/[id]                     edit non-schema fields incl. is_active (admin)
- *  - POST  /types/[id]/archive | /restore  soft archive / restore (admin)
- *  - GET   /types/[id]/versions            list versions (any staff)
  *  - POST  /types/[id]/versions            publish a new form-field version (admin)
  *  - GET   /library                        built-in template library (any staff)
  *  - POST  /library/[slug]/clone           clone a library template into the venue (admin)
  *
- * Because the list route is now directly callable, the id-discovery approach in
- * useDiscoveredComplianceTemplates below (deriving ids from the dashboard /
- * form-links / records payloads) can be replaced by a direct
- * GET /types?include_archived=true query. The hooks that exercise the
- * create / version / library / clone / list routes (useCreateComplianceTemplate,
- * useCreateComplianceVersion, useComplianceLibrary, useCloneComplianceTemplate,
- * useComplianceTemplatesList) are tracked under the R7 compliance domain build;
- * today this file ships only the detail + PATCH hooks plus the discovery fallback.
+ * The real list query is `useComplianceTemplatesList` (GET /types) — it returns
+ * the COMPLETE list including never-used + archived types and per-row counts, so
+ * it supersedes the old id-discovery fallback. `useDiscoveredComplianceTemplates`
+ * is retained only as a degradation path if the list route is unavailable.
  */
 
 // ---------------------------------------------------------------------------
@@ -126,6 +124,47 @@ export interface DiscoveredComplianceTemplate {
   name: string;
 }
 
+/** One row in GET /types — the full list (incl. archived/never-used) + counts. */
+export interface ComplianceTemplateListRow {
+  id: string;
+  name: string;
+  category: string;
+  result_type: string;
+  validity_period_days: number | null;
+  capture_methods: string[];
+  form_link_expiry_days: number | null;
+  is_active: boolean;
+  current_version_number?: number | null;
+  /** Number of services that require this type. */
+  service_requirement_count?: number;
+  /** Number of captured records of this type. */
+  record_count?: number;
+}
+
+/** POST /types body — create a custom type (complianceTypeCreateSchema on the web). */
+export interface CreateComplianceTemplateInput {
+  name: string;
+  category: ComplianceTypeCategory;
+  description?: string | null;
+  result_type: ComplianceResultType;
+  validity_period_days: number | null;
+  capture_methods: ComplianceTypeCaptureMethod[];
+  form_link_expiry_days?: number | null;
+  form_schema: BuilderFormSchema;
+}
+
+/** One library starter template summary (GET /library). */
+export interface ComplianceLibraryTemplate {
+  slug: string;
+  name: string;
+  category: string;
+  result_type: string;
+  validity_period_days: number | null;
+  capture_methods: string[];
+  description?: string;
+  field_count: number;
+}
+
 // ---------------------------------------------------------------------------
 // Local query keys — keys.ts is shared with other surfaces, so compose from
 // its compliance root here instead of editing it. The detail key deliberately
@@ -138,6 +177,10 @@ const complianceTemplateKeys = {
     [...queryKeys.compliance.all(), 'recordsDiscovery', keyScope(accessToken)] as const,
   detail: (accessToken: string | null, typeId: string | null) =>
     [...queryKeys.compliance.all(), 'type', keyScope(accessToken), typeId ?? null] as const,
+  list: (accessToken: string | null, includeArchived: boolean) =>
+    [...queryKeys.compliance.all(), 'typesList', keyScope(accessToken), includeArchived] as const,
+  library: (accessToken: string | null) =>
+    [...queryKeys.compliance.all(), 'library', keyScope(accessToken)] as const,
 };
 
 // ---------------------------------------------------------------------------
@@ -318,6 +361,150 @@ export function useUpdateComplianceTemplate() {
       return apiFetch<{ type: ComplianceTemplateRow }>(
         `/api/venue/compliance/types/${input.typeId}`,
         { accessToken, method: 'PATCH', body: JSON.stringify(input.patch) },
+      );
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.compliance.all() });
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// List — the real GET /types (supersedes the discovery hack)
+// ---------------------------------------------------------------------------
+
+/**
+ * GET /api/venue/compliance/types[?include_archived=true] — the COMPLETE list of
+ * the venue's compliance types (any staff), including never-used and archived
+ * ones, each with `service_requirement_count` + `record_count`. This is the
+ * web TypesPanel's data source and replaces useDiscoveredComplianceTemplates.
+ */
+export function useComplianceTemplatesList(includeArchived = true) {
+  const accessToken = useAccessToken();
+  const enabled = isBackendConfigured() && accessToken !== null;
+
+  return useQuery({
+    queryKey: complianceTemplateKeys.list(accessToken, includeArchived),
+    enabled,
+    retry: false, // 403/402 = plan gate — don't hammer it
+    queryFn: async (): Promise<{ types: ComplianceTemplateListRow[] }> => {
+      if (!accessToken) {
+        throw new Error('Missing access token');
+      }
+      const path = includeArchived
+        ? '/api/venue/compliance/types?include_archived=true'
+        : '/api/venue/compliance/types';
+      return apiFetch<{ types: ComplianceTemplateListRow[] }>(path, { accessToken });
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Create type + publish version (admin)
+// ---------------------------------------------------------------------------
+
+/** POST /api/venue/compliance/types — create a custom type (admin). */
+export function useCreateComplianceTemplate() {
+  const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (
+      input: CreateComplianceTemplateInput,
+    ): Promise<ComplianceTemplateDetail> => {
+      if (!accessToken) {
+        throw new Error('Missing access token');
+      }
+      return apiFetch<ComplianceTemplateDetail>('/api/venue/compliance/types', {
+        accessToken,
+        method: 'POST',
+        body: JSON.stringify(input),
+      });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.compliance.all() });
+    },
+  });
+}
+
+/**
+ * POST /api/venue/compliance/types/[id]/versions — publish a new immutable form
+ * version (admin). The form builder uses this to save edited fields; the type's
+ * non-schema settings are patched separately via useUpdateComplianceTemplate.
+ */
+export function useCreateComplianceVersion() {
+  const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: {
+      typeId: string;
+      formSchema: BuilderFormSchema;
+      changelog?: string;
+      // Response is the raw service value { versionId, versionNumber } — the
+      // route returns result.value directly (not wrapped in { version }).
+    }): Promise<{ versionId: string; versionNumber: number }> => {
+      if (!accessToken) {
+        throw new Error('Missing access token');
+      }
+      return apiFetch<{ versionId: string; versionNumber: number }>(
+        `/api/venue/compliance/types/${input.typeId}/versions`,
+        {
+          accessToken,
+          method: 'POST',
+          body: JSON.stringify({ form_schema: input.formSchema, changelog: input.changelog }),
+        },
+      );
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.compliance.all() });
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Template library + clone (admin)
+// ---------------------------------------------------------------------------
+
+/** GET /api/venue/compliance/library — built-in starter templates (any staff). */
+export function useComplianceLibrary(enabled = true) {
+  const accessToken = useAccessToken();
+  const queryEnabled = enabled && isBackendConfigured() && accessToken !== null;
+
+  return useQuery({
+    queryKey: complianceTemplateKeys.library(accessToken),
+    enabled: queryEnabled,
+    retry: false,
+    staleTime: 30 * 60_000, // library is static
+    queryFn: async (): Promise<{ templates: ComplianceLibraryTemplate[] }> => {
+      if (!accessToken) {
+        throw new Error('Missing access token');
+      }
+      return apiFetch<{ templates: ComplianceLibraryTemplate[] }>(
+        '/api/venue/compliance/library',
+        { accessToken },
+      );
+    },
+  });
+}
+
+/**
+ * POST /api/venue/compliance/library/[slug]/clone — clone a library template
+ * into the venue (admin), creating a ready-to-use type. Invalidates the
+ * compliance query keys so the templates list refreshes immediately.
+ */
+export function useCloneComplianceTemplate() {
+  const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (slug: string): Promise<ComplianceTemplateDetail> => {
+      if (!accessToken) {
+        throw new Error('Missing access token');
+      }
+      return apiFetch<ComplianceTemplateDetail>(
+        `/api/venue/compliance/library/${encodeURIComponent(slug)}/clone`,
+        { accessToken, method: 'POST' },
       );
     },
     onSuccess: () => {

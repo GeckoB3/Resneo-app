@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/Input';
 import { Segmented } from '@/components/ui/Segmented';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
-import { ApiError } from '@/lib/api/client';
+import { ApiError, isApiErrorBody } from '@/lib/api/client';
 import { hapticError, hapticSuccess } from '@/lib/haptics';
 import { useInviteStaff } from '@/lib/queries/useTeamMutations';
 import { useToast } from '@/providers/ToastProvider';
@@ -23,7 +23,12 @@ type InviteStaffSheetProps = {
   visible: boolean;
   onClose: () => void;
   practitioners: AssignablePractitioner[];
+  /** Route to the Plan screen when the server rejects an invite at the seat cap. */
+  onUpgrade?: () => void;
 };
+
+/** Server code for the plan seat-cap 403 (`/api/venue/staff/invite`). */
+const PLAN_STAFF_LIMIT_CODE = 'PLAN_STAFF_LIMIT';
 
 /**
  * Bottom sheet for inviting a new staff member (admin only).
@@ -34,6 +39,7 @@ export function InviteStaffSheet({
   visible,
   onClose,
   practitioners,
+  onUpgrade,
 }: InviteStaffSheetProps) {
   const { colors } = useTheme();
   const toast = useToast();
@@ -44,6 +50,9 @@ export function InviteStaffSheet({
   const [role, setRole] = useState<StaffRole>('staff');
   const [selectedCalendarIds, setSelectedCalendarIds] = useState<string[]>([]);
   const [emailError, setEmailError] = useState<string | undefined>();
+  // Inline plan seat-cap nudge (set when the server rejects with PLAN_STAFF_LIMIT)
+  // — surfaces the upsell pattern instead of a raw error toast.
+  const [capError, setCapError] = useState<string | null>(null);
 
   const activePractitioners = practitioners.filter(
     (p) => p.is_active && (p.calendar_type ?? 'practitioner') !== 'resource',
@@ -55,6 +64,7 @@ export function InviteStaffSheet({
     setRole('staff');
     setSelectedCalendarIds([]);
     setEmailError(undefined);
+    setCapError(null);
   }
 
   function handleClose() {
@@ -79,6 +89,7 @@ export function InviteStaffSheet({
       return;
     }
     setEmailError(undefined);
+    setCapError(null);
 
     try {
       const result = await invite.mutateAsync({
@@ -101,6 +112,16 @@ export function InviteStaffSheet({
       onClose();
     } catch (err) {
       hapticError();
+      // Plan seat-cap rejection → inline upsell nudge, not a raw error toast.
+      if (
+        err instanceof ApiError &&
+        err.status === 403 &&
+        isApiErrorBody(err.body) &&
+        err.body.code === PLAN_STAFF_LIMIT_CODE
+      ) {
+        setCapError(err.message);
+        return;
+      }
       const msg =
         err instanceof ApiError ? err.message : 'Failed to send invitation. Please try again.';
       toast.error(msg);
@@ -237,6 +258,31 @@ export function InviteStaffSheet({
           </View>
         )}
 
+        {/* Plan seat-cap upsell (web parity) — shown when the server rejects the
+            invite because the tier's team-login limit is reached. */}
+        {capError && (
+          <View
+            style={[
+              styles.capBox,
+              { backgroundColor: colors.warningSurface, borderColor: colors.warning },
+            ]}>
+            <Text variant="bodySmall" color={colors.warning} style={styles.capText}>
+              {capError}
+            </Text>
+            {onUpgrade && (
+              <Button
+                label="Upgrade plan"
+                variant="secondary"
+                size="sm"
+                onPress={() => {
+                  handleClose();
+                  onUpgrade();
+                }}
+              />
+            )}
+          </View>
+        )}
+
         <View style={styles.actions}>
           <Button
             label={invite.isPending ? 'Sending…' : 'Send invitation'}
@@ -317,5 +363,15 @@ const styles = StyleSheet.create({
   actions: {
     gap: spacing.sm,
     paddingTop: spacing.xs,
+  },
+  capBox: {
+    borderRadius: radius.md,
+    borderWidth: 1,
+    padding: spacing.base,
+    gap: spacing.sm,
+    alignItems: 'flex-start',
+  },
+  capText: {
+    lineHeight: 18,
   },
 });

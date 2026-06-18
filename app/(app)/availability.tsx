@@ -1,4 +1,4 @@
-import { Stack } from 'expo-router';
+import { Stack, useRouter, type Href } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Pressable,
@@ -18,6 +18,7 @@ import { Card } from '@/components/ui/Card';
 import { Chip } from '@/components/ui/Chip';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
+import { IconButton } from '@/components/ui/IconButton';
 import { Input } from '@/components/ui/Input';
 import { Screen } from '@/components/ui/Screen';
 import { Segmented } from '@/components/ui/Segmented';
@@ -122,6 +123,7 @@ type BlockType = 'allday' | 'window';
 export default function AvailabilityScreen() {
   const { colors } = useTheme();
   const toast = useToast();
+  const router = useRouter();
   const { venue } = useVenueContext();
   const timeZone = venue?.timezone ?? 'Europe/London';
   const today = calendarDateInTimeZone(new Date(), timeZone);
@@ -135,6 +137,34 @@ export default function AvailabilityScreen() {
   const practitioners = useMemo(
     () => practitionersQuery.data?.practitioners ?? [],
     [practitionersQuery.data?.practitioners],
+  );
+
+  // Non-admins may only manage their OWN calendar's leave/blocks (web parity:
+  // StaffLeaveCalendarPanel locks calendarId to the self calendar and hides the
+  // picker). Admins manage every calendar.
+  const ownCalendarIds = useMemo(
+    () => new Set(staff?.linked_calendar_ids ?? []),
+    [staff?.linked_calendar_ids],
+  );
+  const ownsCalendar = useCallback(
+    (id: string | null | undefined) => isAdmin || (id != null && ownCalendarIds.has(id)),
+    [isAdmin, ownCalendarIds],
+  );
+  // Practitioner chips a non-admin may target (self calendars only).
+  const selectablePractitioners = useMemo(
+    () => (isAdmin ? practitioners : practitioners.filter((p) => ownCalendarIds.has(p.id))),
+    [isAdmin, practitioners, ownCalendarIds],
+  );
+
+  // Legacy per-calendar "days off" — older venues stored blocked DATES (YYYY-MM-DD)
+  // in `days_off`. Those still block booking but aren't editable here, so warn
+  // admins to re-add them as proper closures (web parity: amber legacy banner).
+  const legacyDaysOffCalendars = useMemo(
+    () =>
+      practitioners.filter((p) =>
+        (p.days_off ?? []).some((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)),
+      ),
+    [practitioners],
   );
 
   // Practitioner filter (null = all)
@@ -253,6 +283,11 @@ export default function AvailabilityScreen() {
   function openEditBlock(id: string) {
     const block = (blocksQuery.data?.blocks ?? []).find((b) => b.id === id);
     if (!block) return;
+    // Non-admins can only edit blocks on their own calendar.
+    if (!ownsCalendar(block.practitioner_id ?? block.calendar_id)) {
+      toast.error('You can only edit blocks on your own calendar.');
+      return;
+    }
     setEditingBlockId(id);
     setEditingLeaveId(null);
     setPractitionerId(block.practitioner_id ?? block.calendar_id);
@@ -265,6 +300,11 @@ export default function AvailabilityScreen() {
   }
 
   function openEditLeave(period: LeavePeriod) {
+    // Non-admins can only edit leave on their own calendar.
+    if (!ownsCalendar(period.practitioner_id)) {
+      toast.error('You can only edit leave on your own calendar.');
+      return;
+    }
     setEditingLeaveId(period.id);
     setEditingBlockId(null);
     setPractitionerId(period.practitioner_id);
@@ -453,6 +493,8 @@ export default function AvailabilityScreen() {
   // Single leave row — shared by the Upcoming and Past groups below.
   function renderLeaveRow(period: LeavePeriod) {
     const isPartial = period.unavailable_start_time && period.unavailable_end_time;
+    // Non-admins can only edit/remove leave on their own calendar.
+    const canManage = ownsCalendar(period.practitioner_id);
     return (
       <View key={period.id} style={[styles.row, { borderBottomColor: colors.border }]}>
         <View style={styles.rowBody}>
@@ -471,21 +513,23 @@ export default function AvailabilityScreen() {
             {period.notes ? ` · ${period.notes}` : ''}
           </Text>
         </View>
-        <View style={styles.rowActions}>
-          <Button label="Edit" variant="ghost" size="sm" onPress={() => openEditLeave(period)} />
-          <Button
-            label={pendingConfirm === `leave-${period.id}` ? 'Tap to confirm' : 'Remove'}
-            variant="ghost"
-            size="sm"
-            loading={deletingLeaveIds.has(period.id)}
-            disabled={deletingLeaveIds.has(period.id)}
-            onPress={() =>
-              pendingConfirm === `leave-${period.id}`
-                ? void handleDeleteLeave(period.id)
-                : armConfirm(`leave-${period.id}`)
-            }
-          />
-        </View>
+        {canManage ? (
+          <View style={styles.rowActions}>
+            <Button label="Edit" variant="ghost" size="sm" onPress={() => openEditLeave(period)} />
+            <Button
+              label={pendingConfirm === `leave-${period.id}` ? 'Tap to confirm' : 'Remove'}
+              variant="ghost"
+              size="sm"
+              loading={deletingLeaveIds.has(period.id)}
+              disabled={deletingLeaveIds.has(period.id)}
+              onPress={() =>
+                pendingConfirm === `leave-${period.id}`
+                  ? void handleDeleteLeave(period.id)
+                  : armConfirm(`leave-${period.id}`)
+              }
+            />
+          </View>
+        ) : null}
       </View>
     );
   }
@@ -493,7 +537,24 @@ export default function AvailabilityScreen() {
   // ---- Render ----------------------------------------------------------------
   return (
     <Screen scroll={false} padded={false}>
-      <Stack.Screen options={{ title: 'Availability' }} />
+      <Stack.Screen
+        options={{
+          title: 'Availability',
+          // Admin-only entry to the bookable-calendar management surface
+          // (create/rename/activate/reorder/booking-link/delete + assignments).
+          headerRight: isAdmin
+            ? () => (
+                <IconButton
+                  icon={{ ios: 'calendar.badge.plus', android: 'edit_calendar', web: 'edit_calendar' }}
+                  accessibilityLabel="Manage calendars"
+                  tint={colors.brand}
+                  iconSize={22}
+                  onPress={() => router.push('/availability/calendars' as Href)}
+                />
+              )
+            : undefined,
+        }}
+      />
 
       {isLoading ? (
         <DetailSkeleton />
@@ -523,6 +584,22 @@ export default function AvailabilityScreen() {
               }}
             />
           }>
+
+          {/* Legacy days-off migration notice (web parity) */}
+          {isAdmin && legacyDaysOffCalendars.length > 0 ? (
+            <Card style={[styles.legacyBanner, { backgroundColor: colors.warningSurface, borderColor: colors.warning }]}>
+              <Text variant="label" color={colors.warning}>
+                Legacy blocked dates
+              </Text>
+              <Text variant="caption" tone="secondary">
+                {legacyDaysOffCalendars.map((p) => p.name).join(', ')}{' '}
+                {legacyDaysOffCalendars.length === 1 ? 'has' : 'have'} blocked dates saved in an older
+                field. Those dates still block booking but can&apos;t be edited here — re-add them as
+                closures (Business hours → Closures &amp; Exceptions) or time blocks so they stay
+                visible.
+              </Text>
+            </Card>
+          ) : null}
 
           {/* Filter chips */}
           {practitioners.length > 1 ? (
@@ -583,7 +660,10 @@ export default function AvailabilityScreen() {
               <EmptyState title="No blocks" message="Blocked-out time will appear here." />
             ) : (
               <View style={styles.list}>
-                {blocks.map((block) => (
+                {blocks.map((block) => {
+                  // Non-admins can only edit/remove blocks on their own calendar.
+                  const canManage = ownsCalendar(block.practitioner_id ?? block.calendar_id);
+                  return (
                   <View key={block.id} style={[styles.row, { borderBottomColor: colors.border }]}>
                     <View style={styles.rowBody}>
                       <Text variant="bodyMedium">
@@ -595,30 +675,33 @@ export default function AvailabilityScreen() {
                         {block.reason ? ` · ${block.reason}` : ''}
                       </Text>
                     </View>
-                    <View style={styles.rowActions}>
-                      <Button
-                        label="Edit"
-                        variant="ghost"
-                        size="sm"
-                        onPress={() => openEditBlock(block.id)}
-                      />
-                      <Button
-                        label={
-                          pendingConfirm === `block-${block.id}` ? 'Tap to confirm' : 'Remove'
-                        }
-                        variant="ghost"
-                        size="sm"
-                        loading={deletingBlockIds.has(block.id)}
-                        disabled={deletingBlockIds.has(block.id)}
-                        onPress={() =>
-                          pendingConfirm === `block-${block.id}`
-                            ? void handleDeleteBlock(block.id)
-                            : armConfirm(`block-${block.id}`)
-                        }
-                      />
-                    </View>
+                    {canManage ? (
+                      <View style={styles.rowActions}>
+                        <Button
+                          label="Edit"
+                          variant="ghost"
+                          size="sm"
+                          onPress={() => openEditBlock(block.id)}
+                        />
+                        <Button
+                          label={
+                            pendingConfirm === `block-${block.id}` ? 'Tap to confirm' : 'Remove'
+                          }
+                          variant="ghost"
+                          size="sm"
+                          loading={deletingBlockIds.has(block.id)}
+                          disabled={deletingBlockIds.has(block.id)}
+                          onPress={() =>
+                            pendingConfirm === `block-${block.id}`
+                              ? void handleDeleteBlock(block.id)
+                              : armConfirm(`block-${block.id}`)
+                          }
+                        />
+                      </View>
+                    ) : null}
                   </View>
-                ))}
+                  );
+                })}
               </View>
             )}
           </Card>
@@ -741,14 +824,26 @@ export default function AvailabilityScreen() {
             </View>
           ) : null}
 
-          {/* Practitioner chips — hidden when applying to all or editing leave (can't change owner) */}
+          {/* Practitioner chips — hidden when applying to all or editing leave (can't change
+              owner). Non-admins only see their own calendar(s); a single self-calendar shows a
+              read-only label instead of a picker (web parity: locked calendarId, hidden picker). */}
           {!(sheet === 'leave' && applyToAll) && !editingLeaveId ? (
-            practitioners.length > 0 ? (
+            selectablePractitioners.length === 0 ? (
+              <Text variant="bodySmall" tone="muted">
+                {isAdmin
+                  ? 'No practitioners found. Add a calendar from the Calendars screen first.'
+                  : 'No calendar is linked to your account. Ask an admin to link one.'}
+              </Text>
+            ) : !isAdmin && selectablePractitioners.length === 1 ? (
+              <Text variant="bodySmall" tone="secondary">
+                {selectablePractitioners[0]!.name}
+              </Text>
+            ) : (
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.chipRow}>
-                {practitioners.map((p) => (
+                {selectablePractitioners.map((p) => (
                   <Chip
                     key={p.id}
                     label={p.name}
@@ -757,10 +852,6 @@ export default function AvailabilityScreen() {
                   />
                 ))}
               </ScrollView>
-            ) : (
-              <Text variant="bodySmall" tone="muted">
-                No practitioners found. Add practitioners on the web dashboard first.
-              </Text>
             )
           ) : null}
 
@@ -929,6 +1020,10 @@ const styles = StyleSheet.create({
   filterRow: {
     gap: spacing.sm,
     paddingVertical: spacing.xs,
+  },
+  legacyBanner: {
+    borderWidth: 1,
+    gap: spacing.xs,
   },
   actionRow: {
     flexDirection: 'row',

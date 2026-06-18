@@ -73,6 +73,18 @@ export function planCalendarLimit(pricingTier: string | null | undefined): numbe
   return Infinity;
 }
 
+/**
+ * Staff-login (seat) cap by tier — web `plan-limits.ts planStaffLimit`.
+ * Light = 1, Plus = 5, everything else (Pro/restaurant/founding) = unlimited.
+ * Infinity means no cap. Keep in sync with the web enforcement.
+ */
+export function planStaffLimit(pricingTier: string | null | undefined): number {
+  const t = (pricingTier ?? '').toLowerCase().trim();
+  if (t === 'light') return 1;
+  if (t === 'plus') return 5;
+  return Infinity;
+}
+
 /** Included SMS segments per month by tier — web sms-allowance.ts. */
 export function smsMonthlyAllowance(pricingTier: string | null | undefined): number {
   const t = (pricingTier ?? '').toLowerCase().trim();

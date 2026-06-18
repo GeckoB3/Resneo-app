@@ -40,10 +40,23 @@ import type {
   CreateBlockInput,
   OverridePeriod,
   PatchBlockInput,
+  YieldOverrides,
 } from '@/lib/queries/useAvailabilityBlocks';
+import { useManagedServices } from '@/lib/queries/useServicesManage';
 import { useToast } from '@/providers/ToastProvider';
+import { useVenueContext } from '@/providers/VenueProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
+
+/**
+ * Restaurant / Founding table-reservation tier (mirrors web
+ * `isRestaurantTableProductTier`). Only these tiers expose the `reduced_capacity`
+ * block type + its yield/service-scope fields; appointments venues never see it.
+ */
+function isRestaurantTableProductTier(pricingTier: string | null | undefined): boolean {
+  const t = (pricingTier ?? '').toLowerCase().trim();
+  return t === 'restaurant' || t === 'founding';
+}
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -56,7 +69,17 @@ const BLOCK_TYPE_LABELS: Record<BlockType, string> = {
   special_event: 'Special Event',
 };
 
-const BLOCK_TYPES: BlockType[] = ['closed', 'amended_hours', 'reduced_capacity', 'special_event'];
+/**
+ * Creatable block types (web parity with `blockTypeOptions`): Closure + Amended
+ * Hours always; Reduced Capacity only on the restaurant-table tier. `special_event`
+ * is intentionally NOT creatable (the web create UI never makes it) — it stays in
+ * the label/colour maps below so blocks created elsewhere still display.
+ */
+function creatableBlockTypes(isRestaurantTier: boolean): BlockType[] {
+  return isRestaurantTier
+    ? ['closed', 'amended_hours', 'reduced_capacity']
+    : ['closed', 'amended_hours'];
+}
 
 // Colour palette keys per block type (mapped from ThemeColors)
 const BLOCK_BG_KEY: Record<BlockType, string> = {
@@ -89,6 +112,13 @@ interface DraftState {
   p2Open: string;
   p2Close: string;
   override_max_covers: string;
+  /** Reduced-capacity (restaurant tier): scope to a single service, or '' = all services. */
+  service_id: string;
+  /** Reduced-capacity yield overrides (restaurant tier) — numeric strings, '' = unset. */
+  yield_max_bookings: string;
+  yield_interval: string;
+  yield_buffer: string;
+  yield_duration: string;
 }
 
 function emptyDraft(): DraftState {
@@ -108,11 +138,18 @@ function emptyDraft(): DraftState {
     p2Open: '',
     p2Close: '',
     override_max_covers: '',
+    service_id: '',
+    yield_max_bookings: '',
+    yield_interval: '',
+    yield_buffer: '',
+    yield_duration: '',
   };
 }
 
 function draftFromBlock(b: AvailabilityBlock): DraftState {
   const periods = b.override_periods ?? [];
+  const y = b.yield_overrides ?? null;
+  const num = (v: number | undefined) => (v != null ? String(v) : '');
   return {
     block_type: b.block_type,
     date_start: b.date_start,
@@ -125,6 +162,11 @@ function draftFromBlock(b: AvailabilityBlock): DraftState {
     p2Open: periods[1]?.open ?? '',
     p2Close: periods[1]?.close ?? '',
     override_max_covers: b.override_max_covers != null ? String(b.override_max_covers) : '',
+    service_id: b.service_id ?? '',
+    yield_max_bookings: num(y?.max_bookings_per_slot),
+    yield_interval: num(y?.slot_interval_minutes),
+    yield_buffer: num(y?.buffer_minutes),
+    yield_duration: num(y?.duration_minutes),
   };
 }
 
@@ -156,6 +198,23 @@ function draftToCreatePayload(d: DraftState): CreateBlockInput {
   if (d.block_type === 'reduced_capacity') {
     const max = parseInt(d.override_max_covers, 10);
     base.override_max_covers = isNaN(max) ? null : max;
+    // Scope to a single service, or leave null for "All services".
+    base.service_id = d.service_id || null;
+    // Build yield_overrides from the populated numeric fields; omit unset ones.
+    const toInt = (s: string): number | undefined => {
+      const n = parseInt(s, 10);
+      return Number.isFinite(n) && n >= 0 ? n : undefined;
+    };
+    const yo: YieldOverrides = {};
+    const mb = toInt(d.yield_max_bookings);
+    const si = toInt(d.yield_interval);
+    const bf = toInt(d.yield_buffer);
+    const du = toInt(d.yield_duration);
+    if (mb !== undefined) yo.max_bookings_per_slot = mb;
+    if (si !== undefined) yo.slot_interval_minutes = si;
+    if (bf !== undefined) yo.buffer_minutes = bf;
+    if (du !== undefined) yo.duration_minutes = du;
+    base.yield_overrides = Object.keys(yo).length > 0 ? yo : null;
   }
 
   return base;
@@ -337,9 +396,11 @@ function BlockRow({
 
 function TypeSelector({
   value,
+  options,
   onChange,
 }: {
   value: BlockType;
+  options: BlockType[];
   onChange: (t: BlockType) => void;
 }) {
   const { colors } = useTheme();
@@ -349,7 +410,7 @@ function TypeSelector({
         Type
       </Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.typeRow}>
-        {BLOCK_TYPES.map((t) => (
+        {options.map((t) => (
           <Pressable
             key={t}
             onPress={() => onChange(t)}
@@ -369,6 +430,36 @@ function TypeSelector({
         ))}
       </ScrollView>
     </View>
+  );
+}
+
+/** A single pill for the reduced-capacity "Service scope" selector. */
+function ScopeChip({
+  label,
+  selected,
+  onPress,
+}: {
+  label: string;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  const { colors } = useTheme();
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="radio"
+      accessibilityState={{ selected }}
+      style={[
+        styles.typeOption,
+        {
+          backgroundColor: selected ? colors.brand : colors.surface,
+          borderColor: selected ? colors.brand : colors.border,
+        },
+      ]}>
+      <Text variant="label" color={selected ? colors.onBrand : colors.text} numberOfLines={1}>
+        {label}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -468,18 +559,34 @@ function BlockForm({
   visible,
   editingBlock,
   prefill,
+  isRestaurantTier,
+  services,
   onClose,
 }: {
   visible: boolean;
   editingBlock: AvailabilityBlock | null;
   /** Date(s) tapped on the calendar to pre-fill a new closure. */
   prefill: { date_start: string; date_end: string } | null;
+  /** Restaurant-table tier — unlocks the reduced_capacity type + yield/scope fields. */
+  isRestaurantTier: boolean;
+  /** Services for the reduced-capacity "Service scope" picker (restaurant tier). */
+  services: { id: string; name: string }[];
   onClose: () => void;
 }) {
   const { colors } = useTheme();
   const createBlock = useCreateBlock();
   const patchBlock = usePatchBlock();
   const isSaving = createBlock.isPending || patchBlock.isPending;
+  // Creatable options; when editing a block whose type is no longer creatable
+  // (legacy special_event, or reduced_capacity off the restaurant tier) keep it
+  // visible so the editor reflects the saved type rather than dropping it.
+  const creatableTypes = useMemo(() => {
+    const base = creatableBlockTypes(isRestaurantTier);
+    if (editingBlock && !base.includes(editingBlock.block_type)) {
+      return [...base, editingBlock.block_type];
+    }
+    return base;
+  }, [isRestaurantTier, editingBlock]);
 
   const [draft, setDraft] = useState<DraftState>(emptyDraft);
   const [error, setError] = useState<string | null>(null);
@@ -543,6 +650,7 @@ function BlockForm({
 
         <TypeSelector
           value={pd.block_type}
+          options={creatableTypes}
           onChange={(t) =>
             // Seed required period-1 times when first switching to amended hours so the
             // shown defaults are actually in the draft (an OS picker can't be empty).
@@ -653,15 +761,87 @@ function BlockForm({
           </>
         ) : null}
 
-        {/* Reduced capacity */}
+        {/* Reduced capacity — covers cap, service scope, and optional yield overrides */}
         {pd.block_type === 'reduced_capacity' ? (
-          <Input
-            label="Override max covers"
-            value={pd.override_max_covers}
-            onChangeText={(v) => set({ override_max_covers: v })}
-            keyboardType="number-pad"
-            placeholder="e.g. 20"
-          />
+          <>
+            <Input
+              label="Override max covers"
+              value={pd.override_max_covers}
+              onChangeText={(v) => set({ override_max_covers: v })}
+              keyboardType="number-pad"
+              placeholder="e.g. 20"
+            />
+
+            {/* Service scope — All services or one specific service */}
+            <View style={styles.fieldWrapper}>
+              <Text variant="label" tone="secondary">
+                Service scope
+              </Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.typeRow}>
+                <ScopeChip
+                  label="All services"
+                  selected={!pd.service_id}
+                  onPress={() => set({ service_id: '' })}
+                />
+                {services.map((s) => (
+                  <ScopeChip
+                    key={s.id}
+                    label={s.name}
+                    selected={pd.service_id === s.id}
+                    onPress={() => set({ service_id: s.id })}
+                  />
+                ))}
+              </ScrollView>
+            </View>
+
+            {/* Yield overrides (all optional) */}
+            <Text variant="label" tone="secondary">
+              Yield overrides (optional)
+            </Text>
+            <View style={styles.row2}>
+              <View style={styles.halfField}>
+                <Input
+                  label="Max / slot"
+                  value={pd.yield_max_bookings}
+                  onChangeText={(v) => set({ yield_max_bookings: v })}
+                  keyboardType="number-pad"
+                  placeholder="e.g. 4"
+                />
+              </View>
+              <View style={styles.halfField}>
+                <Input
+                  label="Interval (min)"
+                  value={pd.yield_interval}
+                  onChangeText={(v) => set({ yield_interval: v })}
+                  keyboardType="number-pad"
+                  placeholder="e.g. 30"
+                />
+              </View>
+            </View>
+            <View style={styles.row2}>
+              <View style={styles.halfField}>
+                <Input
+                  label="Buffer (min)"
+                  value={pd.yield_buffer}
+                  onChangeText={(v) => set({ yield_buffer: v })}
+                  keyboardType="number-pad"
+                  placeholder="e.g. 0"
+                />
+              </View>
+              <View style={styles.halfField}>
+                <Input
+                  label="Duration (min)"
+                  value={pd.yield_duration}
+                  onChangeText={(v) => set({ yield_duration: v })}
+                  keyboardType="number-pad"
+                  placeholder="e.g. 90"
+                />
+              </View>
+            </View>
+          </>
         ) : null}
 
         {/* Reason */}
@@ -710,8 +890,21 @@ type AvailabilityBlocksSectionProps = {
 export function AvailabilityBlocksSection({ isAdmin }: AvailabilityBlocksSectionProps) {
   const { colors } = useTheme();
   const toast = useToast();
+  const { venue } = useVenueContext();
+  const isRestaurantTier = isRestaurantTableProductTier(venue?.pricing_tier);
   const { data: blocks = [], isLoading, refetch } = useAvailabilityBlocks();
   const deleteBlock = useDeleteBlock();
+
+  // Services for the reduced-capacity scope picker — only fetched on the
+  // restaurant tier (the only place the field is shown).
+  const servicesQuery = useManagedServices();
+  const scopeServices = useMemo(
+    () =>
+      isRestaurantTier
+        ? (servicesQuery.data?.services ?? []).map((s) => ({ id: s.id, name: s.name }))
+        : [],
+    [isRestaurantTier, servicesQuery.data?.services],
+  );
 
   const [sheetVisible, setSheetVisible] = useState(false);
   const [editingBlock, setEditingBlock] = useState<AvailabilityBlock | null>(null);
@@ -803,6 +996,13 @@ export function AvailabilityBlocksSection({ isAdmin }: AvailabilityBlocksSection
           <Text variant="caption" tone="muted">
             One-off closures, amended hours, and capacity changes.
           </Text>
+          {/* Restaurant tier: deeper sitting/capacity & booking-window config is web-only. */}
+          {isRestaurantTier ? (
+            <Text variant="caption" tone="muted">
+              Full sitting intervals, max-covers-by-day, turn-time and booking windows are
+              configured on the web dashboard.
+            </Text>
+          ) : null}
         </View>
       </View>
 
@@ -896,6 +1096,8 @@ export function AvailabilityBlocksSection({ isAdmin }: AvailabilityBlocksSection
         visible={sheetVisible}
         editingBlock={editingBlock}
         prefill={prefill}
+        isRestaurantTier={isRestaurantTier}
+        services={scopeServices}
         onClose={() => {
           setSheetVisible(false);
           setPrefill(null);
