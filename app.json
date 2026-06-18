@@ -27,7 +27,8 @@
       ],
       "infoPlist": {
         "NSUserNotificationsUsageDescription": "Resneo sends alerts when new bookings arrive or existing bookings change.",
-        "NSFaceIDUsageDescription": "Resneo can use Face ID to lock the app so client records stay private if your phone is left unlocked."
+        "NSFaceIDUsageDescription": "Resneo can use Face ID to lock the app so client records stay private if your phone is left unlocked.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
