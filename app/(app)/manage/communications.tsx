@@ -713,14 +713,15 @@ export default function CommunicationsScreen() {
         await updateSettings.mutateAsync(changes);
       }
       if (ownerAlertChanged) {
-        // Send only what changed; empty email → null so the server falls back to
-        // the venue profile email (web parity).
+        // Send only what changed. Send an empty string (NOT null) when cleared —
+        // the venue PATCH schema accepts '' and maps it to null server-side
+        // (it rejects a literal null), then falls back to the venue profile email.
         await updateVenue.mutateAsync({
           ...(ownerAlertEnabledChanged
             ? { owner_booking_notification_enabled: ownerAlertEnabled }
             : {}),
           ...(ownerAlertEmailChanged
-            ? { owner_booking_notification_email: ownerAlertEmail.trim() || null }
+            ? { owner_booking_notification_email: ownerAlertEmail.trim() }
             : {}),
         });
         // Refresh the bootstrap so the seeded values reflect what we just saved

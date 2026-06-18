@@ -244,8 +244,17 @@ export default function ClassProductsScreen() {
     else deleteMembership.mutate(t.id, { onSuccess, onError });
   }, [deleteTarget, deleteCredit, deleteCourse, deleteMembership, toast]);
 
-  // ----- Flag off / non-admin gates -------------------------------------
-  if (!commerceEnabled) {
+  // ----- Flag off / plan-gate / non-admin gates -------------------------
+  // A server plan-gate 403 (flag on but wrong tier / class model not exposed)
+  // is treated as "not enabled" rather than a generic error — matches the web,
+  // which redirects such venues away instead of showing an error screen.
+  const planGated = [
+    creditsQuery.error,
+    coursesQuery.error,
+    membershipsQuery.error,
+    reportsQuery.error,
+  ].some((e) => e instanceof ApiError && e.status === 403);
+  if (!commerceEnabled || planGated) {
     return (
       <Screen>
         <Stack.Screen options={{ title: 'Class products' }} />

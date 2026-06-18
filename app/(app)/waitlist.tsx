@@ -477,10 +477,6 @@ export default function WaitlistScreen() {
           } else {
             toast.success('Booking confirmed.');
           }
-          // notify_failed warning — Alert.alert is a web no-op, so toast it.
-          if (data.notify_failed) {
-            toast.error('Spot offered, but we could not email or SMS the guest. Contact them directly.');
-          }
           if (status === 'confirmed' && data.booking_id) {
             router.push(`/booking/${data.booking_id}` as Href);
           }

@@ -1,6 +1,7 @@
 import { useRouter, type Href } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -132,6 +133,7 @@ export function WaitlistAvailabilityBanner() {
     [actOnAlert, toast],
   );
 
+  const insets = useSafeAreaInsets();
   const alerts = alertsQuery.data?.alerts ?? [];
   if (!isStaffChoose || alerts.length === 0) {
     return null;
@@ -146,7 +148,8 @@ export function WaitlistAvailabilityBanner() {
       accessibilityRole="summary"
       style={[
         styles.banner,
-        { backgroundColor: colors.brandSubtle, borderBottomColor: colors.border },
+        // Sits above all screen headers in _layout — clear the status bar/notch.
+        { paddingTop: insets.top + spacing.sm, backgroundColor: colors.brandSubtle, borderBottomColor: colors.border },
       ]}>
       <View style={styles.inner}>
         <Badge label="Waitlist" tone="brand" />

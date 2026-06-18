@@ -19,6 +19,11 @@ import type { WaitlistAlert } from '@/types/waitlist';
 
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
 
+// The banner reads the top inset to clear the status bar (mounted above all headers).
+jest.mock('react-native-safe-area-context', () => ({
+  useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
+}));
+
 const mockPush = jest.fn();
 jest.mock('expo-router', () => ({
   useRouter: () => ({ push: mockPush }),
