@@ -36,6 +36,9 @@
       "autoIncrement": true,
       "channel": "production",
       "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://njualfobtudvlugqkqho.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY": "sb_publishable_faW-RDRK2CE3M7_MXCtCEQ_2-_o5myN",
+        "EXPO_PUBLIC_API_URL": "https://resneo.com",
         "SENTRY_DISABLE_AUTO_UPLOAD": "true"
       }
     }

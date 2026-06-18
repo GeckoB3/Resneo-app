@@ -1,3 +1,4 @@
+import { Redirect } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
@@ -30,11 +31,22 @@ import {
 import { useTheme } from '@/theme/useTheme';
 
 /**
- * Design-system gallery (dev-only). Visual QA for the Resneo theme + primitives.
- * Reach it from the sign-in screen's dev link, or router.push('/design-system').
- * Follows the device's light/dark setting — toggle it to verify both themes.
+ * Design-system gallery (DEV-ONLY). Visual QA for the Resneo theme + primitives.
+ * Reach it via router.push('/design-system') in a dev build. Follows the
+ * device's light/dark setting — toggle it to verify both themes.
+ *
+ * expo-router registers every file under app/ as a route regardless of __DEV__,
+ * so the default export gates on __DEV__ and redirects in release builds — the
+ * gallery body never mounts (and the route / deep link resolves to Home) in
+ * production. Gating the body, not just the <Stack.Screen> options, is what
+ * keeps the gallery out of the shipped app.
  */
 export default function DesignSystemScreen() {
+  if (!__DEV__) return <Redirect href="/" />;
+  return <DesignSystemGallery />;
+}
+
+function DesignSystemGallery() {
   const { colors, isDark } = useTheme();
 
   const [chips, setChips] = useState<Record<string, boolean>>({ All: true });
