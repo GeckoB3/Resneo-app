@@ -34,6 +34,7 @@
     },
     "production": {
       "autoIncrement": true,
+      "environment": "production",
       "channel": "production",
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://njualfobtudvlugqkqho.supabase.co",

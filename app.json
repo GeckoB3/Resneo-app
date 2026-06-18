@@ -98,7 +98,14 @@
         }
       ],
       "expo-sharing",
-      "@sentry/react-native",
+      [
+        "@sentry/react-native",
+        {
+          "organization": "resneo",
+          "project": "react-native",
+          "url": "https://de.sentry.io"
+        }
+      ],
       "expo-localization",
       "@react-native-community/datetimepicker"
     ],
