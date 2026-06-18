@@ -38,6 +38,12 @@ export interface UpdateVenueInput {
   owner_booking_notification_enabled?: boolean;
   /** Recipient for the owner booking alert; empty/null falls back to the venue email server-side. */
   owner_booking_notification_email?: string | null;
+  /**
+   * Accent colour (6-hex, with or without `#`) for the embeddable booking
+   * widget; threaded into the embed iframe `?accent=`. Empty string clears it
+   * (server normalises). See `lib/embed/embedSnippet.ts`.
+   */
+  embed_accent_colour?: string | null;
 }
 
 /** PATCH /api/venue — update venue profile basics; refreshes the bootstrap. */

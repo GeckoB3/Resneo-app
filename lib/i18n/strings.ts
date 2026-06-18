@@ -90,6 +90,22 @@ export const en = {
       mismatch: 'Passwords do not match.',
     },
   },
+
+  setPassword: {
+    title: 'Create your password',
+    description:
+      'Open this screen from the invitation or password-reset link in your email, then choose a password for your account. You can sign in with email and password next time, or keep using magic links.',
+    newLabel: 'Password',
+    newPlaceholder: 'At least 8 characters',
+    confirmLabel: 'Confirm password',
+    confirmPlaceholder: 'Re-enter password',
+    submit: 'Save password and continue',
+    success: 'Password set. Welcome to Resneo.',
+    error: 'Could not set your password. Please try again.',
+    // `{min}` is interpolated at the call site (see `t(key, params)`).
+    tooShort: 'Password must be at least {min} characters.',
+    mismatch: 'Passwords do not match.',
+  },
 } as const;
 
 /**

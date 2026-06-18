@@ -1,14 +1,40 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { parseAuthCallbackParams, type AuthCallbackParams } from '@/lib/auth/params';
+import {
+  parseAuthCallbackParams,
+  type AuthCallbackParams,
+  type SupportedOtpType,
+} from '@/lib/auth/params';
+
+/**
+ * Discriminated failure reason for an auth-callback exchange, mirroring the web
+ * `AuthErrorDetail` (`_reference/Resneo/src/lib/auth-link.ts`):
+ *   - `otp_expired`   — the link was already used / has expired / is invalid.
+ *   - `exchange_failed` — the PKCE code or OTP token could not be exchanged.
+ *   - `generic`       — no usable code/token was present at all.
+ * `callback.tsx` maps each to reason-specific copy + a "Back to sign in" action.
+ */
+export type AuthErrorReason = 'otp_expired' | 'exchange_failed' | 'generic';
 
 export type CompleteAuthSessionResult =
-  | { ok: true }
-  | { ok: false; message: string };
+  | { ok: true; otpType?: SupportedOtpType }
+  | { ok: false; reason: AuthErrorReason; message: string };
+
+/** Keyword hints that mean the link is spent/expired rather than a transport failure. */
+const OTP_EXPIRED_HINTS = [
+  'access_denied',
+  'expired',
+  'invalid',
+  'already been used',
+  'code verifier',
+  'bad code',
+] as const;
 
 /**
  * Finish sign-in from a magic-link deep link (PKCE code or OTP token hash).
- * Returns ok when a session exists or was created successfully.
+ * Returns ok when a session exists or was created successfully. On success the
+ * resolved `otpType` is surfaced so the caller can route recovery/invite links
+ * to the set-password screen.
  */
 export async function completeAuthSession(
   supabase: SupabaseClient,
@@ -17,9 +43,9 @@ export async function completeAuthSession(
 ): Promise<CompleteAuthSessionResult> {
   const params = parseAuthCallbackParams(routeParams, rawUrl);
 
-  const authError = getAuthErrorMessage(params);
+  const authError = getAuthErrorResult(params);
   if (authError) {
-    return { ok: false, message: authError };
+    return authError;
   }
 
   const {
@@ -27,15 +53,15 @@ export async function completeAuthSession(
   } = await supabase.auth.getSession();
 
   if (existingSession) {
-    return { ok: true };
+    return { ok: true, otpType: params.otpType };
   }
 
   if (params.code) {
     const { error } = await supabase.auth.exchangeCodeForSession(params.code);
     if (error) {
-      return { ok: false, message: mapExchangeError(error.message) };
+      return { ok: false, reason: classifyAuthError(error.message), message: error.message };
     }
-    return { ok: true };
+    return { ok: true, otpType: params.otpType };
   }
 
   if (params.tokenHash && params.otpType) {
@@ -44,36 +70,38 @@ export async function completeAuthSession(
       type: params.otpType,
     });
     if (error) {
-      return { ok: false, message: mapExchangeError(error.message) };
+      return { ok: false, reason: classifyAuthError(error.message), message: error.message };
     }
-    return { ok: true };
+    return { ok: true, otpType: params.otpType };
   }
 
   return {
     ok: false,
+    reason: 'generic',
     message: 'Sign-in link is invalid or has expired. Request a new magic link.',
   };
 }
 
-function getAuthErrorMessage(params: AuthCallbackParams): string | null {
+function getAuthErrorResult(
+  params: AuthCallbackParams,
+): { ok: false; reason: AuthErrorReason; message: string } | null {
   if (!params.error && !params.errorDescription) {
     return null;
   }
 
   const detail = params.errorDescription ?? params.error ?? 'Sign-in failed';
-  return mapExchangeError(detail);
+  return { ok: false, reason: classifyAuthError(detail), message: detail };
 }
 
-function mapExchangeError(message: string): string {
-  const lower = message.toLowerCase();
-  if (
-    lower.includes('expired') ||
-    lower.includes('invalid') ||
-    lower.includes('already been used') ||
-    lower.includes('code verifier')
-  ) {
-    return 'This sign-in link has expired. Request a new magic link.';
+/**
+ * Map a raw Supabase error message to a discriminated reason. Mirrors the web's
+ * `mapAuthErrorMessageToDetail` (spent-link hints → `otp_expired`, otherwise the
+ * exchange itself failed). Exported for unit tests.
+ */
+export function classifyAuthError(message: string | null | undefined): AuthErrorReason {
+  const lower = (message ?? '').toLowerCase();
+  if (OTP_EXPIRED_HINTS.some((hint) => lower.includes(hint))) {
+    return 'otp_expired';
   }
-
-  return message;
+  return 'exchange_failed';
 }

@@ -3,9 +3,10 @@ import { Image } from 'expo-image';
 import { Stack, useRouter, type Href } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Switch, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Switch, View } from 'react-native';
 
 import { BookingPagePreview } from '@/components/bookingPage/BookingPagePreview';
+import { BookingPageQrCard } from '@/components/bookingPage/BookingPageQrCard';
 import { CoverCropperSheet } from '@/components/bookingPage/CoverCropperSheet';
 import { GalleryEditorSheet } from '@/components/bookingPage/GalleryEditorSheet';
 import { LogoFramingSheet } from '@/components/bookingPage/LogoFramingSheet';
@@ -35,10 +36,16 @@ import {
   type BookingPageConfig,
   type BookingPageCoverCropBox,
   type BookingPageImageFraming,
+  type BookingTeamProfile,
 } from '@/lib/booking/bookingPageConfig';
+import {
+  buildVenueEmbedSnippet,
+  normalizeEmbedAccentHex,
+} from '@/lib/embed/embedSnippet';
 import { getWebUrl } from '@/lib/env';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useUpdateBookingPageConfig } from '@/lib/queries/useBookingPage';
+import { useSlugAvailable } from '@/lib/queries/useSlugAvailable';
 import {
   pickVenueImage,
   useUploadVenueCover,
@@ -173,6 +180,20 @@ export default function BookingPageScreen() {
   // not-yet-seeded mount can never overwrite stored config with empty state.
   const lastSavedJsonRef = useRef<string | null>(null);
 
+  // Embed accent colour (a VENUE column, separate from the booking_page_config
+  // brand colours) — drives the embed iframe `?accent=`. Autosaves via
+  // useUpdateVenue (mirrors the web WidgetSection persistAccent), debounced and
+  // compared against the last-persisted value so it never loops.
+  const [embedAccent, setEmbedAccent] = useState('');
+  const [embedAccentStatus, setEmbedAccentStatus] = useState<SaveStatus>('idle');
+  const lastSavedEmbedAccentRef = useRef<string | null>(null);
+
+  // Inline booking-page slug (co-located with the embed/URL — web parity). Edited
+  // here AND on venue-profile; both PATCH `slug` via the same endpoint.
+  const [slugInput, setSlugInput] = useState('');
+  const [slugDebounced, setSlugDebounced] = useState<string | null>(null);
+  const [slugSaveStatus, setSlugSaveStatus] = useState<SaveStatus>('idle');
+
   // Seed from the venue's stored config — once per venue id (background refetches
   // return the same id, so unsaved edits are preserved). Tab + cover defaults are
   // OPT-IN (=== true), matching the web/server (new venues: tabs off, cover contained).
@@ -197,6 +218,15 @@ export default function BookingPageScreen() {
     setCoverCropBox(cfg.cover_crop_box ?? null);
     lastSavedJsonRef.current = configJsonFromStored(cfg);
     setSaveStatus('idle');
+    // Embed accent (venue column) — seed normalised (no `#`), tracking baseline.
+    const seededAccent = normalizeEmbedAccentHex(venue.embed_accent_colour) ?? '';
+    setEmbedAccent(seededAccent);
+    lastSavedEmbedAccentRef.current = seededAccent;
+    setEmbedAccentStatus('idle');
+    // Slug (venue column) — seed the editable field + clear any pending check.
+    setSlugInput(venue.slug ?? '');
+    setSlugDebounced(null);
+    setSlugSaveStatus('idle');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [venue?.id]);
 
@@ -247,6 +277,36 @@ export default function BookingPageScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editorConfigJson, colourError, isAdmin, isLoading]);
 
+  // Embed accent: normalised current value; `null` while the field holds invalid
+  // partial input (so we don't autosave garbage). Empty field = cleared (valid).
+  const embedAccentTrimmed = embedAccent.trim();
+  const embedAccentNormalized = normalizeEmbedAccentHex(embedAccent);
+  const embedAccentInvalid = embedAccentTrimmed !== '' && embedAccentNormalized === null;
+
+  // Autosave the embed accent (a venue column) when it diverges from the last
+  // persisted value. The baseline + comparison are the NORMALISED form so typing
+  // "#" then 6 digits saves once, and a cleared field saves ''. Mirrors the web
+  // WidgetSection debounce-and-save.
+  useEffect(() => {
+    if (!isAdmin || isLoading || !venue) return;
+    if (lastSavedEmbedAccentRef.current === null) return; // not seeded
+    if (embedAccentInvalid) return;
+    const next = embedAccentNormalized ?? ''; // '' clears it
+    if (next === lastSavedEmbedAccentRef.current) return;
+    const handle = setTimeout(() => {
+      setEmbedAccentStatus('saving');
+      updateVenue
+        .mutateAsync({ embed_accent_colour: next })
+        .then(() => {
+          lastSavedEmbedAccentRef.current = next;
+          setEmbedAccentStatus('saved');
+        })
+        .catch(() => setEmbedAccentStatus('error'));
+    }, 700);
+    return () => clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [embedAccentNormalized, embedAccentInvalid, isAdmin, isLoading]);
+
   const applyPalette = (palettePrimary: string, paletteAccent: string) => {
     setPrimary(palettePrimary);
     setAccent(paletteAccent);
@@ -295,6 +355,29 @@ export default function BookingPageScreen() {
     }
   }
 
+  // Toggle the "Meet the team" tab. Web parity: turning it OFF cascades
+  // `hidden:true` onto every existing team profile (hideAllTeamProfilesOnPage) so
+  // re-enabling the tab later does not silently re-expose members who were
+  // previously visible. The tab flag itself still autosaves via the config
+  // baseline; we PATCH the cascaded team_profiles directly (a sheet-managed key
+  // the config autosave intentionally omits).
+  const handleToggleTeam = useCallback(
+    (next: boolean) => {
+      setShowTeam(next);
+      if (next) return; // turning ON never changes per-member hidden flags
+      const profiles = venue?.booking_page_config?.team_profiles;
+      if (!profiles || Object.keys(profiles).length === 0) return;
+      const hasVisible = Object.values(profiles).some((p) => p && p.hidden !== true);
+      if (!hasVisible) return; // already all hidden — nothing to cascade
+      const cascaded: Record<string, BookingTeamProfile> = {};
+      for (const [id, p] of Object.entries(profiles)) {
+        cascaded[id] = { ...(p ?? {}), hidden: true };
+      }
+      void updateConfig.mutateAsync({ team_profiles: cascaded }).catch(() => undefined);
+    },
+    [venue?.booking_page_config?.team_profiles, updateConfig],
+  );
+
   const slug = venue?.slug ?? null;
   const webBase = getWebUrl() || 'https://app.resneo.com';
   const publicUrl = slug ? `${webBase}/book/${slug}` : null;
@@ -308,6 +391,63 @@ export default function BookingPageScreen() {
     if (!publicUrl) return;
     void WebBrowser.openBrowserAsync(publicUrl).catch(() => undefined);
   }, [publicUrl]);
+
+  // ── Inline slug edit + availability ──────────────────────────────────────
+  const slugNorm = slugInput.trim().toLowerCase();
+  const currentSlug = (venue?.slug ?? '').trim().toLowerCase();
+  const slugFormatValid = slugNorm === '' || /^[a-z0-9-]{1,100}$/.test(slugNorm);
+  const slugChanged = slugNorm !== '' && slugNorm !== currentSlug;
+  // Debounce the availability query input (only for a changed, well-formed slug).
+  useEffect(() => {
+    if (!slugChanged || !slugFormatValid) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- debounce reset: clear the queued slug immediately when input is empty/invalid
+      setSlugDebounced(null);
+      return;
+    }
+    const handle = setTimeout(() => setSlugDebounced(slugNorm), 450);
+    return () => clearTimeout(handle);
+  }, [slugNorm, slugChanged, slugFormatValid]);
+  const slugAvail = useSlugAvailable(slugDebounced);
+  const slugAvailable = slugAvail.data?.available ?? null;
+  const slugCanSave =
+    isAdmin &&
+    slugChanged &&
+    slugFormatValid &&
+    slugAvailable === true &&
+    !updateVenue.isPending;
+  const handleSaveSlug = useCallback(async () => {
+    if (!slugCanSave) return;
+    setSlugSaveStatus('saving');
+    try {
+      await updateVenue.mutateAsync({ slug: slugNorm });
+      hapticSuccess();
+      setSlugSaveStatus('saved');
+      toast.success('Web address updated.');
+    } catch (e) {
+      hapticWarning();
+      setSlugSaveStatus('error');
+      toast.error(e instanceof ApiError ? e.message : 'Could not update the web address.');
+    }
+  }, [slugCanSave, slugNorm, toast, updateVenue]);
+
+  // ── Embed snippet (built from the web origin + stored slug + accent) ──────
+  const embedSnippet = useMemo(
+    () =>
+      slug
+        ? buildVenueEmbedSnippet({
+            baseUrl: webBase,
+            venueSlug: slug,
+            accentHex: embedAccentNormalized,
+          }).snippet
+        : null,
+    [slug, webBase, embedAccentNormalized],
+  );
+  const handleCopySnippet = useCallback(async () => {
+    if (!embedSnippet) return;
+    await Clipboard.setStringAsync(embedSnippet);
+    hapticSuccess();
+    toast.success('Embed code copied.');
+  }, [embedSnippet, toast]);
 
   const cfg = venue?.booking_page_config;
   const galleryCount = cfg?.gallery?.length ?? 0;
@@ -372,7 +512,7 @@ export default function BookingPageScreen() {
         announcement={announcement}
       />
 
-      {/* Public URL */}
+      {/* Public URL + inline slug editor */}
       <SectionHeader title="Your booking page" />
       <Card style={styles.card}>
         {publicUrl ? (
@@ -386,15 +526,111 @@ export default function BookingPageScreen() {
             </View>
           </>
         ) : (
-          <Text variant="bodySmall" tone="muted">Set a web address to publish your page.</Text>
+          <Text variant="bodySmall" tone="muted">Set a web address below to publish your page.</Text>
         )}
+
+        <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+        {/* Editable slug — co-located with the URL (web parity). Same PATCH as
+            venue-profile; both edit `slug`. */}
+        <Input
+          label="Web address"
+          value={slugInput}
+          onChangeText={(v) => {
+            setSlugInput(v.toLowerCase().replace(/[^a-z0-9-]/g, '-'));
+            setSlugSaveStatus('idle');
+          }}
+          autoCapitalize="none"
+          autoCorrect={false}
+          maxLength={100}
+          placeholder="my-venue"
+          helper={`/book/${slugNorm || 'my-venue'}`}
+        />
+        <SlugHint
+          changed={slugChanged}
+          formatValid={slugFormatValid}
+          checking={slugChanged && slugFormatValid && slugAvail.isFetching}
+          available={slugAvailable}
+          saved={slugSaveStatus === 'saved' && !slugChanged}
+        />
+        {slugChanged ? (
+          <Button
+            label="Save web address"
+            variant="secondary"
+            size="sm"
+            disabled={!slugCanSave}
+            loading={slugSaveStatus === 'saving'}
+            onPress={() => void handleSaveSlug()}
+          />
+        ) : null}
         <Pressable
           accessibilityRole="button"
           hitSlop={8}
           onPress={() => router.push('/manage/venue-profile' as Href)}>
-          <Text variant="caption" color={colors.brand}>Change web address →</Text>
+          <Text variant="caption" color={colors.brand}>Edit full venue profile →</Text>
         </Pressable>
       </Card>
+
+      {/* Website embed (iframe snippet + accent colour) */}
+      <SectionHeader title="Embed on your website" />
+      <Card style={styles.card}>
+        <Text variant="bodySmall" tone="secondary">
+          Paste this into your website to show your booking form in a frame that resizes to fit.
+        </Text>
+
+        <ColourField
+          label="Accent colour (optional)"
+          value={embedAccent}
+          preview={embedAccentNormalized ? `#${embedAccentNormalized}` : null}
+          onChange={(v) => {
+            setEmbedAccent(v.replace(/[^a-fA-F0-9#]/g, '').slice(0, 7));
+            setEmbedAccentStatus('idle');
+          }}
+          onReset={() => setEmbedAccent('')}
+        />
+        <Text variant="caption" tone="muted">
+          Buttons and highlights in the embedded widget. Enter a 6-digit hex — saved automatically.
+        </Text>
+        {embedAccentInvalid ? (
+          <Text variant="caption" color={colors.danger}>
+            Use a 6-digit hex like #4f46e5.
+          </Text>
+        ) : embedAccentStatus === 'saving' ? (
+          <Text variant="caption" tone="muted">Saving accent…</Text>
+        ) : embedAccentStatus === 'saved' ? (
+          <Text variant="caption" color={colors.success}>Accent colour saved.</Text>
+        ) : embedAccentStatus === 'error' ? (
+          <Text variant="caption" color={colors.danger}>Couldn’t save the accent colour.</Text>
+        ) : null}
+
+        {embedSnippet ? (
+          <>
+            <View style={[styles.codeBlock, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Text variant="caption" color={colors.textSecondary} style={styles.codeText} selectable>
+                {embedSnippet}
+              </Text>
+            </View>
+            <Button
+              label="Copy code"
+              variant="secondary"
+              size="sm"
+              onPress={() => void handleCopySnippet()}
+            />
+          </>
+        ) : (
+          <Text variant="bodySmall" tone="muted">
+            Set a web address above to generate your embed code.
+          </Text>
+        )}
+      </Card>
+
+      {/* QR code */}
+      {publicUrl ? (
+        <>
+          <SectionHeader title="QR code" />
+          <BookingPageQrCard url={publicUrl} venueName={venueName} slug={slug ?? ''} />
+        </>
+      ) : null}
 
       {/* Branding */}
       <SectionHeader title="Branding" />
@@ -472,6 +708,13 @@ export default function BookingPageScreen() {
             );
           })}
         </View>
+        {/* Simplification (audit 12, Low): rendering each chip in its own Google
+            typeface would mean bundling 11 extra @expo-google-fonts packages
+            (one per family). The chip label names the family instead; the chosen
+            font renders for real on the live page — verify via "Open page". */}
+        <Text variant="caption" tone="muted">
+          The typeface name is shown in brackets; it renders for real on your live page.
+        </Text>
       </Card>
 
       {/* Announcement */}
@@ -534,7 +777,7 @@ export default function BookingPageScreen() {
         ) : null}
 
         <View style={[styles.divider, { backgroundColor: colors.border }]} />
-        <SwitchRow label="Meet the team tab" value={showTeam} onValueChange={setShowTeam} />
+        <SwitchRow label="Meet the team tab" value={showTeam} onValueChange={handleToggleTeam} />
         {showTeam ? (
           <NavRow
             label="Team profiles"
@@ -600,6 +843,49 @@ export default function BookingPageScreen() {
       />
     </Screen>
   );
+}
+
+/** Inline availability hint under the slug field (mirrors venue-profile). */
+function SlugHint({
+  changed,
+  formatValid,
+  checking,
+  available,
+  saved,
+}: {
+  changed: boolean;
+  formatValid: boolean;
+  checking: boolean;
+  available: boolean | null;
+  saved: boolean;
+}) {
+  const { colors } = useTheme();
+  if (!formatValid) {
+    return (
+      <Text variant="caption" color={colors.danger}>
+        Use lowercase letters, numbers and hyphens only.
+      </Text>
+    );
+  }
+  if (!changed) {
+    return saved ? (
+      <Text variant="caption" color={colors.success}>This is your current web address.</Text>
+    ) : null;
+  }
+  if (checking) {
+    return <Text variant="caption" tone="muted">Checking availability…</Text>;
+  }
+  if (available === true) {
+    return <Text variant="caption" color={colors.success}>This address is available.</Text>;
+  }
+  if (available === false) {
+    return (
+      <Text variant="caption" color={colors.danger}>
+        Already taken — choose a different address.
+      </Text>
+    );
+  }
+  return null;
 }
 
 /** A hex colour input with a live preview swatch + reset. */
@@ -782,6 +1068,16 @@ const styles = StyleSheet.create({
   urlActions: {
     flexDirection: 'row',
     gap: spacing.sm,
+  },
+  codeBlock: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radius.md,
+    padding: spacing.md,
+  },
+  codeText: {
+    fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' }),
+    fontSize: 11,
+    lineHeight: 16,
   },
   paletteRow: {
     flexDirection: 'row',

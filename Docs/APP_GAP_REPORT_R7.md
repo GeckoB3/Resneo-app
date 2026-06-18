@@ -23,14 +23,14 @@
 | 07 | Resources / Floor-plan / Tables | strong | 0/0/0/4 | ⬜ | tables suite ⏭️ |
 | 08 | Availability / Hours / Closures | partial | 1/1/2/3 | ✅ | `BookableCalendarsManager` (create/reorder/slug+copy/activate/delete + plan-limit 403); 409 "Save anyway" armed-confirm; non-admin leave lock; reduced-capacity yield/scope; days-off banner. +13 tests |
 | 09 | Waitlist | strong | 0/2/2/2 | ✅ | Cross-dashboard `WaitlistAvailabilityBanner` (mounted in `_layout`); enable + slot-opens mode in booking-settings (+fixed blank-rows `RadioRow` bug); join window+notes; header Add; confirmed→booking tap-through. +47 tests |
-| 10 | Home / Reports / Referrals | partial | 0/1/2/7 | ⬜ | |
+| 10 | Home / Reports / Referrals | partial | 0/1/2/7 | 🔧 | **High done:** Refer & Earn (`refer-earn.tsx` + `useReferrals` typed to B3 route + admin settings tile, 403-hides). Home heatmap/KPI-sparkline/secondary-activity + report mediums/lows → Wave 3 (`today.tsx` lane). +8 tests |
 | 11 | Services & Add-ons | strong | 0/2/3/3 | ✅ | Non-admin staff self-service gating; per-calendar `StaffServiceOverrideSheet` + offer toggle (Bearer via B1/B2); specific-dates/date-range custom availability; inline add-calendar; add-on previews. Preserved 13's compliance editor. +33 tests |
-| 12 | Booking Page / Widget | partial | 0/1/3/3 | ⬜ | |
+| 12 | Booking Page / Widget | partial | 0/1/3/3 | ✅⚙️ | Website embed/iframe snippet (`lib/embed`) + Copy; embed accent colour (`useUpdateVenue`); **QR card** (`react-native-qrcode-svg`, ⚙️ device-test share); inline `/book/` slug w/ availability; team-tab cascade. Fonts = documented simplification. +13 tests |
 | 13 | Compliance & Intake Forms | partial | 3/4/3/2 | ✅⚙️ | Full authoring: type create + mobile field builder + per-service requirements editor + general-settings (7 ctrls) + library clone + real templates list (Bearer; stale docstring fixed); capture: drawn-signature (svg+gesture) + file picker + intro/help/defaults + date picker. +57 tests. ⚙️ device-test signature/file capture |
 | 14 | Settings / Account / Plan / Team | strong | 1/1/3/2 | ✅ | `DeleteVenueSheet` (type-to-confirm) + cancel; staff seat-cap + upgrade nudge (`planStaffLimit`); phone E.164 (`PhoneInput`); shared `useStaffAccountForm`. Trial-breakdown Low scoped down (backend doesn't expose via Bearer). Embed/QR merged into Wave 2. +14 tests |
 | 15 | Communications / Templates | strong | 0/1/1/1 | ✅ | "New booking alert" owner-email card (Switch+email→PATCH /api/venue); notification feed 60s polling. Restaurant comm-lane = intentional exclusion. +7 tests |
 | 16 | Linked Venues & Collectives | strong | 0/0/1/4 | ⬜ | |
-| 17 | Auth / Onboarding / Support | partial | 0/2/2/2 | ⬜ | set-password, onboarding |
+| 17 | Auth / Onboarding / Support | partial | 0/2/2/2 | 🔧 | **Done:** set-password screen (invite/recovery → change-password) + (auth) routing; discriminated callback errors; `claim_user_account` RPC. Onboarding wizard + setup-checklist → Wave 3 (`today.tsx` lane). +12 tests |
 | 18 | Design Language & UX | strong | 0/0/0/5 | ⬜ | folded into Foundations |
 
 _Execution plan & wave sequencing: `Docs/audit-r7/EXECUTION_PLAN.md`. Updated as each wave lands._

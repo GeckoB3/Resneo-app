@@ -93,6 +93,11 @@ function RootLayoutNav() {
         <Stack.Protected guard={!session}>
           <Stack.Screen name="(auth)" />
         </Stack.Protected>
+        {/* Set-password (invited staff + reset recipients). A top-level sibling,
+            not under (auth): the callback exchange creates a session before this
+            screen shows, which would unmount the session-gated (auth) group.
+            Reachable in either auth state so callback.tsx can route here. */}
+        <Stack.Screen name="set-password" />
         {/* Dev-only design-system gallery, reachable via the /design-system URL. */}
         {__DEV__ ? (
           <Stack.Screen

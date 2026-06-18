@@ -111,6 +111,12 @@ export const queryKeys = {
       [...queryKeys.reports.all(), keyScope(accessToken), from ?? null, to ?? null] as const,
   },
 
+  referrals: {
+    all: () => [...queryKeys.all, 'referrals'] as const,
+    dashboard: (accessToken?: string | null) =>
+      [...queryKeys.referrals.all(), 'dashboard', keyScope(accessToken)] as const,
+  },
+
   availabilityManage: {
     all: () => [...queryKeys.all, 'availabilityManage'] as const,
     blocks: (accessToken?: string | null, from?: string | null, to?: string | null) =>

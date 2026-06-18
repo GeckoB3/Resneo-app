@@ -11,7 +11,7 @@ import {
 } from 'react';
 
 import { ANALYTICS_EVENTS, identify, resetAnalytics, track } from '@/lib/analytics';
-import { getAuthCallbackRedirectUrl } from '@/lib/auth/redirect';
+import { getAuthCallbackRedirectUrl, getPasswordResetRedirectUrl } from '@/lib/auth/redirect';
 import { setObservabilityUser } from '@/lib/observability';
 import { setQueryAuthScope } from '@/lib/queries/keys';
 import { queryClient } from '@/lib/queries/queryClient';
@@ -162,6 +162,21 @@ export function AuthProvider({ children }: AuthProviderProps) {
         return { error: error.message };
       }
 
+      // Best-effort: backfill any guest/staff rows matched only by email to the
+      // now-authenticated user (matches the web resolve-next flow). Never block
+      // sign-in on a claim failure — staff are normally already linked by id.
+      try {
+        const { error: claimError } = await supabase.rpc('claim_user_account');
+        if (claimError) {
+          console.warn('[AuthProvider] claim_user_account:', claimError.message);
+        }
+      } catch (claimCaught) {
+        console.warn(
+          '[AuthProvider] claim_user_account threw:',
+          claimCaught instanceof Error ? claimCaught.message : claimCaught,
+        );
+      }
+
       return { error: null };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not sign in.';
@@ -177,9 +192,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
         return { error: parsed.error.issues[0]?.message ?? 'Enter a valid email.' };
       }
 
-      // Recovery link opens the app at /callback (add URL in Supabase redirect allow-list).
+      // Recovery link opens the app at /callback, which verifies the link and then
+      // routes to the set-password screen (add URL in Supabase redirect allow-list).
       const { error } = await supabase.auth.resetPasswordForEmail(parsed.data.email, {
-        redirectTo: getAuthCallbackRedirectUrl(),
+        redirectTo: getPasswordResetRedirectUrl(),
       });
 
       if (error) {
