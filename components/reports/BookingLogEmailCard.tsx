@@ -2,8 +2,9 @@
  * BookingLogEmailCard — enable/disable + configure the daily booking digest email.
  * Mirrors the web's BookingLogEmailSettingsPanel from ReportsView.tsx.
  */
+import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Switch, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -18,13 +19,90 @@ import type { BookingLogEmailConfig } from '@/types/reports';
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
+const DEFAULT_TIME = '17:00';
+
 const DEFAULT_SCHEDULE: { day: number; time: string }[] = [
-  { day: 1, time: '17:00' },
-  { day: 2, time: '17:00' },
-  { day: 3, time: '17:00' },
-  { day: 4, time: '17:00' },
-  { day: 5, time: '17:00' },
+  { day: 1, time: DEFAULT_TIME },
+  { day: 2, time: DEFAULT_TIME },
+  { day: 3, time: DEFAULT_TIME },
+  { day: 4, time: DEFAULT_TIME },
+  { day: 5, time: DEFAULT_TIME },
 ];
+
+/** "HH:MM" → today's Date at that wall-clock time (date part is irrelevant). */
+function timeToDate(time: string): Date {
+  const [h, m] = time.split(':').map(Number);
+  const d = new Date();
+  d.setHours(Number.isFinite(h) ? h : 17, Number.isFinite(m) ? m : 0, 0, 0);
+  return d;
+}
+
+/** Date → zero-padded 24h "HH:MM" (matches the schedule entry shape). */
+function dateToTime(date: Date): string {
+  const h = String(date.getHours()).padStart(2, '0');
+  const m = String(date.getMinutes()).padStart(2, '0');
+  return `${h}:${m}`;
+}
+
+/**
+ * A tappable send-time value backed by the OS-native time picker — the mobile
+ * analogue of the web's per-day `<input type="time">`. iOS renders the compact
+ * inline picker; Android shows the value and opens the native clock dialog.
+ */
+function TimePickerField({
+  value,
+  onChange,
+  accessibilityLabel,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  accessibilityLabel: string;
+}) {
+  const { colors } = useTheme();
+  const [open, setOpen] = useState(false);
+
+  if (Platform.OS === 'ios') {
+    return (
+      <DateTimePicker
+        value={timeToDate(value)}
+        mode="time"
+        display="compact"
+        accessibilityLabel={accessibilityLabel}
+        onChange={(_event: DateTimePickerEvent, date?: Date) => {
+          if (date) onChange(dateToTime(date));
+        }}
+      />
+    );
+  }
+
+  return (
+    <>
+      <Pressable
+        onPress={() => setOpen(true)}
+        accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel}
+        style={({ pressed }) => [
+          styles.timeField,
+          { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
+        ]}>
+        <Text variant="caption" style={styles.timeValue}>
+          {value}
+        </Text>
+      </Pressable>
+      {open ? (
+        <DateTimePicker
+          value={timeToDate(value)}
+          mode="time"
+          display="default"
+          onChange={(event: DateTimePickerEvent, date?: Date) => {
+            setOpen(false);
+            if (event.type === 'set' && date) onChange(dateToTime(date));
+          }}
+        />
+      ) : null}
+    </>
+  );
+}
 
 function normalizeConfig(
   config: BookingLogEmailConfig | null | undefined,
@@ -66,7 +144,7 @@ export function BookingLogEmailCard({
       if (enabled && !exists) {
         return {
           ...current,
-          schedule: [...current.schedule, { day, time: '17:00' }].sort(
+          schedule: [...current.schedule, { day, time: DEFAULT_TIME }].sort(
             (a, b) => a.day - b.day,
           ),
         };
@@ -79,6 +157,15 @@ export function BookingLogEmailCard({
       }
       return current;
     });
+  }
+
+  function setDayTime(day: number, time: string) {
+    setDraft((current) => ({
+      ...current,
+      schedule: current.schedule.map((entry) =>
+        entry.day === day ? { ...entry, time } : entry,
+      ),
+    }));
   }
 
   async function handleSave() {
@@ -171,10 +258,12 @@ export function BookingLogEmailCard({
                       thumbColor={colors.surfaceRaised}
                       style={styles.daySwitch}
                     />
-                    {isChecked ? (
-                      <Text variant="caption" tone="muted">
-                        {entry?.time}
-                      </Text>
+                    {isChecked && entry ? (
+                      <TimePickerField
+                        value={entry.time}
+                        onChange={(next) => setDayTime(day, next)}
+                        accessibilityLabel={`Send time for ${label}`}
+                      />
                     ) : null}
                   </View>
                 );
@@ -243,6 +332,15 @@ const styles = StyleSheet.create({
   },
   daySwitch: {
     transform: [{ scaleX: 0.75 }, { scaleY: 0.75 }],
+  },
+  timeField: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xxs,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+  },
+  timeValue: {
+    fontVariant: ['tabular-nums'],
   },
   saveButton: {
     alignSelf: 'flex-end',

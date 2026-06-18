@@ -8,11 +8,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
+  ScrollView,
   StyleSheet,
   View,
 } from 'react-native';
 
+import { GuestTagEditor } from '@/components/clients/GuestTagEditor';
 import { Button } from '@/components/ui/Button';
+import { Chip } from '@/components/ui/Chip';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Input } from '@/components/ui/Input';
@@ -23,10 +26,11 @@ import { hapticTap, hapticWarning } from '@/lib/haptics';
 import { buildAndShareCsv } from '@/lib/reports/csv-export';
 import { useGuestDetail } from '@/lib/queries/useGuestDetail';
 import { useGuests } from '@/lib/queries/useGuests';
+import { useGuestTags } from '@/lib/queries/useGuestTags';
 import { useUpdateGuest, useEraseGuest } from '@/lib/queries/useGuestMutations';
 import { formatPence } from '@/lib/format';
 import { useToast } from '@/providers/ToastProvider';
-import { radius, spacing } from '@/theme/index';
+import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { GuestListItem } from '@/types/guest-list';
 
@@ -317,20 +321,12 @@ function GuestDetail({ guestId, onErased }: { guestId: string; onErased: () => v
         </View>
       )}
 
-      {/* Tags */}
-      {guest.tags.length > 0 ? (
-        <View style={styles.tagsRow}>
-          {guest.tags.map((tag) => (
-            <View
-              key={tag}
-              style={[styles.tagChip, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <Text variant="caption" tone="secondary">
-                {tag}
-              </Text>
-            </View>
-          ))}
-        </View>
-      ) : null}
+      {/* Tags — inline add/remove with a typeahead from the venue's tags */}
+      <GuestTagEditor
+        tags={guest.tags}
+        onTagsChange={(next) => updateMutation.mutateAsync({ tags: next })}
+        disabled={updateMutation.isPending}
+      />
 
       {/* Recent booking history */}
       {history.length > 0 ? (
@@ -394,14 +390,19 @@ export function ClientsTab() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [debouncedSearch, setDebouncedSearch] = useState('');
+
+  const tagsQuery = useGuestTags();
+  const venueTags = tagsQuery.data?.tags ?? [];
 
   const guestsQuery = useGuests({
     search: debouncedSearch,
     page,
     limit: PAGE_SIZE,
     sort: 'last_visit_desc',
+    ...(tagFilter ? { segment: 'tag', segmentTag: tagFilter } : {}),
   });
 
   function handleSearchChange(text: string) {
@@ -412,6 +413,14 @@ export function ClientsTab() {
       setPage(0);
       setExpandedId(null);
     }, 400);
+  }
+
+  function handleTagPress(tag: string) {
+    hapticTap();
+    // Tapping the active tag clears the filter (toggle).
+    setTagFilter((current) => (current === tag ? null : tag));
+    setPage(0);
+    setExpandedId(null);
   }
 
   const guests = guestsQuery.data?.guests ?? [];
@@ -429,6 +438,23 @@ export function ClientsTab() {
         containerStyle={styles.searchBar}
       />
 
+      {/* Tag filter chips (venue tags) */}
+      {venueTags.length > 0 ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.tagFilterRow}>
+          {venueTags.map((tag) => (
+            <Chip
+              key={tag}
+              label={tag}
+              selected={tagFilter === tag}
+              onPress={() => handleTagPress(tag)}
+            />
+          ))}
+        </ScrollView>
+      ) : null}
+
       {/* Loading state */}
       {guestsQuery.isLoading ? (
         <View style={styles.centred}>
@@ -445,11 +471,15 @@ export function ClientsTab() {
         />
       ) : guests.length === 0 ? (
         <EmptyState
-          title={debouncedSearch ? 'No guests match your search' : 'No guests yet'}
+          title={
+            debouncedSearch || tagFilter ? 'No guests match' : 'No guests yet'
+          }
           message={
-            debouncedSearch
-              ? 'Try a different name or email.'
-              : 'Guests appear here once they have a booking.'
+            tagFilter
+              ? `No clients tagged "${tagFilter}"${debouncedSearch ? ' match your search' : ''}.`
+              : debouncedSearch
+                ? 'Try a different name or email.'
+                : 'Guests appear here once they have a booking.'
           }
         />
       ) : (
@@ -582,16 +612,10 @@ const styles = StyleSheet.create({
   profileInfo: {
     gap: spacing.xs,
   },
-  tagsRow: {
+  tagFilterRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: spacing.sm,
-  },
-  tagChip: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.pill,
-    borderWidth: 1,
+    paddingBottom: spacing.xs,
   },
   historySection: {
     gap: spacing.sm,

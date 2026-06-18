@@ -26,6 +26,12 @@ import { calendarDateInTimeZone } from '@/lib/queries/useBookingsList';
 import { useReports } from '@/lib/queries/useReports';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { buildAndShareCsv, aggregateSourcesByLabel } from '@/lib/reports/csv-export';
+import {
+  buildModelBreakdownCsvRows,
+  modelDepositDisplay,
+  modelRowLabel,
+  visibleModelRows,
+} from '@/lib/reports/report-by-model';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { minTouchTarget, radius, spacing } from '@/theme/index';
@@ -198,6 +204,14 @@ export default function ReportsScreen() {
   const bookingLogConfig = data?.booking_log_email_config;
   const defaultLogEmail = data?.default_booking_log_email;
 
+  // Per-booking-model breakdown — only meaningful for multi-model venues.
+  const enabledModels = data?.enabled_models ?? [];
+  const isMultiModel = enabledModels.length > 1;
+  const modelRows = useMemo(
+    () => (isMultiModel ? visibleModelRows(data?.report_by_booking_model) : []),
+    [isMultiModel, data?.report_by_booking_model],
+  );
+
   // Determine if this is an appointment venue
   const isAppointmentVenue =
     data?.booking_model === 'practitioner_appointment' ||
@@ -320,6 +334,19 @@ export default function ReportsScreen() {
     }
     toast.success('Export started.');
   }, [insights, data, toast]);
+
+  const exportModelBreakdown = useCallback(async () => {
+    if (!modelRows.length || !data) return;
+    const result = await buildAndShareCsv(
+      `report-by-model-${data.from}-${data.to}.csv`,
+      buildModelBreakdownCsvRows(modelRows),
+    );
+    if (!result.ok) {
+      toast.error('Could not export the report.');
+      return;
+    }
+    toast.success('Export started.');
+  }, [modelRows, data, toast]);
 
   const header = <Stack.Screen options={{ title: 'Reports' }} />;
 
@@ -582,6 +609,64 @@ export default function ReportsScreen() {
                       />
                     </View>
                   ) : null}
+                </Card>
+              ) : null}
+
+              {/* Per-booking-model breakdown (multi-model venues only) */}
+              {isMultiModel && modelRows.length > 0 ? (
+                <Card>
+                  <CardHeader
+                    title="By booking type"
+                    onExport={exportModelBreakdown}
+                    exportDisabled={modelRows.length === 0}
+                  />
+                  <View style={[styles.modelTable, { borderColor: colors.border }]}>
+                    <View
+                      style={[
+                        styles.modelHeader,
+                        { borderBottomColor: colors.border, backgroundColor: colors.surface },
+                      ]}>
+                      <Text variant="caption" tone="muted" style={styles.modelNameCol}>
+                        Type
+                      </Text>
+                      <Text variant="caption" tone="muted" style={styles.modelNumCol}>
+                        Bookings
+                      </Text>
+                      <Text variant="caption" tone="muted" style={styles.modelNumCol}>
+                        Done
+                      </Text>
+                      <Text variant="caption" tone="muted" style={styles.modelMoneyCol}>
+                        Deposits
+                      </Text>
+                    </View>
+                    {modelRows.map((row) => (
+                      <View
+                        key={row.booking_model}
+                        style={[styles.modelRow, { borderBottomColor: colors.border }]}>
+                        <Text
+                          variant="bodySmall"
+                          numberOfLines={1}
+                          style={styles.modelNameCol}>
+                          {modelRowLabel(row)}
+                        </Text>
+                        <Text
+                          variant="bodySmall"
+                          style={[styles.modelNumCol, styles.modelNum]}>
+                          {row.booking_count}
+                        </Text>
+                        <Text
+                          variant="bodySmall"
+                          style={[styles.modelNumCol, styles.modelNum]}>
+                          {row.completed_count}
+                        </Text>
+                        <Text
+                          variant="bodySmall"
+                          style={[styles.modelMoneyCol, styles.modelNum]}>
+                          {modelDepositDisplay(row)}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
                 </Card>
               ) : null}
 
@@ -980,6 +1065,39 @@ const styles = StyleSheet.create({
   addonRevCol: {
     width: 72,
     textAlign: 'right',
+  },
+  modelTable: {
+    marginTop: spacing.sm,
+    borderRadius: radius.sm,
+    overflow: 'hidden',
+    borderWidth: 1,
+  },
+  modelHeader: {
+    flexDirection: 'row',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderBottomWidth: 1,
+  },
+  modelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+  },
+  modelNameCol: {
+    flex: 2,
+  },
+  modelNumCol: {
+    width: 64,
+    textAlign: 'right',
+  },
+  modelMoneyCol: {
+    width: 80,
+    textAlign: 'right',
+  },
+  modelNum: {
+    fontVariant: ['tabular-nums'],
   },
   clientsContent: {
     marginTop: spacing.sm,

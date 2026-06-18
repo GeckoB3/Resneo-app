@@ -13,17 +13,17 @@
 | # | Domain | Parity (start) | Gaps C/H/M/L | Status | Notes |
 |---|--------|----------------|--------------|--------|-------|
 | F | Foundations (shared types + primitives) | — | — | ✅ | venue.ts + practitioner/availability types widened; `ApiError` 409 `acknowledge` threading; SecureStore `usePersistedCalendarPrefs`; new `SectionCard`/`HelpTooltip`/`StatTile`+`MiniSparkline`/`CompliancePill`/shimmer `Skeleton`/`PhoneInput`; +35 tests. No new deps. |
-| B | Backend prerequisites (`C:\Resneo`) | — | — | ✅⚠️ | B1 overrides + B2 practitioner-services → Bearer; B3 `referrals` GET created; web typecheck clean. **Uncommitted in `C:\Resneo` — needs your commit + deploy.** Audit's other backend prereqs were already done (stale premise). |
+| B | Backend prerequisites (`C:\Resneo`) | — | — | ✅⚠️ | B1 overrides + B2 practitioner-services → Bearer; B3 `referrals` GET created; B4 `requireImportAdmin` → Bearer (all import routes). web typecheck clean. **Uncommitted in `C:\Resneo` — needs your commit + deploy.** Audit's other backend prereqs were already done (stale premise). |
 | 01 | Navigation & IA | strong | 0/1/3/2 | ✅ | Un-gated model rows (Classes/Events/Resources for staff); import-contacts link-out; settings search keywords; Compliance/Waitlist eligibility gating. Today button → see 02. +20 tests |
 | 02 | Calendar / Diary | strong | 0/0/5/2 | ✅ | Visible-window control (`computeGridBounds` override + `TimeRangeControl`); SecureStore prefs hydration (F5); month-grid enrichment (dots/heatmap/open-closed/linked); empty-slot Walk-in + resource; week "All" `WeekMatrixGrid`; Today header button. +82 calendar tests |
 | 03 | Bookings — list & detail | strong | 0/0/2/6 | ✅ | Summary stats strip; multi-service-visit row collapse (`collapseMultiServiceVisits`); deposit amount on row pill; "New for guest" + guest-history per-row rebook. +19 tests |
 | 04 | New booking wizard | partial | 2/1/4/2 | ✅⚙️ | multi-service + group (public `/create-multi-service` & `/create-group`, server-side rollback); client-address, `?tab=` deep-link+reset, rebook resource shapes, resource date dots. **Stripe High DEFERRED** (needs Connect config + product call; extension point left). +30 tests |
-| 05 | Clients / Contacts / Import | strong | 0/1/1/5 | ✅⚠️ | Import link-out (Contacts + empty-state); `RecentImportsSection` (undo) — **degrades read-only: import-sessions web routes still cookie-only** (one-line Bearer migration flagged for `C:\Resneo`); filter hints; bulk-message = consent-safe broadcast (documented). +22 tests |
+| 05 | Clients / Contacts / Import | strong | 0/1/1/5 | ✅ | Import link-out (Contacts + empty-state); `RecentImportsSection` + undo (import-sessions routes **now Bearer** via `requireImportAdmin` migration — works once `C:\Resneo` deploys); filter hints; bulk-message = consent-safe broadcast (documented). +22 tests |
 | 06 | Classes & Events | strong | 0/2/1/5 | ✅ | `class-products` screen (credit/course/membership CRUD) + `CourseEnrollmentsSheet` (cancel+refund); class month grid; type filter + stats bar; event booking-link; cancel-session-notify. +17 tests |
 | 07 | Resources / Floor-plan / Tables | strong | 0/0/0/4 | ✅ | Resource reorder (sort_order up/down); per-field `HelpTooltip`s (web copy); expandable read-only detail (weekly hours + exceptions). Restaurant tables suite = ⏭️ documented exclusion. +7 tests |
 | 08 | Availability / Hours / Closures | partial | 1/1/2/3 | ✅ | `BookableCalendarsManager` (create/reorder/slug+copy/activate/delete + plan-limit 403); 409 "Save anyway" armed-confirm; non-admin leave lock; reduced-capacity yield/scope; days-off banner. +13 tests |
 | 09 | Waitlist | strong | 0/2/2/2 | ✅ | Cross-dashboard `WaitlistAvailabilityBanner` (mounted in `_layout`); enable + slot-opens mode in booking-settings (+fixed blank-rows `RadioRow` bug); join window+notes; header Add; confirmed→booking tap-through. +47 tests |
-| 10 | Home / Reports / Referrals | partial | 0/1/2/7 | 🔧 | **Done:** Refer & Earn (+ admin tile, 403-hides); Home 7-day `HeatmapWeek`; KPI inline sparkline (`StatTile`/`MiniSparkline`); secondary-activity section. report-detail lows (reports→clients tags, per-model breakdown, booking-log per-day time) → Wave 4. +30 tests |
+| 10 | Home / Reports / Referrals | partial | 0/1/2/7 | ✅ | Refer & Earn; Home `HeatmapWeek`; KPI sparkline; secondary activity; reports→clients editable tags + tag filter; per-booking-model breakdown + CSV; booking-log per-day send time. Referee trial-credit banner skipped (no payload field — ties to referrals backend). +47 tests |
 | 11 | Services & Add-ons | strong | 0/2/3/3 | ✅ | Non-admin staff self-service gating; per-calendar `StaffServiceOverrideSheet` + offer toggle (Bearer via B1/B2); specific-dates/date-range custom availability; inline add-calendar; add-on previews. Preserved 13's compliance editor. +33 tests |
 | 12 | Booking Page / Widget | partial | 0/1/3/3 | ✅⚙️ | Website embed/iframe snippet (`lib/embed`) + Copy; embed accent colour (`useUpdateVenue`); **QR card** (`react-native-qrcode-svg`, ⚙️ device-test share); inline `/book/` slug w/ availability; team-tab cascade. Fonts = documented simplification. +13 tests |
 | 13 | Compliance & Intake Forms | partial | 3/4/3/2 | ✅⚙️ | Full authoring: type create + mobile field builder + per-service requirements editor + general-settings (7 ctrls) + library clone + real templates list (Bearer; stale docstring fixed); capture: drawn-signature (svg+gesture) + file picker + intro/help/defaults + date picker. +57 tests. ⚙️ device-test signature/file capture |
@@ -31,9 +31,30 @@
 | 15 | Communications / Templates | strong | 0/1/1/1 | ✅ | "New booking alert" owner-email card (Switch+email→PATCH /api/venue); notification feed 60s polling. Restaurant comm-lane = intentional exclusion. +7 tests |
 | 16 | Linked Venues & Collectives | strong | 0/0/1/4 | ✅ | Live `BookingPagePreview` in combined-page editor; logo/cover crop reuse; audit custom date range + CSV share; first-run onboarding explainer. +10 tests |
 | 17 | Auth / Onboarding / Support | partial | 0/2/2/2 | ✅ | set-password screen + (auth) routing; discriminated callback errors; `claim_user_account` RPC; onboarding-aware `SetupChecklistCard` (model-driven steps + progress, pinned pre-onboarding). Hard onboarding-wizard route = Phase 2 (deferred). Invite Universal Links = platform deferral. +12 tests |
-| 18 | Design Language & UX | strong | 0/0/0/5 | ⬜ | folded into Foundations |
+| 18 | Design Language & UX | strong | 0/0/0/5 | ✅ | Delivered via Foundations (F4) + adoption: shimmer `Skeleton`; `CompliancePill` tones (adopted in 13); `StatTile`+`MiniSparkline` (adopted in 10); `SectionCard` primitive; `HelpTooltip` (adopted in 07). Broad SectionCard migration = opportunistic. |
 
 _Execution plan & wave sequencing: `Docs/audit-r7/EXECUTION_PLAN.md`. Updated as each wave lands._
+
+### ✅ Implementation complete — all 18 domains addressed
+
+All 7 critical, 20 high, 38 medium and 61 low gaps were worked through Waves F → 4, each wave gated by `typecheck + lint + jest` (**~800 tests, all passing; typecheck & lint clean**) and an adversarial QC pass. Verified on every gate: **0 typecheck errors, 0 lint errors.** Cannot run on a device here (no Android emulator; web preview is light-only) — see the device-test list below.
+
+**Backend changes pending in `C:\Resneo` (uncommitted — need your review + commit + deploy):**
+- **B1** `practitioner-service-overrides` PATCH → Bearer (`createVenueRouteClient`)
+- **B2** `practitioner-services` PUT → Bearer
+- **B3** new `GET /api/venue/referrals` (Bearer) wrapping `loadReferralsDashboardForVenue`
+- **B4** `requireImportAdmin` → `createRouteHandlerClientFromHeaders` (makes all `/api/import/*` routes Bearer-capable)
+
+Until deployed, Refer & Earn and Recent-Imports degrade gracefully (hide / read-only) rather than error.
+
+**Deferred / out of scope (by design or needing a decision):**
+- **Stripe in-app card capture (04, High):** needs Stripe Connect provisioning (publishable key + connected-account) that can't be set up/tested here; the payment-link model remains the default and a `ConfirmStep`/`GroupBookingFlow` extension point is in place for when keys land. **Product decision needed.**
+- **Invite Universal Links / tap-to-open deep links (17):** platform deferral (needs domain association) — consistent with the existing linked-venues deep-link deferral. In-app password reset works.
+- **Hard onboarding-wizard route (17):** Phase 2 — the pinned, model-aware `SetupChecklistCard` is the first-run surface for now.
+- **Native CSV contact importer (05):** v1 is a link-out to the web importer.
+- **Restaurant tables / floor-plan / table-grid suite (07):** intentional appointments-first exclusion; Settings → Tables link-out retained.
+
+**⚙️ Needs an on-device smoke test before production** (logic is unit-tested; native/runtime paths can't be exercised here): QR-code share (`react-native-qrcode-svg` SVG→PNG→share), compliance drawn-signature (svg `toDataURL`) + document-picker, and a general first-run pass of the new screens on a real build.
 
 ## Executive summary
 
