@@ -37,9 +37,13 @@ type TimeSlotStepProps = {
   selectedSlot: AppointmentSlot | null;
   onSelectSlot: (slot: AppointmentSlot) => void;
   onContinue: () => void;
-  /** Walk-in flow on today's date — offer a "Start now" shortcut to the nearest slot. */
+  /** Walk-in flow on today's date — show a "Start Now" button that starts the
+   *  appointment at the current time (bypassing slot selection). */
   startNow?: boolean;
-  /** Venue IANA timezone, for computing the current local time on "Start now". */
+  /** Walk-in shortcut — books the appointment at the current time (no slot pick).
+   *  Mirrors the date picker's button so both entry points behave identically. */
+  onStartNow?: (todayIso: string) => void;
+  /** Venue IANA timezone, for the same-day cutoff and the "Start Now" date. */
   timeZone?: string;
   /** Minimum lead time (hours) — same-day slots earlier than now + this are hidden. */
   minBookingNoticeHours?: number;
@@ -139,6 +143,7 @@ export function TimeSlotStep({
   onSelectSlot,
   onContinue,
   startNow = false,
+  onStartNow,
   timeZone = 'Europe/London',
   minBookingNoticeHours = 1,
   allowSameDayBooking = true,
@@ -249,21 +254,6 @@ export function TimeSlotStep({
     return <ErrorState message={message} onRetry={retry} />;
   }
 
-  // Walk-in "Start now": pick the earliest slot at/after the venue's current
-  // local time (falls back to the first slot of the day if all have passed).
-  const handleStartNow = () => {
-    // Prefer what's actually shown (visibleSlots); fall back to the full set so
-    // a walk-in can still start when same-day notice has hidden everything.
-    const pool = visibleSlots.length > 0 ? visibleSlots : slots;
-    if (pool.length === 0) return;
-    const nowStr = venueLocalTime(timeZone);
-    const match = pool.find((slot) => slot.start_time.slice(0, 5) >= nowStr) ?? pool[0];
-    if (match) {
-      hapticSelect();
-      onSelectSlot(match);
-    }
-  };
-
   return (
     <View style={styles.container}>
       <View style={styles.titleRow}>
@@ -271,8 +261,13 @@ export function TimeSlotStep({
         {isFetching ? <ActivityIndicator color={colors.brand} /> : null}
       </View>
 
-      {startNow && slots.length > 0 ? (
-        <Button label="Start now" variant="secondary" fullWidth onPress={handleStartNow} />
+      {startNow ? (
+        <Button
+          label="Start Now"
+          variant="primary"
+          fullWidth
+          onPress={() => onStartNow?.(venueTodayDate(timeZone))}
+        />
       ) : null}
 
       {visibleSlots.length === 0 ? (

@@ -59,12 +59,12 @@ describe('MonthDatePicker', () => {
     expect(screen.getByText('Continue')).toBeTruthy();
   });
 
-  it('hides "Start Appointment Now" for phone bookings', async () => {
+  it('hides "Start Now" for phone bookings', async () => {
     await render(<MonthDatePicker {...baseProps} source="phone" onStartNow={jest.fn()} />);
-    expect(screen.queryByText('Start Appointment Now')).toBeNull();
+    expect(screen.queryByText('Start Now')).toBeNull();
   });
 
-  it('shows "Start Appointment Now" for a walk-in and fires onStartNow with today', async () => {
+  it('shows "Start Now" for a walk-in and fires onStartNow with today', async () => {
     const onStartNow = jest.fn();
     await render(
       <MonthDatePicker
@@ -74,7 +74,7 @@ describe('MonthDatePicker', () => {
         onStartNow={onStartNow}
       />,
     );
-    await press(() => screen.getByText('Start Appointment Now'));
+    await press(() => screen.getByText('Start Now'));
     expect(onStartNow).toHaveBeenCalledTimes(1);
     expect(onStartNow).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/));
   });

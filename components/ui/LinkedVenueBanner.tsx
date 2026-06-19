@@ -1,5 +1,6 @@
 import { useRouter, type Href } from 'expo-router';
 import { Pressable, StyleSheet, Text } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useIncomingLinks } from '@/lib/queries/useLinkedVenues';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
@@ -19,6 +20,7 @@ import { useTheme } from '@/theme/useTheme';
 export function LinkedVenueBanner() {
   const { colors } = useTheme();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   const staffQuery = useStaffMe();
   const isAdmin = staffQuery.data?.staff?.role === 'admin';
@@ -39,7 +41,9 @@ export function LinkedVenueBanner() {
         style={({ pressed }) => [
           styles.banner,
           styles.incoming,
-          { backgroundColor: colors.surface, borderColor: colors.brand },
+          // Clear the status bar — this banner renders above the screen's
+          // SafeAreaView (which collapses its now-redundant top inset).
+          { paddingTop: insets.top + spacing.sm, backgroundColor: colors.surface, borderColor: colors.brand },
           pressed ? styles.pressed : null,
         ]}>
         <Text style={[styles.label, { color: colors.text }]} numberOfLines={1}>

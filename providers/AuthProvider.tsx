@@ -9,8 +9,10 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { AppState, Platform, type AppStateStatus } from 'react-native';
 
 import { ANALYTICS_EVENTS, identify, resetAnalytics, track } from '@/lib/analytics';
+import { setAccessTokenRefresher } from '@/lib/api/client';
 import { getAuthCallbackRedirectUrl, getPasswordResetRedirectUrl } from '@/lib/auth/redirect';
 import { setObservabilityUser } from '@/lib/observability';
 import { setQueryAuthScope } from '@/lib/queries/keys';
@@ -112,9 +114,55 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setIsLoading(false);
     });
 
+    // ── Keep the session alive across background → foreground ────────────────
+    // React Native freezes JS timers while the app is backgrounded, so
+    // Supabase's auto-refresh ticker stops and the in-memory access token can
+    // expire. Supabase assumes "always foreground" on native and REQUIRES the
+    // host app to drive refresh from the platform's foreground signal (see the
+    // startAutoRefresh docs in @supabase/auth-js). Without this, the first
+    // calendar/bookings fetch after resuming raced an expired Bearer token →
+    // 401 "unauthorised access" until the ticker eventually caught up.
+    //
+    // startAutoRefresh() runs an immediate refresh tick, so returning to the
+    // foreground proactively refreshes a near/already-expired token and emits
+    // TOKEN_REFRESHED (updating useAccessToken) before queries refetch. Native
+    // only — on web Supabase manages this itself via the Page Visibility API.
+    let appStateSub: { remove: () => void } | undefined;
+    if (Platform.OS !== 'web') {
+      const syncAutoRefresh = (state: AppStateStatus) => {
+        if (state === 'active') {
+          void supabase.auth.startAutoRefresh();
+        } else {
+          void supabase.auth.stopAutoRefresh();
+        }
+      };
+      // Align with the current state on mount (cold start is normally active).
+      syncAutoRefresh(AppState.currentState);
+      appStateSub = AppState.addEventListener('change', syncAutoRefresh);
+    }
+
+    // Safety net for the resume race: if a request still goes out with a token
+    // that expired while backgrounded, apiFetch asks for a fresh one and retries
+    // once. getSession() refreshes an expired token but returns the SAME token
+    // when it's still valid — so a "valid session but not venue staff" 401
+    // returns null here and is NOT retried (the staff gate still redirects).
+    setAccessTokenRefresher(async (expiredToken) => {
+      try {
+        const {
+          data: { session: refreshedSession },
+        } = await supabase.auth.getSession();
+        const next = refreshedSession?.access_token ?? null;
+        return next && next !== expiredToken ? next : null;
+      } catch {
+        return null;
+      }
+    });
+
     return () => {
       active = false;
       subscription.unsubscribe();
+      appStateSub?.remove();
+      setAccessTokenRefresher(null);
     };
   }, []);
 

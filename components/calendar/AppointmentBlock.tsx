@@ -103,8 +103,12 @@ export function pickTrayActions(params: {
 // Component
 // ---------------------------------------------------------------------------
 
-/** Reserved vertical space (px) below the text for the compact action tray. */
-const TRAY_HEIGHT = 18;
+/**
+ * Reserved vertical space (px) below the text for the action tray. Must track
+ * the tray's height (`bottom` offset + button {@link styles.trayBtn} minHeight)
+ * so the bottom-anchored buttons never overlap the text above them.
+ */
+const TRAY_HEIGHT = 24;
 
 type AppointmentBlockProps = {
   id: string;
@@ -387,8 +391,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   trayBtn: {
+    // Taller than the label needs → a larger tap target. The tray is anchored to
+    // the bottom (see styles.tray `bottom`), so the extra height grows the button
+    // UPWARD, keeping it flush to the bottom-right; TRAY_HEIGHT reserves room so
+    // it never rides up over the text.
+    minHeight: 22,
     paddingHorizontal: 7,
-    paddingVertical: 1,
+    paddingVertical: 2,
     borderRadius: radius.sm,
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',

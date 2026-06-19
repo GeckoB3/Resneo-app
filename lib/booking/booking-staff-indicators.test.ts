@@ -1,10 +1,10 @@
 import {
   canShowCancelStaffAttendanceConfirmationAction,
   canShowConfirmStaffAttendanceConfirmationAction,
+  canShowStaffAttendanceToggle,
   isAttendanceConfirmed,
   showAttendanceConfirmedSupplementPill,
   showDepositPendingPill,
-  type BookingStaffIndicatorInput,
 } from '@/lib/booking/booking-staff-indicators';
 
 /**
@@ -113,5 +113,47 @@ describe('canShowCancelStaffAttendanceConfirmationAction', () => {
     ).toBe(false);
     // 'Confirmed' lifecycle status counts as attendance-confirmed and is actionable.
     expect(canShowCancelStaffAttendanceConfirmationAction({ status: 'Confirmed' })).toBe(true);
+  });
+});
+
+describe('canShowStaffAttendanceToggle', () => {
+  it('hides the attendance toggle for a Confirmed booking that offers "Undo confirm"', () => {
+    // The reported duplicate: status revert "Undo confirm" (→ Booked) already
+    // cancels the confirmation, so the staff "Unconfirm" toggle is redundant.
+    expect(
+      canShowStaffAttendanceToggle(
+        { status: 'Confirmed', staff_attendance_confirmed_at: '2026-06-09T10:00:00' },
+        'Booked',
+      ),
+    ).toBe(false);
+    // ...and also when only the lifecycle status (no staff timestamp) confirms it.
+    expect(canShowStaffAttendanceToggle({ status: 'Confirmed' }, 'Booked')).toBe(false);
+  });
+
+  it('still shows the toggle on a Confirmed booking if no Undo-confirm revert is present', () => {
+    expect(canShowStaffAttendanceToggle({ status: 'Confirmed' }, undefined)).toBe(true);
+    expect(canShowStaffAttendanceToggle({ status: 'Confirmed' }, null)).toBe(true);
+  });
+
+  it('shows "Confirm" for a Booked booking nobody has confirmed yet', () => {
+    expect(canShowStaffAttendanceToggle({ status: 'Booked' }, undefined)).toBe(true);
+  });
+
+  it('shows "Unconfirm" for a Booked booking with a staff timestamp (no duplicate revert there)', () => {
+    // Booked has no "Undo confirm" revert, so the attendance toggle stays — and
+    // the guard (keyed on status Confirmed) must not suppress it.
+    expect(
+      canShowStaffAttendanceToggle(
+        { status: 'Booked', staff_attendance_confirmed_at: '2026-06-09T10:00:00' },
+        'Booked',
+      ),
+    ).toBe(true);
+  });
+
+  it('hides the toggle for walk-ins and in-progress/terminal statuses', () => {
+    expect(canShowStaffAttendanceToggle({ status: 'Booked', source: 'walk-in' }, undefined)).toBe(false);
+    for (const status of ['Cancelled', 'No-Show', 'Completed', 'Seated'] as const) {
+      expect(canShowStaffAttendanceToggle({ status }, undefined)).toBe(false);
+    }
   });
 });

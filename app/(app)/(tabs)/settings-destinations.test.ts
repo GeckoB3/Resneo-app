@@ -14,6 +14,7 @@
  */
 import {
   buildDestinations,
+  LIST_GROUPS,
   type DestinationsContext,
 } from '@/lib/navigation/more-destinations';
 import type { BookingModel } from '@/types/venue';
@@ -90,7 +91,7 @@ describe('buildDestinations — Import contacts (admin-only link-out)', () => {
     expect(importRow?.kind).toBe('web');
     expect(importRow?.external).toBe(true);
     expect(importRow?.target).toBe('/dashboard/import');
-    expect(importRow?.group).toBe('manage');
+    expect(importRow?.group).toBe('people');
   });
 
   it('is hidden for non-admin staff', () => {
@@ -165,5 +166,47 @@ describe('buildDestinations — admin-only manage rows still gated', () => {
 
   it('preserves the Refer & Earn row for admins (Wave 2b — must not regress)', () => {
     expect(ids(ctx({ isAdmin: true }))).toContain('refer-earn');
+  });
+});
+
+describe('buildDestinations — bento hierarchy & group coverage', () => {
+  it('marks Today as the single primary (hero) tile and a featured tool', () => {
+    const dests = buildDestinations(ctx({ isAdmin: true }));
+    expect(dests.filter((d) => d.primary).map((d) => d.id)).toEqual(['today']);
+    expect(dests.find((d) => d.id === 'today')?.featured).toBe(true);
+  });
+
+  it('keeps every featured tool in the workspace group', () => {
+    const dests = buildDestinations(ctx({ isAdmin: true, waitlistEnabled: true }));
+    for (const d of dests.filter((x) => x.featured)) {
+      expect(d.group).toBe('workspace');
+    }
+  });
+
+  it('assigns every destination to a surfaced group (a section, the bento, or the hero)', () => {
+    // Guards against a future destination landing in a group that no surface
+    // renders (the old "workspace non-featured rows never showed" class of bug).
+    const surfaced = new Set<string>([...LIST_GROUPS.map((g) => g.key), 'workspace', 'account']);
+    const dests = buildDestinations(
+      ctx({
+        isAdmin: true,
+        enabledModels: new Set<BookingModel>(['class_session']),
+        waitlistEnabled: true,
+        complianceEnabled: true,
+      }),
+    );
+    for (const d of dests) {
+      expect(surfaced.has(d.group)).toBe(true);
+    }
+  });
+
+  it('no longer dumps everything into a single "manage" group', () => {
+    const groups = new Set(buildDestinations(ctx({ isAdmin: true })).map((d) => d.group));
+    expect(groups.has('manage' as never)).toBe(false);
+    // The former mega-list is now split across several purpose-built sections.
+    expect(groups.has('setup')).toBe(true);
+    expect(groups.has('people')).toBe(true);
+    expect(groups.has('growth')).toBe(true);
+    expect(groups.has('network')).toBe(true);
   });
 });

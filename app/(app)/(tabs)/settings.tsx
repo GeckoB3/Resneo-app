@@ -8,6 +8,7 @@ import { Linking, StyleSheet, Switch, View } from 'react-native';
 import { FeatureTile } from '@/components/more/FeatureTile';
 import { MoreHero } from '@/components/more/MoreHero';
 import { MoreRow } from '@/components/more/MoreRow';
+import { PrimaryTile } from '@/components/more/PrimaryTile';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { LoadingState } from '@/components/ui/LoadingState';
@@ -22,6 +23,7 @@ import {
   LIST_GROUPS,
   type Destination,
 } from '@/lib/navigation/more-destinations';
+import { useBillingStatus } from '@/lib/queries/useBillingStatus';
 import { useNotifications } from '@/lib/queries/useNotifications';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { useAppLock } from '@/providers/AppLockProvider';
@@ -33,8 +35,13 @@ import { useTheme } from '@/theme/useTheme';
 import type { StaffRole } from '@/types/staff';
 import type { BookingModel } from '@/types/venue';
 
-/** Subscription/plan statuses that warrant a warning banner. */
-const WARN_PLAN_STATUSES = new Set(['past_due', 'canceled', 'cancelled', 'unpaid', 'expired']);
+/**
+ * Subscription/plan statuses that warrant a warning banner. These are the exact
+ * values the billing backend emits (`PlanStatus`) — the old set used Stripe-ish
+ * names (`canceled`/`unpaid`/`expired`) the server never writes, and omitted the
+ * real `cancelling`, so the banner could never fire.
+ */
+const WARN_PLAN_STATUSES = new Set(['past_due', 'cancelling', 'cancelled']);
 
 /** Resolve a staff-dashboard URL on the WEB origin (not the API origin). */
 function webDashboardUrl(path = '/dashboard'): string {
@@ -92,10 +99,12 @@ export default function MoreScreen() {
   const appVersion = Constants.expoConfig?.version ?? '—';
   const unreadCount = notificationsQuery.data?.unreadCount ?? 0;
 
-  /** Derive a plan status warning from the venue's pricing tier. */
-  const planStatus: string | undefined = (venue as unknown as { plan_status?: string })?.plan_status;
-  const showPlanWarning =
-    isAdmin && planStatus != null && WARN_PLAN_STATUSES.has(planStatus.toLowerCase());
+  // Live subscription status drives the billing-problem nudge. `plan_status` is
+  // NOT on the venue bootstrap (GET /api/venue omits it), so read it from the
+  // admin-only billing endpoint — gated so non-admins never hit (and 403) it.
+  const billingStatusQuery = useBillingStatus(isAdmin);
+  const planStatus = billingStatusQuery.data?.plan_status ?? null;
+  const showPlanWarning = isAdmin && planStatus != null && WARN_PLAN_STATUSES.has(planStatus);
 
   // In-app browser tab (SFSafariViewController / Chrome Custom Tab) so web
   // content opens without bouncing the user out of the app.
@@ -166,7 +175,13 @@ export default function MoreScreen() {
     );
   }, [destinations, trimmedQuery]);
 
-  const featured = useMemo(() => destinations.filter((d) => d.featured), [destinations]);
+  // The hero tile (single most-used) sits above the two-up grid of the other
+  // daily-driver tools, giving the top zone a clear size hierarchy.
+  const primary = useMemo(() => destinations.find((d) => d.primary) ?? null, [destinations]);
+  const featured = useMemo(
+    () => destinations.filter((d) => d.featured && !d.primary),
+    [destinations],
+  );
 
   if (staffLoading || venueLoading) {
     return (
@@ -249,18 +264,29 @@ export default function MoreScreen() {
             <Text variant="overline" tone="muted" style={styles.sectionLabel}>
               Quick actions
             </Text>
-            <View style={styles.grid}>
-              {featured.map((dest) => (
-                <FeatureTile
-                  key={dest.id}
-                  icon={dest.icon}
-                  tint={dest.tile}
-                  label={dest.label}
-                  hint={dest.hint}
-                  onPress={() => handlePress(dest)}
-                />
-              ))}
-            </View>
+            {primary ? (
+              <PrimaryTile
+                icon={primary.icon}
+                tint={primary.tile}
+                label={primary.label}
+                hint={primary.hint}
+                onPress={() => handlePress(primary)}
+              />
+            ) : null}
+            {featured.length ? (
+              <View style={styles.grid}>
+                {featured.map((dest) => (
+                  <FeatureTile
+                    key={dest.id}
+                    icon={dest.icon}
+                    tint={dest.tile}
+                    label={dest.label}
+                    hint={dest.hint}
+                    onPress={() => handlePress(dest)}
+                  />
+                ))}
+              </View>
+            ) : null}
           </View>
 
           {LIST_GROUPS.map((g) => {
@@ -371,7 +397,7 @@ const styles = StyleSheet.create({
     gap: spacing.lg,
   },
   section: {
-    gap: spacing.sm,
+    gap: spacing.md,
   },
   sectionLabel: {
     marginLeft: spacing.xs,

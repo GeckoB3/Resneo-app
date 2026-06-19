@@ -32,7 +32,6 @@ type MultiServiceReviewStepProps = {
   onAddService: (serviceId: string) => void;
   onRemoveSegment: (index: number) => void;
   onContinue: () => void;
-  onBack: () => void;
   /** Inline error from a failed append/remove (e.g. server rejects the chain). */
   errorMessage?: string | null;
 };
@@ -49,7 +48,6 @@ export function MultiServiceReviewStep({
   onAddService,
   onRemoveSegment,
   onContinue,
-  onBack,
   errorMessage,
 }: MultiServiceReviewStepProps) {
   const { colors } = useTheme();
@@ -57,6 +55,14 @@ export function MultiServiceReviewStep({
   const totalPence = chainTotalPence(segments);
   const canAddMore = segments.length < MAX_MULTI_SERVICE_SEGMENTS;
   const practitionerName = visitPractitioner?.name ?? segments[0]?.practitionerName ?? '';
+
+  // Only services WITHOUT options can be appended: the append path can't carry a
+  // variant choice, so a variant-driven service would be added with its base
+  // duration and the server's consecutive-chain check fails ("must be
+  // consecutive"). Such services are booked on their own instead.
+  const appendableServices = (visitPractitioner?.services ?? []).filter(
+    (svc) => (svc.variants?.length ?? 0) === 0,
+  );
 
   return (
     <View style={styles.container}>
@@ -139,27 +145,33 @@ export function MultiServiceReviewStep({
             <Text variant="caption" tone="muted">
               Next start time is calculated automatically.
             </Text>
-            <View style={styles.chips}>
-              {visitPractitioner.services.map((svc) => (
-                <Pressable
-                  key={svc.id}
-                  accessibilityRole="button"
-                  onPress={() => {
-                    hapticSelect();
-                    onAddService(svc.id);
-                    setShowServiceList(false);
-                  }}
-                  style={({ pressed }) => [
-                    styles.serviceChip,
-                    { borderColor: colors.border, backgroundColor: colors.surfaceRaised, opacity: pressed ? 0.7 : 1 },
-                  ]}>
-                  <Text variant="bodySmall">{svc.name}</Text>
-                  <Text variant="caption" tone="muted">
-                    {svc.duration_minutes} min
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
+            {appendableServices.length > 0 ? (
+              <View style={styles.chips}>
+                {appendableServices.map((svc) => (
+                  <Pressable
+                    key={svc.id}
+                    accessibilityRole="button"
+                    onPress={() => {
+                      hapticSelect();
+                      onAddService(svc.id);
+                      setShowServiceList(false);
+                    }}
+                    style={({ pressed }) => [
+                      styles.serviceChip,
+                      { borderColor: colors.border, backgroundColor: colors.surfaceRaised, opacity: pressed ? 0.7 : 1 },
+                    ]}>
+                    <Text variant="bodySmall">{svc.name}</Text>
+                    <Text variant="caption" tone="muted">
+                      {svc.duration_minutes} min
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            ) : (
+              <Text variant="caption" tone="muted">
+                No more services can be added to this visit. Services with options are booked on their own.
+              </Text>
+            )}
           </View>
         ) : null}
 
@@ -172,7 +184,6 @@ export function MultiServiceReviewStep({
 
       <View style={styles.actions}>
         <Button label="Continue to details" fullWidth onPress={onContinue} />
-        <Button label="Back" variant="ghost" onPress={onBack} />
       </View>
     </View>
   );

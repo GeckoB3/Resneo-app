@@ -5,6 +5,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { Stack, useRouter, type Href } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  FlatList,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -986,48 +987,50 @@ function TimezonePickerSheet({
         placeholder="Search zones (e.g. London, New_York)"
         autoFocus
       />
-      <ScrollView
+      {/* FlatList (not a ScrollView+map): the IANA list is ~600 rows, so
+          virtualizing keeps the picker from mounting every row on open. */}
+      <FlatList
         style={styles.tzList}
+        data={matches}
+        keyExtractor={(zone) => zone}
         keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag">
-        {matches.length === 0 ? (
+        keyboardDismissMode="on-drag"
+        ListEmptyComponent={
           <Text variant="bodySmall" tone="muted" style={styles.tzEmpty}>
             No matching timezones.
           </Text>
-        ) : (
-          matches.map((zone) => {
-            const selected = zone === current;
-            return (
-              <Pressable
-                key={zone}
-                onPress={() => onSelect(zone)}
-                accessibilityRole="button"
-                accessibilityState={{ selected }}
-                accessibilityLabel={zone}
-                style={({ pressed }) => [
-                  styles.tzRow,
-                  { borderBottomColor: colors.border },
-                  pressed && { backgroundColor: colors.surface },
-                ]}>
-                <Text
-                  variant="body"
-                  color={selected ? colors.brand : colors.text}
-                  style={styles.tzRowText}
-                  numberOfLines={1}>
-                  {zone}
-                </Text>
-                {selected ? (
-                  <SymbolView
-                    name={{ ios: 'checkmark', android: 'check', web: 'check' }}
-                    tintColor={colors.brand}
-                    size={16}
-                  />
-                ) : null}
-              </Pressable>
-            );
-          })
-        )}
-      </ScrollView>
+        }
+        renderItem={({ item: zone }) => {
+          const selected = zone === current;
+          return (
+            <Pressable
+              onPress={() => onSelect(zone)}
+              accessibilityRole="button"
+              accessibilityState={{ selected }}
+              accessibilityLabel={zone}
+              style={({ pressed }) => [
+                styles.tzRow,
+                { borderBottomColor: colors.border },
+                pressed && { backgroundColor: colors.surface },
+              ]}>
+              <Text
+                variant="body"
+                color={selected ? colors.brand : colors.text}
+                style={styles.tzRowText}
+                numberOfLines={1}>
+                {zone}
+              </Text>
+              {selected ? (
+                <SymbolView
+                  name={{ ios: 'checkmark', android: 'check', web: 'check' }}
+                  tintColor={colors.brand}
+                  size={16}
+                />
+              ) : null}
+            </Pressable>
+          );
+        }}
+      />
     </Sheet>
   );
 }

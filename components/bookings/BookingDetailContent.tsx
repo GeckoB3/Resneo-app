@@ -55,10 +55,7 @@ import { useUpdateGuest } from '@/lib/queries/useGuestMutations';
 import { useManagedServices } from '@/lib/queries/useServicesManage';
 import { writeRebookBootstrap, type RebookBootstrapPayload } from '@/lib/rebook-bootstrap';
 import type { GuestBookingHistoryRow } from '@/types/guest-detail';
-import {
-  canShowCancelStaffAttendanceConfirmationAction,
-  canShowConfirmStaffAttendanceConfirmationAction,
-} from '@/lib/booking/booking-staff-indicators';
+import { canShowStaffAttendanceToggle } from '@/lib/booking/booking-staff-indicators';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { radius, spacing } from '@/theme/index';
@@ -88,6 +85,12 @@ type BookingDetailContentProps = {
    * the service name visible in the hero. Mirrors the web detail header.
    */
   fallbackServiceName?: string | null;
+  /**
+   * Practitioner/staff name from the list row that opened the detail — the
+   * detail GET doesn't return `practitioner_name`, so without this the hero's
+   * "with {staff}" line is always blank for appointments.
+   */
+  fallbackPractitionerName?: string | null;
 };
 
 const TERMINAL_STATUSES = new Set<BookingStatus>(['Cancelled', 'Completed', 'No-Show']);
@@ -520,6 +523,7 @@ export function BookingDetailContent({
   onDeleted,
   showPrimaryAction = true,
   fallbackServiceName,
+  fallbackPractitionerName,
 }: BookingDetailContentProps) {
   const { colors } = useTheme();
   const router = useRouter();
@@ -642,7 +646,8 @@ export function BookingDetailContent({
 
   // Hero facts — the "what & when" surfaced directly under the guest header so
   // the most important info is visible before any action is taken.
-  const practitionerName = booking.practitioner_name?.trim() || null;
+  const practitionerName =
+    booking.practitioner_name?.trim() || fallbackPractitionerName?.trim() || null;
   const dateLabel = formatBookingDateLabel(booking.booking_date, booking.booking_time);
   const timeRangeLabel = formatBookingTimeRange(booking.booking_time, booking.booking_end_time);
   // Prefer the detail's variant name, then the list row's service label, then the
@@ -740,10 +745,10 @@ export function BookingDetailContent({
   const attendanceRelevant = !TERMINAL_STATUSES.has(booking.status) || booking.status === 'Completed';
   // Web-parity gating: attendance controls hide on in-progress (Seated/Started),
   // terminal statuses, and walk-ins. Once a booking is started, attendance and
-  // arrival are no longer actionable — the lifecycle has moved past them.
-  const showAttendanceConfirmToggle =
-    canShowConfirmStaffAttendanceConfirmationAction(booking) ||
-    canShowCancelStaffAttendanceConfirmationAction(booking);
+  // arrival are no longer actionable — the lifecycle has moved past them. A
+  // `Confirmed` booking also drops the toggle: the "Undo confirm" status revert
+  // below already cancels the confirmation, so the duplicate "Unconfirm" goes.
+  const showAttendanceConfirmToggle = canShowStaffAttendanceToggle(booking, revertAction?.target);
   const showArrivedToggle =
     !isTable &&
     booking.source !== 'walk-in' &&

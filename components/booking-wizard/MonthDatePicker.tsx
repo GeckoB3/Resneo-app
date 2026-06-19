@@ -51,7 +51,7 @@ type MonthDatePickerProps = {
    *  the user can't advance onto an empty "No times available" screen. */
   canContinue?: boolean;
   onContinue: () => void;
-  /** Booking source — drives the walk-in "Start Appointment Now" shortcut. */
+  /** Booking source — drives the walk-in "Start Now" shortcut. */
   source?: 'phone' | 'walk-in';
   /** Venue IANA timezone, for computing "today" when starting a walk-in now. */
   timeZone?: string;
@@ -121,7 +121,7 @@ export function MonthDatePicker({
 
       {showStartNow ? (
         <Button
-          label="Start Appointment Now"
+          label="Start Now"
           variant="primary"
           fullWidth
           onPress={() => onStartNow?.(venueToday(timeZone))}

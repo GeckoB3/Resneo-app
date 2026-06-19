@@ -19,6 +19,7 @@ import { AllCalendarsDayGrid, type AllCalendarColumn } from '@/components/calend
 import { BlockEditSheet, type BlockTarget } from '@/components/calendar/BlockEditSheet';
 import { CalendarDayGrid } from '@/components/calendar/CalendarDayGrid';
 import { minutesToTime, timeToMinutes, type GridWindowOverride } from '@/components/calendar/grid-layout';
+import { resolveDayLoadState } from '@/lib/calendar/day-load-state';
 import { venueDayHours } from '@/lib/calendar/venue-closures';
 import { MonthGrid, type MonthDayDatum } from '@/components/calendar/MonthGrid';
 import { MonthPickerSheet } from '@/components/calendar/MonthPickerSheet';
@@ -824,6 +825,20 @@ export default function CalendarScreen() {
   // Tap a block → full booking detail
   const openDetail = useCallback((id: string) => setDetailBookingId(id), []);
 
+  // Practitioner name for the open booking — found via the column it sits in.
+  // The detail GET now returns `practitioner_name`, but pass this through as a
+  // fallback so the hero's "with {staff}" line stays populated against an older
+  // backend (and defensively if the field is ever missing).
+  const detailPractitionerName = useMemo(() => {
+    if (!detailBookingId) return null;
+    for (const cal of gridQuery.data?.calendars ?? []) {
+      if (cal.dates.some((d) => d.bookings.some((b) => b.id === detailBookingId))) {
+        return practitioners.find((p) => p.id === cal.calendarId)?.name ?? null;
+      }
+    }
+    return null;
+  }, [detailBookingId, gridQuery.data, practitioners]);
+
   const createAt = useCallback(
     (time: string) => {
       setAddSheetTarget({ kind: 'slot', time, practitionerId: effectiveId ?? '' });
@@ -1307,12 +1322,16 @@ export default function CalendarScreen() {
   );
   const complianceFlags = complianceFlagsQuery.data?.flags;
 
-  // Closed-day notice — the practitioner has no working hours and nothing
-  // booked for this date (web parity: closed days are visibly flagged).
-  const dayIsClosed =
-    !gridQuery.isLoading &&
-    (day?.workingHours?.length ?? 0) === 0 &&
-    (day?.bookings?.length ?? 0) === 0;
+  // Day view load/closed state. Stepping the day re-keys the grid query, and
+  // `keepPreviousData` holds the prior range (which lacks the new date) until
+  // the fetch lands — so `day` is briefly null with isLoading false. Resolve
+  // that as "loading" (spinner), never "closed", so the "not scheduled to work
+  // this day" banner can't flash during navigation. See day-load-state.ts.
+  const { isLoading: dayIsLoading, isClosed: dayIsClosed } = resolveDayLoadState({
+    day,
+    isFetching: gridQuery.isFetching,
+    isPlaceholderData: gridQuery.isPlaceholderData,
+  });
 
   const refreshing = gridQuery.isFetching && !gridQuery.isLoading;
   // Pull-to-refresh refetches BOTH the grid and the schedule feed so a freshly
@@ -1784,8 +1803,18 @@ export default function CalendarScreen() {
             // after a 500ms hold + fails on sideways drift) are unaffected.
             <GestureDetector gesture={swipeGesture}>
               <View style={styles.weekBody}>
-                {dayIsClosed ? <ClosedDayBanner /> : null}
-                {dayGrid}
+                {dayIsLoading ? (
+                  // The next day's data is still loading (keepPreviousData holds
+                  // the prior range). Show a spinner rather than an empty grid or
+                  // a premature "closed" banner — the column fills in once the
+                  // fetch lands.
+                  <LoadingState message="Loading appointments…" />
+                ) : (
+                  <>
+                    {dayIsClosed ? <ClosedDayBanner /> : null}
+                    {dayGrid}
+                  </>
+                )}
               </View>
             </GestureDetector>
           )}
@@ -1964,6 +1993,7 @@ export default function CalendarScreen() {
       <BookingDetailSheet
         bookingId={detailBookingId}
         onClose={() => setDetailBookingId(null)}
+        fallbackPractitionerName={detailPractitionerName}
       />
       <BlockEditSheet
         target={blockTarget}

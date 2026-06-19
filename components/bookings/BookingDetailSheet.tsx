@@ -40,6 +40,8 @@ type BookingDetailSheetProps = {
    * name in the hero for plain services the detail GET leaves unnamed.
    */
   fallbackServiceName?: string | null;
+  /** Practitioner/staff name from the list row — the detail GET omits it. */
+  fallbackPractitionerName?: string | null;
 };
 
 /** Tracks soft-keyboard visibility so the pinned action bar yields while typing. */
@@ -82,6 +84,7 @@ export function BookingDetailSheet({
   onClose,
   onOpenFull,
   fallbackServiceName,
+  fallbackPractitionerName,
 }: BookingDetailSheetProps) {
   const router = useRouter();
   const { colors } = useTheme();
@@ -213,6 +216,7 @@ export function BookingDetailSheet({
                 onDeleted={onClose}
                 showPrimaryAction={false}
                 fallbackServiceName={fallbackServiceName}
+                fallbackPractitionerName={fallbackPractitionerName}
               />
             </ScrollView>
           </SheetScrollProvider>

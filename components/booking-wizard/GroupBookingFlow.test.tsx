@@ -4,6 +4,10 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 const mockMutate = jest.fn();
 
+jest.mock('expo-router', () => ({
+  Stack: { Screen: () => null },
+  useRouter: () => ({ back: jest.fn(), push: jest.fn() }),
+}));
 jest.mock('@/lib/queries/useCreateGroupBooking', () => ({
   useCreateGroupBooking: () => ({ mutate: mockMutate, isPending: false }),
 }));

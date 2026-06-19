@@ -52,6 +52,7 @@ import type {
   TimeRange,
   WorkingHoursMap,
 } from '@/types/availability-manage';
+import type { Practitioner, PractitionerTimeRange } from '@/types/practitioner';
 
 
 const RANGE_DAYS = 90;
@@ -112,6 +113,77 @@ function Stepper({
           <Text style={[styles.stepSymbol, { color: colors.brand }]}>+</Text>
         </Pressable>
       </View>
+    </View>
+  );
+}
+
+// ---- Working-hours / breaks summaries (web parity: at-a-glance schedule) -----
+const WH_DAYS: { key: string; short: string }[] = [
+  { key: '1', short: 'Mon' },
+  { key: '2', short: 'Tue' },
+  { key: '3', short: 'Wed' },
+  { key: '4', short: 'Thu' },
+  { key: '5', short: 'Fri' },
+  { key: '6', short: 'Sat' },
+  { key: '0', short: 'Sun' },
+];
+
+function rangeSignature(ranges?: PractitionerTimeRange[] | null): string {
+  if (!ranges || ranges.length === 0) return '';
+  return ranges.map((r) => `${r.start.slice(0, 5)}–${r.end.slice(0, 5)}`).join(', ');
+}
+
+/**
+ * Compact weekly hours summary (e.g. "Mon–Fri 09:00–17:00 · Sat 10:00–14:00"),
+ * grouping consecutive open days that share identical hours. Returns null when
+ * the calendar has no open days so the caller can show a "not set" hint.
+ */
+function summariseWorkingHours(
+  wh?: Record<string, PractitionerTimeRange[]> | null,
+): string | null {
+  if (!wh) return null;
+  const days = WH_DAYS.map((d) => ({ short: d.short, sig: rangeSignature(wh[d.key]) }));
+  if (days.every((d) => d.sig === '')) return null;
+  const parts: string[] = [];
+  let i = 0;
+  while (i < days.length) {
+    const cur = days[i]!;
+    if (!cur.sig) {
+      i += 1;
+      continue;
+    }
+    let j = i;
+    while (j + 1 < days.length && days[j + 1]!.sig === cur.sig) j += 1;
+    const label = i === j ? cur.short : `${days[i]!.short}–${days[j]!.short}`;
+    parts.push(`${label} ${cur.sig}`);
+    i = j + 1;
+  }
+  return parts.join(' · ');
+}
+
+/** Short list of weekdays that carry at least one break (or "Every day" for legacy). */
+function summariseBreaks(p: Practitioner): string | null {
+  const byDay = p.break_times_by_day;
+  if (byDay && typeof byDay === 'object' && Object.keys(byDay).length > 0) {
+    const daysWith = WH_DAYS.filter((d) => (byDay[d.key]?.length ?? 0) > 0).map((d) => d.short);
+    return daysWith.length > 0 ? daysWith.join(', ') : null;
+  }
+  if (Array.isArray(p.break_times) && p.break_times.length > 0) return 'Every day';
+  return null;
+}
+
+// ---- Section header ---------------------------------------------------------
+function SectionHeader({ title, caption }: { title: string; caption?: string }) {
+  return (
+    <View style={styles.sectionHeader}>
+      <Text variant="overline" tone="muted">
+        {title}
+      </Text>
+      {caption ? (
+        <Text variant="caption" tone="muted">
+          {caption}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -534,6 +606,41 @@ export default function AvailabilityScreen() {
     );
   }
 
+  // Single working-hours row — name + at-a-glance weekly summary + edit actions.
+  function renderHoursRow(p: Practitioner) {
+    const summary = summariseWorkingHours(p.working_hours);
+    const breaks = summariseBreaks(p);
+    return (
+      <View key={p.id} style={[styles.hoursItem, { borderBottomColor: colors.border }]}>
+        <Text variant="bodyMedium" numberOfLines={1}>
+          {p.name}
+        </Text>
+        <Text variant="caption" tone={summary ? 'secondary' : 'muted'}>
+          {summary ?? 'No working hours set'}
+        </Text>
+        {breaks ? (
+          <Text variant="caption" tone="muted">
+            Breaks · {breaks}
+          </Text>
+        ) : null}
+        <View style={styles.hoursActions}>
+          <Button
+            label="Edit hours"
+            variant="secondary"
+            size="sm"
+            onPress={() => openHoursSheet(p.id)}
+          />
+          <Button
+            label="Edit breaks"
+            variant="ghost"
+            size="sm"
+            onPress={() => openBreaksSheet(p.id)}
+          />
+        </View>
+      </View>
+    );
+  }
+
   // ---- Render ----------------------------------------------------------------
   return (
     <Screen scroll={false} padded={false}>
@@ -625,6 +732,37 @@ export default function AvailabilityScreen() {
             </ScrollView>
           ) : null}
 
+          {/* ===== Working hours & breaks (primary section, top) ===== */}
+          <SectionHeader
+            title="Working hours"
+            caption="When each calendar can take bookings. Times must also sit within your venue's business hours."
+          />
+          {practitioners.length === 0 ? (
+            <Card>
+              <EmptyState
+                title="No calendars yet"
+                message={
+                  isAdmin
+                    ? 'Add a calendar to set its weekly working hours and breaks.'
+                    : 'Ask an admin to link a calendar to your account.'
+                }
+              />
+            </Card>
+          ) : (
+            <Card>
+              <View style={styles.hoursList}>
+                {practitioners
+                  .filter((p) => (filterPractitionerId ? p.id === filterPractitionerId : true))
+                  .map(renderHoursRow)}
+              </View>
+            </Card>
+          )}
+
+          {/* ===== Time off & blocks ===== */}
+          <SectionHeader
+            title="Time off & blocks"
+            caption="Add leave, mark an unavailable window, or block out a one-off slot."
+          />
           {/* Action buttons */}
           <View style={styles.actionRow}>
             <Button
@@ -748,45 +886,6 @@ export default function AvailabilityScreen() {
               </>
             )}
           </Card>
-
-          {/* Working hours & breaks — one card per practitioner */}
-          {practitioners.length > 0 ? (
-            <Card>
-              <Text variant="label">Working hours & breaks</Text>
-              <View style={styles.list}>
-                {practitioners
-                  .filter((p) =>
-                    filterPractitionerId ? p.id === filterPractitionerId : true,
-                  )
-                  .map((p) => (
-                    <View
-                      key={p.id}
-                      style={[styles.row, { borderBottomColor: colors.border }]}>
-                      <View style={styles.rowBody}>
-                        <Text variant="bodyMedium">{p.name}</Text>
-                        <Text variant="caption" tone="muted">
-                          {p.is_active ? 'Active' : 'Inactive'}
-                        </Text>
-                      </View>
-                      <View style={styles.rowActions}>
-                        <Button
-                          label="Hours"
-                          variant="ghost"
-                          size="sm"
-                          onPress={() => openHoursSheet(p.id)}
-                        />
-                        <Button
-                          label="Breaks"
-                          variant="ghost"
-                          size="sm"
-                          onPress={() => openBreaksSheet(p.id)}
-                        />
-                      </View>
-                    </View>
-                  ))}
-              </View>
-            </Card>
-          ) : null}
 
           <View style={styles.spacer} />
         </ScrollView>
@@ -1033,6 +1132,24 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   list: {
+    marginTop: spacing.xs,
+  },
+  sectionHeader: {
+    gap: spacing.xxs,
+    marginTop: spacing.sm,
+  },
+  hoursList: {
+    marginTop: spacing.xs,
+  },
+  hoursItem: {
+    paddingVertical: spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: spacing.xs,
+  },
+  hoursActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
     marginTop: spacing.xs,
   },
   groupHeading: {

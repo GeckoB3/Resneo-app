@@ -49,6 +49,17 @@ export function useBulkRemoveTag() {
   });
 }
 
+/**
+ * Per-contact outcome from the bulk marketing-message action. The route returns
+ * one entry per FOUND contact (`sent` true, or a `skipped_reason`/`error`), plus
+ * `missing_ids` for any selected id that wasn't found — there is NO top-level
+ * `sent`/`skipped` count, so callers must derive the totals from `results`.
+ */
+export type BulkMarketingMessageResult = {
+  results: { guest_id: string; sent?: boolean; skipped_reason?: string; error?: string }[];
+  missing_ids: string[];
+};
+
 /** POST /api/venue/contacts/bulk {action:'marketing_message'} — bulk email/SMS (admin). */
 export function useBulkMarketingMessage() {
   const accessToken = useAccessToken();
@@ -59,11 +70,11 @@ export function useBulkMarketingMessage() {
       subject: string;
       body: string;
       channel: 'email' | 'sms' | 'both';
-    }): Promise<{ sent?: number; skipped?: number }> => {
+    }): Promise<BulkMarketingMessageResult> => {
       if (!accessToken) {
         throw new Error('Missing access token');
       }
-      return apiFetch<{ sent?: number; skipped?: number }>('/api/venue/contacts/bulk', {
+      return apiFetch<BulkMarketingMessageResult>('/api/venue/contacts/bulk', {
         accessToken,
         method: 'POST',
         body: JSON.stringify({ action: 'marketing_message', ...input }),

@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { AccessibilityInfo, Pressable, StyleSheet, View } from 'react-native';
 import Animated, { FadeInDown, FadeOutDown } from 'react-native-reanimated';
 import { useReduceMotion, motionSafe } from '@/lib/motion';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -86,6 +86,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       idRef.current += 1;
       const next: ActiveToast = { ...opts, id: idRef.current };
       setToast(next);
+      // Toast replaces Alert.alert app-wide and is often the ONLY feedback for a
+      // success/error, so announce it to VoiceOver/TalkBack — the visual bar alone
+      // is silent to screen readers.
+      AccessibilityInfo.announceForAccessibility(opts.message);
       if (opts.tone === 'success') hapticSuccess();
       else if (opts.tone === 'error') hapticError();
       const ms = opts.duration ?? (opts.actionLabel ? 5000 : 3200);

@@ -405,6 +405,9 @@ export default function BookingsScreen() {
   // --- Unified filter sheet (status / staff / type / time / service / compliance) ---
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
 
+  // --- Add menu (New booking vs Walk-in) — mirrors the Calendar tab's FAB ---
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
+
   // --- Bulk selection ---
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkMessageBookings, setBulkMessageBookings] = useState<BookingListRow[]>([]);
@@ -470,19 +473,24 @@ export default function BookingsScreen() {
     [ownerVenueId, linkedVenues],
   );
   const canCreateBooking = !activeLinkedVenue || activeLinkedVenue.action === 'create_edit_cancel';
-  const goToNewBooking = useCallback(() => {
-    if (activeLinkedVenue) {
-      router.push({
-        pathname: '/booking/new',
-        params: {
-          ownerVenueId: activeLinkedVenue.venueId,
-          ownerVenueName: activeLinkedVenue.venueName,
-        },
-      });
-    } else {
-      router.push('/booking/new');
-    }
-  }, [router, activeLinkedVenue]);
+  const openAddMenu = useCallback(() => setAddMenuOpen(true), []);
+  const closeAddMenu = useCallback(() => setAddMenuOpen(false), []);
+  // Open the full booking form. `intent: 'walk-in'` starts the appointment flow
+  // on the walk-in path ("Start Appointment Now"), matching the Calendar tab's
+  // add menu. The active linked venue (when set) scopes the form to it.
+  const goToNewBooking = useCallback(
+    (intent?: 'walk-in') => {
+      closeAddMenu();
+      const params: Record<string, string> = {};
+      if (activeLinkedVenue) {
+        params.ownerVenueId = activeLinkedVenue.venueId;
+        params.ownerVenueName = activeLinkedVenue.venueName;
+      }
+      if (intent) params.intent = intent;
+      router.push({ pathname: '/booking/new', params });
+    },
+    [router, activeLinkedVenue, closeAddMenu],
+  );
 
   const selectAllVenues = useCallback(() => {
     setVenueSelOverride({ own: true, linked: new Set(linkedVenues.map((v) => v.venueId)) });
@@ -542,6 +550,14 @@ export default function BookingsScreen() {
     if (!openBookingId) return null;
     const row = rawRows.find((r) => r.id === openBookingId);
     return row?.service_variant_name?.trim() || row?.booking_item_name?.trim() || null;
+  }, [openBookingId, rawRows]);
+
+  // Practitioner/calendar name for the open booking — the detail GET omits
+  // `practitioner_name`, so pass the list row's `calendar_name` through to keep
+  // the "with {staff}" line populated in the hero.
+  const openCalendarName = useMemo(() => {
+    if (!openBookingId) return null;
+    return rawRows.find((r) => r.id === openBookingId)?.calendar_name?.trim() || null;
   }, [openBookingId, rawRows]);
 
   // Per-booking compliance flags — a small dot on each row. Gated on the
@@ -1111,7 +1127,7 @@ export default function BookingsScreen() {
                   : `No ${(STATUS_FILTERS.find((o) => o.key === status)?.label ?? status).toLowerCase()} appointments for this period.`
               }
               actionLabel={canCreateBooking ? newBookingActionLabel(terminology) : undefined}
-              onAction={canCreateBooking ? goToNewBooking : undefined}
+              onAction={canCreateBooking ? openAddMenu : undefined}
             />
           }
           refreshControl={
@@ -1125,18 +1141,41 @@ export default function BookingsScreen() {
       )}
 
       {/* FAB — hidden during selection mode, and when the active linked venue
-          does not grant booking creation. */}
+          does not grant booking creation. Opens the add menu (New booking vs
+          Walk-in), matching the Calendar tab. */}
       {!selectionMode && canCreateBooking ? (
         <Fab
           accessibilityLabel={newBookingActionLabel(terminology)}
-          onPress={goToNewBooking}
+          onPress={openAddMenu}
         />
       ) : null}
+
+      {/* Add menu — same choice the Calendar tab's FAB offers: a full booking or
+          a walk-in ("Start Appointment Now"). */}
+      <Sheet visible={addMenuOpen} onClose={closeAddMenu}>
+        <Text variant="subheading">{newBookingActionLabel(terminology)}</Text>
+        <View style={styles.addMenuActions}>
+          <Button
+            label={newBookingActionLabel(terminology)}
+            variant="primary"
+            fullWidth
+            onPress={() => goToNewBooking()}
+          />
+          <Button
+            label="Walk-in"
+            variant="secondary"
+            fullWidth
+            onPress={() => goToNewBooking('walk-in')}
+          />
+          <Button label="Cancel" variant="ghost" fullWidth onPress={closeAddMenu} />
+        </View>
+      </Sheet>
 
       <BookingDetailSheet
         bookingId={openBookingId}
         onClose={() => setOpenBookingId(null)}
         fallbackServiceName={openServiceName}
+        fallbackPractitionerName={openCalendarName}
       />
 
       {/* Expanded detail for a linked venue's booking — read-only or editable
@@ -1283,6 +1322,10 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.md,
     gap: spacing.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  addMenuActions: {
+    gap: spacing.sm,
+    marginTop: spacing.md,
   },
   dateNav: {
     flexDirection: 'row',

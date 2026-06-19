@@ -9,6 +9,7 @@ import {
 } from '@/components/booking-wizard/BookingFlowPrimitives';
 import type { GuestDetails } from '@/components/booking-wizard/GuestDetailsStep';
 import { GuestDetailsStep } from '@/components/booking-wizard/GuestDetailsStep';
+import { BookingWizardHeader } from '@/components/booking-wizard/BookingWizardHeader';
 import { MonthDatePicker } from '@/components/booking-wizard/MonthDatePicker';
 import { WizardStepIndicator } from '@/components/booking-wizard/WizardStepIndicator';
 import { Button } from '@/components/ui/Button';
@@ -88,6 +89,9 @@ export function ResourceBookingFlow({ onCreated }: ResourceBookingFlowProps) {
   const [guest, setGuest] = useState<GuestDetails>(EMPTY_GUEST);
   const [guestPrefilled, setGuestPrefilled] = useState(false);
   const [returningGuest, setReturningGuest] = useState(false);
+  // Phone vs walk-in — chosen on the guest step so a walk-in relaxes the phone
+  // requirement before contact details (the toggle used to sit on confirm only).
+  const [source, setSource] = useState<'phone' | 'walk-in'>('phone');
   const [resourcePrefilled, setResourcePrefilled] = useState(false);
 
   useEffect(() => {
@@ -233,11 +237,14 @@ export function ResourceBookingFlow({ onCreated }: ResourceBookingFlowProps) {
   };
 
   const stepIndex = Math.max(0, STEPS.indexOf(step));
+  // Header arrow steps back a page (hidden on the first step); the ✕ exits.
+  const chrome = <BookingWizardHeader canGoBack={stepIndex > 0} onBack={goBack} />;
 
   // ----- resource step -----
   if (step === 'resource') {
     return (
       <View style={styles.container}>
+        {chrome}
         <WizardStepIndicator currentStep={stepIndex} labels={STEP_LABELS} />
         {optionsQuery.isLoading ? (
           <LoadingState message="Loading resources…" />
@@ -266,7 +273,6 @@ export function ResourceBookingFlow({ onCreated }: ResourceBookingFlowProps) {
             ))}
           </ScrollView>
         )}
-        <Button label="Back" onPress={goBack} variant="ghost" style={styles.back} />
       </View>
     );
   }
@@ -275,6 +281,7 @@ export function ResourceBookingFlow({ onCreated }: ResourceBookingFlowProps) {
   if (step === 'date' && selectedResource) {
     return (
       <View style={styles.container}>
+        {chrome}
         <WizardStepIndicator currentStep={stepIndex} labels={STEP_LABELS} />
         <MonthDatePicker
           title="Pick a date"
@@ -294,7 +301,6 @@ export function ResourceBookingFlow({ onCreated }: ResourceBookingFlowProps) {
           weekShortcuts
           timeZone={timeZone}
         />
-        <Button label="Back" onPress={goBack} variant="ghost" style={styles.back} />
       </View>
     );
   }
@@ -303,6 +309,7 @@ export function ResourceBookingFlow({ onCreated }: ResourceBookingFlowProps) {
   if (step === 'duration' && selectedResource) {
     return (
       <View style={styles.container}>
+        {chrome}
         <WizardStepIndicator currentStep={stepIndex} labels={STEP_LABELS} />
         <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
           <StepHeading title="How long do you need it?" subtitle={selectedResource.name} />
@@ -326,7 +333,6 @@ export function ResourceBookingFlow({ onCreated }: ResourceBookingFlowProps) {
             onPress={() => setStep('time')}
           />
         </ScrollView>
-        <Button label="Back" onPress={goBack} variant="ghost" style={styles.back} />
       </View>
     );
   }
@@ -335,6 +341,7 @@ export function ResourceBookingFlow({ onCreated }: ResourceBookingFlowProps) {
   if (step === 'time' && selectedResource && selectedDate && durationMinutes) {
     return (
       <View style={styles.container}>
+        {chrome}
         <WizardStepIndicator currentStep={stepIndex} labels={STEP_LABELS} />
         <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
           <StepHeading
@@ -371,7 +378,6 @@ export function ResourceBookingFlow({ onCreated }: ResourceBookingFlowProps) {
             onPress={() => setStep('guest')}
           />
         </ScrollView>
-        <Button label="Back" onPress={goBack} variant="ghost" style={styles.back} />
       </View>
     );
   }
@@ -380,15 +386,18 @@ export function ResourceBookingFlow({ onCreated }: ResourceBookingFlowProps) {
   if (step === 'guest') {
     return (
       <View style={styles.container}>
+        {chrome}
         <WizardStepIndicator currentStep={stepIndex} labels={STEP_LABELS} />
         <GuestDetailsStep
           value={guest}
           onChange={setGuest}
           onContinue={() => setStep('confirm')}
+          isWalkIn={source === 'walk-in'}
+          source={source}
+          onSourceChange={setSource}
           onPickExistingContact={() => setReturningGuest(true)}
           onClearExistingContact={() => setReturningGuest(false)}
         />
-        <Button label="Back" onPress={goBack} variant="ghost" style={styles.back} />
       </View>
     );
   }
@@ -405,8 +414,11 @@ export function ResourceBookingFlow({ onCreated }: ResourceBookingFlowProps) {
 
     return (
       <View style={styles.container}>
+        {chrome}
         <WizardStepIndicator currentStep={stepIndex} labels={STEP_LABELS} />
         <BookingFlowConfirm
+          source={source}
+          onSourceChange={setSource}
           headerTitle={resource.name}
           headerSubtitle={resource.resource_type ?? undefined}
           rows={[
@@ -447,6 +459,7 @@ export function ResourceBookingFlow({ onCreated }: ResourceBookingFlowProps) {
 
   return (
     <View style={styles.container}>
+      {chrome}
       <WizardStepIndicator currentStep={0} labels={STEP_LABELS} />
       <EmptyState
         title="Start again"
@@ -462,5 +475,4 @@ const styles = StyleSheet.create({
   container: { flex: 1, gap: spacing.base, paddingBottom: spacing.xl },
   list: { gap: spacing.md, paddingBottom: spacing.lg },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  back: { marginTop: spacing.sm },
 });

@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { AddonsStep } from '@/components/booking-wizard/AddonsStep';
+import { BookingWizardHeader } from '@/components/booking-wizard/BookingWizardHeader';
 import type { GuestDetails } from '@/components/booking-wizard/GuestDetailsStep';
 import { GuestDetailsStep } from '@/components/booking-wizard/GuestDetailsStep';
 import { MonthDatePicker } from '@/components/booking-wizard/MonthDatePicker';
@@ -312,11 +313,59 @@ export function GroupBookingFlow({
   // ===================== render =====================
   const stepIndex = indicatorIndex(step);
 
+  // Header back arrow → previous sub-step; mirrors each step's former "Back"
+  // target. The group home ('review') keeps its labelled "Switch to single
+  // booking" action instead, so the arrow is hidden there (the ✕ still exits).
+  const canGoBack = step !== 'review';
+  const goBack = () => {
+    switch (step) {
+      case 'label':
+        setStep('review');
+        break;
+      case 'service':
+        setStep('label');
+        break;
+      case 'practitioner':
+        setStep('service');
+        break;
+      case 'variant':
+        setStep(needsPractitioner ? 'practitioner' : 'service');
+        break;
+      case 'addons':
+        setStep(draftVariants.length > 0 ? 'variant' : needsPractitioner ? 'practitioner' : 'service');
+        break;
+      case 'date':
+        setStep(
+          draftAddonGroups.length > 0
+            ? 'addons'
+            : draftVariants.length > 0
+              ? 'variant'
+              : needsPractitioner
+                ? 'practitioner'
+                : 'service',
+        );
+        break;
+      case 'time':
+        setStep('date');
+        break;
+      case 'organiser':
+        setStep('review');
+        break;
+      case 'confirm':
+        setStep('organiser');
+        break;
+      default:
+        break;
+    }
+  };
+  const chrome = <BookingWizardHeader canGoBack={canGoBack} onBack={goBack} />;
+
   // ----- review (group home) -----
   if (step === 'review') {
     const total = groupTotalPence(people);
     return (
       <View style={styles.container}>
+        {chrome}
         <WizardStepIndicator currentStep={stepIndex} labels={STEP_LABELS} />
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
           <Text variant="heading">Group booking</Text>
@@ -414,6 +463,7 @@ export function GroupBookingFlow({
   if (step === 'label') {
     return (
       <View style={styles.container}>
+        {chrome}
         <WizardStepIndicator currentStep={stepIndex} labels={STEP_LABELS} />
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
           <Text variant="heading">Who is this for?</Text>
@@ -435,7 +485,6 @@ export function GroupBookingFlow({
             disabled={!draftLabel.trim()}
             onPress={() => setStep('service')}
           />
-          <Button label="Back" variant="ghost" onPress={() => setStep('review')} />
         </View>
       </View>
     );
@@ -445,6 +494,7 @@ export function GroupBookingFlow({
   if (step === 'service') {
     return (
       <View style={styles.container}>
+        {chrome}
         <WizardStepIndicator currentStep={stepIndex} labels={STEP_LABELS} />
         <ServicePickerStep
           catalog={catalog}
@@ -470,7 +520,6 @@ export function GroupBookingFlow({
             else setStep('date');
           }}
         />
-        <Button label="Back" variant="ghost" onPress={() => setStep('label')} style={styles.back} />
       </View>
     );
   }
@@ -479,6 +528,7 @@ export function GroupBookingFlow({
   if (step === 'practitioner' && draftService) {
     return (
       <View style={styles.container}>
+        {chrome}
         <WizardStepIndicator currentStep={stepIndex} labels={STEP_LABELS} />
         <PractitionerStep
           practitioners={servicePractitioners}
@@ -495,7 +545,6 @@ export function GroupBookingFlow({
             else setStep('date');
           }}
         />
-        <Button label="Back" variant="ghost" onPress={() => setStep('service')} style={styles.back} />
       </View>
     );
   }
@@ -504,6 +553,7 @@ export function GroupBookingFlow({
   if (step === 'variant' && draftService) {
     return (
       <View style={styles.container}>
+        {chrome}
         <WizardStepIndicator currentStep={stepIndex} labels={STEP_LABELS} />
         <VariantStep
           serviceName={draftService.serviceName}
@@ -519,12 +569,6 @@ export function GroupBookingFlow({
             else setStep('date');
           }}
         />
-        <Button
-          label="Back"
-          variant="ghost"
-          onPress={() => setStep(needsPractitioner ? 'practitioner' : 'service')}
-          style={styles.back}
-        />
       </View>
     );
   }
@@ -533,18 +577,13 @@ export function GroupBookingFlow({
   if (step === 'addons') {
     return (
       <View style={styles.container}>
+        {chrome}
         <WizardStepIndicator currentStep={stepIndex} labels={STEP_LABELS} />
         <AddonsStep
           groups={draftAddonGroups}
           value={draftAddonIds}
           onChange={setDraftAddonIds}
           onContinue={() => setStep('date')}
-        />
-        <Button
-          label="Back"
-          variant="ghost"
-          onPress={() => setStep(draftVariants.length > 0 ? 'variant' : needsPractitioner ? 'practitioner' : 'service')}
-          style={styles.back}
         />
       </View>
     );
@@ -554,6 +593,7 @@ export function GroupBookingFlow({
   if (step === 'date' && draftService) {
     return (
       <View style={styles.container}>
+        {chrome}
         <WizardStepIndicator currentStep={stepIndex} labels={STEP_LABELS} />
         <MonthDatePicker
           monthAnchor={draftMonthAnchor}
@@ -571,22 +611,6 @@ export function GroupBookingFlow({
           weekShortcuts
           timeZone={timeZone}
         />
-        <Button
-          label="Back"
-          variant="ghost"
-          onPress={() =>
-            setStep(
-              draftAddonGroups.length > 0
-                ? 'addons'
-                : draftVariants.length > 0
-                  ? 'variant'
-                  : needsPractitioner
-                    ? 'practitioner'
-                    : 'service',
-            )
-          }
-          style={styles.back}
-        />
       </View>
     );
   }
@@ -595,6 +619,7 @@ export function GroupBookingFlow({
   if (step === 'time' && draftService && draftDate) {
     return (
       <View style={styles.container}>
+        {chrome}
         <WizardStepIndicator currentStep={stepIndex} labels={STEP_LABELS} />
         <TimeSlotStep
           addonIds={draftAddonIds}
@@ -611,7 +636,6 @@ export function GroupBookingFlow({
           venueId={venueId}
           timeZone={timeZone}
         />
-        <Button label="Back" variant="ghost" onPress={() => setStep('date')} style={styles.back} />
       </View>
     );
   }
@@ -620,6 +644,7 @@ export function GroupBookingFlow({
   if (step === 'organiser') {
     return (
       <View style={styles.container}>
+        {chrome}
         <WizardStepIndicator currentStep={stepIndex} labels={STEP_LABELS} />
         <GuestDetailsStep
           isWalkIn={source === 'walk-in'}
@@ -630,7 +655,6 @@ export function GroupBookingFlow({
           onClearExistingContact={() => setReturningGuest(false)}
           collectClientAddress={collectClientAddress}
         />
-        <Button label="Back" variant="ghost" onPress={() => setStep('review')} style={styles.back} />
       </View>
     );
   }
@@ -643,6 +667,7 @@ export function GroupBookingFlow({
     const total = groupTotalPence(people);
     return (
       <View style={styles.container}>
+        {chrome}
         <WizardStepIndicator currentStep={stepIndex} labels={STEP_LABELS} />
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
           <Text variant="heading">Review &amp; confirm</Text>
@@ -680,13 +705,13 @@ export function GroupBookingFlow({
               <Text variant="bodySmall" tone="danger">
                 {complianceError}
               </Text>
-              <Button
-                label="Book anyway (admin override)"
-                variant="secondary"
-                fullWidth
-                loading={createGroup.isPending}
-                onPress={() => handleCreate(true)}
-              />
+              {/* No admin-override here: the create-group route has no override
+                  path (unlike single-create), so an override resubmit just 409s
+                  again. Resolve the flagged attendee's requirement (or book them
+                  individually) to proceed. */}
+              <Text variant="caption" tone="muted">
+                Resolve the flagged requirement, or book the affected guest individually, to continue.
+              </Text>
             </View>
           ) : null}
 
@@ -704,7 +729,6 @@ export function GroupBookingFlow({
             loading={createGroup.isPending}
             onPress={() => handleCreate()}
           />
-          <Button label="Back" variant="ghost" onPress={() => setStep('organiser')} />
         </View>
       </View>
     );
@@ -752,5 +776,4 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   actions: { gap: spacing.sm },
-  back: { marginTop: spacing.sm },
 });

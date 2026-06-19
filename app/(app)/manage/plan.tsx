@@ -31,6 +31,7 @@ import { Card } from '@/components/ui/Card';
 import { Screen } from '@/components/ui/Screen';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
+import { mustManageSubscriptionOnWeb } from '@/lib/billing/store-billing-policy';
 import { getWebUrl } from '@/lib/env';
 import { hapticError, hapticSuccess, hapticWarning } from '@/lib/haptics';
 import {
@@ -201,6 +202,12 @@ export default function PlanScreen() {
 
   const isAdmin = venue?.current_user_role === 'admin';
 
+  // Reader-app posture: on native app-store builds the ResNeo subscription can be
+  // VIEWED and MANAGED here, but PURCHASES / plan changes are routed to the web
+  // dashboard (Apple Guideline 3.1.1 / Play Billing). The Stripe Connect flow for
+  // taking client payments is unaffected. See lib/billing/store-billing-policy.ts.
+  const manageOnWeb = mustManageSubscriptionOnWeb();
+
   // Billing status is admin-only on the server (403 otherwise).
   const {
     data: billing,
@@ -302,6 +309,12 @@ export default function PlanScreen() {
   }
 
   function handleResubscribe() {
+    // Starting a NEW subscription is a purchase — under the reader-app posture we
+    // send admins to the web dashboard instead of opening Stripe Checkout in-app.
+    if (manageOnWeb) {
+      openWeb('/dashboard/settings?tab=plan');
+      return;
+    }
     hapticWarning();
     setActionError(null);
     setSuccessMsg(null);
@@ -464,9 +477,19 @@ export default function PlanScreen() {
           <StatusBanner
             tone="warning"
             title="Your subscription has ended"
-            message="Venue changes and public online booking are paused until you start a new subscription. Use Resubscribe to pay again with Stripe Checkout."
-            buttonLabel={changePlanMutation.isPending ? 'Opening Stripe…' : 'Resubscribe'}
-            loading={changePlanMutation.isPending}
+            message={
+              manageOnWeb
+                ? 'Venue changes and public online booking are paused until you start a new subscription. Resubscribe on the ResNeo website — your plan reactivates here automatically.'
+                : 'Venue changes and public online booking are paused until you start a new subscription. Use Resubscribe to pay again with Stripe Checkout.'
+            }
+            buttonLabel={
+              manageOnWeb
+                ? 'Resubscribe on the web'
+                : changePlanMutation.isPending
+                  ? 'Opening Stripe…'
+                  : 'Resubscribe'
+            }
+            loading={!manageOnWeb && changePlanMutation.isPending}
             onPress={isAdmin ? handleResubscribe : undefined}
           />
         )}
@@ -654,6 +677,8 @@ export default function PlanScreen() {
             currentTier={pricingTier}
             planStatus={planStatus}
             hasStripeSubscription={hasStripeSub && billingActive}
+            manageOnWeb={manageOnWeb}
+            onManageOnWeb={() => openWeb('/dashboard/settings?tab=plan')}
             onChanged={(message) => {
               setSuccessMsg(message);
               setActionError(null);

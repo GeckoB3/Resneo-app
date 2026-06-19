@@ -267,7 +267,13 @@ export function AllCalendarsDayGrid({
                 />
               ) : null}
 
-              <View style={styles.columnsRow}>
+              {/* Explicit height so each column (and its absolute-fill empty-tap
+                  Pressable) spans the full grid: the column's children are all
+                  absolutely positioned, so without this the column collapses to
+                  0px and empty-slot taps never register (only the explicitly-
+                  sized appointment blocks would be tappable). Columns stretch to
+                  this height via the row's default alignItems: 'stretch'. */}
+              <View style={[styles.columnsRow, { height: totalHeight }]}>
                 {calendars.map((cal) => (
                   <DayColumn
                     key={cal.calendarId}

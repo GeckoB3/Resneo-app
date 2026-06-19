@@ -9,6 +9,7 @@ import {
 } from '@/components/booking-wizard/BookingFlowPrimitives';
 import type { GuestDetails } from '@/components/booking-wizard/GuestDetailsStep';
 import { GuestDetailsStep } from '@/components/booking-wizard/GuestDetailsStep';
+import { BookingWizardHeader } from '@/components/booking-wizard/BookingWizardHeader';
 import { MonthDatePicker } from '@/components/booking-wizard/MonthDatePicker';
 import { WizardStepIndicator } from '@/components/booking-wizard/WizardStepIndicator';
 import { Button } from '@/components/ui/Button';
@@ -75,6 +76,9 @@ export function EventBookingFlow({ onCreated }: EventBookingFlowProps) {
   const [guest, setGuest] = useState<GuestDetails>(EMPTY_GUEST);
   const [guestPrefilled, setGuestPrefilled] = useState(false);
   const [returningGuest, setReturningGuest] = useState(false);
+  // Phone vs walk-in — chosen on the guest step so a walk-in relaxes the phone
+  // requirement before contact details (the toggle used to sit on confirm only).
+  const [source, setSource] = useState<'phone' | 'walk-in'>('phone');
 
   useEffect(() => {
     if (guestPrefilled || !prefillGuestQuery.data) return;
@@ -134,11 +138,14 @@ export function EventBookingFlow({ onCreated }: EventBookingFlowProps) {
   };
 
   const stepIndex = Math.max(0, STEPS.indexOf(step));
+  // Header arrow steps back a page (hidden on the first step); the ✕ exits.
+  const chrome = <BookingWizardHeader canGoBack={stepIndex > 0} onBack={goBack} />;
 
   // ----- event step -----
   if (step === 'event') {
     return (
       <View style={styles.container}>
+        {chrome}
         <WizardStepIndicator currentStep={stepIndex} labels={STEP_LABELS} />
         {offeringsQuery.isLoading ? (
           <LoadingState message="Loading events…" />
@@ -175,7 +182,6 @@ export function EventBookingFlow({ onCreated }: EventBookingFlowProps) {
             ))}
           </ScrollView>
         )}
-        <Button label="Back" onPress={goBack} variant="ghost" style={styles.back} />
       </View>
     );
   }
@@ -184,6 +190,7 @@ export function EventBookingFlow({ onCreated }: EventBookingFlowProps) {
   if (step === 'date' && selectedEvent) {
     return (
       <View style={styles.container}>
+        {chrome}
         <WizardStepIndicator currentStep={stepIndex} labels={STEP_LABELS} />
         <MonthDatePicker
           title="Pick a date"
@@ -202,7 +209,6 @@ export function EventBookingFlow({ onCreated }: EventBookingFlowProps) {
           onContinue={() => setStep('tickets')}
           timeZone={timeZone}
         />
-        <Button label="Back" onPress={goBack} variant="ghost" style={styles.back} />
       </View>
     );
   }
@@ -212,6 +218,7 @@ export function EventBookingFlow({ onCreated }: EventBookingFlowProps) {
     const multiple = occurrencesForDate.length > 1;
     return (
       <View style={styles.container}>
+        {chrome}
         <WizardStepIndicator currentStep={stepIndex} labels={STEP_LABELS} />
         <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
           <StepHeading
@@ -288,7 +295,6 @@ export function EventBookingFlow({ onCreated }: EventBookingFlowProps) {
             }}
           />
         </ScrollView>
-        <Button label="Back" onPress={goBack} variant="ghost" style={styles.back} />
       </View>
     );
   }
@@ -297,15 +303,18 @@ export function EventBookingFlow({ onCreated }: EventBookingFlowProps) {
   if (step === 'guest') {
     return (
       <View style={styles.container}>
+        {chrome}
         <WizardStepIndicator currentStep={stepIndex} labels={STEP_LABELS} />
         <GuestDetailsStep
           value={guest}
           onChange={setGuest}
           onContinue={() => setStep('confirm')}
+          isWalkIn={source === 'walk-in'}
+          source={source}
+          onSourceChange={setSource}
           onPickExistingContact={() => setReturningGuest(true)}
           onClearExistingContact={() => setReturningGuest(false)}
         />
-        <Button label="Back" onPress={goBack} variant="ghost" style={styles.back} />
       </View>
     );
   }
@@ -325,8 +334,11 @@ export function EventBookingFlow({ onCreated }: EventBookingFlowProps) {
 
     return (
       <View style={styles.container}>
+        {chrome}
         <WizardStepIndicator currentStep={stepIndex} labels={STEP_LABELS} />
         <BookingFlowConfirm
+          source={source}
+          onSourceChange={setSource}
           headerTitle={selectedEvent.event_name}
           headerSubtitle={formatTimeRange(occ.start_time, occ.end_time)}
           rows={[
@@ -372,6 +384,7 @@ export function EventBookingFlow({ onCreated }: EventBookingFlowProps) {
 
   return (
     <View style={styles.container}>
+      {chrome}
       <WizardStepIndicator currentStep={0} labels={STEP_LABELS} />
       <EmptyState
         title="Start again"
@@ -390,5 +403,4 @@ const styles = StyleSheet.create({
   ticketRow: { gap: spacing.xs },
   summaryLine: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   summaryTotal: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: spacing.md, marginTop: spacing.md },
-  back: { marginTop: spacing.sm },
 });

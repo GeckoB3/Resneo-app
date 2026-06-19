@@ -65,3 +65,26 @@ export function canShowCancelStaffAttendanceConfirmationAction(
   if (!isAttendanceConfirmed(row)) return false;
   return !ATTENDANCE_ACTION_EXCLUDED.has(row.status);
 }
+
+/**
+ * Whether to surface the staff attendance Confirm/Unconfirm toggle in booking
+ * detail. It's the union of the confirm + cancel gating, MINUS the case where a
+ * lifecycle `Confirmed` booking already offers the "Undo confirm" status revert
+ * (target `Booked`): that single revert cancels the confirmation, so a second
+ * "Unconfirm" attendance button next to it is redundant.
+ *
+ * Mirrors web `ExpandedBookingContent` `showUndoAttendanceViaPatch`. The confirm
+ * side is independently inert once `isAttendanceConfirmed` (which `Confirmed`
+ * implies), so guarding the whole toggle reproduces the web's visible behaviour:
+ * a `Confirmed` booking shows only "Undo confirm".
+ */
+export function canShowStaffAttendanceToggle(
+  row: BookingStaffIndicatorInput & { source?: string | null; status: string },
+  revertTarget: string | null | undefined,
+): boolean {
+  if (row.status === 'Confirmed' && revertTarget === 'Booked') return false;
+  return (
+    canShowConfirmStaffAttendanceConfirmationAction(row) ||
+    canShowCancelStaffAttendanceConfirmationAction(row)
+  );
+}

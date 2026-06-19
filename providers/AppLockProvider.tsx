@@ -41,7 +41,7 @@ type AppLockContextValue = {
   setAppLockEnabled: (next: boolean) => Promise<boolean>;
   /** True only when the device has biometric hardware AND an enrolled biometric. */
   supported: boolean;
-  /** True while the lock overlay is covering the app (resume-from-background). */
+  /** True while the lock overlay covers the app (raised on background, cleared after unlock on resume). */
   isLocked: boolean;
   /** Manually trigger the unlock prompt (the overlay's "Unlock" button). */
   unlock: () => Promise<void>;
@@ -155,31 +155,57 @@ export function AppLockProvider({ children }: AppLockProviderProps) {
     }
   }, [authInFlight]);
 
-  // ── Lock on resume-from-background ────────────────────────────────────────
+  // The AppState listener is registered once; reach the latest `unlock` via a ref
+  // so it never re-subscribes (and never captures a stale closure).
+  const unlockRef = useRef(unlock);
+  useEffect(() => {
+    unlockRef.current = unlock;
+  }, [unlock]);
+
+  const lockShownRef = useRef(false);
+
+  // ── Cover on background; prompt on resume ─────────────────────────────────
+  // We raise the cover as the app LEAVES the foreground (→ background), BEFORE
+  // the OS captures the app-switcher / recents thumbnail — otherwise the snapshot
+  // shows client PII. We deliberately cover on `background` and NOT the transient
+  // `inactive` (which also fires for the biometric prompt itself and the Control
+  // Centre / notification pull-down), so neither re-triggers the cover. The
+  // unlock prompt is deferred until the app is visible (`active`) again.
   useEffect(() => {
     const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
       const prev = appStateRef.current;
       appStateRef.current = next;
+      if (!appLockEnabledRef.current || !supportedRef.current) return;
+
+      if (next === 'background' && !isLockedRef.current) {
+        setIsLocked(true);
+        return;
+      }
+
       const cameToForeground =
         next === 'active' && (prev === 'background' || prev === 'inactive');
-      if (
-        cameToForeground &&
-        appLockEnabledRef.current &&
-        supportedRef.current &&
-        !isLockedRef.current
-      ) {
-        setIsLocked(true);
+      if (cameToForeground) {
+        if (!isLockedRef.current) {
+          // Resumed uncovered (e.g. backgrounded before the lock was armed) —
+          // cover now; the active-guarded effect below fires the prompt.
+          setIsLocked(true);
+        } else if (!lockShownRef.current) {
+          // Already covered while backgrounded (where the effect stays quiet),
+          // so kick off the unlock prompt here, exactly once.
+          lockShownRef.current = true;
+          void unlockRef.current();
+        }
       }
     });
     return () => sub.remove();
   }, []);
 
-  // Auto-attempt the prompt ONCE when the overlay first appears, so a returning
+  // Auto-attempt the prompt ONCE when the overlay appears WHILE THE APP IS ACTIVE
+  // (the cover raised on background must stay silent until resume), so a returning
   // user normally just sees Face ID rather than having to tap Unlock. A failure
   // leaves the manual retry button (no loop).
-  const lockShownRef = useRef(false);
   useEffect(() => {
-    if (isLocked && !lockShownRef.current) {
+    if (isLocked && !lockShownRef.current && appStateRef.current === 'active') {
       lockShownRef.current = true;
       void unlock();
     } else if (!isLocked) {

@@ -49,6 +49,9 @@ jest.mock('@/lib/queries/useStaffMe', () => ({
     isLoading: false,
   }),
 }));
+jest.mock('@/lib/queries/useBillingStatus', () => ({
+  useBillingStatus: () => ({ data: undefined }),
+}));
 jest.mock('@/providers/VenueProvider', () => ({
   useVenueContext: () => ({
     venue: {

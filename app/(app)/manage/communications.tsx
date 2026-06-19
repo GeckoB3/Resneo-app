@@ -9,6 +9,7 @@ import {
   Switch,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CommunicationPreviewSheet } from '@/components/manage/CommunicationPreviewSheet';
 import { Button } from '@/components/ui/Button';
@@ -960,6 +961,9 @@ function StickyBar({
   saveDisabled?: boolean;
 }) {
   const { colors } = useTheme();
+  // Pad the bar past the bottom safe-area inset (home indicator / gesture nav),
+  // otherwise the Save button is obscured by the system inset. Mirrors hours.tsx.
+  const insets = useSafeAreaInsets();
   // Use useState to hold the Animated.Value so it is stable across renders
   // without accessing a ref during render (satisfies react-hooks/refs).
   const [anim] = useState(() => new Animated.Value(0));
@@ -984,6 +988,7 @@ function StickyBar({
         {
           backgroundColor: colors.surfaceRaised,
           borderTopColor: colors.border,
+          paddingBottom: spacing.md + insets.bottom,
           transform: [{ translateY }],
           opacity: anim,
         },
@@ -1123,7 +1128,8 @@ const styles = StyleSheet.create({
   },
   stickyBar: {
     borderTopWidth: StyleSheet.hairlineWidth,
-    padding: spacing.base,
-    paddingBottom: spacing.md,
+    paddingHorizontal: spacing.base,
+    paddingTop: spacing.base,
+    // paddingBottom is applied inline (spacing.md + safe-area inset).
   },
 });

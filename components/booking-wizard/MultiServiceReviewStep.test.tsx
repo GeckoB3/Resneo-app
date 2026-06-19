@@ -51,7 +51,6 @@ describe('MultiServiceReviewStep', () => {
         onAddService={jest.fn()}
         onRemoveSegment={jest.fn()}
         onContinue={jest.fn()}
-        onBack={jest.fn()}
       />,
     );
     expect(screen.getByText('Cut')).toBeTruthy();
@@ -70,7 +69,6 @@ describe('MultiServiceReviewStep', () => {
         onAddService={onAddService}
         onRemoveSegment={jest.fn()}
         onContinue={jest.fn()}
-        onBack={jest.fn()}
       />,
     );
     await press(() => screen.getByText('+ Add another service'));
@@ -88,7 +86,6 @@ describe('MultiServiceReviewStep', () => {
         onAddService={jest.fn()}
         onRemoveSegment={onRemoveSegment}
         onContinue={jest.fn()}
-        onBack={jest.fn()}
       />,
     );
     await press(() => screen.getByLabelText('Remove Colour'));
@@ -104,7 +101,6 @@ describe('MultiServiceReviewStep', () => {
         onAddService={jest.fn()}
         onRemoveSegment={jest.fn()}
         onContinue={onContinue}
-        onBack={jest.fn()}
       />,
     );
     await press(() => screen.getByText('Continue to details'));
@@ -129,7 +125,6 @@ describe('MultiServiceReviewStep', () => {
         onAddService={jest.fn()}
         onRemoveSegment={jest.fn()}
         onContinue={jest.fn()}
-        onBack={jest.fn()}
       />,
     );
     // At 4 segments the "add another" affordance is replaced by the cap hint.

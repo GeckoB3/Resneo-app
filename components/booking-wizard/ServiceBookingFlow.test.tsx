@@ -66,6 +66,7 @@ jest.mock('@/lib/analytics', () => ({
   track: jest.fn(),
 }));
 jest.mock('expo-router', () => ({
+  Stack: { Screen: () => null },
   useRouter: () => ({ back: jest.fn(), push: jest.fn() }),
   useLocalSearchParams: () => ({}),
 }));

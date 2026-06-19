@@ -8,9 +8,11 @@
  * 3. Fallback: React Native Share.share() passes CSV as text (works everywhere).
  *
  * Both expo-file-system and expo-sharing are loaded with dynamic require() and
- * typed with `unknown` so the code compiles whether or not they are installed.
- * expo-file-system ships with expo-router (SDK 56), expo-sharing does not — it
- * would need to be added to package.json to get proper file-share behaviour.
+ * typed with `unknown` so the code stays resilient if either is unavailable at
+ * runtime. expo-file-system ships with expo-router (SDK 56); expo-sharing is now
+ * a direct dependency, so path (1) — temp file + native share sheet with the
+ * correct CSV mime/UTI — is the default on device (a native build is required
+ * for the module to load; in Expo Go / an old binary it falls through to (3)).
  */
 import { Platform, Share } from 'react-native';
 

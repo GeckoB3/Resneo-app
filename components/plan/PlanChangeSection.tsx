@@ -21,6 +21,15 @@ type PlanChangeSectionProps = {
   currentTier: AppointmentsTier;
   planStatus: PlanStatus;
   hasStripeSubscription: boolean;
+  /**
+   * Reader-app posture (native app-store builds): when true, plan changes are
+   * NOT performed in-app — the section renders a single "manage on the web"
+   * link instead, routing upgrades/downgrades to the web dashboard. See
+   * `lib/billing/store-billing-policy.ts`.
+   */
+  manageOnWeb: boolean;
+  /** Opens the web dashboard plan page (used when `manageOnWeb`). */
+  onManageOnWeb: () => void;
   /** Bubbles the server success message up to the page-level banner. */
   onChanged: (message: string) => void;
 };
@@ -35,6 +44,8 @@ export function PlanChangeSection({
   currentTier,
   planStatus,
   hasStripeSubscription,
+  manageOnWeb,
+  onManageOnWeb,
   onChanged,
 }: PlanChangeSectionProps) {
   const { colors } = useTheme();
@@ -52,7 +63,30 @@ export function PlanChangeSection({
     planStatus === 'cancelling' ||
     planStatus === 'cancelled';
 
-  const previews = useAppointmentsPlanPreviews(otherTiers, !blocked);
+  // Skip proration previews entirely under the reader-app posture — we never
+  // offer the in-app change there, so there is no estimate to show or fetch.
+  const previews = useAppointmentsPlanPreviews(otherTiers, !blocked && !manageOnWeb);
+
+  // Reader-app posture (native app-store builds): no in-app plan changes. Show a
+  // single link to the web dashboard, where upgrades/downgrades and new
+  // subscriptions are handled. The change applies back here automatically.
+  if (manageOnWeb) {
+    return (
+      <Card>
+        <Text variant="label">Change your plan</Text>
+        <Text variant="bodySmall" tone="secondary" style={styles.intro}>
+          Upgrades, downgrades, and new subscriptions are managed on the ResNeo
+          website. Any change applies here automatically once you’re done.
+        </Text>
+        <Button
+          label="Manage plan on the web"
+          variant="secondary"
+          fullWidth
+          onPress={onManageOnWeb}
+        />
+      </Card>
+    );
+  }
 
   const selectedPreview = selectedTier ? previews[selectedTier] : null;
   const selectedIsUpgrade =

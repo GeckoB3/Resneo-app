@@ -140,6 +140,14 @@ type BookingFlowConfirmProps = {
   successTitle: string;
   successSubtitle: string;
   initialSource?: 'phone' | 'walk-in';
+  /**
+   * Controlled booking source. When `source`/`onSourceChange` are supplied the
+   * flow owns the Phone/Walk-in choice (e.g. surfaced on the guest step) and the
+   * internal "Booking type" selector is hidden. Omit both for the default
+   * uncontrolled selector shown here.
+   */
+  source?: 'phone' | 'walk-in';
+  onSourceChange?: (source: 'phone' | 'walk-in') => void;
   onCreated: (bookingId: string) => void;
   onBookAnother?: () => void;
 };
@@ -175,12 +183,18 @@ export function BookingFlowConfirm({
   successTitle,
   successSubtitle,
   initialSource = 'phone',
+  source: controlledSource,
+  onSourceChange,
   onCreated,
   onBookAnother,
 }: BookingFlowConfirmProps) {
   const { colors } = useTheme();
   const createBooking = useCreateBooking();
-  const [source, setSource] = useState<'phone' | 'walk-in'>(initialSource);
+  // Controlled when the flow passes source/onSourceChange (it then renders the
+  // selector itself, e.g. on the guest step); otherwise own the state here.
+  const [internalSource, setInternalSource] = useState<'phone' | 'walk-in'>(initialSource);
+  const source = controlledSource ?? internalSource;
+  const setSource = onSourceChange ?? setInternalSource;
   const [requireDeposit, setRequireDeposit] = useState(false);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const [complianceError, setComplianceError] = useState<string | null>(null);
@@ -314,19 +328,23 @@ export function BookingFlowConfirm({
         ) : null}
       </Card>
 
-      <View style={styles.sourceBlock}>
-        <Text variant="label" tone="secondary">
-          Booking type
-        </Text>
-        <Segmented
-          options={[
-            { value: 'phone', label: 'Phone' },
-            { value: 'walk-in', label: 'Walk-in' },
-          ]}
-          value={source}
-          onChange={setSource}
-        />
-      </View>
+      {/* Hidden when the flow controls the source (it renders the selector
+          itself, e.g. on the guest step) to avoid a duplicate toggle. */}
+      {onSourceChange ? null : (
+        <View style={styles.sourceBlock}>
+          <Text variant="label" tone="secondary">
+            Booking type
+          </Text>
+          <Segmented
+            options={[
+              { value: 'phone', label: 'Phone' },
+              { value: 'walk-in', label: 'Walk-in' },
+            ]}
+            value={source}
+            onChange={setSource}
+          />
+        </View>
+      )}
 
       {hasDeposit && source !== 'walk-in' ? (
         <Pressable

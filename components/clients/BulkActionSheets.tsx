@@ -183,8 +183,11 @@ export function BulkMessageSheet({
         channel,
       });
       hapticSuccess();
-      const sent = result.sent ?? guestIds.length;
-      const skipped = result.skipped ?? 0;
+      // The route returns a per-contact `results` array (+ `missing_ids`), NOT a
+      // top-level count — derive the totals so opt-outs/no-consent/not-found are
+      // reported as skipped rather than silently counted as "messaged".
+      const sent = result.results?.filter((r) => r.sent).length ?? 0;
+      const skipped = Math.max(0, guestIds.length - sent);
       // Result toast fires directly off the resolved mutation, then we close the
       // selection — Alert.alert is a no-op on web so it gave zero feedback there.
       toast.success(

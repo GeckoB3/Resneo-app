@@ -96,6 +96,28 @@ type ApiFetchOptions = RequestInit & {
 /** Default request timeout — see ApiFetchOptions.timeoutMs. */
 const DEFAULT_TIMEOUT_MS = 15_000;
 
+/**
+ * Optional hook that yields a *fresh* access token after a 401, letting apiFetch
+ * transparently refresh and retry the request once. Registered by AuthProvider
+ * (it owns the Supabase session); kept as an injected dependency so this module
+ * stays auth-agnostic and unit tests that never register it keep the original
+ * single-attempt behaviour.
+ *
+ * Contract: return the NEW token, or `null` when a different token could not be
+ * obtained. `null` means "do NOT retry": either the session is gone, or the
+ * token is still valid and the 401 is a genuine permission failure — e.g. the
+ * staff gate's "valid session but not venue staff" 401, which must surface so
+ * the gate can redirect to /staff-required rather than loop.
+ */
+export type AccessTokenRefresher = (expiredToken: string) => Promise<string | null>;
+
+let accessTokenRefresher: AccessTokenRefresher | null = null;
+
+/** Register (or clear, with `null`) the 401 → refresh-and-retry-once hook. */
+export function setAccessTokenRefresher(refresher: AccessTokenRefresher | null): void {
+  accessTokenRefresher = refresher;
+}
+
 function parseApiResponseBody(text: string, url: string): unknown {
   if (!text) {
     return null;
@@ -136,66 +158,104 @@ export async function apiFetch<T>(
   } = options;
   const url = `${getApiUrl()}${path.startsWith('/') ? path : `/${path}`}`;
 
-  // Time-box the request so a stalled network rejects (retryable) instead of
-  // hanging the UI. Also forward any caller-provided signal (e.g. React Query
-  // cancellation) so both can abort the same fetch.
-  const controller = new AbortController();
-  let timedOut = false;
-  const timeoutId = setTimeout(() => {
-    timedOut = true;
-    controller.abort();
-  }, timeoutMs);
-  if (callerSignal) {
-    if (callerSignal.aborted) {
+  // A single network attempt with the given Bearer token. Each attempt gets its
+  // own AbortController/timeout so a retry (below) is independently time-boxed.
+  const attempt = async (bearer: string | null | undefined): Promise<T> => {
+    // Time-box the request so a stalled network rejects (retryable) instead of
+    // hanging the UI. Also forward any caller-provided signal (e.g. React Query
+    // cancellation) so both can abort the same fetch.
+    const controller = new AbortController();
+    let timedOut = false;
+    const timeoutId = setTimeout(() => {
+      timedOut = true;
       controller.abort();
-    } else if (typeof callerSignal.addEventListener === 'function') {
-      callerSignal.addEventListener('abort', () => controller.abort(), { once: true });
+    }, timeoutMs);
+    if (callerSignal) {
+      if (callerSignal.aborted) {
+        controller.abort();
+      } else if (typeof callerSignal.addEventListener === 'function') {
+        callerSignal.addEventListener('abort', () => controller.abort(), { once: true });
+      }
     }
-  }
+
+    try {
+      const response = await fetch(url, {
+        ...init,
+        signal: controller.signal,
+        headers: {
+          Accept: 'application/json',
+          // Let the platform set the multipart boundary for FormData uploads
+          // (collective page-asset uploads); only force JSON for plain bodies.
+          ...(init.body && !(init.body instanceof FormData)
+            ? { 'Content-Type': 'application/json' }
+            : {}),
+          ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}),
+          ...headers,
+        },
+      });
+
+      const text = await response.text();
+      const data = parseApiResponseBody(text, url);
+
+      if (!response.ok) {
+        throw new ApiError(
+          getApiErrorMessage(data, response.status),
+          response.status,
+          data,
+        );
+      }
+
+      return data as T;
+    } catch (err) {
+      // Preserve our own structured errors (4xx/5xx, HTML-instead-of-JSON, etc.).
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      if (timedOut) {
+        throw new ApiError('Request timed out. Check your connection and try again.', 408);
+      }
+      // Genuine caller cancellation — re-throw so React Query treats it as a
+      // cancellation rather than a failure.
+      if (callerSignal?.aborted) {
+        throw err;
+      }
+      throw new ApiError('Network request failed. Check your connection and try again.', 0);
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  };
 
   try {
-    const response = await fetch(url, {
-      ...init,
-      signal: controller.signal,
-      headers: {
-        Accept: 'application/json',
-        // Let the platform set the multipart boundary for FormData uploads
-        // (collective page-asset uploads); only force JSON for plain bodies.
-        ...(init.body && !(init.body instanceof FormData)
-          ? { 'Content-Type': 'application/json' }
-          : {}),
-        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-        ...headers,
-      },
-    });
-
-    const text = await response.text();
-    const data = parseApiResponseBody(text, url);
-
-    if (!response.ok) {
-      throw new ApiError(
-        getApiErrorMessage(data, response.status),
-        response.status,
-        data,
-      );
-    }
-
-    return data as T;
+    return await attempt(accessToken);
   } catch (err) {
-    // Preserve our own structured errors (4xx/5xx, HTML-instead-of-JSON, etc.).
-    if (err instanceof ApiError) {
-      throw err;
+    // Transparently recover from an expired Bearer token — typically the first
+    // request after the app resumes from the background, before Supabase's
+    // auto-refresh has propagated the new token into the query layer. We retry
+    // ONCE, and only when all of these hold:
+    //   - it's a 401 (not a network/timeout/permission error),
+    //   - we actually sent a token (anonymous 401s aren't an expiry),
+    //   - a refresher is registered, and
+    //   - it returns a *different* token (a refresh actually happened).
+    // A refresher returning the same token / null means the 401 is a genuine
+    // permission failure (e.g. not venue staff) — rethrow so callers and the
+    // staff gate handle it exactly as before. Retrying a 401 is safe even for
+    // mutations: the server rejected the request pre-handler, so nothing ran.
+    if (
+      err instanceof ApiError &&
+      err.status === 401 &&
+      accessToken &&
+      accessTokenRefresher
+    ) {
+      let refreshed: string | null = null;
+      try {
+        refreshed = await accessTokenRefresher(accessToken);
+      } catch {
+        refreshed = null;
+      }
+      if (refreshed && refreshed !== accessToken) {
+        return attempt(refreshed);
+      }
     }
-    if (timedOut) {
-      throw new ApiError('Request timed out. Check your connection and try again.', 408);
-    }
-    // Genuine caller cancellation — re-throw so React Query treats it as a
-    // cancellation rather than a failure.
-    if (callerSignal?.aborted) {
-      throw err;
-    }
-    throw new ApiError('Network request failed. Check your connection and try again.', 0);
-  } finally {
-    clearTimeout(timeoutId);
+    throw err;
   }
 }

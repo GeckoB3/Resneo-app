@@ -56,6 +56,16 @@ function add30(time: string): string {
   return formatTime(Math.floor(total / 60), total % 60);
 }
 
+/**
+ * Accept only a well-formed 24h "HH:mm" — mirrors the backend's create-block
+ * regex exactly, so anything that passes here passes the server (a typo like
+ * "25:00" or "09:99" otherwise sailed past the old end>start-only check and came
+ * back as a generic "Invalid request").
+ */
+function isValidHm(time: string): boolean {
+  return /^([01]?\d|2[0-3]):[0-5]\d$/.test(time.trim());
+}
+
 /** Bottom sheet for creating or editing a practitioner time block. */
 export function BlockEditSheet({ target, onClose }: BlockEditSheetProps) {
   const [startTime, setStartTime] = useState('');
@@ -95,6 +105,10 @@ export function BlockEditSheet({ target, onClose }: BlockEditSheetProps) {
   );
 
   function validate(): boolean {
+    if (!isValidHm(startTime) || !isValidHm(endTime)) {
+      setTimeError('Enter times as HH:mm (e.g. 09:30).');
+      return false;
+    }
     const { hours: sh, minutes: sm } = parseTime(startTime);
     const { hours: eh, minutes: em } = parseTime(endTime);
     if (eh * 60 + em <= sh * 60 + sm) {
@@ -111,19 +125,22 @@ export function BlockEditSheet({ target, onClose }: BlockEditSheetProps) {
   async function handleSave() {
     if (!target || !validate()) return;
     try {
+      // Send times as HH:mm — the create route validates `HH:mm` exactly (it
+      // rejects a seconds suffix with "Invalid request"), and the edit route
+      // accepts HH:mm too. `startTime`/`endTime` are already HH:mm.
       if (target.mode === 'create') {
         await createMutation.mutateAsync({
           practitioner_id: target.practitionerId,
           block_date: target.date,
-          start_time: `${startTime}:00`,
-          end_time: `${endTime}:00`,
+          start_time: startTime,
+          end_time: endTime,
           reason: reason.trim() || undefined,
         });
       } else {
         await updateMutation.mutateAsync({
           id: target.blockId,
-          start_time: `${startTime}:00`,
-          end_time: `${endTime}:00`,
+          start_time: startTime,
+          end_time: endTime,
           reason: reason.trim() || null,
         });
       }

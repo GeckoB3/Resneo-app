@@ -9,6 +9,7 @@ import {
 } from '@/components/booking-wizard/BookingFlowPrimitives';
 import type { GuestDetails } from '@/components/booking-wizard/GuestDetailsStep';
 import { GuestDetailsStep } from '@/components/booking-wizard/GuestDetailsStep';
+import { BookingWizardHeader } from '@/components/booking-wizard/BookingWizardHeader';
 import { MonthDatePicker } from '@/components/booking-wizard/MonthDatePicker';
 import { WizardStepIndicator } from '@/components/booking-wizard/WizardStepIndicator';
 import { Button } from '@/components/ui/Button';
@@ -72,6 +73,9 @@ export function ClassBookingFlow({ onCreated }: ClassBookingFlowProps) {
   const [guest, setGuest] = useState<GuestDetails>(EMPTY_GUEST);
   const [guestPrefilled, setGuestPrefilled] = useState(false);
   const [returningGuest, setReturningGuest] = useState(false);
+  // Phone vs walk-in — chosen on the guest step so a walk-in relaxes the phone
+  // requirement before contact details (the toggle used to sit on confirm only).
+  const [source, setSource] = useState<'phone' | 'walk-in'>('phone');
 
   // Prefill guest from a ?guestId deep link (book-for-this-contact).
   useEffect(() => {
@@ -124,11 +128,14 @@ export function ClassBookingFlow({ onCreated }: ClassBookingFlowProps) {
   };
 
   const stepIndex = Math.max(0, STEPS.indexOf(step));
+  // Header arrow steps back a page (hidden on the first step); the ✕ exits.
+  const chrome = <BookingWizardHeader canGoBack={stepIndex > 0} onBack={goBack} />;
 
   // ----- class step -----
   if (step === 'class') {
     return (
       <View style={styles.container}>
+        {chrome}
         <WizardStepIndicator currentStep={stepIndex} labels={STEP_LABELS} />
         {offeringsQuery.isLoading ? (
           <LoadingState message="Loading classes…" />
@@ -166,7 +173,6 @@ export function ClassBookingFlow({ onCreated }: ClassBookingFlowProps) {
             ))}
           </ScrollView>
         )}
-        <Button label="Back" onPress={goBack} variant="ghost" style={styles.back} />
       </View>
     );
   }
@@ -175,6 +181,7 @@ export function ClassBookingFlow({ onCreated }: ClassBookingFlowProps) {
   if (step === 'date' && selectedClass) {
     return (
       <View style={styles.container}>
+        {chrome}
         <WizardStepIndicator currentStep={stepIndex} labels={STEP_LABELS} />
         <MonthDatePicker
           title="Pick a date"
@@ -193,7 +200,6 @@ export function ClassBookingFlow({ onCreated }: ClassBookingFlowProps) {
           onContinue={() => setStep('session')}
           timeZone={timeZone}
         />
-        <Button label="Back" onPress={goBack} variant="ghost" style={styles.back} />
       </View>
     );
   }
@@ -203,6 +209,7 @@ export function ClassBookingFlow({ onCreated }: ClassBookingFlowProps) {
     const multiple = sessionsForDate.length > 1;
     return (
       <View style={styles.container}>
+        {chrome}
         <WizardStepIndicator currentStep={stepIndex} labels={STEP_LABELS} />
         <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
           <StepHeading
@@ -247,7 +254,6 @@ export function ClassBookingFlow({ onCreated }: ClassBookingFlowProps) {
             }}
           />
         </ScrollView>
-        <Button label="Back" onPress={goBack} variant="ghost" style={styles.back} />
       </View>
     );
   }
@@ -256,15 +262,18 @@ export function ClassBookingFlow({ onCreated }: ClassBookingFlowProps) {
   if (step === 'guest') {
     return (
       <View style={styles.container}>
+        {chrome}
         <WizardStepIndicator currentStep={stepIndex} labels={STEP_LABELS} />
         <GuestDetailsStep
           value={guest}
           onChange={setGuest}
           onContinue={() => setStep('confirm')}
+          isWalkIn={source === 'walk-in'}
+          source={source}
+          onSourceChange={setSource}
           onPickExistingContact={() => setReturningGuest(true)}
           onClearExistingContact={() => setReturningGuest(false)}
         />
-        <Button label="Back" onPress={goBack} variant="ghost" style={styles.back} />
       </View>
     );
   }
@@ -281,8 +290,11 @@ export function ClassBookingFlow({ onCreated }: ClassBookingFlowProps) {
 
     return (
       <View style={styles.container}>
+        {chrome}
         <WizardStepIndicator currentStep={stepIndex} labels={STEP_LABELS} />
         <BookingFlowConfirm
+          source={source}
+          onSourceChange={setSource}
           headerTitle={selectedClass.class_name}
           headerSubtitle={`${formatDurationMinutes(inst.duration_minutes)}${inst.instructor_name ? ` · with ${inst.instructor_name}` : ''}`}
           rows={[
@@ -323,6 +335,7 @@ export function ClassBookingFlow({ onCreated }: ClassBookingFlowProps) {
   // Fallback — a prerequisite went missing; send the user back to the start.
   return (
     <View style={styles.container}>
+      {chrome}
       <WizardStepIndicator currentStep={0} labels={STEP_LABELS} />
       <EmptyState
         title="Start again"
@@ -338,5 +351,4 @@ const styles = StyleSheet.create({
   container: { flex: 1, gap: spacing.base, paddingBottom: spacing.xl },
   list: { gap: spacing.md, paddingBottom: spacing.lg },
   spotsBlock: { gap: spacing.xs, paddingVertical: spacing.sm },
-  back: { marginTop: spacing.sm },
 });

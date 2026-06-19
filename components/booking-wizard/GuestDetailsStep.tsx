@@ -3,6 +3,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'reac
 
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { Segmented } from '@/components/ui/Segmented';
 import { Text } from '@/components/ui/Text';
 import { useGuests } from '@/lib/queries/useGuests';
 import { buildGuestSchema, type GuestField } from '@/lib/validation/walk-in-guest';
@@ -42,6 +43,16 @@ type GuestDetailsStepProps = {
    * `collectClientAddress`.
    */
   collectClientAddress?: boolean;
+  /**
+   * When provided, render a Phone/Walk-in "Booking type" selector at the top of
+   * this step so the source is chosen BEFORE contact details — a walk-in then
+   * relaxes the phone requirement immediately. Used by the class/event/resource
+   * flows, where the toggle otherwise only appears on the later confirm step
+   * (so a walk-in couldn't get past this step without a phone). Keep `isWalkIn`
+   * in sync (`source === 'walk-in'`) so the required-field logic follows.
+   */
+  source?: 'phone' | 'walk-in';
+  onSourceChange?: (source: 'phone' | 'walk-in') => void;
 };
 
 const SEARCH_DEBOUNCE_MS = 280;
@@ -75,6 +86,8 @@ export function GuestDetailsStep({
   onPickExistingContact,
   onClearExistingContact,
   collectClientAddress = false,
+  source,
+  onSourceChange,
 }: GuestDetailsStepProps) {
   const { colors } = useTheme();
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<GuestField, string>>>({});
@@ -156,6 +169,22 @@ export function GuestDetailsStep({
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}>
       <Text variant="heading">Guest details</Text>
+
+      {source && onSourceChange ? (
+        <View style={styles.sourceBlock}>
+          <Text variant="label" tone="secondary">
+            Booking type
+          </Text>
+          <Segmented
+            options={[
+              { value: 'phone', label: 'Phone' },
+              { value: 'walk-in', label: 'Walk-in' },
+            ]}
+            value={source}
+            onChange={onSourceChange}
+          />
+        </View>
+      ) : null}
 
       {!readOnlyContact ? (
         <Input
@@ -365,6 +394,9 @@ const styles = StyleSheet.create({
   container: {
     gap: spacing.md,
     paddingBottom: spacing.xl,
+  },
+  sourceBlock: {
+    gap: spacing.sm,
   },
   results: {
     gap: spacing.sm,

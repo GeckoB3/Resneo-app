@@ -4,6 +4,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { AddonsStep } from '@/components/booking-wizard/AddonsStep';
 import { ConfirmStep } from '@/components/booking-wizard/ConfirmStep';
+import { BookingWizardHeader } from '@/components/booking-wizard/BookingWizardHeader';
 import { GroupBookingFlow } from '@/components/booking-wizard/GroupBookingFlow';
 import type { GuestDetails } from '@/components/booking-wizard/GuestDetailsStep';
 import { GuestDetailsStep } from '@/components/booking-wizard/GuestDetailsStep';
@@ -243,8 +244,8 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
     [steps],
   );
 
-  // Walk-in "Start Appointment Now" (web parity: the staff walk-in button on the
-  // date/time step). Books the chosen service at the current venue-local time
+  // Walk-in "Start Now" (web parity: the staff walk-in button on the date/time
+  // step). Books the chosen service at the current venue-local time
   // WITHOUT picking a slot — synthesise a slot at "now" and skip straight to the
   // (optional) guest step. The create posts source:'walk-in', so the server
   // stamps it "Started" and it lands on the calendar immediately.
@@ -330,6 +331,13 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
         const svc = visitPractitioner.services.find((s) => s.id === serviceId);
         if (!svc) {
           setMultiServiceError('That service is not offered by this practitioner.');
+          return prev;
+        }
+        // A service with options needs a variant choice the append path can't
+        // make; adding it with the base duration fails the server's consecutive
+        // check. The review list already hides these — guard defensively too.
+        if ((svc.variants?.length ?? 0) > 0) {
+          setMultiServiceError('Services with options must be booked on their own.');
           return prev;
         }
         const nextSeg: MultiServiceSegment = {
@@ -471,6 +479,14 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
   }, [prefillGuestQuery.data, guestPrefilled]);
 
   const handleBack = () => {
+    // Multi-service review → drop back to slot selection, discarding the chain
+    // (web parity; replaces the step's own former "Back" control).
+    if (currentStepKey === 'multi_service') {
+      setMultiServiceSegments(null);
+      setMultiServiceError(null);
+      goToStep('time');
+      return;
+    }
     const index = steps.indexOf(currentStepKey);
     if (index <= 0) {
       router.back();
@@ -538,6 +554,9 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
 
   const stepLabels = steps.map((key) => STEP_LABELS[key]);
   const stepNumber = Math.max(0, steps.indexOf(activeKey));
+  // Past the first step the header arrow steps back a page; on step one it's
+  // hidden so only the ✕ leaves the form.
+  const canGoBack = stepNumber > 0;
   const selectedAddons = addonGroups
     .flatMap((group) => group.addons)
     .filter((addon) => selectedAddonIds.includes(addon.id));
@@ -615,6 +634,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
 
   return (
     <View style={styles.container}>
+      <BookingWizardHeader canGoBack={canGoBack} onBack={handleBack} />
       <WizardStepIndicator currentStep={stepNumber} labels={stepLabels} />
 
       {activeKey === 'service' ? (
@@ -769,6 +789,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           variantId={selectedVariant?.id ?? null}
           venueId={venueId}
           startNow={source === 'walk-in' && selectedDate === today}
+          onStartNow={startWalkInNow}
           timeZone={timeZone}
           minBookingNoticeHours={bookingWindow.minNoticeHours}
           allowSameDayBooking={bookingWindow.allowSameDay}
@@ -782,12 +803,6 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           onAddService={addServiceToChain}
           onRemoveSegment={removeServiceFromChain}
           onContinue={() => advanceFrom('multi_service')}
-          onBack={() => {
-            // Drop back to slot selection and discard the chain (web parity).
-            setMultiServiceSegments(null);
-            setMultiServiceError(null);
-            goToStep('time');
-          }}
           errorMessage={multiServiceError}
         />
       ) : null}
@@ -830,9 +845,6 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
         />
       ) : null}
 
-      {activeKey !== 'confirm' && activeKey !== 'multi_service' ? (
-        <Button label="Back" onPress={handleBack} variant="ghost" style={styles.backButton} />
-      ) : null}
     </View>
   );
 }
@@ -842,9 +854,6 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: spacing.base,
     paddingBottom: spacing.xl,
-  },
-  backButton: {
-    marginTop: spacing.sm,
   },
   groupButton: {
     marginTop: spacing.sm,

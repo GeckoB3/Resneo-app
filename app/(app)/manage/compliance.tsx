@@ -16,6 +16,7 @@ import { Sheet } from '@/components/ui/Sheet';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import { calendarDateInTimeZone } from '@/lib/dates/venue-dates';
 import { getWebUrl } from '@/lib/env';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useScreenCaptureProtection } from '@/lib/security/useScreenCaptureProtection';
@@ -28,6 +29,7 @@ import { useSendComplianceFormLink } from '@/lib/queries/useBookingCompliance';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { useUpdateFeatureFlags } from '@/lib/queries/useVenueSettings';
 import { useToast } from '@/providers/ToastProvider';
+import { useVenueContext } from '@/providers/VenueProvider';
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { ComplianceMissingRow } from '@/types/compliance';
@@ -146,6 +148,7 @@ export default function ComplianceScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const toast = useToast();
+  const { venue } = useVenueContext();
   const dashboard = useComplianceDashboard();
   const resend = useResendFormLink();
   const revoke = useRevokeFormLink();
@@ -265,7 +268,9 @@ export default function ComplianceScreen() {
 
   const { expiring_soon, missing_for_bookings, awaiting_submission } = dashboard.data;
 
-  const todayStr = new Date().toISOString().slice(0, 10);
+  // Venue-local "today" — booking dates are venue-local, so grouping by a UTC
+  // date split today's check-ins into the wrong bucket near the day boundary.
+  const todayStr = calendarDateInTimeZone(new Date(), venue?.timezone ?? 'Europe/London');
   const todayCheckIns = groupTodaysCheckIns(missing_for_bookings, todayStr);
   const upcomingMissing = missing_for_bookings.filter((m) => m.booking_date !== todayStr);
 
