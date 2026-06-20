@@ -197,7 +197,7 @@ export default function ClassesScreen() {
       {/* The (app) Stack hides the OS header for this route, so the title, the
           live indicator and the create/manage entry point live in-body below
           (the old headerRight was never rendered → no way to add a class). */}
-      <Stack.Screen options={{ title: 'Classes' }} />
+      <Stack.Screen options={{ headerShown: true, title: 'Classes' }} />
 
       {selectedSession ? (
         <ClassRosterView

@@ -91,7 +91,7 @@ export default function SupportScreen() {
     setContactPhone('');
   }
 
-  const header = <Stack.Screen options={{ title: 'Support' }} />;
+  const header = <Stack.Screen options={{ headerShown: true, title: 'Support' }} />;
 
   if (sent) {
     return (

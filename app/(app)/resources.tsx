@@ -141,6 +141,7 @@ export default function ResourcesScreen() {
     <Screen scroll={false} padded={false}>
       <Stack.Screen
         options={{
+          headerShown: true,
           title: 'Resources',
           headerRight: () => (
             <View style={styles.headerActions}>

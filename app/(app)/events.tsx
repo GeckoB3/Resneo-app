@@ -120,6 +120,7 @@ export default function EventsScreen() {
     <Screen scroll={false} padded={false}>
       <Stack.Screen
         options={{
+          headerShown: true,
           title: 'Events',
           headerRight: () => (
             <View style={styles.headerActions}>

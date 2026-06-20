@@ -208,7 +208,7 @@ export default function TodayScreen() {
   );
   const tableFocusSecondariesEnabled = Boolean(payload?.table_focus_secondaries_enabled);
 
-  const header = <Stack.Screen options={{ title: 'Today' }} />;
+  const header = <Stack.Screen options={{ headerShown: true, title: 'Today' }} />;
 
   if (query.isLoading) {
     return (

@@ -207,7 +207,7 @@ export default function NotificationPreferencesScreen() {
     return () => sub.remove();
   }, [checkPermission]);
 
-  const header = <Stack.Screen options={{ title: 'Push notifications' }} />;
+  const header = <Stack.Screen options={{ headerShown: true, title: 'Push notifications' }} />;
 
   const handleEnable = useCallback(async () => {
     if (!accessToken) {

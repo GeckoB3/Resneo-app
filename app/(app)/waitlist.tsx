@@ -634,6 +634,7 @@ export default function WaitlistScreen() {
     <Screen scroll={false} padded={false}>
       <Stack.Screen
         options={{
+          headerShown: true,
           title: 'Waitlist',
           headerRight: () => (
             <View style={styles.headerRight}>

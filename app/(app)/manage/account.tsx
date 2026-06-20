@@ -81,7 +81,7 @@ export default function AccountScreen() {
     }
   }
 
-  const header = <Stack.Screen options={{ title: t('account.title') }} />;
+  const header = <Stack.Screen options={{ headerShown: true, title: t('account.title') }} />;
 
   if (isLoading || !seeded) {
     return (

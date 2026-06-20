@@ -57,7 +57,7 @@ export default function ComplianceTypesScreen() {
   >(null);
   const [libraryOpen, setLibraryOpen] = useState(false);
 
-  const header = <Stack.Screen options={{ title: 'Compliance templates' }} />;
+  const header = <Stack.Screen options={{ headerShown: true, title: 'Compliance templates' }} />;
   const types = list.data?.types ?? [];
   const planGated = isPlanGate(list.error);
 

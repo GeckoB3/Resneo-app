@@ -766,7 +766,7 @@ export default function CommunicationsScreen() {
   // ---------------------------------------------------------------------------
   // Loading / error states
   // ---------------------------------------------------------------------------
-  const header = <Stack.Screen options={{ title: 'Communications' }} />;
+  const header = <Stack.Screen options={{ headerShown: true, title: 'Communications' }} />;
   const isLoading = policiesQuery.isLoading || settingsQuery.isLoading;
 
   // Show skeleton while queries are in flight OR while seeding state into lane/staffDraft

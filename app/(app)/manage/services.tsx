@@ -1525,7 +1525,7 @@ export default function ServicesScreen() {
 
   return (
     <Screen scroll={false} padded={false}>
-      <Stack.Screen options={{ title: 'Services' }} />
+      <Stack.Screen options={{ headerShown: true, title: 'Services' }} />
 
       {/* Tab bar */}
       <View style={[styles.tabBar, { borderBottomColor: colors.border }]}>

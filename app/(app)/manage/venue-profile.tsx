@@ -581,7 +581,7 @@ export default function VenueProfileScreen() {
   // ------------------------------------------------------------------
   // Render
   // ------------------------------------------------------------------
-  const header = <Stack.Screen options={{ title: 'Venue profile' }} />;
+  const header = <Stack.Screen options={{ headerShown: true, title: 'Venue profile' }} />;
 
   if (isLoading || !venue || !seeded) {
     return (

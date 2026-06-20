@@ -646,6 +646,7 @@ export default function AvailabilityScreen() {
     <Screen scroll={false} padded={false}>
       <Stack.Screen
         options={{
+          headerShown: true,
           title: 'Availability',
           // Admin-only entry to the bookable-calendar management surface
           // (create/rename/activate/reorder/booking-link/delete + assignments).

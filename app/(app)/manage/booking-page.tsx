@@ -470,7 +470,7 @@ export default function BookingPageScreen() {
   if (!isLoading && !isAdmin) {
     return (
       <Screen>
-        <Stack.Screen options={{ title: 'Booking page' }} />
+        <Stack.Screen options={{ headerShown: true, title: 'Booking page' }} />
         <View style={styles.gateWrap}>
           <EmptyState
             title="Admins only"
@@ -485,6 +485,7 @@ export default function BookingPageScreen() {
     <Screen scroll contentContainerStyle={styles.content}>
       <Stack.Screen
         options={{
+          headerShown: true,
           title: 'Booking page',
           headerRight: () =>
             saveLabel ? (

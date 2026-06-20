@@ -348,7 +348,7 @@ export default function PlanScreen() {
     });
   }
 
-  const header = <Stack.Screen options={{ title: 'Plan & payments' }} />;
+  const header = <Stack.Screen options={{ headerShown: true, title: 'Plan & payments' }} />;
 
   if (venueLoading || !venue) {
     return (

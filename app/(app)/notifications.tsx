@@ -300,7 +300,7 @@ export default function NotificationsScreen() {
 
   return (
     <Screen scroll={false} padded={false}>
-      <Stack.Screen options={{ title: 'Notifications' }} />
+      <Stack.Screen options={{ headerShown: true, title: 'Notifications' }} />
 
       {query.isLoading ? (
         <ListSkeleton />

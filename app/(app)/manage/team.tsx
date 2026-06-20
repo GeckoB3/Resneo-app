@@ -78,7 +78,7 @@ export default function TeamScreen() {
 
   const sessionMinutes = sessionQuery.data?.session_timeout_minutes ?? 480;
 
-  const header = <Stack.Screen options={{ title: 'Team' }} />;
+  const header = <Stack.Screen options={{ headerShown: true, title: 'Team' }} />;
 
   if (staffMeLoading) {
     return (

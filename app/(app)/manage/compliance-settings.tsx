@@ -81,7 +81,7 @@ export default function ComplianceSettingsScreen() {
     setHydratedKey('loaded');
   }
 
-  const header = <Stack.Screen options={{ title: 'Compliance settings' }} />;
+  const header = <Stack.Screen options={{ headerShown: true, title: 'Compliance settings' }} />;
 
   if (!isAdmin) {
     return (

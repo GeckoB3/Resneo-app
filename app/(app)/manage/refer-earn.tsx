@@ -136,7 +136,7 @@ export default function ReferEarnScreen() {
     }
   }, [shareableLink, toast]);
 
-  const header = <Stack.Screen options={{ title: 'Refer & Earn' }} />;
+  const header = <Stack.Screen options={{ headerShown: true, title: 'Refer & Earn' }} />;
 
   if (staffQuery.isLoading) {
     return (

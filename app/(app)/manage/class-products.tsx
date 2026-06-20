@@ -257,7 +257,7 @@ export default function ClassProductsScreen() {
   if (!commerceEnabled || planGated) {
     return (
       <Screen>
-        <Stack.Screen options={{ title: 'Class products' }} />
+        <Stack.Screen options={{ headerShown: true, title: 'Class products' }} />
         <EmptyState
           title="Class products not enabled"
           message="Prepaid credit packs, courses and memberships aren't enabled for this venue yet. Contact support to turn on class commerce."
@@ -291,7 +291,7 @@ export default function ClassProductsScreen() {
 
   return (
     <Screen scroll={false} padded={false}>
-      <Stack.Screen options={{ title: 'Class products' }} />
+      <Stack.Screen options={{ headerShown: true, title: 'Class products' }} />
 
       <ScrollView
         contentContainerStyle={styles.content}

@@ -330,7 +330,7 @@ function FeatureFlagsCard({ resolvedFlags, rawFlags, disabled }: FeatureFlagsCar
 
   // Re-seed the priority order whenever the calendars list or saved order
   // changes (e.g. after a refetch following a save, or calendars added on web).
-  const orderSyncKey = `${calendars.map((c) => c.id).join(',')} ${(
+  const orderSyncKey = `${calendars.map((c) => c.id).join(',')}\u0000${(
     savedConfig?.calendar_order ?? []
   ).join(',')}`;
   const [appliedOrderSyncKey, setAppliedOrderSyncKey] = useState(orderSyncKey);
@@ -782,7 +782,7 @@ export default function BookingSettingsScreen() {
   const [loginSaving, setLoginSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  const header = <Stack.Screen options={{ title: 'Booking settings' }} />;
+  const header = <Stack.Screen options={{ headerShown: true, title: 'Booking settings' }} />;
 
   if (isLoading || !venue) {
     return (

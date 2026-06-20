@@ -146,7 +146,7 @@ export default function BusinessHoursScreen() {
     }
   }
 
-  const header = <Stack.Screen options={{ title: 'Business hours' }} />;
+  const header = <Stack.Screen options={{ headerShown: true, title: 'Business hours' }} />;
 
   if (isLoading || draft === null) {
     return (

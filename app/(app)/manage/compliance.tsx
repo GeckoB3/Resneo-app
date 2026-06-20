@@ -204,7 +204,7 @@ export default function ComplianceScreen() {
     );
   };
 
-  const header = <Stack.Screen options={{ title: 'Compliance' }} />;
+  const header = <Stack.Screen options={{ headerShown: true, title: 'Compliance' }} />;
 
   const planGated =
     dashboard.error instanceof ApiError &&

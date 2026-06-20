@@ -348,7 +348,7 @@ export default function ReportsScreen() {
     toast.success('Export started.');
   }, [modelRows, data, toast]);
 
-  const header = <Stack.Screen options={{ title: 'Reports' }} />;
+  const header = <Stack.Screen options={{ headerShown: true, title: 'Reports' }} />;
 
   if (staffQuery.isLoading) {
     return (
