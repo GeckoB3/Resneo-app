@@ -45,10 +45,8 @@ import { Stepper } from '@/components/ui/Stepper';
 import { Text } from '@/components/ui/Text';
 import { hapticSelect } from '@/lib/haptics';
 import {
-  framingPanDelta,
   LOGO_ZOOM_MAX,
   LOGO_ZOOM_MIN,
-  logoFramingTransform,
   normalizeLogoFraming,
   resolveLogoFraming,
   type BookingPageImageFraming,
@@ -71,9 +69,6 @@ const ZOOM_STEP = 0.05;
 
 function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));
-}
-function clampPos(n: number): number {
-  return clamp(n, 0, 100);
 }
 function clampZoom(n: number): number {
   return clamp(n, LOGO_ZOOM_MIN, LOGO_ZOOM_MAX);
@@ -135,8 +130,13 @@ export function LogoFramingSheet({
     .enabled(hasImage)
     .onChange((e) => {
       'worklet';
-      liveX.set(clampPos(liveX.get() + framingPanDelta(e.changeX, FRAME)));
-      liveY.set(clampPos(liveY.get() + framingPanDelta(e.changeY, FRAME)));
+      // Inlined framingPanDelta (px → 0–100 over FRAME) + clamp to 0–100. A worklet
+      // can't call the imported/local helpers under Reanimated 4 ("Object is not a
+      // function"); Math.* is available on the UI thread.
+      const nx = liveX.get() + e.changeX * (100 / FRAME);
+      const ny = liveY.get() + e.changeY * (100 / FRAME);
+      liveX.set(Math.min(100, Math.max(0, nx)));
+      liveY.set(Math.min(100, Math.max(0, ny)));
     })
     .onEnd(() => {
       'worklet';
@@ -154,7 +154,10 @@ export function LogoFramingSheet({
     })
     .onUpdate((e) => {
       'worklet';
-      liveZoom.set(clampZoom(pinchStartZoom.get() * e.scale));
+      // Inlined clampZoom — clamp to [LOGO_ZOOM_MIN, LOGO_ZOOM_MAX] (number
+      // constants are safe to capture in a worklet; the helper call is not).
+      const z = pinchStartZoom.get() * e.scale;
+      liveZoom.set(Math.min(LOGO_ZOOM_MAX, Math.max(LOGO_ZOOM_MIN, z)));
     })
     .onEnd(() => {
       'worklet';
@@ -166,15 +169,15 @@ export function LogoFramingSheet({
 
   // ---- Live preview transform (UI thread) -------------------------------------
   const imageAnimatedStyle = useAnimatedStyle(() => {
-    const t = logoFramingTransform(
-      { x: liveX.get(), y: liveY.get(), zoom: liveZoom.get() },
-      FRAME,
-    );
+    // Inlined `logoFramingTransform` — calling the imported (non-worklet) helper
+    // from this worklet throws "Object is not a function" on the UI thread under
+    // Reanimated 4. liveX/Y are 0–100 (clamped on set); the transform is
+    // centre-origin: translate = ((pos-50)/100)*FRAME, scale = zoom.
     return {
       transform: [
-        { translateX: t.translateX },
-        { translateY: t.translateY },
-        { scale: t.scale },
+        { translateX: ((liveX.get() - 50) / 100) * FRAME },
+        { translateY: ((liveY.get() - 50) / 100) * FRAME },
+        { scale: liveZoom.get() },
       ],
     };
   });
