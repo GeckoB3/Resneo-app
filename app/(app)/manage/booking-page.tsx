@@ -15,6 +15,7 @@ import { TeamProfilesSheet } from '@/components/bookingPage/TeamProfilesSheet';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { IconButton } from '@/components/ui/IconButton';
 import { Input } from '@/components/ui/Input';
 import { Screen } from '@/components/ui/Screen';
@@ -625,11 +626,14 @@ export default function BookingPageScreen() {
         )}
       </Card>
 
-      {/* QR code */}
+      {/* QR code — isolated in an error boundary so a QR/SVG render failure
+          degrades to a recoverable card instead of white-screening the editor. */}
       {publicUrl ? (
         <>
           <SectionHeader title="QR code" />
-          <BookingPageQrCard url={publicUrl} venueName={venueName} slug={slug ?? ''} />
+          <ErrorBoundary label="the QR code">
+            <BookingPageQrCard url={publicUrl} venueName={venueName} slug={slug ?? ''} />
+          </ErrorBoundary>
         </>
       ) : null}
 

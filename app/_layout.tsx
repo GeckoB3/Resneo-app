@@ -1,3 +1,6 @@
+// Install runtime polyfills (global TextEncoder, …) before any other module loads.
+import '@/lib/polyfills';
+
 import {
   Inter_400Regular,
   Inter_500Medium,
