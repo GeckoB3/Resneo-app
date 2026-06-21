@@ -31,6 +31,19 @@ import { useTheme } from '@/theme/useTheme';
 /** SecureStore key — same `reserveni.*` namespace the Supabase adapter uses. */
 const APP_LOCK_KEY = 'reserveni.security.appLockEnabled';
 
+/**
+ * How long the AppState guard stays armed after a biometric prompt resolves.
+ *
+ * A prompt drives the app `active → inactive → active`. The closing `active`
+ * event can arrive AFTER `authenticateAsync` resolves, so we keep ignoring
+ * AppState changes for a short window as a fallback (the listener also clears
+ * the guard the moment it sees that trailing `active`). Without this, the
+ * prompt's own churn is mistaken for a background→foreground resume, which
+ * re-raises the lock and immediately re-prompts — a permanent "Resneo is
+ * locked" loop. Comfortably longer than the JS-thread delivery gap.
+ */
+const PROMPT_GUARD_COOLDOWN_MS = 600;
+
 type AppLockContextValue = {
   /** User preference — whether biometric lock is armed. OFF by default. */
   appLockEnabled: boolean;
@@ -137,12 +150,50 @@ export function AppLockProvider({ children }: AppLockProviderProps) {
     };
   }, []);
 
+  // ── Guard against our OWN biometric prompt's AppState churn ───────────────
+  // Showing a prompt drives the app active → inactive → active. The AppState
+  // listener can't otherwise tell that flicker apart from a real
+  // background→foreground resume, so it would re-raise the lock the moment the
+  // prompt closes and immediately re-prompt — an infinite lock loop. We mark
+  // our own prompt as the cause and have the listener ignore AppState changes
+  // while it's armed (cleared on the prompt's trailing `active`, with a timeout
+  // fallback in case that event never arrives).
+  const promptActiveRef = useRef(false);
+  const promptCooldownRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearPromptGuard = useCallback(() => {
+    promptActiveRef.current = false;
+    if (promptCooldownRef.current) {
+      clearTimeout(promptCooldownRef.current);
+      promptCooldownRef.current = null;
+    }
+  }, []);
+
+  // Every biometric prompt MUST go through this wrapper so the AppState listener
+  // can distinguish "I'm showing the prompt" from "the user left the app".
+  const guardedAuthPrompt = useCallback(
+    async (promptMessage: string): Promise<boolean> => {
+      clearPromptGuard();
+      promptActiveRef.current = true;
+      try {
+        return await runAuthPrompt(promptMessage);
+      } finally {
+        // The closing prompt's `active` event may land AFTER this resolves;
+        // keep the guard up briefly so it's still ignored, then re-arm normal
+        // resume detection. The listener clears it sooner if it sees that
+        // `active` first — this is the belt-and-braces fallback.
+        promptCooldownRef.current = setTimeout(clearPromptGuard, PROMPT_GUARD_COOLDOWN_MS);
+      }
+    },
+    [clearPromptGuard],
+  );
+
   const unlock = useCallback(async () => {
     // Re-entrancy guard: ignore taps while a prompt is already showing.
     if (authInFlight) return;
     setAuthInFlight(true);
     try {
-      const ok = await runAuthPrompt('Unlock Resneo');
+      const ok = await guardedAuthPrompt('Unlock Resneo');
       if (ok) {
         hapticSuccess();
         setIsLocked(false);
@@ -153,7 +204,7 @@ export function AppLockProvider({ children }: AppLockProviderProps) {
     } finally {
       setAuthInFlight(false);
     }
-  }, [authInFlight]);
+  }, [authInFlight, guardedAuthPrompt]);
 
   // The AppState listener is registered once; reach the latest `unlock` via a ref
   // so it never re-subscribes (and never captures a stale closure).
@@ -175,6 +226,18 @@ export function AppLockProvider({ children }: AppLockProviderProps) {
     const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
       const prev = appStateRef.current;
       appStateRef.current = next;
+
+      // Ignore the inactive↔active churn caused by our OWN biometric prompt so
+      // it's never mistaken for a background→foreground resume (which would
+      // re-lock and re-prompt forever). This MUST run before the enabled check:
+      // enabling flips `appLockEnabled` true *during* the confirm prompt, so the
+      // prompt's trailing `active` would otherwise be read as a resume the
+      // instant the lock arms. Re-arm on that trailing `active`.
+      if (promptActiveRef.current) {
+        if (next === 'active') clearPromptGuard();
+        return;
+      }
+
       if (!appLockEnabledRef.current || !supportedRef.current) return;
 
       if (next === 'background' && !isLockedRef.current) {
@@ -197,8 +260,11 @@ export function AppLockProvider({ children }: AppLockProviderProps) {
         }
       }
     });
-    return () => sub.remove();
-  }, []);
+    return () => {
+      sub.remove();
+      clearPromptGuard();
+    };
+  }, [clearPromptGuard]);
 
   // Auto-attempt the prompt ONCE when the overlay appears WHILE THE APP IS ACTIVE
   // (the cover raised on background must stay silent until resume), so a returning
@@ -221,7 +287,7 @@ export function AppLockProvider({ children }: AppLockProviderProps) {
       // Enabling requires proving identity first; disabling is allowed freely
       // (the gate is already cleared — you can only reach Settings unlocked).
       if (next) {
-        const ok = await runAuthPrompt('Confirm to turn on biometric lock');
+        const ok = await guardedAuthPrompt('Confirm to turn on biometric lock');
         if (!ok) return false;
       }
 
@@ -242,7 +308,7 @@ export function AppLockProvider({ children }: AppLockProviderProps) {
       setAppLockEnabledState(next);
       return true;
     },
-    [],
+    [guardedAuthPrompt],
   );
 
   const value = useMemo<AppLockContextValue>(
