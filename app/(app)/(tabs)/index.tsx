@@ -317,14 +317,6 @@ export default function CalendarScreen() {
   const [addSheetTarget, setAddSheetTarget] = useState<AddSheetTarget | null>(null);
   // Month-picker sheet (date jump) — opened by tapping the header date label.
   const [monthPickerOpen, setMonthPickerOpen] = useState(false);
-  // Multi-calendar "move to practitioner" chooser — set by a long-press on a
-  // block in the side-by-side day grid. Carries the booking + its current
-  // column so the chooser can offer the OTHER practitioners.
-  const [reassignTarget, setReassignTarget] = useState<{
-    bookingId: string;
-    fromPractitionerId: string;
-  } | null>(null);
-
   // Pending action tracking for inline status tray + drag commits.
   const [pendingActionIds, setPendingActionIds] = useState<Set<string>>(new Set());
 
@@ -366,6 +358,10 @@ export default function CalendarScreen() {
         date: previous.date,
         time: `${previous.time.slice(0, 5)}:00`,
         ...(endTime ? { endTime } : {}),
+        // A cross-column move's Undo must also return the booking to its ORIGINAL
+        // column — restore the practitioner when one was captured (time-only moves
+        // leave it undefined, keeping the current practitioner).
+        ...(previous.practitionerId ? { practitionerId: previous.practitionerId } : {}),
         deferGuestNotification: true,
       });
     },
@@ -882,6 +878,8 @@ export default function CalendarScreen() {
       bookingId: string;
       time: string;
       endTime?: string;
+      /** Reassign to a different calendar/practitioner (cross-column drag). */
+      practitionerId?: string;
       previousTarget: RescheduleTarget;
       durationChanged: boolean;
     }) => {
@@ -892,6 +890,7 @@ export default function CalendarScreen() {
           date: anchor,
           time: input.time,
           ...(input.endTime ? { endTime: input.endTime } : {}),
+          ...(input.practitionerId ? { practitionerId: input.practitionerId } : {}),
           // Defer the guest email — the move prompt below offers Notify/Skip.
           deferGuestNotification: true,
         },
@@ -922,20 +921,26 @@ export default function CalendarScreen() {
     [anchor, rescheduleById, removePending, toast],
   );
 
-  const handleDragReschedule = useCallback(
-    (bookingId: string, newTime: string) => {
+  // Shared commit for a drag MOVE — vertical (same column) or cross-column (with
+  // practitioner reassign). Preserves the duration (pinning the validated end so
+  // the server doesn't fall back to the wider catalogue default → false "Blocked
+  // time"), captures the prior slot for Undo, and threads the source/target
+  // practitioner when reassigning. Web parity: only movable, non-resource bookings.
+  const commitTimeMove = useCallback(
+    (
+      bookingId: string,
+      newTime: string,
+      reassign?: { toPractitionerId: string; fromPractitionerId: string },
+    ) => {
       const booking = findBookingOnAnchor(bookingId);
-      if (!booking || newTime === booking.startTime.slice(0, 5)) return;
-      // Web parity: only Pending|Booked|Confirmed|Seated are movable, and a
-      // resource booking is never moved here. The block's gesture is already
-      // disabled for these, so this is a defensive backstop.
-      if (!isMovableBooking(booking)) return;
+      if (!booking || !isMovableBooking(booking)) return;
+      // A pure time-move to the SAME time is a no-op; a reassign to the same time
+      // is still a real move (the practitioner changed).
+      if (!reassign && newTime === booking.startTime.slice(0, 5)) return;
 
       const start = timeToMinutes(booking.startTime);
       const end = booking.endTime ? timeToMinutes(booking.endTime) : null;
       const duration = end != null && end > start ? end - start : null;
-      // Preserve the duration and pin the validated end to the real bar so the
-      // server doesn't fall back to the wider catalogue default (false "Blocked time").
       const endTime =
         duration != null
           ? `${minutesToTime(timeToMinutes(`${newTime}:00`) + duration)}:00`
@@ -944,17 +949,25 @@ export default function CalendarScreen() {
         bookingId,
         time: `${newTime}:00`,
         ...(endTime ? { endTime } : {}),
+        ...(reassign ? { practitionerId: reassign.toPractitionerId } : {}),
         previousTarget: {
           id: bookingId,
           guestName: booking.guestName ?? 'booking',
           date: anchor,
           time: booking.startTime,
           durationMinutes: duration,
+          // So a cross-column move's Undo returns the booking to its source column.
+          ...(reassign ? { practitionerId: reassign.fromPractitionerId } : {}),
         },
         durationChanged: false,
       });
     },
     [findBookingOnAnchor, anchor, commitDrag],
+  );
+
+  const handleDragReschedule = useCallback(
+    (bookingId: string, newTime: string) => commitTimeMove(bookingId, newTime),
+    [commitTimeMove],
   );
 
   const handleDragResize = useCallback(
@@ -991,95 +1004,16 @@ export default function CalendarScreen() {
     toast.error("That time isn't available");
   }, [toast]);
 
-  // ---- Cross-practitioner reassignment (multi-calendar long-press) ----
-  //
-  // Long-press a block in the side-by-side day grid → open a "move to
-  // practitioner" chooser. The PATCH keeps the same date/time and just changes
-  // the practitioner/calendar; the server re-validates the slot on the TARGET
-  // and 409s on a hard conflict, which we surface + leave the grid untouched
-  // (no optimistic grid mutation, so an error needs no manual rollback — the
-  // grid is a pure render of unchanged query data). Success invalidates
-  // calendar.all()/bookings.all() via the mutation, and an Undo moves it back.
-  const handleBlockLongPress = useCallback(
-    (bookingId: string, fromPractitionerId: string) => {
-      // Nothing to choose if there's only one practitioner.
-      if (practitioners.length <= 1) return;
-      hapticSelect();
-      setReassignTarget({ bookingId, fromPractitionerId });
-    },
-    [practitioners.length],
-  );
-
-  const closeReassign = useCallback(() => setReassignTarget(null), []);
-
-  // The Undo on a successful reassign re-runs the move back to the original
-  // column. To avoid a self-referential callback (a hooks-rule violation), the
-  // Undo dispatches through a ref that always points at the latest commit.
-  const commitReassignRef = useRef<
-    ((bookingId: string, toPractitionerId: string, undoTo: string | null) => void) | null
-  >(null);
-
-  const commitReassign = useCallback(
-    (bookingId: string, toPractitionerId: string, undoTo: string | null) => {
-      const booking = findBookingOnAnchor(bookingId);
-      if (!booking) {
-        toast.error('Could not find that booking. Pull to refresh.');
-        return;
-      }
-      const toName =
-        practitioners.find((p) => p.id === toPractitionerId)?.name ?? 'practitioner';
-      setPendingActionIds((prev) => new Set([...prev, bookingId]));
-      rescheduleById.mutate(
-        {
-          bookingId,
-          date: anchor,
-          // Reassign keeps the slot — send the booking's current start time.
-          time: `${booking.startTime.slice(0, 5)}:00`,
-          practitionerId: toPractitionerId,
-        },
-        {
-          onSuccess: () => {
-            hapticSuccess();
-            removePending(bookingId);
-            toast.show({
-              message: `Moved ${booking.guestName ?? 'booking'} to ${toName}`,
-              // Offer an Undo back to the original column (when known). The undo
-              // itself offers no further undo (undoTo: null).
-              ...(undoTo
-                ? {
-                    actionLabel: 'Undo',
-                    onAction: () => commitReassignRef.current?.(bookingId, undoTo, null),
-                  }
-                : {}),
-            });
-          },
-          onError: (error) => {
-            removePending(bookingId);
-            toast.error(
-              error instanceof ApiError
-                ? error.message
-                : `Could not move to ${toName}. That slot may be taken.`,
-            );
-          },
-        },
-      );
-    },
-    [findBookingOnAnchor, practitioners, anchor, rescheduleById, removePending, toast],
-  );
-
-  // Keep the ref pointed at the latest commit so the Undo dispatches correctly.
-  useEffect(() => {
-    commitReassignRef.current = commitReassign;
-  }, [commitReassign]);
-
-  const handleReassignPick = useCallback(
-    (toPractitionerId: string) => {
-      const target = reassignTarget;
-      closeReassign();
-      if (!target) return;
-      commitReassign(target.bookingId, toPractitionerId, target.fromPractitionerId);
-    },
-    [reassignTarget, closeReassign, commitReassign],
+  // Cross-column drag (multi-calendar grid): drop a booking onto a DIFFERENT own
+  // practitioner column → reschedule to the new time AND reassign to that calendar
+  // in one PATCH (the server re-validates the target slot and 409s on a clash).
+  const handleDragMoveToColumn = useCallback(
+    (bookingId: string, newTime: string, targetCalendarId: string, fromCalendarId: string) =>
+      commitTimeMove(bookingId, newTime, {
+        toPractitionerId: targetCalendarId,
+        fromPractitionerId: fromCalendarId,
+      }),
+    [commitTimeMove],
   );
 
   const handleBlockTimeBlockPress = useCallback(
@@ -1430,20 +1364,6 @@ export default function CalendarScreen() {
     [closeAddSheet, router, anchor],
   );
 
-  // ---- "Move to practitioner" chooser content ----
-  // The booking being moved + the OTHER practitioners it can move to.
-  const reassignBooking = useMemo(
-    () => (reassignTarget ? findBookingOnAnchor(reassignTarget.bookingId) : null),
-    [reassignTarget, findBookingOnAnchor],
-  );
-  const reassignOptions = useMemo(
-    () =>
-      reassignTarget
-        ? practitioners.filter((p) => p.id !== reassignTarget.fromPractitionerId)
-        : [],
-    [reassignTarget, practitioners],
-  );
-
   return (
     <Screen padded={false}>
       <ErrorBoundary label="the calendar">
@@ -1789,7 +1709,11 @@ export default function CalendarScreen() {
                 nowMinutes={nowMinutes}
                 onBlockPress={handleAllBlockPress}
                 onEmptyPress={handleAllEmptyPress}
-                onBlockLongPress={handleBlockLongPress}
+                onDragReschedule={handleDragReschedule}
+                onDragResize={handleDragResize}
+                onDragConflictReject={handleDragConflictReject}
+                onDragMoveToColumn={handleDragMoveToColumn}
+                pendingActionIds={pendingActionIds}
                 refreshing={refreshing || linkedQuery.isRefetching}
                 onRefresh={() => {
                   onRefresh();
@@ -1917,40 +1841,6 @@ export default function CalendarScreen() {
         </View>
       </Sheet>
 
-      {/* "Move to practitioner" chooser — opened by a long-press on a block in
-          the side-by-side day grid. Picking a practitioner PATCHes the
-          reassignment (optimistic pending + rollback + Undo toast). */}
-      <Sheet visible={reassignTarget !== null} onClose={closeReassign}>
-        <Text variant="subheading">
-          {reassignBooking
-            ? `Move ${reassignBooking.guestName}`
-            : 'Move to practitioner'}
-        </Text>
-        <Text variant="caption" tone="muted">
-          {reassignBooking
-            ? `${reassignBooking.startTime.slice(0, 5)} · keeps the same time`
-            : 'Choose a practitioner to move this booking to.'}
-        </Text>
-        <View style={styles.reassignList}>
-          {reassignOptions.length === 0 ? (
-            <Text variant="body" tone="muted">
-              No other practitioners to move to.
-            </Text>
-          ) : (
-            reassignOptions.map((p) => (
-              <Button
-                key={p.id}
-                label={p.name}
-                variant="secondary"
-                fullWidth
-                onPress={() => handleReassignPick(p.id)}
-              />
-            ))
-          )}
-          <Button label="Cancel" variant="ghost" fullWidth onPress={closeReassign} />
-        </View>
-      </Sheet>
-
       {/* After a drag move/resize the guest notification is deferred, so prompt
           the staff member: notify the guest of the new time/length, skip, or undo. */}
       <Sheet visible={moveNotice !== null} onClose={closeMoveNotice}>
@@ -1960,7 +1850,7 @@ export default function CalendarScreen() {
         <Text variant="caption" tone="muted">
           {moveNotice ? `Let ${moveNotice.guestName} know about the change?` : ''}
         </Text>
-        <View style={styles.reassignList}>
+        <View style={styles.moveNoticeActions}>
           <Button
             label={moveNotice ? `Notify ${moveNotice.guestName}` : 'Notify guest'}
             fullWidth
@@ -2091,7 +1981,7 @@ const styles = StyleSheet.create({
   addSheetSectionLabel: {
     marginTop: spacing.xs,
   },
-  reassignList: {
+  moveNoticeActions: {
     gap: spacing.sm,
     marginTop: spacing.sm,
   },

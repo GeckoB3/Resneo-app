@@ -387,7 +387,10 @@ function WeekDayCol({
           const y = event.nativeEvent.locationY;
           const minutes = startHour * 60 + y / PX_PER_MINUTE;
           const snapped = Math.round(minutes / TAP_SNAP_MINUTES) * TAP_SNAP_MINUTES;
-          onEmptyPress(day.date, minutesToTime(Math.max(0, snapped)));
+          // Clamp to the visible window (a tap below the last hour line must not
+          // map past endHour, which minutesToTime would cap at 23:59).
+          const clamped = Math.min(Math.max(snapped, startHour * 60), endHour * 60);
+          onEmptyPress(day.date, minutesToTime(clamped));
         }}
       />
 

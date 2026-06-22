@@ -28,6 +28,7 @@ import Animated, {
   useSharedValue,
   withSpring,
   withTiming,
+  type SharedValue,
 } from 'react-native-reanimated';
 
 import { AppointmentBlock } from '@/components/calendar/AppointmentBlock';
@@ -138,6 +139,31 @@ type DraggableAppointmentBlockProps = {
   busyRanges?: { id: string; start: number; end: number }[];
   /** The day's working-hour minute-ranges — a drop outside these is amber. */
   workingRanges?: { start: number; end: number }[];
+  /**
+   * Multi-calendar cross-column drag (own columns only). When ALL of these are
+   * provided, an armed MOVE may also travel horizontally onto another own column
+   * to reassign the booking there. The single-calendar grid passes none, so the
+   * gesture stays vertical-only there.
+   */
+  crossColumnSourceIndex?: number;
+  crossColumnCount?: number;
+  crossColumnPitch?: number;
+  crossColumnIds?: string[];
+  /** Set to the source index while dragging so the parent lifts this column's
+   *  z-order above its siblings (else the block hides behind the next column). */
+  liftedColumn?: SharedValue<number>;
+  onDragMoveToColumn?: (
+    bookingId: string,
+    newTime: string,
+    targetCalendarId: string,
+    fromCalendarId: string,
+  ) => void;
+  /** Finger screen-X during a cross-column move (−1 when idle) — the parent's
+   *  frame loop reads it to auto-scroll the columns when it nears an edge. */
+  dragAbsX?: SharedValue<number>;
+  /** How far the columns have auto-scrolled since the drag armed — added to the
+   *  finger translation so the block tracks the finger + targets the right column. */
+  autoScrollDelta?: SharedValue<number>;
 };
 
 /** 0 = valid, 1 = outside working hours (allowed/amber), 2 = conflict (red). */
@@ -197,6 +223,14 @@ export function DraggableAppointmentBlock({
   onDragConflictReject,
   busyRanges = EMPTY_BUSY,
   workingRanges = EMPTY_WORKING,
+  crossColumnSourceIndex,
+  crossColumnCount,
+  crossColumnPitch,
+  crossColumnIds,
+  liftedColumn,
+  onDragMoveToColumn,
+  dragAbsX,
+  autoScrollDelta,
 }: DraggableAppointmentBlockProps) {
   const { colors } = useTheme();
 
@@ -209,9 +243,21 @@ export function DraggableAppointmentBlock({
   // room above to grab for moving and ~14px at the very bottom to resize.
   const resizeZoneHeight = Math.min(RESIZE_ZONE_HEIGHT, Math.round(height * 0.4));
 
+  // ---- Cross-column (multi-calendar) drag config ----
+  // Enabled only when the parent supplies the full bundle (the All-calendars
+  // grid does; the single grid does not). `cc*` locals are plain numbers so the
+  // gesture worklets never read a possibly-undefined prop.
+  const ccPitch = crossColumnPitch ?? 0;
+  const ccSource = crossColumnSourceIndex ?? -1;
+  const ccCount = crossColumnCount ?? 0;
+  const crossColumnEnabled =
+    onDragMoveToColumn != null && liftedColumn != null && ccPitch > 0 && ccCount > 1 && ccSource >= 0;
+
   // ---- Shared animated values (UI thread) ----
   const mode = useSharedValue<DragMode>(0);
   const translateY = useSharedValue(0);
+  /** Horizontal drag offset — only ever non-zero when cross-column is enabled. */
+  const translateX = useSharedValue(0);
   const scale = useSharedValue(1);
   /** 0→1 across the hold window; drives the arming progress bar. */
   const holdProgress = useSharedValue(0);
@@ -272,10 +318,11 @@ export function DraggableAppointmentBlock({
     }
     settled.value = false;
     translateY.value = 0;
+    translateX.value = 0;
     heightOverride.value = -1;
     liveMinutes.value = timeToMinutes(startTime);
     liveDurationMins.value = durationMinutes;
-  }, [settled, translateY, heightOverride, liveMinutes, liveDurationMins, startTime, durationMinutes]);
+  }, [settled, translateY, translateX, heightOverride, liveMinutes, liveDurationMins, startTime, durationMinutes]);
 
   // Layout-defining props changed → the data caught up; drop overrides now.
   useEffect(() => {
@@ -323,6 +370,14 @@ export function DraggableAppointmentBlock({
     (newDuration: number) => onDragResize?.(id, newDuration),
     [id, onDragResize],
   );
+  const jsCommitToColumn = useCallback(
+    (newMinutes: number, targetIndex: number) => {
+      const calId = crossColumnIds?.[targetIndex];
+      const fromId = crossColumnIds?.[crossColumnSourceIndex ?? -1];
+      if (calId && fromId) onDragMoveToColumn?.(id, minutesToTime(newMinutes), calId, fromId);
+    },
+    [id, crossColumnIds, crossColumnSourceIndex, onDragMoveToColumn],
+  );
 
   const originalMinutes = timeToMinutes(startTime);
 
@@ -361,6 +416,11 @@ export function DraggableAppointmentBlock({
       liveDurationMins.value = durationMinutes;
       if (!resizing) {
         scale.value = withSpring(1.03, SNAP_SPRING);
+        // Lift this column above its siblings so the block can travel over them.
+        if (crossColumnEnabled && liftedColumn) {
+          translateX.value = 0;
+          liftedColumn.value = ccSource;
+        }
       }
       runOnJS(jsHapticArm)();
     })
@@ -373,14 +433,32 @@ export function DraggableAppointmentBlock({
         );
         liveMinutes.value = snapped;
         translateY.value = (snapped - originalMinutes) * PX_PER_MINUTE;
-        // Proposed slot keeps the duration; flag overlap (red) / off-hours (amber).
-        conflict.value = evaluateConflict(
-          snapped,
-          snapped + durationMinutes,
-          id,
-          busyRanges,
-          workingRanges,
-        );
+        if (crossColumnEnabled) {
+          // Follow the finger horizontally too, and report its screen-X so the
+          // parent can auto-scroll the columns when it nears an edge. `autoScrollDelta`
+          // (how far the columns have auto-scrolled since arm) is folded into the
+          // target math here and the visual offset in the wrapper style, so both
+          // stay correct as columns slide under a held finger. Over a DIFFERENT
+          // column (or beyond, onto a linked venue) go neutral — the target slot is
+          // validated on the server at drop; only a same-column move shows overlap.
+          if (dragAbsX) dragAbsX.value = event.absoluteX;
+          translateX.value = event.translationX;
+          const effDx = event.translationX + (autoScrollDelta ? autoScrollDelta.value : 0);
+          const raw = ccSource + Math.round(effDx / ccPitch);
+          conflict.value =
+            raw === ccSource
+              ? evaluateConflict(snapped, snapped + durationMinutes, id, busyRanges, workingRanges)
+              : 0;
+        } else {
+          // Proposed slot keeps the duration; flag overlap (red) / off-hours (amber).
+          conflict.value = evaluateConflict(
+            snapped,
+            snapped + durationMinutes,
+            id,
+            busyRanges,
+            workingRanges,
+          );
+        }
       } else if (mode.value === 2) {
         const deltaMins = event.translationY / PX_PER_MINUTE;
         const snapped = snapToGrid(durationMinutes + deltaMins, DRAG_SNAP_MINUTES);
@@ -405,8 +483,36 @@ export function DraggableAppointmentBlock({
       if (mode.value === 1) {
         const newMinutes = liveMinutes.value;
         scale.value = withSpring(1, SNAP_SPRING);
+        if (crossColumnEnabled && liftedColumn) liftedColumn.value = -1;
+
+        if (crossColumnEnabled) {
+          const raw =
+            ccSource +
+            Math.round((translateX.value + (autoScrollDelta ? autoScrollDelta.value : 0)) / ccPitch);
+          // Dropped onto a DIFFERENT own column → reassign (new time + practitioner).
+          if (raw !== ccSource && raw >= 0 && raw <= ccCount - 1) {
+            settled.value = true;
+            conflict.value = 0;
+            mode.value = 0;
+            runOnJS(jsHapticDrop)();
+            runOnJS(jsCommitToColumn)(newMinutes, raw);
+            return;
+          }
+          // Dropped beyond the own columns (e.g. onto a linked venue) — refuse.
+          if (raw < 0 || raw > ccCount - 1) {
+            translateX.value = withSpring(0, SNAP_SPRING);
+            translateY.value = withSpring(0, SNAP_SPRING);
+            conflict.value = 0;
+            mode.value = 0;
+            runOnJS(jsHapticCancel)();
+            return;
+          }
+        }
+
+        // Same column → time move (or cross-column disabled).
         if (newMinutes === originalMinutes) {
           // No-op drag — glide home.
+          translateX.value = withSpring(0, SNAP_SPRING);
           translateY.value = withSpring(0, SNAP_SPRING);
           conflict.value = 0;
           mode.value = 0;
@@ -414,13 +520,17 @@ export function DraggableAppointmentBlock({
         }
         if (conflict.value === 2) {
           // Overlaps another block — refuse the drop and snap home.
+          translateX.value = withSpring(0, SNAP_SPRING);
           translateY.value = withSpring(0, SNAP_SPRING);
           conflict.value = 0;
           mode.value = 0;
           runOnJS(jsConflictReject)();
           return;
         }
-        // Keep the dropped position; props re-sync after the mutation settles.
+        // Keep the dropped VERTICAL position (props re-sync after the mutation
+        // settles), but a same-column move never changes column — glide X home so
+        // the block doesn't sit shifted sideways after a slightly-diagonal drag.
+        translateX.value = withSpring(0, SNAP_SPRING);
         settled.value = true;
         conflict.value = 0;
         mode.value = 0;
@@ -453,12 +563,17 @@ export function DraggableAppointmentBlock({
       'worklet';
       // Touch ended before (or without) activation — clear the arming bar.
       holdProgress.value = withTiming(0, { duration: 120 });
+      // Always drop the column lift (a successful drop already cleared it) and
+      // stop the edge auto-scroll loop.
+      if (crossColumnEnabled && liftedColumn) liftedColumn.value = -1;
+      if (dragAbsX) dragAbsX.value = -1;
       if (!success && mode.value !== 0) {
         // Cancelled mid-drag (e.g. another gesture took over).
         mode.value = 0;
         conflict.value = 0;
         scale.value = withSpring(1, SNAP_SPRING);
         translateY.value = withSpring(0, SNAP_SPRING);
+        translateX.value = withSpring(0, SNAP_SPRING);
         heightOverride.value = -1;
         runOnJS(jsHapticCancel)();
       }
@@ -470,7 +585,14 @@ export function DraggableAppointmentBlock({
   const animatedWrapperStyle = useAnimatedStyle(() => {
     const dragging = mode.value !== 0;
     return {
-      transform: [{ translateY: translateY.value }, { scale: scale.value }],
+      transform: [
+        // Only the actively-dragged block follows the edge auto-scroll; sibling
+        // blocks ride the ScrollView's real scroll, so adding the delta to them
+        // (mode === 0) would double-shift them sideways during an auto-scroll.
+        { translateX: translateX.value + (dragging && autoScrollDelta ? autoScrollDelta.value : 0) },
+        { translateY: translateY.value },
+        { scale: scale.value },
+      ],
       height: heightOverride.value >= 0 ? heightOverride.value : height,
       zIndex: dragging ? 999 : settled.value ? 50 : 10 + laneIndex,
       elevation: dragging ? 12 : 0,

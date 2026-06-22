@@ -20,6 +20,9 @@ export type RescheduleTarget = {
   time: string;
   /** Current length in minutes; null/undefined hides the duration stepper. */
   durationMinutes?: number | null;
+  /** Original practitioner/calendar id — set only by a cross-column drag so its
+   *  Undo restores the booking to its SOURCE column, not just its time. */
+  practitionerId?: string | null;
 };
 
 type RescheduleSheetProps = {
@@ -74,8 +77,13 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
     ? date === target.date && minutesToTime(minutes) === target.time.slice(0, 5) && !durationChanged
     : true;
 
+  // Flag a span that runs past midnight so "Ends at 00:30" isn't read as "before
+  // it starts" (the booking ends the next day).
+  const crossesMidnight = duration != null && minutes + duration >= 24 * 60;
   const endPreview =
-    duration != null ? minutesToTime((minutes + duration) % (24 * 60)) : null;
+    duration != null
+      ? `${minutesToTime((minutes + duration) % (24 * 60))}${crossesMidnight ? ' (next day)' : ''}`
+      : null;
 
   async function handleConfirm() {
     if (!target) return;

@@ -87,7 +87,7 @@ export type BusyRange = { start: number; end: number };
 /** Statuses that occupy the practitioner's wall for conflict math (web parity:
  *  Cancelled/No-Show bookings are excluded). Mutability (which bookings may be
  *  dragged) is a stricter set — see MOVABLE_STATUSES. */
-const CONFLICT_IGNORED_STATUSES = new Set(['Cancelled', 'No-Show']);
+export const CONFLICT_IGNORED_STATUSES = new Set(['Cancelled', 'No-Show']);
 
 /**
  * Statuses whose blocks may be hold-dragged / resized (web parity:
@@ -95,7 +95,7 @@ const CONFLICT_IGNORED_STATUSES = new Set(['Cancelled', 'No-Show']);
  * Completed/No-Show/Cancelled block is rendered but its gesture is disabled, so
  * the move can't even start. The parent ALSO refuses these in its drag handlers.
  */
-const MOVABLE_STATUSES = new Set(['Pending', 'Booked', 'Confirmed', 'Seated']);
+export const MOVABLE_STATUSES = new Set(['Pending', 'Booked', 'Confirmed', 'Seated']);
 
 type CalendarDayGridProps = {
   bookings: CalendarGridBooking[];
@@ -355,9 +355,12 @@ export function CalendarDayGrid({
       const y = event.nativeEvent.locationY;
       const minutes = startHour * 60 + y / PX_PER_MINUTE;
       const snapped = Math.round(minutes / TAP_SNAP_MINUTES) * TAP_SNAP_MINUTES;
-      onEmptyPress(minutesToTime(Math.max(0, snapped)));
+      // Clamp to the visible window so a tap below the last hour line doesn't map
+      // past endHour (minutesToTime would otherwise silently cap it at 23:59).
+      const clamped = Math.min(Math.max(snapped, startHour * 60), endHour * 60);
+      onEmptyPress(minutesToTime(clamped));
     },
-    [startHour, onEmptyPress],
+    [startHour, endHour, onEmptyPress],
   );
 
   // Busy minute-ranges for drag-conflict detection, keyed by id so a dragged
