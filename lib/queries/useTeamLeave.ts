@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
-import { queryKeys } from '@/lib/queries/keys';
+import { keyScope, queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import type { PractitionerLeaveResponse } from '@/types/availability-manage';
 
@@ -22,7 +22,7 @@ export const teamLeaveKeys = {
     [
       ...queryKeys.availabilityManage.all(),
       'teamLeaveMonth',
-      accessToken ?? null,
+      keyScope(accessToken),
       from,
       to,
       practitionerId,

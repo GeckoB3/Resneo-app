@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
-import { queryKeys } from '@/lib/queries/keys';
+import { keyScope, queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import type { PractitionersResponse } from '@/types/practitioner';
 
@@ -14,9 +14,9 @@ import type { PractitionersResponse } from '@/types/practitioner';
 export const resourceQueryKeys = {
   all: () => [...queryKeys.all, 'resources'] as const,
   list: (accessToken?: string | null) =>
-    [...resourceQueryKeys.all(), 'list', accessToken ?? null] as const,
+    [...resourceQueryKeys.all(), 'list', keyScope(accessToken)] as const,
   dayBookings: (accessToken?: string | null, date?: string | null) =>
-    [...resourceQueryKeys.all(), 'dayBookings', accessToken ?? null, date ?? null] as const,
+    [...resourceQueryKeys.all(), 'dayBookings', keyScope(accessToken), date ?? null] as const,
 };
 
 /**

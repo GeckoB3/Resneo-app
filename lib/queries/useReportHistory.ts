@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api/client';
 import { addDaysToDateStr } from '@/lib/dates/venue-dates';
 import { isBackendConfigured } from '@/lib/env';
+import { keyScope } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { useGuests } from '@/lib/queries/useGuests';
 import type { BookingListRow, BookingsListResponse } from '@/types/booking-list';
@@ -20,7 +21,7 @@ import type { BookingListRow, BookingsListResponse } from '@/types/booking-list'
 const reportHistoryKeys = {
   all: ['reserveNI', 'reportHistory'] as const,
   range: (accessToken: string | null, from: string, to: string) =>
-    [...reportHistoryKeys.all, accessToken ?? null, from, to] as const,
+    [...reportHistoryKeys.all, keyScope(accessToken), from, to] as const,
 };
 
 // ── Types ─────────────────────────────────────────────────────────────────────

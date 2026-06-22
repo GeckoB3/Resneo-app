@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
+import { keyScope } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 
 // ---------------------------------------------------------------------------
@@ -30,7 +31,7 @@ export interface VenueDeletionRequestResponse {
 export const venueDeletionKeys = {
   all: ['venueDeletion'] as const,
   status: (accessToken?: string | null) =>
-    [...venueDeletionKeys.all, 'status', accessToken ?? null] as const,
+    [...venueDeletionKeys.all, 'status', keyScope(accessToken)] as const,
 };
 
 // ---------------------------------------------------------------------------

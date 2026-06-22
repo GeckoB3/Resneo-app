@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
-import { queryKeys } from '@/lib/queries/keys';
+import { keyScope, queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import type { Practitioner, PractitionersResponse } from '@/types/practitioner';
 import type {
@@ -21,9 +21,9 @@ import type {
 export const resourceManageKeys = {
   all: () => [...queryKeys.all, 'resourcesManage'] as const,
   list: (accessToken?: string | null) =>
-    [...resourceManageKeys.all(), 'list', accessToken ?? null] as const,
+    [...resourceManageKeys.all(), 'list', keyScope(accessToken)] as const,
   hostCalendars: (accessToken?: string | null) =>
-    [...resourceManageKeys.all(), 'hostCalendars', accessToken ?? null] as const,
+    [...resourceManageKeys.all(), 'hostCalendars', keyScope(accessToken)] as const,
 };
 
 function invalidateResources(queryClient: ReturnType<typeof useQueryClient>) {

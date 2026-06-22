@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
-import { queryKeys } from '@/lib/queries/keys';
+import { keyScope, queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 
 /**
@@ -13,10 +13,10 @@ import { useAccessToken } from '@/lib/queries/useAccessToken';
 export const experienceEventKeys = {
   all: ['reserveNI', 'experienceEvents'] as const,
   list: (accessToken?: string | null, from?: string | null, to?: string | null) =>
-    [...experienceEventKeys.all, 'list', accessToken ?? null, from ?? null, to ?? null] as const,
+    [...experienceEventKeys.all, 'list', keyScope(accessToken), from ?? null, to ?? null] as const,
   attendeesAll: () => [...experienceEventKeys.all, 'attendees'] as const,
   attendees: (accessToken?: string | null, eventId?: string | null) =>
-    [...experienceEventKeys.attendeesAll(), accessToken ?? null, eventId ?? null] as const,
+    [...experienceEventKeys.attendeesAll(), keyScope(accessToken), eventId ?? null] as const,
 };
 
 /**

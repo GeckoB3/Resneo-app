@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
-import { queryKeys } from '@/lib/queries/keys';
+import { keyScope, queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { experienceEventKeys } from '@/lib/queries/useExperienceEvents';
 import type {
@@ -21,7 +21,7 @@ import type {
 export const eventManageKeys = {
   all: () => [...queryKeys.all, 'eventsManage'] as const,
   list: (accessToken?: string | null) =>
-    [...eventManageKeys.all(), 'list', accessToken ?? null] as const,
+    [...eventManageKeys.all(), 'list', keyScope(accessToken)] as const,
 };
 
 function invalidateEvents(queryClient: ReturnType<typeof useQueryClient>) {

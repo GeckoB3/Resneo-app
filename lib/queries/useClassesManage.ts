@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
-import { queryKeys } from '@/lib/queries/keys';
+import { keyScope, queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import type {
   BulkCreateClassInstancesInput,
@@ -31,12 +31,12 @@ import type {
 // ---------------------------------------------------------------------------
 export const classesManageKeys = {
   managed: (accessToken?: string | null) =>
-    [...queryKeys.bookings.all(), 'classesManage', accessToken ?? null] as const,
+    [...queryKeys.bookings.all(), 'classesManage', keyScope(accessToken)] as const,
   attendees: (accessToken?: string | null, classInstanceId?: string | null) =>
     [
       ...queryKeys.bookings.all(),
       'classAttendees',
-      accessToken ?? null,
+      keyScope(accessToken),
       classInstanceId ?? null,
     ] as const,
 };

@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
-import { queryKeys } from '@/lib/queries/keys';
+import { keyScope, queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 
 // ---------------------------------------------------------------------------
@@ -17,7 +17,7 @@ export const classScheduleKeys = {
     [
       ...queryKeys.bookings.all(),
       'classSessions',
-      accessToken ?? null,
+      keyScope(accessToken),
       from ?? null,
       to ?? null,
     ] as const,

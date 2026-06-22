@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
-import { queryKeys } from '@/lib/queries/keys';
+import { keyScope, queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { useVenueContext } from '@/providers/VenueProvider';
 import type {
@@ -56,18 +56,18 @@ export function useClassCommerceEnabled(): boolean {
 // ---------------------------------------------------------------------------
 export const classProductKeys = {
   credits: (accessToken?: string | null) =>
-    [...queryKeys.bookings.all(), 'classCreditProducts', accessToken ?? null] as const,
+    [...queryKeys.bookings.all(), 'classCreditProducts', keyScope(accessToken)] as const,
   courses: (accessToken?: string | null) =>
-    [...queryKeys.bookings.all(), 'classCourseProducts', accessToken ?? null] as const,
+    [...queryKeys.bookings.all(), 'classCourseProducts', keyScope(accessToken)] as const,
   memberships: (accessToken?: string | null) =>
-    [...queryKeys.bookings.all(), 'classMembershipProducts', accessToken ?? null] as const,
+    [...queryKeys.bookings.all(), 'classMembershipProducts', keyScope(accessToken)] as const,
   reports: (accessToken?: string | null) =>
-    [...queryKeys.bookings.all(), 'classCommerceReports', accessToken ?? null] as const,
+    [...queryKeys.bookings.all(), 'classCommerceReports', keyScope(accessToken)] as const,
   enrollments: (accessToken?: string | null, courseId?: string | null) =>
     [
       ...queryKeys.bookings.all(),
       'classCourseEnrollments',
-      accessToken ?? null,
+      keyScope(accessToken),
       courseId ?? null,
     ] as const,
 };

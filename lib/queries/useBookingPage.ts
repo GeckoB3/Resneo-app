@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
-import { queryKeys } from '@/lib/queries/keys';
+import { keyScope, queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import type { BookingPageConfig } from '@/lib/booking/bookingPageConfig';
 
@@ -26,7 +26,7 @@ export function useBookingPageTeam(enabled = true) {
   const queryEnabled = enabled && isBackendConfigured() && accessToken !== null;
 
   return useQuery({
-    queryKey: [...queryKeys.venue.all(), 'bookingPageTeam', accessToken ?? null] as const,
+    queryKey: [...queryKeys.venue.all(), 'bookingPageTeam', keyScope(accessToken)] as const,
     enabled: queryEnabled,
     queryFn: async (): Promise<BookingPageTeamMember[]> => {
       if (!accessToken) {

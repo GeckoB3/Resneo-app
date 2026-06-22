@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
+import { keyScope } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 
 // ---------------------------------------------------------------------------
@@ -104,9 +105,9 @@ export interface AppointmentsPlanPreview {
 export const billingKeys = {
   all: ['billing'] as const,
   status: (accessToken?: string | null) =>
-    [...billingKeys.all, 'status', accessToken ?? null] as const,
+    [...billingKeys.all, 'status', keyScope(accessToken)] as const,
   stripeConnect: (accessToken?: string | null) =>
-    [...billingKeys.all, 'stripeConnect', accessToken ?? null] as const,
+    [...billingKeys.all, 'stripeConnect', keyScope(accessToken)] as const,
 };
 
 // ---------------------------------------------------------------------------
