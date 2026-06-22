@@ -88,6 +88,9 @@ export function useRespondLink() {
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.linkedVenues.all() });
+      // Link/grant changes alter which linked calendars are visible — refresh the
+      // linked-calendar feed (Calendar-tab chips + Bookings venue filter; no realtime).
+      void queryClient.invalidateQueries({ queryKey: queryKeys.linkedCalendar.all() });
     },
   });
 }
@@ -180,6 +183,9 @@ export function useSendLink() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.linkedVenues.all() });
+      // Link/grant changes alter which linked calendars are visible — refresh the
+      // linked-calendar feed (Calendar-tab chips + Bookings venue filter; no realtime).
+      void queryClient.invalidateQueries({ queryKey: queryKeys.linkedCalendar.all() });
     },
   });
 }
@@ -241,6 +247,9 @@ export function useUnlinkVenue() {
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.linkedVenues.all() });
+      // Link/grant changes alter which linked calendars are visible — refresh the
+      // linked-calendar feed (Calendar-tab chips + Bookings venue filter; no realtime).
+      void queryClient.invalidateQueries({ queryKey: queryKeys.linkedCalendar.all() });
     },
   });
 }
@@ -271,6 +280,9 @@ export function useGrantAccess() {
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.linkedVenues.all() });
+      // Link/grant changes alter which linked calendars are visible — refresh the
+      // linked-calendar feed (Calendar-tab chips + Bookings venue filter; no realtime).
+      void queryClient.invalidateQueries({ queryKey: queryKeys.linkedCalendar.all() });
     },
   });
 }
@@ -296,6 +308,9 @@ export function useReduceAccess() {
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.linkedVenues.all() });
+      // Link/grant changes alter which linked calendars are visible — refresh the
+      // linked-calendar feed (Calendar-tab chips + Bookings venue filter; no realtime).
+      void queryClient.invalidateQueries({ queryKey: queryKeys.linkedCalendar.all() });
     },
   });
 }

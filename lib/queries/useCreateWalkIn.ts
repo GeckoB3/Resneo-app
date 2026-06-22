@@ -52,6 +52,9 @@ export function useCreateWalkIn() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all() });
       // Keep the calendar grid in sync with the new walk-in (see useCreateBooking).
       void queryClient.invalidateQueries({ queryKey: queryKeys.calendar.all() });
+      // A walk-in can clear a waitlist entry and updates guest visit history.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.waitlist.all() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.guests.all() });
     },
   });
 }

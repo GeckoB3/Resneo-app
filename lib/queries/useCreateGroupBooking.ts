@@ -35,6 +35,10 @@ export function useCreateGroupBooking() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all() });
       void queryClient.invalidateQueries({ queryKey: queryKeys.calendar.all() });
       void queryClient.invalidateQueries({ queryKey: queryKeys.schedule.all() });
+      // A new group booking can clear waitlist offers and updates each attendee's
+      // guest visit history.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.waitlist.all() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.guests.all() });
     },
   });
 }

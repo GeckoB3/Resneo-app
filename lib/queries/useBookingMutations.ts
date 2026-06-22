@@ -1,9 +1,10 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient, type QueryKey } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
 import { queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import type { BookingDetail, BookingStatus } from '@/types/booking-detail';
+import type { BookingsListResponse } from '@/types/booking-list';
 
 function invalidateBookingCaches(
   queryClient: ReturnType<typeof useQueryClient>,
@@ -25,24 +26,64 @@ function invalidateBookingCaches(
   void queryClient.invalidateQueries({ queryKey: queryKeys.waitlist.all() });
 }
 
+type StatusPatchContext = { previousBookings?: [QueryKey, unknown][] };
+
 /**
- * Optimistically patch the cached booking detail's status so the sheet/pill flip
- * instantly. Returns the previous detail for rollback on error.
+ * Optimistically flip a booking's status everywhere it's cached — the detail
+ * (sheet/pill) AND every bookings list/range query (the Bookings tab + day-list
+ * rows) — so a swipe/confirm reflects instantly instead of waiting for the
+ * onSettled refetch. Snapshots all touched bookings queries for rollback.
  */
 async function optimisticStatusPatch(
   queryClient: ReturnType<typeof useQueryClient>,
   accessToken: string | null,
   bookingId: string,
   status: BookingStatus,
-): Promise<{ previous?: BookingDetail }> {
+): Promise<StatusPatchContext> {
   if (!accessToken) return {};
-  const key = queryKeys.bookings.detail(accessToken, bookingId);
-  await queryClient.cancelQueries({ queryKey: key });
-  const previous = queryClient.getQueryData<BookingDetail>(key);
-  if (previous) {
-    queryClient.setQueryData<BookingDetail>(key, { ...previous, status });
+  // Cancel only THIS booking's in-flight detail fetch so a late response can't
+  // clobber the optimistic status. We deliberately do NOT cancel the broader
+  // list/range queries — that would abort unrelated in-flight refetches; the
+  // onSettled invalidate reconciles any list still loading.
+  await queryClient.cancelQueries({
+    queryKey: queryKeys.bookings.detail(accessToken, bookingId),
+  });
+  const previousBookings = queryClient.getQueriesData({ queryKey: queryKeys.bookings.all() });
+  // Detail (single enriched object).
+  const detailKey = queryKeys.bookings.detail(accessToken, bookingId);
+  const previousDetail = queryClient.getQueryData<BookingDetail>(detailKey);
+  if (previousDetail) {
+    queryClient.setQueryData<BookingDetail>(detailKey, { ...previousDetail, status });
   }
-  return { previous };
+  // List + range responses ({ bookings: BookingListRow[] }). The same filter also
+  // matches the detail/summary queries, whose data has no `bookings` array — the
+  // shape guard below skips them.
+  queryClient.setQueriesData<BookingsListResponse>(
+    { queryKey: queryKeys.bookings.all() },
+    (old) => {
+      if (!old || !Array.isArray(old.bookings)) return old;
+      let changed = false;
+      const bookings = old.bookings.map((row) => {
+        if (row.id === bookingId && row.status !== status) {
+          changed = true;
+          return { ...row, status };
+        }
+        return row;
+      });
+      return changed ? { ...old, bookings } : old;
+    },
+  );
+  return { previousBookings };
+}
+
+/** Restore every booking query snapshotted by optimisticStatusPatch (rollback on error). */
+function rollbackStatusPatch(
+  queryClient: ReturnType<typeof useQueryClient>,
+  context: StatusPatchContext | undefined,
+) {
+  context?.previousBookings?.forEach(([key, data]) => {
+    queryClient.setQueryData(key, data);
+  });
 }
 
 function rollbackDetail(
@@ -97,8 +138,7 @@ export function useUpdateBookingStatus(bookingId: string) {
       });
     },
     onMutate: (status) => optimisticStatusPatch(queryClient, accessToken, bookingId, status),
-    onError: (_error, _status, context) =>
-      rollbackDetail(queryClient, accessToken, bookingId, context),
+    onError: (_error, _status, context) => rollbackStatusPatch(queryClient, context),
     onSuccess: (data) => seedDetailFromRow(queryClient, accessToken, bookingId, data),
     onSettled: () => {
       invalidateBookingCaches(queryClient, accessToken, bookingId);
@@ -126,8 +166,7 @@ export function useCancelBooking(bookingId: string) {
       });
     },
     onMutate: () => optimisticStatusPatch(queryClient, accessToken, bookingId, 'Cancelled'),
-    onError: (_error, _vars, context) =>
-      rollbackDetail(queryClient, accessToken, bookingId, context),
+    onError: (_error, _vars, context) => rollbackStatusPatch(queryClient, context),
     onSuccess: (data) => seedDetailFromRow(queryClient, accessToken, bookingId, data),
     onSettled: () => {
       invalidateBookingCaches(queryClient, accessToken, bookingId);
@@ -478,7 +517,31 @@ export function useSetBookingAttendance(bookingId: string) {
         body: JSON.stringify(input),
       });
     },
-    onSuccess: () => {
+    // Optimistically flip the arrived / staff-confirmed timestamps so the detail
+    // pills toggle instantly; the onSettled refetch replaces the sentinel time
+    // with the server's real one.
+    onMutate: async (input) => {
+      if (!accessToken) return {};
+      const key = queryKeys.bookings.detail(accessToken, bookingId);
+      await queryClient.cancelQueries({ queryKey: key });
+      const previous = queryClient.getQueryData<BookingDetail>(key);
+      if (previous) {
+        const now = new Date().toISOString();
+        queryClient.setQueryData<BookingDetail>(key, {
+          ...previous,
+          ...(input.client_arrived !== undefined
+            ? { client_arrived_at: input.client_arrived ? now : null }
+            : {}),
+          ...(input.staff_attendance_confirmed !== undefined
+            ? { staff_attendance_confirmed_at: input.staff_attendance_confirmed ? now : null }
+            : {}),
+        });
+      }
+      return { previous };
+    },
+    onError: (_error, _input, context) =>
+      rollbackDetail(queryClient, accessToken, bookingId, context),
+    onSettled: () => {
       invalidateBookingCaches(queryClient, accessToken, bookingId);
     },
   });

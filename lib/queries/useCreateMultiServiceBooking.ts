@@ -60,6 +60,10 @@ export function useCreateMultiServiceBooking() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all() });
       void queryClient.invalidateQueries({ queryKey: queryKeys.calendar.all() });
       void queryClient.invalidateQueries({ queryKey: queryKeys.schedule.all() });
+      // A new multi-service visit can clear a waitlist offer and updates the
+      // guest's visit history.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.waitlist.all() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.guests.all() });
     },
   });
 }

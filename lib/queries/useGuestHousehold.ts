@@ -59,10 +59,11 @@ export function useAddToHousehold(guestId: string) {
         body: JSON.stringify({ other_guest_id }),
       });
     },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({
-        queryKey: householdKey(accessToken, guestId),
-      });
+    onSuccess: (_data, otherGuestId) => {
+      // Household links are symmetric — refresh BOTH guests' household blocks so
+      // the newly-linked contact's profile reflects the link without a remount.
+      void queryClient.invalidateQueries({ queryKey: householdKey(accessToken, guestId) });
+      void queryClient.invalidateQueries({ queryKey: householdKey(accessToken, otherGuestId) });
     },
   });
 }

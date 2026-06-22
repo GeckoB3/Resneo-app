@@ -73,7 +73,17 @@ export function useSendGuestMessage(guestId: string) {
       );
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.guests.timeline(accessToken, guestId) });
+      // Refresh the guest DETAIL (it embeds the communications log) and the
+      // timeline — but NOT guests.all(), which would refetch the entire paginated
+      // client roster on every message send. The detail key carries a trailing
+      // bookingHistoryLimit segment, so invalidate by its prefix (drop the last
+      // segment, derived from the factory) to match the cached detail at any limit.
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.guests.detail(accessToken, guestId).slice(0, -1),
+      });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.guests.timeline(accessToken, guestId),
+      });
     },
   });
 }

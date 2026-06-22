@@ -1,5 +1,6 @@
 import NetInfo from '@react-native-community/netinfo';
-import { QueryClient, onlineManager } from '@tanstack/react-query';
+import { QueryClient, focusManager, onlineManager } from '@tanstack/react-query';
+import { AppState, Platform } from 'react-native';
 
 import { ApiError } from '@/lib/api/client';
 
@@ -20,6 +21,29 @@ onlineManager.setEventListener((setOnline) =>
     setOnline(Boolean(state.isConnected));
   }),
 );
+
+/**
+ * Make React Query aware of foreground/background via AppState (W1.8).
+ *
+ * RN has no `window` focus events, so without this the app is treated as ALWAYS
+ * focused: `refetchInterval` polls keep firing while backgrounded (battery/data
+ * drain, and they race the Supabase background-token issue) and
+ * `refetchOnWindowFocus` never fires on resume (stale data when the user returns).
+ *
+ * We treat only a true `background` as "blurred", NOT the transient `inactive`
+ * (the biometric prompt, Control Centre / notification pull-down, app-switcher
+ * peek) — so polling pauses only when genuinely backgrounded and stale queries
+ * refetch exactly once on return, without churning on every inactive flicker.
+ * Web keeps React Query's built-in visibility default.
+ */
+if (Platform.OS !== 'web') {
+  focusManager.setEventListener((handleFocus) => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      handleFocus(state !== 'background');
+    });
+    return () => subscription.remove();
+  });
+}
 
 /**
  * Shared TanStack Query client.

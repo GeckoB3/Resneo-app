@@ -21,6 +21,11 @@ function invalidate(
   });
   void queryClient.invalidateQueries({ queryKey: queryKeys.calendar.all() });
   void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all() });
+  // Class/event/resource blocks render from the separate schedule feed, and a
+  // status/arrival change can clear a waitlist offer — refresh both so a tray
+  // action isn't stale until the 60s poll (parity with invalidateBookingCaches).
+  void queryClient.invalidateQueries({ queryKey: queryKeys.schedule.all() });
+  void queryClient.invalidateQueries({ queryKey: queryKeys.waitlist.all() });
 }
 
 /**

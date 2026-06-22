@@ -53,6 +53,9 @@ export function useLinkedCalendar(params: { from: string; to: string }) {
     // Cross-venue write activity arrives via account_link_notifications
     // realtime; this poll is the belt-and-braces fallback (§9 realtime/poll).
     refetchInterval: 60_000,
+    // Don't keep polling while backgrounded — the realtime channel resubscribes
+    // on resume and the next foreground refetch catches up (matches useNotifications).
+    refetchIntervalInBackground: false,
     queryFn: async (): Promise<LinkedCalendarResponse> => {
       if (!accessToken) throw new Error('Missing access token');
       const qs = new URLSearchParams({ from, to }).toString();

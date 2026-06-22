@@ -97,6 +97,10 @@ export function useCreateBooking() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.schedule.all() });
       void queryClient.invalidateQueries({ queryKey: experienceEventKeys.all });
       void queryClient.invalidateQueries({ queryKey: resourceQueryKeys.all() });
+      // A new booking can fulfil a waitlist entry and updates the guest's visit
+      // history / returning-guest badges — refresh both (cf. invalidateBookingCaches).
+      void queryClient.invalidateQueries({ queryKey: queryKeys.waitlist.all() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.guests.all() });
     },
   });
 }
