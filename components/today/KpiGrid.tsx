@@ -18,7 +18,10 @@ export function KpiGrid({ today, isAppointment, forecast }: KpiGridProps) {
   const pending = today.pending;
   const seated = today.seated;
 
-  const attendancePct = bookings > 0 ? Math.round((confirmed / bookings) * 100) : null;
+  // Clamp to 100 — a status-count race (confirmed > bookings) must never render
+  // an impossible ">100% of bookings" caption.
+  const attendancePct =
+    bookings > 0 ? Math.min(100, Math.round((confirmed / bookings) * 100)) : null;
 
   // Sparkline series — appointments trend on bookings, dining on covers (web parity).
   const spark = (forecast ?? []).map((f) => (isAppointment ? f.bookings : f.covers));

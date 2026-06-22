@@ -125,7 +125,7 @@ function emptyDraft(): DraftState {
   // Seed dates to today so the native pickers show a concrete, valid value the
   // moment the sheet opens (an OS picker can't represent "empty"). The user
   // adjusts from there; the rest stays blank/optional as before.
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayYmd();
   return {
     block_type: 'closed',
     date_start: today,
@@ -237,6 +237,10 @@ function validateDraft(d: DraftState): string | null {
   if (d.date_end < d.date_start) return 'End date must be on or after start date.';
   if (d.time_start && !TIME_RE.test(d.time_start)) return 'Start time must be HH:MM.';
   if (d.time_end && !TIME_RE.test(d.time_end)) return 'End time must be HH:MM.';
+  // A partial-day closure window must be ordered (parity with the weekly editor).
+  if (d.time_start && d.time_end && d.time_start >= d.time_end) {
+    return 'Closure end time must be after the start time.';
+  }
   if (d.block_type === 'amended_hours') {
     if (!d.p1Open || !d.p1Close) return 'At least one open period is required for amended hours.';
     if (!TIME_RE.test(d.p1Open) || !TIME_RE.test(d.p1Close)) return 'Period times must be HH:MM.';
@@ -246,6 +250,7 @@ function validateDraft(d: DraftState): string | null {
         return 'Both period 2 open and close are required when using a second period.';
       }
       if (d.p2Open >= d.p2Close) return 'Period 2 close must be after open.';
+      if (d.p2Open < d.p1Close) return 'The second period must start after the first one ends.';
     }
   }
   return null;
@@ -261,7 +266,14 @@ function formatDateRange(b: AvailabilityBlock): string {
 }
 
 function todayYmd(): string {
-  return new Date().toISOString().slice(0, 10);
+  // Device-local calendar date (YYYY-MM-DD). Slicing toISOString() gave the UTC
+  // date, which showed yesterday/tomorrow near midnight for non-UTC users; this
+  // is only the picker's default day and the user can still change it.
+  const d = new Date();
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, '0');
+  const da = String(d.getDate()).padStart(2, '0');
+  return `${y}-${mo}-${da}`;
 }
 
 /** "16 Jun" from a YYYY-MM-DD string (for the calendar CTA label). */

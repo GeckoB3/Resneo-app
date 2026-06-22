@@ -61,7 +61,7 @@ export function CapacityCard({ today }: CapacityCardProps) {
             />
           </View>
           <Text variant="label" style={styles.fillPct}>
-            {fillPct}%
+            {Math.min(fillPct, 100)}%
           </Text>
         </View>
       )}

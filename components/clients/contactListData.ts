@@ -21,7 +21,13 @@ export function isNameSort(sort: string): boolean {
  */
 export function bucketLetter(guest: GuestListItem): string {
   const source = (guest.last_name?.trim() || guest.first_name?.trim() || '').toUpperCase();
-  const initial = source.charAt(0);
+  // Fold combining accents so "José"/"Müller"/"Renée"/"Ñ" bucket under their base
+  // letter (J/M/R/N) rather than "#": the server sorts last_name with locale
+  // collation that places them near the base letter, so the rail should agree.
+  // NFD puts the base letter first ("É" → "E" + combining accent), so charAt(0)
+  // is the un-accented initial. (Atomic letters like Ł/Ø don't decompose and so
+  // still fall through to "#", which is acceptable.)
+  const initial = source.normalize('NFD').charAt(0);
   return initial >= 'A' && initial <= 'Z' ? initial : NON_ALPHA_BUCKET;
 }
 

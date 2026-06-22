@@ -290,8 +290,15 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
   /** Build the first chain segment from the picked service + slot. */
   const seedMultiServiceChain = useCallback((): MultiServiceSegment[] | null => {
     if (!selectedService || !selectedSlot) return null;
+    // create-multi-service has no per-service duration field: the server
+    // re-derives each segment's length as the (variant-resolved) catalogue
+    // duration + add-on minutes and 400s if our chain starts don't line up
+    // (expectedStart = prev end + buffer). A staff `durationOverride` therefore
+    // cannot be honoured here, so seed the chain from the server-reconstructable
+    // duration — otherwise an overridden non-last segment fails to book, and an
+    // overridden last/only segment silently books at natural length anyway.
     const baseDuration =
-      durationOverride ?? selectedVariant?.duration_minutes ?? selectedService.durationMinutes;
+      selectedVariant?.duration_minutes ?? selectedService.durationMinutes;
     const chosenAddons = addonGroups
       .flatMap((g) => g.addons)
       .filter((a) => selectedAddonIds.includes(a.id));
@@ -317,7 +324,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
       addonTotalMinutes: addonMinutes,
     };
     return recomputeMultiServiceChain([seg], seg.startTime);
-  }, [selectedService, selectedSlot, selectedVariant, durationOverride, addonGroups, selectedAddonIds]);
+  }, [selectedService, selectedSlot, selectedVariant, addonGroups, selectedAddonIds]);
 
   /** Append another service (same practitioner) to the chain and recompute starts. */
   const addServiceToChain = useCallback(

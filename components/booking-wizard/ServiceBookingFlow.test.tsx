@@ -143,6 +143,34 @@ function renderFlow() {
   );
 }
 
+// Pin "today" so the hardcoded availability date (2026-06-20) is always a valid
+// FUTURE date in the displayed month; otherwise the Date step can't auto-advance
+// once the real clock moves past it (and the stubbed slot step never mounts). Fake
+// ONLY Date — leave timers real so RTL's waitFor/act behave normally.
+beforeEach(() => {
+  jest.useFakeTimers({
+    doNotFake: [
+      'setTimeout',
+      'clearTimeout',
+      'setInterval',
+      'clearInterval',
+      'setImmediate',
+      'clearImmediate',
+      'queueMicrotask',
+      'nextTick',
+      'requestAnimationFrame',
+      'cancelAnimationFrame',
+      'hrtime',
+      'performance',
+    ],
+  });
+  jest.setSystemTime(new Date('2026-06-15T09:00:00Z'));
+});
+
+afterEach(() => {
+  jest.useRealTimers();
+});
+
 describe('ServiceBookingFlow — multi-service buffer (regression)', () => {
   it("seeds the FIRST segment with the service's real buffer so segment-2 chains past it", async () => {
     await act(async () => {

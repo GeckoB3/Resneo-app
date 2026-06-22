@@ -65,21 +65,26 @@ const MAX_SESSIONS = 100;
 // All work in "YYYY-MM-DD" calendar-date space; noon avoids tz day slips.
 // ---------------------------------------------------------------------------
 
+// Parse/read/serialize all in UTC (noon-UTC anchor, matching lib/dates). The old
+// code parsed at LOCAL noon but serialized via toISOString() (UTC) — at extreme
+// offsets (e.g. UTC+13/+14) local noon falls on the previous UTC day, so the
+// returned date / derived weekday slipped by one. Staying in UTC end-to-end is
+// stable everywhere.
 function addDays(iso: string, days: number): string {
-  const d = new Date(iso + 'T12:00:00');
-  d.setDate(d.getDate() + days);
+  const d = new Date(iso + 'T12:00:00Z');
+  d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
 }
 
 function dowFromIso(iso: string): number {
-  return new Date(iso + 'T12:00:00').getDay();
+  return new Date(iso + 'T12:00:00Z').getUTCDay();
 }
 
 /** First calendar date on or after `iso` whose weekday matches `targetDow` (0–6). */
 function firstDowOnOrAfter(iso: string, targetDow: number): string {
-  const d = new Date(iso + 'T12:00:00');
-  while (d.getDay() !== targetDow) {
-    d.setDate(d.getDate() + 1);
+  const d = new Date(iso + 'T12:00:00Z');
+  while (d.getUTCDay() !== targetDow) {
+    d.setUTCDate(d.getUTCDate() + 1);
   }
   return d.toISOString().slice(0, 10);
 }

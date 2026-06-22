@@ -246,7 +246,7 @@ export default function TodayScreen() {
           <RefreshControl refreshing={query.isRefetching} onRefresh={() => void query.refetch()} />
         }>
         {/* Greeting + quick-action buttons */}
-        <GreetingHeader isAppointment={isAppointment} />
+        <GreetingHeader isAppointment={isAppointment} timeZone={venue?.timezone} />
 
         {/* Setup checklist (admin-only; pinned pre-onboarding, dismissible after) */}
         <SetupChecklistCard />

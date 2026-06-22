@@ -130,6 +130,9 @@ export function useVenueLiveSync({
 
       scheduleLiveSyncState(setState, 'reconnecting');
       if (!pollRef.current) {
+        // Fetch immediately so a never-connected or just-dropped channel doesn't
+        // leave a full pollMs (~30s) blind spot before the first fallback refresh.
+        onRefreshRef.current();
         pollRef.current = setInterval(() => {
           onRefreshRef.current();
         }, pollMs);
