@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
@@ -11,6 +11,7 @@ import { ApiError } from '@/lib/api/client';
 import { hapticError, hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { t } from '@/lib/i18n';
 import { useChangeOwnPassword } from '@/lib/queries/useTeamMutations';
+import { useAuth } from '@/providers/AuthProvider';
 import { useToast } from '@/providers/ToastProvider';
 import { spacing } from '@/theme/index';
 
@@ -42,11 +43,22 @@ const MIN_PASSWORD_LENGTH = 8;
 export default function SetPasswordScreen() {
   const router = useRouter();
   const toast = useToast();
+  const { session, isLoading } = useAuth();
   const changePassword = useChangeOwnPassword();
 
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+
+  // This screen is only reachable post-exchange WITH a session. If there's none
+  // (an expired/half-finished recovery link, or a stray deep link), the
+  // change-password POST would 401 into a dead-end with no way back — send the
+  // user to sign in so they can request a fresh link.
+  useEffect(() => {
+    if (!isLoading && !session) {
+      router.replace('/sign-in');
+    }
+  }, [isLoading, session, router]);
 
   async function handleSubmit() {
     setError(null);

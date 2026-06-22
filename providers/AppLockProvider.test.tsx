@@ -49,6 +49,15 @@ jest.mock('@/theme/index', () => ({
   radius: { sm: 6, md: 10, lg: 14 },
   spacing: { xs: 4, sm: 8, md: 12, lg: 16, xl: 20, '2xl': 24, '3xl': 32 },
 }));
+// The provider subscribes to auth SIGNED_OUT (reset the lock on a shared device);
+// stub the client so that subscription is a harmless no-op in tests.
+jest.mock('@/lib/supabase', () => ({
+  getSupabase: () => ({
+    auth: {
+      onAuthStateChange: () => ({ data: { subscription: { unsubscribe: jest.fn() } } }),
+    },
+  }),
+}));
 
 type Deferred<T> = { promise: Promise<T>; resolve: (value: T) => void };
 function makeDeferred<T>(): Deferred<T> {

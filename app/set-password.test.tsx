@@ -29,6 +29,12 @@ jest.mock('react-native-safe-area-context', () => {
 const mockToast = { success: jest.fn(), error: jest.fn(), info: jest.fn() };
 jest.mock('@/providers/ToastProvider', () => ({ useToast: () => mockToast }));
 
+// The screen now redirects to /sign-in when there's no session; provide one so the
+// validation/submit behaviour under test renders normally.
+jest.mock('@/providers/AuthProvider', () => ({
+  useAuth: () => ({ session: { user: { id: 'test-user' } }, isLoading: false }),
+}));
+
 const mockChangePasswordAsync = jest.fn(() => Promise.resolve({ success: true }));
 jest.mock('@/lib/queries/useTeamMutations', () => ({
   useChangeOwnPassword: () => ({ mutateAsync: mockChangePasswordAsync, isPending: false }),

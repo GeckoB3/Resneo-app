@@ -25,6 +25,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '@/components/ui/Text';
 import { hapticError, hapticSuccess } from '@/lib/haptics';
 import { captureException } from '@/lib/observability';
+import { getSupabase } from '@/lib/supabase';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
@@ -278,6 +279,30 @@ export function AppLockProvider({ children }: AppLockProviderProps) {
       lockShownRef.current = false;
     }
   }, [isLocked, unlock]);
+
+  // ── Reset on sign-out (shared-device safety) ──────────────────────────────
+  // The lock preference is stored per-DEVICE. Without this, a user who enabled
+  // biometric lock and then signed out would leave the NEXT user on the same
+  // device gated by — and unable to clear — a lock they never set. On SIGNED_OUT
+  // drop the persisted preference and dismiss any overlay so the next session
+  // starts unlocked (re-enabling is one tap in Settings).
+  useEffect(() => {
+    const {
+      data: { subscription },
+    } = getSupabase().auth.onAuthStateChange((event) => {
+      if (event !== 'SIGNED_OUT') return;
+      setAppLockEnabledState(false);
+      setIsLocked(false);
+      lockShownRef.current = false;
+      clearPromptGuard();
+      if (Platform.OS !== 'web') {
+        SecureStore.deleteItemAsync(APP_LOCK_KEY).catch(() => {
+          /* best-effort: a failed delete just leaves an inert preference */
+        });
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, [clearPromptGuard]);
 
   const setAppLockEnabled = useCallback(
     async (next: boolean): Promise<boolean> => {

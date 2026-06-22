@@ -106,7 +106,13 @@ export default function AuthCallbackScreen() {
     return () => {
       active = false;
     };
-  }, [params, router]);
+    // Run exactly once. useLocalSearchParams returns a fresh object every render,
+    // so depending on it re-ran this effect on any re-render and re-entered the
+    // one-shot PKCE exchangeCodeForSession with an already-consumed code —
+    // surfacing a false "link expired" on a perfectly valid link. The deep link
+    // only needs processing once; `active` still guards setState-after-unmount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (errorReason) {
     const copy = ERROR_COPY[errorReason];
