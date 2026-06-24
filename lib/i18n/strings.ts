@@ -89,6 +89,44 @@ export const en = {
       tooShort: 'Password must be at least {min} characters.',
       mismatch: 'Passwords do not match.',
     },
+
+    // Account deletion (Apple Guideline 5.1.1(v)) — the self-serve, in-app path
+    // to permanently delete the account created at sign-up. Distinct from venue
+    // deletion: this removes the user's own login/identity.
+    delete: {
+      dangerZone: 'Danger zone',
+      title: 'Delete account',
+      description:
+        'Permanently delete your Resneo account. This ends your access and anonymises your personal data at venues per GDPR retention rules.',
+      cta: 'Delete account',
+
+      // Type-to-confirm sheet.
+      sheetTitle: 'Delete your account',
+      sheetIntro:
+        'This requests a 30-day grace period, after which your account and personal data are permanently deleted and your linked guest records at venues are anonymised. This cannot be undone once the grace period ends.',
+      // `{phrase}` is interpolated with `confirmPhrase` so the matched text and the
+      // on-screen instruction can never drift apart.
+      confirmPhrase: 'DELETE MY ACCOUNT',
+      confirmLabel: 'Type “{phrase}” to confirm',
+      confirmButton: 'Delete my account',
+      working: 'Deleting…',
+      error: 'Could not request account deletion. Please try again.',
+
+      // Confirmation shown after a successful request (the user is then signed out).
+      scheduledTitle: 'Account deletion scheduled',
+      // `{date}` interpolated at the call site.
+      scheduledBody:
+        'Your account is scheduled for permanent deletion on {date}. You have been signed out on all devices.',
+      scheduledBodyNoDate:
+        'Your account deletion has been requested. You have been signed out on all devices.',
+      cancelHint:
+        'Changed your mind? Use the “Cancel deletion request” link in the confirmation email to cancel before then.',
+      // `{email}` interpolated when the signed-in address is known.
+      cancelHintEmail:
+        'Changed your mind? Use the “Cancel deletion request” link in the email we sent to {email} to cancel before then.',
+      done: 'Done',
+      keep: 'Keep my account',
+    },
   },
 
   setPassword: {

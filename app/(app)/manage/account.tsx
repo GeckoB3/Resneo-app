@@ -2,6 +2,7 @@ import { Stack } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
+import { DeleteAccountSheet } from '@/components/manage/DeleteAccountSheet';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
@@ -14,6 +15,7 @@ import { t } from '@/lib/i18n';
 import { useStaffAccountForm } from '@/lib/queries/useStaffAccountForm';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { getSupabase } from '@/lib/supabase';
+import { useAuth } from '@/providers/AuthProvider';
 import { useToast } from '@/providers/ToastProvider';
 import { spacing } from '@/theme/index';
 
@@ -29,8 +31,10 @@ import { spacing } from '@/theme/index';
  */
 export default function AccountScreen() {
   const toast = useToast();
+  const { signOut } = useAuth();
   const { data, isLoading } = useStaffMe();
   const staff = data?.staff ?? null;
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const form = useStaffAccountForm({
     staff,
@@ -194,8 +198,35 @@ export default function AccountScreen() {
           </View>
         </Card>
 
+        {/* Danger zone — account deletion (Apple Guideline 5.1.1(v)). Available to
+            all roles; deletes the signed-in user's own account, not the venue. */}
+        <Card>
+          <Text variant="label" tone="danger" style={styles.sectionTitle}>
+            {t('account.delete.title')}
+          </Text>
+          <Text variant="caption" tone="muted" style={styles.sectionDesc}>
+            {t('account.delete.description')}
+          </Text>
+          <Button
+            label={t('account.delete.cta')}
+            variant="danger"
+            fullWidth
+            onPress={() => setDeleteOpen(true)}
+          />
+        </Card>
+
         <View style={styles.spacer} />
       </ScrollView>
+
+      <DeleteAccountSheet
+        visible={deleteOpen}
+        email={staff?.email}
+        onClose={() => setDeleteOpen(false)}
+        onDeleted={() => {
+          setDeleteOpen(false);
+          void signOut();
+        }}
+      />
     </Screen>
   );
 }
