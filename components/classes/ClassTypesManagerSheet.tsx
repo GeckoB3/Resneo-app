@@ -2,7 +2,6 @@ import { useRouter, type Href } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
-import { ClassRuleSheet, type ClassRuleTarget } from '@/components/classes/ClassRuleSheet';
 import { ClassScheduleSheet, type ClassScheduleTarget } from '@/components/classes/ClassScheduleSheet';
 import {
   ClassTypeEditorSheet,
@@ -26,7 +25,6 @@ import { useClassCommerceEnabled } from '@/lib/queries/useClassProducts';
 import {
   useCancelClassInstance,
   useDeleteClassEntity,
-  useGenerateInstances,
   useManagedClasses,
 } from '@/lib/queries/useClassesManage';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
@@ -37,7 +35,6 @@ import { useTheme } from '@/theme/useTheme';
 import type {
   ClassCalendarColumn,
   ManagedClassInstance,
-  ManagedClassTimetableEntry,
   ManagedClassType,
 } from '@/types/classes-manage';
 
@@ -62,31 +59,16 @@ function shortTime(time: string): string {
   return time.slice(0, 5);
 }
 
-const DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-/** One-line human summary of a weekly rule, mirroring the web rule list. */
-function ruleSummary(rule: ManagedClassTimetableEntry): string {
-  const parts = [`${DAY_SHORT[rule.day_of_week] ?? '—'} ${shortTime(rule.start_time)}`];
-  const interval = rule.interval_weeks ?? 1;
-  if (interval > 1) parts.push(`every ${interval} wks`);
-  if (rule.recurrence_end_date) {
-    parts.push(`until ${String(rule.recurrence_end_date).slice(0, 10)}`);
-  } else if (rule.total_occurrences != null && rule.total_occurrences > 0) {
-    parts.push(`max ${rule.total_occurrences}`);
-  }
-  return parts.join(' · ');
-}
-
 /**
  * In-app class-types manager — opened from the header "+" on /classes. Lists
  * each class type with its session defaults, payment rule and calendar column,
- * with Edit, "New class", "Schedule session", "Weekly rule" and Delete, plus the
- * next few upcoming sessions per class (Edit / Cancel / Remove).
+ * with Edit, "New class", "Schedule session" and Delete, plus the next few
+ * upcoming sessions per class (Edit / Cancel / Remove).
  *
  * Permissions mirror the web class timetable: admins manage every class; other
  * staff create/edit/delete and schedule classes only on the calendars assigned
  * to them ({@link staffManagesClassType}), which the API enforces too. Cancel-
- * with-guest-notification and generating sessions from rules stay admin-only.
+ * with-guest-notification stays admin-only.
  */
 export function ClassTypesManagerSheet({ visible, onClose }: ClassTypesManagerSheetProps) {
   const { colors } = useTheme();
@@ -102,7 +84,6 @@ export function ClassTypesManagerSheet({ visible, onClose }: ClassTypesManagerSh
   const query = useManagedClasses();
   const deleteEntity = useDeleteClassEntity();
   const cancelInstance = useCancelClassInstance();
-  const generate = useGenerateInstances();
 
   // Web parity: admins manage every class; other staff manage classes only on
   // the calendars assigned to them. `linked_calendar_ids` here is the same set
@@ -124,7 +105,6 @@ export function ClassTypesManagerSheet({ visible, onClose }: ClassTypesManagerSh
 
   const [editorTarget, setEditorTarget] = useState<ClassTypeEditorTarget | null>(null);
   const [scheduleTarget, setScheduleTarget] = useState<ClassScheduleTarget | null>(null);
-  const [ruleTarget, setRuleTarget] = useState<ClassRuleTarget | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ManagedClassType | null>(null);
   const [cancelTarget, setCancelTarget] = useState<
     { classType: ManagedClassType; instance: ManagedClassInstance } | null
@@ -134,11 +114,6 @@ export function ClassTypesManagerSheet({ visible, onClose }: ClassTypesManagerSh
   const [removeSessionTarget, setRemoveSessionTarget] = useState<
     { classType: ManagedClassType; instance: ManagedClassInstance } | null
   >(null);
-  const [removeRuleTarget, setRemoveRuleTarget] = useState<
-    { classType: ManagedClassType; rule: ManagedClassTimetableEntry } | null
-  >(null);
-  const [generateOpen, setGenerateOpen] = useState(false);
-  const [generateWeeks, setGenerateWeeks] = useState('8');
 
   const classTypes = useMemo(
     () => [...(query.data?.class_types ?? [])].sort((a, b) => a.name.localeCompare(b.name)),
@@ -177,29 +152,6 @@ export function ClassTypesManagerSheet({ visible, onClose }: ClassTypesManagerSh
     }
     return map;
   }, [query.data?.instances]);
-
-  // Active recurring weekly rules grouped by class type.
-  const rulesByType = useMemo(() => {
-    const map = new Map<string, ManagedClassTimetableEntry[]>();
-    for (const rule of query.data?.timetable ?? []) {
-      if (rule.is_active === false) continue;
-      const list = map.get(rule.class_type_id) ?? [];
-      list.push(rule);
-      map.set(rule.class_type_id, list);
-    }
-    for (const list of map.values()) {
-      list.sort(
-        (a, b) => a.day_of_week - b.day_of_week || a.start_time.localeCompare(b.start_time),
-      );
-    }
-    return map;
-  }, [query.data?.timetable]);
-
-  // Whether any active rule exists — gates the "Generate sessions" affordance.
-  const hasRules = useMemo(
-    () => (query.data?.timetable ?? []).some((r) => r.is_active !== false),
-    [query.data?.timetable],
-  );
 
   const onDelete = useCallback(() => {
     const ct = deleteTarget;
@@ -275,53 +227,6 @@ export function ClassTypesManagerSheet({ visible, onClose }: ClassTypesManagerSh
     );
   }, [removeSessionTarget, deleteEntity, toast]);
 
-  const onRemoveRule = useCallback(() => {
-    const t = removeRuleTarget;
-    if (!t) return;
-    deleteEntity.mutate(
-      { id: t.rule.id, entity_type: 'timetable' },
-      {
-        onSuccess: () => {
-          hapticSuccess();
-          setRemoveRuleTarget(null);
-          toast.success('Weekly rule removed.');
-        },
-        onError: (e) => {
-          hapticWarning();
-          toast.error(
-            e instanceof ApiError ? e.message : 'Could not remove the rule. Please try again.',
-          );
-        },
-      },
-    );
-  }, [removeRuleTarget, deleteEntity, toast]);
-
-  const onGenerate = useCallback(() => {
-    const weeks = Number(generateWeeks);
-    const clamped = Number.isInteger(weeks) ? Math.min(26, Math.max(1, weeks)) : 8;
-    generate.mutate(
-      { weeks: clamped },
-      {
-        onSuccess: (result) => {
-          hapticSuccess();
-          setGenerateOpen(false);
-          const created = result.created ?? 0;
-          toast.success(
-            created > 0
-              ? `Generated ${created} session${created === 1 ? '' : 's'}.`
-              : 'No new sessions to generate.',
-          );
-        },
-        onError: (e) => {
-          hapticWarning();
-          toast.error(
-            e instanceof ApiError ? e.message : 'Could not generate sessions. Please try again.',
-          );
-        },
-      },
-    );
-  }, [generateWeeks, generate, toast]);
-
   return (
     <>
       <Sheet visible={visible} onClose={onClose} maxHeight="92%" fill>
@@ -371,19 +276,6 @@ export function ClassTypesManagerSheet({ visible, onClose }: ClassTypesManagerSh
                   ? "Your account isn't linked to a calendar yet. Ask an admin to assign one before you can manage classes."
                   : 'You can create, edit and schedule classes on the calendars assigned to you. Cancelling a class with guest notifications is admin-only.'}
               </Text>
-            ) : null}
-
-            {isAdmin && hasRules ? (
-              <Button
-                label="Generate sessions"
-                variant="secondary"
-                fullWidth
-                loading={generate.isPending}
-                onPress={() => {
-                  setGenerateWeeks('8');
-                  setGenerateOpen(true);
-                }}
-              />
             ) : null}
 
             {classCommerceEnabled ? (
@@ -445,48 +337,6 @@ export function ClassTypesManagerSheet({ visible, onClose }: ClassTypesManagerSh
                       </Text>
                     </View>
 
-                    {(() => {
-                      const rules = rulesByType.get(ct.id) ?? [];
-                      if (rules.length === 0) return null;
-                      return (
-                        <View style={styles.upcomingWrap}>
-                          <Text variant="overline" tone="muted">
-                            Weekly rules
-                          </Text>
-                          {rules.map((rule) => (
-                            <View key={rule.id} style={styles.sessionRow}>
-                              <Text
-                                variant="caption"
-                                tone="secondary"
-                                style={styles.sessionLabel}
-                                numberOfLines={1}>
-                                {ruleSummary(rule)}
-                              </Text>
-                              {staffManagesClassType(ct) ? (
-                                <View style={styles.sessionActions}>
-                                  <Button
-                                    label="Edit"
-                                    variant="ghost"
-                                    size="sm"
-                                    onPress={() =>
-                                      setRuleTarget({ mode: 'edit', classType: ct, rule })
-                                    }
-                                  />
-                                  <Button
-                                    label="Remove"
-                                    variant="ghost"
-                                    size="sm"
-                                    customColors={{ background: 'transparent', text: colors.danger }}
-                                    onPress={() => setRemoveRuleTarget({ classType: ct, rule })}
-                                  />
-                                </View>
-                              ) : null}
-                            </View>
-                          ))}
-                        </View>
-                      );
-                    })()}
-
                     {upcoming.length > 0 ? (
                       <View style={styles.upcomingWrap}>
                         <Text variant="overline" tone="muted">
@@ -537,22 +387,13 @@ export function ClassTypesManagerSheet({ visible, onClose }: ClassTypesManagerSh
                     ) : null}
 
                     {staffManagesClassType(ct) ? (
-                      <View style={styles.actionsRow}>
-                        <Button
-                          label="Schedule session"
-                          variant="secondary"
-                          size="sm"
-                          style={styles.flex1}
-                          onPress={() => setScheduleTarget({ mode: 'schedule', classType: ct })}
-                        />
-                        <Button
-                          label="Weekly rule"
-                          variant="secondary"
-                          size="sm"
-                          style={styles.flex1}
-                          onPress={() => setRuleTarget({ mode: 'create', classType: ct })}
-                        />
-                      </View>
+                      <Button
+                        label="Schedule session"
+                        variant="secondary"
+                        size="sm"
+                        fullWidth
+                        onPress={() => setScheduleTarget({ mode: 'schedule', classType: ct })}
+                      />
                     ) : null}
                     {staffManagesClassType(ct) ? (
                       <View style={styles.actionsRow}>
@@ -591,9 +432,6 @@ export function ClassTypesManagerSheet({ visible, onClose }: ClassTypesManagerSh
 
       {/* Schedule single / weekly-repeat / every-N-days, or edit an instance */}
       <ClassScheduleSheet target={scheduleTarget} onClose={() => setScheduleTarget(null)} />
-
-      {/* Create / edit a recurring weekly rule (admin) */}
-      <ClassRuleSheet target={ruleTarget} onClose={() => setRuleTarget(null)} />
 
       {/* Admin cancel-and-notify for a single upcoming session (distinct from delete) */}
       <Sheet
@@ -672,77 +510,6 @@ export function ClassTypesManagerSheet({ visible, onClose }: ClassTypesManagerSh
               style={styles.flex1}
               loading={deleteEntity.isPending}
               onPress={onRemoveSession}
-            />
-          </View>
-        </View>
-      </Sheet>
-
-      {/* Admin remove of a weekly rule (timetable entry). 409s if it blocks. */}
-      <Sheet
-        visible={removeRuleTarget !== null}
-        onClose={() => {
-          if (!deleteEntity.isPending) setRemoveRuleTarget(null);
-        }}>
-        <View style={styles.deleteSheet}>
-          <Text variant="subheading">Remove weekly rule</Text>
-          {removeRuleTarget ? (
-            <Text variant="bodySmall" tone="secondary">
-              Remove the {ruleSummary(removeRuleTarget.rule)} rule for &quot;
-              {removeRuleTarget.classType.name}&quot;? Sessions already on the calendar stay; this
-              only stops future generation from this rule.
-            </Text>
-          ) : null}
-          <View style={styles.actionsRow}>
-            <Button
-              label="Keep rule"
-              variant="secondary"
-              style={styles.flex1}
-              disabled={deleteEntity.isPending}
-              onPress={() => setRemoveRuleTarget(null)}
-            />
-            <Button
-              label="Remove"
-              variant="danger"
-              style={styles.flex1}
-              loading={deleteEntity.isPending}
-              onPress={onRemoveRule}
-            />
-          </View>
-        </View>
-      </Sheet>
-
-      {/* Generate sessions from active weekly rules (admin) */}
-      <Sheet
-        visible={generateOpen}
-        onClose={() => {
-          if (!generate.isPending) setGenerateOpen(false);
-        }}>
-        <View style={styles.deleteSheet}>
-          <Text variant="subheading">Generate sessions</Text>
-          <Text variant="bodySmall" tone="secondary">
-            Create bookable sessions from your active weekly rules for the weeks ahead. Existing
-            sessions are skipped, and each rule&apos;s end date or session cap is respected.
-          </Text>
-          <Input
-            label="Weeks ahead"
-            helper="How far to generate (1–26)."
-            value={generateWeeks}
-            onChangeText={(v) => setGenerateWeeks(v.replace(/[^0-9]/g, ''))}
-            keyboardType="number-pad"
-          />
-          <View style={styles.actionsRow}>
-            <Button
-              label="Cancel"
-              variant="secondary"
-              style={styles.flex1}
-              disabled={generate.isPending}
-              onPress={() => setGenerateOpen(false)}
-            />
-            <Button
-              label="Generate"
-              style={styles.flex1}
-              loading={generate.isPending}
-              onPress={onGenerate}
             />
           </View>
         </View>

@@ -11,14 +11,10 @@ import type {
   CancelClassInstanceResult,
   ClassAttendeesResponse,
   CreateClassInstanceInput,
-  CreateClassRuleInput,
   CreateClassTypeInput,
   DeleteClassEntityInput,
-  GenerateInstancesInput,
-  GenerateInstancesResult,
   ManagedClassesResponse,
   UpdateClassInstanceInput,
-  UpdateClassRuleInput,
   UpdateClassTypeInput,
 } from '@/types/classes-manage';
 
@@ -109,8 +105,8 @@ export function useUpdateClassType() {
 }
 
 /**
- * DELETE /api/venue/classes — delete a class type, timetable rule or instance
- * (by `entity_type`). The API returns 409 when upcoming bookings block it.
+ * DELETE /api/venue/classes — delete a class type or instance (by
+ * `entity_type`). The API returns 409 when upcoming bookings block it.
  */
 export function useDeleteClassEntity() {
   const accessToken = useAccessToken();
@@ -225,75 +221,6 @@ export function useUpdateClassInstance() {
         accessToken,
         method: 'PATCH',
         body: JSON.stringify({ ...input, entity_type: 'instance' }),
-      });
-    },
-    onSuccess: () => invalidateClasses(queryClient),
-  });
-}
-
-/**
- * POST /api/venue/classes — create a recurring weekly rule. The route routes on
- * the presence of `day_of_week` to `timetableEntrySchema`; the rule itself is
- * inert until sessions are generated (see {@link useGenerateInstances}).
- */
-export function useCreateClassRule() {
-  const accessToken = useAccessToken();
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (input: CreateClassRuleInput): Promise<unknown> => {
-      if (!accessToken) {
-        throw new Error('Missing access token');
-      }
-      return apiFetch<unknown>('/api/venue/classes', {
-        accessToken,
-        method: 'POST',
-        body: JSON.stringify({ recurrence_type: 'weekly', ...input }),
-      });
-    },
-    onSuccess: () => invalidateClasses(queryClient),
-  });
-}
-
-/** PATCH /api/venue/classes — update a recurring weekly rule (`entity_type: 'timetable'`). */
-export function useUpdateClassRule() {
-  const accessToken = useAccessToken();
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (input: UpdateClassRuleInput): Promise<unknown> => {
-      if (!accessToken) {
-        throw new Error('Missing access token');
-      }
-      return apiFetch<unknown>('/api/venue/classes', {
-        accessToken,
-        method: 'PATCH',
-        body: JSON.stringify({ ...input, entity_type: 'timetable' }),
-      });
-    },
-    onSuccess: () => invalidateClasses(queryClient),
-  });
-}
-
-/**
- * POST /api/venue/classes/generate-instances — materialise sessions from the
- * active weekly rules for the next N weeks (admin only; route clamps weeks to
- * 1–26). Skips dates already on the calendar and respects each rule's end
- * condition. Returns `{ created }`.
- */
-export function useGenerateInstances() {
-  const accessToken = useAccessToken();
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (input: GenerateInstancesInput): Promise<GenerateInstancesResult> => {
-      if (!accessToken) {
-        throw new Error('Missing access token');
-      }
-      return apiFetch<GenerateInstancesResult>('/api/venue/classes/generate-instances', {
-        accessToken,
-        method: 'POST',
-        body: JSON.stringify(input),
       });
     },
     onSuccess: () => invalidateClasses(queryClient),

@@ -1,7 +1,7 @@
 /**
  * Staff-facing class management types for GET/POST/PATCH/DELETE
  * /api/venue/classes (+ /api/venue/class-instances). Bearer-capable routes,
- * multiplexed by `entity_type` ('class_type' | 'timetable' | 'instance').
+ * multiplexed by `entity_type` ('class_type' | 'instance').
  *
  * @see _reference/Resneo/src/app/api/venue/classes/route.ts (classTypeSchema)
  * @see _reference/Resneo/src/app/api/venue/class-instances/route.ts
@@ -53,7 +53,11 @@ export interface ManagedClassInstance {
   booked_spots?: number;
 }
 
-/** One recurring timetable rule from GET `timetable` (read-only in the app). */
+/**
+ * One legacy recurring timetable rule from GET `timetable`, read-only in the
+ * app: the backend removed timetable writes (create/edit/remove/generate), so
+ * this only types pre-existing rows the GET still returns.
+ */
 export interface ManagedClassTimetableEntry {
   id: string;
   class_type_id: string;
@@ -170,62 +174,10 @@ export interface BulkCreateClassInstancesResult {
   error?: string;
 }
 
-/** Recurrence shape shared by the timetable-rule create/update bodies. */
-export type ClassRuleRecurrenceType = 'weekly';
-
-/**
- * POST body for a recurring weekly rule — POST /api/venue/classes with a
- * `day_of_week` present (the route routes on that to `timetableEntrySchema`).
- * `entity_type: 'timetable'` is added by the mutation. Provide at most one of
- * `recurrence_end_date` / `total_occurrences` (the "until date" vs "after N
- * sessions" end condition; omit both for an ongoing rule).
- *
- * @see _reference/Resneo/src/app/api/venue/classes/route.ts (timetableEntrySchema)
- */
-export interface CreateClassRuleInput {
-  class_type_id: string;
-  /** 0 = Sunday … 6 = Saturday. */
-  day_of_week: number;
-  /** HH:mm */
-  start_time: string;
-  /** 1–8. */
-  interval_weeks?: number;
-  recurrence_type?: ClassRuleRecurrenceType;
-  /** YYYY-MM-DD; mutually exclusive with total_occurrences. */
-  recurrence_end_date?: string | null;
-  total_occurrences?: number | null;
-  is_active?: boolean;
-}
-
-/**
- * PATCH body for a recurring weekly rule — PATCH /api/venue/classes. Sent as
- * `{ id, entity_type: 'timetable', ...fields }` by the mutation.
- */
-export interface UpdateClassRuleInput {
-  id: string;
-  day_of_week?: number;
-  start_time?: string;
-  interval_weeks?: number;
-  recurrence_type?: ClassRuleRecurrenceType;
-  recurrence_end_date?: string | null;
-  total_occurrences?: number | null;
-  is_active?: boolean;
-}
-
-/**
- * POST body for generating instances from the timetable —
- * POST /api/venue/classes/generate-instances (admin only). `weeks` is clamped
- * server-side to 1–26.
- */
-export interface GenerateInstancesInput {
-  weeks: number;
-}
-
-/** Response from generate-instances — how many sessions were created. */
-export interface GenerateInstancesResult {
-  created?: number;
-  error?: string;
-}
+// Weekly timetable-rule writes and generate-instances were removed from the
+// backend; sessions are now scheduled one-off (CreateClassInstanceInput) or in
+// bulk (BulkCreateClassInstancesInput). The GET response still returns existing
+// `timetable` rows (typed by ManagedClassTimetableEntry above) read-only.
 
 /**
  * POST body for admin cancel-and-notify —
@@ -264,7 +216,7 @@ export interface UpdateClassInstanceInput {
 /** DELETE body — DELETE /api/venue/classes. */
 export interface DeleteClassEntityInput {
   id: string;
-  entity_type: 'class_type' | 'timetable' | 'instance';
+  entity_type: 'class_type' | 'instance';
 }
 
 /**
