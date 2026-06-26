@@ -40,7 +40,7 @@ function statusTone(status: ReferralRowForUi['status']): BadgeTone {
   }
 }
 
-/** ISO date → "5 Jun 2026" (— when missing/unparseable). */
+/** ISO date → "5 Jun 2026" (placeholder dash when missing/unparseable). */
 export function formatReferralDate(iso: string | null | undefined): string {
   if (!iso) return '—';
   const ms = Date.parse(iso);
@@ -50,6 +50,66 @@ export function formatReferralDate(iso: string | null | undefined): string {
     month: 'short',
     year: 'numeric',
   });
+}
+
+// ─── How it works ─────────────────────────────────────────────────────────────
+
+/** A single numbered step in the "How it works" explainer. */
+function HowItWorksStep({ index, title, body }: { index: number; title: string; body: string }) {
+  const { colors } = useTheme();
+  return (
+    <View style={styles.step}>
+      <View style={[styles.stepNumber, { backgroundColor: colors.brandSubtle }]}>
+        <Text variant="bodyMedium" color={colors.brand}>
+          {index}
+        </Text>
+      </View>
+      <View style={styles.stepText}>
+        <Text variant="bodyMedium">{title}</Text>
+        <Text variant="bodySmall" tone="secondary">
+          {body}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+/**
+ * Explainer card describing how the Refer & Earn scheme works. `rewardDisplay`
+ * (e.g. "Give £20, get £20") is woven into the reward step so the copy always
+ * matches the venue's active programme.
+ */
+function HowItWorksCard({ rewardDisplay }: { rewardDisplay: string }) {
+  return (
+    <Card>
+      <Text variant="label">How Refer & Earn works</Text>
+      <View style={styles.steps}>
+        <HowItWorksStep
+          index={1}
+          title="Share your link"
+          body="Send your referral code or link to another venue that isn’t on Resneo yet."
+        />
+        <HowItWorksStep
+          index={2}
+          title="They sign up"
+          body="When they create a venue using your link, the referral appears in the list below."
+        />
+        <HowItWorksStep
+          index={3}
+          title="You both earn"
+          body={
+            rewardDisplay
+              ? `${rewardDisplay} is credited once they’re an active, paying venue.`
+              : 'The reward is credited once they’re an active, paying venue.'
+          }
+        />
+      </View>
+      <Text variant="caption" tone="muted" style={styles.howFootnote}>
+        Credit is applied automatically and shown under “Credit remaining”. Referrals may be voided
+        if the venue already had an account or doesn’t stay active.
+      </Text>
+    </Card>
+  );
 }
 
 // ─── Row ──────────────────────────────────────────────────────────────────────
@@ -92,7 +152,7 @@ function ReferralRow({ row, isFirst }: { row: ReferralRowForUi; isFirst: boolean
 // ─── Screen ─────────────────────────────────────────────────────────────────
 
 /**
- * Refer & Earn — the venue's referral dashboard (web Settings → Refer a venue).
+ * Refer & Earn: the venue's referral dashboard (web Settings → Refer a venue).
  * Admin-only: the route returns 403 for non-admins and when the programme is
  * disabled, so non-admins never reach the query and a 403 shows the disabled copy.
  */
@@ -123,9 +183,9 @@ export default function ReferEarnScreen() {
       const available =
         typeof Sharing.isAvailableAsync === 'function' ? await Sharing.isAvailableAsync() : false;
       if (!available || typeof Sharing.shareAsync !== 'function') {
-        // No share sheet (e.g. web / simulator) — fall back to copying the link.
+        // No share sheet (e.g. web / simulator); fall back to copying the link.
         await Clipboard.setStringAsync(shareableLink);
-        toast.info('Sharing isn’t available here — link copied instead.');
+        toast.info('Sharing isn’t available here, so the link was copied instead.');
         return;
       }
       await Sharing.shareAsync(shareableLink, {
@@ -206,7 +266,7 @@ export default function ReferEarnScreen() {
         refreshControl={
           <RefreshControl refreshing={query.isRefetching} onRefresh={() => void query.refetch()} />
         }>
-        {/* Share card — code + link */}
+        {/* Share card: code + link */}
         <Card>
           <Text variant="label">Your referral code</Text>
           <View style={[styles.codePill, { backgroundColor: colors.brandSubtle }]}>
@@ -241,6 +301,9 @@ export default function ReferEarnScreen() {
           </View>
         </Card>
 
+        {/* How it works explainer */}
+        <HowItWorksCard rewardDisplay={data.rewardDisplay} />
+
         {/* KPI cards */}
         <View style={styles.kpiGrid}>
           <StatTile
@@ -273,7 +336,7 @@ export default function ReferEarnScreen() {
                 No referrals yet
               </Text>
               <Text variant="caption" tone="muted" style={styles.center}>
-                Share your link — credited referrals show up here.
+                Share your link and credited referrals show up here.
               </Text>
             </View>
           ) : (
@@ -319,6 +382,29 @@ const styles = StyleSheet.create({
   },
   flex1: {
     flex: 1,
+  },
+  steps: {
+    marginTop: spacing.sm,
+    gap: spacing.md,
+  },
+  step: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+  },
+  stepNumber: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepText: {
+    flex: 1,
+    gap: spacing.xxs,
+  },
+  howFootnote: {
+    marginTop: spacing.base,
   },
   kpiGrid: {
     flexDirection: 'row',

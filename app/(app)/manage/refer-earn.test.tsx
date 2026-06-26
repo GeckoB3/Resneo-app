@@ -125,6 +125,13 @@ describe('Refer & Earn — data state', () => {
     expect(screen.getByText('2 credited')).toBeTruthy();
     expect(screen.getByText('1 pending')).toBeTruthy();
 
+    // "How it works" explainer — heading, steps and the woven reward copy.
+    expect(screen.getByText('How Refer & Earn works')).toBeTruthy();
+    expect(screen.getByText('Share your link')).toBeTruthy();
+    expect(screen.getByText('They sign up')).toBeTruthy();
+    expect(screen.getByText('You both earn')).toBeTruthy();
+    expect(screen.getByText(/Give £20, get £20 is credited/)).toBeTruthy();
+
     // Referral rows + status pills + void reason.
     expect(screen.getByText('Acme Clinic')).toBeTruthy();
     expect(screen.getByText('Credited')).toBeTruthy();
