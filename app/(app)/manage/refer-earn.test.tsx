@@ -114,9 +114,9 @@ describe('Refer & Earn — data state', () => {
   it('renders the code, KPI cards and referral rows', async () => {
     await render(<ReferEarnScreen />);
 
-    // Code + reward + link.
+    // Code + link. The monetary reward value is no longer shown under the code.
     expect(screen.getByText('RESNEO-ABCD')).toBeTruthy();
-    expect(screen.getByText('Give £20, get £20')).toBeTruthy();
+    expect(screen.queryByText('Give £20, get £20')).toBeNull();
     expect(screen.getByText('https://app.resneo.com/r/RESNEO-ABCD')).toBeTruthy();
 
     // KPI cards — formatted pence + counts.
@@ -125,12 +125,13 @@ describe('Refer & Earn — data state', () => {
     expect(screen.getByText('2 credited')).toBeTruthy();
     expect(screen.getByText('1 pending')).toBeTruthy();
 
-    // "How it works" explainer — heading, steps and the woven reward copy.
+    // "How it works" explainer — heading and steps. The reward step describes
+    // one month of credit for both parties without quoting an amount.
     expect(screen.getByText('How Refer & Earn works')).toBeTruthy();
     expect(screen.getByText('Share your link')).toBeTruthy();
     expect(screen.getByText('They sign up')).toBeTruthy();
     expect(screen.getByText('You both earn')).toBeTruthy();
-    expect(screen.getByText(/Give £20, get £20 is credited/)).toBeTruthy();
+    expect(screen.getByText(/one month of subscription credit/)).toBeTruthy();
 
     // Referral rows + status pills + void reason.
     expect(screen.getByText('Acme Clinic')).toBeTruthy();

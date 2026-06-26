@@ -74,12 +74,8 @@ function HowItWorksStep({ index, title, body }: { index: number; title: string; 
   );
 }
 
-/**
- * Explainer card describing how the Refer & Earn scheme works. `rewardDisplay`
- * (e.g. "Give £20, get £20") is woven into the reward step so the copy always
- * matches the venue's active programme.
- */
-function HowItWorksCard({ rewardDisplay }: { rewardDisplay: string }) {
+/** Explainer card describing how the Refer & Earn scheme works. */
+function HowItWorksCard() {
   return (
     <Card>
       <Text variant="label">How Refer & Earn works</Text>
@@ -97,11 +93,7 @@ function HowItWorksCard({ rewardDisplay }: { rewardDisplay: string }) {
         <HowItWorksStep
           index={3}
           title="You both earn"
-          body={
-            rewardDisplay
-              ? `${rewardDisplay} is credited once they’re an active, paying venue.`
-              : 'The reward is credited once they’re an active, paying venue.'
-          }
+          body="You and the venue you referred each get one month of subscription credit — applied once they’re an active, paying venue."
         />
       </View>
       <Text variant="caption" tone="muted" style={styles.howFootnote}>
@@ -266,6 +258,9 @@ export default function ReferEarnScreen() {
         refreshControl={
           <RefreshControl refreshing={query.isRefetching} onRefresh={() => void query.refetch()} />
         }>
+        {/* How it works explainer */}
+        <HowItWorksCard />
+
         {/* Share card: code + link */}
         <Card>
           <Text variant="label">Your referral code</Text>
@@ -274,9 +269,6 @@ export default function ReferEarnScreen() {
               {data.code}
             </Text>
           </View>
-          <Text variant="bodySmall" tone="secondary">
-            {data.rewardDisplay}
-          </Text>
 
           <Text variant="caption" tone="muted" style={styles.linkLabel}>
             Shareable link
@@ -300,9 +292,6 @@ export default function ReferEarnScreen() {
             />
           </View>
         </Card>
-
-        {/* How it works explainer */}
-        <HowItWorksCard rewardDisplay={data.rewardDisplay} />
 
         {/* KPI cards */}
         <View style={styles.kpiGrid}>
