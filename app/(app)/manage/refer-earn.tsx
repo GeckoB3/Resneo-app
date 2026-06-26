@@ -52,6 +52,66 @@ export function formatReferralDate(iso: string | null | undefined): string {
   });
 }
 
+// ─── How it works ─────────────────────────────────────────────────────────────
+
+/** A single numbered step in the "How it works" explainer. */
+function HowItWorksStep({ index, title, body }: { index: number; title: string; body: string }) {
+  const { colors } = useTheme();
+  return (
+    <View style={styles.step}>
+      <View style={[styles.stepNumber, { backgroundColor: colors.brandSubtle }]}>
+        <Text variant="bodyMedium" color={colors.brand}>
+          {index}
+        </Text>
+      </View>
+      <View style={styles.stepText}>
+        <Text variant="bodyMedium">{title}</Text>
+        <Text variant="bodySmall" tone="secondary">
+          {body}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+/**
+ * Explainer card describing how the Refer & Earn scheme works. `rewardDisplay`
+ * (e.g. "Give £20, get £20") is woven into the reward step so the copy always
+ * matches the venue's active programme.
+ */
+function HowItWorksCard({ rewardDisplay }: { rewardDisplay: string }) {
+  return (
+    <Card>
+      <Text variant="label">How Refer & Earn works</Text>
+      <View style={styles.steps}>
+        <HowItWorksStep
+          index={1}
+          title="Share your link"
+          body="Send your referral code or link to another venue that isn’t on Resneo yet."
+        />
+        <HowItWorksStep
+          index={2}
+          title="They sign up"
+          body="When they create a venue using your link, the referral appears in the list below."
+        />
+        <HowItWorksStep
+          index={3}
+          title="You both earn"
+          body={
+            rewardDisplay
+              ? `Once they’re an active, paying venue, the reward is credited — ${rewardDisplay.toLowerCase()}.`
+              : 'Once they’re an active, paying venue, the reward is credited to your account.'
+          }
+        />
+      </View>
+      <Text variant="caption" tone="muted" style={styles.howFootnote}>
+        Credit is applied automatically and shown under “Credit remaining”. Referrals may be voided
+        if the venue already had an account or doesn’t stay active.
+      </Text>
+    </Card>
+  );
+}
+
 // ─── Row ──────────────────────────────────────────────────────────────────────
 
 function ReferralRow({ row, isFirst }: { row: ReferralRowForUi; isFirst: boolean }) {
@@ -241,6 +301,9 @@ export default function ReferEarnScreen() {
           </View>
         </Card>
 
+        {/* How it works explainer */}
+        <HowItWorksCard rewardDisplay={data.rewardDisplay} />
+
         {/* KPI cards */}
         <View style={styles.kpiGrid}>
           <StatTile
@@ -319,6 +382,29 @@ const styles = StyleSheet.create({
   },
   flex1: {
     flex: 1,
+  },
+  steps: {
+    marginTop: spacing.sm,
+    gap: spacing.md,
+  },
+  step: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+  },
+  stepNumber: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepText: {
+    flex: 1,
+    gap: spacing.xxs,
+  },
+  howFootnote: {
+    marginTop: spacing.base,
   },
   kpiGrid: {
     flexDirection: 'row',
