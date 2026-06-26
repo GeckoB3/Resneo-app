@@ -5,24 +5,22 @@ import { useEffect, useRef, useState } from 'react';
 import { Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 
+import { BookingNotesSection } from '@/components/bookings/BookingNotesSection';
 import { ComplianceCard } from '@/components/bookings/ComplianceCard';
 import { DepositSheet, type DepositTarget } from '@/components/bookings/DepositSheet';
-import { EditBookingSheet, type EditBookingTarget } from '@/components/bookings/EditBookingSheet';
 import { GroupVisitCards } from '@/components/bookings/GroupVisitCards';
+import { MessageGuestSection } from '@/components/bookings/MessageGuestSection';
 import {
   ModifyBookingSheet,
   type ModifyBookingTarget,
 } from '@/components/bookings/ModifyBookingSheet';
-import { useScrollIntoViewOnFocus } from '@/components/bookings/sheet-scroll-context';
 import { RescheduleSheet, type RescheduleTarget } from '@/components/calendar/RescheduleSheet';
 import { timeToMinutes } from '@/components/calendar/grid-layout';
 import { Avatar } from '@/components/ui/Avatar';
-import { Badge, StatusPill, type BadgeTone } from '@/components/ui/Badge';
+import { Badge, StatusPill } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { Chip } from '@/components/ui/Chip';
 import { CollapsibleCard } from '@/components/ui/CollapsibleCard';
-import { Input } from '@/components/ui/Input';
 import { MetaChip } from '@/components/ui/MetaChip';
 import { QuickAction } from '@/components/ui/QuickAction';
 import { Text } from '@/components/ui/Text';
@@ -47,18 +45,16 @@ import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import {
   useDeleteBooking,
   useResendConfirmation,
-  useSendBookingMessage,
   useSetBookingAttendance,
 } from '@/lib/queries/useBookingMutations';
 import { useGuestDetail } from '@/lib/queries/useGuestDetail';
-import { useUpdateGuest } from '@/lib/queries/useGuestMutations';
 import { useManagedServices } from '@/lib/queries/useServicesManage';
 import { writeRebookBootstrap, type RebookBootstrapPayload } from '@/lib/rebook-bootstrap';
 import type { GuestBookingHistoryRow } from '@/types/guest-detail';
 import { canShowStaffAttendanceToggle } from '@/lib/booking/booking-staff-indicators';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
-import { radius, spacing } from '@/theme/index';
+import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { BookingDetail, BookingStatus } from '@/types/booking-detail';
 
@@ -276,20 +272,6 @@ function GuestHistoryBody({
   );
 }
 
-function NoteBlock({ label, value }: { label: string; value: string | null | undefined }) {
-  if (!value?.trim()) {
-    return null;
-  }
-  return (
-    <View style={styles.noteBlock}>
-      <Text variant="caption" tone="muted">
-        {label}
-      </Text>
-      <Text variant="bodySmall">{value}</Text>
-    </View>
-  );
-}
-
 function formatDurationLabel(total: number): string {
   const h = Math.floor(total / 60);
   const m = total % 60;
@@ -320,200 +302,6 @@ function locationLabel(booking: BookingDetail): string | null {
   return null;
 }
 
-/** Web parity: green for delivered, red for failures, amber while pending. */
-function commStatusTone(status: string): BadgeTone {
-  const s = status.toLowerCase();
-  if (s === 'sent' || s === 'delivered') return 'success';
-  if (s === 'failed' || s === 'bounced' || s === 'error') return 'danger';
-  return 'warning';
-}
-
-type MessageChannel = 'email' | 'sms' | 'both';
-
-/**
- * Inline SMS/email compose — mirrors the web's guest-communications
- * accordion: channel selector, message box, send with inline feedback.
- */
-function MessageGuestCompose({
-  bookingId,
-  guestEmail,
-  guestPhone,
-}: {
-  bookingId: string;
-  guestEmail?: string | null;
-  guestPhone?: string | null;
-}) {
-  const sendMessage = useSendBookingMessage(bookingId);
-  const hasEmail = !!guestEmail?.trim();
-  const hasPhone = !!guestPhone?.trim();
-  const [message, setMessage] = useState('');
-  const [channel, setChannel] = useState<MessageChannel>(hasEmail ? 'email' : 'sms');
-  const [feedback, setFeedback] = useState<{ tone: 'success' | 'danger'; text: string } | null>(
-    null,
-  );
-  const feedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { ref: composeRef, handleFocus } = useScrollIntoViewOnFocus();
-
-  const showFeedback = (tone: 'success' | 'danger', text: string) => {
-    if (feedbackTimer.current) clearTimeout(feedbackTimer.current);
-    setFeedback({ tone, text });
-    // Web parity: success/error notices auto-dismiss after 8s.
-    feedbackTimer.current = setTimeout(() => setFeedback(null), 8000);
-  };
-
-  const channels: { value: MessageChannel; label: string; enabled: boolean }[] = [
-    { value: 'email', label: 'Email', enabled: hasEmail },
-    { value: 'sms', label: 'SMS', enabled: hasPhone },
-    { value: 'both', label: 'Both', enabled: hasEmail && hasPhone },
-  ];
-
-  const handleSend = () => {
-    const text = message.trim();
-    if (!text) return;
-    sendMessage.mutate(
-      { message: text, channel },
-      {
-        onSuccess: () => {
-          hapticSuccess();
-          setMessage('');
-          showFeedback(
-            'success',
-            channel === 'both'
-              ? 'Message sent by email and SMS.'
-              : channel === 'sms'
-                ? 'SMS sent to the guest.'
-                : 'Email sent to the guest.',
-          );
-        },
-        onError: (error) => {
-          hapticWarning();
-          showFeedback(
-            'danger',
-            error instanceof ApiError ? error.message : 'Could not send the message.',
-          );
-        },
-      },
-    );
-  };
-
-  return (
-    <View style={styles.composeBlock} ref={composeRef}>
-      <View style={styles.composeChannels}>
-        {channels
-          .filter((c) => c.enabled)
-          .map((c) => (
-            <Chip
-              key={c.value}
-              label={c.label}
-              selected={channel === c.value}
-              onPress={() => setChannel(c.value)}
-            />
-          ))}
-      </View>
-      <Input
-        placeholder="Write a message to the guest…"
-        value={message}
-        onChangeText={setMessage}
-        onFocus={handleFocus}
-        multiline
-        numberOfLines={3}
-        textAlignVertical="top"
-      />
-      {feedback ? (
-        <Text variant="bodySmall" tone={feedback.tone}>
-          {feedback.text}
-        </Text>
-      ) : null}
-      <Button
-        label={sendMessage.isPending ? 'Sending…' : 'Send message'}
-        variant="secondary"
-        size="sm"
-        fullWidth
-        loading={sendMessage.isPending}
-        disabled={!message.trim() || sendMessage.isPending}
-        onPress={handleSend}
-      />
-    </View>
-  );
-}
-
-/** Guest tags with inline add/remove — mirrors the web GuestTagsEditor. */
-function GuestTagsEditor({ guestId, tags }: { guestId: string; tags: string[] }) {
-  const { colors } = useTheme();
-  const toast = useToast();
-  const update = useUpdateGuest(guestId);
-  const [draft, setDraft] = useState('');
-  const { ref: tagRef, handleFocus } = useScrollIntoViewOnFocus();
-
-  const commit = (next: string[]) => {
-    update.mutate(
-      { tags: next },
-      {
-        onError: (error) => {
-          toast.error(error instanceof ApiError ? error.message : 'Could not update tags.');
-        },
-      },
-    );
-  };
-
-  const addTag = () => {
-    const tag = draft.trim();
-    if (!tag) return;
-    setDraft('');
-    if (tags.some((t) => t.toLowerCase() === tag.toLowerCase())) return;
-    commit([...tags, tag]);
-  };
-
-  return (
-    <View style={styles.tagsBlock} ref={tagRef}>
-      <Text variant="caption" tone="muted">
-        Tags
-      </Text>
-      {tags.length > 0 ? (
-        <View style={styles.tagsRow}>
-          {tags.map((tag) => (
-            <Pressable
-              key={tag}
-              accessibilityRole="button"
-              accessibilityLabel={`Remove tag ${tag}`}
-              onPress={() => commit(tags.filter((t) => t !== tag))}
-              style={({ pressed }) => [
-                styles.tagPill,
-                { backgroundColor: colors.brandSubtle, opacity: pressed ? 0.6 : 1 },
-              ]}>
-              <Text variant="caption" color={colors.brand}>
-                {tag} ×
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-      ) : null}
-      <View style={styles.tagAddRow}>
-        <View style={styles.tagInput}>
-          <Input
-            placeholder="Add tag"
-            value={draft}
-            onChangeText={setDraft}
-            onFocus={handleFocus}
-            autoCapitalize="none"
-            autoCorrect={false}
-            returnKeyType="done"
-            onSubmitEditing={addTag}
-          />
-        </View>
-        <Button
-          label="Add"
-          variant="secondary"
-          size="sm"
-          onPress={addTag}
-          loading={update.isPending}
-          disabled={!draft.trim()}
-        />
-      </View>
-    </View>
-  );
-}
-
 export function BookingDetailContent({
   booking,
   isAppointmentVenue = false,
@@ -536,7 +324,6 @@ export function BookingDetailContent({
   const [rescheduleTarget, setRescheduleTarget] = useState<RescheduleTarget | null>(null);
   const [modifyTarget, setModifyTarget] = useState<ModifyBookingTarget | null>(null);
   const [depositTarget, setDepositTarget] = useState<DepositTarget | null>(null);
-  const [editTarget, setEditTarget] = useState<EditBookingTarget | null>(null);
   const [copiedRef, setCopiedRef] = useState(false);
   // Two-step confirm for destructive/irreversible actions. `Alert.alert` is a
   // no-op on react-native-web, so we arm the button (label flips to "Tap to
@@ -609,20 +396,6 @@ export function BookingDetailContent({
     : null;
   const isTable = isTableReservationBooking(booking);
 
-  const openEdit = () =>
-    setEditTarget({
-      id: booking.id,
-      guestFirstName: booking.guest?.first_name ?? '',
-      guestLastName: booking.guest?.last_name ?? '',
-      guestPhone: booking.guest?.phone ?? '',
-      guestEmail: booking.guest?.email ?? '',
-      specialRequests: booking.special_requests ?? '',
-      dietaryNotes: booking.dietary_notes ?? '',
-      occasion: booking.occasion ?? '',
-      internalNotes: booking.internal_notes ?? '',
-      isTableReservation: isTable,
-    });
-
   const actions = bookingDetailActions(booking.status, isTable);
   const depositLabel = formatDeposit(booking.deposit_amount_pence);
   const tableNames = (booking.table_assignments ?? []).map((t) => t.name).join(', ');
@@ -641,8 +414,6 @@ export function BookingDetailContent({
   const endMinutes = booking.booking_end_time ? timeToMinutes(booking.booking_end_time) : null;
   const durationMinutes =
     endMinutes != null && endMinutes > startMinutes ? endMinutes - startMinutes : null;
-
-  const communications = booking.communications ?? [];
 
   // Hero facts — the "what & when" surfaced directly under the guest header so
   // the most important info is visible before any action is taken.
@@ -720,7 +491,6 @@ export function BookingDetailContent({
 
   const guestEmail = booking.guest?.email?.trim();
   const guestPhone = booking.guest?.phone?.trim();
-  const canMessage = !!guestEmail || !!guestPhone;
   const canResend = !!guestEmail;
   const hasDeposit = booking.deposit_amount_pence != null || !!booking.deposit_status;
   // Web parity: deposit actions (send link / record cash / waive / refund) show
@@ -1292,26 +1062,15 @@ export function BookingDetailContent({
         ) : null}
       </CollapsibleCard>
 
-      {/* Notes — expanded when there's content, tucked away otherwise */}
-      <CollapsibleCard title="Notes" summary={hasNotes ? null : 'None'} defaultExpanded={hasNotes}>
-        <View style={styles.notesHeaderRow}>
-          <Button label="Edit" variant="ghost" size="sm" onPress={openEdit} />
-        </View>
-        {hasNotes ? (
-          <View style={styles.notes}>
-            <NoteBlock label="Special requests" value={booking.special_requests} />
-            {isTable ? <NoteBlock label="Dietary" value={booking.dietary_notes} /> : null}
-            <NoteBlock label="Internal" value={booking.internal_notes} />
-            <NoteBlock label="Guest profile" value={booking.guest?.customer_profile_notes} />
-          </View>
-        ) : (
-          <Text variant="bodySmall" tone="muted" style={styles.notes}>
-            No notes for this booking.
-          </Text>
-        )}
-        {booking.guest ? (
-          <GuestTagsEditor guestId={booking.guest.id} tags={booking.guest.tags ?? []} />
-        ) : null}
+      {/* Notes — inline-editable booking notes + persistent customer notes & tags.
+          animateLayout off: the fields grow on focus, and a height tween there
+          fights the keyboard/scroll and strands a white gap (Android/Fabric). */}
+      <CollapsibleCard
+        title="Notes"
+        summary={hasNotes ? null : 'None'}
+        defaultExpanded={hasNotes}
+        animateLayout={false}>
+        <BookingNotesSection booking={booking} isTable={isTable} />
       </CollapsibleCard>
 
       {/* Guest history — other visits, lazy-loaded on first expand */}
@@ -1442,49 +1201,8 @@ export function BookingDetailContent({
         </Card>
       ) : null}
 
-      {/* SMS / Email the guest — compose + sent log (web accordion parity) */}
-      {canMessage || communications.length > 0 ? (
-        <CollapsibleCard
-          title="SMS / Email guest"
-          summary={communications.length > 0 ? `${communications.length} sent` : null}>
-          {canMessage ? (
-            <MessageGuestCompose
-              bookingId={booking.id}
-              guestEmail={guestEmail}
-              guestPhone={guestPhone}
-            />
-          ) : null}
-          <View style={styles.commList}>
-            {communications.length === 0 ? (
-              <Text variant="bodySmall" tone="muted">
-                No messages sent to this guest yet.
-              </Text>
-            ) : null}
-            {communications.map((row) => (
-              <View key={row.id} style={[styles.commRow, { borderBottomColor: colors.border }]}>
-                <View style={styles.commHeader}>
-                  <Badge label={(row.channel ?? '').toUpperCase()} tone="brand" />
-                  <Badge label={row.status} tone={commStatusTone(row.status ?? '')} />
-                </View>
-                <Text variant="bodySmall">{(row.message_type ?? '').replace(/_/g, ' ')}</Text>
-                {row.recipient ? (
-                  <Text variant="caption" tone="muted" numberOfLines={1}>
-                    {row.recipient}
-                  </Text>
-                ) : null}
-                <Text variant="caption" tone="muted">
-                  {formatTimelineEventTime(row.created_at)}
-                </Text>
-                {row.error_message ? (
-                  <Text variant="caption" tone="danger">
-                    {row.error_message}
-                  </Text>
-                ) : null}
-              </View>
-            ))}
-          </View>
-        </CollapsibleCard>
-      ) : null}
+      {/* SMS / Email the guest — composer + sent log (web parity) */}
+      <MessageGuestSection booking={booking} />
 
       {/* Activity timeline */}
       {timelineEvents.length > 0 ? (
@@ -1515,7 +1233,6 @@ export function BookingDetailContent({
       <RescheduleSheet target={rescheduleTarget} onClose={() => setRescheduleTarget(null)} />
       <ModifyBookingSheet target={modifyTarget} onClose={() => setModifyTarget(null)} />
       <DepositSheet target={depositTarget} onClose={() => setDepositTarget(null)} />
-      <EditBookingSheet target={editTarget} onClose={() => setEditTarget(null)} />
     </View>
   );
 }
@@ -1631,17 +1348,6 @@ const styles = StyleSheet.create({
     flexBasis: '47%',
     flexGrow: 1,
   },
-  notesHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-  },
-  notes: {
-    marginTop: spacing.sm,
-  },
-  noteBlock: {
-    gap: 2,
-    marginBottom: spacing.sm,
-  },
   timeline: {
     marginTop: spacing.sm,
     gap: spacing.md,
@@ -1695,48 +1401,5 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-  },
-  tagsBlock: {
-    marginTop: spacing.md,
-    gap: spacing.sm,
-  },
-  tagsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-  },
-  tagPill: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.pill,
-  },
-  tagAddRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  tagInput: {
-    flex: 1,
-  },
-  composeBlock: {
-    gap: spacing.sm,
-    marginBottom: spacing.md,
-  },
-  composeChannels: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  commList: {
-    marginTop: spacing.sm,
-  },
-  commRow: {
-    gap: 2,
-    paddingVertical: spacing.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  commHeader: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginBottom: 2,
   },
 });

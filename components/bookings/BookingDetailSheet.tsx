@@ -6,7 +6,7 @@ import { useReduceMotion, motionSafe } from '@/lib/motion';
 import { SymbolView } from 'expo-symbols';
 
 import { BookingDetailContent } from '@/components/bookings/BookingDetailContent';
-import { SheetScrollProvider } from '@/components/bookings/sheet-scroll-context';
+import { useSheetKeyboardScroll } from '@/components/bookings/sheet-scroll-context';
 import { Button } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Sheet } from '@/components/ui/Sheet';
@@ -97,6 +97,7 @@ export function BookingDetailSheet({
   const updateStatus = useUpdateBookingStatus(bookingId ?? '');
   const isAdmin = staffQuery.data?.staff?.role === 'admin';
   const scrollRef = useRef<ScrollView>(null);
+  const { onScroll, spacerStyle } = useSheetKeyboardScroll(scrollRef);
   const keyboardVisible = useKeyboardVisible();
 
   const payload = dashboardQuery.data;
@@ -145,7 +146,7 @@ export function BookingDetailSheet({
   const showActionBar = !!primaryAction && !keyboardVisible;
 
   return (
-    <Sheet visible={!!bookingId} onClose={onClose} fill maxHeight="94%">
+    <Sheet visible={!!bookingId} onClose={onClose} fill maxHeight="94%" keyboardAvoidance="overlay">
       {/* Block screenshots / recording while booking PII is on screen. Mounted
           only while open so protection releases the instant the sheet closes. */}
       {bookingId ? <SheetScreenCaptureGuard /> : null}
@@ -196,17 +197,21 @@ export function BookingDetailSheet({
         </View>
       ) : (
         <>
-          <SheetScrollProvider scrollRef={scrollRef}>
-            <ScrollView
-              ref={scrollRef}
-              style={styles.scroll}
-              contentContainerStyle={[
-                styles.scrollContent,
-                showActionBar && styles.scrollContentWithBar,
-              ]}
-              keyboardShouldPersistTaps="handled"
-              keyboardDismissMode="interactive"
-              showsVerticalScrollIndicator={false}>
+          <ScrollView
+            ref={scrollRef}
+            style={styles.scroll}
+            contentContainerStyle={[
+              styles.scrollContent,
+              showActionBar && styles.scrollContentWithBar,
+            ]}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
+            onScroll={onScroll}
+            scrollEventThrottle={16}
+            showsVerticalScrollIndicator={false}>
+            {/* Keyboard overlays the body; this spacer adds scrollable room at the
+                bottom so the focused field can be lifted clear of the keyboard. */}
+            <Animated.View style={spacerStyle}>
               <BookingDetailContent
                 actionLoading={updateStatus.isPending}
                 booking={booking}
@@ -218,8 +223,8 @@ export function BookingDetailSheet({
                 fallbackServiceName={fallbackServiceName}
                 fallbackPractitionerName={fallbackPractitionerName}
               />
-            </ScrollView>
-          </SheetScrollProvider>
+            </Animated.View>
+          </ScrollView>
 
           {showActionBar && primaryAction ? (
             <Animated.View

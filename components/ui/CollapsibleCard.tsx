@@ -17,6 +17,13 @@ type CollapsibleCardProps = {
   defaultExpanded?: boolean;
   /** Lazily render children only after the first expand. */
   lazy?: boolean;
+  /**
+   * Tween the card height when the body appears/disappears or its content
+   * resizes (default true). Set false when the body holds inputs that grow on
+   * focus — the height tween otherwise fights the keyboard/scroll and strands a
+   * white gap on Android. The expand/collapse then snaps instead of sliding.
+   */
+  animateLayout?: boolean;
   children: ReactNode;
 };
 
@@ -30,6 +37,7 @@ export function CollapsibleCard({
   summary,
   defaultExpanded = false,
   lazy = false,
+  animateLayout = true,
   children,
 }: CollapsibleCardProps) {
   const { colors } = useTheme();
@@ -52,7 +60,12 @@ export function CollapsibleCard({
 
   return (
     <Card>
-      <Animated.View layout={layoutSafe(LinearTransition.duration(motion.normal), reduceMotion)}>
+      <Animated.View
+        layout={
+          animateLayout
+            ? layoutSafe(LinearTransition.duration(motion.normal), reduceMotion)
+            : undefined
+        }>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={title}

@@ -40,6 +40,18 @@ type SheetProps = {
    * that need to show a long, scrollable body — e.g. the full booking detail.
    */
   fill?: boolean;
+  /**
+   * How the sheet yields to the soft keyboard:
+   * - `'reserve'` (default): pad the body up by the keyboard height so nothing
+   *   sits behind it. Right for short forms whose fields would otherwise hide.
+   * - `'overlay'`: let the keyboard overlay the body and DON'T reserve space —
+   *   the child is responsible for scrolling its focused field above the
+   *   keyboard (e.g. `useSheetKeyboardScroll`). Use this for a tall scrollable
+   *   body where reserving a keyboard-height block would otherwise show as a
+   *   white band above the keyboard (the Modal window may also resize on Android,
+   *   which double-counts the reserved space). See sheet-keyboard-avoidance memo.
+   */
+  keyboardAvoidance?: 'reserve' | 'overlay';
   children: ReactNode;
 };
 
@@ -90,7 +102,14 @@ function useKeyboardInset(bottomInset: number) {
  * scrim, drag handle, bottom safe area and keyboard avoidance; callers supply
  * the content (header, scroll body, actions).
  */
-export function Sheet({ visible, onClose, maxHeight = '90%', fill = false, children }: SheetProps) {
+export function Sheet({
+  visible,
+  onClose,
+  maxHeight = '90%',
+  fill = false,
+  keyboardAvoidance = 'reserve',
+  children,
+}: SheetProps) {
   const { colors } = useTheme();
   const reduceMotion = useReduceMotion();
   const insets = useSafeAreaInsets();
@@ -100,9 +119,13 @@ export function Sheet({ visible, onClose, maxHeight = '90%', fill = false, child
   // and shrink the body from the bottom (no top clipping); content-sized sheets
   // grow upward off the keyboard. The base padding keeps the resting layout
   // identical to before when no keyboard is shown.
+  //
+  // `overlay` mode reserves NO keyboard space — the keyboard simply overlays the
+  // body and the child scrolls its focused field above it. This avoids the
+  // white band that reserving would otherwise leave above the keyboard.
   const basePad = fill ? 0 : spacing.lg;
   const animatedPad = useAnimatedStyle(() => ({
-    paddingBottom: basePad + keyboardInset.value,
+    paddingBottom: basePad + (keyboardAvoidance === 'overlay' ? 0 : keyboardInset.value),
   }));
 
   // Drag-to-dismiss: a downward pan on the handle/header translates the whole
