@@ -40,7 +40,7 @@ function statusTone(status: ReferralRowForUi['status']): BadgeTone {
   }
 }
 
-/** ISO date → "5 Jun 2026" (— when missing/unparseable). */
+/** ISO date → "5 Jun 2026" (placeholder dash when missing/unparseable). */
 export function formatReferralDate(iso: string | null | undefined): string {
   if (!iso) return '—';
   const ms = Date.parse(iso);
@@ -99,8 +99,8 @@ function HowItWorksCard({ rewardDisplay }: { rewardDisplay: string }) {
           title="You both earn"
           body={
             rewardDisplay
-              ? `Once they’re an active, paying venue, the reward is credited — ${rewardDisplay.toLowerCase()}.`
-              : 'Once they’re an active, paying venue, the reward is credited to your account.'
+              ? `${rewardDisplay} is credited once they’re an active, paying venue.`
+              : 'The reward is credited once they’re an active, paying venue.'
           }
         />
       </View>
@@ -152,7 +152,7 @@ function ReferralRow({ row, isFirst }: { row: ReferralRowForUi; isFirst: boolean
 // ─── Screen ─────────────────────────────────────────────────────────────────
 
 /**
- * Refer & Earn — the venue's referral dashboard (web Settings → Refer a venue).
+ * Refer & Earn: the venue's referral dashboard (web Settings → Refer a venue).
  * Admin-only: the route returns 403 for non-admins and when the programme is
  * disabled, so non-admins never reach the query and a 403 shows the disabled copy.
  */
@@ -183,9 +183,9 @@ export default function ReferEarnScreen() {
       const available =
         typeof Sharing.isAvailableAsync === 'function' ? await Sharing.isAvailableAsync() : false;
       if (!available || typeof Sharing.shareAsync !== 'function') {
-        // No share sheet (e.g. web / simulator) — fall back to copying the link.
+        // No share sheet (e.g. web / simulator); fall back to copying the link.
         await Clipboard.setStringAsync(shareableLink);
-        toast.info('Sharing isn’t available here — link copied instead.');
+        toast.info('Sharing isn’t available here, so the link was copied instead.');
         return;
       }
       await Sharing.shareAsync(shareableLink, {
@@ -266,7 +266,7 @@ export default function ReferEarnScreen() {
         refreshControl={
           <RefreshControl refreshing={query.isRefetching} onRefresh={() => void query.refetch()} />
         }>
-        {/* Share card — code + link */}
+        {/* Share card: code + link */}
         <Card>
           <Text variant="label">Your referral code</Text>
           <View style={[styles.codePill, { backgroundColor: colors.brandSubtle }]}>
@@ -336,7 +336,7 @@ export default function ReferEarnScreen() {
                 No referrals yet
               </Text>
               <Text variant="caption" tone="muted" style={styles.center}>
-                Share your link — credited referrals show up here.
+                Share your link and credited referrals show up here.
               </Text>
             </View>
           ) : (
