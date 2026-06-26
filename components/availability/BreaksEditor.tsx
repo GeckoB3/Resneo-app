@@ -312,6 +312,9 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     gap: spacing.md,
+    // `fill` Sheets supply no horizontal padding (they delegate it to the
+    // child), so pad the editor itself to match the standard sheet inset.
+    paddingHorizontal: spacing.lg,
   },
   list: { gap: 0 },
   dayBlock: {
