@@ -17,6 +17,8 @@ type SegmentedProps<T extends string> = {
   options: SegmentedOption<T>[];
   value: T;
   onChange: (value: T) => void;
+  /** Let long option labels wrap onto two lines instead of truncating. */
+  wrapLabels?: boolean;
 };
 
 /** Track inner padding and the gap between segments (also the thumb inset). */
@@ -31,7 +33,12 @@ const THUMB_SPRING = { damping: 28, stiffness: 380, mass: 0.7 };
  * The active "thumb" slides between segments with a spring (iOS-style)
  * instead of teleporting. Generic over the value union for type safety.
  */
-export function Segmented<T extends string>({ options, value, onChange }: SegmentedProps<T>) {
+export function Segmented<T extends string>({
+  options,
+  value,
+  onChange,
+  wrapLabels = false,
+}: SegmentedProps<T>) {
   const { colors } = useTheme();
   const reduceMotion = useReduceMotion();
   const [trackWidth, setTrackWidth] = useState(0);
@@ -100,7 +107,8 @@ export function Segmented<T extends string>({ options, value, onChange }: Segmen
             <Text
               variant="label"
               color={isActive ? colors.brand : colors.textSecondary}
-              numberOfLines={1}>
+              numberOfLines={wrapLabels ? 2 : 1}
+              style={styles.segmentLabel}>
               {option.label}
             </Text>
           </Pressable>
@@ -131,5 +139,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: spacing.sm,
     borderRadius: radius.sm,
+  },
+  segmentLabel: {
+    textAlign: 'center',
   },
 });

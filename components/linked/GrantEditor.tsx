@@ -188,6 +188,7 @@ export function GrantEditor({
           options={VISIBILITY_OPTIONS}
           value={v.calendar}
           onChange={(next) => onChange(applyCalendarVisibilityChange(v, next))}
+          wrapLabels
         />
       </View>
 
@@ -224,6 +225,7 @@ export function GrantEditor({
             if (actDisabled) return;
             onChange(normaliseGrant({ ...v, act: next }));
           }}
+          wrapLabels
         />
       </View>
 
