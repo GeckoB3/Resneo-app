@@ -229,4 +229,75 @@ describe('AppLockProvider — biometric prompt AppState churn', () => {
       'true',
     );
   });
+
+  // The reporter's exact symptom: enabling the toggle on iPhone permanently
+  // looped. A real Face ID sheet doesn't churn the app exactly once — its
+  // dismissal emits EXTRA inactive↔active transitions. The previous guard
+  // cleared on the FIRST trailing `active`, so the SECOND inactive→active was
+  // read as a background→foreground resume → re-lock → re-prompt → forever.
+  it('does not loop on the EXTRA iOS active churn after enabling (the reported bug)', async () => {
+    jest.mocked(SecureStore.getItemAsync).mockResolvedValue(null); // start disabled
+    await renderProvider();
+
+    let enablePromise: Promise<boolean> | undefined;
+    await act(async () => {
+      enablePromise = captured.current?.setAppLockEnabled(true);
+      await Promise.resolve();
+    });
+    await emit('inactive'); // confirm prompt on screen
+    await resolveAuth({ success: true }); // confirm succeeds → persisted + enabled
+    await act(async () => {
+      await enablePromise;
+    });
+
+    // The Face ID sheet dismissing churns the app MORE than once on real iOS.
+    await emit('active');
+    await emit('inactive');
+    await emit('active');
+    await emit('inactive');
+    await emit('active');
+
+    expect(lockVisible()).toBe(false);
+    // Exactly the one confirm prompt — never a resume re-prompt loop.
+    expect(LocalAuthentication.authenticateAsync).toHaveBeenCalledTimes(1);
+  });
+
+  // Same EXTRA-churn defect, but on the unlock path: after a real resume + a
+  // successful Face ID unlock, the sheet's extra inactive↔active transitions
+  // must not be mistaken for ANOTHER resume.
+  it('does not loop on the EXTRA iOS active churn after unlocking', async () => {
+    await renderProvider();
+
+    await emit('background'); // armed (getItem 'true') → cover
+    expect(lockVisible()).toBe(true);
+    await emit('inactive');
+    await emit('active'); // genuine resume → auto unlock prompt (call 1)
+    await emit('inactive'); // Face ID on screen
+    await resolveAuth({ success: true }); // success → unlocked
+    expect(lockVisible()).toBe(false);
+
+    // Extra dismissal churn — the loop trigger on real iOS.
+    await emit('active');
+    await emit('inactive');
+    await emit('active');
+
+    expect(lockVisible()).toBe(false);
+    expect(LocalAuthentication.authenticateAsync).toHaveBeenCalledTimes(1);
+  });
+
+  // The flag-based resume detection must still fire for a GENUINE resume that
+  // arrives as background → inactive → active (iOS interposes `inactive`), not
+  // just a bare background → active.
+  it('still prompts on a real background→inactive→active resume', async () => {
+    await renderProvider();
+
+    await emit('background');
+    await emit('inactive');
+    await emit('active'); // real resume → exactly one unlock prompt
+    expect(LocalAuthentication.authenticateAsync).toHaveBeenCalledTimes(1);
+    expect(lockVisible()).toBe(true); // still covered until Face ID succeeds
+
+    await resolveAuth({ success: true });
+    expect(lockVisible()).toBe(false);
+  });
 });
