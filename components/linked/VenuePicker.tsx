@@ -1,13 +1,13 @@
 import { SymbolView } from 'expo-symbols';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
-import { Sheet } from '@/components/ui/Sheet';
+import { IconButton } from '@/components/ui/IconButton';
 import { SearchBar } from '@/components/ui/SearchBar';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { useVenueLookup, useVenueSearch } from '@/lib/queries/useLinkedVenues';
-import { spacing, radius, minTouchTarget } from '@/theme/index';
+import { minTouchTarget, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { VenueSearchResult } from '@/types/linked-venues';
 
@@ -57,33 +57,26 @@ function ResultRow({
 }
 
 /**
- * Venue search combobox (Send-request step 1). Type ≥2 chars to search by name
- * (also matches a pasted booking-page slug), pick from the eligible/ineligible
- * results, or paste a full slug to look it up directly. Returns a `PickedVenue`.
+ * Venue search step (Send-request flow). Type ≥2 chars to search by name (also
+ * matches a pasted booking-page slug), pick from the eligible/ineligible
+ * results, or paste a full slug to look it up directly. Returns a `PickedVenue`
+ * via `onPick`; `onBack` returns to the request form.
+ *
+ * Rendered INLINE inside the LinkRequestSheet's single Sheet — deliberately NOT
+ * its own Modal. Stacking a second Modal over the request sheet failed to
+ * present on iOS for some users (the "Choose a venue" button did nothing), so
+ * the picker is an in-sheet step instead. See LinkRequestSheet for the rationale.
  */
-export function VenuePickerSheet({
-  visible,
-  onClose,
+export function VenuePicker({
   onPick,
+  onBack,
 }: {
-  visible: boolean;
-  onClose: () => void;
   onPick: (venue: PickedVenue) => void;
+  onBack: () => void;
 }) {
   const { colors } = useTheme();
   const [input, setInput] = useState('');
   const [debounced, setDebounced] = useState('');
-
-  // Reset the field each time the sheet opens (key-based reset on the
-  // visible→true transition; bounded, so the cascading-render rule is suppressed
-  // here as elsewhere in the app's sheets).
-  useEffect(() => {
-    if (visible) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setInput('');
-      setDebounced('');
-    }
-  }, [visible]);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebounced(input.trim()), SEARCH_DEBOUNCE_MS);
@@ -111,21 +104,34 @@ export function VenuePickerSheet({
       : null;
 
   return (
-    <Sheet visible={visible} onClose={onClose} maxHeight="80%">
-      <View style={styles.container}>
-        <Text variant="subheading">Find a venue</Text>
-        <Text variant="bodySmall" tone="secondary">
-          Search by name, or paste the venue&apos;s booking-page address.
-        </Text>
-
-        <SearchBar
-          value={input}
-          onChangeText={setInput}
-          placeholder="Venue name or booking-page address"
-          autoCapitalize="none"
-          autoCorrect={false}
+    <View style={styles.root}>
+      <View style={styles.header}>
+        <IconButton
+          icon={{ ios: 'chevron.left', android: 'arrow_back', web: 'arrow_back' }}
+          accessibilityLabel="Back"
+          tint={colors.textSecondary}
+          onPress={onBack}
         />
+        <Text variant="subheading" style={styles.flex1}>
+          Find a venue
+        </Text>
+      </View>
+      <Text variant="bodySmall" tone="secondary">
+        Search by name, or paste the venue&apos;s booking-page address.
+      </Text>
 
+      <SearchBar
+        value={input}
+        onChangeText={setInput}
+        placeholder="Venue name or booking-page address"
+        autoCapitalize="none"
+        autoCorrect={false}
+      />
+
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollBody}
+        keyboardShouldPersistTaps="handled">
         {debounced.length > 0 && debounced.length < 2 ? (
           <Text variant="caption" tone="muted">
             Keep typing to search.
@@ -148,12 +154,7 @@ export function VenuePickerSheet({
         {results.length > 0 ? (
           <View style={[styles.results, { borderColor: colors.border }]}>
             {results.map((r, i) => (
-              <ResultRow
-                key={r.slug}
-                result={r}
-                isFirst={i === 0}
-                onPress={() => onPick(r)}
-              />
+              <ResultRow key={r.slug} result={r} isFirst={i === 0} onPress={() => onPick(r)} />
             ))}
             {truncated ? (
               <View style={[styles.truncated, { borderTopColor: colors.border }]}>
@@ -204,14 +205,28 @@ export function VenuePickerSheet({
             />
           </Pressable>
         ) : null}
-      </View>
-    </Sheet>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
+    flex: 1,
+    paddingHorizontal: spacing.lg,
     gap: spacing.md,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  scroll: {
+    flex: 1,
+  },
+  scrollBody: {
+    gap: spacing.md,
+    paddingBottom: spacing.sm,
   },
   statusRow: {
     flexDirection: 'row',

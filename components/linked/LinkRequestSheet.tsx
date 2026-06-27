@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { GrantPairEditor } from '@/components/linked/GrantPairEditor';
-import { VenuePickerSheet, type PickedVenue } from '@/components/linked/VenuePickerSheet';
+import { VenuePicker, type PickedVenue } from '@/components/linked/VenuePicker';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Sheet } from '@/components/ui/Sheet';
@@ -22,6 +22,15 @@ const NOTE_MAX = 1000;
  * author both grant directions → Send. `mine` = what the chosen venue can do
  * with your data; `theirs` = what you can do with theirs. Defaults to
  * `DEFAULT_LINK_GRANT` both ways, matching the web.
+ *
+ * The venue search runs as an in-sheet STEP (`mode === 'picker'`) inside this
+ * one Sheet — NOT a second Modal. Stacking a Modal over this sheet failed to
+ * present on iOS for some users, so "Choose a venue" appeared to do nothing.
+ * Switching between the form and the picker keeps everything in a single Modal.
+ *
+ * The Sheet is `fill` so its body height is bounded and the ScrollView scrolls
+ * (a non-`fill` sheet hugs its content, leaving the ScrollView unbounded — it
+ * then overflows and the pinned Send/Cancel bar is pushed off-screen).
  *
  * Accepts an optional `prefill` (from an invite deep-link) so the venue step is
  * skipped and the editor opens straight away.
@@ -43,7 +52,7 @@ export function LinkRequestSheet({
   const send = useSendLink();
 
   const [selected, setSelected] = useState<PickedVenue | null>(null);
-  const [pickerOpen, setPickerOpen] = useState(false);
+  const [mode, setMode] = useState<'form' | 'picker'>('form');
   const [note, setNote] = useState('');
   const [mine, setMine] = useState<LinkGrant>(DEFAULT_LINK_GRANT);
   const [theirs, setTheirs] = useState<LinkGrant>(DEFAULT_LINK_GRANT);
@@ -59,12 +68,11 @@ export function LinkRequestSheet({
     setMine(DEFAULT_LINK_GRANT);
     setTheirs(DEFAULT_LINK_GRANT);
     setError(null);
+    setMode('form');
     if (prefill) {
       setSelected({ name: prefill.name, slug: prefill.slug, eligible: true, reason: null });
-      setPickerOpen(false);
     } else {
       setSelected(null);
-      setPickerOpen(false);
     }
   }, [visible, prefill]);
 
@@ -95,11 +103,31 @@ export function LinkRequestSheet({
     );
   };
 
+  // In the picker step, a drag-down / scrim tap returns to the form rather than
+  // abandoning the whole request — mirroring how the old separate picker Modal
+  // dismissed back to the form.
+  const handleSheetClose = () => {
+    if (mode === 'picker') {
+      setMode('form');
+      return;
+    }
+    onClose();
+  };
+
   const otherName = selected?.name ?? 'the other venue';
 
   return (
-    <>
-      <Sheet visible={visible} onClose={onClose} maxHeight="92%">
+    <Sheet visible={visible} onClose={handleSheetClose} maxHeight="92%" fill>
+      {mode === 'picker' ? (
+        <VenuePicker
+          onBack={() => setMode('form')}
+          onPick={(venue) => {
+            setSelected(venue);
+            setError(null);
+            setMode('form');
+          }}
+        />
+      ) : (
         <View style={styles.body}>
           <View>
             <Text variant="subheading">Send a link request</Text>
@@ -113,7 +141,11 @@ export function LinkRequestSheet({
             contentContainerStyle={styles.scrollBody}
             keyboardShouldPersistTaps="handled">
             {selected ? (
-              <View style={[styles.selected, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <View
+                style={[
+                  styles.selected,
+                  { backgroundColor: colors.surface, borderColor: colors.border },
+                ]}>
                 <View style={styles.flex1}>
                   <Text variant="bodyMedium" numberOfLines={1}>
                     {selected.name}
@@ -131,7 +163,7 @@ export function LinkRequestSheet({
                   accessibilityRole="button"
                   accessibilityLabel="Change venue"
                   disabled={send.isPending}
-                  onPress={() => setPickerOpen(true)}
+                  onPress={() => setMode('picker')}
                   hitSlop={8}>
                   <Text variant="label" tone="brand">
                     Change
@@ -139,11 +171,7 @@ export function LinkRequestSheet({
                 </Pressable>
               </View>
             ) : (
-              <Button
-                label="Choose a venue"
-                variant="secondary"
-                onPress={() => setPickerOpen(true)}
-              />
+              <Button label="Choose a venue" variant="secondary" onPress={() => setMode('picker')} />
             )}
 
             <Input
@@ -194,27 +222,19 @@ export function LinkRequestSheet({
             />
           </View>
         </View>
-      </Sheet>
-
-      <VenuePickerSheet
-        visible={pickerOpen}
-        onClose={() => setPickerOpen(false)}
-        onPick={(venue) => {
-          setSelected(venue);
-          setError(null);
-          setPickerOpen(false);
-        }}
-      />
-    </>
+      )}
+    </Sheet>
   );
 }
 
 const styles = StyleSheet.create({
   body: {
+    flex: 1,
+    paddingHorizontal: spacing.lg,
     gap: spacing.md,
   },
   scroll: {
-    flexGrow: 0,
+    flex: 1,
   },
   scrollBody: {
     gap: spacing.md,
