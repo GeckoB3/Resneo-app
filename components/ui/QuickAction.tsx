@@ -43,7 +43,7 @@ export function QuickAction({ icon, label, onPress, tint, filled = false, style 
         ]}>
         <SymbolView name={icon} tintColor={filled ? colors.onBrand : color} size={20} />
       </View>
-      <Text variant="caption" tone="secondary" numberOfLines={1}>
+      <Text variant="caption" tone="secondary" numberOfLines={2} style={styles.label}>
         {label}
       </Text>
     </Pressable>
@@ -54,7 +54,10 @@ const styles = StyleSheet.create({
   action: {
     alignItems: 'center',
     gap: spacing.xs,
-    width: 64,
+    width: 76,
+  },
+  label: {
+    textAlign: 'center',
   },
   icon: {
     width: 48,

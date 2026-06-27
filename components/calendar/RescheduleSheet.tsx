@@ -3,11 +3,13 @@ import { StyleSheet, View } from 'react-native';
 
 import { minutesToTime, timeToMinutes } from '@/components/calendar/grid-layout';
 import { Button } from '@/components/ui/Button';
+import { DatePickerField } from '@/components/ui/DatePickerField';
 import { Sheet } from '@/components/ui/Sheet';
 import { Stepper } from '@/components/ui/Stepper';
 import { Text } from '@/components/ui/Text';
+import { TimePickerField } from '@/components/ui/TimePickerField';
 import { ApiError } from '@/lib/api/client';
-import { addDaysToDateStr, formatDayHeading } from '@/lib/dates/venue-dates';
+import { formatDayHeading } from '@/lib/dates/venue-dates';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useRescheduleBooking } from '@/lib/queries/useBookingMutations';
 import { spacing } from '@/theme/index';
@@ -32,7 +34,6 @@ type RescheduleSheetProps = {
   onMoved?: (previous: RescheduleTarget, meta: { durationChanged: boolean }) => void;
 };
 
-const MAX_MINUTES = 23 * 60 + 59;
 // API bounds: appointments accept 15–840; table bookings cap at 300 (server-validated).
 const MIN_DURATION_MINUTES = 15;
 const MAX_DURATION_MINUTES = 14 * 60;
@@ -122,18 +123,24 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
                 </Text>
               </View>
 
-              <Stepper
-                label="Date"
-                value={formatDayHeading(date)}
-                onDecrement={() => setDate((d) => addDaysToDateStr(d, -1))}
-                onIncrement={() => setDate((d) => addDaysToDateStr(d, 1))}
-              />
-              <Stepper
-                label="Start"
-                value={minutesToTime(minutes)}
-                onDecrement={() => setMinutes((m) => Math.max(0, m - 1))}
-                onIncrement={() => setMinutes((m) => Math.min(MAX_MINUTES, m + 1))}
-              />
+              {/* Date + Start are OS-native pickers (tap the value to set any
+                  date/time directly) — no stepping through a long range. */}
+              <View style={styles.pickerRow}>
+                <Text variant="label" tone="secondary">
+                  Date
+                </Text>
+                <DatePickerField value={date} onChange={setDate} accessibilityLabel="New date" />
+              </View>
+              <View style={styles.pickerRow}>
+                <Text variant="label" tone="secondary">
+                  Start
+                </Text>
+                <TimePickerField
+                  value={minutes}
+                  onChange={setMinutes}
+                  accessibilityLabel="New start time"
+                />
+              </View>
               {duration != null ? (
                 <Stepper
                   label="Duration"
@@ -148,13 +155,9 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
               ) : null}
               {endPreview ? (
                 <Text variant="caption" tone="muted" style={styles.endPreview}>
-                  Ends at {endPreview}. Hold − / + to change faster.
+                  Ends at {endPreview}. Hold − / + to change duration faster.
                 </Text>
-              ) : (
-                <Text variant="caption" tone="muted" style={styles.endPreview}>
-                  Hold − / + to change faster.
-                </Text>
-              )}
+              ) : null}
 
               {error ? (
                 <Text variant="bodySmall" tone="danger">
@@ -181,6 +184,11 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
 const styles = StyleSheet.create({
   body: {
     gap: spacing.lg,
+  },
+  pickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   headerBlock: {
     gap: spacing.xs,
