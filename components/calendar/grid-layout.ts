@@ -48,6 +48,30 @@ export function hourLabel(hour: number): string {
   return `${String(hour).padStart(2, '0')}:00`;
 }
 
+/**
+ * Width for each column in the multi-calendar day grid so the columns FILL the
+ * available width when they fit, and fall back to a fixed minimum (the grid then
+ * scrolls horizontally) when there are too many to fit. Mirrors the web's
+ * `flex-1` + `min-w` columns. Each column reserves a trailing `gap`, so N columns
+ * occupy `N * (width + gap)`; solving for "content == viewport" gives the fill
+ * width. Below `minWidth` we stop shrinking and let the grid scroll instead.
+ *
+ * @param viewportWidth Width available to the columns (excludes the time gutter).
+ * @param columnCount   Number of columns to lay out.
+ * @param gap           Trailing gap reserved per column (dp).
+ * @param minWidth      Floor width; columns never shrink below this.
+ */
+export function computeFillColumnWidth(
+  viewportWidth: number,
+  columnCount: number,
+  gap: number,
+  minWidth: number,
+): number {
+  if (columnCount <= 0 || viewportWidth <= 0) return minWidth;
+  const fill = Math.floor((viewportWidth - gap * columnCount) / columnCount);
+  return Math.max(minWidth, fill);
+}
+
 export type GridBounds = { startHour: number; endHour: number };
 
 /**

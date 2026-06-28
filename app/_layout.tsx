@@ -21,6 +21,7 @@ import { LoadingState } from '@/components/ui/LoadingState';
 import { useColorScheme } from '@/components/useColorScheme';
 import { initAnalytics } from '@/lib/analytics';
 import { captureException, initObservability } from '@/lib/observability';
+import { useDeviceOrientationLock } from '@/lib/orientation';
 import { AppProviders } from '@/providers/AppProviders';
 import { useAuth } from '@/providers/AuthProvider';
 
@@ -36,6 +37,9 @@ initObservability();
 initAnalytics();
 
 export default function RootLayout() {
+  // Phones stay portrait; tablets rotate freely (applied at runtime — see hook).
+  useDeviceOrientationLock();
+
   // Inter is the Resneo brand typeface (matches the web app). Loaded at startup
   // so every screen can reference the weights via the typography tokens.
   const [loaded, error] = useFonts({

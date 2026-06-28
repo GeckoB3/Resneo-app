@@ -20,6 +20,7 @@ import { BlockEditSheet, type BlockTarget } from '@/components/calendar/BlockEdi
 import { CalendarDayGrid } from '@/components/calendar/CalendarDayGrid';
 import { minutesToTime, timeToMinutes, type GridWindowOverride } from '@/components/calendar/grid-layout';
 import { resolveDayLoadState } from '@/lib/calendar/day-load-state';
+import { nextVisibleCalendars } from '@/lib/calendar/calendar-selection';
 import { venueDayHours } from '@/lib/calendar/venue-closures';
 import { MonthGrid, type MonthDayDatum } from '@/components/calendar/MonthGrid';
 import { MonthPickerSheet } from '@/components/calendar/MonthPickerSheet';
@@ -66,6 +67,7 @@ import { useComplianceBookingFlags } from '@/lib/queries/useCompliance';
 import {
   usePersistedCalendarPrefs,
   pruneStaleSelectedId,
+  pruneVisibleCalendarIds,
   type CalendarPrefs,
 } from '@/lib/queries/usePersistedCalendarPrefs';
 import { usePractitioners } from '@/lib/queries/usePractitioners';
@@ -288,6 +290,12 @@ export default function CalendarScreen() {
   const ALL_CALENDARS = 'all' as const;
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
+  // Multi-calendar day view (wide viewports) COLUMN FILTER: which own calendars
+  // show side-by-side. null = all (web parity: a proper subset, or "all"). Only
+  // applies on a wide DAY viewport — phone single-pane + week scope keep using
+  // `selectedId`. Persisted per venue alongside the other prefs.
+  const [visibleIds, setVisibleIds] = useState<string[] | null>(null);
+
   // Visible-window override (web parity: From/Until). null edges auto-fit. Held
   // locally and persisted via the F5 prefs hook; threaded into every grid.
   const [windowOverride, setWindowOverride] = useState<GridWindowOverride | null>(null);
@@ -420,19 +428,21 @@ export default function CalendarScreen() {
     prefsHydratedRef.current = true;
 
     const pruned = pruneStaleSelectedId(storedPrefs, calendarIds, ALL_CALENDARS);
+    const prunedVisible = pruneVisibleCalendarIds(storedPrefs.visibleIds, calendarIds);
     // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot hydration of persisted prefs
     if (!hasDateDeepLink) setScope(pruned.scope);
     setSelectedId(pruned.selectedId);
+    setVisibleIds(prunedVisible);
     if (pruned.startHourOverride != null || pruned.endHourOverride != null) {
       setWindowOverride({
         startHour: pruned.startHourOverride,
         endHour: pruned.endHourOverride,
       });
     }
-    // If the prune dropped a stale id, persist the corrected value back so the
-    // dead id doesn't linger in storage.
+    // If a prune dropped a stale id, persist the corrected value back so the dead
+    // id doesn't linger in storage (the persist effect also catches visibleIds).
     if (pruned !== storedPrefs) {
-      persistPrefs({ selectedId: pruned.selectedId });
+      persistPrefs({ selectedId: pruned.selectedId, visibleIds: prunedVisible });
     }
   }, [
     prefsHydrated,
@@ -453,10 +463,11 @@ export default function CalendarScreen() {
     persistPrefs({
       scope,
       selectedId,
+      visibleIds,
       startHourOverride: windowOverride?.startHour ?? null,
       endHourOverride: windowOverride?.endHour ?? null,
     } satisfies Partial<CalendarPrefs>);
-  }, [persistPrefs, scope, selectedId, windowOverride]);
+  }, [persistPrefs, scope, selectedId, visibleIds, windowOverride]);
 
   // ---- Linked venues (cross-venue calendars) ----
   // Any accepted link that shares calendar visibility surfaces as a chip in the
@@ -566,6 +577,29 @@ export default function CalendarScreen() {
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const isWideViewport = isWideDayViewport(windowWidth, windowHeight);
 
+  // Wide DAY viewport (tablet / landscape): the side-by-side multi-calendar grid
+  // is shown, and its columns can be FILTERED to a subset via a multi-select chip
+  // row (web parity). Phone single-pane day + every week scope keep the existing
+  // single-select switcher driven by `selectedId`.
+  const isWideDay = scope === 'day' && isWideViewport && practitioners.length > 1;
+
+  // On a wide DAY viewport, linked venues are FIRST-CLASS entries in the
+  // multi-select: their column id (`linked:<venueId>`) joins the own calendar
+  // ids in the visible set, so the filter governs own AND linked columns alike.
+  const linkedKeys = useMemo(
+    () => linkedVenues.map((v) => `linked:${v.venueId}`),
+    [linkedVenues],
+  );
+  const selectableDayIds = useMemo(
+    () => [...calendarIds, ...linkedKeys],
+    [calendarIds, linkedKeys],
+  );
+
+  // On a wide DAY viewport linked venues are COLUMNS in the side-by-side grid
+  // (toggled via the multi-select), NOT a full-screen single-venue context — so
+  // the linked-context view is suppressed there. Phone + week scope keep it.
+  const linkedContextActive = isLinkedActive && !isWideDay;
+
   // The calendar being viewed — one at a time, switched via the chips row, OR
   // the 'all' multi-calendar day view. null falls back to the first calendar.
   const isAllView =
@@ -586,10 +620,10 @@ export default function CalendarScreen() {
       ? selectedId
       : calendarIds[0] ?? null;
 
-  // The calendar-switcher chips let you pick one practitioner (or "All"). On a
-  // wide DAY viewport every column already shows side-by-side, so the switcher
-  // is redundant there and its selected-state would be misleading — hide it.
-  // Week scope always keeps it (it chooses whose week renders).
+  // The single-select switcher (pick one practitioner, or "All"). On a wide DAY
+  // viewport the MULTI-SELECT filter (isWideDay) takes over instead, so the
+  // single-select form is suppressed there to avoid two competing selectors.
+  // Week scope always keeps single-select (it chooses whose week renders).
   const showSwitcher =
     practitioners.length > 1 &&
     scope !== 'month' &&
@@ -600,7 +634,9 @@ export default function CalendarScreen() {
   // (so linked calendars are always reachable, even on a single-practitioner or
   // wide-viewport venue where the primary switcher would otherwise hide).
   const hasLinkedVenues = linkedVenues.length > 0 || isLinkedActive;
-  const showChips = scope !== 'month' && (hasLinkedVenues || showSwitcher);
+  // The wide-day multi-select filter row is its own reason to show the chips —
+  // even though the single-select `showSwitcher` is (correctly) false there.
+  const showChips = scope !== 'month' && (hasLinkedVenues || showSwitcher || isWideDay);
 
   const day = useMemo(() => {
     const calendar = gridQuery.data?.calendars.find((c) => c.calendarId === effectiveId);
@@ -788,6 +824,26 @@ export default function CalendarScreen() {
   );
 
   const goToday = useCallback(() => setAnchor(today), [today]);
+
+  // ---- Wide-day multi-calendar column filter (web parity) ----
+  // Tapping a calendar from "all" isolates to just it; further taps add/remove
+  // it from the visible subset; tapping the sole remaining selection clears back
+  // to "all"; selecting every calendar normalizes to "all" (null). Always exits
+  // any active linked-venue context, like the single-select switcher does.
+  const toggleVisibleCalendar = useCallback(
+    (id: string) => {
+      hapticSelect();
+      clearOwnerVenue();
+      setVisibleIds((prev) => nextVisibleCalendars(prev, id, selectableDayIds));
+    },
+    [selectableDayIds, clearOwnerVenue],
+  );
+
+  const selectAllCalendars = useCallback(() => {
+    hapticSelect();
+    clearOwnerVenue();
+    setVisibleIds(null);
+  }, [clearOwnerVenue]);
 
   // Date jump from the month-picker sheet: anchor to the tapped day in day view
   // (the most useful target for an arbitrary jump) and close the picker.
@@ -1096,9 +1152,39 @@ export default function CalendarScreen() {
   // One column per practitioner for the anchor date, sharing the time gutter.
   // Assembled whenever the side-by-side grid will render (explicit "All" chip
   // OR a wide viewport).
+  //
+  // The wide-day visible set spans BOTH own calendar ids and linked venue keys
+  // (`linked:<venueId>`); null = all. Resolve each axis from it, with a safety
+  // fallback to "all" if a (stale) filter would select nothing — so the grid is
+  // never blank. Phone single-pane day + week scope ignore the filter entirely.
+  const wideFilterActive = isWideDay && visibleIds != null;
+  const wideFilterSet = useMemo(() => new Set(visibleIds ?? []), [visibleIds]);
+
+  const dayOwnPractitioners = useMemo(
+    () => (wideFilterActive ? practitioners.filter((p) => wideFilterSet.has(p.id)) : practitioners),
+    [wideFilterActive, practitioners, wideFilterSet],
+  );
+
+  // Linked venues shown as columns: on a wide day filtered by the visible set;
+  // on a phone only when "All" (selectedId) is picked (existing behaviour).
+  const linkedVenuesForDay = useMemo(() => {
+    if (isWideDay) {
+      return wideFilterActive
+        ? linkedVenues.filter((v) => wideFilterSet.has(`linked:${v.venueId}`))
+        : linkedVenues;
+    }
+    return isAllView ? linkedVenues : [];
+  }, [isWideDay, wideFilterActive, wideFilterSet, linkedVenues, isAllView]);
+
+  // If a (stale) filter resolves to zero columns, show everything instead.
+  const wideFilterEmpty =
+    wideFilterActive && dayOwnPractitioners.length + linkedVenuesForDay.length === 0;
+  const ownColumnsSource = wideFilterEmpty ? practitioners : dayOwnPractitioners;
+  const linkedColumnsSource = wideFilterEmpty ? linkedVenues : linkedVenuesForDay;
+
   const allCalendarsForDay = useMemo(() => {
     if (!showAllCalendars) return [];
-    return practitioners.map((p) => {
+    return ownColumnsSource.map((p) => {
       const calendar = gridQuery.data?.calendars.find((c) => c.calendarId === p.id);
       const calDay = calendar?.dates.find((d) => d.date === anchor) ?? null;
       return {
@@ -1112,16 +1198,16 @@ export default function CalendarScreen() {
         scheduleBlocks: scheduleByCalendarDate.get(scheduleKey(p.id, anchor)) ?? [],
       };
     });
-  }, [showAllCalendars, practitioners, gridQuery.data, anchor, getDayBlocks, scheduleByCalendarDate]);
+  }, [showAllCalendars, ownColumnsSource, gridQuery.data, anchor, getDayBlocks, scheduleByCalendarDate]);
 
   // Linked venues as side-by-side columns in the SAME grid — one column per
-  // linked venue, appended after the own practitioners. Only when "All" is
-  // explicitly picked (a wide-viewport auto-multi-column day stays own-only).
+  // linked venue, appended after the own practitioners. Driven by
+  // `linkedColumnsSource`: on a wide day the multi-select subset, on a phone the
+  // explicit "All" view, otherwise none.
   // Grant-gated like the linked day grid: time_only → grey "busy" overlays
   // (no appointment bars), full_details → appointment bars + class/event blocks.
   const linkedColumnsForDay = useMemo<AllCalendarColumn[]>(() => {
-    if (!isAllView) return [];
-    return linkedVenues.map((v) => {
+    return linkedColumnsSource.map((v) => {
       const timeOnly = v.visibility === 'time_only';
       const dayBookings = v.bookings.filter((b) => b.bookingDate === anchor);
       const openRanges = linkedOpenRanges(v, anchor);
@@ -1139,7 +1225,7 @@ export default function CalendarScreen() {
         accent: colors.warning,
       };
     });
-  }, [isAllView, linkedVenues, anchor, colors.warning]);
+  }, [linkedColumnsSource, anchor, colors.warning]);
 
   // Own practitioner columns + linked venue columns, side by side in one grid.
   const allColumnsForDay = useMemo(
@@ -1244,15 +1330,22 @@ export default function CalendarScreen() {
     });
   }, [scope, week.days, today]);
 
-  // Per-booking compliance flags for the visible day — gated on the feature
-  // flag so non-compliance venues never hit the endpoint. Unfiltered ids so
-  // the status filter doesn't churn the query key.
-  const visibleBookingIds = useMemo(
-    () => (day?.bookings ?? []).map((b) => b.id),
-    [day],
-  );
+  // Per-booking compliance flags for the anchor day — gated on the feature flag
+  // so non-compliance venues never hit the endpoint. Covers EVERY calendar's
+  // bookings on the day (not just the selected one) so the multi-calendar grid's
+  // columns all get their corner dots, and so the set is stable when switching
+  // the single-calendar selection or the wide-day filter (the query key is the
+  // sorted id set, so a stable set means no churn).
+  const dayBookingIds = useMemo(() => {
+    const ids: string[] = [];
+    for (const cal of gridQuery.data?.calendars ?? []) {
+      const calDay = cal.dates.find((d) => d.date === anchor);
+      if (calDay) for (const b of calDay.bookings) ids.push(b.id);
+    }
+    return ids;
+  }, [gridQuery.data, anchor]);
   const complianceFlagsQuery = useComplianceBookingFlags(
-    complianceEnabled ? visibleBookingIds : [],
+    complianceEnabled ? dayBookingIds : [],
   );
   const complianceFlags = complianceFlagsQuery.data?.flags;
 
@@ -1472,70 +1565,109 @@ export default function CalendarScreen() {
               />
             </View>
 
-            {/* Calendar switcher — one calendar at a time, plus an "All" view.
-                In DAY scope "All" shows every calendar side-by-side; in WEEK
-                scope it shows the whole-team week matrix. Hidden on a wide day
-                viewport where all columns already show. */}
+            {/* Calendar switcher. Phone single-pane day + week scope: single-
+                select (one calendar, or "All" → side-by-side day / week matrix).
+                Wide day viewport: a MULTI-SELECT filter over the side-by-side
+                columns (show one, a subset, or all). Linked-venue chips follow. */}
             {showChips ? (
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.chips}>
-                {(scope === 'day' || scope === 'week') && practitioners.length > 1 ? (
-                  <Chip
-                    label="All"
-                    count={scope === 'day' ? totalDayCount : undefined}
-                    selected={!isLinkedActive && (isAllView || isWeekAllView)}
-                    onPress={() => {
-                      if (isLinkedActive || selectedId !== ALL_CALENDARS) {
-                        hapticSelect();
-                        clearOwnerVenue();
-                        setSelectedId(ALL_CALENDARS);
-                      }
-                    }}
-                  />
-                ) : null}
-                {practitioners.map((p) => (
-                  <Chip
-                    key={p.id}
-                    label={p.name}
-                    count={scope === 'day' ? perPractitionerCounts[p.id] : undefined}
-                    selected={
-                      !isLinkedActive && !isAllView && !isWeekAllView && p.id === effectiveId
-                    }
-                    onPress={() => {
-                      if (isLinkedActive || isAllView || isWeekAllView || p.id !== effectiveId) {
-                        hapticSelect();
-                        clearOwnerVenue();
-                        setSelectedId(p.id);
-                      }
-                    }}
-                  />
-                ))}
-                {/* Linked venues' calendars — amber-tinted when active. Selecting
-                    one sets the linked context (ownerVenueId) and renders that
-                    venue's day/week grid. Day + week are both supported; the
-                    chips row is hidden in month scope (month is own-venue only),
-                    so a linked venue is only ever picked from day or week. */}
-                {linkedVenues.map((v) => (
-                  <Chip
-                    key={`linked:${v.venueId}`}
-                    label={v.venueName}
-                    count={
-                      scope === 'day'
-                        ? v.bookings.filter((b) => b.bookingDate === anchor).length
-                        : undefined
-                    }
-                    selected={ownerVenueId === v.venueId}
-                    selectedColor={colors.warning}
-                    onPress={() => {
-                      if (ownerVenueId !== v.venueId) {
-                        hapticSelect();
-                        setOwnerVenueId(v.venueId, v.venueName);
-                      }
-                    }}
-                  />
-                ))}
+                {isWideDay ? (
+                  // Wide DAY view: ONE multi-select column filter (web parity)
+                  // spanning OWN calendars AND linked venues — "All" plus a toggle
+                  // each. Any non-empty subset renders side-by-side; only the
+                  // selected columns show. Highlighted = visible (everything is
+                  // highlighted when no filter is active).
+                  <>
+                    <Chip
+                      label="All"
+                      count={totalDayCount}
+                      selected={visibleIds == null}
+                      onPress={selectAllCalendars}
+                    />
+                    {practitioners.map((p) => (
+                      <Chip
+                        key={p.id}
+                        label={p.name}
+                        count={perPractitionerCounts[p.id]}
+                        selected={visibleIds == null || visibleIds.includes(p.id)}
+                        onPress={() => toggleVisibleCalendar(p.id)}
+                      />
+                    ))}
+                    {linkedVenues.map((v) => {
+                      const key = `linked:${v.venueId}`;
+                      return (
+                        <Chip
+                          key={key}
+                          label={v.venueName}
+                          count={v.bookings.filter((b) => b.bookingDate === anchor).length}
+                          selected={visibleIds == null || visibleIds.includes(key)}
+                          selectedColor={colors.warning}
+                          onPress={() => toggleVisibleCalendar(key)}
+                        />
+                      );
+                    })}
+                  </>
+                ) : (
+                  <>
+                    {(scope === 'day' || scope === 'week') && practitioners.length > 1 ? (
+                      <Chip
+                        label="All"
+                        count={scope === 'day' ? totalDayCount : undefined}
+                        selected={!isLinkedActive && (isAllView || isWeekAllView)}
+                        onPress={() => {
+                          if (isLinkedActive || selectedId !== ALL_CALENDARS) {
+                            hapticSelect();
+                            clearOwnerVenue();
+                            setSelectedId(ALL_CALENDARS);
+                          }
+                        }}
+                      />
+                    ) : null}
+                    {practitioners.map((p) => (
+                      <Chip
+                        key={p.id}
+                        label={p.name}
+                        count={scope === 'day' ? perPractitionerCounts[p.id] : undefined}
+                        selected={
+                          !isLinkedActive && !isAllView && !isWeekAllView && p.id === effectiveId
+                        }
+                        onPress={() => {
+                          if (isLinkedActive || isAllView || isWeekAllView || p.id !== effectiveId) {
+                            hapticSelect();
+                            clearOwnerVenue();
+                            setSelectedId(p.id);
+                          }
+                        }}
+                      />
+                    ))}
+                    {/* Linked venues' calendars — selecting one sets the linked
+                        context (ownerVenueId) and renders that venue's day/week
+                        grid full-screen. (On a wide day they instead appear as
+                        toggleable columns in the multi-select above.) */}
+                    {linkedVenues.map((v) => (
+                      <Chip
+                        key={`linked:${v.venueId}`}
+                        label={v.venueName}
+                        count={
+                          scope === 'day'
+                            ? v.bookings.filter((b) => b.bookingDate === anchor).length
+                            : undefined
+                        }
+                        selected={ownerVenueId === v.venueId}
+                        selectedColor={colors.warning}
+                        onPress={() => {
+                          if (ownerVenueId !== v.venueId) {
+                            hapticSelect();
+                            setOwnerVenueId(v.venueId, v.venueName);
+                          }
+                        }}
+                      />
+                    ))}
+                  </>
+                )}
               </ScrollView>
             ) : null}
 
@@ -1543,7 +1675,7 @@ export default function CalendarScreen() {
                 calendar diary (status filtering lives on the Bookings tab). */}
           </View>
 
-          {isLinkedActive ? (
+          {linkedContextActive ? (
             linkedQuery.isLoading ? (
               <LoadingState message="Loading linked calendar…" />
             ) : !activeLinkedVenue ? (
@@ -1709,6 +1841,9 @@ export default function CalendarScreen() {
                 nowMinutes={nowMinutes}
                 onBlockPress={handleAllBlockPress}
                 onEmptyPress={handleAllEmptyPress}
+                onStatusChange={handleStatusChange}
+                onArrivalToggle={handleArrivalToggle}
+                complianceFlags={complianceFlags}
                 onDragReschedule={handleDragReschedule}
                 onDragResize={handleDragResize}
                 onDragConflictReject={handleDragConflictReject}
@@ -1744,8 +1879,9 @@ export default function CalendarScreen() {
           )}
 
           {/* Linked calendars have their own per-grid "New booking" button
-              (grant-gated); the primary FAB is hidden while a linked venue is active. */}
-          {!isLinkedActive ? (
+              (grant-gated); the primary FAB is hidden only in the full-screen
+              linked context (not on a wide day, where linked are just columns). */}
+          {!linkedContextActive ? (
             <Fab
               accessibilityLabel={newBookingActionLabel(terminology)}
               onPress={() => setAddSheetTarget({ kind: 'fab' })}

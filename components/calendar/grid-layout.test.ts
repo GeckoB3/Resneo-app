@@ -7,6 +7,7 @@ import {
   SLOT_MINUTES,
   TAP_SNAP_MINUTES,
   TIME_GUTTER_WIDTH,
+  computeFillColumnWidth,
   computeGridBounds,
   computeLaneLayouts,
   hourLabel,
@@ -36,6 +37,42 @@ describe('layout constants', () => {
   it('defaults the day window to 08:00–20:00', () => {
     expect(DEFAULT_START_HOUR).toBe(8);
     expect(DEFAULT_END_HOUR).toBe(20);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeFillColumnWidth — multi-calendar columns fill the viewport (or scroll).
+// ---------------------------------------------------------------------------
+describe('computeFillColumnWidth', () => {
+  const GAP = 4;
+  const MIN = 168;
+
+  it('falls back to the min width before the viewport is measured', () => {
+    expect(computeFillColumnWidth(0, 3, GAP, MIN)).toBe(MIN);
+  });
+
+  it('expands columns to fill a wide viewport (a few calendars on a tablet)', () => {
+    // 968dp available, 3 columns: (968 - 4*3) / 3 = 318.66 → floor 318 (> min).
+    expect(computeFillColumnWidth(968, 3, GAP, MIN)).toBe(318);
+  });
+
+  it('content never overflows the viewport when filling', () => {
+    const w = computeFillColumnWidth(968, 3, GAP, MIN);
+    expect(3 * (w + GAP)).toBeLessThanOrEqual(968);
+  });
+
+  it('keeps the min width (grid scrolls) when columns would be too narrow', () => {
+    // 8 columns on a 700dp viewport would be ~83dp each → clamp to the min.
+    expect(computeFillColumnWidth(700, 8, GAP, MIN)).toBe(MIN);
+  });
+
+  it('fills width for a single column on a phone-portrait viewport', () => {
+    // 320dp available (after the gutter), 1 column → fills it (minus its gap).
+    expect(computeFillColumnWidth(320, 1, GAP, MIN)).toBe(316);
+  });
+
+  it('returns the min for a zero/negative column count', () => {
+    expect(computeFillColumnWidth(968, 0, GAP, MIN)).toBe(MIN);
   });
 });
 

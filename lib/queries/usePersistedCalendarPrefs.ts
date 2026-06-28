@@ -21,6 +21,12 @@ export interface CalendarPrefs {
   scope: CalendarPrefsScope;
   /** Selected calendar id, or the 'all' sentinel, or null for the default. */
   selectedId: string | null;
+  /**
+   * Multi-calendar day view (wide viewports) column filter: the subset of own
+   * calendar ids to show side-by-side, or null for "all calendars". Empty is
+   * never stored (it collapses to null — see {@link pruneVisibleCalendarIds}).
+   */
+  visibleIds: string[] | null;
   /** Visible-window start hour override (0–23), or null to auto-fit. */
   startHourOverride: number | null;
   /** Visible-window end hour override (1–24), or null to auto-fit. */
@@ -30,6 +36,7 @@ export interface CalendarPrefs {
 export const DEFAULT_CALENDAR_PREFS: CalendarPrefs = {
   scope: 'day',
   selectedId: null,
+  visibleIds: null,
   startHourOverride: null,
   endHourOverride: null,
 };
@@ -46,6 +53,13 @@ function isScope(v: unknown): v is CalendarPrefsScope {
   return v === 'day' || v === 'week' || v === 'month';
 }
 
+/** Coerce a stored value into a string[] of ids, or null. Empty → null. */
+function coerceVisibleIds(raw: unknown): string[] | null {
+  if (!Array.isArray(raw)) return null;
+  const ids = raw.filter((x): x is string => typeof x === 'string');
+  return ids.length > 0 ? ids : null;
+}
+
 /** Coerce an unknown stored blob into a complete, valid CalendarPrefs. */
 function coercePrefs(raw: unknown): CalendarPrefs {
   if (raw == null || typeof raw !== 'object') return { ...DEFAULT_CALENDAR_PREFS };
@@ -53,6 +67,7 @@ function coercePrefs(raw: unknown): CalendarPrefs {
   return {
     scope: isScope(o.scope) ? o.scope : DEFAULT_CALENDAR_PREFS.scope,
     selectedId: typeof o.selectedId === 'string' ? o.selectedId : null,
+    visibleIds: coerceVisibleIds(o.visibleIds),
     startHourOverride: typeof o.startHourOverride === 'number' ? o.startHourOverride : null,
     endHourOverride: typeof o.endHourOverride === 'number' ? o.endHourOverride : null,
   };
@@ -102,6 +117,26 @@ export function pruneStaleSelectedId(
   if (selectedId == null || selectedId === allSentinel) return prefs;
   if (validIds.includes(selectedId)) return prefs;
   return { ...prefs, selectedId: null };
+}
+
+/**
+ * Normalize a persisted multi-calendar column filter against the live OWN
+ * calendar ids. Drops own ids that no longer exist (a calendar deleted while the
+ * app was closed). Linked-venue keys (`linked:<venueId>`) are PRESERVED — their
+ * validity is resolved against the live linked-calendar feed at render time
+ * (and stale ones simply match no column), and that feed loads asynchronously so
+ * they can't be validated here. An empty result collapses to null ("all"). The
+ * "everything selected → all" normalization lives in the live toggle reducer
+ * (so a persisted value is never a full set), not here.
+ */
+export function pruneVisibleCalendarIds(
+  visibleIds: string[] | null,
+  validOwnIds: readonly string[],
+): string[] | null {
+  if (visibleIds == null) return null;
+  const valid = new Set(validOwnIds);
+  const filtered = visibleIds.filter((id) => id.startsWith('linked:') || valid.has(id));
+  return filtered.length > 0 ? filtered : null;
 }
 
 export interface UsePersistedCalendarPrefsResult {

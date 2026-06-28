@@ -15,7 +15,7 @@
  * Tapping a block opens its detail; tapping an empty slot starts a new booking.
  */
 
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import Animated, {
   runOnJS,
@@ -38,6 +38,7 @@ import {
 } from '@/components/calendar/CalendarDayGrid';
 import { DraggableAppointmentBlock } from '@/components/calendar/DraggableAppointmentBlock';
 import {
+  computeFillColumnWidth,
   computeGridBounds,
   computeLaneLayouts,
   hourLabel,
@@ -52,6 +53,7 @@ import {
 } from '@/components/calendar/grid-layout';
 import { Text } from '@/components/ui/Text';
 import { venueClosedRanges, type VenueDayHours } from '@/lib/calendar/venue-closures';
+import type { ComplianceBookingFlag } from '@/lib/queries/useCompliance';
 import { hexToRgba } from '@/lib/color';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -63,11 +65,10 @@ import type {
 import type { CalendarScheduleBlock } from '@/types/schedule-blocks';
 
 const DEFAULT_DURATION_MINUTES = 30;
-const COLUMN_WIDTH = 168;
+/** Floor width per column. Columns grow past this to FILL the viewport when they
+ *  fit (see computeFillColumnWidth); below it the grid scrolls horizontally. */
+const COLUMN_MIN_WIDTH = 168;
 const COLUMN_GAP = spacing.xs;
-/** Horizontal distance between adjacent columns (width + gap) — converts a
- *  cross-column drag's translationX into a target-column delta. */
-const COLUMN_PITCH = COLUMN_WIDTH + COLUMN_GAP;
 /** Distance (px) from a horizontal edge that arms auto-scroll during a cross-column drag. */
 const SCROLL_EDGE = 56;
 /** Pixels scrolled per frame while the dragging finger sits in the edge zone. */
@@ -126,6 +127,12 @@ type AllCalendarsDayGridProps = {
   onBlockPress: (bookingId: string) => void;
   /** Empty-slot tap → carries the column's practitioner id + the snapped time. */
   onEmptyPress: (practitionerId: string, time: string) => void;
+  /** Quick-status tray action on an OWN booking (Confirm / Start / Complete …). */
+  onStatusChange?: (bookingId: string, status: string) => void;
+  /** Arrived toggle on an OWN booking. */
+  onArrivalToggle?: (bookingId: string, arrived: boolean) => void;
+  /** Per-booking compliance flags (bookingId → flag) for the corner dot (own columns). */
+  complianceFlags?: Record<string, ComplianceBookingFlag>;
   /** Hold-drag MOVE release on an OWN column → new "HH:mm" (keeps the practitioner). */
   onDragReschedule?: (bookingId: string, newTime: string) => void;
   /** Hold-RESIZE release on an OWN column → the new duration in minutes. */
@@ -189,6 +196,9 @@ export function AllCalendarsDayGrid({
   nowMinutes,
   onBlockPress,
   onEmptyPress,
+  onStatusChange,
+  onArrivalToggle,
+  complianceFlags,
   onDragReschedule,
   onDragResize,
   onDragConflictReject,
@@ -198,6 +208,20 @@ export function AllCalendarsDayGrid({
   onRefresh,
 }: AllCalendarsDayGridProps) {
   const { colors } = useTheme();
+
+  // Measured width of the columns ScrollView (excludes the sticky time gutter).
+  // Drives fill-to-width column sizing so a handful of calendars span the screen
+  // instead of leaving dead space on a tablet; until measured it falls back to
+  // the min width (the grid scrolls). Mirrors the web's flex-1 + min-w columns.
+  const [columnsViewportWidth, setColumnsViewportWidth] = useState(0);
+  const columnWidth = useMemo(
+    () =>
+      computeFillColumnWidth(columnsViewportWidth, calendars.length, COLUMN_GAP, COLUMN_MIN_WIDTH),
+    [columnsViewportWidth, calendars.length],
+  );
+  /** Horizontal distance between adjacent columns (width + gap) — converts a
+   *  cross-column drag's translationX into a target-column delta. */
+  const columnPitch = columnWidth + COLUMN_GAP;
 
   // Cross-column drag: own (non-linked) columns come FIRST in `calendars`, so a
   // column's array index doubles as its own-column index. `liftedColumn` holds
@@ -226,8 +250,8 @@ export function AllCalendarsDayGrid({
   const scrollTarget = useSharedValue(0);
 
   useEffect(() => {
-    contentW.value = calendars.length * COLUMN_PITCH;
-  }, [calendars.length, contentW]);
+    contentW.value = calendars.length * columnPitch;
+  }, [calendars.length, columnPitch, contentW]);
 
   const scrollHandler = useAnimatedScrollHandler((e) => {
     scrollOffset.value = e.contentOffset.x;
@@ -351,8 +375,11 @@ export function AllCalendarsDayGrid({
           onScroll={scrollHandler}
           scrollEventThrottle={16}
           onLayout={(e) => {
+            const w = e.nativeEvent.layout.width;
             // eslint-disable-next-line react-hooks/immutability -- shared-value write from a layout handler (supported Reanimated pattern)
-            viewportW.value = e.nativeEvent.layout.width;
+            viewportW.value = w;
+            // Re-fit the column widths to the measured viewport (and on rotation).
+            setColumnsViewportWidth(w);
           }}>
           <View>
             {/* Column headers (practitioner names) */}
@@ -366,7 +393,7 @@ export function AllCalendarsDayGrid({
                     key={cal.calendarId}
                     style={[
                       styles.headerCell,
-                      { borderColor: tint ?? colors.border },
+                      { width: columnWidth, borderColor: tint ?? colors.border },
                       tint ? { backgroundColor: hexToRgba(tint, 0.1) } : null,
                     ]}>
                     <Text
@@ -413,6 +440,8 @@ export function AllCalendarsDayGrid({
                     key={cal.calendarId}
                     column={cal}
                     columnIndex={index}
+                    columnWidth={columnWidth}
+                    columnPitch={columnPitch}
                     ownColumnCount={ownColumnCount}
                     ownColumnIds={ownColumnIds}
                     liftedColumn={liftedColumn}
@@ -431,6 +460,9 @@ export function AllCalendarsDayGrid({
                     )}
                     onBlockPress={onBlockPress}
                     onEmptyPress={onEmptyPress}
+                    onStatusChange={onStatusChange}
+                    onArrivalToggle={onArrivalToggle}
+                    complianceFlags={complianceFlags}
                     onDragReschedule={onDragReschedule}
                     onDragResize={onDragResize}
                     onDragConflictReject={onDragConflictReject}
@@ -468,6 +500,8 @@ export function AllCalendarsDayGrid({
 function DayColumn({
   column,
   columnIndex,
+  columnWidth,
+  columnPitch,
   ownColumnCount,
   ownColumnIds,
   liftedColumn,
@@ -479,6 +513,9 @@ function DayColumn({
   closedRanges,
   onBlockPress,
   onEmptyPress,
+  onStatusChange,
+  onArrivalToggle,
+  complianceFlags,
   onDragReschedule,
   onDragResize,
   onDragConflictReject,
@@ -488,6 +525,10 @@ function DayColumn({
   column: AllCalendarColumn;
   /** This column's index in the grid (own columns are first). */
   columnIndex: number;
+  /** Resolved (fill-to-width) column width. */
+  columnWidth: number;
+  /** Column width + gap — the cross-column drag's translationX→column conversion. */
+  columnPitch: number;
   /** Number of own (non-linked) columns — the valid cross-column target range. */
   ownColumnCount: number;
   /** Own columns' calendar ids, indexed — target index → calendar id at drop. */
@@ -503,6 +544,9 @@ function DayColumn({
   closedRanges: { start: number; end: number }[];
   onBlockPress: (bookingId: string) => void;
   onEmptyPress: (practitionerId: string, time: string) => void;
+  onStatusChange?: (bookingId: string, status: string) => void;
+  onArrivalToggle?: (bookingId: string, arrived: boolean) => void;
+  complianceFlags?: Record<string, ComplianceBookingFlag>;
   onDragReschedule?: (bookingId: string, newTime: string) => void;
   onDragResize?: (bookingId: string, newDurationMinutes: number) => void;
   onDragConflictReject?: () => void;
@@ -601,7 +645,7 @@ function DayColumn({
     <Animated.View
       style={[
         styles.column,
-        { borderColor: accent ?? colors.border },
+        { width: columnWidth, borderColor: accent ?? colors.border },
         accent ? { backgroundColor: hexToRgba(accent, 0.05) } : null,
         liftStyle,
       ]}>
@@ -766,6 +810,9 @@ function DayColumn({
             startTime={item.booking.startTime}
             durationMinutes={item.durationMinutes}
             onPress={onBlockPress}
+            onStatusChange={onStatusChange}
+            onArrivalToggle={onArrivalToggle}
+            complianceFlag={complianceFlags?.[item.booking.id]}
             actionPending={pendingActionIds?.has(item.booking.id) ?? false}
             onDragReschedule={onDragReschedule}
             onDragResize={onDragResize}
@@ -773,7 +820,7 @@ function DayColumn({
             onDragMoveToColumn={onDragMoveToColumn}
             crossColumnSourceIndex={columnIndex}
             crossColumnCount={ownColumnCount}
-            crossColumnPitch={COLUMN_PITCH}
+            crossColumnPitch={columnPitch}
             crossColumnIds={ownColumnIds}
             liftedColumn={liftedColumn}
             dragAbsX={dragAbsX}
@@ -812,7 +859,7 @@ const styles = StyleSheet.create({
     height: HEADER_HEIGHT,
   },
   headerCell: {
-    width: COLUMN_WIDTH,
+    // width is set dynamically (fill-to-width) on the element.
     marginRight: COLUMN_GAP,
     alignItems: 'center',
     justifyContent: 'center',
@@ -845,7 +892,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   column: {
-    width: COLUMN_WIDTH,
+    // width is set dynamically (fill-to-width) on the element.
     marginRight: COLUMN_GAP,
     borderLeftWidth: StyleSheet.hairlineWidth,
   },

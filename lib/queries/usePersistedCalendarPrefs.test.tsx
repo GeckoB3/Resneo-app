@@ -26,6 +26,7 @@ jest.mock('expo-secure-store', () => ({
 import {
   DEFAULT_CALENDAR_PREFS,
   pruneStaleSelectedId,
+  pruneVisibleCalendarIds,
   usePersistedCalendarPrefs,
   type CalendarPrefs,
 } from '@/lib/queries/usePersistedCalendarPrefs';
@@ -39,6 +40,7 @@ describe('pruneStaleSelectedId', () => {
   const base: CalendarPrefs = {
     scope: 'week',
     selectedId: 'cal_2',
+    visibleIds: null,
     startHourOverride: 8,
     endHourOverride: 20,
   };
@@ -63,6 +65,35 @@ describe('pruneStaleSelectedId', () => {
     expect(pruneStaleSelectedId(all, [])).toBe(all);
     const none = { ...base, selectedId: null };
     expect(pruneStaleSelectedId(none, [])).toBe(none);
+  });
+});
+
+describe('pruneVisibleCalendarIds', () => {
+  it('returns null for the all-calendars default', () => {
+    expect(pruneVisibleCalendarIds(null, ['cal_1', 'cal_2'])).toBeNull();
+  });
+
+  it('keeps a genuine proper subset of valid ids', () => {
+    expect(pruneVisibleCalendarIds(['cal_1'], ['cal_1', 'cal_2', 'cal_3'])).toEqual(['cal_1']);
+  });
+
+  it('drops ids that no longer exist', () => {
+    expect(pruneVisibleCalendarIds(['cal_1', 'gone'], ['cal_1', 'cal_2'])).toEqual(['cal_1']);
+  });
+
+  it('collapses an empty result to null (all calendars)', () => {
+    expect(pruneVisibleCalendarIds(['gone'], ['cal_1', 'cal_2'])).toBeNull();
+  });
+
+  it('preserves linked-venue keys even though they are not own calendar ids', () => {
+    expect(pruneVisibleCalendarIds(['cal_1', 'linked:v9'], ['cal_1', 'cal_2'])).toEqual([
+      'cal_1',
+      'linked:v9',
+    ]);
+  });
+
+  it('keeps a linked-only selection (own all deleted) rather than collapsing it', () => {
+    expect(pruneVisibleCalendarIds(['linked:v9'], ['cal_1', 'cal_2'])).toEqual(['linked:v9']);
   });
 });
 
@@ -93,9 +124,22 @@ describe('usePersistedCalendarPrefs', () => {
     expect(second.result.current.prefs).toEqual({
       scope: 'week',
       selectedId: 'cal_9',
+      visibleIds: null,
       startHourOverride: 7,
       endHourOverride: null,
     });
+  });
+
+  it('round-trips a visibleIds subset across a fresh mount', async () => {
+    const first = await renderHook(() => usePersistedCalendarPrefs('venue_1'));
+    await waitFor(() => expect(first.result.current.hydrated).toBe(true));
+    await act(async () => {
+      first.result.current.setPrefs({ visibleIds: ['cal_1', 'cal_3'] });
+    });
+
+    const second = await renderHook(() => usePersistedCalendarPrefs('venue_1'));
+    await waitFor(() => expect(second.result.current.hydrated).toBe(true));
+    expect(second.result.current.prefs.visibleIds).toEqual(['cal_1', 'cal_3']);
   });
 
   it('scopes storage by venue id (venue_2 does not see venue_1 prefs)', async () => {
