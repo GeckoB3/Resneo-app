@@ -118,6 +118,13 @@ export interface ComplianceTemplatePatch {
   capture_methods?: ComplianceTypeCaptureMethod[];
   form_link_expiry_days?: number | null;
   online_unmet_message?: string | null;
+  /**
+   * When set, the PATCH route publishes a new form version FIRST (atomic single-
+   * request save, web audit U7), so an invalid schema aborts before any metadata
+   * change. `changelog` is stored on that version.
+   */
+  form_schema?: BuilderFormSchema;
+  changelog?: string;
   is_active?: boolean;
 }
 

@@ -10,6 +10,7 @@ import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import {
+  COMPLIANCE_ENFORCEMENT_DESCRIPTIONS,
   COMPLIANCE_ENFORCEMENT_LABELS,
   COMPLIANCE_ENFORCEMENT_OPTIONS,
   COMPLIANCE_ONLINE_COLLECTION_DESCRIPTIONS,
@@ -210,6 +211,11 @@ export function ComplianceRequirementsEditor({ serviceId, complianceEnabled }: P
                       />
                     ))}
                   </View>
+                  {COMPLIANCE_ENFORCEMENT_DESCRIPTIONS[r.enforcement] ? (
+                    <Text variant="caption" tone="muted">
+                      {COMPLIANCE_ENFORCEMENT_DESCRIPTIONS[r.enforcement]}
+                    </Text>
+                  ) : null}
 
                   {/* Lead time (lock_period_hours) */}
                   <View style={styles.subField}>
@@ -429,6 +435,11 @@ function AddRequirementSheet({
             />
           ))}
         </View>
+        {COMPLIANCE_ENFORCEMENT_DESCRIPTIONS[enforcement] ? (
+          <Text variant="caption" tone="muted">
+            {COMPLIANCE_ENFORCEMENT_DESCRIPTIONS[enforcement]}
+          </Text>
+        ) : null}
 
         <Text variant="label" tone="secondary">
           Lead time (hours before the appointment)

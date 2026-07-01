@@ -194,7 +194,7 @@ export function ComplianceSection({ guestId }: ComplianceSectionProps) {
                     ]}>
                     <View style={styles.linkText}>
                       <Text variant="bodySmall" numberOfLines={1}>
-                        {link.compliance_type_name ?? 'Compliance form'}
+                        {complianceJoinedTypeName(link.compliance_types)}
                       </Text>
                       <Text variant="caption" tone="muted">
                         {link.sent_via ? `Sent by ${link.sent_via}` : 'Not yet sent'}

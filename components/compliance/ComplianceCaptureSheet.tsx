@@ -295,11 +295,17 @@ function FileFieldInput({
   const current = value && typeof value === 'object' ? (value as FileResponse) : null;
 
   async function pick() {
-    const res = await DocumentPicker.getDocumentAsync({
-      type: ALLOWED_FILE_TYPES,
-      copyToCacheDirectory: true,
-      multiple: false,
-    });
+    let res: Awaited<ReturnType<typeof DocumentPicker.getDocumentAsync>>;
+    try {
+      res = await DocumentPicker.getDocumentAsync({
+        type: ALLOWED_FILE_TYPES,
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+    } catch {
+      toast.error('Could not open the file picker. Please try again.');
+      return;
+    }
     if (res.canceled) return;
     const asset = res.assets?.[0];
     if (!asset) return;

@@ -235,10 +235,11 @@ export interface SignatureResponse {
 
 /**
  * An uploaded-file answer (mirrors the web `FileResponse`). `storage_path` is
- * REQUIRED — it can only be produced by a server upload, and the only upload
- * endpoint is the public, code-scoped form. Staff capture therefore cannot
- * synthesise a valid file response; the capture sheet renders `file` fields
- * disabled and directs staff to the client's form link instead.
+ * REQUIRED and is produced by a server upload: the staff capture sheet uploads via
+ * POST /api/venue/compliance/records/upload (useUploadComplianceRecordFile) and
+ * stores the returned FileResponse. That venue route serves both staff and
+ * hand-to-client capture (mirrors the web upload flow); the public code-scoped
+ * form is the client's separate path.
  */
 export interface FileResponse {
   storage_path: string;

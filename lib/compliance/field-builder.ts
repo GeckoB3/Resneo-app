@@ -137,24 +137,31 @@ export function fieldBuilderReducer(
     case 'addOption':
       return {
         ...state,
-        fields: withOptions(state.fields, action.id, (options) => [
-          ...options,
-          {
-            value: `option_${options.length + 1}`,
-            label: `Option ${options.length + 1}`,
-          },
-        ]),
+        fields: withOptions(state.fields, action.id, (options) => {
+          // Pick the next free option_N so a freshly-added option can't collide with an
+          // existing value before its label is edited (web builder guard, audit U8).
+          const taken = new Set(options.map((o) => o.value));
+          let n = options.length + 1;
+          while (taken.has(`option_${n}`)) n += 1;
+          return [...options, { value: `option_${n}`, label: `Option ${n}` }];
+        }),
       };
 
     case 'updateOption':
       return {
         ...state,
         fields: withOptions(state.fields, action.id, (options) =>
-          options.map((o, i) =>
-            i === action.index
-              ? { value: optionValueFromLabel(action.label, i), label: action.label }
-              : o,
-          ),
+          options.map((o, i) => {
+            if (i !== action.index) return o;
+            // Guard against two labels slugifying to the same value: a silent clash
+            // would corrupt select validation and the pass/fail result mapping (audit U8).
+            const base = optionValueFromLabel(action.label, i);
+            const taken = new Set(options.filter((_, j) => j !== i).map((x) => x.value));
+            let value = base;
+            let n = 2;
+            while (taken.has(value)) value = `${base}_${n++}`;
+            return { value, label: action.label };
+          }),
         ),
       };
 

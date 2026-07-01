@@ -23,10 +23,30 @@ import { useAccessToken } from '@/lib/queries/useAccessToken';
 
 /** Enforcement levels (mirrors COMPLIANCE_ENFORCEMENT_LEVELS on the web). */
 export const COMPLIANCE_ENFORCEMENT_OPTIONS = [
-  { value: 'warn_staff', label: 'Warn staff' },
-  { value: 'warn_client', label: 'Warn client' },
-  { value: 'block_online', label: 'Block online booking' },
-  { value: 'block_all', label: 'Block all bookings' },
+  {
+    value: 'warn_staff',
+    label: 'Warn staff',
+    description:
+      'The booking still goes through. Your team sees an outstanding-form flag on the calendar and booking so they can collect the record before the appointment. The client is not told.',
+  },
+  {
+    value: 'warn_client',
+    label: 'Warn client',
+    description:
+      'The booking still goes through. When the client books online they see a note that a form is needed, and your team sees the flag too.',
+  },
+  {
+    value: 'block_online',
+    label: 'Block online booking',
+    description:
+      'Clients cannot book this service online until a valid record is on file. Your team can still book them in from the dashboard.',
+  },
+  {
+    value: 'block_all',
+    label: 'Block all bookings',
+    description:
+      'No one can book this service until a valid record is on file, online or from the dashboard. An admin can override when booking from the dashboard.',
+  },
 ] as const;
 
 export type ComplianceEnforcement =
@@ -34,6 +54,11 @@ export type ComplianceEnforcement =
 
 export const COMPLIANCE_ENFORCEMENT_LABELS: Record<string, string> = Object.fromEntries(
   COMPLIANCE_ENFORCEMENT_OPTIONS.map((o) => [o.value, o.label]),
+);
+
+/** Per-level explanation shown under the enforcement selector (mirrors web shared.ts). */
+export const COMPLIANCE_ENFORCEMENT_DESCRIPTIONS: Record<string, string> = Object.fromEntries(
+  COMPLIANCE_ENFORCEMENT_OPTIONS.map((o) => [o.value, o.description]),
 );
 
 export type { ComplianceOnlineCollection };

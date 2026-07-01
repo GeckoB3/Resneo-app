@@ -48,7 +48,10 @@ export interface ComplianceFormLink {
   guest_id: string;
   guest_name?: string | null;
   compliance_type_id: string;
+  /** Flat name is never sent by the backend; the real name is under the nested join. */
   compliance_type_name?: string | null;
+  /** Supabase compliance_types!inner(name) join the list route returns. */
+  compliance_types?: import('./booking-compliance').ComplianceJoinedType;
   status?: string;
   sent_via?: string | null;
   sent_at?: string | null;

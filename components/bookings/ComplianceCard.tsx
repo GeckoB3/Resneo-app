@@ -184,7 +184,10 @@ export function ComplianceCard({ bookingId, guestId, guestEmail, guestPhone }: C
         guest_id: guestId,
         compliance_type_id: complianceTypeId,
         booking_id: bookingId,
-        send_via: sendVia,
+        // 'manual_copy' is a UI action, not a wire value (the backend enum is
+        // email|sms): omit send_via so the server issues the link; onSuccess copies
+        // the returned public_url.
+        send_via: sendVia === 'manual_copy' ? undefined : sendVia,
       },
       {
         onSuccess: (result) => {

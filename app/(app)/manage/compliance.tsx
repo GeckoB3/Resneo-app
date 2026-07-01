@@ -277,7 +277,6 @@ export default function ComplianceScreen() {
     dashboard.data.today ?? calendarDateInTimeZone(new Date(), venue?.timezone ?? 'Europe/London');
   const todayCheckIns = groupTodaysCheckIns(missing_for_bookings, todayStr);
   const upcomingMissing = missing_for_bookings.filter((m) => m.booking_date !== todayStr);
-  const todayCount = todayCheckIns.reduce((n, g) => n + g.items.length, 0);
 
   // Use awaiting_submission from dashboard payload directly (no redundant fetch)
   const awaitingRows = awaiting_submission;
@@ -396,7 +395,9 @@ export default function ComplianceScreen() {
         guest_id: guestId,
         compliance_type_id: typeId,
         booking_id: bookingId ?? undefined,
-        send_via,
+        // 'manual_copy' is a UI action, not a wire value (the backend enum is
+        // email|sms): omit send_via and copy the returned public_url in onSuccess.
+        send_via: send_via === 'manual_copy' ? undefined : send_via,
       },
       {
         onSuccess: (result) => {
@@ -463,7 +464,7 @@ export default function ComplianceScreen() {
             <Card>
               <Text variant="caption" tone="muted">
                 {[
-                  todayCount > 0 ? `${todayCount} for today` : null,
+                  todayCheckIns.length > 0 ? `${todayCheckIns.length} for today` : null,
                   upcomingMissing.length > 0 ? `${upcomingMissing.length} upcoming` : null,
                   expiring_soon.length > 0 ? `${expiring_soon.length} expiring soon` : null,
                   awaitingRows.length > 0 ? `${awaitingRows.length} awaiting clients` : null,

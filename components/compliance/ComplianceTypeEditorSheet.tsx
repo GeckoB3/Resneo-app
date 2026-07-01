@@ -31,7 +31,6 @@ import {
   useComplianceTemplateDetail,
   useComplianceTypeVersions,
   useCreateComplianceTemplate,
-  useCreateComplianceVersion,
   useDuplicateComplianceType,
   useRestoreComplianceType,
   useRestoreComplianceVersion,
@@ -110,7 +109,6 @@ export function ComplianceTypeEditorSheet({
   const detail = useComplianceTemplateDetail(visible && !isCreate ? typeId : null);
   const update = useUpdateComplianceTemplate();
   const createType = useCreateComplianceTemplate();
-  const createVersion = useCreateComplianceVersion();
   const versionsQuery = useComplianceTypeVersions(visible && !isCreate ? typeId : null);
   const restoreVersion = useRestoreComplianceVersion();
   const duplicateType = useDuplicateComplianceType();
@@ -326,7 +324,9 @@ export function ComplianceTypeEditorSheet({
     }
 
     if (!type) return;
-    // Edit: PATCH non-schema settings, then publish a new form version.
+    // Edit: a single atomic PATCH (web audit U7). The route publishes the new form
+    // version FIRST, so an invalid schema aborts before any metadata change — no
+    // split-write where settings persist but the form fields do not.
     update.mutate(
       {
         typeId: type.id,
@@ -338,29 +338,17 @@ export function ComplianceTypeEditorSheet({
           capture_methods: captureMethods,
           form_link_expiry_days: expiryDays,
           online_unmet_message: unmetMessage.trim() ? unmetMessage.trim() : null,
+          form_schema: schema,
+          changelog: changelog.trim() || undefined,
         },
       },
       {
         onSuccess: () => {
-          createVersion.mutate(
-            { typeId: type.id, formSchema: schema, changelog: changelog.trim() || undefined },
-            {
-              onSuccess: () => {
-                setPendingAction(null);
-                hapticSuccess();
-                toast.success('Template saved.');
-                onSaved?.();
-                onClose();
-              },
-              onError: (error) => {
-                setPendingAction(null);
-                hapticWarning();
-                setErrors([
-                  error instanceof ApiError ? error.message : 'Could not save the form fields.',
-                ]);
-              },
-            },
-          );
+          setPendingAction(null);
+          hapticSuccess();
+          toast.success('Template saved.');
+          onSaved?.();
+          onClose();
         },
         onError: (error) => {
           setPendingAction(null);
@@ -436,9 +424,7 @@ export function ComplianceTypeEditorSheet({
     );
   }
 
-  const saving =
-    pendingAction === 'save' &&
-    (createType.isPending || update.isPending || createVersion.isPending);
+  const saving = pendingAction === 'save' && (createType.isPending || update.isPending);
   const archiving = pendingAction === 'archive' && (archiveType.isPending || restoreType.isPending);
   const duplicating = pendingAction === 'duplicate' && duplicateType.isPending;
   const loadingDetail = !isCreate && detail.isLoading;

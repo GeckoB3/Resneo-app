@@ -49,7 +49,13 @@ export interface SendComplianceFormLinkInput {
   guest_id: string;
   compliance_type_id: string;
   booking_id?: string;
-  send_via: ComplianceSendVia;
+  /**
+   * Real delivery channel to request; OMIT to just issue the link and copy it (the
+   * route always returns public_url, and resolves to manual_copy server-side when
+   * the guest has no email/phone). `manual_copy` is server-internal only and must
+   * never be sent as a caller input — the backend enum is email|sms.
+   */
+  send_via?: 'email' | 'sms';
 }
 
 export interface SendComplianceFormLinkResult {
