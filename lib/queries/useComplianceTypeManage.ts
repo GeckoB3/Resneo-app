@@ -91,6 +91,8 @@ export interface ComplianceTemplateRow {
   capture_methods: string[];
   form_link_expiry_days: number | null;
   is_active: boolean;
+  /** Guidance shown when an online booking is blocked by a self-uncompletable requirement (max 500). */
+  online_unmet_message?: string | null;
   archived_at?: string | null;
   source_template_slug?: string | null;
   created_at?: string;
@@ -115,6 +117,14 @@ export interface ComplianceTemplatePatch {
   validity_period_days?: number | null;
   capture_methods?: ComplianceTypeCaptureMethod[];
   form_link_expiry_days?: number | null;
+  online_unmet_message?: string | null;
+  /**
+   * When set, the PATCH route publishes a new form version FIRST (atomic single-
+   * request save, web audit U7), so an invalid schema aborts before any metadata
+   * change. `changelog` is stored on that version.
+   */
+  form_schema?: BuilderFormSchema;
+  changelog?: string;
   is_active?: boolean;
 }
 
@@ -150,6 +160,7 @@ export interface CreateComplianceTemplateInput {
   validity_period_days: number | null;
   capture_methods: ComplianceTypeCaptureMethod[];
   form_link_expiry_days?: number | null;
+  online_unmet_message?: string | null;
   form_schema: BuilderFormSchema;
 }
 
@@ -163,6 +174,8 @@ export interface ComplianceLibraryTemplate {
   capture_methods: string[];
   description?: string;
   field_count: number;
+  /** Full form schema, so the picker can preview the fields before cloning. */
+  form_schema?: ComplianceTemplateFormSchema;
 }
 
 // ---------------------------------------------------------------------------
@@ -454,6 +467,129 @@ export function useCreateComplianceVersion() {
           method: 'POST',
           body: JSON.stringify({ form_schema: input.formSchema, changelog: input.changelog }),
         },
+      );
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.compliance.all() });
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Type lifecycle — version history/restore, duplicate, archive/restore (admin)
+// ---------------------------------------------------------------------------
+
+/** One row from GET /types/[id]/versions (newest first). */
+export interface ComplianceTypeVersionRow {
+  id: string;
+  version_number: number;
+  changelog: string | null;
+  created_by_staff_id: string | null;
+  created_at: string;
+}
+
+/** GET /api/venue/compliance/types/[id]/versions — version history (newest first). */
+export function useComplianceTypeVersions(typeId: string | null) {
+  const accessToken = useAccessToken();
+  const enabled = isBackendConfigured() && accessToken !== null && !!typeId;
+
+  return useQuery({
+    queryKey: [
+      ...queryKeys.compliance.all(),
+      'typeVersions',
+      keyScope(accessToken),
+      typeId ?? null,
+    ] as const,
+    enabled,
+    retry: false,
+    queryFn: async (): Promise<{ versions: ComplianceTypeVersionRow[] }> => {
+      if (!accessToken || !typeId) {
+        throw new Error('Missing parameters');
+      }
+      return apiFetch<{ versions: ComplianceTypeVersionRow[] }>(
+        `/api/venue/compliance/types/${typeId}/versions`,
+        { accessToken },
+      );
+    },
+  });
+}
+
+/** POST /api/venue/compliance/types/[id]/versions/restore — re-publish a prior version (admin). */
+export function useRestoreComplianceVersion() {
+  const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: { typeId: string; versionId: string }): Promise<unknown> => {
+      if (!accessToken) {
+        throw new Error('Missing access token');
+      }
+      return apiFetch<unknown>(
+        `/api/venue/compliance/types/${input.typeId}/versions/restore`,
+        { accessToken, method: 'POST', body: JSON.stringify({ version_id: input.versionId }) },
+      );
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.compliance.all() });
+    },
+  });
+}
+
+/** POST /api/venue/compliance/types/[id]/duplicate — copy a type into "{name} (copy)" (admin). */
+export function useDuplicateComplianceType() {
+  const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (typeId: string): Promise<ComplianceTemplateDetail> => {
+      if (!accessToken) {
+        throw new Error('Missing access token');
+      }
+      return apiFetch<ComplianceTemplateDetail>(
+        `/api/venue/compliance/types/${typeId}/duplicate`,
+        { accessToken, method: 'POST' },
+      );
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.compliance.all() });
+    },
+  });
+}
+
+/** POST /api/venue/compliance/types/[id]/archive — soft-archive a type, writing archived_at + audit (admin). */
+export function useArchiveComplianceType() {
+  const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (typeId: string): Promise<{ type: ComplianceTemplateRow }> => {
+      if (!accessToken) {
+        throw new Error('Missing access token');
+      }
+      return apiFetch<{ type: ComplianceTemplateRow }>(
+        `/api/venue/compliance/types/${typeId}/archive`,
+        { accessToken, method: 'POST' },
+      );
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.compliance.all() });
+    },
+  });
+}
+
+/** POST /api/venue/compliance/types/[id]/restore — restore an archived type, clearing archived_at + audit (admin). */
+export function useRestoreComplianceType() {
+  const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (typeId: string): Promise<{ type: ComplianceTemplateRow }> => {
+      if (!accessToken) {
+        throw new Error('Missing access token');
+      }
+      return apiFetch<{ type: ComplianceTemplateRow }>(
+        `/api/venue/compliance/types/${typeId}/restore`,
+        { accessToken, method: 'POST' },
       );
     },
     onSuccess: () => {

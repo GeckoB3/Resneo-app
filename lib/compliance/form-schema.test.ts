@@ -19,7 +19,7 @@ const resultSelect: ComplianceField = {
   id: 'result',
   type: 'select',
   label: 'Outcome',
-  required: false,
+  required: true,
   staff_only: true,
   options: [
     { value: 'clear', label: 'Clear' },
@@ -85,6 +85,19 @@ describe('validateFormSchemaForType', () => {
         'pass_fail',
       );
       expect(res.errors).toContain('The pass/fail result field must be marked staff_only.');
+    });
+
+    it('requires the mapped result field to be marked required (audit M7)', () => {
+      const notRequired: ComplianceField = { ...resultSelect, required: false };
+      const res = validateFormSchemaForType(
+        schema([notRequired], {
+          result_mapping: { field: 'result', pass_values: ['clear'], fail_values: ['reaction'] },
+        }),
+        'pass_fail',
+      );
+      expect(res.errors).toContain(
+        'The pass/fail result field must be marked required so a decision is always recorded.',
+      );
     });
 
     it('rejects mapping values absent from the options', () => {

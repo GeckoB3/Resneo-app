@@ -8,11 +8,13 @@ import { Sheet } from '@/components/ui/Sheet';
 import { Stepper } from '@/components/ui/Stepper';
 import { Text } from '@/components/ui/Text';
 import { TimePickerField } from '@/components/ui/TimePickerField';
-import { ApiError } from '@/lib/api/client';
+import { ApiError, complianceBlockMessage } from '@/lib/api/client';
 import { formatDayHeading } from '@/lib/dates/venue-dates';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useRescheduleBooking } from '@/lib/queries/useBookingMutations';
-import { spacing } from '@/theme/index';
+import { useStaffMe } from '@/lib/queries/useStaffMe';
+import { radius, spacing } from '@/theme/index';
+import { useTheme } from '@/theme/useTheme';
 
 export type RescheduleTarget = {
   id: string;
@@ -47,12 +49,15 @@ function formatDuration(total: number): string {
 
 /** Bottom-sheet to move/resize a booking (long-press a calendar block). */
 export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetProps) {
+  const { colors } = useTheme();
   const mutation = useRescheduleBooking(target?.id ?? '');
+  const isAdmin = useStaffMe().data?.staff?.role === 'admin';
 
   const [date, setDate] = useState('');
   const [minutes, setMinutes] = useState(0);
   const [duration, setDuration] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [complianceError, setComplianceError] = useState<string | null>(null);
   const [seededId, setSeededId] = useState<string | null>(null);
 
   // Seed editable state when the target booking changes (open/swap).
@@ -70,6 +75,7 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
     setMinutes(timeToMinutes(target.time));
     setDuration(target.durationMinutes ?? null);
     setError(null);
+    setComplianceError(null);
   }, [target?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const durationChanged =
@@ -86,9 +92,10 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
       ? `${minutesToTime((minutes + duration) % (24 * 60))}${crossesMidnight ? ' (next day)' : ''}`
       : null;
 
-  async function handleConfirm() {
+  async function handleConfirm(overrideCompliance?: boolean) {
     if (!target) return;
     setError(null);
+    setComplianceError(null);
     try {
       await mutation.mutateAsync({
         date,
@@ -96,13 +103,20 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
         // Only send the duration when it changed — table bookings have a lower
         // server-side cap, so an untouched duration must not be re-asserted.
         ...(durationChanged ? { durationMinutes: duration } : {}),
+        ...(overrideCompliance ? { overrideCompliance: true } : {}),
       });
       hapticSuccess();
       onMoved?.(target, { durationChanged });
       onClose();
     } catch (e) {
       hapticWarning();
-      setError(e instanceof ApiError ? e.message : 'Could not reschedule. Try another time.');
+      const compMsg = complianceBlockMessage(e);
+      if (compMsg) {
+        // An edit-time compliance block (block_all). An admin can override.
+        setComplianceError(compMsg);
+      } else {
+        setError(e instanceof ApiError ? e.message : 'Could not reschedule. Try another time.');
+      }
     }
   }
 
@@ -159,6 +173,30 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
                 </Text>
               ) : null}
 
+              {complianceError ? (
+                <View
+                  style={[
+                    styles.complianceBlock,
+                    { backgroundColor: colors.surface, borderColor: colors.border },
+                  ]}>
+                  <Text variant="bodySmall" tone="danger">
+                    {complianceError}
+                  </Text>
+                  {isAdmin ? (
+                    <Button
+                      label="Reschedule anyway (admin override)"
+                      variant="secondary"
+                      onPress={() => void handleConfirm(true)}
+                      loading={mutation.isPending}
+                    />
+                  ) : (
+                    <Text variant="caption" tone="muted">
+                      Ask an admin to override, or collect the required record first.
+                    </Text>
+                  )}
+                </View>
+              ) : null}
+
               {error ? (
                 <Text variant="bodySmall" tone="danger">
                   {error}
@@ -195,6 +233,12 @@ const styles = StyleSheet.create({
   },
   endPreview: {
     marginTop: -spacing.md,
+  },
+  complianceBlock: {
+    gap: spacing.sm,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: spacing.md,
   },
   actions: {
     flexDirection: 'row',

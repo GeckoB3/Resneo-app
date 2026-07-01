@@ -19,6 +19,41 @@ export const RESULT_TYPE_LABELS: Record<string, string> = {
   file_uploaded: 'File upload',
 };
 
+/** Friendly label for a record's derived `result` value (never render the raw token). */
+export const RESULT_LABELS: Record<string, string> = {
+  pass: 'Pass',
+  fail: 'Fail',
+  inconclusive: 'Inconclusive',
+  completed: 'Completed',
+  signed: 'Signed',
+};
+
+/** Audit event type → human label (mirrors web AUDIT_EVENT_LABELS in shared.ts). */
+export const AUDIT_EVENT_LABELS: Record<string, string> = {
+  'type.created': 'Type created',
+  'type.updated': 'Type updated',
+  'type.archived': 'Type archived',
+  'type.restored': 'Type restored',
+  'version.created': 'New form version',
+  'requirement.added': 'Requirement added',
+  'requirement.removed': 'Requirement removed',
+  'requirement.updated': 'Requirement updated',
+  'record.captured': 'Record captured',
+  'record.updated': 'Record updated',
+  'record.voided': 'Record voided',
+  'record.viewed': 'Record viewed',
+  'guest.compliance_erased': 'Compliance data erased',
+  'link.issued': 'Form link issued',
+  'link.sent': 'Form link sent',
+  'link.consumed': 'Form submitted',
+  'link.expired': 'Form link expired',
+  'link.revoked': 'Form link revoked',
+};
+
+export function auditEventLabel(eventType: string): string {
+  return AUDIT_EVENT_LABELS[eventType] ?? eventType;
+}
+
 /** Longer result-type descriptions used by the web form builder. */
 export const RESULT_TYPE_DESCRIPTIONS: Record<string, string> = {
   pass_fail: 'Staff decide a pass or fail result',

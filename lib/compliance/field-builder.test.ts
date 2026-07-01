@@ -116,6 +116,29 @@ describe('fieldBuilderReducer', () => {
     expect((state.fields[0] as { options: unknown[] }).options).toHaveLength(1);
   });
 
+  it('addOption never reuses a value freed by a prior delete (audit U8)', () => {
+    const added = fieldBuilderReducer(emptyBuilderState, { type: 'addField', fieldType: 'select' });
+    const id = added.fields[0]!.id;
+    // [option_1] -> add -> [option_1, option_2] -> delete option_1 -> [option_2] -> add
+    let state = fieldBuilderReducer(added, { type: 'addOption', id });
+    state = fieldBuilderReducer(state, { type: 'removeOption', id, index: 0 });
+    state = fieldBuilderReducer(state, { type: 'addOption', id });
+    const values = (state.fields[0] as { options: { value: string }[] }).options.map((o) => o.value);
+    expect(new Set(values).size).toBe(values.length); // all unique
+    expect(values).toEqual(['option_2', 'option_3']);
+  });
+
+  it('updateOption disambiguates two labels that slugify to the same value (audit U8)', () => {
+    let state = fieldBuilderReducer(emptyBuilderState, { type: 'addField', fieldType: 'select' });
+    const id = state.fields[0]!.id;
+    state = fieldBuilderReducer(state, { type: 'addOption', id }); // 2 options
+    state = fieldBuilderReducer(state, { type: 'updateOption', id, index: 0, label: 'Yes' });
+    state = fieldBuilderReducer(state, { type: 'updateOption', id, index: 1, label: 'Yes!' });
+    const values = (state.fields[0] as { options: { value: string }[] }).options.map((o) => o.value);
+    expect(values).toEqual(['yes', 'yes_2']); // second disambiguated, not a duplicate 'yes'
+    expect(new Set(values).size).toBe(2);
+  });
+
   it('sets description / intro markdown / result mapping', () => {
     const state = reduce(
       emptyBuilderState,
@@ -126,6 +149,29 @@ describe('fieldBuilderReducer', () => {
     expect(state.description).toBe('desc');
     expect(state.introMarkdown).toBe('**hi**');
     expect(state.resultMapping).toEqual({ field: 'r', pass_values: ['a'], fail_values: ['b'] });
+  });
+
+  it('ensureResultField creates a staff-only Pass/Fail select + mapping when none exists', () => {
+    const state = fieldBuilderReducer(emptyBuilderState, { type: 'ensureResultField' });
+    expect(state.fields).toHaveLength(1);
+    const f = state.fields[0]!;
+    expect(f.type).toBe('select');
+    expect(f.staff_only).toBe(true);
+    expect(f.required).toBe(true);
+    expect(state.resultMapping).toEqual({
+      field: f.id,
+      pass_values: ['pass'],
+      fail_values: ['fail'],
+    });
+  });
+
+  it('ensureResultField reuses an existing staff-only select without adding a field', () => {
+    let state = fieldBuilderReducer(emptyBuilderState, { type: 'addField', fieldType: 'select' });
+    const id = state.fields[0]!.id;
+    state = fieldBuilderReducer(state, { type: 'updateField', id, patch: { staff_only: true } });
+    state = fieldBuilderReducer(state, { type: 'ensureResultField' });
+    expect(state.fields).toHaveLength(1);
+    expect(state.resultMapping).toEqual({ field: id, pass_values: [], fail_values: [] });
   });
 });
 

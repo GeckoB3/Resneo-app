@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
-import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
@@ -15,7 +14,12 @@ import { useToast } from '@/providers/ToastProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
-import { CATEGORY_LABELS, RESULT_TYPE_LABELS, validityLabel } from './complianceTypeLabels';
+import {
+  CATEGORY_LABELS,
+  FIELD_TYPE_LABELS,
+  RESULT_TYPE_LABELS,
+  validityLabel,
+} from './complianceTypeLabels';
 
 type Props = {
   visible: boolean;
@@ -36,6 +40,7 @@ export function ComplianceLibrarySheet({ visible, onClose, onCloned }: Props) {
   const library = useComplianceLibrary(visible);
   const clone = useCloneComplianceTemplate();
   const [cloningSlug, setCloningSlug] = useState<string | null>(null);
+  const [previewSlug, setPreviewSlug] = useState<string | null>(null);
 
   const templates = library.data?.templates ?? [];
 
@@ -83,38 +88,78 @@ export function ComplianceLibrarySheet({ visible, onClose, onCloned }: Props) {
             No library templates are available.
           </Text>
         ) : (
-          templates.map((t) => (
-            <View
-              key={t.slug}
-              style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <View style={styles.cardText}>
-                <Text variant="bodyMedium" numberOfLines={1}>
-                  {t.name}
-                </Text>
-                <Text variant="caption" tone="muted" numberOfLines={2}>
-                  {[
-                    CATEGORY_LABELS[t.category] ?? t.category,
-                    RESULT_TYPE_LABELS[t.result_type] ?? t.result_type,
-                    validityLabel(t.validity_period_days),
-                    `${t.field_count} field${t.field_count === 1 ? '' : 's'}`,
-                  ].join(' · ')}
-                </Text>
-                {t.description ? (
-                  <Text variant="caption" tone="muted" numberOfLines={2}>
-                    {t.description}
-                  </Text>
+          templates.map((t) => {
+            const previewFields = t.form_schema?.fields ?? [];
+            const showPreview = previewSlug === t.slug;
+            return (
+              <View
+                key={t.slug}
+                style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <View style={styles.cardHeader}>
+                  <View style={styles.cardText}>
+                    <Text variant="bodyMedium" numberOfLines={1}>
+                      {t.name}
+                    </Text>
+                    <Text variant="caption" tone="muted" numberOfLines={2}>
+                      {[
+                        CATEGORY_LABELS[t.category] ?? t.category,
+                        RESULT_TYPE_LABELS[t.result_type] ?? t.result_type,
+                        validityLabel(t.validity_period_days),
+                        `${t.field_count} field${t.field_count === 1 ? '' : 's'}`,
+                      ].join(' · ')}
+                    </Text>
+                    {t.description ? (
+                      <Text variant="caption" tone="muted" numberOfLines={2}>
+                        {t.description}
+                      </Text>
+                    ) : null}
+                  </View>
+                  <View style={styles.cardActions}>
+                    {previewFields.length > 0 ? (
+                      <Button
+                        label={showPreview ? 'Hide' : 'Preview'}
+                        variant="ghost"
+                        size="sm"
+                        onPress={() => setPreviewSlug(showPreview ? null : t.slug)}
+                      />
+                    ) : null}
+                    <Button
+                      label="Add"
+                      variant="secondary"
+                      size="sm"
+                      loading={cloningSlug === t.slug}
+                      disabled={clone.isPending && cloningSlug !== t.slug}
+                      onPress={() => handleClone(t.slug, t.name)}
+                    />
+                  </View>
+                </View>
+                {showPreview && previewFields.length > 0 ? (
+                  <View style={[styles.preview, { borderTopColor: colors.border }]}>
+                    {previewFields.map((f, idx) => (
+                      <View
+                        key={f.id}
+                        style={[
+                          styles.previewRow,
+                          idx > 0 && {
+                            borderTopColor: colors.border,
+                            borderTopWidth: StyleSheet.hairlineWidth,
+                          },
+                        ]}>
+                        <Text variant="bodySmall" numberOfLines={2}>
+                          {f.label}
+                        </Text>
+                        <Text variant="caption" tone="muted">
+                          {FIELD_TYPE_LABELS[f.type] ?? f.type}
+                          {f.required ? ' · required' : ''}
+                          {f.staff_only ? ' · staff only' : ''}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
                 ) : null}
               </View>
-              <Button
-                label="Add"
-                variant="secondary"
-                size="sm"
-                loading={cloningSlug === t.slug}
-                disabled={clone.isPending && cloningSlug !== t.slug}
-                onPress={() => handleClone(t.slug, t.name)}
-              />
-            </View>
-          ))
+            );
+          })
         )}
         <View style={styles.spacer} />
       </ScrollView>
@@ -143,17 +188,33 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   card: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
+    gap: spacing.sm,
     borderRadius: radius.md,
     borderWidth: 1,
     padding: spacing.md,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
   },
   cardText: {
     flex: 1,
     minWidth: 0,
     gap: 2,
+  },
+  cardActions: {
+    gap: spacing.xs,
+    alignItems: 'flex-end',
+  },
+  preview: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingTop: spacing.sm,
+    gap: spacing.xs,
+  },
+  previewRow: {
+    paddingVertical: spacing.xs,
+    gap: 1,
   },
   footer: {
     paddingHorizontal: spacing.base,

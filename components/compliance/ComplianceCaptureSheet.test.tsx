@@ -2,12 +2,10 @@
  * ComplianceCaptureSheet QC (Domain 13). Two server-confirmed 400s are guarded
  * here:
  *
- *  1. `file` fields are UNSUBMITTABLE from staff capture — a valid file response
- *     needs a server `storage_path`, and the only upload endpoint is the public
- *     code-scoped form. So the sheet renders `file` fields DISABLED with a hint
- *     and contributes NO value to the submitted `responses` (web parity), and a
- *     REQUIRED file field blocks submit (directs staff to the form link) rather
- *     than POSTing an invalid payload.
+ *  1. `file` fields let staff upload a document via the staff records/upload
+ *     endpoint; when none is picked the field contributes NO value to `responses`,
+ *     and a REQUIRED file field with no upload blocks submit ("This field is
+ *     required.") rather than POSTing an invalid payload.
  *
  *  2. Drawn signatures are wrapped as `{ method:'drawn', data:<png url>, signed_at }`
  *     — the PNG comes from SignaturePad (covered in SignaturePad.test.tsx); here
@@ -46,6 +44,11 @@ jest.mock('@/components/compliance/SignaturePad', () => {
 const mockToast = { success: jest.fn(), error: jest.fn(), info: jest.fn() };
 jest.mock('@/providers/ToastProvider', () => ({ useToast: () => mockToast }));
 
+// File picker — default to "cancelled" so no upload runs unless a test overrides it.
+jest.mock('expo-document-picker', () => ({
+  getDocumentAsync: jest.fn(async () => ({ canceled: true, assets: null })),
+}));
+
 // Controlled compliance type + capture mutation.
 let mockSchema: any = null;
 const mockMutate = jest.fn();
@@ -56,6 +59,7 @@ jest.mock('@/lib/queries/useCompliance', () => ({
     isError: false,
   }),
   useCaptureComplianceRecord: () => ({ mutate: mockMutate, isPending: false }),
+  useUploadComplianceRecordFile: () => ({ mutate: jest.fn(), isPending: false }),
 }));
 
 import { ComplianceCaptureSheet } from '@/components/compliance/ComplianceCaptureSheet';
@@ -86,7 +90,7 @@ beforeEach(() => {
 });
 
 describe('ComplianceCaptureSheet — file fields', () => {
-  it('renders a file field disabled with the form-link hint and submits NO value for it', async () => {
+  it('renders a file field with an upload control and submits NO value when none is picked', async () => {
     mockSchema = {
       schema_version: '1.0',
       title: 'T',
@@ -97,11 +101,10 @@ describe('ComplianceCaptureSheet — file fields', () => {
     };
     await renderSheet();
 
-    // The disabled hint is shown; no "Attach file" affordance exists.
-    expect(screen.getByText('File uploads are collected via the form link sent to the client.')).toBeTruthy();
-    expect(screen.queryByText('Attach file')).toBeNull();
+    // An upload affordance is offered (not a disabled hint).
+    expect(screen.getByText('Choose file')).toBeTruthy();
 
-    // Fill the required text field, then save.
+    // Fill the required text field, then save without picking a file.
     await act(async () => {
       fireEvent.changeText(screen.getByLabelText('Name'), 'Jane');
     });
@@ -109,12 +112,12 @@ describe('ComplianceCaptureSheet — file fields', () => {
 
     expect(mockMutate).toHaveBeenCalledTimes(1);
     const payload = mockMutate.mock.calls[0]![0];
-    // The file field contributes nothing to responses.
+    // The (optional, un-picked) file field contributes nothing to responses.
     expect('doc' in payload.responses).toBe(false);
     expect(payload.responses).toEqual({ name: 'Jane' });
   });
 
-  it('blocks submit for a REQUIRED file field and directs staff to the form link', async () => {
+  it('blocks submit for a REQUIRED file field with no uploaded file', async () => {
     mockSchema = {
       schema_version: '1.0',
       title: 'T',
@@ -125,9 +128,7 @@ describe('ComplianceCaptureSheet — file fields', () => {
     await press(() => screen.getByText('Save record'));
 
     expect(mockMutate).not.toHaveBeenCalled();
-    expect(
-      screen.getByText("File uploads can't be captured here — send the client's form link."),
-    ).toBeTruthy();
+    expect(screen.getByText('This field is required.')).toBeTruthy();
   });
 });
 

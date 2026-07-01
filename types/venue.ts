@@ -1,4 +1,5 @@
 import type { BookingPageConfig } from '@/lib/booking/bookingPageConfig';
+import type { ComplianceConfig } from '@/lib/compliance/config';
 import type { StaffRole } from '@/types/staff';
 
 export type { BookingPageConfig };
@@ -40,41 +41,14 @@ export interface WaitlistConfig {
 }
 
 /**
- * Venue-level compliance general settings, persisted on
- * `feature_flags.compliance`. Field names mirror `complianceConfigSchema` in the
- * web app exactly (`C:\Resneo/src/lib/compliance/config.ts`) so the same stored
- * sub-object round-trips through both clients.
+ * Venue-level compliance general settings, persisted on `feature_flags.compliance`.
+ * The schema + defaults live in the shared compliance config module (the single
+ * source of truth, mirroring the web `complianceConfigSchema`); re-exported here
+ * so existing `@/types/venue` import paths keep working. The retired
+ * `auto_send_on_booking` toggle is gone (moved to per-requirement online_collection).
  */
-export interface ComplianceConfig {
-  /** Default capture method pre-selected when creating a new type. */
-  default_capture_method: 'staff_in_venue' | 'client_online' | 'both';
-  /** Default channel for sending form links. */
-  default_form_link_channel: 'email' | 'sms' | 'both';
-  /** Days before a record's expiry to remind the client (0 = no reminder). */
-  reminder_cadence_days: number;
-  /** Hours before a booking the client must complete required forms. */
-  lock_period_hours: number;
-  /** Venue-level form-link expiry override (days). Per-type override still wins. */
-  form_link_expiry_days: number;
-  /** Auto-send a form link when a booking is created with an unmet online-capturable requirement. */
-  auto_send_on_booking: boolean;
-  /** Behaviour when a client arrives with an incomplete required form (v1: warn only). */
-  incomplete_behaviour: 'warn_only';
-}
-
-/**
- * Fully-defaulted compliance config (all keys present). Mirrors
- * `DEFAULT_COMPLIANCE_CONFIG` in the web app — keep the defaults in sync.
- */
-export const DEFAULT_COMPLIANCE_CONFIG: ComplianceConfig = {
-  default_capture_method: 'both',
-  default_form_link_channel: 'email',
-  reminder_cadence_days: 7,
-  lock_period_hours: 0,
-  form_link_expiry_days: 14,
-  auto_send_on_booking: false,
-  incomplete_behaviour: 'warn_only',
-};
+export type { ComplianceConfig };
+export { DEFAULT_COMPLIANCE_CONFIG } from '@/lib/compliance/config';
 
 /**
  * Raw flags stored on `venues.feature_flags`. The boolean toggles are joined by

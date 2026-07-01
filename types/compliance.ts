@@ -36,6 +36,8 @@ export interface ComplianceAwaitingRow {
 }
 
 export interface ComplianceDashboardData {
+  /** Venue-local "today" (YYYY-MM-DD) — the server's day-boundary source of truth. */
+  today?: string;
   expiring_soon: ComplianceExpiringRow[];
   missing_for_bookings: ComplianceMissingRow[];
   awaiting_submission: ComplianceAwaitingRow[];
@@ -46,12 +48,18 @@ export interface ComplianceFormLink {
   guest_id: string;
   guest_name?: string | null;
   compliance_type_id: string;
+  /** Flat name is never sent by the backend; the real name is under the nested join. */
   compliance_type_name?: string | null;
+  /** Supabase compliance_types!inner(name) join the list route returns. */
+  compliance_types?: import('./booking-compliance').ComplianceJoinedType;
   status?: string;
   sent_via?: string | null;
   sent_at?: string | null;
   expires_at?: string | null;
   created_at?: string;
+  /** How many reminders have been sent for this link, and when the last one went out. */
+  reminder_count?: number | null;
+  last_reminded_at?: string | null;
 }
 
 export interface ComplianceFormLinksResponse {
@@ -131,7 +139,10 @@ export interface ComplianceRecordDetail {
   capture_channel: string;
   captured_by_staff_id: string | null;
   responses: Record<string, unknown>;
-  compliance_types?: { name?: string; category?: string } | { name?: string; category?: string }[] | null;
+  compliance_types?:
+    | { name?: string; category?: string; result_type?: string }
+    | { name?: string; category?: string; result_type?: string }[]
+    | null;
 }
 
 export interface ComplianceRecordDetailResponse {

@@ -187,6 +187,10 @@ export function validateFormSchemaForType(
         errors.push('The result field referenced by result_mapping must be a select field.');
       } else if (!mapped.staff_only) {
         errors.push('The pass/fail result field must be marked staff_only.');
+      } else if (!mapped.required) {
+        // audit M7: an optional result field can be left blank, which would otherwise let a
+        // record with no pass/fail decision satisfy a booking (see audit H4).
+        errors.push('The pass/fail result field must be marked required so a decision is always recorded.');
       } else {
         const optionValues = new Set(mapped.options.map((o) => o.value));
         const declared = [...mapping.pass_values, ...mapping.fail_values];
@@ -231,10 +235,11 @@ export interface SignatureResponse {
 
 /**
  * An uploaded-file answer (mirrors the web `FileResponse`). `storage_path` is
- * REQUIRED — it can only be produced by a server upload, and the only upload
- * endpoint is the public, code-scoped form. Staff capture therefore cannot
- * synthesise a valid file response; the capture sheet renders `file` fields
- * disabled and directs staff to the client's form link instead.
+ * REQUIRED and is produced by a server upload: the staff capture sheet uploads via
+ * POST /api/venue/compliance/records/upload (useUploadComplianceRecordFile) and
+ * stores the returned FileResponse. That venue route serves both staff and
+ * hand-to-client capture (mirrors the web upload flow); the public code-scoped
+ * form is the client's separate path.
  */
 export interface FileResponse {
   storage_path: string;

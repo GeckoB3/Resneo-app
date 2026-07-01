@@ -1,3 +1,4 @@
+import * as DocumentPicker from 'expo-document-picker';
 import { useState } from 'react';
 import {
   Platform,
@@ -18,19 +19,24 @@ import { ApiError } from '@/lib/api/client';
 import { renderInlineMarkdown } from '@/lib/compliance/markdown';
 import {
   seedDefaultResponses,
+  type FileResponse,
   type SignatureResponse,
 } from '@/lib/compliance/form-schema';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
-import { useCaptureComplianceRecord, useComplianceType } from '@/lib/queries/useCompliance';
+import {
+  useCaptureComplianceRecord,
+  useComplianceType,
+  useUploadComplianceRecordFile,
+} from '@/lib/queries/useCompliance';
 import { useToast } from '@/providers/ToastProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { ComplianceFormField } from '@/types/compliance';
 
-type CaptureChannel = 'staff_web' | 'client_walkin';
+type CaptureChannel = 'staff_mobile' | 'client_walkin';
 
 const CHANNEL_OPTIONS: { value: CaptureChannel; label: string }[] = [
-  { value: 'staff_web', label: 'Staff entering' },
+  { value: 'staff_mobile', label: 'Staff entering' },
   { value: 'client_walkin', label: 'Client device' },
 ];
 
@@ -155,7 +161,7 @@ function FieldInput({
   }
 
   if (field.type === 'file') {
-    return <FileFieldInput field={field} />;
+    return <FileFieldInput field={field} value={value} onChange={onChange} />;
   }
 
   if (field.type === 'date') {
@@ -190,6 +196,7 @@ function FieldInput({
         placeholderTextColor={colors.textMuted}
         multiline={isMultiline}
         numberOfLines={isMultiline ? 3 : 1}
+        maxLength={field.max_length}
         style={[
           styles.textInput,
           isMultiline && styles.textArea,
@@ -265,30 +272,84 @@ function SignatureFieldInput({
   );
 }
 
+const MAX_FILE_BYTES = 10 * 1024 * 1024;
+const ALLOWED_FILE_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/heic', 'image/webp'];
+
 /**
- * File field — DISABLED in staff capture (web parity with FormRenderer's FileField,
- * which is disabled whenever no upload URL is available). A valid file response
- * needs a server `storage_path`, and the only upload endpoint is the public,
- * code-scoped form — so staff cannot attach files here. We render a disabled
- * control with a hint pointing at the client's form link and emit NO value.
+ * File field — staff pick a PDF or image and upload it to the staff records/upload
+ * endpoint, which returns a FileResponse we store as this field's answer. Enforces
+ * a 10MB client-side cap (the server re-validates MIME + size).
  */
-function FileFieldInput({ field }: { field: ComplianceFormField }) {
+function FileFieldInput({
+  field,
+  value,
+  onChange,
+}: {
+  field: ComplianceFormField;
+  value: unknown;
+  onChange: (val: unknown) => void;
+}) {
   const { colors } = useTheme();
+  const toast = useToast();
+  const upload = useUploadComplianceRecordFile();
+  const current = value && typeof value === 'object' ? (value as FileResponse) : null;
+
+  async function pick() {
+    let res: Awaited<ReturnType<typeof DocumentPicker.getDocumentAsync>>;
+    try {
+      res = await DocumentPicker.getDocumentAsync({
+        type: ALLOWED_FILE_TYPES,
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+    } catch {
+      toast.error('Could not open the file picker. Please try again.');
+      return;
+    }
+    if (res.canceled) return;
+    const asset = res.assets?.[0];
+    if (!asset) return;
+    if (typeof asset.size === 'number' && asset.size > MAX_FILE_BYTES) {
+      toast.error('Files must be 10MB or smaller.');
+      return;
+    }
+    upload.mutate(
+      {
+        uri: asset.uri,
+        name: asset.name ?? 'upload',
+        mimeType: asset.mimeType ?? 'application/octet-stream',
+      },
+      {
+        onSuccess: (fileResponse) => onChange(fileResponse),
+        onError: (error) =>
+          toast.error(error instanceof ApiError ? error.message : 'Could not upload the file.'),
+      },
+    );
+  }
 
   return (
     <View style={styles.fieldRow}>
       <FieldHeader field={field} />
-      <View
-        accessibilityLabel={`${field.label} — file upload`}
-        accessibilityState={{ disabled: true }}
-        style={[
-          styles.fileDisabled,
-          { backgroundColor: colors.surface, borderColor: colors.border, opacity: 0.6 },
-        ]}>
-        <Text variant="bodySmall" tone="muted">
-          File uploads are collected via the form link sent to the client.
-        </Text>
-      </View>
+      {current ? (
+        <View style={[styles.fileChosen, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <Text variant="bodySmall" numberOfLines={1} style={styles.fileName}>
+            {current.file_name}
+          </Text>
+          <Button label="Remove" variant="ghost" size="sm" onPress={() => onChange(undefined)} />
+        </View>
+      ) : (
+        <Button
+          label={upload.isPending ? 'Uploading…' : 'Choose file'}
+          variant="secondary"
+          size="sm"
+          loading={upload.isPending}
+          onPress={pick}
+          style={styles.fileChooseBtn}
+        />
+      )}
+      <Text variant="caption" tone="muted">
+        PDF or image, up to 10MB.
+      </Text>
     </View>
   );
 }
@@ -298,15 +359,14 @@ function FileFieldInput({ field }: { field: ComplianceFormField }) {
  * form schema, renders each field, and POSTs to /api/venue/compliance/records.
  *
  * Supports two capture channels:
- *  - staff_web     → staff enters details (all fields including staff-only)
+ *  - staff_mobile  → staff enters details (all fields including staff-only)
  *  - client_walkin → client self-completes on a venue device (staff-only fields hidden)
  *
  * Capture fidelity matches the web FormRenderer: drawn signatures emit a base64
  * PNG data URL and typed signatures emit `{ method, data, signed_at }`, date
  * fields use the native picker (YYYY-MM-DD), and the schema's description / intro
- * markdown / help text + default values are honoured. `file` fields are rendered
- * disabled (web parity) — uploads are only possible via the client's public form
- * link, so staff are directed there rather than capturing files in-sheet.
+ * markdown / help text + default values are honoured. `file` fields let staff pick
+ * and upload a document (PDF or image) via the staff upload endpoint.
  */
 export function ComplianceCaptureSheet({
   visible,
@@ -315,7 +375,7 @@ export function ComplianceCaptureSheet({
   complianceTypeId,
   complianceTypeName,
   bookingId,
-  initialChannel = 'staff_web',
+  initialChannel = 'staff_mobile',
   onCaptured,
 }: Props) {
   const { colors } = useTheme();
@@ -349,13 +409,6 @@ export function ComplianceCaptureSheet({
     const errors: Record<string, string> = {};
     for (const field of visibleFields) {
       if (!field.required) continue;
-      // File uploads can only be captured via the public form (no staff upload
-      // endpoint). A required file field is never satisfiable here, so direct
-      // staff to the client's form link rather than letting submit 400.
-      if (field.type === 'file') {
-        errors[field.id] = "File uploads can't be captured here — send the client's form link.";
-        continue;
-      }
       const val = responses[field.id];
       const isEmpty =
         val == null ||
@@ -598,11 +651,22 @@ const styles = StyleSheet.create({
   chipBtn: {
     marginRight: spacing.sm,
   },
-  fileDisabled: {
+  fileChosen: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
     borderWidth: 1,
     borderRadius: radius.md,
     paddingHorizontal: spacing.base,
-    paddingVertical: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  fileName: {
+    flex: 1,
+    minWidth: 0,
+  },
+  fileChooseBtn: {
+    alignSelf: 'flex-start',
   },
   fieldError: {
     marginTop: spacing.xs,

@@ -3,9 +3,11 @@ import { Platform, StyleSheet, Switch, TextInput, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
 import { Chip } from '@/components/ui/Chip';
+import { DatePickerField } from '@/components/ui/DatePickerField';
 import { Dot } from '@/components/ui/Dot';
 import { IconButton } from '@/components/ui/IconButton';
 import { Input } from '@/components/ui/Input';
+import { Segmented } from '@/components/ui/Segmented';
 import { Text } from '@/components/ui/Text';
 import {
   COMPLIANCE_FIELD_TYPES,
@@ -21,6 +23,18 @@ import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
 import { FIELD_TYPE_LABELS } from './complianceTypeLabels';
+
+type DateDefaultMode = 'none' | 'today' | 'specific';
+const DATE_DEFAULT_OPTIONS: { value: DateDefaultMode; label: string }[] = [
+  { value: 'none', label: 'None' },
+  { value: 'today', label: 'Today' },
+  { value: 'specific', label: 'Specific' },
+];
+
+/** Today as YYYY-MM-DD. */
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 
 type Props = {
   state: FieldBuilderState;
@@ -180,6 +194,20 @@ function FieldCard({
         autoCapitalize="sentences"
       />
 
+      <Input
+        label="Help text (optional)"
+        value={field.help_text ?? ''}
+        onChangeText={(v) =>
+          dispatch({
+            type: 'updateField',
+            id: field.id,
+            patch: { help_text: v.trim() ? v : undefined },
+          })
+        }
+        placeholder="Guidance shown under the question"
+        autoCapitalize="sentences"
+      />
+
       <View style={styles.toggleRow}>
         <View style={styles.toggle}>
           <Text variant="bodySmall">Required</Text>
@@ -202,8 +230,141 @@ function FieldCard({
       </View>
 
       {hasOptions ? <OptionsEditor field={field} dispatch={dispatch} /> : null}
+      <FieldExtras field={field} dispatch={dispatch} />
     </View>
   );
+}
+
+/**
+ * Per-field extras that depend on the field type: character limit + default value
+ * for text/textarea, a default selection for select/multiselect, and a default
+ * date (none / today / specific) for date. Signature/file have none. The schema +
+ * capture sheet already consume these; this surfaces them in the builder.
+ */
+function FieldExtras({
+  field,
+  dispatch,
+}: {
+  field: ComplianceField;
+  dispatch: Dispatch<FieldBuilderAction>;
+}) {
+  const patch = (p: Partial<ComplianceField>) =>
+    dispatch({ type: 'updateField', id: field.id, patch: p });
+
+  if (field.type === 'text' || field.type === 'textarea') {
+    return (
+      <View style={styles.block}>
+        <Input
+          label="Character limit (optional)"
+          value={field.max_length != null ? String(field.max_length) : ''}
+          onChangeText={(t) => {
+            const n = Number(t.trim());
+            patch({
+              max_length:
+                t.trim() === '' || !Number.isFinite(n)
+                  ? undefined
+                  : Math.max(1, Math.min(10_000, Math.round(n))),
+            });
+          }}
+          keyboardType="number-pad"
+          placeholder="No limit"
+        />
+        <Input
+          label="Default value (optional)"
+          value={typeof field.default_value === 'string' ? field.default_value : ''}
+          onChangeText={(v) => patch({ default_value: v.trim() ? v : undefined })}
+          autoCapitalize="sentences"
+        />
+      </View>
+    );
+  }
+
+  if (field.type === 'select') {
+    return (
+      <View style={styles.block}>
+        <Text variant="caption" tone="muted">
+          Default selection (optional)
+        </Text>
+        <View style={styles.chipWrap}>
+          {field.options.map((o) => (
+            <Chip
+              key={o.value}
+              label={o.label}
+              selected={field.default_value === o.value}
+              onPress={() =>
+                patch({ default_value: field.default_value === o.value ? undefined : o.value })
+              }
+            />
+          ))}
+        </View>
+      </View>
+    );
+  }
+
+  if (field.type === 'multiselect') {
+    const selected = Array.isArray(field.default_value) ? field.default_value : [];
+    return (
+      <View style={styles.block}>
+        <Text variant="caption" tone="muted">
+          Default selections (optional)
+        </Text>
+        <View style={styles.chipWrap}>
+          {field.options.map((o) => {
+            const isSel = selected.includes(o.value);
+            return (
+              <Chip
+                key={o.value}
+                label={o.label}
+                selected={isSel}
+                onPress={() => {
+                  const next = isSel
+                    ? selected.filter((v) => v !== o.value)
+                    : [...selected, o.value];
+                  patch({ default_value: next.length ? next : undefined });
+                }}
+              />
+            );
+          })}
+        </View>
+      </View>
+    );
+  }
+
+  if (field.type === 'date') {
+    const specific =
+      typeof field.default_value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(field.default_value)
+        ? field.default_value
+        : null;
+    const mode: DateDefaultMode =
+      field.default_value === 'today' ? 'today' : specific ? 'specific' : 'none';
+    return (
+      <View style={styles.block}>
+        <Text variant="caption" tone="muted">
+          Default date (optional)
+        </Text>
+        <Segmented
+          options={DATE_DEFAULT_OPTIONS}
+          value={mode}
+          onChange={(m) =>
+            patch({
+              default_value:
+                m === 'today' ? 'today' : m === 'specific' ? specific ?? todayIso() : undefined,
+            })
+          }
+        />
+        {mode === 'specific' ? (
+          <DatePickerField
+            value={specific ?? todayIso()}
+            onChange={(iso) => patch({ default_value: iso })}
+            accessibilityLabel="Default date"
+          />
+        ) : null}
+      </View>
+    );
+  }
+
+  // signature, file: no extra settings.
+  return null;
 }
 
 function OptionsEditor({

@@ -1,5 +1,7 @@
 # Compliance (forms, records, expiries) — parity ~35%
 
+> ⚠️ **SUPERSEDED (2026-07-01) — do not trust for current state.** This brief predates the R5–R7 compliance build. The app now ships in-venue capture, record view/void, the today's check-in panel, guest audit trail, booking-flag badges, type authoring + mobile field builder, per-service requirements editor, general settings, and library clone. The "~35%" figure is materially wrong. See **`Docs/APP_GAP_REPORT_R8_COMPLIANCE.md`** for the current (2026-07-01, web `origin/main 1a237cd4`) end-to-end audit.
+
 ## App files
 - C:\Resneo-app\app\(app)\manage\compliance.tsx
 - C:\Resneo-app\components\bookings\ComplianceCard.tsx

@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
+import type { FileResponse } from '@/lib/compliance/form-schema';
 import { isBackendConfigured } from '@/lib/env';
 import { keyScope, queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
@@ -158,6 +159,50 @@ export function useVoidComplianceRecord() {
   });
 }
 
+/**
+ * PATCH /api/venue/compliance/records/[id] — record a staff pass/fail decision on
+ * an undecided pass_fail record (and/or edit notes). The server 400s a `result` on
+ * a non-pass_fail type; surface the error to the caller.
+ */
+export function useUpdateComplianceRecord() {
+  const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: {
+      recordId: string;
+      result?: 'pass' | 'fail' | 'inconclusive';
+      notes?: string | null;
+    }): Promise<{ record: { id: string } }> => {
+      if (!accessToken) {
+        throw new Error('Missing access token');
+      }
+      const { recordId, ...patch } = input;
+      return apiFetch<{ record: { id: string } }>(
+        `/api/venue/compliance/records/${recordId}`,
+        { accessToken, method: 'PATCH', body: JSON.stringify(patch) },
+      );
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.compliance.all() });
+    },
+  });
+}
+
+/**
+ * capture_channel values the backend accepts (mirrors COMPLIANCE_CAPTURE_CHANNELS
+ * in the web app). The app sends `staff_mobile` for staff entry and
+ * `client_walkin` when handing the device to the client.
+ */
+export type ComplianceCaptureChannel =
+  | 'staff_web'
+  | 'staff_mobile'
+  | 'client_email'
+  | 'client_sms'
+  | 'client_walkin'
+  | 'client_booking'
+  | 'import';
+
 /** POST /api/venue/compliance/records — capture a compliance record in-venue. */
 export function useCaptureComplianceRecord() {
   const accessToken = useAccessToken();
@@ -168,7 +213,7 @@ export function useCaptureComplianceRecord() {
       guest_id: string;
       compliance_type_id: string;
       booking_id?: string | null;
-      capture_channel: 'staff_web' | 'client_walkin';
+      capture_channel: ComplianceCaptureChannel;
       responses: Record<string, unknown>;
       notes?: string | null;
     }): Promise<{ record: { id: string } }> => {
@@ -187,13 +232,74 @@ export function useCaptureComplianceRecord() {
   });
 }
 
+/**
+ * POST /api/venue/compliance/records/upload — staff upload of a `file`-field
+ * document while capturing a record in venue (multipart). Returns the FileResponse
+ * the capture sheet stores as that field's answer. apiFetch lets the platform set
+ * the multipart boundary for a FormData body.
+ */
+export function useUploadComplianceRecordFile() {
+  const accessToken = useAccessToken();
+
+  return useMutation({
+    mutationFn: async (file: {
+      uri: string;
+      name: string;
+      mimeType: string;
+    }): Promise<FileResponse> => {
+      if (!accessToken) {
+        throw new Error('Missing access token');
+      }
+      const form = new FormData();
+      // React Native FormData file part ({ uri, name, type }).
+      form.append('file', {
+        uri: file.uri,
+        name: file.name,
+        type: file.mimeType,
+      } as unknown as Blob);
+      return apiFetch<FileResponse>('/api/venue/compliance/records/upload', {
+        accessToken,
+        method: 'POST',
+        body: form,
+      });
+    },
+  });
+}
+
+/**
+ * GET /api/venue/compliance/records/[id]/file?field=… — a short-lived (120s) signed
+ * URL for a captured signature or uploaded file. Fetched on demand (per tap) because
+ * the URL expires quickly and the compliance-files bucket is private.
+ */
+export function useComplianceRecordFile() {
+  const accessToken = useAccessToken();
+
+  return useMutation({
+    mutationFn: async (input: {
+      recordId: string;
+      fieldId: string;
+    }): Promise<{ url: string; expires_in: number; file_name: string | null }> => {
+      if (!accessToken) {
+        throw new Error('Missing access token');
+      }
+      return apiFetch<{ url: string; expires_in: number; file_name: string | null }>(
+        `/api/venue/compliance/records/${input.recordId}/file?field=${encodeURIComponent(input.fieldId)}`,
+        { accessToken },
+      );
+    },
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Booking-flags hook
 // ---------------------------------------------------------------------------
 
 export interface ComplianceBookingFlag {
-  state: 'missing' | 'expired' | 'expiring_soon' | 'satisfied';
+  /** `unmet` = at least one required record is missing/expired; `satisfied` = all on file. */
+  state: 'satisfied' | 'unmet';
+  /** True when an unmet requirement blocks booking (block_online / block_all). */
   blocking: boolean;
+  /** Type names: the unmet ones when `unmet`, otherwise all required types (for the label/tooltip). */
   labels: string[];
 }
 

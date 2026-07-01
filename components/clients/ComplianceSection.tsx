@@ -2,12 +2,21 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ComplianceRecordSheet } from '@/components/compliance/ComplianceRecordSheet';
+import { auditEventLabel, RESULT_LABELS } from '@/components/compliance/complianceTypeLabels';
 import { Badge, type BadgeTone } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
 import { CollapsibleCard } from '@/components/ui/CollapsibleCard';
 import { Text } from '@/components/ui/Text';
+import { ApiError } from '@/lib/api/client';
+import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { minTouchTarget, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
-import { useGuestCompliance } from '@/lib/queries/useCompliance';
+import {
+  useGuestCompliance,
+  useResendFormLink,
+  useRevokeFormLink,
+} from '@/lib/queries/useCompliance';
+import { useToast } from '@/providers/ToastProvider';
 import {
   complianceJoinedTypeName,
   type ComplianceRecordRow,
@@ -40,31 +49,6 @@ function formatComplianceDate(iso: string | null | undefined): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '—';
   return d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
-}
-
-/** Audit event type → human label (mirrors web's AUDIT_EVENT_LABELS). */
-const AUDIT_EVENT_LABELS: Record<string, string> = {
-  'record.captured': 'Record captured',
-  'record.updated': 'Record updated',
-  'record.voided': 'Record voided',
-  'record.viewed': 'Record viewed',
-  'link.issued': 'Form link issued',
-  'link.sent': 'Form link sent',
-  'link.consumed': 'Form submitted',
-  'link.expired': 'Form link expired',
-  'link.revoked': 'Form link revoked',
-  'type.created': 'Type created',
-  'type.updated': 'Type updated',
-  'type.archived': 'Type archived',
-  'type.restored': 'Type restored',
-  'version.created': 'New form version',
-  'requirement.added': 'Requirement added',
-  'requirement.removed': 'Requirement removed',
-  'requirement.updated': 'Requirement updated',
-};
-
-function auditEventLabel(eventType: string): string {
-  return AUDIT_EVENT_LABELS[eventType] ?? eventType;
 }
 
 /** Collapsible audit trail — mirrors the web's `<details>` element. */
@@ -124,14 +108,58 @@ function AuditTrail({ events }: { events: ComplianceAuditEvent[] }) {
  * The caller gates rendering on the `compliance_records_enabled` feature flag.
  */
 export function ComplianceSection({ guestId }: ComplianceSectionProps) {
+  const { colors } = useTheme();
+  const toast = useToast();
   const guestQuery = useGuestCompliance(guestId);
+  const resendLink = useResendFormLink();
+  const revokeLink = useRevokeFormLink();
   const [viewRecordId, setViewRecordId] = useState<string | null>(null);
+  const [busyLinkId, setBusyLinkId] = useState<string | null>(null);
 
   // Plan-gated (402/403) → the route returns null; hide the section entirely.
   if (guestQuery.data === null) return null;
 
   const records: ComplianceRecordRow[] = guestQuery.data?.records ?? [];
   const auditEvents = guestQuery.data?.audit_events ?? [];
+  // Pending (not-yet-completed) form links the guest still needs to fill.
+  const pendingLinks = (guestQuery.data?.form_links ?? []).filter((l) => l.status === 'pending');
+
+  function resend(id: string, sendVia: 'email' | 'sms') {
+    setBusyLinkId(id);
+    resendLink.mutate(
+      { id, send_via: sendVia },
+      {
+        onSuccess: () => {
+          setBusyLinkId(null);
+          hapticSuccess();
+          toast.success('Form link resent.');
+          void guestQuery.refetch();
+        },
+        onError: (e) => {
+          setBusyLinkId(null);
+          hapticWarning();
+          toast.error(e instanceof ApiError ? e.message : 'Could not resend the link.');
+        },
+      },
+    );
+  }
+
+  function revoke(id: string) {
+    setBusyLinkId(id);
+    revokeLink.mutate(id, {
+      onSuccess: () => {
+        setBusyLinkId(null);
+        hapticSuccess();
+        toast.success('Form link revoked.');
+        void guestQuery.refetch();
+      },
+      onError: (e) => {
+        setBusyLinkId(null);
+        hapticWarning();
+        toast.error(e instanceof ApiError ? e.message : 'Could not revoke the link.');
+      },
+    });
+  }
 
   const summary = guestQuery.isError
     ? null
@@ -152,6 +180,61 @@ export function ComplianceSection({ guestId }: ComplianceSectionProps) {
           </Text>
         ) : (
           <>
+            {pendingLinks.length > 0 ? (
+              <View style={styles.linksBlock}>
+                <Text variant="caption" tone="muted">
+                  Awaiting client
+                </Text>
+                {pendingLinks.map((link) => (
+                  <View
+                    key={link.id}
+                    style={[
+                      styles.linkRow,
+                      { borderColor: colors.border, backgroundColor: colors.surface },
+                    ]}>
+                    <View style={styles.linkText}>
+                      <Text variant="bodySmall" numberOfLines={1}>
+                        {complianceJoinedTypeName(link.compliance_types)}
+                      </Text>
+                      <Text variant="caption" tone="muted">
+                        {link.sent_via ? `Sent by ${link.sent_via}` : 'Not yet sent'}
+                        {link.expires_at ? ` · Expires ${formatComplianceDate(link.expires_at)}` : ''}
+                        {link.reminder_count
+                          ? ` · Reminded ${link.reminder_count} time${link.reminder_count === 1 ? '' : 's'}`
+                          : ''}
+                      </Text>
+                      <Badge label="Awaiting completion" tone="warning" />
+                    </View>
+                    <View style={styles.linkActions}>
+                      <Button
+                        label="Email"
+                        variant="ghost"
+                        size="sm"
+                        disabled={busyLinkId !== null}
+                        loading={busyLinkId === link.id && resendLink.isPending}
+                        onPress={() => resend(link.id, 'email')}
+                      />
+                      <Button
+                        label="SMS"
+                        variant="ghost"
+                        size="sm"
+                        disabled={busyLinkId !== null}
+                        onPress={() => resend(link.id, 'sms')}
+                      />
+                      <Button
+                        label="Revoke"
+                        variant="ghost"
+                        size="sm"
+                        disabled={busyLinkId !== null}
+                        customColors={{ background: 'transparent', text: colors.danger }}
+                        onPress={() => revoke(link.id)}
+                      />
+                    </View>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+
             {records.length === 0 ? (
               <Text variant="bodySmall" tone="muted">
                 No compliance records on file for this guest yet.
@@ -180,10 +263,15 @@ export function ComplianceSection({ guestId }: ComplianceSectionProps) {
                             ? // eslint-disable-next-line react-hooks/purity -- Date.now() intentionally checks expiry at render time
                               ` · ${new Date(rec.expires_at).getTime() <= Date.now() ? 'Expired' : 'Expires'} ${formatComplianceDate(rec.expires_at)}`
                             : ''}
-                          {rec.result ? ` · ${rec.result}` : ''}
+                          {rec.result ? ` · ${RESULT_LABELS[rec.result] ?? rec.result}` : ''}
                         </Text>
                       </View>
-                      <Badge label={pill.label} tone={pill.tone} />
+                      <View style={styles.recordBadges}>
+                        {rec.status === 'completed' && rec.result == null ? (
+                          <Badge label="Awaiting decision" tone="warning" />
+                        ) : null}
+                        <Badge label={pill.label} tone={pill.tone} />
+                      </View>
                     </Pressable>
                   );
                 })}
@@ -227,6 +315,30 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     gap: 1,
+  },
+  recordBadges: {
+    alignItems: 'flex-end',
+    gap: 2,
+    flexShrink: 0,
+  },
+  linksBlock: {
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  linkRow: {
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  linkText: {
+    gap: spacing.xs,
+    alignItems: 'flex-start',
+  },
+  linkActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
   },
   // Audit trail
   auditContainer: {

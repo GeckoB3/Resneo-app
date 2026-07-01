@@ -2,6 +2,7 @@ import { SymbolView } from 'expo-symbols';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
+import { ComplianceWarningNotice } from '@/components/compliance/ComplianceWarningNotice';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Segmented } from '@/components/ui/Segmented';
@@ -10,7 +11,12 @@ import { PressableScale } from '@/components/ui/PressableScale';
 import { ApiError } from '@/lib/api/client';
 import { formatPence } from '@/lib/format';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
-import { useCreateBooking, type CreateBookingPayload } from '@/lib/queries/useCreateBooking';
+import {
+  useCreateBooking,
+  type ComplianceBookingWarning,
+  type CreateBookingPayload,
+} from '@/lib/queries/useCreateBooking';
+import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { fonts, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
@@ -157,6 +163,7 @@ interface Confirmation {
   payment_url?: string;
   requires_deposit?: boolean;
   deposit_amount_pence?: number;
+  compliance_warnings?: ComplianceBookingWarning[];
 }
 
 const money = (pence: number): string => formatPence(pence) ?? '—';
@@ -190,6 +197,7 @@ export function BookingFlowConfirm({
 }: BookingFlowConfirmProps) {
   const { colors } = useTheme();
   const createBooking = useCreateBooking();
+  const isAdmin = useStaffMe().data?.staff?.role === 'admin';
   // Controlled when the flow passes source/onSourceChange (it then renders the
   // selector itself, e.g. on the guest step); otherwise own the state here.
   const [internalSource, setInternalSource] = useState<'phone' | 'walk-in'>(initialSource);
@@ -215,6 +223,7 @@ export function BookingFlowConfirm({
           payment_url: response.payment_url,
           requires_deposit: response.requires_deposit,
           deposit_amount_pence: response.deposit_amount_pence,
+          compliance_warnings: response.compliance_warnings,
         });
       },
       onError: (error) => {
@@ -279,6 +288,8 @@ export function BookingFlowConfirm({
             </View>
           ) : null}
         </Card>
+
+        <ComplianceWarningNotice warnings={confirmation.compliance_warnings} />
 
         <View style={styles.actions}>
           <Button label="View booking" fullWidth onPress={() => onCreated(confirmation.booking_id)} />
@@ -381,13 +392,19 @@ export function BookingFlowConfirm({
           <Text variant="bodySmall" tone="danger">
             {complianceError}
           </Text>
-          <Button
-            label="Book anyway (admin override)"
-            variant="secondary"
-            fullWidth
-            onPress={() => submit(true)}
-            loading={createBooking.isPending}
-          />
+          {isAdmin ? (
+            <Button
+              label="Book anyway (admin override)"
+              variant="secondary"
+              fullWidth
+              onPress={() => submit(true)}
+              loading={createBooking.isPending}
+            />
+          ) : (
+            <Text variant="caption" tone="muted">
+              Ask an admin to override, or collect the required record or send the form first.
+            </Text>
+          )}
         </View>
       ) : null}
 
