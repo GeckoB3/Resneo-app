@@ -34,6 +34,12 @@ type Props = {
   serviceId: string;
   /** Whether compliance is enabled for the venue — hides the whole card if not. */
   complianceEnabled: boolean;
+  /**
+   * Render without the SectionCard chrome — used when the editor already sits
+   * inside a card (the per-service accordion in Compliance settings, mirroring
+   * the web RequirementsPanel).
+   */
+  embedded?: boolean;
 };
 
 /** A type can be completed by clients online only when `client_online` is a capture method. */
@@ -57,10 +63,11 @@ function parseLeadTime(raw: string): number | null {
  * `ComplianceRequirementsEditor`. Lists a service's required compliance types and
  * lets an admin add one (POST /requirements), change its enforcement, lead time
  * (lock_period_hours) and online-collection mode (PATCH), and remove it (DELETE).
- * Rendered inside the service editor (admin-only, edit-mode) and hidden entirely
+ * Rendered inside the service editor (admin-only, edit-mode) and in the
+ * Compliance settings Service requirements panel (`embedded`); hidden entirely
  * when compliance is off for the venue.
  */
-export function ComplianceRequirementsEditor({ serviceId, complianceEnabled }: Props) {
+export function ComplianceRequirementsEditor({ serviceId, complianceEnabled, embedded }: Props) {
   const { colors } = useTheme();
   const toast = useToast();
 
@@ -130,26 +137,20 @@ export function ComplianceRequirementsEditor({ serviceId, complianceEnabled }: P
     });
   }
 
-  return (
-    <SectionCard>
-      <SectionCard.Header
-        eyebrow="Compliance"
-        title="Compliance requirements"
-        description="Records this service needs before a booking. Missing or expired records warn or block at booking time."
-        right={
-          allTypes.length > 0 ? (
-            <Button
-              label="Add"
-              variant="secondary"
-              size="sm"
-              disabled={availableTypes.length === 0}
-              onPress={() => setAdding(true)}
-            />
-          ) : undefined
-        }
+  const addButton =
+    allTypes.length > 0 ? (
+      <Button
+        label="Add"
+        variant="secondary"
+        size="sm"
+        disabled={availableTypes.length === 0}
+        onPress={() => setAdding(true)}
       />
-      <SectionCard.Body style={styles.body}>
-        {reqs.isError ? (
+    ) : undefined;
+
+  const body = (
+    <>
+      {reqs.isError ? (
           <Text variant="bodySmall" tone="danger">
             {reqs.error instanceof ApiError ? reqs.error.message : 'Could not load requirements.'}
           </Text>
@@ -276,38 +277,62 @@ export function ComplianceRequirementsEditor({ serviceId, complianceEnabled }: P
             })}
           </View>
         )}
-      </SectionCard.Body>
+    </>
+  );
 
-      <AddRequirementSheet
-        visible={adding}
-        onClose={() => setAdding(false)}
-        availableTypes={availableTypes}
-        submitting={addReq.isPending}
-        onAdd={(input) => {
-          addReq.mutate(
-            {
-              service_id: serviceId,
-              compliance_type_id: input.typeId,
-              enforcement: input.enforcement,
-              lock_period_hours: input.lockPeriodHours,
-              online_collection: input.onlineCollection,
+  const sheet = (
+    <AddRequirementSheet
+      visible={adding}
+      onClose={() => setAdding(false)}
+      availableTypes={availableTypes}
+      submitting={addReq.isPending}
+      onAdd={(input) => {
+        addReq.mutate(
+          {
+            service_id: serviceId,
+            compliance_type_id: input.typeId,
+            enforcement: input.enforcement,
+            lock_period_hours: input.lockPeriodHours,
+            online_collection: input.onlineCollection,
+          },
+          {
+            onSuccess: () => {
+              hapticSuccess();
+              toast.success('Requirement added.');
+              setAdding(false);
             },
-            {
-              onSuccess: () => {
-                hapticSuccess();
-                toast.success('Requirement added.');
-                setAdding(false);
-              },
-              onError: (error) => {
-                hapticWarning();
-                toast.error(
-                  error instanceof ApiError ? error.message : 'Could not add requirement.',
-                );
-              },
+            onError: (error) => {
+              hapticWarning();
+              toast.error(
+                error instanceof ApiError ? error.message : 'Could not add requirement.',
+              );
             },
-          );
-        }}
+          },
+        );
+      }}
+    />
+  );
+
+  if (embedded) {
+    return (
+      <View style={styles.body}>
+        {addButton ? <View style={styles.embeddedActions}>{addButton}</View> : null}
+        {body}
+        {sheet}
+      </View>
+    );
+  }
+
+  return (
+    <SectionCard>
+      <SectionCard.Header
+        eyebrow="Compliance"
+        title="Compliance requirements"
+        description="Records this service needs before a booking. Missing or expired records warn or block at booking time."
+        right={addButton}
       />
+      <SectionCard.Body style={styles.body}>{body}</SectionCard.Body>
+      {sheet}
     </SectionCard>
   );
 }
@@ -510,6 +535,10 @@ function AddRequirementSheet({
 const styles = StyleSheet.create({
   body: {
     gap: spacing.md,
+  },
+  embeddedActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
   },
   list: {
     gap: spacing.md,
