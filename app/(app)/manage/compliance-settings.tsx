@@ -1,6 +1,6 @@
 import { Stack } from 'expo-router';
 import { useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Switch, View } from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -31,7 +31,6 @@ const CAPTURE_METHOD_OPTIONS: { value: CaptureMethod; label: string }[] = [
 const LINK_CHANNEL_OPTIONS: { value: LinkChannel; label: string }[] = [
   { value: 'email', label: 'Email' },
   { value: 'sms', label: 'SMS' },
-  { value: 'both', label: 'Both' },
 ];
 
 /** Clamp a parsed numeric input to a range; empty/invalid falls back to `fallback`. */
@@ -44,8 +43,8 @@ function clampInt(text: string, min: number, max: number, fallback: number): num
 /**
  * Compliance general settings — the venue-level defaults stored on
  * `feature_flags.compliance` (spec §3.3). Reads `useFeatureFlags().raw.compliance`
- * (defaulting to DEFAULT_COMPLIANCE_CONFIG), renders the seven controls, and
- * saves via `useUpdateFeatureFlags()` with `{ compliance_records_enabled, compliance }`.
+ * (defaulting to DEFAULT_COMPLIANCE_CONFIG), renders the controls, and saves via
+ * `useUpdateFeatureFlags()` with `{ compliance_records_enabled, compliance }`.
  * Admin-only.
  */
 export default function ComplianceSettingsScreen() {
@@ -66,7 +65,6 @@ export default function ComplianceSettingsScreen() {
   const [reminderDays, setReminderDays] = useState(String(DEFAULT_COMPLIANCE_CONFIG.reminder_cadence_days));
   const [expiryDays, setExpiryDays] = useState(String(DEFAULT_COMPLIANCE_CONFIG.form_link_expiry_days));
   const [lockHours, setLockHours] = useState(String(DEFAULT_COMPLIANCE_CONFIG.lock_period_hours));
-  const [autoSend, setAutoSend] = useState(DEFAULT_COMPLIANCE_CONFIG.auto_send_on_booking);
 
   // Hydrate once from the stored config (render-time guard, no effect/loop).
   const recordsEnabled = flags.data?.resolved?.compliance_records_enabled ?? false;
@@ -77,7 +75,6 @@ export default function ComplianceSettingsScreen() {
     setReminderDays(String(cfg.reminder_cadence_days));
     setExpiryDays(String(cfg.form_link_expiry_days));
     setLockHours(String(cfg.lock_period_hours));
-    setAutoSend(cfg.auto_send_on_booking);
     setHydratedKey('loaded');
   }
 
@@ -125,7 +122,6 @@ export default function ComplianceSettingsScreen() {
       reminder_cadence_days: clampInt(reminderDays, 0, 90, DEFAULT_COMPLIANCE_CONFIG.reminder_cadence_days),
       form_link_expiry_days: clampInt(expiryDays, 1, 90, DEFAULT_COMPLIANCE_CONFIG.form_link_expiry_days),
       lock_period_hours: clampInt(lockHours, 0, 720, DEFAULT_COMPLIANCE_CONFIG.lock_period_hours),
-      auto_send_on_booking: autoSend,
       incomplete_behaviour: 'warn_only',
     };
     update.mutate(
@@ -212,15 +208,6 @@ export default function ComplianceSettingsScreen() {
               keyboardType="number-pad"
               helper="Clients must complete required forms this many hours ahead. 0 = no lock. Max 720."
             />
-            <View style={styles.switchRow}>
-              <View style={styles.switchText}>
-                <Text variant="bodyMedium">Auto-send on booking</Text>
-                <Text variant="caption" tone="muted">
-                  Email/SMS a form link when a booking is created with an unmet online requirement.
-                </Text>
-              </View>
-              <Switch value={autoSend} onValueChange={setAutoSend} />
-            </View>
             <View style={styles.switchRow}>
               <View style={styles.switchText}>
                 <Text variant="bodyMedium">When a client arrives incomplete</Text>

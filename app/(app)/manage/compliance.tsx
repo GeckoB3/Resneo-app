@@ -1,4 +1,5 @@
 import { Linking, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import * as WebBrowser from 'expo-web-browser';
 import { Stack, useRouter, type Href } from 'expo-router';
 import { useCallback, useState } from 'react';
@@ -270,9 +271,13 @@ export default function ComplianceScreen() {
 
   // Venue-local "today" — booking dates are venue-local, so grouping by a UTC
   // date split today's check-ins into the wrong bucket near the day boundary.
-  const todayStr = calendarDateInTimeZone(new Date(), venue?.timezone ?? 'Europe/London');
+  // Prefer the server's `today` (its day-boundary source of truth); fall back to
+  // a client computation for older payloads that don't carry it.
+  const todayStr =
+    dashboard.data.today ?? calendarDateInTimeZone(new Date(), venue?.timezone ?? 'Europe/London');
   const todayCheckIns = groupTodaysCheckIns(missing_for_bookings, todayStr);
   const upcomingMissing = missing_for_bookings.filter((m) => m.booking_date !== todayStr);
+  const todayCount = todayCheckIns.reduce((n, g) => n + g.items.length, 0);
 
   // Use awaiting_submission from dashboard payload directly (no redundant fetch)
   const awaitingRows = awaiting_submission;
@@ -381,7 +386,7 @@ export default function ComplianceScreen() {
     );
   };
 
-  const runSend = (send_via: 'email' | 'sms') => {
+  const runSend = (send_via: 'email' | 'sms' | 'manual_copy') => {
     if (action?.kind !== 'send') return;
     const { key, guestId, typeId, bookingId } = action;
     setAction(null);
@@ -394,10 +399,20 @@ export default function ComplianceScreen() {
         send_via,
       },
       {
-        onSuccess: () => {
+        onSuccess: (result) => {
           hapticSuccess();
           setPendingSendKey(null);
-          toast.success(send_via === 'email' ? 'Form link emailed.' : 'Form link sent by SMS.');
+          if (send_via === 'manual_copy') {
+            void Clipboard.setStringAsync(result.public_url);
+            toast.success('Form link copied to your clipboard.');
+          } else if (result.no_destination) {
+            // Nothing to send to — copy the link so staff can share it manually.
+            void Clipboard.setStringAsync(result.public_url);
+            toast.info('No email or phone on file. Link copied to your clipboard instead.');
+          } else {
+            const via = result.sent_via ?? send_via;
+            toast.success(via === 'sms' ? 'Form link sent by SMS.' : 'Form link emailed.');
+          }
         },
         onError: (err) => {
           hapticWarning();
@@ -444,7 +459,20 @@ export default function ComplianceScreen() {
               title="All clear"
               message="No expiring records, missing requirements or outstanding forms."
             />
-          ) : null}
+          ) : (
+            <Card>
+              <Text variant="caption" tone="muted">
+                {[
+                  todayCount > 0 ? `${todayCount} for today` : null,
+                  upcomingMissing.length > 0 ? `${upcomingMissing.length} upcoming` : null,
+                  expiring_soon.length > 0 ? `${expiring_soon.length} expiring soon` : null,
+                  awaitingRows.length > 0 ? `${awaitingRows.length} awaiting clients` : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </Text>
+            </Card>
+          )}
 
           {/* TODAY'S CHECK-IN PANEL */}
           {todayCheckIns.length > 0 ? (
@@ -784,6 +812,13 @@ export default function ComplianceScreen() {
                   onPress={() => (action.kind === 'resend' ? runResend('sms') : runSend('sms'))}
                 />
               </View>
+              {action.kind === 'send' ? (
+                <Button
+                  label="Copy link"
+                  variant="secondary"
+                  onPress={() => runSend('manual_copy')}
+                />
+              ) : null}
               <Button label="Cancel" variant="ghost" onPress={() => setAction(null)} />
             </>
           ) : null}

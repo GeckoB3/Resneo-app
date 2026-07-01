@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
+import type { ComplianceOnlineCollection } from '@/lib/compliance/constants';
 import { isBackendConfigured } from '@/lib/env';
 import { keyScope, queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
@@ -35,12 +36,47 @@ export const COMPLIANCE_ENFORCEMENT_LABELS: Record<string, string> = Object.from
   COMPLIANCE_ENFORCEMENT_OPTIONS.map((o) => [o.value, o.label]),
 );
 
+export type { ComplianceOnlineCollection };
+
+/**
+ * Where a client-completable form is offered during online booking. Mirrors the
+ * web `ONLINE_COLLECTION_OPTIONS` (labels + descriptions) in shared.ts.
+ */
+export const COMPLIANCE_ONLINE_COLLECTION_OPTIONS: {
+  value: ComplianceOnlineCollection;
+  label: string;
+  description: string;
+}[] = [
+  {
+    value: 'confirmation_link',
+    label: 'Email a link in the confirmation',
+    description:
+      'The client books straight away and gets a secure link in their confirmation email to complete the form before their visit.',
+  },
+  {
+    value: 'inline',
+    label: 'Show in the booking flow',
+    description:
+      'The client completes the form as a step while they book. If this requirement blocks online booking, they cannot finish booking until it is done.',
+  },
+  {
+    value: 'none',
+    label: 'Do not collect online',
+    description: 'The form is never shown to the client online. Your team collects it in venue.',
+  },
+];
+
+export const COMPLIANCE_ONLINE_COLLECTION_DESCRIPTIONS: Record<string, string> = Object.fromEntries(
+  COMPLIANCE_ONLINE_COLLECTION_OPTIONS.map((o) => [o.value, o.description]),
+);
+
 /** One row from GET /requirements (web `RequirementRow`). */
 export interface ComplianceRequirementRow {
   id: string;
   compliance_type_id: string;
   enforcement: ComplianceEnforcement;
   lock_period_hours: number | null;
+  online_collection: ComplianceOnlineCollection;
   appointment_service_id: string | null;
   service_item_id: string | null;
   compliance_type_name: string;
@@ -91,6 +127,7 @@ export function useAddComplianceRequirement() {
       compliance_type_id: string;
       enforcement: ComplianceEnforcement;
       lock_period_hours?: number | null;
+      online_collection?: ComplianceOnlineCollection;
     }): Promise<{ requirement: ComplianceRequirementRow }> => {
       if (!accessToken) {
         throw new Error('Missing access token');
@@ -116,6 +153,7 @@ export function useUpdateComplianceRequirement() {
       id: string;
       enforcement?: ComplianceEnforcement;
       lock_period_hours?: number | null;
+      online_collection?: ComplianceOnlineCollection;
     }): Promise<{ requirement: ComplianceRequirementRow }> => {
       if (!accessToken) {
         throw new Error('Missing access token');

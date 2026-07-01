@@ -1,5 +1,7 @@
 # Resneo — Mobile App vs Web Staff Dashboard: Comprehensive Parity & Polish Audit (R7)
 
+> ℹ️ **Compliance (domain 13) is superseded by `Docs/APP_GAP_REPORT_R8_COMPLIANCE.md` (2026-07-01).** R7 is a pre-implementation planning artifact; the compliance domain was built out on `feat/r7-parity-implementation` and then polished further on the web side (Dec-2026 migrations). For current compliance parity, treat R8 as authoritative and this domain-13 view as historical. Other domains here remain as-audited.
+
 **Date:** 2026-06-17 · **Scope:** staff/venue-operator parity with the web dashboard (/dashboard/*, /email-templates, settings). Out of scope: customer booking flow, marketing/SEO pages, super-admin. **Method:** code-level comparison of the app against the web mirror at _reference/Resneo (the authed web dashboard cannot be driven live: CORS + light-only preview + no Android emulator), with an adversarial verification pass on every claimed gap. **North Star:** a staff user can do almost everything in the app that the web allows, with a beautiful, intuitive UI.
 
 ---

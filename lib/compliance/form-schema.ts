@@ -187,6 +187,10 @@ export function validateFormSchemaForType(
         errors.push('The result field referenced by result_mapping must be a select field.');
       } else if (!mapped.staff_only) {
         errors.push('The pass/fail result field must be marked staff_only.');
+      } else if (!mapped.required) {
+        // audit M7: an optional result field can be left blank, which would otherwise let a
+        // record with no pass/fail decision satisfy a booking (see audit H4).
+        errors.push('The pass/fail result field must be marked required so a decision is always recorded.');
       } else {
         const optionValues = new Set(mapped.options.map((o) => o.value));
         const declared = [...mapping.pass_values, ...mapping.fail_values];

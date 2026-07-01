@@ -57,6 +57,10 @@ export interface SendComplianceFormLinkResult {
   public_url: string;
   reused: boolean;
   dispatched: boolean;
+  /** The channel the server actually sent by (SMS can fall back to email). */
+  sent_via?: 'email' | 'sms' | null;
+  /** True when the guest has no email/phone on file, so nothing was dispatched. */
+  no_destination?: boolean;
 }
 
 /**

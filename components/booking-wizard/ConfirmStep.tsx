@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
+import { ComplianceWarningNotice } from '@/components/compliance/ComplianceWarningNotice';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
@@ -14,8 +15,9 @@ import {
 import { formatPence } from '@/lib/format';
 import { hapticSelect, hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { normalizePhone } from '@/lib/phone/normalize';
-import { useCreateBooking } from '@/lib/queries/useCreateBooking';
+import { useCreateBooking, type ComplianceBookingWarning } from '@/lib/queries/useCreateBooking';
 import { useCreateMultiServiceBooking } from '@/lib/queries/useCreateMultiServiceBooking';
+import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { fonts, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { AppointmentSlot } from '@/types/appointment-availability';
@@ -71,6 +73,7 @@ interface BookingConfirmation {
   requires_deposit?: boolean;
   deposit_amount_pence?: number;
   cancellation_notice_hours?: number;
+  compliance_warnings?: ComplianceBookingWarning[];
   service_name: string;
   guest_name: string;
   date_label: string;
@@ -167,6 +170,8 @@ function BookingConfirmationView({
         ) : null}
       </Card>
 
+      <ComplianceWarningNotice warnings={confirmation.compliance_warnings} />
+
       <View style={styles.confirmationActions}>
         <Button label="View booking" fullWidth onPress={onViewBooking} />
         {onBookAnother ? (
@@ -207,6 +212,7 @@ export function ConfirmStep({
   const createBooking = useCreateBooking();
   const createMultiService = useCreateMultiServiceBooking();
   const isMultiService = (multiServiceSegments?.length ?? 0) > 1;
+  const isAdmin = useStaffMe().data?.staff?.role === 'admin';
   const first_name = guest.first_name.trim();
   const last_name = guest.last_name.trim();
   const fullName = [first_name, last_name].filter(Boolean).join(' ');
@@ -387,6 +393,7 @@ export function ConfirmStep({
           requires_deposit: response.requires_deposit,
           deposit_amount_pence: response.deposit_amount_pence,
           cancellation_notice_hours: response.cancellation_notice_hours,
+          compliance_warnings: response.compliance_warnings,
           service_name: `${service.serviceName}${variant ? ` · ${variant.name}` : ''}`,
           guest_name: fullName,
           date_label: formatSummaryDate(date),
@@ -527,13 +534,21 @@ export function ConfirmStep({
           <Text variant="bodySmall" tone="danger">
             {complianceError}
           </Text>
-          <Button
-            label="Book anyway (admin override)"
-            variant="secondary"
-            fullWidth
-            onPress={() => handleConfirm(true)}
-            loading={createBooking.isPending}
-          />
+          {isAdmin && !isMultiService ? (
+            <Button
+              label="Book anyway (admin override)"
+              variant="secondary"
+              fullWidth
+              onPress={() => handleConfirm(true)}
+              loading={createBooking.isPending}
+            />
+          ) : (
+            <Text variant="caption" tone="muted">
+              {isMultiService
+                ? 'Collect the required record or send the form, then create the visit.'
+                : 'Ask an admin to override, or collect the required record or send the form first.'}
+            </Text>
+          )}
         </View>
       ) : null}
 

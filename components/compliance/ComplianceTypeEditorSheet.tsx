@@ -27,9 +27,14 @@ import {
   COMPLIANCE_TYPE_CATEGORIES,
   FORM_LINK_EXPIRY_MAX,
   FORM_LINK_EXPIRY_MIN,
+  useArchiveComplianceType,
   useComplianceTemplateDetail,
+  useComplianceTypeVersions,
   useCreateComplianceTemplate,
   useCreateComplianceVersion,
+  useDuplicateComplianceType,
+  useRestoreComplianceType,
+  useRestoreComplianceVersion,
   useUpdateComplianceTemplate,
   VALIDITY_DAYS_MAX,
   type ComplianceTypeCaptureMethod,
@@ -62,6 +67,13 @@ const RESULT_TYPE_DROPDOWN_LABELS: Record<ComplianceResultType, string> = {
   completed: 'Completed (no result)',
   file_uploaded: 'File upload (requires a file)',
 };
+
+/** DD/MM/YYYY for the version-history list. */
+function formatVersionDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
 
 type Props = {
   visible: boolean;
@@ -99,6 +111,11 @@ export function ComplianceTypeEditorSheet({
   const update = useUpdateComplianceTemplate();
   const createType = useCreateComplianceTemplate();
   const createVersion = useCreateComplianceVersion();
+  const versionsQuery = useComplianceTypeVersions(visible && !isCreate ? typeId : null);
+  const restoreVersion = useRestoreComplianceVersion();
+  const duplicateType = useDuplicateComplianceType();
+  const archiveType = useArchiveComplianceType();
+  const restoreType = useRestoreComplianceType();
 
   // --- Meta form state, hydrated once per opened template ---
   const [hydratedKey, setHydratedKey] = useState<string | null>(null);
@@ -112,9 +129,12 @@ export function ComplianceTypeEditorSheet({
     'client_online',
   ]);
   const [expiryDaysText, setExpiryDaysText] = useState('');
+  const [unmetMessage, setUnmetMessage] = useState('');
+  const [changelog, setChangelog] = useState('');
   const [errors, setErrors] = useState<string[]>([]);
   const [confirmingArchive, setConfirmingArchive] = useState(false);
-  const [pendingAction, setPendingAction] = useState<'save' | 'archive' | null>(null);
+  const [restoringVersionId, setRestoringVersionId] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<'save' | 'archive' | 'duplicate' | null>(null);
 
   // --- Field builder state (reducer) ---
   const [builder, dispatch] = useReducer(fieldBuilderReducer, emptyBuilderState);
@@ -131,6 +151,8 @@ export function ComplianceTypeEditorSheet({
       setValidityDaysText('180');
       setCaptureMethods(['staff_in_venue', 'client_online']);
       setExpiryDaysText('');
+      setUnmetMessage('');
+      setChangelog('');
       dispatch({ type: 'hydrate', state: emptyBuilderState });
     } else if (detail.data) {
       const t = detail.data.type;
@@ -163,6 +185,8 @@ export function ComplianceTypeEditorSheet({
         ),
       );
       setExpiryDaysText(t.form_link_expiry_days != null ? String(t.form_link_expiry_days) : '');
+      setUnmetMessage(t.online_unmet_message ?? '');
+      setChangelog('');
       // Hydrate the field builder from the current version's schema.
       const raw = detail.data.version?.form_schema;
       const parsed = raw ? parseFormSchema(raw) : null;
@@ -280,6 +304,7 @@ export function ComplianceTypeEditorSheet({
           validity_period_days: validityDays,
           capture_methods: captureMethods,
           form_link_expiry_days: expiryDays,
+          online_unmet_message: unmetMessage.trim() ? unmetMessage.trim() : null,
           form_schema: schema,
         },
         {
@@ -312,12 +337,13 @@ export function ComplianceTypeEditorSheet({
           validity_period_days: validityDays,
           capture_methods: captureMethods,
           form_link_expiry_days: expiryDays,
+          online_unmet_message: unmetMessage.trim() ? unmetMessage.trim() : null,
         },
       },
       {
         onSuccess: () => {
           createVersion.mutate(
-            { typeId: type.id, formSchema: schema },
+            { typeId: type.id, formSchema: schema, changelog: changelog.trim() || undefined },
             {
               onSuccess: () => {
                 setPendingAction(null);
@@ -345,24 +371,66 @@ export function ComplianceTypeEditorSheet({
     );
   }
 
-  /** Archive/restore via PATCH is_active. */
+  /** Archive/restore via the dedicated routes (writes archived_at + the audit event). */
   function handleArchiveToggle() {
     if (!type) return;
     setPendingAction('archive');
-    update.mutate(
-      { typeId: type.id, patch: { is_active: isArchived } },
+    const mutation = isArchived ? restoreType : archiveType;
+    mutation.mutate(type.id, {
+      onSuccess: () => {
+        setPendingAction(null);
+        setConfirmingArchive(false);
+        hapticSuccess();
+        onSaved?.();
+      },
+      onError: (error) => {
+        setPendingAction(null);
+        setConfirmingArchive(false);
+        hapticWarning();
+        setErrors([error instanceof ApiError ? error.message : 'Could not update the template.']);
+      },
+    });
+  }
+
+  function handleDuplicate() {
+    if (!type) return;
+    setPendingAction('duplicate');
+    duplicateType.mutate(type.id, {
+      onSuccess: () => {
+        setPendingAction(null);
+        hapticSuccess();
+        toast.success(`${type.name} duplicated.`);
+        onSaved?.();
+        onClose();
+      },
+      onError: (error) => {
+        setPendingAction(null);
+        hapticWarning();
+        setErrors([error instanceof ApiError ? error.message : 'Could not duplicate the type.']);
+      },
+    });
+  }
+
+  function handleRestoreVersion(versionId: string) {
+    if (!type) return;
+    setRestoringVersionId(versionId);
+    restoreVersion.mutate(
+      { typeId: type.id, versionId },
       {
-        onSuccess: () => {
-          setPendingAction(null);
-          setConfirmingArchive(false);
+        onSuccess: async () => {
           hapticSuccess();
+          toast.success('Version restored.');
+          // Restore re-publishes as a new current version; re-hydrate the builder from it.
+          await detail.refetch();
+          setHydratedKey(null);
+          void versionsQuery.refetch();
+          setRestoringVersionId(null);
           onSaved?.();
         },
         onError: (error) => {
-          setPendingAction(null);
-          setConfirmingArchive(false);
+          setRestoringVersionId(null);
           hapticWarning();
-          setErrors([error instanceof ApiError ? error.message : 'Could not update the template.']);
+          setErrors([error instanceof ApiError ? error.message : 'Could not restore the version.']);
         },
       },
     );
@@ -371,7 +439,8 @@ export function ComplianceTypeEditorSheet({
   const saving =
     pendingAction === 'save' &&
     (createType.isPending || update.isPending || createVersion.isPending);
-  const archiving = update.isPending && pendingAction === 'archive';
+  const archiving = pendingAction === 'archive' && (archiveType.isPending || restoreType.isPending);
+  const duplicating = pendingAction === 'duplicate' && duplicateType.isPending;
   const loadingDetail = !isCreate && detail.isLoading;
   const detailError = !isCreate && (detail.isError || !type);
 
@@ -446,7 +515,12 @@ export function ComplianceTypeEditorSheet({
                       key={r}
                       label={RESULT_TYPE_DROPDOWN_LABELS[r]}
                       selected={resultType === r}
-                      onPress={() => setResultType(r)}
+                      onPress={() => {
+                        setResultType(r);
+                        // Auto-wire a staff-only Pass/Fail result field so a valid
+                        // pass_fail form exists immediately (web parity).
+                        if (r === 'pass_fail') dispatch({ type: 'ensureResultField' });
+                      }}
                     />
                   ))}
                 </View>
@@ -515,6 +589,17 @@ export function ComplianceTypeEditorSheet({
               helper="How long a client form link stays valid. Leave blank for the venue default."
             />
 
+            <Input
+              label="Message when online booking is blocked"
+              value={unmetMessage}
+              onChangeText={setUnmetMessage}
+              placeholder="e.g. Please call us to arrange your patch test before booking."
+              helper="Shown to clients who can't book online until this is on file. Max 500 characters."
+              multiline
+              maxLength={500}
+              optional
+            />
+
             {/* Form field builder */}
             <View
               style={[styles.builderDivider, { borderTopColor: colors.border }]}
@@ -525,6 +610,70 @@ export function ComplianceTypeEditorSheet({
               dispatch={dispatch}
               isPassFail={resultType === 'pass_fail'}
             />
+
+            {!isCreate ? (
+              <Input
+                label="What changed"
+                value={changelog}
+                onChangeText={setChangelog}
+                placeholder="e.g. Added a new consent question"
+                helper="Saved with this version in the history below."
+                optional
+              />
+            ) : null}
+
+            {!isCreate && (versionsQuery.data?.versions.length ?? 0) > 1 ? (
+              <View style={styles.fieldBlock}>
+                <Text variant="label" tone="secondary">
+                  Version history
+                </Text>
+                <Text variant="caption" tone="muted">
+                  Restoring re-publishes an earlier form as the current version. Unsaved edits above
+                  are discarded.
+                </Text>
+                <View
+                  style={[
+                    styles.readonlyBox,
+                    { backgroundColor: colors.surface, borderColor: colors.border },
+                  ]}>
+                  {(versionsQuery.data?.versions ?? []).map((v, idx) => {
+                    const isCurrent = v.version_number === version?.version_number;
+                    return (
+                      <View
+                        key={v.id}
+                        style={[
+                          styles.versionRow,
+                          idx > 0 && {
+                            borderTopColor: colors.border,
+                            borderTopWidth: StyleSheet.hairlineWidth,
+                          },
+                        ]}>
+                        <View style={styles.versionText}>
+                          <Text variant="bodySmall">
+                            v{v.version_number}
+                            {isCurrent ? ' · current' : ''}
+                          </Text>
+                          <Text variant="caption" tone="muted" numberOfLines={2}>
+                            {formatVersionDate(v.created_at)}
+                            {v.changelog ? ` · ${v.changelog}` : ''}
+                          </Text>
+                        </View>
+                        {!isCurrent ? (
+                          <Button
+                            label="Restore"
+                            variant="ghost"
+                            size="sm"
+                            loading={restoringVersionId === v.id}
+                            disabled={restoringVersionId !== null}
+                            onPress={() => handleRestoreVersion(v.id)}
+                          />
+                        ) : null}
+                      </View>
+                    );
+                  })}
+                </View>
+              </View>
+            ) : null}
           </>
         ) : (
           /* Read-only summary for non-admins */
@@ -550,6 +699,14 @@ export function ComplianceTypeEditorSheet({
         {/* Archive / restore — admin only, edit mode only */}
         {canEdit && !isCreate && type ? (
           <View style={styles.archiveBlock}>
+            <Button
+              label="Duplicate this type"
+              variant="ghost"
+              size="sm"
+              loading={duplicating}
+              disabled={duplicating}
+              onPress={handleDuplicate}
+            />
             {confirmingArchive && !isArchived ? (
               <>
                 <Text variant="caption" tone="muted">
@@ -629,6 +786,7 @@ function ReadonlySummary({
     capture_methods: string[];
     form_link_expiry_days: number | null;
     description: string | null;
+    online_unmet_message?: string | null;
   };
   version: { version_number: number } | null;
   fields: ComplianceField[];
@@ -654,6 +812,9 @@ function ReadonlySummary({
           value={type.form_link_expiry_days != null ? `${type.form_link_expiry_days} days` : 'Venue default'}
         />
         {type.description ? <ReadonlyRow label="Description" value={type.description} /> : null}
+        {type.online_unmet_message ? (
+          <ReadonlyRow label="Online block message" value={type.online_unmet_message} />
+        ) : null}
       </View>
 
       <View style={styles.fieldBlock}>
@@ -780,6 +941,18 @@ const styles = StyleSheet.create({
   },
   archiveBtn: {
     flexGrow: 0,
+  },
+  versionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+  },
+  versionText: {
+    flex: 1,
+    minWidth: 0,
+    gap: 1,
   },
   footer: {
     flexDirection: 'row',

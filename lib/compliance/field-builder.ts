@@ -76,7 +76,8 @@ export type FieldBuilderAction =
   | { type: 'removeOption'; id: string; index: number }
   | { type: 'setDescription'; value: string }
   | { type: 'setIntroMarkdown'; value: string }
-  | { type: 'setResultMapping'; mapping: ComplianceResultMapping | undefined };
+  | { type: 'setResultMapping'; mapping: ComplianceResultMapping | undefined }
+  | { type: 'ensureResultField' };
 
 function hasOptions(
   field: ComplianceField,
@@ -173,6 +174,40 @@ export function fieldBuilderReducer(
 
     case 'setResultMapping':
       return { ...state, resultMapping: action.mapping };
+
+    case 'ensureResultField': {
+      // Mirror the web `handleResultTypeChange`: when a type becomes pass_fail, reuse
+      // an existing staff-only select as the result field, otherwise auto-create one
+      // with Pass/Fail options + a pre-filled mapping so a valid form exists at once.
+      const existing = state.fields.find(
+        (f): f is Extract<ComplianceField, { type: 'select' }> =>
+          f.type === 'select' && (f.staff_only ?? false),
+      );
+      if (existing) {
+        return state.resultMapping
+          ? state
+          : {
+              ...state,
+              resultMapping: { field: existing.id, pass_values: [], fail_values: [] },
+            };
+      }
+      const resultField: ComplianceField = {
+        id: newFieldId(),
+        type: 'select',
+        label: 'Result (staff decision)',
+        required: true,
+        staff_only: true,
+        options: [
+          { value: 'pass', label: 'Pass' },
+          { value: 'fail', label: 'Fail' },
+        ],
+      };
+      return {
+        ...state,
+        fields: [...state.fields, resultField],
+        resultMapping: { field: resultField.id, pass_values: ['pass'], fail_values: ['fail'] },
+      };
+    }
 
     default:
       return state;

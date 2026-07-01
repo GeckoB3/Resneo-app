@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ComplianceCaptureSheet } from '@/components/compliance/ComplianceCaptureSheet';
 import { ComplianceRecordSheet } from '@/components/compliance/ComplianceRecordSheet';
+import { auditEventLabel, RESULT_LABELS } from '@/components/compliance/complianceTypeLabels';
 import { Badge, type BadgeTone } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -78,31 +79,6 @@ function formatComplianceDate(iso: string | null | undefined): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '—';
   return d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
-}
-
-/** Audit event type → human label (mirrors web's AUDIT_EVENT_LABELS). */
-const AUDIT_EVENT_LABELS: Record<string, string> = {
-  'record.captured': 'Record captured',
-  'record.updated': 'Record updated',
-  'record.voided': 'Record voided',
-  'record.viewed': 'Record viewed',
-  'link.issued': 'Form link issued',
-  'link.sent': 'Form link sent',
-  'link.consumed': 'Form submitted',
-  'link.expired': 'Form link expired',
-  'link.revoked': 'Form link revoked',
-  'type.created': 'Type created',
-  'type.updated': 'Type updated',
-  'type.archived': 'Type archived',
-  'type.restored': 'Type restored',
-  'version.created': 'New form version',
-  'requirement.added': 'Requirement added',
-  'requirement.removed': 'Requirement removed',
-  'requirement.updated': 'Requirement updated',
-};
-
-function auditEventLabel(eventType: string): string {
-  return AUDIT_EVENT_LABELS[eventType] ?? eventType;
 }
 
 // ---------------------------------------------------------------------------
@@ -375,10 +351,15 @@ export function ComplianceCard({ bookingId, guestId, guestEmail, guestPhone }: C
                             // eslint-disable-next-line react-hooks/purity -- Date.now() intentionally checks expiry at render time
                             ? ` · ${new Date(rec.expires_at).getTime() <= Date.now() ? 'Expired' : 'Expires'} ${formatComplianceDate(rec.expires_at)}`
                             : ''}
-                          {rec.result ? ` · ${rec.result}` : ''}
+                          {rec.result ? ` · ${RESULT_LABELS[rec.result] ?? rec.result}` : ''}
                         </Text>
                       </View>
-                      <Badge label={pill.label} tone={pill.tone} />
+                      <View style={styles.recordBadges}>
+                        {rec.status === 'completed' && rec.result == null ? (
+                          <Badge label="Awaiting decision" tone="warning" />
+                        ) : null}
+                        <Badge label={pill.label} tone={pill.tone} />
+                      </View>
                     </Pressable>
                   );
                 })
@@ -491,6 +472,11 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     gap: 1,
+  },
+  recordBadges: {
+    alignItems: 'flex-end',
+    gap: 2,
+    flexShrink: 0,
   },
   // Audit trail styles
   auditContainer: {

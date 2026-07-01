@@ -83,6 +83,24 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Extract the friendly "compliance requirement unmet" message from a 409 (the
+ * booking create/edit compliance gate), or null when it's a different error. The
+ * server sends `{ error: 'COMPLIANCE_REQUIREMENT_UNMET', message, details }`, so
+ * without this the generic handler would surface the raw error code.
+ */
+export function complianceBlockMessage(error: unknown): string | null {
+  if (
+    error instanceof ApiError &&
+    error.status === 409 &&
+    isApiErrorBody(error.body) &&
+    error.body.error === 'COMPLIANCE_REQUIREMENT_UNMET'
+  ) {
+    return error.body.message ?? 'A compliance requirement is unmet for this booking.';
+  }
+  return null;
+}
+
 type ApiFetchOptions = RequestInit & {
   accessToken?: string | null;
   /**

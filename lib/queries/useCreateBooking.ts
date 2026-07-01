@@ -57,6 +57,18 @@ export interface CreateBookingPayload {
   override_compliance?: boolean;
 }
 
+/**
+ * A non-blocking (warn_staff / warn_client) compliance requirement that was unmet
+ * when the booking was created. The server returns these in the 201 so staff can
+ * be nudged to collect or send the form before the appointment (audit M2).
+ */
+export interface ComplianceBookingWarning {
+  compliance_type_id: string;
+  compliance_type_name: string;
+  enforcement: string;
+  state: string;
+}
+
 export interface CreateBookingResponse {
   booking_id: string;
   payment_url?: string;
@@ -64,6 +76,8 @@ export interface CreateBookingResponse {
   requires_deposit?: boolean;
   deposit_amount_pence?: number;
   cancellation_notice_hours?: number;
+  /** Unmet non-blocking compliance requirements, surfaced on the confirmation. */
+  compliance_warnings?: ComplianceBookingWarning[];
 }
 
 /**

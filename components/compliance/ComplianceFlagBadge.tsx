@@ -24,35 +24,34 @@ import { useTheme } from '@/theme/useTheme';
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Map flag state → a theme colour. */
+/** satisfied → green; blocking unmet → red; non-blocking unmet → amber. */
 function flagColor(
-  state: ComplianceBookingFlag['state'],
+  flag: ComplianceBookingFlag,
   colors: {
     danger: string;
     warning: string;
     success: string;
-    textMuted: string;
   },
 ): string {
-  switch (state) {
-    case 'missing':
-    case 'expired':
-      return colors.danger;
-    case 'expiring_soon':
-      return colors.warning;
-    case 'satisfied':
-      return colors.success;
-    default:
-      return colors.textMuted;
-  }
+  if (flag.state === 'satisfied') return colors.success;
+  if (flag.blocking) return colors.danger;
+  return colors.warning;
 }
 
-const FLAG_LABELS: Record<ComplianceBookingFlag['state'], string> = {
-  missing: 'Missing',
-  expired: 'Expired',
-  expiring_soon: 'Expiring',
-  satisfied: 'Compliant',
-};
+/** Short pill label: "Compliant", "<type> due", or "N forms due". */
+function flagLabel(flag: ComplianceBookingFlag): string {
+  if (flag.state === 'satisfied') return 'Compliant';
+  if (flag.labels.length === 1) return `${flag.labels[0]} due`;
+  return `${flag.labels.length} forms due`;
+}
+
+/** Fuller sentence for screen readers / tooltip (ports web complianceFlagTooltip). */
+function flagTooltip(flag: ComplianceBookingFlag): string {
+  const list = flag.labels.join(', ');
+  if (flag.state === 'satisfied') return `Compliance complete${list ? `: ${list}` : ''}`;
+  if (flag.blocking) return `${list || 'A compliance record'} required before this appointment`;
+  return `${list || 'A compliance form'} still outstanding`;
+}
 
 // ---------------------------------------------------------------------------
 // Components
@@ -60,7 +59,7 @@ const FLAG_LABELS: Record<ComplianceBookingFlag['state'], string> = {
 
 /**
  * Small coloured dot for tight spaces (calendar bars, compact list rows).
- * satisfied → green, expiring_soon → amber, missing/expired → red.
+ * satisfied → green, blocking → red, otherwise outstanding → amber.
  * Returns null when no flag (booking has no compliance requirement).
  */
 export function ComplianceFlagDot({
@@ -73,7 +72,7 @@ export function ComplianceFlagDot({
   const { colors } = useTheme();
   if (!flag) return null;
 
-  const color = flagColor(flag.state, colors);
+  const color = flagColor(flag, colors);
   const size = Math.round(8 * scale);
 
   return (
@@ -88,7 +87,7 @@ export function ComplianceFlagDot({
           backgroundColor: color,
         },
       ]}
-      accessibilityLabel={`Compliance: ${flag.state.replace(/_/g, ' ')}`}
+      accessibilityLabel={flagTooltip(flag)}
     />
   );
 }
@@ -106,11 +105,13 @@ export function ComplianceFlagBadge({
   const { colors } = useTheme();
   if (!flag) return null;
 
-  const color = flagColor(flag.state, colors);
-  const label = FLAG_LABELS[flag.state];
+  const color = flagColor(flag, colors);
+  const label = flagLabel(flag);
 
   return (
     <View
+      accessible={true}
+      accessibilityLabel={flagTooltip(flag)}
       style={[
         styles.pill,
         { backgroundColor: color + '22', borderColor: color + '55' },

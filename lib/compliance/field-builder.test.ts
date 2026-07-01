@@ -127,6 +127,29 @@ describe('fieldBuilderReducer', () => {
     expect(state.introMarkdown).toBe('**hi**');
     expect(state.resultMapping).toEqual({ field: 'r', pass_values: ['a'], fail_values: ['b'] });
   });
+
+  it('ensureResultField creates a staff-only Pass/Fail select + mapping when none exists', () => {
+    const state = fieldBuilderReducer(emptyBuilderState, { type: 'ensureResultField' });
+    expect(state.fields).toHaveLength(1);
+    const f = state.fields[0]!;
+    expect(f.type).toBe('select');
+    expect(f.staff_only).toBe(true);
+    expect(f.required).toBe(true);
+    expect(state.resultMapping).toEqual({
+      field: f.id,
+      pass_values: ['pass'],
+      fail_values: ['fail'],
+    });
+  });
+
+  it('ensureResultField reuses an existing staff-only select without adding a field', () => {
+    let state = fieldBuilderReducer(emptyBuilderState, { type: 'addField', fieldType: 'select' });
+    const id = state.fields[0]!.id;
+    state = fieldBuilderReducer(state, { type: 'updateField', id, patch: { staff_only: true } });
+    state = fieldBuilderReducer(state, { type: 'ensureResultField' });
+    expect(state.fields).toHaveLength(1);
+    expect(state.resultMapping).toEqual({ field: id, pass_values: [], fail_values: [] });
+  });
 });
 
 describe('buildFormSchema', () => {
