@@ -300,6 +300,11 @@ export default function CalendarScreen() {
   // locally and persisted via the F5 prefs hook; threaded into every grid.
   const [windowOverride, setWindowOverride] = useState<GridWindowOverride | null>(null);
 
+  // Compact day rows (web parity: the toolbar "Compact" toggle) — the day grids
+  // shrink their vertical scale to fit the whole day on screen for an
+  // at-a-glance read. Persisted per venue with the other prefs.
+  const [compactDay, setCompactDay] = useState(false);
+
   // ---- Persisted per-user calendar prefs (F5, SecureStore) ----
   // Stores { scope, selectedId, startHourOverride, endHourOverride } per venue so
   // the screen restores the user's last view on cold start. Local state above is
@@ -433,6 +438,7 @@ export default function CalendarScreen() {
     if (!hasDateDeepLink) setScope(pruned.scope);
     setSelectedId(pruned.selectedId);
     setVisibleIds(prunedVisible);
+    setCompactDay(pruned.compactDay);
     if (pruned.startHourOverride != null || pruned.endHourOverride != null) {
       setWindowOverride({
         startHour: pruned.startHourOverride,
@@ -466,8 +472,9 @@ export default function CalendarScreen() {
       visibleIds,
       startHourOverride: windowOverride?.startHour ?? null,
       endHourOverride: windowOverride?.endHour ?? null,
+      compactDay,
     } satisfies Partial<CalendarPrefs>);
-  }, [persistPrefs, scope, selectedId, visibleIds, windowOverride]);
+  }, [persistPrefs, scope, selectedId, visibleIds, windowOverride, compactDay]);
 
   // ---- Linked venues (cross-venue calendars) ----
   // Any accepted link that shares calendar visibility surfaces as a chip in the
@@ -1416,6 +1423,7 @@ export default function CalendarScreen() {
       onDragConflictReject={handleDragConflictReject}
       refreshing={refreshing}
       onRefresh={onRefresh}
+      compact={compactDay}
     />
   );
 
@@ -1504,6 +1512,22 @@ export default function CalendarScreen() {
                   idle (matches Resources/Contacts). Realtime invalidates the grid
                   promptly; the 60s poll is the fallback. */}
               <LiveDot state={liveState} />
+              {/* Compact day rows (web parity: the toolbar "Compact" toggle) —
+                  day scope only, like the web. Hidden in the linked-venue
+                  context: the linked grid is embedded and can't fit-to-screen. */}
+              {scope === 'day' && !linkedContextActive ? (
+                <IconButton
+                  icon={{
+                    ios: 'rectangle.compress.vertical',
+                    android: 'compress',
+                    web: 'compress',
+                  }}
+                  accessibilityLabel="Compact day rows — fit the whole day on one screen"
+                  variant="bordered"
+                  active={compactDay}
+                  onPress={() => setCompactDay((c) => !c)}
+                />
+              ) : null}
               {/* Quick jump to the "Today" home (KPI / day-at-a-glance), distinct
                   from the in-grid Today pill that re-anchors the diary to today. */}
               <IconButton
@@ -1854,6 +1878,7 @@ export default function CalendarScreen() {
                   onRefresh();
                   void linkedQuery.refetch();
                 }}
+                compact={compactDay}
               />
             </View>
           ) : (

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Pressable,
   RefreshControl,
@@ -11,6 +11,8 @@ import {
 
 import { DraggableAppointmentBlock } from '@/components/calendar/DraggableAppointmentBlock';
 import {
+  COMPACT_MIN_BLOCK_HEIGHT,
+  computeCompactPxPerMinute,
   computeGridBounds,
   computeLaneLayouts,
   hourLabel,
@@ -159,9 +161,20 @@ type CalendarDayGridProps = {
    * `refreshing`/`onRefresh` are then owned by the parent and ignored here.
    */
   embedded?: boolean;
+  /**
+   * Compact day rows (web parity: the toolbar "Compact" toggle) — shrink the
+   * vertical scale so the whole day fits the measured viewport (floored at the
+   * web's 16px/15min legibility scale), for an at-a-glance busy-ness read.
+   * Blocks shrink with the scale (their density rules drop text rows/actions),
+   * and the resize affordance is hidden. Embedded grids can't measure a
+   * viewport, so compact there renders at the floor scale.
+   */
+  compact?: boolean;
 };
 
 const DEFAULT_DURATION_MINUTES = 30;
+/** Bottom gutter reserved by the compact fit so the day ends just above the fold. */
+const COMPACT_BOTTOM_GUTTER = 16;
 
 /** Scrollable single-day, single-practitioner time grid. */
 export function CalendarDayGrid({
@@ -187,9 +200,104 @@ export function CalendarDayGrid({
   refreshing = false,
   onRefresh,
   embedded = false,
+  compact = false,
 }: CalendarDayGridProps) {
   const { colors } = useTheme();
   const scrollRef = useRef<ScrollViewType | null>(null);
+
+  // Measured size of the grid's scroll viewport. Height: compact mode fits the
+  // whole day into it (0 until the first layout → compact uses its floor
+  // scale). Width: budgets how many quick actions fit a block's overlap lane
+  // (web parity: buttons show where space allows — a phone-width column split
+  // three ways gets a clean name-only bar, not a crammed button).
+  const [viewportHeight, setViewportHeight] = useState(0);
+  const [viewportWidth, setViewportWidth] = useState(0);
+  // The blocks layer is inset from the grid edges (time gutter + margins).
+  const blocksLayerWidth = Math.max(
+    0,
+    viewportWidth - TIME_GUTTER_WIDTH - spacing.xs - spacing.sm,
+  );
+
+  // Parse times + resolve the day's bounds FIRST (minute space, scale-free); the
+  // pixel scale below depends on the bounds, and the px positioning memo depends
+  // on both.
+  const { bounds, rawBlocks, rawTimeBlocks, rawSessions, rawScheduleBlocks, workingRanges } =
+    useMemo(() => {
+      const ranges: { start: number; end: number }[] = [];
+      const working: BusyRange[] = [];
+      for (const wh of workingHours) {
+        const r = { start: timeToMinutes(wh.start), end: timeToMinutes(wh.end) };
+        ranges.push(r);
+        working.push(r);
+      }
+
+      const blocks = bookings.map((booking) => {
+        const start = timeToMinutes(booking.startTime);
+        let end = booking.endTime
+          ? timeToMinutes(booking.endTime)
+          : start + DEFAULT_DURATION_MINUTES;
+        if (end <= start) {
+          end = start + DEFAULT_DURATION_MINUTES;
+        }
+        ranges.push({ start, end });
+        return { booking, start, end };
+      });
+
+      const tBlocks = timeBlocks
+        .map((block) => {
+          const start = timeToMinutes(block.start);
+          const end = timeToMinutes(block.end);
+          return { block, start, end };
+        })
+        .filter(({ start, end }) => end > start);
+      for (const { start, end } of tBlocks) {
+        ranges.push({ start, end });
+      }
+
+      const sess = sessions
+        .map((session) => {
+          const start = timeToMinutes(session.startTime);
+          const end = timeToMinutes(session.endTime);
+          return { session, start, end };
+        })
+        .filter(({ start, end }) => end > start);
+      for (const { start, end } of sess) {
+        ranges.push({ start, end });
+      }
+
+      const schedBlocks = scheduleBlocks
+        .map((block) => {
+          const start = timeToMinutes(block.startTime);
+          const end = timeToMinutes(block.endTime);
+          return { block, start, end };
+        })
+        .filter(({ start, end }) => end > start);
+      for (const { start, end } of schedBlocks) {
+        ranges.push({ start, end });
+      }
+
+      return {
+        bounds: computeGridBounds(ranges, windowOverride),
+        rawBlocks: blocks,
+        rawTimeBlocks: tBlocks,
+        rawSessions: sess,
+        rawScheduleBlocks: schedBlocks,
+        workingRanges: working,
+      };
+    }, [bookings, workingHours, timeBlocks, sessions, scheduleBlocks, windowOverride]);
+
+  // Vertical scale: comfortable 2px/min, or compact fit-the-day-to-the-viewport
+  // (web parity: measured slot height, floored at 16px/15min). The fit subtracts
+  // the scroll padding above the canvas and a small bottom gutter.
+  const pxPerMinute = compact
+    ? computeCompactPxPerMinute(
+        viewportHeight,
+        bounds.startHour,
+        bounds.endHour,
+        spacing.sm + COMPACT_BOTTOM_GUTTER,
+      )
+    : PX_PER_MINUTE;
+  const minBlockHeight = compact ? COMPACT_MIN_BLOCK_HEIGHT : MIN_BLOCK_HEIGHT;
 
   const {
     startHour,
@@ -199,78 +307,25 @@ export function CalendarDayGrid({
     positionedBlocks,
     positionedSessions,
     positionedScheduleBlocks,
-    workingRanges,
   } = useMemo(() => {
-    const ranges: { start: number; end: number }[] = [];
-    const working: BusyRange[] = [];
-    for (const wh of workingHours) {
-      const r = { start: timeToMinutes(wh.start), end: timeToMinutes(wh.end) };
-      ranges.push(r);
-      working.push(r);
-    }
-
-    const rawBlocks = bookings.map((booking) => {
-      const start = timeToMinutes(booking.startTime);
-      let end = booking.endTime ? timeToMinutes(booking.endTime) : start + DEFAULT_DURATION_MINUTES;
-      if (end <= start) {
-        end = start + DEFAULT_DURATION_MINUTES;
-      }
-      ranges.push({ start, end });
-      return { booking, start, end };
-    });
-
-    const rawTimeBlocks = timeBlocks
-      .map((block) => {
-        const start = timeToMinutes(block.start);
-        const end = timeToMinutes(block.end);
-        return { block, start, end };
-      })
-      .filter(({ start, end }) => end > start);
-    for (const { start, end } of rawTimeBlocks) {
-      ranges.push({ start, end });
-    }
-
-    const rawSessions = sessions
-      .map((session) => {
-        const start = timeToMinutes(session.startTime);
-        const end = timeToMinutes(session.endTime);
-        return { session, start, end };
-      })
-      .filter(({ start, end }) => end > start);
-    for (const { start, end } of rawSessions) {
-      ranges.push({ start, end });
-    }
-
-    const rawScheduleBlocks = scheduleBlocks
-      .map((block) => {
-        const start = timeToMinutes(block.startTime);
-        const end = timeToMinutes(block.endTime);
-        return { block, start, end };
-      })
-      .filter(({ start, end }) => end > start);
-    for (const { start, end } of rawScheduleBlocks) {
-      ranges.push({ start, end });
-    }
-
-    const bounds = computeGridBounds(ranges, windowOverride);
     const gridStartMin = bounds.startHour * 60;
-    const total = (bounds.endHour - bounds.startHour) * 60 * PX_PER_MINUTE;
+    const total = (bounds.endHour - bounds.startHour) * 60 * pxPerMinute;
 
     // Pack lanes on TRUE minute ranges so non-overlapping short bookings stay
     // full-width — the visual min-height is applied AFTER lane assignment so it
     // never inflates extents into false overlaps (web lane model).
     const laneInputs: LaneInput[] = rawBlocks.map(({ booking, start, end }) => ({
       id: booking.id,
-      top: (start - gridStartMin) * PX_PER_MINUTE,
-      bottom: (end - gridStartMin) * PX_PER_MINUTE,
+      top: (start - gridStartMin) * pxPerMinute,
+      bottom: (end - gridStartMin) * pxPerMinute,
     }));
     const lanes = computeLaneLayouts(laneInputs);
 
     const blocks: PositionedBooking[] = rawBlocks.map(({ booking, start, end }) => {
       const lane = lanes.get(booking.id) ?? { laneIndex: 0, laneCount: 1 };
-      const top = (start - gridStartMin) * PX_PER_MINUTE;
+      const top = (start - gridStartMin) * pxPerMinute;
       // Visual floor for tappability — applied only now, post-lane-packing.
-      const height = Math.max((end - start) * PX_PER_MINUTE, MIN_BLOCK_HEIGHT);
+      const height = Math.max((end - start) * pxPerMinute, minBlockHeight);
       return {
         booking,
         top,
@@ -284,23 +339,23 @@ export function CalendarDayGrid({
 
     const overlayBlocks: PositionedTimeBlock[] = rawTimeBlocks.map(({ block, start, end }) => ({
       block,
-      top: (start - gridStartMin) * PX_PER_MINUTE,
-      height: Math.max((end - start) * PX_PER_MINUTE, MIN_BLOCK_HEIGHT),
+      top: (start - gridStartMin) * pxPerMinute,
+      height: Math.max((end - start) * pxPerMinute, minBlockHeight),
       timeLabel: `${minutesToTime(start)}–${minutesToTime(end)}`,
     }));
 
     const sessionItems: PositionedSession[] = rawSessions.map(({ session, start, end }) => ({
       session,
-      top: (start - gridStartMin) * PX_PER_MINUTE,
-      height: Math.max((end - start) * PX_PER_MINUTE, MIN_BLOCK_HEIGHT),
+      top: (start - gridStartMin) * pxPerMinute,
+      height: Math.max((end - start) * pxPerMinute, minBlockHeight),
       timeLabel: `${minutesToTime(start)}–${minutesToTime(end)}`,
     }));
 
     const scheduleItems: PositionedScheduleBlock[] = rawScheduleBlocks.map(
       ({ block, start, end }) => ({
         block,
-        top: (start - gridStartMin) * PX_PER_MINUTE,
-        height: Math.max((end - start) * PX_PER_MINUTE, MIN_BLOCK_HEIGHT),
+        top: (start - gridStartMin) * pxPerMinute,
+        height: Math.max((end - start) * pxPerMinute, minBlockHeight),
         timeLabel: `${minutesToTime(start)}–${minutesToTime(end)}`,
       }),
     );
@@ -313,9 +368,8 @@ export function CalendarDayGrid({
       positionedBlocks: overlayBlocks,
       positionedSessions: sessionItems,
       positionedScheduleBlocks: scheduleItems,
-      workingRanges: working,
     };
-  }, [bookings, workingHours, timeBlocks, sessions, scheduleBlocks, windowOverride]);
+  }, [bounds, rawBlocks, rawTimeBlocks, rawSessions, rawScheduleBlocks, pxPerMinute, minBlockHeight]);
 
   const hours = useMemo(
     () => Array.from({ length: endHour - startHour + 1 }, (_, i) => startHour + i),
@@ -330,7 +384,7 @@ export function CalendarDayGrid({
 
   const nowTop =
     nowMinutes != null && nowMinutes >= startHour * 60 && nowMinutes <= endHour * 60
-      ? (nowMinutes - startHour * 60) * PX_PER_MINUTE
+      ? (nowMinutes - startHour * 60) * pxPerMinute
       : null;
 
   // Scroll to the current time once per grid instance (web parity:
@@ -353,14 +407,14 @@ export function CalendarDayGrid({
       // locationY is relative to the inner grid View (which already sits below the
       // scroll padding) — the same space the hour lines use, so no padding offset.
       const y = event.nativeEvent.locationY;
-      const minutes = startHour * 60 + y / PX_PER_MINUTE;
+      const minutes = startHour * 60 + y / pxPerMinute;
       const snapped = Math.round(minutes / TAP_SNAP_MINUTES) * TAP_SNAP_MINUTES;
       // Clamp to the visible window so a tap below the last hour line doesn't map
       // past endHour (minutesToTime would otherwise silently cap it at 23:59).
       const clamped = Math.min(Math.max(snapped, startHour * 60), endHour * 60);
       onEmptyPress(minutesToTime(clamped));
     },
-    [startHour, endHour, onEmptyPress],
+    [startHour, endHour, pxPerMinute, onEmptyPress],
   );
 
   // Busy minute-ranges for drag-conflict detection, keyed by id so a dragged
@@ -415,10 +469,13 @@ export function CalendarDayGrid({
 
         {/* Hour rows: label + line + alternating shading + half-hour line. */}
         {hours.map((hour, index) => {
-          const top = (hour - startHour) * 60 * PX_PER_MINUTE;
+          const top = (hour - startHour) * 60 * pxPerMinute;
           const isLast = hour === endHour;
           return (
-            <View key={hour} style={[styles.hourRow, { top }]} pointerEvents="none">
+            <View
+              key={hour}
+              style={[styles.hourRow, { top, height: 60 * pxPerMinute }]}
+              pointerEvents="none">
               <View style={styles.hourLineRow}>
                 <Text variant="caption" tone="muted" style={styles.hourLabel}>
                   {hourLabel(hour)}
@@ -440,7 +497,7 @@ export function CalendarDayGrid({
                   <View
                     style={[
                       styles.halfHourLine,
-                      { top: 30 * PX_PER_MINUTE, backgroundColor: colors.border },
+                      { top: 30 * pxPerMinute, backgroundColor: colors.border },
                     ]}
                   />
                 </>
@@ -453,8 +510,8 @@ export function CalendarDayGrid({
             behind everything; pointerEvents none so a slot can still be tapped
             to book anyway. */}
         {closedRanges.map((r) => {
-          const top = (r.start - startHour * 60) * PX_PER_MINUTE;
-          const height = (r.end - r.start) * PX_PER_MINUTE;
+          const top = (r.start - startHour * 60) * pxPerMinute;
+          const height = (r.end - r.start) * pxPerMinute;
           return (
             <View
               key={`closed-${r.start}-${r.end}`}
@@ -595,8 +652,14 @@ export function CalendarDayGrid({
               guestAttendanceConfirmedAt={item.booking.guest_attendance_confirmed_at}
               top={item.top}
               height={item.height}
+              laneWidthPx={
+                blocksLayerWidth > 0
+                  ? Math.floor(blocksLayerWidth / item.laneCount)
+                  : undefined
+              }
               laneIndex={item.laneIndex}
               laneCount={item.laneCount}
+              pxPerMinute={pxPerMinute}
               startTime={item.booking.startTime}
               durationMinutes={item.durationMinutes}
               onPress={onBlockPress}
@@ -605,7 +668,10 @@ export function CalendarDayGrid({
               actionPending={pendingActionIds?.has(item.booking.id) ?? false}
               complianceFlag={complianceFlags?.[item.booking.id]}
               onDragReschedule={onDragReschedule}
-              onDragResize={onDragResize}
+              // Compact rows are too short for a usable resize grip — hide the
+              // affordance and disable the resize gesture (web parity: no
+              // resize affordances in compact day mode). Hold-drag MOVE stays.
+              onDragResize={compact ? undefined : onDragResize}
               onDragConflictReject={onDragConflictReject}
               busyRanges={busyRanges}
               workingRanges={workingRanges}
@@ -620,12 +686,26 @@ export function CalendarDayGrid({
   // the parent's pan, leaving the grids below it unreachable. Horizontal column
   // scrolling, where present, is orthogonal and unaffected.
   if (embedded) {
-    return <View style={styles.embeddedContent}>{grid}</View>;
+    return (
+      <View
+        style={styles.embeddedContent}
+        // Width still budgets the per-block quick actions; height is unused
+        // (compact fit needs a scroll viewport, which the parent owns here).
+        onLayout={(e) => setViewportWidth(e.nativeEvent.layout.width)}>
+        {grid}
+      </View>
+    );
   }
 
   return (
     <ScrollView
       ref={scrollRef}
+      // Compact mode fits the day to this viewport's height; the width budgets
+      // the per-block quick actions. Re-measures on rotation / window resize.
+      onLayout={(e) => {
+        setViewportHeight(e.nativeEvent.layout.height);
+        setViewportWidth(e.nativeEvent.layout.width);
+      }}
       contentContainerStyle={styles.scrollContent}
       showsVerticalScrollIndicator={false}
       refreshControl={
@@ -656,7 +736,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    height: 60 * PX_PER_MINUTE,
+    // height is set dynamically (60 * pxPerMinute) on the element.
   },
   hourLineRow: {
     flexDirection: 'row',

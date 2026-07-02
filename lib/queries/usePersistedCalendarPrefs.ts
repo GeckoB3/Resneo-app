@@ -31,6 +31,11 @@ export interface CalendarPrefs {
   startHourOverride: number | null;
   /** Visible-window end hour override (1–24), or null to auto-fit. */
   endHourOverride: number | null;
+  /**
+   * Compact day rows (web parity: the toolbar "Compact" toggle) — the day grids
+   * shrink their vertical scale to fit the whole day on screen.
+   */
+  compactDay: boolean;
 }
 
 export const DEFAULT_CALENDAR_PREFS: CalendarPrefs = {
@@ -39,6 +44,7 @@ export const DEFAULT_CALENDAR_PREFS: CalendarPrefs = {
   visibleIds: null,
   startHourOverride: null,
   endHourOverride: null,
+  compactDay: false,
 };
 
 const STORAGE_PREFIX = 'reserveni.calendar.prefs.';
@@ -70,6 +76,7 @@ function coercePrefs(raw: unknown): CalendarPrefs {
     visibleIds: coerceVisibleIds(o.visibleIds),
     startHourOverride: typeof o.startHourOverride === 'number' ? o.startHourOverride : null,
     endHourOverride: typeof o.endHourOverride === 'number' ? o.endHourOverride : null,
+    compactDay: o.compactDay === true,
   };
 }
 

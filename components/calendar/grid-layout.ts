@@ -5,6 +5,13 @@
 
 /** Vertical scale — pixels per minute. 2 → 120px per hour. */
 export const PX_PER_MINUTE = 2;
+/**
+ * Compact-day floor for the vertical scale — the web's MIN_SLOT_PX legibility
+ * floor (16px per 15-minute slot). Compact mode fits the whole day into the
+ * viewport but never squeezes tighter than this, so a very long day still
+ * scrolls a little rather than becoming unreadable.
+ */
+export const COMPACT_MIN_PX_PER_MINUTE = 16 / 15;
 /** Grid line interval in minutes (hour lines are emphasised). */
 export const SLOT_MINUTES = 30;
 /** Width of the left time-label gutter. */
@@ -17,6 +24,35 @@ export const TIME_GUTTER_WIDTH = 56;
  * purely cosmetic.
  */
 export const MIN_BLOCK_HEIGHT = 40;
+/**
+ * Compact-day visual floor for a block — one name row (12/15 text) plus the
+ * card's vertical padding. Deliberately smaller than {@link MIN_BLOCK_HEIGHT}:
+ * compact mode trades tap comfort for a glanceable whole-day overview (web
+ * parity: bars shrink to the slot scale), and a squeezed bar still opens its
+ * detail on tap.
+ */
+export const COMPACT_MIN_BLOCK_HEIGHT = 20;
+
+/**
+ * Compact-day vertical scale: fit the WHOLE visible window into the measured
+ * grid viewport (web parity: the measured slot height, clamped between the
+ * 16px/15min legibility floor and the comfortable scale — compact never zooms
+ * IN past comfortable). `chromePx` is the vertical chrome inside the viewport
+ * that the time canvas can't use (top padding, column headers, bottom gutter).
+ * Until the viewport is measured (0), returns the floor so the first painted
+ * frame is at most too small, never a jump-down.
+ */
+export function computeCompactPxPerMinute(
+  viewportHeight: number,
+  startHour: number,
+  endHour: number,
+  chromePx = 0,
+): number {
+  const totalMinutes = Math.max(60, (endHour - startHour) * 60);
+  if (viewportHeight <= 0) return COMPACT_MIN_PX_PER_MINUTE;
+  const fit = (viewportHeight - chromePx) / totalMinutes;
+  return Math.min(PX_PER_MINUTE, Math.max(COMPACT_MIN_PX_PER_MINUTE, fit));
+}
 /** Default opening when a day has no working hours. */
 export const DEFAULT_START_HOUR = 8;
 export const DEFAULT_END_HOUR = 20;
@@ -46,6 +82,45 @@ export function minutesToTime(totalMinutes: number): string {
 
 export function hourLabel(hour: number): string {
   return `${String(hour).padStart(2, '0')}:00`;
+}
+
+/**
+ * Web-parity breakpoint for the multi-calendar column floor: Tailwind's `sm`
+ * (640px window width), where the web switches from the phone column model to
+ * the desktop 240px floor.
+ */
+const COLUMN_FLOOR_BREAKPOINT = 640;
+/** Desktop column floor (web: `sm:min-w-[240px]`). */
+const COLUMN_MIN_WIDTH_WIDE = 240;
+/** Phone column cap (web: `min-w-[min(16rem, calc(100vw - 5.5rem))]` → 16rem). */
+const COLUMN_MIN_WIDTH_PHONE_CAP = 256;
+/**
+ * Phone: how much narrower than the columns viewport a column floors at (web's
+ * `100vw - 5.5rem` = viewport − gutter − 32px), leaving a peek of the next
+ * column so the horizontal scroll affords itself.
+ */
+const COLUMN_PHONE_PEEK = 32;
+/** Absolute floor so a degenerate viewport can't produce unusably thin columns. */
+const COLUMN_MIN_WIDTH_FLOOR = 160;
+
+/**
+ * Minimum column width for the multi-calendar day grid (web parity).
+ *
+ * The web's columns are `min-w-[min(16rem, calc(100vw - 5.5rem))] flex-1` on
+ * phones — one nearly full-screen column (capped at 256px) with a sliver of the
+ * next peeking in, swiped horizontally — and `sm:min-w-[240px]` on wider
+ * viewports. Wide columns are what give the guest name and the quick actions
+ * room to render side by side.
+ *
+ * @param columnsViewportWidth Width available to the columns (excludes the gutter).
+ */
+export function computeColumnMinWidth(columnsViewportWidth: number): number {
+  const windowWidth = columnsViewportWidth + TIME_GUTTER_WIDTH;
+  if (windowWidth >= COLUMN_FLOOR_BREAKPOINT) return COLUMN_MIN_WIDTH_WIDE;
+  return Math.max(
+    COLUMN_MIN_WIDTH_FLOOR,
+    Math.min(COLUMN_MIN_WIDTH_PHONE_CAP, columnsViewportWidth - COLUMN_PHONE_PEEK),
+  );
 }
 
 /**

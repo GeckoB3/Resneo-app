@@ -43,6 +43,7 @@ describe('pruneStaleSelectedId', () => {
     visibleIds: null,
     startHourOverride: 8,
     endHourOverride: 20,
+    compactDay: false,
   };
 
   it('keeps a selectedId that still exists (same reference back)', () => {
@@ -127,7 +128,20 @@ describe('usePersistedCalendarPrefs', () => {
       visibleIds: null,
       startHourOverride: 7,
       endHourOverride: null,
+      compactDay: false,
     });
+  });
+
+  it('round-trips the compact-day toggle across a fresh mount', async () => {
+    const first = await renderHook(() => usePersistedCalendarPrefs('venue_1'));
+    await waitFor(() => expect(first.result.current.hydrated).toBe(true));
+    await act(async () => {
+      first.result.current.setPrefs({ compactDay: true });
+    });
+
+    const second = await renderHook(() => usePersistedCalendarPrefs('venue_1'));
+    await waitFor(() => expect(second.result.current.hydrated).toBe(true));
+    expect(second.result.current.prefs.compactDay).toBe(true);
   });
 
   it('round-trips a visibleIds subset across a fresh mount', async () => {
@@ -193,5 +207,18 @@ describe('usePersistedCalendarPrefs', () => {
     const { result } = await renderHook(() => usePersistedCalendarPrefs('venue_1'));
     await waitFor(() => expect(result.current.hydrated).toBe(true));
     expect(result.current.prefs).toEqual(DEFAULT_CALENDAR_PREFS);
+  });
+
+  it('coerces a non-boolean compactDay (and a pre-compact stored blob) to false', async () => {
+    // A blob persisted before the compactDay field existed has no such key;
+    // a corrupt one may hold a truthy non-boolean. Both must coerce to false.
+    mockStore.set(
+      'reserveni.calendar.prefs.venue_1',
+      JSON.stringify({ scope: 'day', selectedId: 'cal_1', compactDay: 'yes' }),
+    );
+    const { result } = await renderHook(() => usePersistedCalendarPrefs('venue_1'));
+    await waitFor(() => expect(result.current.hydrated).toBe(true));
+    expect(result.current.prefs.compactDay).toBe(false);
+    expect(result.current.prefs.selectedId).toBe('cal_1');
   });
 });

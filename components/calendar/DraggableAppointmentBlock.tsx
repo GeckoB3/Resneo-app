@@ -117,9 +117,18 @@ type DraggableAppointmentBlockProps = {
   top: number;
   /** Visual height in px. */
   height: number;
+  /** Visual width in px when the parent knows it (multi-calendar lane width) —
+   *  budgets the tray actions. Omitted → full-screen-column heuristic. */
+  laneWidthPx?: number;
   /** Overlap lane — drives percentage left/width within the blocks layer. */
   laneIndex: number;
   laneCount: number;
+  /**
+   * Vertical scale (px per minute) the parent grid is rendering at. Drives the
+   * drag/resize minute↔px math so a compact-day grid drags accurately. Defaults
+   * to the comfortable module scale.
+   */
+  pxPerMinute?: number;
   /** The booking's start time "HH:mm[:ss]" — used to compute the new time. */
   startTime: string;
   /** True duration in minutes — used for duration resize. */
@@ -209,8 +218,10 @@ export function DraggableAppointmentBlock({
   guestAttendanceConfirmedAt,
   top,
   height,
+  laneWidthPx,
   laneIndex,
   laneCount,
+  pxPerMinute = PX_PER_MINUTE,
   startTime,
   durationMinutes,
   onPress,
@@ -427,12 +438,12 @@ export function DraggableAppointmentBlock({
     .onUpdate((event) => {
       'worklet';
       if (mode.value === 1) {
-        const deltaMinutes = event.translationY / PX_PER_MINUTE;
+        const deltaMinutes = event.translationY / pxPerMinute;
         const snapped = clampMinutes(
           snapToGrid(originalMinutes + deltaMinutes, DRAG_SNAP_MINUTES),
         );
         liveMinutes.value = snapped;
-        translateY.value = (snapped - originalMinutes) * PX_PER_MINUTE;
+        translateY.value = (snapped - originalMinutes) * pxPerMinute;
         if (crossColumnEnabled) {
           // Follow the finger horizontally too, and report its screen-X so the
           // parent can auto-scroll the columns when it nears an edge. `autoScrollDelta`
@@ -460,14 +471,14 @@ export function DraggableAppointmentBlock({
           );
         }
       } else if (mode.value === 2) {
-        const deltaMins = event.translationY / PX_PER_MINUTE;
+        const deltaMins = event.translationY / pxPerMinute;
         const snapped = snapToGrid(durationMinutes + deltaMins, DRAG_SNAP_MINUTES);
         const clamped = Math.max(
           MIN_DURATION_MINUTES,
           Math.min(MAX_DURATION_MINUTES, snapped),
         );
         liveDurationMins.value = clamped;
-        heightOverride.value = clamped * PX_PER_MINUTE;
+        heightOverride.value = clamped * pxPerMinute;
         // Resizing keeps the start; flag overlap with the new tail.
         conflict.value = evaluateConflict(
           originalMinutes,
@@ -659,6 +670,7 @@ export function DraggableAppointmentBlock({
           staffAttendanceConfirmedAt={staffAttendanceConfirmedAt}
           guestAttendanceConfirmedAt={guestAttendanceConfirmedAt}
           height={densityHeight}
+          widthPx={laneWidthPx}
           laneIndex={laneIndex}
           laneCount={laneCount}
           onPress={onPress}

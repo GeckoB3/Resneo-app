@@ -1,4 +1,6 @@
 import {
+  COMPACT_MIN_BLOCK_HEIGHT,
+  COMPACT_MIN_PX_PER_MINUTE,
   DEFAULT_END_HOUR,
   DEFAULT_START_HOUR,
   DRAG_SNAP_MINUTES,
@@ -7,6 +9,8 @@ import {
   SLOT_MINUTES,
   TAP_SNAP_MINUTES,
   TIME_GUTTER_WIDTH,
+  computeColumnMinWidth,
+  computeCompactPxPerMinute,
   computeFillColumnWidth,
   computeGridBounds,
   computeLaneLayouts,
@@ -37,6 +41,66 @@ describe('layout constants', () => {
   it('defaults the day window to 08:00–20:00', () => {
     expect(DEFAULT_START_HOUR).toBe(8);
     expect(DEFAULT_END_HOUR).toBe(20);
+  });
+
+  it('floors the compact scale at the web legibility floor (16px per 15min)', () => {
+    expect(COMPACT_MIN_PX_PER_MINUTE).toBeCloseTo(16 / 15);
+    expect(COMPACT_MIN_BLOCK_HEIGHT).toBe(20);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeCompactPxPerMinute — compact day fits the whole day to the viewport.
+// ---------------------------------------------------------------------------
+describe('computeCompactPxPerMinute', () => {
+  it('fits the day exactly into a viewport that has room (tablet)', () => {
+    // 12h day (08:00–20:00) = 720min into 1200px minus 48px chrome → 1.6 px/min.
+    expect(computeCompactPxPerMinute(1200, 8, 20, 48)).toBeCloseTo(1152 / 720);
+  });
+
+  it('never squeezes below the legibility floor on a short phone viewport', () => {
+    // 600px for a 12h day would be 0.77px/min — clamp to the floor (still scrolls).
+    expect(computeCompactPxPerMinute(600, 8, 20, 48)).toBeCloseTo(COMPACT_MIN_PX_PER_MINUTE);
+  });
+
+  it('never zooms IN past the comfortable scale on a huge viewport', () => {
+    // A short 4h window on a tall screen must not exceed the comfortable 2px/min.
+    expect(computeCompactPxPerMinute(2000, 9, 13, 0)).toBe(PX_PER_MINUTE);
+  });
+
+  it('uses the floor until the viewport is measured', () => {
+    expect(computeCompactPxPerMinute(0, 8, 20, 48)).toBe(COMPACT_MIN_PX_PER_MINUTE);
+  });
+
+  it('guards a degenerate window (end <= start) with a one-hour minimum', () => {
+    // 60min minimum keeps the division sane; result still clamps into range.
+    const v = computeCompactPxPerMinute(400, 10, 10, 0);
+    expect(v).toBeGreaterThanOrEqual(COMPACT_MIN_PX_PER_MINUTE);
+    expect(v).toBeLessThanOrEqual(PX_PER_MINUTE);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeColumnMinWidth — web-parity column floor (phone ≈ full-screen column).
+// ---------------------------------------------------------------------------
+describe('computeColumnMinWidth', () => {
+  it('caps a phone column at 256px (web min-w-[16rem])', () => {
+    // 390px window → columns viewport 334 → min(256, 334 − 32) = 256.
+    expect(computeColumnMinWidth(390 - TIME_GUTTER_WIDTH)).toBe(256);
+  });
+
+  it('narrows with the viewport on small phones (web calc(100vw − 5.5rem))', () => {
+    // 320px window → viewport 264 → min(256, 232) = 232.
+    expect(computeColumnMinWidth(320 - TIME_GUTTER_WIDTH)).toBe(232);
+  });
+
+  it('uses the 240px desktop floor at/above the sm breakpoint', () => {
+    expect(computeColumnMinWidth(640 - TIME_GUTTER_WIDTH)).toBe(240); // boundary
+    expect(computeColumnMinWidth(1024 - TIME_GUTTER_WIDTH)).toBe(240); // tablet
+  });
+
+  it('never returns an unusably thin column before the viewport is measured', () => {
+    expect(computeColumnMinWidth(0)).toBe(160);
   });
 });
 

@@ -38,6 +38,9 @@ import {
 } from '@/components/calendar/CalendarDayGrid';
 import { DraggableAppointmentBlock } from '@/components/calendar/DraggableAppointmentBlock';
 import {
+  COMPACT_MIN_BLOCK_HEIGHT,
+  computeColumnMinWidth,
+  computeCompactPxPerMinute,
   computeFillColumnWidth,
   computeGridBounds,
   computeLaneLayouts,
@@ -65,15 +68,14 @@ import type {
 import type { CalendarScheduleBlock } from '@/types/schedule-blocks';
 
 const DEFAULT_DURATION_MINUTES = 30;
-/** Floor width per column. Columns grow past this to FILL the viewport when they
- *  fit (see computeFillColumnWidth); below it the grid scrolls horizontally. */
-const COLUMN_MIN_WIDTH = 168;
 const COLUMN_GAP = spacing.xs;
 /** Distance (px) from a horizontal edge that arms auto-scroll during a cross-column drag. */
 const SCROLL_EDGE = 56;
 /** Pixels scrolled per frame while the dragging finger sits in the edge zone. */
 const SCROLL_SPEED = 9;
 const PADDING_TOP = spacing.sm;
+/** Bottom gutter reserved by the compact fit so the day ends just above the fold. */
+const COMPACT_BOTTOM_GUTTER = 16;
 const SESSION_ACCENT = '#6366F1';
 
 /** One calendar's day data (a practitioner, or a linked venue), as assembled by the calendar screen. */
@@ -150,12 +152,21 @@ type AllCalendarsDayGridProps = {
   pendingActionIds?: Set<string>;
   refreshing?: boolean;
   onRefresh?: () => void;
+  /**
+   * Compact day rows (web parity: the toolbar "Compact" toggle) — shrink the
+   * shared vertical scale so the whole day fits the measured viewport (floored
+   * at the web's 16px/15min legibility scale). Blocks shrink with the scale
+   * (density rules drop text rows/actions) and the resize affordance is hidden.
+   */
+  compact?: boolean;
 };
 
 /** Lay out one column's bookings into lanes on TRUE minute ranges. */
 function positionColumn(
   bookings: CalendarGridBooking[],
   gridStartMin: number,
+  pxPerMinute: number,
+  minBlockHeight: number,
 ): PositionedBooking[] {
   const raw = bookings.map((booking) => {
     const start = timeToMinutes(booking.startTime);
@@ -166,8 +177,8 @@ function positionColumn(
 
   const laneInputs: LaneInput[] = raw.map(({ booking, start, end }) => ({
     id: booking.id,
-    top: (start - gridStartMin) * PX_PER_MINUTE,
-    bottom: (end - gridStartMin) * PX_PER_MINUTE,
+    top: (start - gridStartMin) * pxPerMinute,
+    bottom: (end - gridStartMin) * pxPerMinute,
   }));
   const lanes = computeLaneLayouts(laneInputs);
 
@@ -175,8 +186,8 @@ function positionColumn(
     const lane = lanes.get(booking.id) ?? { laneIndex: 0, laneCount: 1 };
     return {
       booking,
-      top: (start - gridStartMin) * PX_PER_MINUTE,
-      height: Math.max((end - start) * PX_PER_MINUTE, MIN_BLOCK_HEIGHT),
+      top: (start - gridStartMin) * pxPerMinute,
+      height: Math.max((end - start) * pxPerMinute, minBlockHeight),
       laneIndex: lane.laneIndex,
       laneCount: lane.laneCount,
       durationMinutes: end - start,
@@ -206,17 +217,29 @@ export function AllCalendarsDayGrid({
   pendingActionIds,
   refreshing = false,
   onRefresh,
+  compact = false,
 }: AllCalendarsDayGridProps) {
   const { colors } = useTheme();
+
+  // Measured height of the vertical scroll viewport — compact mode fits the
+  // whole day into it. 0 until the first layout (compact then uses its floor).
+  const [viewportHeight, setViewportHeight] = useState(0);
 
   // Measured width of the columns ScrollView (excludes the sticky time gutter).
   // Drives fill-to-width column sizing so a handful of calendars span the screen
   // instead of leaving dead space on a tablet; until measured it falls back to
-  // the min width (the grid scrolls). Mirrors the web's flex-1 + min-w columns.
+  // the min width (the grid scrolls). Mirrors the web's flex-1 + min-w columns:
+  // phones get one nearly full-screen column (peek + swipe for the rest), wider
+  // viewports the 240px desktop floor — wide enough for name + quick actions.
   const [columnsViewportWidth, setColumnsViewportWidth] = useState(0);
   const columnWidth = useMemo(
     () =>
-      computeFillColumnWidth(columnsViewportWidth, calendars.length, COLUMN_GAP, COLUMN_MIN_WIDTH),
+      computeFillColumnWidth(
+        columnsViewportWidth,
+        calendars.length,
+        COLUMN_GAP,
+        computeColumnMinWidth(columnsViewportWidth),
+      ),
     [columnsViewportWidth, calendars.length],
   );
   /** Horizontal distance between adjacent columns (width + gap) — converts a
@@ -310,7 +333,7 @@ export function AllCalendarsDayGrid({
   /* eslint-enable react-hooks/immutability */
 
   // Shared bounds across ALL columns so every column uses the same time scale.
-  const { startHour, endHour, totalHeight, gridStartMin } = useMemo(() => {
+  const { startHour, endHour, gridStartMin } = useMemo(() => {
     const ranges: { start: number; end: number }[] = [];
     for (const cal of calendars) {
       for (const wh of cal.workingHours) {
@@ -335,10 +358,24 @@ export function AllCalendarsDayGrid({
     return {
       startHour: bounds.startHour,
       endHour: bounds.endHour,
-      totalHeight: (bounds.endHour - bounds.startHour) * 60 * PX_PER_MINUTE,
       gridStartMin: bounds.startHour * 60,
     };
   }, [calendars, windowOverride]);
+
+  // Shared vertical scale: comfortable 2px/min, or compact fit-the-day-to-the-
+  // viewport (web parity: measured slot height floored at 16px/15min). The fit
+  // subtracts the chrome above the time canvas (scroll padding + the column-
+  // header row) and a small bottom gutter.
+  const pxPerMinute = compact
+    ? computeCompactPxPerMinute(
+        viewportHeight,
+        startHour,
+        endHour,
+        PADDING_TOP + HEADER_HEIGHT + COMPACT_BOTTOM_GUTTER,
+      )
+    : PX_PER_MINUTE;
+  const minBlockHeight = compact ? COMPACT_MIN_BLOCK_HEIGHT : MIN_BLOCK_HEIGHT;
+  const totalHeight = (endHour - startHour) * 60 * pxPerMinute;
 
   const hours = useMemo(
     () => Array.from({ length: endHour - startHour + 1 }, (_, i) => startHour + i),
@@ -347,7 +384,7 @@ export function AllCalendarsDayGrid({
 
   const nowTop =
     nowMinutes != null && nowMinutes >= startHour * 60 && nowMinutes <= endHour * 60
-      ? (nowMinutes - startHour * 60) * PX_PER_MINUTE
+      ? (nowMinutes - startHour * 60) * pxPerMinute
       : null;
 
   // The multi-column body: a sticky time gutter beside the horizontally
@@ -361,7 +398,7 @@ export function AllCalendarsDayGrid({
               key={hour}
               variant="caption"
               tone="muted"
-              style={[styles.gutterLabel, { top: (hour - startHour) * 60 * PX_PER_MINUTE - 7 }]}>
+              style={[styles.gutterLabel, { top: (hour - startHour) * 60 * pxPerMinute - 7 }]}>
               {hourLabel(hour)}
             </Text>
           ))}
@@ -415,7 +452,7 @@ export function AllCalendarsDayGrid({
                   pointerEvents="none"
                   style={[
                     styles.hourLine,
-                    { top: (hour - startHour) * 60 * PX_PER_MINUTE, backgroundColor: colors.border },
+                    { top: (hour - startHour) * 60 * pxPerMinute, backgroundColor: colors.border },
                   ]}
                 />
               ))}
@@ -458,13 +495,17 @@ export function AllCalendarsDayGrid({
                       startHour * 60,
                       endHour * 60,
                     )}
+                    pxPerMinute={pxPerMinute}
+                    minBlockHeight={minBlockHeight}
                     onBlockPress={onBlockPress}
                     onEmptyPress={onEmptyPress}
                     onStatusChange={onStatusChange}
                     onArrivalToggle={onArrivalToggle}
                     complianceFlags={complianceFlags}
                     onDragReschedule={onDragReschedule}
-                    onDragResize={onDragResize}
+                    // Compact rows are too short for a usable resize grip — hide
+                    // the affordance and disable the resize gesture (web parity).
+                    onDragResize={compact ? undefined : onDragResize}
                     onDragConflictReject={onDragConflictReject}
                     onDragMoveToColumn={onDragMoveToColumn}
                     pendingActionIds={pendingActionIds}
@@ -479,6 +520,9 @@ export function AllCalendarsDayGrid({
 
   return (
     <ScrollView
+      // Compact mode fits the day to this viewport — measure it (and re-measure
+      // on rotation / window resize).
+      onLayout={(e) => setViewportHeight(e.nativeEvent.layout.height)}
       showsVerticalScrollIndicator={false}
       contentContainerStyle={styles.scrollContent}
       refreshControl={
@@ -510,6 +554,8 @@ function DayColumn({
   gridStartMin,
   startHour,
   endHour,
+  pxPerMinute,
+  minBlockHeight,
   closedRanges,
   onBlockPress,
   onEmptyPress,
@@ -540,6 +586,10 @@ function DayColumn({
   gridStartMin: number;
   startHour: number;
   endHour: number;
+  /** Shared vertical scale (px per minute) — comfortable or the compact fit. */
+  pxPerMinute: number;
+  /** Visual floor for a block's height at the current scale. */
+  minBlockHeight: number;
   /** This column's out-of-hours / closed-day minute ranges (already resolved). */
   closedRanges: { start: number; end: number }[];
   onBlockPress: (bookingId: string) => void;
@@ -560,8 +610,8 @@ function DayColumn({
 }) {
   const { colors } = useTheme();
   const positioned = useMemo(
-    () => positionColumn(column.bookings, gridStartMin),
-    [column.bookings, gridStartMin],
+    () => positionColumn(column.bookings, gridStartMin, pxPerMinute, minBlockHeight),
+    [column.bookings, gridStartMin, pxPerMinute, minBlockHeight],
   );
 
   const overlays = useMemo(
@@ -653,8 +703,8 @@ function DayColumn({
           shades its OWN hours so a linked venue's closures stay accurate even
           when they differ from the host venue's. */}
       {closedRanges.map((r) => {
-        const top = (r.start - startHour * 60) * PX_PER_MINUTE;
-        const height = (r.end - r.start) * PX_PER_MINUTE;
+        const top = (r.start - startHour * 60) * pxPerMinute;
+        const height = (r.end - r.start) * pxPerMinute;
         return (
           <View
             key={`closed-${r.start}-${r.end}`}
@@ -675,7 +725,7 @@ function DayColumn({
         accessibilityLabel={`Tap an empty slot to add a booking for ${column.calendarName}`}
         onPress={(event) => {
           const y = event.nativeEvent.locationY;
-          const minutes = startHour * 60 + y / PX_PER_MINUTE;
+          const minutes = startHour * 60 + y / pxPerMinute;
           const snapped = Math.round(minutes / TAP_SNAP_MINUTES) * TAP_SNAP_MINUTES;
           // Clamp to the visible window (a tap below the last hour line must not
           // map past endHour, which minutesToTime would cap at 23:59).
@@ -692,8 +742,8 @@ function DayColumn({
           style={[
             styles.overlay,
             {
-              top: (start - gridStartMin) * PX_PER_MINUTE,
-              height: Math.max((end - start) * PX_PER_MINUTE, MIN_BLOCK_HEIGHT),
+              top: (start - gridStartMin) * pxPerMinute,
+              height: Math.max((end - start) * pxPerMinute, minBlockHeight),
               borderColor: colors.border,
             },
           ]}>
@@ -711,8 +761,8 @@ function DayColumn({
           style={[
             styles.session,
             {
-              top: (start - gridStartMin) * PX_PER_MINUTE,
-              height: Math.max((end - start) * PX_PER_MINUTE, MIN_BLOCK_HEIGHT),
+              top: (start - gridStartMin) * pxPerMinute,
+              height: Math.max((end - start) * pxPerMinute, minBlockHeight),
               backgroundColor: `${SESSION_ACCENT}1F`,
               borderColor: SESSION_ACCENT,
             },
@@ -726,7 +776,7 @@ function DayColumn({
       {/* Class / event / resource blocks from the schedule feed — read-only,
           named, accent-coloured. Disjoint from `sessions` (different feed). */}
       {scheduleBlocks.map(({ block, start, end }) => {
-        const height = Math.max((end - start) * PX_PER_MINUTE, MIN_BLOCK_HEIGHT);
+        const height = Math.max((end - start) * pxPerMinute, minBlockHeight);
         return (
           <View
             key={block.id}
@@ -737,7 +787,7 @@ function DayColumn({
             style={[
               styles.scheduleBlock,
               {
-                top: (start - gridStartMin) * PX_PER_MINUTE,
+                top: (start - gridStartMin) * pxPerMinute,
                 height,
                 backgroundColor: hexToRgba(block.accent, 0.12),
                 borderColor: block.accent,
@@ -760,6 +810,11 @@ function DayColumn({
           the single grid uses; a plain swipe still scrolls/pages. Linked-venue
           bookings are read-only — a static, tap-to-open card. */}
       {positioned.map((item) => {
+        // The bar's true px width — the resolved column width split across its
+        // overlap lanes. Budgets how many tray actions fit (buttons show where
+        // space allows, web parity), since a multi-calendar column is far
+        // narrower than the single-calendar grid's full-screen column.
+        const laneWidthPx = Math.floor(columnWidth / item.laneCount);
         if (column.linked) {
           const widthPct = 100 / item.laneCount;
           return (
@@ -784,6 +839,7 @@ function DayColumn({
                 staffAttendanceConfirmedAt={item.booking.staff_attendance_confirmed_at}
                 guestAttendanceConfirmedAt={item.booking.guest_attendance_confirmed_at}
                 height={item.height}
+                widthPx={laneWidthPx}
                 laneIndex={item.laneIndex}
                 laneCount={item.laneCount}
                 onPress={onBlockPress}
@@ -805,8 +861,10 @@ function DayColumn({
             guestAttendanceConfirmedAt={item.booking.guest_attendance_confirmed_at}
             top={item.top}
             height={item.height}
+            laneWidthPx={laneWidthPx}
             laneIndex={item.laneIndex}
             laneCount={item.laneCount}
+            pxPerMinute={pxPerMinute}
             startTime={item.booking.startTime}
             durationMinutes={item.durationMinutes}
             onPress={onBlockPress}
