@@ -167,7 +167,7 @@ export function buildDestinations(ctx: DestinationsContext): Destination[] {
   }
   // Compliance — appointment tier + records flag, shown to staff AND admin (web parity).
   if (isAppointmentTier && complianceEnabled) {
-    list.push({ id: 'compliance', label: 'Compliance', hint: 'Forms, records & expiries', icon: { ios: 'checkmark.shield.fill', android: 'verified_user', web: 'verified_user' }, tile: TILE.emerald, group: 'setup', kind: 'route', target: '/manage/compliance', keywords: ['consent', 'forms', 'documents', 'certificates'] });
+    list.push({ id: 'compliance', label: 'Compliance', hint: 'Forms, records & expiries', icon: { ios: 'checkmark.shield.fill', android: 'verified_user', web: 'verified_user' }, tile: TILE.emerald, group: 'setup', kind: 'route', target: '/manage/compliance', keywords: ['consent', 'forms', 'documents', 'certificates', 'requirements', 'templates'] });
   }
 
   // ── Team & clients — people, messaging & client data. ──────────────────────
