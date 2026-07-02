@@ -116,6 +116,25 @@ describe('buildDestinations — Compliance eligibility (tier + flag, staff + adm
     const list = ids(ctx({ isAdmin: true, pricingTier: 'restaurant', complianceEnabled: true }));
     expect(list).not.toContain('compliance');
   });
+
+  // Compliance settings mirrors the web Settings → Compliance tab: admin +
+  // appointment tier, NOT gated on the records flag (admins enable it there).
+  it('shows Compliance settings to admins even with the records flag off', () => {
+    const list = ids(ctx({ isAdmin: true, pricingTier: 'appointments', complianceEnabled: false }));
+    expect(list).toContain('compliance-settings');
+  });
+
+  it('hides Compliance settings from non-admin staff (web SettingsView parity)', () => {
+    const list = ids(
+      ctx({ isAdmin: false, pricingTier: 'appointments', complianceEnabled: true }),
+    );
+    expect(list).not.toContain('compliance-settings');
+  });
+
+  it('hides Compliance settings on a non-appointment tier', () => {
+    const list = ids(ctx({ isAdmin: true, pricingTier: 'restaurant', complianceEnabled: true }));
+    expect(list).not.toContain('compliance-settings');
+  });
 });
 
 describe('buildDestinations — Waitlist & Calendar-availability eligibility', () => {

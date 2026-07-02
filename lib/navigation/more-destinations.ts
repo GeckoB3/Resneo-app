@@ -167,7 +167,13 @@ export function buildDestinations(ctx: DestinationsContext): Destination[] {
   }
   // Compliance — appointment tier + records flag, shown to staff AND admin (web parity).
   if (isAppointmentTier && complianceEnabled) {
-    list.push({ id: 'compliance', label: 'Compliance', hint: 'Forms, records & expiries', icon: { ios: 'checkmark.shield.fill', android: 'verified_user', web: 'verified_user' }, tile: TILE.emerald, group: 'setup', kind: 'route', target: '/manage/compliance', keywords: ['consent', 'forms', 'documents', 'certificates', 'requirements', 'templates'] });
+    list.push({ id: 'compliance', label: 'Compliance', hint: 'Check-ins, expiries & outstanding forms', icon: { ios: 'checkmark.shield.fill', android: 'verified_user', web: 'verified_user' }, tile: TILE.emerald, group: 'setup', kind: 'route', target: '/manage/compliance', keywords: ['consent', 'forms', 'documents', 'certificates', 'requirements', 'check-in', 'expiring'] });
+  }
+  // Compliance settings — the web Settings → Compliance tab (Templates /
+  // Requirements / General). Admin + appointment tier, NOT gated on the records
+  // flag (web SettingsView parity) so admins can turn compliance on from here.
+  if (isAdmin && isAppointmentTier) {
+    list.push({ id: 'compliance-settings', label: 'Compliance settings', hint: 'Templates, service requirements & defaults', icon: { ios: 'checklist', android: 'rule', web: 'rule' }, tile: TILE.slate, group: 'setup', kind: 'route', target: '/manage/compliance-settings', keywords: ['settings', 'consent', 'forms', 'templates', 'requirements', 'general', 'enforcement'] });
   }
 
   // ── Team & clients — people, messaging & client data. ──────────────────────

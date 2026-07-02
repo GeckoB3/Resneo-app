@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
 import type { ComplianceOnlineCollection } from '@/lib/compliance/constants';
@@ -119,6 +119,22 @@ const requirementKeys = {
     ] as const,
 };
 
+/**
+ * Shared fetcher so the single-service hook and the bulk counts hook stay in
+ * lockstep — the SAME query key must always map to the same payload, letting
+ * the panel's count queries seed the editor's cache (expanding a service is
+ * then instant) and vice versa.
+ */
+async function fetchRequirementsForService(
+  accessToken: string,
+  serviceId: string,
+): Promise<{ requirements: ComplianceRequirementRow[] }> {
+  return apiFetch<{ requirements: ComplianceRequirementRow[] }>(
+    `/api/venue/compliance/requirements?service_id=${encodeURIComponent(serviceId)}`,
+    { accessToken },
+  );
+}
+
 /** GET /api/venue/compliance/requirements?service_id=… */
 export function useComplianceRequirements(serviceId: string | null, enabled = true) {
   const accessToken = useAccessToken();
@@ -133,10 +149,51 @@ export function useComplianceRequirements(serviceId: string | null, enabled = tr
       if (!accessToken || !serviceId) {
         throw new Error('Missing parameters');
       }
-      return apiFetch<{ requirements: ComplianceRequirementRow[] }>(
-        `/api/venue/compliance/requirements?service_id=${encodeURIComponent(serviceId)}`,
-        { accessToken },
-      );
+      return fetchRequirementsForService(accessToken, serviceId);
+    },
+  });
+}
+
+/**
+ * Requirement COUNTS for many services at once — drives the at-a-glance
+ * markers on the Settings → Compliance Requirements tab (which services have a
+ * requirement without expanding each one). The backend's GET requires a
+ * `service_id` (no list-all route), so this fans out one light query per
+ * service, sharing {@link requirementKeys.forService} with the editor's hook so
+ * the caches feed each other and every requirement mutation (which invalidates
+ * `queryKeys.compliance.all()`) refreshes the markers automatically.
+ *
+ * Returns a Map of serviceId → requirement count; a service is absent until
+ * its query resolves (render no marker rather than a wrong one).
+ */
+export function useComplianceRequirementCounts(
+  serviceIds: string[],
+  enabled = true,
+): Map<string, number> {
+  const accessToken = useAccessToken();
+  const queryEnabled = enabled && isBackendConfigured() && accessToken !== null;
+
+  return useQueries({
+    queries: serviceIds.map((serviceId) => ({
+      queryKey: requirementKeys.forService(accessToken, serviceId),
+      enabled: queryEnabled && !!serviceId,
+      retry: false, // 403/402 = plan gate
+      queryFn: async (): Promise<{ requirements: ComplianceRequirementRow[] }> => {
+        if (!accessToken || !serviceId) {
+          throw new Error('Missing parameters');
+        }
+        return fetchRequirementsForService(accessToken, serviceId);
+      },
+    })),
+    combine: (results) => {
+      const counts = new Map<string, number>();
+      results.forEach((result, index) => {
+        const serviceId = serviceIds[index];
+        if (serviceId && result.data) {
+          counts.set(serviceId, result.data.requirements.length);
+        }
+      });
+      return counts;
     },
   });
 }

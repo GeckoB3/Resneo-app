@@ -14,6 +14,8 @@ type CollapsibleCardProps = {
   title: string;
   /** Muted text on the right of the header (e.g. a count or status). */
   summary?: string | null;
+  /** Optional visual marker (e.g. a pill/badge) shown before the summary. */
+  marker?: ReactNode;
   defaultExpanded?: boolean;
   /** Lazily render children only after the first expand. */
   lazy?: boolean;
@@ -35,6 +37,7 @@ type CollapsibleCardProps = {
 export function CollapsibleCard({
   title,
   summary,
+  marker,
   defaultExpanded = false,
   lazy = false,
   animateLayout = true,
@@ -74,6 +77,7 @@ export function CollapsibleCard({
           style={({ pressed }) => [styles.header, { opacity: pressed ? 0.55 : 1 }]}>
           <Text variant="label">{title}</Text>
           <View style={styles.headerRight}>
+            {marker ?? null}
             {summary ? (
               <Text variant="caption" tone="muted" numberOfLines={1} style={styles.summary}>
                 {summary}

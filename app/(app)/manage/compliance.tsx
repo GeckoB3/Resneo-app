@@ -1,8 +1,7 @@
-import { Linking, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
-import * as WebBrowser from 'expo-web-browser';
 import { Stack, useRouter, type Href } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 
@@ -18,7 +17,6 @@ import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { calendarDateInTimeZone } from '@/lib/dates/venue-dates';
-import { getWebUrl } from '@/lib/env';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useScreenCaptureProtection } from '@/lib/security/useScreenCaptureProtection';
 import {
@@ -38,15 +36,6 @@ import type { ComplianceMissingRow } from '@/types/compliance';
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/** Web Settings → Compliance tab, where templates are managed. */
-const WEB_COMPLIANCE_PATH = '/dashboard/settings?tab=compliance';
-
-/** Resolve a staff-dashboard URL on the configured WEB origin (prod fallback). */
-function webDashboardUrl(path: string): string {
-  const base = getWebUrl();
-  return base ? `${base}${path}` : `https://app.resneo.com${path}`;
-}
 
 /** DD/MM/YYYY — consistent format matching the web. Handles bare date and timestamps. */
 function formatComplianceDate(iso: string | null | undefined): string {
@@ -133,7 +122,6 @@ type CaptureTarget = {
 type ComplianceAction =
   | { kind: 'resend'; id: string; guestName: string }
   | { kind: 'revoke'; id: string; guestName: string }
-  | { kind: 'disable' }
   | {
       kind: 'send';
       key: string;
@@ -162,19 +150,9 @@ export default function ComplianceScreen() {
   const [pendingRevokeId, setPendingRevokeId] = useState<string | null>(null);
   const [pendingSendKey, setPendingSendKey] = useState<string | null>(null);
 
-  // In-app browser tab (SFSafariViewController / Chrome Custom Tab) on the
-  // configured web origin, with a system-browser fallback — no full app exit.
-  const openWeb = useCallback(
-    (path: string) => {
-      const url = webDashboardUrl(path);
-      void WebBrowser.openBrowserAsync(url).catch(() =>
-        Linking.openURL(url).catch(() => toast.error('Could not open the browser.')),
-      );
-    },
-    [toast],
-  );
-
   // Enable-compliance flow — admins can switch the feature flag on in-app.
+  // (Disabling lives with the other defaults in Compliance settings → General,
+  // matching the web Settings → Compliance placement.)
   const staffQuery = useStaffMe();
   const isAdmin = staffQuery.data?.staff?.role === 'admin';
   const updateFlags = useUpdateFeatureFlags();
@@ -361,30 +339,6 @@ export default function ComplianceScreen() {
     });
   };
 
-  // Disable compliance — admins flip the feature flag off. The dashboard is
-  // flag-gated server-side, so the refetch 403s and the screen falls back to
-  // the "Enable compliance" view. Templates and records are retained.
-  const runDisable = () => {
-    if (action?.kind !== 'disable') return;
-    setAction(null);
-    updateFlags.mutate(
-      { compliance_records_enabled: false },
-      {
-        onSuccess: () => {
-          hapticSuccess();
-          toast.success('Compliance disabled.');
-          void dashboard.refetch();
-        },
-        onError: (err) => {
-          hapticWarning();
-          toast.error(
-            err instanceof ApiError ? err.message : 'Could not disable compliance.',
-          );
-        },
-      },
-    );
-  };
-
   const runSend = (send_via: 'email' | 'sms' | 'manual_copy') => {
     if (action?.kind !== 'send') return;
     const { key, guestId, typeId, bookingId } = action;
@@ -436,57 +390,44 @@ export default function ComplianceScreen() {
               onRefresh={() => void dashboard.refetch()}
             />
           }>
-          <View style={styles.manageRow}>
-            <Button
-              label="Compliance templates"
-              variant="secondary"
-              size="sm"
-              style={styles.flex1}
-              onPress={() => router.push('/manage/compliance-types' as Href)}
-            />
-            {isAdmin ? (
-              <Button
-                label="Settings"
-                variant="secondary"
-                size="sm"
-                style={styles.flex1}
-                onPress={() => router.push('/manage/compliance-settings' as Href)}
-              />
-            ) : null}
-          </View>
-
-          {allClear ? (
-            <EmptyState
-              title="All clear"
-              message="No expiring records, missing requirements or outstanding forms."
-            />
-          ) : (
-            <Card>
-              <Text variant="caption" tone="muted">
-                {[
-                  todayCheckIns.length > 0 ? `${todayCheckIns.length} for today` : null,
-                  upcomingMissing.length > 0 ? `${upcomingMissing.length} upcoming` : null,
-                  expiring_soon.length > 0 ? `${expiring_soon.length} expiring soon` : null,
-                  awaitingRows.length > 0 ? `${awaitingRows.length} awaiting clients` : null,
-                ]
-                  .filter(Boolean)
-                  .join(' · ')}
+          {/* SUMMARY — always shown, mirroring the web's counts / all-caught-up card. */}
+          <Card>
+            {allClear ? (
+              <Text variant="bodySmall" tone="secondary">
+                <Text variant="bodyMedium">You&apos;re all caught up.</Text> No outstanding forms,
+                nothing expiring, and no client submissions to wait on right now.
               </Text>
-            </Card>
-          )}
+            ) : (
+              <Text variant="caption" tone="muted">
+                {`${todayCheckIns.length} for today · ${upcomingMissing.length} upcoming · ${expiring_soon.length} expiring soon · ${awaitingRows.length} awaiting clients`}
+              </Text>
+            )}
+          </Card>
 
           {/* TODAY'S CHECK-IN PANEL */}
-          {todayCheckIns.length > 0 ? (
-            <Card style={[styles.todayCard, { backgroundColor: colors.brandSubtle, borderColor: colors.brandBorder }]}>
-              <View style={styles.sectionHeader}>
-                <Text variant="label" color={colors.brand}>
-                  Check-in today
-                </Text>
-                <Badge label={String(todayCheckIns.reduce((n, g) => n + g.items.length, 0))} tone="danger" />
-              </View>
-              <Text variant="caption" tone="muted" style={styles.sectionDesc}>
-                Today&apos;s bookings with outstanding required forms.
+          <Card
+            style={
+              todayCheckIns.length > 0
+                ? [styles.todayCard, { backgroundColor: colors.brandSubtle, borderColor: colors.brandBorder }]
+                : undefined
+            }>
+            <View style={styles.sectionHeader}>
+              <Text variant="label" color={todayCheckIns.length > 0 ? colors.brand : undefined}>
+                Today&apos;s check-ins
               </Text>
+              {todayCheckIns.length > 0 ? (
+                <Badge label={String(todayCheckIns.reduce((n, g) => n + g.items.length, 0))} tone="danger" />
+              ) : null}
+            </View>
+            <Text variant="caption" tone="muted" style={styles.sectionDesc}>
+              Today&apos;s bookings with a required form still outstanding. Complete it on a venue
+              device or send a link.
+            </Text>
+            {todayCheckIns.length === 0 ? (
+              <Text variant="bodySmall" tone="muted" style={styles.sectionEmpty}>
+                No outstanding forms for today&apos;s bookings.
+              </Text>
+            ) : (
               <View style={styles.list}>
                 {todayCheckIns.map((group) => (
                   <View
@@ -517,7 +458,7 @@ export default function ComplianceScreen() {
                         </View>
                         <View style={styles.checkInItemActions}>
                           <Button
-                            label="Capture"
+                            label="Complete now"
                             variant="primary"
                             size="sm"
                             disabled={!group.guest_id}
@@ -555,16 +496,25 @@ export default function ComplianceScreen() {
                   </View>
                 ))}
               </View>
-            </Card>
-          ) : null}
+            )}
+          </Card>
 
           {/* MISSING FOR UPCOMING BOOKINGS */}
-          {upcomingMissing.length > 0 ? (
-            <Card>
-              <View style={styles.sectionHeader}>
-                <Text variant="label">Missing for upcoming bookings</Text>
+          <Card>
+            <View style={styles.sectionHeader}>
+              <Text variant="label">Missing for upcoming bookings</Text>
+              {upcomingMissing.length > 0 ? (
                 <Badge label={String(upcomingMissing.length)} tone="danger" />
-              </View>
+              ) : null}
+            </View>
+            <Text variant="caption" tone="muted" style={styles.sectionDesc}>
+              Bookings in the next 14 days whose service needs a record that isn&apos;t on file.
+            </Text>
+            {upcomingMissing.length === 0 ? (
+              <Text variant="bodySmall" tone="muted" style={styles.sectionEmpty}>
+                Nothing missing for upcoming bookings.
+              </Text>
+            ) : (
               <View style={styles.list}>
                 {upcomingMissing.map((row) => {
                   const sendKey = row.guest_id
@@ -611,16 +561,25 @@ export default function ComplianceScreen() {
                   );
                 })}
               </View>
-            </Card>
-          ) : null}
+            )}
+          </Card>
 
           {/* EXPIRING SOON */}
-          {expiring_soon.length > 0 ? (
-            <Card>
-              <View style={styles.sectionHeader}>
-                <Text variant="label">Expiring soon</Text>
+          <Card>
+            <View style={styles.sectionHeader}>
+              <Text variant="label">Expiring soon</Text>
+              {expiring_soon.length > 0 ? (
                 <Badge label={String(expiring_soon.length)} tone="warning" />
-              </View>
+              ) : null}
+            </View>
+            <Text variant="caption" tone="muted" style={styles.sectionDesc}>
+              Records on file that expire within 30 days.
+            </Text>
+            {expiring_soon.length === 0 ? (
+              <Text variant="bodySmall" tone="muted" style={styles.sectionEmpty}>
+                No records expiring soon.
+              </Text>
+            ) : (
               <View style={styles.list}>
                 {expiring_soon.map((row) => {
                   const sendKey = `${row.guest_id}:${row.compliance_type_id}`;
@@ -636,7 +595,7 @@ export default function ComplianceScreen() {
                       </View>
                       <View style={styles.rowActions}>
                         <Button
-                          label="Renew"
+                          label="Send renewal"
                           variant="ghost"
                           size="sm"
                           loading={pendingSendKey === sendKey}
@@ -659,16 +618,25 @@ export default function ComplianceScreen() {
                   );
                 })}
               </View>
-            </Card>
-          ) : null}
+            )}
+          </Card>
 
           {/* AWAITING SUBMISSION — reads from dashboard payload (no redundant fetch) */}
-          {awaitingRows.length > 0 ? (
-            <Card>
-              <View style={styles.sectionHeader}>
-                <Text variant="label">Awaiting submission</Text>
+          <Card>
+            <View style={styles.sectionHeader}>
+              <Text variant="label">Awaiting client submission</Text>
+              {awaitingRows.length > 0 ? (
                 <Badge label={String(awaitingRows.length)} tone="brand" />
-              </View>
+              ) : null}
+            </View>
+            <Text variant="caption" tone="muted" style={styles.sectionDesc}>
+              Form links awaiting completion by the client.
+            </Text>
+            {awaitingRows.length === 0 ? (
+              <Text variant="bodySmall" tone="muted" style={styles.sectionEmpty}>
+                No outstanding form links.
+              </Text>
+            ) : (
               <View style={styles.list}>
                 {awaitingRows.map((row) => (
                   <View key={row.id} style={styles.row}>
@@ -701,27 +669,21 @@ export default function ComplianceScreen() {
                   </View>
                 ))}
               </View>
-            </Card>
-          ) : null}
+            )}
+          </Card>
 
-          <Button
-            label="Manage compliance types on the web"
-            variant="ghost"
-            size="sm"
-            onPress={() => openWeb(WEB_COMPLIANCE_PATH)}
-            style={styles.webLink}
-          />
-          {isAdmin ? (
+          {/* SETUP CTA — the web dashboard's single pointer into Settings → Compliance
+              (templates, per-service requirements and general defaults). */}
+          <View style={[styles.setupCta, { borderColor: colors.border, backgroundColor: colors.surfaceRaised }]}>
+            <Text variant="bodySmall" tone="secondary" style={styles.setupCtaText}>
+              Create or update your compliance types and choose which forms each service needs.
+            </Text>
             <Button
-              label="Disable compliance"
-              variant="ghost"
-              size="sm"
-              loading={updateFlags.isPending}
-              customColors={{ background: 'transparent', text: colors.danger }}
-              onPress={() => setAction({ kind: 'disable' })}
-              style={styles.webLink}
+              label="Set up types and requirements"
+              variant="primary"
+              onPress={() => router.push('/manage/compliance-settings' as Href)}
             />
-          ) : null}
+          </View>
           <View style={styles.spacer} />
         </ScrollView>
       </Screen>
@@ -764,28 +726,6 @@ export default function ComplianceScreen() {
                   variant="danger"
                   style={styles.flex1}
                   onPress={runRevoke}
-                />
-              </View>
-            </>
-          ) : action?.kind === 'disable' ? (
-            <>
-              <Text variant="subheading">Disable compliance?</Text>
-              <Text variant="bodySmall" tone="secondary">
-                Staff will no longer see check-ins, expiries or per-booking requirements.
-                Your templates and saved records are kept and return if you re-enable it.
-              </Text>
-              <View style={styles.sheetActions}>
-                <Button
-                  label="Keep enabled"
-                  variant="secondary"
-                  style={styles.flex1}
-                  onPress={() => setAction(null)}
-                />
-                <Button
-                  label="Disable"
-                  variant="danger"
-                  style={styles.flex1}
-                  onPress={runDisable}
                 />
               </View>
             </>
@@ -838,10 +778,6 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     paddingHorizontal: spacing.base,
   },
-  manageRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
   todayCard: {
     // Override Card default surface color for the "act now" emphasis — done via inline style above
   },
@@ -853,6 +789,9 @@ const styles = StyleSheet.create({
   },
   sectionDesc: {
     marginTop: spacing.xs,
+  },
+  sectionEmpty: {
+    marginTop: spacing.sm,
   },
   list: {
     marginTop: spacing.sm,
@@ -907,8 +846,15 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
     flexShrink: 0,
   },
-  webLink: {
-    alignSelf: 'center',
+  setupCta: {
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: spacing.lg,
+    gap: spacing.md,
+    alignItems: 'center',
+  },
+  setupCtaText: {
+    textAlign: 'center',
   },
   spacer: {
     height: spacing.xl,
