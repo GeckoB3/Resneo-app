@@ -48,6 +48,13 @@ export interface CreateBookingPayload {
   /** Force Stripe deposit link generation even for phone bookings. */
   require_deposit?: boolean;
   /**
+   * Staff card-hold toggle (spec §7.6/D6): for a card-hold entity, `false`
+   * waives the hold (booking created like a no-deposit booking). Omitted or
+   * `true` keeps the default-on hold: booking held Pending + card request link
+   * sent. Walk-ins included (unlike `require_deposit`).
+   */
+  require_card_hold?: boolean;
+  /**
    * Flag the booking as belonging to an existing/known contact. The web sends
    * this when staff pick a known contact (or rebook a guest) so the backend
    * links the booking to the existing client rather than minting a new one.
@@ -75,6 +82,8 @@ export interface CreateBookingResponse {
   message?: string;
   requires_deposit?: boolean;
   deposit_amount_pence?: number;
+  /** True when the booking was created with a card hold requested (link sent). */
+  card_hold_requested?: boolean;
   cancellation_notice_hours?: number;
   /** Unmet non-blocking compliance requirements, surfaced on the confirmation. */
   compliance_warnings?: ComplianceBookingWarning[];

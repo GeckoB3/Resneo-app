@@ -69,7 +69,7 @@ export interface ManagedService {
   buffer_minutes?: number | null;
   price_pence?: number | null;
   deposit_pence?: number | null;
-  payment_requirement?: 'none' | 'deposit' | 'full_payment' | null;
+  payment_requirement?: ServicePaymentRequirement | null;
   colour?: string | null;
   is_active?: boolean;
   sort_order?: number;
@@ -126,7 +126,13 @@ export interface ManagedServicesResponse {
   practitioner_services?: PractitionerServiceLink[];
 }
 
-export type ServicePaymentRequirement = 'none' | 'deposit' | 'full_payment';
+/**
+ * `'card_hold'` (web 2026-07, spec D5/6.2): no payment at booking; the card is
+ * stored and a no-show fee (kept in the same `deposit_pence` column) may be
+ * charged. Only offered in editors when the venue's `card_hold_deposits`
+ * feature flag is on.
+ */
+export type ServicePaymentRequirement = 'none' | 'deposit' | 'full_payment' | 'card_hold';
 
 /**
  * Partial update for PATCH /api/venue/appointment-services.

@@ -9,7 +9,8 @@
  * @see _reference/Resneo/src/lib/booking/resource-booking-defaults.ts
  */
 
-export type ResourcePaymentRequirement = 'none' | 'deposit' | 'full_payment';
+/** `'card_hold'` (web 2026-07): flat no-show fee kept in `deposit_amount_pence` (spec D5). */
+export type ResourcePaymentRequirement = 'none' | 'deposit' | 'full_payment' | 'card_hold';
 
 /** One per-weekday availability range (`availability_hours` keyed "0"–"6", Sun–Sat). */
 export interface ResourceHoursRange {

@@ -56,6 +56,9 @@ function ticketLineSummary(row: EventAttendee): string | null {
 
 /** "£5.00 deposit (Paid)" style line, or null when there's no deposit. */
 function depositSummary(row: EventAttendee): string | null {
+  // Card-hold states carry no deposit amount; label them by name (§9.1).
+  if (row.deposit_status === 'Card Held') return 'Card held';
+  if (row.deposit_status === 'Charged') return 'No-show fee charged';
   if (row.deposit_amount_pence == null || row.deposit_amount_pence <= 0) {
     return row.deposit_status ? `Deposit · ${row.deposit_status}` : null;
   }

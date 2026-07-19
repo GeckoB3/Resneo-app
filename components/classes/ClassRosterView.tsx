@@ -27,6 +27,10 @@ import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { minTouchTarget, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
+import {
+  CARD_HOLD_CHARGE_ACTION_LABEL,
+  isRosterChargeLinkCandidate,
+} from '@/lib/booking/card-hold';
 import type { ClassAttendee } from '@/types/classes-manage';
 
 type ClassRosterViewProps = {
@@ -45,6 +49,10 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
 };
 
 function formatDeposit(row: ClassAttendee, currency: string): string | null {
+  // Card-hold states carry no deposit amount (the fee lives on the hold row);
+  // show the state by name so staff see the protection at a glance (§9.1).
+  if (row.deposit_status === 'Card Held') return 'Card held';
+  if (row.deposit_status === 'Charged') return 'No-show fee charged';
   if (row.deposit_amount_pence == null || row.deposit_amount_pence <= 0) return null;
   const symbol = CURRENCY_SYMBOLS[currency] ?? `${currency} `;
   const amount = `${symbol}${(row.deposit_amount_pence / 100).toFixed(2)}`;
@@ -233,8 +241,9 @@ export function ClassRosterView({
       : `${activeSpots} booked`;
 
   // "Check in all" is useful only when at least one active guest is not yet in.
+  // Canonical status is 'No-Show' (web D9 fixed the roster's 'No Show' string).
   const anyCheckable = !commerceLocked && activeAttendees.some(
-    (row) => row.status !== 'No Show' && !row.checked_in_at,
+    (row) => row.status !== 'No-Show' && !row.checked_in_at,
   );
 
   return (
@@ -336,7 +345,7 @@ export function ClassRosterView({
               const presence = formatCheckedIn(row.checked_in_at);
               const contact = row.guest_phone ?? row.guest_email ?? null;
               const isCancelled = row.status === 'Cancelled';
-              const isNoShow = row.status === 'No Show';
+              const isNoShow = row.status === 'No-Show';
               const isCheckedIn = !!row.checked_in_at;
               const rowBusy = pendingBookingId === row.booking_id;
               // Attendance buttons only when the action is meaningful and the
@@ -362,6 +371,18 @@ export function ClassRosterView({
                   {deposit ? (
                     <Text variant="caption" tone="muted">
                       {deposit}
+                    </Text>
+                  ) : null}
+                  {/* Roster charge affordance (§9.2): the attendees payload lacks
+                      the hold row fields, so chargeable-looking rows point admins
+                      at the booking detail, where the real gate re-derives. */}
+                  {isAdmin &&
+                  isRosterChargeLinkCandidate({
+                    status: row.status,
+                    deposit_status: row.deposit_status ?? null,
+                  }) ? (
+                    <Text variant="caption" tone="danger">
+                      {CARD_HOLD_CHARGE_ACTION_LABEL}: open this booking
                     </Text>
                   ) : null}
                   {presence ? (

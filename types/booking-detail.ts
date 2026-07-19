@@ -1,3 +1,4 @@
+import type { CardHoldSummary } from '@/lib/booking/card-hold';
 import type { BookingTimelineEventRow } from '@/lib/booking/booking-timeline';
 import type { BookingModel } from '@/types/venue';
 
@@ -116,6 +117,14 @@ export interface BookingDetail {
   group_booking_id?: string | null;
   /** Per-person label on group people visits ("Person 1", a name…). */
   person_label?: string | null;
+  /**
+   * Card-hold summary (full GET, §9.1); null when the booking has no hold row.
+   * Absent on the /summary prefetch — `resolveCardHoldUiState` falls back to an
+   * enum-only state from `deposit_status` until the full payload lands.
+   */
+  card_hold?: CardHoldSummary | null;
+  /** Configured payment requirement of the booked service (full GET, optional). */
+  service_payment_requirement?: string | null;
   /** Present on full GET; summary returns empty arrays. */
   events?: BookingTimelineEventRow[];
   communications?: BookingCommunicationRow[];

@@ -11,6 +11,7 @@ import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useCreateClassType, useUpdateClassType } from '@/lib/queries/useClassesManage';
 import { useCreateHostCalendar } from '@/lib/queries/usePractitioners';
 import { useSetupStatus } from '@/lib/queries/useSetupStatus';
+import { useFeatureFlags } from '@/lib/queries/useVenueSettings';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { radius, spacing } from '@/theme/index';
@@ -35,6 +36,13 @@ const PAYMENT_OPTIONS: { value: ClassPaymentRequirement; label: string; hint: st
   { value: 'deposit', label: 'Custom deposit', hint: 'Fixed amount paid online when booking' },
   { value: 'full_payment', label: 'Pay in full online', hint: 'Full price taken at booking' },
 ];
+
+/** Fourth payment option (spec 6.2), shown only when `card_hold_deposits` is on. */
+const CARD_HOLD_PAYMENT_OPTION: { value: ClassPaymentRequirement; label: string; hint: string } = {
+  value: 'card_hold',
+  label: 'Card hold',
+  hint: 'No payment is taken when the client books. Their card is stored securely and you can charge a no-show fee if they do not attend.',
+};
 
 /** What the sheet is editing: a brand-new class type, or an existing one. */
 export type ClassTypeEditorTarget =
@@ -80,6 +88,8 @@ export function ClassTypeEditorSheet({
   // Stripe-connected state for the deposit/full-payment warning (web parity).
   const setupStatus = useSetupStatus(isAdmin);
   const stripeConnected = setupStatus.data?.stripe_connected ?? true;
+  // Card-hold payment option shown only when the venue flag is on (spec 6.2).
+  const cardHoldEnabled = Boolean(useFeatureFlags().data?.resolved?.card_hold_deposits);
 
   const editing = target?.mode === 'edit' ? target.classType : null;
 
@@ -226,6 +236,16 @@ export function ClassTypeEditorSheet({
         setError('Deposit cannot exceed the price per person.'); return;
       }
     }
+    // Card hold (spec 6.2): no price relationship — the per-person no-show fee
+    // just has to be £1 to £150.
+    if (paymentReq === 'card_hold') {
+      if (!(depositPence != null && depositPence >= 100)) {
+        setError('No-show fee must be at least £1 per person.'); return;
+      }
+      if (depositPence > 15000) {
+        setError('No-show fee cannot exceed £150 per person.'); return;
+      }
+    }
 
     const colourValue = colour.trim().toLowerCase();
     if (!HEX_COLOUR_RE.test(colourValue)) {
@@ -243,9 +263,10 @@ export function ClassTypeEditorSheet({
       is_active: isActive,
       price_pence: pricePence ?? null,
       payment_requirement: paymentReq,
-      // Only send a deposit amount when the deposit option is active; the API
-      // ignores it otherwise but this keeps the payload tidy.
-      deposit_amount_pence: paymentReq === 'deposit' ? depositPence ?? null : null,
+      // Only send an amount when deposit or card hold is active ('card_hold'
+      // stores the per-person no-show fee in the same column, spec D5).
+      deposit_amount_pence:
+        paymentReq === 'deposit' || paymentReq === 'card_hold' ? depositPence ?? null : null,
       max_advance_booking_days: advance,
       min_booking_notice_hours: notice,
       cancellation_notice_hours: cancel,
@@ -526,7 +547,7 @@ export function ClassTypeEditorSheet({
 
           {/* Price & payment */}
           <Text variant="overline" tone="muted">Price &amp; payment</Text>
-          {PAYMENT_OPTIONS.map((option) => {
+          {(cardHoldEnabled ? [...PAYMENT_OPTIONS, CARD_HOLD_PAYMENT_OPTION] : PAYMENT_OPTIONS).map((option) => {
             const selected = paymentReq === option.value;
             return (
               <Pressable
@@ -567,10 +588,11 @@ export function ClassTypeEditorSheet({
                 keyboardType="decimal-pad"
               />
             </View>
-            {paymentReq === 'deposit' ? (
+            {paymentReq === 'deposit' || paymentReq === 'card_hold' ? (
               <View style={styles.field}>
                 <Input
-                  label="Deposit (£)"
+                  label={paymentReq === 'card_hold' ? 'No-show fee per person (£)' : 'Deposit (£)'}
+                  helper={paymentReq === 'card_hold' ? '£1 to £150 per person.' : undefined}
                   value={deposit}
                   onChangeText={setDeposit}
                   keyboardType="decimal-pad"
@@ -578,6 +600,11 @@ export function ClassTypeEditorSheet({
               </View>
             ) : null}
           </View>
+          {paymentReq === 'card_hold' && !cardHoldEnabled ? (
+            <Text variant="caption" color={colors.warning}>
+              Card hold is disabled for this venue; this class currently takes no deposit.
+            </Text>
+          ) : null}
           {/* Stripe-not-connected warning when an online payment is required (web parity). */}
           {paymentReq !== 'none' && !stripeConnected ? (
             <Text variant="caption" color={colors.warning}>

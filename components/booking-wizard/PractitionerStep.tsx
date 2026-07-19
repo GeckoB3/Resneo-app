@@ -106,6 +106,7 @@ export function PractitionerStep({
         buffer_minutes: service.buffer_minutes,
         pricePence: service.price_pence,
         depositPence: service.deposit_pence ?? null,
+        paymentRequirement: service.payment_requirement ?? serviceOption.paymentRequirement ?? null,
         addonGroups: service.addon_groups ?? [],
         variants: service.variants ?? [],
         locationType: service.location_type ?? serviceOption.locationType,

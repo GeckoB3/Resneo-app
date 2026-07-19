@@ -428,6 +428,8 @@ export function ResourceBookingFlow({ onCreated }: ResourceBookingFlowProps) {
           ]}
           totalPence={totalPence}
           depositPence={hasDeposit ? resource.deposit_amount_pence : null}
+          paymentRequirement={resource.payment_requirement}
+          cardHoldFeePerUnitPence={resource.deposit_amount_pence}
           guestName={[first, last].filter(Boolean).join(' ')}
           successTitle="Resource booking confirmed"
           successSubtitle={`${resource.name} on ${formatBookingDate(selectedDate)}, ${formatTimeRange(slot.start_time, endTime)}.`}

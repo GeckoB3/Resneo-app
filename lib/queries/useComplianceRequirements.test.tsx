@@ -58,48 +58,29 @@ describe('useComplianceRequirements', () => {
 });
 
 describe('useComplianceRequirementCounts', () => {
-  it('fans out one ?service_id= GET per service and maps ids to counts', async () => {
-    mockApiFetch.mockImplementation(async (path: string) => {
-      if (path.endsWith('svc-1')) {
-        return { requirements: [{ id: 'r1' }, { id: 'r2' }] };
-      }
-      return { requirements: [] };
+  it('makes ONE venue-wide GET and groups counts by service FK (web 2026-07 contract)', async () => {
+    mockApiFetch.mockResolvedValue({
+      requirements: [
+        { id: 'r1', appointment_service_id: 'svc-1', service_item_id: null },
+        { id: 'r2', appointment_service_id: 'svc-1', service_item_id: null },
+        // Service-item venues carry the other FK column; both group the same way.
+        { id: 'r3', appointment_service_id: null, service_item_id: 'svc-3' },
+        // A service not in the requested list is ignored.
+        { id: 'r4', appointment_service_id: 'svc-other', service_item_id: null },
+      ],
     });
     const { result } = await renderHook(
-      () => useComplianceRequirementCounts(['svc-1', 'svc-2']),
+      () => useComplianceRequirementCounts(['svc-1', 'svc-2', 'svc-3']),
       { wrapper: makeWrapper() },
     );
-    await waitFor(() => expect(result.current.size).toBe(2));
+    await waitFor(() => expect(result.current.size).toBe(3));
     expect(result.current.get('svc-1')).toBe(2);
     expect(result.current.get('svc-2')).toBe(0);
-    expect(mockApiFetch).toHaveBeenCalledWith(
-      '/api/venue/compliance/requirements?service_id=svc-1',
-      { accessToken: mockToken },
-    );
-    expect(mockApiFetch).toHaveBeenCalledWith(
-      '/api/venue/compliance/requirements?service_id=svc-2',
-      { accessToken: mockToken },
-    );
-  });
-
-  it('shares the per-service cache with useComplianceRequirements (no double fetch)', async () => {
-    mockApiFetch.mockResolvedValue({ requirements: [{ id: 'r1' }] });
-    // Non-zero staleTime so the second mount reads the cache without kicking a
-    // background refetch — pins that both hooks use the SAME query key.
-    const client = new QueryClient({
-      defaultOptions: { queries: { retry: false, staleTime: 60_000 } },
-    });
-    const wrapper = ({ children }: { children: ReactNode }) => (
-      <QueryClientProvider client={client}>{children}</QueryClientProvider>
-    );
-    const counts = await renderHook(() => useComplianceRequirementCounts(['svc-1']), { wrapper });
-    await waitFor(() => expect(counts.result.current.get('svc-1')).toBe(1));
-
-    // The single-service editor hook mounts onto the SAME key → served from
-    // cache immediately, no new request.
-    const single = await renderHook(() => useComplianceRequirements('svc-1'), { wrapper });
-    expect(single.result.current.data?.requirements).toHaveLength(1);
+    expect(result.current.get('svc-3')).toBe(1);
     expect(mockApiFetch).toHaveBeenCalledTimes(1);
+    expect(mockApiFetch).toHaveBeenCalledWith('/api/venue/compliance/requirements', {
+      accessToken: mockToken,
+    });
   });
 
   it('does not fetch when disabled', async () => {

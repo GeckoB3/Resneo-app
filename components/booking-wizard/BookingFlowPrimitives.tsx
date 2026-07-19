@@ -9,6 +9,13 @@ import { Segmented } from '@/components/ui/Segmented';
 import { Text } from '@/components/ui/Text';
 import { PressableScale } from '@/components/ui/PressableScale';
 import { ApiError } from '@/lib/api/client';
+import {
+  STAFF_CARD_HOLD_LINK_SENT_LINE,
+  STAFF_CARD_HOLD_TOGGLE_LABEL,
+  STAFF_CARD_HOLD_TOGGLE_SUBLABEL,
+  resolveStaffEntityCardHold,
+  staffCardHoldFeeLine,
+} from '@/lib/booking/card-hold';
 import { formatPence } from '@/lib/format';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import {
@@ -16,6 +23,7 @@ import {
   type ComplianceBookingWarning,
   type CreateBookingPayload,
 } from '@/lib/queries/useCreateBooking';
+import { useFeatureFlags } from '@/lib/queries/useVenueSettings';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { fonts, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -140,6 +148,18 @@ type BookingFlowConfirmProps = {
   totalPence?: number | null;
   /** Deposit in pence — when > 0 a "Require deposit" toggle appears. */
   depositPence?: number | null;
+  /**
+   * The offering's resolved `payment_requirement`. When it is `card_hold` (and
+   * the venue's `card_hold_deposits` flag is on with a positive fee) the
+   * "Require deposit" toggle is replaced by the default-on "Card hold" toggle
+   * (spec §7.6/D6, walk-ins included) and the payload carries
+   * `require_card_hold`.
+   */
+  paymentRequirement?: string | null;
+  /** Per-unit no-show fee in pence (per person for classes/events, flat otherwise). */
+  cardHoldFeePerUnitPence?: number | null;
+  /** Units the fee multiplies by (spots / tickets); defaults to 1. */
+  cardHoldUnits?: number;
   /** Build the create payload for the chosen source/deposit/override flags. */
   buildPayload: (args: BuildPayloadArgs) => CreateBookingPayload;
   guestName: string;
@@ -163,6 +183,9 @@ interface Confirmation {
   payment_url?: string;
   requires_deposit?: boolean;
   deposit_amount_pence?: number;
+  /** Card hold requested at create (§7.6): shows the card-request notice. */
+  card_hold_requested?: boolean;
+  card_hold_fee_pence?: number | null;
   compliance_warnings?: ComplianceBookingWarning[];
 }
 
@@ -185,6 +208,9 @@ export function BookingFlowConfirm({
   rows,
   totalPence = null,
   depositPence = null,
+  paymentRequirement = null,
+  cardHoldFeePerUnitPence = null,
+  cardHoldUnits,
   buildPayload,
   guestName,
   successTitle,
@@ -204,9 +230,20 @@ export function BookingFlowConfirm({
   const source = controlledSource ?? internalSource;
   const setSource = onSourceChange ?? setInternalSource;
   const [requireDeposit, setRequireDeposit] = useState(false);
+  // Card hold toggle (spec §7.6/D6): default ON (the entity requires it);
+  // staff may switch it off case by case. Walk-ins included.
+  const [requireCardHold, setRequireCardHold] = useState(true);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const [complianceError, setComplianceError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+
+  const cardHoldFlagEnabled = Boolean(useFeatureFlags().data?.resolved?.card_hold_deposits);
+  const staffCardHold = resolveStaffEntityCardHold({
+    paymentRequirement,
+    feePerUnitPence: cardHoldFeePerUnitPence,
+    cardHoldFlagEnabled,
+    units: cardHoldUnits,
+  });
 
   const hasDeposit = depositPence != null && depositPence > 0;
   const depositLabel = hasDeposit ? money(depositPence) : null;
@@ -214,7 +251,12 @@ export function BookingFlowConfirm({
   const submit = (overrideCompliance: boolean) => {
     setComplianceError(null);
     setSubmitError(null);
-    const payload = buildPayload({ source, requireDeposit, overrideCompliance });
+    const payload: CreateBookingPayload = {
+      ...buildPayload({ source, requireDeposit, overrideCompliance }),
+      // The card-hold toggle rides its own flag; sending false waives the hold
+      // for this booking (the server defaults to true when omitted).
+      ...(staffCardHold ? { require_card_hold: requireCardHold } : {}),
+    };
     createBooking.mutate(payload, {
       onSuccess: (response) => {
         hapticSuccess();
@@ -223,6 +265,8 @@ export function BookingFlowConfirm({
           payment_url: response.payment_url,
           requires_deposit: response.requires_deposit,
           deposit_amount_pence: response.deposit_amount_pence,
+          card_hold_requested: response.card_hold_requested,
+          card_hold_fee_pence: staffCardHold?.feePence ?? null,
           compliance_warnings: response.compliance_warnings,
         });
       },
@@ -270,10 +314,22 @@ export function BookingFlowConfirm({
           {rows.map((row) => (
             <SummaryRow key={row.label} label={row.label} value={row.value} />
           ))}
-          {confirmation.payment_url ||
-          (confirmation.requires_deposit &&
-            confirmation.deposit_amount_pence != null &&
-            confirmation.deposit_amount_pence > 0) ? (
+          {confirmation.card_hold_requested ? (
+            <View style={[styles.depositNotice, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Text variant="bodySmall" tone="brand">
+                Card hold
+                {confirmation.card_hold_fee_pence != null && confirmation.card_hold_fee_pence > 0
+                  ? ` · ${staffCardHoldFeeLine(confirmation.card_hold_fee_pence).toLowerCase()}`
+                  : ''}
+              </Text>
+              <Text variant="caption" tone="muted">
+                {STAFF_CARD_HOLD_LINK_SENT_LINE} No payment is taken.
+              </Text>
+            </View>
+          ) : confirmation.payment_url ||
+            (confirmation.requires_deposit &&
+              confirmation.deposit_amount_pence != null &&
+              confirmation.deposit_amount_pence > 0) ? (
             <View style={[styles.depositNotice, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <Text variant="bodySmall" tone="brand">
                 {confirmation.deposit_amount_pence != null && confirmation.deposit_amount_pence > 0
@@ -337,6 +393,14 @@ export function BookingFlowConfirm({
             <Text variant="bodySmall">{depositLabel}</Text>
           </View>
         ) : null}
+        {staffCardHold ? (
+          <View style={styles.depositRow}>
+            <Text variant="caption" tone="muted">
+              No-show fee
+            </Text>
+            <Text variant="bodySmall">{money(staffCardHold.feePence)}</Text>
+          </View>
+        ) : null}
       </Card>
 
       {/* Hidden when the flow controls the source (it renders the selector
@@ -357,7 +421,47 @@ export function BookingFlowConfirm({
         </View>
       )}
 
-      {hasDeposit && source !== 'walk-in' ? (
+      {staffCardHold ? (
+        <Pressable
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: requireCardHold }}
+          accessibilityLabel={`${STAFF_CARD_HOLD_TOGGLE_LABEL}. ${STAFF_CARD_HOLD_TOGGLE_SUBLABEL}`}
+          onPress={() => setRequireCardHold((prev) => !prev)}
+          style={({ pressed }) => [
+            styles.depositToggle,
+            {
+              backgroundColor: requireCardHold ? colors.surfaceRaised : colors.surface,
+              borderColor: requireCardHold ? colors.brand : colors.border,
+              opacity: pressed ? 0.9 : 1,
+            },
+          ]}>
+          <View
+            style={[
+              styles.check,
+              {
+                borderColor: requireCardHold ? colors.brand : colors.borderStrong,
+                backgroundColor: requireCardHold ? colors.brand : 'transparent',
+              },
+            ]}>
+            {requireCardHold ? (
+              <Text style={[styles.checkMark, { color: colors.onBrand }]}>✓</Text>
+            ) : null}
+          </View>
+          <View style={styles.depositToggleLabel}>
+            <Text variant="bodyMedium">{STAFF_CARD_HOLD_TOGGLE_LABEL}</Text>
+            <Text variant="caption" tone="muted">
+              {STAFF_CARD_HOLD_TOGGLE_SUBLABEL}
+            </Text>
+            {requireCardHold ? (
+              <Text variant="caption" tone="muted">
+                {staffCardHoldFeeLine(staffCardHold.feePence)}
+              </Text>
+            ) : null}
+          </View>
+        </Pressable>
+      ) : null}
+
+      {!staffCardHold && hasDeposit && source !== 'walk-in' ? (
         <Pressable
           accessibilityRole="checkbox"
           accessibilityState={{ checked: requireDeposit }}

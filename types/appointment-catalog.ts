@@ -47,7 +47,14 @@ export interface AppointmentCatalogService {
   duration_minutes: number;
   buffer_minutes: number;
   price_pence: number | null;
+  /** Deposit, or the no-show fee when `payment_requirement` is 'card_hold' (spec D5). */
   deposit_pence: number | null;
+  /**
+   * Resolved payment requirement ('none' | 'deposit' | 'full_payment' | 'card_hold').
+   * The catalog folds the venue's `card_hold_deposits` flag in server-side, so
+   * 'card_hold' here implies the flag is on and a positive fee is configured.
+   */
+  payment_requirement?: string | null;
   cancellation_notice_hours?: number;
   /** Minimum lead time (hours) before a slot — same-day slots earlier than
    *  now + this are not bookable. Mirrors the web booking window. */
@@ -83,6 +90,8 @@ export interface AppointmentServiceOption {
   buffer_minutes?: number;
   pricePence: number | null;
   depositPence: number | null;
+  /** Resolved payment requirement of the service; 'card_hold' switches the staff toggle. */
+  paymentRequirement?: string | null;
   /** A real practitioner id, or ANY_AVAILABLE_PRACTITIONER_ID for pooled rows. */
   practitionerId: string;
   practitionerName: string;

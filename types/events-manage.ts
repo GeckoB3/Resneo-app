@@ -9,7 +9,8 @@
  * @see _reference/Resneo/src/app/dashboard/event-manager/EventManagerView.tsx
  */
 
-export type EventPaymentRequirement = 'none' | 'deposit' | 'full_payment';
+/** `'card_hold'` (web 2026-07): per-person no-show fee kept in `deposit_amount_pence` (spec D5). */
+export type EventPaymentRequirement = 'none' | 'deposit' | 'full_payment' | 'card_hold';
 
 /** One ticket tier. `id` is present on records read back; omit on new rows. */
 export interface EventTicketType {

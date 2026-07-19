@@ -107,7 +107,11 @@ export function offeringPriceLabel(
 ): string {
   const price = formatPence(pricePence);
   if (pricePence == null || pricePence <= 0) {
-    return paymentRequirement === 'none' ? 'Free' : 'Pay at venue';
+    // Card holds take no payment at booking: a free card-hold offering is still
+    // "Free" (the no-show fee is surfaced by the card-hold toggle/notice).
+    return paymentRequirement === 'none' || paymentRequirement === 'card_hold'
+      ? 'Free'
+      : 'Pay at venue';
   }
   if (paymentRequirement === 'deposit' && depositPence && depositPence > 0) {
     const deposit = formatPence(depositPence);

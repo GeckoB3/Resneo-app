@@ -348,6 +348,9 @@ export function EventBookingFlow({ onCreated }: EventBookingFlowProps) {
           ]}
           totalPence={totalPence > 0 ? totalPence : null}
           depositPence={hasDeposit ? occ.deposit_amount_pence : null}
+          paymentRequirement={occ.payment_requirement}
+          cardHoldFeePerUnitPence={occ.deposit_amount_pence}
+          cardHoldUnits={totalTickets}
           guestName={[first, last].filter(Boolean).join(' ')}
           successTitle="Event booking confirmed"
           successSubtitle={`${totalTickets} ticket${totalTickets === 1 ? '' : 's'} for ${selectedEvent.event_name} on ${formatBookingDate(occ.event_date)}.`}

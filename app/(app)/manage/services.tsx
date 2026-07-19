@@ -64,11 +64,13 @@ import {
   useCreateService,
   useDeleteService,
   useManagedServices,
+  useReorderServices,
   useUpdateService,
   type VariantWriteInput,
 } from '@/lib/queries/useServicesManage';
 import { useCreateHostCalendar, usePractitioners } from '@/lib/queries/usePractitioners';
 import { useSetupStatus } from '@/lib/queries/useSetupStatus';
+import { useFeatureFlags } from '@/lib/queries/useVenueSettings';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import {
   nextCalendarServiceIds,
@@ -184,6 +186,20 @@ const PAYMENT_OPTIONS: { value: ServicePaymentRequirement; label: string; hint: 
   { value: 'deposit', label: 'Custom deposit', hint: 'Fixed amount paid online when booking' },
   { value: 'full_payment', label: 'Pay in full online', hint: 'Full price taken at booking' },
 ];
+
+/**
+ * Fourth payment option (spec 6.2), appended only when the venue's
+ * `card_hold_deposits` flag is on. Exact web copy.
+ */
+const CARD_HOLD_PAYMENT_OPTION: { value: ServicePaymentRequirement; label: string; hint: string } = {
+  value: 'card_hold',
+  label: 'Card hold',
+  hint: 'No payment is taken when the client books. Their card is stored securely and you can charge a no-show fee if they do not attend.',
+};
+
+/** Editor note when a service is configured card_hold but the venue flag is off (spec 6.3). */
+const CARD_HOLD_DISABLED_NOTE =
+  'Card hold is disabled for this venue; this service currently takes no deposit.';
 
 /** Short label for a service's delivery location (collapsed-section summary). */
 const LOCATION_TYPE_LABELS: Record<ServiceLocationType, string> = {
@@ -408,6 +424,9 @@ function ServiceRowBase({
   onDelete,
   onToggleCalendar,
   onOverride,
+  onMoveUp = null,
+  onMoveDown = null,
+  reorderPending = false,
 }: {
   service: ManagedService;
   expanded: boolean;
@@ -429,6 +448,10 @@ function ServiceRowBase({
   onDelete: (service: ManagedService) => void;
   onToggleCalendar: (serviceId: string, calendarId: string, nextEnabled: boolean) => void;
   onOverride: (service: ManagedService) => void;
+  /** Admin display-order controls; null at the list edges. */
+  onMoveUp?: (() => void) | null;
+  onMoveDown?: (() => void) | null;
+  reorderPending?: boolean;
 }) {
   const { colors } = useTheme();
   const price = formatPence(service.price_pence);
@@ -437,6 +460,9 @@ function ServiceRowBase({
   const deposit = formatPositivePence(service.deposit_pence);
   const variants = service.variants ?? [];
   const addonGroups = service.addon_groups ?? [];
+  // D5: for card-hold services the deposit column holds the no-show fee.
+  const isCardHold = service.payment_requirement === 'card_hold';
+  const cardHoldEnabled = Boolean(useFeatureFlags().data?.resolved?.card_hold_deposits);
 
   return (
     <Card padded={false} style={styles.serviceCard}>
@@ -470,15 +496,24 @@ function ServiceRowBase({
             </Text>
           ) : null}
           <View style={styles.metaGrid}>
-            {deposit ? (
+            {isCardHold ? (
+              <Text variant="caption" tone="muted">
+                {deposit ? `Card hold: ${deposit} no-show fee` : 'Card hold'}
+              </Text>
+            ) : deposit ? (
               <Text variant="caption" tone="muted">Deposit {deposit}</Text>
             ) : null}
             {service.buffer_minutes ? (
               <Text variant="caption" tone="muted">Buffer {service.buffer_minutes} min</Text>
             ) : null}
-            {service.payment_requirement && service.payment_requirement !== 'none' ? (
+            {!isCardHold && service.payment_requirement && service.payment_requirement !== 'none' ? (
               <Text variant="caption" tone="muted">
                 Payment: {service.payment_requirement.replace('_', ' ')}
+              </Text>
+            ) : null}
+            {isCardHold && !cardHoldEnabled ? (
+              <Text variant="caption" color={colors.warning}>
+                Card holds are switched off in Settings
               </Text>
             ) : null}
             {service.cancellation_notice_hours != null ? (
@@ -556,6 +591,29 @@ function ServiceRowBase({
               size="sm"
               onPress={() => onOverride(service)}
             />
+          ) : null}
+
+          {/* Display order — admins reorder the venue's service list (web 2026-07:
+              the saved order drives the booking page and staff booking form). */}
+          {isAdmin && (onMoveUp || onMoveDown) ? (
+            <View style={styles.editRow}>
+              <Button
+                label="Move up"
+                variant="secondary"
+                size="sm"
+                style={styles.editBtnFull}
+                disabled={!onMoveUp || reorderPending}
+                onPress={() => onMoveUp?.()}
+              />
+              <Button
+                label="Move down"
+                variant="secondary"
+                size="sm"
+                style={styles.editBtnFull}
+                disabled={!onMoveDown || reorderPending}
+                onPress={() => onMoveDown?.()}
+              />
+            </View>
           ) : null}
 
           {/* Edit/Delete — admins, or the non-admin who created this service
@@ -804,6 +862,7 @@ export default function ServicesScreen() {
   const update = useUpdateService();
   const create = useCreateService();
   const deleteService = useDeleteService();
+  const reorderServices = useReorderServices();
   const toggleCalendarService = useToggleCalendarService();
   const createCalendar = useCreateHostCalendar();
 
@@ -887,6 +946,13 @@ export default function ServicesScreen() {
   // Stripe-connected state for the deposit/full-payment warning (web parity).
   const setupStatus = useSetupStatus(isAdmin);
   const stripeConnected = setupStatus.data?.stripe_connected ?? true;
+
+  // Card-hold payment option shown only when the venue flag is on (spec 6.2).
+  const cardHoldEnabled = Boolean(useFeatureFlags().data?.resolved?.card_hold_deposits);
+  const paymentOptions = cardHoldEnabled
+    ? [...PAYMENT_OPTIONS, CARD_HOLD_PAYMENT_OPTION]
+    : PAYMENT_OPTIONS;
+  const isCardHoldSelected = paymentReq === 'card_hold';
 
   const practitionersQuery = usePractitioners();
   const practitioners = (practitionersQuery.data?.practitioners ?? [])
@@ -1194,6 +1260,11 @@ export default function ServicesScreen() {
     if (paymentReq === 'deposit' && !(depositPence != null && depositPence > 0)) {
       setError('Enter a deposit amount greater than zero for the deposit option.'); return;
     }
+    // Card hold (spec 6.2): every editor requires the fee to be at least £1 —
+    // a zero-fee card hold must be impossible to configure.
+    if (paymentReq === 'card_hold' && !(depositPence != null && depositPence >= 100)) {
+      setError('Enter a no-show fee of at least £1'); return;
+    }
     // Full online payment: a single offering needs a base price > 0; with options,
     // buildVariantsPayload already enforced a price > 0 on every active option.
     if (paymentReq === 'full_payment' && !usesVariants && !(pricePence != null && pricePence > 0)) {
@@ -1253,10 +1324,13 @@ export default function ServicesScreen() {
     }
 
     // Web parity (appointment-service-form-to-payload.ts): only persist a deposit
-    // when "Custom deposit" is the chosen payment mode. Any other choice zeroes it
-    // so a value typed earlier can't linger on the service after switching mode
-    // (which would otherwise show a phantom deposit and confuse refund logic).
-    const depositToSend = paymentReq === 'deposit' ? (depositPence ?? 0) : 0;
+    // when "Custom deposit" or "Card hold" is the chosen payment mode (card holds
+    // store the no-show fee in the same deposit_pence column). Any other choice
+    // zeroes it so a value typed earlier can't linger on the service after
+    // switching mode (which would otherwise show a phantom deposit and confuse
+    // refund logic).
+    const depositToSend =
+      paymentReq === 'deposit' || paymentReq === 'card_hold' ? (depositPence ?? 0) : 0;
 
     const shared = {
       name: name.trim(),
@@ -1455,6 +1529,26 @@ export default function ServicesScreen() {
   // parent processing-time editor, which the options below supersede (web parity).
   const usesVariants = isAdmin && variantDrafts.length > 0;
 
+  // Admin display order (web 2026-07): move a service one place and persist the
+  // FULL id order via PUT /reorder (`sort_order = index`); the saved order also
+  // drives the public booking page and staff booking form lists.
+  const handleMoveService = useCallback(
+    (serviceId: string, direction: -1 | 1) => {
+      const ids = services.map((s) => s.id);
+      const from = ids.indexOf(serviceId);
+      const to = from + direction;
+      if (from < 0 || to < 0 || to >= ids.length) return;
+      const next = [...ids];
+      next.splice(from, 1);
+      next.splice(to, 0, serviceId);
+      reorderServices.mutate(next, {
+        onError: (e) =>
+          toast.error(e instanceof ApiError ? e.message : 'Could not save the new order.'),
+      });
+    },
+    [services, reorderServices, toast],
+  );
+
   const renderServiceItem = useCallback<ListRenderItem<ManagedService>>(
     ({ item }) => {
       const isExpanded = expandedId === item.id;
@@ -1463,6 +1557,7 @@ export default function ServicesScreen() {
       const offerCalendars = !isAdmin && isExpanded ? offerCalendarsForService(item.id) : [];
       const canOverride =
         !isAdmin && isExpanded && staffMayCustomizeAny(item) && staffOffersService(item.id);
+      const orderIndex = isAdmin && isExpanded ? services.findIndex((s) => s.id === item.id) : -1;
       return (
         <ServiceRow
           service={item}
@@ -1477,6 +1572,13 @@ export default function ServicesScreen() {
           onDelete={handleDeleteService}
           onToggleCalendar={handleToggleCalendar}
           onOverride={handleOpenOverride}
+          onMoveUp={orderIndex > 0 ? () => handleMoveService(item.id, -1) : null}
+          onMoveDown={
+            orderIndex >= 0 && orderIndex < services.length - 1
+              ? () => handleMoveService(item.id, 1)
+              : null
+          }
+          reorderPending={reorderServices.isPending}
         />
       );
     },
@@ -1492,6 +1594,9 @@ export default function ServicesScreen() {
       handleDeleteService,
       handleToggleCalendar,
       handleOpenOverride,
+      services,
+      handleMoveService,
+      reorderServices.isPending,
     ],
   );
 
@@ -1728,7 +1833,7 @@ export default function ServicesScreen() {
                         duration,
                         buffer,
                         price,
-                        deposit: paymentReq === 'deposit' ? deposit : '',
+                        deposit: paymentReq === 'deposit' || paymentReq === 'card_hold' ? deposit : '',
                       }}
                       expandedKey={expandedVariantKey}
                       onExpandedKeyChange={setExpandedVariantKey}
@@ -1766,7 +1871,7 @@ export default function ServicesScreen() {
 
             {/* Online payment */}
             <Text variant="overline" tone="muted">Online payment</Text>
-            {PAYMENT_OPTIONS.map((option) => {
+            {paymentOptions.map((option) => {
               const selected = paymentReq === option.value;
               return (
                 <Pressable
@@ -1798,18 +1903,41 @@ export default function ServicesScreen() {
                 </Pressable>
               );
             })}
-            {!usesVariants || paymentReq === 'deposit' ? (
+            {isCardHoldSelected && !cardHoldEnabled ? (
+              <View style={[styles.stripeWarning, { backgroundColor: colors.warningSurface }]}>
+                <Text variant="caption" color={colors.warning}>
+                  {CARD_HOLD_DISABLED_NOTE}
+                </Text>
+              </View>
+            ) : null}
+            {!usesVariants || paymentReq === 'deposit' || isCardHoldSelected ? (
               <View style={styles.moneyRow}>
                 {!usesVariants ? (
                   <View style={styles.moneyField}>
                     <Input label="Price (£)" value={price} onChangeText={setPrice} keyboardType="decimal-pad" />
                   </View>
                 ) : null}
-                {paymentReq === 'deposit' ? (
+                {paymentReq === 'deposit' || isCardHoldSelected ? (
                   <View style={styles.moneyField}>
                     <Input
-                      label={usesVariants ? 'Default deposit (£)' : 'Deposit (£)'}
-                      helper={usesVariants ? 'Used when an option leaves its deposit blank.' : undefined}
+                      label={
+                        isCardHoldSelected
+                          ? usesVariants
+                            ? 'Default no-show fee (£)'
+                            : 'No-show fee (£)'
+                          : usesVariants
+                            ? 'Default deposit (£)'
+                            : 'Deposit (£)'
+                      }
+                      helper={
+                        isCardHoldSelected
+                          ? usesVariants
+                            ? 'Used when an option leaves its fee blank. Must be at least £1.'
+                            : 'The no-show fee must be at least £1.'
+                          : usesVariants
+                            ? 'Used when an option leaves its deposit blank.'
+                            : undefined
+                      }
                       value={deposit}
                       onChangeText={setDeposit}
                       keyboardType="decimal-pad"

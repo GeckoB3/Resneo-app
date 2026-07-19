@@ -94,6 +94,30 @@ export function useUpdateService() {
   });
 }
 
+/**
+ * PUT /api/venue/appointment-services/reorder — admin sets the display order
+ * (web 2026-07): `sort_order = index` for each id. The saved order drives the
+ * services list, the public booking page, and the staff booking form.
+ */
+export function useReorderServices() {
+  const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (serviceIds: string[]): Promise<unknown> => {
+      if (!accessToken) {
+        throw new Error('Missing access token');
+      }
+      return apiFetch<unknown>('/api/venue/appointment-services/reorder', {
+        accessToken,
+        method: 'PUT',
+        body: JSON.stringify({ service_ids: serviceIds }),
+      });
+    },
+    onSuccess: () => invalidateServices(queryClient),
+  });
+}
+
 /** One variant row sent to PATCH — include `id` to preserve an existing option. */
 export interface VariantWriteInput {
   id?: string;

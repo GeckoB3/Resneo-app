@@ -116,6 +116,9 @@ jest.mock('@/lib/queries/usePractitioners', () => ({
 jest.mock('@/lib/queries/useSetupStatus', () => ({
   useSetupStatus: () => ({ data: { stripe_connected: true } }),
 }));
+jest.mock('@/lib/queries/useVenueSettings', () => ({
+  useFeatureFlags: () => ({ data: { resolved: { card_hold_deposits: true } } }),
+}));
 
 import { ResourceEditorSheet } from '@/components/resources/ResourceEditorSheet';
 

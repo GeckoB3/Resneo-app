@@ -24,6 +24,13 @@ export interface GroupedBookingResponse {
   stripe_account_id?: string;
   status: 'Pending' | 'Booked';
   cancellation_notice_hours?: number;
+  /**
+   * Card-hold capture mode (web 2026-07, spec D7): 'setup' when only a card is
+   * stored, 'payment_with_setup' when a payment also vaults the card. The
+   * summed no-show fee rides `card_hold_fee_pence`.
+   */
+  payment_mode?: 'payment' | 'setup' | 'payment_with_setup';
+  card_hold_fee_pence?: number | null;
 }
 
 /**

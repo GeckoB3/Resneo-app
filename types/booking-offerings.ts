@@ -13,7 +13,14 @@
  * @see _reference/Resneo/src/lib/availability/resource-booking-engine.ts
  */
 
-export type BookingPaymentRequirement = 'none' | 'deposit' | 'full_payment';
+/**
+ * `'card_hold'` (web 2026-07): no payment at booking; the card is saved and a
+ * no-show fee may be charged. The public offering payloads resolve the venue's
+ * `card_hold_deposits` flag server-side, so `'card_hold'` here implies the flag
+ * is on and a positive fee is configured. The fee rides the same
+ * `deposit_amount_pence` field as deposits (spec D5).
+ */
+export type BookingPaymentRequirement = 'none' | 'deposit' | 'full_payment' | 'card_hold';
 
 // ---------------------------------------------------------------------------
 // Classes
@@ -36,7 +43,7 @@ export interface ClassAvailabilitySlot {
   instructor_name: string | null;
   price_pence: number | null;
   payment_requirement: BookingPaymentRequirement;
-  /** Per-person; only set when payment_requirement === 'deposit'. */
+  /** Per-person; the deposit ('deposit') or no-show fee ('card_hold'). */
   deposit_amount_pence: number | null;
   cancellation_notice_hours: number;
   requires_stripe_checkout: boolean;

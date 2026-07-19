@@ -421,6 +421,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
               buffer_minutes: service.buffer_minutes,
               pricePence: service.price_pence,
               depositPence: service.deposit_pence ?? null,
+              paymentRequirement: service.payment_requirement ?? null,
               practitionerId: practitioner.id,
               practitionerName: practitioner.name,
               addonGroups: service.addon_groups ?? [],

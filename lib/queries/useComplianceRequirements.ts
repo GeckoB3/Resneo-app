@@ -1,4 +1,4 @@
-import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
 import type { ComplianceOnlineCollection } from '@/lib/compliance/constants';
@@ -117,6 +117,8 @@ const requirementKeys = {
       keyScope(accessToken),
       serviceId ?? null,
     ] as const,
+  forVenue: (accessToken: string | null) =>
+    [...queryKeys.compliance.all(), 'requirements', keyScope(accessToken), '__venue__'] as const,
 };
 
 /**
@@ -157,14 +159,13 @@ export function useComplianceRequirements(serviceId: string | null, enabled = tr
 /**
  * Requirement COUNTS for many services at once — drives the at-a-glance
  * markers on the Settings → Compliance Requirements tab (which services have a
- * requirement without expanding each one). The backend's GET requires a
- * `service_id` (no list-all route), so this fans out one light query per
- * service, sharing {@link requirementKeys.forService} with the editor's hook so
- * the caches feed each other and every requirement mutation (which invalidates
- * `queryKeys.compliance.all()`) refreshes the markers automatically.
+ * requirement without expanding each one). Web parity (2026-07): the GET now
+ * supports a venue-wide listing when no `service_id` is passed, so this is ONE
+ * query for the whole venue instead of a fan-out per service. Every requirement
+ * mutation invalidates `queryKeys.compliance.all()`, which refreshes it.
  *
- * Returns a Map of serviceId → requirement count; a service is absent until
- * its query resolves (render no marker rather than a wrong one).
+ * Returns a Map of serviceId → requirement count; empty until the query
+ * resolves (render no marker rather than a wrong one).
  */
 export function useComplianceRequirementCounts(
   serviceIds: string[],
@@ -173,29 +174,36 @@ export function useComplianceRequirementCounts(
   const accessToken = useAccessToken();
   const queryEnabled = enabled && isBackendConfigured() && accessToken !== null;
 
-  return useQueries({
-    queries: serviceIds.map((serviceId) => ({
-      queryKey: requirementKeys.forService(accessToken, serviceId),
-      enabled: queryEnabled && !!serviceId,
-      retry: false, // 403/402 = plan gate
-      queryFn: async (): Promise<{ requirements: ComplianceRequirementRow[] }> => {
-        if (!accessToken || !serviceId) {
-          throw new Error('Missing parameters');
-        }
-        return fetchRequirementsForService(accessToken, serviceId);
-      },
-    })),
-    combine: (results) => {
-      const counts = new Map<string, number>();
-      results.forEach((result, index) => {
-        const serviceId = serviceIds[index];
-        if (serviceId && result.data) {
-          counts.set(serviceId, result.data.requirements.length);
-        }
-      });
-      return counts;
+  const query = useQuery({
+    queryKey: requirementKeys.forVenue(accessToken),
+    enabled: queryEnabled,
+    retry: false, // 403/402 = plan gate
+    queryFn: async (): Promise<{ requirements: ComplianceRequirementRow[] }> => {
+      if (!accessToken) {
+        throw new Error('Missing parameters');
+      }
+      return apiFetch<{ requirements: ComplianceRequirementRow[] }>(
+        '/api/venue/compliance/requirements',
+        { accessToken },
+      );
     },
   });
+
+  const counts = new Map<string, number>();
+  if (query.data) {
+    const wanted = new Set(serviceIds);
+    for (const row of query.data.requirements) {
+      // Rows carry both polymorphic service FK columns; group by whichever is set.
+      const serviceId = row.appointment_service_id ?? row.service_item_id;
+      if (!serviceId || !wanted.has(serviceId)) continue;
+      counts.set(serviceId, (counts.get(serviceId) ?? 0) + 1);
+    }
+    // Resolved-but-absent services genuinely have zero requirements.
+    for (const id of serviceIds) {
+      if (!counts.has(id)) counts.set(id, 0);
+    }
+  }
+  return counts;
 }
 
 /** POST /api/venue/compliance/requirements — add a requirement (admin). */

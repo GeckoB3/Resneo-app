@@ -28,6 +28,10 @@ export interface ReportDeposit {
   total_collected_pence: number;
   total_refunded_pence: number;
   total_forfeited_pence: number;
+  /** Card holds: no-show fees charged against stored cards (kept separate from deposits collected). */
+  no_show_fees_charged_pence?: number;
+  no_show_fees_charged_count?: number;
+  card_holds_active_count?: number;
 }
 
 export interface ReportAppointmentInsights {

@@ -473,11 +473,22 @@ export function useNotifyBookingModification() {
   });
 }
 
-export type DepositAction = 'send_payment_link' | 'waive' | 'record_cash' | 'refund';
+export type DepositAction =
+  | 'send_payment_link'
+  | 'waive'
+  | 'record_cash'
+  | 'refund'
+  // Card-hold deposits (§9.2): admin-only charge of the saved card's no-show
+  // fee (`amount_pence` clamps to the consented fee), and release of a hold
+  // kept by a late cancellation. On hold bookings the server also swaps the
+  // comms for `send_payment_link` (card request) and releases on `waive`.
+  | 'charge_no_show_fee'
+  | 'release_hold';
 
 /**
  * POST /api/venue/bookings/[id]/deposit — deposit actions: send a payment link,
- * waive, record a cash payment, or refund. Invalidates the booking on success.
+ * waive, record a cash payment, refund, or the card-hold actions (charge the
+ * no-show fee / release a kept hold). Invalidates the booking on success.
  */
 export function useBookingDeposit(bookingId: string) {
   const accessToken = useAccessToken();

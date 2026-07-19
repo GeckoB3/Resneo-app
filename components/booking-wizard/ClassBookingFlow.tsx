@@ -304,6 +304,9 @@ export function ClassBookingFlow({ onCreated }: ClassBookingFlowProps) {
           ]}
           totalPence={totalPence}
           depositPence={hasDeposit ? inst.deposit_amount_pence : null}
+          paymentRequirement={inst.payment_requirement}
+          cardHoldFeePerUnitPence={inst.deposit_amount_pence}
+          cardHoldUnits={safeSpots}
           guestName={[first, last].filter(Boolean).join(' ')}
           successTitle="Class booking confirmed"
           successSubtitle={`${selectedClass.class_name} on ${formatBookingDate(inst.instance_date)} at ${formatBookingTime(inst.start_time)}.`}

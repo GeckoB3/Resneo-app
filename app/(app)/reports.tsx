@@ -64,7 +64,7 @@ function StatRow({
 }: {
   label: string;
   value: string;
-  accent?: 'emerald' | 'amber' | 'red' | 'brand';
+  accent?: 'emerald' | 'amber' | 'red' | 'brand' | 'teal';
 }) {
   const { colors } = useTheme();
   const valueColor =
@@ -76,7 +76,9 @@ function StatRow({
           ? colors.danger
           : accent === 'brand'
             ? colors.brand
-            : colors.text;
+            : accent === 'teal'
+              ? colors.accent
+              : colors.text;
 
   return (
     <View style={styles.statRow}>
@@ -290,6 +292,13 @@ export default function ReportsScreen() {
       ['Collected', String(deposit.total_collected_pence), (deposit.total_collected_pence / 100).toFixed(2)],
       ['Refunded', String(deposit.total_refunded_pence), (deposit.total_refunded_pence / 100).toFixed(2)],
       ['Forfeited', String(deposit.total_forfeited_pence), (deposit.total_forfeited_pence / 100).toFixed(2)],
+      // Card holds (web parity): charged no-show fees are not deposit payments.
+      [
+        `No-show fees charged (${deposit.no_show_fees_charged_count ?? 0})`,
+        String(deposit.no_show_fees_charged_pence ?? 0),
+        ((deposit.no_show_fees_charged_pence ?? 0) / 100).toFixed(2),
+      ],
+      ['Active card holds', String(deposit.card_holds_active_count ?? 0), ''],
     ]);
     if (!result.ok) {
       toast.error('Could not export the report.');
@@ -776,6 +785,17 @@ export default function ReportsScreen() {
                       label="Forfeited"
                       value={money(deposit.total_forfeited_pence)}
                       accent="red"
+                    />
+                    {/* Card holds are shown separately from deposits collected:
+                        a charged no-show fee is not a deposit payment (spec §13). */}
+                    <StatRow
+                      label={`No-show fees charged (${deposit.no_show_fees_charged_count ?? 0})`}
+                      value={money(deposit.no_show_fees_charged_pence ?? 0)}
+                      accent="teal"
+                    />
+                    <StatRow
+                      label="Active card holds"
+                      value={String(deposit.card_holds_active_count ?? 0)}
                     />
                   </View>
                 </Card>

@@ -12,11 +12,19 @@ import {
   chainTotalPence,
   type MultiServiceSegment,
 } from '@/lib/booking/multi-service-chain';
+import {
+  STAFF_CARD_HOLD_LINK_SENT_LINE,
+  STAFF_CARD_HOLD_TOGGLE_LABEL,
+  STAFF_CARD_HOLD_TOGGLE_SUBLABEL,
+  resolveStaffEntityCardHold,
+  staffCardHoldFeeLine,
+} from '@/lib/booking/card-hold';
 import { formatPence } from '@/lib/format';
 import { hapticSelect, hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { normalizePhone } from '@/lib/phone/normalize';
 import { useCreateBooking, type ComplianceBookingWarning } from '@/lib/queries/useCreateBooking';
 import { useCreateMultiServiceBooking } from '@/lib/queries/useCreateMultiServiceBooking';
+import { useFeatureFlags } from '@/lib/queries/useVenueSettings';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { fonts, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -72,6 +80,9 @@ interface BookingConfirmation {
   payment_url?: string;
   requires_deposit?: boolean;
   deposit_amount_pence?: number;
+  /** Card hold requested at create (§7.6): the confirmation shows the card-request line. */
+  card_hold_requested?: boolean;
+  card_hold_fee_pence?: number | null;
   cancellation_notice_hours?: number;
   compliance_warnings?: ComplianceBookingWarning[];
   service_name: string;
@@ -150,7 +161,19 @@ function BookingConfirmationView({
         <SummaryRow label="Date" value={confirmation.date_label} />
         <SummaryRow label="Time" value={confirmation.time_label} />
 
-        {confirmation.requires_deposit && confirmation.deposit_amount_pence != null && confirmation.deposit_amount_pence > 0 ? (
+        {confirmation.card_hold_requested ? (
+          <View style={[styles.depositNotice, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Text variant="bodySmall" tone="brand">
+              Card hold
+              {confirmation.card_hold_fee_pence != null && confirmation.card_hold_fee_pence > 0
+                ? ` · ${staffCardHoldFeeLine(confirmation.card_hold_fee_pence).toLowerCase()}`
+                : ''}
+            </Text>
+            <Text variant="caption" tone="muted">
+              {STAFF_CARD_HOLD_LINK_SENT_LINE} No payment is taken.
+            </Text>
+          </View>
+        ) : confirmation.requires_deposit && confirmation.deposit_amount_pence != null && confirmation.deposit_amount_pence > 0 ? (
           <View style={[styles.depositNotice, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <Text variant="bodySmall" tone="brand">
               Deposit required: {formatMoney(confirmation.deposit_amount_pence)}
@@ -247,6 +270,23 @@ export function ConfirmStep({
   const hasDeposit = baseDeposit != null && baseDeposit > 0;
   const depositLabel = hasDeposit ? formatMoney(baseDeposit!) : null;
 
+  // Card hold (spec §7.6/D6): when the service's resolved requirement is
+  // card_hold, the per-booking toggle replaces "Require deposit". Default on,
+  // walk-ins included. The fee is the (variant-adjusted) deposit_pence column,
+  // add-ons excluded. Multi-service chains have no toggle (the server derives
+  // per-segment holds from service config).
+  const cardHoldFlagEnabled = Boolean(
+    useFeatureFlags().data?.resolved?.card_hold_deposits,
+  );
+  const staffCardHold = isMultiService
+    ? null
+    : resolveStaffEntityCardHold({
+        paymentRequirement: service.paymentRequirement,
+        feePerUnitPence: baseDeposit,
+        cardHoldFlagEnabled,
+      });
+  const [requireCardHold, setRequireCardHold] = useState(true);
+
   // The web folds the appointment's free-text comment into `dietary_notes`
   // (DetailsStep maps "Comments or requests" → dietary_notes). Mirror that: the
   // mobile "Comments or requests" box is that field, so it must NOT be silently
@@ -283,8 +323,13 @@ export function ConfirmStep({
     ...(comment ? { dietary_notes: comment } : {}),
     // Staff "Require deposit": send when the service has a deposit and the toggle
     // is on (the web sends require_deposit under the same condition). Walk-ins
-    // never charge a deposit.
-    ...(hasDeposit && requireDeposit && source !== 'walk-in' ? { require_deposit: true } : {}),
+    // never charge a deposit. Card-hold services never send require_deposit; the
+    // card-hold toggle rides `require_card_hold` instead (walk-ins included).
+    ...(staffCardHold
+      ? { require_card_hold: requireCardHold }
+      : hasDeposit && requireDeposit && source !== 'walk-in'
+        ? { require_deposit: true }
+        : {}),
     // Existing-contact / rebook → flag as a returning guest (web parity).
     ...(returningGuest ? { returning_guest: true } : {}),
     source,
@@ -363,6 +408,11 @@ export function ConfirmStep({
             booking_id: primary,
             requires_deposit: res.requires_deposit,
             deposit_amount_pence: res.total_deposit_pence,
+            // Card-hold chains (spec D7): pure setup mode shows the card-request
+            // notice; a mixed payment_with_setup chain keeps the deposit notice
+            // (money IS taken there, so "no payment" copy would mislead).
+            card_hold_requested: res.payment_mode === 'setup',
+            card_hold_fee_pence: res.card_hold_fee_pence ?? null,
             cancellation_notice_hours: res.cancellation_notice_hours,
             service_name: `${multiServiceSegments!.length} services`,
             guest_name: fullName,
@@ -392,6 +442,8 @@ export function ConfirmStep({
           payment_url: response.payment_url,
           requires_deposit: response.requires_deposit,
           deposit_amount_pence: response.deposit_amount_pence,
+          card_hold_requested: response.card_hold_requested,
+          card_hold_fee_pence: staffCardHold?.feePence ?? null,
           cancellation_notice_hours: response.cancellation_notice_hours,
           compliance_warnings: response.compliance_warnings,
           service_name: `${service.serviceName}${variant ? ` · ${variant.name}` : ''}`,
@@ -487,14 +539,57 @@ export function ConfirmStep({
         {depositLabel ? (
           <View style={styles.depositRow}>
             <Text variant="caption" tone="muted">
-              Deposit
+              {staffCardHold ? 'No-show fee' : 'Deposit'}
             </Text>
             <Text variant="bodySmall">{depositLabel}</Text>
           </View>
         ) : null}
       </Card>
 
-      {hasDeposit && source !== 'walk-in' && onChangeRequireDeposit ? (
+      {staffCardHold ? (
+        <Pressable
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: requireCardHold }}
+          accessibilityLabel={`${STAFF_CARD_HOLD_TOGGLE_LABEL}. ${STAFF_CARD_HOLD_TOGGLE_SUBLABEL}`}
+          onPress={() => {
+            hapticSelect();
+            setRequireCardHold((v) => !v);
+          }}
+          style={({ pressed }) => [
+            styles.depositToggle,
+            {
+              backgroundColor: requireCardHold ? colors.surfaceRaised : colors.surface,
+              borderColor: requireCardHold ? colors.brand : colors.border,
+              opacity: pressed ? 0.9 : 1,
+            },
+          ]}>
+          <View
+            style={[
+              styles.check,
+              {
+                borderColor: requireCardHold ? colors.brand : colors.borderStrong,
+                backgroundColor: requireCardHold ? colors.brand : 'transparent',
+              },
+            ]}>
+            {requireCardHold ? (
+              <Text style={[styles.checkMark, { color: colors.onBrand }]}>✓</Text>
+            ) : null}
+          </View>
+          <View style={styles.depositToggleLabel}>
+            <Text variant="bodyMedium">{STAFF_CARD_HOLD_TOGGLE_LABEL}</Text>
+            <Text variant="caption" tone="muted">
+              {STAFF_CARD_HOLD_TOGGLE_SUBLABEL}
+            </Text>
+            {requireCardHold ? (
+              <Text variant="caption" tone="muted">
+                {staffCardHoldFeeLine(staffCardHold.feePence)}
+              </Text>
+            ) : null}
+          </View>
+        </Pressable>
+      ) : null}
+
+      {!staffCardHold && hasDeposit && source !== 'walk-in' && onChangeRequireDeposit ? (
         <Pressable
           accessibilityRole="checkbox"
           accessibilityState={{ checked: requireDeposit }}

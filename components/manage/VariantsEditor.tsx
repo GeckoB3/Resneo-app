@@ -124,6 +124,15 @@ export function buildVariantsPayload(
         key: draft.key,
       };
     }
+    // Card hold (spec 6.2): a per-option fee override, when set, must be at
+    // least £1 (blank falls back to the service default fee).
+    if (paymentRequirement === 'card_hold' && draft.deposit.trim() && !(deposit != null && deposit >= 100)) {
+      return {
+        ok: false,
+        error: `Option "${name}": set a no-show fee of at least £1, or leave it blank to use the service fee.`,
+        key: draft.key,
+      };
+    }
     const proc = validateProcessingBlocks(draft.processingDrafts, duration);
     if (!proc.ok) {
       return { ok: false, error: `"${name}": ${proc.error ?? 'processing time is invalid.'}`, key: draft.key };
@@ -332,8 +341,12 @@ export function VariantsEditor({
                   </View>
                   <View style={styles.moneyField}>
                     <Input
-                      label="Deposit (£)"
-                      helper={paymentRequirement === 'deposit' ? 'Blank = service default' : undefined}
+                      label={paymentRequirement === 'card_hold' ? 'No-show fee (£)' : 'Deposit (£)'}
+                      helper={
+                        paymentRequirement === 'deposit' || paymentRequirement === 'card_hold'
+                          ? 'Blank = service default'
+                          : undefined
+                      }
                       value={draft.deposit}
                       onChangeText={(deposit) => patchDraft(draft.key, { deposit })}
                       keyboardType="decimal-pad"

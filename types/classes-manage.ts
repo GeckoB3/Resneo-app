@@ -7,7 +7,8 @@
  * @see _reference/Resneo/src/app/api/venue/class-instances/route.ts
  */
 
-export type ClassPaymentRequirement = 'none' | 'deposit' | 'full_payment';
+/** `'card_hold'` (web 2026-07): per-person no-show fee kept in `deposit_amount_pence` (spec D5). */
+export type ClassPaymentRequirement = 'none' | 'deposit' | 'full_payment' | 'card_hold';
 
 /**
  * One class type row from GET /api/venue/classes `class_types`.

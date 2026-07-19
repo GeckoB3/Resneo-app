@@ -30,6 +30,7 @@ import {
   type HostCalendar,
 } from '@/lib/queries/useResourcesManage';
 import { useSetupStatus } from '@/lib/queries/useSetupStatus';
+import { useFeatureFlags } from '@/lib/queries/useVenueSettings';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { radius, spacing } from '@/theme/index';
@@ -46,6 +47,13 @@ const PAYMENT_OPTIONS: { value: ResourcePaymentRequirement; label: string; hint:
   { value: 'deposit', label: 'Custom deposit', hint: 'Fixed amount paid online when booking' },
   { value: 'full_payment', label: 'Pay in full online', hint: 'Full price taken at booking' },
 ];
+
+/** Fourth payment option (spec 6.2), shown only when `card_hold_deposits` is on. */
+const CARD_HOLD_PAYMENT_OPTION: { value: ResourcePaymentRequirement; label: string; hint: string } = {
+  value: 'card_hold',
+  label: 'Card hold',
+  hint: 'No payment is taken when the client books. Their card is stored securely and you can charge a no-show fee if they do not attend.',
+};
 
 /** Shortest-booking floor (server `resourceSchema` min). */
 const MIN_BOOKING_FLOOR = 15;
@@ -189,6 +197,8 @@ export function ResourceEditorSheet({
   const createCalendar = useCreateHostCalendar();
   const setupStatus = useSetupStatus();
   const stripeConnected = setupStatus.data?.stripe_connected ?? true;
+  // Card-hold payment option shown only when the venue flag is on (spec 6.2).
+  const cardHoldEnabled = Boolean(useFeatureFlags().data?.resolved?.card_hold_deposits);
 
   const editing = target?.mode === 'edit' ? target.resource : null;
 
@@ -434,6 +444,11 @@ export function ResourceEditorSheet({
         setError('Deposit can’t exceed the maximum booking total.'); return;
       }
     }
+    // Card hold (spec 6.2): no price relationship — the flat no-show fee just
+    // has to be at least £1.
+    if (paymentReq === 'card_hold' && !(depositPence != null && depositPence >= 100)) {
+      setError('No-show fee must be at least £1.'); return;
+    }
 
     // Every weekly range + amended exception must end after it starts (the API
     // stores hours verbatim with no order check).
@@ -465,7 +480,9 @@ export function ResourceEditorSheet({
       max_booking_minutes: maxMins,
       price_per_slot_pence: pricePence,
       payment_requirement: paymentReq,
-      deposit_amount_pence: paymentReq === 'deposit' ? depositPence ?? null : null,
+      // 'card_hold' stores the flat no-show fee in the same column (spec D5).
+      deposit_amount_pence:
+        paymentReq === 'deposit' || paymentReq === 'card_hold' ? depositPence ?? null : null,
       is_active: isActive,
       availability_hours: availabilityHours,
       availability_exceptions: availabilityExceptions,
@@ -750,7 +767,7 @@ export function ResourceEditorSheet({
             onChangeText={setPrice}
             keyboardType="decimal-pad"
           />
-          {PAYMENT_OPTIONS.map((option) => {
+          {(cardHoldEnabled ? [...PAYMENT_OPTIONS, CARD_HOLD_PAYMENT_OPTION] : PAYMENT_OPTIONS).map((option) => {
             const selected = paymentReq === option.value;
             return (
               <Pressable
@@ -782,13 +799,19 @@ export function ResourceEditorSheet({
               </Pressable>
             );
           })}
-          {paymentReq === 'deposit' ? (
+          {paymentReq === 'deposit' || paymentReq === 'card_hold' ? (
             <Input
-              label="Deposit (£)"
+              label={paymentReq === 'card_hold' ? 'No-show fee (£)' : 'Deposit (£)'}
+              helper={paymentReq === 'card_hold' ? 'The no-show fee must be at least £1.' : undefined}
               value={deposit}
               onChangeText={setDeposit}
               keyboardType="decimal-pad"
             />
+          ) : null}
+          {paymentReq === 'card_hold' && !cardHoldEnabled ? (
+            <Text variant="caption" color={colors.warning}>
+              Card hold is disabled for this venue; this resource currently takes no deposit.
+            </Text>
           ) : null}
           {paymentReq !== 'none' && !stripeConnected ? (
             <Text variant="caption" color={colors.warning}>

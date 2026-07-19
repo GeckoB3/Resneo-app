@@ -26,6 +26,7 @@ import { QuickAction } from '@/components/ui/QuickAction';
 import { Text } from '@/components/ui/Text';
 import { ANALYTICS_EVENTS, track } from '@/lib/analytics';
 import { ApiError } from '@/lib/api/client';
+import { resolveCardHoldUiState, type CardHoldPillVariant } from '@/lib/booking/card-hold';
 import { calendarDateInTimeZone } from '@/lib/dates/venue-dates';
 import { canMarkNoShowForSlot, clampNoShowGraceMinutes } from '@/lib/booking/no-show-grace';
 import { ACTION_COLORS, primaryActionColors } from '@/lib/booking/booking-action-colors';
@@ -121,6 +122,14 @@ function formatBookingTimeRange(time: string, endTime?: string | null): string {
 }
 
 const formatDeposit = formatPositivePence;
+
+/** Web pill variants (§9.1) → app Badge tones ('info' teal maps to accent). */
+const CARD_HOLD_BADGE_TONE: Record<CardHoldPillVariant, 'warning' | 'accent' | 'neutral' | 'brand'> = {
+  warning: 'warning',
+  info: 'accent',
+  neutral: 'neutral',
+  brand: 'brand',
+};
 
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
@@ -493,12 +502,29 @@ export function BookingDetailContent({
   const guestPhone = booking.guest?.phone?.trim();
   const canResend = !!guestEmail;
   const hasDeposit = booking.deposit_amount_pence != null || !!booking.deposit_status;
+  // Card-hold state (§9.1): when non-null the legacy deposit UI is replaced by
+  // the card-aware pill/lines/actions everywhere in this component.
+  const cardHoldState = resolveCardHoldUiState(
+    { status: booking.status, deposit_status: booking.deposit_status ?? '' },
+    booking.card_hold ?? null,
+    { isAdmin },
+  );
+  const cardHoldHasActions =
+    !!cardHoldState &&
+    (cardHoldState.showResendLink ||
+      cardHoldState.showWaive ||
+      cardHoldState.showChargeAction ||
+      cardHoldState.showRefundAction ||
+      cardHoldState.showReleaseAction);
   // Web parity: deposit actions (send link / record cash / waive / refund) show
   // whenever the booking is active; cancelled bookings instead get a refund
-  // banner + a permanent-delete card.
+  // banner + a permanent-delete card. Card-hold actions ignore the cancel gate:
+  // a kept late-cancellation hold stays chargeable/releasable on a Cancelled
+  // booking (§9.3 amended).
   const isCancelled = booking.status === 'Cancelled';
-  const showDepositActions = !isCancelled;
-  const showRefundBanner = isCancelled && (booking.deposit_amount_pence ?? 0) > 0;
+  const showDepositActions = cardHoldState ? cardHoldHasActions : !isCancelled;
+  const showRefundBanner =
+    !cardHoldState && isCancelled && (booking.deposit_amount_pence ?? 0) > 0;
 
   // Add-on snapshots + price breakdown (variant/base price + add-ons).
   const addons = booking.addons ?? [];
@@ -700,11 +726,17 @@ export function BookingDetailContent({
               ) : null}
             </View>
 
-            {(booking.deposit_status === 'Pending' ||
+            {(cardHoldState?.pill ||
+              (!cardHoldState && booking.deposit_status === 'Pending') ||
               (isTable && booking.occasion?.trim()) ||
               attendanceBadges) ? (
               <View style={styles.heroBadges}>
-                {booking.deposit_status === 'Pending' ? (
+                {cardHoldState?.pill ? (
+                  <Badge
+                    label={cardHoldState.pill.label}
+                    tone={CARD_HOLD_BADGE_TONE[cardHoldState.pill.variant]}
+                  />
+                ) : !cardHoldState && booking.deposit_status === 'Pending' ? (
                   <Badge label="Deposit pending" tone="warning" />
                 ) : null}
                 {isTable && booking.occasion?.trim() ? (
@@ -971,7 +1003,12 @@ export function BookingDetailContent({
       {/* Details — secondary facts, collapsed by default (compact-first) */}
       <CollapsibleCard
         title="Details"
-        summary={[partyLabel, booking.deposit_status ?? (depositLabel ? 'Deposit' : null)]
+        summary={[
+          partyLabel,
+          cardHoldState
+            ? cardHoldState.pill?.label ?? 'Card hold'
+            : booking.deposit_status ?? (depositLabel ? 'Deposit' : null),
+        ]
           .filter(Boolean)
           .join(' · ')}>
         <View style={styles.details}>
@@ -982,7 +1019,12 @@ export function BookingDetailContent({
           {location ? <DetailRow label="Location" value={location} /> : null}
           {booking.area_name ? <DetailRow label="Area" value={booking.area_name} /> : null}
           {tableNames ? <DetailRow label="Table" value={tableNames} /> : null}
-          {depositLabel || booking.deposit_status ? (
+          {cardHoldState ? (
+            <DetailRow
+              label="Card hold"
+              value={cardHoldState.pill?.label ?? cardHoldState.lines[0] ?? 'Card hold'}
+            />
+          ) : depositLabel || booking.deposit_status ? (
             <DetailRow
               label="Deposit"
               value={
@@ -1094,10 +1136,32 @@ export function BookingDetailContent({
       {showDepositActions || hasDeposit || canResend || booking.cancellation_deadline ? (
         <CollapsibleCard
           title="Payments & confirmation"
-          summary={booking.deposit_status ?? null}
-          defaultExpanded={booking.deposit_status === 'Pending'}>
+          summary={
+            cardHoldState ? cardHoldState.pill?.label ?? 'Card hold' : booking.deposit_status ?? null
+          }
+          defaultExpanded={
+            cardHoldState
+              ? cardHoldState.kind === 'awaiting_card' || cardHoldHasActions
+              : booking.deposit_status === 'Pending'
+          }>
           <View style={styles.manage}>
-            {hasDeposit ? (
+            {cardHoldState ? (
+              <>
+                <View style={styles.detailRow}>
+                  <Text variant="bodySmall" tone="muted">
+                    Card hold
+                  </Text>
+                  <Text variant="bodyMedium" style={styles.detailValue}>
+                    {cardHoldState.pill?.label ?? 'Card hold'}
+                  </Text>
+                </View>
+                {cardHoldState.lines.map((line) => (
+                  <Text key={line} variant="caption" tone="muted">
+                    {line}
+                  </Text>
+                ))}
+              </>
+            ) : hasDeposit ? (
               <View style={styles.detailRow}>
                 <Text variant="bodySmall" tone="muted">
                   Deposit
@@ -1111,7 +1175,13 @@ export function BookingDetailContent({
             ) : null}
             {showDepositActions ? (
               <Button
-                label={hasDeposit ? 'Deposit actions' : 'Take deposit / payment'}
+                label={
+                  cardHoldState
+                    ? 'Card hold actions'
+                    : hasDeposit
+                      ? 'Deposit actions'
+                      : 'Take deposit / payment'
+                }
                 variant="secondary"
                 fullWidth
                 onPress={() =>
@@ -1120,6 +1190,7 @@ export function BookingDetailContent({
                     guestName,
                     amountPence: booking.deposit_amount_pence,
                     status: booking.deposit_status,
+                    cardHold: cardHoldState,
                   })
                 }
               />
