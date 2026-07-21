@@ -39,6 +39,7 @@ no-show fee. Two new `deposit_status` values (`'Card Held'`, `'Charged'`), a
 | 11 | Comms log labels | `card_hold_request_email/sms`, `card_hold_payment_reminder_email/sms`, `card_hold_charged_email`; `auto_cancel_notification` label updated to "deposit or card details missing". |
 | 12 | Reports | Deposit summary gains "No-show fees charged (n)" + "Active card holds" rows and CSV lines (`report4_deposit` new keys). |
 | 13 | Indicators | `showDepositPendingPill` documented: hold states never show "Deposit pending" (nothing owed upfront). |
+| 13a | **Feature-flag toggle** (follow-up fix) | `card_hold_deposits` added to `AppointmentsFeatureFlagKey` and to `FLAG_META` in `manage/booking-settings.tsx` (Settings → Booking → Optional booking features), mirroring the web `FeatureFlagsSection`. **Without this the entire feature was invisible** on any venue whose env var wasn't set — the initial R9 pass ported every card-hold surface EXCEPT the switch that turns them on. Not web-only; the app fully supports the feature. |
 
 ### Other #91–#101 changes
 

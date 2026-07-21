@@ -205,6 +205,12 @@ const FLAG_META: {
       'Prepaid class packs, fixed-session courses, and recurring membership plans. Manage from the web dashboard.',
     webOnly: true,
   },
+  {
+    key: 'card_hold_deposits',
+    title: 'Card hold deposits',
+    description:
+      'Card on file with a chargeable no-show fee. No payment taken at booking. Adds a Card hold option when you set up services, classes, events, and resources.',
+  },
 ];
 
 function waitlistModeFromRaw(raw: VenueFeatureFlagsRaw): WaitlistMode {

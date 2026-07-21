@@ -26,7 +26,8 @@ export type AppointmentsFeatureFlagKey =
   | 'guest_self_reschedule'
   | 'any_available_practitioner'
   | 'compliance_records_enabled'
-  | 'class_commerce_enabled';
+  | 'class_commerce_enabled'
+  | 'card_hold_deposits';
 
 /**
  * Appointment-waitlist mode stored on `feature_flags.waitlist_config.mode`.

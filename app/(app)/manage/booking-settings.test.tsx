@@ -137,3 +137,40 @@ describe('Booking settings — waitlist enable + mode', () => {
     expect(patch.waitlist_config).toEqual({ mode: 'notify_in_order' });
   });
 });
+
+describe('Booking settings — card hold deposits flag', () => {
+  it('renders the Card hold deposits toggle and PATCHes card_hold_deposits: true when switched on', async () => {
+    mockResolvedFlags = { waitlist_v2: true, card_hold_deposits: false };
+    mockRawFlags = { waitlist_v2: true, waitlist_config: { mode: 'staff_choose' } };
+    await render(<BookingSettingsScreen />);
+
+    // The toggle that gates every card-hold surface must be present.
+    expect(screen.getByText('Card hold deposits')).toBeTruthy();
+
+    await act(async () => {
+      fireEvent(screen.getByLabelText('Card hold deposits'), 'valueChange', true);
+    });
+
+    expect(mockUpdateFlagsAsync).toHaveBeenCalledTimes(1);
+    const patch = mockUpdateFlagsAsync.mock.calls[0][0] as Record<string, unknown>;
+    expect(patch.card_hold_deposits).toBe(true);
+  });
+
+  it('PATCHes card_hold_deposits: false when switched off', async () => {
+    mockResolvedFlags = { waitlist_v2: true, card_hold_deposits: true };
+    mockRawFlags = {
+      waitlist_v2: true,
+      waitlist_config: { mode: 'staff_choose' },
+      card_hold_deposits: true,
+    };
+    await render(<BookingSettingsScreen />);
+
+    await act(async () => {
+      fireEvent(screen.getByLabelText('Card hold deposits'), 'valueChange', false);
+    });
+
+    expect(mockUpdateFlagsAsync).toHaveBeenCalledTimes(1);
+    const patch = mockUpdateFlagsAsync.mock.calls[0][0] as Record<string, unknown>;
+    expect(patch.card_hold_deposits).toBe(false);
+  });
+});
