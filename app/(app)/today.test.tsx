@@ -17,6 +17,17 @@ jest.mock('expo-router', () => ({
 }));
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
 
+// Render the dismiss-confirmation Sheet's children inline when visible (avoids
+// gesture-handler/Modal), matching the pattern in ResourceManagerSheet.test.
+jest.mock('@/components/ui/Sheet', () => {
+  const React = require('react');
+  const { View } = require('react-native');
+  return {
+    Sheet: ({ visible, children }: { visible: boolean; children: React.ReactNode }) =>
+      visible ? React.createElement(View, null, children) : null,
+  };
+});
+
 const mockPush = jest.fn();
 
 const mockStaff = { data: { staff: { role: 'admin' } } } as {
@@ -24,11 +35,24 @@ const mockStaff = { data: { staff: { role: 'admin' } } } as {
 };
 jest.mock('@/lib/queries/useStaffMe', () => ({ useStaffMe: () => mockStaff }));
 
-const mockDismiss = { mutate: jest.fn() };
+const mockDismiss = { mutate: jest.fn(), isPending: false };
 const mockSetup = { data: undefined as SetupStatus | undefined };
 jest.mock('@/lib/queries/useSetupStatus', () => ({
   useSetupStatus: () => mockSetup,
   useDismissSetupChecklist: () => mockDismiss,
+}));
+
+// The card reads the venue id to scope the tap-through prompt storage.
+jest.mock('@/providers/VenueProvider', () => ({
+  useVenueContext: () => ({ venue: { id: 'venue-1' } }),
+}));
+
+// Tap-through prompt completion is device-local (expo-secure-store); keep the
+// render tests deterministic by starting from an empty set.
+const mockMarkStepClicked = jest.fn();
+jest.mock('@/lib/queries/useClickedSetupSteps', () => ({
+  useClickedSetupSteps: () => new Set<string>(),
+  markSetupStepClicked: (...args: unknown[]) => mockMarkStepClicked(...args),
 }));
 
 import { SetupChecklistCard } from '@/app/(app)/today';
@@ -94,10 +118,26 @@ describe('SetupChecklistCard — onboarding complete (dismissible)', () => {
     mockSetup.data = status({ onboarding_completed: true, profile_complete: true });
     await render(<SetupChecklistCard />);
 
-    expect(screen.getByText(/What's next · 1\/5/)).toBeTruthy();
-    const dismiss = screen.getByLabelText('Dismiss setup checklist');
+    // 5 required steps + the 3 post-onboarding prompts, which count toward the
+    // total once onboarding is complete (web #105).
+    expect(screen.getByText(/What's next · 1\/8/)).toBeTruthy();
+    expect(screen.getByText('Customise your booking page')).toBeTruthy();
+    expect(screen.getByText('Import your bookings and customers')).toBeTruthy();
+  });
+
+  it('confirms before dismissing rather than hiding on the first tap', async () => {
+    mockSetup.data = status({ onboarding_completed: true, profile_complete: true });
+    await render(<SetupChecklistCard />);
+
     await act(async () => {
-      fireEvent.press(dismiss);
+      fireEvent.press(screen.getByLabelText('Dismiss setup checklist'));
+    });
+    // The X opens a confirmation; nothing is dismissed yet (web #105).
+    expect(mockDismiss.mutate).not.toHaveBeenCalled();
+    expect(screen.getByText('Dismiss the setup steps?')).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('Dismiss setup steps'));
     });
     expect(mockDismiss.mutate).toHaveBeenCalledTimes(1);
   });

@@ -197,13 +197,40 @@ export interface CollectiveMemberActionPayload {
 
 export type CatalogueAction =
   | 'create_item'
+  /** Bulk add: several member services become offerings in ONE request (web #105). */
+  | 'create_items'
   | 'update_item'
   | 'archive_item'
   | 'add_provider'
-  | 'remove_provider';
+  | 'remove_provider'
+  /** Batch calendar assignment: apply every staged add/remove at once (web #106). */
+  | 'set_providers';
+
+/** One selected member service for the `create_items` bulk add. */
+export interface CatalogueBulkAddService {
+  name: string;
+  venueId: string;
+  sourceServiceId: string;
+}
+
+/**
+ * One staged calendar-assignment change for `set_providers`. `add` needs
+ * itemId + venueId + practitionerId; `remove` needs providerId.
+ */
+export interface CatalogueProviderOp {
+  op: 'add' | 'remove';
+  itemId?: string;
+  venueId?: string;
+  practitionerId?: string;
+  providerId?: string;
+}
 
 export interface CatalogueActionPayload {
   action: CatalogueAction;
+  /** `create_items` — 1 to 50 selected services (same-named ones merge server-side). */
+  services?: CatalogueBulkAddService[];
+  /** `set_providers` — 1 to 200 staged add/remove ops applied in one request. */
+  ops?: CatalogueProviderOp[];
   itemId?: string;
   name?: string;
   description?: string | null;

@@ -1,5 +1,6 @@
 import { Stack, useRouter, type Href } from 'expo-router';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { useState } from 'react';
+import { Linking, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 
 import { AlertsCard } from '@/components/today/AlertsCard';
@@ -10,15 +11,24 @@ import { ForecastChart } from '@/components/today/ForecastChart';
 import { GreetingHeader } from '@/components/today/GreetingHeader';
 import { HeatmapWeek } from '@/components/today/HeatmapWeek';
 import { KpiGrid } from '@/components/today/KpiGrid';
-import { deriveSetupProgress } from '@/components/today/setup-checklist-steps';
+import {
+  deriveSetupProgress,
+  type SetupStep,
+} from '@/components/today/setup-checklist-steps';
+import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Screen } from '@/components/ui/Screen';
+import { Sheet } from '@/components/ui/Sheet';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { hapticTap } from '@/lib/haptics';
 import { useDashboardHome } from '@/lib/queries/useDashboardHome';
+import {
+  markSetupStepClicked,
+  useClickedSetupSteps,
+} from '@/lib/queries/useClickedSetupSteps';
 import { useDismissSetupChecklist, useSetupStatus } from '@/lib/queries/useSetupStatus';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { isAppointmentExperience } from '@/lib/venue/venue-experience';
@@ -44,6 +54,13 @@ export function SetupChecklistCard() {
   // re-keys (see staff-gate-stack-remount); enabled only for admins.
   const setupQuery = useSetupStatus(isAdmin);
   const dismiss = useDismissSetupChecklist();
+  const { venue } = useVenueContext();
+  const venueId = venue?.id ?? null;
+  // Tap-through completion for the post-onboarding prompts (web parity).
+  const clickedSteps = useClickedSetupSteps(venueId);
+  // Web parity: the X confirms first, so one stray tap can't permanently hide
+  // the checklist. A Sheet, not Alert.alert (a no-op on react-native-web).
+  const [confirmingDismiss, setConfirmingDismiss] = useState(false);
 
   const status = setupQuery.data;
   if (!isAdmin || !status) return null;
@@ -53,7 +70,7 @@ export function SetupChecklistCard() {
   // checklist is the first-run surface and stays pinned regardless.
   if (onboardingComplete && status.setup_checklist_dismissed) return null;
 
-  const progress = deriveSetupProgress(status);
+  const progress = deriveSetupProgress(status, clickedSteps);
   if (progress.allComplete) return null;
 
   const { incompleteSteps, completedCount, totalCount, progressPct } = progress;
@@ -61,6 +78,23 @@ export function SetupChecklistCard() {
   const goTo = (route: Href) => {
     hapticTap();
     router.push(route);
+  };
+
+  /**
+   * Open a step. Tap-through prompts mark themselves complete first, and the
+   * web-only import hub opens in the browser rather than as an in-app route.
+   */
+  const openStep = (step: SetupStep) => {
+    if (step.completeOnClick && venueId) {
+      markSetupStepClicked(venueId, step.key);
+    }
+    if (step.webPath) {
+      hapticTap();
+      const base = (process.env.EXPO_PUBLIC_API_URL ?? '').replace(/\/$/, '');
+      void Linking.openURL(`${base}${step.webPath}`);
+      return;
+    }
+    if (step.route) goTo(step.route);
   };
 
   const heading = onboardingComplete
@@ -87,7 +121,10 @@ export function SetupChecklistCard() {
           </View>
           {onboardingComplete ? (
             <Pressable
-              onPress={() => dismiss.mutate()}
+              onPress={() => {
+                hapticTap();
+                setConfirmingDismiss(true);
+              }}
               accessibilityRole="button"
               accessibilityLabel="Dismiss setup checklist"
               hitSlop={12}
@@ -116,7 +153,7 @@ export function SetupChecklistCard() {
         {incompleteSteps.map((step) => (
           <Pressable
             key={step.key}
-            onPress={() => goTo(step.route)}
+            onPress={() => openStep(step)}
             accessibilityRole="button"
             accessibilityLabel={step.label}
             style={({ pressed }) => [
@@ -143,6 +180,38 @@ export function SetupChecklistCard() {
           </Pressable>
         ))}
       </View>
+
+      {/* Confirm before dismissing (web parity: the X opens a dialog). */}
+      <Sheet visible={confirmingDismiss} onClose={() => setConfirmingDismiss(false)}>
+        <View style={styles.dismissConfirm}>
+          <View style={styles.dismissConfirmText}>
+            <Text variant="title">Dismiss the setup steps?</Text>
+            <Text variant="bodySmall" tone="muted">
+              This hides the What&apos;s next checklist from your dashboard.
+            </Text>
+            <Text variant="bodySmall" tone="muted">
+              Anything you have not set up yet is still available from the More tab whenever you
+              are ready.
+            </Text>
+          </View>
+          <Button
+            label="Dismiss setup steps"
+            variant="danger"
+            fullWidth
+            loading={dismiss.isPending}
+            onPress={() => {
+              setConfirmingDismiss(false);
+              dismiss.mutate();
+            }}
+          />
+          <Button
+            label="Keep showing"
+            variant="secondary"
+            fullWidth
+            onPress={() => setConfirmingDismiss(false)}
+          />
+        </View>
+      </Sheet>
     </Card>
   );
 }
@@ -334,6 +403,12 @@ const styles = StyleSheet.create({
     minWidth: minTouchTarget,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  dismissConfirm: {
+    gap: spacing.md,
+  },
+  dismissConfirmText: {
+    gap: spacing.xs,
   },
   progressTrack: {
     height: 6,

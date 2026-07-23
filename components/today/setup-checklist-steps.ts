@@ -25,12 +25,67 @@ export type SetupStepKey =
   | 'secondary_class_catalog_ready'
   | 'secondary_resource_catalog_ready';
 
+/** Ids of the post-onboarding prompts; these are NOT `SetupStatus` fields. */
+export type SetupPromptKey =
+  | 'customise_booking_page'
+  | 'review_comms'
+  | 'import_bookings_customers';
+
 export interface SetupStep {
-  key: SetupStepKey;
+  /**
+   * Unique id + list key. For required steps this matches a `SetupStatus` field
+   * and completion is read from that flag. The post-onboarding prompts use ids
+   * that are not status fields; they complete once the user taps through to the
+   * linked page (`completeOnClick`), tracked per device.
+   */
+  key: SetupStepKey | SetupPromptKey;
   label: string;
   description: string;
-  route: Href;
+  /** In-app route. Omitted for web-only steps, which carry {@link webPath}. */
+  route?: Href;
+  /**
+   * Web-dashboard path opened in the browser instead of an in-app route (the app
+   * has no import tool; it links out like the More tab's "Import contacts"
+   * destination, which uses the same `kind: 'web'` convention).
+   */
+  webPath?: string;
+  /** Marks the step complete once its row is tapped (see clicked-steps storage). */
+  completeOnClick?: boolean;
 }
+
+/**
+ * Extra prompts shown alongside the required steps once onboarding is complete
+ * (web parity: `POST_ONBOARDING_SETUP_STEPS`). They are optional nudges, so they
+ * complete on tap-through rather than from any server flag.
+ */
+export const POST_ONBOARDING_SETUP_STEPS: SetupStep[] = [
+  {
+    key: 'customise_booking_page',
+    label: 'Customise your booking page',
+    description:
+      'Add your branding, cover photo, and welcome text so your booking page reflects your business.',
+    route: '/manage/booking-page',
+    completeOnClick: true,
+  },
+  {
+    key: 'review_comms',
+    label: 'Review communications settings',
+    description:
+      'Check the emails and texts guests receive when they book, and tailor the wording to your business.',
+    route: '/manage/communications',
+    completeOnClick: true,
+  },
+  {
+    key: 'import_bookings_customers',
+    label: 'Import your bookings and customers',
+    description:
+      'Bring your existing bookings and customer list into Resneo so nothing is left behind.',
+    // The import tool is web-only; open the web hub (same target as the More
+    // tab's "Import contacts").
+    webPath: '/dashboard/import',
+    completeOnClick: true,
+  },
+];
 
 /** Normalise the loosely-typed `enabled_models` field into a string list. */
 export function readEnabledModels(status: Pick<SetupStatus, 'enabled_models'>): string[] {
@@ -184,12 +239,31 @@ export function getSetupSteps(status: SetupStatus): SetupStep[] {
     },
   );
 
+  // Post-onboarding "What's next" prompts, shown alongside the required steps.
+  if (onboardingDone) {
+    steps.push(...POST_ONBOARDING_SETUP_STEPS);
+  }
+
   return steps;
 }
 
 /** Whether the boolean field for a step is satisfied on the status payload. */
 export function isStepDone(status: SetupStatus, key: SetupStepKey): boolean {
   return status[key] === true;
+}
+
+/**
+ * A required step is complete when its key maps to a truthy `SetupStatus` flag.
+ * A `completeOnClick` prompt is complete once the user has tapped through to it
+ * (its key is in `clickedStepKeys`). Mirrors the web `isStepComplete`.
+ */
+export function isStepComplete(
+  status: SetupStatus,
+  step: SetupStep,
+  clickedStepKeys?: ReadonlySet<string>,
+): boolean {
+  if (step.completeOnClick) return Boolean(clickedStepKeys?.has(step.key));
+  return isStepDone(status, step.key as SetupStepKey);
 }
 
 export interface SetupProgress {
@@ -202,10 +276,17 @@ export interface SetupProgress {
   allComplete: boolean;
 }
 
-/** Derive steps + completion counts in one pass (mirrors the web card's memo). */
-export function deriveSetupProgress(status: SetupStatus): SetupProgress {
+/**
+ * Derive steps + completion counts in one pass (mirrors the web card's memo).
+ * `clickedStepKeys` carries the tapped-through post-onboarding prompts; omit it
+ * and those prompts simply read as incomplete.
+ */
+export function deriveSetupProgress(
+  status: SetupStatus,
+  clickedStepKeys?: ReadonlySet<string>,
+): SetupProgress {
   const steps = getSetupSteps(status);
-  const incompleteSteps = steps.filter((s) => !isStepDone(status, s.key));
+  const incompleteSteps = steps.filter((s) => !isStepComplete(status, s, clickedStepKeys));
   const completedCount = steps.length - incompleteSteps.length;
   const totalCount = steps.length;
   const progressPct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;

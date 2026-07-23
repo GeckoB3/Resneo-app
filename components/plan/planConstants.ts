@@ -30,9 +30,17 @@ export const RESTAURANT_PRICE = 79;
 /** Guest SMS after included monthly allowance (Stripe metered usage), per segment. */
 export const SMS_OVERAGE_GBP_PER_MESSAGE = 0.06;
 
-/** Public subscription cancellation wording aligned with Website Terms of Use §4. */
+/**
+ * Public subscription cancellation wording describing how cancellation actually
+ * bills: cancel any time, access continues to the end of the current paid
+ * period, no further charges, and no charge at all if you cancel during the free
+ * trial. Mirrors the web `src/lib/subscription-cancellation-copy.ts` verbatim.
+ *
+ * There is NO 30-day notice requirement; the earlier wording that claimed one
+ * was corrected on the web (and in both Terms pages) as factually wrong.
+ */
 export const SUBSCRIPTION_CANCELLATION_PUBLIC_NOTICE =
-  'Cancel anytime by giving 30 days’ notice. Your subscription remains active until the end of the notice period.';
+  'Cancel anytime. Your subscription stays active until the end of your current billing period, and you are not charged again after that. If you cancel during your free trial, you pay nothing.';
 
 /** User-visible plan name from `venues.pricing_tier` (lowercase). */
 export function planDisplayName(pricingTier: string | null | undefined): string {

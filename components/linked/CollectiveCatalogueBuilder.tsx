@@ -18,8 +18,10 @@ import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type {
   CatalogueActionPayload,
+  CatalogueBulkAddService,
   CatalogueItemView,
   CatalogueMemberSource,
+  CatalogueProviderOp,
   CatalogueProviderView,
 } from '@/types/collectives';
 
@@ -84,12 +86,8 @@ export function CollectiveCatalogueBuilder({ collectiveId }: { collectiveId: str
         memberSources={catalogue.memberSources}
         items={activeItems}
         busy={busy}
-        onAdd={(venueId, svc) =>
-          runAction({
-            action: 'create_item',
-            name: svc.name,
-            sourceServiceIds: [{ venueId, sourceServiceId: svc.id }],
-          })
+        onAddSelected={(services, onDone) =>
+          runAction({ action: 'create_items', services }, onDone)
         }
       />
 
@@ -141,95 +139,206 @@ export function CollectiveCatalogueBuilder({ collectiveId }: { collectiveId: str
 // Venue services picker — "choose what services to offer"
 // ---------------------------------------------------------------------------
 
+/** Composite key for a selectable member service (`venueId::serviceId`). */
+function selectionKey(venueId: string, serviceId: string): string {
+  return `${venueId}::${serviceId}`;
+}
+
+/**
+ * Bulk service picker (web #105). Ticking services and pressing "Add selected"
+ * creates every chosen offering in ONE `create_items` request, replacing the old
+ * per-row "Add" (one request each, with a wait between). Same-named services
+ * across venues merge into a single offering server-side.
+ */
 function VenueServicesPicker({
   memberSources,
   items,
   busy,
-  onAdd,
+  onAddSelected,
 }: {
   memberSources: CatalogueMemberSource[];
   items: CatalogueItemView[];
   busy: boolean;
-  onAdd: (
-    venueId: string,
-    svc: { id: string; name: string; durationMinutes: number | null; pricePence: number | null },
-  ) => void;
+  onAddSelected: (services: CatalogueBulkAddService[], onDone: () => void) => void;
 }) {
   const { colors } = useTheme();
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+
   const onPageNames = new Set(
     items.filter((i) => i.status === 'active').map((i) => i.name.trim().toLowerCase()),
   );
   const anyServices = memberSources.some((m) => m.services.length > 0);
 
+  /** Services not already on the page, per venue — the only selectable rows. */
+  const selectableByVenue = memberSources.map((ms) => ({
+    venueId: ms.venueId,
+    venueName: ms.venueName,
+    services: ms.services,
+    selectable: ms.services.filter((s) => !onPageNames.has(s.name.trim().toLowerCase())),
+  }));
+  const allSelectable = selectableByVenue.flatMap((v) =>
+    v.selectable.map((s) => selectionKey(v.venueId, s.id)),
+  );
+  const allSelected = allSelectable.length > 0 && allSelectable.every((k) => selected.has(k));
+
+  const toggle = (key: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const setMany = (keys: string[], on: boolean) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const k of keys) {
+        if (on) next.add(k);
+        else next.delete(k);
+      }
+      return next;
+    });
+  };
+
+  const submit = () => {
+    const chosen: CatalogueBulkAddService[] = [];
+    for (const v of selectableByVenue) {
+      for (const s of v.selectable) {
+        if (selected.has(selectionKey(v.venueId, s.id))) {
+          chosen.push({ name: s.name, venueId: v.venueId, sourceServiceId: s.id });
+        }
+      }
+    }
+    if (chosen.length === 0) return;
+    onAddSelected(chosen, () => setSelected(new Set()));
+  };
+
+  const selectedCount = selected.size;
+
   return (
     <Card style={styles.card}>
       <Text variant="label">Choose services to offer</Text>
       <Text variant="caption" tone="muted">
-        Add services from any venue to the combined page. To offer one at more than one venue, open
-        the offering below and tick that venue&apos;s calendars — the service is created there
+        Tick services from any venue and add them together. To offer one at more than one venue,
+        open the offering below and tick that venue&apos;s calendars. The service is created there
         automatically if it doesn&apos;t have it yet.
       </Text>
+
       {!anyServices ? (
         <Text variant="bodySmall" tone="muted">
           No bookable services found in the member venues.
         </Text>
       ) : (
-        memberSources.map((ms) => (
-          <View key={ms.venueId} style={styles.venueGroup}>
-            <Text variant="overline" tone="muted">
-              {ms.venueName}
-            </Text>
-            {ms.services.length === 0 ? (
-              <Text variant="caption" tone="muted">
-                No bookable services.
-              </Text>
-            ) : (
-              <View>
-                {ms.services.map((s, i) => {
-                  const onPage = onPageNames.has(s.name.trim().toLowerCase());
-                  return (
-                    <View
-                      key={s.id}
-                      style={[
+        <>
+          {allSelectable.length > 0 ? (
+            <Button
+              label={allSelected ? 'Clear all' : 'Select all'}
+              variant="ghost"
+              size="sm"
+              disabled={busy}
+              onPress={() => setMany(allSelectable, !allSelected)}
+            />
+          ) : null}
+
+          {selectableByVenue.map((v) => {
+            const venueKeys = v.selectable.map((s) => selectionKey(v.venueId, s.id));
+            const venueAllSelected =
+              venueKeys.length > 0 && venueKeys.every((k) => selected.has(k));
+            return (
+              <View key={v.venueId} style={styles.venueGroup}>
+                <View style={styles.venueGroupHeader}>
+                  <Text variant="overline" tone="muted" style={styles.flex1}>
+                    {v.venueName}
+                  </Text>
+                  {venueKeys.length > 0 ? (
+                    <Button
+                      label={venueAllSelected ? 'Clear' : 'Select all'}
+                      variant="ghost"
+                      size="sm"
+                      disabled={busy}
+                      onPress={() => setMany(venueKeys, !venueAllSelected)}
+                    />
+                  ) : null}
+                </View>
+                {v.services.length === 0 ? (
+                  <Text variant="caption" tone="muted">
+                    No bookable services.
+                  </Text>
+                ) : (
+                  <View>
+                    {v.services.map((s, i) => {
+                      const onPage = onPageNames.has(s.name.trim().toLowerCase());
+                      const key = selectionKey(v.venueId, s.id);
+                      const checked = selected.has(key);
+                      const meta = [
+                        s.durationMinutes != null ? `${s.durationMinutes} min` : null,
+                        s.pricePence != null ? `£${(s.pricePence / 100).toFixed(2)}` : null,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ');
+                      const rowStyle = [
                         styles.serviceRow,
                         i > 0 && {
                           borderTopWidth: StyleSheet.hairlineWidth,
                           borderTopColor: colors.border,
                         },
-                      ]}>
-                      <View style={styles.flex1}>
-                        <Text variant="bodyMedium" numberOfLines={1}>
-                          {s.name}
-                        </Text>
-                        <Text variant="caption" tone="muted">
-                          {[
-                            s.durationMinutes != null ? `${s.durationMinutes} min` : null,
-                            s.pricePence != null ? `£${(s.pricePence / 100).toFixed(2)}` : null,
-                          ]
-                            .filter(Boolean)
-                            .join(' · ')}
-                        </Text>
-                      </View>
-                      {onPage ? (
-                        <Text variant="caption" tone="muted">
-                          On page
-                        </Text>
-                      ) : (
-                        <Button
-                          label="Add"
-                          variant="ghost"
-                          size="sm"
+                      ];
+                      if (onPage) {
+                        return (
+                          <View key={s.id} style={rowStyle}>
+                            <View style={styles.flex1}>
+                              <Text variant="bodyMedium" numberOfLines={1}>
+                                {s.name}
+                              </Text>
+                              <Text variant="caption" tone="muted">
+                                {meta}
+                              </Text>
+                            </View>
+                            <Text variant="caption" tone="muted">
+                              On page
+                            </Text>
+                          </View>
+                        );
+                      }
+                      return (
+                        <PressableScale
+                          key={s.id}
+                          onPress={() => toggle(key)}
                           disabled={busy}
-                          onPress={() => onAdd(ms.venueId, s)}
-                        />
-                      )}
-                    </View>
-                  );
-                })}
+                          accessibilityState={{ checked }}
+                          accessibilityLabel={s.name}>
+                          <View style={rowStyle}>
+                            <CheckBox checked={checked} />
+                            <View style={styles.flex1}>
+                              <Text variant="bodyMedium" numberOfLines={1}>
+                                {s.name}
+                              </Text>
+                              <Text variant="caption" tone="muted">
+                                {meta}
+                              </Text>
+                            </View>
+                          </View>
+                        </PressableScale>
+                      );
+                    })}
+                  </View>
+                )}
               </View>
-            )}
-          </View>
-        ))
+            );
+          })}
+
+          {allSelectable.length > 0 ? (
+            <Button
+              label={
+                selectedCount > 0 ? `Add selected (${selectedCount})` : 'Add selected'
+              }
+              disabled={busy || selectedCount === 0}
+              loading={busy && selectedCount > 0}
+              onPress={submit}
+            />
+          ) : null}
+        </>
       )}
     </Card>
   );
@@ -305,6 +414,13 @@ function ItemCard({
   );
 }
 
+/**
+ * Calendar assignment (web #106). Toggles are staged locally so each tick is
+ * instant, then committed together via one `set_providers` batch on "Save and
+ * close". Previously every tick fired a full PATCH, and each of those can
+ * duplicate a service into a member venue, notify it, and reload the whole
+ * catalogue — giving a multi-second delay per tap.
+ */
 function CalendarAssignment({
   item,
   memberSources,
@@ -316,6 +432,9 @@ function CalendarAssignment({
   busy: boolean;
   onAction: (payload: CatalogueActionPayload, onDone?: () => void) => void;
 }) {
+  /** Staged desired state per calendar id; absent = unchanged from the server. */
+  const [staged, setStaged] = useState<Record<string, boolean>>({});
+
   const providerByCalendar = new Map<string, CatalogueProviderView>();
   for (const p of item.providers) {
     if (p.status !== 'removed' && p.practitionerId) providerByCalendar.set(p.practitionerId, p);
@@ -330,6 +449,33 @@ function CalendarAssignment({
     );
   }
 
+  /** Only keep entries that actually differ from the server state. */
+  const pendingOps: CatalogueProviderOp[] = [];
+  for (const ms of memberSources) {
+    for (const cal of ms.practitioners) {
+      const desired = staged[cal.id];
+      if (desired === undefined) continue;
+      const provider = providerByCalendar.get(cal.id) ?? null;
+      const current = Boolean(provider);
+      if (desired === current) continue;
+      if (desired) {
+        pendingOps.push({
+          op: 'add',
+          itemId: item.id,
+          venueId: ms.venueId,
+          practitionerId: cal.id,
+        });
+      } else if (provider) {
+        pendingOps.push({ op: 'remove', providerId: provider.id });
+      }
+    }
+  }
+
+  const commit = () => {
+    if (pendingOps.length === 0) return;
+    onAction({ action: 'set_providers', ops: pendingOps }, () => setStaged({}));
+  };
+
   return (
     <View style={styles.assignBlock}>
       {memberSources.map((ms) => (
@@ -342,61 +488,69 @@ function CalendarAssignment({
               No calendars.
             </Text>
           ) : (
-            ms.practitioners.map((cal) => (
-              <CalendarRow
-                key={cal.id}
-                item={item}
-                venueId={ms.venueId}
-                venueName={ms.venueName}
-                cal={cal}
-                provider={providerByCalendar.get(cal.id) ?? null}
-                busy={busy}
-                onAction={onAction}
-              />
-            ))
+            ms.practitioners.map((cal) => {
+              const provider = providerByCalendar.get(cal.id) ?? null;
+              const checked = staged[cal.id] ?? Boolean(provider);
+              return (
+                <CalendarRow
+                  key={cal.id}
+                  item={item}
+                  venueName={ms.venueName}
+                  cal={cal}
+                  provider={provider}
+                  checked={checked}
+                  busy={busy}
+                  onToggle={() =>
+                    setStaged((prev) => ({ ...prev, [cal.id]: !checked }))
+                  }
+                />
+              );
+            })
           )}
         </View>
       ))}
+
+      {pendingOps.length > 0 ? (
+        <Button
+          label={`Save and close (${pendingOps.length})`}
+          disabled={busy}
+          loading={busy}
+          onPress={commit}
+        />
+      ) : null}
     </View>
   );
 }
 
 function CalendarRow({
   item,
-  venueId,
   venueName,
   cal,
   provider,
+  checked,
   busy,
-  onAction,
+  onToggle,
 }: {
   item: CatalogueItemView;
-  venueId: string;
   venueName: string;
   cal: { id: string; name: string; services: { id: string; name: string }[] };
   provider: CatalogueProviderView | null;
+  /** Staged desired state (may differ from `provider` until saved). */
+  checked: boolean;
   busy: boolean;
-  onAction: (payload: CatalogueActionPayload, onDone?: () => void) => void;
+  onToggle: () => void;
 }) {
   const { colors } = useTheme();
-  const checked = Boolean(provider);
   const hasService = cal.services.some(
     (s) => s.name.trim().toLowerCase() === item.name.trim().toLowerCase(),
   );
-  const willDuplicate = !checked && !hasService;
-
-  const toggle = () => {
-    if (busy) return;
-    if (checked) {
-      if (provider) onAction({ action: 'remove_provider', providerId: provider.id });
-      return;
-    }
-    onAction({ action: 'add_provider', itemId: item.id, venueId, practitionerId: cal.id });
-  };
+  const willDuplicate = checked && !provider && !hasService;
 
   return (
     <PressableScale
-      onPress={toggle}
+      onPress={() => {
+        if (!busy) onToggle();
+      }}
       disabled={busy}
       accessibilityState={{ checked }}
       accessibilityLabel={cal.name}>
@@ -460,6 +614,11 @@ const styles = StyleSheet.create({
   venueGroup: {
     gap: spacing.xs,
     paddingTop: spacing.xs,
+  },
+  venueGroupHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
   serviceRow: {
     flexDirection: 'row',
