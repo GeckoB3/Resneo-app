@@ -64,11 +64,15 @@ export function useTapToPayReader(): UseTapToPayReader {
   // when it is non-null, so the call order never varies for a given instance.
   const terminal = sdk!.useStripeTerminal({
     onUpdateDiscoveredReaders: (readers: Reader.Type[]) => {
-      const first = readers[0];
-      if (first && pendingReaderRef.current) {
+      // Discovery events are GLOBAL: every mounted hook with this callback sees
+      // them, and the payment sheet mounts the Tap to Pay and Bluetooth hooks
+      // together. Take only the phone's own reader here so a Bluetooth scan can
+      // never satisfy a Tap to Pay connect (and vice versa in the BT hook).
+      const local = readers.find((r) => r.deviceType === 'tapToPay') ?? null;
+      if (local && pendingReaderRef.current) {
         const resolve = pendingReaderRef.current;
         pendingReaderRef.current = null;
-        resolve(first);
+        resolve(local);
       }
     },
   });
@@ -158,7 +162,10 @@ export function useTapToPayReader(): UseTapToPayReader {
         // something is wrong (permissions, ineligible device) so fail loudly
         // rather than leaving staff on a spinner.
         setTimeout(() => {
-          if (pendingReaderRef.current) {
+          // Only cancel if THIS attempt is still the pending one. A retry
+          // started before the old timer fired would otherwise have its
+          // resolver cleared and hang until its own timeout.
+          if (pendingReaderRef.current === resolve) {
             pendingReaderRef.current = null;
             reject(new Error('No card reader became available on this phone.'));
           }

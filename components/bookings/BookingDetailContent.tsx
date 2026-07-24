@@ -1367,8 +1367,19 @@ export function BookingDetailContent({
       <RescheduleSheet target={rescheduleTarget} onClose={() => setRescheduleTarget(null)} />
       <ModifyBookingSheet target={modifyTarget} onClose={() => setModifyTarget(null)} />
       <DepositSheet target={depositTarget} onClose={() => setDepositTarget(null)} />
+      {/* The target only carries WHICH booking is open; the balance and ledger
+          rows are fed live from the booking so a refetch (or a payment taken
+          moments ago) is reflected without closing and reopening the sheet. */}
       <TakePaymentSheet
-        target={takePaymentTarget}
+        target={
+          takePaymentTarget
+            ? {
+                ...takePaymentTarget,
+                balanceDuePence: booking.balance_due_pence ?? null,
+                payments: booking.payments ?? [],
+              }
+            : null
+        }
         onClose={() => setTakePaymentTarget(null)}
       />
     </View>

@@ -78,14 +78,22 @@ export function useBluetoothReader(): UseBluetoothReader {
 
   const scopeRef = useRef<string | null>(ownerVenueId ?? null);
   const discoveredRef = useRef<Reader.Type[]>([]);
+  // Single-shot guard + late-bound callback for the auto-reconnect below
+  // (the handler is defined before `reconnectRemembered` exists).
+  const reconnectAttemptedRef = useRef(false);
+  const reconnectRememberedRef = useRef<(() => Promise<boolean>) | null>(null);
 
   // Firmware updates block collection for tens of seconds to minutes, so they
   // are surfaced as their own state with determinate progress (§7A.5).
   const terminal = sdk!.useStripeTerminal({
     onUpdateDiscoveredReaders: (readers: Reader.Type[]) => {
-      discoveredRef.current = readers;
-      setDiscovered(readers);
-      setStatus((prev) => (prev === 'scanning' && readers.length > 0 ? 'found' : prev));
+      // Discovery events are GLOBAL (see the matching note in terminal.ts): drop
+      // the phone's own Tap to Pay reader so it never appears in the list of
+      // pairable Bluetooth readers.
+      const external = readers.filter((r) => r.deviceType !== 'tapToPay');
+      discoveredRef.current = external;
+      setDiscovered(external);
+      setStatus((prev) => (prev === 'scanning' && external.length > 0 ? 'found' : prev));
     },
     onDidStartInstallingUpdate: () => {
       setUpdateProgress(0);
@@ -106,6 +114,18 @@ export function useBluetoothReader(): UseBluetoothReader {
       setConnected(null);
       setStatus('disconnected');
       setError('Reader disconnected. Trying to reconnect.');
+      // ONE silent reconnect to the remembered serial (§7A.5). Guarded so a
+      // reader that keeps dropping cannot spin up an endless scan/connect loop
+      // in the middle of a payment.
+      if (!reconnectAttemptedRef.current) {
+        reconnectAttemptedRef.current = true;
+        void reconnectRememberedRef.current?.().finally(() => {
+          // Allow one more attempt after a later successful connection.
+          setTimeout(() => {
+            reconnectAttemptedRef.current = false;
+          }, 30_000);
+        });
+      }
     },
   });
 
@@ -233,6 +253,9 @@ export function useBluetoothReader(): UseBluetoothReader {
     if (!match) return false;
     return connect(match);
   }, [connect, ownerVenueId, scan]);
+
+  // Late-bind for the disconnect handler, which is defined above this callback.
+  reconnectRememberedRef.current = reconnectRemembered;
 
   const forget = useCallback(async (): Promise<void> => {
     try {

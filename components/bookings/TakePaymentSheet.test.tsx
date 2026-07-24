@@ -39,6 +39,11 @@ jest.mock('@/lib/payments/terminal-sdk', () => ({
   terminalErrorMessage: (_e: unknown, f: string) => f,
 }));
 
+jest.mock('@/lib/payments/last-method', () => ({
+  loadLastMethod: jest.fn(async () => null),
+  rememberLastMethod: jest.fn(),
+}));
+
 jest.mock('@/lib/payments/terminal', () => ({
   useTapToPayReader: () => ({
     status: 'idle',
@@ -108,6 +113,23 @@ describe('known balance', () => {
     expect(mockRecord).toHaveBeenCalledWith(
       expect.objectContaining({ method: 'cash', amountPence: 2500 }),
     );
+  });
+
+  it('shows a success screen and hides the now-stale balance', async () => {
+    await render(<TakePaymentSheet target={target()} onClose={jest.fn()} />);
+    await press('Record cash');
+
+    expect(screen.getByText('£25.00 collected')).toBeTruthy();
+    // The header balance is a snapshot from when the sheet opened; showing it
+    // after collecting would tell staff money is still owed.
+    expect(screen.queryByText('£25.00 due')).toBeNull();
+    expect(screen.getByText('Done')).toBeTruthy();
+  });
+
+  it('does not promise a receipt for cash (only the card path emails one)', async () => {
+    await render(<TakePaymentSheet target={target()} onClose={jest.fn()} />);
+    await press('Record cash');
+    expect(screen.queryByText(/receipt has been emailed/i)).toBeNull();
   });
 });
 
@@ -185,6 +207,7 @@ describe('refunds', () => {
 
     await press('Tap to confirm refund');
     expect(mockRefund).toHaveBeenCalledWith({ paymentId: 'pay-1' });
+    expect(screen.getByText('Refund issued')).toBeTruthy();
   });
 
   it('offers nothing to refund when no row succeeded', async () => {

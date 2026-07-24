@@ -22,6 +22,18 @@
 | `components/bookings/TakePaymentSheet.tsx` | Amount, method selection, capture states, cash, refund, inline reader pairing. |
 | `components/bookings/ReaderSettingsSheet.tsx` | Pair / battery / firmware / forget, from Settings. |
 
+### Review findings (second pass, 2026-07-24)
+Fixed after a line-by-line re-read of the canonical §7/§7A:
+- **Reader cross-talk.** SDK discovery events are global, and the sheet mounts the Tap to Pay and Bluetooth hooks together, so each was seeing the other's readers (a Bluetooth scan could satisfy a Tap to Pay connect, and the phone's own reader appeared in the pairing list). Both callbacks now filter on `deviceType`.
+- **Missing success state (§7.8).** Added: amount collected, the receipt line for card only (cash and refunds send no receipt, confirmed against the backend), and Done. This also removed a stale-balance bug where the header kept showing the original amount due after collecting.
+- **Missing Retry (§7.8)** on the card error state; it repeats the channel that failed.
+- **Missing last-used-method persistence (§7A.6).**
+- **Missing auto-reconnect (§7A.5):** "Use card reader" now tries the remembered reader before showing a picker, and an unexpected disconnect makes ONE guarded silent reconnect attempt.
+- **Discovery-timeout race:** a stale 30s timer could clear a newer attempt's resolver and hang it.
+- **Snapshot staleness:** the sheet now receives the balance and ledger rows live from the booking, so a refetch is reflected without reopening.
+
+**Doc correction:** §7A.4 lists the iOS plugin prop as `bluetoothPeripheralUsagePermission`; the pinned SDK's config-plugin schema actually accepts **`bluetoothPeripheralPermission`**. The doc's spelling would be silently ignored. Every prop in `app.json` was validated against the plugin's own type. `bluetoothBackgroundMode` is deliberately NOT set: background reconnection is optional in the doc and adds an App Store review surface for no v1 benefit.
+
 ### Deliberately deferred
 - **"Send payment link" fallback on card decline (§7.8).** The doc suggests reusing the deposit route's `send_payment_link`, but that machinery sends a **deposit** request tied to `deposit_status`, not an appointment **balance**. Firing it after a declined balance payment would email the client a misleading (or failing) deposit request. The sheet instead surfaces the decline and points staff at cash / another method. Wire this up once the backend exposes a balance payment link.
 - **Tips** (`tip_amount_pence` reserved, unused in v1) and **partial refunds** (v1 refunds a whole ledger row).

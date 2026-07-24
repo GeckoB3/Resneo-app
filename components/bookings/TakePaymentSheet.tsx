@@ -10,6 +10,7 @@ import { formatPence, formatPositivePence, parsePoundsToPence, penceToPoundsInpu
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { newPaymentAttemptId } from '@/lib/payments/attempt-id';
 import { useBluetoothReader } from '@/lib/payments/bluetoothReader';
+import { loadLastMethod, rememberLastMethod } from '@/lib/payments/last-method';
 import { paymentMethodLabel, refundablePayments } from '@/lib/payments/payment-display';
 import { isTerminalSdkAvailable } from '@/lib/payments/terminal-sdk';
 import { useTapToPayReader } from '@/lib/payments/terminal';
@@ -50,7 +51,15 @@ export type TakePaymentTarget = {
   cardPresentReady: boolean;
 };
 
-type SheetMode = 'menu' | 'card' | 'pair' | 'cash' | 'refund';
+type SheetMode = 'menu' | 'card' | 'pair' | 'cash' | 'refund' | 'success';
+
+/** What was just collected, for the success screen (§7.8). */
+type SuccessInfo = {
+  amountPence: number | null;
+  /** Card payments email a receipt from the webhook; cash and refunds do not. */
+  receiptEmailed: boolean;
+  heading: string;
+};
 
 type TakePaymentSheetProps = {
   target: TakePaymentTarget | null;
@@ -73,7 +82,7 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
   const [note, setNote] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [seededId, setSeededId] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [success, setSuccess] = useState<SuccessInfo | null>(null);
   const [refundArmedId, setRefundArmedId] = useState<string | null>(null);
   const [readerType, setReaderType] = useState<InPersonReaderType>('tap_to_pay');
 
@@ -95,7 +104,7 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
     );
     setNote('');
     setError(null);
-    setSuccessMessage(null);
+    setSuccess(null);
     setRefundArmedId(null);
   }, [target?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -137,12 +146,14 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
         ...(note.trim() ? { note: note.trim() } : {}),
       });
       hapticSuccess();
-      setSuccessMessage(
-        amountPence != null
-          ? `${formatPence(amountPence)} recorded.`
-          : 'Payment recorded.',
-      );
-      setMode('menu');
+      // Cash and other settlements are recorded straight to the ledger, with no
+      // Stripe leg and therefore no emailed receipt.
+      setSuccess({
+        amountPence: amountPence ?? null,
+        receiptEmailed: false,
+        heading: 'Payment recorded',
+      });
+      setMode('success');
     } catch (e) {
       fail(e, 'The payment could not be recorded.');
     }
@@ -153,9 +164,9 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
     try {
       await refund.mutateAsync({ paymentId });
       hapticSuccess();
-      setSuccessMessage('Refund issued.');
       setRefundArmedId(null);
-      setMode('menu');
+      setSuccess({ amountPence: null, receiptEmailed: false, heading: 'Refund issued' });
+      setMode('success');
     } catch (e) {
       fail(e, 'The refund could not be completed.');
     }
@@ -164,24 +175,47 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
   return (
     <Sheet visible onClose={handleClose}>
       <View style={styles.body}>
-        <View style={styles.header}>
-          <Text variant="overline" tone="muted">
-            Take payment
-          </Text>
-          <Text variant="title">
-            {balanceKnown
-              ? `${formatPositivePence(target.balanceDuePence) ?? '—'} due`
-              : 'Enter the amount'}
-          </Text>
-          <Text variant="bodySmall" tone="muted">
-            {target.guestName}
-          </Text>
-        </View>
+        {/* The balance shown here is a snapshot taken when the sheet opened, so
+            it is hidden once something has been collected rather than showing a
+            stale "due" figure. */}
+        {mode !== 'success' ? (
+          <View style={styles.header}>
+            <Text variant="overline" tone="muted">
+              Take payment
+            </Text>
+            <Text variant="title">
+              {balanceKnown
+                ? `${formatPositivePence(target.balanceDuePence) ?? '—'} due`
+                : 'Enter the amount'}
+            </Text>
+            <Text variant="bodySmall" tone="muted">
+              {target.guestName}
+            </Text>
+          </View>
+        ) : null}
 
-        {successMessage ? (
-          <Text variant="bodySmall" tone="success">
-            {successMessage}
-          </Text>
+        {/* ── Success (§7.8) ──────────────────────────────────────────── */}
+        {mode === 'success' && success ? (
+          <>
+            <View style={styles.successBlock}>
+              <Text variant="title" tone="success">
+                {success.amountPence != null
+                  ? `${formatPence(success.amountPence)} collected`
+                  : success.heading}
+              </Text>
+              {success.receiptEmailed ? (
+                <Text variant="bodySmall" tone="muted">
+                  A receipt has been emailed to {target.guestName}.
+                </Text>
+              ) : null}
+              <Text variant="caption" tone="muted">
+                The booking updates in a moment once the payment is confirmed.
+              </Text>
+            </View>
+            <View style={styles.buttons}>
+              <Button label="Done" onPress={handleClose} fullWidth />
+            </View>
+          </>
         ) : null}
 
         {/* ── Method menu ─────────────────────────────────────────────── */}
@@ -213,7 +247,7 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
                   disabled={!amountValid || busy}
                   onPress={() => {
                     setError(null);
-                    setSuccessMessage(null);
+                    setSuccess(null);
                     setMode('card');
                   }}
                   fullWidth
@@ -262,10 +296,15 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
             onReaderTypeChange={setReaderType}
             onPair={() => setMode('pair')}
             onDone={(collected) => {
-              setSuccessMessage(
-                collected != null ? `${formatPence(collected)} collected.` : 'Payment collected.',
-              );
-              setMode('menu');
+              // Card payments settle through Stripe, and the webhook emails the
+              // receipt on success (§6.5) — so this is the only path that can
+              // promise one.
+              setSuccess({
+                amountPence: collected,
+                receiptEmailed: true,
+                heading: 'Payment collected',
+              });
+              setMode('success');
             }}
             onBack={() => setMode('menu')}
           />
@@ -398,10 +437,16 @@ function CardCollectSection({
 
   const [stage, setStage] = useState<CardStage>('idle');
   const [message, setMessage] = useState<string | null>(null);
+  /** The channel of the last failed attempt, so Retry repeats the same one. */
+  const [lastTried, setLastTried] = useState<InPersonReaderType | null>(null);
 
-  // Device capability drives which options exist (§7A.3).
+  // Device capability drives which options exist (§7A.3), and the remembered
+  // method means staff are not re-asked on every appointment (§7A.6).
   useEffect(() => {
     void tapToPay.checkSupport();
+    void loadLastMethod().then((remembered) => {
+      if (remembered) onReaderTypeChange(remembered);
+    });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const supportsTapToPay = tapToPay.supported !== false;
@@ -410,6 +455,7 @@ function CardCollectSection({
   async function collect(kind: InPersonReaderType) {
     setMessage(null);
     setStage('preparing');
+    setLastTried(kind);
     onReaderTypeChange(kind);
 
     // Ensure a reader is ready for the chosen channel.
@@ -421,9 +467,14 @@ function CardCollectSection({
         return;
       }
     } else if (!readerConnected) {
-      onPair();
-      setStage('idle');
-      return;
+      // Try the reader this device already knows before making staff pick one
+      // from a list (§7A.5): the common case is the same reader every day.
+      const reconnected = await bluetooth.reconnectRemembered();
+      if (!reconnected) {
+        onPair();
+        setStage('idle');
+        return;
+      }
     }
 
     setStage('collecting');
@@ -438,6 +489,7 @@ function CardCollectSection({
       });
       hapticSuccess();
       setStage('success');
+      rememberLastMethod(kind);
       onDone(res.amountPence ?? null);
     } catch (e) {
       hapticWarning();
@@ -509,10 +561,19 @@ function CardCollectSection({
           onPress={() => void collect('bluetooth')}
           fullWidth
         />
-        {stage === 'error' ? (
-          <Text variant="caption" tone="muted">
-            You can try again, or take the payment another way from the previous screen.
-          </Text>
+        {stage === 'error' && lastTried ? (
+          <>
+            <Button
+              label="Retry"
+              variant="secondary"
+              disabled={busy}
+              onPress={() => void collect(lastTried)}
+              fullWidth
+            />
+            <Text variant="caption" tone="muted">
+              If the card keeps failing, go back and record a cash or other payment instead.
+            </Text>
+          </>
         ) : null}
         <Button
           label="Back"
@@ -596,6 +657,9 @@ const styles = StyleSheet.create({
     gap: spacing.lg,
   },
   header: {
+    gap: spacing.xs,
+  },
+  successBlock: {
     gap: spacing.xs,
   },
   buttons: {
