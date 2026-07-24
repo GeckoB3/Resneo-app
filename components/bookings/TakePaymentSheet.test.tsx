@@ -24,7 +24,11 @@ jest.mock('@/components/ui/Sheet', () => {
 
 const mockRecord = jest.fn(async () => ({ success: true }));
 const mockRefund = jest.fn(async () => ({ success: true }));
-const mockTakePayment = jest.fn(async () => ({ amountPence: 2500 }));
+const mockTakePayment = jest.fn(
+  async (_input: { attemptId: string; amountPence?: number; readerType?: string }) => ({
+    amountPence: 2500,
+  }),
+);
 const mockCancelCollection = jest.fn(async () => undefined);
 jest.mock('@/lib/queries/useTakePayment', () => ({
   useRecordExternalPayment: () => ({ mutateAsync: mockRecord, isPending: false }),
@@ -60,17 +64,23 @@ jest.mock('@/lib/payments/terminal', () => ({
   }),
 }));
 
+const mockBtState = {
+  connected: null as { serialNumber: string } | null,
+  status: 'idle' as string,
+};
+const mockBtConnect = jest.fn(async () => true);
+const mockBtScan = jest.fn(async () => undefined);
 jest.mock('@/lib/payments/bluetoothReader', () => ({
   useBluetoothReader: () => ({
-    status: 'idle',
+    status: mockBtState.status,
     error: null,
-    discovered: [],
-    connected: null,
+    discovered: [] as { serialNumber: string; label?: string }[],
+    connected: mockBtState.connected,
     batteryLevel: null,
     batteryLow: false,
     updateProgress: null,
-    scan: jest.fn(async () => undefined),
-    connect: jest.fn(async () => true),
+    scan: mockBtScan,
+    connect: mockBtConnect,
     reconnectRemembered: jest.fn(async () => false),
     forget: jest.fn(async () => undefined),
     reset: jest.fn(),
@@ -105,6 +115,10 @@ beforeEach(() => {
   mockCancelCollection.mockClear();
   mockTapConnect.mockReset();
   mockTapConnect.mockResolvedValue({ ok: true, error: null });
+  mockBtConnect.mockClear();
+  mockBtScan.mockClear();
+  mockBtState.connected = null;
+  mockBtState.status = 'idle';
 });
 
 describe('known balance', () => {
@@ -181,6 +195,47 @@ describe('card availability', () => {
     mockSdkAvailable = false;
     await render(<TakePaymentSheet target={target()} onClose={jest.fn()} />);
     expect(screen.queryByText('Card payment')).toBeNull();
+  });
+});
+
+describe('card collection', () => {
+  it('collects via Tap to Pay and shows the amount collected', async () => {
+    await render(<TakePaymentSheet target={target()} onClose={jest.fn()} />);
+    await press('Card payment');
+    await press('Tap to Pay on this phone');
+
+    expect(mockTakePayment).toHaveBeenCalledWith(
+      expect.objectContaining({ amountPence: 2500, readerType: 'tap_to_pay' }),
+    );
+    // A fresh uuid attempt id is minted per user-initiated attempt (6.3c).
+    const arg = mockTakePayment.mock.calls[0]![0];
+    expect(arg.attemptId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    );
+
+    expect(screen.getByText('£25.00 collected')).toBeTruthy();
+    expect(screen.getByText(/receipt has been emailed to Ada Lovelace/i)).toBeTruthy();
+  });
+
+  it('collects on the reader without a second tap once one is connected', async () => {
+    mockBtState.connected = { serialNumber: 'WP-1' };
+    await render(<TakePaymentSheet target={target()} onClose={jest.fn()} />);
+    await press('Card payment');
+    await press('Use card reader');
+
+    expect(mockTakePayment).toHaveBeenCalledWith(
+      expect.objectContaining({ readerType: 'bluetooth' }),
+    );
+  });
+
+  it('sends staff to pairing when no reader is connected or remembered', async () => {
+    await render(<TakePaymentSheet target={target()} onClose={jest.fn()} />);
+    await press('Card payment');
+    await press('Connect a card reader');
+
+    // The pairing step opens and starts scanning; nothing is charged yet.
+    expect(mockBtScan).toHaveBeenCalled();
+    expect(mockTakePayment).not.toHaveBeenCalled();
   });
 });
 

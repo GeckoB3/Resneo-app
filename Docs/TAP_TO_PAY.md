@@ -48,6 +48,27 @@ Five further defects, all fixed:
 - **An extra tap mid-payment.** After pairing a reader, staff had to press "Use card reader" a second time, with the client waiting. Pairing now continues straight into collection.
 - **Buttons stayed live during reader work.** `busy` ignored the reader's own `connecting` / `updating` states, so a second collect could be fired mid-connect.
 
+### Stress testing (fifth pass)
+The reader layer is where every defect in this feature has been found, and it is
+the part that cannot run on a device from here. So rather than re-reading it
+again, it is now **executed** against a mock Terminal SDK that mirrors the real
+one (readers arrive through the global callback DURING `discoverReaders`, not as
+a return value):
+
+- `lib/payments/reader-hooks.test.tsx` (22 cases) drives both state machines
+  through connect, retry after failure, double-tap, abandon mid-discovery,
+  linked-venue switch, firmware update with progress, low battery, unexpected
+  disconnect, remembered-serial reconnect, and the no-reader timeout.
+- `lib/payments/connection-token.test.ts` (10 cases) pins Terminal Location
+  **scoping**: own-venue and linked-venue locations must never cross, because a
+  leak there would attach a payment to the wrong venue's Stripe account.
+- `TakePaymentSheet.test.tsx` now also covers card collection end to end through
+  the UI, including the uuid attempt id and the reader-vs-pairing branch.
+
+These confirm the earlier fixes actually hold (cross-talk filtering,
+disconnect-before-connect, error propagation, discovery cancel on unmount,
+shared one-shot init) rather than just looking right on the page.
+
 ### Deliberately deferred
 - **"Send payment link" fallback on card decline (§7.8).** The doc suggests reusing the deposit route's `send_payment_link`, but that machinery sends a **deposit** request tied to `deposit_status`, not an appointment **balance**. Firing it after a declined balance payment would email the client a misleading (or failing) deposit request. The sheet instead surfaces the decline and points staff at cash / another method. Wire this up once the backend exposes a balance payment link.
 - **Tips** (`tip_amount_pence` reserved, unused in v1) and **partial refunds** (v1 refunds a whole ledger row).
