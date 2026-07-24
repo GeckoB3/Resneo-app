@@ -10,7 +10,11 @@
  * neutral information, never as a blocking error or required-action callout.
  */
 
-import type { BookingPaymentRow, BookingPaymentState } from '@/types/booking-detail';
+import type {
+  BookingPaymentRow,
+  BookingPaymentState,
+  VisitPayment,
+} from '@/types/booking-detail';
 
 /** Inputs for the §3.4 Take-payment button gate. */
 export interface TakePaymentGateInput {
@@ -79,4 +83,22 @@ export function refundablePayments(
   payments: BookingPaymentRow[] | null | undefined,
 ): BookingPaymentRow[] {
   return (payments ?? []).filter((p) => p.status === 'succeeded');
+}
+
+/**
+ * §5.7 — the one-line "this covers the whole visit" note for the Take payment
+ * sheet, or null when there is nothing extra to say.
+ *
+ * A multi-service visit is several bookings settled in ONE collection, so the
+ * balance on screen is bigger than the opened service's price. Without this,
+ * staff opening a £30 service and seeing "£90.00 due" have no way to tell
+ * whether that is right. Returns null for a standalone appointment (count 0 or
+ * 1) so the common case stays uncluttered.
+ */
+export function visitPaymentNote(
+  visit: VisitPayment | null | undefined,
+): string | null {
+  const count = visit?.booking_count ?? 0;
+  if (count < 2) return null;
+  return `Covers all ${count} services in this visit`;
 }

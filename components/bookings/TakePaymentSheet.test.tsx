@@ -155,6 +155,40 @@ describe('known balance', () => {
   });
 });
 
+describe('multi-service visit (§5.7)', () => {
+  const visitTarget = (count: number) =>
+    target({
+      // The visit balance, which is larger than the opened service's price.
+      balanceDuePence: 9000,
+      visitPayment: {
+        booking_count: count,
+        booking_ids: Array.from({ length: count }, (_, i) => `bk-${i + 1}`),
+        total_pence: 9000,
+        amount_paid_pence: 0,
+        balance_due_pence: 9000,
+      },
+    });
+
+  it('tells staff the balance covers every service in the visit', async () => {
+    await render(<TakePaymentSheet target={visitTarget(2)} onClose={jest.fn()} />);
+    expect(screen.getByText('£90.00 due')).toBeTruthy();
+    expect(screen.getByText('Covers all 2 services in this visit')).toBeTruthy();
+  });
+
+  it('collects the whole visit balance in one payment', async () => {
+    await render(<TakePaymentSheet target={visitTarget(2)} onClose={jest.fn()} />);
+    await press('Record cash');
+    expect(mockRecord).toHaveBeenCalledWith(
+      expect.objectContaining({ method: 'cash', amountPence: 9000 }),
+    );
+  });
+
+  it('stays uncluttered for a standalone appointment', async () => {
+    await render(<TakePaymentSheet target={target()} onClose={jest.fn()} />);
+    expect(screen.queryByText(/Covers all/)).toBeNull();
+  });
+});
+
 describe('unknown balance (§5.7 / flow G)', () => {
   it('prompts for an amount and blocks collection until one is entered', async () => {
     await render(

@@ -11,7 +11,11 @@ import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { newPaymentAttemptId } from '@/lib/payments/attempt-id';
 import { useBluetoothReader } from '@/lib/payments/bluetoothReader';
 import { loadLastMethod, rememberLastMethod } from '@/lib/payments/last-method';
-import { paymentMethodLabel, refundablePayments } from '@/lib/payments/payment-display';
+import {
+  paymentMethodLabel,
+  refundablePayments,
+  visitPaymentNote,
+} from '@/lib/payments/payment-display';
 import { isTerminalSdkAvailable } from '@/lib/payments/terminal-sdk';
 import { useTapToPayReader } from '@/lib/payments/terminal';
 import {
@@ -23,7 +27,7 @@ import {
 } from '@/lib/queries/useTakePayment';
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
-import type { BookingPaymentRow } from '@/types/booking-detail';
+import type { BookingPaymentRow, VisitPayment } from '@/types/booking-detail';
 
 /**
  * Take payment sheet (Tap to Pay design doc §7.8 + §7A.6).
@@ -41,8 +45,14 @@ import type { BookingPaymentRow } from '@/types/booking-detail';
 export type TakePaymentTarget = {
   id: string;
   guestName: string;
-  /** Outstanding balance; null = price unknown, staff must enter an amount (§5.7). */
+  /**
+   * Outstanding balance; null = price unknown, staff must enter an amount
+   * (§5.7). VISIT-scoped: on a multi-service visit this is the whole visit's
+   * balance, because one collection settles every service in it.
+   */
   balanceDuePence: number | null;
+  /** The visit behind that balance, so staff can see what it covers (§5.7). */
+  visitPayment?: VisitPayment | null;
   /** Admin-only actions (refunds) follow the same rule as every money action. */
   isAdmin: boolean;
   /** Ledger rows from the booking GET; drives the refund list. */
@@ -122,6 +132,7 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
   }
 
   const balanceKnown = target.balanceDuePence != null;
+  const visitNote = visitPaymentNote(target.visitPayment);
   const enteredPence = parsePoundsToPence(amountInput);
   // Known balance: the server clamps to it, so a blank field just means "all of it".
   // Unknown balance: an amount is REQUIRED before anything can be collected.
@@ -195,6 +206,14 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
             <Text variant="bodySmall" tone="muted">
               {target.guestName}
             </Text>
+            {/* §5.7: on a multi-service visit the balance above covers every
+                service, not just the one that was opened. Without this line a
+                £30 service showing "£90.00 due" looks like a bug. */}
+            {visitNote ? (
+              <Text variant="bodySmall" tone="muted">
+                {visitNote}
+              </Text>
+            ) : null}
           </View>
         ) : null}
 

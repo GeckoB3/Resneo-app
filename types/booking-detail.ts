@@ -52,11 +52,29 @@ export type BookingPaymentState =
  */
 export interface BookingPaymentRow {
   id: string;
+  /** Which booking of the visit the row is anchored to (§5.7); older payloads omit it. */
+  booking_id?: string;
   method: 'card_present' | 'cash' | 'external' | 'online';
   status: 'pending' | 'succeeded' | 'failed' | 'refunded';
   amount_pence: number;
   note: string | null;
   created_at: string;
+}
+
+/**
+ * The visit behind a booking's balance (§5.7). A multi-service visit or group
+ * booking is several `bookings` rows sharing a `group_booking_id`, and taking
+ * payment settles all of them in ONE collection — so the balance staff see is
+ * the visit's, not the opened line's. `booking_count` is 1 for a standalone
+ * appointment, in which case there is nothing extra to tell staff.
+ */
+export interface VisitPayment {
+  booking_count: number;
+  booking_ids: string[];
+  /** Visit price; null when any line's price cannot be resolved (§5.7). */
+  total_pence: number | null;
+  amount_paid_pence: number;
+  balance_due_pence: number | null;
 }
 
 /**
@@ -152,17 +170,20 @@ export interface BookingDetail {
   /** Configured payment requirement of the booked service (full GET, optional). */
   service_payment_requirement?: string | null;
   /**
-   * In-person payments (§6.6): the RESOLVED total (variant + add-ons when the
-   * stored column is empty), live amount paid (deposit + ledger), whole-booking
-   * payment state, and the outstanding balance. `balance_due_pence` is null when
-   * the price cannot be resolved — the Take payment sheet then requires a
-   * staff-entered amount (§5.7).
+   * In-person payments (§6.6). These are VISIT-scoped (§5.7): taking payment
+   * settles every booking sharing this one's `group_booking_id`, so
+   * `amount_paid_pence`, `payment_state` and `balance_due_pence` cover the
+   * whole visit. `booking_total_price_pence` stays THIS row's resolved price.
+   * `balance_due_pence` is null when the price cannot be resolved — the Take
+   * payment sheet then requires a staff-entered amount (§5.7).
    */
   booking_total_price_pence?: number | null;
   amount_paid_pence?: number | null;
   payment_state?: BookingPaymentState | null;
   balance_due_pence?: number | null;
-  /** In-person payment ledger rows (full GET only; newest first). */
+  /** Visit breakdown behind the balance above (§5.7); absent on older payloads. */
+  visit_payment?: VisitPayment | null;
+  /** In-person payment ledger rows (full GET only; newest first). Visit-wide. */
   payments?: BookingPaymentRow[];
   /** Present on full GET; summary returns empty arrays. */
   events?: BookingTimelineEventRow[];

@@ -1229,6 +1229,7 @@ export function BookingDetailContent({
                     id: booking.id,
                     guestName,
                     balanceDuePence: booking.balance_due_pence ?? null,
+                    visitPayment: booking.visit_payment ?? null,
                     isAdmin,
                     payments: booking.payments ?? [],
                     cardPresentReady: venue?.card_present_ready === true,

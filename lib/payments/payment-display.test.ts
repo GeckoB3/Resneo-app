@@ -3,8 +3,9 @@ import {
   canTakeInPersonPayment,
   paymentMethodLabel,
   refundablePayments,
+  visitPaymentNote,
 } from '@/lib/payments/payment-display';
-import type { BookingPaymentRow } from '@/types/booking-detail';
+import type { BookingPaymentRow, VisitPayment } from '@/types/booking-detail';
 
 /**
  * §3.4 Take-payment gate + neutral state labels (Tap to Pay design doc).
@@ -100,5 +101,37 @@ describe('refundablePayments', () => {
   it('tolerates a missing list', () => {
     expect(refundablePayments(undefined)).toEqual([]);
     expect(refundablePayments(null)).toEqual([]);
+  });
+});
+
+describe('visitPaymentNote (§5.7)', () => {
+  const visit = (over: Partial<VisitPayment>): VisitPayment => ({
+    booking_count: 2,
+    booking_ids: ['b1', 'b2'],
+    total_pence: 9000,
+    amount_paid_pence: 1000,
+    balance_due_pence: 8000,
+    ...over,
+  });
+
+  it('explains that the balance covers every service in the visit', () => {
+    // Without this, staff opening a £30 service and seeing "£90.00 due" have
+    // no way to tell whether the amount is right.
+    expect(visitPaymentNote(visit({ booking_count: 2 }))).toBe(
+      'Covers all 2 services in this visit',
+    );
+    expect(visitPaymentNote(visit({ booking_count: 3 }))).toBe(
+      'Covers all 3 services in this visit',
+    );
+  });
+
+  it('says nothing for a standalone appointment', () => {
+    expect(visitPaymentNote(visit({ booking_count: 1 }))).toBeNull();
+    expect(visitPaymentNote(visit({ booking_count: 0 }))).toBeNull();
+  });
+
+  it('tolerates an older payload with no visit block', () => {
+    expect(visitPaymentNote(undefined)).toBeNull();
+    expect(visitPaymentNote(null)).toBeNull();
   });
 });
