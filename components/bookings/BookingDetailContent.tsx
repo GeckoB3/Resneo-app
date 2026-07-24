@@ -8,6 +8,10 @@ import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 import { BookingNotesSection } from '@/components/bookings/BookingNotesSection';
 import { ComplianceCard } from '@/components/bookings/ComplianceCard';
 import { DepositSheet, type DepositTarget } from '@/components/bookings/DepositSheet';
+import {
+  TakePaymentSheet,
+  type TakePaymentTarget,
+} from '@/components/bookings/TakePaymentSheet';
 import { GroupVisitCards } from '@/components/bookings/GroupVisitCards';
 import { MessageGuestSection } from '@/components/bookings/MessageGuestSection';
 import {
@@ -27,6 +31,10 @@ import { Text } from '@/components/ui/Text';
 import { ANALYTICS_EVENTS, track } from '@/lib/analytics';
 import { ApiError } from '@/lib/api/client';
 import { resolveCardHoldUiState, type CardHoldPillVariant } from '@/lib/booking/card-hold';
+import {
+  bookingPaymentStateLabel,
+  canTakeInPersonPayment,
+} from '@/lib/payments/payment-display';
 import { calendarDateInTimeZone } from '@/lib/dates/venue-dates';
 import { canMarkNoShowForSlot, clampNoShowGraceMinutes } from '@/lib/booking/no-show-grace';
 import { ACTION_COLORS, primaryActionColors } from '@/lib/booking/booking-action-colors';
@@ -333,6 +341,7 @@ export function BookingDetailContent({
   const [rescheduleTarget, setRescheduleTarget] = useState<RescheduleTarget | null>(null);
   const [modifyTarget, setModifyTarget] = useState<ModifyBookingTarget | null>(null);
   const [depositTarget, setDepositTarget] = useState<DepositTarget | null>(null);
+  const [takePaymentTarget, setTakePaymentTarget] = useState<TakePaymentTarget | null>(null);
   const [copiedRef, setCopiedRef] = useState(false);
   // Two-step confirm for destructive/irreversible actions. `Alert.alert` is a
   // no-op on react-native-web, so we arm the button (label flips to "Tap to
@@ -516,6 +525,20 @@ export function BookingDetailContent({
       cardHoldState.showChargeAction ||
       cardHoldState.showRefundAction ||
       cardHoldState.showReleaseAction);
+  // In-person payments (Tap to Pay §3.4/§7.8). The gate is deliberately strict:
+  // when it is false the button does not exist in the tree at all, so a venue
+  // that has not enabled the feature sees exactly today's screen.
+  const canTakePayment = canTakeInPersonPayment({
+    inPersonPaymentsEnabled: venue?.in_person_payments_enabled === true,
+    isAppointmentVenue,
+    status: booking.status,
+    paymentState: booking.payment_state,
+    balanceDuePence: booking.balance_due_pence,
+  });
+  const paymentStateLabel = booking.payment_state
+    ? bookingPaymentStateLabel(booking.payment_state)
+    : null;
+
   // Web parity: deposit actions (send link / record cash / waive / refund) show
   // whenever the booking is active; cancelled bookings instead get a refund
   // banner + a permanent-delete card. Card-hold actions ignore the cancel gate:
@@ -1133,7 +1156,11 @@ export function BookingDetailContent({
       ) : null}
 
       {/* Payments & confirmation — deposit state, actions, resend (web parity) */}
-      {showDepositActions || hasDeposit || canResend || booking.cancellation_deadline ? (
+      {showDepositActions ||
+      hasDeposit ||
+      canResend ||
+      canTakePayment ||
+      booking.cancellation_deadline ? (
         <CollapsibleCard
           title="Payments & confirmation"
           summary={
@@ -1172,6 +1199,42 @@ export function BookingDetailContent({
                     : booking.deposit_status ?? '—'}
                 </Text>
               </View>
+            ) : null}
+            {/* In-person payment state — neutral information, never a nag or a
+                required action (§3.4 rule 4). */}
+            {paymentStateLabel &&
+            (booking.payment_state === 'paid' ||
+              booking.payment_state === 'refunded' ||
+              booking.payment_state === 'partially_paid') ? (
+              <View style={styles.detailRow}>
+                <Text variant="bodySmall" tone="muted">
+                  Payment
+                </Text>
+                <Text variant="bodyMedium" style={styles.detailValue}>
+                  {paymentStateLabel}
+                  {booking.amount_paid_pence
+                    ? ` · ${formatPositivePence(booking.amount_paid_pence) ?? ''}`
+                    : ''}
+                </Text>
+              </View>
+            ) : null}
+            {/* Take payment (Tap to Pay / card reader / cash). Optional, per
+                appointment: nothing depends on it and nothing auto-opens it. */}
+            {canTakePayment ? (
+              <Button
+                label="Take payment"
+                fullWidth
+                onPress={() =>
+                  setTakePaymentTarget({
+                    id: booking.id,
+                    guestName,
+                    balanceDuePence: booking.balance_due_pence ?? null,
+                    isAdmin,
+                    payments: booking.payments ?? [],
+                    cardPresentReady: venue?.card_present_ready === true,
+                  })
+                }
+              />
             ) : null}
             {showDepositActions ? (
               <Button
@@ -1304,6 +1367,10 @@ export function BookingDetailContent({
       <RescheduleSheet target={rescheduleTarget} onClose={() => setRescheduleTarget(null)} />
       <ModifyBookingSheet target={modifyTarget} onClose={() => setModifyTarget(null)} />
       <DepositSheet target={depositTarget} onClose={() => setDepositTarget(null)} />
+      <TakePaymentSheet
+        target={takePaymentTarget}
+        onClose={() => setTakePaymentTarget(null)}
+      />
     </View>
   );
 }

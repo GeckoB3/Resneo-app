@@ -1,7 +1,30 @@
 # Tap to Pay (mobile) — pointer + mobile essentials
 
-> **Canonical design doc:** lives in the **backend repo** at `reserve-ni/Docs/TAP_TO_PAY_DESIGN_AND_IMPLEMENTATION.md`.
+> **Canonical design doc:** lives in the **backend repo** at `resneo/Docs/TAP_TO_PAY_DESIGN_AND_IMPLEMENTATION.md` (mirrored read-only at `_reference/Resneo/Docs/…`).
 > That document covers the whole feature end-to-end (data model, backend endpoints, webhook, security, rollout, tests). This file is the **mobile-side summary** so resneo-app work is self-sufficient. If the two ever disagree, the canonical doc wins.
+
+## Status (2026-07-24)
+
+**Backend: implemented** (ledger, three endpoints, webhook branches, receipt, GET/bootstrap extensions).
+**Mobile: implemented** — see "What shipped" below. **Not yet runnable end to end**: it needs an EAS dev build carrying the native Terminal module plus the Apple entitlement, and a pilot venue with `in_person_payments_enabled = true` and the Stripe card-present capability. Until then the surface is inert by design (the SDK is absent, so the app renders exactly as before).
+
+### What shipped (mobile)
+| File | Role |
+|---|---|
+| `lib/payments/terminal-sdk.ts` | Lazy, crash-proof SDK loader. **Never import the SDK directly** — it executes native work at import time and throws without the native module. |
+| `lib/payments/connection-token.ts` | `POST /api/payments/connection-token` + per-venue-scope Terminal Location cache. |
+| `lib/payments/terminal.ts` | `useTapToPayReader` — initialise, permissions, discover, connect. |
+| `lib/payments/bluetoothReader.ts` | `useBluetoothReader` — scan, connect, firmware-update + battery + reconnect states (§7A). |
+| `lib/payments/payment-display.ts` | The §3.4 button gate + neutral state labels (pure, unit-tested). |
+| `lib/payments/attempt-id.ts` | RFC 4122 v4 `attempt_id` (the route rejects anything else). |
+| `lib/queries/useTakePayment.ts` | Card / cash / refund mutations. |
+| `providers/TerminalProvider.tsx` | Mounted inside `ToastProvider`; renders children untouched unless enabled. |
+| `components/bookings/TakePaymentSheet.tsx` | Amount, method selection, capture states, cash, refund, inline reader pairing. |
+| `components/bookings/ReaderSettingsSheet.tsx` | Pair / battery / firmware / forget, from Settings. |
+
+### Deliberately deferred
+- **"Send payment link" fallback on card decline (§7.8).** The doc suggests reusing the deposit route's `send_payment_link`, but that machinery sends a **deposit** request tied to `deposit_status`, not an appointment **balance**. Firing it after a declined balance payment would email the client a misleading (or failing) deposit request. The sheet instead surfaces the decline and points staff at cash / another method. Wire this up once the backend exposes a balance payment link.
+- **Tips** (`tip_amount_pence` reserved, unused in v1) and **partial refunds** (v1 refunds a whole ledger row).
 
 ## What we're building
 Let staff collect an appointment's **outstanding balance in person** by tapping the client's card/phone to the staff phone — **Stripe Tap to Pay on iPhone & Android, no hardware reader**. Money goes **directly to the venue** via Stripe Connect (0% to Resneo).

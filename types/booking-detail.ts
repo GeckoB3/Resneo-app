@@ -34,6 +34,32 @@ export interface BookingTableAssignment {
 }
 
 /**
+ * Whole-booking payment state derived live by the server from the paid deposit
+ * plus the in-person payments ledger (Tap to Pay design doc §5.5).
+ * `unpaid` / `deposit_paid` / `partially_paid` are NORMAL states, never errors.
+ */
+export type BookingPaymentState =
+  | 'unpaid'
+  | 'deposit_paid'
+  | 'partially_paid'
+  | 'paid'
+  | 'refunded';
+
+/**
+ * One in-person payment ledger row (`booking_payments`) from the full booking
+ * GET. Service-role table — the authenticated staff GET is the app's only read
+ * path (§9). The refund action posts a row's `id` as `payment_id`.
+ */
+export interface BookingPaymentRow {
+  id: string;
+  method: 'card_present' | 'cash' | 'external' | 'online';
+  status: 'pending' | 'succeeded' | 'failed' | 'refunded';
+  amount_pence: number;
+  note: string | null;
+  created_at: string;
+}
+
+/**
  * Sent email/SMS row merged from communication_logs + legacy communications.
  * @see _reference/Resneo/src/lib/booking/load-booking-detail-bundle.ts
  */
@@ -125,6 +151,19 @@ export interface BookingDetail {
   card_hold?: CardHoldSummary | null;
   /** Configured payment requirement of the booked service (full GET, optional). */
   service_payment_requirement?: string | null;
+  /**
+   * In-person payments (§6.6): the RESOLVED total (variant + add-ons when the
+   * stored column is empty), live amount paid (deposit + ledger), whole-booking
+   * payment state, and the outstanding balance. `balance_due_pence` is null when
+   * the price cannot be resolved — the Take payment sheet then requires a
+   * staff-entered amount (§5.7).
+   */
+  booking_total_price_pence?: number | null;
+  amount_paid_pence?: number | null;
+  payment_state?: BookingPaymentState | null;
+  balance_due_pence?: number | null;
+  /** In-person payment ledger rows (full GET only; newest first). */
+  payments?: BookingPaymentRow[];
   /** Present on full GET; summary returns empty arrays. */
   events?: BookingTimelineEventRow[];
   communications?: BookingCommunicationRow[];

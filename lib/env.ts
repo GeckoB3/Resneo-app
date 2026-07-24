@@ -51,6 +51,18 @@ export function getWebUrl(): string {
   return raw.replace(/\/$/, '');
 }
 
+/**
+ * Stripe PLATFORM publishable key (pk_test_/pk_live_), needed by the Stripe
+ * Terminal SDK at init for in-person payments (Tap to Pay design doc §7.4).
+ * Publishable keys are public by design. Returns null when unset so the
+ * Terminal provider can degrade gracefully (no init, no payment surface)
+ * instead of crashing venues that have in-person payments enabled before the
+ * build carries a key.
+ */
+export function getStripePublishableKey(): string | null {
+  return process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || null;
+}
+
 export function getAppVersion(): string {
   return Constants.expoConfig?.version ?? '1.0.0';
 }

@@ -5,6 +5,7 @@ import { useRouter, type Href } from 'expo-router';
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { Linking, StyleSheet, Switch, View } from 'react-native';
 
+import { ReaderSettingsSheet } from '@/components/bookings/ReaderSettingsSheet';
 import { FeatureTile } from '@/components/more/FeatureTile';
 import { MoreHero } from '@/components/more/MoreHero';
 import { MoreRow } from '@/components/more/MoreRow';
@@ -21,6 +22,7 @@ import { getWebUrl } from '@/lib/env';
 import {
   buildDestinations,
   LIST_GROUPS,
+  TILE,
   type Destination,
 } from '@/lib/navigation/more-destinations';
 import { useBillingStatus } from '@/lib/queries/useBillingStatus';
@@ -93,6 +95,7 @@ export default function MoreScreen() {
   const [query, setQuery] = useState('');
   const [appLockBusy, setAppLockBusy] = useState(false);
   const [signOutOpen, setSignOutOpen] = useState(false);
+  const [readerSheetOpen, setReaderSheetOpen] = useState(false);
 
   const staff = staffData?.staff;
   const isAdmin = staff?.role === 'admin';
@@ -310,6 +313,22 @@ export default function MoreScreen() {
             );
           })}
 
+          {/* Card reader — only for venues that have turned on in-person
+              payments (Tap to Pay §7A.6). Pairing, battery and firmware live in
+              the sheet so they can be managed outside a live payment. */}
+          {venue?.in_person_payments_enabled ? (
+            <Group title="In-person payments">
+              <MoreRow
+                isFirst
+                icon={{ ios: 'creditcard', android: 'credit_card', web: 'credit_card' }}
+                tile={TILE.teal}
+                label="Card reader"
+                hint="Pair a Bluetooth reader, check battery and updates"
+                onPress={() => setReaderSheetOpen(true)}
+              />
+            </Group>
+          ) : null}
+
           {/* Privacy & security — opt-in biometric app lock. Only shown when the
               device actually has Face ID / fingerprint enrolled (W9.1). */}
           {appLockSupported ? (
@@ -358,6 +377,12 @@ export default function MoreScreen() {
       <Text variant="caption" tone="muted" style={styles.version}>
         Resneo v{appVersion}
       </Text>
+
+      {/* Card reader pairing / status (in-person payments). */}
+      <ReaderSettingsSheet
+        visible={readerSheetOpen}
+        onClose={() => setReaderSheetOpen(false)}
+      />
 
       {/* Sign-out confirm — a Sheet (not Alert.alert, which is a no-op on web). */}
       <Sheet visible={signOutOpen} onClose={() => setSignOutOpen(false)}>

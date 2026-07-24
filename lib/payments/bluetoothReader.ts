@@ -1,0 +1,271 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Platform } from 'react-native';
+import * as SecureStore from 'expo-secure-store';
+import type { Reader } from '@stripe/stripe-terminal-react-native';
+
+import { ensureTerminalLocationId } from '@/lib/payments/connection-token';
+import { getTerminalSdk, terminalErrorMessage } from '@/lib/payments/terminal-sdk';
+import { useAccessToken } from '@/lib/queries/useAccessToken';
+import { useLinkedVenueContext } from '@/providers/LinkedVenueProvider';
+
+/**
+ * Physical Bluetooth card reader lifecycle (Tap to Pay design doc §7A.5).
+ *
+ * Sibling to `useTapToPayReader`, same lazy philosophy and the same
+ * connection-token / Terminal Location plumbing. The collection flow itself is
+ * identical from `useTakePayment`'s point of view — only which reader is
+ * connected differs.
+ *
+ * Same mounting constraint as `useTapToPayReader`: only usable inside
+ * `TerminalProvider` when the Terminal SDK is available.
+ */
+
+/** Reader status, including firmware update as a first-class state (§7A.5). */
+export type BluetoothReaderStatus =
+  | 'idle'
+  | 'scanning'
+  | 'found'
+  | 'connecting'
+  | 'updating'
+  | 'ready'
+  | 'disconnected'
+  | 'error';
+
+/** Battery percentage under which staff are warned to charge the reader. */
+const LOW_BATTERY_THRESHOLD = 0.15;
+
+/** Remembered reader serial, per venue scope, so we can reconnect silently. */
+function serialStorageKey(ownerVenueId: string | null): string {
+  return `resneo_bt_reader_serial_${ownerVenueId ?? 'own'}`;
+}
+
+export interface UseBluetoothReader {
+  status: BluetoothReaderStatus;
+  error: string | null;
+  /** Readers found by the current scan (a busy salon may see several). */
+  discovered: Reader.Type[];
+  connected: Reader.Type | null;
+  /** 0-1 battery level of the connected reader, when reported. */
+  batteryLevel: number | null;
+  /** True when the connected reader's battery is low enough to warn about. */
+  batteryLow: boolean;
+  /** 0-1 firmware install progress while `status === 'updating'`. */
+  updateProgress: number | null;
+  /** Start scanning for nearby readers. */
+  scan: () => Promise<void>;
+  /** Connect to a specific discovered reader and remember it. */
+  connect: (reader: Reader.Type) => Promise<boolean>;
+  /** Scan and reconnect to the remembered serial without a picker. */
+  reconnectRemembered: () => Promise<boolean>;
+  /** Disconnect and forget the remembered reader for this venue scope. */
+  forget: () => Promise<void>;
+  reset: () => void;
+}
+
+const USE_SIMULATED = __DEV__;
+
+export function useBluetoothReader(): UseBluetoothReader {
+  const sdk = getTerminalSdk();
+  const accessToken = useAccessToken();
+  const { ownerVenueId } = useLinkedVenueContext();
+
+  const [status, setStatus] = useState<BluetoothReaderStatus>('idle');
+  const [error, setError] = useState<string | null>(null);
+  const [discovered, setDiscovered] = useState<Reader.Type[]>([]);
+  const [localConnected, setConnected] = useState<Reader.Type | null>(null);
+  const [batteryLevel, setBatteryLevel] = useState<number | null>(null);
+  const [updateProgress, setUpdateProgress] = useState<number | null>(null);
+
+  const scopeRef = useRef<string | null>(ownerVenueId ?? null);
+  const discoveredRef = useRef<Reader.Type[]>([]);
+
+  // Firmware updates block collection for tens of seconds to minutes, so they
+  // are surfaced as their own state with determinate progress (§7A.5).
+  const terminal = sdk!.useStripeTerminal({
+    onUpdateDiscoveredReaders: (readers: Reader.Type[]) => {
+      discoveredRef.current = readers;
+      setDiscovered(readers);
+      setStatus((prev) => (prev === 'scanning' && readers.length > 0 ? 'found' : prev));
+    },
+    onDidStartInstallingUpdate: () => {
+      setUpdateProgress(0);
+      setStatus('updating');
+    },
+    onDidReportReaderSoftwareUpdateProgress: (progress: string | number) => {
+      const value = typeof progress === 'number' ? progress : Number(progress);
+      if (Number.isFinite(value)) setUpdateProgress(value);
+    },
+    onDidFinishInstallingUpdate: () => {
+      setUpdateProgress(null);
+      setStatus((prev) => (prev === 'updating' ? 'ready' : prev));
+    },
+    onDidReportBatteryLevel: (level: number) => {
+      if (typeof level === 'number' && Number.isFinite(level)) setBatteryLevel(level);
+    },
+    onDidDisconnect: () => {
+      setConnected(null);
+      setStatus('disconnected');
+      setError('Reader disconnected. Trying to reconnect.');
+    },
+  });
+
+  /** Linked-venue switch: drop the reader and the remembered serial scope. */
+  useEffect(() => {
+    const next = ownerVenueId ?? null;
+    if (scopeRef.current === next) return;
+    scopeRef.current = next;
+    setConnected(null);
+    setStatus('idle');
+    setError(null);
+    void terminal.disconnectReader().catch(() => {
+      // Best effort; reconnection happens on next use.
+    });
+  }, [ownerVenueId, terminal]);
+
+  /** Shared setup: initialise once and resolve the Terminal Location. */
+  const prepare = useCallback(async (): Promise<string> => {
+    const init = await terminal.initialize();
+    if (init?.error) {
+      throw new Error(terminalErrorMessage(init.error, 'Could not start the card reader.'));
+    }
+    if (Platform.OS === 'android' && sdk?.requestNeededAndroidPermissions) {
+      await sdk.requestNeededAndroidPermissions({
+        accessFineLocation: {
+          title: 'Location permission',
+          message: 'Location is required to connect to your card reader.',
+          buttonPositive: 'Allow',
+        },
+      });
+    }
+    return ensureTerminalLocationId({ accessToken, ownerVenueId: ownerVenueId ?? null });
+  }, [accessToken, ownerVenueId, sdk, terminal]);
+
+  const scan = useCallback(async (): Promise<void> => {
+    setError(null);
+    setDiscovered([]);
+    discoveredRef.current = [];
+    try {
+      await prepare();
+      setStatus('scanning');
+      const res = await terminal.discoverReaders({
+        discoveryMethod: 'bluetoothScan',
+        simulated: USE_SIMULATED,
+      });
+      if (res?.error) {
+        setStatus('error');
+        setError(terminalErrorMessage(res.error, 'Could not search for card readers.'));
+        return;
+      }
+      // Discovery finished: if nothing arrived, say so rather than spin.
+      setStatus(discoveredRef.current.length > 0 ? 'found' : 'error');
+      if (discoveredRef.current.length === 0) {
+        setError('No card readers found. Check the reader is switched on and nearby.');
+      }
+    } catch (e) {
+      setStatus('error');
+      setError(e instanceof Error ? e.message : 'Could not search for card readers.');
+    }
+  }, [prepare, terminal]);
+
+  const connect = useCallback(
+    async (reader: Reader.Type): Promise<boolean> => {
+      setError(null);
+      try {
+        const locationId = await prepare();
+        setStatus('connecting');
+        const res = await terminal.connectReader({
+          discoveryMethod: 'bluetoothScan',
+          reader,
+          locationId,
+        });
+        if (res?.error) {
+          setStatus('error');
+          setError(terminalErrorMessage(res.error, 'Could not connect to the card reader.'));
+          return false;
+        }
+        const live = res.reader ?? reader;
+        setConnected(live);
+        if (typeof live.batteryLevel === 'number') setBatteryLevel(live.batteryLevel);
+        // A mandatory firmware update may have flipped us to 'updating'; only
+        // claim ready when it has not.
+        setStatus((prev) => (prev === 'updating' ? prev : 'ready'));
+        await SecureStore.setItemAsync(
+          serialStorageKey(ownerVenueId ?? null),
+          live.serialNumber,
+        ).catch(() => {
+          // Remembering is a convenience; failing it must not block payment.
+        });
+        return true;
+      } catch (e) {
+        setStatus('error');
+        setError(e instanceof Error ? e.message : 'Could not connect to the card reader.');
+        return false;
+      }
+    },
+    [ownerVenueId, prepare, terminal],
+  );
+
+  /**
+   * The connected reader comes from the SDK provider, not this hook's local
+   * state, so EVERY consumer sees the same reader. The pairing step and the
+   * collect step are separate component instances; keying off local state made
+   * a freshly paired reader look disconnected to the collect step, which sent
+   * staff back to pairing in a loop.
+   * Tap to Pay connects through the same provider, so exclude that device type.
+   */
+  const providerReader = terminal.connectedReader ?? null;
+  const connected =
+    providerReader && providerReader.deviceType !== 'tapToPay'
+      ? providerReader
+      : (localConnected ?? null);
+
+  const reconnectRemembered = useCallback(async (): Promise<boolean> => {
+    let serial: string | null = null;
+    try {
+      serial = await SecureStore.getItemAsync(serialStorageKey(ownerVenueId ?? null));
+    } catch {
+      serial = null;
+    }
+    if (!serial) return false;
+
+    await scan();
+    const match = discoveredRef.current.find((r) => r.serialNumber === serial);
+    if (!match) return false;
+    return connect(match);
+  }, [connect, ownerVenueId, scan]);
+
+  const forget = useCallback(async (): Promise<void> => {
+    try {
+      await SecureStore.deleteItemAsync(serialStorageKey(ownerVenueId ?? null));
+    } catch {
+      // Nothing remembered.
+    }
+    await terminal.disconnectReader().catch(() => {
+      // Already disconnected.
+    });
+    setConnected(null);
+    setBatteryLevel(null);
+    setStatus('idle');
+    setError(null);
+  }, [ownerVenueId, terminal]);
+
+  const reset = useCallback(() => {
+    setStatus(connected ? 'ready' : 'idle');
+    setError(null);
+  }, [connected]);
+
+  return {
+    status,
+    error,
+    discovered,
+    connected,
+    batteryLevel,
+    batteryLow: batteryLevel != null && batteryLevel < LOW_BATTERY_THRESHOLD,
+    updateProgress,
+    scan,
+    connect,
+    reconnectRemembered,
+    forget,
+    reset,
+  };
+}

@@ -118,6 +118,18 @@ export interface VenueBootstrap {
   stripe_connected_account_id?: string | null;
   stripe_subscription_id?: string | null;
   require_account_login_for_bookings?: boolean;
+  /**
+   * In-person payments (Tap to Pay / Terminal) master switch (§6.7). When false
+   * or absent, the app renders NO payment surface and makes no Terminal calls —
+   * the frictionless-off hard requirement (§1.3/§3.2).
+   */
+  in_person_payments_enabled?: boolean;
+  /**
+   * Derived server-side (§6.6): `in_person_payments_enabled && stripe account
+   * connected`. Gates the card options; the connection-token 400 stays the
+   * authoritative capability check.
+   */
+  card_present_ready?: boolean;
   no_show_grace_minutes?: number | null;
   cover_photo_url?: string | null;
   cuisine_type?: string | null;

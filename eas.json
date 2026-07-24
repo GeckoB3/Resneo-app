@@ -16,6 +16,12 @@
         "simulator": true
       }
     },
+    "development-device": {
+      "extends": "development",
+      "ios": {
+        "simulator": false
+      }
+    },
     "preview": {
       "distribution": "internal",
       "environment": "preview",
@@ -24,6 +30,7 @@
         "EXPO_PUBLIC_SUPABASE_URL": "https://zkppmyyvkjvbsvemakbb.supabase.co",
         "EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY": "sb_publishable_3OiMNwftdkz3XhDy9f3Vbw_IN67kE9i",
         "EXPO_PUBLIC_API_URL": "https://reserve-ni.vercel.app",
+        "EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_test_51TTpEeHhd3bfD0kpxmJu3pFmA8cXRahtKHKKxdTHDqre3aHT2vk1nannrZGK3NEu7nyp1uJn8Mb9XzcjMnfgCt4b00TvdWvMQz",
         "SENTRY_DISABLE_AUTO_UPLOAD": "true"
       },
       "android": {
