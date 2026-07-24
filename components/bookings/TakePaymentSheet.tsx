@@ -82,6 +82,13 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
   const [success, setSuccess] = useState<SuccessInfo | null>(null);
   const [refundArmedId, setRefundArmedId] = useState<string | null>(null);
   const [readerType, setReaderType] = useState<InPersonReaderType>('tap_to_pay');
+  /**
+   * Set when the card step is entered from a just-completed pairing, so the
+   * collection starts immediately. Without it staff would pair a reader and
+   * then have to press "Use card reader" a second time, mid-payment, with the
+   * client waiting.
+   */
+  const [autoCollect, setAutoCollect] = useState<InPersonReaderType | null>(null);
 
   const recordExternal = useRecordExternalPayment(target?.id ?? '');
   const refund = useRefundPayment(target?.id ?? '');
@@ -291,6 +298,8 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
             amountPence={amountPence}
             readerType={readerType}
             onReaderTypeChange={setReaderType}
+            autoCollect={autoCollect}
+            onAutoCollectHandled={() => setAutoCollect(null)}
             onPair={() => setMode('pair')}
             onDone={(collected) => {
               // Card payments settle through Stripe, and the webhook emails the
@@ -312,6 +321,7 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
           <ReaderPairingSection
             onPaired={() => {
               setReaderType('bluetooth');
+              setAutoCollect('bluetooth');
               setMode('card');
             }}
             onBack={() => setMode('card')}
@@ -415,6 +425,8 @@ function CardCollectSection({
   amountPence,
   readerType,
   onReaderTypeChange,
+  autoCollect,
+  onAutoCollectHandled,
   onPair,
   onDone,
   onBack,
@@ -423,6 +435,9 @@ function CardCollectSection({
   amountPence: number | undefined;
   readerType: InPersonReaderType;
   onReaderTypeChange: (t: InPersonReaderType) => void;
+  /** Start collecting on this channel as soon as the section mounts. */
+  autoCollect: InPersonReaderType | null;
+  onAutoCollectHandled: () => void;
   onPair: () => void;
   onDone: (collectedPence: number | null) => void;
   onBack: () => void;
@@ -462,6 +477,14 @@ function CardCollectSection({
 
   const supportsTapToPay = tapToPay.supported !== false;
   const readerConnected = bluetooth.connected != null;
+
+  // Continue straight into collection after a fresh pairing (fires once).
+  useEffect(() => {
+    if (!autoCollect) return;
+    onAutoCollectHandled();
+    void collect(autoCollect);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot on arrival
+  }, [autoCollect]);
 
   async function collect(kind: InPersonReaderType) {
     setMessage(null);
@@ -520,7 +543,13 @@ function CardCollectSection({
     }
   }
 
-  const busy = stage === 'preparing' || stage === 'collecting';
+  // Reader work counts as busy too: a firmware install or an in-progress
+  // connect must not leave the collect buttons tappable.
+  const busy =
+    stage === 'preparing' ||
+    stage === 'collecting' ||
+    bluetooth.status === 'connecting' ||
+    bluetooth.status === 'updating';
 
   return (
     <>
@@ -623,17 +652,29 @@ function ReaderPairingSection({
     void reader.scan();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const updating = reader.status === 'updating';
   const scanning = reader.status === 'scanning' || reader.status === 'connecting';
+  // A mandatory firmware install blocks collection and can run for minutes, so
+  // it locks the controls rather than letting staff tap into a dead end.
+  const locked = scanning || updating;
 
   return (
     <>
       <Text variant="bodySmall" tone="muted">
-        {scanning
-          ? 'Looking for card readers nearby. Keep the reader switched on.'
-          : 'Choose your card reader.'}
+        {updating
+          ? 'Updating your reader. Keep it nearby and switched on. This can take a few minutes.'
+          : scanning
+            ? 'Looking for card readers nearby. Keep the reader switched on.'
+            : 'Choose your card reader.'}
       </Text>
 
-      {reader.error ? (
+      {updating && reader.updateProgress != null ? (
+        <Text variant="bodySmall" tone="muted">
+          {Math.round(reader.updateProgress * 100)}% complete
+        </Text>
+      ) : null}
+
+      {reader.error && !updating ? (
         <Text variant="bodySmall" tone="danger">
           {reader.error}
         </Text>
@@ -645,7 +686,7 @@ function ReaderPairingSection({
             key={r.serialNumber}
             label={r.label?.trim() ? r.label : r.serialNumber}
             variant="secondary"
-            disabled={scanning}
+            disabled={locked}
             onPress={() => {
               void reader.connect(r).then((ok) => {
                 if (ok) onPaired();
@@ -658,11 +699,11 @@ function ReaderPairingSection({
           label="Scan again"
           variant="ghost"
           loading={scanning}
-          disabled={scanning}
+          disabled={locked}
           onPress={() => void reader.scan()}
           fullWidth
         />
-        <Button label="Back" variant="ghost" onPress={onBack} fullWidth />
+        <Button label="Back" variant="ghost" disabled={updating} onPress={onBack} fullWidth />
       </View>
     </>
   );

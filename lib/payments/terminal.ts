@@ -7,6 +7,7 @@ import {
   ensureTerminalInitialized,
   getTerminalSdk,
   terminalErrorMessage,
+  type TerminalHookApi,
 } from '@/lib/payments/terminal-sdk';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { useLinkedVenueContext } from '@/providers/LinkedVenueProvider';
@@ -68,6 +69,9 @@ export function useTapToPayReader(): UseTapToPayReader {
   // through `onUpdateDiscoveredReaders` rather than returning them.
   const pendingReaderRef = useRef<((reader: Reader.Type) => void) | null>(null);
   const scopeRef = useRef<string | null>(ownerVenueId ?? null);
+  /** Discovery in flight, so leaving the sheet can stop it (see cleanup below). */
+  const discoveringRef = useRef(false);
+  const terminalRef = useRef<TerminalHookApi | null>(null);
 
   // `useStripeTerminal` must be called unconditionally. The SDK object is
   // process-stable (cached in terminal-sdk.ts), and this hook is only mounted
@@ -86,6 +90,28 @@ export function useTapToPayReader(): UseTapToPayReader {
       }
     },
   });
+
+  useEffect(() => {
+    terminalRef.current = terminal;
+  }, [terminal]);
+
+  /**
+   * Abandoning the sheet mid-discovery must stop it: the SDK will not start a
+   * new discovery while one is running, so a stale scan would break the next
+   * payment attempt.
+   */
+  useEffect(
+    () => () => {
+      pendingReaderRef.current = null;
+      if (discoveringRef.current) {
+        discoveringRef.current = false;
+        void terminalRef.current?.cancelDiscovering().catch(() => {
+          // Nothing in flight.
+        });
+      }
+    },
+    [],
+  );
 
   /** Switching linked venue re-scopes the connected account: drop the reader. */
   useEffect(() => {
@@ -193,10 +219,12 @@ export function useTapToPayReader(): UseTapToPayReader {
         }, 30_000);
       });
 
+      discoveringRef.current = true;
       const discovery = await terminal.discoverReaders({
         discoveryMethod: 'tapToPay',
         simulated: USE_SIMULATED,
       });
+      discoveringRef.current = false;
       if (discovery?.error) {
         pendingReaderRef.current = null;
         return fail(terminalErrorMessage(discovery.error, 'Could not find a card reader.'));
@@ -217,6 +245,7 @@ export function useTapToPayReader(): UseTapToPayReader {
       setStatus('ready');
       return { ok: true, error: null };
     } catch (e) {
+      discoveringRef.current = false;
       return fail(e instanceof Error ? e.message : 'Could not start the card reader.');
     }
   }, [accessToken, ownerVenueId, sdk, terminal]);

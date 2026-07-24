@@ -42,6 +42,12 @@ Five further defects, all fixed:
 - **Repeat `initialize()`.** The Bluetooth path re-initialised on every scan and connect; an "already initialised" error envelope would throw and abort the scan. Both hooks now share a one-shot `ensureTerminalInitialized`.
 - **Ref mutated during render** (`reconnectRememberedRef`), which is unsafe under concurrent rendering. Moved into an effect.
 
+### Review findings (fourth pass: both hardware paths + UI polish)
+- **Abandoned discovery was never cancelled.** Leaving the pairing screen or the reader settings sheet left a Bluetooth scan running: battery drain, and worse, the SDK refuses to start a new discovery while one is in progress, so closing and reopening could leave pairing permanently broken until app restart. Both hooks now cancel discovery on unmount.
+- **Firmware updates were invisible during pairing.** The pairing step showed "Choose your card reader" while a mandatory multi-minute install ran, with the reader buttons still tappable. It now shows the update copy with percentage and locks the controls (the card step already handled this).
+- **An extra tap mid-payment.** After pairing a reader, staff had to press "Use card reader" a second time, with the client waiting. Pairing now continues straight into collection.
+- **Buttons stayed live during reader work.** `busy` ignored the reader's own `connecting` / `updating` states, so a second collect could be fired mid-connect.
+
 ### Deliberately deferred
 - **"Send payment link" fallback on card decline (§7.8).** The doc suggests reusing the deposit route's `send_payment_link`, but that machinery sends a **deposit** request tied to `deposit_status`, not an appointment **balance**. Firing it after a declined balance payment would email the client a misleading (or failing) deposit request. The sheet instead surfaces the decline and points staff at cash / another method. Wire this up once the backend exposes a balance payment link.
 - **Tips** (`tip_amount_pence` reserved, unused in v1) and **partial refunds** (v1 refunds a whole ledger row).

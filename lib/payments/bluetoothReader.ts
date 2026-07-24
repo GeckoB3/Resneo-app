@@ -8,6 +8,7 @@ import {
   ensureTerminalInitialized,
   getTerminalSdk,
   terminalErrorMessage,
+  type TerminalHookApi,
 } from '@/lib/payments/terminal-sdk';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { useLinkedVenueContext } from '@/providers/LinkedVenueProvider';
@@ -86,6 +87,10 @@ export function useBluetoothReader(): UseBluetoothReader {
   // (the handler is defined before `reconnectRemembered` exists).
   const reconnectAttemptedRef = useRef(false);
   const reconnectRememberedRef = useRef<(() => Promise<boolean>) | null>(null);
+  /** True while a Bluetooth scan is running, for the unmount cleanup below. */
+  const discoveringRef = useRef(false);
+  /** Stable handle to the SDK for cleanup that must not re-run on every render. */
+  const terminalRef = useRef<TerminalHookApi | null>(null);
 
   // Firmware updates block collection for tens of seconds to minutes, so they
   // are surfaced as their own state with determinate progress (§7A.5).
@@ -133,6 +138,29 @@ export function useBluetoothReader(): UseBluetoothReader {
     },
   });
 
+  // Keep the cleanup's SDK handle current, in an effect (never during render).
+  useEffect(() => {
+    terminalRef.current = terminal;
+  }, [terminal]);
+
+  /**
+   * Leaving the screen must stop an in-flight Bluetooth scan. Beyond the
+   * battery cost of scanning forever, the SDK refuses to start a new discovery
+   * while one is already running, so an abandoned scan would break the NEXT
+   * attempt to pair.
+   */
+  useEffect(
+    () => () => {
+      if (discoveringRef.current) {
+        discoveringRef.current = false;
+        void terminalRef.current?.cancelDiscovering().catch(() => {
+          // Nothing was discovering after all.
+        });
+      }
+    },
+    [],
+  );
+
   /** Linked-venue switch: drop the reader and the remembered serial scope. */
   useEffect(() => {
     const next = ownerVenueId ?? null;
@@ -174,10 +202,12 @@ export function useBluetoothReader(): UseBluetoothReader {
     try {
       await prepare();
       setStatus('scanning');
+      discoveringRef.current = true;
       const res = await terminal.discoverReaders({
         discoveryMethod: 'bluetoothScan',
         simulated: USE_SIMULATED,
       });
+      discoveringRef.current = false;
       if (res?.error) {
         setStatus('error');
         setError(terminalErrorMessage(res.error, 'Could not search for card readers.'));
@@ -189,6 +219,7 @@ export function useBluetoothReader(): UseBluetoothReader {
         setError('No card readers found. Check the reader is switched on and nearby.');
       }
     } catch (e) {
+      discoveringRef.current = false;
       setStatus('error');
       setError(e instanceof Error ? e.message : 'Could not search for card readers.');
     }
