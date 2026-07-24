@@ -25,10 +25,12 @@ jest.mock('@/components/ui/Sheet', () => {
 const mockRecord = jest.fn(async () => ({ success: true }));
 const mockRefund = jest.fn(async () => ({ success: true }));
 const mockTakePayment = jest.fn(async () => ({ amountPence: 2500 }));
+const mockCancelCollection = jest.fn(async () => undefined);
 jest.mock('@/lib/queries/useTakePayment', () => ({
   useRecordExternalPayment: () => ({ mutateAsync: mockRecord, isPending: false }),
   useRefundPayment: () => ({ mutateAsync: mockRefund, isPending: false }),
   useTakePayment: () => ({ mutateAsync: mockTakePayment, isPending: false }),
+  useCancelCardCollection: () => mockCancelCollection,
 }));
 
 // The Terminal SDK is present in these tests unless a case says otherwise.
@@ -44,12 +46,15 @@ jest.mock('@/lib/payments/last-method', () => ({
   rememberLastMethod: jest.fn(),
 }));
 
+const mockTapConnect = jest.fn(
+  async (): Promise<{ ok: boolean; error: string | null }> => ({ ok: true, error: null }),
+);
 jest.mock('@/lib/payments/terminal', () => ({
   useTapToPayReader: () => ({
     status: 'idle',
     error: null,
     supported: true,
-    connect: jest.fn(async () => true),
+    connect: mockTapConnect,
     checkSupport: jest.fn(async () => true),
     reset: jest.fn(),
   }),
@@ -97,6 +102,9 @@ beforeEach(() => {
   mockRecord.mockClear();
   mockRefund.mockClear();
   mockTakePayment.mockClear();
+  mockCancelCollection.mockClear();
+  mockTapConnect.mockReset();
+  mockTapConnect.mockResolvedValue({ ok: true, error: null });
 });
 
 describe('known balance', () => {
@@ -173,6 +181,34 @@ describe('card availability', () => {
     mockSdkAvailable = false;
     await render(<TakePaymentSheet target={target()} onClose={jest.fn()} />);
     expect(screen.queryByText('Card payment')).toBeNull();
+  });
+});
+
+describe('card errors', () => {
+  it('shows the reader connect failure returned by connect(), not a generic fallback', async () => {
+    // Regression: the reason must travel back through the call. Reading
+    // `tapToPay.error` after awaiting sees the pre-await render's value, which
+    // silently downgraded specific messages to the generic fallback.
+    mockTapConnect.mockResolvedValue({
+      ok: false,
+      error: 'Location permission is needed to take card payments.',
+    });
+    await render(<TakePaymentSheet target={target()} onClose={jest.fn()} />);
+    await press('Card payment');
+    await press('Tap to Pay on this phone');
+
+    expect(
+      screen.getByText('Location permission is needed to take card payments.'),
+    ).toBeTruthy();
+    expect(mockTakePayment).not.toHaveBeenCalled();
+  });
+
+  it('offers Retry after a failed attempt', async () => {
+    mockTapConnect.mockResolvedValue({ ok: false, error: 'The reader is unavailable.' });
+    await render(<TakePaymentSheet target={target()} onClose={jest.fn()} />);
+    await press('Card payment');
+    await press('Tap to Pay on this phone');
+    expect(screen.getByText('Retry')).toBeTruthy();
   });
 });
 

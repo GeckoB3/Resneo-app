@@ -3,7 +3,11 @@ import { Platform } from 'react-native';
 import type { Reader } from '@stripe/stripe-terminal-react-native';
 
 import { ensureTerminalLocationId } from '@/lib/payments/connection-token';
-import { getTerminalSdk, terminalErrorMessage } from '@/lib/payments/terminal-sdk';
+import {
+  ensureTerminalInitialized,
+  getTerminalSdk,
+  terminalErrorMessage,
+} from '@/lib/payments/terminal-sdk';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { useLinkedVenueContext } from '@/providers/LinkedVenueProvider';
 
@@ -34,8 +38,15 @@ export interface UseTapToPayReader {
   error: string | null;
   /** True when this device can do Tap to Pay at all (NFC + OS floor). */
   supported: boolean | null;
-  /** Initialise, discover and connect. Resolves true when a reader is ready. */
-  connect: () => Promise<boolean>;
+  /**
+   * Initialise, discover and connect.
+   *
+   * Returns the failure reason alongside the flag: callers run this inside an
+   * async handler, where reading `error` off the hook straight after awaiting
+   * would see the PREVIOUS render's value (always stale, usually null) and
+   * silently downgrade a specific, actionable message to a generic one.
+   */
+  connect: () => Promise<{ ok: boolean; error: string | null }>;
   /** Re-check device support (cheap; cached after the first answer). */
   checkSupport: () => Promise<boolean>;
   reset: () => void;
@@ -56,7 +67,6 @@ export function useTapToPayReader(): UseTapToPayReader {
   // Resolver for the discovery callback: `discoverReaders` streams results
   // through `onUpdateDiscoveredReaders` rather than returning them.
   const pendingReaderRef = useRef<((reader: Reader.Type) => void) | null>(null);
-  const initializedRef = useRef(false);
   const scopeRef = useRef<string | null>(ownerVenueId ?? null);
 
   // `useStripeTerminal` must be called unconditionally. The SDK object is
@@ -111,26 +121,39 @@ export function useTapToPayReader(): UseTapToPayReader {
     }
   }, [supported, terminal]);
 
-  const connect = useCallback(async (): Promise<boolean> => {
+  const connect = useCallback(async (): Promise<{ ok: boolean; error: string | null }> => {
     setError(null);
 
-    // Already connected from a previous payment in this session.
-    if (terminal.connectedReader) {
+    /** Record the reason in hook state AND hand it back to the caller. */
+    const fail = (reason: string) => {
+      setStatus('error');
+      setError(reason);
+      return { ok: false, error: reason };
+    };
+
+    // Already connected from a previous payment in this session — but ONLY
+    // reuse the phone's own reader. A Bluetooth reader may be connected from an
+    // earlier payment; collecting through it after the staff member chose "Tap
+    // to Pay on this phone" would use the wrong device and mislabel the ledger
+    // row's reader_type.
+    const existing = terminal.connectedReader;
+    if (existing?.deviceType === 'tapToPay') {
       setStatus('ready');
-      return true;
+      return { ok: true, error: null };
+    }
+    if (existing) {
+      // Terminal holds one reader at a time, so free it before connecting ours.
+      await terminal.disconnectReader().catch(() => {
+        // If it was already gone, connecting below still works.
+      });
     }
 
     try {
       setStatus('initializing');
 
-      if (!initializedRef.current) {
-        const init = await terminal.initialize();
-        if (init?.error) {
-          setStatus('error');
-          setError(terminalErrorMessage(init.error, 'Could not start the card reader.'));
-          return false;
-        }
-        initializedRef.current = true;
+      const init = await ensureTerminalInitialized(terminal);
+      if (!init.ok) {
+        return fail(init.error ?? 'Could not start the card reader.');
       }
 
       // Android needs runtime location permission before discovery.
@@ -144,9 +167,7 @@ export function useTapToPayReader(): UseTapToPayReader {
         });
         // The helper resolves with an error-shaped object when denied.
         if (granted && typeof granted === 'object' && 'error' in granted) {
-          setStatus('error');
-          setError('Location permission is needed to take card payments.');
-          return false;
+          return fail('Location permission is needed to take card payments.');
         }
       }
 
@@ -178,9 +199,7 @@ export function useTapToPayReader(): UseTapToPayReader {
       });
       if (discovery?.error) {
         pendingReaderRef.current = null;
-        setStatus('error');
-        setError(terminalErrorMessage(discovery.error, 'Could not find a card reader.'));
-        return false;
+        return fail(terminalErrorMessage(discovery.error, 'Could not find a card reader.'));
       }
 
       const reader = await readerPromise;
@@ -192,17 +211,13 @@ export function useTapToPayReader(): UseTapToPayReader {
         locationId,
       });
       if (connected?.error) {
-        setStatus('error');
-        setError(terminalErrorMessage(connected.error, 'Could not connect the card reader.'));
-        return false;
+        return fail(terminalErrorMessage(connected.error, 'Could not connect the card reader.'));
       }
 
       setStatus('ready');
-      return true;
+      return { ok: true, error: null };
     } catch (e) {
-      setStatus('error');
-      setError(e instanceof Error ? e.message : 'Could not start the card reader.');
-      return false;
+      return fail(e instanceof Error ? e.message : 'Could not start the card reader.');
     }
   }, [accessToken, ownerVenueId, sdk, terminal]);
 

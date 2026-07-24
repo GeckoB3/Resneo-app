@@ -4,7 +4,11 @@ import * as SecureStore from 'expo-secure-store';
 import type { Reader } from '@stripe/stripe-terminal-react-native';
 
 import { ensureTerminalLocationId } from '@/lib/payments/connection-token';
-import { getTerminalSdk, terminalErrorMessage } from '@/lib/payments/terminal-sdk';
+import {
+  ensureTerminalInitialized,
+  getTerminalSdk,
+  terminalErrorMessage,
+} from '@/lib/payments/terminal-sdk';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { useLinkedVenueContext } from '@/providers/LinkedVenueProvider';
 
@@ -144,9 +148,12 @@ export function useBluetoothReader(): UseBluetoothReader {
 
   /** Shared setup: initialise once and resolve the Terminal Location. */
   const prepare = useCallback(async (): Promise<string> => {
-    const init = await terminal.initialize();
-    if (init?.error) {
-      throw new Error(terminalErrorMessage(init.error, 'Could not start the card reader.'));
+    // Shared one-shot init: scan and connect both call this, and the Tap to Pay
+    // hook initialises too, so re-initialising here could fail the second
+    // caller and abort an otherwise fine scan.
+    const init = await ensureTerminalInitialized(terminal);
+    if (!init.ok) {
+      throw new Error(init.error ?? 'Could not start the card reader.');
     }
     if (Platform.OS === 'android' && sdk?.requestNeededAndroidPermissions) {
       await sdk.requestNeededAndroidPermissions({
@@ -192,6 +199,14 @@ export function useBluetoothReader(): UseBluetoothReader {
       setError(null);
       try {
         const locationId = await prepare();
+        // Terminal holds one reader at a time. If the phone's own Tap to Pay
+        // reader is connected from an earlier payment, free it first or this
+        // connect fails.
+        if (terminal.connectedReader?.deviceType === 'tapToPay') {
+          await terminal.disconnectReader().catch(() => {
+            // Already gone; the connect below still works.
+          });
+        }
         setStatus('connecting');
         const res = await terminal.connectReader({
           discoveryMethod: 'bluetoothScan',
@@ -255,7 +270,11 @@ export function useBluetoothReader(): UseBluetoothReader {
   }, [connect, ownerVenueId, scan]);
 
   // Late-bind for the disconnect handler, which is defined above this callback.
-  reconnectRememberedRef.current = reconnectRemembered;
+  // Done in an effect, never during render: mutating a ref while rendering is
+  // unsafe under concurrent rendering.
+  useEffect(() => {
+    reconnectRememberedRef.current = reconnectRemembered;
+  }, [reconnectRemembered]);
 
   const forget = useCallback(async (): Promise<void> => {
     try {

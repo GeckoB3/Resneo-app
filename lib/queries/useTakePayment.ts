@@ -112,21 +112,22 @@ export function useTakePayment(bookingId: string) {
   });
 }
 
-/** Abort an in-flight card collection (staff dismissed the sheet). */
-export async function cancelCardCollection(): Promise<void> {
-  const sdk = getTerminalSdk();
-  if (!sdk) return;
-  try {
-    // Reached through the module functions rather than the hook so it can be
-    // called from a dismiss handler without extra hook wiring.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports -- lazy, see terminal-sdk.ts
-    const mod = require('@stripe/stripe-terminal-react-native') as {
-      cancelCollectPaymentMethod?: () => Promise<unknown>;
-    };
-    await mod.cancelCollectPaymentMethod?.();
-  } catch {
-    // Nothing in flight, or the SDK is unavailable — nothing to undo.
-  }
+/**
+ * Abort an in-flight card collection (staff dismissed the sheet mid-payment).
+ *
+ * This MUST come from the `useStripeTerminal` hook: the SDK does not re-export
+ * `cancelCollectPaymentMethod` from its package root, so a module-level
+ * `require(...)` of it resolves to `undefined` and cancels nothing at all.
+ */
+export function useCancelCardCollection(): () => Promise<void> {
+  const terminal = getTerminalSdk()!.useStripeTerminal();
+  return async () => {
+    try {
+      await terminal.cancelCollectPaymentMethod();
+    } catch {
+      // Nothing was in flight — dismissing is still a no-op, as intended.
+    }
+  };
 }
 
 /** Record cash / other settlement: a ledger row only, no Stripe (§6.3b). */

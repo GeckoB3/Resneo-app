@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
@@ -15,7 +15,7 @@ import { paymentMethodLabel, refundablePayments } from '@/lib/payments/payment-d
 import { isTerminalSdkAvailable } from '@/lib/payments/terminal-sdk';
 import { useTapToPayReader } from '@/lib/payments/terminal';
 import {
-  cancelCardCollection,
+  useCancelCardCollection,
   useRecordExternalPayment,
   useRefundPayment,
   useTakePayment,
@@ -68,14 +68,11 @@ type TakePaymentSheetProps = {
 
 export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
   /**
-   * Dismissing must leave NO side effects (§3.2). If a card collection is in
-   * flight the SDK is told to stop, so an abandoned PaymentIntent is never left
-   * waiting on a tap.
+   * Dismissing must leave NO side effects (§3.2). An in-flight card collection
+   * is cancelled by `CardCollectSection`'s unmount cleanup, which covers every
+   * route out of the sheet (Close, Back, or the host clearing the target).
    */
-  const handleClose = () => {
-    void cancelCardCollection();
-    onClose();
-  };
+  const handleClose = onClose;
 
   const [mode, setMode] = useState<SheetMode>('menu');
   const [amountInput, setAmountInput] = useState('');
@@ -434,11 +431,25 @@ function CardCollectSection({
   const tapToPay = useTapToPayReader();
   const bluetooth = useBluetoothReader();
   const takePayment = useTakePayment(bookingId);
+  const cancelCollection = useCancelCardCollection();
 
   const [stage, setStage] = useState<CardStage>('idle');
   const [message, setMessage] = useState<string | null>(null);
   /** The channel of the last failed attempt, so Retry repeats the same one. */
   const [lastTried, setLastTried] = useState<InPersonReaderType | null>(null);
+  /** Ref (not state) so the unmount cleanup below reads the CURRENT value. */
+  const collectingRef = useRef(false);
+
+  // Dismissing mid-collection must leave nothing waiting on a card tap (§3.2).
+  // Unmount is the reliable hook for that: this section is torn down whether
+  // staff press Close, press Back, or the sheet itself closes.
+  useEffect(
+    () => () => {
+      if (collectingRef.current) void cancelCollection();
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- cleanup must run only on unmount
+    [],
+  );
 
   // Device capability drives which options exist (§7A.3), and the remembered
   // method means staff are not re-asked on every appointment (§7A.6).
@@ -460,10 +471,12 @@ function CardCollectSection({
 
     // Ensure a reader is ready for the chosen channel.
     if (kind === 'tap_to_pay') {
-      const ok = await tapToPay.connect();
+      // The reason comes back from the call, not from hook state: reading
+      // `tapToPay.error` here would see the pre-await render's value.
+      const { ok, error: reason } = await tapToPay.connect();
       if (!ok) {
         setStage('error');
-        setMessage(tapToPay.error ?? 'The card reader could not be started.');
+        setMessage(reason ?? 'The card reader could not be started.');
         return;
       }
     } else if (!readerConnected) {
@@ -478,6 +491,7 @@ function CardCollectSection({
     }
 
     setStage('collecting');
+    collectingRef.current = true;
     try {
       // ONE attempt id per user-initiated attempt (§6.3c): a double-fired
       // mutation reuses it and stays idempotent; a later retry mints a new one.
@@ -487,11 +501,13 @@ function CardCollectSection({
         ...(amountPence != null ? { amountPence } : {}),
         readerType: kind,
       });
+      collectingRef.current = false;
       hapticSuccess();
       setStage('success');
       rememberLastMethod(kind);
       onDone(res.amountPence ?? null);
     } catch (e) {
+      collectingRef.current = false;
       hapticWarning();
       setStage('error');
       setMessage(

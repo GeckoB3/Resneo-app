@@ -107,6 +107,34 @@ export function __resetTerminalSdkForTests(): void {
   cached = undefined;
 }
 
+/**
+ * `initialize()` exactly once per app run, shared by the Tap to Pay and
+ * Bluetooth hooks.
+ *
+ * Both hooks can be mounted at once and each needs the SDK initialised, but
+ * calling `initialize()` again on an already-initialised SDK can come back as
+ * an error envelope. Treating that as a genuine failure would abort the second
+ * caller's scan or connect, so the result is remembered and re-used.
+ */
+let initialized = false;
+
+export async function ensureTerminalInitialized(
+  terminal: Pick<TerminalHookApi, 'initialize'>,
+): Promise<{ ok: boolean; error: string | null }> {
+  if (initialized) return { ok: true, error: null };
+  const res = await terminal.initialize();
+  if (res?.error) {
+    return { ok: false, error: terminalErrorMessage(res.error, 'Could not start the card reader.') };
+  }
+  initialized = true;
+  return { ok: true, error: null };
+}
+
+/** Test seam: forget the initialised flag. */
+export function __resetTerminalInitForTests(): void {
+  initialized = false;
+}
+
 /** Human-readable message from an SDK error envelope, with a safe fallback. */
 export function terminalErrorMessage(error: StripeError | undefined, fallback: string): string {
   if (!error) return fallback;

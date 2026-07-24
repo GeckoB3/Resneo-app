@@ -34,6 +34,14 @@ Fixed after a line-by-line re-read of the canonical §7/§7A:
 
 **Doc correction:** §7A.4 lists the iOS plugin prop as `bluetoothPeripheralUsagePermission`; the pinned SDK's config-plugin schema actually accepts **`bluetoothPeripheralPermission`**. The doc's spelling would be silently ignored. Every prop in `app.json` was validated against the plugin's own type. `bluetoothBackgroundMode` is deliberately NOT set: background reconnection is optional in the doc and adds an App Store review surface for no v1 benefit.
 
+### Review findings (third pass)
+Five further defects, all fixed:
+- **Abandon-cancel was a silent no-op.** The SDK does **not** re-export `cancelCollectPaymentMethod` from its package root, so the module-level `require(...)` resolved to `undefined` and cancelled nothing. It now comes off the `useStripeTerminal` hook and runs from `CardCollectSection`'s unmount cleanup, which covers every route out of the sheet.
+- **Reader connect errors were lost.** `connect()` returned a bare boolean and the caller read `tapToPay.error` straight after awaiting, which sees the pre-await render's value (null). Every specific message ("Location permission is needed…") silently became the generic fallback. `connect()` now returns `{ ok, error }`. Regression-tested.
+- **Wrong reader could collect.** Choosing "Tap to Pay on this phone" while a Bluetooth reader was still connected reused that reader, collecting on the wrong device and mislabelling the ledger row's `reader_type`. Both connect paths now check `deviceType` and disconnect first (Terminal holds one reader at a time).
+- **Repeat `initialize()`.** The Bluetooth path re-initialised on every scan and connect; an "already initialised" error envelope would throw and abort the scan. Both hooks now share a one-shot `ensureTerminalInitialized`.
+- **Ref mutated during render** (`reconnectRememberedRef`), which is unsafe under concurrent rendering. Moved into an effect.
+
 ### Deliberately deferred
 - **"Send payment link" fallback on card decline (§7.8).** The doc suggests reusing the deposit route's `send_payment_link`, but that machinery sends a **deposit** request tied to `deposit_status`, not an appointment **balance**. Firing it after a declined balance payment would email the client a misleading (or failing) deposit request. The sheet instead surfaces the decline and points staff at cash / another method. Wire this up once the backend exposes a balance payment link.
 - **Tips** (`tip_amount_pence` reserved, unused in v1) and **partial refunds** (v1 refunds a whole ledger row).
