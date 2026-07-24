@@ -13,7 +13,25 @@ const config = getDefaultConfig(__dirname);
 const originalResolveRequest = config.resolver?.resolveRequest;
 
 config.resolver = config.resolver ?? {};
+
+// The Stripe Terminal SDK (in-person payments) is NATIVE ONLY, and its web
+// build is broken upstream: `lib/commonjs/logger/index.js` requires
+// "../../package.json", which resolves to a `lib/package.json` the package does
+// not ship, so `expo export --platform web` fails to bundle. (Native builds are
+// unaffected — the package's `react-native` field points at `src/`, where the
+// same relative path correctly resolves to the package root.)
+//
+// Stubbing it on web is the honest fix rather than a workaround: Tap to Pay and
+// Bluetooth readers cannot work in a browser at all. `lib/payments/terminal-sdk.ts`
+// treats a module without `useStripeTerminal` as "unavailable" and the whole
+// payment surface simply does not render, exactly as on a native build that
+// predates the dependency.
+const NATIVE_ONLY_WEB_STUBS = ['@stripe/stripe-terminal-react-native'];
+
 config.resolver.resolveRequest = (context, moduleName, platform) => {
+  if (platform === 'web' && NATIVE_ONLY_WEB_STUBS.some((m) => moduleName === m || moduleName.startsWith(`${m}/`))) {
+    return { type: 'empty' };
+  }
   if (originalResolveRequest) {
     try {
       return originalResolveRequest(context, moduleName, platform);
