@@ -2,11 +2,19 @@
 
 > **Canonical design doc:** lives in the **backend repo** at `resneo/Docs/TAP_TO_PAY_DESIGN_AND_IMPLEMENTATION.md` (mirrored read-only at `_reference/Resneo/Docs/…`).
 > That document covers the whole feature end-to-end (data model, backend endpoints, webhook, security, rollout, tests). This file is the **mobile-side summary** so resneo-app work is self-sufficient. If the two ever disagree, the canonical doc wins.
+>
+> **Last reconciled:** 2026-07-24 against the canonical doc at web `staging` @ `3c2616ce` (its §16 sixth review). The per-pass mobile review findings below are **only** in this file — the canonical doc compresses them into three spec corrections. Don't lose them in a future sync.
 
 ## Status (2026-07-24)
 
-**Backend: implemented** (ledger, three endpoints, webhook branches, receipt, GET/bootstrap extensions).
-**Mobile: implemented** — see "What shipped" below. **Not yet runnable end to end**: it needs an EAS dev build carrying the native Terminal module plus the Apple entitlement, and a pilot venue with `in_person_payments_enabled = true` and the Stripe card-present capability. Until then the surface is inert by design (the SDK is absent, so the app renders exactly as before).
+**Backend: implemented** (ledger, three endpoints, webhook branches, receipt, GET/bootstrap extensions, **visit-scoped settlement**, and a **venue toggle in the web dashboard**). On the web repo's `staging` branch, not yet on `main`.
+**Mobile: implemented** — see "What shipped" below. Both hardware paths (Tap to Pay + Bluetooth reader), on `main` through `cad0bcc`. SDK pinned at **`@stripe/stripe-terminal-react-native@0.0.1-beta.31`**.
+
+**Not yet runnable end to end.** Still required: an EAS dev build carrying the native Terminal module, and a pilot venue with `in_person_payments_enabled = true` plus the Stripe card-present capability. Until then the surface is inert by design (the native module is absent, so the app renders exactly as before).
+
+**The Apple entitlement is a Tap to Pay requirement only.** `com.apple.developer.proximity-reader.payment.acceptance` gates Apple's ProximityReader framework — the phone's own NFC acting as the reader. A **Bluetooth reader (BBPOS WisePad 3) needs no Apple entitlement and no approval**: the card is read by separately certified hardware and iOS sees only a BLE accessory. So a reader-only pilot can ship without waiting on Apple (§7A.4, §7A.11). Shipping Bluetooth-only would mean dropping the `ios.entitlements` block and `tapToPayCheck` from `app.json` first — signing with an entitlement the Apple account has not been granted fails provisioning.
+
+Device eligibility splits the same way: **Tap to Pay** needs iPhone XS+/iOS 16.4+ or a certified NFC Android 11+ device; the **Bluetooth path works on any Bluetooth-capable device**, which is much wider.
 
 ### What shipped (mobile)
 | File | Role |
@@ -17,6 +25,7 @@
 | `lib/payments/bluetoothReader.ts` | `useBluetoothReader` — scan, connect, firmware-update + battery + reconnect states (§7A). |
 | `lib/payments/payment-display.ts` | The §3.4 button gate + neutral state labels (pure, unit-tested). |
 | `lib/payments/attempt-id.ts` | RFC 4122 v4 `attempt_id` (the route rejects anything else). |
+| `lib/payments/last-method.ts` | Remembers the last-used payment method (§7A.6). |
 | `lib/queries/useTakePayment.ts` | Card / cash / refund mutations. |
 | `providers/TerminalProvider.tsx` | Mounted inside `ToastProvider`; renders children untouched unless enabled. |
 | `components/bookings/TakePaymentSheet.tsx` | Amount, method selection, capture states, cash, refund, inline reader pairing. |
@@ -69,12 +78,27 @@ These confirm the earlier fixes actually hold (cross-talk filtering,
 disconnect-before-connect, error propagation, discovery cancel on unmount,
 shared one-shot init) rather than just looking right on the page.
 
+### Visit-payment pass (sixth, `cad0bcc`)
+Visit-scoped settlement landed in the backend **after** the mobile work and was already semantically compatible — `balance_due_pence` is the visit balance, so the sheet was collecting for the whole visit, and the list already collapses a multi-service visit into one row via `collapseMultiServiceVisits`. The gap was purely that staff had no way to tell **why** the amount exceeded the service they opened. Closed with the `VisitPayment` type, `visitPaymentNote()`, the sheet header note, and `BookingPaymentRow.booking_id` (because `payments[]` is now visit-wide).
+
+### Refund routing (seventh pass, found by the doc reconcile)
+Making the visit-scoping explicit in this file exposed a live contract mismatch between the two repos:
+- the booking GET returns `payments[]` **visit-wide** (`.in('booking_id', visit.bookingIds)`), commented "refundable from any line";
+- but the charge route's refund branch looks the row up **anchor-scoped** (`.eq('id', payment_id).eq('booking_id', id)`);
+- and the app posted every refund to the **opened** booking, with `refundablePayments` filtering on status only.
+
+So refunding a visit payment from any line other than the one it was collected on 409'd with "This payment cannot be refunded" — reachable because the list collapses a visit to one representative row, which needn't be the anchor. Standalone appointments were unaffected. **Fixed app-side** (no backend change needed, since the row *is* anchored to its own booking): `useRefundPayment` takes the row's `paymentBookingId` and posts there, and `otherVisitLineNote()` labels sibling rows in the refund list — `booking_id` had been on the type since `cad0bcc` but was never read. If the backend later widens its lookup to the visit, this stays correct.
+
 ### Deliberately deferred
 - **"Send payment link" fallback on card decline (§7.8).** The doc suggests reusing the deposit route's `send_payment_link`, but that machinery sends a **deposit** request tied to `deposit_status`, not an appointment **balance**. Firing it after a declined balance payment would email the client a misleading (or failing) deposit request. The sheet instead surfaces the decline and points staff at cash / another method. Wire this up once the backend exposes a balance payment link.
 - **Tips** (`tip_amount_pence` reserved, unused in v1) and **partial refunds** (v1 refunds a whole ledger row).
 
 ## What we're building
-Let staff collect an appointment's **outstanding balance in person** by tapping the client's card/phone to the staff phone — **Stripe Tap to Pay on iPhone & Android, no hardware reader**. Money goes **directly to the venue** via Stripe Connect (0% to Resneo).
+Let staff collect an appointment's **outstanding balance in person**, by either of two card paths:
+- **Tap to Pay on iPhone & Android** — the client taps their card or phone against the **staff phone**; no hardware. Needs an eligible NFC device and, on iOS, the Apple entitlement.
+- **A Bluetooth reader (BBPOS WisePad 3)** — chip + contactless + on-reader PIN, on **any** Bluetooth-capable device. No Apple entitlement. This also closes the UK SCA gap: a high-value or PIN-required card that would stall Tap to Pay can just be chip-inserted with the PIN on the reader keypad.
+
+Both run the identical `card_present` PaymentIntent through the same charge route, webhook, ledger and receipt — the only difference is which reader is connected when `collectPaymentMethod` runs. Plus **cash/external recording** and **refunds**. Money goes **directly to the venue** via Stripe Connect (0% to Resneo).
 
 ## Hard requirement — frictionless & optional, per appointment
 - If the venue is **not** enabled (`venue.in_person_payments_enabled === false`), render **nothing** new and make **no** new network calls — the app behaves exactly as today.
@@ -86,29 +110,56 @@ Let staff collect an appointment's **outstanding balance in person** by tapping 
   - `{ method: 'card_present', amount_pence? }` → `{ payment_intent_id, client_secret, amount_pence }` (omit `amount_pence` = full balance).
   - `{ method: 'cash' | 'external', amount_pence, note? }` → `{ success: true }`.
   - `{ action: 'refund', payment_id, amount_pence? }` (admin) → `{ success: true }`.
-- Booking detail GET now returns `booking_total_price_pence`, `amount_paid_pence`, `balance_due_pence`, `payment_state`. **`balance_due_pence` may be `null`** when the appointment's price can't be resolved (the column is unreliable for appointments — see canonical §5.7); when null, the sheet asks staff to enter the amount.
+- Booking detail GET now returns `booking_total_price_pence`, `amount_paid_pence`, `balance_due_pence`, `payment_state`, a `payments[]` ledger array, and a `visit_payment` object. **`balance_due_pence` may be `null`** when the appointment's price can't be resolved (the column is unreliable for appointments — see canonical §5.7); when null, the sheet asks staff to enter the amount.
 - Venue bootstrap (`GET /api/venue`) now returns `in_person_payments_enabled` and `card_present_ready`.
+
+### Payment is VISIT-scoped — Take payment settles the whole visit
+A multi-service visit or group booking writes **one `bookings` row per service/person**, each with its own variant, add-ons and deposit. A cut + colour visit is **one collection, not two**: the backend's `loadVisitPaymentPicture` sums every row sharing `group_booking_id` and every payment across them. What this means for the app:
+
+- `balance_due_pence`, `amount_paid_pence` and `payment_state` on the booking GET are **visit-scoped** — they are what Take payment acts on. `booking_total_price_pence` stays **this row's** resolved price.
+- `visit_payment` carries `booking_count`, `booking_ids`, `total_pence`, `amount_paid_pence`, `balance_due_pence`. It is optional on the type so older payloads still parse.
+- **Visit total is `null` if ANY line is unresolvable** (not £0) → staff enter the amount. Cancelled lines are excluded, except the anchor row. Siblings never cross venues.
+- `payments[]` is **visit-wide**, so a visit payment is visible and refundable from any line — hence `BookingPaymentRow.booking_id`.
+- One collection writes **one** ledger row, anchored to the booking the staff opened, with `metadata.group_booking_id` + `visit_booking_ids` for provenance.
+- App-side, `visitPaymentNote()` (`lib/payments/payment-display.ts`) renders "Covers all N services in this visit" under the guest name, and returns **null for a standalone appointment** so the common case stays uncluttered. Without it staff had no way to tell why the amount exceeded the service they opened.
+
+### Feature flag
+`venues.in_person_payments_enabled` is the master switch (default false). The venue now **turns it on themselves** from the web Dashboard → Settings; it no longer needs a SQL flip for a pilot. When false the bootstrap returns false, the app renders nothing, and all three endpoints 403 — including refunds (the kill switch is total; Stripe-dashboard refunds still reconcile via the flag-agnostic `charge.refunded` webhook).
 
 > **Source of truth = the webhook.** On a successful tap, invalidate booking caches and let the refetched booking (reflecting the webhook's write) show `payment_state='paid'`. Never set paid state from the client confirm result alone.
 
-## Mobile work (see canonical §7 for full detail)
-**Dependency:** `npx expo install @stripe/stripe-terminal-react-native` — **pin the exact version**; it's a public-preview beta and the discover/connect API has changed across betas. Per `AGENTS.md`, read that version's exact docs before coding. (`@stripe/stripe-react-native` does **not** do Tap to Pay.)
+## Mobile build & native config — as built
 
-**Native config (`app.json`):** add the `@stripe/stripe-terminal-react-native` config plugin (`tapToPayCheck: true`, `appDelegate: true`, location usage string) + the iOS entitlement `com.apple.developer.proximity-reader.payment.acceptance`. Needs a **custom EAS dev/prod build** (not Expo Go); `expo-dev-client` is already installed. Real devices only (iPhone XS+/iOS 16.4+, NFC Android 11+).
+**Dependency:** `@stripe/stripe-terminal-react-native`, **pinned at `0.0.1-beta.31`**. It's a public-preview beta and the discover/connect API has moved across betas, so per `AGENTS.md` re-read that exact version's reference before touching this code. (`@stripe/stripe-react-native` does **not** do Tap to Pay.) Two non-obvious constraints this version forces:
+- **Never import the SDK directly** — it executes native work at import time and throws wherever the native module is absent (Expo Go, web, any build without it). All access goes through `lib/payments/terminal-sdk.ts`. This is what keeps the surface inert.
+- **`cancelCollectPaymentMethod` is not re-exported from the package root** — it must come off the `useStripeTerminal` hook.
 
-**Env:** add `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` (platform publishable key) to `lib/env.ts` + `.env.example`.
+**Build:** requires a **custom EAS dev/prod build**, not Expo Go; `expo-dev-client` is already installed. Web export needs the native-only SDK stubbed in `metro.config.js`, and Android needs **`minSdkVersion 26`** (the Terminal SDK's floor) via `expo-build-properties`.
 
-**New files:**
-- `providers/TerminalProvider.tsx` — `StripeTerminalProvider` with a `tokenProvider`; **renders children untouched when the venue isn't enabled** (frictionless off).
-- `lib/payments/terminal.ts` + `useTapToPayReader()` — lazy init → discover (`discoveryMethod: 'tapToPay'`, `simulated: __DEV__`) → connect with `locationId`; reconnect on linked-venue switch.
-- `lib/queries/useTakePayment.ts` (+ `useRecordExternalPayment`, `useRefundPayment`) — modelled on `useBookingDeposit` in `lib/queries/useBookingMutations.ts`. Card flow: POST `/charge` → `retrievePaymentIntent` → `collectPaymentMethod` → `confirmPaymentIntent` → `invalidateBookingCaches`.
-- `components/bookings/TakePaymentSheet.tsx` — modelled on `components/bookings/DepositSheet.tsx`; primary **Tap to Pay** (only if `card_present_ready`), secondary **Record cash/other**, admin **Refund**, with a capture state machine and an SCA/decline **Send payment link** fallback.
+**`app.json` plugin config (as built, validated against the pinned plugin's own types):**
+```json
+[
+  "@stripe/stripe-terminal-react-native",
+  {
+    "tapToPayCheck": true,
+    "appDelegate": true,
+    "locationWhenInUsePermission": "Location is required to accept in-person card payments.",
+    "bluetoothAlwaysUsagePermission": "Bluetooth is used to connect to your card reader.",
+    "bluetoothPeripheralPermission": "Bluetooth is used to connect to your card reader."
+  }
+]
+```
+- **Location permission is mandatory for both paths** — Stripe disables card-present payments outright without it.
+- The canonical doc's §7A.4 originally said `bluetoothPeripheralUsagePermission`; the pinned plugin accepts **`bluetoothPeripheralPermission`** and silently ignores the longer spelling. Always validate prop names against the pinned plugin's types.
+- **`bluetoothBackgroundMode` is deliberately unset.** It was judged optional for a Tap-to-Pay-first v1 and adds App Store review surface. Reconsider if the WisePad becomes the primary path: without `UIBackgroundModes: bluetooth-central` the reader can drop or power down when the app backgrounds or the phone locks.
+- iOS entitlement `com.apple.developer.proximity-reader.payment.acceptance` lives in the `ios.entitlements` block (the plugin does not add it). Verify it survives into the built `.entitlements` — an EAS prebuild can overwrite. **Tap to Pay only** — see the entitlement note in Status.
 
-**Modified files:**
-- `types/booking-detail.ts` — add `booking_total_price_pence`, `amount_paid_pence`, `balance_due_pence`, `payment_state`.
-- `components/bookings/BookingDetailContent.tsx` — gated **Take payment** button + "Paid" indicator inside the existing "Payments & confirmation" card (`useVenueContext()` is already imported here). Gate: `in_person_payments_enabled && isAppointmentVenue && status !== 'Cancelled' && payment_state ∉ {paid,refunded} && (balance_due_pence === null || balance_due_pence > 0)`.
-- `providers/AppProviders.tsx` — mount `TerminalProvider` just inside `ToastProvider` (no-op when venue not enabled).
-- `types/venue.ts` (`VenueBootstrap`) — add `in_person_payments_enabled`, `card_present_ready` (already carries `stripe_connected_account_id`).
+**Env:** `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` (the **platform** publishable key) in `lib/env.ts` + `.env.example`; the SDK needs it at init.
 
-## Phase order (mobile portion)
-Backend (data model + endpoints) ships and is tested first. Then: custom dev build with the SDK → Terminal provider + hooks (simulated reader first) → UI sheet + button → harden + store builds. Apple entitlement approval is the long pole — request it on day 1.
+**Button gate** (`components/bookings/BookingDetailContent.tsx`, inside the existing "Payments & confirmation" card) implements canonical §3.4 rule 2 verbatim: `in_person_payments_enabled && isAppointmentVenue && status !== 'Cancelled' && payment_state ∉ {paid,refunded} && (balance_due_pence === null || balance_due_pence > 0)`. Render nothing else when it's false — the surface simply doesn't exist.
+
+## What's left before a pilot
+1. An **EAS dev build** carrying the native Terminal module (nothing runs without it).
+2. A pilot venue with `in_person_payments_enabled = true` (self-serve from the web dashboard now) **and** the Stripe card-present capability on its connected account.
+3. **Apple entitlement** — only if the pilot uses Tap to Pay. A WisePad 3 pilot skips this entirely and can go first.
+4. On-device manual passes the mock SDK can't cover: first-pair firmware update, low battery, disconnect mid-collection, on-reader PIN on a high-value card, contactless tap on the reader. A **simulated** Bluetooth reader (`simulated: true` in `__DEV__`) covers discover/connect/collect/confirm before hardware arrives.
