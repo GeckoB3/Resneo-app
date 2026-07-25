@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import type { Reader } from '@stripe/stripe-terminal-react-native';
 
+import { shouldSimulateCardReaders } from '@/lib/env';
 import { ensureTerminalLocationId } from '@/lib/payments/connection-token';
 import {
   ensureTerminalInitialized,
@@ -67,7 +68,9 @@ export interface UseBluetoothReader {
   reset: () => void;
 }
 
-const USE_SIMULATED = __DEV__;
+/** See `shouldSimulateCardReaders`: defaults to `__DEV__`, overridable so a dev
+ *  build can pair with a real WisePad instead of the simulator. */
+const USE_SIMULATED = shouldSimulateCardReaders();
 
 export function useBluetoothReader(): UseBluetoothReader {
   const sdk = getTerminalSdk();

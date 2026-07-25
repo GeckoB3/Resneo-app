@@ -63,6 +63,29 @@ export function getStripePublishableKey(): string | null {
   return process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || null;
 }
 
+/**
+ * Whether the Stripe Terminal SDK should discover SIMULATED readers instead of
+ * real hardware (Tap to Pay design doc §7.6 / §7A.10).
+ *
+ * This used to be plain `__DEV__`, which welded together two unrelated
+ * questions: "is this a debug build?" and "am I using fake readers?". That made
+ * two combinations impossible — a dev build could never talk to a real WisePad,
+ * so all hardware testing had to happen on a release build with no logs, no
+ * fast refresh, and a full rebuild per change. Firmware updates and pairing
+ * failures are exactly when you want the logs.
+ *
+ * `EXPO_PUBLIC_TERMINAL_SIMULATED` now decides explicitly. When it is unset we
+ * fall back to `__DEV__`, so nothing changes for existing builds and a release
+ * build still gets real readers unless someone opts in deliberately.
+ */
+export function shouldSimulateCardReaders(): boolean {
+  // Static member access only — see the inlining note at the top of this file.
+  const raw = process.env.EXPO_PUBLIC_TERMINAL_SIMULATED;
+  if (raw === 'true') return true;
+  if (raw === 'false') return false;
+  return __DEV__;
+}
+
 export function getAppVersion(): string {
   return Constants.expoConfig?.version ?? '1.0.0';
 }

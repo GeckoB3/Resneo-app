@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 import type { Reader } from '@stripe/stripe-terminal-react-native';
 
+import { shouldSimulateCardReaders } from '@/lib/env';
 import { ensureTerminalLocationId } from '@/lib/payments/connection-token';
 import {
   ensureTerminalInitialized,
@@ -53,8 +54,12 @@ export interface UseTapToPayReader {
   reset: () => void;
 }
 
-/** Simulated readers in dev builds so the flow is testable without a real card. */
-const USE_SIMULATED = __DEV__;
+/**
+ * Simulated readers so the flow is testable without hardware or a real card.
+ * Defaults to `__DEV__`; set `EXPO_PUBLIC_TERMINAL_SIMULATED` to override, which
+ * is what lets a dev build talk to real hardware (see `shouldSimulateCardReaders`).
+ */
+const USE_SIMULATED = shouldSimulateCardReaders();
 
 export function useTapToPayReader(): UseTapToPayReader {
   const sdk = getTerminalSdk();
