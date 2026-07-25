@@ -178,6 +178,23 @@ describe('useRefundPayment', () => {
     const { result } = await renderHook(() => useRefundPayment('bk-1'), { wrapper: wrapper() });
     await result.current.mutateAsync({ paymentId: 'pay-1' });
 
+    expect(mockApiFetch.mock.calls[0]![0]).toBe('/api/venue/bookings/bk-1/charge');
+    expect(JSON.parse((mockApiFetch.mock.calls[0]![1] as { body: string }).body)).toEqual({
+      action: 'refund',
+      payment_id: 'pay-1',
+    });
+  });
+
+  it('routes a visit payment to the booking its ledger row is anchored to (§5.7)', async () => {
+    // payments[] is visit-wide, but the charge route looks the row up scoped
+    // to the booking in the URL. Posting a sibling's row to the opened booking
+    // 409s "This payment cannot be refunded", so the refund must follow the
+    // anchor, not the line the staff member happens to have open.
+    mockApiFetch.mockResolvedValue({ success: true });
+    const { result } = await renderHook(() => useRefundPayment('bk-1'), { wrapper: wrapper() });
+    await result.current.mutateAsync({ paymentId: 'pay-1', paymentBookingId: 'bk-2' });
+
+    expect(mockApiFetch.mock.calls[0]![0]).toBe('/api/venue/bookings/bk-2/charge');
     expect(JSON.parse((mockApiFetch.mock.calls[0]![1] as { body: string }).body)).toEqual({
       action: 'refund',
       payment_id: 'pay-1',

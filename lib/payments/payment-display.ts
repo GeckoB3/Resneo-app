@@ -86,6 +86,22 @@ export function refundablePayments(
 }
 
 /**
+ * §5.7 — `payments[]` is VISIT-wide, so a row listed under this booking may
+ * have been collected on a different service of the same visit. Staff need to
+ * see which, because the amount and the service on screen won't match up.
+ *
+ * Returns null for a row anchored to the booking on screen (the normal case)
+ * and for older payloads that omit `booking_id`.
+ */
+export function otherVisitLineNote(
+  payment: BookingPaymentRow,
+  openedBookingId: string,
+): string | null {
+  if (!payment.booking_id || payment.booking_id === openedBookingId) return null;
+  return 'Collected on another service in this visit';
+}
+
+/**
  * §5.7 — the one-line "this covers the whole visit" note for the Take payment
  * sheet, or null when there is nothing extra to say.
  *

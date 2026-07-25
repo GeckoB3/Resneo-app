@@ -335,6 +335,35 @@ describe('refunds', () => {
     expect(screen.getByText('Refund issued')).toBeTruthy();
   });
 
+  it("routes a sibling line's payment to its own booking, and labels it (§5.7)", async () => {
+    // payments[] is visit-wide. Refunding a sibling's row against the opened
+    // booking 409s server-side, and staff have no other clue the row belongs
+    // to a different service.
+    await render(
+      <TakePaymentSheet
+        target={target({ isAdmin: true, payments: [{ ...paid, booking_id: 'bk-2' }] })}
+        onClose={jest.fn()}
+      />,
+    );
+    await press('Refund a payment');
+    expect(screen.getByText('Collected on another service in this visit')).toBeTruthy();
+
+    await press('Refund £25.00 · Card');
+    await press('Tap to confirm refund');
+    expect(mockRefund).toHaveBeenCalledWith({ paymentId: 'pay-1', paymentBookingId: 'bk-2' });
+  });
+
+  it('does not label a row anchored to the booking on screen', async () => {
+    await render(
+      <TakePaymentSheet
+        target={target({ isAdmin: true, payments: [{ ...paid, booking_id: 'bk-1' }] })}
+        onClose={jest.fn()}
+      />,
+    );
+    await press('Refund a payment');
+    expect(screen.queryByText('Collected on another service in this visit')).toBeNull();
+  });
+
   it('offers nothing to refund when no row succeeded', async () => {
     await render(
       <TakePaymentSheet

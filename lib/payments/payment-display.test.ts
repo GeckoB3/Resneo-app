@@ -1,6 +1,7 @@
 import {
   bookingPaymentStateLabel,
   canTakeInPersonPayment,
+  otherVisitLineNote,
   paymentMethodLabel,
   refundablePayments,
   visitPaymentNote,
@@ -101,6 +102,34 @@ describe('refundablePayments', () => {
   it('tolerates a missing list', () => {
     expect(refundablePayments(undefined)).toEqual([]);
     expect(refundablePayments(null)).toEqual([]);
+  });
+});
+
+describe('otherVisitLineNote (§5.7)', () => {
+  const row = (over: Partial<BookingPaymentRow>): BookingPaymentRow => ({
+    id: 'p1',
+    method: 'card_present',
+    status: 'succeeded',
+    amount_pence: 2500,
+    note: null,
+    created_at: '2026-07-23T10:00:00Z',
+    ...over,
+  });
+
+  it('flags a row collected on another service of the visit', () => {
+    // payments[] is visit-wide, so the opened line lists a sibling's payment
+    // with no other clue that it belongs elsewhere.
+    expect(otherVisitLineNote(row({ booking_id: 'bk-2' }), 'bk-1')).toBe(
+      'Collected on another service in this visit',
+    );
+  });
+
+  it('says nothing for a row anchored to the booking on screen', () => {
+    expect(otherVisitLineNote(row({ booking_id: 'bk-1' }), 'bk-1')).toBeNull();
+  });
+
+  it('tolerates an older payload with no booking_id', () => {
+    expect(otherVisitLineNote(row({}), 'bk-1')).toBeNull();
   });
 });
 

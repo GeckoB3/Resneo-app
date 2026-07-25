@@ -162,9 +162,25 @@ export function useRefundPayment(bookingId: string) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (input: { paymentId: string }): Promise<{ success: boolean }> => {
+    mutationFn: async (input: {
+      paymentId: string;
+      /**
+       * The booking the ledger row is ANCHORED to. Defaults to the opened
+       * booking, which is right for a standalone appointment.
+       */
+      paymentBookingId?: string | null;
+    }): Promise<{ success: boolean }> => {
       if (!accessToken) throw new Error('Missing access token');
-      return apiFetch<{ success: boolean }>(`/api/venue/bookings/${bookingId}/charge`, {
+      /**
+       * §5.7 — `payments[]` is VISIT-wide, so a row shown on this booking may
+       * have been collected on a different service of the same visit. The
+       * refund route looks the row up scoped to the booking in the URL
+       * (`.eq('booking_id', id)`), so posting a sibling's row to the opened
+       * booking 409s "This payment cannot be refunded". Route it to the row's
+       * own booking instead.
+       */
+      const anchorBookingId = input.paymentBookingId ?? bookingId;
+      return apiFetch<{ success: boolean }>(`/api/venue/bookings/${anchorBookingId}/charge`, {
         accessToken,
         method: 'POST',
         body: JSON.stringify({ action: 'refund', payment_id: input.paymentId }),

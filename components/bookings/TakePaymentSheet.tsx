@@ -12,6 +12,7 @@ import { newPaymentAttemptId } from '@/lib/payments/attempt-id';
 import { useBluetoothReader } from '@/lib/payments/bluetoothReader';
 import { loadLastMethod, rememberLastMethod } from '@/lib/payments/last-method';
 import {
+  otherVisitLineNote,
   paymentMethodLabel,
   refundablePayments,
   visitPaymentNote,
@@ -174,10 +175,13 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
     }
   }
 
-  async function runRefund(paymentId: string) {
+  async function runRefund(paymentId: string, paymentBookingId?: string) {
     setError(null);
     try {
-      await refund.mutateAsync({ paymentId });
+      // Route to the booking the row is anchored to, not the one on screen —
+      // a visit payment is listed on every line but only refundable from its
+      // own (§5.7).
+      await refund.mutateAsync({ paymentId, paymentBookingId });
       hapticSuccess();
       setRefundArmedId(null);
       setSuccess({ amountPence: null, receiptEmailed: false, heading: 'Refund issued' });
@@ -383,28 +387,37 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
               Refunds are for the full payment. Card refunds go back to the client&apos;s card.
             </Text>
             <View style={styles.buttons}>
-              {refundable.map((p) => (
-                <Button
-                  key={p.id}
-                  label={
-                    refundArmedId === p.id
-                      ? 'Tap to confirm refund'
-                      : `Refund ${formatPence(p.amount_pence)} · ${paymentMethodLabel(p.method)}`
-                  }
-                  variant="danger"
-                  disabled={busy}
-                  loading={refund.isPending && refundArmedId === p.id}
-                  onPress={() => {
-                    if (refundArmedId !== p.id) {
-                      hapticWarning();
-                      setRefundArmedId(p.id);
-                      return;
-                    }
-                    void runRefund(p.id);
-                  }}
-                  fullWidth
-                />
-              ))}
+              {refundable.map((p) => {
+                const lineNote = otherVisitLineNote(p, target.id);
+                return (
+                  <View key={p.id} style={styles.refundRow}>
+                    <Button
+                      label={
+                        refundArmedId === p.id
+                          ? 'Tap to confirm refund'
+                          : `Refund ${formatPence(p.amount_pence)} · ${paymentMethodLabel(p.method)}`
+                      }
+                      variant="danger"
+                      disabled={busy}
+                      loading={refund.isPending && refundArmedId === p.id}
+                      onPress={() => {
+                        if (refundArmedId !== p.id) {
+                          hapticWarning();
+                          setRefundArmedId(p.id);
+                          return;
+                        }
+                        void runRefund(p.id, p.booking_id);
+                      }}
+                      fullWidth
+                    />
+                    {lineNote ? (
+                      <Text variant="bodySmall" tone="muted">
+                        {lineNote}
+                      </Text>
+                    ) : null}
+                  </View>
+                );
+              })}
               <Button
                 label="Back"
                 variant="secondary"
@@ -740,5 +753,8 @@ const styles = StyleSheet.create({
   },
   buttons: {
     gap: spacing.sm,
+  },
+  refundRow: {
+    gap: spacing.xs,
   },
 });
