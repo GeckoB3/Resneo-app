@@ -18,6 +18,13 @@ export interface CalendarGridBooking {
   client_arrived_at?: string | null;
   staff_attendance_confirmed_at?: string | null;
   guest_attendance_confirmed_at?: string | null;
+  /**
+   * Whole-booking payment state — drives the "paid" glyph on the bar. Optional:
+   * older backends omit it, and it is the denormalised column, so it can lag
+   * (no glyph on a booking that is in fact settled) but never claims paid for
+   * one that is not.
+   */
+  payment_state?: string | null;
 }
 
 export interface CalendarGridBlock {

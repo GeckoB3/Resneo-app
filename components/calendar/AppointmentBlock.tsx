@@ -1,3 +1,4 @@
+import { SymbolView } from 'expo-symbols';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
 import { ComplianceFlagDot } from '@/components/compliance/ComplianceFlagBadge';
@@ -150,6 +151,22 @@ export function pickBlockLayout(params: {
 // Status action tray helpers — mirrors web quick-action buttons
 // ---------------------------------------------------------------------------
 
+/**
+ * The "settled" marker on a calendar bar. A glyph, not a text pill: a
+ * lane-split or compact bar can be only a few characters wide and the guest
+ * name must keep its reserve. The block's accessibility label carries the word
+ * "paid" so the meaning is not colour- or icon-only.
+ */
+function PaidGlyph({ color }: { color: string }) {
+  return (
+    <SymbolView
+      name={{ ios: 'sterlingsign.circle.fill', android: 'paid', web: 'paid' }}
+      tintColor={color}
+      size={12}
+    />
+  );
+}
+
 /** Tray action: label shown on the button and the status/attendance value to apply. */
 type TrayAction =
   | { kind: 'status'; status: string; label: string }
@@ -239,6 +256,14 @@ type AppointmentBlockProps = {
   actionPending?: boolean;
   /** Per-booking compliance flag — renders a small coloured dot. */
   complianceFlag?: ComplianceBookingFlag | null;
+  /**
+   * The visit is settled — renders a small "paid" glyph so staff can see at a
+   * glance which of the day's appointments still need collecting.
+   *
+   * A glyph rather than a text pill because a lane-split or compact bar can be
+   * only a few characters wide, and the guest name must never be squeezed out.
+   */
+  paid?: boolean;
 };
 
 /**
@@ -265,6 +290,7 @@ export function AppointmentBlock({
   onArrivalToggle,
   actionPending = false,
   complianceFlag,
+  paid = false,
 }: AppointmentBlockProps) {
   const palette = bookingCalendarBlockPalette({
     status,
@@ -387,7 +413,9 @@ export function AppointmentBlock({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${timeLabel}, ${guestName}, ${serviceName}, ${statusLabel}`}
+      accessibilityLabel={`${timeLabel}, ${guestName}, ${serviceName}, ${statusLabel}${
+        paid ? ', paid' : ''
+      }`}
       accessibilityHint="Tap to open. Touch and hold to move."
       onPress={() => onPress(id)}
       style={({ pressed }) => [
@@ -412,6 +440,7 @@ export function AppointmentBlock({
                 {guestName}
                 {trayActions.length === 0 ? ` · ${timeLabel.split('–')[0]}` : ''}
               </Text>
+              {paid ? <PaidGlyph color={subtleText} /> : null}
               {complianceFlag ? <ComplianceFlagDot flag={complianceFlag} /> : null}
             </View>
             {layout.rows >= 2 ? (
@@ -428,10 +457,11 @@ export function AppointmentBlock({
         </View>
       ) : (
         <>
-          {/* Compliance flag — top-right corner. */}
-          {complianceFlag ? (
+          {/* Paid + compliance markers — top-right corner. */}
+          {paid || complianceFlag ? (
             <View style={styles.complianceDot} pointerEvents="none">
-              <ComplianceFlagDot flag={complianceFlag} />
+              {paid ? <PaidGlyph color={subtleText} /> : null}
+              {complianceFlag ? <ComplianceFlagDot flag={complianceFlag} /> : null}
             </View>
           ) : null}
 
@@ -498,6 +528,11 @@ const styles = StyleSheet.create({
     top: 3,
     right: 4,
     zIndex: 1,
+    // Paid glyph and compliance dot can both be present; keep them side by side
+    // rather than stacked on top of each other.
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
   },
   // ---- Row layout (short bars) ----
   rowShell: {

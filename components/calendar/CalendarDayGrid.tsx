@@ -667,6 +667,7 @@ export function CalendarDayGrid({
               onArrivalToggle={onArrivalToggle}
               actionPending={pendingActionIds?.has(item.booking.id) ?? false}
               complianceFlag={complianceFlags?.[item.booking.id]}
+              paid={item.booking.payment_state === 'paid'}
               onDragReschedule={onDragReschedule}
               // Compact rows are too short for a usable resize grip — hide the
               // affordance and disable the resize gesture (web parity: no

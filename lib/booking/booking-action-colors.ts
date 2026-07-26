@@ -18,6 +18,10 @@ export const ACTION_COLORS = {
   arrived: { background: '#F59E0B', text: '#451A03' }, // amber attention
   attendance: { background: '#7C3AED', text: '#FFFFFF' }, // violet
   noShow: { background: '#E11D48', text: '#FFFFFF' }, // rose-600
+  // Take payment: brand navy. Deliberately not green — emerald already means
+  // "start/complete" in this toolbar, and a money action must not be mistaken
+  // for a lifecycle one at a glance.
+  payment: { background: '#003B6F', text: '#FFFFFF' },
 } as const satisfies Record<string, ActionColors>;
 
 /** Colour for a forward status transition, keyed by its TARGET status. */

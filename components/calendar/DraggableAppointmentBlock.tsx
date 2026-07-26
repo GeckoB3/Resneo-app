@@ -138,6 +138,8 @@ type DraggableAppointmentBlockProps = {
   onArrivalToggle?: (id: string, arrived: boolean) => void;
   actionPending?: boolean;
   complianceFlag?: ComplianceBookingFlag | null;
+  /** The visit is settled — renders the "paid" glyph on the bar. */
+  paid?: boolean;
   /** Called on drag release with the new snapped "HH:mm". Parent commits. */
   onDragReschedule?: (bookingId: string, newTime: string) => void;
   /** Called on resize release with the new snapped duration (minutes). */
@@ -229,6 +231,7 @@ export function DraggableAppointmentBlock({
   onArrivalToggle,
   actionPending = false,
   complianceFlag,
+  paid = false,
   onDragReschedule,
   onDragResize,
   onDragConflictReject,
@@ -678,6 +681,7 @@ export function DraggableAppointmentBlock({
           onArrivalToggle={onArrivalToggle}
           actionPending={actionPending}
           complianceFlag={complianceFlag}
+          paid={paid}
         />
 
         {/* Resize affordance — a grip on the bottom edge (hold it to resize). */}

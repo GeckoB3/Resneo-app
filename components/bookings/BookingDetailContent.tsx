@@ -541,6 +541,34 @@ export function BookingDetailContent({
     ? bookingPaymentStateLabel(booking.payment_state)
     : null;
 
+  /**
+   * The money action is mirrored into the top toolbar beside Arrived/Confirm.
+   * It previously lived only inside the collapsed "Payments & confirmation"
+   * card, so collecting during a live checkout meant scrolling and expanding a
+   * section with the client waiting.
+   *
+   * When the visit is settled the same slot reads "Paid" and still opens the
+   * sheet. That is not only a status: `canTakeInPersonPayment` is false once
+   * `payment_state` is 'paid', and the sheet had exactly one entry point, so a
+   * fully paid booking previously had NO route to the refund UI at all.
+   * Cancelled-but-paid bookings therefore keep the button too, since a refund is
+   * precisely what they need.
+   */
+  const inPersonPaymentsOn = venue?.in_person_payments_enabled === true && isAppointmentVenue;
+  const isPaidInPerson = inPersonPaymentsOn && booking.payment_state === 'paid';
+  const showPaymentToolbarAction = canTakePayment || isPaidInPerson;
+
+  const openTakePayment = () =>
+    setTakePaymentTarget({
+      id: booking.id,
+      guestName,
+      balanceDuePence: booking.balance_due_pence ?? null,
+      visitPayment: booking.visit_payment ?? null,
+      isAdmin,
+      payments: booking.payments ?? [],
+      cardPresentReady: venue?.card_present_ready === true,
+    });
+
   // Web parity: deposit actions (send link / record cash / waive / refund) show
   // whenever the booking is active; cancelled bookings instead get a refund
   // banner + a permanent-delete card. Card-hold actions ignore the cancel gate:
@@ -670,6 +698,7 @@ export function BookingDetailContent({
     showInlinePrimary ||
     showArrivedToggle ||
     showAttendanceConfirmToggle ||
+    showPaymentToolbarAction ||
     !!revertAction ||
     destructiveActions.length > 0;
 
@@ -934,8 +963,22 @@ export function BookingDetailContent({
               style={styles.primaryAction}
             />
           ) : null}
-          {showArrivedToggle || showAttendanceConfirmToggle ? (
+          {showArrivedToggle || showAttendanceConfirmToggle || showPaymentToolbarAction ? (
             <View style={styles.toolbarGrid}>
+              {showPaymentToolbarAction ? (
+                <View style={styles.toolbarCell}>
+                  <Button
+                    label={isPaidInPerson ? 'Paid' : 'Take payment'}
+                    variant="secondary"
+                    customColors={
+                      isPaidInPerson ? ACTION_COLORS.complete : ACTION_COLORS.payment
+                    }
+                    size="sm"
+                    fullWidth
+                    onPress={openTakePayment}
+                  />
+                </View>
+              ) : null}
               {showArrivedToggle ? (
                 <View style={styles.toolbarCell}>
                   <Button
@@ -1234,21 +1277,7 @@ export function BookingDetailContent({
             {/* Take payment (Tap to Pay / card reader / cash). Optional, per
                 appointment: nothing depends on it and nothing auto-opens it. */}
             {canTakePayment ? (
-              <Button
-                label="Take payment"
-                fullWidth
-                onPress={() =>
-                  setTakePaymentTarget({
-                    id: booking.id,
-                    guestName,
-                    balanceDuePence: booking.balance_due_pence ?? null,
-                    visitPayment: booking.visit_payment ?? null,
-                    isAdmin,
-                    payments: booking.payments ?? [],
-                    cardPresentReady: venue?.card_present_ready === true,
-                  })
-                }
-              />
+              <Button label="Take payment" fullWidth onPress={openTakePayment} />
             ) : null}
             {showDepositActions ? (
               <Button
