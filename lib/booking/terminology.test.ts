@@ -53,9 +53,42 @@ describe('partySizeLabel', () => {
 });
 
 describe('newBookingActionLabel', () => {
-  it('lowercases the booking term in a "New …" label', () => {
-    expect(newBookingActionLabel(null)).toBe('New reservation');
-    expect(newBookingActionLabel({ booking: 'Booking' } as never)).toBe('New booking');
+  it('says "New booking" on an appointment venue', () => {
+    // The default term is "Reservation", which suits a restaurant but read as
+    // "New reservation" in a salon or barber.
+    expect(newBookingActionLabel(null, true)).toBe('New booking');
+  });
+
+  it('keeps the reservation default for a table venue', () => {
+    expect(newBookingActionLabel(null, false)).toBe('New reservation');
+  });
+
+  it('lets a venue term the venue set itself win either way', () => {
+    expect(newBookingActionLabel({ booking: 'Booking' } as never, false)).toBe('New booking');
+    expect(newBookingActionLabel({ booking: 'Visit' } as never, true)).toBe('New visit');
+    // A barber set up through the web onboarding gets "Appointment".
+    expect(newBookingActionLabel({ booking: 'Appointment' } as never, true)).toBe(
+      'New appointment',
+    );
+  });
+
+  it('treats the merged-in default as "not customised"', () => {
+    /**
+     * The regression test for why this stayed broken on device. VenueProvider
+     * spreads DEFAULT_TERMINOLOGY in before anything reads it, so `booking` is
+     * ALWAYS a string — an implementation that treats "a term is present" as
+     * "the venue chose it" never reaches the appointment branch, and every
+     * venue keeps reading "New reservation".
+     */
+    expect(newBookingActionLabel({ booking: 'Reservation' } as never, true)).toBe('New booking');
+    expect(newBookingActionLabel({ booking: 'reservation' } as never, true)).toBe('New booking');
+    expect(newBookingActionLabel({ booking: 'Reservation' } as never, false)).toBe(
+      'New reservation',
+    );
+  });
+
+  it('ignores a blank term rather than rendering "New "', () => {
+    expect(newBookingActionLabel({ booking: '  ' } as never, true)).toBe('New booking');
   });
 });
 

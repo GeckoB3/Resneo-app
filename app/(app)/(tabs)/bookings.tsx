@@ -1126,7 +1126,7 @@ export default function BookingsScreen() {
                   ? 'Nothing booked for this period yet.'
                   : `No ${(STATUS_FILTERS.find((o) => o.key === status)?.label ?? status).toLowerCase()} appointments for this period.`
               }
-              actionLabel={canCreateBooking ? newBookingActionLabel(terminology) : undefined}
+              actionLabel={canCreateBooking ? newBookingActionLabel(terminology, isAppointment) : undefined}
               onAction={canCreateBooking ? openAddMenu : undefined}
             />
           }
@@ -1145,7 +1145,7 @@ export default function BookingsScreen() {
           Walk-in), matching the Calendar tab. */}
       {!selectionMode && canCreateBooking ? (
         <Fab
-          accessibilityLabel={newBookingActionLabel(terminology)}
+          accessibilityLabel={newBookingActionLabel(terminology, isAppointment)}
           onPress={openAddMenu}
         />
       ) : null}
@@ -1153,10 +1153,10 @@ export default function BookingsScreen() {
       {/* Add menu — same choice the Calendar tab's FAB offers: a full booking or
           a walk-in ("Start Appointment Now"). */}
       <Sheet visible={addMenuOpen} onClose={closeAddMenu}>
-        <Text variant="subheading">{newBookingActionLabel(terminology)}</Text>
+        <Text variant="subheading">{newBookingActionLabel(terminology, isAppointment)}</Text>
         <View style={styles.addMenuActions}>
           <Button
-            label={newBookingActionLabel(terminology)}
+            label={newBookingActionLabel(terminology, isAppointment)}
             variant="primary"
             fullWidth
             onPress={() => goToNewBooking()}

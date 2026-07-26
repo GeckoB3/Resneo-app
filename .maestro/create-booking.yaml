@@ -18,21 +18,20 @@ env:
 ---
 - assertVisible: "Calendar"
 
-# The floating action button has accessibilityLabel = newBookingActionLabel(),
-# which is "New <booking-term>" — default terminology makes this "New
-# reservation". It is venue-terminology dependent.
-# TODO: add testID="calendar-fab" to components/ui/Fab.tsx so this selector does
-# not depend on the venue's booking terminology.
+# The FAB carries testID="calendar-fab" so this does not depend on the venue's
+# booking terminology: its visible label is newBookingActionLabel(), which reads
+# "New booking" on an appointment venue, "New reservation" on a table venue, and
+# whatever a venue has set for itself ("New appointment", ...).
 - tapOn:
-    text: "New reservation"
+    id: "calendar-fab"
 
-# The add-action Sheet opens with the same primary label; tapping it routes to
-# /booking/new. (On an empty-slot tap the sheet title is "Add at HH:MM"; from the
-# FAB it is "Add to calendar".)
+# The add-action Sheet opens with that same terminology-dependent label, so match
+# the "New <term>" shape rather than one venue's wording. (On an empty-slot tap
+# the sheet title is "Add at HH:MM"; from the FAB it is "Add to calendar".)
+# TODO: give the Sheet's primary Button its own testID so this can drop the regex.
 - assertVisible: "Add to calendar"
 - tapOn:
-    text: "New reservation"
-    index: 1 # the Sheet's primary Button (the FAB itself is index 0)
+    text: "New (booking|reservation|appointment|visit)"
 
 # ---- Service step ----
 - assertVisible: "Choose a service"

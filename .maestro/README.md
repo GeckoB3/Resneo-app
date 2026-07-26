@@ -71,14 +71,16 @@ button, the "Continue" / "Create booking" / "Cancel booking" buttons, step
 headings like "Choose a service" / "Guest details" / "Review & confirm").
 
 Some targets only have venue-data or positional identity today (the first
-service row, the first time slot, the FAB whose label depends on venue booking
-terminology — default "New reservation"). For those the flow uses an optional
+service row, the first time slot). For those the flow uses an optional
 `id:` regex with a positional fallback and leaves a `# TODO: add testID` comment
 naming the component. **Adding those testIDs to the screens is intentionally out
 of scope for this batch** — do it in a follow-up so the flows can drop the
 positional fallbacks and become fully deterministic. Candidates:
 
-- `components/ui/Fab.tsx` → `testID="calendar-fab"`
+- ~~`components/ui/Fab.tsx` → `testID="calendar-fab"`~~ — **done.** The FAB's
+  visible label is venue terminology ("New booking" on an appointment venue,
+  "New reservation" on a table venue, or whatever the venue set), so selecting
+  on text broke as soon as the wording changed.
 - `components/booking-wizard/ServicePickerStep.tsx` → `testID="service-option-0"`
 - `components/booking-wizard/TimeSlotStep.tsx` → `testID="time-slot-0"`
 - `components/booking-wizard/GuestDetailsStep.tsx` → `testID` on the

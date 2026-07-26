@@ -42,6 +42,7 @@ import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { newBookingActionLabel } from '@/lib/booking/terminology';
+import { isAppointmentFromVenue } from '@/lib/venue/venue-experience';
 import { hapticSelect, hapticSuccess } from '@/lib/haptics';
 import {
   addDaysToDateStr,
@@ -275,7 +276,19 @@ export default function CalendarScreen() {
   const params = useLocalSearchParams<{ date?: string }>();
   const { colors } = useTheme();
   const reduceMotion = useReduceMotion();
-  const { venue, terminology, featureFlags } = useVenueContext();
+  const { venue, terminology, pricingTier, bookingModel, featureFlags } = useVenueContext();
+  /**
+   * Drives the create-button wording: appointment venues say "New booking",
+   * table venues keep the "reservation" default (see `newBookingActionLabel`).
+   *
+   * Memoized deliberately. Calling this bare in the body made the React
+   * Compiler bail out of four existing memoizations further down this (very
+   * large) component — "existing memoization could not be preserved".
+   */
+  const isAppointmentVenue = useMemo(
+    () => isAppointmentFromVenue(pricingTier, bookingModel),
+    [pricingTier, bookingModel],
+  );
   // Weekly venue opening hours → drives the "Closed" shading on the grids.
   const openingHours = venue?.opening_hours ?? null;
   const timeZone = venue?.timezone ?? 'Europe/London';
@@ -1912,7 +1925,7 @@ export default function CalendarScreen() {
               linked context (not on a wide day, where linked are just columns). */}
           {!linkedContextActive ? (
             <Fab
-              accessibilityLabel={newBookingActionLabel(terminology)}
+              accessibilityLabel={newBookingActionLabel(terminology, isAppointmentVenue)}
               onPress={() => setAddSheetTarget({ kind: 'fab' })}
             />
           ) : null}
@@ -1926,7 +1939,7 @@ export default function CalendarScreen() {
         </Text>
         <View style={styles.addSheetActions}>
           <Button
-            label={newBookingActionLabel(terminology)}
+            label={newBookingActionLabel(terminology, isAppointmentVenue)}
             variant="primary"
             fullWidth
             onPress={() => {

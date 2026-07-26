@@ -16,6 +16,14 @@ type FabProps = {
   onPress: () => void;
   /** Screen-reader label, e.g. "New appointment". */
   accessibilityLabel: string;
+  /**
+   * Stable handle for the Maestro E2E flows. Those scripts previously tapped
+   * the FAB by its visible text, which is venue TERMINOLOGY ("New reservation"
+   * / "New booking" / "New appointment"), so the flow broke whenever a venue
+   * used different wording. Defaults to `calendar-fab` because both current
+   * users are that button.
+   */
+  testID?: string;
 };
 
 /**
@@ -23,7 +31,7 @@ type FabProps = {
  * Deliberately small (52pt circle) so it stays out of the content's way;
  * presses scale down with a spring for a tactile, Apple-like feel.
  */
-export function Fab({ onPress, accessibilityLabel }: FabProps) {
+export function Fab({ onPress, accessibilityLabel, testID = 'calendar-fab' }: FabProps) {
   const { colors } = useTheme();
   const reduceMotion = useReduceMotion();
   const scale = useSharedValue(1);
@@ -34,6 +42,7 @@ export function Fab({ onPress, accessibilityLabel }: FabProps) {
 
   return (
     <AnimatedPressable
+      testID={testID}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       onPressIn={() => {
