@@ -217,6 +217,43 @@ describe('useTapToPayReader', () => {
     expect(mockApi.cancelDiscovering).toHaveBeenCalled();
   });
 
+  it('initialises the SDK before probing device support', async () => {
+    // Without this ordering the SDK answers "First initialize the Stripe
+    // Terminal SDK before performing any action" every time, so the support gate
+    // silently never runs and Tap to Pay is offered on incapable devices.
+    const order: string[] = [];
+    mockApi.initialize.mockImplementation(async () => {
+      order.push('initialize');
+      return {};
+    });
+    mockApi.supportsReadersOfType.mockImplementation(async () => {
+      order.push('supportsReadersOfType');
+      return { readerSupportResult: true };
+    });
+
+    const { result } = await renderHook(() => useTapToPayReader());
+    await act(async () => {
+      await result.current.checkSupport();
+    });
+
+    expect(order).toEqual(['initialize', 'supportsReadersOfType']);
+    expect(result.current.supported).toBe(true);
+  });
+
+  it('leaves support unknown when the SDK cannot be initialised', async () => {
+    mockApi.initialize.mockResolvedValue({ error: { message: 'no connection token' } });
+    const { result } = await renderHook(() => useTapToPayReader());
+
+    await act(async () => {
+      await result.current.checkSupport();
+    });
+
+    // Unknown, not false: a token failure says nothing about the hardware, and
+    // false would hide Tap to Pay on a capable phone.
+    expect(result.current.supported).toBeNull();
+    expect(mockApi.supportsReadersOfType).not.toHaveBeenCalled();
+  });
+
   it('leaves support UNKNOWN when the SDK cannot answer, so the option stays visible', async () => {
     mockApi.supportsReadersOfType.mockResolvedValue({ error: { message: 'not initialised' } });
     const { result } = await renderHook(() => useTapToPayReader());

@@ -132,6 +132,15 @@ export function useTapToPayReader(): UseTapToPayReader {
 
   const checkSupport = useCallback(async (): Promise<boolean> => {
     try {
+      /**
+       * `supportsReadersOfType` requires an initialised SDK. Without this the
+       * call always came back "First initialize the Stripe Terminal SDK before
+       * performing any action", so the device-support gate never actually ran:
+       * `supported` stayed unknown and Tap to Pay was offered on every device,
+       * including ones that cannot do it (§7A.3).
+       */
+      const init = await ensureTerminalInitialized(terminal);
+      if (!init.ok) return supported === true;
       const res = await terminal.supportsReadersOfType({
         deviceType: 'tapToPay',
         discoveryMethod: 'tapToPay',
