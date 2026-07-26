@@ -40,11 +40,23 @@ const ANDROID_CHANNELS = {
 async function configureAndroidChannels(notifications: NonNullable<typeof Notifications>): Promise<void> {
   if (Platform.OS !== 'android') return;
   const { AndroidImportance, AndroidNotificationVisibility } = notifications;
+  /**
+   * `sound` is deliberately NOT set. On input it is a CUSTOM sound FILENAME that
+   * must be bundled through the expo-notifications plugin's `sounds` array, so
+   * passing the string 'default' made Android hunt for a file called "default"
+   * and log on every launch:
+   *
+   *   expo-notifications: Custom sound 'default' not found in native app.
+   *
+   * Omitting it is what actually gives the system default notification sound at
+   * these importance levels. (The value read back from a channel is
+   * `'default' | 'custom' | null`, which describes the state rather than being
+   * something to pass in — an easy trap.)
+   */
   try {
     await notifications.setNotificationChannelAsync(ANDROID_CHANNELS.bookingsNew, {
       name: 'New bookings',
       importance: AndroidImportance.HIGH,
-      sound: 'default',
       vibrationPattern: [0, 250, 250, 250],
       lightColor: '#003B6F',
       lockscreenVisibility: AndroidNotificationVisibility.PUBLIC,
@@ -52,13 +64,11 @@ async function configureAndroidChannels(notifications: NonNullable<typeof Notifi
     await notifications.setNotificationChannelAsync(ANDROID_CHANNELS.bookingsChanged, {
       name: 'Booking changes',
       importance: AndroidImportance.DEFAULT,
-      sound: 'default',
       lockscreenVisibility: AndroidNotificationVisibility.PUBLIC,
     });
     await notifications.setNotificationChannelAsync(ANDROID_CHANNELS.reminders, {
       name: 'Reminders',
       importance: AndroidImportance.DEFAULT,
-      sound: 'default',
       lockscreenVisibility: AndroidNotificationVisibility.PUBLIC,
     });
   } catch (error) {
