@@ -369,6 +369,57 @@ describe('switching between the two card paths', () => {
   });
 });
 
+describe('SDK command serialisation', () => {
+  /**
+   * Terminal executes ONE command at a time. A second discover/connect while one
+   * is running fails with "could not execute discoverReaders because the SDK is
+   * busy with another command" and can leave the first caller half-applied — the
+   * observed symptom being connect, immediate disconnect, reconnect, then a
+   * discovery erroring with "You must disconnect from reader before discovering
+   * readers". The races are real: "Use card reader" auto-reconnects while the
+   * pairing step may also scan, a fresh pairing continues straight into
+   * collection, and staff can double-tap any of it.
+   */
+  it('shares one discovery when two callers scan at once', async () => {
+    discoverable = [WISEPAD];
+    const { result } = await renderHook(() => useBluetoothReader());
+
+    await act(async () => {
+      await Promise.all([result.current.scan(), result.current.scan()]);
+    });
+
+    expect(mockApi.discoverReaders).toHaveBeenCalledTimes(1);
+  });
+
+  it('shares one connect when two callers connect at once', async () => {
+    const { result } = await renderHook(() => useBluetoothReader());
+
+    const [a, b] = await act(async () =>
+      Promise.all([result.current.connect(WISEPAD), result.current.connect(WISEPAD)]),
+    );
+
+    expect(mockApi.connectReader).toHaveBeenCalledTimes(1);
+    // Both callers still get a real answer rather than one hanging.
+    expect(a).toBe(true);
+    expect(b).toBe(true);
+  });
+
+  it('shares one auto-reconnect when the collect and pairing steps both ask', async () => {
+    mockStore.set('resneo_bt_reader_serial_own', 'WP-1');
+    discoverable = [WISEPAD];
+    const { result } = await renderHook(() => useBluetoothReader());
+
+    const [a, b] = await act(async () =>
+      Promise.all([result.current.reconnectRemembered(), result.current.reconnectRemembered()]),
+    );
+
+    expect(a).toBe(true);
+    expect(b).toBe(true);
+    expect(mockApi.discoverReaders).toHaveBeenCalledTimes(1);
+    expect(mockApi.connectReader).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('adversarial sequences', () => {
   it('settles BOTH connects when staff double-tap (neither may hang)', async () => {
     discoverable = [PHONE];

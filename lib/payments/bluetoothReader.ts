@@ -41,6 +41,32 @@ export type BluetoothReaderStatus =
 /** Battery percentage under which staff are warned to charge the reader. */
 const LOW_BATTERY_THRESHOLD = 0.15;
 
+/**
+ * Share an in-flight call instead of starting a second one.
+ *
+ * The Terminal SDK executes ONE command at a time. A second `discoverReaders`
+ * or `connectReader` while one is running fails with "could not execute
+ * discoverReaders because the SDK is busy with another command", and can leave
+ * the first caller's state half-applied — the symptom being a connect, an
+ * immediate disconnect, a reconnect, and then a discovery that errors with
+ * "You must disconnect from reader before discovering readers."
+ *
+ * The races are easy to hit: "Use card reader" auto-reconnects while the
+ * pairing step may also scan, a just-paired reader continues straight into
+ * collection, and staff can double-tap any of it.
+ */
+function shareInFlight<T>(
+  ref: { current: Promise<T> | null },
+  run: () => Promise<T>,
+): Promise<T> {
+  if (ref.current) return ref.current;
+  const pending = run().finally(() => {
+    ref.current = null;
+  });
+  ref.current = pending;
+  return pending;
+}
+
 /** Remembered reader serial, per venue scope, so we can reconnect silently. */
 function serialStorageKey(ownerVenueId: string | null): string {
   return `resneo_bt_reader_serial_${ownerVenueId ?? 'own'}`;
@@ -93,6 +119,10 @@ export function useBluetoothReader(): UseBluetoothReader {
   const reconnectRememberedRef = useRef<(() => Promise<boolean>) | null>(null);
   /** True while a Bluetooth scan is running, for the unmount cleanup below. */
   const discoveringRef = useRef(false);
+  // In-flight SDK work, shared by concurrent callers (see `shareInFlight`).
+  const scanInFlightRef = useRef<Promise<void> | null>(null);
+  const connectInFlightRef = useRef<Promise<boolean> | null>(null);
+  const reconnectInFlightRef = useRef<Promise<boolean> | null>(null);
   /** Stable handle to the SDK for cleanup that must not re-run on every render. */
   const terminalRef = useRef<TerminalHookApi | null>(null);
 
@@ -208,6 +238,7 @@ export function useBluetoothReader(): UseBluetoothReader {
   }, [accessToken, ownerVenueId, sdk, terminal]);
 
   const scan = useCallback(async (): Promise<void> => {
+    return shareInFlight(scanInFlightRef, async () => {
     setError(null);
     setDiscovered([]);
     discoveredRef.current = [];
@@ -247,10 +278,12 @@ export function useBluetoothReader(): UseBluetoothReader {
       setStatus('error');
       setError(e instanceof Error ? e.message : 'Could not search for card readers.');
     }
+    });
   }, [prepare, terminal]);
 
   const connect = useCallback(
     async (reader: Reader.Type): Promise<boolean> => {
+      return shareInFlight(connectInFlightRef, async () => {
       setError(null);
       try {
         const locationId = await prepare();
@@ -291,6 +324,7 @@ export function useBluetoothReader(): UseBluetoothReader {
         setError(e instanceof Error ? e.message : 'Could not connect to the card reader.');
         return false;
       }
+      });
     },
     [ownerVenueId, prepare, terminal],
   );
@@ -310,6 +344,7 @@ export function useBluetoothReader(): UseBluetoothReader {
       : (localConnected ?? null);
 
   const reconnectRemembered = useCallback(async (): Promise<boolean> => {
+    return shareInFlight(reconnectInFlightRef, async () => {
     let serial: string | null = null;
     try {
       serial = await SecureStore.getItemAsync(serialStorageKey(ownerVenueId ?? null));
@@ -334,6 +369,7 @@ export function useBluetoothReader(): UseBluetoothReader {
     const match = discoveredRef.current.find((r) => r.serialNumber === serial);
     if (!match) return false;
     return connect(match);
+    });
   }, [connect, ownerVenueId, scan, terminal]);
 
   // Late-bind for the disconnect handler, which is defined above this callback.
