@@ -38,6 +38,7 @@
     "android": {
       "version": "1.0.1",
       "package": "com.resneo.app",
+      "googleServicesFile": "./google-services.json",
       "softwareKeyboardLayoutMode": "resize",
       "blockedPermissions": [
         "android.permission.READ_MEDIA_IMAGES",
