@@ -7,6 +7,11 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { Text } from '@/components/ui/Text';
+import {
+  filterSlotsForGroup,
+  pickSlotAtOrAfter,
+  type GroupBusyInterval,
+} from '@/lib/booking/group-slot-availability';
 import { hapticSelect } from '@/lib/haptics';
 import {
   useAnyPractitionerAvailability,
@@ -49,6 +54,24 @@ type TimeSlotStepProps = {
   minBookingNoticeHours?: number;
   /** When false, today is not bookable: same-day slots are all hidden. */
   allowSameDayBooking?: boolean;
+  /**
+   * Time already claimed by OTHER attendees of the same group booking.
+   *
+   * The group's people are not created until the whole group is submitted, so
+   * the availability endpoint cannot know about them and happily offers the
+   * same slot to every attendee. Filtering here is the only place that can stop
+   * two of them being booked onto one practitioner at one time.
+   */
+  groupBusy?: GroupBusyInterval[];
+  /** Duration being booked now, for the overlap maths against `groupBusy`. */
+  groupDurationMinutes?: number;
+  /**
+   * Preselect the first slot at or after this "HH:mm". Used to follow straight
+   * on from the previous attendee with the same practitioner, so a group runs
+   * back to back rather than leaving an accidental gap. Unlike `preferredTime`
+   * this does NOT need an exact match.
+   */
+  earliestStart?: string | null;
 };
 
 export function formatSlotTime(startTime: string): string {
@@ -147,6 +170,9 @@ export function TimeSlotStep({
   timeZone = 'Europe/London',
   minBookingNoticeHours = 1,
   allowSameDayBooking = true,
+  groupBusy,
+  groupDurationMinutes = 0,
+  earliestStart = null,
 }: TimeSlotStepProps) {
   const { colors } = useTheme();
   const isAnyAvailable = practitionerId === ANY_AVAILABLE_PRACTITIONER_ID;
@@ -216,11 +242,25 @@ export function TimeSlotStep({
   const isToday = date === now.date;
   const noticeMinutes = Math.max(0, minBookingNoticeHours) * 60;
   const visibleSlots = useMemo(() => {
-    if (!isToday) return slots;
-    if (!allowSameDayBooking) return [];
-    const cutoff = now.minutes + noticeMinutes;
-    return slots.filter((slot) => startMinutes(slot.start_time) >= cutoff);
-  }, [slots, isToday, allowSameDayBooking, now.minutes, noticeMinutes]);
+    let out = slots;
+    if (isToday) {
+      if (!allowSameDayBooking) return [];
+      const cutoff = now.minutes + noticeMinutes;
+      out = out.filter((slot) => startMinutes(slot.start_time) >= cutoff);
+    }
+    // Times another attendee of this group already holds with the same
+    // practitioner. The server cannot exclude these: those bookings do not exist
+    // until the whole group is submitted.
+    return groupBusy?.length ? filterSlotsForGroup(out, groupDurationMinutes, groupBusy) : out;
+  }, [
+    slots,
+    isToday,
+    allowSameDayBooking,
+    now.minutes,
+    noticeMinutes,
+    groupBusy,
+    groupDurationMinutes,
+  ]);
 
   const periods = useMemo(() => groupSlotsByPeriod(visibleSlots), [visibleSlots]);
 
@@ -237,6 +277,24 @@ export function TimeSlotStep({
       onSelectSlot(match);
     }
   }, [visibleSlots, preferredTime, selectedSlot, onSelectSlot]);
+
+  /**
+   * One-shot: follow straight on from the previous attendee with the same
+   * practitioner, so a group runs back to back instead of leaving a gap that
+   * nobody intended. Unlike `preferredTime` this takes the first slot AT OR
+   * AFTER the time, since the exact minute is rarely on the grid. Only ever
+   * preselects — staff can pick anything else, and nothing is chosen when no
+   * slot qualifies.
+   */
+  const appliedEarliestStart = useRef(false);
+  useEffect(() => {
+    if (appliedEarliestStart.current || !earliestStart || selectedSlot) return;
+    const match = pickSlotAtOrAfter(visibleSlots, earliestStart);
+    if (match) {
+      appliedEarliestStart.current = true;
+      onSelectSlot(match);
+    }
+  }, [visibleSlots, earliestStart, selectedSlot, onSelectSlot]);
 
   const isLoading = isAnyAvailable ? pooledQuery.isLoading : singleQuery.isLoading;
   const isFetching = isAnyAvailable ? pooledQuery.isFetching : singleQuery.isFetching;

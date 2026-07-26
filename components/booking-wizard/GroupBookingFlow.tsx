@@ -17,6 +17,11 @@ import { Input } from '@/components/ui/Input';
 import { Text } from '@/components/ui/Text';
 import { ANALYTICS_EVENTS, track } from '@/lib/analytics';
 import { ApiError } from '@/lib/api/client';
+import { addMinutesToTime } from '@/lib/booking/booking-format';
+import {
+  earliestStartAfterGroup,
+  groupBusyIntervals,
+} from '@/lib/booking/group-slot-availability';
 import {
   buildGroupPayload,
   type GroupPerson,
@@ -174,8 +179,39 @@ export function GroupBookingFlow({
   const startNewPerson = useCallback(() => {
     resetDraft();
     setDraftLabel(`Guest ${people.length + 1}`);
+    // Start on the day the group is already booked for. A group is one visit,
+    // so sending staff back to today and making them scroll to the first
+    // attendee's date for every extra person is pure friction.
+    const anchorDate = people[0]?.bookingDate;
+    if (anchorDate) {
+      setDraftDate(anchorDate);
+      setDraftMonthAnchor(anchorDate);
+    }
     setStep('label');
-  }, [people.length, resetDraft]);
+  }, [people, resetDraft]);
+
+  /** This attendee's total length, matching what `commitDraft` will store. */
+  const draftDurationMinutes = useMemo(() => {
+    if (!draftService) return 0;
+    const base = draftVariant ? draftVariant.duration_minutes : draftService.durationMinutes;
+    return base + draftSelectedAddons.reduce((s, a) => s + a.additional_duration_minutes, 0);
+  }, [draftService, draftVariant, draftSelectedAddons]);
+
+  /** Time the attendees added so far already hold on the day being picked. */
+  const groupBusy = useMemo(() => groupBusyIntervals(people, draftDate), [people, draftDate]);
+
+  /**
+   * When this attendee is seeing a practitioner who is already booked in the
+   * group, offer the slot right after that practitioner finishes. Skipped on
+   * "any available", where there is no single practitioner to follow on from.
+   */
+  const followOnStart = useMemo(() => {
+    const practitionerId =
+      draftService && draftService.practitionerId !== ANY_AVAILABLE_PRACTITIONER_ID
+        ? draftService.practitionerId
+        : null;
+    return earliestStartAfterGroup(groupBusy, practitionerId);
+  }, [groupBusy, draftService]);
 
   /** Commit the in-progress attendee to the group and return to the review. */
   const commitDraft = useCallback(() => {
@@ -395,6 +431,9 @@ export function GroupBookingFlow({
                     <Text variant="bodyMedium">{p.label}</Text>
                     <Text variant="caption" tone="muted">
                       {p.serviceName} · {p.practitionerName} · {p.bookingTime.slice(0, 5)}
+                      {'–'}
+                      {addMinutesToTime(p.bookingTime, p.durationMinutes)}
+                      {` · ${p.durationMinutes} min`}
                       {p.pricePence != null ? ` · ${formatPence(p.pricePence)}` : ''}
                     </Text>
                   </View>
@@ -635,6 +674,9 @@ export function GroupBookingFlow({
           variantId={draftVariant?.id ?? null}
           venueId={venueId}
           timeZone={timeZone}
+          groupBusy={groupBusy}
+          groupDurationMinutes={draftDurationMinutes}
+          earliestStart={followOnStart}
         />
       </View>
     );
