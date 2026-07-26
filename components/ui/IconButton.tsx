@@ -56,14 +56,29 @@ export function IconButton({
     opacity: 1 - pressed.get() * 0.12,
   }));
 
-  const bg =
-    active || variant === 'tinted'
+  /**
+   * `active` means "this control is currently doing something" (compact rows on,
+   * a filter applied, a non-default sort). It used to be a pale `brandSubtle`
+   * wash behind a brand-tinted glyph, which read as almost identical to the
+   * bordered resting state — staff could not tell at a glance whether the toggle
+   * was on. It is now a SOLID brand fill with an on-brand glyph, which is
+   * unmistakable and matches how a pressed toggle is expected to look.
+   *
+   * `tinted` keeps the old soft wash: it is decoration for emphasis, not state.
+   */
+  const bg = active
+    ? colors.brand
+    : variant === 'tinted'
       ? colors.brandSubtle
       : variant === 'bordered'
         ? colors.surface
         : 'transparent';
-  const borderColor = variant === 'bordered' ? colors.border : 'transparent';
-  const glyph = tint ?? (active ? colors.brand : colors.textSecondary);
+  const borderColor = active
+    ? colors.brand
+    : variant === 'bordered'
+      ? colors.border
+      : 'transparent';
+  const glyph = tint ?? (active ? colors.onBrand : colors.textSecondary);
 
   return (
     <AnimatedPressable

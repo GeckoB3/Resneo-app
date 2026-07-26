@@ -55,6 +55,7 @@ export function LinkedVenueCalendarGrid({
   refreshing,
   onRefresh,
   embedded,
+  compact,
 }: {
   venue: LinkedVenueCalendar;
   /** The day being shown ("YYYY-MM-DD") — drives the working-hours window. */
@@ -75,6 +76,13 @@ export function LinkedVenueCalendarGrid({
    * swallow the parent's pan and the venues below the first stay unreachable.
    */
   embedded?: boolean;
+  /**
+   * Shrink the vertical scale for an at-a-glance read (the toolbar "Compact"
+   * toggle). Works here even though these grids are usually `embedded`:
+   * `CalendarDayGrid` cannot measure a viewport when embedded, so it renders
+   * compact at its floor scale, which is still far tighter than the default.
+   */
+  compact?: boolean;
 }) {
   const { colors } = useTheme();
 
@@ -199,6 +207,7 @@ export function LinkedVenueCalendarGrid({
         <View style={embedded ? undefined : styles.gridWrap}>
           <CalendarDayGrid
             embedded={embedded}
+            compact={compact}
             bookings={gridBookings}
             workingHours={workingHours}
             venueHours={venueHours}

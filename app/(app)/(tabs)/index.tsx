@@ -1513,9 +1513,12 @@ export default function CalendarScreen() {
                   promptly; the 60s poll is the fallback. */}
               <LiveDot state={liveState} />
               {/* Compact day rows (web parity: the toolbar "Compact" toggle) —
-                  day scope only, like the web. Hidden in the linked-venue
-                  context: the linked grid is embedded and can't fit-to-screen. */}
-              {scope === 'day' && !linkedContextActive ? (
+                  day scope only, like the web. Shown in the linked-venue context
+                  too: the linked grid is embedded and so cannot fit-to-screen,
+                  but `CalendarDayGrid` falls back to its floor scale there, which
+                  is still much tighter than the default. It used to be hidden,
+                  leaving no way to compact a linked venue's day. */}
+              {scope === 'day' ? (
                 <IconButton
                   icon={{
                     ios: 'rectangle.compress.vertical',
@@ -1761,6 +1764,7 @@ export default function CalendarScreen() {
                 }>
                 <LinkedVenueCalendarGrid
                   embedded
+                  compact={compactDay}
                   venue={activeLinkedVenue}
                   date={anchor}
                   nowMinutes={nowMinutes}
