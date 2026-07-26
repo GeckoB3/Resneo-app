@@ -42,6 +42,14 @@ const mockApi = {
   discoveredReaders: [] as Reader.Type[],
 };
 
+/**
+ * Android runtime-permission helper. ALWAYS resolves `{ error: ... }`, with
+ * `error: null` meaning everything was granted.
+ */
+const mockPermissions = jest.fn(
+  async (): Promise<{ error?: Record<string, string> | null }> => ({ error: null }),
+);
+
 jest.mock('@/lib/payments/terminal-sdk', () => {
   const actual = jest.requireActual<typeof import('@/lib/payments/terminal-sdk')>(
     '@/lib/payments/terminal-sdk',
@@ -53,7 +61,7 @@ jest.mock('@/lib/payments/terminal-sdk', () => {
         if (props) mockCallbacks.push(props);
         return mockApi;
       },
-      requestNeededAndroidPermissions: jest.fn(async () => true),
+      requestNeededAndroidPermissions: mockPermissions,
     }),
   };
 });
@@ -81,6 +89,8 @@ jest.mock('expo-secure-store', () => ({
     mockStore.delete(k);
   }),
 }));
+
+import { Platform } from 'react-native';
 
 import { useBluetoothReader } from '@/lib/payments/bluetoothReader';
 import { useTapToPayReader } from '@/lib/payments/terminal';
@@ -119,6 +129,9 @@ beforeEach(() => {
     if (typeof v === 'function' && 'mockClear' in v) (v as jest.Mock).mockClear();
   });
   mockApi.initialize.mockResolvedValue({});
+  mockApi.connectedReader = null;
+  mockPermissions.mockReset();
+  mockPermissions.mockResolvedValue({ error: null });
   discoverable = [];
   mockApi.discoverReaders.mockImplementation(async () => {
     emitDiscovered(discoverable);
@@ -265,6 +278,94 @@ describe('useTapToPayReader', () => {
     // `null` (unknown) keeps the Tap to Pay button on screen; `false` would hide
     // it on a perfectly capable phone.
     expect(result.current.supported).toBeNull();
+  });
+});
+
+describe('switching between the two card paths', () => {
+  it('frees a connected reader before scanning for Bluetooth readers', async () => {
+    // Terminal refuses discovery while a reader is connected. Choosing Tap to
+    // Pay and then switching to the card reader failed the scan with "You must
+    // disconnect from reader before discovering readers."
+    mockApi.connectedReader = PHONE;
+    const order: string[] = [];
+    mockApi.disconnectReader.mockImplementation(async () => {
+      order.push('disconnect');
+      return {};
+    });
+    mockApi.discoverReaders.mockImplementation(async () => {
+      order.push('discover');
+      emitDiscovered([]);
+      return {};
+    });
+
+    const { result } = await renderHook(() => useBluetoothReader());
+    await act(async () => {
+      await result.current.scan();
+    });
+
+    expect(order).toEqual(['disconnect', 'discover']);
+  });
+
+  it('does not re-pair when the remembered reader is already connected', async () => {
+    // The scan guard above would otherwise disconnect and pair again, which on
+    // real hardware is a multi-second stall with the client waiting.
+    mockStore.set('resneo_bt_reader_serial_own', 'SN-BT');
+    mockApi.connectedReader = reader({ deviceType: 'wisePad3', serialNumber: 'SN-BT' });
+
+    const { result } = await renderHook(() => useBluetoothReader());
+    const ok = await act(async () => result.current.reconnectRemembered());
+
+    expect(ok).toBe(true);
+    expect(mockApi.discoverReaders).not.toHaveBeenCalled();
+    expect(mockApi.disconnectReader).not.toHaveBeenCalled();
+  });
+
+  it('refuses the Bluetooth path when location permission is denied', async () => {
+    // Previously only Tap to Pay enforced this, so a denied permission blocked
+    // one path and let the other run on to fail later against real hardware.
+    const originalOS = Platform.OS;
+    Object.defineProperty(Platform, 'OS', { value: 'android', configurable: true });
+    try {
+      mockPermissions.mockResolvedValue({
+        error: { 'android.permission.ACCESS_FINE_LOCATION': 'denied' },
+      });
+      const { result } = await renderHook(() => useBluetoothReader());
+
+      await act(async () => {
+        await result.current.scan();
+      });
+
+      expect(result.current.status).toBe('error');
+      // Names the app settings: Android stops prompting after two refusals, so
+      // "permission needed" alone leaves staff with no way forward.
+      expect(result.current.error).toContain('app settings');
+      expect(mockApi.discoverReaders).not.toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(Platform, 'OS', { value: originalOS, configurable: true });
+    }
+  });
+
+  it('proceeds on Android when every permission was granted', async () => {
+    /**
+     * The regression test for the bug this whole area had: the helper resolves
+     * `{ error: null }` on success, and the old `'error' in result` check read
+     * that as a refusal. Tap to Pay was therefore blocked on EVERY Android
+     * device, however the permissions were set.
+     */
+    const originalOS = Platform.OS;
+    Object.defineProperty(Platform, 'OS', { value: 'android', configurable: true });
+    try {
+      mockPermissions.mockResolvedValue({ error: null });
+      discoverable = [PHONE];
+      const { result } = await renderHook(() => useTapToPayReader());
+
+      const outcome = await act(async () => result.current.connect());
+
+      expect(outcome).toEqual({ ok: true, error: null });
+      expect(mockApi.connectReader).toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(Platform, 'OS', { value: originalOS, configurable: true });
+    }
   });
 });
 

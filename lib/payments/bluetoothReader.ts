@@ -6,6 +6,7 @@ import type { Reader } from '@stripe/stripe-terminal-react-native';
 import { shouldSimulateCardReaders } from '@/lib/env';
 import { ensureTerminalLocationId } from '@/lib/payments/connection-token';
 import {
+  androidPermissionMessage,
   ensureTerminalInitialized,
   getTerminalSdk,
   terminalErrorMessage,
@@ -187,13 +188,21 @@ export function useBluetoothReader(): UseBluetoothReader {
       throw new Error(init.error ?? 'Could not start the card reader.');
     }
     if (Platform.OS === 'android' && sdk?.requestNeededAndroidPermissions) {
-      await sdk.requestNeededAndroidPermissions({
+      const granted = await sdk.requestNeededAndroidPermissions({
         accessFineLocation: {
           title: 'Location permission',
           message: 'Location is required to connect to your card reader.',
           buttonPositive: 'Allow',
         },
       });
+      /**
+       * The result was previously ignored here while the Tap to Pay path
+       * enforced it, so a refusal blocked Tap to Pay but let the reader path run
+       * on. Stripe requires these permissions for card-present on BOTH paths, so
+       * a real reader would have failed later and less clearly.
+       */
+      const refused = androidPermissionMessage(granted);
+      if (refused) throw new Error(refused);
     }
     return ensureTerminalLocationId({ accessToken, ownerVenueId: ownerVenueId ?? null });
   }, [accessToken, ownerVenueId, sdk, terminal]);
@@ -204,6 +213,18 @@ export function useBluetoothReader(): UseBluetoothReader {
     discoveredRef.current = [];
     try {
       await prepare();
+      /**
+       * Terminal refuses to discover while ANY reader is connected, so free it
+       * first. Without this, choosing "Tap to Pay on this phone" and then
+       * switching to the card reader in the same session fails the scan with
+       * "You must disconnect from reader before discovering readers." The
+       * connect path already guards this; discovery did not.
+       */
+      if (terminal.connectedReader) {
+        await terminal.disconnectReader().catch(() => {
+          // Already gone; the discovery below still works.
+        });
+      }
       setStatus('scanning');
       discoveringRef.current = true;
       const res = await terminal.discoverReaders({
@@ -297,11 +318,23 @@ export function useBluetoothReader(): UseBluetoothReader {
     }
     if (!serial) return false;
 
+    /**
+     * Already holding the remembered reader: nothing to do. Without this the
+     * scan below would disconnect it (see the guard in `scan`) and pair again,
+     * which on real hardware is a visible multi-second stall with the client
+     * waiting.
+     */
+    const live = terminal.connectedReader;
+    if (live && live.deviceType !== 'tapToPay' && live.serialNumber === serial) {
+      setStatus('ready');
+      return true;
+    }
+
     await scan();
     const match = discoveredRef.current.find((r) => r.serialNumber === serial);
     if (!match) return false;
     return connect(match);
-  }, [connect, ownerVenueId, scan]);
+  }, [connect, ownerVenueId, scan, terminal]);
 
   // Late-bind for the disconnect handler, which is defined above this callback.
   // Done in an effect, never during render: mutating a ref while rendering is

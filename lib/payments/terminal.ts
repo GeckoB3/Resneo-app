@@ -5,6 +5,7 @@ import type { Reader } from '@stripe/stripe-terminal-react-native';
 import { shouldSimulateCardReaders } from '@/lib/env';
 import { ensureTerminalLocationId } from '@/lib/payments/connection-token';
 import {
+  androidPermissionMessage,
   ensureTerminalInitialized,
   getTerminalSdk,
   terminalErrorMessage,
@@ -205,10 +206,10 @@ export function useTapToPayReader(): UseTapToPayReader {
             buttonPositive: 'Allow',
           },
         });
-        // The helper resolves with an error-shaped object when denied.
-        if (granted && typeof granted === 'object' && 'error' in granted) {
-          return fail('Location permission is needed to take card payments.');
-        }
+        // Judge `error`'s VALUE: the helper always returns an object with an
+        // `error` key and nulls it on success.
+        const refused = androidPermissionMessage(granted);
+        if (refused) return fail(refused);
       }
 
       const locationId = await ensureTerminalLocationId({

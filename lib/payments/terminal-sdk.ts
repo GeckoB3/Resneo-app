@@ -37,9 +37,19 @@ export interface TerminalSdkModule {
     logLevel?: 'none' | 'verbose' | 'error' | 'warning';
   }>;
   useStripeTerminal: (props?: Record<string, unknown>) => TerminalHookApi;
+  /**
+   * Android runtime permissions. Returns `{ error: null }` when everything was
+   * granted, or `{ error: { '<permission>': '<status>' } }` naming the FIRST
+   * one refused. It is always an object with an `error` key, so the result must
+   * be judged on `error`'s value, never on key presence (see
+   * `androidPermissionMessage`).
+   *
+   * On Android 12+ it also requests BLUETOOTH_CONNECT and BLUETOOTH_SCAN, for
+   * the Tap to Pay path as well as the reader path.
+   */
   requestNeededAndroidPermissions?: (opts?: {
     accessFineLocation?: { title: string; message: string; buttonPositive: string };
-  }) => Promise<boolean>;
+  }) => Promise<{ error?: Record<string, string> | null }>;
 }
 
 /** Result envelope shared by most SDK calls: `{ error? }` rather than throwing. */
@@ -133,6 +143,36 @@ export async function ensureTerminalInitialized(
 /** Test seam: forget the initialised flag. */
 export function __resetTerminalInitForTests(): void {
   initialized = false;
+}
+
+/**
+ * Turn the Android permission result into a message, or null when everything
+ * needed was granted.
+ *
+ * TWO bugs lived here. First, the caller tested `'error' in result`, which is
+ * key presence: the SDK ALWAYS returns an object carrying an `error` key and
+ * sets it to `null` on success, so the check was true even when every permission
+ * was granted and Tap to Pay could never work on Android. Judge `error`'s value.
+ *
+ * Second, every failure was reported as a location problem. On Android 12+ the
+ * SDK also requires BLUETOOTH_CONNECT and BLUETOOTH_SCAN (granted under "Nearby
+ * devices"), for Tap to Pay as much as for a reader, and the returned key says
+ * which one was refused. Blaming location sent staff to the wrong setting.
+ *
+ * The messages name the app settings on purpose: after two refusals Android
+ * stops prompting and resolves denied immediately, so "permission is needed" on
+ * its own leaves no way forward.
+ */
+export function androidPermissionMessage(
+  result: { error?: Record<string, string> | null } | null | undefined,
+): string | null {
+  const error = result?.error;
+  if (!error || Object.keys(error).length === 0) return null;
+  const refused = Object.keys(error).join(' ');
+  if (refused.includes('BLUETOOTH')) {
+    return 'Nearby devices permission is needed to connect to a card reader. Turn it on for Resneo in your phone app settings.';
+  }
+  return 'Location permission is needed to take card payments. Turn it on for Resneo in your phone app settings.';
 }
 
 /** Human-readable message from an SDK error envelope, with a safe fallback. */
