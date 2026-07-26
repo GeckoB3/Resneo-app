@@ -75,6 +75,21 @@ export interface VisitPayment {
   total_pence: number | null;
   amount_paid_pence: number;
   balance_due_pence: number | null;
+  /**
+   * What each service of the visit costs, in visit order. Optional: older
+   * payloads omit it, and the backend only resolves names for a real multi-line
+   * visit (a standalone booking already carries `service_variant_name`).
+   */
+  lines?: VisitPaymentLine[];
+}
+
+/** One priced service of a visit. */
+export interface VisitPaymentLine {
+  booking_id: string;
+  /** Service name when resolvable; null for an unnamed or non-variant line. */
+  name: string | null;
+  /** This line's price; null when it cannot be determined (§5.7). */
+  total_pence: number | null;
 }
 
 /**

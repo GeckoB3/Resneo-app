@@ -1,12 +1,13 @@
 import {
   bookingPaymentStateLabel,
+  buildPriceSummary,
   canTakeInPersonPayment,
   otherVisitLineNote,
   paymentMethodLabel,
   refundablePayments,
   visitPaymentNote,
 } from '@/lib/payments/payment-display';
-import type { BookingPaymentRow, VisitPayment } from '@/types/booking-detail';
+import type { BookingDetail, BookingPaymentRow, VisitPayment } from '@/types/booking-detail';
 
 /**
  * §3.4 Take-payment gate + neutral state labels (Tap to Pay design doc).
@@ -102,6 +103,222 @@ describe('refundablePayments', () => {
   it('tolerates a missing list', () => {
     expect(refundablePayments(undefined)).toEqual([]);
     expect(refundablePayments(null)).toEqual([]);
+  });
+});
+
+describe('buildPriceSummary', () => {
+  const booking = (over: Partial<BookingDetail>): BookingDetail =>
+    ({
+      id: 'bk-1',
+      status: 'Booked',
+      booking_date: '2026-07-27',
+      booking_time: '10:00',
+      party_size: 1,
+      guest_id: 'g-1',
+      ...over,
+    }) as BookingDetail;
+
+  function labels(rows: ReturnType<typeof buildPriceSummary>) {
+    return rows.map((r) => [r.label, r.pence, r.note ?? null]);
+  }
+
+  it('lists the service, each add-on, and the booking total', () => {
+    const rows = buildPriceSummary(
+      booking({
+        service_variant_name: 'Cut & finish',
+        service_variant_price_pence: 3000,
+        addons: [
+          { addon_id: 'a1', addon_name_snapshot: 'Scalp massage', price_pence_at_booking: 500, duration_minutes_at_booking: 10 },
+          { addon_id: 'a2', addon_name_snapshot: 'Gloss', price_pence_at_booking: 800, duration_minutes_at_booking: 15 },
+        ],
+        addons_total_price_pence: 1300,
+        balance_due_pence: 4300,
+      }),
+    );
+
+    expect(labels(rows)).toEqual([
+      ['Cut & finish', 3000, null],
+      ['Scalp massage', 500, null],
+      ['Gloss', 800, null],
+      ['Booking total', 4300, null],
+      ['Outstanding', 4300, null],
+    ]);
+  });
+
+  it('resolves the total from variant + add-ons when the stored column is empty', () => {
+    // booking_total_price_pence is NULL for app/widget/staff-created appointments
+    // (backend §5.7), so the total must not depend on it.
+    const rows = buildPriceSummary(
+      booking({
+        service_variant_name: 'Massage',
+        service_variant_price_pence: 4000,
+        addons_total_price_pence: 1000,
+        booking_total_price_pence: null,
+        balance_due_pence: 5000,
+      }),
+    );
+    expect(rows.find((r) => r.label === 'Booking total')?.pence).toBe(5000);
+  });
+
+  it('names an unpriced service instead of hiding it', () => {
+    // Otherwise a £0 variant looks like a broken screen: no prices, and a Take
+    // payment sheet that demands a typed amount for no visible reason.
+    const rows = buildPriceSummary(
+      booking({ service_variant_name: 'Consultation', service_variant_price_pence: null }),
+    );
+    expect(labels(rows)).toEqual([['Consultation', null, 'Price not set']]);
+  });
+
+  it('shows the visit total for a multi-service visit', () => {
+    const rows = buildPriceSummary(
+      booking({
+        service_variant_name: 'Colour',
+        service_variant_price_pence: 6000,
+        visit_payment: {
+          booking_count: 2,
+          booking_ids: ['bk-1', 'bk-2'],
+          total_pence: 9000,
+          amount_paid_pence: 0,
+          balance_due_pence: 9000,
+        },
+        balance_due_pence: 9000,
+      }),
+    );
+    expect(rows.find((r) => r.label === 'Visit total (2 services)')?.pence).toBe(9000);
+  });
+
+  it('lists every service of a visit with its own price', () => {
+    const rows = buildPriceSummary(
+      booking({
+        id: 'bk-1',
+        service_variant_name: 'Cut & finish',
+        service_variant_price_pence: 3000,
+        addons: [
+          { addon_id: 'a1', addon_name_snapshot: 'Gloss', price_pence_at_booking: 800, duration_minutes_at_booking: 15 },
+        ],
+        addons_total_price_pence: 800,
+        visit_payment: {
+          booking_count: 2,
+          booking_ids: ['bk-1', 'bk-2'],
+          total_pence: 10300,
+          amount_paid_pence: 0,
+          balance_due_pence: 10300,
+          lines: [
+            { booking_id: 'bk-1', name: 'Cut & finish', total_pence: 3800 },
+            { booking_id: 'bk-2', name: 'Colour', total_pence: 6500 },
+          ],
+        },
+        balance_due_pence: 10300,
+      }),
+    );
+
+    // Per-line totals already include each line's add-ons, so this booking's own
+    // add-on row and "Booking total" must not also appear.
+    expect(labels(rows)).toEqual([
+      ['Cut & finish', 3800, null],
+      ['Colour', 6500, null],
+      ['Visit total (2 services)', 10300, null],
+      ['Outstanding', 10300, null],
+    ]);
+  });
+
+  it('falls back to the on-screen service name when a visit line has none', () => {
+    const rows = buildPriceSummary(
+      booking({
+        id: 'bk-1',
+        service_variant_name: 'Cut & finish',
+        service_variant_price_pence: 3000,
+        visit_payment: {
+          booking_count: 2,
+          booking_ids: ['bk-1', 'bk-2'],
+          total_pence: 9500,
+          amount_paid_pence: 0,
+          balance_due_pence: 9500,
+          lines: [
+            { booking_id: 'bk-1', name: null, total_pence: 3000 },
+            { booking_id: 'bk-2', name: null, total_pence: 6500 },
+          ],
+        },
+        balance_due_pence: 9500,
+      }),
+    );
+    expect(rows.slice(0, 2).map((r) => r.label)).toEqual(['Cut & finish', 'Service']);
+  });
+
+  it('keeps the single-booking breakdown when an older payload has no visit lines', () => {
+    const rows = buildPriceSummary(
+      booking({
+        service_variant_name: 'Colour',
+        service_variant_price_pence: 6000,
+        visit_payment: {
+          booking_count: 2,
+          booking_ids: ['bk-1', 'bk-2'],
+          total_pence: 9000,
+          amount_paid_pence: 0,
+          balance_due_pence: 9000,
+        },
+        balance_due_pence: 9000,
+      }),
+    );
+    expect(rows.map((r) => r.label)).toEqual([
+      'Colour',
+      'Visit total (2 services)',
+      'Outstanding',
+    ]);
+  });
+
+  it('reports a paid deposit without double-counting it as paid-so-far', () => {
+    // amount_paid_pence already includes the deposit, so showing both as
+    // deductions would understate what is owed.
+    const rows = buildPriceSummary(
+      booking({
+        service_variant_name: 'Facial',
+        service_variant_price_pence: 5000,
+        deposit_status: 'Paid',
+        deposit_amount_pence: 1000,
+        amount_paid_pence: 1000,
+        balance_due_pence: 4000,
+      }),
+    );
+    expect(labels(rows)).toEqual([
+      ['Facial', 5000, null],
+      ['Deposit paid', 1000, null],
+      ['Outstanding', 4000, null],
+    ]);
+  });
+
+  it('shows paid-so-far when in-person payments went on top of the deposit', () => {
+    const rows = buildPriceSummary(
+      booking({
+        service_variant_name: 'Facial',
+        service_variant_price_pence: 5000,
+        deposit_status: 'Paid',
+        deposit_amount_pence: 1000,
+        amount_paid_pence: 3000,
+        balance_due_pence: 2000,
+      }),
+    );
+    expect(rows.map((r) => r.label)).toEqual([
+      'Facial',
+      'Deposit paid',
+      'Paid so far',
+      'Outstanding',
+    ]);
+  });
+
+  it('explains an unknown balance rather than showing a dash', () => {
+    const rows = buildPriceSummary(
+      booking({
+        service_variant_name: 'Package',
+        service_variant_price_pence: 5000,
+        balance_due_pence: null,
+      }),
+    );
+    expect(rows.find((r) => r.label === 'Outstanding')?.note).toBe('Enter an amount');
+  });
+
+  it('renders nothing for a booking with no prices, deposit or payments', () => {
+    expect(buildPriceSummary(booking({}))).toEqual([]);
   });
 });
 

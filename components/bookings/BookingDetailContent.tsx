@@ -6,6 +6,7 @@ import { Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 
 import { BookingNotesSection } from '@/components/bookings/BookingNotesSection';
+import { BookingPriceSummary } from '@/components/bookings/BookingPriceSummary';
 import { ComplianceCard } from '@/components/bookings/ComplianceCard';
 import { DepositSheet, type DepositTarget } from '@/components/bookings/DepositSheet';
 import {
@@ -33,6 +34,7 @@ import { ApiError } from '@/lib/api/client';
 import { resolveCardHoldUiState, type CardHoldPillVariant } from '@/lib/booking/card-hold';
 import {
   bookingPaymentStateLabel,
+  buildPriceSummary,
   canTakeInPersonPayment,
 } from '@/lib/payments/payment-display';
 import { calendarDateInTimeZone } from '@/lib/dates/venue-dates';
@@ -628,6 +630,9 @@ export function BookingDetailContent({
 
   // Dietary + occasion are restaurant concepts — only table reservations
   // surface them; appointment bookings show requests/internal/profile notes.
+  // Price breakdown for the Payments card: items, totals, deposit, outstanding.
+  const priceRows = buildPriceSummary(booking);
+
   const hasNotes =
     !!booking.special_requests?.trim() ||
     !!booking.internal_notes?.trim() ||
@@ -1132,8 +1137,7 @@ export function BookingDetailContent({
           fights the keyboard/scroll and strands a white gap (Android/Fabric). */}
       <CollapsibleCard
         title="Notes"
-        summary={hasNotes ? null : 'None'}
-        defaultExpanded={hasNotes}
+        summary={hasNotes ? 'Added' : 'None'}
         animateLayout={false}>
         <BookingNotesSection booking={booking} isTable={isTable} />
       </CollapsibleCard>
@@ -1160,11 +1164,18 @@ export function BookingDetailContent({
       hasDeposit ||
       canResend ||
       canTakePayment ||
+      priceRows.length > 0 ||
       booking.cancellation_deadline ? (
         <CollapsibleCard
           title="Payments & confirmation"
           summary={
-            cardHoldState ? cardHoldState.pill?.label ?? 'Card hold' : booking.deposit_status ?? null
+            cardHoldState
+              ? cardHoldState.pill?.label ?? 'Card hold'
+              : // The outstanding balance is the most actionable money fact, so it
+                // shows on the collapsed header rather than only inside.
+                booking.balance_due_pence != null && booking.balance_due_pence > 0
+                ? `${formatPence(booking.balance_due_pence)} due`
+                : booking.deposit_status ?? null
           }
           defaultExpanded={
             cardHoldState
@@ -1172,6 +1183,8 @@ export function BookingDetailContent({
               : booking.deposit_status === 'Pending'
           }>
           <View style={styles.manage}>
+            {/* What the visit costs, what has been paid, what is left. */}
+            <BookingPriceSummary rows={priceRows} />
             {cardHoldState ? (
               <>
                 <View style={styles.detailRow}>
