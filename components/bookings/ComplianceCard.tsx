@@ -7,7 +7,7 @@ import { ComplianceRecordSheet } from '@/components/compliance/ComplianceRecordS
 import { auditEventLabel, RESULT_LABELS } from '@/components/compliance/complianceTypeLabels';
 import { Badge, type BadgeTone } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
-import { Card } from '@/components/ui/Card';
+import { CollapsibleCard } from '@/components/ui/CollapsibleCard';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
@@ -158,12 +158,11 @@ export function ComplianceCard({ bookingId, guestId, guestEmail, guestPhone }: C
   if (bookingQuery.data === null) return null;
   if (bookingQuery.isError) {
     return (
-      <Card>
-        <Text variant="label">Compliance</Text>
-        <Text variant="bodySmall" tone="muted" style={styles.sectionBody}>
+      <CollapsibleCard title="Compliance" summary="Unavailable">
+        <Text variant="bodySmall" tone="muted">
           Could not load compliance details. Pull to refresh to try again.
         </Text>
-      </Card>
+      </CollapsibleCard>
     );
   }
 
@@ -176,6 +175,22 @@ export function ComplianceCard({ bookingId, guestId, guestEmail, guestPhone }: C
   if (!bookingQuery.isLoading && requirements.length === 0 && records.length === 0) {
     return null;
   }
+
+  /**
+   * Header state for when the card is collapsed. This section used to be the one
+   * card that never collapsed, so Missing/Expired requirements were always on
+   * screen. Collapsing it must not hide them: anything needing action keeps a
+   * danger-toned marker on the header, which stays visible while collapsed.
+   */
+  const needsActionCount = requirements.filter((r) => requirementNeedsAction(r.state)).length;
+  const headerSummary =
+    needsActionCount > 0
+      ? null
+      : requirements.length > 0
+        ? 'All current'
+        : records.length > 0
+          ? `${records.length} record${records.length === 1 ? '' : 's'}`
+          : null;
 
   const dispatch = (complianceTypeId: string, sendVia: ComplianceSendVia) => {
     setSendingTypeId(complianceTypeId);
@@ -232,15 +247,20 @@ export function ComplianceCard({ bookingId, guestId, guestEmail, guestPhone }: C
 
   return (
     <>
-      <Card>
-        <Text variant="label">Compliance</Text>
-
+      <CollapsibleCard
+        title="Compliance"
+        summary={headerSummary}
+        marker={
+          needsActionCount > 0 ? (
+            <Badge label={`${needsActionCount} to action`} tone="danger" />
+          ) : null
+        }>
         {bookingQuery.isLoading ? (
-          <Text variant="bodySmall" tone="muted" style={styles.sectionBody}>
+          <Text variant="bodySmall" tone="muted">
             Loading compliance…
           </Text>
         ) : (
-          <>
+          <View style={styles.sections}>
             {requirements.length > 0 ? (
               <View style={styles.sectionBody}>
                 <Text variant="caption" tone="muted">
@@ -371,9 +391,9 @@ export function ComplianceCard({ bookingId, guestId, guestEmail, guestPhone }: C
 
             {/* Audit trail — mirrors web's collapsible <details> section */}
             <AuditTrail events={auditEvents} />
-          </>
+          </View>
         )}
-      </Card>
+      </CollapsibleCard>
 
       {/* In-venue capture sheet */}
       {captureTarget ? (
@@ -428,8 +448,12 @@ export function ComplianceCard({ bookingId, guestId, guestEmail, guestPhone }: C
 }
 
 const styles = StyleSheet.create({
+  // CollapsibleCard already spaces its body below the header, so the sections
+  // space themselves with a gap rather than each adding its own marginTop.
+  sections: {
+    gap: spacing.md,
+  },
   sectionBody: {
-    marginTop: spacing.sm,
     gap: spacing.sm,
   },
   requirementRow: {
@@ -483,7 +507,6 @@ const styles = StyleSheet.create({
   },
   // Audit trail styles
   auditContainer: {
-    marginTop: spacing.sm,
     borderRadius: 8,
     borderWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
