@@ -6,6 +6,7 @@ import { Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 
 import { BookingNotesSection } from '@/components/bookings/BookingNotesSection';
+import { BookingPaymentHistory } from '@/components/bookings/BookingPaymentHistory';
 import { BookingPriceSummary } from '@/components/bookings/BookingPriceSummary';
 import { ComplianceCard } from '@/components/bookings/ComplianceCard';
 import { DepositSheet, type DepositTarget } from '@/components/bookings/DepositSheet';
@@ -34,8 +35,11 @@ import { ApiError } from '@/lib/api/client';
 import { resolveCardHoldUiState, type CardHoldPillVariant } from '@/lib/booking/card-hold';
 import {
   bookingPaymentStateLabel,
+  buildPaymentHistory,
   buildPriceSummary,
   canTakeInPersonPayment,
+  pendingCardPayments,
+  pendingCardTotalPence,
 } from '@/lib/payments/payment-display';
 import { calendarDateInTimeZone } from '@/lib/dates/venue-dates';
 import { canMarkNoShowForSlot, clampNoShowGraceMinutes } from '@/lib/booking/no-show-grace';
@@ -540,6 +544,18 @@ export function BookingDetailContent({
   const paymentStateLabel = booking.payment_state
     ? bookingPaymentStateLabel(booking.payment_state)
     : null;
+  /**
+   * A card payment whose Stripe webhook hasn't landed yet. Until it does the
+   * booking still reads "Outstanding" with a live Take payment button, so
+   * without this the only honest signal that money is already in flight is
+   * invisible and the client gets charged twice. It has to be readable from the
+   * COLLAPSED card too, hence the summary/expanded overrides below.
+   */
+  const pendingCard = pendingCardPayments(booking.payments);
+  const hasPendingCard = pendingCard.length > 0;
+  const pendingCardPence = pendingCardTotalPence(booking.payments);
+  // Ledger history for reconciliation: pending, succeeded, failed and refunded.
+  const paymentHistory = buildPaymentHistory(booking.payments, booking.id);
 
   /**
    * The money action is mirrored into the top toolbar beside Arrived/Confirm.
@@ -694,6 +710,15 @@ export function BookingDetailContent({
   // Attendance toggles + (optionally) the primary action all live in one card;
   // skip rendering it entirely when there's nothing actionable.
   const showInlinePrimary = showPrimaryAction && !!primaryAction;
+  /**
+   * The toggle row and the divider beneath it MUST share one condition. They
+   * were two copies of the same expression, and only the row's copy gained
+   * `showPaymentToolbarAction` when Take payment was added. A Started booking
+   * hides both attendance toggles, so the row rendered with Take payment alone
+   * while the divider vanished, leaving it flush against Undo start / Cancel.
+   */
+  const showToolbarRow =
+    showArrivedToggle || showAttendanceConfirmToggle || showPaymentToolbarAction;
   const showActionsCard =
     showInlinePrimary ||
     showArrivedToggle ||
@@ -963,7 +988,7 @@ export function BookingDetailContent({
               style={styles.primaryAction}
             />
           ) : null}
-          {showArrivedToggle || showAttendanceConfirmToggle || showPaymentToolbarAction ? (
+          {showToolbarRow ? (
             <View style={styles.toolbarGrid}>
               {showPaymentToolbarAction ? (
                 <View style={styles.toolbarCell}>
@@ -1009,7 +1034,7 @@ export function BookingDetailContent({
           ) : null}
           {revertAction || destructiveActions.length > 0 ? (
             <>
-              {showInlinePrimary || showArrivedToggle || showAttendanceConfirmToggle ? (
+              {showInlinePrimary || showToolbarRow ? (
                 <View style={[styles.toolbarDivider, { backgroundColor: colors.border }]} />
               ) : null}
               <View style={styles.toolbarGrid}>
@@ -1208,26 +1233,45 @@ export function BookingDetailContent({
       canResend ||
       canTakePayment ||
       priceRows.length > 0 ||
+      paymentHistory.length > 0 ||
       booking.cancellation_deadline ? (
         <CollapsibleCard
           title="Payments & confirmation"
           summary={
-            cardHoldState
-              ? cardHoldState.pill?.label ?? 'Card hold'
-              : // The outstanding balance is the most actionable money fact, so it
-                // shows on the collapsed header rather than only inside.
-                booking.balance_due_pence != null && booking.balance_due_pence > 0
-                ? `${formatPence(booking.balance_due_pence)} due`
-                : booking.deposit_status ?? null
+            // An in-flight card payment outranks everything else on the header:
+            // it is the one fact that changes what staff should do next.
+            hasPendingCard
+              ? 'Card payment processing'
+              : cardHoldState
+                ? cardHoldState.pill?.label ?? 'Card hold'
+                : // The outstanding balance is the most actionable money fact, so it
+                  // shows on the collapsed header rather than only inside.
+                  booking.balance_due_pence != null && booking.balance_due_pence > 0
+                  ? `${formatPence(booking.balance_due_pence)} due`
+                  : booking.deposit_status ?? null
           }
           defaultExpanded={
-            cardHoldState
+            hasPendingCard ||
+            (cardHoldState
               ? cardHoldState.kind === 'awaiting_card' || cardHoldHasActions
-              : booking.deposit_status === 'Pending'
+              : booking.deposit_status === 'Pending')
           }>
           <View style={styles.manage}>
             {/* What the visit costs, what has been paid, what is left. */}
             <BookingPriceSummary rows={priceRows} />
+            {hasPendingCard ? (
+              <View style={styles.cardStack}>
+                <Text variant="bodyMedium" color={colors.warning}>
+                  Card payment processing
+                  {pendingCardPence > 0 ? ` · ${formatPence(pendingCardPence)}` : ''}
+                </Text>
+                <Text variant="caption" tone="muted">
+                  This usually clears within a few seconds. Don&apos;t take another payment until
+                  it does. If it is still here in a few minutes, check the payment in your Stripe
+                  dashboard before collecting again.
+                </Text>
+              </View>
+            ) : null}
             {cardHoldState ? (
               <>
                 <View style={styles.detailRow}>
@@ -1274,6 +1318,9 @@ export function BookingDetailContent({
                 </Text>
               </View>
             ) : null}
+            {/* Every ledger row, so end-of-day reconciliation and a failed or
+                stuck attempt are both visible without opening a sheet. */}
+            <BookingPaymentHistory rows={paymentHistory} />
             {/* Take payment (Tap to Pay / card reader / cash). Optional, per
                 appointment: nothing depends on it and nothing auto-opens it. */}
             {canTakePayment ? (

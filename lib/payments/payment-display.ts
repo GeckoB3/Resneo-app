@@ -10,6 +10,7 @@
  * neutral information, never as a blocking error or required-action callout.
  */
 
+import { formatPence, parsePoundsToPence } from '@/lib/format';
 import type {
   BookingDetail,
   BookingPaymentRow,
@@ -242,6 +243,176 @@ export function refundablePayments(
   payments: BookingPaymentRow[] | null | undefined,
 ): BookingPaymentRow[] {
   return (payments ?? []).filter((p) => p.status === 'succeeded');
+}
+
+/**
+ * Card rows the venue is still waiting on. `confirmPaymentIntent` resolving is
+ * NOT settlement: the `payment_intent.succeeded` webhook writes the paid state
+ * (§6.4) and lands a second or three later, so in between the booking still
+ * reads "Outstanding" with a live Take payment button beside it.
+ *
+ * Surfacing these rows is the whole defence against charging a client twice, so
+ * they must be visible on the booking itself, not only inside the payment sheet.
+ */
+export function pendingCardPayments(
+  payments: BookingPaymentRow[] | null | undefined,
+): BookingPaymentRow[] {
+  return (payments ?? []).filter((p) => p.status === 'pending' && p.method === 'card_present');
+}
+
+/** Total of the card payments currently in flight (0 when there are none). */
+export function pendingCardTotalPence(
+  payments: BookingPaymentRow[] | null | undefined,
+): number {
+  return pendingCardPayments(payments).reduce((sum, p) => sum + p.amount_pence, 0);
+}
+
+/**
+ * The charge route's zod cap on a staff-entered `amount_pence`
+ * (`MAX_IN_PERSON_PENCE` in `charge/route.ts`). Anything above it fails schema
+ * parse and returns a bare `{ error: 'Invalid request' }` 400 — which, on the
+ * unknown-price appointment where staff MUST type the amount, is exactly the
+ * screen a plausible £1,200 package lands on. Mirrored here so the sheet can say
+ * what is actually wrong.
+ */
+export const MAX_IN_PERSON_PENCE = 100_000;
+
+/** Verdict on the amount staff typed into the Take payment sheet. */
+export interface ChargeAmountCheck {
+  /** Send as `amount_pence`; null means omit it and let the server take the full balance. */
+  amountPence: number | null;
+  /** False blocks every collect button (card and cash alike). */
+  valid: boolean;
+  /** Inline message under the field; null when there is nothing to say. */
+  error: string | null;
+}
+
+/**
+ * Validate a typed pounds amount against the balance and the route's cap.
+ *
+ * The reason this is stricter than "is it a positive number": the charge route
+ * silently clamps with `Math.min(input.amount_pence ?? balance, balance)`, so
+ * £100 entered against a £30 balance charges £30 and says nothing. On the cash
+ * path that is a till-reconciliation bug — staff take £50 in notes and the
+ * ledger records £30. Blocking is the only treatment that makes it impossible to
+ * walk into the clamp unaware, and it costs nothing: the staff member simply
+ * corrects the figure to what the ledger can actually hold.
+ */
+export function checkChargeAmount(
+  rawInput: string,
+  balanceDuePence: number | null | undefined,
+): ChargeAmountCheck {
+  const balance = balanceDuePence ?? null;
+  const balanceKnown = balance != null && balance > 0;
+  const trimmed = rawInput.trim();
+
+  if (trimmed === '') {
+    // Known balance: blank means "all of it", which is what omitting
+    // amount_pence asks the server for. Unknown balance: an amount is required,
+    // but an untouched field is not worth shouting about — the buttons are
+    // simply disabled until one is typed.
+    return { amountPence: null, valid: balanceKnown, error: null };
+  }
+
+  const parsed = parsePoundsToPence(trimmed);
+  if (parsed == null) {
+    return { amountPence: null, valid: false, error: 'Enter a valid amount.' };
+  }
+  if (parsed <= 0) {
+    return { amountPence: null, valid: false, error: 'Enter an amount greater than zero.' };
+  }
+
+  if (balanceKnown && parsed > balance) {
+    return {
+      amountPence: null,
+      valid: false,
+      error: `That is more than the ${formatPence(balance)} outstanding. Enter ${formatPence(balance)} or less.`,
+    };
+  }
+
+  if (parsed > MAX_IN_PERSON_PENCE) {
+    // Taking the whole balance is exempt: the cap only applies to a supplied
+    // amount_pence, so omitting it lets the server charge the balance it
+    // resolved itself. A genuine £1,200 package therefore still collects in one
+    // go, while a typo on an unknown-price booking is still caught.
+    if (balanceKnown && parsed === balance) {
+      return { amountPence: null, valid: true, error: null };
+    }
+    return {
+      amountPence: null,
+      valid: false,
+      error: `The most you can take in one payment is ${formatPence(MAX_IN_PERSON_PENCE)}. Take the rest as a second payment.`,
+    };
+  }
+
+  return { amountPence: parsed, valid: true, error: null };
+}
+
+/**
+ * What is still owed after collecting `collectedPence` against `balancePence`.
+ * Null when either is unknown, so the success screen stays silent rather than
+ * guessing at a figure staff might read out to the client.
+ */
+export function remainingAfterPayment(
+  balancePence: number | null | undefined,
+  collectedPence: number | null | undefined,
+): number | null {
+  if (balancePence == null || collectedPence == null) return null;
+  return Math.max(balancePence - collectedPence, 0);
+}
+
+/** How a ledger row's status should read to staff. */
+const PAYMENT_STATUS_LABEL: Record<BookingPaymentRow['status'], string> = {
+  pending: 'Processing',
+  succeeded: 'Collected',
+  failed: 'Failed',
+  refunded: 'Refunded',
+};
+
+/** One line of the booking's payment history. */
+export interface PaymentHistoryRow {
+  key: string;
+  pence: number;
+  methodLabel: string;
+  statusLabel: string;
+  /** Drives the status colour: settled, in flight, or a problem. */
+  tone: 'default' | 'muted' | 'warning' | 'danger';
+  /** ISO timestamp for the caller to format. */
+  createdAt: string;
+  /** §5.7 note when the row was collected on a sibling service of the visit. */
+  note: string | null;
+}
+
+/**
+ * The ledger as staff need to read it at end of day: every row, newest first,
+ * with its amount, method, status and date.
+ *
+ * `failed` and `pending` rows are deliberately included. They are the only
+ * in-app trace of a card attempt that went wrong, and hiding them is what left
+ * a booking looking simply unpaid after a tap that did charge the client.
+ * `payments[]` is VISIT-wide, so rows anchored elsewhere carry the §5.7 note.
+ */
+export function buildPaymentHistory(
+  payments: BookingPaymentRow[] | null | undefined,
+  openedBookingId: string,
+): PaymentHistoryRow[] {
+  const tones: Record<BookingPaymentRow['status'], PaymentHistoryRow['tone']> = {
+    pending: 'warning',
+    succeeded: 'default',
+    failed: 'danger',
+    refunded: 'muted',
+  };
+  return [...(payments ?? [])]
+    .sort((a, b) => b.created_at.localeCompare(a.created_at))
+    .map((p) => ({
+      key: p.id,
+      pence: p.amount_pence,
+      methodLabel: paymentMethodLabel(p.method),
+      statusLabel: PAYMENT_STATUS_LABEL[p.status],
+      tone: tones[p.status],
+      createdAt: p.created_at,
+      note: otherVisitLineNote(p, openedBookingId),
+    }));
 }
 
 /**

@@ -62,7 +62,11 @@ export function useTakePayment(bookingId: string) {
       amountPence?: number;
       readerType?: InPersonReaderType;
     }): Promise<{ amountPence: number }> => {
-      if (!accessToken) throw new Error('Missing access token');
+      // Staff-facing: this surfaces raw in the payment sheet, so it must read as
+      // something a salon can act on rather than as an internal token error.
+      if (!accessToken) {
+        throw new Error('Could not confirm you are signed in. Please try again.');
+      }
 
       // 1. Server creates the card_present PaymentIntent on the venue's account.
       const charge = await apiFetch<CardChargeResponse>(
@@ -141,7 +145,11 @@ export function useRecordExternalPayment(bookingId: string) {
       amountPence?: number;
       note?: string;
     }): Promise<{ success: boolean }> => {
-      if (!accessToken) throw new Error('Missing access token');
+      // Staff-facing: this surfaces raw in the payment sheet, so it must read as
+      // something a salon can act on rather than as an internal token error.
+      if (!accessToken) {
+        throw new Error('Could not confirm you are signed in. Please try again.');
+      }
       return apiFetch<{ success: boolean }>(`/api/venue/bookings/${bookingId}/charge`, {
         accessToken,
         method: 'POST',
@@ -170,7 +178,11 @@ export function useRefundPayment(bookingId: string) {
        */
       paymentBookingId?: string | null;
     }): Promise<{ success: boolean }> => {
-      if (!accessToken) throw new Error('Missing access token');
+      // Staff-facing: this surfaces raw in the payment sheet, so it must read as
+      // something a salon can act on rather than as an internal token error.
+      if (!accessToken) {
+        throw new Error('Could not confirm you are signed in. Please try again.');
+      }
       /**
        * §5.7 — `payments[]` is VISIT-wide, so a row shown on this booking may
        * have been collected on a different service of the same visit. The

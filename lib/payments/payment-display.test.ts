@@ -1,10 +1,16 @@
 import {
+  MAX_IN_PERSON_PENCE,
   bookingPaymentStateLabel,
+  buildPaymentHistory,
   buildPriceSummary,
   canTakeInPersonPayment,
+  checkChargeAmount,
   otherVisitLineNote,
   paymentMethodLabel,
+  pendingCardPayments,
+  pendingCardTotalPence,
   refundablePayments,
+  remainingAfterPayment,
   visitPaymentNote,
 } from '@/lib/payments/payment-display';
 import type { BookingDetail, BookingPaymentRow, VisitPayment } from '@/types/booking-detail';
@@ -103,6 +109,178 @@ describe('refundablePayments', () => {
   it('tolerates a missing list', () => {
     expect(refundablePayments(undefined)).toEqual([]);
     expect(refundablePayments(null)).toEqual([]);
+  });
+});
+
+describe('pendingCardPayments', () => {
+  const row = (over: Partial<BookingPaymentRow>): BookingPaymentRow => ({
+    id: 'p1',
+    method: 'card_present',
+    status: 'pending',
+    amount_pence: 2500,
+    note: null,
+    created_at: '2026-07-23T10:00:00Z',
+    ...over,
+  });
+
+  it('keeps only card rows still waiting on their webhook', () => {
+    const rows = [
+      row({ id: 'a' }),
+      row({ id: 'b', status: 'succeeded' }),
+      // Cash/external are written `succeeded` synchronously, so a pending one
+      // is not a card payment in flight and must not raise the warning.
+      row({ id: 'c', method: 'cash' }),
+      row({ id: 'd', method: 'online' }),
+    ];
+    expect(pendingCardPayments(rows).map((r) => r.id)).toEqual(['a']);
+  });
+
+  it('totals what is in flight, and tolerates a missing list', () => {
+    expect(pendingCardTotalPence([row({ id: 'a' }), row({ id: 'b', amount_pence: 1500 })])).toBe(
+      4000,
+    );
+    expect(pendingCardTotalPence(undefined)).toBe(0);
+    expect(pendingCardPayments(null)).toEqual([]);
+  });
+});
+
+describe('checkChargeAmount', () => {
+  it('treats a blank field as "take the whole balance"', () => {
+    // Omitting amount_pence is what asks the server for the full balance.
+    expect(checkChargeAmount('', 3000)).toEqual({
+      amountPence: null,
+      valid: true,
+      error: null,
+    });
+  });
+
+  it('blocks a blank field when the price is unknown, without nagging', () => {
+    // The buttons are simply disabled; an untouched field is not an error.
+    expect(checkChargeAmount('', null)).toEqual({
+      amountPence: null,
+      valid: false,
+      error: null,
+    });
+  });
+
+  it('passes a partial amount straight through', () => {
+    expect(checkChargeAmount('20', 9000)).toEqual({
+      amountPence: 2000,
+      valid: true,
+      error: null,
+    });
+  });
+
+  it('rejects nonsense and zero', () => {
+    expect(checkChargeAmount('abc', 3000).valid).toBe(false);
+    expect(checkChargeAmount('abc', 3000).error).toBe('Enter a valid amount.');
+    expect(checkChargeAmount('0', 3000).error).toBe('Enter an amount greater than zero.');
+    expect(checkChargeAmount('-5', 3000).error).toBe('Enter a valid amount.');
+  });
+
+  it('blocks more than the balance instead of letting the route clamp it', () => {
+    // charge/route.ts: Math.min(input.amount_pence ?? balance, balance). £100
+    // against a £30 balance silently records £30, which on the cash path means
+    // the till holds £50 in notes and the ledger says £30.
+    const result = checkChargeAmount('100', 3000);
+    expect(result.valid).toBe(false);
+    expect(result.amountPence).toBeNull();
+    expect(result.error).toBe('That is more than the £30.00 outstanding. Enter £30.00 or less.');
+  });
+
+  it('allows exactly the balance', () => {
+    expect(checkChargeAmount('30.00', 3000)).toEqual({
+      amountPence: 3000,
+      valid: true,
+      error: null,
+    });
+  });
+
+  it('explains the £1,000 cap rather than letting the route 400 "Invalid request"', () => {
+    // The zod schema caps amount_pence, so anything above fails schema parse and
+    // comes back as a bare 400 that tells staff nothing.
+    const result = checkChargeAmount('1200', null);
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe(
+      'The most you can take in one payment is £1,000.00. Take the rest as a second payment.',
+    );
+  });
+
+  it('holds the cap boundary exactly', () => {
+    expect(checkChargeAmount('1000.00', null).amountPence).toBe(MAX_IN_PERSON_PENCE);
+    expect(checkChargeAmount('1000.00', null).valid).toBe(true);
+    expect(checkChargeAmount('1000.01', null).valid).toBe(false);
+  });
+
+  it('still collects a genuine over-cap balance in one go', () => {
+    // The cap only applies to a SUPPLIED amount_pence, so taking the whole
+    // balance omits it and the server charges the figure it resolved itself.
+    expect(checkChargeAmount('1200.00', 120_000)).toEqual({
+      amountPence: null,
+      valid: true,
+      error: null,
+    });
+    // A part payment of that balance is still capped — the route would reject it.
+    expect(checkChargeAmount('1100.00', 120_000).valid).toBe(false);
+  });
+
+  it('reports over-balance before the cap, because that is the more useful message', () => {
+    expect(checkChargeAmount('1200', 3000).error).toContain('£30.00 outstanding');
+  });
+});
+
+describe('remainingAfterPayment', () => {
+  it('reports what is left after a part payment', () => {
+    expect(remainingAfterPayment(9000, 2000)).toBe(7000);
+  });
+
+  it('never goes negative, and says nothing when either figure is unknown', () => {
+    expect(remainingAfterPayment(2000, 9000)).toBe(0);
+    expect(remainingAfterPayment(null, 2000)).toBeNull();
+    expect(remainingAfterPayment(2000, null)).toBeNull();
+  });
+});
+
+describe('buildPaymentHistory', () => {
+  const row = (over: Partial<BookingPaymentRow>): BookingPaymentRow => ({
+    id: 'p1',
+    booking_id: 'bk-1',
+    method: 'card_present',
+    status: 'succeeded',
+    amount_pence: 2500,
+    note: null,
+    created_at: '2026-07-23T10:00:00Z',
+    ...over,
+  });
+
+  it('lists every row newest first, including pending and failed ones', () => {
+    // A failed or still-processing attempt is precisely what staff need when
+    // something goes wrong; hiding it left the booking looking simply unpaid.
+    const rows = buildPaymentHistory(
+      [
+        row({ id: 'a', created_at: '2026-07-23T09:00:00Z', status: 'failed' }),
+        row({ id: 'b', created_at: '2026-07-23T11:00:00Z', status: 'pending' }),
+        row({ id: 'c', created_at: '2026-07-23T10:00:00Z', method: 'cash' }),
+        row({ id: 'd', created_at: '2026-07-23T08:00:00Z', status: 'refunded' }),
+      ],
+      'bk-1',
+    );
+    expect(rows.map((r) => [r.key, r.statusLabel, r.methodLabel, r.tone])).toEqual([
+      ['b', 'Processing', 'Card', 'warning'],
+      ['c', 'Collected', 'Cash', 'default'],
+      ['a', 'Failed', 'Card', 'danger'],
+      ['d', 'Refunded', 'Card', 'muted'],
+    ]);
+  });
+
+  it("labels a row collected on another service of the visit (§5.7)", () => {
+    const rows = buildPaymentHistory([row({ booking_id: 'bk-2' })], 'bk-1');
+    expect(rows[0].note).toBe('Collected on another service in this visit');
+    expect(buildPaymentHistory([row({ booking_id: 'bk-1' })], 'bk-1')[0].note).toBeNull();
+  });
+
+  it('tolerates a missing list', () => {
+    expect(buildPaymentHistory(undefined, 'bk-1')).toEqual([]);
   });
 });
 
