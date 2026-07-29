@@ -39,8 +39,9 @@ import {
   buildPriceSummary,
   canTakeInPersonPayment,
   pendingCardPayments,
-  pendingCardTotalPence,
+  pendingCardState,
 } from '@/lib/payments/payment-display';
+import { usePendingCardClock } from '@/lib/payments/usePendingCardClock';
 import { calendarDateInTimeZone } from '@/lib/dates/venue-dates';
 import { canMarkNoShowForSlot, clampNoShowGraceMinutes } from '@/lib/booking/no-show-grace';
 import { ACTION_COLORS, primaryActionColors } from '@/lib/booking/booking-action-colors';
@@ -396,6 +397,14 @@ export function BookingDetailContent({
     // noShowTick advances the clock each minute; re-running re-checks the guard.
   }, [noShowPending, noShowTick]);
 
+  /**
+   * Clock for ageing out a `pending` card row (see `usePendingCardClock`). Runs
+   * only while there IS such a row, so an ordinary booking holds no timer.
+   */
+  const pendingCardNowMs = usePendingCardClock(
+    pendingCardPayments(booking.payments).length > 0,
+  );
+
   const armConfirm = (target: BookingStatus) => {
     setPendingConfirm(target);
     hapticWarning();
@@ -551,9 +560,12 @@ export function BookingDetailContent({
    * invisible and the client gets charged twice. It has to be readable from the
    * COLLAPSED card too, hence the summary/expanded overrides below.
    */
-  const pendingCard = pendingCardPayments(booking.payments);
-  const hasPendingCard = pendingCard.length > 0;
-  const pendingCardPence = pendingCardTotalPence(booking.payments);
+  const pendingCard = pendingCardState({ payments: booking.payments, nowMs: pendingCardNowMs });
+  const hasPendingCard = pendingCard.verdict !== 'none';
+  const pendingCardPence = pendingCard.totalPence;
+  /** A row this client watched decline, or one whose webhook is never coming,
+   *  must not keep claiming money is in flight — it says what to check instead. */
+  const pendingCardStale = pendingCard.verdict === 'stale';
   // Ledger history for reconciliation: pending, succeeded, failed and refunded.
   const paymentHistory = buildPaymentHistory(booking.payments, booking.id);
 
@@ -1241,7 +1253,9 @@ export function BookingDetailContent({
             // An in-flight card payment outranks everything else on the header:
             // it is the one fact that changes what staff should do next.
             hasPendingCard
-              ? 'Card payment processing'
+              ? pendingCardStale
+                ? 'Card payment unconfirmed'
+                : 'Card payment processing'
               : cardHoldState
                 ? cardHoldState.pill?.label ?? 'Card hold'
                 : // The outstanding balance is the most actionable money fact, so it
@@ -1262,13 +1276,17 @@ export function BookingDetailContent({
             {hasPendingCard ? (
               <View style={styles.cardStack}>
                 <Text variant="bodyMedium" color={colors.warning}>
-                  Card payment processing
+                  {pendingCardStale ? 'Card payment unconfirmed' : 'Card payment processing'}
                   {pendingCardPence > 0 ? ` · ${formatPence(pendingCardPence)}` : ''}
                 </Text>
+                {/* Two registers: "wait a moment" vs "stop waiting, here is where
+                    to find out". Nothing in the app can settle a stuck row (see
+                    Docs/TAP_TO_PAY.md, "Backend requirements"), so the stale copy
+                    has to name the places that can answer. */}
                 <Text variant="caption" tone="muted">
-                  This usually clears within a few seconds. Don&apos;t take another payment until
-                  it does. If it is still here in a few minutes, check the payment in your Stripe
-                  dashboard before collecting again.
+                  {pendingCardStale
+                    ? 'This started a while ago and has not been confirmed, so it may or may not have gone through. Check the payment history below, or the payment in your Stripe dashboard, before taking another card payment.'
+                    : "This usually clears within a few seconds. Don't take another payment until it does. If it is still here in a few minutes, check the payment in your Stripe dashboard before collecting again."}
                 </Text>
               </View>
             ) : null}

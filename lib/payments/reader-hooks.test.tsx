@@ -92,7 +92,14 @@ jest.mock('expo-secure-store', () => ({
 
 import { Platform } from 'react-native';
 
-import { useBluetoothReader } from '@/lib/payments/bluetoothReader';
+import {
+  useBluetoothReader,
+  __resetDiscoverySessionForTests,
+} from '@/lib/payments/bluetoothReader';
+import {
+  READER_CONNECT_TIMEOUT_MS,
+  READER_DISCOVERY_TIMEOUT_MS,
+} from '@/lib/payments/reader-timeouts';
 import { useTapToPayReader } from '@/lib/payments/terminal';
 import { __resetTerminalInitForTests } from '@/lib/payments/terminal-sdk';
 
@@ -125,6 +132,9 @@ beforeEach(() => {
   mockStore.clear();
   mockOwnerVenueId = null;
   __resetTerminalInitForTests();
+  // Discovery ownership is module-level (one global SDK command), so it has to be
+  // reset between cases or an abandoned scan leaks into the next one.
+  __resetDiscoverySessionForTests();
   Object.values(mockApi).forEach((v) => {
     if (typeof v === 'function' && 'mockClear' in v) (v as jest.Mock).mockClear();
   });
@@ -215,19 +225,26 @@ describe('useTapToPayReader', () => {
   });
 
   it('cancels an in-flight discovery when the sheet unmounts', async () => {
-    const { result, unmount } = await renderHook(() => useTapToPayReader());
-    // Leave discovery hanging, as it would be while waiting for a reader.
-    mockApi.discoverReaders.mockImplementation(() => new Promise(() => {}));
-    await act(async () => {
-      void result.current.connect();
-      await Promise.resolve();
-    });
+    // Fake timers because the abandoned attempt is time-boxed now: its deadline
+    // must not outlive the suite as a real pending timer.
+    jest.useFakeTimers();
+    try {
+      const { result, unmount } = await renderHook(() => useTapToPayReader());
+      // Leave discovery hanging, as it would be while waiting for a reader.
+      mockApi.discoverReaders.mockImplementation(() => new Promise(() => {}));
+      await act(async () => {
+        void result.current.connect();
+        await Promise.resolve();
+      });
 
-    await act(async () => {
-      unmount();
-    });
+      await act(async () => {
+        unmount();
+      });
 
-    expect(mockApi.cancelDiscovering).toHaveBeenCalled();
+      expect(mockApi.cancelDiscovering).toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('initialises the SDK before probing device support', async () => {
@@ -365,6 +382,377 @@ describe('switching between the two card paths', () => {
       expect(mockApi.connectReader).toHaveBeenCalled();
     } finally {
       Object.defineProperty(Platform, 'OS', { value: originalOS, configurable: true });
+    }
+  });
+});
+
+/**
+ * Model the pinned SDK's REAL Bluetooth discovery semantics, which the default
+ * mock above does not: `discoverReaders({ discoveryMethod: 'bluetoothScan' })`
+ * resolves only when the discovery SESSION ENDS — cancelled, or ended by a
+ * successful connect — and a second discovery while one is live is refused as
+ * busy. Verified in beta.31's own native sources; see `reader-timeouts.ts`.
+ */
+function modelBluetoothDiscovery() {
+  let live: (() => void) | null = null;
+  const end = () => {
+    const resolve = live;
+    live = null;
+    resolve?.();
+  };
+  mockApi.discoverReaders.mockImplementation(async () => {
+    if (live) {
+      return {
+        error: {
+          message: 'could not execute discoverReaders because the SDK is busy with another command',
+        },
+      };
+    }
+    const session = new Promise<Record<string, never>>((resolve) => {
+      live = () => resolve({});
+    });
+    emitDiscovered(discoverable);
+    return session;
+  });
+  mockApi.cancelDiscovering.mockImplementation(async () => {
+    end();
+    return {};
+  });
+  mockApi.connectReader.mockImplementation(async () => {
+    // A successful connect ends the discovery, as it does on the device.
+    end();
+    return {};
+  });
+}
+
+describe('a Bluetooth discovery that never completes on its own', () => {
+  it('finishes the scan on the readers it found, not on the discovery promise', async () => {
+    /**
+     * THE "spins for ever" BUG. Awaiting `discoverReaders` as if it meant
+     * "discovery finished" never returns for a Bluetooth scan, so the scan — and
+     * every caller waiting on it — hung, with the sheet showing "Getting the card
+     * reader ready" and Back disabled.
+     */
+    modelBluetoothDiscovery();
+    discoverable = [WISEPAD];
+    const { result } = await renderHook(() => useBluetoothReader());
+
+    await act(async () => {
+      await result.current.scan();
+    });
+
+    expect(result.current.discovered).toEqual([WISEPAD]);
+    await waitFor(() => expect(result.current.status).toBe('found'));
+  });
+
+  it('reconnects to the remembered reader instead of deadlocking on it', async () => {
+    /**
+     * The exact device symptom: `reconnectRemembered` awaited the scan, and the
+     * scan awaited a discovery that only the connect it was gating could end.
+     */
+    modelBluetoothDiscovery();
+    mockStore.set('resneo_bt_reader_serial_own', 'WP-1');
+    discoverable = [WISEPAD];
+    const { result } = await renderHook(() => useBluetoothReader());
+
+    const ok = await act(async () => result.current.reconnectRemembered());
+
+    expect(ok).toBe(true);
+    expect(mockApi.connectReader).toHaveBeenCalledWith(
+      expect.objectContaining({ reader: WISEPAD }),
+    );
+  });
+
+  it('ends a scan with a real error when nothing ever appears', async () => {
+    // A silent reader must produce something staff can act on. Before the bound
+    // this was an indefinite spinner with every button, Back included, disabled.
+    jest.useFakeTimers();
+    try {
+      modelBluetoothDiscovery();
+      discoverable = [];
+      const { result } = await renderHook(() => useBluetoothReader());
+
+      let scanning!: Promise<void>;
+      await act(async () => {
+        scanning = result.current.scan();
+      });
+      await act(async () => {
+        jest.advanceTimersByTime(READER_DISCOVERY_TIMEOUT_MS + 1_000);
+      });
+      await act(async () => {
+        await scanning;
+      });
+
+      expect(result.current.status).toBe('error');
+      expect(result.current.error).toMatch(/No card readers found/i);
+      // The abandoned session is stopped too: leaving it running is what made the
+      // NEXT attempt fail as busy.
+      expect(mockApi.cancelDiscovering).toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('takes over a discovery the other hook instance left running', async () => {
+    /**
+     * The sheet mounts this hook TWICE — the collect step and the pairing step —
+     * and hands over between them. The abandoned instance's session is still live
+     * at the SDK level, and the SDK answers the new instance "busy", so the
+     * hand-over has to end the old session first.
+     */
+    modelBluetoothDiscovery();
+    discoverable = [WISEPAD];
+    const pairing = await renderHook(() => useBluetoothReader());
+    await act(async () => {
+      await pairing.result.current.scan();
+    });
+
+    const collect = await renderHook(() => useBluetoothReader());
+    mockApi.cancelDiscovering.mockClear();
+    await act(async () => {
+      await collect.result.current.scan();
+    });
+
+    expect(mockApi.cancelDiscovering).toHaveBeenCalled();
+    expect(collect.result.current.discovered).toEqual([WISEPAD]);
+    expect(collect.result.current.status).not.toBe('error');
+  });
+
+  it('cancels a live scan when the step is left', async () => {
+    modelBluetoothDiscovery();
+    discoverable = [WISEPAD];
+    const { result, unmount } = await renderHook(() => useBluetoothReader());
+    await act(async () => {
+      await result.current.scan();
+    });
+    mockApi.cancelDiscovering.mockClear();
+
+    await act(async () => {
+      unmount();
+    });
+
+    expect(mockApi.cancelDiscovering).toHaveBeenCalled();
+  });
+});
+
+describe('a firmware install inside connectReader', () => {
+  /**
+   * A MANDATORY install runs inside `connectReader` and takes minutes. The connect
+   * has a time budget so a dead handshake cannot leave `status: 'connecting'` set
+   * for ever — but `withTimeout` only rejects the JS promise, it cancels nothing
+   * native, so an expiry mid-install would report a perfectly healthy reader as
+   * broken AND tell staff to switch it off and on again. Power-cycling a Terminal
+   * reader mid-flash is the documented way to brick one.
+   */
+  it('keeps waiting while the reader is still reporting install progress', async () => {
+    jest.useFakeTimers();
+    try {
+      const { result } = await renderHook(() => useBluetoothReader());
+      // A connect that outlives the budget, as a firmware install does.
+      mockApi.connectReader.mockImplementation(() => new Promise(() => {}));
+
+      await act(async () => {
+        void result.current.connect(WISEPAD);
+      });
+      await act(async () => {
+        mockCallbacks.forEach((c) => c.onDidStartInstallingUpdate?.());
+      });
+      expect(result.current.status).toBe('updating');
+
+      // Well past the budget, with the reader reporting progress throughout.
+      for (let step = 0; step < 4; step += 1) {
+        await act(async () => {
+          jest.advanceTimersByTime(READER_CONNECT_TIMEOUT_MS * 0.75);
+        });
+        await act(async () => {
+          mockCallbacks.forEach((c) => c.onDidReportReaderSoftwareUpdateProgress?.(0.25 * step));
+        });
+      }
+
+      // Still installing, still honest about it — and no power-cycle advice.
+      expect(result.current.status).toBe('updating');
+      expect(result.current.error ?? '').not.toMatch(/Switch it off/i);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('completes a connect whose install outlived the budget', async () => {
+    /**
+     * The headline of "a budget of SILENCE, not a ceiling": the install must be
+     * able to run PAST the budget and still have its connect complete.
+     *
+     * Without the re-arm the connect is abandoned at the budget, so when the
+     * install finishes minutes later nothing resumes it — `setConnected` never
+     * runs, the hook believes no reader is attached, and staff have to pair again
+     * with a client waiting. That is a silent loss of completion, not of safety,
+     * which is why this test asserts the CONNECTED reader and the remembered
+     * serial rather than just the absence of an error.
+     */
+    jest.useFakeTimers();
+    try {
+      const { result } = await renderHook(() => useBluetoothReader());
+      let finishConnect: (() => void) | undefined;
+      mockApi.connectReader.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            finishConnect = () => resolve({ reader: WISEPAD });
+          }),
+      );
+
+      let connecting!: Promise<boolean>;
+      await act(async () => {
+        connecting = result.current.connect(WISEPAD);
+      });
+      await act(async () => {
+        mockCallbacks.forEach((c) => c.onDidStartInstallingUpdate?.());
+      });
+
+      // Three quarters of a budget at a time, with a progress report between, so
+      // the budget is crossed TWICE while the reader is demonstrably alive.
+      for (let step = 0; step < 3; step += 1) {
+        await act(async () => {
+          jest.advanceTimersByTime(READER_CONNECT_TIMEOUT_MS * 0.75);
+        });
+        await act(async () => {
+          mockCallbacks.forEach((c) => c.onDidReportReaderSoftwareUpdateProgress?.(0.3 * step));
+        });
+      }
+
+      // The install finishes and the handshake it was blocking completes.
+      await act(async () => {
+        mockCallbacks.forEach((c) => c.onDidFinishInstallingUpdate?.());
+      });
+      const ok = await act(async () => {
+        finishConnect?.();
+        return connecting;
+      });
+
+      expect(ok).toBe(true);
+      expect(result.current.status).toBe('ready');
+      expect(result.current.error).toBeNull();
+      // The reader is actually attached, and remembered for next time.
+      expect(result.current.connected).toEqual(WISEPAD);
+      expect([...mockStore.values()]).toContain('WP-1');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('gives up on an install that has gone silent, without power-cycle advice', async () => {
+    // The other side of the bound: a handshake nothing is driving must not pin the
+    // UI for the rest of the shift. It still must not claim the reader is broken
+    // while the install it started has never reported finishing.
+    jest.useFakeTimers();
+    try {
+      const { result } = await renderHook(() => useBluetoothReader());
+      mockApi.connectReader.mockImplementation(() => new Promise(() => {}));
+
+      let connecting!: Promise<boolean>;
+      await act(async () => {
+        connecting = result.current.connect(WISEPAD);
+      });
+      await act(async () => {
+        mockCallbacks.forEach((c) => c.onDidStartInstallingUpdate?.());
+      });
+      // Two whole budgets of silence: one to expire, one to prove it is dead.
+      await act(async () => {
+        jest.advanceTimersByTime(READER_CONNECT_TIMEOUT_MS * 2 + 1_000);
+      });
+      const ok = await act(async () => connecting);
+
+      expect(ok).toBe(false);
+      expect(result.current.error).toMatch(/still updating/i);
+      expect(result.current.error).not.toMatch(/Switch it off/i);
+      // The install state is kept, so the reader is never described as broken.
+      expect(result.current.status).toBe('updating');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('still reports a dead handshake when no install is running', async () => {
+    jest.useFakeTimers();
+    try {
+      const { result } = await renderHook(() => useBluetoothReader());
+      mockApi.connectReader.mockImplementation(() => new Promise(() => {}));
+
+      let connecting!: Promise<boolean>;
+      await act(async () => {
+        connecting = result.current.connect(WISEPAD);
+      });
+      await act(async () => {
+        jest.advanceTimersByTime(READER_CONNECT_TIMEOUT_MS + 1_000);
+      });
+      const ok = await act(async () => connecting);
+
+      expect(ok).toBe(false);
+      expect(result.current.status).toBe('error');
+      expect(result.current.error).toMatch(/Switch it off and on again/i);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});
+
+describe('abort (staff cancelled a slow prepare)', () => {
+  it('stops the discovery and returns to a state the next attempt can use', async () => {
+    modelBluetoothDiscovery();
+    discoverable = [WISEPAD];
+    const { result } = await renderHook(() => useBluetoothReader());
+    await act(async () => {
+      await result.current.scan();
+    });
+
+    await act(async () => {
+      await result.current.abort();
+    });
+
+    expect(mockApi.cancelDiscovering).toHaveBeenCalled();
+    expect(result.current.status).toBe('idle');
+    expect(result.current.discovered).toEqual([]);
+
+    // And the next scan is not refused as busy.
+    await act(async () => {
+      await result.current.scan();
+    });
+    expect(result.current.status).toBe('found');
+  });
+
+  it('leaves a firmware install alone', async () => {
+    // Cancelling never disconnects, so an install carries on — reporting it as
+    // idle would hide a reader that is still unusable for minutes.
+    const { result } = await renderHook(() => useBluetoothReader());
+    await act(async () => {
+      mockCallbacks.forEach((c) => c.onDidStartInstallingUpdate?.());
+    });
+
+    await act(async () => {
+      await result.current.abort();
+    });
+
+    expect(result.current.status).toBe('updating');
+    expect(mockApi.disconnectReader).not.toHaveBeenCalled();
+  });
+
+  it('lets the tap to pay path be abandoned mid-discovery', async () => {
+    jest.useFakeTimers();
+    try {
+      mockApi.discoverReaders.mockImplementation(() => new Promise(() => {}));
+      const { result } = await renderHook(() => useTapToPayReader());
+      await act(async () => {
+        void result.current.connect();
+        await Promise.resolve();
+      });
+
+      await act(async () => {
+        await result.current.abort();
+      });
+
+      expect(mockApi.cancelDiscovering).toHaveBeenCalled();
+      expect(result.current.status).toBe('idle');
+    } finally {
+      jest.useRealTimers();
     }
   });
 });

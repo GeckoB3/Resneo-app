@@ -18,7 +18,7 @@
  * they are unit-testable; the timers live in `useBookingDetail`.
  */
 
-import { pendingCardPayments } from '@/lib/payments/payment-display';
+import { PENDING_CARD_STALE_MS, pendingCardPayments } from '@/lib/payments/payment-display';
 import type { BookingPaymentRow } from '@/types/booking-detail';
 
 /**
@@ -34,8 +34,13 @@ export const SETTLEMENT_POLL_DELAYS_MS: readonly number[] = [2_000, 5_000, 10_00
  * coming, and re-polling it every time the booking is opened would be pure
  * noise. Nothing in the app can settle or cancel one of those — see
  * Docs/TAP_TO_PAY.md, "Backend requirements".
+ *
+ * The SAME window softens the payment sheet's processing gate (see
+ * `PENDING_CARD_STALE_MS`), and it is one constant on purpose: "we have stopped
+ * waiting for this webhook" and "we no longer block staff behind it" must be the
+ * same moment, or the sheet gates on something nothing is watching any more.
  */
-export const SETTLEMENT_WATCH_MAX_AGE_MS = 5 * 60_000;
+export const SETTLEMENT_WATCH_MAX_AGE_MS = PENDING_CARD_STALE_MS;
 
 /** What the booking is currently waiting on. */
 export interface SettlementWatch {

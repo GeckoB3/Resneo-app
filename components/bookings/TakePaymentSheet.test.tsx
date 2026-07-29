@@ -55,6 +55,7 @@ jest.mock('@/lib/payments/last-method', () => ({
 const mockTapConnect = jest.fn(
   async (): Promise<{ ok: boolean; error: string | null }> => ({ ok: true, error: null }),
 );
+const mockTapAbort = jest.fn(async () => undefined);
 jest.mock('@/lib/payments/terminal', () => ({
   useTapToPayReader: () => ({
     status: 'idle',
@@ -62,6 +63,7 @@ jest.mock('@/lib/payments/terminal', () => ({
     supported: true,
     connect: mockTapConnect,
     checkSupport: jest.fn(async () => true),
+    abort: mockTapAbort,
     reset: jest.fn(),
   }),
 }));
@@ -88,6 +90,8 @@ const btConnectDefault = async (reader: { serialNumber: string }) => {
 };
 const mockBtConnect = jest.fn(btConnectDefault);
 const mockBtScan = jest.fn(async () => undefined);
+const mockBtReconnect = jest.fn(async () => false);
+const mockBtAbort = jest.fn(async () => undefined);
 jest.mock('@/lib/payments/bluetoothReader', () => ({
   useBluetoothReader: () => ({
     status: mockBtState.status,
@@ -99,13 +103,18 @@ jest.mock('@/lib/payments/bluetoothReader', () => ({
     updateProgress: null,
     scan: mockBtScan,
     connect: mockBtConnect,
-    reconnectRemembered: jest.fn(async () => false),
+    reconnectRemembered: mockBtReconnect,
     forget: jest.fn(async () => undefined),
+    abort: mockBtAbort,
     reset: jest.fn(),
   }),
 }));
 
 import { TakePaymentSheet, type TakePaymentTarget } from '@/components/bookings/TakePaymentSheet';
+import {
+  recordFailedCardAttempt,
+  __resetFailedCardAttemptsForTests,
+} from '@/lib/payments/failed-attempts';
 
 function target(over: Partial<TakePaymentTarget> = {}): TakePaymentTarget {
   return {
@@ -161,9 +170,15 @@ beforeEach(() => {
   // Restored explicitly, so a case that freezes the connect cannot leak.
   mockBtConnect.mockImplementation(btConnectDefault);
   mockBtScan.mockClear();
+  mockBtReconnect.mockReset();
+  mockBtReconnect.mockResolvedValue(false);
+  mockBtAbort.mockClear();
+  mockTapAbort.mockClear();
   mockBtState.connected = null;
   mockBtState.status = 'idle';
   mockBtState.discovered = [];
+  // The known-failure store is module-level and survives renders by design.
+  __resetFailedCardAttemptsForTests();
 });
 
 describe('known balance', () => {
@@ -484,13 +499,19 @@ describe('card collection', () => {
 });
 
 describe('a card payment still settling', () => {
+  /**
+   * The row's AGE decides how loud the sheet is, so the fixture is built from the
+   * clock rather than a fixed date: a hard-coded timestamp silently became "stuck"
+   * as soon as it aged past the five-minute window, which is exactly the
+   * distinction under test here.
+   */
   const pendingRow = {
     id: 'pay-pending',
     method: 'card_present' as const,
     status: 'pending' as const,
     amount_pence: 2500,
     note: null,
-    created_at: '2026-07-23T10:00:00Z',
+    created_at: new Date(Date.now() - 5_000).toISOString(),
   };
 
   it('warns before starting a second collection, instead of opening the menu', async () => {
@@ -564,6 +585,201 @@ describe('a card payment still settling', () => {
     );
     expect(screen.getByText(/A card payment of £25.00 is still going through/)).toBeTruthy();
     expect(screen.getByText('Retry')).toBeTruthy();
+  });
+});
+
+describe('a pending row the sheet must NOT block on', () => {
+  const rowAt = (createdAtMs: number) => ({
+    id: 'pay-pending',
+    method: 'card_present' as const,
+    status: 'pending' as const,
+    amount_pence: 2500,
+    note: null,
+    created_at: new Date(createdAtMs).toISOString(),
+  });
+
+  it('does not hard-gate a row whose webhook is clearly never coming', async () => {
+    /**
+     * The bug: nothing in the app can settle a stuck `pending` row, so gating on
+     * one for ever left the venue unable to take money at all. Past the settlement
+     * window the sheet opens on the menu and the row becomes information.
+     */
+    await render(
+      <TakePaymentSheet
+        target={target({ payments: [rowAt(Date.now() - 10 * 60_000)] })}
+        onClose={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Card payment')).toBeTruthy();
+    expect(screen.getByText('Record cash')).toBeTruthy();
+    expect(screen.queryByText('Take another payment anyway')).toBeNull();
+    expect(screen.queryByText(/is still going through/)).toBeNull();
+  });
+
+  it('tells staff where to find out whether a stuck payment went through', async () => {
+    await render(
+      <TakePaymentSheet
+        target={target({ payments: [rowAt(Date.now() - 10 * 60_000)] })}
+        onClose={jest.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByText(/A card payment of £25.00 started a while ago/),
+    ).toBeTruthy();
+    // Both places that can actually answer the question, in plain words.
+    expect(screen.getByText(/Check the payment history on this booking/)).toBeTruthy();
+    expect(screen.getByText(/Stripe dashboard/)).toBeTruthy();
+    expect(screen.getByText(/Cash and other payments are not affected/)).toBeTruthy();
+  });
+
+  it('says nothing at all about a payment this client watched decline', async () => {
+    /**
+     * The reported bug: a declined tap, then close and reopen, and the sheet
+     * warned "a card payment is still going through" for minutes — because only
+     * the `payment_intent.payment_failed` webhook can move the row off `pending`,
+     * and in dev it may never arrive. The client saw the decline; it must not
+     * warn staff about it.
+     */
+    const startedAtMs = Date.now() - 20_000;
+    recordFailedCardAttempt({
+      bookingId: 'bk-1',
+      paymentIntentId: 'pi_declined',
+      amountPence: 2500,
+      startedAtMs,
+      failedAtMs: startedAtMs + 8_000,
+    });
+
+    await render(
+      <TakePaymentSheet
+        target={target({ payments: [{ ...rowAt(startedAtMs + 1_000), booking_id: 'bk-1' }] })}
+        onClose={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Card payment')).toBeTruthy();
+    expect(screen.queryByText(/is still going through/)).toBeNull();
+    expect(screen.queryByText(/started a while ago/)).toBeNull();
+  });
+
+  it('still warns about a DIFFERENT payment while a decline is on record', async () => {
+    // Suppression is per attempt, not a blanket amnesty: a colleague collecting a
+    // different amount on another device must still stop this staff member.
+    const startedAtMs = Date.now() - 20_000;
+    recordFailedCardAttempt({
+      bookingId: 'bk-1',
+      paymentIntentId: 'pi_declined',
+      amountPence: 2500,
+      startedAtMs,
+      failedAtMs: startedAtMs + 8_000,
+    });
+
+    await render(
+      <TakePaymentSheet
+        target={target({
+          payments: [{ ...rowAt(startedAtMs + 1_000), amount_pence: 1000, booking_id: 'bk-1' }],
+        })}
+        onClose={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/A card payment of £10.00 is still going through/)).toBeTruthy();
+  });
+});
+
+describe('a reader that never gets ready (the "spins for ever" bug)', () => {
+  it('keeps Cancel live while preparing, and aborts the attempt', async () => {
+    /**
+     * On device: "Use card reader" sat on "Getting the card reader ready" and Back
+     * did nothing, because `busy` disabled every button including Back. The only
+     * way out was closing the whole sheet.
+     */
+    let releaseConnect: ((r: { ok: boolean; error: string | null }) => void) | undefined;
+    mockTapConnect.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releaseConnect = resolve;
+        }),
+    );
+
+    await render(<TakePaymentSheet target={target()} onClose={jest.fn()} />);
+    await press('Card payment');
+    await press('Tap to Pay on this phone');
+
+    // Stuck in prepare, with a live way out rather than a dead Back.
+    expect(screen.getByText('Getting the card reader ready.')).toBeTruthy();
+    expect(screen.getByText('Cancel')).toBeTruthy();
+
+    await press('Cancel');
+
+    // Cancelling reaches the SDK: an abandoned discovery is refused as busy on
+    // the next attempt, so it has to be stopped, not just ignored.
+    expect(mockTapAbort).toHaveBeenCalled();
+    expect(screen.queryByText('Getting the card reader ready.')).toBeNull();
+    expect(screen.getByText('Back')).toBeTruthy();
+    expect(mockTakePayment).not.toHaveBeenCalled();
+
+    // The abandoned attempt finishing late must not resurrect the payment.
+    await act(async () => {
+      releaseConnect?.({ ok: true, error: null });
+    });
+    expect(mockTakePayment).not.toHaveBeenCalled();
+  });
+
+  it('lets staff retry a different channel after cancelling', async () => {
+    // Cancel must release the same-frame re-entry guard, or every button is dead
+    // for the rest of the sheet's life.
+    let releaseConnect: (() => void) | undefined;
+    mockTapConnect.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releaseConnect = () => resolve({ ok: false, error: 'gone' });
+        }),
+    );
+    mockBtState.connected = { serialNumber: 'WP-1' };
+
+    await render(<TakePaymentSheet target={target()} onClose={jest.fn()} />);
+    await press('Card payment');
+    await press('Tap to Pay on this phone');
+    await press('Cancel');
+    await press('Use card reader');
+
+    expect(mockTakePayment).toHaveBeenCalledWith(
+      expect.objectContaining({ readerType: 'bluetooth' }),
+    );
+
+    await act(async () => {
+      releaseConnect?.();
+    });
+  });
+
+  it('keeps Cancel live while a card reader is being reconnected', async () => {
+    // The reported path: `reconnectRemembered` deadlocked on a Bluetooth
+    // discovery that only a connect could end, so this prepare never returned.
+    let releaseReconnect: ((ok: boolean) => void) | undefined;
+    mockBtReconnect.mockImplementation(
+      () =>
+        new Promise<boolean>((resolve) => {
+          releaseReconnect = resolve;
+        }),
+    );
+
+    await render(<TakePaymentSheet target={target()} onClose={jest.fn()} />);
+    await press('Card payment');
+    await press('Connect a card reader');
+
+    expect(screen.getByText('Getting the card reader ready.')).toBeTruthy();
+    await press('Cancel');
+
+    expect(mockBtAbort).toHaveBeenCalled();
+    expect(screen.queryByText('Getting the card reader ready.')).toBeNull();
+
+    await act(async () => {
+      releaseReconnect?.(false);
+    });
+    // The cancelled attempt must not drag staff into the pairing step afterwards.
+    expect(screen.queryByText('Choose your card reader.')).toBeNull();
   });
 });
 

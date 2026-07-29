@@ -11,6 +11,11 @@
  */
 
 import { formatPence, parsePoundsToPence } from '@/lib/format';
+import {
+  failedCardAttempts,
+  isKnownFailedCardRow,
+  type FailedCardAttempt,
+} from '@/lib/payments/failed-attempts';
 import type {
   BookingDetail,
   BookingPaymentRow,
@@ -265,6 +270,64 @@ export function pendingCardTotalPence(
   payments: BookingPaymentRow[] | null | undefined,
 ): number {
   return pendingCardPayments(payments).reduce((sum, p) => sum + p.amount_pence, 0);
+}
+
+/**
+ * Past this age a `pending` card row is stuck, not in flight: its webhook is not
+ * coming (nothing in the app can settle one — see Docs/TAP_TO_PAY.md, "Backend
+ * requirements"). ONE window, two uses: the settlement watch stops polling, and
+ * the payment sheet stops hard-blocking staff behind it.
+ */
+export const PENDING_CARD_STALE_MS = 5 * 60_000;
+
+/**
+ * How much a `pending` card row should be allowed to interrupt staff:
+ *  - `none` — nothing to say. No pending row, or the only ones are attempts this
+ *    client watched decline.
+ *  - `in_flight` — fresh and unexplained. Worth blocking a second collection for:
+ *    this is the case where taking another payment double-charges the client.
+ *  - `stale` — older than {@link PENDING_CARD_STALE_MS}. Informational ONLY: the
+ *    webhook is not coming, so continuing to hard-gate the sheet would strand the
+ *    venue with no way to take money at all.
+ */
+export type PendingCardVerdict = 'none' | 'in_flight' | 'stale';
+
+export interface PendingCardState {
+  verdict: PendingCardVerdict;
+  /** The rows behind the verdict (empty when `none`). */
+  rows: BookingPaymentRow[];
+  totalPence: number;
+}
+
+/**
+ * The pending-card verdict for a booking.
+ *
+ * Takes `nowMs` instead of reading the clock, the same discipline
+ * `settlement-watch.ts` follows: `Date.now()` during render is impure
+ * (`react-hooks/purity`), so callers pass a clock they read in an effect. A
+ * `nowMs` of 0 means "not read yet" and is treated as in flight — warning for a
+ * few extra seconds costs nothing; missing a warning costs a double charge.
+ */
+export function pendingCardState(args: {
+  payments: BookingPaymentRow[] | null | undefined;
+  nowMs: number;
+  /** Defaults to what this client has seen fail; passed explicitly in tests. */
+  knownFailed?: readonly FailedCardAttempt[];
+}): PendingCardState {
+  const known = args.knownFailed ?? failedCardAttempts();
+  const rows = pendingCardPayments(args.payments).filter(
+    (row) => !isKnownFailedCardRow(row, known),
+  );
+  if (rows.length === 0) return { verdict: 'none', rows: [], totalPence: 0 };
+
+  const totalPence = rows.reduce((sum, row) => sum + row.amount_pence, 0);
+  const newestMs = rows.reduce((newest, row) => {
+    const at = Date.parse(row.created_at);
+    return Number.isNaN(at) ? newest : Math.max(newest, at);
+  }, 0);
+  // No usable timestamp is treated as in flight, for the same reason as nowMs 0.
+  const stale = args.nowMs > 0 && newestMs > 0 && args.nowMs - newestMs > PENDING_CARD_STALE_MS;
+  return { verdict: stale ? 'stale' : 'in_flight', rows, totalPence };
 }
 
 /**

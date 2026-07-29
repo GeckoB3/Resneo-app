@@ -39,6 +39,10 @@ jest.mock('@/lib/payments/terminal-sdk', () => ({
 }));
 
 import {
+  failedCardAttempts,
+  __resetFailedCardAttemptsForTests,
+} from '@/lib/payments/failed-attempts';
+import {
   useRecordExternalPayment,
   useRefundPayment,
   useTakePayment,
@@ -60,7 +64,11 @@ beforeEach(() => {
   mockRetrieve.mockReset();
   mockCollect.mockReset();
   mockConfirm.mockReset();
+  __resetFailedCardAttemptsForTests();
 });
+
+/** The charge response for a £25 card attempt. */
+const CHARGE = { payment_intent_id: 'pi_1', client_secret: 'cs_1', amount_pence: 2500 };
 
 describe('useTakePayment (card_present)', () => {
   it('POSTs the charge, then drives retrieve -> collect -> confirm in order', async () => {
@@ -150,6 +158,99 @@ describe('useTakePayment (card_present)', () => {
     const { result } = await renderHook(() => useTakePayment('bk-1'), { wrapper: wrapper() });
     await expect(result.current.mutateAsync({ attemptId: ATTEMPT })).rejects.toThrow();
     expect(mockRetrieve).not.toHaveBeenCalled();
+  });
+});
+
+describe('a card attempt this client watches fail', () => {
+  /**
+   * The pending ledger row is written when the PaymentIntent is created, and ONLY
+   * the Stripe webhook can move it off `pending`. A decline therefore leaves the
+   * row looking in-flight — which is what warned staff "a card payment is still
+   * going through" for minutes after a tap they had watched be refused.
+   */
+  it('records the decline so the sheet stops warning about it', async () => {
+    mockApiFetch.mockResolvedValue(CHARGE);
+    mockRetrieve.mockResolvedValue({ paymentIntent: { id: 'pi_1' } });
+    mockCollect.mockResolvedValue({ paymentIntent: { id: 'pi_1' } });
+    mockConfirm.mockResolvedValue({
+      error: { message: 'The card was declined.', apiError: { declineCode: 'generic_decline' } },
+    });
+
+    const { result } = await renderHook(() => useTakePayment('bk-1'), { wrapper: wrapper() });
+    await expect(result.current.mutateAsync({ attemptId: ATTEMPT })).rejects.toThrow(
+      'The card was declined.',
+    );
+
+    expect(failedCardAttempts()).toEqual([
+      expect.objectContaining({
+        bookingId: 'bk-1',
+        paymentIntentId: 'pi_1',
+        amountPence: 2500,
+      }),
+    ]);
+  });
+
+  it('records a card the reader refused before the confirm step', async () => {
+    mockApiFetch.mockResolvedValue(CHARGE);
+    mockRetrieve.mockResolvedValue({ paymentIntent: { id: 'pi_1' } });
+    mockCollect.mockResolvedValue({
+      error: { message: 'The card was not read.', paymentIntent: { status: 'requiresPaymentMethod' } },
+    });
+
+    const { result } = await renderHook(() => useTakePayment('bk-1'), { wrapper: wrapper() });
+    await expect(result.current.mutateAsync({ attemptId: ATTEMPT })).rejects.toThrow();
+
+    expect(failedCardAttempts()).toHaveLength(1);
+  });
+
+  it('does NOT record an ambiguous failure, because Stripe may have captured', async () => {
+    /**
+     * The important negative. A confirm that failed on the network says nothing
+     * about whether the money moved, so the warning has to stay up — the app must
+     * never quietly tell staff a payment failed when it may have succeeded.
+     */
+    mockApiFetch.mockResolvedValue(CHARGE);
+    mockRetrieve.mockResolvedValue({ paymentIntent: { id: 'pi_1' } });
+    mockCollect.mockResolvedValue({ paymentIntent: { id: 'pi_1' } });
+    mockConfirm.mockResolvedValue({
+      error: { code: 'REQUEST_TIMED_OUT', message: 'The payment could not be confirmed.' },
+    });
+
+    const { result } = await renderHook(() => useTakePayment('bk-1'), { wrapper: wrapper() });
+    await expect(result.current.mutateAsync({ attemptId: ATTEMPT })).rejects.toThrow();
+
+    expect(failedCardAttempts()).toEqual([]);
+  });
+
+  it('records nothing when the charge itself never created a PaymentIntent', async () => {
+    // No PI, no ledger row, nothing to discount.
+    mockApiFetch.mockRejectedValue(new Error('offline'));
+    const { result } = await renderHook(() => useTakePayment('bk-1'), { wrapper: wrapper() });
+    await expect(result.current.mutateAsync({ attemptId: ATTEMPT })).rejects.toThrow('offline');
+    expect(failedCardAttempts()).toEqual([]);
+  });
+
+  it('refetches the booking after a failure too', async () => {
+    /**
+     * Without this the webhook's flip of the row to `failed` was invisible until
+     * some unrelated refetch happened: the sheet's live `payments` kept showing
+     * Processing, so the row it is meant to explain never updated.
+     */
+    mockApiFetch.mockResolvedValue(CHARGE);
+    mockRetrieve.mockResolvedValue({ error: { message: 'The payment could not be started.' } });
+
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    const spy = jest.spyOn(client, 'invalidateQueries');
+    const Wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+
+    const { result } = await renderHook(() => useTakePayment('bk-1'), { wrapper: Wrapper });
+    await expect(result.current.mutateAsync({ attemptId: ATTEMPT })).rejects.toThrow();
+
+    await waitFor(() => expect(spy).toHaveBeenCalled());
   });
 });
 

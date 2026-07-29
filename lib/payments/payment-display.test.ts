@@ -8,7 +8,9 @@ import {
   otherVisitLineNote,
   paymentMethodLabel,
   pendingCardPayments,
+  pendingCardState,
   pendingCardTotalPence,
+  PENDING_CARD_STALE_MS,
   refundablePayments,
   remainingAfterPayment,
   visitPaymentNote,
@@ -557,5 +559,120 @@ describe('visitPaymentNote (§5.7)', () => {
   it('tolerates an older payload with no visit block', () => {
     expect(visitPaymentNote(undefined)).toBeNull();
     expect(visitPaymentNote(null)).toBeNull();
+  });
+});
+
+describe('pendingCardState (how loud a pending card row is allowed to be)', () => {
+  const NOW = Date.parse('2026-07-29T12:00:00Z');
+  const pending = (over: Partial<BookingPaymentRow> = {}): BookingPaymentRow => ({
+    id: 'pay-1',
+    booking_id: 'bk-1',
+    method: 'card_present',
+    status: 'pending',
+    amount_pence: 2500,
+    note: null,
+    created_at: new Date(NOW - 3_000).toISOString(),
+    ...over,
+  });
+
+  it('says there is nothing to warn about when nothing is pending', () => {
+    expect(pendingCardState({ payments: [], nowMs: NOW, knownFailed: [] }).verdict).toBe('none');
+    expect(pendingCardState({ payments: null, nowMs: NOW, knownFailed: [] }).verdict).toBe('none');
+  });
+
+  it('blocks on a fresh row, with the total to show staff', () => {
+    const state = pendingCardState({
+      payments: [pending(), pending({ id: 'pay-2', amount_pence: 1000 })],
+      nowMs: NOW,
+      knownFailed: [],
+    });
+    expect(state.verdict).toBe('in_flight');
+    expect(state.totalPence).toBe(3500);
+    expect(state.rows).toHaveLength(2);
+  });
+
+  it('softens a row whose webhook is clearly never coming', () => {
+    /**
+     * Nothing in the app can settle a stuck `pending` row, so a permanent hard
+     * gate would leave the venue unable to take money at all. Past the settlement
+     * window it becomes information.
+     */
+    const stale = pending({
+      created_at: new Date(NOW - PENDING_CARD_STALE_MS - 1_000).toISOString(),
+    });
+    expect(pendingCardState({ payments: [stale], nowMs: NOW, knownFailed: [] }).verdict).toBe(
+      'stale',
+    );
+  });
+
+  it('stays blocking right up to the edge of the window', () => {
+    const edge = pending({
+      created_at: new Date(NOW - PENDING_CARD_STALE_MS + 1_000).toISOString(),
+    });
+    expect(pendingCardState({ payments: [edge], nowMs: NOW, knownFailed: [] }).verdict).toBe(
+      'in_flight',
+    );
+  });
+
+  it('assumes in flight until the clock has actually been read', () => {
+    // `nowMs` is 0 on the first render, before the effect that reads the clock.
+    // Warning for a moment too long is free; missing a warning is a double charge.
+    const old = pending({ created_at: '2020-01-01T00:00:00Z' });
+    expect(pendingCardState({ payments: [old], nowMs: 0, knownFailed: [] }).verdict).toBe(
+      'in_flight',
+    );
+  });
+
+  it('assumes in flight when the row has no readable timestamp', () => {
+    expect(
+      pendingCardState({ payments: [pending({ created_at: 'nonsense' })], nowMs: NOW, knownFailed: [] })
+        .verdict,
+    ).toBe('in_flight');
+  });
+
+  it('discounts an attempt this client watched decline', () => {
+    // The device bug: the row stays `pending` until the payment_failed webhook
+    // lands (in dev, possibly never), so staff were warned about a payment they
+    // had just seen refused.
+    const state = pendingCardState({
+      payments: [pending()],
+      nowMs: NOW,
+      knownFailed: [
+        {
+          bookingId: 'bk-1',
+          paymentIntentId: 'pi_1',
+          amountPence: 2500,
+          startedAtMs: NOW - 10_000,
+          failedAtMs: NOW - 1_000,
+        },
+      ],
+    });
+    expect(state.verdict).toBe('none');
+    expect(state.totalPence).toBe(0);
+  });
+
+  it('still counts a row the decline does not account for', () => {
+    const state = pendingCardState({
+      payments: [pending(), pending({ id: 'pay-2', amount_pence: 4000 })],
+      nowMs: NOW,
+      knownFailed: [
+        {
+          bookingId: 'bk-1',
+          paymentIntentId: 'pi_1',
+          amountPence: 2500,
+          startedAtMs: NOW - 10_000,
+          failedAtMs: NOW - 1_000,
+        },
+      ],
+    });
+    expect(state.verdict).toBe('in_flight');
+    expect(state.totalPence).toBe(4000);
+  });
+
+  it('leaves the raw ledger helpers alone, so history still shows the row', () => {
+    // Staff need the Processing -> Failed trail for reconciliation; only the
+    // gate and the notices discount it.
+    expect(pendingCardPayments([pending()])).toHaveLength(1);
+    expect(pendingCardTotalPence([pending()])).toBe(2500);
   });
 });

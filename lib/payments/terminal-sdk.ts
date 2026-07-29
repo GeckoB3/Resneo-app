@@ -29,6 +29,12 @@ import type {
 } from '@stripe/stripe-terminal-react-native';
 import type { ComponentType, ReactNode } from 'react';
 
+import {
+  READER_INIT_TIMEOUT_MESSAGE,
+  READER_INIT_TIMEOUT_MS,
+  withTimeout,
+} from '@/lib/payments/reader-timeouts';
+
 /** The subset of the SDK surface this app uses (docs §7.6, §7.7, §7A.5). */
 export interface TerminalSdkModule {
   StripeTerminalProvider: ComponentType<{
@@ -128,21 +134,60 @@ export function __resetTerminalSdkForTests(): void {
  */
 let initialized = false;
 
+/** The `initialize()` currently running, shared by concurrent callers. */
+let initializing: Promise<{ ok: boolean; error: string | null }> | null = null;
+
 export async function ensureTerminalInitialized(
   terminal: Pick<TerminalHookApi, 'initialize'>,
 ): Promise<{ ok: boolean; error: string | null }> {
   if (initialized) return { ok: true, error: null };
-  const res = await terminal.initialize();
-  if (res?.error) {
-    return { ok: false, error: terminalErrorMessage(res.error, 'Could not start the card reader.') };
-  }
-  initialized = true;
-  return { ok: true, error: null };
+  /**
+   * CONCURRENT callers share one call, not just sequential ones. The device-support
+   * probe runs the moment the card step mounts, and a staff member can tap "Tap to
+   * Pay" a fraction of a second later — two `initialize()` calls in flight at once,
+   * where the second comes back as an error envelope and aborted an otherwise fine
+   * collect with "Could not start the card reader".
+   */
+  if (initializing) return initializing;
+
+  const pending = (async (): Promise<{ ok: boolean; error: string | null }> => {
+    try {
+      // Bounded HERE rather than at each call site, so the support probe is covered
+      // too: an `initialize()` that never returns must not hold this shared slot
+      // (and must not leave the sheet on a spinner — see reader-timeouts.ts).
+      const res = await withTimeout(
+        terminal.initialize(),
+        READER_INIT_TIMEOUT_MS,
+        READER_INIT_TIMEOUT_MESSAGE,
+      );
+      if (res?.error) {
+        return {
+          ok: false,
+          error: terminalErrorMessage(res.error, 'Could not start the card reader.'),
+        };
+      }
+      initialized = true;
+      return { ok: true, error: null };
+    } catch (e) {
+      return {
+        ok: false,
+        error: e instanceof Error ? e.message : 'Could not start the card reader.',
+      };
+    }
+  })();
+  initializing = pending;
+  // Release the slot only if this call still owns it, and only once it has
+  // settled — a failed attempt must be retryable rather than cached for ever.
+  void pending.finally(() => {
+    if (initializing === pending) initializing = null;
+  });
+  return pending;
 }
 
-/** Test seam: forget the initialised flag. */
+/** Test seam: forget the initialised flag (and any call in flight). */
 export function __resetTerminalInitForTests(): void {
   initialized = false;
+  initializing = null;
 }
 
 /**
@@ -173,6 +218,31 @@ export function androidPermissionMessage(
     return 'Nearby devices permission is needed to connect to a card reader. Turn it on for Resneo in your phone app settings.';
   }
   return 'Location permission is needed to take card payments. Turn it on for Resneo in your phone app settings.';
+}
+
+/**
+ * Did this SDK error definitely leave the money UNCOLLECTED?
+ *
+ * The distinction matters because the answer decides whether the app is allowed
+ * to stop warning staff that a payment might be in flight (see
+ * `lib/payments/failed-attempts.ts`). Getting it wrong in the optimistic
+ * direction hides a payment that Stripe actually captured.
+ *
+ * `true` only for the two unambiguous shapes the pinned beta gives us:
+ *  - the attached PaymentIntent's status says no payment method is attached or
+ *    the intent was cancelled, or
+ *  - the API error carries a decline code (the card was refused).
+ *
+ * Everything else — most importantly a confirm that failed with a NETWORK error,
+ * where Stripe may have captured and the client simply never heard back — is
+ * `false`, so the "still going through" warning stays up.
+ */
+export function isDefiniteCardFailure(error: StripeError | null | undefined): boolean {
+  if (!error) return false;
+  const status = error.paymentIntent?.status;
+  if (status === 'requiresPaymentMethod' || status === 'canceled') return true;
+  const declineCode = error.apiError?.declineCode;
+  return typeof declineCode === 'string' && declineCode.trim() !== '';
 }
 
 /** Human-readable message from an SDK error envelope, with a safe fallback. */

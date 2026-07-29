@@ -16,13 +16,15 @@ import {
   otherVisitLineNote,
   paymentMethodLabel,
   pendingCardPayments,
-  pendingCardTotalPence,
+  pendingCardState,
   refundablePayments,
   remainingAfterPayment,
   visitPaymentNote,
+  type PendingCardVerdict,
 } from '@/lib/payments/payment-display';
 import { isTerminalSdkAvailable } from '@/lib/payments/terminal-sdk';
 import { useTapToPayReader } from '@/lib/payments/terminal';
+import { usePendingCardClock } from '@/lib/payments/usePendingCardClock';
 import {
   useCancelCardCollection,
   useRecordExternalPayment,
@@ -129,6 +131,13 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
   const recordExternal = useRecordExternalPayment(target?.id ?? '');
   const refund = useRefundPayment(target?.id ?? '');
 
+  /**
+   * Clock for the pending-row age check, ticking only while there is a row whose
+   * age could matter. Render must not read `Date.now()` itself — see
+   * `usePendingCardClock`.
+   */
+  const nowMs = usePendingCardClock(pendingCardPayments(target?.payments).length > 0);
+
   // Reset every time a different booking opens the sheet, and follow the live
   // balance while it stays open.
   useEffect(() => {
@@ -148,12 +157,23 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
       setError(null);
       setSuccess(null);
       setRefundArmedId(null);
-      // A card payment already in flight opens on the warning rather than the
-      // menu: starting a fresh collection over the top of one is exactly how a
-      // client gets charged twice. A row that appears LATER (a confirm that
-      // errored after Stripe captured, or a second device collecting) can't
-      // move staff mid-flow, so it raises the persistent notice below instead.
-      setMode(pendingCardPayments(target.payments).length > 0 ? 'processing' : 'menu');
+      /**
+       * A card payment already in flight opens on the warning rather than the
+       * menu: starting a fresh collection over the top of one is exactly how a
+       * client gets charged twice. A row that appears LATER (a confirm that
+       * errored after Stripe captured, or a second device collecting) can't
+       * move staff mid-flow, so it raises the persistent notice below instead.
+       *
+       * Only a FRESH, unexplained row gets to take the sheet over. A decline this
+       * client watched, or a row so old its webhook is never coming, must not
+       * stand between the venue and taking the money — it softens to the notice
+       * below. `Date.now()` is fine here: an effect is not render.
+       */
+      setMode(
+        pendingCardState({ payments: target.payments, nowMs: Date.now() }).verdict === 'in_flight'
+          ? 'processing'
+          : 'menu',
+      );
       return;
     }
 
@@ -209,10 +229,11 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
    * so one can appear while this sheet is on screen — a confirm that failed
    * after Stripe captured, or a colleague collecting on another device. Reading
    * it once at open would leave Retry (and cash) armed with no warning at all.
+   *
+   * `verdict` also decides how loud it is: see `pendingCardState`.
    */
-  const pendingCard = pendingCardPayments(target.payments);
-  const hasPendingCard = pendingCard.length > 0;
-  const pendingTotalPence = pendingCardTotalPence(target.payments);
+  const pending = pendingCardState({ payments: target.payments, nowMs });
+  const hasPendingCard = pending.verdict !== 'none';
 
   const busy = recordExternal.isPending || refund.isPending;
   /** The card steps replace the balance headline with what is being charged. */
@@ -370,7 +391,11 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
         {/* As a whole step when the sheet opened on one... */}
         {mode === 'processing' ? (
           <>
-            <PendingCardNotice totalPence={pendingTotalPence} guestName={target.guestName} />
+            <PendingCardNotice
+              verdict={pending.verdict}
+              totalPence={pending.totalPence}
+              guestName={target.guestName}
+            />
             <View style={styles.buttons}>
               <Button label="Wait and close" onPress={handleClose} fullWidth />
               <Button
@@ -387,8 +412,13 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
         ) : hasPendingCard && mode !== 'success' ? (
           /* ...and as a notice pinned above whatever step staff are already on
              when one shows up mid-flow. It sits above every button that could
-             commit money — Retry included — rather than only the card ones. */
-          <PendingCardNotice totalPence={pendingTotalPence} guestName={target.guestName} />
+             commit money — Retry included — rather than only the card ones. A
+             stale row lands here too, informational rather than blocking. */
+          <PendingCardNotice
+            verdict={pending.verdict}
+            totalPence={pending.totalPence}
+            guestName={target.guestName}
+          />
         ) : null}
 
         {/* ── Method menu ─────────────────────────────────────────────── */}
@@ -637,23 +667,46 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
  * identically whether it is the whole step (sheet opened on a pending row) or a
  * notice pinned over another step (row appeared while staff were mid-flow).
  *
- * The closing line is the only exit staff have from a payment whose webhook
- * never lands: nothing in the app can settle or cancel a stuck `pending` row
- * (see Docs/TAP_TO_PAY.md, "Backend requirements").
+ * Two registers, because "wait a moment" and "this one is not coming back" need
+ * completely different things from staff:
+ *  - `in_flight`: wait, and don't collect again.
+ *  - `stale`: stop waiting. Nothing in the app can settle or cancel a stuck
+ *    `pending` row (see Docs/TAP_TO_PAY.md, "Backend requirements"), so the copy
+ *    has to hand staff the two places that CAN answer whether the money arrived —
+ *    the booking's payment history and the Stripe dashboard — and make clear
+ *    they are not blocked from taking payment in the meantime.
  */
 function PendingCardNotice({
+  verdict,
   totalPence,
   guestName,
 }: {
+  verdict: PendingCardVerdict;
   totalPence: number;
   guestName: string;
 }) {
   const { colors } = useTheme();
+  const amount = totalPence > 0 ? ` of ${formatPence(totalPence)}` : '';
+
+  if (verdict === 'stale') {
+    return (
+      <View style={styles.notice}>
+        <Text variant="bodyMedium" color={colors.warning}>
+          A card payment{amount} started a while ago and still has not been confirmed.
+        </Text>
+        <Text variant="bodySmall" tone="muted">
+          It may or may not have gone through. Check the payment history on this booking, or the
+          payment in your Stripe dashboard, before taking another card payment. Cash and other
+          payments are not affected.
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.notice}>
       <Text variant="bodyMedium" color={colors.warning}>
-        A card payment{totalPence > 0 ? ` of ${formatPence(totalPence)}` : ''} is still going
-        through. It normally finishes within a few seconds.
+        A card payment{amount} is still going through. It normally finishes within a few seconds.
       </Text>
       <Text variant="bodySmall" tone="muted">
         Taking another payment now could charge {guestName} twice. If it is still here in a few
@@ -710,6 +763,12 @@ function CardCollectSection({
    * loses the race with "the SDK is busy".
    */
   const startingRef = useRef(false);
+  /**
+   * Which attempt is current. Cancel bumps it, and an attempt whose generation is
+   * stale must neither touch state nor — the part that matters — go on to create
+   * a PaymentIntent for a payment staff have already walked away from.
+   */
+  const attemptRef = useRef(0);
 
   // Dismissing mid-collection must leave nothing waiting on a card tap (§3.2).
   // Unmount is the reliable hook for that: this section is torn down whether
@@ -742,9 +801,35 @@ function CardCollectSection({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot on arrival
   }, [autoCollect]);
 
+  /**
+   * Abandon the prepare in flight and come back to a state staff can act from.
+   *
+   * The bug this exists for: a prepare that never settled left `busy` true, and
+   * `busy` disabled every button INCLUDING Back — so a scan that found nothing
+   * trapped the staff member on "Getting the card reader ready" until the whole
+   * sheet was closed. Cancelling has to reach the SDK too, because an abandoned
+   * discovery is refused-as-busy on the next attempt.
+   */
+  function cancelPrepare() {
+    attemptRef.current += 1;
+    // Released here, not in the abandoned attempt's `finally`: the collect
+    // buttons and Retry must be live again immediately. `collectingRef` is
+    // deliberately left alone — it is the unmount cleanup's only signal that a
+    // card collection needs cancelling, and Cancel cannot be reached from the
+    // collecting stage anyway.
+    startingRef.current = false;
+    void tapToPay.abort();
+    void bluetooth.abort();
+    setStage('idle');
+    setMessage(null);
+  }
+
   async function collect(kind: InPersonReaderType) {
     if (startingRef.current) return;
     startingRef.current = true;
+    const attempt = ++attemptRef.current;
+    /** True once Cancel (or a newer attempt) has superseded this one. */
+    const superseded = () => attemptRef.current !== attempt;
     try {
       setMessage(null);
       setStage('preparing');
@@ -752,10 +837,17 @@ function CardCollectSection({
       onReaderTypeChange(kind);
 
       // Ensure a reader is ready for the chosen channel.
+      /**
+       * Each `await` below is followed by a `superseded()` check, and they are the
+       * only awaits between "staff pressed collect" and the charge route — so a
+       * cancelled attempt can neither write state nor create a PaymentIntent that
+       * nobody is watching.
+       */
       if (kind === 'tap_to_pay') {
         // The reason comes back from the call, not from hook state: reading
         // `tapToPay.error` here would see the pre-await render's value.
         const { ok, error: reason } = await tapToPay.connect();
+        if (superseded()) return;
         if (!ok) {
           setStage('error');
           setMessage(reason ?? 'The card reader could not be started.');
@@ -765,6 +857,7 @@ function CardCollectSection({
         // Try the reader this device already knows before making staff pick one
         // from a list (§7A.5): the common case is the same reader every day.
         const reconnected = await bluetooth.reconnectRemembered();
+        if (superseded()) return;
         if (!reconnected) {
           onPair();
           setStage('idle');
@@ -802,8 +895,10 @@ function CardCollectSection({
       }
     } finally {
       // Released on every route out, including the connect-failed and
-      // sent-to-pairing early returns, so Retry is never dead.
-      startingRef.current = false;
+      // sent-to-pairing early returns, so Retry is never dead. A superseded
+      // attempt leaves it alone: Cancel already released it, and a newer attempt
+      // may be holding it.
+      if (!superseded()) startingRef.current = false;
     }
   }
 
@@ -814,6 +909,12 @@ function CardCollectSection({
     stage === 'collecting' ||
     bluetooth.status === 'connecting' ||
     bluetooth.status === 'updating';
+  /**
+   * While a reader is being got ready, the bottom button cancels the attempt
+   * instead of navigating: that is the state staff were trapped in, and "Back"
+   * would read as if it also abandoned the payment sheet.
+   */
+  const canCancelPrepare = stage === 'preparing';
 
   return (
     <>
@@ -884,11 +985,20 @@ function CardCollectSection({
             </Text>
           </>
         ) : null}
+        {/* The escape hatch. NEVER disabled while a reader is being got ready:
+            spinner + every button dead is exactly what stranded staff, with only
+            "close the whole sheet" left. It locks during `collecting` alone,
+            where the client's card is already being read — and even there,
+            dismissing the sheet cancels the collection. */}
         <Button
-          label="Back"
+          label={canCancelPrepare ? 'Cancel' : 'Back'}
           variant="ghost"
-          disabled={busy}
+          disabled={stage === 'collecting'}
           onPress={() => {
+            if (canCancelPrepare) {
+              cancelPrepare();
+              return;
+            }
             tapToPay.reset();
             onBack();
           }}
@@ -983,7 +1093,10 @@ function ReaderPairingSection({
           onPress={() => void reader.scan()}
           fullWidth
         />
-        <Button label="Back" variant="ghost" disabled={updating} onPress={onBack} fullWidth />
+        {/* Never disabled. Going back does not disconnect the reader, so it
+            cannot interrupt (or brick) a firmware install — and a locked Back
+            during a stalled install left staff with nothing to press at all. */}
+        <Button label="Back" variant="ghost" onPress={onBack} fullWidth />
       </View>
     </>
   );

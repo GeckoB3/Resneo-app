@@ -5,6 +5,15 @@ import type { Reader } from '@stripe/stripe-terminal-react-native';
 import { shouldSimulateCardReaders } from '@/lib/env';
 import { ensureTerminalLocationId } from '@/lib/payments/connection-token';
 import {
+  READER_CANCEL_TIMEOUT_MS,
+  READER_DISCOVERY_TIMEOUT_MESSAGE,
+  READER_DISCOVERY_TIMEOUT_MS,
+  READER_TOKEN_TIMEOUT_MESSAGE,
+  READER_TOKEN_TIMEOUT_MS,
+  TAP_TO_PAY_CONNECT_TIMEOUT_MS,
+  withTimeout,
+} from '@/lib/payments/reader-timeouts';
+import {
   androidPermissionMessage,
   ensureTerminalInitialized,
   getTerminalSdk,
@@ -52,6 +61,11 @@ export interface UseTapToPayReader {
   connect: () => Promise<{ ok: boolean; error: string | null }>;
   /** Re-check device support (cheap; cached after the first answer). */
   checkSupport: () => Promise<boolean>;
+  /**
+   * Abandon a connect in flight and cancel the SDK's discovery, so staff can get
+   * out of a slow prepare and the next attempt starts clean.
+   */
+  abort: () => Promise<void>;
   reset: () => void;
 }
 
@@ -192,6 +206,10 @@ export function useTapToPayReader(): UseTapToPayReader {
     try {
       setStatus('initializing');
 
+      // Every await from here to "the client can tap" is time-boxed: an unbounded
+      // one leaves the sheet on "Getting the card reader ready" with nothing to
+      // press (see reader-timeouts.ts). This one is bounded, and de-duplicated
+      // against the support probe, inside `ensureTerminalInitialized`.
       const init = await ensureTerminalInitialized(terminal);
       if (!init.ok) {
         return fail(init.error ?? 'Could not start the card reader.');
@@ -212,47 +230,50 @@ export function useTapToPayReader(): UseTapToPayReader {
         if (refused) return fail(refused);
       }
 
-      const locationId = await ensureTerminalLocationId({
-        accessToken,
-        ownerVenueId: ownerVenueId ?? null,
-      });
+      const locationId = await withTimeout(
+        ensureTerminalLocationId({ accessToken, ownerVenueId: ownerVenueId ?? null }),
+        READER_TOKEN_TIMEOUT_MS,
+        READER_TOKEN_TIMEOUT_MESSAGE,
+      );
 
       setStatus('discovering');
-      const readerPromise = new Promise<Reader.Type>((resolve, reject) => {
+      /**
+       * The reader arrives on the discovery callback, so this promise is what the
+       * attempt actually waits on. Its bound is `withTimeout` below rather than a
+       * timer paired with the resolver: the old paired timer only fired while THIS
+       * attempt still owned `pendingReaderRef`, so anything that cleared the ref
+       * first (a retry, or now `abort`) left this await hanging for ever — and
+       * with it the caller's `startingRef` guard, killing Retry.
+       */
+      const readerPromise = new Promise<Reader.Type>((resolve) => {
         pendingReaderRef.current = resolve;
-        // Tap to Pay resolves its local reader almost immediately; a stall means
-        // something is wrong (permissions, ineligible device) so fail loudly
-        // rather than leaving staff on a spinner.
-        setTimeout(() => {
-          // Only cancel if THIS attempt is still the pending one. A retry
-          // started before the old timer fired would otherwise have its
-          // resolver cleared and hang until its own timeout.
-          if (pendingReaderRef.current === resolve) {
-            pendingReaderRef.current = null;
-            reject(new Error('No card reader became available on this phone.'));
-          }
-        }, 30_000);
       });
 
       discoveringRef.current = true;
-      const discovery = await terminal.discoverReaders({
-        discoveryMethod: 'tapToPay',
-        simulated: USE_SIMULATED,
-      });
+      const discovery = await withTimeout(
+        terminal.discoverReaders({ discoveryMethod: 'tapToPay', simulated: USE_SIMULATED }),
+        READER_DISCOVERY_TIMEOUT_MS,
+        READER_DISCOVERY_TIMEOUT_MESSAGE,
+      );
       discoveringRef.current = false;
       if (discovery?.error) {
         pendingReaderRef.current = null;
         return fail(terminalErrorMessage(discovery.error, 'Could not find a card reader.'));
       }
 
-      const reader = await readerPromise;
+      const reader = await withTimeout(
+        readerPromise,
+        READER_DISCOVERY_TIMEOUT_MS,
+        'No card reader became available on this phone.',
+      );
+      pendingReaderRef.current = null;
 
       setStatus('connecting');
-      const connected = await terminal.connectReader({
-        discoveryMethod: 'tapToPay',
-        reader,
-        locationId,
-      });
+      const connected = await withTimeout(
+        terminal.connectReader({ discoveryMethod: 'tapToPay', reader, locationId }),
+        TAP_TO_PAY_CONNECT_TIMEOUT_MS,
+        'The card reader did not finish starting up. Try again.',
+      );
       if (connected?.error) {
         return fail(terminalErrorMessage(connected.error, 'Could not connect the card reader.'));
       }
@@ -271,5 +292,27 @@ export function useTapToPayReader(): UseTapToPayReader {
     setError(null);
   }, []);
 
-  return { status, error, supported, connect, checkSupport, reset };
+  /**
+   * Staff cancelled a prepare that was taking too long. As well as resetting, the
+   * SDK's discovery has to be cancelled: an abandoned one is refused-as-busy the
+   * next time, so leaving it running would break the retry as well.
+   */
+  const abort = useCallback(async (): Promise<void> => {
+    pendingReaderRef.current = null;
+    setStatus('idle');
+    setError(null);
+    if (discoveringRef.current) {
+      discoveringRef.current = false;
+      await withTimeout(
+        terminal.cancelDiscovering(),
+        READER_CANCEL_TIMEOUT_MS,
+        'Could not stop looking for a card reader.',
+      ).catch(() => {
+        // Nothing was discovering, or the SDK never confirmed. Either way the
+        // attempt is abandoned and the next one re-discovers.
+      });
+    }
+  }, [terminal]);
+
+  return { status, error, supported, connect, checkSupport, abort, reset };
 }
