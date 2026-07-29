@@ -18,6 +18,7 @@ import { Text } from '@/components/ui/Text';
 import { TimePickerField } from '@/components/ui/TimePickerField';
 import { ApiError } from '@/lib/api/client';
 import { hapticSelect } from '@/lib/haptics';
+import { linkedBookingLabel } from '@/lib/linked/linked-calendar-view';
 import { pingLinkedBookingView, useUpdateLinkedBooking } from '@/lib/queries/useLinkedCalendar';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { useToast } from '@/providers/ToastProvider';
@@ -163,7 +164,7 @@ export function LinkedBookingDetailSheet({
   if (!booking || !venue) return null;
 
   const venueName = venue.venueName;
-  const guestName = timeOnly ? 'Busy' : booking.guestName?.trim() || 'Guest';
+  const title = timeOnly ? 'Busy' : linkedBookingLabel(booking);
   const practitionerName =
     venue.practitioners.find((p) => p.id === booking.practitionerId)?.name ?? null;
   const guestPhone = booking.guestPhone?.trim() || null;
@@ -174,7 +175,10 @@ export function LinkedBookingDetailSheet({
   const durationMinutes = booking.bookingEndTime
     ? timeToMinutes(fmtTime(booking.bookingEndTime)) - timeToMinutes(fmtTime(booking.bookingTime))
     : null;
-  const serviceLine = [booking.serviceName?.trim() || null, practitionerName]
+  const serviceLabel = booking.serviceName?.trim() || null;
+  // Without the PII grant the heading already shows the service, so only the
+  // practitioner is left to add here.
+  const serviceLine = [serviceLabel === title ? null : serviceLabel, practitionerName]
     .filter(Boolean)
     .join(' · ');
 
@@ -216,10 +220,10 @@ export function LinkedBookingDetailSheet({
             <View style={[styles.heroAccent, { backgroundColor: colors.warning }]} />
             <View style={styles.heroInner}>
               <View style={styles.headerRow}>
-                <Avatar name={guestName} size={48} />
+                <Avatar name={title} size={48} />
                 <View style={styles.headerText}>
                   <Text variant="heading" numberOfLines={1}>
-                    {guestName}
+                    {title}
                   </Text>
                   <View style={styles.chipRow}>
                     <Badge label={`Linked · ${venueName}`} tone="warning" />

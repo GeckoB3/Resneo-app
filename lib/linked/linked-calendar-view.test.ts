@@ -1,6 +1,7 @@
 import {
   fmtTime,
   linkedActionLabel,
+  linkedBookingLabel,
   linkedBusyBlock,
   linkedGridBooking,
   linkedHasTemplate,
@@ -87,6 +88,25 @@ describe('linkedActionLabel', () => {
     expect(
       linkedActionLabel(venue({ visibility: 'full_details', action: 'create_edit_cancel' })),
     ).toBeNull();
+  });
+});
+
+describe('linkedBookingLabel', () => {
+  it('uses the client name when the link shares it', () => {
+    expect(linkedBookingLabel(booking())).toBe('Ada Lovelace');
+  });
+
+  it('falls back to the service when the link hides the client name (no PII grant)', () => {
+    expect(linkedBookingLabel(booking({ guestName: null }))).toBe('Cut & Finish');
+  });
+
+  it('falls back to "Booking" when neither is available', () => {
+    expect(linkedBookingLabel(booking({ guestName: null, serviceName: null }))).toBe('Booking');
+  });
+
+  it('treats a blank name as absent rather than rendering empty text', () => {
+    expect(linkedBookingLabel(booking({ guestName: '   ' }))).toBe('Cut & Finish');
+    expect(linkedBookingLabel(booking({ guestName: '', serviceName: '  ' }))).toBe('Booking');
   });
 });
 

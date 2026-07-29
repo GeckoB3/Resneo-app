@@ -26,6 +26,20 @@ export function fmtTime(t: string | null | undefined): string {
   return (t ?? '').slice(0, 5);
 }
 
+/**
+ * What to call a linked booking on screen.
+ *
+ * A link without the PII grant returns `guestName: null` for EVERY booking: the
+ * web stopped falling through to the booking's own guest-name snapshot (§5.2),
+ * so the client's name is hidden along with their contact details. That makes
+ * this fallback the normal case on such a link, not a rare one, and the web
+ * labels those cards with the service — which still tells staff what the slot is
+ * for, where a bare "Booking" on every row would not.
+ */
+export function linkedBookingLabel(b: LinkedBooking): string {
+  return b.guestName?.trim() || b.serviceName?.trim() || 'Booking';
+}
+
 /** Per-grant pill label mirroring the web `VenueCalendarBlock` header. */
 export function linkedActionLabel(venue: LinkedVenueCalendar): string | null {
   if (venue.visibility === 'time_only') return 'Time blocks only';
@@ -46,7 +60,7 @@ export function linkedGridBooking(
   const pracName = practitioners.find((p) => p.id === b.practitionerId)?.name;
   return {
     id: b.id,
-    guestName: b.guestName ?? b.serviceName ?? 'Booking',
+    guestName: linkedBookingLabel(b),
     serviceName: pracName
       ? `${b.serviceName ?? ''}${b.serviceName ? ' · ' : ''}${pracName}`
       : b.serviceName ?? '',

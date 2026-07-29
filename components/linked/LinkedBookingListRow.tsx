@@ -4,6 +4,7 @@ import { StatusPill } from '@/components/ui/Badge';
 import { PressableScale } from '@/components/ui/PressableScale';
 import { Text } from '@/components/ui/Text';
 import { formatBookingTime } from '@/lib/booking/booking-format';
+import { linkedBookingLabel } from '@/lib/linked/linked-calendar-view';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { LinkCalendarVisibility, LinkedBooking } from '@/types/linked-venues';
@@ -29,8 +30,11 @@ export function LinkedBookingListRow({
 }: LinkedBookingListRowProps) {
   const { colors } = useTheme();
   const timeOnly = visibility === 'time_only';
-  const title = timeOnly ? 'Busy' : booking.guestName?.trim() || 'Booking';
-  const subtitle = timeOnly ? null : booking.serviceName?.trim() || null;
+  const title = timeOnly ? 'Busy' : linkedBookingLabel(booking);
+  const serviceLabel = booking.serviceName?.trim() || null;
+  // On a no-PII link the title already IS the service, so the subtitle would
+  // just repeat it back.
+  const subtitle = timeOnly || serviceLabel === title ? null : serviceLabel;
   const time = booking.bookingTime ? formatBookingTime(booking.bookingTime) : '';
 
   return (
