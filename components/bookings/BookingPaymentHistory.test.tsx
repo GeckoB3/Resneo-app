@@ -7,6 +7,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 
 import { BookingPaymentHistory } from '@/components/bookings/BookingPaymentHistory';
+import { formatTimelineEventTime } from '@/lib/booking/booking-timeline';
 import { buildPaymentHistory } from '@/lib/payments/payment-display';
 import type { BookingPaymentRow } from '@/types/booking-detail';
 
@@ -35,7 +36,13 @@ describe('BookingPaymentHistory', () => {
     await renderHistory([row({})]);
     expect(screen.getByText('£25.00 · Card')).toBeTruthy();
     expect(screen.getByText('Collected')).toBeTruthy();
-    expect(screen.getByText('23 Jul, 11:00')).toBeTruthy();
+    /**
+     * Expected via the same formatter the component uses, NOT a literal:
+     * timestamps render in the machine's local time, so "23 Jul, 11:00"
+     * hard-coded the dev box's UTC+1 and failed on CI's UTC runner. What this
+     * pins is the wiring — the row's own created_at reaching the screen.
+     */
+    expect(screen.getByText(formatTimelineEventTime('2026-07-23T10:00:00Z'))).toBeTruthy();
   });
 
   it('surfaces the rows staff most need: still processing, and failed', async () => {
