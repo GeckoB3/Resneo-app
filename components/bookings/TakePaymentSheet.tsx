@@ -963,6 +963,13 @@ function CardCollectSection({
             fullWidth
           />
         ) : null}
+        {__DEV__ && !supportsTapToPay ? (
+          <Text variant="caption" tone="muted">
+            Tap to Pay hidden: this build failed Stripe&apos;s real-device check. Real Tap to Pay
+            never runs on debuggable dev builds or with Developer options on — test it with the
+            preview build, or set EXPO_PUBLIC_TERMINAL_SIMULATED=true here.
+          </Text>
+        ) : null}
         <Button
           label={readerConnected ? 'Use card reader' : 'Connect a card reader'}
           variant="secondary"
