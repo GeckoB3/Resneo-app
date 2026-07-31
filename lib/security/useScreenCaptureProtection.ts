@@ -1,10 +1,20 @@
 import { useFocusEffect } from 'expo-router';
 import { useCallback } from 'react';
 
+import { shouldAllowScreenCapture } from '@/lib/env';
 import { captureException } from '@/lib/observability';
 
 /**
- * Block screenshots / screen recording while a PII-bearing screen is focused.
+ * Block screenshots / screen recording while a sensitive screen is focused.
+ *
+ * POLICY (2026-07-31): applied ONLY to the compliance screen, which can hold
+ * special-category data (patch tests, allergies, contraindications). The booking
+ * detail and client profile deliberately allow capture: iOS cannot block
+ * screenshots at all (so an Android-only block was inconsistent theater against
+ * authorized staff), and blocking broke legitimate workflows — sharing an
+ * appointment with a client, handing a booking to a colleague, screenshotting a
+ * bug for support. Don't re-add it to high-traffic screens via a security sweep;
+ * widening coverage is a product decision.
  *
  * On Android this sets `FLAG_SECURE` (screenshots blocked, app content hidden in
  * the recents thumbnail); on iOS it obscures the screen during a recording. The
@@ -20,6 +30,9 @@ import { captureException } from '@/lib/observability';
 export function useScreenCaptureProtection(key: string): void {
   useFocusEffect(
     useCallback(() => {
+      // Explicit dev/store-capture opt-out (EXPO_PUBLIC_ALLOW_SCREENSHOTS=true).
+      // Checked inside the effect so the hook order never varies.
+      if (shouldAllowScreenCapture()) return;
       // Loaded lazily + typed `any` so the bundle compiles even if the native
       // module isn't present (e.g. a future build that drops the dep).
       let ScreenCapture: {

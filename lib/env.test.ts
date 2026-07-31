@@ -1,4 +1,4 @@
-import { shouldSimulateCardReaders } from '@/lib/env';
+import { shouldAllowScreenCapture, shouldSimulateCardReaders } from '@/lib/env';
 
 /**
  * The card-reader simulation switch (Tap to Pay design doc §7.6 / §7A.10).
@@ -42,5 +42,36 @@ describe('shouldSimulateCardReaders', () => {
     // A typo must not silently decide how real money is collected.
     process.env[KEY] = 'yes';
     expect(shouldSimulateCardReaders()).toBe(__DEV__);
+  });
+});
+
+/**
+ * The screenshot escape hatch for PII-protected screens (W9.2). Getting this
+ * wrong in the permissive direction strips FLAG_SECURE from a release, so the
+ * default and the exact-match are both pinned.
+ */
+const CAPTURE_KEY = 'EXPO_PUBLIC_ALLOW_SCREENSHOTS';
+const captureOriginal = process.env.EXPO_PUBLIC_ALLOW_SCREENSHOTS;
+
+afterEach(() => {
+  if (captureOriginal === undefined) delete process.env[CAPTURE_KEY];
+  else process.env[CAPTURE_KEY] = captureOriginal;
+});
+
+describe('shouldAllowScreenCapture', () => {
+  it('defaults to protected (capture NOT allowed) when unset, in every build', () => {
+    delete process.env[CAPTURE_KEY];
+    expect(shouldAllowScreenCapture()).toBe(false);
+  });
+
+  it("allows capture only when set to exactly 'true'", () => {
+    process.env[CAPTURE_KEY] = 'true';
+    expect(shouldAllowScreenCapture()).toBe(true);
+  });
+
+  it('treats anything else as protected', () => {
+    // '1', 'yes', 'TRUE' must not lift a privacy layer.
+    process.env[CAPTURE_KEY] = 'TRUE';
+    expect(shouldAllowScreenCapture()).toBe(false);
   });
 });

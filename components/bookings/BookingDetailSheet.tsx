@@ -18,7 +18,6 @@ import { bookingDetailActions } from '@/lib/booking/booking-status-actions';
 import { isTableReservationBooking } from '@/lib/booking/infer-booking-row-model';
 import { useToast } from '@/providers/ToastProvider';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
-import { useScreenCaptureProtection } from '@/lib/security/useScreenCaptureProtection';
 import { useBookingDetail } from '@/lib/queries/useBookingDetail';
 import { useDashboardHome } from '@/lib/queries/useDashboardHome';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
@@ -56,18 +55,6 @@ function useKeyboardVisible() {
     };
   }, []);
   return visible;
-}
-
-/**
- * Engages screen-capture protection for as long as it stays mounted. Rendered
- * only while the sheet is open, so its `useFocusEffect` cleanup (which fires on
- * unmount as well as blur) releases protection the moment the sheet closes —
- * giving the focus-scoped helper an explicit open/closed gate. The booking
- * detail shows guest PII (name, phone, email, notes, visit history).
- */
-function SheetScreenCaptureGuard() {
-  useScreenCaptureProtection('booking-detail');
-  return null;
 }
 
 /**
@@ -147,9 +134,6 @@ export function BookingDetailSheet({
 
   return (
     <Sheet visible={!!bookingId} onClose={onClose} fill maxHeight="94%" keyboardAvoidance="overlay">
-      {/* Block screenshots / recording while booking PII is on screen. Mounted
-          only while open so protection releases the instant the sheet closes. */}
-      {bookingId ? <SheetScreenCaptureGuard /> : null}
       <View style={styles.header}>
         <Text variant="subheading">{isAppointmentVenue ? 'Appointment' : 'Booking'}</Text>
         <View style={styles.headerActions}>

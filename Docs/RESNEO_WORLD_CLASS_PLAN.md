@@ -37,7 +37,7 @@ _Method: read-only audit pass — three parallel code-audit agents (app architec
 | W7.2 merge data-loss | ✅ | custom-fields resolved on merge (overlay only fills, never clobbers with empty) |
 | W8.1–8.4 performance | ✅ | virtualized 5 screens, memoized rows, fixed waitlist tick, FlatList tuning |
 | W9.1 app-lock | ✅ | opt-in biometric gate (off by default, no lockout/loop) |
-| W9.2 screen-capture | ✅ | FLAG_SECURE on PII/compliance screens (focus-scoped) |
+| W9.2 screen-capture | ✅ | FLAG_SECURE on the compliance screen only (focus-scoped). 2026-07-31: deliberately REMOVED from booking/client detail — iOS can't block screenshots (Android-only block was inconsistent), and it broke staff workflows (share appointment, bug reports). `EXPO_PUBLIC_ALLOW_SCREENSHOTS=true` lifts it in dev. |
 | W9.4 GDPR export | ✅ | chunked/yielding CSV build + progress/feedback |
 | W10.2 channels+badges | ✅ | Android notification channels + badge management |
 | W10.3 actionable push | ✅ | View/Confirm notification categories |

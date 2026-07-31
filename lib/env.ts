@@ -86,6 +86,22 @@ export function shouldSimulateCardReaders(): boolean {
   return __DEV__;
 }
 
+/**
+ * Whether screenshots/screen recording should be ALLOWED on the protected
+ * compliance screen, which normally engages `FLAG_SECURE` via
+ * `useScreenCaptureProtection` (world-class plan W9.2; since 2026-07-31 the
+ * only protected surface — see the policy note in that hook).
+ *
+ * Opt-in and exact-match on purpose: protection is the default in EVERY build,
+ * including dev — only an explicit `EXPO_PUBLIC_ALLOW_SCREENSHOTS=true` lifts
+ * it, so a typo can never silently strip a privacy layer from a release. This
+ * exists for development and store-listing captures, not for production.
+ */
+export function shouldAllowScreenCapture(): boolean {
+  // Static member access only — see the inlining note at the top of this file.
+  return process.env.EXPO_PUBLIC_ALLOW_SCREENSHOTS === 'true';
+}
+
 export function getAppVersion(): string {
   return Constants.expoConfig?.version ?? '1.0.0';
 }

@@ -7,7 +7,6 @@ import { Screen } from '@/components/ui/Screen';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { ApiError } from '@/lib/api/client';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
-import { useScreenCaptureProtection } from '@/lib/security/useScreenCaptureProtection';
 import { useUpdateBookingStatus } from '@/lib/queries/useBookingMutations';
 import { useBookingDetail } from '@/lib/queries/useBookingDetail';
 import { useDashboardHome } from '@/lib/queries/useDashboardHome';
@@ -28,10 +27,6 @@ export default function BookingDetailScreen() {
   const { venue } = useVenueContext();
   const updateStatus = useUpdateBookingStatus(bookingId ?? '');
   const isAdmin = staffQuery.data?.staff?.role === 'admin';
-
-  // Block screenshots / screen recording — the detail surfaces guest PII (name,
-  // phone, email, notes, visit history). Focus-scoped, so it lifts on navigate-away.
-  useScreenCaptureProtection('booking-detail');
 
   const actionLoading = updateStatus.isPending;
 
