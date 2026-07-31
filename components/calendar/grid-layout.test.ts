@@ -9,11 +9,13 @@ import {
   SLOT_MINUTES,
   TAP_SNAP_MINUTES,
   TIME_GUTTER_WIDTH,
+  computeBlockHeights,
   computeColumnMinWidth,
   computeCompactPxPerMinute,
   computeFillColumnWidth,
   computeGridBounds,
   computeLaneLayouts,
+  computeRangeHeights,
   hourLabel,
   minutesToTime,
   timeToMinutes,
@@ -33,9 +35,17 @@ describe('layout constants', () => {
   it('exposes the grid/snap granularities and gutter width', () => {
     expect(SLOT_MINUTES).toBe(30);
     expect(TIME_GUTTER_WIDTH).toBe(56);
-    expect(MIN_BLOCK_HEIGHT).toBe(40);
+    expect(MIN_BLOCK_HEIGHT).toBe(14);
     expect(TAP_SNAP_MINUTES).toBe(15);
     expect(DRAG_SNAP_MINUTES).toBe(5);
+  });
+
+  it('keeps the degenerate floor below the shortest bookable bar', () => {
+    // The floor may only rescue bars with no real duration. Once it exceeds a
+    // bar staff can actually book, it starts inflating real bookings — which is
+    // exactly how back-to-back 15-minute appointments came to overlap.
+    expect(MIN_BLOCK_HEIGHT).toBeLessThan(TAP_SNAP_MINUTES * PX_PER_MINUTE);
+    expect(COMPACT_MIN_BLOCK_HEIGHT).toBeLessThan(TAP_SNAP_MINUTES * COMPACT_MIN_PX_PER_MINUTE);
   });
 
   it('defaults the day window to 08:00–20:00', () => {
@@ -45,7 +55,7 @@ describe('layout constants', () => {
 
   it('floors the compact scale at the web legibility floor (16px per 15min)', () => {
     expect(COMPACT_MIN_PX_PER_MINUTE).toBeCloseTo(16 / 15);
-    expect(COMPACT_MIN_BLOCK_HEIGHT).toBe(20);
+    expect(COMPACT_MIN_BLOCK_HEIGHT).toBe(10);
   });
 });
 
@@ -492,5 +502,133 @@ describe('computeLaneLayouts', () => {
     ]);
     expect(layout.get('a')).toEqual({ laneIndex: 0, laneCount: 2 });
     expect(layout.get('zero')).toEqual({ laneIndex: 1, laneCount: 2 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Block heights — a bar's extent IS its time
+// ---------------------------------------------------------------------------
+
+describe('computeBlockHeights', () => {
+  /**
+   * The bug this function exists for: MIN_BLOCK_HEIGHT was 40px, but a
+   * 15-minute booking is only 30px at 2px/min, so every short bar was inflated
+   * and visibly ran 10px into the booking underneath it. Reported from a device
+   * as "two 15-minute bookings overlap slightly".
+   */
+  it('gives back-to-back 15-minute bookings their exact heights, so neither overlaps', () => {
+    const fifteen = 15 * PX_PER_MINUTE; // 30px
+    const heights = computeBlockHeights(
+      [
+        { id: 'a', top: 0, bottom: fifteen },
+        { id: 'b', top: fifteen, bottom: fifteen * 2 },
+      ],
+      MIN_BLOCK_HEIGHT,
+    );
+    expect(heights.get('a')).toBe(fifteen);
+    expect(heights.get('b')).toBe(fifteen);
+    // The load-bearing assertion: a's painted bottom never passes b's top.
+    expect(0 + (heights.get('a') as number)).toBeLessThanOrEqual(fifteen);
+  });
+
+  it('never lets ANY duration overlap the next booking, however short', () => {
+    // 5-minute bookings (10px) are shorter than the degenerate floor itself.
+    const five = 5 * PX_PER_MINUTE;
+    const tops = [0, five, five * 2, five * 3];
+    const heights = computeBlockHeights(
+      tops.map((top, i) => ({ id: `b${i}`, top, bottom: top + five })),
+      MIN_BLOCK_HEIGHT,
+    );
+    tops.forEach((top, i) => {
+      const bottom = top + (heights.get(`b${i}`) as number);
+      const nextTop = tops[i + 1];
+      if (nextTop != null) expect(bottom).toBeLessThanOrEqual(nextTop);
+    });
+  });
+
+  it('grows a degenerate block only into space that is genuinely free', () => {
+    // A 1-minute booking (2px) alone on the grid may reach the floor…
+    const alone = computeBlockHeights([{ id: 'a', top: 0, bottom: 2 }], MIN_BLOCK_HEIGHT);
+    expect(alone.get('a')).toBe(MIN_BLOCK_HEIGHT);
+    // …but only as far as the next booking's start when one is close behind.
+    const crowded = computeBlockHeights(
+      [
+        { id: 'a', top: 0, bottom: 2 },
+        { id: 'b', top: 6, bottom: 60 },
+      ],
+      MIN_BLOCK_HEIGHT,
+    );
+    expect(crowded.get('a')).toBe(6);
+    expect(crowded.get('b')).toBe(54);
+  });
+
+  it('leaves normal bookings at exactly their duration', () => {
+    const heights = computeBlockHeights(
+      [
+        { id: 'half', top: 0, bottom: 30 * PX_PER_MINUTE },
+        { id: 'hour', top: 200, bottom: 200 + 60 * PX_PER_MINUTE },
+      ],
+      MIN_BLOCK_HEIGHT,
+    );
+    expect(heights.get('half')).toBe(60);
+    expect(heights.get('hour')).toBe(120);
+  });
+
+  it('measures free space per lane, since lanes render side by side', () => {
+    // A short block in lane 0 is not boxed in by an overlapping block that was
+    // pushed into lane 1 — they never collide vertically.
+    const heights = computeBlockHeights(
+      [
+        { id: 'a', top: 0, bottom: 4, laneIndex: 0 },
+        { id: 'b', top: 2, bottom: 60, laneIndex: 1 },
+      ],
+      MIN_BLOCK_HEIGHT,
+    );
+    expect(heights.get('a')).toBe(MIN_BLOCK_HEIGHT);
+  });
+
+  it('does not shrink a genuine overlap — that is the lane splitter, not this', () => {
+    // b starts before a ends: a keeps its full height and the two go side by side.
+    const heights = computeBlockHeights(
+      [
+        { id: 'a', top: 0, bottom: 60 },
+        { id: 'b', top: 30, bottom: 90 },
+      ],
+      MIN_BLOCK_HEIGHT,
+    );
+    expect(heights.get('a')).toBe(60);
+    expect(heights.get('b')).toBe(60);
+  });
+
+  it('is order-independent', () => {
+    const items = [
+      { id: 'c', top: 120, bottom: 150 },
+      { id: 'a', top: 0, bottom: 30 },
+      { id: 'b', top: 30, bottom: 60 },
+    ];
+    const forward = computeBlockHeights(items, MIN_BLOCK_HEIGHT);
+    const reversed = computeBlockHeights([...items].reverse(), MIN_BLOCK_HEIGHT);
+    for (const id of ['a', 'b', 'c']) expect(reversed.get(id)).toBe(forward.get(id));
+  });
+
+  it('returns an empty map for no items', () => {
+    expect(computeBlockHeights([], MIN_BLOCK_HEIGHT).size).toBe(0);
+  });
+});
+
+describe('computeRangeHeights', () => {
+  it('converts minute ranges against the grid start and applies the same clamp', () => {
+    // 09:00-09:15 and 09:15-09:30 on a grid starting at 08:00.
+    const heights = computeRangeHeights(
+      [
+        { id: 'a', start: 9 * 60, end: 9 * 60 + 15 },
+        { id: 'b', start: 9 * 60 + 15, end: 9 * 60 + 30 },
+      ],
+      8 * 60,
+      PX_PER_MINUTE,
+      MIN_BLOCK_HEIGHT,
+    );
+    expect(heights.get('a')).toBe(30);
+    expect(heights.get('b')).toBe(30);
   });
 });

@@ -16,8 +16,10 @@ import { useMemo } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
 import {
+  computeBlockHeights,
   computeGridBounds,
   computeLaneLayouts,
+  computeRangeHeights,
   hourLabel,
   minutesToTime,
   PX_PER_MINUTE,
@@ -119,12 +121,16 @@ function positionBookings(
     bottom: (end - gridStartMin) * PX_PER_MINUTE,
   }));
   const lanes = computeLaneLayouts(laneInputs);
+  const heights = computeBlockHeights(
+    laneInputs.map((input) => ({ ...input, laneIndex: lanes.get(input.id)?.laneIndex ?? 0 })),
+    WEEK_MIN_BLOCK_HEIGHT,
+  );
   return raw.map(({ booking, start, end }) => {
     const lane = lanes.get(booking.id) ?? { laneIndex: 0, laneCount: 1 };
     return {
       booking,
       top: (start - gridStartMin) * PX_PER_MINUTE,
-      height: Math.max((end - start) * PX_PER_MINUTE, WEEK_MIN_BLOCK_HEIGHT),
+      height: heights.get(booking.id) ?? (end - start) * PX_PER_MINUTE,
       laneIndex: lane.laneIndex,
       laneCount: lane.laneCount,
     };
@@ -311,51 +317,67 @@ function WeekDayCol({
     [day.bookings, gridStartMin],
   );
 
-  const sessions = useMemo(
-    () =>
-      day.sessions
-        .map((session) => {
-          const start = timeToMinutes(session.startTime);
-          const end = timeToMinutes(session.endTime);
-          return {
-            session,
-            top: (start - gridStartMin) * PX_PER_MINUTE,
-            height: Math.max((end - start) * PX_PER_MINUTE, WEEK_MIN_BLOCK_HEIGHT),
-          };
-        })
-        .filter((s) => s.height > 0),
-    [day.sessions, gridStartMin],
-  );
+  const sessions = useMemo(() => {
+    const raw = day.sessions.map((session) => ({
+      session,
+      start: timeToMinutes(session.startTime),
+      end: timeToMinutes(session.endTime),
+    }));
+    const heights = computeRangeHeights(
+      raw.map(({ session, start, end }) => ({ id: session.id, start, end })),
+      gridStartMin,
+      PX_PER_MINUTE,
+      WEEK_MIN_BLOCK_HEIGHT,
+    );
+    return raw
+      .map(({ session, start, end }) => ({
+        session,
+        top: (start - gridStartMin) * PX_PER_MINUTE,
+        height: heights.get(session.id) ?? (end - start) * PX_PER_MINUTE,
+      }))
+      .filter((s) => s.height > 0);
+  }, [day.sessions, gridStartMin]);
 
-  const scheduleBlocks = useMemo(
-    () =>
-      day.scheduleBlocks
-        .map((block) => {
-          const start = timeToMinutes(block.startTime);
-          const end = timeToMinutes(block.endTime);
-          return {
-            block,
-            top: (start - gridStartMin) * PX_PER_MINUTE,
-            height: Math.max((end - start) * PX_PER_MINUTE, WEEK_MIN_BLOCK_HEIGHT),
-          };
-        })
-        .filter((s) => s.height > 0),
-    [day.scheduleBlocks, gridStartMin],
-  );
-
-  const busyBlocks = useMemo(() => {
-    const out: { block: CalendarTimeBlock; top: number; height: number }[] = [];
-    for (const block of day.timeBlocks ?? []) {
-      const start = timeToMinutes(block.start);
-      const end = timeToMinutes(block.end);
-      if (end <= start) continue;
-      out.push({
+  const scheduleBlocks = useMemo(() => {
+    const raw = day.scheduleBlocks.map((block) => ({
+      block,
+      start: timeToMinutes(block.startTime),
+      end: timeToMinutes(block.endTime),
+    }));
+    const heights = computeRangeHeights(
+      raw.map(({ block, start, end }) => ({ id: block.id, start, end })),
+      gridStartMin,
+      PX_PER_MINUTE,
+      WEEK_MIN_BLOCK_HEIGHT,
+    );
+    return raw
+      .map(({ block, start, end }) => ({
         block,
         top: (start - gridStartMin) * PX_PER_MINUTE,
-        height: Math.max((end - start) * PX_PER_MINUTE, WEEK_MIN_BLOCK_HEIGHT),
-      });
-    }
-    return out;
+        height: heights.get(block.id) ?? (end - start) * PX_PER_MINUTE,
+      }))
+      .filter((s) => s.height > 0);
+  }, [day.scheduleBlocks, gridStartMin]);
+
+  const busyBlocks = useMemo(() => {
+    const raw = (day.timeBlocks ?? [])
+      .map((block) => ({
+        block,
+        start: timeToMinutes(block.start),
+        end: timeToMinutes(block.end),
+      }))
+      .filter(({ start, end }) => end > start);
+    const heights = computeRangeHeights(
+      raw.map(({ block, start, end }) => ({ id: block.id, start, end })),
+      gridStartMin,
+      PX_PER_MINUTE,
+      WEEK_MIN_BLOCK_HEIGHT,
+    );
+    return raw.map(({ block, start, end }) => ({
+      block,
+      top: (start - gridStartMin) * PX_PER_MINUTE,
+      height: heights.get(block.id) ?? (end - start) * PX_PER_MINUTE,
+    }));
   }, [day.timeBlocks, gridStartMin]);
 
   const closedRanges = useMemo(

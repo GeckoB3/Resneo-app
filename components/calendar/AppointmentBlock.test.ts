@@ -32,10 +32,28 @@ describe('pickBlockLayout', () => {
       expect(pickBlockLayout({ height: 40, laneCount: 4 }).maxActions).toBe(1);
     });
 
-    it('tracks the bar height for buttons: a hair shorter, floored 14, capped 22', () => {
-      expect(pickBlockLayout({ height: 20, laneCount: 1 }).buttonHeight).toBe(16);
-      expect(pickBlockLayout({ height: 17, laneCount: 1 }).buttonHeight).toBe(14); // floor
+    it('tracks the bar height for buttons: inset by 6, floored 14, capped 22', () => {
+      expect(pickBlockLayout({ height: 20, laneCount: 1 }).buttonHeight).toBe(14);
+      expect(pickBlockLayout({ height: 26, laneCount: 1 }).buttonHeight).toBe(20);
       expect(pickBlockLayout({ height: 40, laneCount: 1 }).buttonHeight).toBe(22); // cap
+    });
+
+    it('leaves a button room to sit inside the bar it is drawn in', () => {
+      // The regression this guards: bar heights are now true durations, so a
+      // short bar is genuinely short. A button taller than its bar gets sliced
+      // by the card's overflow:hidden and reads as broken.
+      for (const height of [20, 24, 30, 40, 55]) {
+        const { buttonHeight, maxActions } = pickBlockLayout({ height, laneCount: 1 });
+        if (maxActions > 0) expect(buttonHeight + 2).toBeLessThanOrEqual(height);
+      }
+    });
+
+    it('drops the actions entirely on a bar too short to draw one', () => {
+      // Sub-10-minute bookings: the name alone, rather than a clipped control.
+      expect(pickBlockLayout({ height: 19, laneCount: 1 }).maxActions).toBe(0);
+      expect(pickBlockLayout({ height: 14, laneCount: 1 }).maxActions).toBe(0);
+      // …and the threshold is not so eager that it strips a 15-minute bar (30px).
+      expect(pickBlockLayout({ height: 30, laneCount: 1 }).maxActions).toBeGreaterThan(0);
     });
 
     it('shrinks the NAME font only on the very short bars (web thresholds)', () => {

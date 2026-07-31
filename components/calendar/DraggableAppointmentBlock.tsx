@@ -53,8 +53,12 @@ const HOLD_TOLERANCE_PX = 10;
 const SNAP_SPRING = { damping: 22, stiffness: 280 };
 /** Max touch zone at the bottom edge that resizes instead of moves (px). */
 const RESIZE_ZONE_HEIGHT = 22;
-/** Tiny safety floor — the grid's MIN_BLOCK_HEIGHT (36) means every real block
- *  clears this, so the duration grip shows on all bookings. */
+/**
+ * Bars shorter than this hide the resize grip. Bar heights are true durations,
+ * so at 2px/min this is every booking under ~14 minutes: too little edge for a
+ * {@link RESIZE_ZONE_HEIGHT} touch zone that wouldn't swallow the whole block
+ * (leaving no way to move or tap it). Those resize from the detail sheet.
+ */
 const RESIZE_MIN_BLOCK_HEIGHT = 28;
 /** Duration bounds (minutes). */
 const MIN_DURATION_MINUTES = DRAG_SNAP_MINUTES;

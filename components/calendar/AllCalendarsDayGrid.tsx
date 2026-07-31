@@ -39,11 +39,13 @@ import {
 import { DraggableAppointmentBlock } from '@/components/calendar/DraggableAppointmentBlock';
 import {
   COMPACT_MIN_BLOCK_HEIGHT,
+  computeBlockHeights,
   computeColumnMinWidth,
   computeCompactPxPerMinute,
   computeFillColumnWidth,
   computeGridBounds,
   computeLaneLayouts,
+  computeRangeHeights,
   hourLabel,
   MIN_BLOCK_HEIGHT,
   minutesToTime,
@@ -181,13 +183,19 @@ function positionColumn(
     bottom: (end - gridStartMin) * pxPerMinute,
   }));
   const lanes = computeLaneLayouts(laneInputs);
+  // True extents; the degenerate floor grows a block only into free space, so a
+  // bar never runs past the start of the next booking in its lane.
+  const heights = computeBlockHeights(
+    laneInputs.map((input) => ({ ...input, laneIndex: lanes.get(input.id)?.laneIndex ?? 0 })),
+    minBlockHeight,
+  );
 
   return raw.map(({ booking, start, end }) => {
     const lane = lanes.get(booking.id) ?? { laneIndex: 0, laneCount: 1 };
     return {
       booking,
       top: (start - gridStartMin) * pxPerMinute,
-      height: Math.max((end - start) * pxPerMinute, minBlockHeight),
+      height: heights.get(booking.id) ?? (end - start) * pxPerMinute,
       laneIndex: lane.laneIndex,
       laneCount: lane.laneCount,
       durationMinutes: end - start,
@@ -650,6 +658,39 @@ function DayColumn({
     [column.scheduleBlocks],
   );
 
+  // Gap-clamped heights per overlay layer — each stacks on its own, and each
+  // gets the same "a bar never runs past the next one" guarantee as bookings.
+  const overlayHeights = useMemo(
+    () =>
+      computeRangeHeights(
+        overlays.map(({ block, start, end }) => ({ id: block.id, start, end })),
+        gridStartMin,
+        pxPerMinute,
+        minBlockHeight,
+      ),
+    [overlays, gridStartMin, pxPerMinute, minBlockHeight],
+  );
+  const sessionHeights = useMemo(
+    () =>
+      computeRangeHeights(
+        sessions.map(({ session, start, end }) => ({ id: session.id, start, end })),
+        gridStartMin,
+        pxPerMinute,
+        minBlockHeight,
+      ),
+    [sessions, gridStartMin, pxPerMinute, minBlockHeight],
+  );
+  const scheduleHeights = useMemo(
+    () =>
+      computeRangeHeights(
+        scheduleBlocks.map(({ block, start, end }) => ({ id: block.id, start, end })),
+        gridStartMin,
+        pxPerMinute,
+        minBlockHeight,
+      ),
+    [scheduleBlocks, gridStartMin, pxPerMinute, minBlockHeight],
+  );
+
   // Conflict inputs for the hold-drag/resize gesture on OWN columns: every
   // wall-holding range in THIS column (bookings minus Cancelled/No-Show, manual
   // blocks, capacity sessions, schedule blocks), plus the column's open hours (a
@@ -743,7 +784,7 @@ function DayColumn({
             styles.overlay,
             {
               top: (start - gridStartMin) * pxPerMinute,
-              height: Math.max((end - start) * pxPerMinute, minBlockHeight),
+              height: overlayHeights.get(block.id) ?? (end - start) * pxPerMinute,
               borderColor: colors.border,
             },
           ]}>
@@ -762,7 +803,7 @@ function DayColumn({
             styles.session,
             {
               top: (start - gridStartMin) * pxPerMinute,
-              height: Math.max((end - start) * pxPerMinute, minBlockHeight),
+              height: sessionHeights.get(session.id) ?? (end - start) * pxPerMinute,
               backgroundColor: `${SESSION_ACCENT}1F`,
               borderColor: SESSION_ACCENT,
             },
@@ -776,7 +817,7 @@ function DayColumn({
       {/* Class / event / resource blocks from the schedule feed — read-only,
           named, accent-coloured. Disjoint from `sessions` (different feed). */}
       {scheduleBlocks.map(({ block, start, end }) => {
-        const height = Math.max((end - start) * pxPerMinute, minBlockHeight);
+        const height = scheduleHeights.get(block.id) ?? (end - start) * pxPerMinute;
         return (
           <View
             key={block.id}

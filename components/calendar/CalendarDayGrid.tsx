@@ -12,9 +12,11 @@ import {
 import { DraggableAppointmentBlock } from '@/components/calendar/DraggableAppointmentBlock';
 import {
   COMPACT_MIN_BLOCK_HEIGHT,
+  computeBlockHeights,
   computeCompactPxPerMinute,
   computeGridBounds,
   computeLaneLayouts,
+  computeRangeHeights,
   hourLabel,
   MIN_BLOCK_HEIGHT,
   minutesToTime,
@@ -320,12 +322,20 @@ export function CalendarDayGrid({
       bottom: (end - gridStartMin) * pxPerMinute,
     }));
     const lanes = computeLaneLayouts(laneInputs);
+    // Heights are the TRUE extents; the degenerate floor may only grow a block
+    // into free space, so a bar never runs past the next booking's start.
+    const heights = computeBlockHeights(
+      laneInputs.map((input) => ({
+        ...input,
+        laneIndex: lanes.get(input.id)?.laneIndex ?? 0,
+      })),
+      minBlockHeight,
+    );
 
     const blocks: PositionedBooking[] = rawBlocks.map(({ booking, start, end }) => {
       const lane = lanes.get(booking.id) ?? { laneIndex: 0, laneCount: 1 };
       const top = (start - gridStartMin) * pxPerMinute;
-      // Visual floor for tappability — applied only now, post-lane-packing.
-      const height = Math.max((end - start) * pxPerMinute, minBlockHeight);
+      const height = heights.get(booking.id) ?? (end - start) * pxPerMinute;
       return {
         booking,
         top,
@@ -337,25 +347,45 @@ export function CalendarDayGrid({
       };
     });
 
+    // Each overlay layer stacks on its own, so its heights are gap-clamped
+    // within that layer — same rule as bookings, same guarantee.
+    const overlayH = computeRangeHeights(
+      rawTimeBlocks.map(({ block, start, end }) => ({ id: block.id, start, end })),
+      gridStartMin,
+      pxPerMinute,
+      minBlockHeight,
+    );
     const overlayBlocks: PositionedTimeBlock[] = rawTimeBlocks.map(({ block, start, end }) => ({
       block,
       top: (start - gridStartMin) * pxPerMinute,
-      height: Math.max((end - start) * pxPerMinute, minBlockHeight),
+      height: overlayH.get(block.id) ?? (end - start) * pxPerMinute,
       timeLabel: `${minutesToTime(start)}–${minutesToTime(end)}`,
     }));
 
+    const sessionH = computeRangeHeights(
+      rawSessions.map(({ session, start, end }) => ({ id: session.id, start, end })),
+      gridStartMin,
+      pxPerMinute,
+      minBlockHeight,
+    );
     const sessionItems: PositionedSession[] = rawSessions.map(({ session, start, end }) => ({
       session,
       top: (start - gridStartMin) * pxPerMinute,
-      height: Math.max((end - start) * pxPerMinute, minBlockHeight),
+      height: sessionH.get(session.id) ?? (end - start) * pxPerMinute,
       timeLabel: `${minutesToTime(start)}–${minutesToTime(end)}`,
     }));
 
+    const scheduleH = computeRangeHeights(
+      rawScheduleBlocks.map(({ block, start, end }) => ({ id: block.id, start, end })),
+      gridStartMin,
+      pxPerMinute,
+      minBlockHeight,
+    );
     const scheduleItems: PositionedScheduleBlock[] = rawScheduleBlocks.map(
       ({ block, start, end }) => ({
         block,
         top: (start - gridStartMin) * pxPerMinute,
-        height: Math.max((end - start) * pxPerMinute, minBlockHeight),
+        height: scheduleH.get(block.id) ?? (end - start) * pxPerMinute,
         timeLabel: `${minutesToTime(start)}–${minutesToTime(end)}`,
       }),
     );

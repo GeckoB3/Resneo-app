@@ -54,6 +54,21 @@ const TRAY_CHROME_PX = 12;
  * minHeight) so the bottom-anchored buttons never overlap the text above them.
  */
 const TRAY_HEIGHT = 24;
+/**
+ * Below this bar height the quick actions are dropped entirely.
+ *
+ * A button has a hard 14px floor (its label's line box) and sits 2px off the
+ * bar's bottom edge, so a shorter bar can only render it clipped by the card's
+ * `overflow: 'hidden'` — and a half-cut control reads as broken, not compact.
+ * Bars this short belong to sub-10-minute bookings, where the guest name alone
+ * is the honest amount of information. The block still opens on tap.
+ */
+const ACTIONS_MIN_HEIGHT = 20;
+/**
+ * Vertical space a row-layout button must leave inside the bar: its 2px bottom
+ * inset plus 4px of breathing room, so the button never touches the border.
+ */
+const ROW_BUTTON_INSET = 6;
 
 export type BlockLayout = {
   /**
@@ -109,20 +124,23 @@ export function pickBlockLayout(params: {
   const { height, laneCount, widthPx, hasActions = true } = params;
 
   if (height < CORNER_MIN_HEIGHT) {
-    const maxActions = !hasActions
-      ? 0
-      : widthPx != null && widthPx > 0
-        ? clampActions(Math.floor((widthPx - ROW_CHROME_PX - NAME_RESERVE_PX) / ROW_PER_BUTTON_PX))
-        : laneCount > 1
-          ? 1
-          : 2;
+    const maxActions =
+      !hasActions || height < ACTIONS_MIN_HEIGHT
+        ? 0
+        : widthPx != null && widthPx > 0
+          ? clampActions(Math.floor((widthPx - ROW_CHROME_PX - NAME_RESERVE_PX) / ROW_PER_BUTTON_PX))
+          : laneCount > 1
+            ? 1
+            : 2;
     return {
       mode: 'row',
       rows: height >= 44 ? 2 : 1,
       maxActions,
       // Web parity: a hair shorter than the bar, floored so it never vanishes
-      // and capped so it stays compact on the taller short bars.
-      buttonHeight: Math.max(14, Math.min(height - 4, 22)),
+      // and capped so it stays compact on the taller short bars. The inset keeps
+      // the button clear of the bottom border — with `ACTIONS_MIN_HEIGHT` above,
+      // the 14px floor can no longer exceed the space the bar actually has.
+      buttonHeight: Math.max(14, Math.min(height - ROW_BUTTON_INSET, 22)),
       nameFontSize: height < 24 ? 10 : height < 32 ? 12 : 13,
     };
   }

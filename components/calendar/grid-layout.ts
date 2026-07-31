@@ -17,21 +17,27 @@ export const SLOT_MINUTES = 30;
 /** Width of the left time-label gutter. */
 export const TIME_GUTTER_WIDTH = 56;
 /**
- * Minimum visual height (px) for a block so very short appointments stay
- * tappable AND have room for the guest name plus a compact action row. Visual
- * only — applied AFTER lane assignment so it never inflates a block's extent
- * into a false overlap. Lane packing runs on true minute ranges; this floor is
- * purely cosmetic.
+ * Absolute visual floor (px) so a degenerate booking (a 0–2 minute range, or a
+ * bad end time) still paints something visible and tappable.
+ *
+ * NOT a comfort floor. A bar's height is otherwise EXACTLY its duration,
+ * because a calendar's core promise is that a bar's extent *is* its time: this
+ * was 40px, which inflated every sub-20-minute booking and made back-to-back
+ * 15-minute appointments visibly overlap (a 15-min bar is 30px at 2px/min, so
+ * the floor stole 10px from the next one). Sized to one name row (10/13 text)
+ * plus the card's border — see `pickBlockLayout`, which drops the action
+ * buttons rather than clip them on bars this short.
+ *
+ * Even this floor is clamped to the space actually free below the block, so it
+ * can never overlap the next booking — see {@link computeBlockHeights}.
  */
-export const MIN_BLOCK_HEIGHT = 40;
+export const MIN_BLOCK_HEIGHT = 14;
 /**
- * Compact-day visual floor for a block — one name row (12/15 text) plus the
- * card's vertical padding. Deliberately smaller than {@link MIN_BLOCK_HEIGHT}:
- * compact mode trades tap comfort for a glanceable whole-day overview (web
- * parity: bars shrink to the slot scale), and a squeezed bar still opens its
- * detail on tap.
+ * Compact-day degenerate floor. Smaller than {@link MIN_BLOCK_HEIGHT}: compact
+ * mode trades tap comfort for a glanceable whole-day overview (web parity: bars
+ * shrink to the slot scale), and a squeezed bar still opens its detail on tap.
  */
-export const COMPACT_MIN_BLOCK_HEIGHT = 20;
+export const COMPACT_MIN_BLOCK_HEIGHT = 10;
 
 /**
  * Compact-day vertical scale: fit the WHOLE visible window into the measured
@@ -240,6 +246,77 @@ export interface LaneLayout {
   laneIndex: number;
   /** Total lanes in this cluster (1 = no overlap, full width). */
   laneCount: number;
+}
+
+/**
+ * Visual height for each block: its TRUE extent, so a bar always ends where its
+ * booking ends.
+ *
+ * The only exception is a degenerate bar shorter than `minHeight`, which may
+ * grow — but ONLY into space that is genuinely free before the next bar in its
+ * own lane. That clamp is what makes the guarantee total: whatever the
+ * durations, a bar can never extend past the start of the booking below it.
+ *
+ * Lanes are considered separately because blocks in different lanes render
+ * side by side (they never collide vertically). Blocks with no lane information
+ * are treated as one lane, which is the safe direction — it can only make the
+ * floor more conservative, never less.
+ */
+export function computeBlockHeights(
+  items: (LaneInput & { laneIndex?: number })[],
+  minHeight: number,
+): Map<string, number> {
+  const heights = new Map<string, number>();
+
+  const byLane = new Map<number, LaneInput[]>();
+  for (const item of items) {
+    const lane = item.laneIndex ?? 0;
+    const existing = byLane.get(lane);
+    if (existing) existing.push(item);
+    else byLane.set(lane, [item]);
+  }
+
+  for (const lane of byLane.values()) {
+    const sorted = [...lane].sort((a, b) => a.top - b.top || a.bottom - b.bottom);
+    sorted.forEach((item, i) => {
+      const trueHeight = Math.max(0, item.bottom - item.top);
+      // The nearest block STARTING at or after this one ends caps the growth.
+      // Blocks that start earlier than this one's end are genuine overlaps —
+      // they are handled by lane splitting, not by shrinking anyone's height.
+      let nextTop = Infinity;
+      for (let j = i + 1; j < sorted.length; j += 1) {
+        if (sorted[j].top >= item.bottom) {
+          nextTop = sorted[j].top;
+          break;
+        }
+      }
+      const free = nextTop - item.top;
+      heights.set(item.id, Math.max(trueHeight, Math.min(minHeight, free)));
+    });
+  }
+
+  return heights;
+}
+
+/**
+ * {@link computeBlockHeights} for a flat, single-stack collection given in
+ * MINUTES — the day grid's blocked-time, class-session and schedule overlays,
+ * which each render as their own layer rather than into booking lanes.
+ */
+export function computeRangeHeights(
+  ranges: { id: string; start: number; end: number }[],
+  gridStartMin: number,
+  pxPerMinute: number,
+  minHeight: number,
+): Map<string, number> {
+  return computeBlockHeights(
+    ranges.map(({ id, start, end }) => ({
+      id,
+      top: (start - gridStartMin) * pxPerMinute,
+      bottom: (end - gridStartMin) * pxPerMinute,
+    })),
+    minHeight,
+  );
 }
 
 /**
