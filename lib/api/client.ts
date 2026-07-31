@@ -53,6 +53,43 @@ export function isRequiresConfirmationBody(
   );
 }
 
+/**
+ * Pull the first specific field message out of a zod `error.flatten()` body.
+ *
+ * The API answers a failed schema parse with a bare `{ error: 'Invalid request',
+ * details: { formErrors, fieldErrors } }`. Surfacing only `error` told the user
+ * nothing about WHICH field was wrong — a service whose price was blank failed
+ * every save with "Invalid request" no matter what had been edited, and the only
+ * way to find out why was to read the route's schema. The details are already on
+ * the wire; this just says what they say.
+ *
+ * Returns null when the body carries no usable field detail.
+ */
+export function zodDetailMessage(details: unknown): string | null {
+  if (typeof details !== 'object' || details === null) return null;
+  const { formErrors, fieldErrors } = details as {
+    formErrors?: unknown;
+    fieldErrors?: unknown;
+  };
+
+  if (typeof fieldErrors === 'object' && fieldErrors !== null) {
+    for (const [field, messages] of Object.entries(fieldErrors as Record<string, unknown>)) {
+      const first = Array.isArray(messages)
+        ? messages.find((m): m is string => typeof m === 'string' && m.trim() !== '')
+        : null;
+      // Field names are snake_case wire names; "buffer minutes" reads better
+      // than "buffer_minutes" in a sentence shown to a salon owner.
+      if (first) return `${field.replace(/_/g, ' ')}: ${first}`;
+    }
+  }
+
+  if (Array.isArray(formErrors)) {
+    const first = formErrors.find((m): m is string => typeof m === 'string' && m.trim() !== '');
+    if (first) return first;
+  }
+  return null;
+}
+
 export function getApiErrorMessage(body: unknown, status: number): string {
   if (isApiErrorBody(body)) {
     if (body.code === 'VENUE_PAST_DUE') {
@@ -64,7 +101,10 @@ export function getApiErrorMessage(body: unknown, status: number): string {
     if (status === 403) {
       return body.error;
     }
-    return body.error;
+    // A 400 from a schema parse: name the offending field rather than making
+    // the user guess from "Invalid request".
+    const detail = status === 400 ? zodDetailMessage(body.details) : null;
+    return detail ? `${body.error} — ${detail}` : body.error;
   }
   if (status === 403) {
     return 'You do not have permission for this action.';

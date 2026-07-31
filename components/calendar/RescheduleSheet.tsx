@@ -36,8 +36,10 @@ type RescheduleSheetProps = {
   onMoved?: (previous: RescheduleTarget, meta: { durationChanged: boolean }) => void;
 };
 
-// API bounds: appointments accept 15–840; table bookings cap at 300 (server-validated).
-const MIN_DURATION_MINUTES = 15;
+// API bounds: appointments accept 5–840; table bookings cap at 300 (server-validated).
+// The floor matches the shortest configurable service duration, so a 5-minute
+// service can actually be booked at its own length (drag-resize uses the same).
+const MIN_DURATION_MINUTES = 5;
 const MAX_DURATION_MINUTES = 14 * 60;
 
 function formatDuration(total: number): string {

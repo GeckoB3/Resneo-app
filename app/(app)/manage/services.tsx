@@ -1337,7 +1337,16 @@ export default function ServicesScreen() {
       description: description.trim() || null,
       duration_minutes: durationMinutes,
       buffer_minutes: bufferMinutes,
-      price_pence: pricePence ?? null,
+      /**
+       * OMITTED when there is no price, never null. `price_pence` is the one
+       * field in this payload the API does not accept as null
+       * (`z.number().int().min(0).optional()` — unlike `deposit_pence`, which is
+       * `.nullable()`), so sending null failed the schema and came back as a
+       * bare "Invalid request" for EVERY save of a service with a blank price,
+       * whatever the user had actually edited. Web parity: the dashboard's
+       * form-to-payload sends `?? undefined` here for the same reason.
+       */
+      price_pence: pricePence ?? undefined,
       deposit_pence: depositToSend,
       payment_requirement: paymentReq,
       colour,
@@ -1409,7 +1418,6 @@ export default function ServicesScreen() {
           ...shared,
           ...adminExtras,
           description: shared.description ?? undefined,
-          price_pence: pricePence ?? undefined,
           deposit_pence: depositToSend,
           practitioner_ids: practitionerIds,
         });
