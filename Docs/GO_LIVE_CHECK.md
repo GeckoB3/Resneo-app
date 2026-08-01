@@ -3,6 +3,8 @@
 **Run:** 2026-08-01, against `main` @ `1587f76`.
 **Verdict:** the codebase is release-quality — 1,244 tests pass, zero TypeScript errors, no secrets committed, crash reporting fully wired. **Two items must be settled before a store submission**, both build-configuration rather than code, and neither visible from a dev or preview build.
 
+> **Correction (2026-08-01):** §2.1 originally reported the iOS/Android version split as a defect and advised removing `android.version`. That was wrong — the split is deliberate per-platform marketing versioning and the OTA claim was incorrect too. The section is struck through below with the reasoning. Nothing else in this report changed.
+
 Re-run the mechanical parts with:
 
 ```bash
@@ -35,13 +37,17 @@ If approval hasn't landed and you want to ship now, the WisePad 3 path needs no 
 
 ## 2. Should fix
 
-### 2.1 Android ships a different version number than iOS
+### ~~2.1 Android ships a different version number than iOS~~ — WITHDRAWN, this is deliberate
 
-`app.json` has root `version: "1.0.4"` but also `android.version: "1.0.1"`. Per the [SDK 56 config reference](https://docs.expo.dev/versions/v56.0.0/config/app/), `android.version` **takes precedence over the root `version`** — so Play would show **1.0.1** while the App Store shows 1.0.4.
+The first version of this check called the root `version: "1.0.4"` / `android.version: "1.0.1"` split a bug and advised deleting the override. **That was wrong — do not delete it.**
 
-It also splits OTA updates: `runtimeVersion` is `{ policy: "appVersion" }`, so Android clients would resolve runtime `1.0.1` and iOS `1.0.4`, and an update published for one would not reach the other.
+The split is intentional per-platform marketing versioning, set in `df789ed` and `9626564`: iOS had already shipped 1.0.1 while Android was still submitting its first release, so the two store listings legitimately sit at different numbers. `android.version` overriding the root is the documented mechanism for exactly that.
 
-Either delete `android.version` (recommended — one source of truth) or set it to `1.0.4`. Build numbers themselves are fine: `cli.appVersionSource: "remote"` plus `autoIncrement: true` leaves them to EAS.
+The claim that it splits OTA updates was also wrong. The `appVersion` policy sets the runtime version from the **root `version`**, so both platforms resolve `1.0.4` regardless of the Android override — builds and their updates stay matched.
+
+One real consequence to keep in mind, though it isn't a defect: the root `version` is doing two jobs — iOS marketing version *and* the OTA compatibility key for both platforms. Bumping it for an iOS release therefore moves the runtime version for Android too, so Android builds already in the field at the old runtime stop receiving updates even though their own displayed version never changed. Bump deliberately, not as a reflex.
+
+Build numbers are handled independently per platform by EAS (`cli.appVersionSource: "remote"` + `autoIncrement: true`).
 
 ### 2.2 Deep links are declared but cannot verify
 
