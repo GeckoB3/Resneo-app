@@ -52,6 +52,11 @@ jest.mock('@/lib/queries/useStaffMe', () => ({
 jest.mock('@/lib/queries/useBillingStatus', () => ({
   useBillingStatus: () => ({ data: undefined }),
 }));
+// The in-person payments switch mutates through this; mocked like every other
+// query hook here, since the screen is rendered without a QueryClientProvider.
+jest.mock('@/lib/queries/useVenueSettings', () => ({
+  useUpdateVenue: () => ({ mutateAsync: jest.fn() }),
+}));
 jest.mock('@/providers/VenueProvider', () => ({
   useVenueContext: () => ({
     venue: {

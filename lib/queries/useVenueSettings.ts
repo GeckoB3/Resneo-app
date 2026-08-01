@@ -44,6 +44,17 @@ export interface UpdateVenueInput {
    * (server normalises). See `lib/embed/embedSnippet.ts`.
    */
   embed_accent_colour?: string | null;
+  /**
+   * Master switch for in-person card payments (Tap to Pay / card reader), the
+   * §6.7 venue flag. Off means the app renders no payment surface at all and the
+   * connection-token + charge endpoints 403 — so this is the one setting that
+   * decides whether the feature exists for a venue.
+   *
+   * Admin-only server-side (`requireAdmin`). It only takes effect once the venue
+   * has a Stripe connected account: the bootstrap derives `card_present_ready`
+   * as `in_person_payments_enabled && stripe_connected_account_id`.
+   */
+  in_person_payments_enabled?: boolean;
 }
 
 /** PATCH /api/venue — update venue profile basics; refreshes the bootstrap. */

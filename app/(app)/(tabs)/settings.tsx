@@ -18,6 +18,7 @@ import { Screen } from '@/components/ui/Screen';
 import { SearchBar } from '@/components/ui/SearchBar';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
+import { ApiError } from '@/lib/api/client';
 import { getWebUrl } from '@/lib/env';
 import {
   buildDestinations,
@@ -28,6 +29,7 @@ import {
 import { useBillingStatus } from '@/lib/queries/useBillingStatus';
 import { useNotifications } from '@/lib/queries/useNotifications';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
+import { useUpdateVenue } from '@/lib/queries/useVenueSettings';
 import { useAppLock } from '@/providers/AppLockProvider';
 import { useAuth } from '@/providers/AuthProvider';
 import { useToast } from '@/providers/ToastProvider';
@@ -94,6 +96,9 @@ export default function MoreScreen() {
   const { appLockEnabled, setAppLockEnabled, supported: appLockSupported } = useAppLock();
   const [query, setQuery] = useState('');
   const [appLockBusy, setAppLockBusy] = useState(false);
+  const [inPersonBusy, setInPersonBusy] = useState(false);
+  /** Optimistic switch position; null = follow the venue bootstrap. */
+  const [inPersonOptimistic, setInPersonOptimistic] = useState<boolean | null>(null);
   const [signOutOpen, setSignOutOpen] = useState(false);
   const [readerSheetOpen, setReaderSheetOpen] = useState(false);
 
@@ -106,6 +111,15 @@ export default function MoreScreen() {
   // NOT on the venue bootstrap (GET /api/venue omits it), so read it from the
   // admin-only billing endpoint — gated so non-admins never hit (and 403) it.
   const billingStatusQuery = useBillingStatus(isAdmin);
+  const updateVenue = useUpdateVenue();
+  /**
+   * Switch position: the optimistic value while a toggle is in flight, otherwise
+   * the venue bootstrap. Resetting the optimistic value to null on a refetch is
+   * unnecessary — once the bootstrap carries the new value the two agree, and if
+   * the PATCH failed the catch already cleared it.
+   */
+  const inPersonEnabled = inPersonOptimistic ?? Boolean(venue?.in_person_payments_enabled);
+  const stripeConnected = Boolean(venue?.stripe_connected_account_id);
   const planStatus = billingStatusQuery.data?.plan_status ?? null;
   const showPlanWarning = isAdmin && planStatus != null && WARN_PLAN_STATUSES.has(planStatus);
 
@@ -139,6 +153,34 @@ export default function MoreScreen() {
       }
     },
     [setAppLockEnabled, toast],
+  );
+
+  /**
+   * Turn in-person card payments on or off for the whole venue (§6.7).
+   *
+   * Optimistic: the switch answers immediately and rolls back if the PATCH
+   * fails, because the surface it gates (the Card reader row below, the Take
+   * payment button on every appointment) appears in the same frame and a
+   * lagging switch reads as a dead control. The venue bootstrap is invalidated
+   * on success so `card_present_ready` re-derives everywhere.
+   */
+  const handleInPersonPaymentsToggle = useCallback(
+    async (next: boolean) => {
+      setInPersonBusy(true);
+      setInPersonOptimistic(next);
+      try {
+        await updateVenue.mutateAsync({ in_person_payments_enabled: next });
+        toast.success(next ? 'In-person payments turned on.' : 'In-person payments turned off.');
+      } catch (e) {
+        setInPersonOptimistic(null);
+        toast.error(
+          e instanceof ApiError ? e.message : 'Could not change in-person payments. Try again.',
+        );
+      } finally {
+        setInPersonBusy(false);
+      }
+    },
+    [toast, updateVenue],
   );
 
   // Build the full, role- and eligibility-aware index once. The grid, the
@@ -313,19 +355,68 @@ export default function MoreScreen() {
             );
           })}
 
-          {/* Card reader — only for venues that have turned on in-person
-              payments (Tap to Pay §7A.6). Pairing, battery and firmware live in
-              the sheet so they can be managed outside a live payment. */}
-          {venue?.in_person_payments_enabled ? (
+          {/* In-person payments (Tap to Pay §6.7 / §7A.6).
+              ADMINS get the master switch — matching the web dashboard and the
+              route's own `requireAdmin`, and so an admin never has to reach for a
+              laptop to turn the feature on. Everyone else sees the section only
+              once it IS on, and only the reader row: staff can pair hardware but
+              not decide whether the venue takes cards at all. */}
+          {isAdmin || venue?.in_person_payments_enabled ? (
             <Group title="In-person payments">
-              <MoreRow
-                isFirst
-                icon={{ ios: 'creditcard', android: 'credit_card', web: 'credit_card' }}
-                tile={TILE.teal}
-                label="Card reader"
-                hint="Pair a Bluetooth reader, check battery and updates"
-                onPress={() => setReaderSheetOpen(true)}
-              />
+              {isAdmin ? (
+                <View style={styles.toggleRow}>
+                  <View style={styles.toggleLabel}>
+                    <Text variant="bodyMedium">Take card payments at your venue</Text>
+                    <Text variant="caption" tone="muted">
+                      Let your team collect an appointment&apos;s balance in person by tapping the
+                      client&apos;s card or phone. Money goes straight to your Stripe account.
+                    </Text>
+                  </View>
+                  <Switch
+                    value={inPersonEnabled}
+                    onValueChange={(v) => void handleInPersonPaymentsToggle(v)}
+                    disabled={inPersonBusy}
+                    accessibilityLabel="Take card payments at your venue"
+                  />
+                </View>
+              ) : null}
+
+              {/* The flag alone does nothing without a connected account —
+                  `card_present_ready` is `enabled && stripe_connected_account_id`.
+                  Connect onboarding is a hosted Stripe flow, so it stays on web. */}
+              {isAdmin && inPersonEnabled && !stripeConnected ? (
+                <View style={styles.noticeRow}>
+                  <Text variant="caption" color={colors.warning}>
+                    Connect Stripe first — card payments are paid into your own Stripe account, so
+                    this has no effect until that is set up. Open Plan &amp; payments on the web
+                    dashboard to finish.
+                  </Text>
+                </View>
+              ) : null}
+
+              {/* Taking payment is never compulsory — the frictionless-off
+                  guarantee (§1.3) is a promise to staff, so say it here too. */}
+              {isAdmin && inPersonEnabled ? (
+                <View style={styles.noticeRow}>
+                  <Text variant="caption" tone="muted">
+                    Taking a payment is always your team&apos;s choice, appointment by appointment.
+                    An appointment can still be completed with a balance outstanding.
+                  </Text>
+                </View>
+              ) : null}
+
+              {/* Pairing, battery and firmware live in the sheet so they can be
+                  managed outside a live payment. */}
+              {venue?.in_person_payments_enabled ? (
+                <MoreRow
+                  isFirst={!isAdmin}
+                  icon={{ ios: 'creditcard', android: 'credit_card', web: 'credit_card' }}
+                  tile={TILE.teal}
+                  label="Card reader"
+                  hint="Pair a Bluetooth reader, check battery and updates"
+                  onPress={() => setReaderSheetOpen(true)}
+                />
+              ) : null}
             </Group>
           ) : null}
 
@@ -453,6 +544,12 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     gap: 2,
+  },
+  /** Explanatory line under a toggle — inset to the label, no top padding so it
+   *  reads as part of the setting above rather than a row of its own. */
+  noticeRow: {
+    paddingHorizontal: spacing.base,
+    paddingBottom: spacing.base,
   },
   signOutRow: {
     flexDirection: 'row',
