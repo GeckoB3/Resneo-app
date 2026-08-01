@@ -22,6 +22,7 @@ import {
   visitPaymentNote,
   type PendingCardVerdict,
 } from '@/lib/payments/payment-display';
+import { getStripePublishableKey } from '@/lib/env';
 import { isTerminalSdkAvailable } from '@/lib/payments/terminal-sdk';
 import { useTapToPayReader } from '@/lib/payments/terminal';
 import { usePendingCardClock } from '@/lib/payments/usePendingCardClock';
@@ -221,7 +222,17 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
   const chargeLabel = formatPence(chargePence) ?? 'the amount';
   const isPartial = balancePence != null && chargePence != null && chargePence < balancePence;
 
-  const cardAvailable = target.cardPresentReady && isTerminalSdkAvailable();
+  /**
+   * The card options must require EXACTLY what `TerminalProvider` requires to
+   * mount, or they lead somewhere that cannot work. The publishable key is the
+   * one condition that was missing: without it the provider renders its children
+   * bare, so `useStripeTerminal` runs against the SDK's default context, its
+   * `initialize` is undefined, and every collect ends on "Could not start the
+   * card reader" — a build-configuration problem wearing a hardware error's
+   * clothes. Cash and refunds are unaffected; only the card channel disappears.
+   */
+  const cardAvailable =
+    target.cardPresentReady && isTerminalSdkAvailable() && Boolean(getStripePublishableKey());
   const refundable = refundablePayments(target.payments);
   /**
    * Recomputed every render from the LIVE ledger the host feeds in, not just at

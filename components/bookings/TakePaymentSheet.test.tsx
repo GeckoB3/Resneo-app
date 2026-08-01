@@ -5,7 +5,8 @@
  *  - cash recording posts the right charge-route body, behind a confirm step,
  *  - no money action can be committed at an amount the route would clamp or
  *    reject,
- *  - the card option only exists when the venue is card-present ready,
+ *  - the card option only exists when the venue is card-present ready, the
+ *    native SDK is in the build, AND the build carries a Stripe publishable key,
  *  - refunds are admin-only and list only succeeded ledger rows.
  *
  * jest hoists mock factories above imports, so closed-over vars are `mock*`.
@@ -13,6 +14,20 @@
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
+
+/**
+ * A real build that can take cards has this set; without it `TerminalProvider`
+ * never mounts. Set here so the card cases below exercise a build that CAN pay,
+ * and cleared explicitly in the one case that asserts the opposite.
+ */
+const ORIGINAL_STRIPE_KEY = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+beforeEach(() => {
+  process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY = 'pk_test_fixture';
+});
+afterEach(() => {
+  if (ORIGINAL_STRIPE_KEY === undefined) delete process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+  else process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY = ORIGINAL_STRIPE_KEY;
+});
 
 // Render Sheet children inline when visible (avoids gesture-handler/Modal).
 jest.mock('@/components/ui/Sheet', () => {
@@ -410,6 +425,21 @@ describe('card availability', () => {
     mockSdkAvailable = false;
     await render(<TakePaymentSheet target={target()} onClose={jest.fn()} />);
     expect(screen.queryByText('Card payment')).toBeNull();
+  });
+
+  /**
+   * The build-configuration case, found in a go-live check: the production EAS
+   * profile carried no publishable key, so `TerminalProvider` would render its
+   * children bare and every card collect would die on "Could not start the card
+   * reader" — a config problem dressed as a hardware fault. The option must not
+   * be offered when the build cannot honour it.
+   */
+  it('hides the card option when the build carries no Stripe publishable key', async () => {
+    delete process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+    await render(<TakePaymentSheet target={target()} onClose={jest.fn()} />);
+    expect(screen.queryByText('Card payment')).toBeNull();
+    // Cash and the rest of the sheet still work — only the card channel goes.
+    expect(screen.getByText('Record cash')).toBeTruthy();
   });
 });
 
