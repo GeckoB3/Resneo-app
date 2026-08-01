@@ -54,12 +54,43 @@ const SNAP_SPRING = { damping: 22, stiffness: 280 };
 /** Max touch zone at the bottom edge that resizes instead of moves (px). */
 const RESIZE_ZONE_HEIGHT = 22;
 /**
- * Bars shorter than this hide the resize grip. Bar heights are true durations,
- * so at 2px/min this is every booking under ~14 minutes: too little edge for a
- * {@link RESIZE_ZONE_HEIGHT} touch zone that wouldn't swallow the whole block
- * (leaving no way to move or tap it). Those resize from the detail sheet.
+ * Smallest bottom strip a finger can reliably find. When a bar is too short to
+ * give up this much of itself, the shortfall is taken from the empty grid BELOW
+ * it instead (see `resizeSlopBelow`) rather than by hiding the control.
  */
-const RESIZE_MIN_BLOCK_HEIGHT = 28;
+const MIN_RESIZE_ZONE_HEIGHT = 12;
+/**
+ * Space always kept ABOVE the resize strip, so however short a bar gets there is
+ * still somewhere to grab it for a move. Without this the resize zone would eat
+ * a short bar whole and it could never be dragged to another time.
+ */
+const MIN_MOVE_ZONE_HEIGHT = 6;
+/**
+ * Where a bar's bottom "resize" strip sits, and how far it reaches below the bar.
+ *
+ * Split out and exported because the rule has to hold at EVERY bar height and is
+ * otherwise invisible: `zoneHeight` is the part inside the bar (touches at or
+ * below `height - zoneHeight` resize instead of move), and `slopBelow` is the
+ * extra reach into the empty grid underneath, granted only to bars too short to
+ * spare a full strip of their own.
+ *
+ * Two invariants, both tested: a move zone always survives above the strip, and
+ * the combined target is never smaller than {@link MIN_RESIZE_ZONE_HEIGHT}.
+ */
+export function resizeZoneGeometry(height: number): {
+  zoneHeight: number;
+  slopBelow: number;
+} {
+  const zoneHeight = Math.max(
+    0,
+    Math.min(RESIZE_ZONE_HEIGHT, Math.round(height * 0.4), height - MIN_MOVE_ZONE_HEIGHT),
+  );
+  return {
+    zoneHeight,
+    slopBelow: Math.max(0, MIN_RESIZE_ZONE_HEIGHT - zoneHeight),
+  };
+}
+
 /** Duration bounds (minutes). */
 const MIN_DURATION_MINUTES = DRAG_SNAP_MINUTES;
 const MAX_DURATION_MINUTES = 14 * 60;
@@ -255,11 +286,23 @@ export function DraggableAppointmentBlock({
   // Non-movable blocks (Completed/No-Show/Cancelled/resource) gate out BOTH the
   // move and resize affordances — `draggable` is the single switch.
   const dragEnabled = draggable && onDragReschedule != null;
-  const resizeEnabled = draggable && onDragResize != null && height >= RESIZE_MIN_BLOCK_HEIGHT;
-  // Keep a usable "move" zone on short blocks: the resize strip is at most 40%
-  // of the block height (capped at RESIZE_ZONE_HEIGHT), so even a 36px bar keeps
-  // room above to grab for moving and ~14px at the very bottom to resize.
-  const resizeZoneHeight = Math.min(RESIZE_ZONE_HEIGHT, Math.round(height * 0.4));
+  /**
+   * Resize stays available at EVERY duration. It used to switch off below 28px,
+   * which — once bars became their true height — silently took the control away
+   * from every appointment under 15 minutes, the exact ones most likely to need
+   * adjusting.
+   */
+  const resizeEnabled = draggable && onDragResize != null;
+  /**
+   * The strip inside the bar, plus the reach below it that a short bar needs.
+   * The slop only ever extends DOWNWARD, into the empty grid — the direction you
+   * already drag to lengthen an appointment. It costs the neighbours nothing: a
+   * bar overlapping that strip renders after (above) this one and keeps its own
+   * touches, and hitSlop only widens where a PAN may begin, so a tap still lands
+   * on whatever is actually there.
+   */
+  const { zoneHeight: resizeZoneHeight, slopBelow } = resizeZoneGeometry(height);
+  const resizeSlopBelow = resizeEnabled ? slopBelow : 0;
 
   // ---- Cross-column (multi-calendar) drag config ----
   // Enabled only when the parent supplies the full bundle (the All-calendars
@@ -408,6 +451,9 @@ export function DraggableAppointmentBlock({
 
   const dragGesture = Gesture.Pan()
     .enabled(dragEnabled || resizeEnabled)
+    // Only ever extends DOWNWARD, and only by what a short bar could not spare
+    // (0 on any bar tall enough to hold a full strip itself).
+    .hitSlop({ bottom: resizeSlopBelow })
     .maxPointers(1)
     .activateAfterLongPress(HOLD_MS)
     // Drift past tolerance before the hold elapses → the pan FAILS (scroll wins).
@@ -688,13 +734,21 @@ export function DraggableAppointmentBlock({
           paid={paid}
         />
 
-        {/* Resize affordance — a grip on the bottom edge (hold it to resize). */}
+        {/* Resize affordance — a grip on the bottom edge (hold it to resize).
+            Shown at every duration; it narrows on a short bar so it reads as an
+            edge affordance rather than a line struck through the guest name. */}
         {resizeEnabled ? (
           <View
             style={styles.resizeGripWrap}
             pointerEvents="none"
             accessibilityLabel="Touch and hold the bottom edge to change duration">
-            <View style={[styles.resizeGrip, { backgroundColor: colors.surface }]} />
+            <View
+              style={[
+                styles.resizeGrip,
+                height < 24 ? styles.resizeGripShort : null,
+                { backgroundColor: colors.surface },
+              ]}
+            />
           </View>
         ) : null}
 
@@ -745,6 +799,10 @@ const styles = StyleSheet.create({
     height: 3,
     borderRadius: 2,
     opacity: 0.65,
+  },
+  resizeGripShort: {
+    width: 18,
+    height: 2,
   },
   holdBar: {
     position: 'absolute',
