@@ -15,7 +15,13 @@ npx tsc --noEmit && npx jest --silent && npx eslint .
 
 ## 1. Blockers
 
-### 1.1 The production build has no Stripe publishable key — in-person payments cannot work
+### ~~1.1 The production build has no Stripe publishable key~~ — RESOLVED 2026-08-01
+
+A live key (`pk_live_…`) now sits in the **EAS `production` environment**, not in `eas.json` — the right home for a live credential in a public repo, and it loads automatically for any profile pointing at that environment. Verified by resolving the profile through EAS, not just by reading config. The original finding is kept below because the failure mode is worth remembering.
+
+---
+
+### 1.1 (original) The production build has no Stripe publishable key — in-person payments cannot work
 
 `eas.json`'s `production` profile sets `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `EXPO_PUBLIC_API_URL` and `EXPO_PUBLIC_SENTRY_DSN` — but **not `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY`**. The EAS `production` environment doesn't supply it either (it holds only `GOOGLE_SERVICES_JSON` and `SENTRY_AUTH_TOKEN`). The `preview` profile does have it, which is why Tap to Pay and the WisePad worked on the preview APK.
 
@@ -84,6 +90,17 @@ Also note `reserve-ni.vercel.app` — a **staging** host — is in the productio
 
 ---
 
-## 5. Not covered here
+## 5. Build profiles — which one produces what
+
+`production` sets no `android.buildType`, and **EAS defaults Android to an AAB, which cannot be installed on a device**. That is correct for a Play submission and useless for testing real cards on a phone, so there are two profiles:
+
+| Profile | Output | Credentials | versionCode |
+|---|---|---|---|
+| `production-apk` | APK, sideloadable | live (inherited via `extends`) | pinned — `autoIncrement: false`, so test builds don't burn numbers |
+| `production` | AAB, for Play | live | auto-increments |
+
+Test on the APK, submit the AAB. Both carry identical live credentials, so the APK is a faithful rehearsal of the store build — the only difference is the packaging.
+
+## 6. Not covered here
 
 Static checks only. Still needs a pass on a real device against the **production** backend: sign-in, a real booking write, push delivery, the biometric app-lock resume path, and — once §1.1 is settled — one live card payment.
