@@ -49,9 +49,16 @@ The first version of this check called the root `version: "1.0.4"` / `android.ve
 
 The split is intentional per-platform marketing versioning, set in `df789ed` and `9626564`: iOS had already shipped 1.0.1 while Android was still submitting its first release, so the two store listings legitimately sit at different numbers. `android.version` overriding the root is the documented mechanism for exactly that.
 
-The claim that it splits OTA updates was also wrong. The `appVersion` policy sets the runtime version from the **root `version`**, so both platforms resolve `1.0.4` regardless of the Android override — builds and their updates stay matched.
+The OTA half of the original finding was **right**, though — I withdrew it on wrong reasoning. The docs say the `appVersion` policy takes the runtime version from the root `version`, but the 1.0.1 production build resolved **`runtimeVersion: 1.0.1`**, i.e. from `android.version`. Verified on the real artifact:
 
-One real consequence to keep in mind, though it isn't a defect: the root `version` is doing two jobs — iOS marketing version *and* the OTA compatibility key for both platforms. Bumping it for an iOS release therefore moves the runtime version for Android too, so Android builds already in the field at the old runtime stop receiving updates even though their own displayed version never changed. Bump deliberately, not as a reflex.
+| | value | source |
+|---|---|---|
+| `versionName` (in the AAB manifest) | `1.0.1` | `android.version` |
+| `versionCode` | `11` | EAS remote, auto-incremented |
+| `runtimeVersion` | `1.0.1` | resolved per-platform |
+| EAS `appVersion` field | `1.0.4` | root `version` — bookkeeping only, not in the binary |
+
+So the runtime version **is** per-platform: Android on `1.0.1`, iOS on `1.0.4`. That is self-consistent rather than broken — updates are matched per platform, so each platform's builds and its updates agree. The thing to hold onto is that **each platform's OTA compatibility key is its own marketing version**: bumping `android.version` moves Android's runtime and strands older Android builds, and bumping the root moves iOS's. Bump deliberately, not as a reflex.
 
 Build numbers are handled independently per platform by EAS (`cli.appVersionSource: "remote"` + `autoIncrement: true`).
 
