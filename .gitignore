@@ -46,3 +46,9 @@ _reference/
 # Firebase Android client config. Contains a Google API key; this repo is PUBLIC.
 # Supplied to EAS builds as a file-type env var instead of being committed.
 google-services.json
+
+# Build artifacts downloaded from EAS (app.aab is ~110 MB). The build that
+# matters lives on EAS and in the store listing, never in git.
+*.aab
+*.apk
+*.ipa
