@@ -114,6 +114,14 @@ export interface VenueBootstrap {
   phone?: string | null;
   email?: string | null;
   website_url?: string | null;
+  /**
+   * Google review request on the post-visit thank-you email. The URL is stored
+   * canonicalised by the server (see `lib/reviews/google-review-link.ts`); the
+   * toggle is off for every existing venue and cannot be turned on without a
+   * usable link. Each guest is asked at most once every six months.
+   */
+  google_review_url?: string | null;
+  review_request_enabled?: boolean;
   opening_hours?: OpeningHours | null;
   stripe_connected_account_id?: string | null;
   stripe_subscription_id?: string | null;

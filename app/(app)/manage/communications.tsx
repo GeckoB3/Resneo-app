@@ -2,6 +2,7 @@ import { Stack } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
   Animated,
+  Linking,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -30,6 +31,10 @@ import {
   useUpdateNotificationSettings,
 } from '@/lib/queries/useCommunications';
 import { useUpdateVenue } from '@/lib/queries/useVenueSettings';
+import {
+  GOOGLE_REVIEW_LINK_HELP,
+  normaliseGoogleReviewUrl,
+} from '@/lib/reviews/google-review-link';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { fonts, minTouchTarget, radius, spacing } from '@/theme/index';
@@ -548,6 +553,102 @@ function OwnerAlertCard({
 }
 
 // ---------------------------------------------------------------------------
+// GoogleReviewCard — venue-level review request on the post-visit thank you.
+// Mirrors the web `CommunicationTemplatesSection` "Ask for a Google review"
+// card: a Switch (review_request_enabled) plus the link Input
+// (google_review_url), and a "Test this link" link-out once one resolves.
+// ---------------------------------------------------------------------------
+function GoogleReviewCard({
+  enabled,
+  link,
+  isAdmin,
+  error,
+  onToggle,
+  onChangeLink,
+}: {
+  enabled: boolean;
+  link: string;
+  isAdmin: boolean;
+  error: string | null;
+  onToggle: (next: boolean) => void;
+  onChangeLink: (next: string) => void;
+}) {
+  // The canonical form of whatever is typed, so "Test this link" opens the same
+  // URL the email will carry — including for a pasted bare Place ID.
+  const resolved = normaliseGoogleReviewUrl(link);
+
+  return (
+    <Card>
+      <Text variant="label">Ask for a Google review</Text>
+      <Text variant="caption" tone="muted" style={styles.sectionSub}>
+        Adds a review button to your post-visit thank you. Each customer is asked at most once
+        every six months.
+      </Text>
+
+      <View style={styles.staffSection}>
+        <View style={styles.settingRow}>
+          <View style={styles.settingText}>
+            <Text variant="bodyMedium">Include a review request</Text>
+            <Text variant="caption" tone="muted">
+              Off until you add a link below, so nobody starts asking their customers for reviews
+              by accident.
+            </Text>
+          </View>
+          <Switch
+            value={enabled}
+            disabled={!isAdmin}
+            accessibilityLabel="Include a review request"
+            onValueChange={(next) => {
+              hapticSelect();
+              onToggle(next);
+            }}
+          />
+        </View>
+
+        {isAdmin ? (
+          <Input
+            label="Google review link"
+            value={link}
+            placeholder="https://g.page/r/.../review"
+            autoCapitalize="none"
+            autoCorrect={false}
+            inputMode="url"
+            onChangeText={onChangeLink}
+            error={error ?? undefined}
+            helper={
+              error
+                ? undefined
+                : 'Paste the review link from your Google Business Profile, or your Place ID. A Maps search link will not work, because it does not open the review box.'
+            }
+          />
+        ) : (
+          <View style={styles.settingText}>
+            <Text variant="label" tone="secondary">
+              Google review link
+            </Text>
+            <Text variant="bodySmall" tone="muted">
+              {link.trim() || '—'}
+            </Text>
+          </View>
+        )}
+
+        {resolved ? (
+          <Button
+            label="Test this link"
+            variant="ghost"
+            size="sm"
+            onPress={() => {
+              hapticSelect();
+              Linking.openURL(resolved).catch(() => undefined);
+            }}
+          />
+        ) : null}
+      </View>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // SMS Light-plan banner
 // ---------------------------------------------------------------------------
 function SmsLightBanner() {
@@ -625,6 +726,9 @@ export default function CommunicationsScreen() {
   const [ownerAlertEmail, setOwnerAlertEmail] = useState(
     venue?.owner_booking_notification_email ?? '',
   );
+  // Google review request draft (venue-level, same PATCH as the owner alert).
+  const [reviewEnabled, setReviewEnabled] = useState(venue?.review_request_enabled ?? false);
+  const [reviewLink, setReviewLink] = useState(venue?.google_review_url ?? '');
   const [seeded, setSeeded] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -648,6 +752,8 @@ export default function CommunicationsScreen() {
       // Re-sync the owner-alert draft from the (now-loaded) bootstrap.
       setOwnerAlertEnabled(venue?.owner_booking_notification_enabled ?? false);
       setOwnerAlertEmail(venue?.owner_booking_notification_email ?? '');
+      setReviewEnabled(venue?.review_request_enabled ?? false);
+      setReviewLink(venue?.google_review_url ?? '');
     }
   }, [policiesQuery.data, settingsQuery.data, seeded, venue]);
 
@@ -680,6 +786,31 @@ export default function CommunicationsScreen() {
   const ownerAlertEmailInvalid = ownerAlertEnabled && !isValidOwnerAlertEmail(ownerAlertEmail);
   const ownerAlertError = ownerAlertEmailInvalid ? 'Enter a valid email address.' : null;
 
+  // Google review change detection. The stored value is already canonical, so
+  // compare the resolved form: re-pasting the same link in a different accepted
+  // shape (a bare Place ID, say) is not a change worth a PATCH.
+  const savedReviewLink = venue?.google_review_url ?? '';
+  const reviewLinkTrimmed = reviewLink.trim();
+  const reviewLinkResolved = normaliseGoogleReviewUrl(reviewLinkTrimmed);
+  const reviewLinkChanged =
+    reviewLinkTrimmed === ''
+      ? savedReviewLink !== ''
+      : (reviewLinkResolved ?? reviewLinkTrimmed) !== savedReviewLink;
+  const reviewEnabledChanged = reviewEnabled !== (venue?.review_request_enabled ?? false);
+  const reviewChanged = reviewLinkChanged || reviewEnabledChanged;
+  // The server rejects both of these; catching them here keeps one bad paste from
+  // failing a save that also carries the message policies.
+  const reviewLinkInvalid = reviewLinkTrimmed !== '' && reviewLinkResolved === null;
+  // Only an error when there is nothing to fall back on. Clearing a link that IS
+  // saved is a legitimate "stop asking" — the server clears the link and turns
+  // the request off together, and we mirror that below rather than blocking it.
+  const reviewNeedsLink = reviewEnabled && reviewLinkTrimmed === '' && savedReviewLink === '';
+  const reviewError = reviewLinkInvalid
+    ? GOOGLE_REVIEW_LINK_HELP
+    : reviewNeedsLink
+      ? 'Add your Google review link before turning review requests on.'
+      : null;
+
   const laneChanged =
     !!lane &&
     !!policiesQuery.data &&
@@ -688,7 +819,7 @@ export default function CommunicationsScreen() {
     !!staffDraft &&
     !!settingsQuery.data &&
     JSON.stringify(staffDraft) !== JSON.stringify(settingsQuery.data);
-  const hasChanges = laneChanged || staffChanged || ownerAlertChanged;
+  const hasChanges = laneChanged || staffChanged || ownerAlertChanged || reviewChanged;
 
   async function handleSave() {
     if (!lane || !staffDraft || !settingsQuery.data) return;
@@ -697,6 +828,11 @@ export default function CommunicationsScreen() {
     if (ownerAlertEmailInvalid) {
       hapticWarning();
       setSaveError('Enter a valid notification email address.');
+      return;
+    }
+    if (reviewError) {
+      hapticWarning();
+      setSaveError(reviewError);
       return;
     }
     setSaveError(null);
@@ -713,18 +849,38 @@ export default function CommunicationsScreen() {
         }
         await updateSettings.mutateAsync(changes);
       }
-      if (ownerAlertChanged) {
-        // Send only what changed. Send an empty string (NOT null) when cleared —
-        // the venue PATCH schema accepts '' and maps it to null server-side
-        // (it rejects a literal null), then falls back to the venue profile email.
+      if (ownerAlertChanged || reviewChanged) {
+        // One PATCH for both venue-level settings. Send only what changed, except
+        // that enabling review requests must carry the link in the same call —
+        // the server resolves an omitted one from the stored row and rejects
+        // turning it on with nothing there.
+        const sendReviewLink = reviewLinkChanged || (reviewEnabled && reviewEnabledChanged);
+        // Never ask the server to turn the request on with no link — clearing the
+        // field means "stop asking", which the server enforces by forcing the
+        // flag off whenever the link goes empty.
+        const sendReviewEnabled = reviewEnabledChanged && !(reviewEnabled && reviewLinkTrimmed === '');
         await updateVenue.mutateAsync({
+          // Send an empty string (NOT null) when cleared — the venue PATCH schema
+          // accepts '' and maps it to null server-side (it rejects a literal
+          // null), then falls back to the venue profile email.
           ...(ownerAlertEnabledChanged
             ? { owner_booking_notification_enabled: ownerAlertEnabled }
             : {}),
           ...(ownerAlertEmailChanged
             ? { owner_booking_notification_email: ownerAlertEmail.trim() }
             : {}),
+          // Send the canonical form so the field shows back what was stored.
+          ...(sendReviewLink
+            ? { google_review_url: reviewLinkResolved ?? reviewLinkTrimmed }
+            : {}),
+          ...(sendReviewEnabled ? { review_request_enabled: reviewEnabled } : {}),
         });
+        // Show the canonical link back, so a pasted Place ID becomes something
+        // the venue can tap and test (web parity).
+        if (sendReviewLink && reviewLinkResolved) setReviewLink(reviewLinkResolved);
+        // Clearing the link turns the request off server-side; reflect that here
+        // so the toggle doesn't sit on showing a state the venue no longer has.
+        if (reviewLinkTrimmed === '') setReviewEnabled(false);
         // Refresh the bootstrap so the seeded values reflect what we just saved
         // (placeholder/helper + change detection read from VenueProvider).
         refetchVenue();
@@ -894,6 +1050,21 @@ export default function CommunicationsScreen() {
           }}
           onChangeEmail={(next) => {
             setOwnerAlertEmail(next);
+            setSaved(false);
+          }}
+        />
+
+        <GoogleReviewCard
+          enabled={reviewEnabled}
+          link={reviewLink}
+          isAdmin={!!isAdmin}
+          error={reviewError}
+          onToggle={(next) => {
+            setReviewEnabled(next);
+            setSaved(false);
+          }}
+          onChangeLink={(next) => {
+            setReviewLink(next);
             setSaved(false);
           }}
         />

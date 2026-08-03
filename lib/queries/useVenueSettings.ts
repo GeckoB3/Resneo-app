@@ -39,6 +39,15 @@ export interface UpdateVenueInput {
   /** Recipient for the owner booking alert; empty/null falls back to the venue email server-side. */
   owner_booking_notification_email?: string | null;
   /**
+   * Google review request (Communications). The server normalises whatever is
+   * pasted into a canonical write-review URL and 400s on anything it cannot
+   * resolve; an empty string clears the link AND turns the request off. Enabling
+   * without a stored link is rejected, so send both in one PATCH when the venue
+   * sets them together.
+   */
+  google_review_url?: string;
+  review_request_enabled?: boolean;
+  /**
    * Accent colour (6-hex, with or without `#`) for the embeddable booking
    * widget; threaded into the embed iframe `?accent=`. Empty string clears it
    * (server normalises). See `lib/embed/embedSnippet.ts`.

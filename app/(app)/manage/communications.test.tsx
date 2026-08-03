@@ -80,6 +80,8 @@ let mockVenue: {
   email: string | null;
   owner_booking_notification_enabled?: boolean;
   owner_booking_notification_email?: string | null;
+  google_review_url?: string | null;
+  review_request_enabled?: boolean;
   pricing_tier?: string | null;
   stripe_connected_account_id?: string | null;
 };
@@ -121,6 +123,8 @@ beforeEach(() => {
     email: 'venue@example.com',
     owner_booking_notification_enabled: false,
     owner_booking_notification_email: null,
+    google_review_url: null,
+    review_request_enabled: false,
     pricing_tier: 'pro',
     stripe_connected_account_id: 'acct_1',
   };
@@ -202,5 +206,129 @@ describe('Communications — New booking alert (owner email)', () => {
     expect(mockUpdateVenueAsync).toHaveBeenCalledWith({
       owner_booking_notification_email: 'new@biz.com',
     });
+  });
+});
+
+describe('Communications — Google review request', () => {
+  const PLACE_ID = 'ChIJN1t_tDeuEmsRUsoyG83frY4';
+  const REVIEW_URL = 'https://g.page/r/CX9alnDqPlYGEBM/review';
+
+  it('renders the card, off with an empty link by default', async () => {
+    await render(<CommunicationsScreen />);
+    expect(screen.getByText('Ask for a Google review')).toBeTruthy();
+    expect(screen.getByText('Google review link')).toBeTruthy();
+    // Nothing to test until a link resolves.
+    expect(screen.queryByText('Test this link')).toBeNull();
+  });
+
+  it('blocks save and explains why when the pasted link is not a review target', async () => {
+    await render(<CommunicationsScreen />);
+    // A Maps link is the mistake this copy exists for.
+    await changeText(
+      screen.getByPlaceholderText('https://g.page/r/.../review'),
+      'https://www.google.com/maps/place/Aura+Hair+Studio',
+    );
+    expect(screen.getByText(/A Maps search link will not work/)).toBeTruthy();
+
+    await press(() => screen.getByText('Save changes'));
+    expect(mockUpdateVenueAsync).not.toHaveBeenCalled();
+  });
+
+  it('blocks save when enabled with no link at all', async () => {
+    await render(<CommunicationsScreen />);
+    await toggle(screen.getByLabelText('Include a review request'), true);
+    expect(
+      screen.getByText('Add your Google review link before turning review requests on.'),
+    ).toBeTruthy();
+
+    await press(() => screen.getByText('Save changes'));
+    expect(mockUpdateVenueAsync).not.toHaveBeenCalled();
+  });
+
+  it('PATCHes the canonical URL for a pasted Place ID, with the toggle', async () => {
+    await render(<CommunicationsScreen />);
+    await changeText(screen.getByPlaceholderText('https://g.page/r/.../review'), PLACE_ID);
+    await toggle(screen.getByLabelText('Include a review request'), true);
+    await press(() => screen.getByText('Save changes'));
+
+    expect(mockUpdateVenueAsync).toHaveBeenCalledWith({
+      google_review_url: `https://search.google.com/local/writereview?placeid=${PLACE_ID}`,
+      review_request_enabled: true,
+    });
+    expect(mockRefetchVenue).toHaveBeenCalled();
+  });
+
+  it('offers "Test this link" as soon as the typed value resolves', async () => {
+    await render(<CommunicationsScreen />);
+    await changeText(screen.getByPlaceholderText('https://g.page/r/.../review'), REVIEW_URL);
+    expect(screen.getByText('Test this link')).toBeTruthy();
+  });
+
+  it('re-sends the link when enabling an already-saved one', async () => {
+    // The server rejects enabling with nothing stored, and resolves an omitted
+    // link from the row — so the link rides along whenever the toggle goes on.
+    mockVenue.google_review_url = REVIEW_URL;
+    mockVenue.review_request_enabled = false;
+    await render(<CommunicationsScreen />);
+
+    await toggle(screen.getByLabelText('Include a review request'), true);
+    await press(() => screen.getByText('Save changes'));
+
+    expect(mockUpdateVenueAsync).toHaveBeenCalledWith({
+      google_review_url: REVIEW_URL,
+      review_request_enabled: true,
+    });
+  });
+
+  it('sends only the toggle when switching an enabled request off', async () => {
+    mockVenue.google_review_url = REVIEW_URL;
+    mockVenue.review_request_enabled = true;
+    await render(<CommunicationsScreen />);
+
+    await toggle(screen.getByLabelText('Include a review request'), false);
+    await press(() => screen.getByText('Save changes'));
+
+    expect(mockUpdateVenueAsync).toHaveBeenCalledWith({ review_request_enabled: false });
+  });
+
+  it('clears the link with an empty string, which the server maps to null', async () => {
+    mockVenue.google_review_url = REVIEW_URL;
+    mockVenue.review_request_enabled = false;
+    await render(<CommunicationsScreen />);
+
+    expect(screen.getByDisplayValue(REVIEW_URL)).toBeTruthy();
+    await changeText(screen.getByDisplayValue(REVIEW_URL), '');
+    await press(() => screen.getByText('Save changes'));
+
+    expect(mockUpdateVenueAsync).toHaveBeenCalledWith({ google_review_url: '' });
+  });
+
+  it('lets an active request be stopped by clearing the link, and never sends enabled:true with none', async () => {
+    // "Stop asking" — the server clears the link and forces the flag off, so the
+    // app must not block this, and must not send review_request_enabled: true.
+    mockVenue.google_review_url = REVIEW_URL;
+    mockVenue.review_request_enabled = true;
+    await render(<CommunicationsScreen />);
+
+    await changeText(screen.getByDisplayValue(REVIEW_URL), '');
+    expect(
+      screen.queryByText('Add your Google review link before turning review requests on.'),
+    ).toBeNull();
+
+    await press(() => screen.getByText('Save changes'));
+    expect(mockUpdateVenueAsync).toHaveBeenCalledWith({ google_review_url: '' });
+  });
+
+  it('does not arm save when the same link is re-pasted in another accepted form', async () => {
+    // Stored canonical vs a typed bare Place ID that resolves to it.
+    mockVenue.google_review_url = `https://search.google.com/local/writereview?placeid=${PLACE_ID}`;
+    await render(<CommunicationsScreen />);
+
+    await changeText(
+      screen.getByDisplayValue(mockVenue.google_review_url as string),
+      `  ${PLACE_ID}  `,
+    );
+    await press(() => screen.getByText('Save changes'));
+    expect(mockUpdateVenueAsync).not.toHaveBeenCalled();
   });
 });
