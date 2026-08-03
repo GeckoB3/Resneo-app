@@ -1,5 +1,45 @@
 # Go-live check — Resneo app
 
+## Run 2026-08-03 — web-parity batch (`6992f46`)
+
+Four features tracking the web update at `resneo@9439f7ad`: the booking location callout, per-service fixed start times, setup-checklist snoozing, and Google review requests. **No blockers found; nothing below changes the 2026-08-01 verdict**, whose two build-configuration items still stand unchanged.
+
+| Check | Result |
+|---|---|
+| `tsc --noEmit` | clean |
+| `jest` | 134 suites / 1,364 tests pass |
+| `eslint .` | 15 errors — **the same 15** as the last run (see §3), none introduced here |
+| Secrets in the diff | none |
+| `console.log` outside `__DEV__` | none |
+| `package.json` / `app.json` / `eas.json` / `app.config.js` | **untouched** |
+
+**These changes are OTA-eligible.** No dependency, native module or config change: the only new native surface is `TimePickerField`, which wraps `@react-native-community/datetimepicker` — already a dependency and already used by five other screens. JS-only, so this ships as an update rather than a store build.
+
+### Backend dependency — the thing worth checking before shipping
+
+All four features consume web API surface added in the same web release, so **the app must not ship ahead of the backend**. Verified `POST /api/venue/setup-checklist-snooze` on `https://www.resneo.com` returns **401, not 404** — the route exists in production, so that web release is deployed. (`POST /api/venue` returns 405 as a control: route present, no POST handler.)
+
+The other three are field additions on existing routes plus DB migrations, which cannot be checked unauthenticated. They rode the same deploy as the route above, so they are almost certainly live — but if any of them is not, the failure modes are all soft:
+
+| Field / route | If the backend lacks it |
+|---|---|
+| `setup_checklist_snoozed_keys`, `POST …/setup-checklist-snooze` | verified present |
+| `online_meeting_url` / `online_meeting_info` on `GET …/bookings/[id]` | online bookings show "No meeting link is set" instead of a join link |
+| `booking_start_times` on `…/appointment-services` | zod strips the unknown key; the editor offers fixed times that never persist |
+| `google_review_url` / `review_request_enabled` on `/api/venue` | the toggle saves nothing and reads back off |
+
+None of them crash, and none affect a venue that does not use the feature.
+
+### Not covered
+
+Static checks plus the one live endpoint probe. Three of the four features are auth-gated behind API calls the web preview cannot reach (CORS), so the booking location callout, checklist snooze and review-request card have **not been exercised against a real backend** — only against unit and component tests. The fixed-start-times editor was driven end to end in the web preview. Dark mode is unverified throughout: the Expo web preview renders light-only.
+
+Still wanted on a real device against the production backend: an off-site/online booking opened from the calendar, a service saved with fixed start times, and one review-request save.
+
+---
+
+## Run 2026-08-01 (previous)
+
 **Run:** 2026-08-01, against `main` @ `1587f76`.
 **Verdict:** the codebase is release-quality — 1,244 tests pass, zero TypeScript errors, no secrets committed, crash reporting fully wired. **Two items must be settled before a store submission**, both build-configuration rather than code, and neither visible from a dev or preview build.
 
