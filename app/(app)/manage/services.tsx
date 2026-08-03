@@ -33,6 +33,7 @@ import {
   toScheduleV2,
   validateSchedule,
 } from '@/components/services/ServiceCustomAvailabilityEditor';
+import { BookingIntervalEditor } from '@/components/manage/BookingIntervalEditor';
 import { ComplianceRequirementsEditor } from '@/components/compliance/ComplianceRequirementsEditor';
 import {
   StaffServiceOverrideSheet,
@@ -57,8 +58,16 @@ import { Sheet } from '@/components/ui/Sheet';
 import { ListSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import {
+  DEFAULT_BOOKING_INTERVAL_MINUTES,
+  bookingStartFingerprint,
+  describeBookingStartTimes,
+  normalizeBookingIntervalMinutes,
+  normalizeBookingStartForStorage,
+  sanitizeBookingStartTimes,
+} from '@/lib/appointments/booking-interval';
 import { formatPence, formatPositivePence, parsePoundsToPence, penceToPoundsInput } from '@/lib/format';
-import { hapticSelect, hapticSuccess, hapticWarning } from '@/lib/haptics';
+import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useAddonGroups } from '@/lib/queries/useAddonGroups';
 import {
   useCreateService,
@@ -94,86 +103,6 @@ type EditTarget = {
 };
 
 type ActiveTab = 'services' | 'addons';
-
-/**
- * Booking-start fields the API round-trips but that aren't on `ManagedService`
- * (the shared type lives in a file this screen doesn't own). Read via this cast.
- */
-type BookingStartReadFields = {
-  booking_interval_minutes?: number | null;
-  booking_minute_marks?: number[] | null;
-};
-
-// --- Booking interval + per-hour start marks (web parity) --------------------
-// Mirrors _reference/Resneo/src/lib/appointments/booking-interval.ts so the app
-// agrees with the availability engine + API on the grid and on what restricts it.
-
-const DEFAULT_BOOKING_INTERVAL_MINUTES = 15;
-const MIN_BOOKING_INTERVAL_MINUTES = 1;
-const MAX_BOOKING_INTERVAL_MINUTES = 60;
-/** Interval presets surfaced as quick-pick chips (any 1-60 value is still valid). */
-const BOOKING_INTERVAL_PRESETS = [5, 10, 15, 20, 30, 60];
-
-/** Clamp/floor an interval to 1-60; falls back to the default when invalid. */
-function normalizeBookingIntervalMinutes(value: unknown): number {
-  const n = typeof value === 'number' ? value : Number(value);
-  if (!Number.isFinite(n)) return DEFAULT_BOOKING_INTERVAL_MINUTES;
-  const floored = Math.floor(n);
-  if (floored < MIN_BOOKING_INTERVAL_MINUTES) return MIN_BOOKING_INTERVAL_MINUTES;
-  if (floored > MAX_BOOKING_INTERVAL_MINUTES) return MAX_BOOKING_INTERVAL_MINUTES;
-  return floored;
-}
-
-/** Every start-minute offset within an hour for the given interval, anchored at :00. */
-function bookingIntervalGrid(intervalMinutes: number): number[] {
-  const interval = normalizeBookingIntervalMinutes(intervalMinutes);
-  const grid: number[] = [];
-  for (let m = 0; m < 60; m += interval) grid.push(m);
-  return grid;
-}
-
-/** Sanitize raw marks to unique, in-range, on-grid, ascending offsets. */
-function sanitizeBookingMinuteMarks(raw: unknown, intervalMinutes: number): number[] {
-  if (!Array.isArray(raw)) return [];
-  const grid = new Set(bookingIntervalGrid(intervalMinutes));
-  return [
-    ...new Set(
-      raw
-        .map((m) => (typeof m === 'number' ? m : Number(m)))
-        .filter((m) => Number.isInteger(m) && grid.has(m)),
-    ),
-  ].sort((a, b) => a - b);
-}
-
-/** Human-readable summary like ":00, :05, :10". */
-function describeBookingStartOffsets(offsets: number[]): string {
-  return offsets.map((m) => `:${String(m).padStart(2, '0')}`).join(', ');
-}
-
-/**
- * Storage normalization for the API: a full-grid or empty mark set collapses to
- * NULL ("no restriction") so the engine treats it as a plain interval. Matches
- * the web's `normalizeBookingStartForStorage`.
- */
-function normalizeBookingStartForStorage(
-  intervalMinutes: number,
-  minuteMarks: number[] | null,
-): { booking_interval_minutes: number; booking_minute_marks: number[] | null } {
-  const interval = normalizeBookingIntervalMinutes(intervalMinutes);
-  if (minuteMarks == null) {
-    return { booking_interval_minutes: interval, booking_minute_marks: null };
-  }
-  const grid = bookingIntervalGrid(interval);
-  const marks = sanitizeBookingMinuteMarks(minuteMarks, interval);
-  const restricted = marks.length > 0 && marks.length < grid.length;
-  return { booking_interval_minutes: interval, booking_minute_marks: restricted ? marks : null };
-}
-
-/** Stable fingerprint of the booking-start config, for change detection on save. */
-function bookingStartFingerprint(intervalMinutes: number, minuteMarks: number[] | null): string {
-  const norm = normalizeBookingStartForStorage(intervalMinutes, minuteMarks);
-  return `${norm.booking_interval_minutes}|${norm.booking_minute_marks ? norm.booking_minute_marks.join(',') : 'null'}`;
-}
 
 /** Web service colour presets (`APPOINTMENT_SERVICE_COLOUR_OPTIONS`). */
 const COLOUR_OPTIONS = [
@@ -245,162 +174,6 @@ function processingFingerprint(drafts: ProcessingBlockDraft[]): string {
     drafts
       .map((d) => [Number(d.start) || 0, Number(d.duration) || 0])
       .sort((a, b) => a[0]! - b[0]! || a[1]! - b[1]!),
-  );
-}
-
-/**
- * Booking interval (1-60 min) plus an optional selector for which minute marks
- * within each hour are bookable. Mirrors the web `BookingIntervalEditor`:
- * restriction is opt-in; when on, every interval mark for one representative hour
- * is a toggle, and the pattern repeats each hour anchored to :00.
- */
-function BookingIntervalEditor({
-  intervalMinutes,
-  minuteMarks,
-  onChange,
-}: {
-  intervalMinutes: number;
-  /** `null` = no per-hour restriction (every interval mark is bookable). */
-  minuteMarks: number[] | null;
-  onChange: (next: { intervalMinutes: number; minuteMarks: number[] | null }) => void;
-}) {
-  const { colors } = useTheme();
-  const interval = normalizeBookingIntervalMinutes(intervalMinutes);
-  const grid = useMemo(() => bookingIntervalGrid(interval), [interval]);
-  const restricted = minuteMarks !== null;
-  const selected = useMemo(
-    () => new Set(restricted ? sanitizeBookingMinuteMarks(minuteMarks, interval) : grid),
-    [restricted, minuteMarks, interval, grid],
-  );
-  const selectedSorted = useMemo(() => [...selected].sort((a, b) => a - b), [selected]);
-
-  const setInterval = (next: number) => {
-    const nextInterval = normalizeBookingIntervalMinutes(next);
-    // Re-anchor any existing restriction to the new grid (drop off-grid marks).
-    const nextMarks = restricted ? sanitizeBookingMinuteMarks(minuteMarks, nextInterval) : null;
-    onChange({ intervalMinutes: nextInterval, minuteMarks: nextMarks });
-  };
-
-  const setRestricted = (on: boolean) => {
-    // Turning restriction on starts from "all marks" so the venue carves marks away.
-    onChange({ intervalMinutes: interval, minuteMarks: on ? [...grid] : null });
-  };
-
-  const toggleMark = (offset: number) => {
-    hapticSelect();
-    const next = new Set(selected);
-    if (next.has(offset)) next.delete(offset);
-    else next.add(offset);
-    onChange({ intervalMinutes: interval, minuteMarks: [...next].sort((a, b) => a - b) });
-  };
-
-  const noneSelected = restricted && selectedSorted.length === 0;
-  const summary =
-    selectedSorted.length > 0
-      ? describeBookingStartOffsets(selectedSorted)
-      : describeBookingStartOffsets(grid);
-
-  return (
-    <View style={styles.intervalCard}>
-      <Text variant="caption" tone="muted">
-        How often a booking can start. Times are anchored to the top of each hour and apply to this
-        service&apos;s online bookable slots.
-      </Text>
-
-      {/* Interval (minutes) — number input + quick-pick presets */}
-      <View style={styles.intervalInputRow}>
-        <View style={styles.intervalInputField}>
-          <Input
-            label="Interval (mins)"
-            value={String(interval)}
-            onChangeText={(v) => setInterval(Number(v))}
-            keyboardType="number-pad"
-            maxLength={2}
-          />
-        </View>
-        <View style={styles.intervalPresets}>
-          {BOOKING_INTERVAL_PRESETS.map((preset) => {
-            const active = interval === preset;
-            return (
-              <Pressable
-                key={preset}
-                accessibilityRole="button"
-                accessibilityLabel={`Set interval to ${preset} minutes`}
-                accessibilityState={{ selected: active }}
-                onPress={() => setInterval(preset)}
-                style={({ pressed }) => [
-                  styles.intervalPreset,
-                  {
-                    backgroundColor: active ? colors.brand : colors.surface,
-                    borderColor: active ? colors.brand : colors.border,
-                    opacity: pressed ? 0.7 : 1,
-                  },
-                ]}>
-                <Text variant="caption" color={active ? colors.onBrand : colors.textSecondary}>
-                  {preset}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </View>
-
-      {/* Restrict toggle */}
-      <View style={styles.switchRow}>
-        <View style={styles.intervalSwitchText}>
-          <Text variant="bodyMedium">Restrict start times within each hour</Text>
-          <Text variant="caption" tone="muted">
-            Choose exactly which marks are bookable, e.g. only the first half-hour.
-          </Text>
-        </View>
-        <Switch value={restricted} onValueChange={setRestricted} />
-      </View>
-
-      {restricted ? (
-        <View style={[styles.markGridWrap, { borderColor: colors.border, backgroundColor: colors.surface }]}>
-          <Text variant="caption" tone="muted">
-            Tap the minutes past the hour when bookings can start:
-          </Text>
-          <View style={styles.markGrid}>
-            {grid.map((offset) => {
-              const on = selected.has(offset);
-              return (
-                <Pressable
-                  key={offset}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Toggle start time at ${offset} minutes past the hour`}
-                  accessibilityState={{ selected: on }}
-                  onPress={() => toggleMark(offset)}
-                  style={({ pressed }) => [
-                    styles.markChip,
-                    {
-                      backgroundColor: on ? colors.brand : colors.surface,
-                      borderColor: on ? colors.brand : colors.border,
-                      opacity: pressed ? 0.7 : 1,
-                    },
-                  ]}>
-                  <Text variant="label" color={on ? colors.onBrand : colors.textSecondary}>
-                    :{String(offset).padStart(2, '0')}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-          {noneSelected ? (
-            <Text variant="caption" color={colors.warning}>
-              Select at least one start time, or turn off &quot;Restrict start times&quot; to allow
-              every interval.
-            </Text>
-          ) : null}
-        </View>
-      ) : null}
-
-      <Text variant="caption" tone="muted">
-        {noneSelected
-          ? `No start times selected — bookings will fall back to every ${interval}-minute mark.`
-          : `Bookings can start at ${summary} past each hour.`}
-      </Text>
-    </View>
   );
 }
 
@@ -912,11 +685,13 @@ export default function ServicesScreen() {
   const [noticeHours, setNoticeHours] = useState('1');
   const [cancelHours, setCancelHours] = useState('48');
   const [sameDay, setSameDay] = useState(true);
-  // Booking interval + per-hour start marks (admin-only). `null` marks = unrestricted.
+  // Booking start (admin-only). `null` marks = unrestricted; `null` start times =
+  // interval mode, any list (even empty, mid-edit) = fixed times of day.
   const [bookingInterval, setBookingInterval] = useState(DEFAULT_BOOKING_INTERVAL_MINUTES);
   const [bookingMinuteMarks, setBookingMinuteMarks] = useState<number[] | null>(null);
+  const [bookingStartTimes, setBookingStartTimes] = useState<string[] | null>(null);
   const [initialBookingStartKey, setInitialBookingStartKey] = useState(
-    bookingStartFingerprint(DEFAULT_BOOKING_INTERVAL_MINUTES, null),
+    bookingStartFingerprint(DEFAULT_BOOKING_INTERVAL_MINUTES, null, null),
   );
   const [practitionerIds, setPractitionerIds] = useState<string[]>([]);
   const [isActive, setIsActive] = useState(true);
@@ -1113,14 +888,20 @@ export default function ServicesScreen() {
     setNoticeHours(String(service.min_booking_notice_hours ?? 1));
     setCancelHours(String(service.cancellation_notice_hours ?? 48));
     setSameDay(service.allow_same_day_booking !== false);
-    const bs = service as ManagedService & BookingStartReadFields;
     const seededInterval = normalizeBookingIntervalMinutes(
-      bs.booking_interval_minutes ?? DEFAULT_BOOKING_INTERVAL_MINUTES,
+      service.booking_interval_minutes ?? DEFAULT_BOOKING_INTERVAL_MINUTES,
     );
-    const seededMarks = bs.booking_minute_marks ?? null;
+    const seededMarks = service.booking_minute_marks ?? null;
+    // Only a non-empty stored list means fixed-time mode; the API normalises an
+    // empty one to NULL, so anything else seeds the interval grid.
+    const seededTimes = sanitizeBookingStartTimes(service.booking_start_times);
+    const seededStartTimes = seededTimes.length > 0 ? seededTimes : null;
     setBookingInterval(seededInterval);
     setBookingMinuteMarks(seededMarks);
-    setInitialBookingStartKey(bookingStartFingerprint(seededInterval, seededMarks));
+    setBookingStartTimes(seededStartTimes);
+    setInitialBookingStartKey(
+      bookingStartFingerprint(seededInterval, seededMarks, seededStartTimes),
+    );
     setPractitionerIds(linked);
     setIsActive(service.is_active !== false);
     setStaffMay({
@@ -1171,7 +952,10 @@ export default function ServicesScreen() {
     setSameDay(true);
     setBookingInterval(DEFAULT_BOOKING_INTERVAL_MINUTES);
     setBookingMinuteMarks(null);
-    setInitialBookingStartKey(bookingStartFingerprint(DEFAULT_BOOKING_INTERVAL_MINUTES, null));
+    setBookingStartTimes(null);
+    setInitialBookingStartKey(
+      bookingStartFingerprint(DEFAULT_BOOKING_INTERVAL_MINUTES, null, null),
+    );
     // Default to every calendar the user can offer this on — the full roster for
     // an admin, only the staff member's managed calendars otherwise (web parity).
     setPractitionerIds(calendarsForServiceForm.map((p) => p.id));
@@ -1277,18 +1061,23 @@ export default function ServicesScreen() {
     // Admin-only sections: location, processing time, custom availability, booking interval.
     let scheduleToSend: ServiceCustomScheduleV2 | null = null;
     let customChanged = false;
-    let bookingStart: { booking_interval_minutes: number; booking_minute_marks: number[] | null } | null = null;
+    let bookingStart: ReturnType<typeof normalizeBookingStartForStorage> | null = null;
     let bookingStartChanged = false;
     // Parent processing blocks: cleared ([]) when options drive timing — each option
     // carries its own; otherwise sent only when the base editor changed them.
     let processingToSend: ReturnType<typeof validateProcessingBlocks>['blocks'] | undefined;
     if (isAdmin) {
-      // Booking interval + per-hour start marks. An empty restriction collapses to
-      // "unrestricted" (null) here, mirroring the web's non-blocking warning — the
-      // in-editor hint guides the user but does not prevent saving.
-      bookingStart = normalizeBookingStartForStorage(bookingInterval, bookingMinuteMarks);
+      // Booking start. An empty restriction — or a fixed-time list with nothing
+      // valid in it — collapses to null here, mirroring the web's non-blocking
+      // warnings: the in-editor hints guide the user but never prevent saving.
+      bookingStart = normalizeBookingStartForStorage(
+        bookingInterval,
+        bookingMinuteMarks,
+        bookingStartTimes,
+      );
       bookingStartChanged =
-        bookingStartFingerprint(bookingInterval, bookingMinuteMarks) !== initialBookingStartKey;
+        bookingStartFingerprint(bookingInterval, bookingMinuteMarks, bookingStartTimes) !==
+        initialBookingStartKey;
 
       // Location / online-meeting link
       if (locationType === 'online' && !isValidMeetingUrl(meetingUrl)) {
@@ -1390,13 +1179,16 @@ export default function ServicesScreen() {
                 custom_working_hours: scheduleToSend,
               }
             : {}),
-          // Booking interval + marks — sent only when the editor changed them from
-          // the form default; the server normalizes + defaults to 15/unrestricted,
-          // so an untouched form correctly omits them.
+          // Booking start — sent only when the editor changed it from the form
+          // default; the server normalizes + defaults to 15/unrestricted, so an
+          // untouched form correctly omits these. All three go together: the API
+          // resolves an omitted one from the stored row, so sending a partial set
+          // would silently keep a mode the user just switched away from.
           ...(bookingStartChanged && bookingStart
             ? {
                 booking_interval_minutes: bookingStart.booking_interval_minutes,
                 booking_minute_marks: bookingStart.booking_minute_marks,
+                booking_start_times: bookingStart.booking_start_times,
               }
             : {}),
         }
@@ -1619,9 +1411,16 @@ export default function ServicesScreen() {
   const staffMaySummary =
     staffMayCount === 0 ? 'None' : `${staffMayCount} of ${STAFF_MAY_FIELDS.length} allowed`;
   const locationSummary = LOCATION_TYPE_LABELS[locationType];
-  const bookingIntervalSummary = `Every ${normalizeBookingIntervalMinutes(bookingInterval)} min${
-    bookingMinuteMarks !== null ? ' · restricted' : ''
-  }`;
+  // Fixed times win over the interval in the engine, so they must win in the
+  // summary too — otherwise a collapsed card reads "Every 15 min" for a service
+  // that only ever offers 9:20 and 11:30.
+  const bookingStartTimesForSummary = sanitizeBookingStartTimes(bookingStartTimes);
+  const bookingIntervalSummary =
+    bookingStartTimesForSummary.length > 0
+      ? describeBookingStartTimes(bookingStartTimesForSummary)
+      : `Every ${normalizeBookingIntervalMinutes(bookingInterval)} min${
+          bookingMinuteMarks !== null ? ' · restricted' : ''
+        }`;
   const processingSummary =
     processingDrafts.length === 0
       ? 'None'
@@ -2135,16 +1934,21 @@ export default function ServicesScreen() {
                   />
                 </CollapsibleCard>
 
-                {/* Booking interval + per-hour start marks */}
+                {/* Booking start: interval grid or fixed times of day */}
                 <CollapsibleCard
                   title="Booking interval &amp; start times"
                   summary={bookingIntervalSummary}>
                   <BookingIntervalEditor
                     intervalMinutes={bookingInterval}
                     minuteMarks={bookingMinuteMarks}
-                    onChange={({ intervalMinutes, minuteMarks }) => {
+                    startTimes={bookingStartTimes}
+                    // How much of the day one booking occupies, so the editor can
+                    // flag fixed times that sit closer together than that.
+                    spanMinutes={(Number(duration) || 0) + (Number(buffer) || 0)}
+                    onChange={({ intervalMinutes, minuteMarks, startTimes }) => {
                       setBookingInterval(intervalMinutes);
                       setBookingMinuteMarks(minuteMarks);
+                      setBookingStartTimes(startTimes);
                     }}
                   />
                 </CollapsibleCard>
@@ -2522,59 +2326,5 @@ const styles = StyleSheet.create({
   stripeWarning: {
     borderRadius: radius.md,
     padding: spacing.md,
-  },
-  // Booking interval editor
-  intervalCard: {
-    gap: spacing.sm,
-  },
-  intervalInputRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: spacing.md,
-  },
-  intervalInputField: {
-    width: 110,
-  },
-  intervalPresets: {
-    flex: 1,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.xs,
-    paddingBottom: spacing.xs,
-  },
-  intervalPreset: {
-    minWidth: 44,
-    minHeight: 36,
-    paddingHorizontal: spacing.sm,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  intervalSwitchText: {
-    flex: 1,
-    minWidth: 0,
-    gap: 1,
-    paddingRight: spacing.md,
-  },
-  markGridWrap: {
-    gap: spacing.sm,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderRadius: radius.md,
-  },
-  markGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.xs,
-  },
-  markChip: {
-    minWidth: 48,
-    minHeight: 44,
-    paddingHorizontal: spacing.sm,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
 });

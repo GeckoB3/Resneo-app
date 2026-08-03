@@ -85,6 +85,17 @@ export interface ManagedService {
   staff_may_customize_price?: boolean;
   staff_may_customize_deposit?: boolean;
   staff_may_customize_colour?: boolean;
+  /**
+   * Admin-only booking-start configuration. The service offers either an interval
+   * grid (`booking_interval_minutes` + optional `booking_minute_marks`) or, when
+   * `booking_start_times` is set, exactly those times of day — which replace the
+   * grid entirely. The interval is still stored in that case so switching back
+   * restores it.
+   * @see lib/appointments/booking-interval.ts
+   */
+  booking_interval_minutes?: number | null;
+  booking_minute_marks?: number[] | null;
+  booking_start_times?: string[] | null;
   /** Admin-only: whether per-service custom availability schedule is enabled. */
   custom_availability_enabled?: boolean;
   /** Per-service custom availability schedule (versioned rule list or legacy map). */

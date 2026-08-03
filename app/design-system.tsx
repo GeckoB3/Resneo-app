@@ -20,6 +20,10 @@ import {
   Text,
 } from '@/components/ui';
 import { BookingLocationCallout } from '@/components/bookings/BookingLocationCallout';
+import {
+  BookingIntervalEditor,
+  type BookingStartValue,
+} from '@/components/manage/BookingIntervalEditor';
 import { resolveStaffBookingLocation } from '@/lib/booking/staff-booking-location';
 import { useToast } from '@/providers/ToastProvider';
 import {
@@ -337,8 +341,30 @@ function DesignSystemGallery() {
         </View>
       </Section>
 
+      <Section title="Booking start (interval vs fixed times)">
+        <BookingStartDemo />
+      </Section>
+
       <View style={styles.footer} />
     </Screen>
+  );
+}
+
+/** Live demo of the two booking-start modes, driven by real editor state. */
+function BookingStartDemo() {
+  const [value, setValue] = useState<BookingStartValue>({
+    intervalMinutes: 15,
+    minuteMarks: null,
+    startTimes: null,
+  });
+  return (
+    <BookingIntervalEditor
+      intervalMinutes={value.intervalMinutes}
+      minuteMarks={value.minuteMarks}
+      startTimes={value.startTimes}
+      spanMinutes={30}
+      onChange={setValue}
+    />
   );
 }
 
