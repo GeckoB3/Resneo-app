@@ -199,6 +199,7 @@ export function BookingDetailSheet({
               <BookingDetailContent
                 actionLoading={updateStatus.isPending}
                 booking={booking}
+                detailPending={detailQuery.isPlaceholderData}
                 isAdmin={isAdmin}
                 isAppointmentVenue={isAppointmentVenue}
                 onStatusChange={handleStatusChange}

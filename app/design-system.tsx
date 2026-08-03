@@ -19,6 +19,8 @@ import {
   StatusPill,
   Text,
 } from '@/components/ui';
+import { BookingLocationCallout } from '@/components/bookings/BookingLocationCallout';
+import { resolveStaffBookingLocation } from '@/lib/booking/staff-booking-location';
 import { useToast } from '@/providers/ToastProvider';
 import {
   accent,
@@ -309,6 +311,32 @@ function DesignSystemGallery() {
         </View>
       </Section>
 
+      <Section title="Booking location callout">
+        <View style={styles.calloutStack}>
+          <BookingLocationCallout
+            view={resolveStaffBookingLocation({
+              location_type: 'client_address',
+              client_address_line1: '12 Elm Row',
+              client_address_city: 'Edinburgh',
+              client_address_postcode: 'EH7 4AA',
+            })}
+          />
+          <BookingLocationCallout
+            view={resolveStaffBookingLocation({ location_type: 'client_address' })}
+          />
+          <BookingLocationCallout
+            view={resolveStaffBookingLocation({
+              location_type: 'online',
+              online_meeting_url: 'https://meet.example.com/aura-hair-studio',
+              online_meeting_info: 'Join a few minutes early so we can check your camera.',
+            })}
+          />
+          <BookingLocationCallout
+            view={resolveStaffBookingLocation({ location_type: 'online' })}
+          />
+        </View>
+      </Section>
+
       <View style={styles.footer} />
     </Screen>
   );
@@ -417,6 +445,9 @@ const styles = StyleSheet.create({
   },
   stateBox: {
     height: 240,
+  },
+  calloutStack: {
+    gap: spacing.sm,
   },
   footer: {
     height: spacing['3xl'],

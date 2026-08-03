@@ -172,6 +172,13 @@ export interface BookingDetail {
   client_address_line2?: string | null;
   client_address_city?: string | null;
   client_address_postcode?: string | null;
+  /**
+   * Online joining details (web 2026-08). Resolved live from the service — so a
+   * corrected link reaches the team — by the FULL GET only; the /summary prefetch
+   * spreads the booking row and never carries them.
+   */
+  online_meeting_url?: string | null;
+  online_meeting_info?: string | null;
   /** Multi-service visit / group booking link (full GET spreads the row). */
   group_booking_id?: string | null;
   /** Per-person label on group people visits ("Person 1", a name…). */

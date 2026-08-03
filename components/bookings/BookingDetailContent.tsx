@@ -68,6 +68,11 @@ import { useManagedServices } from '@/lib/queries/useServicesManage';
 import { writeRebookBootstrap, type RebookBootstrapPayload } from '@/lib/rebook-bootstrap';
 import type { GuestBookingHistoryRow } from '@/types/guest-detail';
 import { canShowStaffAttendanceToggle } from '@/lib/booking/booking-staff-indicators';
+import {
+  resolveStaffBookingLocation,
+  staffBookingLocationPillLabel,
+} from '@/lib/booking/staff-booking-location';
+import { BookingLocationCallout } from '@/components/bookings/BookingLocationCallout';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { spacing } from '@/theme/index';
@@ -103,6 +108,13 @@ type BookingDetailContentProps = {
    * "with {staff}" line is always blank for appointments.
    */
   fallbackPractitionerName?: string | null;
+  /**
+   * True while `booking` is still the lightweight /summary placeholder. Only the
+   * full GET resolves an online booking's joining details from the service, so
+   * without this the location callout would report "no meeting link is set" for
+   * the moment before the full detail lands.
+   */
+  detailPending?: boolean;
 };
 
 const TERMINAL_STATUSES = new Set<BookingStatus>(['Cancelled', 'Completed', 'No-Show']);
@@ -311,21 +323,6 @@ function formatShortDate(value: string): string {
   }
 }
 
-/** Service delivery location — "Online" or the client's address (web parity). */
-function locationLabel(booking: BookingDetail): string | null {
-  if (booking.location_type === 'online') return 'Online';
-  if (booking.location_type === 'client_address' || booking.client_address_line1) {
-    const parts = [
-      booking.client_address_line1,
-      booking.client_address_line2,
-      booking.client_address_city,
-      booking.client_address_postcode,
-    ].filter((p): p is string => !!p?.trim());
-    return parts.length > 0 ? parts.join(', ') : "Client's address";
-  }
-  return null;
-}
-
 export function BookingDetailContent({
   booking,
   isAppointmentVenue = false,
@@ -336,6 +333,7 @@ export function BookingDetailContent({
   showPrimaryAction = true,
   fallbackServiceName,
   fallbackPractitionerName,
+  detailPending = false,
 }: BookingDetailContentProps) {
   const { colors } = useTheme();
   const router = useRouter();
@@ -471,11 +469,11 @@ export function BookingDetailContent({
   ]
     .filter(Boolean)
     .join(' · ');
-  const location = locationLabel(booking);
-  const locationIcon: SymbolName =
-    booking.location_type === 'online'
-      ? { ios: 'video.fill', android: 'videocam', web: 'videocam' }
-      : { ios: 'mappin.and.ellipse', android: 'place', web: 'place' };
+  // Where the team has to be. Null for business-venue and legacy bookings, which
+  // render nothing. The address rides on the booking row so it paints with the
+  // /summary placeholder; the joining details arrive with the full detail, which
+  // `detailPending` keeps the callout from mistaking for an unconfigured service.
+  const staffLocation = resolveStaffBookingLocation({ ...booking, detailPending });
   const statusVisual = bookingStatusVisualForKey(booking.status);
 
   // Full modify (service/staff/slot) — appointment bookings in live statuses,
@@ -814,11 +812,18 @@ export function BookingDetailContent({
                 icon={{ ios: 'person.2.fill', android: 'group', web: 'group' }}
                 label={partyLabel}
               />
-              {location ? <MetaChip icon={locationIcon} label={location} /> : null}
               {modelLabel ? (
                 <MetaChip icon={{ ios: 'tag', android: 'sell', web: 'sell' }} label={modelLabel} />
               ) : null}
             </View>
+
+            {/* Above the badges on purpose: for an off-site or online booking, where
+                to be outranks the deposit state for whoever is about to travel. */}
+            {staffLocation ? (
+              <View style={styles.locationCallout}>
+                <BookingLocationCallout view={staffLocation} />
+              </View>
+            ) : null}
 
             {(cardHoldState?.pill ||
               (!cardHoldState && booking.deposit_status === 'Pending') ||
@@ -1124,7 +1129,11 @@ export function BookingDetailContent({
           {serviceName ? <DetailRow label="Service" value={serviceName} /> : null}
           {practitionerName ? <DetailRow label="With" value={practitionerName} /> : null}
           {modelLabel ? <DetailRow label="Type" value={modelLabel} /> : null}
-          {location ? <DetailRow label="Location" value={location} /> : null}
+          {/* Short marker only — the hero callout carries the address itself, and
+              repeating it here would give the same text two touch targets. */}
+          {staffLocation ? (
+            <DetailRow label="Location" value={staffBookingLocationPillLabel(staffLocation.kind)} />
+          ) : null}
           {booking.area_name ? <DetailRow label="Area" value={booking.area_name} /> : null}
           {tableNames ? <DetailRow label="Table" value={tableNames} /> : null}
           {cardHoldState ? (
@@ -1551,6 +1560,9 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: spacing.sm,
     marginTop: spacing.sm,
+  },
+  locationCallout: {
+    marginTop: spacing.md,
   },
   contactLine: {
     flexDirection: 'row',
