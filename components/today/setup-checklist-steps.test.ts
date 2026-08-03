@@ -5,9 +5,12 @@
  * completion/progress maths.
  */
 import {
+  OPTIONAL_SETUP_STEP_KEYS,
   deriveSetupProgress,
   getSetupSteps,
+  isOptionalSetupStepKey,
   readEnabledModels,
+  readSnoozedStepKeys,
 } from '@/components/today/setup-checklist-steps';
 import type { SetupStatus } from '@/lib/queries/useSetupStatus';
 
@@ -161,5 +164,73 @@ describe('deriveSetupProgress — completion + progress', () => {
     const p = deriveSetupProgress(s);
     expect(p.allComplete).toBe(false);
     expect(p.incompleteSteps.map((step) => step.key)).toEqual(['secondary_resource_catalog_ready']);
+  });
+});
+
+describe('snoozing optional steps', () => {
+  /** Everything except the two optional steps is done. */
+  const nearlyDone = status({
+    booking_model: 'unified_scheduling',
+    profile_complete: true,
+    availability_set: true,
+    guest_booking_ready: true,
+  });
+
+  it('marks exactly the two steps a venue may never do as optional', () => {
+    expect(OPTIONAL_SETUP_STEP_KEYS).toEqual(['stripe_connected', 'first_booking_made']);
+    const optional = getSetupSteps(nearlyDone)
+      .filter((s) => s.optional)
+      .map((s) => s.key);
+    expect(optional).toEqual(['stripe_connected', 'first_booking_made']);
+  });
+
+  it('rejects keys the snooze API would not accept', () => {
+    expect(isOptionalSetupStepKey('stripe_connected')).toBe(true);
+    expect(isOptionalSetupStepKey('profile_complete')).toBe(false);
+    expect(isOptionalSetupStepKey(undefined)).toBe(false);
+  });
+
+  it('drops a snoozed step from the list and counts it as done', () => {
+    const p = deriveSetupProgress(
+      { ...nearlyDone, setup_checklist_snoozed_keys: ['stripe_connected'] },
+      undefined,
+    );
+    expect(p.incompleteSteps.map((s) => s.key)).toEqual(['first_booking_made']);
+    expect(p.completedCount).toBe(4);
+    expect(p.totalCount).toBe(5);
+  });
+
+  it('lets the card hide itself once the optional steps are snoozed', () => {
+    // The whole point: a venue that never takes payments online is not nagged
+    // forever by a checklist that can never reach 100%.
+    const p = deriveSetupProgress({
+      ...nearlyDone,
+      setup_checklist_snoozed_keys: ['stripe_connected', 'first_booking_made'],
+    });
+    expect(p.allComplete).toBe(true);
+    expect(p.progressPct).toBe(100);
+  });
+
+  it('never snoozes away a required step, even if the server sent its key', () => {
+    const p = deriveSetupProgress({
+      ...status({ booking_model: 'unified_scheduling' }),
+      setup_checklist_snoozed_keys: ['profile_complete', 'availability_set'],
+    });
+    expect(p.incompleteSteps.map((s) => s.key)).toContain('profile_complete');
+  });
+
+  it('reads nothing snoozed when the field is absent (older deploys)', () => {
+    expect(readSnoozedStepKeys(status()).size).toBe(0);
+    expect(deriveSetupProgress(nearlyDone).incompleteSteps).toHaveLength(2);
+  });
+
+  it('keeps a snoozed step complete even after it is genuinely done', () => {
+    // Belt and braces: snoozing then connecting Stripe must not resurrect the row.
+    const p = deriveSetupProgress({
+      ...nearlyDone,
+      stripe_connected: true,
+      setup_checklist_snoozed_keys: ['stripe_connected'],
+    });
+    expect(p.incompleteSteps.map((s) => s.key)).toEqual(['first_booking_made']);
   });
 });

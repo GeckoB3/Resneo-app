@@ -13,6 +13,8 @@ import { HeatmapWeek } from '@/components/today/HeatmapWeek';
 import { KpiGrid } from '@/components/today/KpiGrid';
 import {
   deriveSetupProgress,
+  isOptionalSetupStepKey,
+  readSnoozedStepKeys,
   type SetupStep,
 } from '@/components/today/setup-checklist-steps';
 import { Button } from '@/components/ui/Button';
@@ -29,7 +31,11 @@ import {
   markSetupStepClicked,
   useClickedSetupSteps,
 } from '@/lib/queries/useClickedSetupSteps';
-import { useDismissSetupChecklist, useSetupStatus } from '@/lib/queries/useSetupStatus';
+import {
+  useDismissSetupChecklist,
+  useSetupStatus,
+  useSnoozeSetupStep,
+} from '@/lib/queries/useSetupStatus';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { isAppointmentExperience } from '@/lib/venue/venue-experience';
 import { useVenueContext } from '@/providers/VenueProvider';
@@ -54,6 +60,7 @@ export function SetupChecklistCard() {
   // re-keys (see staff-gate-stack-remount); enabled only for admins.
   const setupQuery = useSetupStatus(isAdmin);
   const dismiss = useDismissSetupChecklist();
+  const snooze = useSnoozeSetupStep();
   const { venue } = useVenueContext();
   const venueId = venue?.id ?? null;
   // Tap-through completion for the post-onboarding prompts (web parity).
@@ -61,6 +68,10 @@ export function SetupChecklistCard() {
   // Web parity: the X confirms first, so one stray tap can't permanently hide
   // the checklist. A Sheet, not Alert.alert (a no-op on react-native-web).
   const [confirmingDismiss, setConfirmingDismiss] = useState(false);
+  // Snoozes tapped in this session, applied on top of what the server returned
+  // (web parity). Without this the row would sit there until the invalidated
+  // dashboard query comes back, which reads as "Not now" having done nothing.
+  const [pendingSnoozes, setPendingSnoozes] = useState<readonly string[]>([]);
 
   const status = setupQuery.data;
   if (!isAdmin || !status) return null;
@@ -70,7 +81,8 @@ export function SetupChecklistCard() {
   // checklist is the first-run surface and stays pinned regardless.
   if (onboardingComplete && status.setup_checklist_dismissed) return null;
 
-  const progress = deriveSetupProgress(status, clickedSteps);
+  const snoozedSteps = new Set([...readSnoozedStepKeys(status), ...pendingSnoozes]);
+  const progress = deriveSetupProgress(status, clickedSteps, snoozedSteps);
   if (progress.allComplete) return null;
 
   const { incompleteSteps, completedCount, totalCount, progressPct } = progress;
@@ -95,6 +107,18 @@ export function SetupChecklistCard() {
       return;
     }
     if (step.route) goTo(step.route);
+  };
+
+  /**
+   * "Not now" on an optional step. Hides the row immediately and persists in the
+   * background; the key is re-checked here because the server rejects anything
+   * that is not genuinely optional.
+   */
+  const snoozeStep = (step: SetupStep) => {
+    if (!isOptionalSetupStepKey(step.key)) return;
+    hapticTap();
+    setPendingSnoozes((prev) => (prev.includes(step.key) ? prev : [...prev, step.key]));
+    snooze.mutate(step.key);
   };
 
   const heading = onboardingComplete
@@ -151,33 +175,47 @@ export function SetupChecklistCard() {
 
       <View style={styles.checklist}>
         {incompleteSteps.map((step) => (
-          <Pressable
-            key={step.key}
-            onPress={() => openStep(step)}
-            accessibilityRole="button"
-            accessibilityLabel={step.label}
-            style={({ pressed }) => [
-              styles.checklistRow,
-              styles.checklistRowTappable,
-              pressed && { opacity: 0.6 },
-            ]}>
-            <Text variant="bodySmall" color={colors.textMuted}>
-              ○
-            </Text>
-            <View style={styles.checklistRowText}>
-              <Text variant="bodySmall" tone="secondary" numberOfLines={1}>
-                {step.label}
+          <View key={step.key}>
+            <Pressable
+              onPress={() => openStep(step)}
+              accessibilityRole="button"
+              accessibilityLabel={step.label}
+              style={({ pressed }) => [
+                styles.checklistRow,
+                styles.checklistRowTappable,
+                pressed && { opacity: 0.6 },
+              ]}>
+              <Text variant="bodySmall" color={colors.textMuted}>
+                ○
               </Text>
-              <Text variant="caption" tone="muted" numberOfLines={2}>
-                {step.description}
-              </Text>
-            </View>
-            <SymbolView
-              name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }}
-              tintColor={colors.textMuted}
-              size={14}
-            />
-          </Pressable>
+              <View style={styles.checklistRowText}>
+                <Text variant="bodySmall" tone="secondary" numberOfLines={1}>
+                  {step.label}
+                </Text>
+                <Text variant="caption" tone="muted" numberOfLines={2}>
+                  {step.description}
+                </Text>
+              </View>
+              <SymbolView
+                name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }}
+                tintColor={colors.textMuted}
+                size={14}
+              />
+            </Pressable>
+            {/* "Not now" for the steps a venue may never do (payments, a test
+                booking). A sibling of the row rather than a child, so the two
+                touch targets never overlap. */}
+            {step.optional ? (
+              <View style={styles.snoozeRow}>
+                <Button
+                  label="Not now"
+                  variant="ghost"
+                  size="sm"
+                  onPress={() => snoozeStep(step)}
+                />
+              </View>
+            ) : null}
+          </View>
         ))}
       </View>
 
@@ -436,6 +474,12 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     gap: 1,
+  },
+  snoozeRow: {
+    flexDirection: 'row',
+    // Sits under its row, aligned right so it reads as secondary to the step
+    // itself rather than competing with it.
+    justifyContent: 'flex-end',
   },
   secondarySection: {
     gap: spacing.base,

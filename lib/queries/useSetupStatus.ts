@@ -8,6 +8,12 @@ import { useAccessToken } from '@/lib/queries/useAccessToken';
 /** GET /api/venue/setup-status — onboarding checklist progress. */
 export interface SetupStatus {
   setup_checklist_dismissed: boolean;
+  /**
+   * Optional steps this staff member snoozed with "Not now". Server-side rather
+   * than on-device (unlike the tap-through nudges in `useClickedSetupSteps`) so
+   * a snooze holds across devices and sign-outs. Absent on older deploys.
+   */
+  setup_checklist_snoozed_keys?: string[];
   onboarding_completed: boolean;
   profile_complete: boolean;
   availability_set: boolean;
@@ -37,6 +43,32 @@ export function useSetupStatus(enabled = true) {
         throw new Error('Missing access token');
       }
       return apiFetch<SetupStatus>('/api/venue/setup-status', { accessToken });
+    },
+  });
+}
+
+/**
+ * POST /api/venue/setup-checklist-snooze — record "Not now" on an optional step
+ * (admin). The server rejects any key that is not genuinely optional, so callers
+ * must only pass one of `OPTIONAL_SETUP_STEP_KEYS`.
+ */
+export function useSnoozeSetupStep() {
+  const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (stepKey: string): Promise<unknown> => {
+      if (!accessToken) {
+        throw new Error('Missing access token');
+      }
+      return apiFetch<unknown>('/api/venue/setup-checklist-snooze', {
+        accessToken,
+        method: 'POST',
+        body: JSON.stringify({ step_key: stepKey }),
+      });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all() });
     },
   });
 }

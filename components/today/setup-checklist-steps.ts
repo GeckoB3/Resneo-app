@@ -31,6 +31,22 @@ export type SetupPromptKey =
   | 'review_comms'
   | 'import_bookings_customers';
 
+/**
+ * Steps a venue may legitimately never do, so they offer "Not now" (web parity:
+ * `lib/venue/setup-checklist-steps.ts`). A snoozed row is hidden and stops
+ * blocking the card from hiding itself, so only steps that are genuinely
+ * optional belong here — the snooze API rejects any other key.
+ */
+export const OPTIONAL_SETUP_STEP_KEYS = ['stripe_connected', 'first_booking_made'] as const;
+
+export type OptionalSetupStepKey = (typeof OPTIONAL_SETUP_STEP_KEYS)[number];
+
+export function isOptionalSetupStepKey(value: unknown): value is OptionalSetupStepKey {
+  return (
+    typeof value === 'string' && (OPTIONAL_SETUP_STEP_KEYS as readonly string[]).includes(value)
+  );
+}
+
 export interface SetupStep {
   /**
    * Unique id + list key. For required steps this matches a `SetupStatus` field
@@ -51,6 +67,12 @@ export interface SetupStep {
   webPath?: string;
   /** Marks the step complete once its row is tapped (see clicked-steps storage). */
   completeOnClick?: boolean;
+  /**
+   * Offers "Not now". Snoozing counts as settled, so the row drops out of the
+   * list and stops holding the whole card open. Keys must be in
+   * {@link OPTIONAL_SETUP_STEP_KEYS} for the snooze API to accept them.
+   */
+  optional?: boolean;
 }
 
 /**
@@ -230,12 +252,14 @@ export function getSetupSteps(status: SetupStatus): SetupStep[] {
       label: 'Stripe payments',
       description: 'Connect Stripe so you can take deposits and card payments.',
       route: '/manage/plan',
+      optional: true,
     },
     {
       key: 'first_booking_made',
       label: 'First test booking',
       description: 'Try the guest flow once to confirm booking and emails look right.',
       route: '/booking/new',
+      optional: true,
     },
   );
 
@@ -255,15 +279,32 @@ export function isStepDone(status: SetupStatus, key: SetupStepKey): boolean {
 /**
  * A required step is complete when its key maps to a truthy `SetupStatus` flag.
  * A `completeOnClick` prompt is complete once the user has tapped through to it
- * (its key is in `clickedStepKeys`). Mirrors the web `isStepComplete`.
+ * (its key is in `clickedStepKeys`). An optional step also counts as done once it
+ * has been snoozed, so it drops out of the list and the progress count. Mirrors
+ * the web `isStepComplete`.
  */
 export function isStepComplete(
   status: SetupStatus,
   step: SetupStep,
   clickedStepKeys?: ReadonlySet<string>,
+  snoozedStepKeys?: ReadonlySet<string>,
 ): boolean {
+  if (step.optional && snoozedStepKeys?.has(step.key)) return true;
   if (step.completeOnClick) return Boolean(clickedStepKeys?.has(step.key));
   return isStepDone(status, step.key as SetupStepKey);
+}
+
+/**
+ * The snoozed keys carried on the status payload, filtered to the ones that are
+ * actually snoozeable. Older deploys omit the field entirely, which reads as
+ * "nothing snoozed" rather than an error.
+ */
+export function readSnoozedStepKeys(
+  status: Pick<SetupStatus, 'setup_checklist_snoozed_keys'>,
+): ReadonlySet<string> {
+  const raw = status.setup_checklist_snoozed_keys;
+  if (!Array.isArray(raw)) return new Set();
+  return new Set(raw.filter(isOptionalSetupStepKey));
 }
 
 export interface SetupProgress {
@@ -279,14 +320,18 @@ export interface SetupProgress {
 /**
  * Derive steps + completion counts in one pass (mirrors the web card's memo).
  * `clickedStepKeys` carries the tapped-through post-onboarding prompts; omit it
- * and those prompts simply read as incomplete.
+ * and those prompts simply read as incomplete. `snoozedStepKeys` defaults to
+ * whatever the status payload carries, so callers only pass it to override.
  */
 export function deriveSetupProgress(
   status: SetupStatus,
   clickedStepKeys?: ReadonlySet<string>,
+  snoozedStepKeys: ReadonlySet<string> = readSnoozedStepKeys(status),
 ): SetupProgress {
   const steps = getSetupSteps(status);
-  const incompleteSteps = steps.filter((s) => !isStepComplete(status, s, clickedStepKeys));
+  const incompleteSteps = steps.filter(
+    (s) => !isStepComplete(status, s, clickedStepKeys, snoozedStepKeys),
+  );
   const completedCount = steps.length - incompleteSteps.length;
   const totalCount = steps.length;
   const progressPct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;

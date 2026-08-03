@@ -36,10 +36,12 @@ const mockStaff = { data: { staff: { role: 'admin' } } } as {
 jest.mock('@/lib/queries/useStaffMe', () => ({ useStaffMe: () => mockStaff }));
 
 const mockDismiss = { mutate: jest.fn(), isPending: false };
+const mockSnooze = { mutate: jest.fn(), isPending: false };
 const mockSetup = { data: undefined as SetupStatus | undefined };
 jest.mock('@/lib/queries/useSetupStatus', () => ({
   useSetupStatus: () => mockSetup,
   useDismissSetupChecklist: () => mockDismiss,
+  useSnoozeSetupStep: () => mockSnooze,
 }));
 
 // The card reads the venue id to scope the tap-through prompt storage.
@@ -79,6 +81,7 @@ function status(partial: Partial<SetupStatus> = {}): SetupStatus {
 beforeEach(() => {
   mockPush.mockClear();
   mockDismiss.mutate.mockClear();
+  mockSnooze.mutate.mockClear();
   mockStaff.data = { staff: { role: 'admin' } };
   mockSetup.data = undefined;
 });
@@ -167,5 +170,75 @@ describe('SetupChecklistCard — hide rules', () => {
     });
     await render(<SetupChecklistCard />);
     expect(screen.toJSON()).toBeNull();
+  });
+
+  it('renders nothing once the only steps left are snoozed', async () => {
+    mockSetup.data = status({
+      profile_complete: true,
+      availability_set: true,
+      guest_booking_ready: true,
+      setup_checklist_snoozed_keys: ['stripe_connected', 'first_booking_made'],
+    });
+    await render(<SetupChecklistCard />);
+    expect(screen.toJSON()).toBeNull();
+  });
+});
+
+describe('SetupChecklistCard — "Not now" on optional steps', () => {
+  /** Everything except the two optional steps is done, so both rows show. */
+  const nearlyDone: Partial<SetupStatus> = {
+    profile_complete: true,
+    availability_set: true,
+    guest_booking_ready: true,
+  };
+
+  it('offers "Not now" on the optional steps only', async () => {
+    mockSetup.data = status(nearlyDone);
+    await render(<SetupChecklistCard />);
+    // Stripe + first booking are the two rows left, and both are optional.
+    expect(screen.getByText('Stripe payments')).toBeTruthy();
+    expect(screen.getByText('First test booking')).toBeTruthy();
+    expect(screen.getAllByText('Not now')).toHaveLength(2);
+  });
+
+  it('does not offer "Not now" on a required step', async () => {
+    mockSetup.data = status({ ...nearlyDone, guest_booking_ready: false });
+    await render(<SetupChecklistCard />);
+    expect(screen.getByText('Public booking page')).toBeTruthy();
+    // Still only the two optional rows carry the action.
+    expect(screen.getAllByText('Not now')).toHaveLength(2);
+  });
+
+  it('snoozes the step it belongs to, without navigating', async () => {
+    mockSetup.data = status(nearlyDone);
+    await render(<SetupChecklistCard />);
+    await act(async () => {
+      fireEvent.press(screen.getAllByText('Not now')[0]!);
+    });
+    expect(mockSnooze.mutate).toHaveBeenCalledWith('stripe_connected');
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it('hides the row immediately, without waiting for the server', async () => {
+    // The mutation is mocked and never resolves a refetch, so anything still on
+    // screen after the press would be waiting on the network.
+    mockSetup.data = status(nearlyDone);
+    await render(<SetupChecklistCard />);
+    await act(async () => {
+      fireEvent.press(screen.getAllByText('Not now')[0]!);
+    });
+    expect(screen.queryByText('Stripe payments')).toBeNull();
+    expect(screen.getByText('First test booking')).toBeTruthy();
+  });
+
+  it('hides a step the server reports as snoozed', async () => {
+    mockSetup.data = status({
+      ...nearlyDone,
+      setup_checklist_snoozed_keys: ['stripe_connected'],
+    });
+    await render(<SetupChecklistCard />);
+    expect(screen.queryByText('Stripe payments')).toBeNull();
+    expect(screen.getByText('First test booking')).toBeTruthy();
+    expect(screen.getAllByText('Not now')).toHaveLength(1);
   });
 });
