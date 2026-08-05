@@ -1,8 +1,8 @@
 # Go-live check — Resneo app
 
-## ⚠️ BLOCKER — an OTA update to production would brick the live app (found 2026-08-05)
+## ~~⚠️ BLOCKER — an OTA update to production would brick the live app~~ — RESOLVED 2026-08-05
 
-**Do not run `eas update --branch production` until this is fixed.** It would take the app down for every customer.
+**Fixed the same day it was found.** All four missing variables were added to the EAS `production` environment and verified byte-for-byte against `eas.json`. The environment now carries every `EXPO_PUBLIC_*` the app reads, so an OTA to production produces a working bundle. The finding is kept in full below, because the failure mode is worth remembering and the rule at the end still governs every future variable.
 
 `EXPO_PUBLIC_*` values are inlined at **bundle** time, and the two build paths read env from **different places**:
 
@@ -13,7 +13,7 @@
 
 So any variable that lives *only* in `eas.json` silently vanishes from every OTA update. It fails quietly, as a missing feature rather than an error.
 
-**Production is currently exposed on four variables.** `eas.json`'s `production.env` carries them; the EAS `production` environment does not:
+**Production was exposed on four variables** (all four now added — the ❌ column below is the state as found). `eas.json`'s `production.env` carried them; the EAS `production` environment did not:
 
 | Variable | In EAS `production` env? | Consequence of an OTA today |
 |---|---|---|
@@ -25,13 +25,13 @@ So any variable that lives *only* in `eas.json` silently vanishes from every OTA
 
 The app would render the "Supabase env missing" terminal error screen for every user, and stay there until a corrected update was published. Customers cannot fix it by reinstalling — the update is sticky.
 
-**The fix** is to add those four to the EAS `production` environment so the two sources agree. Builds are unaffected: `eas.json`'s `env` takes precedence, and the values are identical. None are secret — all four are already committed in `eas.json` in this public repo.
+**The fix applied:** all four added to the EAS `production` environment, so the two sources agree. Builds are unaffected — `eas.json`'s `env` takes precedence and the values are identical. None are secret; all four were already committed in `eas.json` in this public repo. Values were read straight from `eas.json` and diffed against `eas env:list production` afterwards rather than transcribed, since a single wrong character in the Supabase URL causes precisely the outage being prevented.
 
 ```bash
 npx eas-cli env:set --environment production --name EXPO_PUBLIC_API_URL --value "https://www.resneo.com" --visibility plaintext --scope project
 ```
 
-…and the same for the three others.
+`preview` was fixed the same way (`EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `EXPO_PUBLIC_TERMINAL_SIMULATED`).
 
 **How this was found:** an OTA to `preview` on 2026-08-05 silently removed the card-payment option from the payment sheet. `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` lived only in `eas.json`'s `preview.env`, so `getStripePublishableKey()` returned null in the update bundle and `cardAvailable` went false. Cash and external were unaffected, which is exactly why it read as a feature regression rather than a configuration fault. Fixed for `preview` by adding that key and `EXPO_PUBLIC_TERMINAL_SIMULATED` to the EAS `preview` environment.
 
