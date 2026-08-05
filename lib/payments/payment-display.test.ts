@@ -52,9 +52,30 @@ describe('canTakeInPersonPayment (§3.4 rule 2)', () => {
     }
   });
 
-  it('hides when already paid or refunded', () => {
+  it('hides when already paid', () => {
     expect(canTakeInPersonPayment({ ...BASE, paymentState: 'paid' })).toBe(false);
-    expect(canTakeInPersonPayment({ ...BASE, paymentState: 'refunded' })).toBe(false);
+  });
+
+  it('STAYS available after a refund, so a mistaken amount can be re-taken', () => {
+    // Deliberate deviation from canonical §3.4 rule 2, which also excludes
+    // 'refunded'. The backend only reports 'refunded' when nothing remains paid,
+    // so the booking owes the full amount again — and this gate covers cash and
+    // external too, so excluding it left money that was genuinely taken with no
+    // way to reach the ledger.
+    expect(canTakeInPersonPayment({ ...BASE, paymentState: 'refunded' })).toBe(true);
+  });
+
+  it('still refuses a refunded booking with nothing left to pay', () => {
+    // The balance is the real guard, not the state label.
+    expect(
+      canTakeInPersonPayment({ ...BASE, paymentState: 'refunded', balanceDuePence: 0 }),
+    ).toBe(false);
+  });
+
+  it('still refuses a cancelled booking, refunded or not', () => {
+    expect(
+      canTakeInPersonPayment({ ...BASE, paymentState: 'refunded', status: 'Cancelled' }),
+    ).toBe(false);
   });
 
   it('unpaid / partially_paid / missing state stay actionable', () => {

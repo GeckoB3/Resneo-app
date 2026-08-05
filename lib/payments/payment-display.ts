@@ -195,16 +195,31 @@ export interface TakePaymentGateInput {
 }
 
 /**
- * §3.4 rule 2, verbatim: the button renders ONLY when the venue is enabled,
- * this is an appointments venue, the booking is not cancelled, the state is
- * not paid/refunded, and there is (or may be) something left to pay.
- * Otherwise the button does not exist in the tree.
+ * §3.4 rule 2: the button renders ONLY when the venue is enabled, this is an
+ * appointments venue, the booking is not cancelled, the state is not paid, and
+ * there is (or may be) something left to pay. Otherwise the button does not
+ * exist in the tree.
+ *
+ * **Deliberate deviation from the canonical §3.4 rule 2**, which also excludes
+ * `'refunded'`. That is wrong, and the backend's own accounting proves it: a
+ * refunded ledger row contributes nothing to `balancePaidPence`, and
+ * `deriveBookingPaymentState` only returns `'refunded'` when
+ * `hasRefundedRow && amountPaid === 0` — i.e. the booking owes the FULL amount
+ * again and `balance_due_pence` has been restored. The charge route would accept
+ * a fresh payment.
+ *
+ * Excluding it stranded the correct-a-mistake flow: take £50, realise it should
+ * have been £25, refund, and there is then no way to collect the £25. Not just
+ * by card — this gate gates the whole sheet, so cash and external could not be
+ * recorded either, leaving money that was genuinely taken absent from the
+ * ledger. `'refunded'` now falls through to the balance check, which is
+ * server-computed and remains the real guard against collecting twice.
  */
 export function canTakeInPersonPayment(input: TakePaymentGateInput): boolean {
   if (!input.inPersonPaymentsEnabled) return false;
   if (!input.isAppointmentVenue) return false;
   if (input.status === 'Cancelled') return false;
-  if (input.paymentState === 'paid' || input.paymentState === 'refunded') return false;
+  if (input.paymentState === 'paid') return false;
   const balance = input.balanceDuePence ?? null;
   return balance === null || balance > 0;
 }

@@ -134,6 +134,8 @@ Five things this pass could **not** fix app-side. All live in `src/app/api/venue
    **Fix:** add `stripe_payment_intent_id` to that select (and ideally `metadata->>attempt_id`). The match then becomes exact and the heuristic can be deleted. Nothing else in the app needs the field, and it is not a secret — the client already holds the PI's client secret for the same intent.
 5. **The cash route doesn't echo what it recorded.** It returns only `{ success: true }`, so the app's success screen ("£30.00 collected", "£60.00 still outstanding") is built from what the *client* believed the balance was at render time. If the server balance dropped between render and POST — a deposit landing, a sibling service settled, a colleague collecting — the ledger holds the clamped figure while the screen reports the client's, and staff read the wrong number out to the client. Not fixable app-side. The card path is immune because it echoes `amount_pence`; cash should do the same (`{ success: true, amount_pence, balance_due_pence }`), after which the app can build the success screen from the response.
 
+6. **The canonical spec's §3.4 rule 2 is wrong about `'refunded'`** and should be amended in `resneo/Docs/TAP_TO_PAY_DESIGN_AND_IMPLEMENTATION.md` to match the app. This is a doc fix, not a code one — the backend's accounting is already correct and the charge route already accepts the payment. See the deviation note under "Button gate" for the reasoning. Until the canonical doc is amended, anyone re-deriving the gate from the spec will reintroduce the bug.
+
 ### Deliberately deferred
 - **"Send payment link" fallback on card decline (§7.8).** The doc suggests reusing the deposit route's `send_payment_link`, but that machinery sends a **deposit** request tied to `deposit_status`, not an appointment **balance**. Firing it after a declined balance payment would email the client a misleading (or failing) deposit request. The sheet instead surfaces the decline and points staff at cash / another method. Wire this up once the backend exposes a balance payment link.
 - **Tips** (`tip_amount_pence` reserved, unused in v1) and **partial refunds** (v1 refunds a whole ledger row).
@@ -201,7 +203,13 @@ A multi-service visit or group booking writes **one `bookings` row per service/p
 
 **Env:** `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` (the **platform** publishable key) in `lib/env.ts` + `.env.example`; the SDK needs it at init.
 
-**Button gate** (`components/bookings/BookingDetailContent.tsx`, inside the existing "Payments & confirmation" card) implements canonical §3.4 rule 2 verbatim: `in_person_payments_enabled && isAppointmentVenue && status !== 'Cancelled' && payment_state ∉ {paid,refunded} && (balance_due_pence === null || balance_due_pence > 0)`. Render nothing else when it's false — the surface simply doesn't exist.
+**Button gate** (`components/bookings/BookingDetailContent.tsx`, inside the existing "Payments & confirmation" card) implements canonical §3.4 rule 2 with **one deliberate deviation**: `in_person_payments_enabled && isAppointmentVenue && status !== 'Cancelled' && payment_state !== 'paid' && (balance_due_pence === null || balance_due_pence > 0)`. Render nothing else when it's false — the surface simply doesn't exist.
+
+> **Deviation (2026-08-05): `'refunded'` is NOT excluded.** The canonical rule says `payment_state ∉ {paid, refunded}`. That is wrong, and the backend's own accounting proves it: in `payment-summary.ts` a refunded ledger row contributes nothing to `balancePaidPence`, and `deriveBookingPaymentState` returns `'refunded'` only when `hasRefundedRow && amountPaid === 0` — the booking owes the **full amount again** and `balance_due_pence` is restored. The charge route would accept a fresh payment.
+>
+> Found from device testing. Excluding it stranded the correct-a-mistake flow: take £50, realise it should have been £25, refund, and there is then no route to collect the £25. Worse than a card-path problem, because this gate gates the whole sheet — **cash and external could not be recorded either**, so money genuinely taken could never reach the ledger. The toolbar mirror failed with it (`canTakePayment || isPaidInPerson`, and `isPaidInPerson` needs state `'paid'`), so a refunded booking had no payment entry point at all.
+>
+> `'refunded'` now falls through to the balance check, which is server-computed and remains the real guard against collecting twice. A refunded booking with a zero balance, or a cancelled one, is still refused.
 
 ## What's left before a pilot
 1. An **EAS dev build** carrying the native Terminal module (nothing runs without it).
