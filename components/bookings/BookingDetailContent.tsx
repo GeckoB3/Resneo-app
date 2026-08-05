@@ -38,6 +38,7 @@ import {
   buildPaymentHistory,
   buildPriceSummary,
   canTakeInPersonPayment,
+  canRefundInPerson,
   pendingCardPayments,
   pendingCardState,
 } from '@/lib/payments/payment-display';
@@ -584,16 +585,40 @@ export function BookingDetailContent({
   const isPaidInPerson = inPersonPaymentsOn && booking.payment_state === 'paid';
   const showPaymentToolbarAction = canTakePayment || isPaidInPerson;
 
-  const openTakePayment = () =>
-    setTakePaymentTarget({
-      id: booking.id,
-      guestName,
-      balanceDuePence: booking.balance_due_pence ?? null,
-      visitPayment: booking.visit_payment ?? null,
-      isAdmin,
-      payments: booking.payments ?? [],
-      cardPresentReady: venue?.card_present_ready === true,
-    });
+  const paymentSheetTarget = (initialMode?: 'menu' | 'refund'): TakePaymentTarget => ({
+    id: booking.id,
+    guestName,
+    balanceDuePence: booking.balance_due_pence ?? null,
+    visitPayment: booking.visit_payment ?? null,
+    isAdmin,
+    payments: booking.payments ?? [],
+    cardPresentReady: venue?.card_present_ready === true,
+    initialMode,
+  });
+
+  // Two zero-argument handlers rather than one that takes the mode: passed
+  // straight to `onPress`, a parameterised opener would receive the press event
+  // as its first argument and open the sheet on a GestureResponderEvent.
+  const openTakePayment = () => setTakePaymentTarget(paymentSheetTarget());
+  const openRefund = () => setTakePaymentTarget(paymentSheetTarget('refund'));
+
+  /**
+   * Refunding used to be reachable only by opening the payment sheet and
+   * spotting "Refund a payment" inside it — and on a settled booking the way in
+   * is a button labelled "Paid", which reads as a status rather than an action.
+   * Two taps, neither of them signposted. The ledger it acts on is already right
+   * here in this section, so the action belongs beside it.
+   *
+   * Gated exactly like the one inside the sheet, plus the venue switch: refunds
+   * are admin-only, need a settled row to act on, and the server 403s every
+   * payment route when in-person payments are off (the kill switch is total).
+   */
+  const showInPersonRefund = canRefundInPerson({
+    inPersonPaymentsEnabled: venue?.in_person_payments_enabled,
+    isAppointmentVenue,
+    isAdmin,
+    payments: booking.payments,
+  });
 
   // Web parity: deposit actions (send link / record cash / waive / refund) show
   // whenever the booking is active; cancelled bookings instead get a refund
@@ -1352,6 +1377,16 @@ export function BookingDetailContent({
                 appointment: nothing depends on it and nothing auto-opens it. */}
             {canTakePayment ? (
               <Button label="Take payment" fullWidth onPress={openTakePayment} />
+            ) : null}
+            {/* Beside the ledger it acts on, rather than two unsignposted taps
+                behind a button labelled "Paid". */}
+            {showInPersonRefund ? (
+              <Button
+                label="Refund a payment"
+                variant="ghost"
+                fullWidth
+                onPress={openRefund}
+              />
             ) : null}
             {showDepositActions ? (
               <Button

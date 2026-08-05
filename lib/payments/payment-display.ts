@@ -209,6 +209,30 @@ export function canTakeInPersonPayment(input: TakePaymentGateInput): boolean {
   return balance === null || balance > 0;
 }
 
+export interface RefundGateInput {
+  inPersonPaymentsEnabled: boolean | null | undefined;
+  isAppointmentVenue: boolean;
+  isAdmin: boolean;
+  payments: BookingPaymentRow[] | null | undefined;
+}
+
+/**
+ * Whether to offer "Refund a payment" on the booking detail, beside the ledger
+ * it acts on. Sibling of {@link canTakeInPersonPayment}, and deliberately NOT
+ * subject to its rules: a refund is most needed exactly where taking a payment
+ * is impossible — a settled booking, or a cancelled one.
+ *
+ * Admin-only, needs a settled row to act on, and off entirely when the venue
+ * switch is off — the kill switch is total server-side and refunds 403 with
+ * everything else, so offering the action there would only produce an error.
+ */
+export function canRefundInPerson(input: RefundGateInput): boolean {
+  if (!input.inPersonPaymentsEnabled) return false;
+  if (!input.isAppointmentVenue) return false;
+  if (!input.isAdmin) return false;
+  return refundablePayments(input.payments).length > 0;
+}
+
 /** Neutral labels for the whole-booking payment state (§5.5). */
 export function bookingPaymentStateLabel(state: BookingPaymentState): string {
   switch (state) {

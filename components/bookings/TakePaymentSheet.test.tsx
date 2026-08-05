@@ -999,6 +999,30 @@ describe('refunds', () => {
     expect(screen.queryByText('Refund a payment')).toBeNull();
   });
 
+  it('opens straight on the refund list when the caller asks for it', async () => {
+    // The booking detail links here directly, so staff do not have to find the
+    // action behind "Take payment" / "Paid".
+    await render(
+      <TakePaymentSheet
+        target={target({ isAdmin: true, payments: [paid], initialMode: 'refund' })}
+        onClose={jest.fn()}
+      />,
+    );
+    expect(screen.getByText('Refund £25.00 · Card')).toBeTruthy();
+  });
+
+  it('still warns about a payment in flight instead of honouring initialMode', async () => {
+    // The double-charge warning is a safety step; a deep link must not skip it.
+    const pending = { ...paid, id: 'pay-2', status: 'pending' as const, created_at: new Date().toISOString() };
+    await render(
+      <TakePaymentSheet
+        target={target({ isAdmin: true, payments: [paid, pending], initialMode: 'refund' })}
+        onClose={jest.fn()}
+      />,
+    );
+    expect(screen.queryByText('Refund £25.00 · Card')).toBeNull();
+  });
+
   it('lists succeeded rows for admins and needs a second tap to confirm', async () => {
     await render(
       <TakePaymentSheet

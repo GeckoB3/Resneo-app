@@ -3,6 +3,7 @@ import {
   bookingPaymentStateLabel,
   buildPaymentHistory,
   buildPriceSummary,
+  canRefundInPerson,
   canTakeInPersonPayment,
   checkChargeAmount,
   otherVisitLineNote,
@@ -674,5 +675,57 @@ describe('pendingCardState (how loud a pending card row is allowed to be)', () =
     // gate and the notices discount it.
     expect(pendingCardPayments([pending()])).toHaveLength(1);
     expect(pendingCardTotalPence([pending()])).toBe(2500);
+  });
+});
+
+describe('canRefundInPerson', () => {
+  const paid = {
+    id: 'pay-1',
+    method: 'card_present' as const,
+    status: 'succeeded' as const,
+    amount_pence: 2500,
+    note: null,
+    created_at: '2026-08-05T10:00:00Z',
+  };
+  const base = {
+    inPersonPaymentsEnabled: true,
+    isAppointmentVenue: true,
+    isAdmin: true,
+    payments: [paid],
+  };
+
+  it('offers the refund when an admin has a settled row to act on', () => {
+    expect(canRefundInPerson(base)).toBe(true);
+  });
+
+  it('is off for non-admins — refunds follow every other money action', () => {
+    expect(canRefundInPerson({ ...base, isAdmin: false })).toBe(false);
+  });
+
+  it('is off when the venue switch is off, because the server 403s refunds too', () => {
+    expect(canRefundInPerson({ ...base, inPersonPaymentsEnabled: false })).toBe(false);
+    expect(canRefundInPerson({ ...base, inPersonPaymentsEnabled: null })).toBe(false);
+  });
+
+  it('needs a succeeded row: pending and failed ones are not refundable', () => {
+    expect(canRefundInPerson({ ...base, payments: [] })).toBe(false);
+    expect(canRefundInPerson({ ...base, payments: null })).toBe(false);
+    expect(canRefundInPerson({ ...base, payments: [{ ...paid, status: 'pending' }] })).toBe(false);
+    expect(canRefundInPerson({ ...base, payments: [{ ...paid, status: 'failed' }] })).toBe(false);
+  });
+
+  it('stays available where taking a payment is not — that is the point', () => {
+    // canTakeInPersonPayment is false for both of these; a refund is exactly
+    // what a settled or cancelled booking needs.
+    expect(canRefundInPerson(base)).toBe(true);
+    expect(
+      canTakeInPersonPayment({
+        inPersonPaymentsEnabled: true,
+        isAppointmentVenue: true,
+        status: 'Completed',
+        paymentState: 'paid',
+        balanceDuePence: 0,
+      }),
+    ).toBe(false);
   });
 });

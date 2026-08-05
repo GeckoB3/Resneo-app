@@ -68,6 +68,13 @@ export type TakePaymentTarget = {
   payments: BookingPaymentRow[];
   /** Venue has a connected Stripe account, so card options can work (§6.6). */
   cardPresentReady: boolean;
+  /**
+   * Step to open on. Defaults to the menu; `'refund'` lets the booking detail
+   * link straight to the refund list instead of making staff find it behind
+   * "Take payment"/"Paid". A card payment in flight still overrides this — that
+   * warning exists to stop a double charge and must not be skippable.
+   */
+  initialMode?: 'menu' | 'refund';
 };
 
 type SheetMode =
@@ -174,7 +181,7 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
       setMode(
         pendingCardState({ payments: target.payments, nowMs: Date.now() }).verdict === 'in_flight'
           ? 'processing'
-          : 'menu',
+          : (target.initialMode ?? 'menu'),
       );
       return;
     }
