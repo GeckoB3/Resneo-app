@@ -16,6 +16,8 @@
  */
 import { Platform } from 'react-native';
 
+import { getBuildChannel } from '@/lib/build-channel';
+
 export type ObservabilityLevel = 'fatal' | 'error' | 'warning' | 'info';
 type ContextValue = string | number | boolean | null | undefined;
 export type ObservabilityContext = Record<string, ContextValue>;
@@ -92,26 +94,13 @@ type ErrorUtilsShape = {
 };
 
 /**
- * Which build this is, for Sentry's `environment` tag.
- *
- * The EAS build profile's `channel` (see eas.json) is the only signal that
- * distinguishes a preview build from a production one at runtime — both are
- * release builds, so `__DEV__` is false in each. Without this every non-dev
+ * Which build this is, for Sentry's `environment` tag. Without it every non-dev
  * build reports as the SDK's default and preview crashes are indistinguishable
  * from real customer ones in the same Sentry project.
- *
- * Read defensively: `channel` is null for local/non-EAS builds, and reading it
- * must never be the thing that stops error reporting from initialising.
  */
 function resolveSentryEnvironment(): string {
   if (__DEV__) return 'development';
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires, global-require
-    const updates = require('expo-updates') as { channel?: string | null };
-    return updates.channel?.trim() || 'unknown';
-  } catch {
-    return 'unknown';
-  }
+  return getBuildChannel() ?? 'unknown';
 }
 
 /**

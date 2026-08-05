@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, type ReactNode } from 'react';
 
+import { isDiagnosticBuild } from '@/lib/build-channel';
 import { getStripePublishableKey } from '@/lib/env';
 import {
   clearTerminalLocationCache,
@@ -63,7 +64,16 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
 
   const StripeTerminalProvider = sdk.StripeTerminalProvider;
   return (
-    <StripeTerminalProvider logLevel={__DEV__ ? 'verbose' : 'error'} tokenProvider={tokenProvider}>
+    /**
+     * `error` in production, verbose everywhere else — including preview builds,
+     * which are release builds and were therefore silent. That silence cost a
+     * whole debugging round trip: the SDK aborts the process on some integration
+     * errors and prints its reason immediately beforehand, so at `error` level
+     * the crash arrives with no explanation attached.
+     */
+    <StripeTerminalProvider
+      logLevel={isDiagnosticBuild() ? 'verbose' : 'error'}
+      tokenProvider={tokenProvider}>
       {children}
     </StripeTerminalProvider>
   );
