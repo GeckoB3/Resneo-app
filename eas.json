@@ -33,6 +33,7 @@
         "EXPO_PUBLIC_API_URL": "https://reserve-ni.vercel.app",
         "EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_test_51TTpEeHhd3bfD0kpxmJu3pFmA8cXRahtKHKKxdTHDqre3aHT2vk1nannrZGK3NEu7nyp1uJn8Mb9XzcjMnfgCt4b00TvdWvMQz",
         "EXPO_PUBLIC_TERMINAL_SIMULATED": "false",
+        "EXPO_PUBLIC_SENTRY_DSN": "https://b1cbcc3c520d8a60245d49fecea1c8e3@o4511587664003072.ingest.de.sentry.io/4511587670949968",
         "SENTRY_DISABLE_AUTO_UPLOAD": "true"
       },
       "android": {

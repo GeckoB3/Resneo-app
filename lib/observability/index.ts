@@ -92,6 +92,29 @@ type ErrorUtilsShape = {
 };
 
 /**
+ * Which build this is, for Sentry's `environment` tag.
+ *
+ * The EAS build profile's `channel` (see eas.json) is the only signal that
+ * distinguishes a preview build from a production one at runtime — both are
+ * release builds, so `__DEV__` is false in each. Without this every non-dev
+ * build reports as the SDK's default and preview crashes are indistinguishable
+ * from real customer ones in the same Sentry project.
+ *
+ * Read defensively: `channel` is null for local/non-EAS builds, and reading it
+ * must never be the thing that stops error reporting from initialising.
+ */
+function resolveSentryEnvironment(): string {
+  if (__DEV__) return 'development';
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires, global-require
+    const updates = require('expo-updates') as { channel?: string | null };
+    return updates.channel?.trim() || 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
+/**
  * Lazily load and init @sentry/react-native — only ever called when a DSN is
  * configured, so a build without the native module linked never requires it.
  */
@@ -101,6 +124,7 @@ function initSentry(): void {
     const sdk = require('@sentry/react-native') as SentrySdk;
     sdk.init({
       dsn: process.env.EXPO_PUBLIC_SENTRY_DSN,
+      environment: resolveSentryEnvironment(),
       enableAutoSessionTracking: true,
       tracesSampleRate: 0.2,
     });
