@@ -1,5 +1,44 @@
 # Go-live check — Resneo app
 
+## ⚠️ BLOCKER — an OTA update to production would brick the live app (found 2026-08-05)
+
+**Do not run `eas update --branch production` until this is fixed.** It would take the app down for every customer.
+
+`EXPO_PUBLIC_*` values are inlined at **bundle** time, and the two build paths read env from **different places**:
+
+| | reads from |
+|---|---|
+| `eas build` | `eas.json`'s build-profile `env` **plus** the EAS environment (profile wins on conflict) |
+| `eas update` | the EAS environment **only** — `eas.json`'s `env` block is not consulted |
+
+So any variable that lives *only* in `eas.json` silently vanishes from every OTA update. It fails quietly, as a missing feature rather than an error.
+
+**Production is currently exposed on four variables.** `eas.json`'s `production.env` carries them; the EAS `production` environment does not:
+
+| Variable | In EAS `production` env? | Consequence of an OTA today |
+|---|---|---|
+| `EXPO_PUBLIC_SUPABASE_URL` | ❌ | `getSupabaseUrl()` **throws** — terminal error screen, no sign-in |
+| `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | ❌ | same |
+| `EXPO_PUBLIC_API_URL` | ❌ | every backend call fails |
+| `EXPO_PUBLIC_SENTRY_DSN` | ❌ | crash reporting silently off — so you would not even be told |
+| `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` | ✅ (`pk_live_…`) | fine |
+
+The app would render the "Supabase env missing" terminal error screen for every user, and stay there until a corrected update was published. Customers cannot fix it by reinstalling — the update is sticky.
+
+**The fix** is to add those four to the EAS `production` environment so the two sources agree. Builds are unaffected: `eas.json`'s `env` takes precedence, and the values are identical. None are secret — all four are already committed in `eas.json` in this public repo.
+
+```bash
+npx eas-cli env:set --environment production --name EXPO_PUBLIC_API_URL --value "https://www.resneo.com" --visibility plaintext --scope project
+```
+
+…and the same for the three others.
+
+**How this was found:** an OTA to `preview` on 2026-08-05 silently removed the card-payment option from the payment sheet. `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` lived only in `eas.json`'s `preview.env`, so `getStripePublishableKey()` returned null in the update bundle and `cardAvailable` went false. Cash and external were unaffected, which is exactly why it read as a feature regression rather than a configuration fault. Fixed for `preview` by adding that key and `EXPO_PUBLIC_TERMINAL_SIMULATED` to the EAS `preview` environment.
+
+**Rule going forward:** every `EXPO_PUBLIC_*` the app reads must exist in the EAS environment for any channel you intend to OTA, not only in `eas.json`. Verify with `eas env:list <environment>` before publishing, and treat a variable present in only one of the two places as a defect.
+
+---
+
 ## Run 2026-08-03 — web-parity batch (`6992f46`)
 
 Four features tracking the web update at `resneo@9439f7ad`: the booking location callout, per-service fixed start times, setup-checklist snoozing, and Google review requests. **No blockers found; nothing below changes the 2026-08-01 verdict**, whose two build-configuration items still stand unchanged.
