@@ -1,5 +1,61 @@
 # Go-live check — Resneo app
 
+## Run 2026-08-05 — iOS production readiness, Bluetooth-reader card payments
+
+**Scope:** shipping in-person card payments on iOS via a **connected BBPOS WisePad 3 only**. Tap to Pay on iPhone is deliberately deferred (Apple has granted the entitlement for Development distribution only — see `Docs/TAP_TO_PAY.md`).
+
+**Verdict: the code is ready; the build sequence is not.** One step must not be skipped, one config item is fixed here, and three operational facts can only be confirmed by a human against the live Stripe account.
+
+### 1. Do a `preview` build first — do not go straight to production
+
+The last working preview build (`1.0.4`, build 16) **predates both `expo-location` and `bluetooth-central`.** So:
+
+- The **iOS location permission flow has never run on a device.** It sits directly in the reader path (`prepare()` calls it before discovery) and a refused or mishandled prompt breaks card payments outright.
+- **We never isolated whether `bluetooth-central` was the fix** for the `discoverReaders` SIGABRT. Three changes landed together — location, background mode, verbose SDK logging — and the build then worked. It may have been the cause, or it may be carrying App Store review surface for nothing.
+
+Going straight to production puts an untested permission flow in the payment path onto the App Store. A preview build costs ~20 minutes.
+
+### 2. Fixed in this pass
+
+**Dropped `applinks:reserve-ni.vercel.app` from `ios.associatedDomains`** — a staging host declared in the production build, flagged on 2026-08-01 and still present. The production app should not claim to handle links for the staging site. (The same host remains in `android.intentFilters`; inert until the next Android build, worth removing then.)
+
+### 3. Verified healthy
+
+| Check | Result |
+|---|---|
+| `tsc --noEmit` | clean |
+| `jest` | 136 suites / 1,388 tests pass |
+| `eslint .` | 15 errors — **the same 15** as every prior run, all pre-existing |
+| `ios.entitlements` | **absent** — no proximity-reader entitlement, so provisioning cannot fail on it |
+| `TAP_TO_PAY_IOS_ENABLED` | `false` — the tap-on-phone option is hidden on iOS |
+| Version | **1.0.4**, above the live **1.0.3 (build 16)**; `autoIncrement` yields build 17 |
+| Sentry | DSN + `SENTRY_AUTH_TOKEN` present, `SENTRY_DISABLE_AUTO_UPLOAD` unset → source maps upload |
+| Production `EXPO_PUBLIC_*` | all five present in the EAS environment (fixed earlier today, see below) |
+| `ios.simulator` | unset → device build |
+
+**The "How to Tap" overlay is NOT required for this submission.** It is a Tap to Pay on iPhone obligation; with no ProximityReader use and no entitlement it is off the critical path. It returns when Tap to Pay ships.
+
+### 4. Only a human can confirm these
+
+1. **The WisePad must be registered in LIVE mode.** All testing ran against `pk_test_` on staging. A reader paired to a test-mode Location is **not** available in live mode — it must be registered to a Location on the live connected account. This is the most likely cause of a failed go-live day.
+2. **The live venue needs `in_person_payments_enabled = true`** and the **`card_present` capability** on its live Stripe connected account.
+3. **Stripe must have approved the account for Terminal in live mode.**
+
+### 5. Known, accepted for this release
+
+- **Backend charge-route improvements are on `staging`, not `main`.** Production points at `www.resneo.com`, which tracks main, so the live app gets the old route: silent clamp, `Invalid request` on the £1,000 cap, bare `{ success: true }` on cash. Not blocking — the app blocks over-payment client-side and mirrors the cap — but merge before or soon after go-live.
+- **`bluetooth-central` needs a review note.** Apple scrutinises background modes. The justification is sound (the app holds a connection to a Bluetooth card reader, which can otherwise drop when the phone locks mid-transaction) — put it in the review notes rather than waiting to be asked.
+- **Deep links still cannot verify.** No `apple-app-site-association` is served on either declared domain, so Universal Links will not route. The `resneo://` scheme works. Unchanged since 2026-08-01.
+
+### 6. Suggested order
+
+1. `eas build --profile preview --platform ios` → test the reader, confirm the location prompt behaves
+2. Merge backend `staging` → `main`, deploy
+3. Confirm the live reader registration, venue flag and Stripe capability
+4. `eas build --profile production --platform ios` → submit with a review note covering `bluetooth-central`
+
+---
+
 ## ~~⚠️ BLOCKER — an OTA update to production would brick the live app~~ — RESOLVED 2026-08-05
 
 **Fixed the same day it was found.** All four missing variables were added to the EAS `production` environment and verified byte-for-byte against `eas.json`. The environment now carries every `EXPO_PUBLIC_*` the app reads, so an OTA to production produces a working bundle. The finding is kept in full below, because the failure mode is worth remembering and the rule at the end still governs every future variable.
