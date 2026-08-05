@@ -40,6 +40,7 @@ Device eligibility splits the same way: **Tap to Pay** needs iPhone XS+/iOS 16.4
 | `lib/payments/connection-token.ts` | `POST /api/payments/connection-token` + per-venue-scope Terminal Location cache. |
 | `lib/payments/terminal.ts` | `useTapToPayReader` — initialise, permissions, discover, connect. |
 | `lib/payments/bluetoothReader.ts` | `useBluetoothReader` — scan, connect, firmware-update + battery + reconnect states (§7A). |
+| `lib/payments/card-present-permissions.ts` | iOS location permission. The Terminal SDK ships `requestNeededAndroidPermissions` and **nothing for iOS**, so until 2026-08-05 iOS never asked at all — invisible while only Android ran this code. Requires `expo-location` (a native dep, so this is not OTA-updatable). |
 | `lib/payments/payment-display.ts` | The §3.4 button gate + neutral state labels (pure, unit-tested). |
 | `lib/payments/attempt-id.ts` | RFC 4122 v4 `attempt_id` (the route rejects anything else). |
 | `lib/payments/last-method.ts` | Remembers the last-used payment method (§7A.6). |

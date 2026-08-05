@@ -17,6 +17,7 @@ import {
   timeoutSignal,
   withTimeout,
 } from '@/lib/payments/reader-timeouts';
+import { ensureIosLocationPermission } from '@/lib/payments/card-present-permissions';
 import {
   androidPermissionMessage,
   ensureTerminalInitialized,
@@ -367,6 +368,13 @@ export function useBluetoothReader(): UseBluetoothReader {
       const refused = androidPermissionMessage(granted);
       if (refused) throw new Error(refused);
     }
+    /**
+     * The iOS half of the same requirement. The Terminal SDK has no iOS
+     * permission API, so without this iOS never asked at all and Stripe would
+     * refuse card-present further in, with a less useful message.
+     */
+    const iosRefused = await ensureIosLocationPermission();
+    if (iosRefused) throw new Error(iosRefused);
     /**
      * Deliberately NOT bounded above: the permission call puts a system dialog on
      * screen and the staff member may take as long as they like to answer it.

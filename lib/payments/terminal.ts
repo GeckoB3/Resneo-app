@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 import type { Reader } from '@stripe/stripe-terminal-react-native';
 
 import { shouldSimulateCardReaders } from '@/lib/env';
+import { ensureIosLocationPermission } from '@/lib/payments/card-present-permissions';
 import { ensureTerminalLocationId } from '@/lib/payments/connection-token';
 import {
   READER_CANCEL_TIMEOUT_MS,
@@ -229,6 +230,11 @@ export function useTapToPayReader(): UseTapToPayReader {
         const refused = androidPermissionMessage(granted);
         if (refused) return fail(refused);
       }
+      // The iOS half. Currently unreachable — Tap to Pay is disabled on iOS
+      // pending Apple's distribution entitlement — but it must not be missing
+      // when that gate reopens, and the Bluetooth path needs the same call.
+      const iosRefused = await ensureIosLocationPermission();
+      if (iosRefused) return fail(iosRefused);
 
       const locationId = await withTimeout(
         ensureTerminalLocationId({ accessToken, ownerVenueId: ownerVenueId ?? null }),
