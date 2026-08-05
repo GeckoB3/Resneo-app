@@ -23,6 +23,7 @@ import {
   type PendingCardVerdict,
 } from '@/lib/payments/payment-display';
 import { getStripePublishableKey } from '@/lib/env';
+import { buildSupportsTapToPay } from '@/lib/payments/tap-to-pay-build-support';
 import { isTerminalSdkAvailable } from '@/lib/payments/terminal-sdk';
 import { useTapToPayReader } from '@/lib/payments/terminal';
 import { usePendingCardClock } from '@/lib/payments/usePendingCardClock';
@@ -795,13 +796,23 @@ function CardCollectSection({
   // Device capability drives which options exist (§7A.3), and the remembered
   // method means staff are not re-asked on every appointment (§7A.6).
   useEffect(() => {
-    void tapToPay.checkSupport();
+    // Only ask the SDK about the phone's own reader on a build that is allowed
+    // to use it — on iOS without the entitlement the question is meaningless and
+    // the native call is a needless place to throw.
+    if (buildSupportsTapToPay()) void tapToPay.checkSupport();
     void loadLastMethod().then((remembered) => {
       if (remembered) onReaderTypeChange(remembered);
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const supportsTapToPay = tapToPay.supported !== false;
+  /**
+   * Two independent gates, and the build one has to come first: `checkSupport`
+   * deliberately leaves support UNKNOWN when the SDK errors (a false negative
+   * would hide Tap to Pay on a capable phone), and unknown reads as supported.
+   * On a build with no entitlement that would offer a button which fails mid
+   * payment, with a client waiting.
+   */
+  const supportsTapToPay = buildSupportsTapToPay() && tapToPay.supported !== false;
   const readerConnected = bluetooth.connected != null;
 
   // Continue straight into collection after a fresh pairing (fires once).
@@ -976,9 +987,9 @@ function CardCollectSection({
         ) : null}
         {__DEV__ && !supportsTapToPay ? (
           <Text variant="caption" tone="muted">
-            Tap to Pay hidden: this build failed Stripe&apos;s real-device check. Real Tap to Pay
-            never runs on debuggable dev builds or with Developer options on — test it with the
-            preview build, or set EXPO_PUBLIC_TERMINAL_SIMULATED=true here.
+            {buildSupportsTapToPay()
+              ? 'Tap to Pay hidden: this build failed Stripe’s real-device check. Real Tap to Pay never runs on debuggable dev builds or with Developer options on — test it with the preview build, or set EXPO_PUBLIC_TERMINAL_SIMULATED=true here.'
+              : 'Tap to Pay hidden: this iOS build carries no Apple proximity-reader entitlement, so the card reader path is Bluetooth only. See lib/payments/tap-to-pay-build-support.ts.'}
           </Text>
         ) : null}
         <Button

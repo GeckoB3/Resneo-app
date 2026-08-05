@@ -67,17 +67,31 @@ jest.mock('@/lib/payments/last-method', () => ({
   rememberLastMethod: jest.fn(),
 }));
 
+/**
+ * Whether the BUILD may use the phone's own NFC. Jest runs as iOS, where this is
+ * currently false (no Apple entitlement — see tap-to-pay-build-support.ts), which
+ * would hide the Tap to Pay button and gut this suite. Tap to Pay is still live
+ * on Android, so it defaults to true here and each case can opt out.
+ */
+let mockBuildSupportsTapToPay = true;
+jest.mock('@/lib/payments/tap-to-pay-build-support', () => ({
+  buildSupportsTapToPay: () => mockBuildSupportsTapToPay,
+  TAP_TO_PAY_IOS_ENABLED: false,
+}));
+
 const mockTapConnect = jest.fn(
   async (): Promise<{ ok: boolean; error: string | null }> => ({ ok: true, error: null }),
 );
 const mockTapAbort = jest.fn(async () => undefined);
+// Named rather than inline so cases can assert the build gate stopped the call.
+const mockCheckSupport = jest.fn(async () => true);
 jest.mock('@/lib/payments/terminal', () => ({
   useTapToPayReader: () => ({
     status: 'idle',
     error: null,
     supported: true,
     connect: mockTapConnect,
-    checkSupport: jest.fn(async () => true),
+    checkSupport: mockCheckSupport,
     abort: mockTapAbort,
     reset: jest.fn(),
   }),
@@ -175,6 +189,8 @@ async function retypeAmount(from: string, to: string) {
 
 beforeEach(() => {
   mockSdkAvailable = true;
+  mockBuildSupportsTapToPay = true;
+  mockCheckSupport.mockClear();
   mockRecord.mockClear();
   mockRefund.mockClear();
   mockTakePayment.mockClear();
@@ -440,6 +456,45 @@ describe('card availability', () => {
     expect(screen.queryByText('Card payment')).toBeNull();
     // Cash and the rest of the sheet still work — only the card channel goes.
     expect(screen.getByText('Record cash')).toBeTruthy();
+  });
+});
+
+describe('a build with no Tap to Pay entitlement (iOS, pending Apple)', () => {
+  it('hides Tap to Pay but keeps the Bluetooth reader path', async () => {
+    mockBuildSupportsTapToPay = false;
+    await render(<TakePaymentSheet target={target()} onClose={jest.fn()} />);
+    await press('Card payment');
+
+    expect(screen.queryByText('Tap to Pay on this phone')).toBeNull();
+    expect(screen.getByText('Connect a card reader')).toBeTruthy();
+  });
+
+  it('still collects through a connected reader', async () => {
+    mockBuildSupportsTapToPay = false;
+    mockBtState.connected = { serialNumber: 'WP-1' };
+    await render(<TakePaymentSheet target={target()} onClose={jest.fn()} />);
+    await press('Card payment');
+    await press('Use card reader');
+
+    expect(mockTakePayment).toHaveBeenCalledWith(
+      expect.objectContaining({ amountPence: 2500, readerType: 'bluetooth' }),
+    );
+  });
+
+  it('never asks the SDK about a reader the build cannot use', async () => {
+    // The native call is pointless without the entitlement and is a needless
+    // place to throw on a build that is not allowed to try.
+    mockBuildSupportsTapToPay = false;
+    await render(<TakePaymentSheet target={target()} onClose={jest.fn()} />);
+    await press('Card payment');
+    expect(mockCheckSupport).not.toHaveBeenCalled();
+  });
+
+  it('does ask when the build IS allowed (Android today)', async () => {
+    mockBuildSupportsTapToPay = true;
+    await render(<TakePaymentSheet target={target()} onClose={jest.fn()} />);
+    await press('Card payment');
+    expect(mockCheckSupport).toHaveBeenCalled();
   });
 });
 

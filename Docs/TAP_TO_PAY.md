@@ -12,7 +12,24 @@
 
 **Not yet runnable end to end.** Still required: an EAS dev build carrying the native Terminal module, and a pilot venue with `in_person_payments_enabled = true` plus the Stripe card-present capability. Until then the surface is inert by design (the native module is absent, so the app renders exactly as before).
 
-**The Apple entitlement is a Tap to Pay requirement only.** `com.apple.developer.proximity-reader.payment.acceptance` gates Apple's ProximityReader framework — the phone's own NFC acting as the reader. A **Bluetooth reader (BBPOS WisePad 3) needs no Apple entitlement and no approval**: the card is read by separately certified hardware and iOS sees only a BLE accessory. So a reader-only pilot can ship without waiting on Apple (§7A.4, §7A.11). Shipping Bluetooth-only would mean dropping the `ios.entitlements` block and `tapToPayCheck` from `app.json` first — signing with an entitlement the Apple account has not been granted fails provisioning.
+**The Apple entitlement is a Tap to Pay requirement only.** `com.apple.developer.proximity-reader.payment.acceptance` gates Apple's ProximityReader framework — the phone's own NFC acting as the reader. A **Bluetooth reader (BBPOS WisePad 3) needs no Apple entitlement and no approval**: the card is read by separately certified hardware and iOS sees only a BLE accessory. So a reader-only pilot can ship without waiting on Apple (§7A.4, §7A.11).
+
+> **Correction (2026-08-05):** this section used to say Bluetooth-only means dropping the `ios.entitlements` block **and `tapToPayCheck`**. Dropping `tapToPayCheck` is wrong and would break **Android** Tap to Pay. Verified against the pinned plugin's source: `tapToPayCheck` drives `withTapToPayAndroid`, which patches `MainApplication` with `TapToPay.isInTapToPayProcess()`. It is Android-only and has no iOS effect whatsoever — the plugin's iOS half writes Info.plist strings only and never touches entitlements. **Only `ios.entitlements` comes out.**
+
+### iOS is Bluetooth-only right now (2026-08-05)
+
+`ios.entitlements` has been removed from `app.json`, and `lib/payments/tap-to-pay-build-support.ts` hides the Tap to Pay option on iOS. **Android is untouched and keeps full Tap to Pay in production.**
+
+Why: Apple granted the entitlement with a **development distribution restriction** (Case-ID 21181959). EAS Build signs internal-distribution builds with **Ad Hoc** provisioning profiles, and Apple does not put the entitlement into an Ad Hoc profile — confirmed by inspecting the generated profile (`39317692-8ce4-4383-b6e0-81044cb9ce8f`), whose Entitlements dict carries `aps-environment` and `com.apple.developer.associated-domains` but not the proximity-reader key. Both `preview` and `development-device` produced identical ad-hoc signing and the same archive failure:
+
+```
+Entitlement com.apple.developer.proximity-reader.payment.acceptance not found
+and could not be included in profile.
+```
+
+EAS cannot produce a Development-signed iOS build (profile type follows `distribution`), so with a development-only grant and no local Xcode there is no working configuration. Awaiting Apple's distribution review.
+
+**To restore iOS Tap to Pay, both together:** put the `ios.entitlements` block back in `app.json` AND set `TAP_TO_PAY_IOS_ENABLED = true`. The entitlement alone offers a button that cannot work; the flag alone archives a build Apple rejects. Delete the cached provisioning profile (`eas credentials`) first, or EAS hands back the pre-approval one.
 
 Device eligibility splits the same way: **Tap to Pay** needs iPhone XS+/iOS 16.4+ or a certified NFC Android 11+ device; the **Bluetooth path works on any Bluetooth-capable device**, which is much wider.
 
