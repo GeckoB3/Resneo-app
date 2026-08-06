@@ -64,8 +64,12 @@ export function LinkedVenueCalendarGrid({
   nowMinutes: number | null;
   /** Open the booking's expanded detail (read-only or editable per the grant). */
   onOpenBooking: (booking: LinkedBooking) => void;
-  /** Start a new cross-venue booking (only shown for create_edit_cancel). */
-  onCreate: () => void;
+  /**
+   * Start a new cross-venue booking (only shown for create_edit_cancel). The
+   * tapped slot time is passed on so the booking opens at that time; the header
+   * button has no slot and passes none.
+   */
+  onCreate: (time?: string) => void;
   refreshing?: boolean;
   onRefresh?: () => void;
   /**
@@ -192,8 +196,10 @@ export function LinkedVenueCalendarGrid({
             <Badge label={pill} tone="neutral" />
           </View>
         ) : null}
+        {/* `onCreate` is wrapped, not passed directly: `onPress` hands the press
+            event to its handler, which would arrive as the slot time. */}
         {canCreate ? (
-          <Button label="New booking" size="sm" variant="primary" onPress={onCreate} />
+          <Button label="New booking" size="sm" variant="primary" onPress={() => onCreate()} />
         ) : null}
       </View>
 
@@ -215,9 +221,10 @@ export function LinkedVenueCalendarGrid({
             scheduleBlocks={scheduleBlocks}
             nowMinutes={nowMinutes}
             onBlockPress={handleBlockPress}
-            onEmptyPress={() => {
-              // Tapping empty space starts a new booking only when allowed.
-              if (canCreate) onCreate();
+            onEmptyPress={(time) => {
+              // Tapping empty space starts a new booking only when allowed, at
+              // the tapped time (the grid resolves it from the tap's Y).
+              if (canCreate) onCreate(time);
             }}
             refreshing={refreshing}
             onRefresh={onRefresh}

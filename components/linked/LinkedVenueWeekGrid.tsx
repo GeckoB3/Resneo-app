@@ -33,7 +33,8 @@ import type { LinkedBooking, LinkedVenueCalendar } from '@/types/linked-venues';
  *  · `time_only`          → bookings render as grey, non-interactive "busy"
  *                           bands; no tap.
  *  · `full_details`       → appointment bars open the detail/edit sheet on tap.
- *  · `create_edit_cancel` → tapping an empty slot (or "New booking") starts a
+ *  · `create_edit_cancel` → tapping an empty slot (or "New booking") opens the
+ *                           linked slot menu — New booking or Walk-in — for a
  *                           cross-venue booking on that day.
  *
  * Like the week view everywhere, it's read-first: drag/resize and the on-bar
@@ -59,8 +60,11 @@ export function LinkedVenueWeekGrid({
   nowMinutes: number | null;
   /** Open a booking's detail (read-only or editable per the grant). */
   onOpenBooking: (booking: LinkedBooking) => void;
-  /** Start a new booking; the optional date re-anchors to the tapped day. */
-  onCreate: (date?: string) => void;
+  /**
+   * Start a new booking; the optional date re-anchors to the tapped day and the
+   * time opens the booking at that slot. The header button passes neither.
+   */
+  onCreate: (date?: string, time?: string) => void;
   /** Tap a day header to open that day in the Day view (stays in linked context). */
   onDayPress: (date: string) => void;
   refreshing?: boolean;
@@ -147,10 +151,10 @@ export function LinkedVenueWeekGrid({
         days={columns}
         nowMinutes={nowMinutes}
         onBlockPress={handleBlockPress}
-        onEmptyPress={(date) => {
+        onEmptyPress={(date, time) => {
           // Tapping empty space starts a new booking only when allowed; carry
-          // the tapped day so the create sheet targets it.
-          if (canCreate) onCreate(date);
+          // the tapped day AND time so the create sheet targets both.
+          if (canCreate) onCreate(date, time);
         }}
         onDayPress={onDayPress}
         refreshing={refreshing}

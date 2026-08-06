@@ -27,6 +27,7 @@ import { MonthPickerSheet } from '@/components/calendar/MonthPickerSheet';
 import { type RescheduleTarget } from '@/components/calendar/RescheduleSheet';
 import { WeekGrid, type WeekDayColumn } from '@/components/calendar/WeekGrid';
 import { WeekMatrixGrid } from '@/components/calendar/WeekMatrixGrid';
+import { LinkedSlotSheet, type LinkedSlotTarget } from '@/components/linked/LinkedSlotSheet';
 import { Button } from '@/components/ui/Button';
 import { Chip } from '@/components/ui/Chip';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -527,6 +528,10 @@ export default function CalendarScreen() {
   }, [linkedQuery.isSuccess, linkedVenues, reconcileOwnerVenue]);
 
   const [linkedSheet, setLinkedSheet] = useState<LinkedSheet>(null);
+  // The linked-column slot menu (New booking / Walk-in). Separate from
+  // `addSheetTarget`, which is the own-venue sheet and carries a practitioner
+  // column plus Block time / resource actions that a linked venue must not get.
+  const [linkedSlot, setLinkedSlot] = useState<LinkedSlotTarget | null>(null);
 
   const gridQuery = useCalendarGrid({
     calendarIds,
@@ -1287,16 +1292,13 @@ export default function CalendarScreen() {
         // Empty-slot create is only offered when the grant allows it; otherwise
         // a tap on a view-only / time-only linked column is a no-op.
         if (venue.action === 'create_edit_cancel') {
-          router.push({
-            pathname: '/booking/new',
-            params: { ownerVenueId: venue.venueId, ownerVenueName: venue.venueName, date: anchor },
-          });
+          setLinkedSlot({ venue, date: anchor, time });
         }
         return;
       }
       createAtFor(calendarId, time);
     },
-    [linkedColumnVenue, createAtFor, router, anchor],
+    [linkedColumnVenue, createAtFor, anchor],
   );
 
   // ---- Week view data ----
@@ -1744,19 +1746,14 @@ export default function CalendarScreen() {
                     onOpenBooking={(b) =>
                       setLinkedSheet({ kind: 'detail', venue: activeLinkedVenue, booking: b })
                     }
-                    onCreate={(date) =>
-                      // Empty-slot tap carries the tapped day; the header button
-                      // passes none → use the current anchor. The full booking
-                      // form opens scoped to this linked venue.
-                      router.push({
-                        pathname: '/booking/new',
-                        params: {
-                          ownerVenueId: activeLinkedVenue.venueId,
-                          ownerVenueName: activeLinkedVenue.venueName,
-                          date: date ?? anchor,
-                        },
-                      })
-                    }
+                    onCreate={(date, time) => {
+                      // Empty-slot tap carries the tapped day and time; the
+                      // header button passes neither → use the current anchor.
+                      // Re-anchor to the tapped day (own-venue week parity),
+                      // then offer New booking / Walk-in for this linked venue.
+                      if (date) setAnchor(date);
+                      setLinkedSlot({ venue: activeLinkedVenue, date: date ?? anchor, time });
+                    }}
                     onDayPress={(date) => {
                       hapticSelect();
                       setAnchor(date);
@@ -1784,15 +1781,8 @@ export default function CalendarScreen() {
                   onOpenBooking={(b) =>
                     setLinkedSheet({ kind: 'detail', venue: activeLinkedVenue, booking: b })
                   }
-                  onCreate={() =>
-                    router.push({
-                      pathname: '/booking/new',
-                      params: {
-                        ownerVenueId: activeLinkedVenue.venueId,
-                        ownerVenueName: activeLinkedVenue.venueName,
-                        date: anchor,
-                      },
-                    })
+                  onCreate={(time) =>
+                    setLinkedSlot({ venue: activeLinkedVenue, date: anchor, time })
                   }
                 />
               </ScrollView>
@@ -2071,8 +2061,8 @@ export default function CalendarScreen() {
       {/* Linked cross-venue booking detail — one rich expanded detail (read-only
           or editable per the grant). It carries its own venue, so it works for a
           single focused linked venue or any of several shown together in the
-          "All" view. Creating a booking opens the full form (scoped to the
-          linked venue) rather than a sheet. */}
+          "All" view. Creating goes through the slot menu below, which opens the
+          full form scoped to the linked venue. */}
       <LinkedBookingDetailSheet
         visible={linkedSheet?.kind === 'detail'}
         venue={linkedSheet?.kind === 'detail' ? linkedSheet.venue : null}
@@ -2080,6 +2070,10 @@ export default function CalendarScreen() {
         onClose={() => setLinkedSheet(null)}
         onSaved={() => void linkedQuery.refetch()}
       />
+
+      {/* Linked-column slot menu — New booking / Walk-in, then the full form
+          scoped to that venue. */}
+      <LinkedSlotSheet target={linkedSlot} onClose={() => setLinkedSlot(null)} />
       </ErrorBoundary>
     </Screen>
   );

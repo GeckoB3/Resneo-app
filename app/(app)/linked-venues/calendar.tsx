@@ -1,9 +1,10 @@
-import { Stack, useRouter } from 'expo-router';
+import { Stack } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { RefreshControl, StyleSheet, View } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 
 import { LinkedBookingDetailSheet } from '@/components/linked/LinkedBookingDetailSheet';
+import { LinkedSlotSheet, type LinkedSlotTarget } from '@/components/linked/LinkedSlotSheet';
 import { LinkedVenueCalendarGrid } from '@/components/linked/LinkedVenueCalendarGrid';
 import { DatePickerField } from '@/components/ui/DatePickerField';
 import { Button } from '@/components/ui/Button';
@@ -40,19 +41,21 @@ type SheetState =
 /**
  * Dedicated linked-calendar screen (any staff role — NOT admin-gated). Shows a
  * date picker and one grant-gated `LinkedVenueCalendarGrid` per accessible
- * linked venue for that day. Cross-venue bookings are created/edited/cancelled
- * via the per-grid sheets. 60s refetch is the realtime fallback (handled in the
- * hook). Reached from the link detail / the venue switcher.
+ * linked venue for that day. Tapping an empty slot opens the linked slot menu
+ * (New booking / Walk-in); editing and cancelling go through the per-grid detail
+ * sheet. 60s refetch is the realtime fallback (handled in the hook). Reached
+ * from the link detail / the venue switcher.
  */
 export default function LinkedCalendarScreen() {
   const { colors } = useTheme();
-  const router = useRouter();
   const { venue } = useVenueContext();
   const timeZone = venue?.timezone ?? 'Europe/London';
   const today = calendarDateInTimeZone(new Date(), timeZone);
 
   const [date, setDate] = useState(today);
   const [sheet, setSheet] = useState<SheetState>(null);
+  // The linked slot menu (New booking / Walk-in) for whichever grid was tapped.
+  const [slot, setSlot] = useState<LinkedSlotTarget | null>(null);
 
   // Single-day fetch (from === to). The hook polls every 60s as a fallback.
   const query = useLinkedCalendar({ from: date, to: date });
@@ -159,12 +162,7 @@ export default function LinkedCalendarScreen() {
           date={date}
           nowMinutes={nowMinutes}
           onOpenBooking={(booking) => setSheet({ kind: 'detail', venue: v, booking })}
-          onCreate={() =>
-            router.push({
-              pathname: '/booking/new',
-              params: { ownerVenueId: v.venueId, ownerVenueName: v.venueName, date },
-            })
-          }
+          onCreate={(time) => setSlot({ venue: v, date, time })}
         />
       ))}
 
@@ -175,6 +173,8 @@ export default function LinkedCalendarScreen() {
         onClose={() => setSheet(null)}
         onSaved={() => void query.refetch()}
       />
+
+      <LinkedSlotSheet target={slot} onClose={() => setSlot(null)} />
     </Screen>
   );
 }
