@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
+import { MonthDatePicker } from '@/components/booking-wizard/MonthDatePicker';
+import {
+  dedupeSlotsByStartTime,
+  groupSlotsByPeriod,
+} from '@/components/booking-wizard/TimeSlotStep';
 import { minutesToTime, timeToMinutes } from '@/components/calendar/grid-layout';
 import { Button } from '@/components/ui/Button';
 import { Chip } from '@/components/ui/Chip';
@@ -8,12 +13,13 @@ import { Sheet } from '@/components/ui/Sheet';
 import { Stepper } from '@/components/ui/Stepper';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
-import { addDaysToDateStr, formatDayHeading } from '@/lib/dates/venue-dates';
+import { calendarDateInTimeZone, formatDayHeading } from '@/lib/dates/venue-dates';
 import { formatPence } from '@/lib/format';
 import { hapticSelect, hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useAppointmentAvailability } from '@/lib/queries/useAppointmentAvailability';
 import { useAppointmentCatalog } from '@/lib/queries/useAppointmentCatalog';
 import { useBookingDetail } from '@/lib/queries/useBookingDetail';
+import { useMonthAvailability } from '@/lib/queries/useMonthAvailability';
 import {
   useModifyAppointment,
   useValidateAppointmentModification,
@@ -48,10 +54,24 @@ type ModifyBookingSheetProps = {
 };
 
 const MAX_MINUTES = 23 * 60 + 59;
-// Appointment PATCH bounds (validate-appointment-modification schema).
+/**
+ * Duration bounds. The API floor is 5 (`MIN_APPOINTMENT_CORE_DURATION_MINUTES`),
+ * but the web modify form's input is `min={15} step={5}`, so the UI floor stays
+ * 15 here to match it — deliberately, not by omission.
+ */
 const MIN_DURATION_MINUTES = 15;
 const MAX_DURATION_MINUTES = 14 * 60;
+/** Web parity: the duration input steps in 5s. */
+const DURATION_STEP_MINUTES = 5;
 const VALIDATE_DEBOUNCE_MS = 450;
+
+/**
+ * Which pane of the sheet is showing. The date and time pickers are STEPS inside
+ * this sheet, not sheets of their own: opening a second modal from a visible one
+ * is unreliable on iOS, and a month grid nested in the form's ScrollView would
+ * put two same-axis scrollers on screen at once.
+ */
+type Mode = 'form' | 'date' | 'time';
 
 type CheckState =
   | { state: 'idle' | 'checking' | 'valid' | 'unknown' }
@@ -124,6 +144,9 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   const [error, setError] = useState<string | null>(null);
   const [seededId, setSeededId] = useState<string | null>(null);
   const checkSeq = useRef(0);
+  const [mode, setMode] = useState<Mode>('form');
+  /** Any date inside the month the calendar step is showing. */
+  const [monthAnchor, setMonthAnchor] = useState('');
 
   // Seed from the booking when the sheet opens or the target booking changes.
   // useEffect avoids setState-during-render in Fabric/concurrent mode.
@@ -145,6 +168,8 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     setAddonsSeeded(false);
     setChecked({ sig: null, result: { state: 'idle' } });
     setError(null);
+    setMode('form');
+    setMonthAnchor(target.date);
   }, [target?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Unique services across the catalog + which practitioners offer each.
@@ -343,12 +368,54 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   });
   const slots = useMemo(() => {
     const practitioner = availability.data?.practitioners.find((p) => p.id === practitionerId);
-    return (practitioner?.slots ?? []).filter(
-      (s) => !s.service_id || s.service_id === serviceId,
+    return dedupeSlotsByStartTime(
+      (practitioner?.slots ?? []).filter((s) => !s.service_id || s.service_id === serviceId),
     );
   }, [availability.data, practitionerId, serviceId]);
+  /** Morning / Afternoon / Evening sections (web parity: `groupSlotsByPeriod`). */
+  const slotPeriods = useMemo(() => groupSlotsByPeriod(slots), [slots]);
 
   const selectedTime = minutesToTime(minutes);
+
+  // Which dates in the shown month can fit this service — drives the calendar's
+  // availability markers, matching the web picker's month fetch.
+  const [monthYear, monthMonth] = (monthAnchor || target?.date || '').split('-').map(Number);
+  const monthQuery = useMonthAvailability({
+    serviceId,
+    practitionerId,
+    year: monthYear ?? new Date().getFullYear(),
+    month: monthMonth ?? 1,
+    variantId: requiresVariant ? variantId : null,
+    durationMinutes: effectiveDuration,
+    enabled: mode === 'date' && !!target && serviceInCatalog && !!serviceId && !!practitionerId,
+  });
+  const availableDates = useMemo(
+    () => (monthQuery.data ? new Set(monthQuery.data.available_dates) : null),
+    [monthQuery.data],
+  );
+
+  const timeZone = venue?.timezone ?? 'Europe/London';
+  const today = calendarDateInTimeZone(new Date(), timeZone);
+
+  /**
+   * Web parity: Save stays disabled until something actually changes ("Adjust a
+   * field to check availability and enable save"). Without it the button invites
+   * a PATCH that would rewrite the booking to exactly what it already is.
+   */
+  const hasChanges =
+    !!target &&
+    (serviceId !== target.serviceId ||
+      variantId !== target.serviceVariantId ||
+      practitionerId !== target.practitionerId ||
+      date !== target.date ||
+      minutes !== timeToMinutes(target.time) ||
+      effectiveDuration !== (target.durationMinutes ?? 30));
+
+  /** The booking's original start, for the "orig" marker on the slot list. */
+  const originalTime = target ? minutesToTime(timeToMinutes(target.time)) : '';
+  /** Date or time moved — the web picker highlights this as its own state. */
+  const scheduleChanged =
+    !!target && (date !== target.date || minutes !== timeToMinutes(target.time));
 
   // Debounced dry-run validation (450ms, web parity). Auth/availability errors
   // on the endpoint degrade to "unknown" — the PATCH still validates.
@@ -417,6 +484,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     !!practitionerId &&
     (!requiresVariant || !!variantId) &&
     addonGroupsValid &&
+    hasChanges &&
     check.state !== 'invalid' &&
     check.state !== 'checking';
 
@@ -450,8 +518,95 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
 
   const endPreview = minutesToTime((minutes + effectiveDuration) % (24 * 60));
 
+  // ---- Date step: the wizard's month calendar, reused whole -------------------
+  if (target && seededId === target.id && mode === 'date') {
+    return (
+      <Sheet visible fill onClose={onClose}>
+        <MonthDatePicker
+          title="Choose a date"
+          monthAnchor={monthAnchor || target.date}
+          onChangeMonth={setMonthAnchor}
+          today={today}
+          selectedDate={date}
+          onSelectDate={setDate}
+          availableDates={availableDates}
+          isLoading={monthQuery.isLoading}
+          timeZone={timeZone}
+          weekShortcuts
+          availabilityHint="Green dates can fit this appointment."
+          onContinue={() => setMode('time')}
+        />
+      </Sheet>
+    );
+  }
+
+  // ---- Time step: free slots, grouped and marked ------------------------------
+  if (target && seededId === target.id && mode === 'time') {
+    return (
+      <Sheet visible fill onClose={onClose}>
+        <View style={styles.stepBody}>
+          <Text variant="heading">Choose a time</Text>
+          <Text variant="bodySmall" tone="muted">
+            {formatDayHeading(date)} · {formatDuration(effectiveDuration)}
+          </Text>
+
+          <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollBody}>
+            {availability.isLoading ? (
+              <Text variant="bodySmall" tone="muted">
+                Loading free slots…
+              </Text>
+            ) : slotPeriods.length === 0 ? (
+              <Text variant="bodySmall" tone="muted">
+                No free slots on this day. Pick another date, or set the time by hand on the
+                previous screen.
+              </Text>
+            ) : (
+              slotPeriods.map((period) => (
+                <View key={period.title} style={styles.fieldBlock}>
+                  <Text variant="label" tone="secondary">
+                    {period.title}
+                  </Text>
+                  <View style={styles.chipWrap}>
+                    {period.slots.map((slot) => {
+                      const key = slot.start_time.slice(0, 5);
+                      // Web marks the booking's CURRENT slot so staff can find
+                      // their way back to it after browsing other times.
+                      const isOriginal = date === target.date && key === originalTime;
+                      return (
+                        <Chip
+                          key={`${slot.practitioner_id}-${slot.start_time}`}
+                          label={isOriginal ? `${key} · now` : key}
+                          selected={key === selectedTime}
+                          onPress={() => {
+                            hapticSelect();
+                            setMinutes(timeToMinutes(slot.start_time));
+                            setMode('form');
+                          }}
+                        />
+                      );
+                    })}
+                  </View>
+                </View>
+              ))
+            )}
+          </ScrollView>
+
+          <View style={styles.actions}>
+            <Button
+              label="Back"
+              variant="secondary"
+              onPress={() => setMode('date')}
+              style={styles.actionButton}
+            />
+            <Button label="Done" onPress={() => setMode('form')} style={styles.actionButton} />
+          </View>
+        </View>
+      </Sheet>
+    );
+  }
+
   return (
-    <Sheet visible={!!target} onClose={onClose}>
+    <Sheet visible={!!target} fill onClose={onClose}>
       {target && seededId === target.id ? (
         <View style={styles.body}>
           <View style={styles.headerBlock}>
@@ -609,14 +764,54 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
               </View>
             ) : null}
 
+            {/* When — the web shows a month calendar and grouped slot list here.
+                On a sheet those are steps (see `Mode`), so this row states the
+                current selection and opens them. */}
+            <View style={styles.fieldBlock}>
+              <Text variant="label" tone="secondary">
+                When
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Change the date and time"
+                onPress={() => {
+                  hapticSelect();
+                  setMonthAnchor(date);
+                  setMode('date');
+                }}
+                style={({ pressed }) => [
+                  styles.whenRow,
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: scheduleChanged ? colors.brand : colors.border,
+                    opacity: pressed ? 0.9 : 1,
+                  },
+                ]}>
+                <View style={styles.addonText}>
+                  <Text variant="bodyMedium">
+                    {formatDayHeading(date)} · {selectedTime}
+                  </Text>
+                  {scheduleChanged ? (
+                    <Text variant="caption" tone="muted">
+                      was {formatDayHeading(target.date)} · {target.time.slice(0, 5)}
+                    </Text>
+                  ) : (
+                    <Text variant="caption" tone="muted">
+                      Ends at {endPreview}
+                    </Text>
+                  )}
+                </View>
+                <Text variant="bodySmall" color={colors.brand}>
+                  Change
+                </Text>
+              </Pressable>
+            </View>
+
+            {/* Manual nudge — the app keeps a by-hand start time, which the web
+                picker has no equivalent of: staff sometimes need a time the
+                availability engine won't offer (an overrun, a squeezed-in fit). */}
             <Stepper
-              label="Date"
-              value={formatDayHeading(date)}
-              onDecrement={() => setDate((d) => addDaysToDateStr(d, -1))}
-              onIncrement={() => setDate((d) => addDaysToDateStr(d, 1))}
-            />
-            <Stepper
-              label="Start"
+              label="Start (by hand)"
               value={selectedTime}
               onDecrement={() => setMinutes((m) => Math.max(0, m - 1))}
               onIncrement={() => setMinutes((m) => Math.min(MAX_MINUTES, m + 1))}
@@ -624,8 +819,12 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
             <Stepper
               label="Duration"
               value={formatDuration(duration)}
-              onDecrement={() => setDuration((d) => Math.max(MIN_DURATION_MINUTES, d - 1))}
-              onIncrement={() => setDuration((d) => Math.min(MAX_DURATION_MINUTES, d + 1))}
+              onDecrement={() =>
+                setDuration((d) => Math.max(MIN_DURATION_MINUTES, d - DURATION_STEP_MINUTES))
+              }
+              onIncrement={() =>
+                setDuration((d) => Math.min(MAX_DURATION_MINUTES, d + DURATION_STEP_MINUTES))
+              }
             />
             <View style={styles.chipWrap}>
               {durationPresets.map((preset) => (
@@ -653,30 +852,13 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
               </Text>
             ) : null}
 
-            {slots.length > 0 ? (
-              <View style={styles.fieldBlock}>
-                <Text variant="label" tone="secondary">
-                  Free slots
-                </Text>
-                <View style={styles.chipWrap}>
-                  {slots.map((slot) => (
-                    <Chip
-                      key={`${slot.practitioner_id}-${slot.start_time}`}
-                      label={slot.start_time}
-                      selected={slot.start_time === selectedTime}
-                      onPress={() => setMinutes(timeToMinutes(slot.start_time))}
-                    />
-                  ))}
-                </View>
-              </View>
-            ) : availability.isLoading ? (
-              <Text variant="caption" tone="muted">
-                Loading free slots…
-              </Text>
-            ) : null}
           </ScrollView>
 
-          {check.state === 'checking' ? (
+          {!hasChanges ? (
+            <Text variant="caption" tone="muted">
+              Adjust a field to check availability and enable save.
+            </Text>
+          ) : check.state === 'checking' ? (
             <Text variant="caption" tone="muted">
               Checking availability…
             </Text>
@@ -717,14 +899,22 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
 }
 
 const styles = StyleSheet.create({
+  // `flex: 1` + a `fill` Sheet: the form is long enough to exceed the sheet's
+  // height, and a content-sized body pushes the pinned Save/Cancel row off the
+  // bottom of the screen. The ScrollView must be the part that gives.
   body: {
+    flex: 1,
     gap: spacing.md,
+  },
+  stepBody: {
+    flex: 1,
+    gap: spacing.sm,
   },
   headerBlock: {
     gap: spacing.xs,
   },
   scroll: {
-    flexGrow: 0,
+    flex: 1,
   },
   scrollBody: {
     gap: spacing.lg,
@@ -772,6 +962,14 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     gap: 1,
+  },
+  whenRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: spacing.base,
   },
   actions: {
     flexDirection: 'row',
