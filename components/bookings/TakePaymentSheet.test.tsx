@@ -41,11 +41,12 @@ jest.mock('@/components/ui/Sheet', () => {
 
 const mockRecord = jest.fn(async () => ({ success: true }));
 const mockRefund = jest.fn(async () => ({ success: true }));
-const mockTakePayment = jest.fn(
-  async (_input: { attemptId: string; amountPence?: number; readerType?: string }) => ({
-    amountPence: 2500,
-  }),
-);
+const takePaymentDefault = async (_input: {
+  attemptId: string;
+  amountPence?: number;
+  readerType?: string;
+}) => ({ amountPence: 2500 });
+const mockTakePayment = jest.fn(takePaymentDefault);
 const mockCancelCollection = jest.fn(async () => undefined);
 jest.mock('@/lib/queries/useTakePayment', () => ({
   useRecordExternalPayment: () => ({ mutateAsync: mockRecord, isPending: false }),
@@ -193,7 +194,10 @@ beforeEach(() => {
   mockCheckSupport.mockClear();
   mockRecord.mockClear();
   mockRefund.mockClear();
-  mockTakePayment.mockClear();
+  // Reset, not clear: the cancel cases install a collection that never settles,
+  // and `mockClear` leaves the implementation behind for every later case.
+  mockTakePayment.mockReset();
+  mockTakePayment.mockImplementation(takePaymentDefault);
   mockCancelCollection.mockClear();
   mockTapConnect.mockReset();
   mockTapConnect.mockResolvedValue({ ok: true, error: null });
@@ -810,6 +814,73 @@ describe('a reader that never gets ready (the "spins for ever" bug)', () => {
       releaseConnect?.({ ok: true, error: null });
     });
     expect(mockTakePayment).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Reported on device: connect a reader, land on "Hold the card to the reader",
+   * change your mind — and the back button does nothing. It was `disabled` for
+   * the whole `collecting` stage, and the card step renders no Close, so the only
+   * exit was the sheet's grabber or backdrop: a gesture nothing signposts. Since
+   * `collectPaymentMethod` waits for a card indefinitely, nothing ended the state
+   * on its own either.
+   */
+  it('keeps Cancel live while the client is at the reader, and reaches the SDK', async () => {
+    let failCollection: ((e: Error) => void) | undefined;
+    mockTakePayment.mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          failCollection = reject;
+        }),
+    );
+
+    mockBtState.connected = { serialNumber: 'WP-1' };
+    mockBtReconnect.mockResolvedValue(true);
+
+    await render(<TakePaymentSheet target={target()} onClose={jest.fn()} />);
+    await press('Card payment');
+    await press('Use card reader');
+
+    expect(screen.getByText('Hold the card to the reader, or insert the chip.')).toBeTruthy();
+    await press('Cancel');
+
+    // Cancelling an abandoned collection has to reach the reader, or the next
+    // attempt is refused as busy.
+    expect(mockCancelCollection).toHaveBeenCalled();
+    expect(screen.queryByText('Hold the card to the reader, or insert the chip.')).toBeNull();
+    expect(screen.getByText('Use card reader')).toBeTruthy();
+
+    // The cancel makes the collection throw. That is the cancel completing, not
+    // a fault, so staff must not be shown a card error for what they just did.
+    await act(async () => {
+      failCollection?.(new Error('The card was not read.'));
+    });
+    expect(screen.queryByText('The card was not read.')).toBeNull();
+    expect(screen.getByText('Back')).toBeTruthy();
+  });
+
+  it('still reports a payment that lands in the same breath as the Cancel', async () => {
+    // Cancel races the card. If the money moved, silence would hide a real
+    // payment from the person who has to account for it.
+    let completeCollection: ((r: { amountPence: number }) => void) | undefined;
+    mockTakePayment.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          completeCollection = resolve;
+        }),
+    );
+
+    mockBtState.connected = { serialNumber: 'WP-1' };
+    mockBtReconnect.mockResolvedValue(true);
+
+    await render(<TakePaymentSheet target={target()} onClose={jest.fn()} />);
+    await press('Card payment');
+    await press('Use card reader');
+    await press('Cancel');
+
+    await act(async () => {
+      completeCollection?.({ amountPence: 2500 });
+    });
+    expect(screen.getByText('£25.00 collected')).toBeTruthy();
   });
 
   it('lets staff retry a different channel after cancelling', async () => {

@@ -228,7 +228,8 @@ export function androidPermissionMessage(
  * `lib/payments/failed-attempts.ts`). Getting it wrong in the optimistic
  * direction hides a payment that Stripe actually captured.
  *
- * `true` only for the two unambiguous shapes the pinned beta gives us:
+ * `true` only for the unambiguous shapes the pinned beta gives us:
+ *  - the SDK cancelled the collection because WE asked it to, or
  *  - the attached PaymentIntent's status says no payment method is attached or
  *    the intent was cancelled, or
  *  - the API error carries a decline code (the card was refused).
@@ -236,9 +237,22 @@ export function androidPermissionMessage(
  * Everything else — most importantly a confirm that failed with a NETWORK error,
  * where Stripe may have captured and the client simply never heard back — is
  * `false`, so the "still going through" warning stays up.
+ *
+ * The `CANCELED` case has to be matched on the code, not the intent: an error
+ * the SDK raises itself cannot carry a PaymentIntent (only `rehydrateBridgeError`
+ * may set that field, from native results), so a staff cancellation arrived here
+ * with no status and no decline code and was read as ambiguous. Staff who
+ * cancelled at the reader were then warned, for the next five minutes and
+ * beyond, about money nobody had taken.
+ *
+ * Cancellation is safe to call definite: `collectPaymentMethod` had not returned,
+ * so no payment method was ever attached and Stripe cannot have captured. A cancel
+ * that LOSES the race against the client's card fails with `CANCEL_FAILED`
+ * instead, which is deliberately not matched here.
  */
 export function isDefiniteCardFailure(error: StripeError | null | undefined): boolean {
   if (!error) return false;
+  if (error.code === 'CANCELED') return true;
   const status = error.paymentIntent?.status;
   if (status === 'requiresPaymentMethod' || status === 'canceled') return true;
   const declineCode = error.apiError?.declineCode;

@@ -80,6 +80,23 @@ describe('isDefiniteCardFailure', () => {
     );
   });
 
+  /**
+   * Reported on device: staff cancelled at the reader and were then told "a card
+   * payment of £1 started a while ago and still has not been confirmed". The SDK
+   * raises its cancellation itself, and an internally-raised error cannot carry a
+   * PaymentIntent — so with no status and no decline code this read as ambiguous
+   * and the warning stayed up over money nobody had taken.
+   */
+  it('is true when the SDK cancelled the collection because we asked', () => {
+    expect(isDefiniteCardFailure(err({ code: 'CANCELED', message: 'Canceled' }))).toBe(true);
+  });
+
+  it('is FALSE when the cancel LOST the race and the card went through', () => {
+    // `CANCEL_FAILED` means the collection completed despite the cancel, so the
+    // money may well have moved. Matching it would bury a real payment.
+    expect(isDefiniteCardFailure(err({ code: 'CANCEL_FAILED', message: 'too late' }))).toBe(false);
+  });
+
   it('is FALSE for a bare network failure, where Stripe may have captured', () => {
     // The dangerous case: `confirmPaymentIntent` failed because the connection
     // dropped, not because the card was refused. Staff must keep being warned.

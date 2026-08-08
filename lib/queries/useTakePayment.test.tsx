@@ -222,6 +222,48 @@ describe('a card attempt this client watches fail', () => {
     expect(failedCardAttempts()).toEqual([]);
   });
 
+  /**
+   * Reported on device: staff cancelled at the reader, then the next attempt still
+   * said "a card payment of £1 started a while ago and still has not been
+   * confirmed". Two things were wrong — the SDK's own `CANCELED` error carries no
+   * PaymentIntent, so it read as ambiguous; and even once discounted locally, the
+   * row stayed `pending` for the web dashboard, a colleague's phone, and this app
+   * after a restart. Cancelling the intent server-side is what actually settles it.
+   */
+  it('cancels the intent server-side when staff abandon the collection', async () => {
+    mockApiFetch.mockResolvedValue(CHARGE);
+    mockRetrieve.mockResolvedValue({ paymentIntent: { id: 'pi_1' } });
+    mockCollect.mockResolvedValue({ error: { code: 'CANCELED', message: 'Canceled' } });
+
+    const { result } = await renderHook(() => useTakePayment('bk-1'), { wrapper: wrapper() });
+    await expect(result.current.mutateAsync({ attemptId: ATTEMPT })).rejects.toThrow();
+
+    expect(failedCardAttempts()).toHaveLength(1);
+    expect(mockApiFetch).toHaveBeenCalledWith(
+      '/api/venue/bookings/bk-1/charge',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ action: 'cancel', payment_intent_id: 'pi_1' }),
+      }),
+    );
+  });
+
+  it('does not ask the server to cancel an outcome it cannot vouch for', async () => {
+    // The mirror of the ambiguous case above: if Stripe may have captured, the
+    // app must not go and cancel the intent out from under a real payment.
+    mockApiFetch.mockResolvedValue(CHARGE);
+    mockRetrieve.mockResolvedValue({ paymentIntent: { id: 'pi_1' } });
+    mockCollect.mockResolvedValue({ paymentIntent: { id: 'pi_1' } });
+    mockConfirm.mockResolvedValue({ error: { code: 'REQUEST_TIMED_OUT', message: 'no link' } });
+
+    const { result } = await renderHook(() => useTakePayment('bk-1'), { wrapper: wrapper() });
+    await expect(result.current.mutateAsync({ attemptId: ATTEMPT })).rejects.toThrow();
+
+    expect(
+      mockApiFetch.mock.calls.some((c) => String(c[1]?.body ?? '').includes('"action":"cancel"')),
+    ).toBe(false);
+  });
+
   it('records nothing when the charge itself never created a PaymentIntent', async () => {
     // No PI, no ledger row, nothing to discount.
     mockApiFetch.mockRejectedValue(new Error('offline'));

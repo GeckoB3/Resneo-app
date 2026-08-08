@@ -48,6 +48,37 @@ function invalidateAfterPayment(
 }
 
 /**
+ * Ask the server to cancel an abandoned card attempt's PaymentIntent.
+ *
+ * The ledger row is written `pending` when the intent is created, BEFORE the card
+ * is presented, and only a webhook moves it off `pending`. Cancelling at the
+ * reader cancels the COLLECTION, not the intent — so nothing ever settled the
+ * row and staff kept being warned about money that was never taken. Cancelling
+ * the intent makes Stripe emit `payment_intent.canceled`, which the backend
+ * already handles.
+ *
+ * Never throws: every caller is on a path that is already failing, and a failure
+ * here only leaves the row as it would have been anyway.
+ */
+async function cancelBalancePaymentIntent(args: {
+  bookingId: string;
+  accessToken: string | null;
+  paymentIntentId: string;
+}): Promise<void> {
+  if (!args.accessToken) return;
+  try {
+    await apiFetch(`/api/venue/bookings/${args.bookingId}/charge`, {
+      accessToken: args.accessToken,
+      method: 'POST',
+      body: JSON.stringify({ action: 'cancel', payment_intent_id: args.paymentIntentId }),
+    });
+  } catch {
+    // A 409 here is the server refusing because the payment actually settled —
+    // which is exactly the case where the row SHOULD stay as it is.
+  }
+}
+
+/**
  * Card collection over Stripe Terminal: create the PaymentIntent server-side,
  * then drive the reader through retrieve -> collect -> confirm (§7.7).
  *
@@ -106,6 +137,14 @@ export function useTakePayment(bookingId: string) {
        * `isDefiniteCardFailure` is deliberately strict — an ambiguous confirm
        * (network drop after the reader accepted) is NOT recorded, because Stripe
        * may have captured it and staff must keep being warned.
+       *
+       * The local record only silences THIS device, and only until the app
+       * restarts. So the same verdict also tells the server to cancel the
+       * PaymentIntent, which makes Stripe emit `payment_intent.canceled` and moves
+       * the ledger row off `pending` for everyone — the web dashboard, a
+       * colleague's phone, and this app after a restart. Fire-and-forget on
+       * purpose: staff are waiting on the sheet, and if the call fails the row
+       * simply stays pending, exactly as it did before.
        */
       const reportFailure = (error: StripeError | undefined, message: string): never => {
         if (isDefiniteCardFailure(error)) {
@@ -115,6 +154,11 @@ export function useTakePayment(bookingId: string) {
             amountPence: charge.amount_pence,
             startedAtMs,
             failedAtMs: Date.now(),
+          });
+          void cancelBalancePaymentIntent({
+            bookingId,
+            accessToken,
+            paymentIntentId: charge.payment_intent_id,
           });
         }
         throw new Error(message);

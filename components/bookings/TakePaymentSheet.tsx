@@ -843,12 +843,35 @@ function CardCollectSection({
     attemptRef.current += 1;
     // Released here, not in the abandoned attempt's `finally`: the collect
     // buttons and Retry must be live again immediately. `collectingRef` is
-    // deliberately left alone — it is the unmount cleanup's only signal that a
-    // card collection needs cancelling, and Cancel cannot be reached from the
-    // collecting stage anyway.
+    // deliberately left alone — nothing is collecting yet at this stage, and it
+    // is the unmount cleanup's only signal that one needs cancelling.
     startingRef.current = false;
     void tapToPay.abort();
     void bluetooth.abort();
+    setStage('idle');
+    setMessage(null);
+  }
+
+  /**
+   * Abandon a collection the client never completed — they changed their mind,
+   * or walked off. `collectPaymentMethod` waits indefinitely for a card, so
+   * without this nothing ends the state on its own.
+   *
+   * Reaching the SDK matters as much as the UI: an abandoned collection is
+   * refused-as-busy on the next attempt. Clearing `collectingRef` stops the
+   * unmount cleanup cancelling a second time if staff then close the sheet.
+   *
+   * The pending ledger row created before the card was read is cleared by the
+   * attempt's own `reportFailure`, which matches the SDK's `CANCELED` code and
+   * then asks the server to cancel the PaymentIntent. Matching on the code is
+   * the whole trick: an error the SDK raises itself carries no PaymentIntent, so
+   * a cancellation used to read as ambiguous and kept warning staff.
+   */
+  function cancelCollect() {
+    attemptRef.current += 1;
+    startingRef.current = false;
+    collectingRef.current = false;
+    void cancelCollection();
     setStage('idle');
     setMessage(null);
   }
@@ -905,12 +928,20 @@ function CardCollectSection({
           ...(amountPence != null ? { amountPence } : {}),
           readerType: kind,
         });
+        // Reported even when this attempt was superseded. Cancel races the card:
+        // if the money moved, staff must be told, whatever they pressed a moment
+        // earlier. Silence here would hide a real payment.
         collectingRef.current = false;
         hapticSuccess();
         setStage('success');
         rememberLastMethod(kind);
         onDone(res.amountPence ?? null);
       } catch (e) {
+        // The other side of that race, and the opposite rule: cancelling makes
+        // `collectPaymentMethod` throw, so without this the staff member who
+        // just pressed Cancel is shown "The card was not read." as if something
+        // went wrong. A superseded failure is the cancel completing, not an error.
+        if (superseded()) return;
         collectingRef.current = false;
         hapticWarning();
         setStage('error');
@@ -939,11 +970,14 @@ function CardCollectSection({
     bluetooth.status === 'connecting' ||
     bluetooth.status === 'updating';
   /**
-   * While a reader is being got ready, the bottom button cancels the attempt
-   * instead of navigating: that is the state staff were trapped in, and "Back"
-   * would read as if it also abandoned the payment sheet.
+   * While an attempt is in flight the bottom button cancels it instead of
+   * navigating — "Back" would read as if it also abandoned the payment sheet.
+   *
+   * `collecting` is included because a client who changes their mind at the
+   * reader is the ordinary case, not an edge one, and nothing else ends that
+   * state: `collectPaymentMethod` waits for a card indefinitely.
    */
-  const canCancelPrepare = stage === 'preparing';
+  const canCancelAttempt = stage === 'preparing' || stage === 'collecting';
 
   return (
     <>
@@ -1021,17 +1055,21 @@ function CardCollectSection({
             </Text>
           </>
         ) : null}
-        {/* The escape hatch. NEVER disabled while a reader is being got ready:
-            spinner + every button dead is exactly what stranded staff, with only
-            "close the whole sheet" left. It locks during `collecting` alone,
-            where the client's card is already being read — and even there,
-            dismissing the sheet cancels the collection. */}
+        {/* The escape hatch, and it is NEVER disabled. A spinner with every
+            button dead is what stranded staff at `preparing`; the same trap
+            survived one stage later at `collecting`, where the only way out was
+            a gesture nobody signposts — the sheet's grabber or backdrop. Both
+            stages now cancel the attempt and return to a state staff can act
+            from, rather than leaving the sheet. */}
         <Button
-          label={canCancelPrepare ? 'Cancel' : 'Back'}
+          label={canCancelAttempt ? 'Cancel' : 'Back'}
           variant="ghost"
-          disabled={stage === 'collecting'}
           onPress={() => {
-            if (canCancelPrepare) {
+            if (stage === 'collecting') {
+              cancelCollect();
+              return;
+            }
+            if (stage === 'preparing') {
               cancelPrepare();
               return;
             }
