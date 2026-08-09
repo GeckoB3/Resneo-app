@@ -65,25 +65,33 @@ jest.mock('react-native-reanimated', () => {
     default: Animated,
     ...Animated,
     // Reanimated v4 shared values use .get()/.set() (plus legacy .value).
+    // IMPORTANT: identity must be render-stable like the real hook — components
+    // legitimately list shared values in effect deps, and a new object per
+    // render makes those effects re-fire and clobber state (bit the framing
+    // editor's seed effect).
     useSharedValue: (initial) => {
-      let current = initial;
-      return {
-        get value() {
-          return current;
-        },
-        set value(next) {
-          current = next;
-        },
-        get: () => current,
-        set: (next) => {
-          current = typeof next === 'function' ? next(current) : next;
-        },
-        modify: (fn) => {
-          current = typeof fn === 'function' ? fn(current) : current;
-        },
-        addListener: () => {},
-        removeListener: () => {},
-      };
+      const ref = React.useRef(null);
+      if (ref.current === null) {
+        let current = initial;
+        ref.current = {
+          get value() {
+            return current;
+          },
+          set value(next) {
+            current = next;
+          },
+          get: () => current,
+          set: (next) => {
+            current = typeof next === 'function' ? next(current) : next;
+          },
+          modify: (fn) => {
+            current = typeof fn === 'function' ? fn(current) : current;
+          },
+          addListener: () => {},
+          removeListener: () => {},
+        };
+      }
+      return ref.current;
     },
     useAnimatedStyle: (factory) => (typeof factory === 'function' ? factory() : {}),
     // Returns the resolved prop object once (no animation) so animated SVG

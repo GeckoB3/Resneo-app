@@ -29,6 +29,12 @@ export interface BookingTeamProfile {
   bio?: string | null;
   /** Public photo URL (stored in the `venue-team-photos` bucket). */
   photo?: string | null;
+  /**
+   * Pan/zoom framing for {@link photo} inside its fixed circle. The upload is
+   * never altered; `null`/absent = centred at 100%. Only meaningful while a
+   * photo is set (the server sanitiser drops it otherwise).
+   */
+  photo_crop?: BookingPageImageFraming | null;
   /** Comma-separated specialties / focus areas. */
   specialties?: string | null;
   /** When true, hide this member from the public booking page. */
@@ -106,6 +112,15 @@ export interface BookingPageConfig {
   social_links?: BookingPageSocialLinks | null;
   /** Per-service photos for the public Services tab, keyed by service id. */
   service_photos?: Record<string, string> | null;
+  /**
+   * Pan/zoom framing for each service photo, keyed by the same service id. The
+   * uploaded file is never altered; the public thumbnail is a fixed square, so
+   * framing is all that is needed to choose what shows inside it. Absent for a
+   * service → centred at 100%. (The server cascades this away with
+   * `service_photos: null`, and framing for a photo-less service is pruned
+   * client-side before save — see {@link servicePhotoCropsForSave}.)
+   */
+  service_photo_crops?: Record<string, BookingPageImageFraming> | null;
   /** When true, show a Services tab (photos + descriptions) on the public booking page. */
   show_services_tab?: boolean;
   /** When true, show a Meet the team tab on the public booking page. */
@@ -179,20 +194,50 @@ export function normalizeLogoFraming(
 }
 
 /**
- * RN transform values for a `contentFit="cover"` Image that fills a square frame
- * of `frameSize` px — mirrors the web `translate((x-50)%, (y-50)%) scale(zoom)`
- * where the % is of the element box (= frameSize). RN transforms are centre-origin.
+ * RN transform values for a `contentFit="cover"` Image that fills a `frameWidth`
+ * × `frameHeight` px frame — mirrors the web `translate((x-50)%, (y-50)%)
+ * scale(zoom)`, where each translate % is of the element box on that axis. RN
+ * transforms are centre-origin.
  */
+export function framingTransform(
+  f: BookingPageImageFraming | null | undefined,
+  frameWidth: number,
+  frameHeight: number,
+): { translateX: number; translateY: number; scale: number } {
+  const { x, y, zoom } = resolveLogoFraming(f);
+  return {
+    translateX: ((x - 50) / 100) * frameWidth,
+    translateY: ((y - 50) / 100) * frameHeight,
+    scale: zoom,
+  };
+}
+
+/** {@link framingTransform} for the square/circular frames (logo, team photo). */
 export function logoFramingTransform(
   f: BookingPageImageFraming | null | undefined,
   frameSize: number,
 ): { translateX: number; translateY: number; scale: number } {
-  const { x, y, zoom } = resolveLogoFraming(f);
-  return {
-    translateX: ((x - 50) / 100) * frameSize,
-    translateY: ((y - 50) / 100) * frameSize,
-    scale: zoom,
-  };
+  return framingTransform(f, frameSize, frameSize);
+}
+
+/**
+ * The `service_photo_crops` value a config PATCH should carry, given the photo
+ * map it will be saved alongside. Framing is only meaningful for a service that
+ * currently has a photo (mirrors the web editor's `servicePhotoCropsForConfig`),
+ * and a centred/unzoomed framing collapses away entirely. Returns `null` when
+ * nothing survives — the server deletes the key on `null`, matching the web save.
+ */
+export function servicePhotoCropsForSave(
+  crops: Record<string, BookingPageImageFraming> | null | undefined,
+  photos: Record<string, string> | null | undefined,
+): Record<string, BookingPageImageFraming> | null {
+  const out: Record<string, BookingPageImageFraming> = {};
+  for (const [id, crop] of Object.entries(crops ?? {})) {
+    if (!photos?.[id]?.trim()) continue;
+    const framed = normalizeLogoFraming(crop);
+    if (framed) out[id] = framed;
+  }
+  return Object.keys(out).length > 0 ? out : null;
 }
 
 /** Pointer-drag px → 0–100 position delta over a viewport of `sizePx`. */
