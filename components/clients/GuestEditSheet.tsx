@@ -94,8 +94,12 @@ export function GuestEditSheet({ target, onClose }: GuestEditSheetProps) {
 
   function buildPayload(t: GuestEditTarget): UpdateGuestInput & AddressUpdate {
     const payload: UpdateGuestInput & AddressUpdate = {};
-    const diff = (cur: string, orig: string): string | null | undefined =>
-      cur.trim() === orig.trim() ? undefined : cur.trim() || null;
+    // Cleared fields send an EMPTY STRING, never null: the guest PATCH schema
+    // types these as `.optional()` (not `.nullable()`) and documents "empty string
+    // clears a field", so a null 400s the whole request — taking every other edit
+    // made in the same sheet down with it.
+    const diff = (cur: string, orig: string): string | undefined =>
+      cur.trim() === orig.trim() ? undefined : cur.trim();
 
     const f = diff(firstName, t.firstName);
     if (f !== undefined) payload.first_name = f;

@@ -478,7 +478,10 @@ export function ResourceEditorSheet({
       slot_interval_minutes: slotMins,
       min_booking_minutes: minMins,
       max_booking_minutes: maxMins,
-      price_per_slot_pence: pricePence,
+      // Omitted, never null, when the price is blank: the schema is `.optional()`
+      // and would 400 on null, making every FREE resource unsaveable. Mirrors the
+      // web, which spreads the key in only when a price was typed.
+      ...(pricePence != null ? { price_per_slot_pence: pricePence } : {}),
       payment_requirement: paymentReq,
       // 'card_hold' stores the flat no-show fee in the same column (spec D5).
       deposit_amount_pence:
