@@ -25,6 +25,24 @@ export interface CalendarGridBooking {
    * one that is not.
    */
   payment_state?: string | null;
+  /**
+   * Multi-service visit key: several consecutive bookings for one guest share a
+   * `group_booking_id`. Optional — older backends omit it.
+   *
+   * NOT yet consumed: the calendar still draws one bar per row, so a
+   * multi-service visit appears as several bars. Grouping them needs the web's
+   * span semantics (first start → last end), not the Bookings tab's
+   * `collapseMultiServiceVisits`, which keeps only the earliest segment and
+   * would give the bar the first service's duration. See
+   * Docs/APP_GAP_REPORT_R12_WEB_DELTA.md §R12-1.
+   */
+  group_booking_id?: string | null;
+  /**
+   * Per-person label on a group booking ("Person 1", a name…). Tells a
+   * multi-service visit by ONE guest (no label) from a group booking of several
+   * people (each labelled) — the latter must stay as separate bars.
+   */
+  person_label?: string | null;
 }
 
 export interface CalendarGridBlock {
