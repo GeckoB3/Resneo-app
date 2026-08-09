@@ -228,6 +228,23 @@ export function useCancelCardCollection(): () => Promise<void> {
 }
 
 /** Record cash / other settlement: a ledger row only, no Stripe (§6.3b). */
+/**
+ * What the charge route actually recorded for a cash/external payment.
+ *
+ * The success screen used to be built from the client's own balance snapshot,
+ * which is stale the moment a colleague settles a sibling service on another
+ * device: staff would read "£90.00 collected" off a £30 ledger row. The backend
+ * added this echo for exactly that reason - prefer it, and fall back to the
+ * local figures only when an older backend omits it.
+ */
+export interface ExternalPaymentResult {
+  success: boolean;
+  /** What the server actually charged, in pence. */
+  amount_pence?: number;
+  /** The balance remaining AFTER this payment, recomputed server-side. */
+  balance_due_pence?: number | null;
+}
+
 export function useRecordExternalPayment(bookingId: string) {
   const accessToken = useAccessToken();
   const queryClient = useQueryClient();
@@ -237,13 +254,13 @@ export function useRecordExternalPayment(bookingId: string) {
       method: 'cash' | 'external';
       amountPence?: number;
       note?: string;
-    }): Promise<{ success: boolean }> => {
+    }): Promise<ExternalPaymentResult> => {
       // Staff-facing: this surfaces raw in the payment sheet, so it must read as
       // something a salon can act on rather than as an internal token error.
       if (!accessToken) {
         throw new Error('Could not confirm you are signed in. Please try again.');
       }
-      return apiFetch<{ success: boolean }>(`/api/venue/bookings/${bookingId}/charge`, {
+      return apiFetch<ExternalPaymentResult>(`/api/venue/bookings/${bookingId}/charge`, {
         accessToken,
         method: 'POST',
         body: JSON.stringify({
@@ -254,6 +271,12 @@ export function useRecordExternalPayment(bookingId: string) {
       });
     },
     onSuccess: () => invalidateAfterPayment(queryClient, accessToken, bookingId),
+    // Refetch on FAILURE too, matching the card path. This write has no
+    // idempotency key of any kind, and apiFetch aborts at 15s — so a slow venue
+    // network can leave the row inserted while the client reports a flat
+    // failure. Without a refetch the sheet keeps showing the pre-payment
+    // balance, and the obvious next move is to record the same cash again.
+    onError: () => invalidateAfterPayment(queryClient, accessToken, bookingId),
   });
 }
 

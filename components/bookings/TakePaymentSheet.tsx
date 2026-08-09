@@ -292,7 +292,7 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
     recordingRef.current = true;
     setError(null);
     try {
-      await recordExternal.mutateAsync({
+      const result = await recordExternal.mutateAsync({
         method,
         ...(amountPence != null ? { amountPence } : {}),
         ...(note.trim() ? { note: note.trim() } : {}),
@@ -300,16 +300,37 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
       hapticSuccess();
       // Cash and other settlements are recorded straight to the ledger, with no
       // Stripe leg and therefore no emailed receipt.
-      const collected = amountPence ?? balancePence;
+      //
+      // Read back what the SERVER recorded rather than what this screen believed
+      // the balance was: blank means "take the full balance", and that balance is
+      // stale the moment a colleague settles a sibling service on another device.
+      // The route echoes both figures for this reason. Local values remain the
+      // fallback for a backend that predates the echo.
+      const collected = result?.amount_pence ?? amountPence ?? balancePence;
+      const remaining =
+        result?.balance_due_pence ?? remainingAfterPayment(balancePence, collected);
       setSuccess({
         amountPence: collected,
         receiptEmailed: false,
         heading: 'Payment recorded',
-        remainingPence: remainingAfterPayment(balancePence, collected),
+        remainingPence: remaining,
       });
       setMode('success');
     } catch (e) {
-      fail(e, 'The payment could not be recorded.');
+      // A TIMEOUT here is ambiguous, not a failure. This write carries no
+      // idempotency key of any kind (the only unique index covers Stripe
+      // PaymentIntents), and apiFetch aborts at 15s — so the row may well have
+      // landed. Saying "could not be recorded" invites staff to record the same
+      // cash again, putting double the money in the ledger against one payment.
+      // The hook now refetches on error too, so the history below is authoritative.
+      if (e instanceof ApiError && e.status === 408) {
+        hapticWarning();
+        setError(
+          'We could not confirm whether this payment was recorded. Check the payment history below before recording it again.',
+        );
+      } else {
+        fail(e, 'The payment could not be recorded.');
+      }
     } finally {
       recordingRef.current = false;
     }
