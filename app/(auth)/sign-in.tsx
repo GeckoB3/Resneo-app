@@ -321,8 +321,12 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   logo: {
+    // Sized to the asset's own ratio (1200x324 = 3.70) so `contain` has no slack
+    // to letterbox. The previous box was 208x50 (4.16), cut for the older, wider
+    // lockup at 4.30 - against the new artwork that made it height-bound and it
+    // rendered 185px wide, short of the intended 208.
     width: 208,
-    height: 50,
+    height: 56,
   },
   headerBlock: {
     gap: spacing.xs,
