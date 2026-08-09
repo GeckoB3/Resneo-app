@@ -444,7 +444,14 @@ export default function CalendarScreen() {
     // Wait for calendars before pruning a stored id (unless there are genuinely
     // none — a venue with zero practitioners — in which case there's nothing to
     // prune against and we still hydrate scope/window).
-    if (calendarIds.length === 0 && practitionersQuery.isLoading) return;
+    // `isLoading` is only true while PENDING AND FETCHING, so it is FALSE when the
+    // query is paused (offline — NetInfo drives onlineManager) or has errored out
+    // after its single retry. Pruning then compares the saved calendar against an
+    // empty roster, decides it is stale, and PERSISTS the deletion — losing the
+    // user's selected calendar and column filter for good, because
+    // `prefsHydratedRef` is already set when the roster finally arrives. Gate on a
+    // genuinely known roster instead.
+    if (calendarIds.length === 0 && !practitionersQuery.isSuccess) return;
     prefsHydratedRef.current = true;
 
     const pruned = pruneStaleSelectedId(storedPrefs, calendarIds, ALL_CALENDARS);
