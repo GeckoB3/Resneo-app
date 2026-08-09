@@ -1,8 +1,8 @@
 import { Stack } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
-import { DeleteAccountSheet } from '@/components/manage/DeleteAccountSheet';
+import { DeleteAccountSheet, formatScheduledDate } from '@/components/manage/DeleteAccountSheet';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
@@ -10,14 +10,20 @@ import { PhoneInput } from '@/components/ui/PhoneInput';
 import { Screen } from '@/components/ui/Screen';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
+import { ApiError } from '@/lib/api/client';
 import { hapticError, hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { t } from '@/lib/i18n';
+import {
+  useAccountDeletionStatus,
+  useCancelAccountDeletion,
+} from '@/lib/queries/useAccountDeletion';
 import { useStaffAccountForm } from '@/lib/queries/useStaffAccountForm';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { getSupabase } from '@/lib/supabase';
 import { useAuth } from '@/providers/AuthProvider';
 import { useToast } from '@/providers/ToastProvider';
 import { spacing } from '@/theme/index';
+import { useTheme } from '@/theme/useTheme';
 
 /**
  * Personal account settings for the signed-in staff member.
@@ -31,10 +37,31 @@ import { spacing } from '@/theme/index';
  */
 export default function AccountScreen() {
   const toast = useToast();
+  const { colors } = useTheme();
   const { signOut } = useAuth();
   const { data, isLoading } = useStaffMe();
   const staff = data?.staff ?? null;
   const [deleteOpen, setDeleteOpen] = useState(false);
+
+  // Pending-deletion state: a user who signed back in during the 30-day grace
+  // window sees a banner and can cancel in-app (web parity, R11-2). Nothing is
+  // anonymised until the grace period ends, so cancelling restores normality.
+  const deletionStatus = useAccountDeletionStatus();
+  const cancelDeletion = useCancelAccountDeletion();
+  const deletionScheduledAt = deletionStatus.data?.deletion_scheduled_at ?? null;
+  const deletionDate = formatScheduledDate(deletionScheduledAt);
+
+  async function handleCancelDeletion() {
+    if (cancelDeletion.isPending) return;
+    try {
+      await cancelDeletion.mutateAsync();
+      hapticSuccess();
+      toast.success(t('account.delete.cancelled'));
+    } catch (e) {
+      hapticError();
+      toast.error(e instanceof ApiError ? e.message : t('account.delete.cancelError'));
+    }
+  }
 
   const form = useStaffAccountForm({
     staff,
@@ -100,6 +127,35 @@ export default function AccountScreen() {
     <Screen scroll={false} padded={false}>
       {header}
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        {/* Pending account deletion — grace-window banner + in-app cancel. */}
+        {deletionScheduledAt !== null ? (
+          <Card
+            style={[
+              styles.pendingCard,
+              { backgroundColor: colors.dangerSurface, borderColor: colors.danger },
+            ]}>
+            <Text variant="label" tone="danger" style={styles.sectionTitle}>
+              {t('account.delete.pendingTitle')}
+            </Text>
+            <Text variant="caption" tone="muted" style={styles.sectionDesc}>
+              {deletionDate
+                ? t('account.delete.pendingBody', { date: deletionDate })
+                : t('account.delete.pendingBodyNoDate')}
+            </Text>
+            <Button
+              label={
+                cancelDeletion.isPending
+                  ? t('account.delete.cancelWorking')
+                  : t('account.delete.cancelCta')
+              }
+              variant="secondary"
+              fullWidth
+              loading={cancelDeletion.isPending}
+              onPress={() => void handleCancelDeletion()}
+            />
+          </Card>
+        ) : null}
+
         {/* Profile section */}
         <Card>
           <Text variant="label" style={styles.sectionTitle}>
@@ -199,21 +255,25 @@ export default function AccountScreen() {
         </Card>
 
         {/* Danger zone — account deletion (Apple Guideline 5.1.1(v)). Available to
-            all roles; deletes the signed-in user's own account, not the venue. */}
-        <Card>
-          <Text variant="label" tone="danger" style={styles.sectionTitle}>
-            {t('account.delete.title')}
-          </Text>
-          <Text variant="caption" tone="muted" style={styles.sectionDesc}>
-            {t('account.delete.description')}
-          </Text>
-          <Button
-            label={t('account.delete.cta')}
-            variant="danger"
-            fullWidth
-            onPress={() => setDeleteOpen(true)}
-          />
-        </Card>
+            all roles; deletes the signed-in user's own account, not the venue.
+            Hidden while a deletion is already scheduled — the pending banner above
+            owns that state, and re-requesting would be a no-op. */}
+        {deletionScheduledAt === null ? (
+          <Card>
+            <Text variant="label" tone="danger" style={styles.sectionTitle}>
+              {t('account.delete.title')}
+            </Text>
+            <Text variant="caption" tone="muted" style={styles.sectionDesc}>
+              {t('account.delete.description')}
+            </Text>
+            <Button
+              label={t('account.delete.cta')}
+              variant="danger"
+              fullWidth
+              onPress={() => setDeleteOpen(true)}
+            />
+          </Card>
+        ) : null}
 
         <View style={styles.spacer} />
       </ScrollView>
@@ -235,6 +295,9 @@ const styles = StyleSheet.create({
   content: {
     padding: spacing.base,
     gap: spacing.md,
+  },
+  pendingCard: {
+    borderWidth: 1,
   },
   sectionTitle: {
     marginBottom: spacing.xs,

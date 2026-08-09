@@ -126,6 +126,19 @@ export const en = {
         'Changed your mind? Use the “Cancel deletion request” link in the email we sent to {email} to cancel before then.',
       done: 'Done',
       keep: 'Keep my account',
+
+      // Pending banner on the Account screen — shown when the signed-in user is
+      // inside the 30-day grace window (they signed back in after requesting).
+      pendingTitle: 'Account deletion scheduled',
+      // `{date}` interpolated at the call site.
+      pendingBody:
+        'Your account is scheduled for permanent deletion on {date}. Cancel before then to keep your account and data.',
+      pendingBodyNoDate:
+        'Your account is scheduled for permanent deletion. Cancel before the grace period ends to keep your account and data.',
+      cancelCta: 'Cancel deletion request',
+      cancelWorking: 'Cancelling…',
+      cancelled: 'Account deletion cancelled. Your account stays active.',
+      cancelError: 'Could not cancel the deletion request. Please try again.',
     },
   },
 

@@ -27,8 +27,11 @@ type DeleteAccountSheetProps = {
   onDeleted: () => void;
 };
 
-/** "30 Jun 2026" from an ISO timestamp (date portion only); null when absent. */
-function formatScheduledDate(iso: string | null): string | null {
+/**
+ * "30 Jun 2026" from an ISO timestamp (date portion only); null when absent.
+ * Shared with the Account screen's pending-deletion banner.
+ */
+export function formatScheduledDate(iso: string | null): string | null {
   if (!iso) return null;
   const ms = Date.parse(iso);
   if (Number.isNaN(ms)) return iso.slice(0, 10);
