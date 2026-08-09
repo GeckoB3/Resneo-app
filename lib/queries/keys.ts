@@ -212,6 +212,16 @@ export const queryKeys = {
     all: () => [...queryKeys.all, 'appointments'] as const,
     catalog: (venueId?: string | null) =>
       [...queryKeys.appointments.all(), 'catalog', venueId ?? null] as const,
+    /**
+     * Prefix of every {@link queryKeys.appointments.availability} key. Taking a
+     * booking invalidates through this rather than through `all()`, which would
+     * drag the service CATALOGUE along — that only changes when services or
+     * practitioners do, never when a slot is filled.
+     */
+    availabilityAll: () => [...queryKeys.appointments.all(), 'availability'] as const,
+    /** Prefix of every {@link queryKeys.appointments.monthAvailability} key. */
+    monthAvailabilityAll: () =>
+      [...queryKeys.appointments.all(), 'monthAvailability'] as const,
     availability: (
       accessToken?: string | null,
       date?: string | null,

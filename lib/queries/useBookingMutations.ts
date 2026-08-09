@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient, type QueryKey } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
+import { invalidateAppointmentAvailability } from '@/lib/queries/invalidateAvailability';
 import { queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import type { BookingDetail, BookingStatus } from '@/types/booking-detail';
@@ -24,6 +25,8 @@ function invalidateBookingCaches(
   // the detail sheet doesn't leave a stale roster/waitlist row during a polling gap.
   void queryClient.invalidateQueries({ queryKey: queryKeys.schedule.all() });
   void queryClient.invalidateQueries({ queryKey: queryKeys.waitlist.all() });
+  // A moved/resized/cancelled booking changes which slots are free.
+  invalidateAppointmentAvailability(queryClient);
 }
 
 type StatusPatchContext = { previousBookings?: [QueryKey, unknown][] };

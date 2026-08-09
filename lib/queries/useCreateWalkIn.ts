@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
+import { invalidateAppointmentAvailability } from '@/lib/queries/invalidateAvailability';
 import { queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 
@@ -55,6 +56,8 @@ export function useCreateWalkIn() {
       // A walk-in can clear a waitlist entry and updates guest visit history.
       void queryClient.invalidateQueries({ queryKey: queryKeys.waitlist.all() });
       void queryClient.invalidateQueries({ queryKey: queryKeys.guests.all() });
+      // The booked slot is no longer free — the picker must not still offer it.
+      invalidateAppointmentAvailability(queryClient);
     },
   });
 }

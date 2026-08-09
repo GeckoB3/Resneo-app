@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
 import type { CreateGroupPayload } from '@/lib/booking/multi-service-chain';
+import { invalidateAppointmentAvailability } from '@/lib/queries/invalidateAvailability';
 import { queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import type { GroupedBookingResponse } from '@/lib/queries/useCreateMultiServiceBooking';
@@ -39,6 +40,8 @@ export function useCreateGroupBooking() {
       // guest visit history.
       void queryClient.invalidateQueries({ queryKey: queryKeys.waitlist.all() });
       void queryClient.invalidateQueries({ queryKey: queryKeys.guests.all() });
+      // The booked slot is no longer free — the picker must not still offer it.
+      invalidateAppointmentAvailability(queryClient);
     },
   });
 }
