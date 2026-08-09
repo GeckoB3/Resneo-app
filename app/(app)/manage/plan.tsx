@@ -31,6 +31,7 @@ import { Card } from '@/components/ui/Card';
 import { Screen } from '@/components/ui/Screen';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
+import { resolveResumeSubscriptionOutcome } from '@/lib/billing/resume-subscription-outcome';
 import { mustManageSubscriptionOnWeb } from '@/lib/billing/store-billing-policy';
 import { getWebUrl } from '@/lib/env';
 import { hapticError, hapticSuccess, hapticWarning } from '@/lib/haptics';
@@ -298,8 +299,28 @@ export default function PlanScreen() {
     setSuccessMsg(null);
     changePlanMutation.mutate('resume_subscription', {
       onSuccess: (data) => {
+        // Resuming can come back as a NEW subscription: Stripe refuses to revive
+        // one that has reached `canceled`, and this screen offers "Keep my plan"
+        // from the stored billing row, which the real subscription can close
+        // underneath. `resolveResumeSubscriptionOutcome` tells the two apart —
+        // reporting a checkout as a resume used to claim success falsely.
+        const outcome = resolveResumeSubscriptionOutcome(data, { manageOnWeb });
+        if (outcome.kind === 'purchase_on_web') {
+          // Starting a subscription is a purchase, so it goes to the web
+          // dashboard like Resubscribe does. The server has already opened a
+          // Checkout session by this point; it is simply left to expire, which
+          // costs nothing and charges nobody.
+          setSuccessMsg(outcome.message);
+          openWeb('/dashboard/settings?tab=plan');
+          return;
+        }
+        if (outcome.kind === 'checkout') {
+          setSuccessMsg(outcome.message);
+          openExternal(outcome.url);
+          return;
+        }
         hapticSuccess();
-        setSuccessMsg(data.message ?? 'Your subscription will continue.');
+        setSuccessMsg(outcome.message);
       },
       onError: (err: Error) => {
         hapticError();
