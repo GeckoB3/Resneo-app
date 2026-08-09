@@ -108,9 +108,17 @@ const UPLOAD_TIMEOUT_MS = 60_000;
  * unchanged; `null` means the user cancelled or denied access.
  */
 export async function pickVenueImage(): Promise<{ uri: string; mimeType: string } | null> {
-  const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-  if (!permission.granted) return null;
-
+  // NO requestMediaLibraryPermissionsAsync() gate. `launchImageLibraryAsync`
+  // does not check permissions — it hands straight to the system picker, which
+  // returns a URI without the app holding storage access on any version.
+  //
+  // Requesting first actively BREAKS Android 8-12. The module asks for an empty
+  // array on Android 13+, but below that it asks for READ_EXTERNAL_STORAGE —
+  // which app.json blocks, so it is stripped from the merged manifest and
+  // Android denies instantly with no prompt. Gating on that result would have
+  // silently disabled every image upload on Android 8-12, which minSdkVersion 26
+  // still supports. If an OS ever does want consent it prompts inside the
+  // picker, and a refusal surfaces here as a plain cancellation.
   const result = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: ['images'],
     // The upload routes take a single file; multiple selection has no consumer.
