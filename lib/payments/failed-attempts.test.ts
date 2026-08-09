@@ -129,3 +129,60 @@ describe('isKnownFailedCardRow', () => {
     expect(isKnownFailedCardRow(row(), [])).toBe(false);
   });
 });
+
+/**
+ * Matching by PaymentIntent (the row's true identity).
+ *
+ * The booking GET now returns `stripe_payment_intent_id`. Before the app read
+ * it, the only join available was booking + amount + a two-minute window — and
+ * the app's OWN retry flow defeats that, which is the scenario pinned below.
+ */
+describe('isKnownFailedCardRow — matched on the PaymentIntent', () => {
+  it('recognises our decline by its intent, whatever the clock says', () => {
+    recordFailedCardAttempt(attempt({ paymentIntentId: 'pi_1' }));
+    // Hours later — a time window would have given up long ago.
+    const late = row({
+      stripe_payment_intent_id: 'pi_1',
+      created_at: new Date(STARTED + 6 * 60 * 60_000).toISOString(),
+    });
+    expect(isKnownFailedCardRow(late)).toBe(true);
+  });
+
+  it('does NOT claim a retry we never saw fail — the double-charge case', () => {
+    /**
+     * £30 declines (pi_1). Staff retry ~40s later; that second attempt fails
+     * AMBIGUOUSLY (network drop after the reader accepted), so it is deliberately
+     * not recorded — the warning must stay up because Stripe may have captured it.
+     * Its row sits well inside pi_1's ±2min window with an identical amount, so
+     * the old heuristic silenced the warning and staff charged the client again.
+     */
+    recordFailedCardAttempt(attempt({ paymentIntentId: 'pi_1' }));
+    const retryRow = row({
+      id: 'pay-2',
+      stripe_payment_intent_id: 'pi_2',
+      created_at: new Date(STARTED + 40_000).toISOString(),
+    });
+    expect(isKnownFailedCardRow(retryRow)).toBe(false);
+  });
+
+  it('ignores amount and booking once an intent is present', () => {
+    // A row naming OUR intent is ours even if the amount was later corrected.
+    recordFailedCardAttempt(attempt({ paymentIntentId: 'pi_1', amountPence: 2500 }));
+    expect(
+      isKnownFailedCardRow(row({ stripe_payment_intent_id: 'pi_1', amount_pence: 9999 })),
+    ).toBe(true);
+  });
+
+  it('still falls back to the window for rows carrying no intent', () => {
+    recordFailedCardAttempt(attempt());
+    expect(isKnownFailedCardRow(row({ stripe_payment_intent_id: null }))).toBe(true);
+    expect(
+      isKnownFailedCardRow(
+        row({
+          stripe_payment_intent_id: '   ',
+          created_at: new Date(STARTED + ATTEMPT_MATCH_SKEW_MS + 1_000).toISOString(),
+        }),
+      ),
+    ).toBe(false);
+  });
+});

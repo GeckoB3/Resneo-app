@@ -42,14 +42,19 @@ export interface FailedCardAttempt {
 /**
  * Allowance for device-clock vs database-clock skew when matching a row by time.
  *
- * WHY a time window at all: the booking GET does NOT return
- * `stripe_payment_intent_id` (see Docs/TAP_TO_PAY.md, "Backend requirements"), so
- * the PaymentIntent id we hold cannot be joined to the row directly and the match
- * is booking + amount + when. The window BOUNDS — it cannot rule out — the case
- * where a colleague's genuinely in-flight payment for the same amount on the same
- * booking is mistaken for our decline and silently un-warned; only the backend
- * field closes that off. Keeping it narrow is therefore the point, and erring
- * narrow is safe: a row outside the window simply keeps warning, as it did before.
+ * FALLBACK ONLY. The booking GET now returns `stripe_payment_intent_id`, so a
+ * card row is matched on its PaymentIntent — the row's true identity — and this
+ * window is used solely for rows that carry none (older payloads).
+ *
+ * It is kept because it is still the best available answer for those rows, not
+ * because it is a good one. Matching on booking + amount + when cannot rule out
+ * mistaking a genuinely in-flight payment for our decline, and the app's OWN
+ * retry flow is enough to trigger that: retry a declined £30 within two minutes,
+ * have the second attempt fail ambiguously (a network drop after the reader
+ * accepted, which `isDefiniteCardFailure` deliberately refuses to record), and
+ * the second row matches the FIRST attempt — silencing the double-charge warning
+ * on a payment that may well have gone through. Erring narrow is safe: a row
+ * outside the window simply keeps warning.
  */
 export const ATTEMPT_MATCH_SKEW_MS = 2 * 60_000;
 
@@ -105,6 +110,15 @@ export function isKnownFailedCardRow(
   known: readonly FailedCardAttempt[] = attempts,
 ): boolean {
   if (row.method !== 'card_present' || row.status !== 'pending') return false;
+
+  // The row names its PaymentIntent: match on identity and stop. An attempt we
+  // did not record is NOT ours, however closely its amount and timing line up —
+  // which is exactly the case the time window below cannot tell apart.
+  const rowPaymentIntentId = row.stripe_payment_intent_id?.trim();
+  if (rowPaymentIntentId) {
+    return known.some((a) => a.paymentIntentId === rowPaymentIntentId);
+  }
+
   const createdAtMs = Date.parse(row.created_at);
   // An unreadable timestamp cannot be placed in any window, so keep warning.
   if (Number.isNaN(createdAtMs)) return false;

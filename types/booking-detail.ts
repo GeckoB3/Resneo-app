@@ -59,6 +59,12 @@ export interface BookingPaymentRow {
   amount_pence: number;
   note: string | null;
   created_at: string;
+  /**
+   * Stripe PaymentIntent behind a card row — the row's true identity, and how a
+   * client recognises the attempt it just drove. Optional: cash/external rows
+   * have none, and older payloads omitted it entirely.
+   */
+  stripe_payment_intent_id?: string | null;
 }
 
 /**
