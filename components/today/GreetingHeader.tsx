@@ -3,6 +3,7 @@ import { useRouter, type Href } from 'expo-router';
 
 import { Button } from '@/components/ui/Button';
 import { Text } from '@/components/ui/Text';
+import { getDateTimeFormat } from '@/lib/dates/formatters';
 import { calendarDateInTimeZone } from '@/lib/dates/venue-dates';
 import { spacing } from '@/theme/index';
 
@@ -18,7 +19,7 @@ const MONTHS = [
 function hourInZone(timeZone?: string): number {
   if (!timeZone) return new Date().getHours();
   const parsed = Number(
-    new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', hour12: false }).format(new Date()),
+    getDateTimeFormat('en-GB', { timeZone, hour: '2-digit', hour12: false }).format(new Date()),
   );
   return Number.isFinite(parsed) ? parsed % 24 : new Date().getHours();
 }

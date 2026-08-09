@@ -12,6 +12,7 @@ import {
   pickSlotAtOrAfter,
   type GroupBusyInterval,
 } from '@/lib/booking/group-slot-availability';
+import { getDateTimeFormat } from '@/lib/dates/formatters';
 import { hapticSelect } from '@/lib/haptics';
 import {
   useAnyPractitionerAvailability,
@@ -126,7 +127,7 @@ export function groupSlotsByPeriod(slots: AppointmentSlot[]): SlotPeriod[] {
 
 /** Current local time (HH:mm) in the venue timezone. */
 export function venueLocalTime(timeZone: string): string {
-  return new Intl.DateTimeFormat('en-GB', {
+  return getDateTimeFormat('en-GB', {
     timeZone,
     hour: '2-digit',
     minute: '2-digit',
@@ -136,7 +137,7 @@ export function venueLocalTime(timeZone: string): string {
 
 /** Today's calendar date (YYYY-MM-DD) in the venue timezone. */
 function venueTodayDate(timeZone: string): string {
-  return new Intl.DateTimeFormat('en-CA', {
+  return getDateTimeFormat('en-CA', {
     timeZone,
     year: 'numeric',
     month: '2-digit',

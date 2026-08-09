@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { FadeIn, FadeOut, runOnJS } from 'react-native-reanimated';
+import { getDateTimeFormat } from '@/lib/dates/formatters';
 import { useReduceMotion, motionSafe } from '@/lib/motion';
 import { SymbolView } from 'expo-symbols';
 import { format, parseISO } from 'date-fns';
@@ -224,7 +225,7 @@ function groupScheduleByCalendarDate(
 
 /** Current wall-clock time (minutes since midnight) in the venue timezone. */
 function nowMinutesInTz(timeZone: string): number {
-  const parts = new Intl.DateTimeFormat('en-GB', {
+  const parts = getDateTimeFormat('en-GB', {
     timeZone,
     hour: '2-digit',
     minute: '2-digit',

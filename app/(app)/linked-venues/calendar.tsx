@@ -14,6 +14,7 @@ import { ListSkeleton } from '@/components/ui/Skeletons';
 import { Screen } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import { getDateTimeFormat } from '@/lib/dates/formatters';
 import { calendarDateInTimeZone, formatDayHeading } from '@/lib/dates/venue-dates';
 import { useLinkedCalendar } from '@/lib/queries/useLinkedCalendar';
 import { useVenueContext } from '@/providers/VenueProvider';
@@ -23,7 +24,7 @@ import type { LinkedBooking, LinkedVenueCalendar } from '@/types/linked-venues';
 
 /** Current minutes-since-midnight in the venue timezone (for the now-line). */
 function nowMinutesInTz(timeZone: string): number {
-  const parts = new Intl.DateTimeFormat('en-GB', {
+  const parts = getDateTimeFormat('en-GB', {
     timeZone,
     hour: '2-digit',
     minute: '2-digit',

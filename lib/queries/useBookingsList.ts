@@ -1,6 +1,7 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
+import { getDateTimeFormat } from '@/lib/dates/formatters';
 import { isBackendConfigured } from '@/lib/env';
 import { queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
@@ -16,7 +17,7 @@ export function calendarDateInTimeZone(
   date: Date = new Date(),
   timeZone: string = DEFAULT_TIMEZONE,
 ): string {
-  return new Intl.DateTimeFormat('en-CA', {
+  return getDateTimeFormat('en-CA', {
     timeZone,
     year: 'numeric',
     month: '2-digit',

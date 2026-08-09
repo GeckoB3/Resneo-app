@@ -3,6 +3,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'reac
 
 import { Button } from '@/components/ui/Button';
 import { Text } from '@/components/ui/Text';
+import { getDateTimeFormat } from '@/lib/dates/formatters';
 import { addDaysToDateStr, addMonthsToDateStr, formatMonthLabel } from '@/lib/dates/venue-dates';
 import { hapticSelect } from '@/lib/haptics';
 import { radius, spacing } from '@/theme/index';
@@ -67,7 +68,7 @@ type MonthDatePickerProps = {
 
 /** Today's calendar date (YYYY-MM-DD) in the venue's timezone. */
 function venueToday(timeZone: string): string {
-  return new Intl.DateTimeFormat('en-CA', {
+  return getDateTimeFormat('en-CA', {
     timeZone,
     year: 'numeric',
     month: '2-digit',

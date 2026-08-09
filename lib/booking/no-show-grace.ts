@@ -1,8 +1,9 @@
+import { getDateTimeFormat } from '@/lib/dates/formatters';
 import { calendarDateInTimeZone } from '@/lib/dates/venue-dates';
 
 /** Current wall-clock time (minutes since midnight) in the given timezone. */
 export function nowMinutesInTz(timeZone: string): number {
-  const parts = new Intl.DateTimeFormat('en-GB', {
+  const parts = getDateTimeFormat('en-GB', {
     timeZone,
     hour: '2-digit',
     minute: '2-digit',
