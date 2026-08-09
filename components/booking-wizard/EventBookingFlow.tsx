@@ -347,7 +347,9 @@ export function EventBookingFlow({ onCreated }: EventBookingFlowProps) {
             { label: 'Tickets', value: ticketSummary || String(totalTickets) },
           ]}
           totalPence={totalPence > 0 ? totalPence : null}
-          depositPence={hasDeposit ? occ.deposit_amount_pence : null}
+          // Same as the class flow: the server charges the per-person deposit per
+          // TICKET (`depPerPerson * partySize`), so the quoted figure must multiply.
+          depositPence={hasDeposit ? (occ.deposit_amount_pence ?? 0) * totalTickets : null}
           paymentRequirement={occ.payment_requirement}
           cardHoldFeePerUnitPence={occ.deposit_amount_pence}
           cardHoldUnits={totalTickets}

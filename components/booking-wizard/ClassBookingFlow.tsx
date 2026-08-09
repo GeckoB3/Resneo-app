@@ -303,7 +303,12 @@ export function ClassBookingFlow({ onCreated }: ClassBookingFlowProps) {
             { label: 'Spots', value: String(safeSpots) },
           ]}
           totalPence={totalPence}
-          depositPence={hasDeposit ? inst.deposit_amount_pence : null}
+          // The server multiplies the PER-PERSON deposit by the party size
+          // (bookings/route.ts: `classDepPerPerson * party_size`), so showing the
+          // configured figure quoted the client a fraction of what they are asked
+          // to pay — and the success screen, which echoes the server, then
+          // contradicted it.
+          depositPence={hasDeposit ? (inst.deposit_amount_pence ?? 0) * safeSpots : null}
           paymentRequirement={inst.payment_requirement}
           cardHoldFeePerUnitPence={inst.deposit_amount_pence}
           cardHoldUnits={safeSpots}
