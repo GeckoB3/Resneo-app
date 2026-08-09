@@ -17,6 +17,7 @@ import {
   View,
 } from 'react-native';
 
+import { ApiError, isRequiresConfirmationBody } from '@/lib/api/client';
 import { minutesToTime } from '@/components/calendar/grid-layout';
 import { ClosuresCalendar } from '@/components/manage/ClosuresCalendar';
 import { Button } from '@/components/ui/Button';
@@ -602,6 +603,8 @@ function BlockForm({
 
   const [draft, setDraft] = useState<DraftState>(emptyDraft);
   const [error, setError] = useState<string | null>(null);
+  /** Set when the server refuses a closure that covers existing bookings (409). */
+  const [affectedWarning, setAffectedWarning] = useState<string | null>(null);
   const today = todayYmd();
 
   // Sync draft whenever the sheet opens (editingBlock / prefill may change).
@@ -622,6 +625,17 @@ function BlockForm({
     [],
   );
 
+  async function save(acknowledge: boolean) {
+    if (editingBlock) {
+      await patchBlock.mutateAsync({ ...draftToPatchPayload(pd, editingBlock.id), acknowledge });
+    } else {
+      await createBlock.mutateAsync({ ...draftToCreatePayload(pd), acknowledge });
+    }
+    hapticSuccess();
+    setAffectedWarning(null);
+    onClose();
+  }
+
   async function handleSave() {
     const valErr = validateDraft(pd);
     if (valErr) {
@@ -630,16 +644,36 @@ function BlockForm({
       return;
     }
     setError(null);
+    setAffectedWarning(null);
     try {
-      if (editingBlock) {
-        await patchBlock.mutateAsync(draftToPatchPayload(pd, editingBlock.id));
-      } else {
-        await createBlock.mutateAsync(draftToCreatePayload(pd));
+      await save(false);
+    } catch (e) {
+      // A closure covering existing bookings comes back 409 with
+      // `requires_confirmation` and NO `error` key, so the generic handler could
+      // only say "Request failed (409)" and the closure could never be saved —
+      // closing for a bank holiday or an emergency was impossible from the app
+      // whenever a single booking fell inside it. Ask, then re-send acknowledged.
+      if (e instanceof ApiError && e.status === 409 && isRequiresConfirmationBody(e.body)) {
+        hapticWarning();
+        setAffectedWarning(
+          e.body.message ??
+            `This closure covers ${e.body.affected_count ?? 'existing'} booking(s). Save anyway?`,
+        );
+        return;
       }
-      hapticSuccess();
-      onClose();
+      hapticError();
+      setError(e instanceof Error ? e.message : 'Could not save block.');
+    }
+  }
+
+  /** Admin confirmed the affected-bookings warning — re-save with the flag. */
+  async function handleConfirmAffected() {
+    setError(null);
+    try {
+      await save(true);
     } catch (e) {
       hapticError();
+      setAffectedWarning(null);
       setError(e instanceof Error ? e.message : 'Could not save block.');
     }
   }
@@ -874,6 +908,36 @@ function BlockForm({
             <Text variant="bodySmall" tone="danger">
               {error}
             </Text>
+          </View>
+        ) : null}
+
+        {/* 409 from the server: this closure covers existing bookings. Confirming
+            re-sends with acknowledge_affected_bookings, which is the only way the
+            save can succeed — without it a bank holiday or an emergency closure
+            was unsaveable whenever one booking fell inside the range. */}
+        {affectedWarning ? (
+          <View
+            style={[
+              styles.errorBanner,
+              { backgroundColor: colors.warningSurface, borderColor: colors.warning },
+            ]}>
+            <Text variant="bodySmall">{affectedWarning}</Text>
+            <View style={styles.affectedActions}>
+              <Button
+                label="Close anyway"
+                variant="danger"
+                size="sm"
+                loading={isSaving}
+                onPress={() => void handleConfirmAffected()}
+              />
+              <Button
+                label="Cancel"
+                variant="ghost"
+                size="sm"
+                disabled={isSaving}
+                onPress={() => setAffectedWarning(null)}
+              />
+            </View>
           </View>
         ) : null}
 
@@ -1245,6 +1309,11 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     justifyContent: 'center',
     alignSelf: 'flex-start',
+  },
+  affectedActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
   },
   errorBanner: {
     borderWidth: 1,

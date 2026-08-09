@@ -109,18 +109,29 @@ export function useAvailabilityBlocks() {
   });
 }
 
+/**
+ * Closures that cover existing bookings come back 409 with
+ * `{ requires_confirmation, affected_count, message }` and NO `error` key, so
+ * `getApiErrorMessage` cannot read it and the admin saw "Request failed (409)".
+ * Re-send with this set once they have confirmed — same shape as the working-hours
+ * editor, which has had the flow all along.
+ */
 /** POST /api/venue/availability-blocks — create a new block (admin only). */
 export function useCreateBlock() {
   const accessToken = useAccessToken();
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (input: CreateBlockInput): Promise<AvailabilityBlock> => {
+    mutationFn: async (
+      input: CreateBlockInput & { acknowledge?: boolean },
+    ): Promise<AvailabilityBlock> => {
       if (!accessToken) throw new Error('Missing access token');
-      const res = await apiFetch<BlockResponse>('/api/venue/availability-blocks', {
+      const { acknowledge, ...body } = input;
+      const query = acknowledge ? '?acknowledge_affected_bookings=true' : '';
+      const res = await apiFetch<BlockResponse>(`/api/venue/availability-blocks${query}`, {
         accessToken,
         method: 'POST',
-        body: JSON.stringify(input),
+        body: JSON.stringify(body),
       });
       return res.block;
     },
@@ -134,12 +145,16 @@ export function usePatchBlock() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (input: PatchBlockInput): Promise<AvailabilityBlock> => {
+    mutationFn: async (
+      input: PatchBlockInput & { acknowledge?: boolean },
+    ): Promise<AvailabilityBlock> => {
       if (!accessToken) throw new Error('Missing access token');
-      const res = await apiFetch<BlockResponse>('/api/venue/availability-blocks', {
+      const { acknowledge, ...body } = input;
+      const query = acknowledge ? '?acknowledge_affected_bookings=true' : '';
+      const res = await apiFetch<BlockResponse>(`/api/venue/availability-blocks${query}`, {
         accessToken,
         method: 'PATCH',
-        body: JSON.stringify(input),
+        body: JSON.stringify(body),
       });
       return res.block;
     },
