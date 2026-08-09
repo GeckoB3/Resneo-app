@@ -68,10 +68,6 @@
             {
               "scheme": "https",
               "host": "resneo.com"
-            },
-            {
-              "scheme": "https",
-              "host": "reserve-ni.vercel.app"
             }
           ]
         }

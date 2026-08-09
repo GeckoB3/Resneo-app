@@ -1198,8 +1198,15 @@ export default function BookingsScreen() {
         onHeightChange={setBulkBarClearance}
       />
 
-      {/* Bulk message compose sheet */}
+      {/* Bulk message compose sheet.
+          Keyed on the selection so a new one starts with an EMPTY composer. The
+          component stays mounted when closed (only the Modal's children unmount,
+          one level down), so its draft survived otherwise — reopening for a
+          different set of guests pre-filled the last message with Send already
+          enabled, one tap from sending "Running 15 min late" to the wrong five
+          clients. */}
       <BulkMessageSheet
+        key={bulkMessageBookings.map((b) => b.id).join(',')}
         bookings={bulkMessageBookings}
         onClose={() => setBulkMessageBookings([])}
       />
