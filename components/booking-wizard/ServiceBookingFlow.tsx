@@ -15,12 +15,17 @@ import {
 } from '@/components/booking-wizard/MultiServiceReviewStep';
 import { PractitionerStep } from '@/components/booking-wizard/PractitionerStep';
 import { ServicePickerStep } from '@/components/booking-wizard/ServicePickerStep';
+import { StaffPickerStep } from '@/components/booking-wizard/StaffPickerStep';
 import { TimeSlotStep, venueLocalTime } from '@/components/booking-wizard/TimeSlotStep';
 import { VariantStep } from '@/components/booking-wizard/VariantStep';
 import { WizardStepIndicator } from '@/components/booking-wizard/WizardStepIndicator';
 import { Button } from '@/components/ui/Button';
 import { ANALYTICS_EVENTS, track } from '@/lib/analytics';
 import { ApiError } from '@/lib/api/client';
+import {
+  resolveAppointmentFlowOrdering,
+  type AppointmentFlowOrdering,
+} from '@/lib/booking/appointment-flow-order';
 import {
   type MultiServiceSegment,
   recomputeMultiServiceChain,
@@ -46,6 +51,7 @@ import {
 } from '@/types/appointment-catalog';
 
 type StepKey =
+  | 'staff_pick'
   | 'service'
   | 'practitioner'
   | 'variant'
@@ -57,6 +63,7 @@ type StepKey =
   | 'confirm';
 
 const STEP_LABELS: Record<StepKey, string> = {
+  staff_pick: 'Practitioner',
   service: 'Service',
   practitioner: 'Practitioner',
   variant: 'Option',
@@ -67,6 +74,11 @@ const STEP_LABELS: Record<StepKey, string> = {
   guest: 'Guest',
   confirm: 'Confirm',
 };
+
+/** Staff-first: who the booking is with, chosen before any service. */
+type StaffPick =
+  | { kind: 'any' }
+  | { kind: 'practitioner'; practitioner: AppointmentCatalogPractitioner };
 
 const EMPTY_GUEST: GuestDetails = {
   first_name: '',
@@ -88,7 +100,8 @@ type ServiceBookingFlowProps = {
  */
 export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
   const router = useRouter();
-  const { venueId, timeZone, anyAvailableEnabled, isLinked } = useBookingFormVenue();
+  const { venueId, timeZone, anyAvailableEnabled, staffFirstEnabled, isLinked } =
+    useBookingFormVenue();
   const { ownerVenueId } = useLinkedVenueContext();
   const {
     guestId: guestIdParam,
@@ -133,6 +146,20 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
   // and for computing next/previous, so a mid-flow change to which steps exist
   // can never strand the user on a step missing its prerequisites.
   const [currentStepKey, setCurrentStepKey] = useState<StepKey>('service');
+  /**
+   * Which question this session asks first. Pinned ONCE (see the render-time
+   * adjustment below), so the steps are never rearranged under someone
+   * part-way through. `null` until the venue is known — its `staff_first_booking_flow`
+   * setting is what decides, and nothing renders before `venueId` exists.
+   */
+  const [ordering, setOrdering] = useState<AppointmentFlowOrdering | null>(null);
+  const isStaffFirst = ordering === 'staff_first';
+  /**
+   * Staff-first only: the person chosen at the first step. `{ kind: 'any' }` is
+   * the pooled option, distinct from "not chosen yet" (null) — a pooled pick
+   * legitimately has no practitioner.
+   */
+  const [staffPick, setStaffPick] = useState<StaffPick | null>(null);
   const [selectedService, setSelectedService] = useState<AppointmentServiceOption | null>(null);
   // Whether THIS flow includes the practitioner-choice step. Captured at service
   // selection (true when 2+ staff offer it and it wasn't pre-scoped) and cleared
@@ -206,6 +233,17 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
     };
   }, [managedServicesQuery.data, selectedService?.serviceId, selectedCatalogService]);
 
+  /**
+   * Which practitioner the SERVICE LIST is scoped to. Staff-first scopes it to
+   * the person just chosen (a pooled pick stays unscoped, so the list is the
+   * union everyone offers); otherwise it is the calendar-tapped column, as before.
+   */
+  const serviceScopePractitionerId = isStaffFirst
+    ? staffPick?.kind === 'practitioner'
+      ? staffPick.practitioner.id
+      : null
+    : prefilledPractitionerId;
+
   const addonGroups = selectedService?.addonGroups ?? [];
   const hasAddons = addonGroups.length > 0;
   const serviceVariants = selectedService?.variants ?? [];
@@ -214,12 +252,15 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
   // The ordered steps for THIS flow. Derived from the current selection — used
   // only to render the indicator and to compute the next/previous KEY.
   const steps: StepKey[] = useMemo(() => {
-    const includePractitioner = !!selectedService && needsPractitionerStep;
+    // Staff-first asked who FIRST, so the person is already settled and the
+    // practitioner step (which sits after the service) has nothing left to ask.
+    const includePractitioner = !isStaffFirst && !!selectedService && needsPractitionerStep;
     // The multi-service review sits between Time and Guest. It only exists once a
     // slot has been chosen (segments seeded), so a single-service booking never
     // sees it unless the user chooses to add more.
     const includeMultiService = (multiServiceSegments?.length ?? 0) > 0;
     return [
+      ...(isStaffFirst ? (['staff_pick'] as StepKey[]) : []),
       'service',
       ...(includePractitioner ? (['practitioner'] as StepKey[]) : []),
       ...(hasVariants ? (['variant'] as StepKey[]) : []),
@@ -230,7 +271,33 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
       'guest',
       'confirm',
     ];
-  }, [selectedService, needsPractitionerStep, hasVariants, hasAddons, multiServiceSegments]);
+  }, [
+    isStaffFirst,
+    selectedService,
+    needsPractitionerStep,
+    hasVariants,
+    hasAddons,
+    multiServiceSegments,
+  ]);
+
+  // Pin the ordering the first time the venue is known — its feature flag is the
+  // deciding input, and `if (!venueId) return null` below means no step has been
+  // shown yet, so this can never rearrange a flow in progress. Render-time
+  // adjustment (the pattern used for seeding elsewhere), guarded to run once.
+  if (ordering === null && venueId) {
+    const resolved = resolveAppointmentFlowOrdering({
+      flagEnabled: staffFirstEnabled,
+      prefilledDate,
+      prefilledTime,
+      prefilledPractitionerId,
+      isWalkIn: isWalkInIntent,
+      // A pending rebook is read asynchronously and cannot be known here; the
+      // rebook effect flips this back to service-first when it resolves one.
+      rebookSeededAppointment: false,
+    });
+    setOrdering(resolved);
+    if (resolved === 'staff_first') setCurrentStepKey('staff_pick');
+  }
 
   const goToStep = useCallback((key: StepKey) => setCurrentStepKey(key), []);
 
@@ -439,6 +506,14 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
             if (appt.durationMinutes != null && appt.durationMinutes !== service.duration_minutes) {
               setDurationOverride(appt.durationMinutes);
             }
+            // A rebook knows BOTH answers, so it is service-first by definition
+            // (web parity: `staffRebookBootstrap?.appointment` excludes the
+            // reorder). Flipping here rather than at mount is forced by the
+            // payload being read asynchronously; it happens before any step the
+            // user could have acted on, and the jump below leaves no staff step
+            // stranded behind them.
+            setOrdering('service_first');
+            setStaffPick(null);
             // A specific practitioner is known, so skip the practitioner step.
             // Land on the variant step when the service has variants but the
             // rebook variant didn't resolve; otherwise jump to date & time.
@@ -529,8 +604,10 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
     setSelectedDate(calendarDateInTimeZone(new Date(), timeZone));
     setMonthAnchor(calendarDateInTimeZone(new Date(), timeZone));
     setSource(isWalkInIntent ? 'walk-in' : 'phone');
-    setCurrentStepKey('service');
-  }, [isWalkInIntent, timeZone]);
+    // Back to the FIRST step of whichever ordering this session is running.
+    setStaffPick(null);
+    setCurrentStepKey(isStaffFirst ? 'staff_pick' : 'service');
+  }, [isWalkInIntent, timeZone, isStaffFirst]);
 
   const handleBookingCreated = (bookingId: string) => {
     // Non-PII funnel completion: how the booking was created, not who for.
@@ -548,9 +625,13 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
   // earliest step that supplies the missing prerequisite.
   let activeKey: StepKey = currentStepKey;
   if (!steps.includes(activeKey)) {
-    activeKey = 'service';
+    activeKey = steps[0] ?? 'service';
   }
-  if (activeKey !== 'service' && !selectedService) {
+  if (isStaffFirst && !staffPick && activeKey !== 'staff_pick') {
+    // The service list is scoped to the chosen person, so it has nothing to show
+    // until there is one.
+    activeKey = 'staff_pick';
+  } else if (activeKey !== 'service' && activeKey !== 'staff_pick' && !selectedService) {
     activeKey = 'service';
   } else if (activeKey === 'confirm' && !selectedSlot) {
     activeKey = selectedDate ? 'time' : 'date';
@@ -645,11 +726,46 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
       <BookingWizardHeader canGoBack={canGoBack} onBack={handleBack} />
       <WizardStepIndicator currentStep={stepNumber} labels={stepLabels} />
 
+      {activeKey === 'staff_pick' ? (
+        <StaffPickerStep
+          catalog={catalogQuery.data}
+          isLoading={catalogQuery.isLoading}
+          isError={catalogQuery.isError}
+          errorMessage={
+            catalogQuery.error instanceof ApiError
+              ? catalogQuery.error.message
+              : catalogQuery.error?.message
+          }
+          onRetry={() => void catalogQuery.refetch()}
+          allowAnyAvailable={anyAvailableEnabled}
+          selectedPractitionerId={
+            staffPick?.kind === 'practitioner'
+              ? staffPick.practitioner.id
+              : staffPick?.kind === 'any'
+                ? ANY_AVAILABLE_PRACTITIONER_ID
+                : null
+          }
+          onSelect={(practitioner) => {
+            // A different person offers a different catalogue, so nothing chosen
+            // under the previous one may survive.
+            setStaffPick(practitioner ? { kind: 'practitioner', practitioner } : { kind: 'any' });
+            setSelectedService(null);
+            setNeedsPractitionerStep(false);
+            setSelectedVariant(null);
+            setSelectedAddonIds([]);
+            setSelectedSlot(null);
+            setDurationOverride(null);
+            setRequireDeposit(false);
+            goToStep('service');
+          }}
+        />
+      ) : null}
+
       {activeKey === 'service' ? (
         <>
           <ServicePickerStep
           catalog={catalogQuery.data}
-          defaultPractitionerId={prefilledPractitionerId}
+          defaultPractitionerId={serviceScopePractitionerId}
           errorMessage={
             catalogQuery.error instanceof ApiError
               ? catalogQuery.error.message
@@ -661,7 +777,24 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           selectedServiceId={selectedService?.serviceId ?? null}
           initialDurationOverride={durationOverride}
           onSelect={(option, customDuration) => {
-            setSelectedService(option);
+            const practitioners = catalogQuery.data
+              ? catalogQuery.data.practitioners.filter((p) =>
+                  p.services.some((s) => s.id === option.serviceId),
+                )
+              : [];
+            // Staff-first already has the person. A named practitioner arrives
+            // scoped by `dedupeCatalogServices`; a pooled pick has to be widened
+            // to the sentinel here, exactly as the practitioner step does it.
+            const resolved: AppointmentServiceOption =
+              isStaffFirst && staffPick?.kind === 'any'
+                ? {
+                    ...option,
+                    practitionerId: ANY_AVAILABLE_PRACTITIONER_ID,
+                    practitionerName: 'Any available',
+                    candidatePractitionerIds: practitioners.map((p) => p.id),
+                  }
+                : option;
+            setSelectedService(resolved);
             setSelectedSlot(null);
             setSelectedVariant(null);
             setSelectedAddonIds([]);
@@ -671,18 +804,15 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
             setRequireDeposit(false);
             // Decide whether this flow runs the practitioner-choice step:
             // only when 2+ staff offer the service and it wasn't pre-scoped.
-            const practitioners = catalogQuery.data
-              ? catalogQuery.data.practitioners.filter((p) =>
-                  p.services.some((s) => s.id === option.serviceId),
-                )
-              : [];
-            const needsPractitioner = !prefilledPractitionerId && practitioners.length >= 2;
+            // Staff-first never does — the person came first.
+            const needsPractitioner =
+              !isStaffFirst && !prefilledPractitionerId && practitioners.length >= 2;
             setNeedsPractitionerStep(needsPractitioner);
             if (needsPractitioner) {
               goToStep('practitioner');
-            } else if ((option.variants ?? []).length > 0) {
+            } else if ((resolved.variants ?? []).length > 0) {
               goToStep('variant');
-            } else if ((option.addonGroups ?? []).length > 0) {
+            } else if ((resolved.addonGroups ?? []).length > 0) {
               goToStep('addons');
             } else {
               goToStep('date');

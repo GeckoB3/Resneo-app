@@ -27,7 +27,8 @@ export type AppointmentsFeatureFlagKey =
   | 'any_available_practitioner'
   | 'compliance_records_enabled'
   | 'class_commerce_enabled'
-  | 'card_hold_deposits';
+  | 'card_hold_deposits'
+  | 'staff_first_booking_flow';
 
 /**
  * Appointment-waitlist mode stored on `feature_flags.waitlist_config.mode`.

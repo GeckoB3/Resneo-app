@@ -28,6 +28,12 @@ export interface BookingFormVenue {
   pricingTier: string | null;
   /** Whether the "any available practitioner" option is offered. */
   anyAvailableEnabled: boolean;
+  /**
+   * Whether this venue asks for the person BEFORE the service
+   * (`staff_first_booking_flow`). The web toggle reorders the staff-facing form
+   * as well as the public and collective pages, so the app follows it too.
+   */
+  staffFirstEnabled: boolean;
   /** True when scoping to a linked owner venue rather than the own venue. */
   isLinked: boolean;
   ownerVenueId: string | null;
@@ -60,6 +66,7 @@ export function useBookingFormVenue(): BookingFormVenue {
       bookingModel: venue?.booking_model ?? null,
       pricingTier: venue?.pricing_tier ?? null,
       anyAvailableEnabled: Boolean(featureFlags?.resolved?.any_available_practitioner),
+      staffFirstEnabled: Boolean(featureFlags?.resolved?.staff_first_booking_flow),
       isLinked: false,
       ownerVenueId: null,
       isLoading: venueLoading,
@@ -94,6 +101,10 @@ export function useBookingFormVenue(): BookingFormVenue {
     // Pooled "any available practitioner" is not offered when booking into a
     // linked venue (mirrors the web, which scopes it to the own venue).
     anyAvailableEnabled: false,
+    // Same reasoning: the linked venue's profile does not carry its feature
+    // flags, and guessing at another venue's booking setup is worse than the
+    // order our own staff already know.
+    staffFirstEnabled: false,
     isLinked: true,
     ownerVenueId,
     isLoading: profile.isLoading,
