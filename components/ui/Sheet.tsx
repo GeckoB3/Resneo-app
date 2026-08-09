@@ -20,6 +20,7 @@ import Animated, {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useReduceMotion } from '@/lib/motion';
+import { AppLockCover } from '@/providers/AppLockProvider';
 import { motion, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
@@ -201,6 +202,12 @@ export function Sheet({
             </Animated.View>
           </SafeAreaView>
         </Animated.View>
+        {/* The app-lock cover must be rendered INSIDE this Modal: the provider's
+            own cover lives in the root view, and a Modal is a separate native
+            window that no zIndex can reach over. Without this, backgrounding the
+            app with a sheet open leaves client PII in the app-switcher snapshot
+            and visible behind a cancelled biometric prompt. */}
+        <AppLockCover />
       </View>
     </Modal>
   );

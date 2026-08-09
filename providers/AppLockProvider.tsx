@@ -44,6 +44,8 @@ type AppLockContextValue = {
   supported: boolean;
   /** True while the lock overlay covers the app (raised on background, cleared after unlock on resume). */
   isLocked: boolean;
+  /** True while a biometric prompt is on screen (drives the cover's busy state). */
+  authInFlight: boolean;
   /** Manually trigger the unlock prompt (the overlay's "Unlock" button). */
   unlock: () => Promise<void>;
 };
@@ -317,8 +319,8 @@ export function AppLockProvider({ children }: AppLockProviderProps) {
   );
 
   const value = useMemo<AppLockContextValue>(
-    () => ({ appLockEnabled, setAppLockEnabled, supported, isLocked, unlock }),
-    [appLockEnabled, setAppLockEnabled, supported, isLocked, unlock],
+    () => ({ appLockEnabled, setAppLockEnabled, supported, isLocked, authInFlight, unlock }),
+    [appLockEnabled, setAppLockEnabled, supported, isLocked, authInFlight, unlock],
   );
 
   return (
@@ -389,6 +391,27 @@ function LockOverlay({ onUnlock, busy }: { onUnlock: () => void; busy: boolean }
 }
 
 /** Read app-lock state anywhere under AppProviders. */
+/**
+ * The lock cover, renderable from INSIDE a native modal.
+ *
+ * The provider's own cover is a sibling of the app tree, and every Sheet in the
+ * app is a React Native `Modal` — a SEPARATE native window (a UIViewController
+ * on iOS, a Dialog on Android). No `zIndex` or `elevation` in the root view can
+ * paint over that, so backgrounding the app with a booking sheet open left the
+ * client's name, phone and notes in the app-switcher snapshot and fully visible
+ * (and interactive) behind a cancelled Face ID prompt — on exactly the screens
+ * holding the most PII.
+ *
+ * Rendering this inside the modal puts a cover in that window too. It reads the
+ * context directly and returns null when there is no provider, so a Sheet in a
+ * test tree renders unchanged.
+ */
+export function AppLockCover(): React.JSX.Element | null {
+  const ctx = useContext(AppLockContext);
+  if (!ctx?.isLocked) return null;
+  return <LockOverlay onUnlock={() => void ctx.unlock()} busy={ctx.authInFlight} />;
+}
+
 export function useAppLock(): AppLockContextValue {
   const ctx = useContext(AppLockContext);
   if (!ctx) {
