@@ -241,9 +241,28 @@ export function buildGroupPayload(args: {
   };
 }
 
-/** Total duration (incl. add-ons + buffers) of a chained visit, in minutes. */
+/**
+ * How long the CLIENT is here for a chained visit, in minutes: every service's
+ * duration (add-ons included) plus the buffers BETWEEN them.
+ *
+ * The final segment's buffer is deliberately excluded — it is clean-down time
+ * after the client has left, and counting it made the confirm screen contradict
+ * itself. A single service showed its bare duration, while adding a second made
+ * the total jump by that service's length PLUS two buffers: 30 min for a Cut,
+ * then 120 for the same Cut plus a 60-minute Colour, for a visit the client
+ * experiences as 105. Ending at the last service's end makes the two agree,
+ * because a one-segment chain now reduces to exactly its duration.
+ *
+ * This is the client-facing figure. It is NOT how long the practitioner's column
+ * is occupied — that trailing buffer is real, and anything scheduling against
+ * the chair rather than the client should add it back.
+ */
 export function chainTotalMinutes(segments: MultiServiceSegment[]): number {
-  return segments.reduce((sum, s) => sum + s.durationMinutes + s.bufferMinutes, 0);
+  return segments.reduce(
+    (sum, s, index) =>
+      sum + s.durationMinutes + (index < segments.length - 1 ? s.bufferMinutes : 0),
+    0,
+  );
 }
 
 /** Total list price (service+variant+add-ons) of a chained visit, in pence. */

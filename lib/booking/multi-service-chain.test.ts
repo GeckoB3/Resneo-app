@@ -102,13 +102,33 @@ describe('recomputeMultiServiceChain', () => {
 });
 
 describe('chain totals', () => {
-  it('sums minutes including buffers', () => {
+  it('sums the services plus the buffers BETWEEN them', () => {
+    // 30 + 5 + 45 = 80. The final 10-minute buffer is clean-down after the
+    // client has gone, so it is not part of how long they are here. Counting it
+    // (the old 90) made this disagree with the single-service total, which has
+    // never included a buffer.
     expect(
       chainTotalMinutes([
         seg({ durationMinutes: 30, bufferMinutes: 5 }),
         seg({ durationMinutes: 45, bufferMinutes: 10 }),
       ]),
-    ).toBe(90);
+    ).toBe(80);
+  });
+
+  it('reduces a one-service chain to its bare duration', () => {
+    // The consistency this change exists for: adding a second service must move
+    // the total by that service plus the buffer before it, never by more.
+    expect(chainTotalMinutes([seg({ durationMinutes: 30, bufferMinutes: 15 })])).toBe(30);
+    expect(
+      chainTotalMinutes([
+        seg({ durationMinutes: 30, bufferMinutes: 15 }),
+        seg({ durationMinutes: 60, bufferMinutes: 15 }),
+      ]),
+    ).toBe(105);
+  });
+
+  it('is zero for no segments', () => {
+    expect(chainTotalMinutes([])).toBe(0);
   });
 
   it('sums price including add-on totals', () => {
