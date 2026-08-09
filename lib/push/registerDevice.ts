@@ -103,15 +103,54 @@ export async function registerCurrentDeviceForPush(
   };
 
   try {
-    await apiFetch('/api/v1/me/devices', {
+    const response = await apiFetch<{ device?: { id?: string } }>('/api/v1/me/devices', {
       accessToken: input.accessToken,
       method: 'POST',
       body: JSON.stringify(payload),
     });
+    // Remember the row so signing out can remove it — see `unregisterDevice`.
+    registeredDeviceId = response?.device?.id ?? null;
   } catch (error) {
     console.warn('[push] /api/v1/me/devices POST failed:', error);
     return { registered: false, pushToken, reason: 'error' };
   }
 
   return { registered: true, pushToken };
+}
+
+/**
+ * The `user_devices` row this session registered, held for the process so
+ * sign-out can delete it.
+ */
+let registeredDeviceId: string | null = null;
+
+/**
+ * Detach this device from the signed-in user's push registrations.
+ *
+ * MUST be called while the session is still valid — the DELETE is scoped
+ * `user_id = auth.uid()`, so it is a no-op once the token is revoked.
+ *
+ * Without this the row outlives the sign-out, and the server fans out purely by
+ * `user_id` (`staff-push-notification.ts`), pruning tokens only when Expo reports
+ * them INVALID — which never happens here, because the token is still perfectly
+ * valid; only its owner changed. On a shared salon tablet that means the next
+ * person to sign in keeps receiving the previous venue's booking alerts, and
+ * those carry the client's name and service in the body. The unique index is on
+ * `(user_id, push_token)`, so re-registering under the new user ADDS a row rather
+ * than reassigning the old one — both fire, indefinitely.
+ *
+ * Best-effort: a failure here must never block sign-out, so it is swallowed.
+ */
+export async function unregisterDevice(accessToken: string | null): Promise<void> {
+  const deviceId = registeredDeviceId;
+  registeredDeviceId = null;
+  if (!deviceId || !accessToken) return;
+  try {
+    await apiFetch(`/api/v1/me/devices/${encodeURIComponent(deviceId)}`, {
+      accessToken,
+      method: 'DELETE',
+    });
+  } catch (error) {
+    console.warn('[push] device unregister failed:', error);
+  }
 }

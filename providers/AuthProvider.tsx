@@ -11,6 +11,7 @@ import {
 } from 'react';
 import { AppState, Platform, type AppStateStatus } from 'react-native';
 
+import { unregisterDevice } from '@/lib/push/registerDevice';
 import { ANALYTICS_EVENTS, identify, resetAnalytics, track } from '@/lib/analytics';
 import { setAccessTokenRefresher } from '@/lib/api/client';
 import { getAuthCallbackRedirectUrl, getPasswordResetRedirectUrl } from '@/lib/auth/redirect';
@@ -266,6 +267,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
     isExplicitSignOutRef.current = true;
     track(ANALYTICS_EVENTS.signedOut);
     const supabase = getSupabase();
+    // Detach this device's push registration FIRST — the DELETE is scoped to
+    // auth.uid(), so it is a no-op once the token below is revoked. Leaving the
+    // row behind sends the next person to sign in on this device the previous
+    // venue's booking alerts, client names and all.
+    const { data: sessionData } = await supabase.auth.getSession();
+    await unregisterDevice(sessionData.session?.access_token ?? null);
     const { error } = await supabase.auth.signOut();
     if (error) {
       console.warn('[AuthProvider] signOut failed:', error.message);

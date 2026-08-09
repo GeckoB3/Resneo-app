@@ -59,17 +59,17 @@ async function configureAndroidChannels(notifications: NonNullable<typeof Notifi
       importance: AndroidImportance.HIGH,
       vibrationPattern: [0, 250, 250, 250],
       lightColor: '#003B6F',
-      lockscreenVisibility: AndroidNotificationVisibility.PUBLIC,
+      lockscreenVisibility: AndroidNotificationVisibility.PRIVATE,
     });
     await notifications.setNotificationChannelAsync(ANDROID_CHANNELS.bookingsChanged, {
       name: 'Booking changes',
       importance: AndroidImportance.DEFAULT,
-      lockscreenVisibility: AndroidNotificationVisibility.PUBLIC,
+      lockscreenVisibility: AndroidNotificationVisibility.PRIVATE,
     });
     await notifications.setNotificationChannelAsync(ANDROID_CHANNELS.reminders, {
       name: 'Reminders',
       importance: AndroidImportance.DEFAULT,
-      lockscreenVisibility: AndroidNotificationVisibility.PUBLIC,
+      lockscreenVisibility: AndroidNotificationVisibility.PRIVATE,
     });
   } catch (error) {
     console.warn('[push] Android channel setup failed:', error);
