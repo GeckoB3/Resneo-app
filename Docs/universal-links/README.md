@@ -1,5 +1,25 @@
 # Universal / App Links — hosting deliverables
 
+> **STATUS (2026-08-09): the app side has been REMOVED — this doc describes a
+> future state, not the current build.**
+>
+> `ios.associatedDomains` and the Android `https` intent filter (with
+> `autoVerify: true`) were deleted from `app.json`, because neither association
+> file was ever served: `https://www.resneo.com/.well-known/assetlinks.json` and
+> `.../apple-app-site-association` both return **404**, and the apex only 307s to
+> www — which Android does not follow when verifying. A FAILED verification is
+> worse than none on Android 12+: the app is not offered as a handler at all, so
+> the links opened Chrome regardless.
+>
+> Nothing depends on this today. Invite receiving is deliberately manual-paste,
+> and the `resneo://` custom scheme (which auth and notification taps use) is
+> untouched and still works.
+>
+> The two files below are still the correct deliverables. To turn the feature on:
+> serve them as real 200s on **both** www and apex (no redirect), with the
+> production signing cert's SHA-256 fingerprint, then restore the app.json config.
+> Note the host below is the old **staging** domain and would need updating too.
+
 These two files make `https://reserve-ni.vercel.app/booking/<id>` open **in the
 Resneo app** (iOS Universal Links / Android App Links) instead of the browser,
 matching the in-app notification-tap routing to `/booking/{id}`.

@@ -21,10 +21,6 @@
         "dark": "./assets/images/icon-dark.png",
         "tinted": "./assets/images/icon-tinted.png"
       },
-      "associatedDomains": [
-        "applinks:www.resneo.com",
-        "applinks:resneo.com"
-      ],
       "infoPlist": {
         "NSUserNotificationsUsageDescription": "Resneo sends alerts when new bookings arrive or existing bookings change.",
         "NSPhotoLibraryUsageDescription": "Resneo needs access to your photos so you can add a logo, cover image and team or service photos to your public booking page.",
@@ -51,24 +47,6 @@
           "data": [
             {
               "scheme": "resneo"
-            }
-          ]
-        },
-        {
-          "action": "VIEW",
-          "autoVerify": true,
-          "category": [
-            "BROWSABLE",
-            "DEFAULT"
-          ],
-          "data": [
-            {
-              "scheme": "https",
-              "host": "www.resneo.com"
-            },
-            {
-              "scheme": "https",
-              "host": "resneo.com"
             }
           ]
         }
