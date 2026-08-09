@@ -372,6 +372,14 @@ export default function ClientsScreen() {
   // Realtime: refresh the directory when the venue's guests OR bookings change
   // server-side. Web watches both tables so a new/changed booking refreshes the
   // contact's next-visit + stats (last_visit, visit_count, upcoming count).
+  // Mirrors `page` for the live-sync callback, which must stay referentially
+  // stable (useVenueLiveSync keys its subscription on identity) and therefore
+  // cannot close over the state directly.
+  const pageRef = useRef(page);
+  useEffect(() => {
+    pageRef.current = page;
+  }, [page]);
+
   const venueId = venue?.id;
   const venueFilter = venueId ? `venue_id=eq.${venueId}` : undefined;
   const liveState = useVenueLiveSync({
@@ -381,9 +389,18 @@ export default function ClientsScreen() {
       { table: 'bookings', filter: venueFilter },
     ],
     onRefresh: useCallback(() => {
-      // Reset to the first page so the realtime refresh reflects the new total.
-      setPage(0);
-      void guestsQuery.refetch();
+      // Refetch in place. Resetting to page 0 unconditionally threw anyone who
+      // had scrolled back to the top: the accumulator REPLACES its list when
+      // page is 0, so a directory scrolled to row ~180 collapsed to the first
+      // 25 and the scroll position was clamped. This subscription watches
+      // `bookings` as well as `guests`, filtered only by venue, so on a busy day
+      // an online booking or a colleague's status tap fired it every few seconds
+      // — mid-search.
+      //
+      // Page 0 still refetches (it is the active query), and deeper pages are
+      // left as they are: a new contact appears on the next manual pull, which
+      // is a far smaller surprise than losing your place.
+      if (pageRef.current === 0) void guestsQuery.refetch();
     }, [guestsQuery]),
     enabled: Boolean(venueId),
   });
