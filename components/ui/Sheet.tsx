@@ -175,6 +175,12 @@ export function Sheet({
       visible={visible}
       transparent
       animationType={reduceMotion ? 'fade' : 'slide'}
+      // A Modal runs in its OWN native window, which is not laid out edge-to-edge
+      // unless told so. Without both flags the Android system navigation bar
+      // flips from transparent to opaque the moment any sheet opens, and the
+      // scrim stops short of it. RN warns if only one is set.
+      statusBarTranslucent
+      navigationBarTranslucent
       onRequestClose={onClose}>
       <View style={[styles.root, { backgroundColor: colors.overlay }]}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Dismiss" />

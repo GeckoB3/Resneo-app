@@ -758,6 +758,15 @@ export default function BookingsScreen() {
   useEffect(() => {
     const clear: Record<string, undefined> = {};
 
+    // Forget a param once it has gone. The ref exists so the effect fires ONCE
+    // per arrival, but `router.setParams` strips the param immediately after —
+    // so without this the id stayed remembered for the life of the tab (which is
+    // the whole session), and following the SAME link again did nothing at all.
+    // A re-sent confirmation link, a pinned shortcut, or a colleague resharing a
+    // booking would silently fail to open it.
+    if (!openBookingParam) consumedParamsRef.current.openBooking = undefined;
+    if (!guestParam) consumedParamsRef.current.guest = undefined;
+
     if (openBookingParam && consumedParamsRef.current.openBooking !== openBookingParam) {
       consumedParamsRef.current.openBooking = openBookingParam;
       if (UUID_RE.test(openBookingParam)) {

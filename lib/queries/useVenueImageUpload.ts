@@ -32,14 +32,37 @@ async function uploadImageToRoute(
   } as unknown as Blob);
 
   const url = `${getApiUrl()}${route}`;
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      // Do NOT set Content-Type here — browser/RN will set it with boundary
-    },
-    body: formData,
-  });
+  // Uploads go out through raw fetch (apiFetch cannot carry FormData), so they
+  // need their own time box — otherwise a stalled connection on venue Wi-Fi
+  // leaves "Uploading…" on screen until the OS socket timeout, a minute or more
+  // with no way to tell whether it is working. Generous compared with apiFetch's
+  // 15s: a cover photo over 4G legitimately takes longer than a JSON call.
+  const controller = new AbortController();
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, UPLOAD_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        // Do NOT set Content-Type here — browser/RN will set it with boundary
+      },
+      body: formData,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (timedOut) {
+      throw new ApiError('The upload timed out. Check your connection and try again.', 408);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 
   const text = await response.text();
   let data: unknown;
@@ -61,6 +84,9 @@ async function uploadImageToRoute(
   if (!imageUrl) throw new ApiError('No URL returned from upload', 200);
   return imageUrl;
 }
+
+/** Time box for an image upload. Longer than apiFetch's 15s — a photo is not a JSON call. */
+const UPLOAD_TIMEOUT_MS = 60_000;
 
 /**
  * Pick an image from the device's photo library.
