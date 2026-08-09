@@ -229,7 +229,10 @@ export function BookingFlowConfirm({
   const [internalSource, setInternalSource] = useState<'phone' | 'walk-in'>(initialSource);
   const source = controlledSource ?? internalSource;
   const setSource = onSourceChange ?? setInternalSource;
-  const [requireDeposit, setRequireDeposit] = useState(false);
+  // Sent for payload-shape compatibility only: the server ignores require_deposit
+  // for classes, events and resources (see the note where the toggle used to be),
+  // so there is nothing here for staff to change.
+  const requireDeposit = false;
   // Card hold toggle (spec §7.6/D6): default ON (the entity requires it);
   // staff may switch it off case by case. Walk-ins included.
   const [requireCardHold, setRequireCardHold] = useState(true);
@@ -461,35 +464,14 @@ export function BookingFlowConfirm({
         </Pressable>
       ) : null}
 
-      {!staffCardHold && hasDeposit && source !== 'walk-in' ? (
-        <Pressable
-          accessibilityRole="checkbox"
-          accessibilityState={{ checked: requireDeposit }}
-          accessibilityLabel={`Require deposit ${depositLabel ?? ''}`}
-          onPress={() => setRequireDeposit((prev) => !prev)}
-          style={({ pressed }) => [
-            styles.depositToggle,
-            {
-              backgroundColor: requireDeposit ? colors.surfaceRaised : colors.surface,
-              borderColor: requireDeposit ? colors.brand : colors.border,
-              opacity: pressed ? 0.9 : 1,
-            },
-          ]}>
-          <View
-            style={[
-              styles.check,
-              {
-                borderColor: requireDeposit ? colors.brand : colors.borderStrong,
-                backgroundColor: requireDeposit ? colors.brand : 'transparent',
-              },
-            ]}>
-            {requireDeposit ? <Text style={[styles.checkMark, { color: colors.onBrand }]}>✓</Text> : null}
-          </View>
-          <Text variant="bodyMedium" style={styles.depositToggleLabel}>
-            Require deposit{depositLabel ? ` (${depositLabel})` : ''}
-          </Text>
-        </Pressable>
-      ) : null}
+      {/* No "Require deposit" toggle here. This component is used ONLY by the
+          class, event and resource flows, and the server honours `require_deposit`
+          for appointments and tables alone — for these three the deposit is derived
+          unconditionally from the offering's own payment_requirement. The control
+          therefore promised a choice it could not keep: it defaulted to OFF, so
+          staff who deliberately left it unticked ("no deposit for this one") still
+          had the server create the deposit and send the guest a payment link. The
+          web's equivalents have no such toggle, for the same reason. */}
 
       {complianceError ? (
         <View style={[styles.complianceBlock, { backgroundColor: colors.surface, borderColor: colors.border }]}>
