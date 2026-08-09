@@ -119,22 +119,44 @@ export function useUpdateLinkedBooking() {
 }
 
 /**
+ * Shortest query the server will answer (its `MIN_QUERY_LENGTH`). Below this it
+ * returns `[]` rather than the head of the client list — browsing a partner
+ * venue's whole client book is an enumeration primitive, not a search — so
+ * asking is pointless. Any caller MUST also tell the user why nothing is
+ * showing ("Type at least 2 characters to search."), as the web form does.
+ */
+export const LINKED_GUEST_MIN_QUERY_LENGTH = 2;
+
+/**
  * GET /api/venue/linked-calendar/guests — search a linked venue's own clients
- * for a cross-venue booking. Debounce ≥250ms in the caller (we gate on
- * `enabled` so an empty/too-short query doesn't fire). Needs
+ * for a cross-venue booking. Debounce ≥250ms in the caller; we gate on
+ * `enabled` so an empty/too-short query doesn't fire. Needs
  * `create_edit_cancel`+`pii` server-side.
+ *
+ * NOTE: dormant — the app books into linked venues through its own wizard
+ * (`/booking/new` scoped to `ownerVenueId` → `/api/venue/bookings`), not the
+ * web's cross-venue modal, so nothing consumes this yet. Kept in step with the
+ * route so a future consumer starts from a correct contract.
  */
 export function useLinkedGuests(venueId: string | null, q: string) {
   const accessToken = useAccessToken();
   const trimmed = q.trim();
-  const enabled = isBackendConfigured() && accessToken !== null && venueId !== null;
+  const enabled =
+    isBackendConfigured() &&
+    accessToken !== null &&
+    venueId !== null &&
+    trimmed.length >= LINKED_GUEST_MIN_QUERY_LENGTH;
 
   return useQuery({
     queryKey: queryKeys.linkedCalendar.guests(accessToken, venueId, trimmed),
     enabled,
     // The search box always shows the most recent results; keep the previous
     // page visible while the next query loads to avoid a flicker to empty.
-    placeholderData: (prev) => prev,
+    // Only while the gate is open, though: carrying results into a below-minimum
+    // query would leave the last matches on screen after the user backspaces —
+    // clients that no longer match what is typed, from a query we deliberately
+    // refuse to run.
+    placeholderData: enabled ? (prev) => prev : undefined,
     queryFn: async (): Promise<LinkedGuestsResponse> => {
       if (!accessToken || !venueId) throw new Error('Missing access token');
       const qs = new URLSearchParams({ venueId, q: trimmed }).toString();
