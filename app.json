@@ -27,6 +27,7 @@
       ],
       "infoPlist": {
         "NSUserNotificationsUsageDescription": "Resneo sends alerts when new bookings arrive or existing bookings change.",
+        "NSPhotoLibraryUsageDescription": "Resneo needs access to your photos so you can add a logo, cover image and team or service photos to your public booking page.",
         "NSFaceIDUsageDescription": "Resneo can use Face ID to lock the app so client records stay private if your phone is left unlocked.",
         "ITSAppUsesNonExemptEncryption": false
       }

@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import * as DocumentPicker from 'expo-document-picker';
+import * as ImagePicker from 'expo-image-picker';
 
 import { apiFetch, ApiError } from '@/lib/api/client';
 import { getApiUrl } from '@/lib/env';
@@ -62,20 +62,46 @@ async function uploadImageToRoute(
   return imageUrl;
 }
 
-/** Pick an image from the device library using expo-document-picker. */
+/**
+ * Pick an image from the device's photo library.
+ *
+ * Uses expo-image-picker, NOT a document picker. `getDocumentAsync` presents
+ * UIDocumentPickerViewController on iOS, which browses iCloud Drive / On My
+ * iPhone / third-party providers — the Photos library is not a file provider
+ * there, so every image upload in the app (logo, cover, gallery, team and
+ * service photos: nine entry points) opened a Files browser that simply did not
+ * contain the user's photos. Compounding it, iPhone photos are HEIC, which was
+ * not in the accepted type list, so even one exported to Files was greyed out.
+ *
+ * The library picker also transcodes HEIC to JPEG on the way out, so the upload
+ * routes keep receiving a format they accept. Android is unaffected either way,
+ * and does NOT need READ_MEDIA_IMAGES — expo-image-picker uses the system photo
+ * picker on Android 13+, which is why that permission stays blocked in app.json.
+ *
+ * Returns the same `{ uri, mimeType }` contract as before, so callers are
+ * unchanged; `null` means the user cancelled or denied access.
+ */
 export async function pickVenueImage(): Promise<{ uri: string; mimeType: string } | null> {
-  const result = await DocumentPicker.getDocumentAsync({
-    type: ['image/jpeg', 'image/png', 'image/webp'],
-    copyToCacheDirectory: true,
+  const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (!permission.granted) return null;
+
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ['images'],
+    // The upload routes take a single file; multiple selection has no consumer.
+    allowsMultipleSelection: false,
+    // Full-quality re-encode. These are venue branding images shown on a public
+    // booking page, so compressing them here would be visible.
+    quality: 1,
   });
 
   if (result.canceled || !result.assets?.length) return null;
 
   const asset = result.assets[0];
-  if (!asset) return null;
+  if (!asset?.uri) return null;
 
-  const mimeType = asset.mimeType ?? 'image/jpeg';
-  return { uri: asset.uri, mimeType };
+  // iOS reports HEIC assets as image/heic only when handed over untranscoded;
+  // the default path yields JPEG. Fall back rather than send an empty type.
+  return { uri: asset.uri, mimeType: asset.mimeType ?? 'image/jpeg' };
 }
 
 /** Upload venue logo to POST /api/venue/logo; PATCHes logo_url back to /api/venue. */

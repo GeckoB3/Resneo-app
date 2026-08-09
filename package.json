@@ -22,6 +22,7 @@
     "expo-font": "~56.0.5",
     "expo-haptics": "~56.0.3",
     "expo-image": "~56.0.11",
+    "expo-image-picker": "~56.0.23",
     "expo-linking": "~56.0.14",
     "expo-local-authentication": "~56.0.4",
     "expo-localization": "~56.0.6",
