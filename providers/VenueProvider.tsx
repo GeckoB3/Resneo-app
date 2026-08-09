@@ -5,6 +5,7 @@ import {
   type ReactNode,
 } from 'react';
 
+import { mergeVenueTerminology } from '@/lib/booking/terminology';
 import { useVenue } from '@/lib/queries/useVenue';
 import type {
   BookingModel,
@@ -13,12 +14,14 @@ import type {
   VenueTerminology,
 } from '@/types/venue';
 
-/** Fallback labels when the venue has not customised terminology yet. */
-const DEFAULT_TERMINOLOGY: VenueTerminology = {
-  client: 'Guest',
-  booking: 'Reservation',
-  staff: 'Staff',
-};
+/**
+ * Booking model assumed before the venue loads, and if a payload ever arrives
+ * without one. Appointments rather than table booking: ResNeo sells appointment
+ * scheduling, and the web moved its own stored default the same way
+ * (migration 20270103124000) after venues were found greeting appointment
+ * clients with "Reservation confirmed".
+ */
+const FALLBACK_BOOKING_MODEL: BookingModel = 'unified_scheduling';
 
 type VenueContextValue = {
   /** Full bootstrap payload when loaded; null while loading or on error. */
@@ -49,10 +52,13 @@ export function VenueProvider({ children }: VenueProviderProps) {
   const { data, isLoading, isError, error, refetch } = useVenue();
 
   const value = useMemo<VenueContextValue>(() => {
-    const terminology: VenueTerminology = {
-      ...DEFAULT_TERMINOLOGY,
-      ...(data?.terminology ?? {}),
-    };
+    // Resolved against the venue's own booking model, so an appointments venue
+    // never inherits restaurant wording — and a venue that changed model since
+    // signup does not keep serving the words of the one it left.
+    const terminology: VenueTerminology = mergeVenueTerminology(
+      data?.booking_model ?? FALLBACK_BOOKING_MODEL,
+      data?.terminology,
+    );
 
     return {
       venue: data ?? null,

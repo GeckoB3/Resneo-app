@@ -2,6 +2,7 @@ import {
   bookingsScreenTitle,
   clientsScreenTitle,
   mergeTerminology,
+  mergeVenueTerminology,
   newBookingActionLabel,
   partySizeLabel,
   todaySectionTitle,
@@ -32,6 +33,112 @@ describe('mergeTerminology', () => {
       booking: 'Appointment',
       staff: 'Staff',
     });
+  });
+});
+
+/**
+ * Model-aware resolution (R12-4) — port of the web `mergeVenueTerminology`.
+ *
+ * The app used to fall back to table-booking wording for every venue and had no
+ * notion of the booking model at all, so an appointments venue could be told it
+ * had a "Reservation". The web moved both its stored default and its display
+ * resolution off that wording (migrations 20270103124000); this keeps the app in
+ * step, including the rule that a stored word which is merely the OLD table
+ * default is drift rather than a choice.
+ */
+describe('mergeVenueTerminology', () => {
+  it('uses the model default when nothing is stored', () => {
+    expect(mergeVenueTerminology('unified_scheduling', null)).toEqual({
+      client: 'Client',
+      booking: 'Appointment',
+      staff: 'Staff',
+    });
+    expect(mergeVenueTerminology('class_session', undefined)).toEqual({
+      client: 'Member',
+      booking: 'Booking',
+      staff: 'Instructor',
+    });
+  });
+
+  it('keeps table wording for a venue that really is a restaurant', () => {
+    expect(mergeVenueTerminology('table_reservation', null)).toEqual({
+      client: 'Guest',
+      booking: 'Reservation',
+      staff: 'Staff',
+    });
+    // Stored table words on the table model are a genuine choice, not drift.
+    expect(
+      mergeVenueTerminology('table_reservation', {
+        client: 'Guest',
+        booking: 'Reservation',
+        staff: 'Staff',
+      }),
+    ).toEqual({ client: 'Guest', booking: 'Reservation', staff: 'Staff' });
+  });
+
+  it('discards stale table wording left behind on an appointments venue', () => {
+    expect(
+      mergeVenueTerminology('unified_scheduling', {
+        client: 'Guest',
+        booking: 'Reservation',
+        staff: 'Staff',
+      }),
+    ).toEqual({ client: 'Client', booking: 'Appointment', staff: 'Staff' });
+  });
+
+  it('respects words the venue actually chose', () => {
+    expect(
+      mergeVenueTerminology('practitioner_appointment', {
+        client: 'Patient',
+        booking: 'Session',
+        staff: 'Therapist',
+      }),
+    ).toEqual({ client: 'Patient', booking: 'Session', staff: 'Therapist' });
+  });
+
+  it('leaves a chosen word alone even when it matches another model’s default', () => {
+    // "Booking" is the event/class/resource default but not the table one, so it
+    // is a choice here, not drift.
+    expect(mergeVenueTerminology('unified_scheduling', { booking: 'Booking' } as never).booking).toBe(
+      'Booking',
+    );
+  });
+
+  it('drifted and chosen words are resolved independently, key by key', () => {
+    expect(
+      mergeVenueTerminology('unified_scheduling', {
+        client: 'Patient',
+        booking: 'Reservation',
+        staff: 'Staff',
+      }),
+    ).toEqual({ client: 'Patient', booking: 'Appointment', staff: 'Staff' });
+  });
+
+  it('treats a blank stored word as absent', () => {
+    expect(
+      mergeVenueTerminology('unified_scheduling', {
+        client: '   ',
+        booking: '',
+        staff: 'Staff',
+      }),
+    ).toEqual({ client: 'Client', booking: 'Appointment', staff: 'Staff' });
+  });
+
+  it('covers every booking model with a default', () => {
+    const models = [
+      'table_reservation',
+      'practitioner_appointment',
+      'unified_scheduling',
+      'event_ticket',
+      'class_session',
+      'resource_booking',
+    ] as const;
+    for (const model of models) {
+      const words = mergeVenueTerminology(model, null);
+      expect(words.client.length).toBeGreaterThan(0);
+      expect(words.booking.length).toBeGreaterThan(0);
+      expect(words.staff.length).toBeGreaterThan(0);
+    }
   });
 });
 
@@ -66,10 +173,21 @@ describe('newBookingActionLabel', () => {
   it('lets a venue term the venue set itself win either way', () => {
     expect(newBookingActionLabel({ booking: 'Booking' } as never, false)).toBe('New booking');
     expect(newBookingActionLabel({ booking: 'Visit' } as never, true)).toBe('New visit');
-    // A barber set up through the web onboarding gets "Appointment".
-    expect(newBookingActionLabel({ booking: 'Appointment' } as never, true)).toBe(
-      'New appointment',
+    expect(newBookingActionLabel({ booking: 'Consultation' } as never, true)).toBe(
+      'New consultation',
     );
+  });
+
+  it('treats "Appointment" as a default, not a choice (R12-4)', () => {
+    /**
+     * This expectation flipped when terminology became model-aware. "Appointment"
+     * used to prove the venue had typed something, because the default for every
+     * venue was "Reservation". It is now the DEFAULT that appointments venues
+     * carry — the web changed its stored default the same way (20270103124000) —
+     * so reading it as a choice would make the "New booking" branch unreachable
+     * for exactly the venues it was written for.
+     */
+    expect(newBookingActionLabel({ booking: 'Appointment' } as never, true)).toBe('New booking');
   });
 
   it('treats the merged-in default as "not customised"', () => {
