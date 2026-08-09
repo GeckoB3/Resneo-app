@@ -15,6 +15,85 @@ on the other, and iOS 1.0.4 is the worked example.
 
 ---
 
+## iOS 1.0.5 / Android 1.0.5 — 2026-08-09
+
+The two version lines converge here: Android moves 1.0.1 → 1.0.5 to sit alongside
+iOS. See `Docs/GO_LIVE_CHECK.md` §183 — `android.version` remains a deliberate
+override, not drift.
+
+Covers 2026-08-06 → 2026-08-09 on iOS, and 2026-08-03 → 2026-08-09 on Android,
+which was cut earlier. **Android additionally gains the refund work** iOS shipped
+in 1.0.4, so the Play copy differs.
+
+**Not OTA-eligible** — carries a native dependency (`expo-image-picker`) and the
+Sentry navigation/profiling integration. Both need this build.
+
+Requires the backend at `resneo@06d5491c` or later: multi-service calendar bars
+and recorded service names read fields added there.
+
+### Play Store — "What's new" (447/500)
+
+```
+Multi-service visits now show as one appointment on the calendar, not one bar per service.
+
+New: staff-first booking. Guests choose a team member first, then that person's services - on your booking page and when you take a booking yourself.
+
+New to Android: refund a payment from the booking.
+
+Also: crop booking-page photos, cancel a card payment at the reader, close a day that already has bookings, and accuracy fixes to deposits and payments.
+```
+
+### App Store — "What's new" (819/4,000)
+
+```
+Multi-service visits
+
+A booking with several services now shows as one appointment on the
+calendar, spanning the whole visit, instead of one bar per service.
+
+Staff-first booking
+
+A new setting that asks who the booking is with before which service.
+It applies to your public booking page and to bookings you take
+yourself. Off by default — turn it on in booking settings.
+
+Photos
+
+Pick images from your photo library (they were previously unreachable
+on iPhone), and crop and position service and team photos for your
+booking page.
+
+Also in this release
+
+Cancel a card payment at the reader. Close a day that already has
+bookings. Cancel a scheduled account deletion. Plus accuracy fixes to
+deposit amounts on classes and events, cash payment records, clearing
+a contact's details, and saving a resource with no price.
+```
+
+### Fixed
+
+- Deposits on classes and events quoted the per-person figure while the server
+  charged per attendee.
+- A declined card was matched to its ledger row by amount and timing, which the
+  app's own retry flow could defeat and silently hide a double-charge warning.
+- Cash payments reported the client's stale balance, and a timeout was reported
+  as a definite failure on a write with no idempotency key.
+- Booking a slot did not mark availability stale, so the picker could offer a
+  slot that had just gone.
+- Clearing a contact field, or saving a resource with no price, was rejected.
+- Push notifications kept arriving after sign-out, and Android showed full client
+  detail on the lock screen.
+- The app lock did not cover open sheets — the surfaces holding the most client
+  data.
+- Saved calendar preferences were wiped when the app opened offline.
+
+### Removed
+
+- Universal Links / Android App Links config. Neither association file was ever
+  served, and a failed verification is worse than no claim on Android 12+. The
+  `resneo://` scheme is unaffected. See `Docs/universal-links`.
+
 ## iOS 1.0.4 — 2026-08-06
 
 App Store build 17, superseding the live **1.0.3 (build 16)**. Covers
