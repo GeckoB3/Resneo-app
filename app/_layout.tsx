@@ -9,7 +9,7 @@ import {
   Inter_800ExtraBold,
   useFonts,
 } from '@expo-google-fonts/inter';
-import { Stack } from 'expo-router';
+import { Stack, useNavigationContainerRef } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
@@ -20,7 +20,11 @@ import { AuthNoticeBridge } from '@/components/AuthNoticeBridge';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { useColorScheme } from '@/components/useColorScheme';
 import { initAnalytics } from '@/lib/analytics';
-import { captureException, initObservability } from '@/lib/observability';
+import {
+  captureException,
+  initObservability,
+  registerNavigationContainer,
+} from '@/lib/observability';
 import { useDeviceOrientationLock } from '@/lib/orientation';
 import { AppProviders } from '@/providers/AppProviders';
 import { useAuth } from '@/providers/AuthProvider';
@@ -39,6 +43,14 @@ initAnalytics();
 export default function RootLayout() {
   // Phones stay portrait; tablets rotate freely (applied at runtime — see hook).
   useDeviceOrientationLock();
+
+  // Give Sentry the navigation container so every report names the screen it
+  // came from. The ref is populated after the first render, so this runs in an
+  // effect rather than during it.
+  const navigationRef = useNavigationContainerRef();
+  useEffect(() => {
+    registerNavigationContainer(navigationRef);
+  }, [navigationRef]);
 
   // Inter is the Resneo brand typeface (matches the web app). Loaded at startup
   // so every screen can reference the weights via the typography tokens.

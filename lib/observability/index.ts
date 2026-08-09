@@ -24,16 +24,23 @@ export type ObservabilityContext = Record<string, ContextValue>;
 
 // Minimal shape of the bits of @sentry/react-native we use. Kept local so the
 // SDK's types are never required at build time (the require is runtime + gated).
+type SentryNavigationIntegration = {
+  registerNavigationContainer: (ref: unknown) => void;
+};
+
 type SentrySdk = {
   init: (options: Record<string, unknown>) => void;
   captureException: (error: unknown, context?: Record<string, unknown>) => void;
   captureMessage: (message: string, level?: ObservabilityLevel) => void;
   setUser: (user: { id: string } | null) => void;
+  reactNavigationIntegration?: (options?: Record<string, unknown>) => SentryNavigationIntegration;
 };
 
 let currentUserId: string | null = null;
 let installed = false;
 let sentry: SentrySdk | null = null;
+/** Held from init so the root layout can hand it the navigation container. */
+let navigationIntegration: SentryNavigationIntegration | null = null;
 
 /** True once a reporting backend DSN is configured. */
 export function isObservabilityConfigured(): boolean {
@@ -75,6 +82,22 @@ export function captureMessage(
   }
 }
 
+/**
+ * Hand Sentry the root navigation container so events carry the current screen.
+ *
+ * Call once from the root layout with expo-router's `useNavigationContainerRef()`.
+ * Safe (and a no-op) when Sentry is not configured, when the native module is
+ * missing, or when the ref has not resolved yet.
+ */
+export function registerNavigationContainer(ref: unknown): void {
+  if (!navigationIntegration || !ref) return;
+  try {
+    navigationIntegration.registerNavigationContainer(ref);
+  } catch {
+    // Never let observability wiring break navigation.
+  }
+}
+
 /** Associate subsequent reports with a user (or null to clear on sign-out). */
 export function setObservabilityUser(userId: string | null): void {
   currentUserId = userId;
@@ -111,11 +134,33 @@ function initSentry(): void {
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires, global-require
     const sdk = require('@sentry/react-native') as SentrySdk;
+    // Screen names on every event. Without this a report carries only UIKit
+    // view-controller breadcrumbs (_UICursorAccessoryViewController and friends),
+    // which say a text field was focused but never which of our screens it was
+    // on — the gap that made an App Hang report unactionable on 2026-08-09.
+    // expo-router runs on React Navigation, so this is the right integration;
+    // it stays inert until `registerNavigationContainer` gets the root ref.
+    const integrations: unknown[] = [];
+    if (typeof sdk.reactNavigationIntegration === 'function') {
+      navigationIntegration = sdk.reactNavigationIntegration({
+        // Route-change spans are for tracing; the value here is the screen tag.
+        enableTimeToInitialDisplay: false,
+      });
+      integrations.push(navigationIntegration);
+    }
     sdk.init({
       dsn: process.env.EXPO_PUBLIC_SENTRY_DSN,
       environment: resolveSentryEnvironment(),
       enableAutoSessionTracking: true,
       tracesSampleRate: 0.2,
+      ...(integrations.length > 0 ? { integrations } : {}),
+      // Sampled JS-THREAD stacks. iOS App Hang detection samples the MAIN thread,
+      // which in React Native is parked in the run loop while the JS thread does
+      // the blocking work — so those reports arrive with a stack of
+      // `UIApplicationDelegate.main` and nothing else. Profiles are the only way
+      // to see what was actually running. Fraction OF sampled traces, so the
+      // effective rate is tracesSampleRate x this.
+      profilesSampleRate: 0.2,
     });
     sentry = sdk;
     // Tag any user already known before init ran.
