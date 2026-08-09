@@ -28,6 +28,10 @@ import {
   type LaneInput,
 } from '@/components/calendar/grid-layout';
 import { Text } from '@/components/ui/Text';
+import {
+  clusterCalendarBookings,
+  type CalendarBookingCluster,
+} from '@/lib/calendar/cluster-bookings';
 import { venueClosedRanges, type VenueDayHours } from '@/lib/calendar/venue-closures';
 import { hexToRgba } from '@/lib/color';
 import type { ComplianceBookingFlag } from '@/lib/queries/useCompliance';
@@ -44,7 +48,8 @@ import type { CalendarScheduleBlock } from '@/types/schedule-blocks';
 const SESSION_ACCENT = '#6366F1';
 
 type PositionedBooking = {
-  booking: CalendarGridBooking;
+  /** One visit — a standalone booking, or every service/person sharing a group id. */
+  cluster: CalendarBookingCluster;
   top: number;
   height: number;
   laneIndex: number;
@@ -233,17 +238,25 @@ export function CalendarDayGrid({
         working.push(r);
       }
 
-      const blocks = bookings.map((booking) => {
-        const start = timeToMinutes(booking.startTime);
-        let end = booking.endTime
-          ? timeToMinutes(booking.endTime)
-          : start + DEFAULT_DURATION_MINUTES;
-        if (end <= start) {
-          end = start + DEFAULT_DURATION_MINUTES;
-        }
+      // One entry per VISIT, not per booking: a multi-service visit or a group
+      // booked together shares a group id and draws as one bar spanning the lot.
+      // Clustering happens before the grid bounds are measured so a merged bar
+      // can extend them, exactly as its segments used to.
+      const blocks = clusterCalendarBookings(
+        bookings.map((booking) => {
+          const start = timeToMinutes(booking.startTime);
+          let end = booking.endTime
+            ? timeToMinutes(booking.endTime)
+            : start + DEFAULT_DURATION_MINUTES;
+          if (end <= start) {
+            end = start + DEFAULT_DURATION_MINUTES;
+          }
+          return { booking, start, end };
+        }),
+      );
+      for (const { start, end } of blocks) {
         ranges.push({ start, end });
-        return { booking, start, end };
-      });
+      }
 
       const tBlocks = timeBlocks
         .map((block) => {
@@ -316,8 +329,10 @@ export function CalendarDayGrid({
     // Pack lanes on TRUE minute ranges so non-overlapping short bookings stay
     // full-width — the visual min-height is applied AFTER lane assignment so it
     // never inflates extents into false overlaps (web lane model).
-    const laneInputs: LaneInput[] = rawBlocks.map(({ booking, start, end }) => ({
-      id: booking.id,
+    // Lanes are packed on the CLUSTER's extent, so a merged visit occupies the
+    // column for its whole length and nothing else is placed over it.
+    const laneInputs: LaneInput[] = rawBlocks.map(({ lead, start, end }) => ({
+      id: lead.id,
       top: (start - gridStartMin) * pxPerMinute,
       bottom: (end - gridStartMin) * pxPerMinute,
     }));
@@ -332,12 +347,13 @@ export function CalendarDayGrid({
       minBlockHeight,
     );
 
-    const blocks: PositionedBooking[] = rawBlocks.map(({ booking, start, end }) => {
-      const lane = lanes.get(booking.id) ?? { laneIndex: 0, laneCount: 1 };
+    const blocks: PositionedBooking[] = rawBlocks.map((cluster) => {
+      const { lead, start, end } = cluster;
+      const lane = lanes.get(lead.id) ?? { laneIndex: 0, laneCount: 1 };
       const top = (start - gridStartMin) * pxPerMinute;
-      const height = heights.get(booking.id) ?? (end - start) * pxPerMinute;
+      const height = heights.get(lead.id) ?? (end - start) * pxPerMinute;
       return {
-        booking,
+        cluster,
         top,
         height,
         laneIndex: lane.laneIndex,
@@ -400,6 +416,62 @@ export function CalendarDayGrid({
       positionedScheduleBlocks: scheduleItems,
     };
   }, [bounds, rawBlocks, rawTimeBlocks, rawSessions, rawScheduleBlocks, pxPerMinute, minBlockHeight]);
+
+  /**
+   * A quick action on a merged bar applies to the WHOLE visit — web parity with
+   * `quickPatchBookingCluster`, which patches every booking in the cluster.
+   * Doing otherwise would advance one service and leave its siblings behind.
+   *
+   * Segments already in the target state are skipped, so a part-completed visit
+   * fires only the mutations it needs (and, since each failure raises its own
+   * toast upstream, does not multiply the noise).
+   *
+   * One stable handler per grid rather than a closure per bar: the block is not
+   * memoised, so per-bar closures would be pure allocation on a busy column.
+   */
+  const clusterByLeadId = useMemo(() => {
+    const map = new Map<string, CalendarBookingCluster>();
+    for (const item of positioned) map.set(item.cluster.lead.id, item.cluster);
+    return map;
+  }, [positioned]);
+
+  const handleBarStatusChange = useMemo(
+    () =>
+      onStatusChange
+        ? (leadId: string, status: string) => {
+            const cluster = clusterByLeadId.get(leadId);
+            // No cluster means the grid re-rendered between press and handler;
+            // fall back to the id we were given rather than dropping the action.
+            if (!cluster) {
+              onStatusChange(leadId, status);
+              return;
+            }
+            for (const segment of cluster.bookings) {
+              if (segment.status !== status) onStatusChange(segment.id, status);
+            }
+          }
+        : undefined,
+    [clusterByLeadId, onStatusChange],
+  );
+
+  const handleBarArrivalToggle = useMemo(
+    () =>
+      onArrivalToggle
+        ? (leadId: string, arrived: boolean) => {
+            const cluster = clusterByLeadId.get(leadId);
+            if (!cluster) {
+              onArrivalToggle(leadId, arrived);
+              return;
+            }
+            for (const segment of cluster.bookings) {
+              if (Boolean(segment.client_arrived_at) !== arrived) {
+                onArrivalToggle(segment.id, arrived);
+              }
+            }
+          }
+        : undefined,
+    [clusterByLeadId, onArrivalToggle],
+  );
 
   const hours = useMemo(
     () => Array.from({ length: endHour - startHour + 1 }, (_, i) => startHour + i),
@@ -670,16 +742,22 @@ export function CalendarDayGrid({
         <View style={styles.blocksLayer} pointerEvents="box-none">
           {positioned.map((item) => (
             <DraggableAppointmentBlock
-              key={item.booking.id}
-              id={item.booking.id}
-              guestName={item.booking.guestName}
-              serviceName={item.booking.serviceName}
+              key={item.cluster.lead.id}
+              id={item.cluster.lead.id}
+              guestName={item.cluster.lead.guestName}
+              serviceName={item.cluster.serviceLabel}
               timeLabel={item.timeLabel}
-              status={item.booking.status}
-              draggable={MOVABLE_STATUSES.has(item.booking.status)}
-              clientArrivedAt={item.booking.client_arrived_at}
-              staffAttendanceConfirmedAt={item.booking.staff_attendance_confirmed_at}
-              guestAttendanceConfirmedAt={item.booking.guest_attendance_confirmed_at}
+              status={item.cluster.lead.status}
+              // A merged visit is never dragged or resized: the gesture moves ONE
+              // booking, which would tear the visit apart. `draggable` is the
+              // single switch for both (see DraggableAppointmentBlock), and the
+              // web disables the same thing on its clusters.
+              draggable={
+                !item.cluster.isMultiSegment && MOVABLE_STATUSES.has(item.cluster.lead.status)
+              }
+              clientArrivedAt={item.cluster.lead.client_arrived_at}
+              staffAttendanceConfirmedAt={item.cluster.lead.staff_attendance_confirmed_at}
+              guestAttendanceConfirmedAt={item.cluster.lead.guest_attendance_confirmed_at}
               top={item.top}
               height={item.height}
               laneWidthPx={
@@ -690,14 +768,18 @@ export function CalendarDayGrid({
               laneIndex={item.laneIndex}
               laneCount={item.laneCount}
               pxPerMinute={pxPerMinute}
-              startTime={item.booking.startTime}
+              startTime={item.cluster.lead.startTime}
               durationMinutes={item.durationMinutes}
               onPress={onBlockPress}
-              onStatusChange={onStatusChange}
-              onArrivalToggle={onArrivalToggle}
-              actionPending={pendingActionIds?.has(item.booking.id) ?? false}
-              complianceFlag={complianceFlags?.[item.booking.id]}
-              paid={item.booking.payment_state === 'paid'}
+              onStatusChange={handleBarStatusChange}
+              onArrivalToggle={handleBarArrivalToggle}
+              // Busy while ANY segment's action is in flight, so the whole bar
+              // shows one spinner rather than looking idle mid-fan-out.
+              actionPending={item.cluster.ids.some((id) => pendingActionIds?.has(id) === true)}
+              complianceFlag={item.cluster.ids
+                .map((id) => complianceFlags?.[id])
+                .find((flag) => flag != null)}
+              paid={item.cluster.paid}
               onDragReschedule={onDragReschedule}
               // Compact rows are too short for a usable resize grip — hide the
               // affordance and disable the resize gesture (web parity: no

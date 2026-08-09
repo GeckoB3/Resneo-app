@@ -57,6 +57,10 @@ import {
   type LaneInput,
 } from '@/components/calendar/grid-layout';
 import { Text } from '@/components/ui/Text';
+import {
+  clusterCalendarBookings,
+  type CalendarBookingCluster,
+} from '@/lib/calendar/cluster-bookings';
 import { venueClosedRanges, type VenueDayHours } from '@/lib/calendar/venue-closures';
 import type { ComplianceBookingFlag } from '@/lib/queries/useCompliance';
 import { hexToRgba } from '@/lib/color';
@@ -107,7 +111,8 @@ export type AllCalendarColumn = {
 };
 
 type PositionedBooking = {
-  booking: CalendarGridBooking;
+  /** One visit — see `clusterCalendarBookings`. */
+  cluster: CalendarBookingCluster;
   top: number;
   height: number;
   laneIndex: number;
@@ -163,22 +168,28 @@ type AllCalendarsDayGridProps = {
   compact?: boolean;
 };
 
-/** Lay out one column's bookings into lanes on TRUE minute ranges. */
+/**
+ * Lay out one column's VISITS into lanes on TRUE minute ranges. Bookings sharing
+ * a group id become one bar spanning the whole visit, so a multi-service
+ * appointment stops looking like several back-to-back ones.
+ */
 function positionColumn(
   bookings: CalendarGridBooking[],
   gridStartMin: number,
   pxPerMinute: number,
   minBlockHeight: number,
 ): PositionedBooking[] {
-  const raw = bookings.map((booking) => {
-    const start = timeToMinutes(booking.startTime);
-    let end = booking.endTime ? timeToMinutes(booking.endTime) : start + DEFAULT_DURATION_MINUTES;
-    if (end <= start) end = start + DEFAULT_DURATION_MINUTES;
-    return { booking, start, end };
-  });
+  const raw = clusterCalendarBookings(
+    bookings.map((booking) => {
+      const start = timeToMinutes(booking.startTime);
+      let end = booking.endTime ? timeToMinutes(booking.endTime) : start + DEFAULT_DURATION_MINUTES;
+      if (end <= start) end = start + DEFAULT_DURATION_MINUTES;
+      return { booking, start, end };
+    }),
+  );
 
-  const laneInputs: LaneInput[] = raw.map(({ booking, start, end }) => ({
-    id: booking.id,
+  const laneInputs: LaneInput[] = raw.map(({ lead, start, end }) => ({
+    id: lead.id,
     top: (start - gridStartMin) * pxPerMinute,
     bottom: (end - gridStartMin) * pxPerMinute,
   }));
@@ -190,12 +201,13 @@ function positionColumn(
     minBlockHeight,
   );
 
-  return raw.map(({ booking, start, end }) => {
-    const lane = lanes.get(booking.id) ?? { laneIndex: 0, laneCount: 1 };
+  return raw.map((cluster) => {
+    const { lead, start, end } = cluster;
+    const lane = lanes.get(lead.id) ?? { laneIndex: 0, laneCount: 1 };
     return {
-      booking,
+      cluster,
       top: (start - gridStartMin) * pxPerMinute,
-      height: heights.get(booking.id) ?? (end - start) * pxPerMinute,
+      height: heights.get(lead.id) ?? (end - start) * pxPerMinute,
       laneIndex: lane.laneIndex,
       laneCount: lane.laneCount,
       durationMinutes: end - start,
@@ -622,6 +634,55 @@ function DayColumn({
     [column.bookings, gridStartMin, pxPerMinute, minBlockHeight],
   );
 
+  /**
+   * A quick action on a merged bar applies to the WHOLE visit (web parity with
+   * `quickPatchBookingCluster`) — advancing one service and leaving its siblings
+   * behind would be worse than not offering the action. Segments already in the
+   * target state are skipped. One stable handler per column rather than a
+   * closure per bar.
+   */
+  const clusterByLeadId = useMemo(() => {
+    const map = new Map<string, CalendarBookingCluster>();
+    for (const item of positioned) map.set(item.cluster.lead.id, item.cluster);
+    return map;
+  }, [positioned]);
+
+  const handleBarStatusChange = useMemo(
+    () =>
+      onStatusChange
+        ? (leadId: string, status: string) => {
+            const cluster = clusterByLeadId.get(leadId);
+            if (!cluster) {
+              onStatusChange(leadId, status);
+              return;
+            }
+            for (const segment of cluster.bookings) {
+              if (segment.status !== status) onStatusChange(segment.id, status);
+            }
+          }
+        : undefined,
+    [clusterByLeadId, onStatusChange],
+  );
+
+  const handleBarArrivalToggle = useMemo(
+    () =>
+      onArrivalToggle
+        ? (leadId: string, arrived: boolean) => {
+            const cluster = clusterByLeadId.get(leadId);
+            if (!cluster) {
+              onArrivalToggle(leadId, arrived);
+              return;
+            }
+            for (const segment of cluster.bookings) {
+              if (Boolean(segment.client_arrived_at) !== arrived) {
+                onArrivalToggle(segment.id, arrived);
+              }
+            }
+          }
+        : undefined,
+    [clusterByLeadId, onArrivalToggle],
+  );
+
   const overlays = useMemo(
     () =>
       column.timeBlocks
@@ -860,7 +921,7 @@ function DayColumn({
           const widthPct = 100 / item.laneCount;
           return (
             <View
-              key={item.booking.id}
+              key={item.cluster.lead.id}
               style={[
                 styles.blockWrap,
                 {
@@ -871,14 +932,14 @@ function DayColumn({
                 },
               ]}>
               <AppointmentBlock
-                id={item.booking.id}
-                guestName={item.booking.guestName}
-                serviceName={item.booking.serviceName}
+                id={item.cluster.lead.id}
+                guestName={item.cluster.lead.guestName}
+                serviceName={item.cluster.serviceLabel}
                 timeLabel={item.timeLabel}
-                status={item.booking.status}
-                clientArrivedAt={item.booking.client_arrived_at}
-                staffAttendanceConfirmedAt={item.booking.staff_attendance_confirmed_at}
-                guestAttendanceConfirmedAt={item.booking.guest_attendance_confirmed_at}
+                status={item.cluster.lead.status}
+                clientArrivedAt={item.cluster.lead.client_arrived_at}
+                staffAttendanceConfirmedAt={item.cluster.lead.staff_attendance_confirmed_at}
+                guestAttendanceConfirmedAt={item.cluster.lead.guest_attendance_confirmed_at}
                 height={item.height}
                 widthPx={laneWidthPx}
                 laneIndex={item.laneIndex}
@@ -890,29 +951,35 @@ function DayColumn({
         }
         return (
           <DraggableAppointmentBlock
-            key={item.booking.id}
-            id={item.booking.id}
-            guestName={item.booking.guestName}
-            serviceName={item.booking.serviceName}
+            key={item.cluster.lead.id}
+            id={item.cluster.lead.id}
+            guestName={item.cluster.lead.guestName}
+            serviceName={item.cluster.serviceLabel}
             timeLabel={item.timeLabel}
-            status={item.booking.status}
-            draggable={MOVABLE_STATUSES.has(item.booking.status)}
-            clientArrivedAt={item.booking.client_arrived_at}
-            staffAttendanceConfirmedAt={item.booking.staff_attendance_confirmed_at}
-            guestAttendanceConfirmedAt={item.booking.guest_attendance_confirmed_at}
+            status={item.cluster.lead.status}
+            // A merged visit is never dragged or resized — the gesture moves ONE
+            // booking and would tear the visit apart (web parity).
+            draggable={
+              !item.cluster.isMultiSegment && MOVABLE_STATUSES.has(item.cluster.lead.status)
+            }
+            clientArrivedAt={item.cluster.lead.client_arrived_at}
+            staffAttendanceConfirmedAt={item.cluster.lead.staff_attendance_confirmed_at}
+            guestAttendanceConfirmedAt={item.cluster.lead.guest_attendance_confirmed_at}
             top={item.top}
             height={item.height}
             laneWidthPx={laneWidthPx}
             laneIndex={item.laneIndex}
             laneCount={item.laneCount}
             pxPerMinute={pxPerMinute}
-            startTime={item.booking.startTime}
+            startTime={item.cluster.lead.startTime}
             durationMinutes={item.durationMinutes}
             onPress={onBlockPress}
-            onStatusChange={onStatusChange}
-            onArrivalToggle={onArrivalToggle}
-            complianceFlag={complianceFlags?.[item.booking.id]}
-            actionPending={pendingActionIds?.has(item.booking.id) ?? false}
+            onStatusChange={handleBarStatusChange}
+            onArrivalToggle={handleBarArrivalToggle}
+            complianceFlag={item.cluster.ids
+              .map((id) => complianceFlags?.[id])
+              .find((flag) => flag != null)}
+            actionPending={item.cluster.ids.some((id) => pendingActionIds?.has(id) === true)}
             onDragReschedule={onDragReschedule}
             onDragResize={onDragResize}
             onDragConflictReject={onDragConflictReject}

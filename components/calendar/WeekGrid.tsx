@@ -31,6 +31,10 @@ import {
 import type { CalendarTimeBlock } from '@/components/calendar/CalendarDayGrid';
 import { Text } from '@/components/ui/Text';
 import { bookingCalendarBlockPalette } from '@/lib/booking/booking-status-visual';
+import {
+  clusterCalendarBookings,
+  type CalendarBookingCluster,
+} from '@/lib/calendar/cluster-bookings';
 import { venueClosedRanges, type VenueDayHours } from '@/lib/calendar/venue-closures';
 import { hexToRgba } from '@/lib/color';
 import { fonts, radius, spacing } from '@/theme/index';
@@ -97,26 +101,33 @@ type WeekGridProps = {
 };
 
 type PositionedBooking = {
-  booking: CalendarGridBooking;
+  /** One visit — see `clusterCalendarBookings`. */
+  cluster: CalendarBookingCluster;
   top: number;
   height: number;
   laneIndex: number;
   laneCount: number;
 };
 
-/** Lay out one day's bookings into lanes on TRUE minute ranges (web lane model). */
+/**
+ * Lay out one day's VISITS into lanes on TRUE minute ranges (web lane model).
+ * Bookings sharing a group id become one bar spanning the whole visit, so a
+ * multi-service appointment stops looking like several back-to-back ones.
+ */
 function positionBookings(
   bookings: CalendarGridBooking[],
   gridStartMin: number,
 ): PositionedBooking[] {
-  const raw = bookings.map((booking) => {
-    const start = timeToMinutes(booking.startTime);
-    let end = booking.endTime ? timeToMinutes(booking.endTime) : start + DEFAULT_DURATION_MINUTES;
-    if (end <= start) end = start + DEFAULT_DURATION_MINUTES;
-    return { booking, start, end };
-  });
-  const laneInputs: LaneInput[] = raw.map(({ booking, start, end }) => ({
-    id: booking.id,
+  const raw = clusterCalendarBookings(
+    bookings.map((booking) => {
+      const start = timeToMinutes(booking.startTime);
+      let end = booking.endTime ? timeToMinutes(booking.endTime) : start + DEFAULT_DURATION_MINUTES;
+      if (end <= start) end = start + DEFAULT_DURATION_MINUTES;
+      return { booking, start, end };
+    }),
+  );
+  const laneInputs: LaneInput[] = raw.map(({ lead, start, end }) => ({
+    id: lead.id,
     top: (start - gridStartMin) * PX_PER_MINUTE,
     bottom: (end - gridStartMin) * PX_PER_MINUTE,
   }));
@@ -125,12 +136,13 @@ function positionBookings(
     laneInputs.map((input) => ({ ...input, laneIndex: lanes.get(input.id)?.laneIndex ?? 0 })),
     WEEK_MIN_BLOCK_HEIGHT,
   );
-  return raw.map(({ booking, start, end }) => {
-    const lane = lanes.get(booking.id) ?? { laneIndex: 0, laneCount: 1 };
+  return raw.map((cluster) => {
+    const { lead, start, end } = cluster;
+    const lane = lanes.get(lead.id) ?? { laneIndex: 0, laneCount: 1 };
     return {
-      booking,
+      cluster,
       top: (start - gridStartMin) * PX_PER_MINUTE,
-      height: heights.get(booking.id) ?? (end - start) * PX_PER_MINUTE,
+      height: heights.get(lead.id) ?? (end - start) * PX_PER_MINUTE,
       laneIndex: lane.laneIndex,
       laneCount: lane.laneCount,
     };
@@ -493,10 +505,10 @@ function WeekDayCol({
         const widthPct = 100 / item.laneCount;
         return (
           <Pressable
-            key={item.booking.id}
-            onPress={() => onBlockPress(item.booking.id)}
+            key={item.cluster.lead.id}
+            onPress={() => onBlockPress(item.cluster.lead.id)}
             accessibilityRole="button"
-            accessibilityLabel={`${item.booking.startTime} ${item.booking.guestName}, ${item.booking.status}`}
+            accessibilityLabel={`${item.cluster.lead.startTime} ${item.cluster.lead.guestName}, ${item.cluster.lead.status}`}
             hitSlop={item.height < 28 ? 4 : undefined}
             style={[
               styles.blockWrap,
@@ -507,7 +519,7 @@ function WeekDayCol({
                 width: `${widthPct}%`,
               },
             ]}>
-            <WeekBlock booking={item.booking} height={item.height} />
+            <WeekBlock booking={item.cluster.lead} height={item.height} />
           </Pressable>
         );
       })}
