@@ -43,7 +43,19 @@ type BookingDetailSheetProps = {
   fallbackPractitionerName?: string | null;
 };
 
-/** Tracks soft-keyboard visibility so the pinned action bar yields while typing. */
+/**
+ * Tracks soft-keyboard visibility so the pinned action bar yields while typing.
+ *
+ * Deliberately consumed ONLY by {@link KeyboardAwareActionBar} below, never by
+ * the sheet itself. This is the one place in the app that answers keyboard
+ * events with React state rather than a Reanimated shared value, because the
+ * bar mounts and unmounts (it has enter/exit animations) and a shared value
+ * cannot drive that. Keeping the subscription down here bounds the cost to the
+ * bar: iOS re-emits `keyboardDidShow` every time the keyboard reconfigures —
+ * moving between fields with different `keyboardType` produced bursts of four
+ * in 20ms in a 2026-08-09 trace — and each of those used to re-render the whole
+ * booking detail tree.
+ */
 function useKeyboardVisible() {
   const [visible, setVisible] = useState(false);
   useEffect(() => {
@@ -55,6 +67,52 @@ function useKeyboardVisible() {
     };
   }, []);
   return visible;
+}
+
+/**
+ * The pinned primary-action bar, which hides itself while the keyboard is up so
+ * it never sits on top of the field being typed into.
+ *
+ * Its own component so the keyboard subscription re-renders this bar alone. The
+ * scroll body reserves room for it unconditionally, so nothing above has to know
+ * whether it is currently showing.
+ */
+function KeyboardAwareActionBar({
+  label,
+  colors,
+  reduceMotion,
+  loading,
+  actionColors,
+  onPress,
+}: {
+  label: string;
+  colors: { border: string; surfaceRaised: string };
+  reduceMotion: boolean;
+  loading: boolean;
+  actionColors: ReturnType<typeof primaryActionColors>;
+  onPress: () => void;
+}) {
+  const keyboardVisible = useKeyboardVisible();
+  if (keyboardVisible) return null;
+  return (
+    <Animated.View
+      entering={motionSafe(FadeInDown.duration(180), reduceMotion)}
+      exiting={motionSafe(FadeOutDown.duration(120), reduceMotion)}
+      style={[
+        styles.actionBar,
+        { borderTopColor: colors.border, backgroundColor: colors.surfaceRaised },
+      ]}>
+      <Button
+        label={label}
+        variant="primary"
+        customColors={actionColors}
+        size="lg"
+        fullWidth
+        loading={loading}
+        onPress={onPress}
+      />
+    </Animated.View>
+  );
 }
 
 /**
@@ -85,7 +143,6 @@ export function BookingDetailSheet({
   const isAdmin = staffQuery.data?.staff?.role === 'admin';
   const scrollRef = useRef<ScrollView>(null);
   const { onScroll, spacerStyle } = useSheetKeyboardScroll(scrollRef);
-  const keyboardVisible = useKeyboardVisible();
 
   const payload = dashboardQuery.data;
   const isAppointmentVenue = payload
@@ -130,7 +187,6 @@ export function BookingDetailSheet({
   const primaryAction = booking
     ? bookingDetailActions(booking.status, isTable).find((a) => a.kind === 'primary')
     : undefined;
-  const showActionBar = !!primaryAction && !keyboardVisible;
 
   return (
     <Sheet visible={!!bookingId} onClose={onClose} fill maxHeight="94%" keyboardAvoidance="overlay">
@@ -186,7 +242,11 @@ export function BookingDetailSheet({
             style={styles.scroll}
             contentContainerStyle={[
               styles.scrollContent,
-              showActionBar && styles.scrollContentWithBar,
+              // Room for the pinned bar is reserved whether or not it is showing.
+              // It only hides while the keyboard is up, and the keyboard covers
+              // that space anyway — so making this conditional bought nothing and
+              // cost a re-render of this whole tree per keyboard event.
+              primaryAction ? styles.scrollContentWithBar : null,
             ]}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="interactive"
@@ -211,21 +271,15 @@ export function BookingDetailSheet({
             </Animated.View>
           </ScrollView>
 
-          {showActionBar && primaryAction ? (
-            <Animated.View
-              entering={motionSafe(FadeInDown.duration(180), reduceMotion)}
-              exiting={motionSafe(FadeOutDown.duration(120), reduceMotion)}
-              style={[styles.actionBar, { borderTopColor: colors.border, backgroundColor: colors.surfaceRaised }]}>
-              <Button
-                label={primaryAction.label}
-                variant="primary"
-                customColors={primaryActionColors(primaryAction.target)}
-                size="lg"
-                fullWidth
-                loading={updateStatus.isPending}
-                onPress={() => handleStatusChange(primaryAction.target)}
-              />
-            </Animated.View>
+          {primaryAction ? (
+            <KeyboardAwareActionBar
+              label={primaryAction.label}
+              colors={colors}
+              reduceMotion={reduceMotion}
+              loading={updateStatus.isPending}
+              actionColors={primaryActionColors(primaryAction.target)}
+              onPress={() => handleStatusChange(primaryAction.target)}
+            />
           ) : null}
         </>
       )}

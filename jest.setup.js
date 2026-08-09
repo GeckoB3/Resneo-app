@@ -118,5 +118,11 @@ jest.mock('react-native-reanimated', () => {
     LinearTransition: layoutAnim(),
     FadeIn: layoutAnim(),
     FadeOut: layoutAnim(),
+    // Directional variants are used by pinned bars and sheets; without them the
+    // `.duration()` call in an `entering`/`exiting` prop throws at render.
+    FadeInDown: layoutAnim(),
+    FadeOutDown: layoutAnim(),
+    FadeInUp: layoutAnim(),
+    FadeOutUp: layoutAnim(),
   };
 });
