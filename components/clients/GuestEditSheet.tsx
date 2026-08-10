@@ -153,7 +153,7 @@ export function GuestEditSheet({ target, onClose }: GuestEditSheetProps) {
   }
 
   return (
-    <Sheet visible={!!target} onClose={onClose} maxHeight="88%">
+    <Sheet visible={!!target} onClose={onClose} maxHeight="88%" fill>
       {target ? (
         <View style={styles.body}>
           <Text variant="overline" tone="muted">
@@ -277,8 +277,18 @@ export function GuestEditSheet({ target, onClose }: GuestEditSheetProps) {
 }
 
 const styles = StyleSheet.create({
-  body: { gap: spacing.md },
-  scroll: { flexGrow: 0 },
+  // `fill` + a flexing ScrollView: the form is longer than the sheet, and a
+  // content-sized body can't scroll AND pushes the pinned Save/Cancel row off
+  // the bottom — the form could be read but neither finished nor scrolled.
+  // Same pattern the Event/Resource/ClassType and Modify editors were fixed for.
+  // `fill` Sheets supply no horizontal padding (they delegate it to the child),
+  // so the body has to carry the standard sheet inset itself.
+  body: {
+    flex: 1,
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+  },
+  scroll: { flex: 1 },
   scrollBody: { gap: spacing.md, paddingBottom: spacing.sm },
   nameRow: { flexDirection: 'row', gap: spacing.md },
   nameField: { flex: 1 },
