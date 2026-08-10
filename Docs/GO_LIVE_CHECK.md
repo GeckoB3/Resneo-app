@@ -1,5 +1,62 @@
 # Go-live check — Resneo app
 
+## Run 2026-08-10 — 1.0.6, both platforms
+
+**Scope:** a JavaScript-only correctness and layout release (guest-notification
+prompt on Modify, six unscrollable sheets, bottom safe area on pushed screens).
+Device-tested by the author on an iPhone XS before this run.
+
+**Verdict: clear to build.** No blockers found. Two decisions are the author's,
+not defects.
+
+### Verified healthy
+
+| Check | Result |
+|---|---|
+| `expo lint` | exit 0 (145 warnings, the standing baseline; **0 errors**) |
+| `jest` | 155 suites / 1,558 tests pass |
+| `expo export --platform web` | exit 0 |
+| `tsc --noEmit` | clean |
+| Version | root **1.0.6**, `android.version` **1.0.6** — both bumped from 1.0.5 |
+| Build numbers | EAS remote + `autoIncrement: true` — nothing to set by hand |
+| `ios.entitlements` | absent — provisioning cannot fail on the proximity-reader key |
+| `TAP_TO_PAY_IOS_ENABLED` | `false` |
+| Staging host in prod config | none — `reserve-ni.vercel.app` no longer declared |
+| Production `env` | the four `EXPO_PUBLIC_*` only; no dev-only flag leaks (`TERMINAL_SIMULATED`, `ALLOW_SCREENSHOTS`, `SENTRY_DISABLE_AUTO_UPLOAD` all absent) |
+| `console.log` in app code | all `__DEV__`-gated |
+| Native surface | **unchanged since 1.0.5** — no dependency, native module or `app.json` native-config diff |
+
+### Backend
+
+**No merge required for this release.** The one server-side contract it depends
+on — `defer_modification_guest_notification` on the appointment-modify branch of
+`PATCH /api/venue/bookings/[id]`, plus the `guest-modification-notify` route —
+was verified present on the backend's **`main`** (not merely on `staging`), and
+the notify route is Bearer-capable. Production tracks `main`, so the prompt will
+behave in production exactly as it does on staging.
+
+Separately: the backend's `staging` is **6 commits ahead of `main`**. That is the
+standing item from the 2026-08-05 run (§5) and is unrelated to this release, but
+it still wants merging.
+
+### The author's calls, not defects
+
+1. **This release did not have to be a build.** Nothing native changed since
+   1.0.5, so it was OTA-eligible. Bumping both versions moves each platform's
+   runtime version (§2.1), which forecloses that — an update published now cannot
+   reach anyone still on 1.0.5. Chosen deliberately.
+2. **Android `production` emits an AAB**, which cannot be sideloaded. Use
+   `production-apk` for a device rehearsal; it carries identical live
+   credentials.
+
+### Not covered
+
+Static checks plus the author's device pass on a **preview/dev** build. Untested
+against the **production** backend: sign-in, a real booking write, push delivery,
+and one live card payment (unchanged from the 2026-08-05 run).
+
+---
+
 ## Run 2026-08-05 — iOS production readiness, Bluetooth-reader card payments
 
 **Scope:** shipping in-person card payments on iOS via a **connected BBPOS WisePad 3 only**. Tap to Pay on iPhone is deliberately deferred (Apple has granted the entitlement for Development distribution only — see `Docs/TAP_TO_PAY.md`).

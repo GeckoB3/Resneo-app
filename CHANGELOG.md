@@ -15,6 +15,82 @@ on the other, and iOS 1.0.4 is the worked example.
 
 ---
 
+## iOS 1.0.6 / Android 1.0.6 — 2026-08-10
+
+A correctness and layout release. Covers 2026-08-09 → 2026-08-10 on both
+platforms; the same commits ship to each, so the store copy is identical.
+
+**OTA-eligible in principle** — no dependency, native module or `app.json`
+native config changed since 1.0.5, so every change here is JavaScript. Shipped
+as a build by choice, not necessity. Note that bumping both versions moves each
+platform's runtime version, so this release cannot be delivered as an update to
+anyone still on 1.0.5 (see `Docs/GO_LIVE_CHECK.md` §2.1).
+
+Requires no backend change — the guest-notification deferral uses
+`defer_modification_guest_notification`, which the modify branch of
+`PATCH /api/venue/bookings/[id]` already honours.
+
+### Play Store — "What's new" (445/500)
+
+```
+Changing a booking's time from the Modify form now asks before emailing the guest, with notify, don't notify and undo — the same choice the calendar already gave you.
+
+Fixed: the edit-contact form could not be scrolled and its Save button was out of reach. Six more forms had the same fault.
+
+Fixed: content sitting under the home bar on reports, contacts, services, add-ons, booking page and team.
+
+Also: the start time steps in 5-minute marks.
+```
+
+### App Store — "What's new" (771/4,000)
+
+```
+Changing a booking's time
+
+Moving a booking from the Modify form used to email the guest the
+instant you saved. It now asks first — notify, don't notify, or undo
+the change — which is the same choice the calendar has always given
+you for a dragged booking. Undo restores the whole edit, not just
+the time.
+
+Forms you couldn't finish
+
+The edit-contact form could not be scrolled and its Save button sat
+below the bottom of the screen. Six other forms had the same fault
+and are fixed with it.
+
+Room at the bottom
+
+Reports, contact detail, services, add-ons, the booking page editor
+and the team page all ran their last row of content under the home
+bar. So did the Modify booking form.
+
+Also in this release
+
+The by-hand start time steps in 5-minute marks rather than one.
+```
+
+### Fixed
+
+- Modifying a booking's start time emailed the guest immediately, with no
+  confirmation and no way back.
+- Saving the Modify form on a service with add-ons could clear the booking's
+  add-ons: the form latched "already seeded" before it knew the service, so it
+  sent an empty add-on list, which the server treats as "replace with none".
+- The edit-contact form, and six other sheets, sized their body to their content
+  — so they could not scroll and their pinned buttons were pushed off the bottom.
+- Sheets opened from inside another sheet (Modify, from booking detail) lost the
+  bottom safe area entirely and sat on the home indicator.
+- Pushed screens never reserved the bottom safe area, so their last row of
+  content ran under the home indicator.
+
+### Changed
+
+- The Modify form's by-hand start steps in 5 minutes and snaps to the
+  `:00/:05/:10` grid; its label drops the "(by hand)" qualifier.
+
+---
+
 ## iOS 1.0.5 / Android 1.0.5 — 2026-08-09
 
 The two version lines converge here: Android moves 1.0.1 → 1.0.5 to sit alongside
