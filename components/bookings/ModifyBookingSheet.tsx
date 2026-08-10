@@ -22,8 +22,10 @@ import { useBookingDetail } from '@/lib/queries/useBookingDetail';
 import { useMonthAvailability } from '@/lib/queries/useMonthAvailability';
 import {
   useModifyAppointment,
+  useNotifyBookingModification,
   useValidateAppointmentModification,
 } from '@/lib/queries/useBookingMutations';
+import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { fonts, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -63,15 +65,30 @@ const MIN_DURATION_MINUTES = 15;
 const MAX_DURATION_MINUTES = 14 * 60;
 /** Web parity: the duration input steps in 5s. */
 const DURATION_STEP_MINUTES = 5;
+/** The by-hand start nudge steps in 5s too, onto a clean :00/:05/:10 grid. */
+const START_STEP_MINUTES = 5;
 const VALIDATE_DEBOUNCE_MS = 450;
 
 /**
- * Which pane of the sheet is showing. The date and time pickers are STEPS inside
- * this sheet, not sheets of their own: opening a second modal from a visible one
- * is unreliable on iOS, and a month grid nested in the form's ScrollView would
- * put two same-axis scrollers on screen at once.
+ * Step the start time by whole 5-minute marks. A start seeded off-grid (a slot
+ * at 14:02, an overrun) snaps to the next mark in the direction of travel rather
+ * than carrying the offset forward, so the value always lands on :00/:05/:10.
  */
-type Mode = 'form' | 'date' | 'time';
+function stepStartMinutes(current: number, direction: 1 | -1): number {
+  const stepped =
+    direction === 1
+      ? (Math.floor(current / START_STEP_MINUTES) + 1) * START_STEP_MINUTES
+      : (Math.ceil(current / START_STEP_MINUTES) - 1) * START_STEP_MINUTES;
+  return Math.min(MAX_MINUTES, Math.max(0, stepped));
+}
+
+/**
+ * Which pane of the sheet is showing. The date/time pickers and the post-save
+ * notify prompt are STEPS inside this sheet, not sheets of their own: opening a
+ * second modal from a visible one is unreliable on iOS, and a month grid nested
+ * in the form's ScrollView would put two same-axis scrollers on screen at once.
+ */
+type Mode = 'form' | 'date' | 'time' | 'notify';
 
 type CheckState =
   | { state: 'idle' | 'checking' | 'valid' | 'unknown' }
@@ -115,9 +132,12 @@ function addonRequirementLabel(group: AppointmentCatalogAddonGroup['group']): st
 export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps) {
   const { colors } = useTheme();
   const { venue } = useVenueContext();
+  const toast = useToast();
   const catalogQuery = useAppointmentCatalog(target ? venue?.id ?? null : null);
   const modify = useModifyAppointment(target?.id ?? '');
   const validate = useValidateAppointmentModification(target?.id ?? '');
+  // Sends the email the save deliberately held back, when the user taps Notify.
+  const notifyModification = useNotifyBookingModification();
   // Read the open booking's full detail (cache hit — the detail sheet is already
   // open) so we can seed the booking's current add-ons. ModifyBookingTarget does
   // not carry them and its source component is out of scope to edit.
@@ -147,6 +167,14 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   const [mode, setMode] = useState<Mode>('form');
   /** Any date inside the month the calendar step is showing. */
   const [monthAnchor, setMonthAnchor] = useState('');
+  /**
+   * The add-ons the booking had when the sheet opened. Kept in a ref because
+   * Undo needs them AFTER the save has invalidated the detail query — by then
+   * `currentAddons` describes the NEW booking, not the one we're restoring.
+   */
+  const originalAddonIds = useRef<string[]>([]);
+  /** True once an Undo PATCH is in flight, so the pane can show it working. */
+  const [undoing, setUndoing] = useState(false);
 
   // Seed from the booking when the sheet opens or the target booking changes.
   // useEffect avoids setState-during-render in Fabric/concurrent mode.
@@ -166,8 +194,10 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     setDuration(target.durationMinutes ?? 30);
     setAddonIds([]);
     setAddonsSeeded(false);
+    originalAddonIds.current = [];
     setChecked({ sig: null, result: { state: 'idle' } });
     setError(null);
+    setUndoing(false);
     setMode('form');
     setMonthAnchor(target.date);
   }, [target?.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -259,8 +289,17 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   // Seed selected add-ons from the booking's current add-ons once the detail
   // loads AND the catalogue knows the service's groups (so stale snapshots that
   // are no longer offered drop out). Effect (not render) to stay Fabric-safe.
+  //
+  // `seededId !== target.id` holds this off until the target-seeding effect above
+  // has actually applied. Both effects run in the SAME commit, and this one reads
+  // the pre-seed closure — where `serviceId` is still null, so `serviceInCatalog`
+  // is vacuously true and `hasAddonGroups` false. Without the guard it took the
+  // "nothing to seed" branch and latched `addonsSeeded` before the service was
+  // known, so a booking whose detail was already cached (the normal case — the
+  // detail sheet is open behind this one) never seeded its add-ons and the next
+  // save PATCHed `addons: []`, silently clearing them.
   useEffect(() => {
-    if (!target || addonsSeeded || !currentAddons) return;
+    if (!target || addonsSeeded || !currentAddons || seededId !== target.id) return;
     if (!serviceInCatalog || !hasAddonGroups) {
       // Nothing to seed against yet (or service has no add-ons) — mark seeded so
       // we don't keep re-checking, but only once the catalogue has resolved.
@@ -274,9 +313,11 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
       .map((a) => a.addon_id)
       .filter((id): id is string => !!id && addonById.has(id));
     setAddonIds(seeded);
+    originalAddonIds.current = seeded;
     setAddonsSeeded(true);
   }, [
     target,
+    seededId,
     addonsSeeded,
     currentAddons,
     serviceInCatalog,
@@ -507,8 +548,17 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
         ...(hasAddonGroups
           ? { addons: validAddonIds.map((addon_id) => ({ addon_id })) }
           : {}),
+        // Moving the start is the only change the server emails the guest about,
+        // and it does so the instant the PATCH lands. Hold it back so the staff
+        // member gets the same Notify / Don't notify / Undo choice the calendar
+        // gives them after a drag.
+        ...(scheduleChanged ? { defer_modification_guest_notification: true } : {}),
       });
       hapticSuccess();
+      if (scheduleChanged) {
+        setMode('notify');
+        return;
+      }
       onClose();
     } catch (e) {
       hapticWarning();
@@ -516,26 +566,123 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     }
   }
 
+  /** Send the held-back "your booking changed" email, then close. */
+  function handleNotify() {
+    if (!target) return;
+    const name = target.guestName;
+    notifyModification.mutate(
+      { bookingId: target.id },
+      {
+        onSuccess: () => toast.success(`${name} notified of the change.`),
+        onError: () => toast.error('Could not notify the guest.'),
+      },
+    );
+    onClose();
+  }
+
+  /**
+   * Put the booking back exactly as it was. Modify can change service, variant,
+   * staff, slot, duration AND add-ons, so Undo restores all of them — a
+   * schedule-only revert would silently keep the rest of the edit. The restore
+   * defers its own notification: an undone change is not something to email
+   * about.
+   *
+   * Ids fall back to the just-saved values when the booking opened without one
+   * (an archived service leaves `serviceId` null), which keeps the payload valid
+   * while still restoring everything we know the original of.
+   */
+  async function handleUndo() {
+    if (!target) return;
+    const restoreServiceId = target.serviceId ?? serviceId;
+    const restorePractitionerId = target.practitionerId ?? practitionerId;
+    if (!restoreServiceId || !restorePractitionerId) {
+      onClose();
+      return;
+    }
+    // The original service's groups decide whether add-ons are part of the
+    // restore — not the service the user may have switched to. `addonsSeeded`
+    // gates it: without a seeded snapshot we don't KNOW the original set, and
+    // sending an empty list would clear the booking's add-ons rather than
+    // restore them (the server treats a present `addons` key as REPLACE, and an
+    // omitted one as "leave alone").
+    const originalHadAddons =
+      addonsSeeded &&
+      services.some((s) => s.id === restoreServiceId && (s.addon_groups?.length ?? 0) > 0);
+    setUndoing(true);
+    try {
+      await modify.mutateAsync({
+        booking_date: target.date,
+        booking_time: `${target.time.slice(0, 5)}:00`,
+        practitioner_id: restorePractitionerId,
+        ...(target.usesServiceItem
+          ? { service_item_id: restoreServiceId }
+          : { appointment_service_id: restoreServiceId }),
+        duration_minutes: target.durationMinutes ?? 30,
+        service_variant_id: target.serviceVariantId,
+        ...(originalHadAddons
+          ? { addons: originalAddonIds.current.map((addon_id) => ({ addon_id })) }
+          : {}),
+        defer_modification_guest_notification: true,
+      });
+      hapticSuccess();
+      toast.success('Change undone.');
+      onClose();
+    } catch {
+      hapticWarning();
+      setUndoing(false);
+      toast.error('Could not undo the change.');
+    }
+  }
+
   const endPreview = minutesToTime((minutes + effectiveDuration) % (24 * 60));
+
+  // ---- Notify step: the save landed, the guest email is still held back -------
+  // Content-sized (no `fill`), matching the calendar's post-drag prompt — a
+  // 90%-tall sheet for three buttons would be all empty space.
+  if (target && seededId === target.id && mode === 'notify') {
+    return (
+      <Sheet visible onClose={onClose}>
+        <Text variant="subheading">Booking moved</Text>
+        <Text variant="caption" tone="muted">
+          Let {target.guestName} know about the change?
+        </Text>
+        <View style={styles.noticeActions}>
+          <Button label={`Notify ${target.guestName}`} fullWidth onPress={handleNotify} />
+          <Button label="Don't notify" variant="secondary" fullWidth onPress={onClose} />
+          <Button
+            label="Undo change"
+            variant="ghost"
+            fullWidth
+            loading={undoing}
+            onPress={() => void handleUndo()}
+          />
+        </View>
+      </Sheet>
+    );
+  }
 
   // ---- Date step: the wizard's month calendar, reused whole -------------------
   if (target && seededId === target.id && mode === 'date') {
     return (
       <Sheet visible fill onClose={onClose}>
-        <MonthDatePicker
-          title="Choose a date"
-          monthAnchor={monthAnchor || target.date}
-          onChangeMonth={setMonthAnchor}
-          today={today}
-          selectedDate={date}
-          onSelectDate={setDate}
-          availableDates={availableDates}
-          isLoading={monthQuery.isLoading}
-          timeZone={timeZone}
-          weekShortcuts
-          availabilityHint="Green dates can fit this appointment."
-          onContinue={() => setMode('time')}
-        />
+        {/* MonthDatePicker takes its gutter from its parent (in the wizard, a
+            padded Screen), so the date pane needs a padded wrapper of its own. */}
+        <View style={styles.pickerPane}>
+          <MonthDatePicker
+            title="Choose a date"
+            monthAnchor={monthAnchor || target.date}
+            onChangeMonth={setMonthAnchor}
+            today={today}
+            selectedDate={date}
+            onSelectDate={setDate}
+            availableDates={availableDates}
+            isLoading={monthQuery.isLoading}
+            timeZone={timeZone}
+            weekShortcuts
+            availabilityHint="Green dates can fit this appointment."
+            onContinue={() => setMode('time')}
+          />
+        </View>
       </Sheet>
     );
   }
@@ -811,10 +958,10 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
                 picker has no equivalent of: staff sometimes need a time the
                 availability engine won't offer (an overrun, a squeezed-in fit). */}
             <Stepper
-              label="Start (by hand)"
+              label="Start"
               value={selectedTime}
-              onDecrement={() => setMinutes((m) => Math.max(0, m - 1))}
-              onIncrement={() => setMinutes((m) => Math.min(MAX_MINUTES, m + 1))}
+              onDecrement={() => setMinutes((m) => stepStartMinutes(m, -1))}
+              onIncrement={() => setMinutes((m) => stepStartMinutes(m, 1))}
             />
             <Stepper
               label="Duration"
@@ -902,13 +1049,24 @@ const styles = StyleSheet.create({
   // `flex: 1` + a `fill` Sheet: the form is long enough to exceed the sheet's
   // height, and a content-sized body pushes the pinned Save/Cancel row off the
   // bottom of the screen. The ScrollView must be the part that gives.
+  //
+  // `fill` Sheets supply no horizontal padding (they delegate it to the child),
+  // so every pane pads itself to the standard sheet inset — otherwise the form
+  // runs flush to the screen edges while the content-sized sheets beside it
+  // (deposit, filters, take payment) sit inset, and Modify reads as too wide.
   body: {
     flex: 1,
     gap: spacing.md,
+    paddingHorizontal: spacing.lg,
   },
   stepBody: {
     flex: 1,
     gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+  },
+  pickerPane: {
+    flex: 1,
+    paddingHorizontal: spacing.lg,
   },
   headerBlock: {
     gap: spacing.xs,
@@ -977,5 +1135,8 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     flex: 1,
+  },
+  noticeActions: {
+    gap: spacing.sm,
   },
 });

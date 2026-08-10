@@ -328,6 +328,13 @@ export interface ModifyAppointmentInput {
    * add-on minutes into `duration_minutes` so the wall-clock end time is correct.
    */
   addons?: { addon_id: string }[];
+  /**
+   * Hold back the server's "your booking changed" guest email so the app can
+   * prompt (Notify / Don't notify / Undo) — same deferral the drag-reschedule
+   * path uses. The server only sends that email when the booking START moved,
+   * so this is only meaningful on a date/time change.
+   */
+  defer_modification_guest_notification?: boolean;
   /** Admin acknowledgement of an edit-time compliance block (409 → override). */
   override_compliance?: boolean;
 }
