@@ -1489,7 +1489,7 @@ export default function CalendarScreen() {
   );
 
   return (
-    <Screen padded={false}>
+    <Screen padded={false} bottomInset={false}>
       <ErrorBoundary label="the calendar">
       {practitionersQuery.isLoading ? (
         <LoadingState message="Loading calendar…" />

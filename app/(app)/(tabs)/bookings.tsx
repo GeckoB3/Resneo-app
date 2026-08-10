@@ -960,7 +960,7 @@ export default function BookingsScreen() {
   }, [customRange]);
 
   return (
-    <Screen padded={false}>
+    <Screen padded={false} bottomInset={false}>
       <ErrorBoundary label="appointments">
       <View style={[styles.toolbar, { borderBottomColor: colors.border }]}>
         <Segmented value={scope} onChange={handleScopeChange} options={SCOPE_OPTIONS} />

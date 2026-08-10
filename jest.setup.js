@@ -19,6 +19,30 @@ jest.mock('expo-haptics', () => ({
   NotificationFeedbackType: { Success: 'success', Warning: 'warning', Error: 'error' },
 }));
 
+// There is no native provider under jest, so the real `useSafeAreaInsets`
+// throws "No safe area value available" for anything that renders a Screen or a
+// Sheet. A zero-inset default keeps those suites about their own behaviour;
+// suites that care about the inset (Screen, Sheet) mock this module themselves,
+// and a suite-level jest.mock takes precedence over this one.
+// eslint-disable-next-line no-undef
+jest.mock('react-native-safe-area-context', () => {
+  // eslint-disable-next-line no-undef
+  const React = require('react');
+  // eslint-disable-next-line no-undef
+  const { View } = require('react-native');
+  const insets = { top: 0, left: 0, right: 0, bottom: 0 };
+  const frame = { x: 0, y: 0, width: 375, height: 812 };
+  return {
+    __esModule: true,
+    SafeAreaProvider: ({ children }) => children,
+    SafeAreaView: ({ children, ...props }) => React.createElement(View, props, children),
+    SafeAreaInsetsContext: React.createContext(insets),
+    useSafeAreaInsets: () => insets,
+    useSafeAreaFrame: () => frame,
+    initialWindowMetrics: { insets, frame },
+  };
+});
+
 // react-native-reanimated's native part (worklets) is not initialized under
 // jest-expo, so importing any component that pulls it in (Button, Input, Sheet,
 // …) throws at module-load time. The library's own `/mock` entry transitively

@@ -14,7 +14,7 @@ import {
   type ScrollViewProps,
 } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { motion, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -27,6 +27,19 @@ type ScreenProps = ScrollViewProps & {
    * above the on-screen keyboard. Opt-in (forms) — most screens don't need it.
    */
   keyboardAvoiding?: boolean;
+  /**
+   * Reserve the bottom safe area (the home-indicator strip). On by default,
+   * because a PUSHED screen sits against the physical bottom edge and nothing
+   * else clears it — leave it off and the last row of content runs under the
+   * indicator.
+   *
+   * The four TAB screens pass `false`: they sit above the tab bar, which already
+   * carries the inset via `tabBarStyle.paddingBottom` in (tabs)/_layout.tsx, so
+   * reserving it here too would leave a dead strip above the bar. Default-on is
+   * the safe way round — a forgotten tab screen wastes space, a forgotten pushed
+   * screen hides content.
+   */
+  bottomInset?: boolean;
 };
 
 /**
@@ -37,13 +50,35 @@ export function Screen({
   scroll = false,
   padded = true,
   keyboardAvoiding = false,
+  bottomInset = true,
   style,
   contentContainerStyle,
   children,
   ...props
 }: ScreenProps) {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const paddingStyle = padded ? styles.padded : undefined;
+  const safeBottom = bottomInset ? insets.bottom : 0;
+
+  /**
+   * Add the safe area to whatever bottom padding is already in play, rather than
+   * replacing it — a caller that asked for room at the end of a list still gets
+   * it, and still clears the indicator. Applied last so it always wins.
+   */
+  const withSafeBottom = useCallback(
+    (base: ScrollViewProps['style'] | ScrollViewProps['contentContainerStyle']) => {
+      const flat = StyleSheet.flatten(base) ?? {};
+      const existing =
+        typeof flat.paddingBottom === 'number'
+          ? flat.paddingBottom
+          : typeof flat.padding === 'number'
+            ? flat.padding
+            : 0;
+      return { paddingBottom: existing + safeBottom };
+    },
+    [safeBottom],
+  );
   // Non-scroll keyboardAvoiding uses a KeyboardAvoidingView; iOS needs an
   // explicit padding behaviour, Android relies on adjustResize.
   const kavBehavior = Platform.OS === 'ios' ? 'padding' : undefined;
@@ -61,7 +96,7 @@ export function Screen({
   const keyboardInset = useSharedValue(0);
   const scrollRef = useRef<ScrollView>(null);
   const scrollOffset = useRef(0);
-  const basePad = padded ? spacing.base : 0;
+  const basePad = (padded ? spacing.base : 0) + safeBottom;
 
   const handleScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     scrollOffset.current = event.nativeEvent.contentOffset.y;
@@ -137,7 +172,11 @@ export function Screen({
     return (
       <SafeAreaView style={[styles.flex, { backgroundColor: colors.background }]} edges={['top']}>
         <ScrollView
-          contentContainerStyle={[paddingStyle, contentContainerStyle]}
+          contentContainerStyle={[
+            paddingStyle,
+            contentContainerStyle,
+            withSafeBottom([paddingStyle, contentContainerStyle]),
+          ]}
           keyboardShouldPersistTaps="handled"
           style={[styles.flex, style]}
           {...props}>
@@ -150,7 +189,13 @@ export function Screen({
   const inner = <View style={styles.flex}>{children}</View>;
   return (
     <SafeAreaView
-      style={[styles.flex, paddingStyle, { backgroundColor: colors.background }, style]}
+      style={[
+        styles.flex,
+        paddingStyle,
+        { backgroundColor: colors.background },
+        style,
+        withSafeBottom([paddingStyle, style]),
+      ]}
       edges={['top']}>
       {keyboardAvoiding ? (
         <KeyboardAvoidingView style={styles.flex} behavior={kavBehavior}>

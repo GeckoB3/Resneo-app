@@ -827,7 +827,7 @@ export default function ClientsScreen() {
   }, [guests.length, isFetchingNextPage, hasMore, totalCount, clientLabel, colors.brand]);
 
   return (
-    <Screen padded={false}>
+    <Screen padded={false} bottomInset={false}>
       {/* Search box is rendered OUTSIDE the FlatList so its TextInput is never remounted. */}
       <View style={styles.header}>
         <SearchBar

@@ -230,14 +230,14 @@ export default function MoreScreen() {
 
   if (staffLoading || venueLoading) {
     return (
-      <Screen>
+      <Screen bottomInset={false}>
         <LoadingState message="Loading…" />
       </Screen>
     );
   }
 
   return (
-    <Screen scroll padded={false} contentContainerStyle={styles.content}>
+    <Screen scroll padded={false} bottomInset={false} contentContainerStyle={styles.content}>
       <MoreHero
         name={staff?.name ?? 'Staff member'}
         subtitle={venueName ?? staff?.email ?? ''}
