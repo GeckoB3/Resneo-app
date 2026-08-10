@@ -17,7 +17,7 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useReduceMotion } from '@/lib/motion';
 import { AppLockCover } from '@/providers/AppLockProvider';
@@ -67,8 +67,8 @@ type SheetProps = {
  * on the UI thread via a shared value (no re-render), and is a no-op on web
  * where the events never fire — so the field is never obscured.
  *
- * The returned value already nets off the bottom safe-area inset (the sheet's
- * SafeAreaView contributes that), so callers add it straight onto a base pad.
+ * The returned value already nets off the bottom safe-area inset (the base pad
+ * carries that), so callers add it straight onto a base pad.
  */
 function useKeyboardInset(bottomInset: number) {
   const inset = useSharedValue(0);
@@ -118,13 +118,24 @@ export function Sheet({
 
   // Lift the content above the keyboard. `fill` sheets keep their fixed height
   // and shrink the body from the bottom (no top clipping); content-sized sheets
-  // grow upward off the keyboard. The base padding keeps the resting layout
-  // identical to before when no keyboard is shown.
+  // grow upward off the keyboard.
   //
   // `overlay` mode reserves NO keyboard space — the keyboard simply overlays the
   // body and the child scrolls its focused field above it. This avoids the
   // white band that reserving would otherwise leave above the keyboard.
-  const basePad = fill ? 0 : spacing.lg;
+  //
+  // The bottom safe area is padding here rather than a native <SafeAreaView>.
+  // Every sheet renders in its own Modal window, and a sheet opened from INSIDE
+  // another sheet — booking detail → Modify — is a Modal within a Modal, where
+  // the native view measures no safe area and contributes 0, dropping the pinned
+  // action row onto the home indicator. The root SafeAreaProvider's metrics are
+  // correct however deeply the Modal is nested, so they drive it instead.
+  //
+  // `fill` sheets also need a margin of their own. The flag used to give them 0
+  // — it existed only to keep the pre-keyboard resting layout byte-identical —
+  // which left their pinned footer sitting hard on the safe-area boundary.
+  // Content-sized sheets are unchanged: lg + inset, exactly as before.
+  const basePad = (fill ? spacing.md : spacing.lg) + insets.bottom;
   const animatedPad = useAnimatedStyle(() => ({
     paddingBottom: basePad + (keyboardAvoidance === 'overlay' ? 0 : keyboardInset.value),
   }));
@@ -191,22 +202,20 @@ export function Sheet({
             fill ? { height: maxHeight } : { maxHeight },
             sheetTransform,
           ]}>
-          <SafeAreaView edges={['bottom']} style={fill ? styles.safeFill : undefined}>
-            <Animated.View style={[fill ? styles.contentFill : styles.content, animatedPad]}>
-              <GestureDetector gesture={panGesture}>
-                <Pressable
-                  onPress={onClose}
-                  accessibilityRole="button"
-                  accessibilityLabel="Close"
-                  accessibilityHint="Or drag down to dismiss"
-                  hitSlop={12}
-                  style={styles.handleHitArea}>
-                  <View style={[styles.handle, { backgroundColor: colors.border }]} />
-                </Pressable>
-              </GestureDetector>
-              {children}
-            </Animated.View>
-          </SafeAreaView>
+          <Animated.View style={[fill ? styles.contentFill : styles.content, animatedPad]}>
+            <GestureDetector gesture={panGesture}>
+              <Pressable
+                onPress={onClose}
+                accessibilityRole="button"
+                accessibilityLabel="Close"
+                accessibilityHint="Or drag down to dismiss"
+                hitSlop={12}
+                style={styles.handleHitArea}>
+                <View style={[styles.handle, { backgroundColor: colors.border }]} />
+              </Pressable>
+            </GestureDetector>
+            {children}
+          </Animated.View>
         </Animated.View>
         {/* The app-lock cover must be rendered INSIDE this Modal: the provider's
             own cover lives in the root view, and a Modal is a separate native
@@ -227,11 +236,6 @@ const styles = StyleSheet.create({
   sheet: {
     borderTopLeftRadius: radius.surface,
     borderTopRightRadius: radius.surface,
-  },
-  // `fill` sheets pin a fixed height on the outer wrapper; the SafeAreaView must
-  // fill it so the flex:1 content body expands to the full height.
-  safeFill: {
-    flex: 1,
   },
   content: {
     paddingTop: spacing.lg,
