@@ -198,223 +198,233 @@ export function ContactFilterSheet({
   }
 
   return (
-    <Sheet visible={visible} onClose={onClose} maxHeight="92%">
-      <View style={styles.header}>
-        <Text variant="subheading">Filter contacts</Text>
-      </View>
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollBody}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}>
-        {/* Identity scope */}
-        <View style={styles.section}>
-          <Text variant="label">Who to include</Text>
-          <View style={styles.chipRow}>
-            {IDENTITY_OPTIONS.map((opt) => (
-              <Chip
-                key={opt.value}
-                label={opt.label}
-                selected={draft.filter === opt.value}
-                onPress={() => setDraft((d) => ({ ...d, filter: opt.value }))}
-              />
-            ))}
-          </View>
-          {selectedHint(IDENTITY_OPTIONS, draft.filter) ? (
-            <Text variant="caption" tone="muted">
-              {selectedHint(IDENTITY_OPTIONS, draft.filter)}
-            </Text>
-          ) : null}
+    <Sheet visible={visible} onClose={onClose} maxHeight="92%" fill>
+      <View style={styles.body}>
+        <View style={styles.header}>
+          <Text variant="subheading">Filter contacts</Text>
         </View>
-
-        {/* Smart-list segment */}
-        <View style={styles.section}>
-          <Text variant="label">Smart list</Text>
-          <View style={styles.chipRow}>
-            {SEGMENT_OPTIONS.map((opt) => (
-              <Chip
-                key={opt.value}
-                label={opt.label}
-                selected={draft.segment === opt.value}
-                onPress={() =>
-                  setDraft((d) => ({
-                    ...d,
-                    segment: opt.value,
-                    segmentTag: '',
-                    date_from: '',
-                    date_to: '',
-                    // Default marketing to the backend's `subscribed` when the
-                    // marketing segment is chosen (web parity).
-                    marketing: opt.value === 'marketing' ? 'subscribed' : '',
-                    last_staff_id: '',
-                    last_service_id: '',
-                  }))
-                }
-              />
-            ))}
-          </View>
-          {selectedHint(SEGMENT_OPTIONS, draft.segment) ? (
-            <Text variant="caption" tone="muted">
-              {selectedHint(SEGMENT_OPTIONS, draft.segment)}
-            </Text>
-          ) : null}
-        </View>
-
-        {/* Tag picker for tag segment */}
-        {segmentNeedsTag ? (
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.scrollBody}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}>
+          {/* Identity scope */}
           <View style={styles.section}>
-            <Text variant="label">Tag</Text>
-            {availableTags.length > 0 ? (
-              <View style={styles.chipRow}>
-                {availableTags.map((tag) => (
-                  <Chip
-                    key={tag}
-                    label={tag}
-                    selected={draft.segmentTag === tag}
-                    onPress={() => setDraft((d) => ({ ...d, segmentTag: tag }))}
-                  />
-                ))}
-              </View>
-            ) : null}
-            <Input
-              label="Tag (type any)"
-              value={draft.segmentTag}
-              onChangeText={(v) => setDraft((d) => ({ ...d, segmentTag: v }))}
-              autoCapitalize="none"
-              placeholder="e.g. vip"
-            />
-          </View>
-        ) : null}
-
-        {/* Last staff picker */}
-        {segmentNeedsStaff ? (
-          <View style={styles.section}>
-            <Text variant="label">Last seen by</Text>
-            {practitionersQuery.isLoading ? (
-              <Text variant="caption" tone="muted">
-                Loading team…
-              </Text>
-            ) : practitioners.length === 0 ? (
-              <Text variant="caption" tone="muted">
-                No staff to filter by.
-              </Text>
-            ) : (
-              <View style={styles.chipRow}>
-                {practitioners.map((p) => (
-                  <Chip
-                    key={p.id}
-                    label={p.name}
-                    selected={draft.last_staff_id === p.id}
-                    onPress={() =>
-                      setDraft((d) => ({
-                        ...d,
-                        last_staff_id: d.last_staff_id === p.id ? '' : p.id,
-                      }))
-                    }
-                  />
-                ))}
-              </View>
-            )}
-          </View>
-        ) : null}
-
-        {/* Last service picker */}
-        {segmentNeedsService ? (
-          <View style={styles.section}>
-            <Text variant="label">Last service booked</Text>
-            {servicesQuery.isLoading ? (
-              <Text variant="caption" tone="muted">
-                Loading services…
-              </Text>
-            ) : services.length === 0 ? (
-              <Text variant="caption" tone="muted">
-                No services to filter by.
-              </Text>
-            ) : (
-              <View style={styles.chipRow}>
-                {services.map((s) => (
-                  <Chip
-                    key={s.id}
-                    label={s.name}
-                    selected={draft.last_service_id === s.id}
-                    onPress={() =>
-                      setDraft((d) => ({
-                        ...d,
-                        last_service_id: d.last_service_id === s.id ? '' : s.id,
-                      }))
-                    }
-                  />
-                ))}
-              </View>
-            )}
-          </View>
-        ) : null}
-
-        {/* Date range */}
-        {segmentNeedsDateRange ? (
-          <View style={styles.section}>
-            <Text variant="label">Date range</Text>
-            <View style={styles.dateRow}>
-              <View style={styles.dateField}>
-                <Text variant="caption" tone="muted">
-                  From
-                </Text>
-                <DatePickerField
-                  value={draft.date_from || todayIso}
-                  onChange={(iso) => setDraft((d) => ({ ...d, date_from: iso }))}
-                  accessibilityLabel="Filter from date"
+            <Text variant="label">Who to include</Text>
+            <View style={styles.chipRow}>
+              {IDENTITY_OPTIONS.map((opt) => (
+                <Chip
+                  key={opt.value}
+                  label={opt.label}
+                  selected={draft.filter === opt.value}
+                  onPress={() => setDraft((d) => ({ ...d, filter: opt.value }))}
                 />
-              </View>
-              <View style={styles.dateField}>
-                <Text variant="caption" tone="muted">
-                  To
-                </Text>
-                <DatePickerField
-                  value={draft.date_to || todayIso}
-                  onChange={(iso) => setDraft((d) => ({ ...d, date_to: iso }))}
-                  accessibilityLabel="Filter to date"
-                />
-              </View>
+              ))}
             </View>
-            {rangeError ? (
-              <Text variant="caption" tone="danger">
-                {rangeError}
+            {selectedHint(IDENTITY_OPTIONS, draft.filter) ? (
+              <Text variant="caption" tone="muted">
+                {selectedHint(IDENTITY_OPTIONS, draft.filter)}
               </Text>
             ) : null}
           </View>
-        ) : null}
 
-        {/* Marketing consent sub-filter */}
-        {segmentNeedsMarketing ? (
+          {/* Smart-list segment */}
           <View style={styles.section}>
-            <Text variant="label">Consent status</Text>
-            <Segmented
-              options={MARKETING_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
-              value={normaliseMarketing(draft.marketing)}
-              onChange={(v) => {
-                hapticSelect();
-                setDraft((d) => ({ ...d, marketing: v }));
-              }}
-            />
+            <Text variant="label">Smart list</Text>
+            <View style={styles.chipRow}>
+              {SEGMENT_OPTIONS.map((opt) => (
+                <Chip
+                  key={opt.value}
+                  label={opt.label}
+                  selected={draft.segment === opt.value}
+                  onPress={() =>
+                    setDraft((d) => ({
+                      ...d,
+                      segment: opt.value,
+                      segmentTag: '',
+                      date_from: '',
+                      date_to: '',
+                      // Default marketing to the backend's `subscribed` when the
+                      // marketing segment is chosen (web parity).
+                      marketing: opt.value === 'marketing' ? 'subscribed' : '',
+                      last_staff_id: '',
+                      last_service_id: '',
+                    }))
+                  }
+                />
+              ))}
+            </View>
+            {selectedHint(SEGMENT_OPTIONS, draft.segment) ? (
+              <Text variant="caption" tone="muted">
+                {selectedHint(SEGMENT_OPTIONS, draft.segment)}
+              </Text>
+            ) : null}
           </View>
-        ) : null}
-      </ScrollView>
 
-      <View style={styles.actions}>
-        <Button label="Reset" variant="ghost" style={styles.flex1} onPress={handleReset} />
-        <Button label="Apply" style={styles.flex2} disabled={!dateValid} onPress={handleApply} />
+          {/* Tag picker for tag segment */}
+          {segmentNeedsTag ? (
+            <View style={styles.section}>
+              <Text variant="label">Tag</Text>
+              {availableTags.length > 0 ? (
+                <View style={styles.chipRow}>
+                  {availableTags.map((tag) => (
+                    <Chip
+                      key={tag}
+                      label={tag}
+                      selected={draft.segmentTag === tag}
+                      onPress={() => setDraft((d) => ({ ...d, segmentTag: tag }))}
+                    />
+                  ))}
+                </View>
+              ) : null}
+              <Input
+                label="Tag (type any)"
+                value={draft.segmentTag}
+                onChangeText={(v) => setDraft((d) => ({ ...d, segmentTag: v }))}
+                autoCapitalize="none"
+                placeholder="e.g. vip"
+              />
+            </View>
+          ) : null}
+
+          {/* Last staff picker */}
+          {segmentNeedsStaff ? (
+            <View style={styles.section}>
+              <Text variant="label">Last seen by</Text>
+              {practitionersQuery.isLoading ? (
+                <Text variant="caption" tone="muted">
+                  Loading team…
+                </Text>
+              ) : practitioners.length === 0 ? (
+                <Text variant="caption" tone="muted">
+                  No staff to filter by.
+                </Text>
+              ) : (
+                <View style={styles.chipRow}>
+                  {practitioners.map((p) => (
+                    <Chip
+                      key={p.id}
+                      label={p.name}
+                      selected={draft.last_staff_id === p.id}
+                      onPress={() =>
+                        setDraft((d) => ({
+                          ...d,
+                          last_staff_id: d.last_staff_id === p.id ? '' : p.id,
+                        }))
+                      }
+                    />
+                  ))}
+                </View>
+              )}
+            </View>
+          ) : null}
+
+          {/* Last service picker */}
+          {segmentNeedsService ? (
+            <View style={styles.section}>
+              <Text variant="label">Last service booked</Text>
+              {servicesQuery.isLoading ? (
+                <Text variant="caption" tone="muted">
+                  Loading services…
+                </Text>
+              ) : services.length === 0 ? (
+                <Text variant="caption" tone="muted">
+                  No services to filter by.
+                </Text>
+              ) : (
+                <View style={styles.chipRow}>
+                  {services.map((s) => (
+                    <Chip
+                      key={s.id}
+                      label={s.name}
+                      selected={draft.last_service_id === s.id}
+                      onPress={() =>
+                        setDraft((d) => ({
+                          ...d,
+                          last_service_id: d.last_service_id === s.id ? '' : s.id,
+                        }))
+                      }
+                    />
+                  ))}
+                </View>
+              )}
+            </View>
+          ) : null}
+
+          {/* Date range */}
+          {segmentNeedsDateRange ? (
+            <View style={styles.section}>
+              <Text variant="label">Date range</Text>
+              <View style={styles.dateRow}>
+                <View style={styles.dateField}>
+                  <Text variant="caption" tone="muted">
+                    From
+                  </Text>
+                  <DatePickerField
+                    value={draft.date_from || todayIso}
+                    onChange={(iso) => setDraft((d) => ({ ...d, date_from: iso }))}
+                    accessibilityLabel="Filter from date"
+                  />
+                </View>
+                <View style={styles.dateField}>
+                  <Text variant="caption" tone="muted">
+                    To
+                  </Text>
+                  <DatePickerField
+                    value={draft.date_to || todayIso}
+                    onChange={(iso) => setDraft((d) => ({ ...d, date_to: iso }))}
+                    accessibilityLabel="Filter to date"
+                  />
+                </View>
+              </View>
+              {rangeError ? (
+                <Text variant="caption" tone="danger">
+                  {rangeError}
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
+
+          {/* Marketing consent sub-filter */}
+          {segmentNeedsMarketing ? (
+            <View style={styles.section}>
+              <Text variant="label">Consent status</Text>
+              <Segmented
+                options={MARKETING_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+                value={normaliseMarketing(draft.marketing)}
+                onChange={(v) => {
+                  hapticSelect();
+                  setDraft((d) => ({ ...d, marketing: v }));
+                }}
+              />
+            </View>
+          ) : null}
+        </ScrollView>
+
+        <View style={styles.actions}>
+          <Button label="Reset" variant="ghost" style={styles.flex1} onPress={handleReset} />
+          <Button label="Apply" style={styles.flex2} disabled={!dateValid} onPress={handleApply} />
+        </View>
       </View>
     </Sheet>
   );
 }
 
 const styles = StyleSheet.create({
+  // `fill` + a flexing ScrollView. The filter list outgrows the sheet, and a
+  // content-sized body can't scroll AND pushes Reset/Apply off the bottom. The
+  // scroll used to be capped at a hardcoded 75% to hold that off; flexing to the
+  // space actually left over is what the cap was approximating. `fill` Sheets
+  // supply no horizontal padding, so the body carries the standard inset.
+  body: {
+    flex: 1,
+    paddingHorizontal: spacing.lg,
+  },
   header: {
     paddingBottom: spacing.sm,
   },
   scroll: {
-    flexGrow: 0,
-    maxHeight: '75%',
+    flex: 1,
   },
   scrollBody: {
     gap: spacing.base,

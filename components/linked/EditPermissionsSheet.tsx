@@ -136,7 +136,7 @@ export function EditPermissionsSheet({
   };
 
   return (
-    <Sheet visible={visible} onClose={onClose} maxHeight="92%">
+    <Sheet visible={visible} onClose={onClose} maxHeight="92%" fill>
       <View style={styles.container}>
         <View>
           <Text variant="subheading">{`Edit permissions with ${name}`}</Text>
@@ -187,11 +187,17 @@ export function EditPermissionsSheet({
 }
 
 const styles = StyleSheet.create({
+  // `fill` + a flexing ScrollView: the body outgrows the sheet, and a
+  // content-sized one can't scroll AND pushes the pinned actions off the
+  // bottom. `fill` Sheets supply no horizontal padding, so the container
+  // carries the standard inset itself.
   container: {
+    flex: 1,
     gap: spacing.md,
+    paddingHorizontal: spacing.lg,
   },
   scroll: {
-    flexGrow: 0,
+    flex: 1,
   },
   scrollBody: {
     gap: spacing.md,

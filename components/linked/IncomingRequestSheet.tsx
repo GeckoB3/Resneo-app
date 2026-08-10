@@ -70,8 +70,8 @@ export function IncomingRequestSheet({
     normaliseGrant(mine).calendar === 'none' && normaliseGrant(theirs).calendar === 'none';
 
   return (
-    <Sheet visible={visible} onClose={onClose} maxHeight={editing ? '92%' : '85%'}>
-      <View style={styles.container}>
+    <Sheet visible={visible} onClose={onClose} maxHeight={editing ? '92%' : '85%'} fill={editing}>
+      <View style={[styles.container, editing ? styles.containerFill : null]}>
         <View>
           <Text variant="subheading">{`${name} wants to link with you`}</Text>
           <Text variant="bodySmall" tone="secondary">
@@ -184,8 +184,17 @@ const styles = StyleSheet.create({
   message: {
     fontStyle: 'italic',
   },
+  // Only the `editing` branch scrolls, so only it goes `fill`: the read-only
+  // branch is short, and a fixed 85% sheet around it would be mostly gap. The
+  // padding follows the same switch — a content-sized Sheet already insets its
+  // child, a `fill` one delegates that to the body, so applying both would
+  // double it.
+  containerFill: {
+    flex: 1,
+    paddingHorizontal: spacing.lg,
+  },
   scroll: {
-    flexGrow: 0,
+    flex: 1,
   },
   scrollBody: {
     gap: spacing.md,

@@ -401,7 +401,7 @@ export function ClassScheduleSheet({ target, onClose, onSaved }: ClassScheduleSh
   const saveLabel = isEditing ? 'Save' : mode === 'single' ? 'Schedule' : 'Schedule sessions';
 
   return (
-    <Sheet visible={target !== null} onClose={onClose} maxHeight="92%">
+    <Sheet visible={target !== null} onClose={onClose} maxHeight="92%" fill>
       <View style={styles.bodyWrap}>
         <Text variant="overline" tone="muted">
           {isEditing ? 'Edit session' : 'Schedule session'}
@@ -638,11 +638,17 @@ function ChipRow({
 }
 
 const styles = StyleSheet.create({
+  // `fill` + a flexing ScrollView: the form outgrows the sheet, and a
+  // content-sized body can't scroll AND pushes the pinned actions off the
+  // bottom. `fill` Sheets supply no horizontal padding, so the body carries the
+  // standard inset itself.
   bodyWrap: {
+    flex: 1,
     gap: spacing.md,
+    paddingHorizontal: spacing.lg,
   },
   scroll: {
-    flexGrow: 0,
+    flex: 1,
   },
   body: {
     gap: spacing.md,
