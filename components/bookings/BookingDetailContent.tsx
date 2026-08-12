@@ -1,7 +1,7 @@
 import * as Clipboard from 'expo-clipboard';
 import { format, parseISO } from 'date-fns';
 import { useRouter, type Href } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 
@@ -47,6 +47,10 @@ import { calendarDateInTimeZone } from '@/lib/dates/venue-dates';
 import { canMarkNoShowForSlot, clampNoShowGraceMinutes } from '@/lib/booking/no-show-grace';
 import { ACTION_COLORS, primaryActionColors } from '@/lib/booking/booking-action-colors';
 import { useAcceptUnpaidGuard } from '@/components/bookings/AcceptUnpaidSheet';
+import {
+  resolveAppointmentVisit,
+  visitServiceNames,
+} from '@/lib/booking/appointment-visit';
 import { resolveBookingCoreDurationMinutes } from '@/lib/booking/booking-core-duration';
 import { bookingDetailActions } from '@/lib/booking/booking-status-actions';
 import { bookingStatusVisualForKey } from '@/lib/booking/booking-status-visual';
@@ -67,6 +71,7 @@ import {
   useSetBookingAttendance,
 } from '@/lib/queries/useBookingMutations';
 import { useGuestDetail } from '@/lib/queries/useGuestDetail';
+import { useGroupVisitBookings } from '@/lib/queries/useGroupVisit';
 import { useManagedServices } from '@/lib/queries/useServicesManage';
 import { writeRebookBootstrap, type RebookBootstrapPayload } from '@/lib/rebook-bootstrap';
 import type { GuestBookingHistoryRow } from '@/types/guest-detail';
@@ -467,18 +472,42 @@ export function BookingDetailContent({
   // seed for the Modify sheet. Reads BOTH end columns: a guest-created
   // appointment has no `booking_end_time`, and treating that as "unknown length"
   // let Modify propose 30 minutes and shrink the booking on save.
-  const durationMinutes = resolveBookingCoreDurationMinutes(booking);
+  const rowDurationMinutes = resolveBookingCoreDurationMinutes(booking);
+
+  /**
+   * The whole visit, when this booking is one service of several.
+   *
+   * The calendar merges a visit into one bar and opens its EARLIEST segment, so
+   * without this the panel reported that segment's time and length for the whole
+   * thing: a visit running 10:00 to 12:15 opened showing "10:00 – 11:00 · 1h",
+   * disagreeing with the bar that had just been tapped. Null for a party, for an
+   * ordinary booking, and while the query is still loading — every one of which
+   * wants the single-row facts below.
+   *
+   * The same query already backs `GroupVisitCards` further down, so this is a
+   * cache hit rather than a second request.
+   */
+  const groupVisitQuery = useGroupVisitBookings(booking.group_booking_id);
+  const visit = useMemo(
+    () => resolveAppointmentVisit(groupVisitQuery.data ?? []),
+    [groupVisitQuery.data],
+  );
+
+  // Booked length as the screen should read it: the visit's wall-clock span when
+  // there is one, otherwise this row's own. Note this is the SPAN, gaps included
+  // — not the sum of the services, which is a different number whenever a buffer
+  // or processing gap sits between two of them, and which is what the visit is
+  // edited by.
+  const durationMinutes = visit?.totalMinutes ?? rowDurationMinutes;
 
   // Hero facts — the "what & when" surfaced directly under the guest header so
   // the most important info is visible before any action is taken.
   const practitionerName =
     booking.practitioner_name?.trim() || fallbackPractitionerName?.trim() || null;
   const dateLabel = formatBookingDateLabel(booking.booking_date, booking.booking_time);
-  const timeRangeLabel = formatBookingTimeRange(
-    booking.booking_time,
-    booking.booking_end_time,
-    durationMinutes,
-  );
+  const timeRangeLabel = visit
+    ? `${visit.startHm} – ${visit.endHm}`
+    : formatBookingTimeRange(booking.booking_time, booking.booking_end_time, durationMinutes);
   // Prefer the detail's variant name, then the list row's service label, then the
   // service catalog by id (the detail GET omits the base name for plain services).
   const catalogServiceName =
@@ -490,8 +519,11 @@ export function BookingDetailContent({
     fallbackServiceName?.trim() ||
     catalogServiceName ||
     null;
+  // A visit says what it is made of, so the panel answers "how long is this and
+  // what is in it" without scrolling to the breakdown card below. The per-row
+  // name would otherwise be whichever service happened to be first.
   const serviceLine = [
-    serviceName,
+    visit ? visitServiceNames(visit).join(', ') : serviceName,
     practitionerName ? `with ${practitionerName}` : null,
   ]
     .filter(Boolean)
@@ -524,17 +556,41 @@ export function BookingDetailContent({
     !!booking.guest &&
     !!(booking.appointment_service_id || booking.service_item_id);
 
+  /**
+   * What a visit hands the editing sheets, or null for an ordinary booking.
+   *
+   * Both sheets used to take this row alone, which is what let a visit come
+   * apart: shortening the first service left the rest where they were (dead time
+   * opens up), and moving it took the head away from the tail. With this set they
+   * edit the whole visit through one endpoint instead.
+   */
+  const visitEdit =
+    visit?.groupBookingId != null
+      ? {
+          groupBookingId: visit.groupBookingId,
+          startHm: visit.startHm,
+          endHm: visit.endHm,
+          serviceCount: visit.services.length,
+          serviceNames: visitServiceNames(visit),
+          /** The visit's FIRST service: the row its notification is sent against. */
+          leadBookingId: visit.services[0]!.id,
+        }
+      : null;
+
   const openModify = () =>
     setModifyTarget({
       id: booking.id,
       guestName,
       date: booking.booking_date,
-      time: booking.booking_time,
+      // A visit's schedule belongs to its FIRST service, whichever segment the
+      // calendar opened.
+      time: visit ? `${visit.startHm}:00` : booking.booking_time,
       durationMinutes,
       practitionerId: booking.calendar_id ?? booking.practitioner_id ?? null,
       serviceId: booking.appointment_service_id ?? booking.service_item_id ?? null,
       usesServiceItem: !booking.appointment_service_id && !!booking.service_item_id,
       serviceVariantId: booking.service_variant_id ?? null,
+      visit: visitEdit,
     });
 
   const primaryAction = actions.find((a) => a.kind === 'primary');
@@ -967,8 +1023,9 @@ export function BookingDetailContent({
                         id: booking.id,
                         guestName,
                         date: booking.booking_date,
-                        time: booking.booking_time,
+                        time: visit ? `${visit.startHm}:00` : booking.booking_time,
                         durationMinutes,
+                        visit: visitEdit,
                       })
                     }
                   />
@@ -1013,7 +1070,11 @@ export function BookingDetailContent({
                                     serviceId: serviceId as string,
                                     practitionerId: practitionerId as string,
                                     variantId: booking.service_variant_id ?? null,
-                                    durationMinutes: durationMinutes ?? null,
+                                    // THIS row's length, not the visit's span:
+                                    // rebooking seeds one service, so a visit's
+                                    // 135 minutes would propose a 135-minute
+                                    // booking of a 60-minute service.
+                                    durationMinutes: rowDurationMinutes ?? null,
                                   },
                                 }
                               : {}),

@@ -9,10 +9,15 @@ import { Stepper } from '@/components/ui/Stepper';
 import { Text } from '@/components/ui/Text';
 import { TimePickerField } from '@/components/ui/TimePickerField';
 import { ApiError, complianceBlockMessage } from '@/lib/api/client';
+import {
+  minimumVisitFloorMinutes,
+  type VisitEditTarget,
+} from '@/lib/booking/appointment-visit';
 import { MIN_CORE_DURATION_MINUTES } from '@/lib/booking/booking-core-duration';
 import { formatDayHeading } from '@/lib/dates/venue-dates';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useRescheduleBooking } from '@/lib/queries/useBookingMutations';
+import { useVisitSchedule } from '@/lib/queries/useVisitMutations';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -28,6 +33,12 @@ export type RescheduleTarget = {
   /** Original practitioner/calendar id — set only by a cross-column drag so its
    *  Undo restores the booking to its SOURCE column, not just its time. */
   practitionerId?: string | null;
+  /**
+   * Set when this booking is one service of a multi-service visit. The move then
+   * goes through the visit endpoint and carries every service with it: PATCHing
+   * this row alone took the visit's head away and left its tail behind.
+   */
+  visit?: VisitEditTarget | null;
 };
 
 type RescheduleSheetProps = {
@@ -54,7 +65,19 @@ function formatDuration(total: number): string {
 export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetProps) {
   const { colors } = useTheme();
   const mutation = useRescheduleBooking(target?.id ?? '');
+  const visitMutation = useVisitSchedule(target?.visit?.groupBookingId);
   const isAdmin = useStaffMe().data?.staff?.role === 'admin';
+  const visit = target?.visit ?? null;
+  const pending = visit ? visitMutation.isPending : mutation.isPending;
+  /**
+   * A visit's floor is its services' floors added up. Deliberately ignores the
+   * gaps between them, which the server adds: staying below the server's floor
+   * means no reachable length is blocked here, and asking for one that is
+   * genuinely too short comes back naming the real minimum.
+   */
+  const minDuration = visit
+    ? minimumVisitFloorMinutes(visit.serviceCount)
+    : MIN_DURATION_MINUTES;
 
   const [date, setDate] = useState('');
   const [minutes, setMinutes] = useState(0);
@@ -100,20 +123,46 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
     setError(null);
     setComplianceError(null);
     try {
-      await mutation.mutateAsync({
-        date,
-        time: `${minutesToTime(minutes)}:00`,
-        // Only send the duration when it changed — table bookings have a lower
-        // server-side cap, so an untouched duration must not be re-asserted.
-        ...(durationChanged ? { durationMinutes: duration } : {}),
-        ...(overrideCompliance ? { overrideCompliance: true } : {}),
-      });
+      if (visit) {
+        /**
+         * One write for every service. The endpoint plans them all, checks each
+         * against the availability engine and rolls back anything it already
+         * wrote if one is refused, so the visit either moves whole or not at all.
+         *
+         * No `overrideCompliance` here: the visit endpoint has no such flag. A
+         * compliance block on a visit is reported and the move is refused, which
+         * is the safe direction — the admin override stays available on the
+         * single-booking path.
+         */
+        await visitMutation.mutateAsync({
+          booking_date: date,
+          booking_time: `${minutesToTime(minutes)}:00`,
+          ...(durationChanged && duration != null
+            ? { total_duration_minutes: duration }
+            : {}),
+          // Staff moving a visit by hand have decided where it goes; the same
+          // posture as the single-booking path above.
+          allow_outside_hours: true,
+        });
+      } else {
+        await mutation.mutateAsync({
+          date,
+          time: `${minutesToTime(minutes)}:00`,
+          // Only send the duration when it changed — table bookings have a lower
+          // server-side cap, so an untouched duration must not be re-asserted.
+          ...(durationChanged ? { durationMinutes: duration } : {}),
+          ...(overrideCompliance ? { overrideCompliance: true } : {}),
+        });
+      }
       hapticSuccess();
       onMoved?.(target, { durationChanged });
       onClose();
     } catch (e) {
       hapticWarning();
-      const compMsg = complianceBlockMessage(e);
+      // A visit's compliance block is shown as a plain refusal: the visit
+      // endpoint takes no override flag, so offering an admin an override button
+      // that cannot be honoured would be worse than not offering one.
+      const compMsg = visit ? null : complianceBlockMessage(e);
       if (compMsg) {
         // An edit-time compliance block (block_all). An admin can override.
         setComplianceError(compMsg);
@@ -129,7 +178,7 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
         <View style={styles.body}>
               <View style={styles.headerBlock}>
                 <Text variant="overline" tone="muted">
-                  Reschedule
+                  {visit ? 'Reschedule visit' : 'Reschedule'}
                 </Text>
                 <Text variant="title">{target.guestName}</Text>
                 <Text variant="bodySmall" tone="muted">
@@ -138,6 +187,12 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
                     ? ` · ${formatDuration(target.durationMinutes)}`
                     : ''}
                 </Text>
+                {visit ? (
+                  <Text variant="caption" tone="muted">
+                    All {visit.serviceCount} services move together:{' '}
+                    {visit.serviceNames.join(', ')}.
+                  </Text>
+                ) : null}
               </View>
 
               {/* Date + Start are OS-native pickers (tap the value to set any
@@ -160,11 +215,9 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
               </View>
               {duration != null ? (
                 <Stepper
-                  label="Duration"
+                  label={visit ? 'Visit length' : 'Duration'}
                   value={formatDuration(duration)}
-                  onDecrement={() =>
-                    setDuration((d) => Math.max(MIN_DURATION_MINUTES, (d ?? 0) - 1))
-                  }
+                  onDecrement={() => setDuration((d) => Math.max(minDuration, (d ?? 0) - 1))}
                   onIncrement={() =>
                     setDuration((d) => Math.min(MAX_DURATION_MINUTES, (d ?? 0) + 1))
                   }
@@ -173,6 +226,12 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
               {endPreview ? (
                 <Text variant="caption" tone="muted" style={styles.endPreview}>
                   Ends at {endPreview}. Hold − / + to change duration faster.
+                </Text>
+              ) : null}
+              {visit && durationChanged ? (
+                <Text variant="caption" tone="muted" style={styles.endPreview}>
+                  Extra time goes on the last service; time taken off comes off the last
+                  service first, then the ones before it.
                 </Text>
               ) : null}
 
@@ -190,7 +249,7 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
                       label="Reschedule anyway (admin override)"
                       variant="secondary"
                       onPress={() => void handleConfirm(true)}
-                      loading={mutation.isPending}
+                      loading={pending}
                     />
                   ) : (
                     <Text variant="caption" tone="muted">
@@ -209,9 +268,9 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
               <View style={styles.actions}>
                 <Button label="Cancel" variant="secondary" onPress={onClose} style={styles.actionButton} />
                 <Button
-                  label="Confirm move"
+                  label={visit ? 'Move whole visit' : 'Confirm move'}
                   onPress={() => void handleConfirm()}
-                  loading={mutation.isPending}
+                  loading={pending}
                   disabled={unchanged}
                   style={styles.actionButton}
                 />

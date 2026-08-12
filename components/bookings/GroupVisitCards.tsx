@@ -4,6 +4,7 @@ import { timeToMinutes } from '@/components/calendar/grid-layout';
 import { Badge, StatusPill } from '@/components/ui/Badge';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
+import { resolveAppointmentVisit } from '@/lib/booking/appointment-visit';
 import { useGroupVisitBookings, type GroupVisitBookingRow } from '@/lib/queries/useGroupVisit';
 import { formatDayHeading } from '@/lib/dates/venue-dates';
 import { spacing } from '@/theme/index';
@@ -103,7 +104,16 @@ export function GroupVisitCards({
   }
 
   // Multi-service visit: consecutive services for one guest.
-  const totalMinutes = rows.reduce((sum, row) => sum + (rowMinutes(row) ?? 0), 0);
+  //
+  // The total is the visit's wall-clock SPAN, the same number the header shows
+  // and the same one the visit is edited by. Summing the services instead gives a
+  // different answer whenever a buffer or processing gap sits between two of
+  // them, and two totals for one visit on one screen is worse than either. Falls
+  // back to the sum only where the resolver declines to call these rows a visit
+  // (a party, or cancellations leaving one service standing).
+  const visit = resolveAppointmentVisit(rows);
+  const totalMinutes =
+    visit?.totalMinutes ?? rows.reduce((sum, row) => sum + (rowMinutes(row) ?? 0), 0);
   return (
     <Card>
       <Text variant="label">Services in this visit</Text>

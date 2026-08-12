@@ -12,7 +12,12 @@ import { Chip } from '@/components/ui/Chip';
 import { Sheet } from '@/components/ui/Sheet';
 import { Stepper } from '@/components/ui/Stepper';
 import { Text } from '@/components/ui/Text';
+import { TimePickerField } from '@/components/ui/TimePickerField';
 import { ApiError } from '@/lib/api/client';
+import {
+  minimumVisitFloorMinutes,
+  type VisitEditTarget,
+} from '@/lib/booking/appointment-visit';
 import { MIN_CORE_DURATION_MINUTES } from '@/lib/booking/booking-core-duration';
 import {
   describeProcessingChange,
@@ -33,6 +38,7 @@ import {
   useNotifyBookingModification,
   useValidateAppointmentModification,
 } from '@/lib/queries/useBookingMutations';
+import { useVisitSchedule } from '@/lib/queries/useVisitMutations';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { fonts, radius, spacing } from '@/theme/index';
@@ -57,6 +63,17 @@ export type ModifyBookingTarget = {
   /** Which anchor column the booking uses — decides the PATCH field name. */
   usesServiceItem: boolean;
   serviceVariantId: string | null;
+  /**
+   * Set when this booking is one service of a multi-service visit. The form then
+   * edits the VISIT: one start, one calendar and ONE wall-clock duration, written
+   * through the visit endpoint so the services cannot come apart.
+   *
+   * Per-service editing is withdrawn while it is set, deliberately — shortening
+   * one service and leaving the rest where they were is what opened dead time
+   * inside a visit in the first place. Changing WHAT a visit is made of is a
+   * separate endpoint the app does not surface yet (R15-4).
+   */
+  visit?: VisitEditTarget | null;
 };
 
 type ModifyBookingSheetProps = {
@@ -152,6 +169,14 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   const catalogQuery = useAppointmentCatalog(target ? venue?.id ?? null : null);
   const modify = useModifyAppointment(target?.id ?? '');
   const validate = useValidateAppointmentModification(target?.id ?? '');
+  /**
+   * A visit is edited as one booking through its own endpoint, which plans every
+   * service, checks each one, and rolls back anything already written if one is
+   * refused. Null `groupBookingId` leaves the hook inert.
+   */
+  const visit = target?.visit ?? null;
+  const isVisit = visit != null;
+  const visitSchedule = useVisitSchedule(visit?.groupBookingId);
   // Sends the email the save deliberately held back, when the user taps Notify.
   const notifyModification = useNotifyBookingModification();
   // Read the open booking's full detail (cache hit — the detail sheet is already
@@ -214,6 +239,27 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   >(null);
   /** True once an Undo PATCH is in flight, so the pane can show it working. */
   const [undoing, setUndoing] = useState(false);
+  /**
+   * The visit carries dead time an earlier per-service edit left behind, so
+   * saving will re-lay it even if the staff member changes nothing. Answered by
+   * the endpoint on open (`changed` on a dry run that asks for the visit's
+   * current shape) — the rows' own span is not the visit's span when a hole sits
+   * inside it.
+   */
+  const [visitRelayNeeded, setVisitRelayNeeded] = useState(false);
+  /** The span the endpoint says this visit has, once its opening dry run answers. */
+  const [visitPlannedMinutes, setVisitPlannedMinutes] = useState<number | null>(null);
+
+  /**
+   * The duration floor for whatever is being edited. A visit's is its services'
+   * floors added up, deliberately excluding the gaps the server adds on top: a
+   * client clamp below the server's floor can never put a legitimate length out
+   * of reach, and one that is genuinely too short comes back from the dry run
+   * naming the real minimum.
+   */
+  const minDuration = visit
+    ? minimumVisitFloorMinutes(visit.serviceCount)
+    : MIN_DURATION_MINUTES;
 
   // Seed from the booking when the sheet opens or the target booking changes.
   // useEffect avoids setState-during-render in Fabric/concurrent mode.
@@ -239,6 +285,8 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     setChecked({ sig: null, result: { state: 'idle' } });
     setError(null);
     setUndoing(false);
+    setVisitRelayNeeded(false);
+    setVisitPlannedMinutes(null);
     setMode('form');
     setMonthAnchor(target.date);
   }, [target?.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -282,20 +330,27 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
       selectedService.duration_minutes
     : null;
   useEffect(() => {
-    if (duration != null || catalogueDuration == null) return;
+    // Never on a visit: `duration` there is the WHOLE visit's span, and adopting
+    // the lead service's catalogue length would silently propose collapsing a
+    // three-service visit to the length of its first service.
+    if (isVisit || duration != null || catalogueDuration == null) return;
     if (!Number.isFinite(catalogueDuration) || catalogueDuration < MIN_DURATION_MINUTES) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot adoption once the catalogue resolves
     setDuration(catalogueDuration);
     setBaselineDuration(catalogueDuration);
-  }, [duration, catalogueDuration]);
+  }, [isVisit, duration, catalogueDuration]);
 
   // Staff offering the selected service; all staff when the service is
   // unknown to the catalog (archived) so reassignment stays possible.
   const eligibleStaff = useMemo(() => {
+    // A visit has several services, so no single "who offers this" answer. Show
+    // every calendar and let the endpoint judge: it checks each service against
+    // the target calendar and names the one that cannot go there.
+    if (isVisit) return practitioners;
     if (!serviceId || !offeredBy.has(serviceId)) return practitioners;
     const ids = offeredBy.get(serviceId)!;
     return practitioners.filter((p) => ids.has(p.id));
-  }, [serviceId, offeredBy, practitioners]);
+  }, [isVisit, serviceId, offeredBy, practitioners]);
 
   const selectService = (svc: AppointmentCatalogService) => {
     // Switching to a different service invalidates the current add-on choices
@@ -365,6 +420,9 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   // save PATCHed `addons: []`, silently clearing them.
   useEffect(() => {
     if (!target || addonsSeeded || !currentAddons || seededId !== target.id) return;
+    // A visit does not edit add-ons, and its span already includes their minutes.
+    // Seeding them would add those minutes a second time.
+    if (isVisit) return;
     if (!serviceInCatalog || !hasAddonGroups) {
       // Nothing to seed against yet (or service has no add-ons) — mark seeded so
       // we don't keep re-checking, but only once the catalogue has resolved.
@@ -382,6 +440,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     setAddonsSeeded(true);
   }, [
     target,
+    isVisit,
     seededId,
     addonsSeeded,
     currentAddons,
@@ -445,7 +504,10 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   // the selected add-ons' extra minutes (the create route adds these the same
   // way; the PATCH validator only takes a single duration_minutes). Null while
   // the base duration is still unresolved — never a guess.
-  const effectiveDuration = duration == null ? null : duration + addonTotals.durationMinutes;
+  // On a visit this IS the wall-clock span, gaps and add-ons already inside it —
+  // adding the add-on minutes again would lengthen the visit by them on save.
+  const effectiveDuration =
+    duration == null ? null : duration + (isVisit ? 0 : addonTotals.durationMinutes);
 
   // ---- Processing time ------------------------------------------------------
   // A booking snapshots its service's processing gaps at creation, and the
@@ -542,7 +604,9 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
    * deliberately replacing them because the service changed.
    */
   const processingBlocksToSend =
-    effectiveDuration != null && (originalProcessingBlocks != null || processingServiceChanged)
+    !isVisit &&
+    effectiveDuration != null &&
+    (originalProcessingBlocks != null || processingServiceChanged)
       ? processingFit.blocks
       : null;
 
@@ -571,8 +635,15 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     sourceProcessingBlocks,
   ]);
 
-  /** Only worth showing when this booking has, or is losing, a processing gap. */
+  /**
+   * Only worth showing when this booking has, or is losing, a processing gap.
+   *
+   * Never on a visit: its services each carry their own gaps, and the endpoint
+   * fits them per service as it re-lays the visit. A panel describing the lead
+   * service's gaps would be reporting one service's arithmetic as the visit's.
+   */
   const showProcessingPanel =
+    !isVisit &&
     effectiveDuration != null &&
     (sourceProcessingBlocks.length > 0 ||
       (processingServiceChanged && (originalProcessingBlocks?.length ?? 0) > 0));
@@ -583,7 +654,9 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   const durationPresets = [
     ...new Set(
       [
-        selectedService?.duration_minutes,
+        // A visit's length comes from the services in it, so the single-service
+        // catalogue length is not a preset for it.
+        isVisit ? undefined : selectedService?.duration_minutes,
         baselineDuration ?? undefined,
         5,
         10,
@@ -593,7 +666,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
         60,
         90,
         120,
-      ].filter((d): d is number => d != null && d >= MIN_DURATION_MINUTES),
+      ].filter((d): d is number => d != null && d >= minDuration),
     ),
   ].sort((a, b) => a - b);
 
@@ -608,7 +681,14 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     excludeBookingId: target?.id,
     // Wait for the duration to resolve rather than querying without one (the
     // server would answer for the catalogue default, not this booking).
-    enabled: !!target && serviceInCatalog && effectiveDuration != null,
+    //
+    // Disabled for a visit. The endpoint can only exclude ONE booking, so the
+    // visit's other services would count as occupied against themselves and the
+    // list would hide every slot the visit currently overlaps — including where
+    // it already sits. The visit's live check does this properly (it excludes
+    // every one of its own rows), so a slot list here would be a second, wrong
+    // opinion. Visit mode uses a time picker and that check instead.
+    enabled: !isVisit && !!target && serviceInCatalog && effectiveDuration != null,
   });
   const slots = useMemo(() => {
     const practitioner = availability.data?.practitioners.find((p) => p.id === practitionerId);
@@ -632,6 +712,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     variantId: requiresVariant ? variantId : null,
     durationMinutes: effectiveDuration,
     enabled:
+      !isVisit &&
       mode === 'date' &&
       !!target &&
       serviceInCatalog &&
@@ -654,8 +735,8 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
    */
   const hasChanges =
     !!target &&
-    (serviceId !== target.serviceId ||
-      variantId !== target.serviceVariantId ||
+    ((!isVisit &&
+      (serviceId !== target.serviceId || variantId !== target.serviceVariantId)) ||
       practitionerId !== target.practitionerId ||
       date !== target.date ||
       minutes !== timeToMinutes(target.time) ||
@@ -663,6 +744,19 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
       // no end time is the catalogue duration it adopted — adopting one is not
       // a staff edit and must not arm Save on an untouched form.
       (effectiveDuration != null && effectiveDuration !== baselineDuration));
+
+  /**
+   * The length was deliberately changed, as opposed to merely carried.
+   *
+   * A visit's `total_duration_minutes` is an INSTRUCTION, not a description: the
+   * server lays the services out to fill it, so re-asserting the span the form
+   * happens to be holding lengthens the tail service by whatever dead time was in
+   * it. Sending it only on a real edit means a move stays a move — and it is also
+   * the safe answer when the opening plan never arrived, where the form is still
+   * showing the rows' raw span.
+   */
+  const durationEdited =
+    effectiveDuration != null && baselineDuration != null && effectiveDuration !== baselineDuration;
 
   /** The booking's original start, for the "orig" marker on the slot list. */
   const originalTime = target ? minutesToTime(timeToMinutes(target.time)) : '';
@@ -674,38 +768,82 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   // on the endpoint degrade to "unknown" — the PATCH still validates.
   // Duration unresolved (catalogue still loading): stay idle rather than
   // validate a guess. The effect re-runs once the adoption lands.
-  const canCheck =
-    !!target && !!serviceId && !!practitionerId && !!date && effectiveDuration != null;
-  const signature = canCheck
-    ? [
-        target.id,
-        serviceId,
-        variantId,
-        practitionerId,
-        date,
-        minutes,
-        effectiveDuration,
-        // The blocks are part of what the dry run judges, and they can arrive
-        // AFTER the rest is settled (the detail query resolving flips them from
-        // "not loaded" to a real set), so a stale "valid" must not survive that.
-        processingBlocksToSend ? JSON.stringify(processingBlocksToSend) : '',
-      ].join('|')
-    : null;
+  // A visit has no service or variant of its own to check, and its length is the
+  // whole span — the endpoint plans every service from those three facts.
+  const canCheck = isVisit
+    ? !!target && !!practitionerId && !!date && effectiveDuration != null
+    : !!target && !!serviceId && !!practitionerId && !!date && effectiveDuration != null;
+  const signature = !canCheck
+    ? null
+    : isVisit
+      ? ['visit', visit!.groupBookingId, practitionerId, date, minutes, effectiveDuration].join('|')
+      : [
+          target!.id,
+          serviceId,
+          variantId,
+          practitionerId,
+          date,
+          minutes,
+          effectiveDuration,
+          // The blocks are part of what the dry run judges, and they can arrive
+          // AFTER the rest is settled (the detail query resolving flips them from
+          // "not loaded" to a real set), so a stale "valid" must not survive that.
+          processingBlocksToSend ? JSON.stringify(processingBlocksToSend) : '',
+        ].join('|');
   const validateMutate = validate.mutate;
+  const visitScheduleAsync = visitSchedule.mutateAsync;
   useEffect(() => {
-    if (!target || !serviceId || !practitionerId || !date || !signature) {
-      return;
-    }
+    if (!target || !practitionerId || !date || !signature) return;
+    if (!isVisit && !serviceId) return;
     const seq = ++checkSeq.current;
     const timer = setTimeout(() => {
+      if (isVisit) {
+        /**
+         * The visit's OWN dry run, not N per-service checks. It plans every
+         * service, excludes the visit's own rows from the overlap test (so a
+         * service is never reported as clashing with the sibling it is about to
+         * follow), and answers in the shape the save does — the live check and
+         * the save cannot disagree.
+         */
+        void (async () => {
+          try {
+            await visitScheduleAsync({
+              dry_run: true,
+              booking_date: date,
+              booking_time: `${minutesToTime(minutes)}:00`,
+              practitioner_id: practitionerId,
+              // Exactly what the save will send, or the check judges a request
+              // the save would not make.
+              ...(durationEdited ? { total_duration_minutes: effectiveDuration! } : {}),
+            });
+            if (checkSeq.current !== seq) return;
+            setChecked({ sig: signature, result: { state: 'valid' } });
+          } catch (e) {
+            if (checkSeq.current !== seq) return;
+            // A refusal (409), a rejected shape (400) or a stale visit (412) all
+            // carry a sentence naming what blocked it. Anything else — auth, a
+            // dropped connection, a 500 — is not something to report as "this
+            // time is taken", so it degrades to unknown and the save re-checks.
+            const refused =
+              e instanceof ApiError && (e.status === 409 || e.status === 400 || e.status === 412);
+            setChecked({
+              sig: signature,
+              result: refused
+                ? { state: 'invalid', reason: (e as ApiError).message }
+                : { state: 'unknown' },
+            });
+          }
+        })();
+        return;
+      }
       validateMutate(
         {
           booking_date: date,
           booking_time: minutesToTime(minutes),
           practitioner_id: practitionerId,
           ...(target.usesServiceItem
-            ? { service_item_id: serviceId }
-            : { appointment_service_id: serviceId }),
+            ? { service_item_id: serviceId! }
+            : { appointment_service_id: serviceId! }),
           duration_minutes: effectiveDuration,
           service_variant_id: requiresVariant ? variantId : null,
           // The same fitted blocks the save will send, so this dry run judges
@@ -732,6 +870,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     return () => clearTimeout(timer);
   }, [
     target,
+    isVisit,
     serviceId,
     variantId,
     practitionerId,
@@ -742,7 +881,67 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     requiresVariant,
     signature,
     validateMutate,
+    visitScheduleAsync,
   ]);
+
+  /**
+   * What the visit actually looks like to the server, asked once on open.
+   *
+   * The rows can carry dead time an earlier per-service edit left behind, so the
+   * span they occupy is not the span the visit HAS. Adopting the planned total as
+   * both the value and the baseline keeps that correction from reading as a staff
+   * edit, and `visitRelayNeeded` is what still lets them save it.
+   */
+  useEffect(() => {
+    if (!isVisit || !target || seededId !== target.id) return;
+    if (visitPlannedMinutes != null) return;
+    const seededDuration = target.durationMinutes;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const plan = await visitScheduleAsync({
+          dry_run: true,
+          booking_date: target.date,
+          booking_time: `${target.time.slice(0, 5)}:00`,
+          ...(target.practitionerId ? { practitioner_id: target.practitionerId } : {}),
+        });
+        if (cancelled || typeof plan.total_minutes !== 'number') return;
+        setVisitPlannedMinutes(plan.total_minutes);
+        setVisitRelayNeeded(plan.changed === true);
+        // Only if the staff member has not already moved the slider in the
+        // meantime — their edit outranks the correction.
+        setDuration((current) => (current === seededDuration ? plan.total_minutes : current));
+        setBaselineDuration((current) =>
+          current === seededDuration ? plan.total_minutes : current,
+        );
+      } catch {
+        // The form still works from the rows' own span, and the save is checked
+        // against the endpoint regardless.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isVisit, target, seededId, visitPlannedMinutes, visitScheduleAsync]);
+
+  /**
+   * Dead time the rows carry that saving will close, in words.
+   *
+   * Shown before the staff member commits, because it is a change they did not
+   * ask for: the visit comes out shorter than it went in, and every service after
+   * the hole moves earlier. It is also the repair for visits an earlier
+   * per-service edit already damaged.
+   */
+  const visitRelayNotice = useMemo(() => {
+    if (!visitRelayNeeded || !target) return null;
+    const rawSpan = target.durationMinutes;
+    const gap =
+      rawSpan != null && visitPlannedMinutes != null ? rawSpan - visitPlannedMinutes : 0;
+    if (gap > 0) {
+      return `This visit has ${gap} minutes of dead time in it. Saving closes it, so the services run back to back.`;
+    }
+    return 'Saving will re-lay this visit so its services run back to back.';
+  }, [visitRelayNeeded, target, visitPlannedMinutes]);
 
   const check: CheckState = !canCheck
     ? { state: 'idle' }
@@ -752,18 +951,57 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
 
   const canSave =
     !!target &&
-    !!serviceId &&
     !!practitionerId &&
     effectiveDuration != null &&
-    (!requiresVariant || !!variantId) &&
-    addonGroupsValid &&
-    hasChanges &&
+    // A visit has no single service, variant or add-on set to satisfy — those
+    // controls are not offered while it is being edited.
+    (isVisit || (!!serviceId && (!requiresVariant || !!variantId) && addonGroupsValid)) &&
+    // Re-laying a visit that carries dead time is a real save even though no
+    // field has been touched: it is the edit that closes the hole.
+    (hasChanges || (isVisit && visitRelayNeeded)) &&
     check.state !== 'invalid' &&
     check.state !== 'checking';
 
   async function handleSave() {
-    if (!target || !serviceId || !practitionerId || effectiveDuration == null) return;
+    if (!target || !practitionerId || effectiveDuration == null) return;
     setError(null);
+
+    if (isVisit) {
+      /**
+       * One write for the whole visit. Every service is planned and checked
+       * before any is written, and a write that fails part-way puts back the rows
+       * that already landed — the visit either moves whole or not at all.
+       */
+      try {
+        await visitSchedule.mutateAsync({
+          booking_date: date,
+          booking_time: `${minutesToTime(minutes)}:00`,
+          practitioner_id: practitionerId,
+          // Only on a real edit — see `durationEdited`. Omitted, every service
+          // keeps its own length and the visit is simply re-laid, which is what
+          // closes any dead time in it.
+          ...(durationEdited ? { total_duration_minutes: effectiveDuration } : {}),
+          // Staff editing a visit by hand have decided where it goes.
+          allow_outside_hours: true,
+          // The server emails the guest once, against the visit's first service,
+          // and only when the START moved. Hold it back so the staff member gets
+          // the same Notify / Don't notify / Undo choice a drag gives them.
+          ...(scheduleChanged ? { defer_modification_guest_notification: true } : {}),
+        });
+        hapticSuccess();
+        if (scheduleChanged) {
+          setMode('notify');
+          return;
+        }
+        onClose();
+      } catch (e) {
+        hapticWarning();
+        setError(e instanceof ApiError ? e.message : 'Could not save changes. Try again.');
+      }
+      return;
+    }
+
+    if (!serviceId) return;
     try {
       await modify.mutateAsync({
         booking_date: date,
@@ -806,7 +1044,11 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     if (!target) return;
     const name = target.guestName;
     notifyModification.mutate(
-      { bookingId: target.id },
+      // A visit is notified ONCE, against its first service — the row the
+      // endpoint would have emailed against had the send not been deferred. Any
+      // other segment would either send nothing or tell the guest about one
+      // service of the several that moved.
+      { bookingId: visit?.leadBookingId ?? target.id },
       {
         onSuccess: () => toast.success(`${name} notified of the change.`),
         onError: () => toast.error('Could not notify the guest.'),
@@ -828,6 +1070,46 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
    */
   async function handleUndo() {
     if (!target) return;
+
+    if (isVisit) {
+      /**
+       * A visit goes back through the same endpoint, so the undo is as
+       * all-or-nothing as the save was. It restores the visit's original start
+       * and calendar, and its length only if the save changed it — otherwise the
+       * services keep the lengths they still have, which restores them exactly.
+       *
+       * Worth knowing where it is NOT exact: when the length WAS changed, the
+       * total is restored but the server redistributes it by its own rule (growth
+       * goes on the tail). A shrink that cascaded back into an earlier service
+       * therefore comes back with those minutes on the last one. That is inherent
+       * to editing a visit by one wall-clock number, not something the undo can
+       * recover; the slot and the total are exact.
+       */
+      setUndoing(true);
+      try {
+        await visitSchedule.mutateAsync({
+          booking_date: target.date,
+          booking_time: `${target.time.slice(0, 5)}:00`,
+          ...(target.practitionerId ? { practitioner_id: target.practitionerId } : {}),
+          ...(durationEdited && baselineDuration != null
+            ? { total_duration_minutes: baselineDuration }
+            : {}),
+          allow_outside_hours: true,
+          // SKIP, not defer: an undone change is not something to tell the guest
+          // about, and no prompt follows this to decide otherwise.
+          skip_booking_modification_guest_notification: true,
+        });
+        hapticSuccess();
+        toast.success('Change undone.');
+        onClose();
+      } catch {
+        hapticWarning();
+        setUndoing(false);
+        toast.error('Could not undo the change.');
+      }
+      return;
+    }
+
     const restoreServiceId = target.serviceId ?? serviceId;
     const restorePractitionerId = target.practitionerId ?? practitionerId;
     const restoreDuration = baselineDuration;
@@ -894,7 +1176,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   if (target && seededId === target.id && mode === 'notify') {
     return (
       <Sheet visible onClose={onClose}>
-        <Text variant="subheading">Booking moved</Text>
+        <Text variant="subheading">{isVisit ? 'Visit moved' : 'Booking moved'}</Text>
         <Text variant="caption" tone="muted">
           Let {target.guestName} know about the change?
         </Text>
@@ -927,12 +1209,21 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
             today={today}
             selectedDate={date}
             onSelectDate={setDate}
-            availableDates={availableDates}
-            isLoading={monthQuery.isLoading}
+            // A visit gets no green markers: the month endpoint answers for ONE
+            // service and would mark days by whether that service fits, not the
+            // whole visit. `null` leaves every future date selectable and the
+            // visit's own check decides, which is the only thing that can.
+            availableDates={isVisit ? null : availableDates}
+            isLoading={isVisit ? false : monthQuery.isLoading}
             timeZone={timeZone}
             weekShortcuts
-            availabilityHint="Green dates can fit this appointment."
-            onContinue={() => setMode('time')}
+            availabilityHint={
+              isVisit
+                ? 'Pick a day, then set the start time. The whole visit is checked against it.'
+                : 'Green dates can fit this appointment.'
+            }
+            // No slot list for a visit — see the availability query above.
+            onContinue={() => setMode(isVisit ? 'form' : 'time')}
           />
         </View>
       </Sheet>
@@ -1011,7 +1302,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
         <View style={styles.body}>
           <View style={styles.headerBlock}>
             <Text variant="overline" tone="muted">
-              Modify booking
+              {isVisit ? 'Modify visit' : 'Modify booking'}
             </Text>
             <Text variant="title">{target.guestName}</Text>
             <Text variant="bodySmall" tone="muted">
@@ -1020,6 +1311,12 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
                 ? ` · ${formatDuration(target.durationMinutes)}`
                 : ''}
             </Text>
+            {visit ? (
+              <Text variant="caption" tone="muted">
+                {visit.serviceCount} services, edited as one booking:{' '}
+                {visit.serviceNames.join(', ')}.
+              </Text>
+            ) : null}
           </View>
 
           <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollBody}>
@@ -1029,14 +1326,19 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
               </Text>
             ) : null}
 
-            {!serviceInCatalog ? (
+            {!isVisit && !serviceInCatalog ? (
               <Text variant="caption" tone="muted">
                 The booked service is no longer in the catalogue — pick a service below to
                 change it, or just adjust the time and duration.
               </Text>
             ) : null}
 
-            {services.length > 0 ? (
+            {/* Per-service editing is withdrawn on a visit, deliberately.
+                Changing one service's length and leaving the others where they
+                were is what opened dead time inside a visit; the whole visit's
+                length is the control below, and the services re-sequence to
+                stay back to back behind it. */}
+            {!isVisit && services.length > 0 ? (
               <View style={styles.fieldBlock}>
                 <Text variant="label" tone="secondary">
                   Service
@@ -1054,7 +1356,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
               </View>
             ) : null}
 
-            {requiresVariant ? (
+            {!isVisit && requiresVariant ? (
               <View style={styles.fieldBlock}>
                 <Text variant="label" tone="secondary">
                   Variant
@@ -1090,7 +1392,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
               </View>
             ) : null}
 
-            {serviceInCatalog && hasAddonGroups ? (
+            {!isVisit && serviceInCatalog && hasAddonGroups ? (
               <View style={styles.fieldBlock}>
                 <Text variant="label" tone="secondary">
                   Add-ons
@@ -1209,19 +1511,37 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
 
             {/* Manual nudge — the app keeps a by-hand start time, which the web
                 picker has no equivalent of: staff sometimes need a time the
-                availability engine won't offer (an overrun, a squeezed-in fit). */}
+                availability engine won't offer (an overrun, a squeezed-in fit).
+
+                A visit gets the OS time picker instead of the stepper: it has no
+                slot list to jump from (see the availability query), so stepping
+                would be the only way to move it and a four-hour move would be
+                forty-eight taps. */}
+            {isVisit ? (
+              <View style={styles.pickerRow}>
+                <Text variant="label" tone="secondary">
+                  Start
+                </Text>
+                <TimePickerField
+                  value={minutes}
+                  onChange={setMinutes}
+                  accessibilityLabel="New start time for the visit"
+                />
+              </View>
+            ) : (
+              <Stepper
+                label="Start"
+                value={selectedTime}
+                onDecrement={() => setMinutes((m) => stepStartMinutes(m, -1))}
+                onIncrement={() => setMinutes((m) => stepStartMinutes(m, 1))}
+              />
+            )}
             <Stepper
-              label="Start"
-              value={selectedTime}
-              onDecrement={() => setMinutes((m) => stepStartMinutes(m, -1))}
-              onIncrement={() => setMinutes((m) => stepStartMinutes(m, 1))}
-            />
-            <Stepper
-              label="Duration"
+              label={isVisit ? 'Visit length' : 'Duration'}
               value={duration == null ? '—' : formatDuration(duration)}
               onDecrement={() =>
                 setDuration((d) =>
-                  d == null ? d : Math.max(MIN_DURATION_MINUTES, d - DURATION_STEP_MINUTES),
+                  d == null ? d : Math.max(minDuration, d - DURATION_STEP_MINUTES),
                 )
               }
               onIncrement={() =>
@@ -1243,6 +1563,18 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
             <Text variant="caption" tone="muted">
               {endPreview ? `Ends at ${endPreview}. ` : ''}Hold − / + to change faster.
             </Text>
+            {isVisit ? (
+              <Text variant="caption" tone="muted">
+                This is the whole visit, gaps included. Extra time goes on the last
+                service; time taken off comes off the last service first, then the ones
+                before it, and the services stay back to back.
+              </Text>
+            ) : null}
+            {visitRelayNotice ? (
+              <Text variant="caption" color={colors.warning}>
+                {visitRelayNotice}
+              </Text>
+            ) : null}
             {addonTotals.durationMinutes > 0 || addonTotals.pricePence > 0 ? (
               <Text variant="caption" tone="muted">
                 Includes add-ons
@@ -1280,7 +1612,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
 
           </ScrollView>
 
-          {!hasChanges ? (
+          {!hasChanges && !(isVisit && visitRelayNeeded) ? (
             <Text variant="caption" tone="muted">
               Adjust a field to check availability and enable save.
             </Text>
@@ -1311,9 +1643,9 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
           <View style={styles.actions}>
             <Button label="Cancel" variant="secondary" onPress={onClose} style={styles.actionButton} />
             <Button
-              label="Save changes"
+              label={isVisit ? 'Save whole visit' : 'Save changes'}
               onPress={() => void handleSave()}
-              loading={modify.isPending}
+              loading={isVisit ? visitSchedule.isPending : modify.isPending}
               disabled={!canSave}
               style={styles.actionButton}
             />
@@ -1359,6 +1691,12 @@ const styles = StyleSheet.create({
   },
   fieldBlock: {
     gap: spacing.sm,
+  },
+  // The visit's OS time picker sits on its label's row, matching RescheduleSheet.
+  pickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   chipWrap: {
     flexDirection: 'row',

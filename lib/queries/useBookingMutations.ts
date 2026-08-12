@@ -8,7 +8,14 @@ import type { BookingDetail, BookingStatus } from '@/types/booking-detail';
 import type { BookingsListResponse } from '@/types/booking-list';
 import type { ProcessingTimeBlock } from '@/types/services-manage';
 
-function invalidateBookingCaches(
+/**
+ * Everything a write to one booking can have changed. Exported for the visit
+ * endpoints (`useVisitMutations`), which write several bookings at once but need
+ * exactly this fan-out — `queryKeys.bookings.all()` already covers every
+ * booking's detail and the group-visit query, so one call answers for the whole
+ * visit.
+ */
+export function invalidateBookingCaches(
   queryClient: ReturnType<typeof useQueryClient>,
   accessToken: string | null,
   bookingId: string,
