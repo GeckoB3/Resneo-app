@@ -9,6 +9,7 @@ import { Stepper } from '@/components/ui/Stepper';
 import { Text } from '@/components/ui/Text';
 import { TimePickerField } from '@/components/ui/TimePickerField';
 import { ApiError, complianceBlockMessage } from '@/lib/api/client';
+import { MIN_CORE_DURATION_MINUTES } from '@/lib/booking/booking-core-duration';
 import { formatDayHeading } from '@/lib/dates/venue-dates';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useRescheduleBooking } from '@/lib/queries/useBookingMutations';
@@ -37,9 +38,9 @@ type RescheduleSheetProps = {
 };
 
 // API bounds: appointments accept 5–840; table bookings cap at 300 (server-validated).
-// The floor matches the shortest configurable service duration, so a 5-minute
-// service can actually be booked at its own length (drag-resize uses the same).
-const MIN_DURATION_MINUTES = 5;
+// The floor is the ONE shared floor, so a 5-minute service can actually be
+// booked at its own length here, on the drag-resize and in the Modify sheet.
+const MIN_DURATION_MINUTES = MIN_CORE_DURATION_MINUTES;
 const MAX_DURATION_MINUTES = 14 * 60;
 
 function formatDuration(total: number): string {

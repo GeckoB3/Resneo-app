@@ -41,7 +41,14 @@ const MAP: Record<string, BookingStatusVisual> = {
     textColor: '#9A3412',
     dotColor: '#EA580C',
     listStripeColor: '#EA580C',
-    calendarBlock: { bg: '#EA580C', text: '#FFFFFF', border: '#C2410C', accent: '#C2410C' },
+    /**
+     * Orange-800, not the orange-600 the dot and stripe use. White text on
+     * orange-600 measures 2.96:1 where the guest name sits and 2.53:1 for the
+     * meta lines (which render at 85% opacity), both well under the 4.5:1 AA
+     * floor. Orange-800 clears it while staying unmistakably the "awaiting
+     * payment" orange beside the Arrived amber.
+     */
+    calendarBlock: { bg: '#9A3412', text: '#FFFFFF', border: '#7C2D12', accent: '#7C2D12' },
   },
   Booked: {
     backgroundColor: '#E0F2FE',
@@ -65,8 +72,15 @@ const MAP: Record<string, BookingStatusVisual> = {
     textColor: '#064E3B',
     dotColor: '#047857',
     listStripeColor: '#047857',
-    // Started / in-progress: brighter emerald-600 fill so active bookings pop; emerald-700 edge.
-    calendarBlock: { bg: '#059669', text: '#FFFFFF', border: '#047857', accent: '#047857' },
+    /**
+     * Emerald-800. The brighter emerald-600 was chosen so in-progress bars pop,
+     * but white text on it measures 3.03:1 at the name and 2.60:1 for the meta
+     * lines, under the 4.5:1 AA floor. Emerald-800 keeps it clearly the
+     * "started" green (still the most saturated bar on the grid next to
+     * Confirmed navy) and reads cleanly. `accent` stays emerald-700: it paints
+     * the frosted pill label on WHITE, where it was already legible.
+     */
+    calendarBlock: { bg: '#065F46', text: '#FFFFFF', border: '#064E3B', accent: '#047857' },
   },
   Arrived: {
     backgroundColor: '#FEF3C7',
@@ -107,7 +121,8 @@ const MAP: Record<string, BookingStatusVisual> = {
     textColor: '#9A3412',
     dotColor: '#EA580C',
     listStripeColor: '#EA580C',
-    calendarBlock: { bg: '#EA580C', text: '#FFFFFF', border: '#C2410C', accent: '#C2410C' },
+    /** Orange-800 for the AA reason documented on `Pending` above. */
+    calendarBlock: { bg: '#9A3412', text: '#FFFFFF', border: '#7C2D12', accent: '#7C2D12' },
   },
 };
 

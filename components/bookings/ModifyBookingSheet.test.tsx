@@ -95,6 +95,11 @@ const ADDON_GROUP = {
   link_sort_order: 0,
 };
 
+/** Catalogue processing pattern for svc-1. Empty unless a test sets it. */
+let mockServiceProcessingBlocks: unknown[] = [];
+/** A second service, so a test can switch away and swap patterns. */
+let mockOtherServiceProcessingBlocks: unknown[] = [];
+
 jest.mock('@/lib/queries/useAppointmentCatalog', () => ({
   useAppointmentCatalog: () => ({
     data: {
@@ -109,6 +114,15 @@ jest.mock('@/lib/queries/useAppointmentCatalog', () => ({
               duration_minutes: 45,
               variants: [],
               addon_groups: mockAddonGroups,
+              processing_time_blocks: mockServiceProcessingBlocks,
+            },
+            {
+              id: 'svc-2',
+              name: 'Blow Dry',
+              duration_minutes: 45,
+              variants: [],
+              addon_groups: [],
+              processing_time_blocks: mockOtherServiceProcessingBlocks,
             },
           ],
         },
@@ -132,8 +146,15 @@ jest.mock('@/lib/queries/useMonthAvailability', () => ({
 
 /** The add-ons the booking already has — what Undo has to put back. */
 let mockDetailAddons: { addon_id: string }[] = [];
+/**
+ * The booking's own processing snapshot. `undefined` is the "column not loaded"
+ * case, which must never be sent as `[]` (that would clear a real gap).
+ */
+let mockDetailProcessingBlocks: unknown;
 jest.mock('@/lib/queries/useBookingDetail', () => ({
-  useBookingDetail: () => ({ data: { addons: mockDetailAddons } }),
+  useBookingDetail: () => ({
+    data: { addons: mockDetailAddons, processing_time_blocks: mockDetailProcessingBlocks },
+  }),
 }));
 
 const mockModify = jest.fn();
@@ -181,6 +202,9 @@ beforeEach(() => {
   onClose.mockClear();
   mockAddonGroups = [];
   mockDetailAddons = [];
+  mockDetailProcessingBlocks = undefined;
+  mockServiceProcessingBlocks = [];
+  mockOtherServiceProcessingBlocks = [];
   mockSlots = [
     { practitioner_id: 'prac-1', service_id: 'svc-1', start_time: '09:30' },
     { practitioner_id: 'prac-1', service_id: 'svc-1', start_time: '14:00' },
@@ -362,6 +386,222 @@ describe('ModifyBookingSheet', () => {
     });
   });
 
+  describe('processing time', () => {
+    // R14-2: a booking snapshots its service's processing gaps, and the server
+    // validates that snapshot against whatever duration the PATCH asks for. The
+    // sheet sent nothing, so shortening a booking below its last gap's end was
+    // rejected ("Processing blocks must lie within the service duration") with
+    // no way to resolve it from the app.
+    const GAP = { id: 'blk-1', start_minute: 15, duration_minutes: 30 };
+
+    it('sends the gaps fitted to the new duration', async () => {
+      mockDetailProcessingBlocks = [GAP];
+      jest.useFakeTimers();
+      try {
+        await render(<ModifyBookingSheet target={TARGET} onClose={onClose} />);
+        // 45 → 30: the 15-45 gap no longer fits and is trimmed to end with it.
+        await press('30 min');
+        await settleAvailability();
+        await press('Save changes');
+
+        expect(mockModify).toHaveBeenCalledWith(
+          expect.objectContaining({
+            duration_minutes: 30,
+            processing_time_blocks: [{ id: 'blk-1', start_minute: 15, duration_minutes: 15 }],
+          }),
+        );
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('drops a gap with no room left rather than sending an unfittable one', async () => {
+      mockDetailProcessingBlocks = [GAP];
+      jest.useFakeTimers();
+      try {
+        await render(<ModifyBookingSheet target={TARGET} onClose={onClose} />);
+        await press('15 min');
+        await settleAvailability();
+        await press('Save changes');
+
+        expect(mockModify).toHaveBeenCalledWith(
+          expect.objectContaining({ duration_minutes: 15, processing_time_blocks: [] }),
+        );
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('sends the same fitted gaps to the dry-run validator', async () => {
+      // Or the pre-check passes on the stored snapshot and Save then fails.
+      mockDetailProcessingBlocks = [GAP];
+      jest.useFakeTimers();
+      try {
+        await render(<ModifyBookingSheet target={TARGET} onClose={onClose} />);
+        await press('30 min');
+        await settleAvailability();
+
+        expect(mockValidate).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            duration_minutes: 30,
+            processing_time_blocks: [{ id: 'blk-1', start_minute: 15, duration_minutes: 15 }],
+          }),
+          expect.anything(),
+        );
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('inherits the service pattern when the booking has no snapshot', async () => {
+      // A NULL snapshot means "this booking follows its service's pattern", not
+      // "it has no gaps". Parsing null to [] and sending that stripped the
+      // service's processing time from the booking on its first save.
+      mockDetailProcessingBlocks = null;
+      mockServiceProcessingBlocks = [GAP];
+      jest.useFakeTimers();
+      try {
+        await render(<ModifyBookingSheet target={TARGET} onClose={onClose} />);
+        await press('30 min');
+        await settleAvailability();
+        await press('Save changes');
+
+        expect(mockModify).toHaveBeenCalledWith(
+          expect.objectContaining({
+            processing_time_blocks: [{ id: 'blk-1', start_minute: 15, duration_minutes: 15 }],
+          }),
+        );
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('sends [] for a booking that genuinely has no gaps', async () => {
+      // The other side of the same coin: an EMPTY array is a real answer and
+      // must not be confused with the null "inherit" case.
+      mockDetailProcessingBlocks = [];
+      mockServiceProcessingBlocks = [GAP];
+      jest.useFakeTimers();
+      try {
+        await render(<ModifyBookingSheet target={TARGET} onClose={onClose} />);
+        await press('30 min');
+        await settleAvailability();
+        await press('Save changes');
+
+        expect(mockModify).toHaveBeenCalledWith(
+          expect.objectContaining({ processing_time_blocks: [] }),
+        );
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('drops a malformed catalogue block instead of forwarding it', async () => {
+      // The catalogue arrives as raw JSON like the booking's own column; passing
+      // a bad entry through turns a clean save into a schema rejection.
+      mockDetailProcessingBlocks = [GAP];
+      mockOtherServiceProcessingBlocks = [
+        { start_minute: 'nope', duration_minutes: 10 },
+        { start_minute: 5, duration_minutes: 10 },
+      ];
+      jest.useFakeTimers();
+      try {
+        await render(<ModifyBookingSheet target={TARGET} onClose={onClose} />);
+        await press('Blow Dry');
+        await settleAvailability();
+        await press('Save changes');
+
+        expect(mockModify).toHaveBeenCalledWith(
+          expect.objectContaining({
+            processing_time_blocks: [{ start_minute: 5, duration_minutes: 10 }],
+          }),
+        );
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('omits the key entirely when the booking’s own blocks never loaded', async () => {
+      // `undefined` is "not loaded", NOT "has none". Sending [] would clear a
+      // real processing gap on a booking the app never read.
+      mockDetailProcessingBlocks = undefined;
+      jest.useFakeTimers();
+      try {
+        await render(<ModifyBookingSheet target={TARGET} onClose={onClose} />);
+        await press('30 min');
+        await settleAvailability();
+        await press('Save changes');
+
+        expect(mockModify).toHaveBeenCalledWith(
+          expect.not.objectContaining({ processing_time_blocks: expect.anything() }),
+        );
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('swaps in the new service’s pattern when the service changes', async () => {
+      mockDetailProcessingBlocks = [GAP];
+      mockOtherServiceProcessingBlocks = [{ start_minute: 5, duration_minutes: 10 }];
+      jest.useFakeTimers();
+      try {
+        await render(<ModifyBookingSheet target={TARGET} onClose={onClose} />);
+        await press('Blow Dry');
+        await settleAvailability();
+        await press('Save changes');
+
+        // The old service's gap does not follow the booking across the switch.
+        expect(mockModify).toHaveBeenCalledWith(
+          expect.objectContaining({
+            processing_time_blocks: [{ start_minute: 5, duration_minutes: 10 }],
+          }),
+        );
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('says what saving will do to the gap, and stays quiet when nothing changes', async () => {
+      mockDetailProcessingBlocks = [GAP];
+      await render(<ModifyBookingSheet target={TARGET} onClose={onClose} />);
+      // Untouched at 45 minutes the gap fits, so there is nothing to warn about.
+      expect(screen.getByText('Processing time')).toBeTruthy();
+      expect(
+        screen.queryByText(
+          'Saving will shorten the processing gap so it ends with the appointment.',
+        ),
+      ).toBeNull();
+
+      await press('30 min');
+      expect(
+        screen.getByText('Saving will shorten the processing gap so it ends with the appointment.'),
+      ).toBeTruthy();
+    });
+
+    it('shows no processing panel on an ordinary booking', async () => {
+      mockDetailProcessingBlocks = [];
+      await render(<ModifyBookingSheet target={TARGET} onClose={onClose} />);
+      expect(screen.queryByText('Processing time')).toBeNull();
+    });
+
+    it('undo restores the booking’s own snapshot, not what the save fitted', async () => {
+      mockDetailProcessingBlocks = [GAP];
+      jest.useFakeTimers();
+      try {
+        await render(<ModifyBookingSheet target={TARGET} onClose={onClose} />);
+        await press('30 min');
+        await moveAndSave();
+        await press('Undo change');
+
+        expect(mockModify).toHaveBeenLastCalledWith(
+          expect.objectContaining({ processing_time_blocks: [GAP] }),
+        );
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+  });
+
   describe('by-hand start nudge', () => {
     it('steps in 5-minute marks, not 1', async () => {
       await render(<ModifyBookingSheet target={TARGET} onClose={onClose} />);
@@ -515,6 +755,8 @@ describe('ModifyBookingSheet', () => {
         await press('Undo change');
 
         // Second PATCH restores every field the form can change, and stays quiet.
+        // SKIP, not defer: no prompt follows an undo, so the flag that promises
+        // one would be a lie to the next reader (R14-4).
         expect(mockModify).toHaveBeenCalledTimes(2);
         expect(mockModify).toHaveBeenLastCalledWith(
           expect.objectContaining({
@@ -524,8 +766,11 @@ describe('ModifyBookingSheet', () => {
             appointment_service_id: 'svc-1',
             duration_minutes: 45,
             service_variant_id: null,
-            defer_modification_guest_notification: true,
+            skip_booking_modification_guest_notification: true,
           }),
+        );
+        expect(mockModify).toHaveBeenLastCalledWith(
+          expect.not.objectContaining({ defer_modification_guest_notification: true }),
         );
         expect(mockNotify).not.toHaveBeenCalled();
         expect(onClose).toHaveBeenCalled();

@@ -3,7 +3,7 @@
  * @see _reference/reserve-ni/src/lib/availability/appointment-catalog.ts
  */
 
-import type { ServiceLocationType } from '@/types/services-manage';
+import type { ProcessingTimeBlock, ServiceLocationType } from '@/types/services-manage';
 
 export interface AppointmentCatalogVariant {
   id: string;
@@ -14,6 +14,11 @@ export interface AppointmentCatalogVariant {
   price_pence: number | null;
   deposit_pence: number | null;
   sort_order: number;
+  /**
+   * Internal processing gaps this option defines. When non-empty it REPLACES the
+   * parent service's pattern (see `effectiveProcessingTemplate`).
+   */
+  processing_time_blocks?: ProcessingTimeBlock[];
 }
 
 export interface AppointmentCatalogAddon {
@@ -65,6 +70,12 @@ export interface AppointmentCatalogService {
   location_type?: ServiceLocationType;
   variants?: AppointmentCatalogVariant[];
   addon_groups?: AppointmentCatalogAddonGroup[];
+  /**
+   * Internal processing gaps inside the core duration (salon-style: the
+   * practitioner is free for another booking during them). The catalogue
+   * pattern, which a booking snapshots at creation.
+   */
+  processing_time_blocks?: ProcessingTimeBlock[];
 }
 
 export interface AppointmentCatalogPractitioner {

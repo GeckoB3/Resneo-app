@@ -161,7 +161,11 @@ function formatBookingTimeRange(
     return `${start} – ${endTime.slice(0, 5)}`;
   }
   if (durationMinutes != null && durationMinutes > 0) {
-    return `${start} – ${minutesToTime(timeToMinutes(start) + durationMinutes)}`;
+    // Wrap, don't clamp: `minutesToTime` pins anything past midnight to 23:59,
+    // so a 23:30 appointment running an hour read "23:30 – 23:59" instead of
+    // "23:30 – 00:30". The date lives elsewhere on the card, as it does for the
+    // stored `booking_end_time`, which is a bare wall clock for the same reason.
+    return `${start} – ${minutesToTime((timeToMinutes(start) + durationMinutes) % (24 * 60))}`;
   }
   return start;
 }

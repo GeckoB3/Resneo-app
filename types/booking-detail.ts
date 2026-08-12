@@ -141,6 +141,16 @@ export interface BookingDetail {
    * Read it via `resolveBookingCoreDurationMinutes`, never on its own.
    */
   estimated_end_time?: string | null;
+  /**
+   * Raw `bookings.processing_time_blocks` — the processing pattern snapshotted
+   * from the catalogue when this booking was made. Deliberately `unknown`: it is
+   * a JSON column the app only ever hands to `parseProcessingTimeBlocks`.
+   *
+   * `undefined` means "not loaded", which is NOT the same as "this booking has
+   * none": sending `[]` for a row we never read would clear real processing time
+   * on save.
+   */
+  processing_time_blocks?: unknown;
   party_size: number;
   guest_id: string;
   guest: BookingDetailGuest | null;

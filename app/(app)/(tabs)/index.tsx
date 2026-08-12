@@ -44,6 +44,7 @@ import { Segmented } from '@/components/ui/Segmented';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import { guestNotifyPlanForChange } from '@/lib/booking/modification-notify';
 import { newBookingActionLabel } from '@/lib/booking/terminology';
 import { isAppointmentFromVenue } from '@/lib/venue/venue-experience';
 import { hapticSelect, hapticSuccess } from '@/lib/haptics';
@@ -370,12 +371,21 @@ export default function CalendarScreen() {
     bookingId: string;
     guestName: string;
     previous: RescheduleTarget;
-    durationChanged: boolean;
+    /**
+     * Whether the booking's START moved. False for a pure resize AND for a
+     * cross-column reassign at the same time: in both the guest is still due
+     * when they were, so the notify offer is withheld (the email was skipped
+     * outright at commit) and only Undo is offered.
+     */
+    startMoved: boolean;
+    /** Moved to another practitioner's column. A move for the heading's purposes. */
+    reassigned: boolean;
   } | null>(null);
 
   // Restore a booking to its previous slot AND length. Sends the original end so
-  // the revert validates the true span, and defers the email (an undone change
-  // shouldn't notify the guest).
+  // the revert validates the true span, and SKIPS the email: an undone change is
+  // not something to tell the guest about, and there is no follow-up prompt
+  // here to decide otherwise.
   const undoReschedule = useCallback(
     (previous: RescheduleTarget) => {
       const endTime =
@@ -391,7 +401,7 @@ export default function CalendarScreen() {
         // column — restore the practitioner when one was captured (time-only moves
         // leave it undefined, keeping the current practitioner).
         ...(previous.practitionerId ? { practitionerId: previous.practitionerId } : {}),
-        deferGuestNotification: true,
+        skipGuestNotification: true,
       });
     },
     [rescheduleById],
@@ -973,6 +983,18 @@ export default function CalendarScreen() {
       previousTarget: RescheduleTarget;
       durationChanged: boolean;
     }) => {
+      // Derived from the slots themselves rather than the caller's flag: a MOVE
+      // defers the guest email so the prompt below can offer Notify/Skip, and a
+      // RESIZE (same start, new length) skips it — the guest is still due at
+      // the same time. Both flags suppress the send server-side; sending the
+      // one that matches the intent keeps this readable, and `prompt` is what
+      // actually stops the app offering to announce a move that never happened.
+      const notifyPlan = guestNotifyPlanForChange({
+        previousDate: input.previousTarget.date,
+        nextDate: anchor,
+        previousTime: input.previousTarget.time,
+        nextTime: input.time,
+      });
       setPendingActionIds((prev) => new Set([...prev, input.bookingId]));
       rescheduleById.mutate(
         {
@@ -981,8 +1003,9 @@ export default function CalendarScreen() {
           time: input.time,
           ...(input.endTime ? { endTime: input.endTime } : {}),
           ...(input.practitionerId ? { practitionerId: input.practitionerId } : {}),
-          // Defer the guest email — the move prompt below offers Notify/Skip.
-          deferGuestNotification: true,
+          ...(notifyPlan.skip
+            ? { skipGuestNotification: true }
+            : { deferGuestNotification: true }),
         },
         {
           onSuccess: () => {
@@ -992,7 +1015,8 @@ export default function CalendarScreen() {
               bookingId: input.bookingId,
               guestName: input.previousTarget.guestName,
               previous: input.previousTarget,
-              durationChanged: input.durationChanged,
+              startMoved: notifyPlan.prompt,
+              reassigned: input.practitionerId != null,
             });
           },
           onError: (error) => {
@@ -2031,23 +2055,47 @@ export default function CalendarScreen() {
         </View>
       </Sheet>
 
-      {/* After a drag move/resize the guest notification is deferred, so prompt
-          the staff member: notify the guest of the new time/length, skip, or undo. */}
+      {/* After a drag MOVE the guest notification is deferred, so prompt the
+          staff member: notify the guest of the new time, skip, or undo.
+
+          After a drag RESIZE there is nothing to notify about: the guest is due
+          at the same time, and the server only emails when the start moves.
+          This sheet drops the notify offer accordingly, keeping Undo (the app's
+          only undo for a drag). Offering "Notify" here told a guest their
+          appointment had moved when it had not. */}
       <Sheet visible={moveNotice !== null} onClose={closeMoveNotice}>
         <Text variant="subheading">
-          {moveNotice?.durationChanged ? 'Duration updated' : 'Booking moved'}
+          {/* A reassign at the same time is still a move, just to another
+              person's column, so it must not read as "Duration updated". */}
+          {moveNotice?.startMoved || moveNotice?.reassigned ? 'Booking moved' : 'Duration updated'}
         </Text>
         <Text variant="caption" tone="muted">
-          {moveNotice ? `Let ${moveNotice.guestName} know about the change?` : ''}
+          {!moveNotice
+            ? ''
+            : moveNotice.startMoved
+              ? `Let ${moveNotice.guestName} know about the change?`
+              : `The start time has not changed, so ${moveNotice.guestName} has not been told.`}
         </Text>
         <View style={styles.moveNoticeActions}>
-          <Button
-            label={moveNotice ? `Notify ${moveNotice.guestName}` : 'Notify guest'}
-            fullWidth
-            onPress={handleNotifyMove}
-          />
-          <Button label="Don't notify" variant="secondary" fullWidth onPress={closeMoveNotice} />
+          {moveNotice?.startMoved ? (
+            <>
+              <Button
+                label={`Notify ${moveNotice.guestName}`}
+                fullWidth
+                onPress={handleNotifyMove}
+              />
+              <Button
+                label="Don't notify"
+                variant="secondary"
+                fullWidth
+                onPress={closeMoveNotice}
+              />
+            </>
+          ) : null}
           <Button label="Undo change" variant="ghost" fullWidth onPress={handleUndoMove} />
+          {moveNotice && !moveNotice.startMoved ? (
+            <Button label="Done" variant="secondary" fullWidth onPress={closeMoveNotice} />
+          ) : null}
         </View>
       </Sheet>
 

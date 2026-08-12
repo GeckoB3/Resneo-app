@@ -13,6 +13,14 @@ import { Sheet } from '@/components/ui/Sheet';
 import { Stepper } from '@/components/ui/Stepper';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import { MIN_CORE_DURATION_MINUTES } from '@/lib/booking/booking-core-duration';
+import {
+  describeProcessingChange,
+  describeProcessingGaps,
+  effectiveProcessingTemplate,
+  fitProcessingBlocksToDuration,
+  parseProcessingTimeBlocks,
+} from '@/lib/booking/processing-time-fit';
 import { calendarDateInTimeZone, formatDayHeading } from '@/lib/dates/venue-dates';
 import { formatPence } from '@/lib/format';
 import { hapticSelect, hapticSuccess, hapticWarning } from '@/lib/haptics';
@@ -33,6 +41,7 @@ import type {
   AppointmentCatalogAddonGroup,
   AppointmentCatalogService,
 } from '@/types/appointment-catalog';
+import type { ProcessingTimeBlock } from '@/types/services-manage';
 
 export type ModifyBookingTarget = {
   id: string;
@@ -57,11 +66,18 @@ type ModifyBookingSheetProps = {
 
 const MAX_MINUTES = 23 * 60 + 59;
 /**
- * Duration bounds. The API floor is 5 (`MIN_APPOINTMENT_CORE_DURATION_MINUTES`),
- * but the web modify form's input is `min={15} step={5}`, so the UI floor stays
- * 15 here to match it — deliberately, not by omission.
+ * Duration bounds. The floor is the ONE shared floor
+ * ({@link MIN_CORE_DURATION_MINUTES}, 5) that the API, the calendar drag and the
+ * reschedule sheet all use.
+ *
+ * It was 15 here, justified by the web modify form's `min={15}`. That input is
+ * now `min={5}` too: web found eight places carrying their own 15 against an
+ * engine floor of 5, so a 5 or 10 minute appointment "could be configured but
+ * not booked, dragged but not saved". The last 15 in this app was here, and it
+ * also gated the catalogue adoption below — a sub-15 service whose row had no
+ * end time never resolved a duration at all, leaving Save disabled for good.
  */
-const MIN_DURATION_MINUTES = 15;
+const MIN_DURATION_MINUTES = MIN_CORE_DURATION_MINUTES;
 const MAX_DURATION_MINUTES = 14 * 60;
 /** Web parity: the duration input steps in 5s. */
 const DURATION_STEP_MINUTES = 5;
@@ -186,6 +202,16 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
    * `currentAddons` describes the NEW booking, not the one we're restoring.
    */
   const originalAddonIds = useRef<string[]>([]);
+  /**
+   * The booking's own processing gaps as they stood when the sheet opened, for
+   * the same reason `originalAddonIds` exists: by Undo time the save has
+   * invalidated the detail query and it describes the NEW booking. `null` means
+   * not resolved yet, where omitting the key and leaving the row alone is the
+   * only safe answer. State rather than a ref because the panel's copy reads it.
+   */
+  const [originalProcessingBlocks, setOriginalProcessingBlocks] = useState<
+    ProcessingTimeBlock[] | null
+  >(null);
   /** True once an Undo PATCH is in flight, so the pane can show it working. */
   const [undoing, setUndoing] = useState(false);
 
@@ -209,6 +235,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     setAddonIds([]);
     setAddonsSeeded(false);
     originalAddonIds.current = [];
+    setOriginalProcessingBlocks(null);
     setChecked({ sig: null, result: { state: 'idle' } });
     setError(null);
     setUndoing(false);
@@ -420,12 +447,147 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   // the base duration is still unresolved — never a guess.
   const effectiveDuration = duration == null ? null : duration + addonTotals.durationMinutes;
 
-  // Quick duration presets — current/baseline/default + common lengths.
+  // ---- Processing time ------------------------------------------------------
+  // A booking snapshots its service's processing gaps at creation, and the
+  // server validates that snapshot against whatever `duration_minutes` the
+  // request asks for. Send the gaps FITTED to that same number, or shortening a
+  // booking below its last gap's end is rejected ("Processing blocks must lie
+  // within the service duration") with nothing the app can do about it.
+  //
+  // Fitted against `effectiveDuration`, not the bare core: that is the value
+  // sent as `duration_minutes`, so it is what the server will judge them by.
+  // Add-on minutes only ever make the window longer, so a gap that fits the
+  // core fits this too.
+
+  /**
+   * The raw column. Three states, all different:
+   * - `undefined`: not loaded. Send nothing and leave the row alone.
+   * - `null`: no snapshot taken, which means the booking INHERITS its service's
+   *   catalogue pattern. Sending `[]` here would strip a real processing gap
+   *   from the booking on its first save.
+   * - an array: this booking's own gaps, `[]` included (it deliberately has none).
+   */
+  const bookingSnapshotRaw = detailQuery.data?.processing_time_blocks;
+  const bookingBlocksKnown = bookingSnapshotRaw !== undefined;
+
+  /**
+   * The catalogue pattern for whichever service and option is selected right
+   * now. Parsed, not trusted: the catalogue's blocks arrive as raw JSON like the
+   * booking's own, and forwarding a malformed entry would turn a clean save into
+   * a server-side schema rejection staff cannot act on.
+   */
+  const selectedTemplateBlocks = useMemo(() => {
+    if (!selectedService) return [];
+    return effectiveProcessingTemplate({
+      parentBlocks: parseProcessingTimeBlocks(selectedService.processing_time_blocks),
+      variantBlocks: parseProcessingTimeBlocks(
+        variants.find((v) => v.id === variantId)?.processing_time_blocks,
+      ),
+    });
+  }, [selectedService, variants, variantId]);
+
+  /** Switching service or option means a different catalogue pattern applies. */
+  const processingServiceChanged =
+    !!target &&
+    (serviceId !== target.serviceId || (variantId ?? null) !== (target.serviceVariantId ?? null));
+
+  /**
+   * The booking's OWN gaps as they stood when the sheet opened, resolved through
+   * the null-means-inherit rule. Latched in state (not derived) for the same
+   * reason `originalAddonIds` is a ref: after a save the detail query describes
+   * the NEW booking, and Undo has to restore the old one. `null` = not resolved
+   * yet, where sending nothing is the only safe answer.
+   */
+  useEffect(() => {
+    if (!target || seededId !== target.id) return;
+    if (originalProcessingBlocks != null || !bookingBlocksKnown) return;
+    // A null snapshot needs the catalogue to resolve; wait for it rather than
+    // latching an empty list that would later read as "this booking has none".
+    if (bookingSnapshotRaw === null && !selectedService) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot latch once the detail (and, for a null snapshot, the catalogue) resolves
+    setOriginalProcessingBlocks(
+      bookingSnapshotRaw === null
+        ? selectedTemplateBlocks
+        : parseProcessingTimeBlocks(bookingSnapshotRaw),
+    );
+  }, [
+    target,
+    seededId,
+    originalProcessingBlocks,
+    bookingBlocksKnown,
+    bookingSnapshotRaw,
+    selectedService,
+    selectedTemplateBlocks,
+  ]);
+
+  /**
+   * Which pattern this booking should carry: its own while it stays on the same
+   * service and option, otherwise the newly chosen one's template. A snapshot
+   * belongs to the service it was taken from, so keeping it across a service
+   * change would leave the old service's gap on the booking.
+   */
+  const sourceProcessingBlocks = useMemo(
+    () => (processingServiceChanged ? selectedTemplateBlocks : (originalProcessingBlocks ?? [])),
+    [processingServiceChanged, selectedTemplateBlocks, originalProcessingBlocks],
+  );
+
+  const processingFit = useMemo(
+    () => fitProcessingBlocksToDuration(sourceProcessingBlocks, effectiveDuration ?? 0),
+    [sourceProcessingBlocks, effectiveDuration],
+  );
+
+  /**
+   * What to send, or null to leave the row alone. Only once the duration has
+   * resolved AND we have either latched the booking's own gaps or are
+   * deliberately replacing them because the service changed.
+   */
+  const processingBlocksToSend =
+    effectiveDuration != null && (originalProcessingBlocks != null || processingServiceChanged)
+      ? processingFit.blocks
+      : null;
+
+  /** What saving will do to the processing time, in words. Null when nothing changes. */
+  const processingNotice = useMemo(() => {
+    if (effectiveDuration == null) return null;
+    // Switched to a service with no processing time at all: nothing to trim, but
+    // the booking is still losing its gap. Say so rather than dropping it quietly.
+    if (
+      processingServiceChanged &&
+      (originalProcessingBlocks?.length ?? 0) > 0 &&
+      sourceProcessingBlocks.length === 0
+    ) {
+      return 'The service you picked has no processing time, so saving will remove this booking’s gap.';
+    }
+    return describeProcessingChange({
+      removed: processingFit.removed.length,
+      trimmed: processingFit.trimmed.length,
+      serviceChanged: processingServiceChanged && sourceProcessingBlocks.length > 0,
+    });
+  }, [
+    effectiveDuration,
+    processingFit,
+    processingServiceChanged,
+    originalProcessingBlocks,
+    sourceProcessingBlocks,
+  ]);
+
+  /** Only worth showing when this booking has, or is losing, a processing gap. */
+  const showProcessingPanel =
+    effectiveDuration != null &&
+    (sourceProcessingBlocks.length > 0 ||
+      (processingServiceChanged && (originalProcessingBlocks?.length ?? 0) > 0));
+
+  // Quick duration presets — current/baseline/default + common lengths. The
+  // short ones lead so a 5 or 10 minute appointment is a tap, not eight
+  // decrements (web parity: its preset row gained the same two).
   const durationPresets = [
     ...new Set(
       [
         selectedService?.duration_minutes,
         baselineDuration ?? undefined,
+        5,
+        10,
+        15,
         30,
         45,
         60,
@@ -515,7 +677,19 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   const canCheck =
     !!target && !!serviceId && !!practitionerId && !!date && effectiveDuration != null;
   const signature = canCheck
-    ? [target.id, serviceId, variantId, practitionerId, date, minutes, effectiveDuration].join('|')
+    ? [
+        target.id,
+        serviceId,
+        variantId,
+        practitionerId,
+        date,
+        minutes,
+        effectiveDuration,
+        // The blocks are part of what the dry run judges, and they can arrive
+        // AFTER the rest is settled (the detail query resolving flips them from
+        // "not loaded" to a real set), so a stale "valid" must not survive that.
+        processingBlocksToSend ? JSON.stringify(processingBlocksToSend) : '',
+      ].join('|')
     : null;
   const validateMutate = validate.mutate;
   useEffect(() => {
@@ -534,6 +708,9 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
             : { appointment_service_id: serviceId }),
           duration_minutes: effectiveDuration,
           service_variant_id: requiresVariant ? variantId : null,
+          // The same fitted blocks the save will send, so this dry run judges
+          // exactly what the PATCH will persist.
+          ...(processingBlocksToSend ? { processing_time_blocks: processingBlocksToSend } : {}),
         },
         {
           onSuccess: (res) => {
@@ -561,6 +738,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     date,
     minutes,
     effectiveDuration,
+    processingBlocksToSend,
     requiresVariant,
     signature,
     validateMutate,
@@ -602,6 +780,9 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
         ...(hasAddonGroups
           ? { addons: validAddonIds.map((addon_id) => ({ addon_id })) }
           : {}),
+        // The booking's processing gaps, fitted to the new duration. Omitted
+        // when unresolved, which leaves the row's stored snapshot alone.
+        ...(processingBlocksToSend ? { processing_time_blocks: processingBlocksToSend } : {}),
         // Moving the start is the only change the server emails the guest about,
         // and it does so the instant the PATCH lands. Hold it back so the staff
         // member gets the same Notify / Don't notify / Undo choice the calendar
@@ -680,7 +861,16 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
         ...(originalHadAddons
           ? { addons: originalAddonIds.current.map((addon_id) => ({ addon_id })) }
           : {}),
-        defer_modification_guest_notification: true,
+        // Undo restores the booking's OWN gaps, not whatever the save fitted.
+        // Latched on open for the same reason the add-ons are: by now the detail
+        // query describes the saved booking.
+        ...(originalProcessingBlocks
+          ? { processing_time_blocks: originalProcessingBlocks }
+          : {}),
+        // SKIP, not defer: an undone change is not something to tell the guest
+        // about, and no prompt follows this to decide otherwise. (Both flags
+        // suppress the send server-side; this one says why.)
+        skip_booking_modification_guest_notification: true,
       });
       hapticSuccess();
       toast.success('Change undone.');
@@ -1066,6 +1256,28 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
               </Text>
             ) : null}
 
+            {/* Processing time. Shown only when this booking has (or is losing)
+                a gap, so an ordinary appointment never sees it. Saving trims or
+                drops what no longer fits rather than being refused, and this
+                says which before the staff member commits. */}
+            {showProcessingPanel ? (
+              <View style={[styles.processingPanel, { borderColor: colors.border }]}>
+                <Text variant="label" tone="secondary">
+                  Processing time
+                </Text>
+                <Text variant="caption" tone="muted">
+                  {processingFit.blocks.length > 0
+                    ? `The practitioner is free during ${describeProcessingGaps(processingFit.blocks)} of this appointment.`
+                    : 'This appointment will have no processing gap.'}
+                </Text>
+                {processingNotice ? (
+                  <Text variant="caption" color={colors.warning}>
+                    {processingNotice}
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
+
           </ScrollView>
 
           {!hasChanges ? (
@@ -1152,6 +1364,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.sm,
+  },
+  processingPanel: {
+    gap: spacing.xs,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radius.md,
+    padding: spacing.md,
   },
   addonGroup: {
     gap: spacing.sm,

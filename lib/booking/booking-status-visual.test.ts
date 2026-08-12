@@ -17,11 +17,40 @@ function row(overrides: Partial<BookingStatusVisualRow> & { status: string }): B
   return { ...overrides };
 }
 
+/** sRGB relative luminance (WCAG 2.x §relative-luminance) for a `#rrggbb`. */
+function relativeLuminance(hex: string): number {
+  const channels = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+  const [r, g, b] = channels.map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+}
+
+/** WCAG contrast ratio between two `#rrggbb` colours (1 to 21). */
+function contrastRatio(a: string, b: string): number {
+  const la = relativeLuminance(a);
+  const lb = relativeLuminance(b);
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+
 describe('bookingStatusVisualForKey', () => {
   it('returns the mapped visual for a known status key', () => {
     const pending = bookingStatusVisualForKey('Pending');
     expect(pending.dotColor).toBe('#EA580C');
-    expect(pending.calendarBlock.bg).toBe('#EA580C');
+    // The BAR fill is darker than the dot on purpose: white text on orange-600
+    // fails AA (2.53:1 to 2.96:1), so the bar uses orange-800 (R14-3).
+    expect(pending.calendarBlock.bg).toBe('#9A3412');
+  });
+
+  it('keeps every white-on-fill calendar bar above the AA contrast floor', () => {
+    // Pins the R14-3 fix so a future palette tweak cannot quietly undo it.
+    // Bars whose text is a deep hue on a light fill (Arrived, Cancelled) are
+    // covered by the same check from the other direction.
+    for (const key of ['Pending', 'Deposit Pending', 'Booked', 'Confirmed', 'Seated', 'Arrived', 'Cancelled']) {
+      const block = bookingStatusVisualForKey(key).calendarBlock;
+      expect({ key, ratio: contrastRatio(block.text, block.bg) >= 4.5 }).toEqual({
+        key,
+        ratio: true,
+      });
+    }
   });
 
   it('falls back to the default visual for an unknown key', () => {

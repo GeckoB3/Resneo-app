@@ -6,6 +6,7 @@ import { queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import type { BookingDetail, BookingStatus } from '@/types/booking-detail';
 import type { BookingsListResponse } from '@/types/booking-list';
+import type { ProcessingTimeBlock } from '@/types/services-manage';
 
 function invalidateBookingCaches(
   queryClient: ReturnType<typeof useQueryClient>,
@@ -274,6 +275,17 @@ export function useRescheduleBookingById() {
       durationMinutes?: number;
       /** Defer the server's guest "booking changed" email so the app can prompt. */
       deferGuestNotification?: boolean;
+      /**
+       * Tell the server not to send that email at all. Used where the change is
+       * not one the guest needs to hear about: a drag-RESIZE keeps the start,
+       * and a revert puts back what was there.
+       *
+       * The server treats this and `deferGuestNotification` identically (both
+       * suppress the immediate send). Sending the one that matches the intent is
+       * for the reader's benefit: `defer` promises a follow-up prompt, `skip`
+       * says there will not be one.
+       */
+      skipGuestNotification?: boolean;
       /** New practitioner/calendar id — reassigns the booking when set. */
       practitionerId?: string;
       /** Admin acknowledgement of an edit-time compliance block (409 → override). */
@@ -309,6 +321,9 @@ export function useRescheduleBookingById() {
           // server emailing the guest automatically on every drag.
           ...(input.deferGuestNotification
             ? { defer_modification_guest_notification: true }
+            : {}),
+          ...(input.skipGuestNotification
+            ? { skip_booking_modification_guest_notification: true }
             : {}),
           ...(input.practitionerId !== undefined
             ? { practitioner_id: input.practitionerId }
@@ -351,12 +366,30 @@ export interface ModifyAppointmentInput {
    */
   addons?: { addon_id: string }[];
   /**
+   * The booking's processing gaps, already fitted to `duration_minutes`.
+   *
+   * The server validates the booking's STORED snapshot against the requested
+   * duration when this key is absent, so shortening an appointment below its
+   * last gap's end is rejected outright ("Processing blocks must lie within the
+   * service duration"). Sending the fitted set makes the validator judge what
+   * will actually be persisted. Omit the key to leave the stored snapshot
+   * alone — never send `[]` for a booking whose blocks were not loaded, which
+   * would clear real processing time.
+   */
+  processing_time_blocks?: ProcessingTimeBlock[];
+  /**
    * Hold back the server's "your booking changed" guest email so the app can
    * prompt (Notify / Don't notify / Undo) — same deferral the drag-reschedule
    * path uses. The server only sends that email when the booking START moved,
    * so this is only meaningful on a date/time change.
    */
   defer_modification_guest_notification?: boolean;
+  /**
+   * Suppress that email outright. Used by Undo: restoring the original slot is
+   * not a change to tell the guest about, and no prompt follows to decide
+   * otherwise. Equivalent to `defer` at the server; the difference is intent.
+   */
+  skip_booking_modification_guest_notification?: boolean;
   /** Admin acknowledgement of an edit-time compliance block (409 → override). */
   override_compliance?: boolean;
 }
@@ -393,6 +426,12 @@ export interface ValidateAppointmentModificationInput {
   service_item_id?: string | null;
   duration_minutes?: number | null;
   service_variant_id?: string | null;
+  /**
+   * The same fitted blocks the save will send, so this dry run judges exactly
+   * what the PATCH will persist. Omitted → the server falls back to the
+   * booking's stored snapshot.
+   */
+  processing_time_blocks?: ProcessingTimeBlock[];
 }
 
 export type ValidateAppointmentModificationResult =
