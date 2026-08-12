@@ -5,7 +5,7 @@
 **Caveat:** still **unreleased**. `origin/main` remains at `671f5051 "Staging (#132)"`; `origin/staging` is now 27 commits ahead of it. Everything below is staging-only. The reference clone was refreshed to `staging` for this audit at the user's request — see [Reference repo](../_reference/Resneo).
 **Verdict:** two workstreams. One is server-side and arrives free; the other, **multi-service visits**, is the largest app-facing delta since R7 — and it is not only a missing feature. The app can currently **tear a visit apart**, by exactly the mechanism that produced web's reference case.
 
-**Status: R15-5, R15-3 and R15-2 BUILT 2026-08-12.** Full suite green: 162 files / 1,669 tests (+1 file, +35 tests), `tsc --noEmit` clean, `eslint .` at its exact pre-existing error baseline (15 errors, all in `scripts/`; the 13 new warnings are the `require()`-in-a-jest-mock-factory pattern the suite already uses throughout). R15-1 and R15-4 remain open. See §5 for what was built and §6 for the review pass that followed.
+**Status: ALL FIVE BUILT 2026-08-12.** Full suite green: 164 files / 1,698 tests (+3 files, +64 tests), `tsc --noEmit` clean, `eslint .` at its exact pre-existing error baseline (15 errors, all in `scripts/`; the new warnings are the `require()`-in-a-jest-mock-factory pattern the suite already uses throughout). See §5 for what was built and §6 for the review passes. Nothing has been smoke-tested on a device.
 
 > **The R14 shipping gate still stands and now covers R15 too.** Nothing here should ship ahead of the web staging release. The two visit endpoints do not exist on production web, so an app that calls them gets a 404 against `resneo.com` today. The release is to be synchronised with the staging→main merge.
 
@@ -117,7 +117,7 @@ That accident is now a benefit: web's guard tallies every match before reporting
 | 2 | **R15-3** (detail reports the visit) | Port `resolveAppointmentVisit` + lift the visit query. Smallest of the visit work, and it is the one that makes the defect visible to staff. |
 | 3 | **R15-2** (modify/reschedule a visit as a visit) | Stops the app creating the damage. Highest severity; depends on the resolver from step 2. |
 | 4 | **R15-1** (drag and resize a merged bar) | Same endpoint as step 3, plus the party gate in §3. |
-| 5 | **R15-4** (service list editing) | Defer past a device pass. |
+| 5 | **R15-4** (service list editing) | Largest. Built after the rest, at the user's direction, rather than being deferred past a device pass. |
 
 No backend work is outstanding — both visit endpoints are Bearer-capable and complete. But they exist only on `staging`, so this whole report is gated on the web release, and steps 2 to 4 must not ship before it.
 
@@ -156,4 +156,37 @@ Two things the app does NOT copy from web:
 - **Undo after a length change restores the total, not necessarily the split.** The server redistributes by its own rule (growth goes on the tail), so a shrink that cascaded back into an earlier service returns with those minutes on the last one. Inherent to editing a visit by one wall-clock number; the slot and the total are exact, and the common case — a move that never touched the lengths — sends no total at all and restores the services exactly.
 - **The R15-3 wiring in `BookingDetailContent` has no render test.** The rules underneath it are fully covered by the resolver's 14 tests; the wiring itself is three `visit ? … : …` expressions, and a render harness for that component needs roughly twenty hook and child mocks. Judged not worth the brittleness — flagged so the gap is known rather than assumed covered. One trap inside it was caught by eye and is commented: **Rebook** seeds a new booking from one service, so it keeps the row's own duration, not the visit's span.
 
-**Not verified in the browser preview**: the changed surfaces are the booking detail panel and its two sheets, which need the authed API the web preview cannot reach (see [[dev-environment]]). They want a device pass alongside R15-1.
+### R15-1 · A visit drags and resizes as one bar
+
+Merged bars were undraggable outright; the reason (the gesture PATCHes one row) no longer holds once the commit goes through the visit endpoint.
+
+- **The gate is `isVisit`, not `isMultiSegment`** — the trap §3 flagged. `clusterCalendarBookings` gained `isVisit` (and `groupBookingId`), so a party still merges into one bar and still refuses to drag.
+- **A bar is told every row it owns.** `busyRanges` is built per booking row, so a visit excluding only its lead was reported as clashing with the sibling it is about to follow: red on pickup, drop refused, nothing actually in the way. `evaluateConflict` now takes a list and is exported with its own tests — it only ever runs on the UI thread, so it cannot be reached through the component.
+- **A visit resize floors at its services' floors**, not one drag snap, via a new `minDurationMinutes` prop.
+- A **move** sends no length (every service keeps its own); a **resize** sends the bar's new height as the visit's span. **Undo** goes back through the same endpoint and restores the length only when the commit changed it — where web's `patchVisitResize` records no undo at all, which its own plan flags as open.
+
+### R15-4 · Service list editing
+
+`useVisitServices` plus a "Services in this visit" editor in the visit form: tap a line to swap it (a mode step, not a nested sheet — [[ios-no-stacked-modals]]), Remove to drop one, "Add a service" to append. The live check and the save route to the services endpoint whenever the list differs, and the length control goes read-only while it does, because the services set it.
+
+Three app-side rules the contract forced:
+
+- **A partial list is destructive, so it is withheld.** The request is declarative — a row left out is cancelled — so if the opening plan cannot resolve *every* row to a service id, the editor does not appear at all. Web maps and filters the same list, which would silently drop the row it could not name.
+- **`known_booking_ids` is the whole visit as the form saw it**, not the list being sent. That is what makes a service appearing meanwhile a 412 rather than a silent cancellation.
+- **The last service cannot be removed** from the UI at all; emptying a visit is a cancellation, with its own refund and notification rules.
+
+## 6. Review passes
+
+**R15-2/3 — one real defect, found after the build was green and fixed.** `total_duration_minutes` is an **instruction**, not a description — the server lays the services out to fill it. Both sheets were sending the span the form happened to be holding on every save, so moving a visit that contained dead time would have silently lengthened its **last service** by that dead time. Worse on the failure path: if the opening plan never arrived, the form is still showing the rows' raw span, and that would have been asserted as the target length. Both now send it only on a deliberate edit (`durationEdited`), on the dry run and the save alike. Four tests pin it, and the same rule is why a visit drag sends no length.
+
+**R15-4 — two defects, same pass:**
+
+1. **Undo after a service change was a lie.** The notify prompt's Undo restores a *schedule*; once the list has been rewritten there is no honest schedule-only undo, because a removed service has been cancelled and re-adding it would insert a new row rather than bring that one back. Undo is now withheld after a services save, with a line saying so, rather than putting the visit back where it was while leaving it made of something else.
+2. **The dead-time notice went nonsense mid-edit.** It subtracts the planned total from the rows' span; once the planned total describes the *new* list, that difference is the edit in progress, not a gap. Suppressed while the list differs.
+
+**Two limits left in place, documented rather than papered over:**
+
+- **Undo after a length change restores the total, not necessarily the split.** The server redistributes by its own rule (growth goes on the tail), so a shrink that cascaded back into an earlier service returns with those minutes on the last one. Inherent to editing a visit by one wall-clock number; the slot and the total are exact, and the common case — a move that never touched the lengths — sends no total at all and restores the services exactly.
+- **The R15-3 wiring in `BookingDetailContent` has no render test.** The rules underneath it are fully covered by the resolver's 14 tests; the wiring itself is three `visit ? … : …` expressions, and a render harness for that component needs roughly twenty hook and child mocks. Judged not worth the brittleness — flagged so the gap is known rather than assumed covered. One trap inside it was caught by eye and is commented: **Rebook** seeds a new booking from one service, so it keeps the row's own duration, not the visit's span.
+
+**Not verified in the browser preview**: every changed surface (the booking detail panel, its two sheets, and the calendar's drag) needs the authed API the web preview cannot reach (see [[dev-environment]]). **All of this wants a device pass**, and the drag especially — a gesture's conflict maths and its floors are the kind of thing that reads correctly and feels wrong.

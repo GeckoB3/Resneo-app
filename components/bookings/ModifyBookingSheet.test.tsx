@@ -195,8 +195,11 @@ jest.mock('@/lib/queries/useBookingMutations', () => ({
  * its calls to prove the form never PATCHes a single service of a visit.
  */
 const mockVisitSchedule = jest.fn();
+/** The services endpoint — a different write: what the visit is MADE OF. */
+const mockVisitServices = jest.fn();
 jest.mock('@/lib/queries/useVisitMutations', () => ({
   useVisitSchedule: () => ({ mutateAsync: mockVisitSchedule, isPending: false }),
+  useVisitServices: () => ({ mutateAsync: mockVisitServices, isPending: false }),
 }));
 
 const mockToast = { success: jest.fn(), error: jest.fn(), info: jest.fn() };
@@ -235,8 +238,12 @@ const VISIT_TARGET: ModifyBookingTarget = {
   },
 };
 
-/** What the visit endpoint answers a dry run with. */
-function visitPlan(over: { total_minutes?: number; changed?: boolean } = {}) {
+/**
+ * What the schedule endpoint answers a dry run with. Its `services` carry the
+ * ids the services endpoint needs, which is how the form learns what the visit
+ * is made of — the rows it is handed have names, not ids.
+ */
+function visitPlan(over: { total_minutes?: number; changed?: boolean; services?: unknown[] } = {}) {
   return {
     ok: true,
     group_booking_id: 'grp-1',
@@ -247,7 +254,11 @@ function visitPlan(over: { total_minutes?: number; changed?: boolean } = {}) {
     calendar_id: 'prac-1',
     changed: false,
     dry_run: true,
-    services: [{ id: 'bk-lead' }, { id: 'bk-1' }, { id: 'bk-3' }],
+    services: [
+      { id: 'bk-lead', service_id: 'svc-1', service_variant_id: null },
+      { id: 'bk-1', service_id: 'svc-2', service_variant_id: null },
+      { id: 'bk-3', service_id: 'svc-1', service_variant_id: null },
+    ],
     ...over,
   };
 }
@@ -260,6 +271,8 @@ beforeEach(() => {
   mockModify.mockResolvedValue({});
   mockVisitSchedule.mockClear();
   mockVisitSchedule.mockResolvedValue(visitPlan());
+  mockVisitServices.mockClear();
+  mockVisitServices.mockResolvedValue({ ok: true, total_minutes: 165, services: [] });
   // Cleared per test, or a visit's "never asks the single-booking validator"
   // assertion reads calls left behind by whatever ran before it.
   mockValidate.mockClear();
@@ -282,6 +295,16 @@ beforeEach(() => {
 async function press(label: string) {
   await act(async () => {
     fireEvent.press(screen.getByText(label));
+  });
+}
+
+/**
+ * Press by accessibility label, by position. A visit can hold the same service
+ * twice, so its rows are told apart by where they sit, not by what they say.
+ */
+async function pressLabel(label: string, index = 0) {
+  await act(async () => {
+    fireEvent.press(screen.getAllByLabelText(label)[index]!);
   });
 }
 
@@ -1117,6 +1140,231 @@ describe('ModifyBookingSheet', () => {
       } finally {
         jest.useRealTimers();
       }
+    });
+
+    /**
+     * Changing WHAT a visit is made of. The request is declarative — a row left
+     * out is cancelled — so the assertions here are mostly about what the app
+     * must never send.
+     */
+    describe('its service list', () => {
+      it('lists the services with a way to change or add one', async () => {
+        jest.useFakeTimers();
+        try {
+          await renderVisit();
+          expect(screen.getByText('Services in this visit')).toBeTruthy();
+          // Three rows: svc-1, svc-2, svc-1 — a visit may hold one service twice.
+          expect(screen.getAllByLabelText('Change Cut & Finish')).toHaveLength(2);
+          expect(screen.getByLabelText('Change Blow Dry')).toBeTruthy();
+          expect(screen.getByText('Add a service')).toBeTruthy();
+        } finally {
+          jest.useRealTimers();
+        }
+      });
+
+      it('is withheld when a row did not resolve to a service', async () => {
+        // The list is declarative, so a partial one would cancel the service it
+        // could not name. Better to offer no editing than to drop a service.
+        jest.useFakeTimers();
+        try {
+          mockVisitSchedule.mockResolvedValue(
+            visitPlan({
+              services: [
+                { id: 'bk-lead', service_id: 'svc-1', service_variant_id: null },
+                { id: 'bk-legacy', service_id: null, service_variant_id: null },
+              ],
+            }),
+          );
+          await renderVisit();
+          expect(screen.queryByText('Services in this visit')).toBeNull();
+          // The rest of the visit is still editable.
+          expect(screen.getByLabelText('Visit length')).toBeTruthy();
+        } finally {
+          jest.useRealTimers();
+        }
+      });
+
+      it('adds a service through the services endpoint, with the known ids', async () => {
+        jest.useFakeTimers();
+        try {
+          await renderVisit();
+          await press('Add a service');
+          await press('Blow Dry');
+          await settleAvailability();
+          await press('Save whole visit');
+
+          expect(mockVisitServices).toHaveBeenCalledWith(
+            expect.objectContaining({
+              services: [
+                { booking_id: 'bk-lead', service_id: 'svc-1', service_variant_id: null },
+                { booking_id: 'bk-1', service_id: 'svc-2', service_variant_id: null },
+                { booking_id: 'bk-3', service_id: 'svc-1', service_variant_id: null },
+                { service_id: 'svc-2', service_variant_id: null },
+              ],
+              known_booking_ids: ['bk-lead', 'bk-1', 'bk-3'],
+            }),
+          );
+          // The schedule endpoint must not also run: two writes for one edit.
+          expect(visitWrite()).toBeUndefined();
+        } finally {
+          jest.useRealTimers();
+        }
+      });
+
+      it('swaps a service in place, keeping its row', async () => {
+        // Keeping `booking_id` is what makes it a re-service rather than a
+        // cancel-and-insert, which would lose the row's history and its price.
+        jest.useFakeTimers();
+        try {
+          await renderVisit();
+          await pressLabel('Change Cut & Finish');
+          await press('Blow Dry');
+          await settleAvailability();
+          await press('Save whole visit');
+
+          expect(mockVisitServices).toHaveBeenCalledWith(
+            expect.objectContaining({
+              services: expect.arrayContaining([
+                { booking_id: 'bk-lead', service_id: 'svc-2', service_variant_id: null },
+              ]),
+            }),
+          );
+        } finally {
+          jest.useRealTimers();
+        }
+      });
+
+      it('removes a service by leaving it out of the list', async () => {
+        jest.useFakeTimers();
+        try {
+          await renderVisit();
+          await pressLabel('Remove Cut & Finish');
+          await settleAvailability();
+          await press('Save whole visit');
+
+          const body = mockVisitServices.mock.calls.at(-1)![0] as {
+            services: { booking_id?: string }[];
+            known_booking_ids: string[];
+          };
+          expect(body.services.map((s) => s.booking_id)).toEqual(['bk-1', 'bk-3']);
+          // Still every id the form saw, or the endpoint cannot tell a removal
+          // from a visit that changed underneath it.
+          expect(body.known_booking_ids).toEqual(['bk-lead', 'bk-1', 'bk-3']);
+        } finally {
+          jest.useRealTimers();
+        }
+      });
+
+      it('never offers to remove the last service', async () => {
+        // An empty visit is a cancellation, which has its own refund and
+        // notification rules. The endpoint refuses it; the form does not ask.
+        jest.useFakeTimers();
+        try {
+          mockVisitSchedule.mockResolvedValue(
+            visitPlan({
+              services: [{ id: 'bk-lead', service_id: 'svc-1', service_variant_id: null }],
+            }),
+          );
+          await renderVisit();
+          expect(screen.queryByLabelText('Remove Cut & Finish')).toBeNull();
+        } finally {
+          jest.useRealTimers();
+        }
+      });
+
+      it('hands the length to the services while the list is in play', async () => {
+        // Two controls over one number would let a staff member ask for a visit
+        // shorter than the services they just chose.
+        jest.useFakeTimers();
+        try {
+          await renderVisit();
+          expect(screen.getByLabelText('Visit length')).toBeTruthy();
+          await press('Add a service');
+          await press('Blow Dry');
+          await settleAvailability();
+
+          expect(screen.queryByLabelText('Visit length')).toBeNull();
+          expect(
+            screen.getByText('Set by the services you picked. Save, then reopen to adjust it by hand.'),
+          ).toBeTruthy();
+          // The length the endpoint planned for the new list, not the old span.
+          expect(screen.getByText('2h 45m')).toBeTruthy();
+        } finally {
+          jest.useRealTimers();
+        }
+      });
+
+      it('checks a changed list against the services endpoint, not the schedule one', async () => {
+        jest.useFakeTimers();
+        try {
+          await renderVisit();
+          mockVisitSchedule.mockClear();
+          await press('Add a service');
+          await press('Blow Dry');
+          await settleAvailability();
+
+          expect(mockVisitServices).toHaveBeenCalledWith(
+            expect.objectContaining({ dry_run: true }),
+          );
+          expect(mockVisitSchedule).not.toHaveBeenCalled();
+        } finally {
+          jest.useRealTimers();
+        }
+      });
+
+      it('does not offer Undo after the services changed', async () => {
+        // Undo restores a schedule, and there is no honest schedule-only undo
+        // once the list has been rewritten: a removed service has been cancelled,
+        // and re-adding it would insert a new row rather than bring that one back.
+        jest.useFakeTimers();
+        try {
+          await renderVisit();
+          await press('TIME_PICKER');
+          await press('Add a service');
+          await press('Blow Dry');
+          await settleAvailability();
+          await press('Save whole visit');
+
+          expect(screen.getByText('Visit moved')).toBeTruthy();
+          expect(screen.getByText('Notify Alex Rivera')).toBeTruthy();
+          expect(screen.queryByText('Undo change')).toBeNull();
+        } finally {
+          jest.useRealTimers();
+        }
+      });
+
+      it('still offers Undo when only the schedule changed', async () => {
+        jest.useFakeTimers();
+        try {
+          await renderVisit();
+          await press('TIME_PICKER');
+          await settleAvailability();
+          await press('Save whole visit');
+          expect(screen.getByText('Undo change')).toBeTruthy();
+        } finally {
+          jest.useRealTimers();
+        }
+      });
+
+      it('surfaces a stale-visit refusal instead of applying the list', async () => {
+        jest.useFakeTimers();
+        try {
+          const { ApiError } = require('@/lib/api/client');
+          await renderVisit();
+          mockVisitServices.mockRejectedValue(
+            new ApiError('This visit was changed somewhere else. Refresh and try again.', 412, {}),
+          );
+          await press('Add a service');
+          await press('Blow Dry');
+          await settleAvailability();
+
+          expect(
+            screen.getByText('This visit was changed somewhere else. Refresh and try again.'),
+          ).toBeTruthy();
+        } finally {
+          jest.useRealTimers();
+        }
+      });
     });
 
     it('does not add the add-on minutes on top of a span that already holds them', async () => {

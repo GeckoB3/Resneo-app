@@ -119,6 +119,109 @@ export function useVisitSchedule(groupBookingId: string | null | undefined) {
   });
 }
 
+/** One line of the visit as the staff member wants it, in order. */
+export interface VisitServiceLineInput {
+  /**
+   * The row this line keeps. Absent adds a service; a line whose `service_id`
+   * differs from the row's re-services it (a swap).
+   */
+  booking_id?: string | null;
+  service_id: string;
+  service_variant_id?: string | null;
+}
+
+export interface VisitServicesPatchInput {
+  /**
+   * The visit's services, in order. This is DECLARATIVE: a row of the visit left
+   * out of the list is removed from it, so the list must always be the whole
+   * visit.
+   */
+  services: VisitServiceLineInput[];
+  /**
+   * Every scheduled row of the visit as the caller last saw it.
+   *
+   * Required, and the reason is the line above: omission removes. A form opened
+   * on three services that saves after a fourth appeared would cancel that fourth
+   * without ever having shown it, and the per-row guards cannot catch that — the
+   * row nobody knew about is exactly the one being dropped. Mismatched, the whole
+   * request is refused with 412 rather than applied.
+   */
+  known_booking_ids: string[];
+  /** The visit's schedule, when the same edit moves it. */
+  booking_date?: string;
+  booking_time?: string;
+  practitioner_id?: string;
+  allow_manual_overlap?: boolean;
+  allow_outside_hours?: boolean;
+  dry_run?: boolean;
+  defer_modification_guest_notification?: boolean;
+  skip_booking_modification_guest_notification?: boolean;
+}
+
+/** What each line becomes, and whether it was kept, added or re-serviced. */
+export interface VisitPlannedServiceLine {
+  id: string | null;
+  kind: 'keep' | 'add' | 'reservice';
+  service_id: string;
+  service_variant_id: string | null;
+  name: string | null;
+  booking_date: string;
+  booking_time: string;
+  booking_end_time: string;
+  duration_minutes: number;
+}
+
+export interface VisitServicesPlan {
+  ok: true;
+  group_booking_id: string;
+  booking_date: string;
+  start_time: string;
+  end_time: string;
+  total_minutes: number;
+  changed: boolean;
+  dry_run: boolean;
+  /** Rows this edit will cancel. Cancelled, not deleted — they keep their history. */
+  removed_booking_ids: string[];
+  services: VisitPlannedServiceLine[];
+}
+
+/**
+ * PATCH /api/venue/visits/[groupBookingId]/services — add, remove, swap or
+ * reorder the services of a visit, and move it in the same write.
+ *
+ * Three refusals worth knowing before wiring a caller to it: an empty list is
+ * refused in words ("a visit has to keep at least one service; to end the
+ * booking altogether, cancel it instead"), a stale view is refused with 412, and
+ * a row with money against it cannot be removed at all — refunds belong to
+ * cancellation, which has its own rules.
+ */
+export function useVisitServices(groupBookingId: string | null | undefined) {
+  const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: VisitServicesPatchInput): Promise<VisitServicesPlan> => {
+      if (!accessToken) {
+        throw new Error('Missing access token');
+      }
+      if (!groupBookingId) {
+        throw new Error('Missing visit id');
+      }
+      return apiFetch<VisitServicesPlan>(
+        `/api/venue/visits/${encodeURIComponent(groupBookingId)}/services`,
+        { accessToken, method: 'PATCH', body: JSON.stringify(input) },
+      );
+    },
+    onSuccess: (data, input) => {
+      if (input.dry_run === true) return;
+      const anyServiceId = data.services?.find((s) => s.id)?.id;
+      if (anyServiceId) {
+        invalidateBookingCaches(queryClient, accessToken, anyServiceId);
+      }
+    },
+  });
+}
+
 /**
  * The same endpoint where the VISIT changes per action — the calendar's
  * drag-move, drag-resize and undo, which act on whichever bar was grabbed.

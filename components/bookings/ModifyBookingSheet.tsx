@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { MonthDatePicker } from '@/components/booking-wizard/MonthDatePicker';
@@ -38,7 +38,7 @@ import {
   useNotifyBookingModification,
   useValidateAppointmentModification,
 } from '@/lib/queries/useBookingMutations';
-import { useVisitSchedule } from '@/lib/queries/useVisitMutations';
+import { useVisitSchedule, useVisitServices } from '@/lib/queries/useVisitMutations';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { fonts, radius, spacing } from '@/theme/index';
@@ -121,7 +121,23 @@ function stepStartMinutes(current: number, direction: 1 | -1): number {
  * second modal from a visible one is unreliable on iOS, and a month grid nested
  * in the form's ScrollView would put two same-axis scrollers on screen at once.
  */
-type Mode = 'form' | 'date' | 'time' | 'notify';
+type Mode = 'form' | 'date' | 'time' | 'notify' | 'visitService';
+
+/** One line of a visit's service list, as the form holds it. */
+type VisitServiceLine = {
+  /** Stable across edits so React keys survive a swap. */
+  key: string;
+  /** The row this line keeps, or null for a service being added. */
+  bookingId: string | null;
+  serviceId: string;
+  variantId: string | null;
+};
+
+let visitLineSeq = 0;
+function nextVisitLineKey(): string {
+  visitLineSeq += 1;
+  return `visit-line-${visitLineSeq}`;
+}
 
 type CheckState =
   | { state: 'idle' | 'checking' | 'valid' | 'unknown' }
@@ -177,6 +193,12 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   const visit = target?.visit ?? null;
   const isVisit = visit != null;
   const visitSchedule = useVisitSchedule(visit?.groupBookingId);
+  /**
+   * Changing WHAT a visit is made of is a different write from changing when it
+   * is: the services endpoint takes the list and reconciles it, and lays the
+   * visit out from what it then holds.
+   */
+  const visitServices = useVisitServices(visit?.groupBookingId);
   // Sends the email the save deliberately held back, when the user taps Notify.
   const notifyModification = useNotifyBookingModification();
   // Read the open booking's full detail (cache hit — the detail sheet is already
@@ -240,6 +262,17 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   /** True once an Undo PATCH is in flight, so the pane can show it working. */
   const [undoing, setUndoing] = useState(false);
   /**
+   * The save that just landed rewrote the visit's SERVICES, so Undo is not
+   * offered after it.
+   *
+   * Undo restores a schedule, and there is no honest schedule-only undo here: a
+   * removed service has been cancelled (a new row would be an insert, not a
+   * resurrection), and the ids this form knows are stale the moment the write
+   * lands. Putting the visit back where it was while leaving it made of
+   * something else would be worse than not offering it.
+   */
+  const [savedServiceChange, setSavedServiceChange] = useState(false);
+  /**
    * The visit carries dead time an earlier per-service edit left behind, so
    * saving will re-lay it even if the staff member changes nothing. Answered by
    * the endpoint on open (`changed` on a dry run that asks for the visit's
@@ -249,6 +282,27 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   const [visitRelayNeeded, setVisitRelayNeeded] = useState(false);
   /** The span the endpoint says this visit has, once its opening dry run answers. */
   const [visitPlannedMinutes, setVisitPlannedMinutes] = useState<number | null>(null);
+  /**
+   * The visit's services as the staff member wants them, and as they stand.
+   *
+   * Both null until the opening plan answers: the rows the booking list hands
+   * this form carry service NAMES, not ids, and the endpoint needs ids to say
+   * what the visit is made of.
+   */
+  const [serviceLines, setServiceLines] = useState<VisitServiceLine[] | null>(null);
+  const [baselineServiceLines, setBaselineServiceLines] = useState<VisitServiceLine[] | null>(
+    null,
+  );
+  /**
+   * Every scheduled row of the visit as this form last saw it, sent with a
+   * service edit so a service that appeared meanwhile cannot be cancelled by a
+   * list that never included it.
+   */
+  const [knownBookingIds, setKnownBookingIds] = useState<string[]>([]);
+  /** Which line the service picker is editing; -1 while adding a new one. */
+  const [pickerLineIndex, setPickerLineIndex] = useState<number | null>(null);
+  /** The service chosen in the picker, while its options are being chosen. */
+  const [pickerServiceId, setPickerServiceId] = useState<string | null>(null);
 
   /**
    * The duration floor for whatever is being edited. A visit's is its services'
@@ -285,8 +339,14 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     setChecked({ sig: null, result: { state: 'idle' } });
     setError(null);
     setUndoing(false);
+    setSavedServiceChange(false);
     setVisitRelayNeeded(false);
     setVisitPlannedMinutes(null);
+    setServiceLines(null);
+    setBaselineServiceLines(null);
+    setKnownBookingIds([]);
+    setPickerLineIndex(null);
+    setPickerServiceId(null);
     setMode('form');
     setMonthAnchor(target.date);
   }, [target?.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -758,6 +818,85 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   const durationEdited =
     effectiveDuration != null && baselineDuration != null && effectiveDuration !== baselineDuration;
 
+  // ---- The visit's service list (add / remove / swap) -----------------------
+
+  /**
+   * Offered only once the endpoint has resolved every row to a service. See the
+   * opening plan above for why a partial list is withheld rather than shown.
+   */
+  const canEditVisitServices = isVisit && serviceLines != null && knownBookingIds.length > 0;
+
+  /** A line's identity for change detection: which row, which service, which option. */
+  const serviceLinesKey = (lines: VisitServiceLine[] | null) =>
+    (lines ?? []).map((l) => `${l.bookingId ?? 'new'}:${l.serviceId}:${l.variantId ?? ''}`).join('|');
+
+  const servicesChanged =
+    canEditVisitServices && serviceLinesKey(serviceLines) !== serviceLinesKey(baselineServiceLines);
+
+  /**
+   * Only what this calendar actually offers may join the visit, plus whatever is
+   * already on it — a service the calendar has since stopped offering must still
+   * be listable, or the form could not show the visit it opened on.
+   */
+  const visitServiceOptions = useMemo(() => {
+    if (!canEditVisitServices) return [];
+    const onVisit = new Set((serviceLines ?? []).map((l) => l.serviceId));
+    return services.filter(
+      (s) =>
+        onVisit.has(s.id) ||
+        !practitionerId ||
+        !offeredBy.has(s.id) ||
+        offeredBy.get(s.id)!.has(practitionerId),
+    );
+  }, [canEditVisitServices, serviceLines, services, offeredBy, practitionerId]);
+
+  /** "Cut & Finish – Long" for a line, from the catalogue rather than a snapshot. */
+  const visitLineLabel = useCallback(
+    (line: VisitServiceLine): string => {
+      const service = services.find((s) => s.id === line.serviceId);
+      if (!service) return 'Service';
+      const variant = (service.variants ?? []).find((v) => v.id === line.variantId);
+      return variant ? `${service.name} – ${variant.name}` : service.name;
+    },
+    [services],
+  );
+
+  const openServicePicker = (index: number | null) => {
+    hapticSelect();
+    setPickerLineIndex(index ?? -1);
+    setPickerServiceId(index != null && index >= 0 ? (serviceLines?.[index]?.serviceId ?? null) : null);
+    setMode('visitService');
+  };
+
+  /** Commit the picker's choice onto the line it was opened for, then return. */
+  const commitServicePick = (serviceId: string, variantId: string | null) => {
+    setServiceLines((current) => {
+      if (!current) return current;
+      const line: VisitServiceLine = {
+        key: pickerLineIndex != null && pickerLineIndex >= 0 ? current[pickerLineIndex]!.key : nextVisitLineKey(),
+        // Swapping keeps the ROW, so the endpoint re-services it rather than
+        // cancelling one booking and inserting another (which would lose its
+        // history, and its price snapshot with it).
+        bookingId:
+          pickerLineIndex != null && pickerLineIndex >= 0
+            ? current[pickerLineIndex]!.bookingId
+            : null,
+        serviceId,
+        variantId,
+      };
+      if (pickerLineIndex == null || pickerLineIndex < 0) return [...current, line];
+      return current.map((l, i) => (i === pickerLineIndex ? line : l));
+    });
+    setPickerLineIndex(null);
+    setPickerServiceId(null);
+    setMode('form');
+  };
+
+  const removeServiceLine = (index: number) => {
+    hapticSelect();
+    setServiceLines((current) => (current ? current.filter((_, i) => i !== index) : current));
+  };
+
   /** The booking's original start, for the "orig" marker on the slot list. */
   const originalTime = target ? minutesToTime(timeToMinutes(target.time)) : '';
   /** Date or time moved — the web picker highlights this as its own state. */
@@ -776,7 +915,17 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   const signature = !canCheck
     ? null
     : isVisit
-      ? ['visit', visit!.groupBookingId, practitionerId, date, minutes, effectiveDuration].join('|')
+      ? [
+          'visit',
+          visit!.groupBookingId,
+          practitionerId,
+          date,
+          minutes,
+          effectiveDuration,
+          // The list is part of what the check judges: the services set the
+          // visit's length, so a stale "valid" must not survive one changing.
+          serviceLinesKey(serviceLines),
+        ].join('|')
       : [
           target!.id,
           serviceId,
@@ -792,6 +941,27 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
         ].join('|');
   const validateMutate = validate.mutate;
   const visitScheduleAsync = visitSchedule.mutateAsync;
+  const visitServicesAsync = visitServices.mutateAsync;
+
+  /** What the services endpoint is asked for: the list, plus the schedule. */
+  const visitServicesRequestBody = useCallback(
+    () => ({
+      services: (serviceLines ?? []).map((l) => ({
+        ...(l.bookingId ? { booking_id: l.bookingId } : {}),
+        service_id: l.serviceId,
+        service_variant_id: l.variantId,
+      })),
+      // The visit this form was opened on. Leaving a service out is how it is
+      // removed, so the endpoint refuses the whole request if the visit has
+      // gained or lost one since.
+      known_booking_ids: knownBookingIds,
+      booking_date: date,
+      booking_time: `${minutesToTime(minutes)}:00`,
+      ...(practitionerId ? { practitioner_id: practitionerId } : {}),
+      allow_outside_hours: true,
+    }),
+    [serviceLines, knownBookingIds, date, minutes, practitionerId],
+  );
   useEffect(() => {
     if (!target || !practitionerId || !date || !signature) return;
     if (!isVisit && !serviceId) return;
@@ -807,6 +977,21 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
          */
         void (async () => {
           try {
+            // A visit whose SERVICES changed is planned by the services endpoint,
+            // which lays the visit out from what it now holds. Its length then
+            // follows the services rather than competing with them.
+            if (servicesChanged) {
+              const plan = await visitServicesAsync({
+                dry_run: true,
+                ...visitServicesRequestBody(),
+              });
+              if (checkSeq.current !== seq) return;
+              setChecked({ sig: signature, result: { state: 'valid' } });
+              if (typeof plan.total_minutes === 'number') {
+                setVisitPlannedMinutes(plan.total_minutes);
+              }
+              return;
+            }
             await visitScheduleAsync({
               dry_run: true,
               booking_date: date,
@@ -882,6 +1067,9 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     signature,
     validateMutate,
     visitScheduleAsync,
+    visitServicesAsync,
+    visitServicesRequestBody,
+    servicesChanged,
   ]);
 
   /**
@@ -908,6 +1096,28 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
         if (cancelled || typeof plan.total_minutes !== 'number') return;
         setVisitPlannedMinutes(plan.total_minutes);
         setVisitRelayNeeded(plan.changed === true);
+        /**
+         * The service list, but only when EVERY row resolved to a service id.
+         *
+         * A partial list would be destructive: the request is declarative, so a
+         * row missing from it is cancelled. A legacy row the endpoint could not
+         * resolve therefore switches service editing off entirely rather than
+         * quietly dropping that service on the first save.
+         */
+        const planned = plan.services ?? [];
+        const lines = planned
+          .filter((s) => s.id && s.service_id)
+          .map((s) => ({
+            key: nextVisitLineKey(),
+            bookingId: s.id,
+            serviceId: s.service_id!,
+            variantId: s.service_variant_id ?? null,
+          }));
+        setKnownBookingIds(planned.map((s) => s.id).filter((id): id is string => Boolean(id)));
+        if (lines.length > 0 && lines.length === planned.length) {
+          setServiceLines(lines);
+          setBaselineServiceLines(lines);
+        }
         // Only if the staff member has not already moved the slider in the
         // meantime — their edit outranks the correction.
         setDuration((current) => (current === seededDuration ? plan.total_minutes : current));
@@ -934,6 +1144,10 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
    */
   const visitRelayNotice = useMemo(() => {
     if (!visitRelayNeeded || !target) return null;
+    // While the list is being rewritten the visit is re-laid regardless, and the
+    // planned total now describes the NEW services — subtracting it from the old
+    // span would report a "gap" that is really the edit in progress.
+    if (servicesChanged) return null;
     const rawSpan = target.durationMinutes;
     const gap =
       rawSpan != null && visitPlannedMinutes != null ? rawSpan - visitPlannedMinutes : 0;
@@ -941,7 +1155,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
       return `This visit has ${gap} minutes of dead time in it. Saving closes it, so the services run back to back.`;
     }
     return 'Saving will re-lay this visit so its services run back to back.';
-  }, [visitRelayNeeded, target, visitPlannedMinutes]);
+  }, [visitRelayNeeded, servicesChanged, target, visitPlannedMinutes]);
 
   const check: CheckState = !canCheck
     ? { state: 'idle' }
@@ -958,7 +1172,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     (isVisit || (!!serviceId && (!requiresVariant || !!variantId) && addonGroupsValid)) &&
     // Re-laying a visit that carries dead time is a real save even though no
     // field has been touched: it is the edit that closes the hole.
-    (hasChanges || (isVisit && visitRelayNeeded)) &&
+    (hasChanges || servicesChanged || (isVisit && visitRelayNeeded)) &&
     check.state !== 'invalid' &&
     check.state !== 'checking';
 
@@ -973,6 +1187,20 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
        * that already landed — the visit either moves whole or not at all.
        */
       try {
+        if (servicesChanged) {
+          await visitServices.mutateAsync({
+            ...visitServicesRequestBody(),
+            ...(scheduleChanged ? { defer_modification_guest_notification: true } : {}),
+          });
+          hapticSuccess();
+          if (scheduleChanged) {
+            setSavedServiceChange(true);
+            setMode('notify');
+            return;
+          }
+          onClose();
+          return;
+        }
         await visitSchedule.mutateAsync({
           booking_date: date,
           booking_time: `${minutesToTime(minutes)}:00`,
@@ -1183,13 +1411,108 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
         <View style={styles.noticeActions}>
           <Button label={`Notify ${target.guestName}`} fullWidth onPress={handleNotify} />
           <Button label="Don't notify" variant="secondary" fullWidth onPress={onClose} />
-          <Button
-            label="Undo change"
-            variant="ghost"
-            fullWidth
-            loading={undoing}
-            onPress={() => void handleUndo()}
-          />
+          {/* No Undo once the SERVICES changed — see `savedServiceChange`. */}
+          {savedServiceChange ? (
+            <Text variant="caption" tone="muted">
+              This visit&rsquo;s services changed too, so there is nothing to undo in one step.
+              Reopen it to make further changes.
+            </Text>
+          ) : (
+            <Button
+              label="Undo change"
+              variant="ghost"
+              fullWidth
+              loading={undoing}
+              onPress={() => void handleUndo()}
+            />
+          )}
+        </View>
+      </Sheet>
+    );
+  }
+
+  // ---- Service step: choose what goes on (or off) a visit ---------------------
+  // A STEP, not a nested sheet: opening a second modal from a visible one is
+  // unreliable on iOS. The option list appears under the chosen service rather
+  // than in a further step, for the same reason.
+  if (target && seededId === target.id && mode === 'visitService') {
+    const picked = pickerServiceId ? services.find((s) => s.id === pickerServiceId) : null;
+    const pickedVariants = picked?.variants ?? [];
+    return (
+      <Sheet visible fill onClose={onClose}>
+        <View style={styles.stepBody}>
+          <Text variant="heading">
+            {pickerLineIndex != null && pickerLineIndex >= 0 ? 'Change service' : 'Add a service'}
+          </Text>
+          <Text variant="bodySmall" tone="muted">
+            {pickerLineIndex != null && pickerLineIndex >= 0
+              ? 'The visit keeps this slot; only what happens in it changes.'
+              : 'Added to the end of the visit, which grows by its length.'}
+          </Text>
+
+          <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollBody}>
+            <View style={styles.fieldBlock}>
+              <Text variant="label" tone="secondary">
+                Service
+              </Text>
+              <View style={styles.chipWrap}>
+                {visitServiceOptions.map((svc) => (
+                  <Chip
+                    key={svc.id}
+                    label={svc.name}
+                    selected={svc.id === pickerServiceId}
+                    onPress={() => {
+                      hapticSelect();
+                      const variants = svc.variants ?? [];
+                      // Nothing to choose between: take it and go back.
+                      if (variants.length === 0) {
+                        commitServicePick(svc.id, null);
+                        return;
+                      }
+                      setPickerServiceId(svc.id);
+                    }}
+                  />
+                ))}
+              </View>
+            </View>
+
+            {picked && pickedVariants.length > 0 ? (
+              <View style={styles.fieldBlock}>
+                <Text variant="label" tone="secondary">
+                  Option
+                </Text>
+                <View style={styles.chipWrap}>
+                  {pickedVariants.map((v) => (
+                    <Chip
+                      key={v.id}
+                      label={`${v.name} (${v.duration_minutes}m)`}
+                      onPress={() => {
+                        hapticSelect();
+                        commitServicePick(picked.id, v.id);
+                      }}
+                    />
+                  ))}
+                </View>
+                <Text variant="caption" tone="muted">
+                  A service brings its own length with it, so swapping one does not keep a
+                  length set by hand.
+                </Text>
+              </View>
+            ) : null}
+          </ScrollView>
+
+          <View style={styles.actions}>
+            <Button
+              label="Cancel"
+              variant="secondary"
+              onPress={() => {
+                setPickerLineIndex(null);
+                setPickerServiceId(null);
+                setMode('form');
+              }}
+              style={styles.actionButton}
+            />
+          </View>
         </View>
       </Sheet>
     );
@@ -1331,6 +1654,67 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
                 The booked service is no longer in the catalogue — pick a service below to
                 change it, or just adjust the time and duration.
               </Text>
+            ) : null}
+
+            {/* What the visit is MADE OF. Per-service duration editing stays
+                withdrawn — changing one service's length and leaving the others
+                where they were is what opened dead time inside a visit — but the
+                services themselves can be added, removed and swapped, and the
+                visit re-sequences behind whatever it ends up holding. */}
+            {canEditVisitServices ? (
+              <View style={styles.fieldBlock}>
+                <Text variant="label" tone="secondary">
+                  Services in this visit
+                </Text>
+                {(serviceLines ?? []).map((line, index) => (
+                  <View
+                    key={line.key}
+                    style={[
+                      styles.visitServiceRow,
+                      { backgroundColor: colors.surface, borderColor: colors.border },
+                    ]}>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Change ${visitLineLabel(line)}`}
+                      onPress={() => openServicePicker(index)}
+                      style={styles.visitServiceMain}>
+                      <Text variant="bodyMedium" numberOfLines={2}>
+                        {visitLineLabel(line)}
+                      </Text>
+                      <Text variant="caption" tone="muted">
+                        {line.bookingId ? 'Tap to change' : 'New service'}
+                      </Text>
+                    </Pressable>
+                    {(serviceLines?.length ?? 0) > 1 ? (
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Remove ${visitLineLabel(line)}`}
+                        onPress={() => removeServiceLine(index)}
+                        hitSlop={8}>
+                        <Text variant="bodySmall" color={colors.danger}>
+                          Remove
+                        </Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
+                ))}
+                <Button
+                  label="Add a service"
+                  variant="secondary"
+                  onPress={() => openServicePicker(null)}
+                />
+                {servicesChanged ? (
+                  <Text variant="caption" color={colors.warning}>
+                    Saving rewrites this visit&rsquo;s services. A service taken off is
+                    cancelled, keeping its own history; one that has been paid for cannot be
+                    removed here, and has to be cancelled instead.
+                  </Text>
+                ) : (
+                  <Text variant="caption" tone="muted">
+                    The services set how long the visit is. A visit has to keep at least one.
+                  </Text>
+                )}
+              </View>
             ) : null}
 
             {/* Per-service editing is withdrawn on a visit, deliberately.
@@ -1536,30 +1920,54 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
                 onIncrement={() => setMinutes((m) => stepStartMinutes(m, 1))}
               />
             )}
-            <Stepper
-              label={isVisit ? 'Visit length' : 'Duration'}
-              value={duration == null ? '—' : formatDuration(duration)}
-              onDecrement={() =>
-                setDuration((d) =>
-                  d == null ? d : Math.max(minDuration, d - DURATION_STEP_MINUTES),
-                )
-              }
-              onIncrement={() =>
-                setDuration((d) =>
-                  d == null ? d : Math.min(MAX_DURATION_MINUTES, d + DURATION_STEP_MINUTES),
-                )
-              }
-            />
-            <View style={styles.chipWrap}>
-              {durationPresets.map((preset) => (
-                <Chip
-                  key={preset}
-                  label={formatDuration(preset)}
-                  selected={duration === preset}
-                  onPress={() => setDuration(preset)}
+            {/* While the service list is in play the length is READ-ONLY: the
+                services set it, and two controls competing over one number would
+                let a staff member ask for a visit shorter than the services they
+                just chose. */}
+            {servicesChanged ? (
+              <View
+                style={[
+                  styles.processingPanel,
+                  { borderColor: colors.border, backgroundColor: colors.surface },
+                ]}>
+                <Text variant="label" tone="secondary">
+                  Visit length
+                </Text>
+                <Text variant="bodyMedium">
+                  {visitPlannedMinutes != null ? formatDuration(visitPlannedMinutes) : '—'}
+                </Text>
+                <Text variant="caption" tone="muted">
+                  Set by the services you picked. Save, then reopen to adjust it by hand.
+                </Text>
+              </View>
+            ) : (
+              <>
+                <Stepper
+                  label={isVisit ? 'Visit length' : 'Duration'}
+                  value={duration == null ? '—' : formatDuration(duration)}
+                  onDecrement={() =>
+                    setDuration((d) =>
+                      d == null ? d : Math.max(minDuration, d - DURATION_STEP_MINUTES),
+                    )
+                  }
+                  onIncrement={() =>
+                    setDuration((d) =>
+                      d == null ? d : Math.min(MAX_DURATION_MINUTES, d + DURATION_STEP_MINUTES),
+                    )
+                  }
                 />
-              ))}
-            </View>
+                <View style={styles.chipWrap}>
+                  {durationPresets.map((preset) => (
+                    <Chip
+                      key={preset}
+                      label={formatDuration(preset)}
+                      selected={duration === preset}
+                      onPress={() => setDuration(preset)}
+                    />
+                  ))}
+                </View>
+              </>
+            )}
             <Text variant="caption" tone="muted">
               {endPreview ? `Ends at ${endPreview}. ` : ''}Hold − / + to change faster.
             </Text>
@@ -1612,7 +2020,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
 
           </ScrollView>
 
-          {!hasChanges && !(isVisit && visitRelayNeeded) ? (
+          {!hasChanges && !servicesChanged && !(isVisit && visitRelayNeeded) ? (
             <Text variant="caption" tone="muted">
               Adjust a field to check availability and enable save.
             </Text>
@@ -1697,6 +2105,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  visitServiceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: spacing.base,
+  },
+  visitServiceMain: {
+    flex: 1,
+    minWidth: 0,
+    gap: 1,
   },
   chipWrap: {
     flexDirection: 'row',
