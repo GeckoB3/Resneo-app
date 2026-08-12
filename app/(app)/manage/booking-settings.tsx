@@ -857,16 +857,18 @@ export default function BookingSettingsScreen() {
       setModelsSaved(true);
     } catch (e) {
       hapticWarning();
-      if (
-        e instanceof ApiError &&
-        `${(e.body as { error?: string } | null)?.error ?? ''}`.includes('FUTURE_BOOKINGS')
-      ) {
-        setModelsError(
-          "A booking type with upcoming bookings can't be switched off. Cancel or complete those bookings first.",
-        );
-      } else {
-        setModelsError(e instanceof ApiError ? e.message : 'Could not save booking types.');
-      }
+      // The server's own words, deliberately. PATCH /api/venue answers a blocked
+      // toggle with `{ error: <prose> }` — it keeps the
+      // BOOKING_MODEL_HAS_FUTURE_BOOKINGS code on the thrown error server-side and
+      // never puts it on the wire, so the substring check that used to sit here
+      // never matched and this fallback was always the live path.
+      //
+      // That is now the better path: the guard tallies every match before
+      // reporting, so the message names the model, the count and the next
+      // booking ("Appointments cannot be turned off yet. You have 12 upcoming
+      // bookings of that type, the next on Thu 13 Aug 2026 at 9:30am."). Do not
+      // re-add a special case here — any local copy is vaguer than what arrives.
+      setModelsError(e instanceof ApiError ? e.message : 'Could not save booking types.');
     }
   }
 
