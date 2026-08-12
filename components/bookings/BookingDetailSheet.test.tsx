@@ -48,7 +48,7 @@ jest.mock('@/components/bookings/sheet-scroll-context', () => ({
   useSheetKeyboardScroll: () => ({ onScroll: jest.fn(), spacerStyle: {} }),
 }));
 
-// "Pending" is the status whose primary action is plain "Confirm"; "Booked"
+// "Pending" is the status whose primary action is plain "Accept"; "Booked"
 // maps to Seat/Start, which the appointment branch relabels.
 const mockBooking = {
   id: 'bk-1',
@@ -76,6 +76,8 @@ jest.mock('@/lib/queries/useStaffMe', () => ({
 }));
 jest.mock('@/lib/queries/useBookingMutations', () => ({
   useUpdateBookingStatus: () => ({ mutate: jest.fn(), isPending: false }),
+  // Feeds the unpaid-promotion guard's "Send payment link" action.
+  useSendDepositPaymentLinkById: () => ({ mutate: jest.fn(), isPending: false }),
 }));
 jest.mock('@/providers/VenueProvider', () => ({
   useVenueContext: () => ({ venue: { pricing_tier: 'appointments', booking_model: 'unified_scheduling', enabled_models: [] } }),
@@ -131,8 +133,8 @@ describe('BookingDetailSheet action bar', () => {
     await act(async () => {
       renderSheet();
     });
-    // "Booked" offers Confirm as its primary action.
-    expect(screen.getByText('Confirm')).toBeTruthy();
+    // "Pending" offers Accept as its primary action.
+    expect(screen.getByText('Accept')).toBeTruthy();
   });
 
   it('hides it while the keyboard is up, so it never covers the field', async () => {
@@ -140,7 +142,7 @@ describe('BookingDetailSheet action bar', () => {
       renderSheet();
     });
     await emitKeyboard('keyboardDidShow');
-    expect(screen.queryByText('Confirm')).toBeNull();
+    expect(screen.queryByText('Accept')).toBeNull();
   });
 
   it('brings it back when the keyboard goes down', async () => {
@@ -149,7 +151,7 @@ describe('BookingDetailSheet action bar', () => {
     });
     await emitKeyboard('keyboardDidShow');
     await emitKeyboard('keyboardDidHide');
-    expect(screen.getByText('Confirm')).toBeTruthy();
+    expect(screen.getByText('Accept')).toBeTruthy();
   });
 
   it('does NOT re-render the detail body when the keyboard toggles', async () => {

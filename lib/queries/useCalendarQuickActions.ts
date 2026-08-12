@@ -37,12 +37,23 @@ export function useCalendarStatusAction() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (input: { bookingId: string; status: BookingStatus }) => {
+    mutationFn: async (input: {
+      bookingId: string;
+      status: BookingStatus;
+      /**
+       * The unpaid-promotion acknowledgement (`lib/booking/accept-unpaid.ts`).
+       * Sent only as the replay after staff answer the guard sheet.
+       */
+      accept_unpaid?: true;
+    }) => {
       if (!accessToken) throw new Error('Missing access token');
       return apiFetch(`/api/venue/bookings/${input.bookingId}`, {
         accessToken,
         method: 'PATCH',
-        body: JSON.stringify({ status: input.status }),
+        body: JSON.stringify({
+          status: input.status,
+          ...(input.accept_unpaid ? { accept_unpaid: true } : {}),
+        }),
       });
     },
     onSuccess: (_data, variables) => {

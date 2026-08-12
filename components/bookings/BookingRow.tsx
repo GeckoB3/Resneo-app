@@ -12,7 +12,12 @@ import {
   bookingDisplayVisualKey,
   bookingStatusVisualForKey,
 } from '@/lib/booking/booking-status-visual';
-import { showAttendanceConfirmedSupplementPill, showDepositPendingPill } from '@/lib/booking/booking-staff-indicators';
+import {
+  depositPillAppliesToStatus,
+  showAttendanceConfirmedSupplementPill,
+  showDepositFailedPill,
+  showDepositPendingPill,
+} from '@/lib/booking/booking-staff-indicators';
 import { bookingStatusDisplayLabel } from '@/lib/booking/infer-booking-row-model';
 import type { ComplianceBookingFlag } from '@/lib/queries/useCompliance';
 import { fonts, minTouchTarget, radius, spacing } from '@/theme/index';
@@ -92,6 +97,11 @@ function BookingRowBase({
   // Supplement "Confirmed" pill when attendance is confirmed but lifecycle status isn't (web parity).
   const showConfirmedSupplement = showAttendanceConfirmedSupplementPill(booking);
   const showDepositPending = showDepositPendingPill(booking);
+  // A failed deposit was invisible in the app: a booking whose payment bounced
+  // looked identical to one with no deposit at all. Red, and louder than
+  // "Deposit due" — the money is not merely outstanding, an attempt failed.
+  const showDepositFailed =
+    showDepositFailedPill(booking) && depositPillAppliesToStatus(booking.status);
 
   return (
     <PressableScale
@@ -182,7 +192,15 @@ function BookingRowBase({
             isTableReservation={booking.booking_model === 'table_reservation'}
           />
         </View>
-        {showDepositPending ? (
+        {showDepositFailed ? (
+          <View
+            style={[styles.depositPill, { backgroundColor: colors.dangerSurface }]}
+            accessibilityLabel="Deposit failed">
+            <Text variant="caption" color={colors.danger} style={styles.supplementText}>
+              Deposit failed
+            </Text>
+          </View>
+        ) : showDepositPending ? (
           <View
             style={[styles.depositPill, { backgroundColor: colors.warningSurface }]}
             accessibilityLabel="Deposit pending">

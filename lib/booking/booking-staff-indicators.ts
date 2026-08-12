@@ -23,6 +23,30 @@ export function showDepositPendingPill(row: BookingStaffIndicatorInput): boolean
 }
 
 /**
+ * Statuses where a deposit pill is still meaningful. A cancelled or completed
+ * booking carries stale deposit columns, and a red "Deposit failed" on a
+ * cancelled row would send staff chasing money nobody owes.
+ */
+const DEPOSIT_PILL_LIVE_STATUSES = ['Pending', 'Booked', 'Confirmed'];
+
+/**
+ * A payment attempt failed and the money (or card save) is still owed.
+ *
+ * No amount gate, unlike the pending pill: `payment_with_setup` hold rows carry
+ * `deposit_amount_pence` NULL, and a `'Failed'` state is always a failed
+ * collection. Pair it with {@link depositPillAppliesToStatus} at the render
+ * site, mirroring web.
+ */
+export function showDepositFailedPill(row: BookingStaffIndicatorInput): boolean {
+  return row.deposit_status === 'Failed';
+}
+
+/** Render-site status gate for the deposit pills (see the list above). */
+export function depositPillAppliesToStatus(status: string | null | undefined): boolean {
+  return DEPOSIT_PILL_LIVE_STATUSES.includes(status ?? '');
+}
+
+/**
  * True when attendance is considered confirmed: lifecycle `Confirmed`, or either
  * attendance timestamp is set (guest link or staff confirm).
  */

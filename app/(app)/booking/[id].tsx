@@ -1,6 +1,7 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ScrollView, StyleSheet } from 'react-native';
 
+import { useAcceptUnpaidGuard } from '@/components/bookings/AcceptUnpaidSheet';
 import { BookingDetailContent } from '@/components/bookings/BookingDetailContent';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Screen } from '@/components/ui/Screen';
@@ -26,6 +27,7 @@ export default function BookingDetailScreen() {
   const staffQuery = useStaffMe();
   const { venue } = useVenueContext();
   const updateStatus = useUpdateBookingStatus(bookingId ?? '');
+  const acceptUnpaidGuard = useAcceptUnpaidGuard();
   const isAdmin = staffQuery.data?.staff?.role === 'admin';
 
   const actionLoading = updateStatus.isPending;
@@ -49,20 +51,28 @@ export default function BookingDetailScreen() {
     if (!bookingId) {
       return;
     }
-    updateStatus.mutate(status, {
-      onSuccess: () => {
-        // Warning buzz for the destructive states; success for forward progress.
-        if (status === 'Cancelled' || status === 'No-Show') {
+    const run = (acceptUnpaid: boolean) => {
+      updateStatus.mutate(acceptUnpaid ? { status, accept_unpaid: true } : status, {
+        onSuccess: () => {
+          // Warning buzz for the destructive states; success for forward progress.
+          if (status === 'Cancelled' || status === 'No-Show') {
+            hapticWarning();
+          } else {
+            hapticSuccess();
+          }
+        },
+        onError: (error) => {
+          // Accepting a Pending booking whose deposit is still owed: offer the
+          // payment link or an explicit accept rather than an error toast.
+          if (!acceptUnpaid && acceptUnpaidGuard.intercept(bookingId, error, () => run(true))) {
+            return;
+          }
           hapticWarning();
-        } else {
-          hapticSuccess();
-        }
-      },
-      onError: (error) => {
-        hapticWarning();
-        toast.error(error instanceof ApiError ? error.message : 'Could not update booking.');
-      },
-    });
+          toast.error(error instanceof ApiError ? error.message : 'Could not update booking.');
+        },
+      });
+    };
+    run(false);
   };
 
   if (!bookingId) {
@@ -108,6 +118,7 @@ export default function BookingDetailScreen() {
           onDeleted={() => router.back()}
         />
       </ScrollView>
+      {acceptUnpaidGuard.sheet}
     </Screen>
   );
 }

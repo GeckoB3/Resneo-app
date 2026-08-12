@@ -15,6 +15,7 @@ import { useReduceMotion, motionSafe } from '@/lib/motion';
 import { SymbolView } from 'expo-symbols';
 import { format, parseISO } from 'date-fns';
 
+import { useAcceptUnpaidGuard } from '@/components/bookings/AcceptUnpaidSheet';
 import { BookingDetailSheet } from '@/components/bookings/BookingDetailSheet';
 import { AllCalendarsDayGrid, type AllCalendarColumn } from '@/components/calendar/AllCalendarsDayGrid';
 import { BlockEditSheet, type BlockTarget } from '@/components/calendar/BlockEditSheet';
@@ -1127,27 +1128,40 @@ export default function CalendarScreen() {
   // ---- Inline quick-status actions ----
   const calendarStatusAction = useCalendarStatusAction();
   const calendarArrivalAction = useCalendarArrivalAction();
+  const acceptUnpaidGuard = useAcceptUnpaidGuard();
 
   const handleStatusChange = useCallback(
     (bookingId: string, status: string) => {
-      setPendingActionIds((prev) => new Set([...prev, bookingId]));
-      calendarStatusAction.mutate(
-        { bookingId, status: status as import('@/types/booking-detail').BookingStatus },
-        {
-          onSuccess: () => {
-            hapticSuccess();
-            removePending(bookingId);
+      const run = (acceptUnpaid: boolean) => {
+        setPendingActionIds((prev) => new Set([...prev, bookingId]));
+        calendarStatusAction.mutate(
+          {
+            bookingId,
+            status: status as import('@/types/booking-detail').BookingStatus,
+            ...(acceptUnpaid ? { accept_unpaid: true as const } : {}),
           },
-          onError: (error) => {
-            removePending(bookingId);
-            toast.error(
-              error instanceof ApiError ? error.message : 'Could not update booking.',
-            );
+          {
+            onSuccess: () => {
+              hapticSuccess();
+              removePending(bookingId);
+            },
+            onError: (error) => {
+              removePending(bookingId);
+              // Accepting a Pending booking from the block tray hits the same
+              // unpaid guard as the detail sheet's Accept.
+              if (!acceptUnpaid && acceptUnpaidGuard.intercept(bookingId, error, () => run(true))) {
+                return;
+              }
+              toast.error(
+                error instanceof ApiError ? error.message : 'Could not update booking.',
+              );
+            },
           },
-        },
-      );
+        );
+      };
+      run(false);
     },
-    [calendarStatusAction, removePending, toast],
+    [calendarStatusAction, removePending, toast, acceptUnpaidGuard],
   );
 
   const handleArrivalToggle = useCallback(
@@ -2036,6 +2050,10 @@ export default function CalendarScreen() {
           <Button label="Undo change" variant="ghost" fullWidth onPress={handleUndoMove} />
         </View>
       </Sheet>
+
+      {/* Accepting a Pending booking from a block tray can trip the server's
+          unpaid-deposit guard; this is the choice it offers. */}
+      {acceptUnpaidGuard.sheet}
 
       {/* Date-jump month picker — tap the header date label to open. Reuses the
           month grid (with its own month stepper) so any date is a couple of taps

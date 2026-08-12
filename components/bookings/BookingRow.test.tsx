@@ -66,6 +66,43 @@ describe('BookingRow deposit pill', () => {
     expect(screen.queryByText(`${amount} · Pending`)).toBeNull();
   });
 
+  it('shows "Deposit failed" and outranks the due pill', async () => {
+    // R13-2: a booking whose payment bounced used to look identical in this
+    // list to one with no deposit at all.
+    await render(
+      <BookingRow
+        booking={bk({ id: 'e', status: 'Pending', deposit_status: 'Failed', deposit_amount_pence: 2000 })}
+        isAppointment
+        onPress={() => {}}
+      />,
+    );
+    expect(screen.getByText('Deposit failed')).toBeTruthy();
+    expect(screen.queryByText('Deposit due')).toBeNull();
+  });
+
+  it('shows "Deposit failed" on a card-hold row that carries no amount', async () => {
+    await render(
+      <BookingRow
+        booking={bk({ id: 'f', status: 'Booked', deposit_status: 'Failed', deposit_amount_pence: null })}
+        isAppointment
+        onPress={() => {}}
+      />,
+    );
+    expect(screen.getByText('Deposit failed')).toBeTruthy();
+  });
+
+  it('drops the failed pill once the booking is cancelled', async () => {
+    // Cancelled rows keep stale deposit columns; nobody owes this money.
+    await render(
+      <BookingRow
+        booking={bk({ id: 'g', status: 'Cancelled', deposit_status: 'Failed', deposit_amount_pence: 2000 })}
+        isAppointment
+        onPress={() => {}}
+      />,
+    );
+    expect(screen.queryByText('Deposit failed')).toBeNull();
+  });
+
   it('renders no deposit text for hidden statuses like "Not Required"', async () => {
     await render(
       <BookingRow

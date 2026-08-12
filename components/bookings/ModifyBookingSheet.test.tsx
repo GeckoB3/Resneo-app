@@ -309,6 +309,59 @@ describe('ModifyBookingSheet', () => {
     }
   });
 
+  describe('a booking whose row carries no end time', () => {
+    // Regression (R13-4): `bookings.booking_end_time` is NULL for every
+    // guest-created appointment (only the resource flows post one), so the
+    // detail resolves `durationMinutes: null`. This form used to seed 30
+    // minutes there, and saving ANY change rewrote a 45-minute appointment to
+    // half an hour, handing the practitioner's time back to availability.
+    const NO_END: ModifyBookingTarget = { ...TARGET, durationMinutes: null };
+
+    it('adopts the service catalogue duration instead of defaulting to 30', async () => {
+      await render(<ModifyBookingSheet target={NO_END} onClose={onClose} />);
+      expect(stepperValue('Duration')).toBe('45 min');
+    });
+
+    it('does not treat the adopted duration as a staff edit', async () => {
+      // Adopting is not a change, so Save must stay disabled on a form nobody
+      // has touched.
+      await render(<ModifyBookingSheet target={NO_END} onClose={onClose} />);
+      expect(screen.getByText('Adjust a field to check availability and enable save.')).toBeTruthy();
+
+      await press('Save changes');
+      expect(mockModify).not.toHaveBeenCalled();
+    });
+
+    it('saves the adopted duration, never 30', async () => {
+      jest.useFakeTimers();
+      try {
+        await render(<ModifyBookingSheet target={NO_END} onClose={onClose} />);
+        await moveAndSave();
+
+        expect(mockModify).toHaveBeenCalledWith(
+          expect.objectContaining({ booking_time: '09:30:00', duration_minutes: 45 }),
+        );
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('undo restores the adopted duration, not 30', async () => {
+      jest.useFakeTimers();
+      try {
+        await render(<ModifyBookingSheet target={NO_END} onClose={onClose} />);
+        await moveAndSave();
+        await press('Undo change');
+
+        expect(mockModify).toHaveBeenLastCalledWith(
+          expect.objectContaining({ booking_time: '14:00:00', duration_minutes: 45 }),
+        );
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+  });
+
   describe('by-hand start nudge', () => {
     it('steps in 5-minute marks, not 1', async () => {
       await render(<ModifyBookingSheet target={TARGET} onClose={onClose} />);

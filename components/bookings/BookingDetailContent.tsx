@@ -21,7 +21,7 @@ import {
   type ModifyBookingTarget,
 } from '@/components/bookings/ModifyBookingSheet';
 import { RescheduleSheet, type RescheduleTarget } from '@/components/calendar/RescheduleSheet';
-import { timeToMinutes } from '@/components/calendar/grid-layout';
+import { minutesToTime, timeToMinutes } from '@/components/calendar/grid-layout';
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge, StatusPill } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -46,6 +46,8 @@ import { usePendingCardClock } from '@/lib/payments/usePendingCardClock';
 import { calendarDateInTimeZone } from '@/lib/dates/venue-dates';
 import { canMarkNoShowForSlot, clampNoShowGraceMinutes } from '@/lib/booking/no-show-grace';
 import { ACTION_COLORS, primaryActionColors } from '@/lib/booking/booking-action-colors';
+import { useAcceptUnpaidGuard } from '@/components/bookings/AcceptUnpaidSheet';
+import { resolveBookingCoreDurationMinutes } from '@/lib/booking/booking-core-duration';
 import { bookingDetailActions } from '@/lib/booking/booking-status-actions';
 import { bookingStatusVisualForKey } from '@/lib/booking/booking-status-visual';
 import {
@@ -68,7 +70,11 @@ import { useGuestDetail } from '@/lib/queries/useGuestDetail';
 import { useManagedServices } from '@/lib/queries/useServicesManage';
 import { writeRebookBootstrap, type RebookBootstrapPayload } from '@/lib/rebook-bootstrap';
 import type { GuestBookingHistoryRow } from '@/types/guest-detail';
-import { canShowStaffAttendanceToggle } from '@/lib/booking/booking-staff-indicators';
+import {
+  canShowStaffAttendanceToggle,
+  depositPillAppliesToStatus,
+  showDepositFailedPill,
+} from '@/lib/booking/booking-staff-indicators';
 import {
   resolveStaffBookingLocation,
   staffBookingLocationPillLabel,
@@ -140,11 +146,22 @@ function formatBookingDateLabel(date: string, time: string): string {
   }
 }
 
-/** "14:00 – 15:00" or just the start time when there's no end. */
-function formatBookingTimeRange(time: string, endTime?: string | null): string {
+/**
+ * "14:00 – 15:00", falling back to the start plus the resolved core duration
+ * when the row has no `booking_end_time` (every guest-created appointment), and
+ * to the bare start when nothing resolves an end at all.
+ */
+function formatBookingTimeRange(
+  time: string,
+  endTime?: string | null,
+  durationMinutes?: number | null,
+): string {
   const start = time.slice(0, 5);
   if (endTime?.trim()) {
     return `${start} – ${endTime.slice(0, 5)}`;
+  }
+  if (durationMinutes != null && durationMinutes > 0) {
+    return `${start} – ${minutesToTime(timeToMinutes(start) + durationMinutes)}`;
   }
   return start;
 }
@@ -361,6 +378,7 @@ export function BookingDetailContent({
   const deleteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resend = useResendConfirmation(booking.id);
   const attendance = useSetBookingAttendance(booking.id);
+  const acceptUnpaidGuard = useAcceptUnpaidGuard();
   const deleteBooking = useDeleteBooking(booking.id);
 
   // Funnel: the booking detail opened (re-fires if the host swaps in a new id).
@@ -441,18 +459,22 @@ export function BookingDetailContent({
   });
   const canReschedule = !TERMINAL_STATUSES.has(booking.status);
 
-  // Booked length — feeds the duration stepper on the reschedule sheet.
-  const startMinutes = timeToMinutes(booking.booking_time);
-  const endMinutes = booking.booking_end_time ? timeToMinutes(booking.booking_end_time) : null;
-  const durationMinutes =
-    endMinutes != null && endMinutes > startMinutes ? endMinutes - startMinutes : null;
+  // Booked length — feeds the duration stepper on the reschedule sheet AND the
+  // seed for the Modify sheet. Reads BOTH end columns: a guest-created
+  // appointment has no `booking_end_time`, and treating that as "unknown length"
+  // let Modify propose 30 minutes and shrink the booking on save.
+  const durationMinutes = resolveBookingCoreDurationMinutes(booking);
 
   // Hero facts — the "what & when" surfaced directly under the guest header so
   // the most important info is visible before any action is taken.
   const practitionerName =
     booking.practitioner_name?.trim() || fallbackPractitionerName?.trim() || null;
   const dateLabel = formatBookingDateLabel(booking.booking_date, booking.booking_time);
-  const timeRangeLabel = formatBookingTimeRange(booking.booking_time, booking.booking_end_time);
+  const timeRangeLabel = formatBookingTimeRange(
+    booking.booking_time,
+    booking.booking_end_time,
+    durationMinutes,
+  );
   // Prefer the detail's variant name, then the list row's service label, then the
   // service catalog by id (the detail GET omits the base name for plain services).
   const catalogServiceName =
@@ -476,6 +498,10 @@ export function BookingDetailContent({
   // `detailPending` keeps the callout from mistaking for an unconfigured service.
   const staffLocation = resolveStaffBookingLocation({ ...booking, detailPending });
   const statusVisual = bookingStatusVisualForKey(booking.status);
+  // A failed deposit had no presence at all on this screen: staff had to open
+  // the deposit card to learn the payment had bounced.
+  const showDepositFailed =
+    showDepositFailedPill(booking) && depositPillAppliesToStatus(booking.status);
 
   // Full modify (service/staff/slot) — appointment bookings in live statuses,
   // mirroring web `canStaffModifyBooking` + the appointment modify branch.
@@ -656,15 +682,26 @@ export function BookingDetailContent({
     !TERMINAL_STATUSES.has(booking.status);
 
   const toggleAttendance = (field: 'staff_attendance_confirmed' | 'client_arrived', next: boolean) => {
-    attendance.mutate(
-      { [field]: next },
-      {
-        onSuccess: () => hapticSuccess(),
-        onError: (error) => {
-          toast.error(error instanceof ApiError ? error.message : 'Could not update attendance.');
+    const run = (acceptUnpaid: boolean) => {
+      attendance.mutate(
+        { [field]: next, ...(acceptUnpaid ? { accept_unpaid: true as const } : {}) },
+        {
+          onSuccess: () => hapticSuccess(),
+          onError: (error) => {
+            // Confirming attendance on a Pending booking promotes it to
+            // Confirmed, so the server runs the same unpaid guard as Accept.
+            if (
+              !acceptUnpaid &&
+              acceptUnpaidGuard.intercept(booking.id, error, () => run(true))
+            ) {
+              return;
+            }
+            toast.error(error instanceof ApiError ? error.message : 'Could not update attendance.');
+          },
         },
-      },
-    );
+      );
+    };
+    run(false);
   };
 
   // Resend confirmation — two-step (arm → confirm) since Alert is a web no-op.
@@ -852,6 +889,7 @@ export function BookingDetailContent({
 
             {(cardHoldState?.pill ||
               (!cardHoldState && booking.deposit_status === 'Pending') ||
+              showDepositFailed ||
               (isTable && booking.occasion?.trim()) ||
               attendanceBadges) ? (
               <View style={styles.heroBadges}>
@@ -863,6 +901,10 @@ export function BookingDetailContent({
                 ) : !cardHoldState && booking.deposit_status === 'Pending' ? (
                   <Badge label="Deposit pending" tone="warning" />
                 ) : null}
+                {/* Shown even alongside a card-hold pill: a `Failed` hold row is
+                    exactly the case staff must not miss, and it is the signal
+                    that the Accept guard is about to fire. */}
+                {showDepositFailed ? <Badge label="Deposit failed" tone="danger" /> : null}
                 {isTable && booking.occasion?.trim() ? (
                   <Badge label={booking.occasion} tone="accent" />
                 ) : null}
@@ -1516,6 +1558,9 @@ export function BookingDetailContent({
         </CollapsibleCard>
       ) : null}
 
+      {/* Confirming attendance on a Pending booking is a promotion, so it can
+          trip the server's unpaid guard exactly like Accept does. */}
+      {acceptUnpaidGuard.sheet}
       <RescheduleSheet target={rescheduleTarget} onClose={() => setRescheduleTarget(null)} />
       <ModifyBookingSheet target={modifyTarget} onClose={() => setModifyTarget(null)} />
       <DepositSheet target={depositTarget} onClose={() => setDepositTarget(null)} />

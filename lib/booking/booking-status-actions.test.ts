@@ -69,9 +69,9 @@ describe('BOOKING_STATUSES enumeration', () => {
 // ---------------------------------------------------------------------------
 
 describe('bookingDetailActions — table reservation (isTableReservation = true)', () => {
-  it('Pending → Confirm (to Booked) + Cancel', () => {
+  it('Pending → Accept (to Booked) + Cancel', () => {
     expect(tuples('Pending', true)).toEqual([
-      { label: 'Confirm', target: 'Booked', variant: 'primary', kind: 'primary', destructive: false },
+      { label: 'Accept', target: 'Booked', variant: 'primary', kind: 'primary', destructive: false },
       {
         label: 'Cancel booking',
         target: 'Cancelled',
@@ -172,9 +172,11 @@ describe('bookingDetailActions — table reservation (isTableReservation = true)
 // ---------------------------------------------------------------------------
 
 describe('bookingDetailActions — appointment (isTableReservation = false)', () => {
-  it('Pending → Confirm (unchanged) + Cancel', () => {
+  // "Accept" not "Confirm" (web D9): the Confirm on a Booked booking is the
+  // attendance action, and this one may be accepting an unpaid booking.
+  it('Pending → Accept (same in both vocabularies) + Cancel', () => {
     expect(tuples('Pending', false)).toEqual([
-      { label: 'Confirm', target: 'Booked', variant: 'primary', kind: 'primary', destructive: false },
+      { label: 'Accept', target: 'Booked', variant: 'primary', kind: 'primary', destructive: false },
       {
         label: 'Cancel booking',
         target: 'Cancelled',

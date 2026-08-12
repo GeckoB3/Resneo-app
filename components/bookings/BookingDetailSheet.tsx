@@ -21,6 +21,7 @@ import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useBookingDetail } from '@/lib/queries/useBookingDetail';
 import { useDashboardHome } from '@/lib/queries/useDashboardHome';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
+import { useAcceptUnpaidGuard } from '@/components/bookings/AcceptUnpaidSheet';
 import { useUpdateBookingStatus } from '@/lib/queries/useBookingMutations';
 import { isAppointmentExperience } from '@/lib/venue/venue-experience';
 import { useVenueContext } from '@/providers/VenueProvider';
@@ -140,6 +141,7 @@ export function BookingDetailSheet({
   const dashboardQuery = useDashboardHome();
   const staffQuery = useStaffMe();
   const updateStatus = useUpdateBookingStatus(bookingId ?? '');
+  const acceptUnpaidGuard = useAcceptUnpaidGuard();
   const isAdmin = staffQuery.data?.staff?.role === 'admin';
   const scrollRef = useRef<ScrollView>(null);
   const { onScroll, spacerStyle } = useSheetKeyboardScroll(scrollRef);
@@ -156,18 +158,26 @@ export function BookingDetailSheet({
 
   const handleStatusChange = (status: BookingStatus) => {
     if (!bookingId) return;
-    updateStatus.mutate(status, {
-      onSuccess: () => {
-        if (status === 'Cancelled' || status === 'No-Show') {
-          hapticWarning();
-        } else {
-          hapticSuccess();
-        }
-      },
-      onError: (error) => {
-        toast.error(error instanceof ApiError ? error.message : 'Could not update booking.');
-      },
-    });
+    const run = (acceptUnpaid: boolean) => {
+      updateStatus.mutate(acceptUnpaid ? { status, accept_unpaid: true } : status, {
+        onSuccess: () => {
+          if (status === 'Cancelled' || status === 'No-Show') {
+            hapticWarning();
+          } else {
+            hapticSuccess();
+          }
+        },
+        onError: (error) => {
+          // Accepting a Pending booking whose deposit is still owed: offer the
+          // payment link or an explicit accept rather than an error toast.
+          if (!acceptUnpaid && acceptUnpaidGuard.intercept(bookingId, error, () => run(true))) {
+            return;
+          }
+          toast.error(error instanceof ApiError ? error.message : 'Could not update booking.');
+        },
+      });
+    };
+    run(false);
   };
 
   const openFull = () => {
@@ -283,6 +293,11 @@ export function BookingDetailSheet({
           ) : null}
         </>
       )}
+
+      {/* Inside this Sheet on purpose: a Modal nested in the presented Modal's
+          own tree is the pattern that works on iOS (same as Modify/Deposit).
+          A sibling would present from the root while this one is up. */}
+      {acceptUnpaidGuard.sheet}
     </Sheet>
   );
 }

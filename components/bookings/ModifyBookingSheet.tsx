@@ -149,7 +149,20 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   const [practitionerId, setPractitionerId] = useState<string | null>(null);
   const [date, setDate] = useState('');
   const [minutes, setMinutes] = useState(0);
-  const [duration, setDuration] = useState(30);
+  /**
+   * null until resolved: the booking's own core duration when its row carries
+   * an end time, otherwise the service's catalogue duration adopted once the
+   * catalogue loads (see the effect below). Never a hardcoded default — that is
+   * what used to shrink a guest-created appointment to 30 minutes on save,
+   * because those rows have no `booking_end_time`.
+   */
+  const [duration, setDuration] = useState<number | null>(null);
+  /**
+   * What the form OPENED with. Tracks an adopted catalogue duration so adopting
+   * one does not read as a staff edit (which would arm Save on a form nobody
+   * has touched), and so Undo restores the real original length.
+   */
+  const [baselineDuration, setBaselineDuration] = useState<number | null>(null);
   /** Flat selected add-on ids across all groups (matches AddonsStep's `value`). */
   const [addonIds, setAddonIds] = useState<string[]>([]);
   /** True once we've seeded add-ons from the loaded booking detail. */
@@ -191,7 +204,8 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     setPractitionerId(target.practitionerId);
     setDate(target.date);
     setMinutes(timeToMinutes(target.time));
-    setDuration(target.durationMinutes ?? 30);
+    setDuration(target.durationMinutes);
+    setBaselineDuration(target.durationMinutes);
     setAddonIds([]);
     setAddonsSeeded(false);
     originalAddonIds.current = [];
@@ -221,8 +235,32 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
 
   const selectedService = services.find((s) => s.id === serviceId) ?? null;
   const serviceInCatalog = !serviceId || !!selectedService;
-  const variants = selectedService?.variants ?? [];
+  // Derived from the stable `services`/`serviceId` (like `addonGroups` below) so
+  // its identity is stable for the adoption effect's dependency list.
+  const variants = useMemo(
+    () => services.find((s) => s.id === serviceId)?.variants ?? [],
+    [services, serviceId],
+  );
   const requiresVariant = variants.length > 0;
+
+  /**
+   * The booking row carried no end time (every guest-created appointment), so
+   * adopt the catalogue duration — the chosen variant's when there is one — as
+   * BOTH the value and the baseline: it is what this appointment is scheduled
+   * for, not an edit staff made. Self-limiting: it fills the null it tests, so
+   * it runs at most once per opened booking.
+   */
+  const catalogueDuration = selectedService
+    ? variants.find((v) => v.id === variantId)?.duration_minutes ??
+      selectedService.duration_minutes
+    : null;
+  useEffect(() => {
+    if (duration != null || catalogueDuration == null) return;
+    if (!Number.isFinite(catalogueDuration) || catalogueDuration < MIN_DURATION_MINUTES) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot adoption once the catalogue resolves
+    setDuration(catalogueDuration);
+    setBaselineDuration(catalogueDuration);
+  }, [duration, catalogueDuration]);
 
   // Staff offering the selected service; all staff when the service is
   // unknown to the catalog (archived) so reassignment stays possible.
@@ -378,15 +416,16 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
 
   // Total length sent to the validator + PATCH: the user-set base duration plus
   // the selected add-ons' extra minutes (the create route adds these the same
-  // way; the PATCH validator only takes a single duration_minutes).
-  const effectiveDuration = duration + addonTotals.durationMinutes;
+  // way; the PATCH validator only takes a single duration_minutes). Null while
+  // the base duration is still unresolved — never a guess.
+  const effectiveDuration = duration == null ? null : duration + addonTotals.durationMinutes;
 
-  // Quick duration presets — current/default/initial + common lengths.
+  // Quick duration presets — current/baseline/default + common lengths.
   const durationPresets = [
     ...new Set(
       [
         selectedService?.duration_minutes,
-        target?.durationMinutes ?? undefined,
+        baselineDuration ?? undefined,
         30,
         45,
         60,
@@ -405,7 +444,9 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     variantId,
     durationMinutes: effectiveDuration,
     excludeBookingId: target?.id,
-    enabled: !!target && serviceInCatalog,
+    // Wait for the duration to resolve rather than querying without one (the
+    // server would answer for the catalogue default, not this booking).
+    enabled: !!target && serviceInCatalog && effectiveDuration != null,
   });
   const slots = useMemo(() => {
     const practitioner = availability.data?.practitioners.find((p) => p.id === practitionerId);
@@ -428,7 +469,13 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     month: monthMonth ?? 1,
     variantId: requiresVariant ? variantId : null,
     durationMinutes: effectiveDuration,
-    enabled: mode === 'date' && !!target && serviceInCatalog && !!serviceId && !!practitionerId,
+    enabled:
+      mode === 'date' &&
+      !!target &&
+      serviceInCatalog &&
+      !!serviceId &&
+      !!practitionerId &&
+      effectiveDuration != null,
   });
   const availableDates = useMemo(
     () => (monthQuery.data ? new Set(monthQuery.data.available_dates) : null),
@@ -450,7 +497,10 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
       practitionerId !== target.practitionerId ||
       date !== target.date ||
       minutes !== timeToMinutes(target.time) ||
-      effectiveDuration !== (target.durationMinutes ?? 30));
+      // Compare against what the form opened with, which for a row that carried
+      // no end time is the catalogue duration it adopted — adopting one is not
+      // a staff edit and must not arm Save on an untouched form.
+      (effectiveDuration != null && effectiveDuration !== baselineDuration));
 
   /** The booking's original start, for the "orig" marker on the slot list. */
   const originalTime = target ? minutesToTime(timeToMinutes(target.time)) : '';
@@ -460,7 +510,10 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
 
   // Debounced dry-run validation (450ms, web parity). Auth/availability errors
   // on the endpoint degrade to "unknown" — the PATCH still validates.
-  const canCheck = !!target && !!serviceId && !!practitionerId && !!date;
+  // Duration unresolved (catalogue still loading): stay idle rather than
+  // validate a guess. The effect re-runs once the adoption lands.
+  const canCheck =
+    !!target && !!serviceId && !!practitionerId && !!date && effectiveDuration != null;
   const signature = canCheck
     ? [target.id, serviceId, variantId, practitionerId, date, minutes, effectiveDuration].join('|')
     : null;
@@ -523,6 +576,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     !!target &&
     !!serviceId &&
     !!practitionerId &&
+    effectiveDuration != null &&
     (!requiresVariant || !!variantId) &&
     addonGroupsValid &&
     hasChanges &&
@@ -530,7 +584,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     check.state !== 'checking';
 
   async function handleSave() {
-    if (!target || !serviceId || !practitionerId) return;
+    if (!target || !serviceId || !practitionerId || effectiveDuration == null) return;
     setError(null);
     try {
       await modify.mutateAsync({
@@ -595,7 +649,8 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     if (!target) return;
     const restoreServiceId = target.serviceId ?? serviceId;
     const restorePractitionerId = target.practitionerId ?? practitionerId;
-    if (!restoreServiceId || !restorePractitionerId) {
+    const restoreDuration = baselineDuration;
+    if (!restoreServiceId || !restorePractitionerId || restoreDuration == null) {
       onClose();
       return;
     }
@@ -617,7 +672,10 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
         ...(target.usesServiceItem
           ? { service_item_id: restoreServiceId }
           : { appointment_service_id: restoreServiceId }),
-        duration_minutes: target.durationMinutes ?? 30,
+        // The length the form OPENED with: the booking's own, or the catalogue
+        // duration adopted for a row that carried no end time. Never 30 —
+        // undoing a change must not itself shrink the appointment.
+        duration_minutes: restoreDuration,
         service_variant_id: target.serviceVariantId,
         ...(originalHadAddons
           ? { addons: originalAddonIds.current.map((addon_id) => ({ addon_id })) }
@@ -634,7 +692,11 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     }
   }
 
-  const endPreview = minutesToTime((minutes + effectiveDuration) % (24 * 60));
+  /** Null while the duration is unresolved — the end is unknown, not 30 minutes out. */
+  const endPreview =
+    effectiveDuration == null
+      ? null
+      : minutesToTime((minutes + effectiveDuration) % (24 * 60));
 
   // ---- Notify step: the save landed, the guest email is still held back -------
   // Content-sized (no `fill`), matching the calendar's post-drag prompt — a
@@ -694,7 +756,8 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
         <View style={styles.stepBody}>
           <Text variant="heading">Choose a time</Text>
           <Text variant="bodySmall" tone="muted">
-            {formatDayHeading(date)} · {formatDuration(effectiveDuration)}
+            {formatDayHeading(date)}
+            {effectiveDuration != null ? ` · ${formatDuration(effectiveDuration)}` : ''}
           </Text>
 
           <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollBody}>
@@ -942,11 +1005,11 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
                     <Text variant="caption" tone="muted">
                       was {formatDayHeading(target.date)} · {target.time.slice(0, 5)}
                     </Text>
-                  ) : (
+                  ) : endPreview ? (
                     <Text variant="caption" tone="muted">
                       Ends at {endPreview}
                     </Text>
-                  )}
+                  ) : null}
                 </View>
                 <Text variant="bodySmall" color={colors.brand}>
                   Change
@@ -965,12 +1028,16 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
             />
             <Stepper
               label="Duration"
-              value={formatDuration(duration)}
+              value={duration == null ? '—' : formatDuration(duration)}
               onDecrement={() =>
-                setDuration((d) => Math.max(MIN_DURATION_MINUTES, d - DURATION_STEP_MINUTES))
+                setDuration((d) =>
+                  d == null ? d : Math.max(MIN_DURATION_MINUTES, d - DURATION_STEP_MINUTES),
+                )
               }
               onIncrement={() =>
-                setDuration((d) => Math.min(MAX_DURATION_MINUTES, d + DURATION_STEP_MINUTES))
+                setDuration((d) =>
+                  d == null ? d : Math.min(MAX_DURATION_MINUTES, d + DURATION_STEP_MINUTES),
+                )
               }
             />
             <View style={styles.chipWrap}>
@@ -984,7 +1051,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
               ))}
             </View>
             <Text variant="caption" tone="muted">
-              Ends at {endPreview}. Hold − / + to change faster.
+              {endPreview ? `Ends at ${endPreview}. ` : ''}Hold − / + to change faster.
             </Text>
             {addonTotals.durationMinutes > 0 || addonTotals.pricePence > 0 ? (
               <Text variant="caption" tone="muted">
@@ -995,7 +1062,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
                 {addonTotals.pricePence > 0
                   ? ` · +${formatPence(addonTotals.pricePence)}`
                   : ''}
-                {` · ${formatDuration(effectiveDuration)} total`}
+                {effectiveDuration != null ? ` · ${formatDuration(effectiveDuration)} total` : ''}
               </Text>
             ) : null}
 

@@ -2,8 +2,10 @@ import {
   canShowCancelStaffAttendanceConfirmationAction,
   canShowConfirmStaffAttendanceConfirmationAction,
   canShowStaffAttendanceToggle,
+  depositPillAppliesToStatus,
   isAttendanceConfirmed,
   showAttendanceConfirmedSupplementPill,
+  showDepositFailedPill,
   showDepositPendingPill,
 } from '@/lib/booking/booking-staff-indicators';
 
@@ -27,6 +29,46 @@ describe('showDepositPendingPill', () => {
     expect(showDepositPendingPill({ deposit_status: 'Pending', deposit_amount_pence: 0 })).toBe(false);
     expect(showDepositPendingPill({ deposit_status: 'Pending' })).toBe(false);
     expect(showDepositPendingPill({ deposit_status: 'Pending', deposit_amount_pence: -50 })).toBe(false);
+  });
+});
+
+describe('showDepositFailedPill', () => {
+  it('shows whenever the deposit status is Failed', () => {
+    expect(showDepositFailedPill({ deposit_status: 'Failed', deposit_amount_pence: 2000 })).toBe(true);
+  });
+
+  it('has NO amount gate, unlike the pending pill', () => {
+    // A `payment_with_setup` card-hold row carries deposit_amount_pence NULL,
+    // and a Failed state there is still a failed collection attempt.
+    expect(showDepositFailedPill({ deposit_status: 'Failed' })).toBe(true);
+    expect(showDepositFailedPill({ deposit_status: 'Failed', deposit_amount_pence: 0 })).toBe(true);
+  });
+
+  it('hides for every other deposit state', () => {
+    expect(showDepositFailedPill({ deposit_status: 'Pending', deposit_amount_pence: 2000 })).toBe(false);
+    expect(showDepositFailedPill({ deposit_status: 'Paid' })).toBe(false);
+    expect(showDepositFailedPill({ deposit_status: 'Waived' })).toBe(false);
+    expect(showDepositFailedPill({})).toBe(false);
+  });
+});
+
+describe('depositPillAppliesToStatus', () => {
+  it('allows the live statuses a deposit can still be owed in', () => {
+    // Booked/Confirmed included: accept-without-payment leaves an accepted
+    // booking still owing its deposit, and staff must keep seeing that.
+    expect(depositPillAppliesToStatus('Pending')).toBe(true);
+    expect(depositPillAppliesToStatus('Booked')).toBe(true);
+    expect(depositPillAppliesToStatus('Confirmed')).toBe(true);
+  });
+
+  it('blocks it once the booking is over', () => {
+    // Cancelled rows keep their stale deposit columns; a red pill there would
+    // send staff chasing money nobody owes.
+    expect(depositPillAppliesToStatus('Cancelled')).toBe(false);
+    expect(depositPillAppliesToStatus('Completed')).toBe(false);
+    expect(depositPillAppliesToStatus('No-Show')).toBe(false);
+    expect(depositPillAppliesToStatus('Seated')).toBe(false);
+    expect(depositPillAppliesToStatus(null)).toBe(false);
   });
 });
 

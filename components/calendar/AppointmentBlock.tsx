@@ -219,7 +219,10 @@ export function pickTrayActions(params: {
   const all = (() => {
     switch (status) {
       case 'Pending':
-        return [arrivedToggle, { kind: 'status', status: 'Booked', label: 'Confirm' } as TrayAction];
+        // "Accept", matching BOOKING_PRIMARY_ACTIONS (web D9): the Confirm on a
+        // Booked booking is the attendance action, and this one may be
+        // accepting a booking whose deposit is still unpaid.
+        return [arrivedToggle, { kind: 'status', status: 'Booked', label: 'Accept' } as TrayAction];
       case 'Booked':
       case 'Confirmed':
         return [arrivedToggle, { kind: 'status', status: 'Seated', label: 'Start' } as TrayAction];

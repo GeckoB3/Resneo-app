@@ -117,12 +117,13 @@ describe('pickTrayActions', () => {
 
   it('returns the status action alone when only one fits (keep-tail rule)', () => {
     expect(labels(pickTrayActions({ status: 'Booked', max: 1 }))).toEqual(['Start']);
-    expect(labels(pickTrayActions({ status: 'Pending', max: 1 }))).toEqual(['Confirm']);
+    // "Accept" on a Pending booking (web D9) — Confirm is the attendance action.
+    expect(labels(pickTrayActions({ status: 'Pending', max: 1 }))).toEqual(['Accept']);
   });
 
   it('returns the arrived toggle + status action when two fit', () => {
     expect(labels(pickTrayActions({ status: 'Booked', max: 2 }))).toEqual(['Arrived', 'Start']);
-    expect(labels(pickTrayActions({ status: 'Pending', max: 2 }))).toEqual(['Arrived', 'Confirm']);
+    expect(labels(pickTrayActions({ status: 'Pending', max: 2 }))).toEqual(['Arrived', 'Accept']);
   });
 
   it('swaps Arrived → Clear once the guest has arrived', () => {

@@ -121,7 +121,27 @@ function seedDetailFromRow(
 }
 
 /**
- * PATCH /api/venue/bookings/[id] — update booking status (Confirm, Seated, etc.).
+ * A status change, optionally carrying the unpaid-promotion acknowledgement.
+ *
+ * The bare `BookingStatus` form is the normal call. The object form adds
+ * `accept_unpaid`, which is the ONLY way past the server's `DEPOSIT_UNPAID` 409
+ * when promoting a `Pending` booking whose deposit or card save is still owed
+ * (see `lib/booking/accept-unpaid.ts`). It is never sent speculatively — only
+ * as the deliberate replay after staff answer the guard sheet.
+ */
+export type BookingStatusChange = BookingStatus | { status: BookingStatus; accept_unpaid: true };
+
+function statusChangeParts(input: BookingStatusChange): {
+  status: BookingStatus;
+  acceptUnpaid: boolean;
+} {
+  return typeof input === 'string'
+    ? { status: input, acceptUnpaid: false }
+    : { status: input.status, acceptUnpaid: input.accept_unpaid === true };
+}
+
+/**
+ * PATCH /api/venue/bookings/[id] — update booking status (Accept, Seated, etc.).
  * Optimistically updates the cached detail so the status pill + action toolbar
  * flip immediately, then reconciles with the server response.
  */
@@ -130,17 +150,19 @@ export function useUpdateBookingStatus(bookingId: string) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (status: BookingStatus): Promise<BookingDetail> => {
+    mutationFn: async (input: BookingStatusChange): Promise<BookingDetail> => {
       if (!accessToken) {
         throw new Error('Missing access token');
       }
+      const { status, acceptUnpaid } = statusChangeParts(input);
       return apiFetch<BookingDetail>(`/api/venue/bookings/${bookingId}`, {
         accessToken,
         method: 'PATCH',
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ status, ...(acceptUnpaid ? { accept_unpaid: true } : {}) }),
       });
     },
-    onMutate: (status) => optimisticStatusPatch(queryClient, accessToken, bookingId, status),
+    onMutate: (input) =>
+      optimisticStatusPatch(queryClient, accessToken, bookingId, statusChangeParts(input).status),
     onError: (_error, _status, context) => rollbackStatusPatch(queryClient, context),
     onSuccess: (data) => seedDetailFromRow(queryClient, accessToken, bookingId, data),
     onSettled: () => {
@@ -525,6 +547,36 @@ export function useBookingDeposit(bookingId: string) {
 }
 
 /**
+ * POST /api/venue/bookings/[id]/deposit `send_payment_link`, with the booking id
+ * in the mutation input so one instance serves whichever booking tripped the
+ * unpaid-promotion guard (a fixed-id hook would close over a stale id).
+ *
+ * The server serves payment links for `Booked`/`Confirmed` bookings that still
+ * owe their deposit, so this works as the recovery path after an accept-unpaid
+ * too, not only while the booking is `Pending`.
+ */
+export function useSendDepositPaymentLinkById() {
+  const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: { bookingId: string }): Promise<{ success: boolean }> => {
+      if (!accessToken) {
+        throw new Error('Missing access token');
+      }
+      return apiFetch<{ success: boolean }>(`/api/venue/bookings/${input.bookingId}/deposit`, {
+        accessToken,
+        method: 'POST',
+        body: JSON.stringify({ action: 'send_payment_link' }),
+      });
+    },
+    onSuccess: (_data, input) => {
+      invalidateBookingCaches(queryClient, accessToken, input.bookingId);
+    },
+  });
+}
+
+/**
  * PATCH /api/venue/bookings/[id] — staff attendance confirmation and
  * guest-arrived toggles (mirrors the web's attendance pills).
  */
@@ -536,6 +588,12 @@ export function useSetBookingAttendance(bookingId: string) {
     mutationFn: async (input: {
       staff_attendance_confirmed?: boolean;
       client_arrived?: boolean;
+      /**
+       * Confirming attendance on a `Pending` booking promotes it to `Confirmed`,
+       * so the server runs the same unpaid guard as the status branch. Sent only
+       * as the replay after staff answer the guard sheet.
+       */
+      accept_unpaid?: true;
     }): Promise<unknown> => {
       if (!accessToken) {
         throw new Error('Missing access token');

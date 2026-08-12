@@ -20,6 +20,13 @@ type BookingSwipeRowProps = {
   selected?: boolean;
   selectionMode?: boolean;
   complianceFlag?: ComplianceBookingFlag | null;
+  /**
+   * The list's unpaid-promotion guard (`useAcceptUnpaidGuard().intercept`).
+   * Owned by the LIST, not the row: the guard renders a Sheet, and one per row
+   * would be a Modal (plus a mutation) for every booking on screen. Returns true
+   * when it recognised the error and took over. Omitted → the old toast.
+   */
+  onUnpaidPromotion?: (bookingId: string, error: unknown, retry: () => void) => boolean;
 };
 
 /**
@@ -37,6 +44,7 @@ function BookingSwipeRowBase({
   selected,
   selectionMode,
   complianceFlag,
+  onUnpaidPromotion,
 }: BookingSwipeRowProps) {
   const toast = useToast();
   const { venue } = useVenueContext();
@@ -44,13 +52,25 @@ function BookingSwipeRowBase({
 
   const transition = useCallback(
     (target: BookingStatus, successMsg: string) => {
-      updateStatus.mutate(target, {
-        onSuccess: () => toast.success(successMsg),
-        onError: (error) =>
-          toast.error(error instanceof ApiError ? error.message : 'Could not update the booking.'),
-      });
+      const run = (acceptUnpaid: boolean) => {
+        updateStatus.mutate(acceptUnpaid ? { status: target, accept_unpaid: true } : target, {
+          onSuccess: () => toast.success(successMsg),
+          onError: (error) => {
+            // Accepting an unpaid Pending booking: hand the 409 to the list's
+            // guard so staff get the payment-link / accept-anyway choice rather
+            // than a dead-end error toast.
+            if (!acceptUnpaid && onUnpaidPromotion?.(booking.id, error, () => run(true))) {
+              return;
+            }
+            toast.error(
+              error instanceof ApiError ? error.message : 'Could not update the booking.',
+            );
+          },
+        });
+      };
+      run(false);
     },
-    [updateStatus, toast],
+    [updateStatus, toast, onUnpaidPromotion, booking.id],
   );
 
   // Status-appropriate quick actions — never offered in selection mode.
@@ -61,10 +81,12 @@ function BookingSwipeRowBase({
     if (booking.status === 'Pending') {
       rightActions.push({
         key: 'confirm',
-        label: 'Confirm',
+        // "Accept" (web D9) — the Confirm on a Booked row is the attendance
+        // action, and this one may be accepting an unpaid booking.
+        label: 'Accept',
         icon: { ios: 'checkmark', android: 'check', web: 'check' },
         color: confirmedTint,
-        onPress: () => transition('Booked', 'Booking confirmed.'),
+        onPress: () => transition('Booked', 'Booking accepted.'),
       });
     }
     // No-show is only offered once the start + grace window has elapsed — the same

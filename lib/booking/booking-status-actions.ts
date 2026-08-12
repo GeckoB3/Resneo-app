@@ -2,7 +2,10 @@ import type { BookingStatus } from '@/types/booking-detail';
 
 /** Primary forward action per status — matches web `BOOKING_PRIMARY_ACTIONS`. */
 const PRIMARY: Partial<Record<BookingStatus, { label: string; target: BookingStatus }>> = {
-  Pending: { label: 'Confirm', target: 'Booked' },
+  // "Accept", not "Confirm": the attendance action on a Booked booking is also
+  // called Confirm, and staff could not tell that THIS one accepts a booking
+  // whose deposit may still be unpaid (web D9, deposit-payment-robustness-plan).
+  Pending: { label: 'Accept', target: 'Booked' },
   Booked: { label: 'Seat', target: 'Seated' },
   Confirmed: { label: 'Seat', target: 'Seated' },
   Seated: { label: 'Complete', target: 'Completed' },

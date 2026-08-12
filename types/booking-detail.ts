@@ -134,6 +134,13 @@ export interface BookingDetail {
   /** HH:mm from API (full GET normalises to 5 chars). */
   booking_time: string;
   booking_end_time?: string | null;
+  /**
+   * Venue-local wall-clock end encoded as UTC. The ONLY end a guest-created
+   * appointment has: `booking_end_time` is written only when the create request
+   * supplies one, which among the guest flows only the resource ones do.
+   * Read it via `resolveBookingCoreDurationMinutes`, never on its own.
+   */
+  estimated_end_time?: string | null;
   party_size: number;
   guest_id: string;
   guest: BookingDetailGuest | null;

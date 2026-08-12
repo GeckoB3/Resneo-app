@@ -17,6 +17,7 @@ import { apiFetch , ApiError } from '@/lib/api/client';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { useToast } from '@/providers/ToastProvider';
 
+import { useAcceptUnpaidGuard } from '@/components/bookings/AcceptUnpaidSheet';
 import { BookingDetailSheet } from '@/components/bookings/BookingDetailSheet';
 import { BookingSwipeRow } from '@/components/bookings/BookingSwipeRow';
 import { BookingBulkBar } from '@/components/bookings/BookingBulkBar';
@@ -386,6 +387,9 @@ export default function BookingsScreen() {
   const [serviceFilter, setServiceFilter] = useState<string | null>(null);
   const [modelFilter, setModelFilter] = useState<ModelFilterKey | null>(null);
   const [needsComplianceOnly, setNeedsComplianceOnly] = useState(false);
+  // Unpaid-promotion guard for the swipe "Accept" action. Owned here, not per
+  // row: it renders a Sheet, and a list of rows would each carry one.
+  const acceptUnpaidGuard = useAcceptUnpaidGuard();
   const [openBookingId, setOpenBookingId] = useState<string | null>(null);
   // Guest scope from the `?guest=` deep link — filters the list to one contact.
   const [guestFilter, setGuestFilter] = useState<string | null>(null);
@@ -862,6 +866,7 @@ export default function BookingsScreen() {
               selected={selectedIds.has(item.booking.id)}
               selectionMode={selectionMode}
               complianceFlag={complianceFlags?.[item.booking.id]}
+              onUnpaidPromotion={acceptUnpaidGuard.intercept}
             />
           )}
         </Animated.View>
@@ -877,6 +882,7 @@ export default function BookingsScreen() {
       colors.background,
       reduceMotion,
       linkedMetaById,
+      acceptUnpaidGuard.intercept,
     ],
   );
 
@@ -1179,6 +1185,8 @@ export default function BookingsScreen() {
           <Button label="Cancel" variant="ghost" fullWidth onPress={closeAddMenu} />
         </View>
       </Sheet>
+
+      {acceptUnpaidGuard.sheet}
 
       <BookingDetailSheet
         bookingId={openBookingId}
