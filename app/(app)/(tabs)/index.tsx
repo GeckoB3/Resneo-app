@@ -44,6 +44,10 @@ import { Segmented } from '@/components/ui/Segmented';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import {
+  resolveAppointmentVisit,
+  type VisitServiceRow,
+} from '@/lib/booking/appointment-visit';
 import { guestNotifyPlanForChange } from '@/lib/booking/modification-notify';
 import { newBookingActionLabel } from '@/lib/booking/terminology';
 import { isAppointmentFromVenue } from '@/lib/venue/venue-experience';
@@ -63,6 +67,7 @@ import {
   useNotifyBookingModification,
   useRescheduleBookingById,
 } from '@/lib/queries/useBookingMutations';
+import { useVisitScheduleById } from '@/lib/queries/useVisitMutations';
 import {
   useCalendarStatusAction,
   useCalendarArrivalAction,
@@ -362,6 +367,13 @@ export default function CalendarScreen() {
 
   // One mutation for drag commits AND undo — the booking id travels in the input.
   const rescheduleById = useRescheduleBookingById();
+  /**
+   * The same, for a multi-service visit: one request that plans every service,
+   * checks each, writes them, and puts back anything already written if one is
+   * refused. A visit dragged as N client PATCHes is what leaves one service moved
+   * and the rest behind.
+   */
+  const visitScheduleById = useVisitScheduleById();
   // Sends the deferred "booking changed" email when the user taps Notify.
   const notifyModification = useNotifyBookingModification();
 
@@ -380,6 +392,12 @@ export default function CalendarScreen() {
     startMoved: boolean;
     /** Moved to another practitioner's column. A move for the heading's purposes. */
     reassigned: boolean;
+    /**
+     * The commit changed the length, so Undo has to put it back. A pure move did
+     * not, and on a visit re-asserting a length is not free — see
+     * `undoReschedule`.
+     */
+    lengthChanged: boolean;
   } | null>(null);
 
   // Restore a booking to its previous slot AND length. Sends the original end so
@@ -387,7 +405,32 @@ export default function CalendarScreen() {
   // not something to tell the guest about, and there is no follow-up prompt
   // here to decide otherwise.
   const undoReschedule = useCallback(
-    (previous: RescheduleTarget) => {
+    (previous: RescheduleTarget, options: { restoreLength: boolean }) => {
+      if (previous.visit) {
+        /**
+         * A visit goes back through the endpoint that moved it, so the undo is as
+         * all-or-nothing as the move was.
+         *
+         * The length is re-asserted only if the commit changed it (a resize).
+         * `total_duration_minutes` is an instruction — the server lays the
+         * services out to FILL it — so sending it after a plain move would put
+         * any dead time in the visit onto its last service, which is the opposite
+         * of putting things back.
+         */
+        visitScheduleById.mutate({
+          groupBookingId: previous.visit.groupBookingId,
+          booking_date: previous.date,
+          booking_time: `${previous.time.slice(0, 5)}:00`,
+          ...(previous.practitionerId ? { practitioner_id: previous.practitionerId } : {}),
+          ...(options.restoreLength && previous.durationMinutes != null
+            ? { total_duration_minutes: previous.durationMinutes }
+            : {}),
+          allow_outside_hours: true,
+          allow_manual_overlap: true,
+          skip_booking_modification_guest_notification: true,
+        });
+        return;
+      }
       const endTime =
         previous.durationMinutes != null
           ? `${minutesToTime(timeToMinutes(previous.time) + previous.durationMinutes)}:00`
@@ -404,7 +447,7 @@ export default function CalendarScreen() {
         skipGuestNotification: true,
       });
     },
-    [rescheduleById],
+    [rescheduleById, visitScheduleById],
   );
 
   const closeMoveNotice = useCallback(() => setMoveNotice(null), []);
@@ -424,7 +467,7 @@ export default function CalendarScreen() {
 
   const handleUndoMove = useCallback(() => {
     if (!moveNotice) return;
-    undoReschedule(moveNotice.previous);
+    undoReschedule(moveNotice.previous, { restoreLength: moveNotice.lengthChanged });
     setMoveNotice(null);
   }, [moveNotice, undoReschedule]);
 
@@ -971,7 +1014,124 @@ export default function CalendarScreen() {
     [gridQuery.data, anchor],
   );
 
+  /**
+   * The whole multi-service visit a bar stands for, or null when it is an
+   * ordinary booking (or a party, which the resolver refuses).
+   *
+   * Read back from the grid rather than threaded through the gesture, so the
+   * commit path has one source. Safe to resolve from one calendar's one day: a
+   * visit is always on a single calendar, and the diary tab has no status filter
+   * to hide a segment from it (see [[calendar-no-status-filter]]). A MOVE is
+   * safe regardless — it sends no length, and the endpoint loads the visit's real
+   * rows itself.
+   */
+  const findVisitOnAnchor = useCallback(
+    (bookingId: string) => {
+      for (const cal of gridQuery.data?.calendars ?? []) {
+        const dateData = cal.dates.find((d) => d.date === anchor);
+        const booking = dateData?.bookings.find((b) => b.id === bookingId);
+        if (!dateData || !booking) continue;
+        const groupBookingId = booking.group_booking_id?.trim();
+        if (!groupBookingId) return null;
+        const rows: VisitServiceRow[] = dateData.bookings
+          .filter((b) => b.group_booking_id?.trim() === groupBookingId)
+          .map((b) => ({
+            id: b.id,
+            booking_time: b.startTime,
+            // The grid sends "" for a row with no end; the resolver reads that as
+            // absent and falls back rather than treating it as midnight.
+            booking_end_time: b.endTime || null,
+            status: b.status,
+            group_booking_id: b.group_booking_id,
+            person_label: b.person_label,
+            booking_item_name: b.serviceName,
+          }));
+        const visit = resolveAppointmentVisit(rows);
+        return visit ? { groupBookingId, visit } : null;
+      }
+      return null;
+    },
+    [gridQuery.data, anchor],
+  );
+
   // ---- Hold-drag move / resize commits ----
+
+  /**
+   * Commit a drag on a merged visit bar: one request for every service.
+   *
+   * The single-booking path below cannot serve this. It PATCHes one row, and a
+   * visit's rows are separate bookings — moving the one the bar is keyed on takes
+   * the visit's head away and leaves its tail behind.
+   */
+  const commitVisitDrag = useCallback(
+    (input: {
+      groupBookingId: string;
+      /** The visit's FIRST service: the row the guest email is sent against. */
+      leadBookingId: string;
+      segmentIds: string[];
+      guestName: string;
+      /** "HH:mm:ss" */
+      time: string;
+      /** Only on a resize — see the note in `undoReschedule`. */
+      totalDurationMinutes?: number;
+      practitionerId?: string;
+      previousTarget: RescheduleTarget;
+    }) => {
+      const notifyPlan = guestNotifyPlanForChange({
+        previousDate: input.previousTarget.date,
+        nextDate: anchor,
+        previousTime: input.previousTarget.time,
+        nextTime: input.time,
+      });
+      // Every segment, so the whole bar shows one spinner rather than the lead
+      // row spinning while its siblings look idle.
+      setPendingActionIds((prev) => new Set([...prev, ...input.segmentIds]));
+      visitScheduleById.mutate(
+        {
+          groupBookingId: input.groupBookingId,
+          booking_date: anchor,
+          booking_time: input.time,
+          ...(input.totalDurationMinutes != null
+            ? { total_duration_minutes: input.totalDurationMinutes }
+            : {}),
+          ...(input.practitionerId ? { practitioner_id: input.practitionerId } : {}),
+          allow_outside_hours: true,
+          // Same rule as the single-booking path: a same-column drag has already
+          // been conflict-checked against the grid (now excluding the visit's own
+          // services), a cross-column move has not, so let the server 409 there.
+          allow_manual_overlap: input.practitionerId === undefined,
+          ...(notifyPlan.skip
+            ? { skip_booking_modification_guest_notification: true }
+            : { defer_modification_guest_notification: true }),
+        },
+        {
+          onSuccess: () => {
+            for (const id of input.segmentIds) removePending(id);
+            setMoveNotice({
+              // The endpoint notifies once, against the visit's first service.
+              bookingId: input.leadBookingId,
+              guestName: input.guestName,
+              previous: input.previousTarget,
+              startMoved: notifyPlan.prompt,
+              reassigned: input.practitionerId != null,
+              lengthChanged: input.totalDurationMinutes != null,
+            });
+          },
+          onError: (error) => {
+            for (const id of input.segmentIds) removePending(id);
+            // A 409 names the service and the time it could not take, and says
+            // the visit was not moved. Nothing here improves on that.
+            toast.error(
+              error instanceof ApiError
+                ? error.message
+                : 'Could not move this visit. Try another time.',
+            );
+          },
+        },
+      );
+    },
+    [anchor, visitScheduleById, removePending, toast],
+  );
 
   const commitDrag = useCallback(
     (input: {
@@ -1017,6 +1177,7 @@ export default function CalendarScreen() {
               previous: input.previousTarget,
               startMoved: notifyPlan.prompt,
               reassigned: input.practitionerId != null,
+              lengthChanged: input.durationChanged,
             });
           },
           onError: (error) => {
@@ -1052,6 +1213,38 @@ export default function CalendarScreen() {
       // is still a real move (the practitioner changed).
       if (!reassign && newTime === booking.startTime.slice(0, 5)) return;
 
+      const grouped = findVisitOnAnchor(bookingId);
+      if (grouped) {
+        const { groupBookingId, visit } = grouped;
+        commitVisitDrag({
+          groupBookingId,
+          leadBookingId: visit.services[0]!.id,
+          segmentIds: visit.services.map((s) => s.id),
+          guestName: booking.guestName ?? 'booking',
+          time: `${newTime}:00`,
+          ...(reassign ? { practitionerId: reassign.toPractitionerId } : {}),
+          // No length: every service keeps its own, and the endpoint re-lays them
+          // behind the new start.
+          previousTarget: {
+            id: bookingId,
+            guestName: booking.guestName ?? 'booking',
+            date: anchor,
+            time: visit.startHm,
+            durationMinutes: visit.totalMinutes,
+            ...(reassign ? { practitionerId: reassign.fromPractitionerId } : {}),
+            visit: {
+              groupBookingId,
+              startHm: visit.startHm,
+              endHm: visit.endHm,
+              serviceCount: visit.services.length,
+              serviceNames: visit.services.map((s) => s.name?.trim() || 'Service'),
+              leadBookingId: visit.services[0]!.id,
+            },
+          },
+        });
+        return;
+      }
+
       const start = timeToMinutes(booking.startTime);
       const end = booking.endTime ? timeToMinutes(booking.endTime) : null;
       const duration = end != null && end > start ? end - start : null;
@@ -1076,7 +1269,7 @@ export default function CalendarScreen() {
         durationChanged: false,
       });
     },
-    [findBookingOnAnchor, anchor, commitDrag],
+    [findBookingOnAnchor, findVisitOnAnchor, anchor, commitDrag, commitVisitDrag],
   );
 
   const handleDragReschedule = useCallback(
@@ -1090,6 +1283,40 @@ export default function CalendarScreen() {
       if (!booking) return;
       // Same movability gate as reschedule (web parity).
       if (!isMovableBooking(booking)) return;
+
+      const grouped = findVisitOnAnchor(bookingId);
+      if (grouped) {
+        const { groupBookingId, visit } = grouped;
+        // The bar's new height IS the visit's new wall-clock span, gaps included,
+        // which is exactly what the endpoint distributes: growth onto the tail
+        // service, shrinkage off the tail and then back through the earlier ones,
+        // each to its own floor.
+        if (newDurationMinutes === visit.totalMinutes) return;
+        commitVisitDrag({
+          groupBookingId,
+          leadBookingId: visit.services[0]!.id,
+          segmentIds: visit.services.map((s) => s.id),
+          guestName: booking.guestName ?? 'booking',
+          time: `${visit.startHm}:00`,
+          totalDurationMinutes: newDurationMinutes,
+          previousTarget: {
+            id: bookingId,
+            guestName: booking.guestName ?? 'booking',
+            date: anchor,
+            time: visit.startHm,
+            durationMinutes: visit.totalMinutes,
+            visit: {
+              groupBookingId,
+              startHm: visit.startHm,
+              endHm: visit.endHm,
+              serviceCount: visit.services.length,
+              serviceNames: visit.services.map((s) => s.name?.trim() || 'Service'),
+              leadBookingId: visit.services[0]!.id,
+            },
+          },
+        });
+        return;
+      }
 
       const start = timeToMinutes(booking.startTime);
       const end = booking.endTime ? timeToMinutes(booking.endTime) : null;
@@ -1110,7 +1337,7 @@ export default function CalendarScreen() {
         durationChanged: true,
       });
     },
-    [findBookingOnAnchor, anchor, commitDrag],
+    [findBookingOnAnchor, findVisitOnAnchor, anchor, commitDrag, commitVisitDrag],
   );
 
   // Drag dropped on a conflicting slot — the grid refuses the move; surface why.
@@ -2066,8 +2293,16 @@ export default function CalendarScreen() {
       <Sheet visible={moveNotice !== null} onClose={closeMoveNotice}>
         <Text variant="subheading">
           {/* A reassign at the same time is still a move, just to another
-              person's column, so it must not read as "Duration updated". */}
-          {moveNotice?.startMoved || moveNotice?.reassigned ? 'Booking moved' : 'Duration updated'}
+              person's column, so it must not read as "Duration updated". A visit
+              says so: what moved was several services, and Undo puts all of them
+              back. */}
+          {moveNotice?.startMoved || moveNotice?.reassigned
+            ? moveNotice?.previous.visit
+              ? 'Visit moved'
+              : 'Booking moved'
+            : moveNotice?.previous.visit
+              ? 'Visit length updated'
+              : 'Duration updated'}
         </Text>
         <Text variant="caption" tone="muted">
           {!moveNotice

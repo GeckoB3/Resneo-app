@@ -15,6 +15,10 @@
  * detail still tells the two apart — `GroupVisitCards` switches on `person_label`
  * to render "Services in this visit" or a per-person list.
  *
+ * Because a party merges too, `isVisit` is what the drag path gates on — several
+ * services of one guest may be moved and resized as one bar (the visit endpoint
+ * re-lays them), several PEOPLE may not.
+ *
  * ONE DELIBERATE DIFFERENCE from the web. Its `clusterTimeRange` ends the bar at
  * the LAST-STARTING segment's end:
  *
@@ -30,6 +34,7 @@
  * and correct for concurrent ones.
  */
 
+import { isServiceVisit } from '@/lib/booking/appointment-visit';
 import type { CalendarGridBooking } from '@/types/calendar-grid';
 
 /** A booking with its resolved minute range, as every grid already computes. */
@@ -57,8 +62,23 @@ export interface CalendarBookingCluster {
   start: number;
   /** LATEST end across segments — see the note above on why not the last-starting one. */
   end: number;
-  /** True when this bar stands for more than one booking. Such bars are not draggable. */
+  /** True when this bar stands for more than one booking. */
   isMultiSegment: boolean;
+  /**
+   * The shared `group_booking_id`, when these segments have one.
+   */
+  groupBookingId: string | null;
+  /**
+   * Several services of ONE guest's visit, as opposed to several PEOPLE booked
+   * together. Only a visit may be dragged or resized as one bar: it goes through
+   * the visit endpoint, which re-lays every service behind the change.
+   *
+   * A party must not, and this is the only thing that tells them apart here —
+   * clustering keys on `group_booking_id` alone (see the note above), so
+   * `isMultiSegment` is true for both. Re-sequencing a party would take four
+   * people booked at 10:00 and stack them back to back.
+   */
+  isVisit: boolean;
   /**
    * Service names joined with an arrow, mirroring the web's
    * `calendarMultiServiceDisplayTitle`. Not de-duplicated, also web parity: a
@@ -89,13 +109,16 @@ function toCluster(segments: ClusterInput[]): CalendarBookingCluster {
     (a, b) => a.start - b.start || a.booking.id.localeCompare(b.booking.id),
   );
   const bookings = sorted.map((segment) => segment.booking);
+  const isMultiSegment = bookings.length > 1;
   return {
     lead: bookings[0]!,
     bookings,
     ids: bookings.map((booking) => booking.id),
     start: sorted[0]!.start,
     end: sorted.reduce((latest, segment) => Math.max(latest, segment.end), sorted[0]!.end),
-    isMultiSegment: bookings.length > 1,
+    isMultiSegment,
+    groupBookingId: groupKeyOf(bookings[0]!),
+    isVisit: isMultiSegment && isServiceVisit(bookings),
     serviceLabel: serviceLabelFor(bookings),
     paid: bookings.every((booking) => booking.payment_state === 'paid'),
   };

@@ -29,12 +29,10 @@ export interface CalendarGridBooking {
    * Multi-service visit key: several consecutive bookings for one guest share a
    * `group_booking_id`. Optional — older backends omit it.
    *
-   * NOT yet consumed: the calendar still draws one bar per row, so a
-   * multi-service visit appears as several bars. Grouping them needs the web's
-   * span semantics (first start → last end), not the Bookings tab's
-   * `collapseMultiServiceVisits`, which keeps only the earliest segment and
-   * would give the bar the first service's duration. See
-   * Docs/APP_GAP_REPORT_R12_WEB_DELTA.md §R12-1.
+   * Consumed by `clusterCalendarBookings`, which merges the rows into ONE bar
+   * spanning first start → latest end, and by the drag path, which moves and
+   * resizes a visit through `/api/venue/visits/{id}/schedule` rather than
+   * PATCHing whichever row the bar is keyed on.
    */
   group_booking_id?: string | null;
   /**

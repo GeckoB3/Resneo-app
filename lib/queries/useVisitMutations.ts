@@ -118,3 +118,37 @@ export function useVisitSchedule(groupBookingId: string | null | undefined) {
     },
   });
 }
+
+/**
+ * The same endpoint where the VISIT changes per action — the calendar's
+ * drag-move, drag-resize and undo, which act on whichever bar was grabbed.
+ *
+ * A fixed-id hook would close over a stale visit there, the same reason
+ * `useRescheduleBookingById` exists beside `useRescheduleBooking`.
+ */
+export function useVisitScheduleById() {
+  const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (
+      input: VisitSchedulePatchInput & { groupBookingId: string },
+    ): Promise<VisitSchedulePlan> => {
+      if (!accessToken) {
+        throw new Error('Missing access token');
+      }
+      const { groupBookingId, ...body } = input;
+      return apiFetch<VisitSchedulePlan>(
+        `/api/venue/visits/${encodeURIComponent(groupBookingId)}/schedule`,
+        { accessToken, method: 'PATCH', body: JSON.stringify(body) },
+      );
+    },
+    onSuccess: (data, input) => {
+      if (input.dry_run === true) return;
+      const anyServiceId = data.services?.[0]?.id;
+      if (anyServiceId) {
+        invalidateBookingCaches(queryClient, accessToken, anyServiceId);
+      }
+    },
+  });
+}

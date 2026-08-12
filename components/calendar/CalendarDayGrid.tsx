@@ -28,6 +28,7 @@ import {
   type LaneInput,
 } from '@/components/calendar/grid-layout';
 import { Text } from '@/components/ui/Text';
+import { minimumVisitFloorMinutes } from '@/lib/booking/appointment-visit';
 import {
   clusterCalendarBookings,
   type CalendarBookingCluster,
@@ -748,12 +749,23 @@ export function CalendarDayGrid({
               serviceName={item.cluster.serviceLabel}
               timeLabel={item.timeLabel}
               status={item.cluster.lead.status}
-              // A merged visit is never dragged or resized: the gesture moves ONE
-              // booking, which would tear the visit apart. `draggable` is the
-              // single switch for both (see DraggableAppointmentBlock), and the
-              // web disables the same thing on its clusters.
+              // A merged VISIT drags and resizes as one booking: the commit goes
+              // through the visit endpoint, which plans every service before
+              // writing any. A merged PARTY does not — several people booked at
+              // one time are not a thing to re-sequence — and that is why the
+              // gate is `isVisit` rather than `isMultiSegment`.
               draggable={
-                !item.cluster.isMultiSegment && MOVABLE_STATUSES.has(item.cluster.lead.status)
+                (!item.cluster.isMultiSegment || item.cluster.isVisit) &&
+                MOVABLE_STATUSES.has(item.cluster.lead.status)
+              }
+              // Every row this bar owns, so the drag's conflict check does not
+              // see the visit's own services as occupying the space it is moving
+              // into, and so a resize cannot go below the services' own floors.
+              segmentIds={item.cluster.ids}
+              minDurationMinutes={
+                item.cluster.isVisit
+                  ? minimumVisitFloorMinutes(item.cluster.bookings.length)
+                  : undefined
               }
               clientArrivedAt={item.cluster.lead.client_arrived_at}
               staffAttendanceConfirmedAt={item.cluster.lead.staff_attendance_confirmed_at}

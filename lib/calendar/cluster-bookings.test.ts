@@ -55,6 +55,41 @@ describe('clusterCalendarBookings — what groups', () => {
     expect(out[0]!.end).toBe(630);
   });
 
+  it('marks one guest’s several services as a visit, and carries the group id', () => {
+    // `isVisit` is what the drag gate reads: a visit moves and resizes as one bar
+    // through the visit endpoint.
+    const out = clusterCalendarBookings([
+      seg('b1', 540, 570, { group_booking_id: 'g1' }),
+      seg('b2', 570, 630, { group_booking_id: 'g1' }),
+    ]);
+    expect(out[0]!.isVisit).toBe(true);
+    expect(out[0]!.groupBookingId).toBe('g1');
+  });
+
+  it('does NOT mark a party as a visit, though it still merges', () => {
+    // The trap this exists to stop: clustering keys on group_booking_id alone, so
+    // a party is `isMultiSegment` too. Dragging one as a visit would re-sequence
+    // four people booked at 10:00 into four consecutive bookings.
+    const out = clusterCalendarBookings([
+      seg('b1', 600, 660, { group_booking_id: 'g1', person_label: 'Person 1' }),
+      seg('b2', 600, 660, { group_booking_id: 'g1', person_label: 'Person 2' }),
+    ]);
+    expect(out[0]!.isMultiSegment).toBe(true);
+    expect(out[0]!.isVisit).toBe(false);
+  });
+
+  it('does not call a lone member of a group a visit', () => {
+    const out = clusterCalendarBookings([seg('b1', 540, 570, { group_booking_id: 'g1' })]);
+    expect(out[0]!.isVisit).toBe(false);
+    expect(out[0]!.groupBookingId).toBe('g1');
+  });
+
+  it('reports no group id on an ordinary booking', () => {
+    const out = clusterCalendarBookings([seg('b1', 540, 570)]);
+    expect(out[0]!.groupBookingId).toBeNull();
+    expect(out[0]!.isVisit).toBe(false);
+  });
+
   it('merges a group of PEOPLE too — web parity, no person_label rule', () => {
     // The bookings list deliberately refuses to collapse these; the calendar
     // deliberately does. Do not "fix" this into the list's rule.

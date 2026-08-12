@@ -18,7 +18,7 @@
  * (or the mutation fails and it snaps home). No bounce-back-then-jump.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -168,6 +168,22 @@ type DraggableAppointmentBlockProps = {
   startTime: string;
   /** True duration in minutes — used for duration resize. */
   durationMinutes: number;
+  /**
+   * Every booking id this bar stands for. One entry for an ordinary booking; all
+   * of a multi-service visit's services for a merged bar.
+   *
+   * The conflict check excludes them ALL from the busy ranges. `busyRanges` is
+   * built per booking row, so a visit whose bar excluded only its lead would be
+   * reported as clashing with the sibling service it is about to follow — the
+   * whole bar would go red the moment it was picked up. Defaults to `[id]`.
+   */
+  segmentIds?: string[];
+  /**
+   * Floor for a resize, in minutes. A visit's is its services' floors added up
+   * (each needs its own minimum), where an ordinary booking's is one drag snap.
+   * Defaults to {@link DRAG_SNAP_MINUTES}.
+   */
+  minDurationMinutes?: number;
   onPress: (id: string) => void;
   onStatusChange?: (id: string, status: string) => void;
   onArrivalToggle?: (id: string, arrived: boolean) => void;
@@ -219,18 +235,23 @@ type ConflictLevel = 0 | 1 | 2;
  * Worklet conflict check for a proposed [start,end) minute-range. Overlapping
  * another booking/block → 2 (red, refused). Fully inside working hours → 0.
  * Otherwise → 1 (amber, allowed but flagged). Runs on the UI thread during drag.
+ *
+ * Exported for its own tests: the self-exclusion rule is load-bearing and cannot
+ * be reached through the component, whose gesture only runs on the UI thread.
  */
-function evaluateConflict(
+export function evaluateConflict(
   start: number,
   end: number,
-  selfId: string,
+  selfIds: string[],
   busy: { id: string; start: number; end: number }[],
   working: { start: number; end: number }[],
 ): ConflictLevel {
   'worklet';
   for (let i = 0; i < busy.length; i += 1) {
     const r = busy[i];
-    if (r == null || r.id === selfId) continue;
+    // Every range this bar owns is excluded, not just the row it is keyed on: a
+    // merged visit is moving as one, so it must never be judged against itself.
+    if (r == null || selfIds.indexOf(r.id) !== -1) continue;
     if (start < r.end && end > r.start) return 2;
   }
   if (working.length === 0) return 0;
@@ -261,6 +282,8 @@ export function DraggableAppointmentBlock({
   pxPerMinute = PX_PER_MINUTE,
   startTime,
   durationMinutes,
+  segmentIds,
+  minDurationMinutes = MIN_DURATION_MINUTES,
   onPress,
   onStatusChange,
   onArrivalToggle,
@@ -311,6 +334,15 @@ export function DraggableAppointmentBlock({
   const ccPitch = crossColumnPitch ?? 0;
   const ccSource = crossColumnSourceIndex ?? -1;
   const ccCount = crossColumnCount ?? 0;
+
+  /**
+   * Which busy ranges this bar owns. Memoised so the gesture worklets capture one
+   * stable array rather than a new one on every render.
+   */
+  const selfIds = useMemo(
+    () => (segmentIds && segmentIds.length > 0 ? segmentIds : [id]),
+    [segmentIds, id],
+  );
   const crossColumnEnabled =
     onDragMoveToColumn != null && liftedColumn != null && ccPitch > 0 && ccCount > 1 && ccSource >= 0;
 
@@ -511,14 +543,20 @@ export function DraggableAppointmentBlock({
           const raw = ccSource + Math.round(effDx / ccPitch);
           conflict.value =
             raw === ccSource
-              ? evaluateConflict(snapped, snapped + durationMinutes, id, busyRanges, workingRanges)
+              ? evaluateConflict(
+                  snapped,
+                  snapped + durationMinutes,
+                  selfIds,
+                  busyRanges,
+                  workingRanges,
+                )
               : 0;
         } else {
           // Proposed slot keeps the duration; flag overlap (red) / off-hours (amber).
           conflict.value = evaluateConflict(
             snapped,
             snapped + durationMinutes,
-            id,
+            selfIds,
             busyRanges,
             workingRanges,
           );
@@ -527,7 +565,7 @@ export function DraggableAppointmentBlock({
         const deltaMins = event.translationY / pxPerMinute;
         const snapped = snapToGrid(durationMinutes + deltaMins, DRAG_SNAP_MINUTES);
         const clamped = Math.max(
-          MIN_DURATION_MINUTES,
+          minDurationMinutes,
           Math.min(MAX_DURATION_MINUTES, snapped),
         );
         liveDurationMins.value = clamped;
@@ -536,7 +574,7 @@ export function DraggableAppointmentBlock({
         conflict.value = evaluateConflict(
           originalMinutes,
           originalMinutes + clamped,
-          id,
+          selfIds,
           busyRanges,
           workingRanges,
         );

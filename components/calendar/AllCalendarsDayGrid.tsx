@@ -57,6 +57,7 @@ import {
   type LaneInput,
 } from '@/components/calendar/grid-layout';
 import { Text } from '@/components/ui/Text';
+import { minimumVisitFloorMinutes } from '@/lib/booking/appointment-visit';
 import {
   clusterCalendarBookings,
   type CalendarBookingCluster,
@@ -957,10 +958,18 @@ function DayColumn({
             serviceName={item.cluster.serviceLabel}
             timeLabel={item.timeLabel}
             status={item.cluster.lead.status}
-            // A merged visit is never dragged or resized — the gesture moves ONE
-            // booking and would tear the visit apart (web parity).
+            // A merged VISIT drags and resizes as one booking (the commit goes
+            // through the visit endpoint); a merged PARTY does not. See the same
+            // gate in CalendarDayGrid.
             draggable={
-              !item.cluster.isMultiSegment && MOVABLE_STATUSES.has(item.cluster.lead.status)
+              (!item.cluster.isMultiSegment || item.cluster.isVisit) &&
+              MOVABLE_STATUSES.has(item.cluster.lead.status)
+            }
+            segmentIds={item.cluster.ids}
+            minDurationMinutes={
+              item.cluster.isVisit
+                ? minimumVisitFloorMinutes(item.cluster.bookings.length)
+                : undefined
             }
             clientArrivedAt={item.cluster.lead.client_arrived_at}
             staffAttendanceConfirmedAt={item.cluster.lead.staff_attendance_confirmed_at}
