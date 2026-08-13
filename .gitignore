@@ -30,8 +30,13 @@ yarn-error.*
 .DS_Store
 *.pem
 
-# local env files
-.env*.local
+# Local env files, and any stray copy of one.
+#
+# `.env*.local` alone matched `.env.local` but NOT `.env.local.bak`, so a backup
+# made while publishing an update was picked up by `requireCommit` and committed.
+# Match the whole family instead, and allow only the checked-in template through.
+.env*
+!.env.example
 
 # typescript
 *.tsbuildinfo
