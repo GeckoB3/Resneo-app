@@ -356,7 +356,22 @@ export interface ModifyAppointmentInput {
   booking_date: string;
   /** HH:mm:ss */
   booking_time: string;
-  practitioner_id: string;
+  /**
+   * Target calendar — **send only on a real reassign** (R16-1).
+   *
+   * Its mere PRESENCE is what arms the server's managed-calendar gate: web's C8
+   * fix refuses an own-venue non-admin whose account is not assigned to this
+   * calendar, and it does so inside `if (body.practitioner_id && isAppointment)`
+   * without first asking whether the value actually changed. Re-asserting the
+   * booking's existing calendar therefore turned every edit of a colleague's
+   * booking — a time change, a service swap — into a 403 for non-admin staff.
+   *
+   * Omitting it is behaviour-identical for an unchanged calendar: the route
+   * resolves the slot against `booking.practitioner_id ?? booking.calendar_id`
+   * (`venue/bookings/[id]/route.ts:2311`) and only writes the calendar column
+   * inside that same block, so there is nothing to preserve by sending it.
+   */
+  practitioner_id?: string;
   appointment_service_id?: string;
   service_item_id?: string;
   duration_minutes: number;
@@ -428,7 +443,12 @@ export interface ValidateAppointmentModificationInput {
   booking_date: string;
   /** HH:mm */
   booking_time: string;
-  practitioner_id: string;
+  /**
+   * Send only on a real reassign — see {@link ModifyAppointmentInput.practitioner_id}.
+   * The validate route has carried the same gate for longer than the PATCH route
+   * has, so a dry run that re-asserted an unchanged calendar 403'd first.
+   */
+  practitioner_id?: string;
   appointment_service_id?: string | null;
   service_item_id?: string | null;
   duration_minutes?: number | null;

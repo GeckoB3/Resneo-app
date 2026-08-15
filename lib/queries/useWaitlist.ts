@@ -2,6 +2,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
+import {
+  invalidateAppointmentAvailability,
+  invalidateAvailabilityIfSlotTaken,
+} from '@/lib/queries/invalidateAvailability';
 import { keyScope, queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import type {
@@ -56,7 +60,13 @@ export function useUpdateWaitlistEntry() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.waitlist.all() });
       void queryClient.invalidateQueries({ queryKey: queryKeys.bookings.all() });
       void queryClient.invalidateQueries({ queryKey: queryKeys.calendar.all() });
+      // Converting an entry WRITES a booking, so it fills a slot exactly as the
+      // create paths do — and this was the one booking write that never said so.
+      invalidateAppointmentAvailability(queryClient);
     },
+    // The conversion re-checks the slot immediately before its insert and 409s
+    // if it has gone (R16-3), which is itself proof the cached pickers are stale.
+    onError: (error) => invalidateAvailabilityIfSlotTaken(queryClient, error),
   });
 }
 

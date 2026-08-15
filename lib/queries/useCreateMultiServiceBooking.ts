@@ -2,7 +2,10 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
 import type { CreateMultiServicePayload } from '@/lib/booking/multi-service-chain';
-import { invalidateAppointmentAvailability } from '@/lib/queries/invalidateAvailability';
+import {
+  invalidateAppointmentAvailability,
+  invalidateAvailabilityIfSlotTaken,
+} from '@/lib/queries/invalidateAvailability';
 import { queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 
@@ -75,5 +78,8 @@ export function useCreateMultiServiceBooking() {
       // The booked slot is no longer free — the picker must not still offer it.
       invalidateAppointmentAvailability(queryClient);
     },
+    // A visit is written whole or not at all — one taken segment refuses all of
+    // them, and leaves every segment's picker holding availability that has moved.
+    onError: (error) => invalidateAvailabilityIfSlotTaken(queryClient, error),
   });
 }

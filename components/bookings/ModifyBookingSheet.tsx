@@ -19,6 +19,7 @@ import {
   type VisitEditTarget,
 } from '@/lib/booking/appointment-visit';
 import { MIN_CORE_DURATION_MINUTES } from '@/lib/booking/booking-core-duration';
+import { filterToUsableCalendars } from '@/lib/calendar/managed-calendars';
 import {
   describeProcessingChange,
   describeProcessingGaps,
@@ -33,6 +34,7 @@ import { useAppointmentAvailability } from '@/lib/queries/useAppointmentAvailabi
 import { useAppointmentCatalog } from '@/lib/queries/useAppointmentCatalog';
 import { useBookingDetail } from '@/lib/queries/useBookingDetail';
 import { useMonthAvailability } from '@/lib/queries/useMonthAvailability';
+import { useStaffMe } from '@/lib/queries/useStaffMe';
 import {
   useModifyAppointment,
   useNotifyBookingModification,
@@ -206,6 +208,9 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   // not carry them and its source component is out of scope to edit.
   const detailQuery = useBookingDetail(target?.id);
   const currentAddons = detailQuery.data?.addons ?? null;
+
+  /** Role + assigned calendars, for the reassign gate on the picker (R16-1). */
+  const staffMe = useStaffMe();
 
   const [serviceId, setServiceId] = useState<string | null>(null);
   const [variantId, setVariantId] = useState<string | null>(null);
@@ -406,11 +411,44 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     // A visit has several services, so no single "who offers this" answer. Show
     // every calendar and let the endpoint judge: it checks each service against
     // the target calendar and names the one that cannot go there.
-    if (isVisit) return practitioners;
-    if (!serviceId || !offeredBy.has(serviceId)) return practitioners;
-    const ids = offeredBy.get(serviceId)!;
-    return practitioners.filter((p) => ids.has(p.id));
-  }, [isVisit, serviceId, offeredBy, practitioners]);
+    const offering = isVisit
+      ? practitioners
+      : !serviceId || !offeredBy.has(serviceId)
+        ? practitioners
+        : practitioners.filter((p) => offeredBy.get(serviceId)!.has(p.id));
+    /**
+     * R16-1 — a non-admin may only move a booking onto a calendar assigned to
+     * their account, so do not offer the rest. The catalogue behind
+     * `practitioners` comes from a `roster=1` fetch, which is exactly the flag
+     * that turns the server's own narrowing off, so without this the picker
+     * lists every colleague and the save 403s.
+     *
+     * The booking's CURRENT calendar is kept even when it is not theirs: it is
+     * the selected value, and dropping it out of the list would render the
+     * picker with nothing selected and make an unrelated edit look like a
+     * reassign. Selecting it changes nothing, so it never arms the gate.
+     */
+    const usable = filterToUsableCalendars(
+      {
+        role: staffMe.data?.staff.role,
+        managedCalendarIds: staffMe.data?.staff.linked_calendar_ids,
+      },
+      offering,
+    );
+    const current = offering.find((p) => p.id === target?.practitionerId);
+    return current && !usable.some((p) => p.id === current.id) ? [current, ...usable] : usable;
+  }, [isVisit, serviceId, offeredBy, practitioners, staffMe.data, target?.practitionerId]);
+
+  /**
+   * The calendar id to SEND, or undefined when it has not changed.
+   *
+   * Re-asserting the booking's existing calendar arms the server's
+   * managed-calendar gate for no reason — see
+   * {@link ModifyAppointmentInput.practitioner_id}. Every send site below uses
+   * this rather than `practitionerId` directly.
+   */
+  const reassignedPractitionerId =
+    practitionerId && practitionerId !== target?.practitionerId ? practitionerId : undefined;
 
   const selectService = (svc: AppointmentCatalogService) => {
     // Switching to a different service invalidates the current add-on choices
@@ -957,10 +995,10 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
       known_booking_ids: knownBookingIds,
       booking_date: date,
       booking_time: `${minutesToTime(minutes)}:00`,
-      ...(practitionerId ? { practitioner_id: practitionerId } : {}),
+      ...(reassignedPractitionerId ? { practitioner_id: reassignedPractitionerId } : {}),
       allow_outside_hours: true,
     }),
-    [serviceLines, knownBookingIds, date, minutes, practitionerId],
+    [serviceLines, knownBookingIds, date, minutes, reassignedPractitionerId],
   );
   useEffect(() => {
     if (!target || !practitionerId || !date || !signature) return;
@@ -996,7 +1034,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
               dry_run: true,
               booking_date: date,
               booking_time: `${minutesToTime(minutes)}:00`,
-              practitioner_id: practitionerId,
+              ...(reassignedPractitionerId ? { practitioner_id: reassignedPractitionerId } : {}),
               // Exactly what the save will send, or the check judges a request
               // the save would not make.
               ...(durationEdited ? { total_duration_minutes: effectiveDuration! } : {}),
@@ -1025,7 +1063,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
         {
           booking_date: date,
           booking_time: minutesToTime(minutes),
-          practitioner_id: practitionerId,
+          ...(reassignedPractitionerId ? { practitioner_id: reassignedPractitionerId } : {}),
           ...(target.usesServiceItem
             ? { service_item_id: serviceId! }
             : { appointment_service_id: serviceId! }),
@@ -1059,6 +1097,9 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     serviceId,
     variantId,
     practitionerId,
+    // Derived from `practitionerId` + `target`, both already here, so this adds
+    // no re-runs — it keeps the dry run honest about what the save will send.
+    reassignedPractitionerId,
     date,
     minutes,
     effectiveDuration,
@@ -1204,7 +1245,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
         await visitSchedule.mutateAsync({
           booking_date: date,
           booking_time: `${minutesToTime(minutes)}:00`,
-          practitioner_id: practitionerId,
+          ...(reassignedPractitionerId ? { practitioner_id: reassignedPractitionerId } : {}),
           // Only on a real edit — see `durationEdited`. Omitted, every service
           // keeps its own length and the visit is simply re-laid, which is what
           // closes any dead time in it.
@@ -1234,7 +1275,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
       await modify.mutateAsync({
         booking_date: date,
         booking_time: `${minutesToTime(minutes)}:00`,
-        practitioner_id: practitionerId,
+        ...(reassignedPractitionerId ? { practitioner_id: reassignedPractitionerId } : {}),
         ...(target.usesServiceItem
           ? { service_item_id: serviceId }
           : { appointment_service_id: serviceId }),

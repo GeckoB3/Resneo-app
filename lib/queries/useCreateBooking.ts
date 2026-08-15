@@ -1,7 +1,10 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
-import { invalidateAppointmentAvailability } from '@/lib/queries/invalidateAvailability';
+import {
+  invalidateAppointmentAvailability,
+  invalidateAvailabilityIfSlotTaken,
+} from '@/lib/queries/invalidateAvailability';
 import { queryKeys } from '@/lib/queries/keys';
 import { experienceEventKeys } from '@/lib/queries/useExperienceEvents';
 import { resourceQueryKeys } from '@/lib/queries/useResources';
@@ -128,5 +131,7 @@ export function useCreateBooking() {
       // The booked slot is no longer free — the picker must not still offer it.
       invalidateAppointmentAvailability(queryClient);
     },
+    // …and neither is a slot someone else took while this request was in flight.
+    onError: (error) => invalidateAvailabilityIfSlotTaken(queryClient, error),
   });
 }

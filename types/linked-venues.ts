@@ -343,8 +343,22 @@ export interface LinkedCalendarResponse {
 export interface LinkedBookingCreatePayload {
   ownerVenueId: string;
   guestId: string;
-  practitionerId?: string | null;
-  appointmentServiceId?: string | null;
+  /**
+   * Both REQUIRED (web's H38 fix, `linkedBookingCreateSchema`).
+   *
+   * They were optional here because they were optional on the server — and that
+   * was the vulnerability, not a convenience. Every guard in the create route
+   * was conditional on them (calendar-belongs-to-owner, service-belongs-to-owner,
+   * overlap/working-hours), while `linked_apply_booking_insert` wrote the row
+   * regardless. Omitting either put an unvalidated booking on a partner's diary,
+   * and a row with no calendar escapes calendar scoping altogether because
+   * `link_calendar_allows` returns true for a NULL calendar.
+   *
+   * Sending `null` is now a 400. Whoever builds the app's linked-booking create
+   * UI must gate Save on both being chosen — do not restore `|| null`.
+   */
+  practitionerId: string;
+  appointmentServiceId: string;
   bookingDate: string; // YYYY-MM-DD
   bookingTime: string; // HH:MM(:SS)
   bookingEndTime?: string;

@@ -141,6 +141,30 @@ export function complianceBlockMessage(error: unknown): string | null {
   return null;
 }
 
+/**
+ * True for the 409 web's C3 fix added: the slot was still free when the request
+ * was validated and had gone by the time it reached the insert.
+ *
+ * Every appointment write now re-checks immediately before writing, so this is a
+ * routine outcome rather than an exceptional one — two staff booking the same
+ * 10:00 within a second of each other. It matters to the caller because the
+ * cached availability that offered the slot is now known to be wrong: the
+ * message alone would leave the picker still showing it, and the obvious next
+ * move is to tap it again.
+ *
+ * Matched on `code`, not on the sentence — copy changes, contracts do not.
+ *
+ * @see Docs/APP_GAP_REPORT_R16_WEB_DELTA.md (R16-3)
+ */
+export function isSlotTakenError(error: unknown): boolean {
+  return (
+    error instanceof ApiError &&
+    error.status === 409 &&
+    isApiErrorBody(error.body) &&
+    error.body.code === 'SLOT_NO_LONGER_AVAILABLE'
+  );
+}
+
 type ApiFetchOptions = RequestInit & {
   accessToken?: string | null;
   /**

@@ -93,6 +93,11 @@ import { LinkedVenueCalendarGrid } from '@/components/linked/LinkedVenueCalendar
 import { LinkedVenueWeekGrid } from '@/components/linked/LinkedVenueWeekGrid';
 import { dedupeScheduleDTOs, toCalendarScheduleBlock } from '@/lib/calendar/schedule-block-view';
 import {
+  CANNOT_MOVE_TO_CALENDAR_ERROR,
+  canStaffUseCalendar,
+} from '@/lib/calendar/managed-calendars';
+import { useStaffMe } from '@/lib/queries/useStaffMe';
+import {
   linkedBusyBlock,
   linkedGridBooking,
   linkedHasTemplate,
@@ -364,6 +369,13 @@ export default function CalendarScreen() {
   }, []);
 
   const toast = useToast();
+
+  /**
+   * Role + assigned calendars, for the cross-column move gate in
+   * `commitTimeMove` (R16-1). Cheap to add here: the profile is already cached
+   * app-wide with a 5 minute `staleTime`, so this observer costs no request.
+   */
+  const staffMe = useStaffMe();
 
   // One mutation for drag commits AND undo — the booking id travels in the input.
   const rescheduleById = useRescheduleBookingById();
@@ -1209,6 +1221,35 @@ export default function CalendarScreen() {
     ) => {
       const booking = findBookingOnAnchor(bookingId);
       if (!booking || !isMovableBooking(booking)) return;
+      /**
+       * R16-1 — refuse a cross-column move a non-admin is not allowed to make,
+       * BEFORE the mutation rather than after it.
+       *
+       * The server gained this gate in web's C8 fix, and the app hands it every
+       * column: `usePractitioners` sends `roster=1`, which is exactly the flag
+       * that disables the server's managed-calendar narrowing. Without this the
+       * gesture completes, the bar animates into the new column, the PATCH 403s,
+       * and the grid snaps back with a permissions error staff will read as a bug.
+       *
+       * Only the reassign branch is gated: a plain time move sends no
+       * `practitioner_id`, so the server never runs the check — and gating it
+       * here would stop a non-admin dragging a booking around their OWN column.
+       *
+       * The target is always an own-venue calendar. `AllCalendarsDayGrid`
+       * restricts cross-column drops to non-linked columns (`ownColumnIds`), which
+       * matches the server's `isOwnVenue` condition, so there is no linked-venue
+       * carve-out to make here.
+       */
+      if (
+        reassign &&
+        !canStaffUseCalendar(
+          { role: staffMe.data?.staff.role, managedCalendarIds: staffMe.data?.staff.linked_calendar_ids },
+          reassign.toPractitionerId,
+        )
+      ) {
+        toast.error(CANNOT_MOVE_TO_CALENDAR_ERROR);
+        return;
+      }
       // A pure time-move to the SAME time is a no-op; a reassign to the same time
       // is still a real move (the practitioner changed).
       if (!reassign && newTime === booking.startTime.slice(0, 5)) return;
@@ -1269,7 +1310,7 @@ export default function CalendarScreen() {
         durationChanged: false,
       });
     },
-    [findBookingOnAnchor, findVisitOnAnchor, anchor, commitDrag, commitVisitDrag],
+    [findBookingOnAnchor, findVisitOnAnchor, anchor, commitDrag, commitVisitDrag, staffMe, toast],
   );
 
   const handleDragReschedule = useCallback(

@@ -2,7 +2,10 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
 import type { CreateGroupPayload } from '@/lib/booking/multi-service-chain';
-import { invalidateAppointmentAvailability } from '@/lib/queries/invalidateAvailability';
+import {
+  invalidateAppointmentAvailability,
+  invalidateAvailabilityIfSlotTaken,
+} from '@/lib/queries/invalidateAvailability';
 import { queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import type { GroupedBookingResponse } from '@/lib/queries/useCreateMultiServiceBooking';
@@ -43,5 +46,8 @@ export function useCreateGroupBooking() {
       // The booked slot is no longer free — the picker must not still offer it.
       invalidateAppointmentAvailability(queryClient);
     },
+    // A group is written whole or not at all, so one member's slot going 409s
+    // the lot — and every picker behind the wizard is now stale, not just theirs.
+    onError: (error) => invalidateAvailabilityIfSlotTaken(queryClient, error),
   });
 }

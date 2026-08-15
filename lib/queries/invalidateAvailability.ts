@@ -1,5 +1,6 @@
 import type { QueryClient } from '@tanstack/react-query';
 
+import { isSlotTakenError } from '@/lib/api/client';
 import { queryKeys } from '@/lib/queries/keys';
 
 /**
@@ -26,4 +27,26 @@ export function invalidateAppointmentAvailability(queryClient: QueryClient): voi
   void queryClient.invalidateQueries({
     queryKey: queryKeys.appointments.monthAvailabilityAll(),
   });
+}
+
+/**
+ * The same, for a booking write that FAILED because the slot had gone (R16-3).
+ *
+ * Web's C3 fix re-checks the slot immediately before every appointment insert
+ * and returns `SLOT_NO_LONGER_AVAILABLE` when it has been taken in between. That
+ * 409 is positive information: the cached availability which offered the slot is
+ * now known to be stale, and it is the only thing standing between staff and
+ * tapping the same dead slot again.
+ *
+ * Deliberately narrow. Any other failure — a compliance block, a validation
+ * error, a dropped connection — says nothing about occupancy, and refetching
+ * every picker on every error would be traffic without information.
+ */
+export function invalidateAvailabilityIfSlotTaken(
+  queryClient: QueryClient,
+  error: unknown,
+): void {
+  if (isSlotTakenError(error)) {
+    invalidateAppointmentAvailability(queryClient);
+  }
 }

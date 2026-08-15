@@ -14,7 +14,11 @@
  */
 import { QueryClient } from '@tanstack/react-query';
 
-import { invalidateAppointmentAvailability } from '@/lib/queries/invalidateAvailability';
+import { ApiError } from '@/lib/api/client';
+import {
+  invalidateAppointmentAvailability,
+  invalidateAvailabilityIfSlotTaken,
+} from '@/lib/queries/invalidateAvailability';
 import { queryKeys } from '@/lib/queries/keys';
 
 const AVAILABILITY = queryKeys.appointments.availability(
@@ -81,6 +85,70 @@ describe('invalidateAppointmentAvailability', () => {
 
     expect(isStale(client, AVAILABILITY)).toBe(true);
     expect(isStale(client, other)).toBe(true);
+  });
+});
+
+describe('invalidateAvailabilityIfSlotTaken', () => {
+  /**
+   * R16-3 — a booking write that FAILS because the slot had gone is as much
+   * proof that availability is stale as a write that succeeds. Web's C3 fix
+   * re-checks immediately before every appointment insert, so this 409 is now a
+   * routine outcome, and without this the picker keeps offering the dead slot to
+   * staff whose obvious next move is to tap it again.
+   */
+  function slotTaken(): ApiError {
+    return new ApiError('That appointment slot was just taken. Please choose another time.', 409, {
+      error: 'That appointment slot was just taken. Please choose another time.',
+      code: 'SLOT_NO_LONGER_AVAILABLE',
+    });
+  }
+
+  it('marks availability stale when the slot was taken mid-request', () => {
+    const client = new QueryClient({ defaultOptions: { queries: { staleTime: 30_000 } } });
+    seed(client);
+
+    invalidateAvailabilityIfSlotTaken(client, slotTaken());
+
+    expect(isStale(client, AVAILABILITY)).toBe(true);
+    expect(isStale(client, MONTH)).toBe(true);
+  });
+
+  it('ignores a different 409 — a compliance block says nothing about occupancy', () => {
+    const client = new QueryClient({ defaultOptions: { queries: { staleTime: 30_000 } } });
+    seed(client);
+
+    invalidateAvailabilityIfSlotTaken(
+      client,
+      new ApiError('Blocked', 409, { error: 'COMPLIANCE_REQUIREMENT_UNMET' }),
+    );
+
+    expect(isStale(client, AVAILABILITY)).toBe(false);
+  });
+
+  it('ignores a non-API error, so a dropped connection does not refetch every picker', () => {
+    const client = new QueryClient({ defaultOptions: { queries: { staleTime: 30_000 } } });
+    seed(client);
+
+    invalidateAvailabilityIfSlotTaken(client, new Error('Network request failed'));
+
+    expect(isStale(client, AVAILABILITY)).toBe(false);
+  });
+
+  it('matches on the code rather than the sentence', () => {
+    // The copy is web's to change; the contract is not. A match on the message
+    // would break silently the first time that sentence is reworded.
+    const client = new QueryClient({ defaultOptions: { queries: { staleTime: 30_000 } } });
+    seed(client);
+
+    invalidateAvailabilityIfSlotTaken(
+      client,
+      new ApiError('Some other wording entirely', 409, {
+        error: 'Some other wording entirely',
+        code: 'SLOT_NO_LONGER_AVAILABLE',
+      }),
+    );
+
+    expect(isStale(client, AVAILABILITY)).toBe(true);
   });
 });
 

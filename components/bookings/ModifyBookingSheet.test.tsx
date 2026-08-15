@@ -162,6 +162,19 @@ jest.mock('@/lib/queries/useMonthAvailability', () => ({
   useMonthAvailability: () => ({ data: { available_dates: ['2026-08-10'] }, isLoading: false }),
 }));
 
+/**
+ * Role + assigned calendars, which gate the reassign picker (R16-1). Admin by
+ * default so every pre-existing case keeps the full calendar list; the tests
+ * that care about the gate set this themselves.
+ */
+let mockStaffMe: { role: string; linked_calendar_ids: string[] } = {
+  role: 'admin',
+  linked_calendar_ids: [],
+};
+jest.mock('@/lib/queries/useStaffMe', () => ({
+  useStaffMe: () => ({ data: { staff: mockStaffMe } }),
+}));
+
 /** The add-ons the booking already has — what Undo has to put back. */
 let mockDetailAddons: { addon_id: string }[] = [];
 /**
@@ -434,6 +447,28 @@ describe('ModifyBookingSheet', () => {
       expect(mockModify).toHaveBeenCalledWith(
         expect.objectContaining({ addons: [{ addon_id: 'addon-gloss' }] }),
       );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('does not re-assert a calendar nobody changed', async () => {
+    /**
+     * R16-1 — the sheet used to send `practitioner_id` on every save, unchanged
+     * or not, and its PRESENCE is what arms the server's managed-calendar gate
+     * (web's C8 fix). So a non-admin editing the TIME of a colleague's booking —
+     * a thing the server allows — was refused with a permissions error. Both the
+     * dry run and the PATCH must stay quiet about a calendar that has not moved.
+     */
+    jest.useFakeTimers();
+    try {
+      await render(<ModifyBookingSheet target={TARGET} onClose={onClose} />);
+      await press('1h');
+      await settleAvailability();
+      await press('Save changes');
+
+      expect(mockModify.mock.calls[0]?.[0]).not.toHaveProperty('practitioner_id');
+      expect(mockValidate.mock.calls[0]?.[0]).not.toHaveProperty('practitioner_id');
     } finally {
       jest.useRealTimers();
     }
@@ -973,10 +1008,16 @@ describe('ModifyBookingSheet', () => {
           expect.objectContaining({
             booking_date: '2026-08-10',
             booking_time: '09:30:00',
-            practitioner_id: 'prac-1',
             defer_modification_guest_notification: true,
           }),
         );
+        // R16-1 — the calendar is NOT re-asserted, because it did not change.
+        // Its mere presence arms the server's managed-calendar gate, which would
+        // 403 a non-admin moving the time of a colleague's visit. The endpoint
+        // resolves the calendar from the visit's own rows when it is omitted
+        // (`visits/[groupBookingId]/schedule/route.ts:191`), so this is the same
+        // write with one fewer way to be refused.
+        expect(visitWrite()).not.toHaveProperty('practitioner_id');
         expect(screen.getByText('Visit moved')).toBeTruthy();
       } finally {
         jest.useRealTimers();
