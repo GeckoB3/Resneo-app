@@ -1,5 +1,114 @@
 # Go-live check — Resneo app
 
+## Run 2026-08-15 — R13–R16 web-parity batch, on `main` @ `4e0d881`
+
+**Scope:** everything since the 1.0.6 release (`e131d98`) — the R13, R14, R15 and
+R16 web-parity batches. JavaScript only. Not device-tested.
+
+**Verdict: clear to ship, and the R14/R15 shipping gate is now provably lifted.**
+No blockers. One tooling defect found and fixed here. One open risk (§4) is not a
+regression in this batch but is now live in production and unverified.
+
+### The gate that was blocking R14/R15 is open — verified against the live host
+
+R14 and R15 were built against web's `staging` and carried an explicit
+instruction not to ship before web released. That release has happened, and this
+was checked against the running production API rather than inferred from git:
+
+| Probe (`PATCH`, unauthenticated) | Response | Means |
+|---|---|---|
+| `/api/venue/visits/{gid}/schedule` | **401** | route exists, auth-gated |
+| `/api/venue/visits/{gid}/services` | **401** | route exists, auth-gated |
+| `/api/venue/bookings/{id}/summary` | 405 | control — route exists, no PATCH handler |
+
+A 404 would have meant the endpoint was still staging-only. Both visit endpoints
+answer, so the app's multi-service visit work will function against
+`www.resneo.com`. The duration floor of 5 (R14-1) rides the same release.
+
+### Fixed in this pass — local `jest` and `eslint` were double-counting
+
+`jest.config.js` and `eslint.config.js` both excluded `_reference/**` (the web
+clone) but neither excluded `.claude/**`. The Claude Code harness creates git
+worktrees at `.claude/worktrees/<name>/`, **inside the repo**, and each is a full
+second checkout — so with a worktree present:
+
+| | reported | actual |
+|---|---|---|
+| `npx jest` | 330 suites / 3,426 tests | 165 / 1,713 |
+| `npx eslint .` | 30 errors | 15 (the standing baseline) |
+
+The inflated numbers are the harmless half. The dangerous half is that **a
+failure in a stale worktree reads as a failure on the branch you are on**, and
+that a doubled error count makes the 15-error baseline — which is how every run
+of this check distinguishes a new error from an old one — unreadable. Both
+configs now exclude `.claude/**`.
+
+This is not a build risk: the worktree is untracked and listed in
+`.git/info/exclude`, so `git archive` (which EAS uses under
+`cli.requireCommit: true`) never uploaded it.
+
+### Verified healthy
+
+| Check | Result |
+|---|---|
+| `tsc --noEmit` | clean |
+| `jest` | **165 suites / 1,713 tests pass** (post-fix figure) |
+| `eslint .` | **15 errors** — the same 15 as every prior run, all in `scripts/` + `jest.setup.js`; 0 in shipped code |
+| `expo export --platform web` | exit 0 |
+| Native surface | **unchanged since 1.0.6** — no `package.json`, `app.json`, `app.config.js` or `eas.json` diff since `e131d98` |
+| Version | root **1.0.6**, `android.version` **1.0.6** — unchanged, see §3 |
+| Staging host in prod config | none — `reserve-ni.vercel.app` absent from `app.json` (dropped in `8079198`, which predates the 1.0.6 release) |
+| Production `env` | the four `EXPO_PUBLIC_*` only; no dev-only flag leaks (`TERMINAL_SIMULATED`, `ALLOW_SCREENSHOTS`, `SENTRY_DISABLE_AUTO_UPLOAD` all absent) |
+| `console.log` in app code | all four `__DEV__`-gated (calendar schedule-block skip, analytics ×2, observability) |
+| Secrets since `e131d98` | none — the only pattern hit is the phrase `service_role` in R16 report prose |
+| R16's new backend dependency | none new: `linked_calendar_ids` on `/api/venue/staff/me` is long-standing and already load-bearing in `availability`, `manage/services` and `ClassTypesManagerSheet` |
+
+### 3. The author's calls, not defects
+
+1. **This batch is OTA-eligible.** Nothing native changed since 1.0.6, so it can
+   ship as an `eas update` to the `production` channel rather than a store
+   build. The version is deliberately left at 1.0.6 — bumping it moves each
+   platform's runtime version and strands existing installs from the update
+   (§2.1 of the 2026-08-01 run). **Bump only if you intend a store build.**
+2. **If you OTA, check the EAS environment first.** `eas update` reads
+   `EXPO_PUBLIC_*` from the EAS environment **only**, never from `eas.json`.
+   All five were added to `production` on 2026-08-05, but the standing rule from
+   that run still governs: verify with `eas env:list production` before
+   publishing. Not checkable from here — it needs EAS auth.
+
+### 4. The open risk — not from this batch, but now live
+
+**W1 from the R16 audit is unverified and is no longer hypothetical.** Web's
+`20270112120000_bookings_column_grants.sql` revokes `authenticated`'s
+table-level SELECT on `bookings` down to nine columns. The migration's own header
+states that **Realtime delivery under column grants is unverified** and names a
+pre-production gate that has not been reported as run. The visit endpoints
+answering 401 above means that web release is deployed, so those grants are
+almost certainly already applied to the production database.
+
+Eight app subscription sites ride `bookings` Realtime. The columns themselves are
+fine — every site filters on `venue_id`, which is granted, and no consumer reads
+the payload. But **the app's failure mode is worse than web's**:
+`useVenueLiveSync` starts polling only while the channel is *not* `SUBSCRIBED`,
+so a channel that subscribes successfully and then never fires clears the poll,
+leaves `liveState` reading `'live'`, and every one of those screens goes silently
+stale behind a live indicator.
+
+**This is a five-minute check and it should happen before the next release, not
+after:** open the app on Calendar against production, change a booking from
+another session, and confirm the grid reacts. If it does not, the fix is web's
+own A6 — drop the subscription and poll — and it is needed in the app too.
+
+### 5. Not covered
+
+Static checks, the live endpoint probes above, and nothing else. **No device
+pass on this batch.** Specifically untested on hardware: the R16 cross-column
+drag refusal and the Modify save (both gesture-level), the R15 visit drag and
+resize, and — unchanged from every prior run — sign-in, a real booking write,
+push delivery and one live card payment against the production backend.
+
+---
+
 ## Run 2026-08-10 — 1.0.6, both platforms
 
 **Scope:** a JavaScript-only correctness and layout release (guest-notification

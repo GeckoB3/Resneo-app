@@ -12,6 +12,19 @@ module.exports = {
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/$1',
   },
-  testPathIgnorePatterns: ['/node_modules/', '/_reference/', '/.expo/', '/dist/'],
+  /**
+   * `/.claude/` covers git worktrees, which the Claude Code harness creates at
+   * `.claude/worktrees/<name>/` — INSIDE the repo. A worktree is a full second
+   * checkout of the app, so without this every suite is discovered twice and the
+   * run reports double: 330 suites / 3,426 tests against a real 165 / 1,713.
+   * The inflated count is the harmless half. The dangerous half is that a
+   * failure in a STALE worktree reads as a failure on the branch you are
+   * actually on. Found by the 2026-08-15 go-live check, whose first numbers were
+   * wrong because of it.
+   *
+   * `/_reference/` is the same idea for the web app's own clone — dropping it
+   * makes this run the WEB suite, which is how the pattern above was diagnosed.
+   */
+  testPathIgnorePatterns: ['/node_modules/', '/_reference/', '/.expo/', '/dist/', '/.claude/'],
   collectCoverageFrom: ['lib/**/*.{ts,tsx}', 'components/**/*.{ts,tsx}', '!**/*.d.ts'],
 };
