@@ -14,7 +14,7 @@
  *   2. add the Sentry Expo config plugin in app.json
  *   3. set EXPO_PUBLIC_SENTRY_DSN — init + forwarding below light up automatically
  */
-import { Platform } from 'react-native';
+import { NativeModules, Platform, TurboModuleRegistry } from 'react-native';
 
 import { getBuildChannel } from '@/lib/build-channel';
 
@@ -127,6 +127,42 @@ function resolveSentryEnvironment(): string {
 }
 
 /**
+ * Stop the SDK's per-navigation native time-to-display probe.
+ *
+ * `reactNavigationIntegration` calls the native `getNewScreenTimeToDisplay()` on
+ * EVERY navigation state change, ungated — `enableTimeToInitialDisplay: false`
+ * below does NOT prevent it (see the call in the SDK's
+ * tracing/reactnavigation.js). The iOS implementation keeps the promise resolver
+ * in a single instance variable and installs a fresh CADisplayLink per call
+ * WITHOUT invalidating the previous one, so a burst of navigations leaves a pile
+ * of live display links firing against a clobbered resolver. That is the
+ * `EXC_BAD_ACCESS ... getNewScreenTimeToDisplay` that killed the app on
+ * 2026-08-16 the moment it was backgrounded.
+ *
+ * We already ask for no time-to-display data, so resolving null is exactly what
+ * the configuration requests — this just skips the leaky native round-trip to
+ * get there. Revisit if the SDK fixes the native lifecycle and we ever want TTID.
+ */
+function disableNativeTimeToDisplayProbe(): void {
+  if (Platform.OS === 'web') return;
+  try {
+    // The SDK resolves RNSentry as a TurboModule under the new architecture and
+    // falls back to NativeModules otherwise; patch whichever object it will hold.
+    const registry = TurboModuleRegistry as unknown as
+      | { get?: (name: string) => Record<string, unknown> | null }
+      | undefined;
+    const native =
+      registry?.get?.('RNSentry') ??
+      (NativeModules?.RNSentry as Record<string, unknown> | undefined);
+    if (native && typeof native.getNewScreenTimeToDisplay === 'function') {
+      native.getNewScreenTimeToDisplay = () => Promise.resolve(null);
+    }
+  } catch {
+    // Best-effort hardening — never let it block Sentry from starting.
+  }
+}
+
+/**
  * Lazily load and init @sentry/react-native — only ever called when a DSN is
  * configured, so a build without the native module linked never requires it.
  */
@@ -134,6 +170,8 @@ function initSentry(): void {
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires, global-require
     const sdk = require('@sentry/react-native') as SentrySdk;
+    // Before anything can navigate (see the function's comment for why).
+    disableNativeTimeToDisplayProbe();
     // Screen names on every event. Without this a report carries only UIKit
     // view-controller breadcrumbs (_UICursorAccessoryViewController and friends),
     // which say a text field was focused but never which of our screens it was
@@ -144,6 +182,8 @@ function initSentry(): void {
     if (typeof sdk.reactNavigationIntegration === 'function') {
       navigationIntegration = sdk.reactNavigationIntegration({
         // Route-change spans are for tracing; the value here is the screen tag.
+        // NOTE: this flag does not stop the per-navigation NATIVE time-to-display
+        // call — disableNativeTimeToDisplayProbe() above is what does that.
         enableTimeToInitialDisplay: false,
       });
       integrations.push(navigationIntegration);

@@ -1,9 +1,9 @@
-import { type Href, useRouter } from 'expo-router';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { Platform } from 'react-native';
 
 import { isBackendConfigured } from '@/lib/env';
 import { Notifications } from '@/lib/push/notificationsModule';
+import { setPendingBookingRoute } from '@/lib/push/pendingNotificationRoute';
 import { isExpoGoClient } from '@/lib/push/runtime';
 import { registerCurrentDeviceForPush } from '@/lib/push/registerDevice';
 import { useAuth } from '@/providers/AuthProvider';
@@ -120,12 +120,17 @@ function extractBookingId(data: Record<string, unknown> | null | undefined): str
 
 /**
  * Registers the device for push notifications once a Supabase session is available, and
- * routes notification taps to the matching booking detail screen.
+ * hands notification taps to the navigator to route.
+ *
+ * This provider deliberately does NOT navigate: it lives above the navigator, so
+ * on a cold start its effects run before one exists. It parks the booking id via
+ * `setPendingBookingRoute` and `PendingPushRouteHandler` (inside the (app)
+ * Stack) does the routing — see lib/push/pendingNotificationRoute.ts for the
+ * crash loop that taught us this.
  *
  * Skips all expo-notifications imports in Expo Go — remote push requires a development build.
  */
 export function PushNotificationsProvider({ children }: PushNotificationsProviderProps) {
-  const router = useRouter();
   const { session } = useAuth();
   const accessToken = session?.access_token ?? null;
   const userId = session?.user?.id ?? null;
@@ -202,7 +207,19 @@ export function PushNotificationsProvider({ children }: PushNotificationsProvide
       if (!routes) return;
       const bookingId = extractBookingId(typed.notification.request.content.data);
       if (bookingId) {
-        router.push(`/booking/${bookingId}` as Href);
+        setPendingBookingRoute(bookingId);
+      }
+      // The last response persists for the whole PROCESS, so any remount of this
+      // provider would read the same tap back out of the native module and act on
+      // it again. Clear it the moment it has been parked (the expo-notifications
+      // docs call this out for exactly this case: apps that pick a route from the
+      // response and must not keep picking it).
+      try {
+        notifications.clearLastNotificationResponse();
+      } catch (error) {
+        // Throws UnavailabilityError when the JS is ahead of the native binary
+        // (an OTA update onto an older build) — nothing to clear there anyway.
+        console.warn('[push] could not clear the last notification response:', error);
       }
       void clearBadge(notifications);
     };
@@ -249,7 +266,9 @@ export function PushNotificationsProvider({ children }: PushNotificationsProvide
       cancelled = true;
       subscription?.remove();
     };
-  }, [router]);
+    // Mount-once: nothing in here depends on render state, and re-running it
+    // would re-read the launch response and re-route the same tap.
+  }, []);
 
   return <>{children}</>;
 }

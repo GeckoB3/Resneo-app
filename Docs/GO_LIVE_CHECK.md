@@ -1,5 +1,100 @@
 # Go-live check — Resneo app
 
+## Run 2026-08-16 — the `__root` navigation crash loop, on `main` @ `e2b11d0`
+
+**Scope:** one fix, in four parts, for the iOS crash reported by Sentry on
+2026-08-16 (`EXC_BAD_ACCESS ... getNewScreenTimeToDisplay`, preceded by ~100
+`Navigation to __root` breadcrumbs ~20ms apart). JavaScript only. Not
+device-tested.
+
+**Verdict: clear to ship, and it should ship.** No blockers. The defect it
+removes is a hard crash that leaves the app frozen on "Loading session…" before
+it dies, and it is reachable by any user who opens a booking notification on a
+cold start over a slow connection.
+
+### What the crash was
+
+A closed loop, not a Sentry bug — though the SDK supplied the fatal step:
+
+1. `PushNotificationsProvider` sits **above** the navigator and routed
+   notification taps itself. On a cold start its effect ran before
+   `getSession()` resolved.
+2. `RootLayoutNav` returned `<LoadingState/>` **instead of** the `<Stack>` while
+   loading, so there was no navigator below expo-router's internal `__root`
+   route.
+3. expo-router therefore resolved the push's divergence at the root navigator
+   and pushed a **second `__root`** — mounting a fresh copy of the whole
+   provider tree, which reset `isLoading` to true and re-read the SAME launch
+   response (`getLastNotificationResponseAsync` persists for the process), which
+   pushed again. ~50x/second, self-sustaining: the session could never finish
+   loading, so step 2 stayed true forever.
+4. Sentry's `reactNavigationIntegration` calls native
+   `getNewScreenTimeToDisplay()` on **every** navigation — ungated, despite
+   `enableTimeToInitialDisplay: false`. iOS `RNSentryTimeToDisplay` keeps one
+   resolver ivar and adds a `CADisplayLink` per call without invalidating the
+   previous one, so the burst left ~100 live display links firing at a clobbered
+   resolver. Backgrounding the app then killed the process.
+
+The loop predates the crash: the navigation integration landed 2026-08-09
+(`980c724`) and only made it *visible*. It is a strong candidate for the earlier
+unactionable App Hang reports.
+
+### The fix
+
+| Part | Change |
+|---|---|
+| Cause | Notification taps park in `lib/push/pendingNotificationRoute.ts` (take-once) and are routed by `PendingPushRouteHandler` **inside** the (app) Stack; the launch response is cleared via `clearLastNotificationResponse()` once parked |
+| Amplifier | `app/_layout.tsx` and `app/(app)/_layout.tsx` now **cover** the Stack with an opaque overlay instead of replacing it, so a mistimed navigation is a no-op rather than a root clone |
+| Fatal step | `lib/observability` stubs the `RNSentry` native `getNewScreenTimeToDisplay` to resolve null before `init` — which is exactly what `enableTimeToInitialDisplay: false` already asks for |
+
+`not_staff` still replaces the (app) Stack deliberately: it is terminal, nothing
+navigates out of it, and mounting the tabs behind it would fire a burst of
+doomed 401s.
+
+### Verified healthy
+
+| Check | Result |
+|---|---|
+| `tsc --noEmit` | clean |
+| `jest` | **167 suites / 1,723 tests pass** (was 165/1,713; +2 suites, +10 tests, all new regression cover) |
+| `eslint .` | **15 errors** — the same 15 as every prior run, all in `scripts/` + `jest.setup.js`; 0 in shipped code |
+| `expo export --platform web` | exit 0 |
+| Native surface | **unchanged** — no `package.json`, `package-lock.json`, `app.json`, `app.config.js` or `eas.json` diff |
+| Version | untouched, so unchanged from the last run |
+| New dependencies | none |
+| `console.log` added | none (two `console.warn` on failure paths, matching the file's existing pattern) |
+| Secrets in the diff | none |
+
+### 3. The author's calls, not defects
+
+1. **OTA-eligible.** Nothing native changed, so this ships as an `eas update` to
+   `production`. The Sentry part is a JS-side stub of a native method, not a
+   native change. The standing rule still governs: verify `eas env:list
+   production` before publishing.
+2. **The sign-in screen now mounts briefly on every launch**, behind the opaque
+   session cover, because the Stack stays mounted and `session` is null until
+   `getSession()` resolves. It has no mount effects — only submit handlers — so
+   it is inert. This is the deliberate cost of never unmounting the navigator.
+
+### 4. Not covered
+
+Static checks and the web export. **No device pass**, and that matters more than
+usual here: the crash is an iOS-native one, and the race that triggers it is won
+only when `getSession()` is slow. The check that would actually confirm the fix
+is a dev build, cold-started from a booking notification tap on a throttled
+connection — the app should land on the booking instead of freezing on "Loading
+session…".
+
+The web preview could not be used: this ran from a git worktree, which has no
+local `node_modules` (hoisted to the repo root), so Metro serves the entry
+bundle from outside the project root and the browser 404s on it. An environment
+limit, not a symptom.
+
+The open Realtime column-grant risk (§4 of the 2026-08-15 run) is untouched by
+this work and still wants its five-minute check.
+
+---
+
 ## Run 2026-08-15 — R13–R16 web-parity batch, on `main` @ `4e0d881`
 
 **Scope:** everything since the 1.0.6 release (`e131d98`) — the R13, R14, R15 and

@@ -1,8 +1,9 @@
 import { Stack } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { StaffRequired } from '@/components/auth/StaffRequired';
+import { PendingPushRouteHandler } from '@/components/push/PendingPushRouteHandler';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { WaitlistAvailabilityBanner } from '@/components/waitlist/WaitlistAvailabilityBanner';
 import { useColorScheme } from '@/components/useColorScheme';
@@ -76,13 +77,11 @@ export default function AppLayout() {
     return () => clearTimeout(timer);
   }, [staffStatus]);
 
-  if (staffStatus === 'loading' && !proceedAnyway) {
-    return <LoadingState message="Checking staff access…" />;
-  }
-
   // Render the staff-required screen INLINE (not a redirect into this same gated
   // stack, which infinite-loops). A 401 from staff/me lands here; "Try again"
-  // refetches in case the venue API was mid-deploy.
+  // refetches in case the venue API was mid-deploy. This one DOES replace the
+  // Stack: it is a terminal state, nothing navigates out of it, and mounting the
+  // tabs behind it would fire a burst of doomed 401s for a non-staff user.
   if (staffStatus === 'not_staff') {
     return (
       <StaffRequired
@@ -91,6 +90,12 @@ export default function AppLayout() {
       />
     );
   }
+
+  // The transient staff check, by contrast, COVERS the Stack instead of replacing
+  // it. Unmounting a navigator makes every router.push() taken during the gap
+  // resolve against the parent navigator instead — the degenerate push that fed
+  // the 2026-08-16 crash loop (see lib/push/pendingNotificationRoute.ts).
+  const checkingStaffAccess = staffStatus === 'loading' && !proceedAnyway;
 
   return (
     <View style={{ flex: 1 }}>
@@ -181,6 +186,14 @@ export default function AppLayout() {
         }}
       />
       </Stack>
+      {/* Routes a parked notification tap. Lives inside this layout so it can
+          only ever push while the (app) navigator is mounted. */}
+      <PendingPushRouteHandler />
+      {checkingStaffAccess ? (
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.background }]}>
+          <LoadingState message="Checking staff access…" />
+        </View>
+      ) : null}
     </View>
   );
 }

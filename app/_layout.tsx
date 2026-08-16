@@ -13,12 +13,12 @@ import { Stack, useNavigationContainerRef } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
+import { StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
 
 import { AuthNoticeBridge } from '@/components/AuthNoticeBridge';
 import { LoadingState } from '@/components/ui/LoadingState';
-import { useColorScheme } from '@/components/useColorScheme';
 import { initAnalytics } from '@/lib/analytics';
 import {
   captureException,
@@ -28,6 +28,7 @@ import {
 import { useDeviceOrientationLock } from '@/lib/orientation';
 import { AppProviders } from '@/providers/AppProviders';
 import { useAuth } from '@/providers/AuthProvider';
+import { useTheme } from '@/theme/useTheme';
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -92,16 +93,12 @@ export default function RootLayout() {
 }
 
 function RootLayoutNav() {
-  const colorScheme = useColorScheme();
+  const { colors, isDark } = useTheme();
   const { session, isLoading } = useAuth();
-
-  if (isLoading) {
-    return <LoadingState message="Loading session…" />;
-  }
 
   return (
     <>
-      <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
+      <StatusBar style={isDark ? 'light' : 'dark'} />
       {/* Surfaces auth notices (e.g. session expiry) via the Toast host, which
           lives under AppProviders above this nav. */}
       <AuthNoticeBridge />
@@ -125,6 +122,20 @@ function RootLayoutNav() {
           />
         ) : null}
       </Stack>
+      {/* The session check COVERS the Stack; it must never replace it.
+          Rendering a loading screen in place of the navigator leaves expo-router
+          with nothing below its internal `__root` route, so any router.push()
+          taken during the gap resolves against that root navigator and pushes a
+          SECOND `__root` — remounting this entire provider tree. On 2026-08-16 a
+          cold-start notification tap did exactly that ~50x/second (each remount
+          resetting isLoading, so the session never finished loading) until the
+          app died. Keeping the Stack mounted makes a mistimed navigation a
+          harmless no-op instead. */}
+      {isLoading ? (
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.background }]}>
+          <LoadingState message="Loading session…" />
+        </View>
+      ) : null}
     </>
   );
 }
