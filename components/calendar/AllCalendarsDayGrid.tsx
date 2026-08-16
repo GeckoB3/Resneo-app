@@ -62,6 +62,7 @@ import {
   clusterCalendarBookings,
   type CalendarBookingCluster,
 } from '@/lib/calendar/cluster-bookings';
+import { isNonWorkingBlock, isOccupyingBlock, narrowWorkingRanges } from '@/lib/calendar/occupying-blocks';
 import { venueClosedRanges, type VenueDayHours } from '@/lib/calendar/venue-closures';
 import type { ComplianceBookingFlag } from '@/lib/queries/useCompliance';
 import { hexToRgba } from '@/lib/color';
@@ -766,20 +767,29 @@ function DayColumn({
       if (end <= start) end = start + DEFAULT_DURATION_MINUTES;
       out.push({ id: b.id, start, end });
     }
-    for (const { block, start, end } of overlays) out.push({ id: block.id, start, end });
+    // R17-2: breaks and closures are advice, not walls (see occupying-blocks).
+    // They stay drawn; they just stop refusing the drop.
+    for (const { block, start, end } of overlays) {
+      if (!isOccupyingBlock(block.blockType)) continue;
+      out.push({ id: block.id, start, end });
+    }
     for (const { session, start, end } of sessions) out.push({ id: session.id, start, end });
     for (const { block, start, end } of scheduleBlocks) out.push({ id: block.id, start, end });
     return out;
   }, [column.bookings, overlays, sessions, scheduleBlocks]);
 
-  const workingRanges = useMemo<BusyRange[]>(
-    () =>
-      column.workingHours.map((wh) => ({
-        start: timeToMinutes(wh.start),
-        end: timeToMinutes(wh.end),
-      })),
-    [column.workingHours],
-  );
+  const workingRanges = useMemo<BusyRange[]>(() => {
+    const working = column.workingHours.map((wh) => ({
+      start: timeToMinutes(wh.start),
+      end: timeToMinutes(wh.end),
+    }));
+    // A break sits inside working hours, so cutting it out is what earns the
+    // amber note on a drop over it — see the same step in CalendarDayGrid.
+    const nonWorking = overlays
+      .filter(({ block }) => isNonWorkingBlock(block.blockType))
+      .map(({ start, end }) => ({ start, end }));
+    return narrowWorkingRanges(working, nonWorking);
+  }, [column.workingHours, overlays]);
 
   // Linked columns read amber (matching the linked chip) with a faint wash.
   const accent = column.linked ? column.accent ?? colors.warning : null;

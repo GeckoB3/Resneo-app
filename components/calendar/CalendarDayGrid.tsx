@@ -33,6 +33,7 @@ import {
   clusterCalendarBookings,
   type CalendarBookingCluster,
 } from '@/lib/calendar/cluster-bookings';
+import { isNonWorkingBlock, isOccupyingBlock, narrowWorkingRanges } from '@/lib/calendar/occupying-blocks';
 import { venueClosedRanges, type VenueDayHours } from '@/lib/calendar/venue-closures';
 import { hexToRgba } from '@/lib/color';
 import type { ComplianceBookingFlag } from '@/lib/queries/useCompliance';
@@ -68,6 +69,12 @@ export type CalendarTimeBlock = {
   label?: string | null;
   /** When set, tapping the block calls onBlockTimeBlockPress instead of swallowing. */
   isEditable?: boolean;
+  /**
+   * `calendar_blocks.block_type` — decides whether the drag treats this as a
+   * wall or as advice (see `lib/calendar/occupying-blocks`). Omitted means
+   * "unknown", which occupies, so a caller that doesn't set it is unchanged.
+   */
+  blockType?: string | null;
 };
 
 type PositionedTimeBlock = {
@@ -292,13 +299,21 @@ export function CalendarDayGrid({
         ranges.push({ start, end });
       }
 
+      // R17-2: a break sits INSIDE working hours, so without cutting it out a
+      // drop over it would read green. Cutting it makes `evaluateConflict` fall
+      // through to level 1 — allowed, amber — which is what web's note does.
+      // Amended hours are excluded from the cut: that window is the venue open.
+      const nonWorking = tBlocks
+        .filter(({ block }) => isNonWorkingBlock(block.blockType))
+        .map(({ start, end }) => ({ start, end }));
+
       return {
         bounds: computeGridBounds(ranges, windowOverride),
         rawBlocks: blocks,
         rawTimeBlocks: tBlocks,
         rawSessions: sess,
         rawScheduleBlocks: schedBlocks,
-        workingRanges: working,
+        workingRanges: narrowWorkingRanges(working, nonWorking),
       };
     }, [bookings, workingHours, timeBlocks, sessions, scheduleBlocks, windowOverride]);
 
@@ -541,7 +556,11 @@ export function CalendarDayGrid({
       if (end <= start) end = start + DEFAULT_DURATION_MINUTES;
       out.push({ id: booking.id, start, end });
     }
+    // R17-2: breaks and closures are advice, not walls — staff routinely work
+    // past closing and over a break, and the server now accepts both overrides.
+    // They stay DRAWN; they just stop refusing the drop.
     for (const block of timeBlocks) {
+      if (!isOccupyingBlock(block.blockType)) continue;
       const start = timeToMinutes(block.start);
       const end = timeToMinutes(block.end);
       if (end > start) out.push({ id: block.id, start, end });

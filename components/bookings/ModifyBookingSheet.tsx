@@ -997,6 +997,10 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
       booking_time: `${minutesToTime(minutes)}:00`,
       ...(reassignedPractitionerId ? { practitioner_id: reassignedPractitionerId } : {}),
       allow_outside_hours: true,
+      // The dry run has to be asked the same question the PATCH will be, or the
+      // two disagree and the visit is refused before it is ever attempted — the
+      // exact failure web hit threading this through (R17-3).
+      allow_during_breaks: true,
     }),
     [serviceLines, knownBookingIds, date, minutes, reassignedPractitionerId],
   );
@@ -1252,6 +1256,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
           ...(durationEdited ? { total_duration_minutes: effectiveDuration } : {}),
           // Staff editing a visit by hand have decided where it goes.
           allow_outside_hours: true,
+          allow_during_breaks: true,
           // The server emails the guest once, against the visit's first service,
           // and only when the START moved. Hold it back so the staff member gets
           // the same Notify / Don't notify / Undo choice a drag gives them.
@@ -1364,6 +1369,9 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
             ? { total_duration_minutes: baselineDuration }
             : {}),
           allow_outside_hours: true,
+          // An undo must be able to put the booking back exactly where it was,
+          // including onto a break it was already sitting over.
+          allow_during_breaks: true,
           // SKIP, not defer: an undone change is not something to tell the guest
           // about, and no prompt follows this to decide otherwise.
           skip_booking_modification_guest_notification: true,

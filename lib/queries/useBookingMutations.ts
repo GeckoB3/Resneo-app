@@ -238,6 +238,10 @@ export function useRescheduleBooking(bookingId: string) {
           // reason). Overlaps are left to 409 here so an accidental double-book on
           // a busy practitioner still surfaces "slot taken".
           allow_outside_hours: true,
+          // Breaks are a separate server gate that `allow_outside_hours` has
+          // never relaxed, so a deliberate staff placement over one needs this
+          // too or it 409s with no actionable reason (R17-3).
+          allow_during_breaks: true,
           ...(input.durationMinutes !== undefined
             ? { duration_minutes: input.durationMinutes }
             : {}),
@@ -308,7 +312,9 @@ export function useRescheduleBookingById() {
           booking_date: input.date,
           booking_time: input.time,
           // Out-of-hours is an explicit staff choice in both paths, so honour it.
+          // Breaks are a distinct gate and need saying separately (R17-3).
           allow_outside_hours: true,
+          allow_during_breaks: true,
           // Manual overlap is only auto-allowed on the DRAG path, which already
           // refuses hard overlaps client-side before committing. A reassign
           // (practitionerId set) has NO pre-flight conflict check, so we must let

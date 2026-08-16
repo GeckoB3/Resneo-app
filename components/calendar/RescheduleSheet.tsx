@@ -143,6 +143,7 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
           // Staff moving a visit by hand have decided where it goes; the same
           // posture as the single-booking path above.
           allow_outside_hours: true,
+          allow_during_breaks: true,
         });
       } else {
         await mutation.mutateAsync({

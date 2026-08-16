@@ -438,6 +438,10 @@ export default function CalendarScreen() {
             ? { total_duration_minutes: previous.durationMinutes }
             : {}),
           allow_outside_hours: true,
+          // A SEPARATE gate from the one above: the server's break check has
+          // never been relaxed by `allow_outside_hours`, so without this a move
+          // the grid permits comes back 409 "Conflicts with a break" (R17-3).
+          allow_during_breaks: true,
           allow_manual_overlap: true,
           skip_booking_modification_guest_notification: true,
         });
@@ -771,6 +775,10 @@ export default function CalendarScreen() {
           end: b.endTime,
           label: b.reason?.trim() || typeLabel,
           isEditable: !readOnlyType,
+          // Carried through so the drag can tell a wall from advice (R17-2).
+          // Read-only and non-occupying are NOT the same question: a class
+          // session is read-only here and still a hard conflict.
+          blockType: b.type,
         };
       });
 
@@ -789,6 +797,8 @@ export default function CalendarScreen() {
         end: range.end,
         label: 'Break',
         isEditable: false,
+        // Same rule as a server-sent break block: drawn, but not a wall.
+        blockType: 'break',
       }));
 
       return [...oneOff, ...breaks];
@@ -1108,6 +1118,8 @@ export default function CalendarScreen() {
             : {}),
           ...(input.practitionerId ? { practitioner_id: input.practitionerId } : {}),
           allow_outside_hours: true,
+          // Separate gate; see the restore path above (R17-3).
+          allow_during_breaks: true,
           // Same rule as the single-booking path: a same-column drag has already
           // been conflict-checked against the grid (now excluding the visit's own
           // services), a cross-column move has not, so let the server 409 there.

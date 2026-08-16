@@ -33,6 +33,13 @@ export interface VisitSchedulePatchInput {
   allow_manual_overlap?: boolean;
   allow_outside_hours?: boolean;
   /**
+   * Staff placement over a break. A DISTINCT gate from `allow_outside_hours`,
+   * which has never relaxed the engine's break check — the visit dry run and
+   * the save must both send it or they disagree and the visit is refused before
+   * anything is written (R17-3).
+   */
+  allow_during_breaks?: boolean;
+  /**
    * Plan and check without writing. Answers in the same shape the save does, so
    * a form's live check and its save cannot disagree.
    */
@@ -153,6 +160,8 @@ export interface VisitServicesPatchInput {
   practitioner_id?: string;
   allow_manual_overlap?: boolean;
   allow_outside_hours?: boolean;
+  /** See the schedule payload above — a separate gate from out-of-hours (R17-3). */
+  allow_during_breaks?: boolean;
   dry_run?: boolean;
   defer_modification_guest_notification?: boolean;
   skip_booking_modification_guest_notification?: boolean;

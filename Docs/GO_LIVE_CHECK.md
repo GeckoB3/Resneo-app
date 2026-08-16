@@ -1,5 +1,73 @@
 # Go-live check — Resneo app
 
+## Run 2026-08-16 (second) — R17-2 / R17-3, the break-override pair, on `main` @ `05041d6`
+
+**Scope:** the app half of web's SA-H3 / SA-H5 — staff may place an appointment
+over a break or a closure. JavaScript only. Not device-tested. Also carries two
+documents (the R17 audit report and the R17-4 web handover), which ship no code.
+
+**Verdict: clear to ship, with one honest limit.** No blockers. The change is
+correct and complete on the app side, but **it only takes effect for SINGLE
+bookings until web lands R17-4** — the two visit save routes still do not accept
+`allow_during_breaks`, so a visit dragged over a break is still refused by the
+server. That is a web-side gap, written up and handed over; nothing here is
+waiting on it, and nothing here breaks because of it.
+
+### What changed, and why it is two changes
+
+Web's own lesson from this batch is that the rule change alone *"changed nothing
+a user could do"* because a second layer was still enforcing. Both layers are
+done here:
+
+| Layer | Change |
+|---|---|
+| The app's own drag rule | `lib/calendar/occupying-blocks.ts` — `break`, `closed` and amended-hours blocks stop being hard conflicts. `manual`, `class_session` and **any unrecognised type** still occupy. Applied in `CalendarDayGrid` and `AllCalendarsDayGrid`; `WeekGrid` has no drag |
+| The server gate | `allow_during_breaks: true` at all eight send sites, plus both `useVisitMutations` payload types |
+
+Two decisions worth recording. The rule accepts **both vocabularies** — the app's
+grid returns `calendar_blocks.block_type` raw (`break` / `closed` /
+`amended_hours`) while web's diary computes its own (`venue_closed` /
+`venue_amended_hours` / `practitioner_closed`) — so it keeps working if that
+endpoint ever moves. And the amber note is produced by cutting non-working
+blocks out of the working ranges (`narrowWorkingRanges`), which meant **no change
+to the Reanimated drag worklet**.
+
+### Verified healthy
+
+| Check | Result |
+|---|---|
+| `tsc --noEmit` | clean |
+| `jest` | **168 suites / 1,750 tests pass** (was 167/1,723; +1 suite, +27 tests) |
+| `eslint .` | **15 errors** — the same 15 as every prior run, all in `scripts/` + `jest.setup.js`; 0 in shipped code |
+| `expo export --platform web` | exit 0 |
+| Native surface | **unchanged** — no `package.json`, `package-lock.json`, `app.json`, `app.config.js` or `eas.json` diff |
+| New dependencies | none |
+| `console.log` added | none (new files scanned too, not just the tracked diff) |
+| Secrets | none |
+
+### 3. The author's calls, not defects
+
+1. **OTA-eligible.** Nothing native changed.
+2. **Leave is not drawn on the app's diary at all**, so making `closed`
+   non-occupying cannot unlock it — the grid feed reads `calendar_blocks` and
+   leave lives in `practitioner_leave_periods`. The server refuses it regardless
+   (full-day leave survives even `allowOutsideHours`, SA-M3). Worth knowing
+   rather than discovering: a staff member can now drop onto a leave day with no
+   client-side warning and get a server refusal.
+
+### 4. Not covered
+
+Static checks and the web export. **No device pass, and this change is a
+gesture.** What wants exercising on hardware: drag an appointment onto a break
+and confirm it lands with the amber note rather than a red refusal; confirm a
+drag onto a class/event or a hand-made manual block is still refused; and
+confirm the same for a resize. The visit equivalents will still refuse until
+R17-4 lands on web — that is expected, not a regression.
+
+The Realtime column-grant verification carried from R16 is still open.
+
+---
+
 ## Run 2026-08-16 — the `__root` navigation crash loop, on `main` @ `e2b11d0`
 
 **Scope:** one fix, in four parts, for the iOS crash reported by Sentry on
