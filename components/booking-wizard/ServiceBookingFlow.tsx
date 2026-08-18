@@ -26,6 +26,7 @@ import {
   resolveAppointmentFlowOrdering,
   type AppointmentFlowOrdering,
 } from '@/lib/booking/appointment-flow-order';
+import { multiServiceSegmentCharge } from '@/lib/booking/appointment-online-charge';
 import {
   type MultiServiceSegment,
   recomputeMultiServiceChain,
@@ -389,6 +390,18 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
       addonIds: selectedAddonIds.length ? selectedAddonIds : undefined,
       addonTotalPence: addonPence,
       addonTotalMinutes: addonMinutes,
+      // Resolved per segment so the confirm step can total the visit. Variant
+      // overrides win for the deposit, as they do for duration and price.
+      // Add-on price is excluded from a deposit and rolled into a full payment,
+      // matching the server's `resolveAppointmentServiceOnlineChargeWithAddons`.
+      ...multiServiceSegmentCharge(
+        {
+          price_pence: (selectedVariant?.price_pence ?? selectedService.pricePence) ?? null,
+          deposit_pence: selectedVariant?.deposit_pence ?? selectedService.depositPence,
+          payment_requirement: selectedService.paymentRequirement,
+        },
+        addonPence,
+      ),
     };
     return recomputeMultiServiceChain([seg], seg.startTime);
   }, [selectedService, selectedSlot, selectedVariant, addonGroups, selectedAddonIds]);
@@ -424,6 +437,17 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           durationMinutes: svc.duration_minutes,
           bufferMinutes: svc.buffer_minutes ?? 0,
           pricePence: svc.price_pence,
+          // Appended services can carry a deposit of their own. Without this the
+          // visit total ignored them, so a chain whose only deposit sat on an
+          // appended service offered staff no way to waive it.
+          ...multiServiceSegmentCharge(
+            {
+              price_pence: svc.price_pence,
+              deposit_pence: svc.deposit_pence,
+              payment_requirement: svc.payment_requirement,
+            },
+            0,
+          ),
         };
         const firstStart = prev[0]!.startTime;
         return recomputeMultiServiceChain([...prev, nextSeg], firstStart);

@@ -38,6 +38,17 @@ export interface MultiServiceSegment {
   addonTotalPence?: number;
   /** Sum of add-on minutes folded into `durationMinutes`. */
   addonTotalMinutes?: number;
+  /**
+   * What this segment asks for online, resolved from the catalogue at the time
+   * it was added. Mirrors the web segment's `depositPence` / `onlineChargeLabel`.
+   *
+   * Carried per segment because the visit's total is what staff decide about:
+   * reading the charge off the FIRST service only (what the confirm step used
+   * to do) hides the control entirely when the deposit sits on a later service,
+   * and misstates the amount when it does not.
+   */
+  chargePence?: number | null;
+  chargeLabel?: 'deposit' | 'full_payment' | 'card_hold' | null;
 }
 
 /**
@@ -133,6 +144,13 @@ export interface CreateMultiServicePayload {
     addons?: { addon_id: string }[];
   }>;
   dietary_notes?: string;
+  /**
+   * Staff discretion over money. Honoured by the route only for the `phone` /
+   * `walk-in` sources and ignored outright for public ones; omitted means "do
+   * not charge", matching how `POST /api/venue/bookings` has always treated it.
+   */
+  require_deposit?: boolean;
+  require_card_hold?: boolean;
   client_address_line1?: string;
   client_address_line2?: string;
   client_address_city?: string;
@@ -157,10 +175,45 @@ export interface CreateGroupPayload {
     booking_time: string;
   }>;
   dietary_notes?: string;
+  /** As `CreateMultiServicePayload`: one decision covers the whole group. */
+  require_deposit?: boolean;
+  require_card_hold?: boolean;
   client_address_line1?: string;
   client_address_line2?: string;
   client_address_city?: string;
   client_address_postcode?: string;
+}
+
+/** Staff's per-booking money decisions, as the confirm step holds them. */
+export interface StaffChargeDecision {
+  /** Staff ticked "Require deposit" / "Require payment". */
+  requireDeposit?: boolean;
+  /** Staff left the card-hold toggle on. Defaults to on server-side when omitted. */
+  requireCardHold?: boolean;
+}
+
+/**
+ * The money fields for a visit body.
+ *
+ * Walk-ins never collect a deposit in any model, so the flag is not sent for
+ * them at all rather than sent as false: the route applies the same rule, and
+ * sending it would imply a decision staff were never offered. Card holds ARE
+ * offered on walk-ins (D6), so that one is sent for both staff sources.
+ *
+ * `BookingSource` here is only ever 'phone' | 'walk-in' — the app has no public
+ * booking surface — so there is no public-source branch to write. The route
+ * ignores both fields for public sources regardless, and that check belongs
+ * there rather than in a client that could not be trusted with it anyway.
+ */
+function staffChargePayloadFields(
+  source: BookingSource,
+  charges?: StaffChargeDecision,
+): { require_deposit?: boolean; require_card_hold?: boolean } {
+  if (!charges) return {};
+  return {
+    ...(source === 'walk-in' ? {} : { require_deposit: Boolean(charges.requireDeposit) }),
+    ...(charges.requireCardHold != null ? { require_card_hold: charges.requireCardHold } : {}),
+  };
 }
 
 function trimTime(time: string): string {
@@ -179,8 +232,10 @@ export function buildMultiServicePayload(args: {
   source: BookingSource;
   segments: MultiServiceSegment[];
   address?: ClientAddressInput | null;
+  /** Staff's per-booking money decisions; omitted means "do not charge". */
+  charges?: StaffChargeDecision;
 }): CreateMultiServicePayload {
-  const { venueId, bookingDate, contact, source, segments, address } = args;
+  const { venueId, bookingDate, contact, source, segments, address, charges } = args;
   const email = contact.email?.trim();
   const phone = contact.phone?.trim();
   const dietary = contact.dietary_notes?.trim();
@@ -202,6 +257,7 @@ export function buildMultiServicePayload(args: {
         : {}),
     })),
     ...(dietary ? { dietary_notes: dietary } : {}),
+    ...staffChargePayloadFields(source, charges),
     ...clientAddressPayloadFields(address),
   };
 }
@@ -213,8 +269,10 @@ export function buildGroupPayload(args: {
   source: BookingSource;
   people: GroupPerson[];
   address?: ClientAddressInput | null;
+  /** Staff's per-booking money decisions; omitted means "do not charge". */
+  charges?: StaffChargeDecision;
 }): CreateGroupPayload {
-  const { venueId, contact, source, people, address } = args;
+  const { venueId, contact, source, people, address, charges } = args;
   const email = contact.email?.trim();
   const phone = contact.phone?.trim();
   const dietary = contact.dietary_notes?.trim();
@@ -237,6 +295,7 @@ export function buildGroupPayload(args: {
       booking_time: trimTime(p.bookingTime),
     })),
     ...(dietary ? { dietary_notes: dietary } : {}),
+    ...staffChargePayloadFields(source, charges),
     ...clientAddressPayloadFields(address),
   };
 }

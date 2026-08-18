@@ -7,6 +7,10 @@ import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import {
+  resolveAppointmentServiceOnlineCharge,
+  resolveVisitChargeTotal,
+} from '@/lib/booking/appointment-online-charge';
+import {
   buildMultiServicePayload,
   chainTotalMinutes,
   chainTotalPence,
@@ -267,8 +271,39 @@ export function ConfirmStep({
   const totalDuration = isMultiService
     ? chainTotalMinutes(multiServiceSegments!)
     : baseDuration + addonsDuration;
-  const hasDeposit = baseDeposit != null && baseDeposit > 0;
-  const depositLabel = hasDeposit ? formatMoney(baseDeposit!) : null;
+  /**
+   * What this booking asks for online, across the WHOLE visit.
+   *
+   * This used to be `baseDeposit > 0` on the selected service alone, which was
+   * wrong twice over. On a chain it read only the first segment, so a visit
+   * whose deposit sat on the second service showed no control at all and could
+   * not be booked without charging; when it did show, the amount was the first
+   * service's rather than the visit's. And keying off `deposit_pence` skipped
+   * `full_payment` services entirely, because they carry their amount in
+   * `price_pence`: staff had no way to take a pay-in-full booking without
+   * charging for it.
+   *
+   * Card-hold fees stay out of this total. No money is due at booking for them
+   * and they have their own toggle.
+   */
+  const singleCharge = resolveAppointmentServiceOnlineCharge({
+    price_pence: basePrice,
+    deposit_pence: baseDeposit,
+    payment_requirement: service.paymentRequirement,
+  });
+  const visitCharge = isMultiService
+    ? resolveVisitChargeTotal(multiServiceSegments!)
+    : {
+        amountPence:
+          singleCharge && singleCharge.chargeLabel !== 'card_hold' ? singleCharge.amountPence : 0,
+        chargeLabel:
+          singleCharge?.chargeLabel === 'full_payment'
+            ? ('full_payment' as const)
+            : ('deposit' as const),
+      };
+  const hasDeposit = visitCharge.amountPence > 0;
+  const chargeNoun = visitCharge.chargeLabel === 'full_payment' ? 'payment' : 'deposit';
+  const depositLabel = hasDeposit ? formatMoney(visitCharge.amountPence) : null;
 
   // Card hold (spec §7.6/D6): when the service's resolved requirement is
   // card_hold, the per-booking toggle replaces "Require deposit". Default on,
@@ -352,6 +387,10 @@ export function ConfirmStep({
       },
       source,
       segments: multiServiceSegments ?? [],
+      // The toggle's value used to be dropped here, so it was a silent no-op on
+      // every chain. Card holds are not sent: chains have no hold toggle yet, so
+      // there is no decision to report and the route's default (on) stands.
+      charges: { requireDeposit },
       address: collectClientAddress
         ? {
             client_address_line1: guest.address_line1,
@@ -539,7 +578,7 @@ export function ConfirmStep({
         {depositLabel ? (
           <View style={styles.depositRow}>
             <Text variant="caption" tone="muted">
-              {staffCardHold ? 'No-show fee' : 'Deposit'}
+              {staffCardHold ? 'No-show fee' : chargeNoun === 'payment' ? 'Pay now' : 'Deposit'}
             </Text>
             <Text variant="bodySmall">{depositLabel}</Text>
           </View>
@@ -593,7 +632,7 @@ export function ConfirmStep({
         <Pressable
           accessibilityRole="checkbox"
           accessibilityState={{ checked: requireDeposit }}
-          accessibilityLabel={`Require deposit ${depositLabel ?? ''}`}
+          accessibilityLabel={`Require ${chargeNoun} ${depositLabel ?? ''}`}
           onPress={() => {
             hapticSelect();
             onChangeRequireDeposit(!requireDeposit);
@@ -618,9 +657,17 @@ export function ConfirmStep({
               <Text style={[styles.checkMark, { color: colors.onBrand }]}>✓</Text>
             ) : null}
           </View>
-          <Text variant="bodyMedium" style={styles.depositToggleLabel}>
-            Require deposit{depositLabel ? ` (${depositLabel})` : ''}
-          </Text>
+          <View style={styles.depositToggleLabel}>
+            <Text variant="bodyMedium">
+              Require {chargeNoun}
+              {depositLabel ? ` (${depositLabel})` : ''}
+            </Text>
+            <Text variant="caption" tone="muted">
+              {requireDeposit
+                ? `We will send a payment link and hold the booking until the ${chargeNoun} is paid.`
+                : `Leave unchecked to confirm now and take the ${chargeNoun} in person.`}
+            </Text>
+          </View>
         </Pressable>
       ) : null}
 

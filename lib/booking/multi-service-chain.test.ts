@@ -206,6 +206,106 @@ describe('buildMultiServicePayload', () => {
     expect(payload.source).toBe('walk-in');
   });
 
+  /**
+   * The toggle's value used to be dropped here entirely: neither payload type
+   * carried `require_deposit`, so the confirm step's checkbox was a silent
+   * no-op on every chain and staff could not stop a multi-service visit
+   * demanding a deposit.
+   */
+  describe('staff charge decisions', () => {
+    const base = {
+      venueId: 'venue-1',
+      bookingDate: '2026-06-20',
+      contact: { first_name: 'Jo', last_name: 'B' },
+      segments,
+    };
+
+    it('sends nothing at all when staff made no decision', () => {
+      // The app has no public booking surface (`BookingSource` is the two staff
+      // sources), so "no decision" is the only no-fields case there is.
+      const payload = buildMultiServicePayload({ ...base, source: 'phone' });
+      expect(payload.require_deposit).toBeUndefined();
+      expect(payload.require_card_hold).toBeUndefined();
+    });
+
+    it('sends the decision on a staff phone booking', () => {
+      const payload = buildMultiServicePayload({
+        ...base,
+        source: 'phone',
+        charges: { requireDeposit: true },
+      });
+      expect(payload.require_deposit).toBe(true);
+    });
+
+    it('sends an explicit false when staff leave the box unchecked', () => {
+      // Not merely omitted: the route defaults to not charging, but saying so
+      // keeps the posted body an honest record of what staff decided.
+      const payload = buildMultiServicePayload({
+        ...base,
+        source: 'phone',
+        charges: { requireDeposit: false },
+      });
+      expect(payload.require_deposit).toBe(false);
+    });
+
+    it('never asks a walk-in for a deposit, whatever the toggle says', () => {
+      // Walk-ins never collect deposits in any model, so there is no decision
+      // to report and the field is left off the body entirely.
+      const payload = buildMultiServicePayload({
+        ...base,
+        source: 'walk-in',
+        charges: { requireDeposit: true },
+      });
+      expect(payload.require_deposit).toBeUndefined();
+    });
+
+    it('sends the card-hold decision for both staff sources', () => {
+      // Card holds ARE offered on walk-ins (D6), unlike deposits.
+      for (const source of ['phone', 'walk-in'] as const) {
+        const payload = buildMultiServicePayload({
+          ...base,
+          source,
+          charges: { requireCardHold: false },
+        });
+        expect(payload.require_card_hold).toBe(false);
+      }
+    });
+
+    it('leaves the card hold alone when the surface offers no toggle', () => {
+      // Omitted means the route's default (on) stands, which is what a chain
+      // wants: it has no hold toggle yet, so there is no decision to send.
+      const payload = buildMultiServicePayload({
+        ...base,
+        source: 'phone',
+        charges: { requireDeposit: true },
+      });
+      expect(payload.require_card_hold).toBeUndefined();
+    });
+
+    it('applies the same rules to a group body', () => {
+      const payload = buildGroupPayload({
+        venueId: 'venue-1',
+        contact: { first_name: 'Org', last_name: 'Aniser' },
+        source: 'phone',
+        people: [
+          {
+            label: 'Alex',
+            serviceId: 's1',
+            serviceName: 'Service',
+            practitionerId: 'prac',
+            practitionerName: 'Pat',
+            bookingDate: '2026-06-20',
+            bookingTime: '09:00',
+            durationMinutes: 30,
+            pricePence: 1000,
+          },
+        ],
+        charges: { requireDeposit: false },
+      });
+      expect(payload.require_deposit).toBe(false);
+    });
+  });
+
   it('spreads client_address_* when an address is supplied', () => {
     const payload = buildMultiServicePayload({
       venueId: 'venue-1',
