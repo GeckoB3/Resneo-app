@@ -20,12 +20,12 @@
  * ## What is deliberately still a wall
  *
  * `manual` (a block staff made by hand), `class_session`, and anything
- * unrecognised. Web keeps `practitioner_leave` occupying on the same reasoning —
+ * unrecognised. `practitioner_leave` stays occupying on the same reasoning —
  * a closure is a boundary the venue can choose to work past, but leave means the
- * person is not in the building. Leave does not currently reach the app's grid
- * feed at all (it lives in `practitioner_leave_periods`, which the grid does not
- * read), so nothing here can unlock it; the server refuses it regardless, and
- * full-day leave survives even `allowOutsideHours` server-side.
+ * person is not in the building. The app now draws leave itself, from
+ * `/api/venue/practitioner-leave` (the grid feed still does not carry it), so
+ * the drag refuses it client-side and reads the same as the server, which
+ * refuses it regardless: full-day leave survives even `allowOutsideHours`.
  *
  * An unknown type OCCUPIES, so any type added later is refused until someone
  * decides otherwise.
@@ -36,10 +36,14 @@ const NON_OCCUPYING_BLOCK_TYPES = new Set([
   'break',
   'closed',
   'amended_hours',
-  // Web's computed vocabulary, accepted so the rule survives an endpoint change.
+  // Web's computed vocabulary, accepted so the rule survives an endpoint change,
+  // and now also emitted by the app itself (`lib/calendar/schedule-closures.ts`).
   'venue_closed',
   'venue_amended_hours',
   'practitioner_closed',
+  // A calendar's own per-date hours override. Advice, exactly like the venue's:
+  // it marks the window that IS worked on an amended day.
+  'calendar_amended_hours',
 ]);
 
 /**
@@ -48,7 +52,11 @@ const NON_OCCUPYING_BLOCK_TYPES = new Set([
  * from the set above because they answer the two questions differently: staff
  * may place over them (non-occupying) AND doing so warrants no amber note.
  */
-const AMENDED_HOURS_BLOCK_TYPES = new Set(['amended_hours', 'venue_amended_hours']);
+const AMENDED_HOURS_BLOCK_TYPES = new Set([
+  'amended_hours',
+  'venue_amended_hours',
+  'calendar_amended_hours',
+]);
 
 /** Whether a block should stop staff placing an appointment over it. */
 export function isOccupyingBlock(blockType: string | null | undefined): boolean {

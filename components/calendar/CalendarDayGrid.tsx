@@ -34,6 +34,11 @@ import {
   type CalendarBookingCluster,
 } from '@/lib/calendar/cluster-bookings';
 import { isNonWorkingBlock, isOccupyingBlock, narrowWorkingRanges } from '@/lib/calendar/occupying-blocks';
+import { closureBandLook } from '@/components/calendar/closure-band';
+import {
+  clampClosureBlocksToWindow,
+  isScheduleClosureBlockType,
+} from '@/lib/calendar/schedule-closures';
 import { venueClosedRanges, type VenueDayHours } from '@/lib/calendar/venue-closures';
 import { hexToRgba } from '@/lib/color';
 import type { ComplianceBookingFlag } from '@/lib/queries/useCompliance';
@@ -266,14 +271,21 @@ export function CalendarDayGrid({
         ranges.push({ start, end });
       }
 
-      const tBlocks = timeBlocks
+      const allTimeBlocks = timeBlocks
         .map((block) => {
           const start = timeToMinutes(block.start);
           const end = timeToMinutes(block.end);
           return { block, start, end };
         })
         .filter(({ start, end }) => end > start);
-      for (const { start, end } of tBlocks) {
+      /**
+       * Closure bands (venue/calendar closed, leave, amended hours) are DRAWN in
+       * the day but must not define it. A full-day band is emitted 00:00–23:59
+       * and would otherwise drag the visible window out to midnight — an output
+       * of the day's bounds cannot also be an input to them.
+       */
+      for (const { block, start, end } of allTimeBlocks) {
+        if (isScheduleClosureBlockType(block.blockType)) continue;
         ranges.push({ start, end });
       }
 
@@ -303,12 +315,19 @@ export function CalendarDayGrid({
       // drop over it would read green. Cutting it makes `evaluateConflict` fall
       // through to level 1 — allowed, amber — which is what web's note does.
       // Amended hours are excluded from the cut: that window is the venue open.
-      const nonWorking = tBlocks
+      const nonWorking = allTimeBlocks
         .filter(({ block }) => isNonWorkingBlock(block.blockType))
         .map(({ start, end }) => ({ start, end }));
 
+      const gridBounds = computeGridBounds(ranges, windowOverride);
+      const tBlocks = clampClosureBlocksToWindow(
+        allTimeBlocks,
+        gridBounds.startHour * 60,
+        gridBounds.endHour * 60,
+      );
+
       return {
-        bounds: computeGridBounds(ranges, windowOverride),
+        bounds: gridBounds,
         rawBlocks: blocks,
         rawTimeBlocks: tBlocks,
         rawSessions: sess,
@@ -649,34 +668,53 @@ export function CalendarDayGrid({
           );
         })}
 
-        {/* Blocked-time overlays */}
-        {positionedBlocks.map((item) => (
-          <Pressable
-            key={item.block.id}
-            accessibilityLabel={`Blocked ${item.timeLabel}`}
-            onPress={() => {
-              if (item.block.isEditable && onBlockTimeBlockPress) {
-                onBlockTimeBlockPress(item.block.id);
+        {/* Blocked-time overlays, and the closure bands that say why the day is
+            empty (closed / on leave / amended hours). */}
+        {positionedBlocks.map((item) => {
+          const look = closureBandLook(item.block.blockType, colors);
+          return (
+            <Pressable
+              key={item.block.id}
+              accessibilityLabel={
+                look
+                  ? `${item.block.label?.trim() || 'Closed'} ${item.timeLabel}`
+                  : `Blocked ${item.timeLabel}`
               }
-            }}
-            style={[
-              styles.blockedOverlay,
-              {
-                top: item.top,
-                height: item.height,
-                borderColor: colors.border,
-              },
-            ]}>
-            <Text variant="caption" tone="muted" numberOfLines={1}>
-              {item.block.label?.trim() || 'Blocked'} · {item.timeLabel}
-            </Text>
-            {item.block.isEditable && item.height >= 40 ? (
-              <Text variant="caption" tone="muted" numberOfLines={1} style={styles.editHint}>
-                Tap to edit
-              </Text>
-            ) : null}
-          </Pressable>
-        ))}
+              onPress={() => {
+                if (item.block.isEditable && onBlockTimeBlockPress) {
+                  onBlockTimeBlockPress(item.block.id);
+                }
+              }}
+              style={[
+                look ? styles.closureBand : styles.blockedOverlay,
+                {
+                  top: item.top,
+                  height: item.height,
+                  backgroundColor: look?.backgroundColor,
+                  borderColor: look ? look.borderColor : colors.border,
+                },
+              ]}>
+              {/* A short band has no room for a label; the tint alone still
+                  says "not available". */}
+              {!look || item.height >= 26 ? (
+                <Text
+                  variant="caption"
+                  tone={look ? undefined : 'muted'}
+                  numberOfLines={1}
+                  style={look ? { color: look.labelColor } : undefined}>
+                  {look
+                    ? item.block.label?.trim() || 'Closed'
+                    : `${item.block.label?.trim() || 'Blocked'} · ${item.timeLabel}`}
+                </Text>
+              ) : null}
+              {!look && item.block.isEditable && item.height >= 40 ? (
+                <Text variant="caption" tone="muted" numberOfLines={1} style={styles.editHint}>
+                  Tap to edit
+                </Text>
+              ) : null}
+            </Pressable>
+          );
+        })}
 
         {/* Class / event capacity blocks (indigo) — read-only, distinct from
             appointment bars. Render below the now-line and appointment layer. */}
@@ -920,6 +958,25 @@ const styles = StyleSheet.create({
     marginTop: 4,
     marginLeft: spacing.sm,
     opacity: 0.7,
+  },
+  /**
+   * A closure band fills its span exactly, so abutting bands (closed → on leave
+   * → closed) read as one continuous state rather than a stack of boxes.
+   *
+   * This grid's canvas INCLUDES the time gutter — unlike the column grids,
+   * where a band is already inside its column — so it carries the same
+   * `TIME_GUTTER_WIDTH` offset every other overlay here does. Without it the
+   * band ran underneath the hour labels.
+   */
+  closureBand: {
+    position: 'absolute',
+    left: TIME_GUTTER_WIDTH + spacing.xs,
+    right: spacing.sm,
+    borderRadius: radius.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: spacing.xs,
+    paddingTop: 1,
+    overflow: 'hidden',
   },
   blockedOverlay: {
     position: 'absolute',

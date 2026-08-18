@@ -63,6 +63,11 @@ import {
   type CalendarBookingCluster,
 } from '@/lib/calendar/cluster-bookings';
 import { isNonWorkingBlock, isOccupyingBlock, narrowWorkingRanges } from '@/lib/calendar/occupying-blocks';
+import { closureBandLook } from '@/components/calendar/closure-band';
+import {
+  clampClosureBlocksToWindow,
+  isScheduleClosureBlockType,
+} from '@/lib/calendar/schedule-closures';
 import { venueClosedRanges, type VenueDayHours } from '@/lib/calendar/venue-closures';
 import type { ComplianceBookingFlag } from '@/lib/queries/useCompliance';
 import { hexToRgba } from '@/lib/color';
@@ -367,6 +372,9 @@ export function AllCalendarsDayGrid({
         ranges.push({ start, end: Math.max(end, start + DEFAULT_DURATION_MINUTES) });
       }
       for (const tb of cal.timeBlocks) {
+        // Closure bands are drawn in the day but must not define it: a full-day
+        // band runs 00:00–23:59 and would drag every column out to midnight.
+        if (isScheduleClosureBlockType(tb.blockType)) continue;
         ranges.push({ start: timeToMinutes(tb.start), end: timeToMinutes(tb.end) });
       }
       for (const s of cal.sessions) {
@@ -687,14 +695,18 @@ function DayColumn({
 
   const overlays = useMemo(
     () =>
-      column.timeBlocks
-        .map((block) => {
-          const start = timeToMinutes(block.start);
-          const end = timeToMinutes(block.end);
-          return { block, start, end };
-        })
-        .filter(({ start, end }) => end > start),
-    [column.timeBlocks],
+      clampClosureBlocksToWindow(
+        column.timeBlocks
+          .map((block) => {
+            const start = timeToMinutes(block.start);
+            const end = timeToMinutes(block.end);
+            return { block, start, end };
+          })
+          .filter(({ start, end }) => end > start),
+        startHour * 60,
+        endHour * 60,
+      ),
+    [column.timeBlocks, startHour, endHour],
   );
 
   const sessions = useMemo(
@@ -847,24 +859,39 @@ function DayColumn({
         }}
       />
 
-      {/* Blocked-time overlays */}
-      {overlays.map(({ block, start, end }) => (
-        <View
-          key={block.id}
-          pointerEvents="none"
-          style={[
-            styles.overlay,
-            {
-              top: (start - gridStartMin) * pxPerMinute,
-              height: overlayHeights.get(block.id) ?? (end - start) * pxPerMinute,
-              borderColor: colors.border,
-            },
-          ]}>
-          <Text variant="caption" tone="muted" numberOfLines={1}>
-            {block.label?.trim() || 'Blocked'}
-          </Text>
-        </View>
-      ))}
+      {/* Blocked-time overlays, and the closure bands that say why a column is
+          empty (closed / on leave / amended hours). */}
+      {overlays.map(({ block, start, end }) => {
+        const look = closureBandLook(block.blockType, colors);
+        const height = overlayHeights.get(block.id) ?? (end - start) * pxPerMinute;
+        return (
+          <View
+            key={block.id}
+            pointerEvents="none"
+            accessibilityLabel={look ? block.label?.trim() || undefined : undefined}
+            style={[
+              look ? styles.closureBand : styles.overlay,
+              {
+                top: (start - gridStartMin) * pxPerMinute,
+                height,
+                backgroundColor: look?.backgroundColor,
+                borderColor: look ? look.borderColor : colors.border,
+              },
+            ]}>
+            {/* A short band has no room for a label, and a clipped one reads as
+                a glitch — the tint alone still says "not available". */}
+            {!look || height >= 26 ? (
+              <Text
+                variant="caption"
+                tone={look ? undefined : 'muted'}
+                numberOfLines={1}
+                style={look ? { color: look.labelColor } : undefined}>
+                {block.label?.trim() || 'Blocked'}
+              </Text>
+            ) : null}
+          </View>
+        );
+      })}
 
       {/* Class/event capacity blocks (indigo) */}
       {sessions.map(({ session, start, end }) => (
@@ -1084,6 +1111,21 @@ const styles = StyleSheet.create({
   blockWrap: {
     position: 'absolute',
     paddingHorizontal: 1,
+  },
+  /**
+   * A closure band fills its span exactly and carries no border by default, so
+   * abutting bands (closed → on leave → closed) read as one continuous state
+   * rather than a stack of boxes.
+   */
+  closureBand: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    borderRadius: radius.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: spacing.xs,
+    paddingTop: 1,
+    overflow: 'hidden',
   },
   overlay: {
     position: 'absolute',

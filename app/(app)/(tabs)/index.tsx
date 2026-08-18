@@ -23,7 +23,8 @@ import { CalendarDayGrid } from '@/components/calendar/CalendarDayGrid';
 import { minutesToTime, timeToMinutes, type GridWindowOverride } from '@/components/calendar/grid-layout';
 import { resolveDayLoadState } from '@/lib/calendar/day-load-state';
 import { nextVisibleCalendars } from '@/lib/calendar/calendar-selection';
-import { venueDayHours } from '@/lib/calendar/venue-closures';
+import { resolveVenueDay, venueDayHours } from '@/lib/calendar/venue-closures';
+import { buildCalendarClosureOverlays } from '@/lib/calendar/schedule-closures';
 import { MonthGrid, type MonthDayDatum } from '@/components/calendar/MonthGrid';
 import { MonthPickerSheet } from '@/components/calendar/MonthPickerSheet';
 import { type RescheduleTarget } from '@/components/calendar/RescheduleSheet';
@@ -83,6 +84,8 @@ import {
 import { usePractitioners } from '@/lib/queries/usePractitioners';
 import { useResourcesManageList } from '@/lib/queries/useResourcesManage';
 import { useSchedule } from '@/lib/queries/useSchedule';
+import { useAvailabilityBlocks } from '@/lib/queries/useAvailabilityBlocks';
+import { usePractitionerLeave } from '@/lib/queries/useAvailabilityManage';
 import { useVenueLiveSync } from '@/lib/realtime/useVenueLiveSync';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
@@ -632,6 +635,21 @@ export default function CalendarScreen() {
     refetchInterval: 60_000,
   });
 
+  /**
+   * Venue-wide closures and amended hours, and staff leave.
+   *
+   * Neither reaches `/api/venue/calendar-grid`: it reads `calendar_blocks`,
+   * `bookings` and `event_sessions` only. So a venue closure, a bank-holiday
+   * amendment and a fortnight of annual leave were all enforced by the booking
+   * engine and invisible on the diary — the screen staff use to find space.
+   * The blocks feed is not date-scoped (it is small, and the resolver filters
+   * per date); leave is fetched for the visible range.
+   */
+  const availabilityBlocksQuery = useAvailabilityBlocks();
+  const leaveQuery = usePractitionerLeave(range.from, range.to);
+  const venueWideBlocks = availabilityBlocksQuery.data;
+  const leavePeriods = useMemo(() => leaveQuery.data?.periods ?? [], [leaveQuery.data]);
+
   // Group the flat feed by `${calendarId} ${date}` so each calendar column on a
   // given date can pull its own list (class instances deduped; null-column
   // blocks dropped — see groupScheduleByCalendarDate).
@@ -801,9 +819,37 @@ export default function CalendarScreen() {
         blockType: 'break',
       }));
 
-      return [...oneOff, ...breaks];
+      /**
+       * The bands that say why a column has no space: the venue's own closures
+       * and amended hours, this calendar's non-working time (weekly shape,
+       * `days_off`, or a per-date override), and staff leave.
+       *
+       * Drawn FIRST so a manual block, a break or a booking sits on top of
+       * them — a band is the backdrop, not the content. They also carry the
+       * block types the drag rule already knows: leave is a wall, a closure is
+       * advice (`lib/calendar/occupying-blocks`).
+       */
+      const venueDay = resolveVenueDay(openingHours, dateStr, venueWideBlocks);
+      const venueOpenRanges = venueDay.hours.kind === 'open' ? venueDay.hours.periods : [];
+      const venueAmended: CalendarTimeBlock[] = venueDay.amendedRanges.map((range) => ({
+        id: `venue_amended_hours:${calId}:${dateStr}:${range.start}-${range.end}`,
+        start: minutesToTime(range.start),
+        end: minutesToTime(range.end),
+        label: 'Amended hours',
+        isEditable: false,
+        blockType: 'venue_amended_hours',
+      }));
+      const closures = buildCalendarClosureOverlays({
+        calendarId: calId,
+        dateStr,
+        calendar: practitioner,
+        leavePeriods,
+        venueOpenRanges,
+      });
+
+      return [...closures, ...venueAmended, ...oneOff, ...breaks];
     },
-    [practitioners],
+    [practitioners, openingHours, venueWideBlocks, leavePeriods],
   );
 
   /**
@@ -836,7 +882,7 @@ export default function CalendarScreen() {
     const ensure = (date: string): MonthDayDatum => {
       let d = map[date];
       if (!d) {
-        const hours = venueDayHours(openingHours, date).kind;
+        const hours = venueDayHours(openingHours, date, venueWideBlocks).kind;
         d = {
           appointments: 0,
           classes: 0,
@@ -890,7 +936,7 @@ export default function CalendarScreen() {
     }
 
     return map;
-  }, [gridQuery.data, scheduleQuery.data, linkedVenues, openingHours, anchor]);
+  }, [gridQuery.data, scheduleQuery.data, linkedVenues, openingHours, anchor, venueWideBlocks]);
 
   /** practitionerId → bookings on the anchor date (badges on the switcher chips). */
   const perPractitionerCounts = useMemo(() => {
@@ -1651,10 +1697,28 @@ export default function CalendarScreen() {
           ? scheduleByCalendarDate.get(scheduleKey(effectiveId, date)) ?? []
           : [],
         // Venue open/closed state for this day → "Closed" shading.
-        venueHours: venueDayHours(openingHours, date),
+        venueHours: venueDayHours(openingHours, date, venueWideBlocks),
+        /**
+         * Closure bands only — not breaks or manual blocks, which stay a Day-view
+         * detail. "Who is off this week?" is the question the week view exists to
+         * answer, and a column that renders the same whether the person is working
+         * or on leave cannot answer it.
+         */
+        timeBlocks: effectiveId
+          ? buildCalendarClosureOverlays({
+              calendarId: effectiveId,
+              dateStr: date,
+              calendar: practitioners.find((p) => p.id === effectiveId),
+              leavePeriods,
+              venueOpenRanges: (() => {
+                const resolved = resolveVenueDay(openingHours, date, venueWideBlocks).hours;
+                return resolved.kind === 'open' ? resolved.periods : [];
+              })(),
+            })
+          : [],
       };
     });
-  }, [scope, gridQuery.data, effectiveId, week.days, today, scheduleByCalendarDate, openingHours]);
+  }, [scope, gridQuery.data, effectiveId, week.days, today, scheduleByCalendarDate, openingHours, venueWideBlocks, practitioners, leavePeriods]);
 
   // ---- Whole-team week matrix data (week-scope "All") ----
   // Practitioner rows + 7 day-column headers. The cell counts are derived inside
@@ -1731,8 +1795,8 @@ export default function CalendarScreen() {
 
   // Venue open/closed state for the anchor date (shared by the day + all-cal views).
   const venueHoursForAnchor = useMemo(
-    () => venueDayHours(openingHours, anchor),
-    [openingHours, anchor],
+    () => venueDayHours(openingHours, anchor, venueWideBlocks),
+    [openingHours, anchor, venueWideBlocks],
   );
 
   const dayGrid = (

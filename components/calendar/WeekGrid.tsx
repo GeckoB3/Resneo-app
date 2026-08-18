@@ -36,6 +36,11 @@ import {
   type CalendarBookingCluster,
 } from '@/lib/calendar/cluster-bookings';
 import { venueClosedRanges, type VenueDayHours } from '@/lib/calendar/venue-closures';
+import { closureBandLook } from '@/components/calendar/closure-band';
+import {
+  clampClosureBlocksToWindow,
+  isScheduleClosureBlockType,
+} from '@/lib/calendar/schedule-closures';
 import { hexToRgba } from '@/lib/color';
 import { fonts, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -181,6 +186,9 @@ export function WeekGrid({
         ranges.push({ start: timeToMinutes(sb.startTime), end: timeToMinutes(sb.endTime) });
       }
       for (const tb of day.timeBlocks ?? []) {
+        // Closure bands are drawn in the week but must not define its hours: a
+        // full-day band runs 00:00–23:59 and would stretch every column.
+        if (isScheduleClosureBlockType(tb.blockType)) continue;
         const start = timeToMinutes(tb.start);
         const end = timeToMinutes(tb.end);
         if (end > start) ranges.push({ start, end });
@@ -372,13 +380,17 @@ function WeekDayCol({
   }, [day.scheduleBlocks, gridStartMin]);
 
   const busyBlocks = useMemo(() => {
-    const raw = (day.timeBlocks ?? [])
-      .map((block) => ({
-        block,
-        start: timeToMinutes(block.start),
-        end: timeToMinutes(block.end),
-      }))
-      .filter(({ start, end }) => end > start);
+    const raw = clampClosureBlocksToWindow(
+      (day.timeBlocks ?? [])
+        .map((block) => ({
+          block,
+          start: timeToMinutes(block.start),
+          end: timeToMinutes(block.end),
+        }))
+        .filter(({ start, end }) => end > start),
+      startHour * 60,
+      endHour * 60,
+    );
     const heights = computeRangeHeights(
       raw.map(({ block, start, end }) => ({ id: block.id, start, end })),
       gridStartMin,
@@ -390,7 +402,7 @@ function WeekDayCol({
       top: (start - gridStartMin) * PX_PER_MINUTE,
       height: heights.get(block.id) ?? (end - start) * PX_PER_MINUTE,
     }));
-  }, [day.timeBlocks, gridStartMin]);
+  }, [day.timeBlocks, gridStartMin, startHour, endHour]);
 
   const closedRanges = useMemo(
     () => venueClosedRanges(day.venueHours, startHour * 60, endHour * 60),
@@ -447,22 +459,34 @@ function WeekDayCol({
 
       {/* Busy / blocked time (e.g. a time_only linked venue's redacted
           bookings) — grey, non-interactive, behind the booking layer. */}
-      {busyBlocks.map(({ block, top, height }) => (
-        <View
-          key={block.id}
-          pointerEvents="none"
-          accessibilityLabel={block.label ?? 'Busy'}
-          style={[
-            styles.busy,
-            { top, height, backgroundColor: hexToRgba(colors.text, 0.1), borderColor: colors.border },
-          ]}>
-          {height >= WEEK_MIN_BLOCK_HEIGHT ? (
-            <Text variant="caption" tone="muted" numberOfLines={1} style={styles.busyLabel}>
-              Busy
-            </Text>
-          ) : null}
-        </View>
-      ))}
+      {busyBlocks.map(({ block, top, height }) => {
+        const look = closureBandLook(block.blockType, colors);
+        return (
+          <View
+            key={block.id}
+            pointerEvents="none"
+            accessibilityLabel={block.label ?? 'Busy'}
+            style={[
+              styles.busy,
+              {
+                top,
+                height,
+                backgroundColor: look?.backgroundColor ?? hexToRgba(colors.text, 0.1),
+                borderColor: look ? look.borderColor : colors.border,
+              },
+            ]}>
+            {height >= WEEK_MIN_BLOCK_HEIGHT ? (
+              <Text
+                variant="caption"
+                tone={look ? undefined : 'muted'}
+                numberOfLines={1}
+                style={[styles.busyLabel, look ? { color: look.labelColor } : null]}>
+                {look ? block.label?.trim() || 'Closed' : 'Busy'}
+              </Text>
+            ) : null}
+          </View>
+        );
+      })}
 
       {/* Class / event capacity blocks (indigo). */}
       {sessions.map(({ session, top, height }) => (
