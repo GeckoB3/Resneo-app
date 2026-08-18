@@ -21,6 +21,10 @@ jest.mock('@/lib/analytics', () => ({
   ANALYTICS_EVENTS: { createBookingCompleted: 'x' },
   track: jest.fn(),
 }));
+// The confirm step's card-hold toggle is flag-gated; the flow reads it on mount.
+jest.mock('@/lib/queries/useVenueSettings', () => ({
+  useFeatureFlags: () => ({ data: { resolved: { card_hold_deposits: true } } }),
+}));
 
 import { GroupBookingFlow } from '@/components/booking-wizard/GroupBookingFlow';
 import type { AppointmentCatalogResponse } from '@/types/appointment-catalog';

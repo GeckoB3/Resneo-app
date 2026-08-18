@@ -107,6 +107,23 @@ export function multiServiceSegmentCharge(
  * web's `singleDetailsChargeLabel` rule, so a chain reads as 'full_payment'
  * only when every chargeable segment is pay-in-full.
  */
+/**
+ * The no-show fee a visit would authorise, summed across its `card_hold`
+ * segments.
+ *
+ * The mirror image of {@link resolveVisitChargeTotal}, which deliberately drops
+ * these: no money is due at booking for a hold, so it must not join the "pay
+ * now" total, but it still needs its own staff toggle. A single service can
+ * only ever be one or the other, so this is zero for everything except a mixed
+ * or all-hold visit.
+ */
+export function resolveVisitCardHoldTotal(segments: SegmentCharge[]): number {
+  return segments.reduce(
+    (sum, s) => (s.chargeLabel === 'card_hold' ? sum + (s.chargePence ?? 0) : sum),
+    0,
+  );
+}
+
 export function resolveVisitChargeTotal(segments: SegmentCharge[]): {
   amountPence: number;
   chargeLabel: 'deposit' | 'full_payment';

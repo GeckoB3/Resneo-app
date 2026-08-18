@@ -2,6 +2,7 @@ import {
   multiServiceSegmentCharge,
   resolveAppointmentPaymentRequirement,
   resolveAppointmentServiceOnlineCharge,
+  resolveVisitCardHoldTotal,
   resolveVisitChargeTotal,
 } from '@/lib/booking/appointment-online-charge';
 
@@ -180,6 +181,38 @@ describe('resolveVisitChargeTotal', () => {
         { chargePence: null, chargeLabel: null },
         { chargePence: null, chargeLabel: null },
       ]).amountPence,
+    ).toBe(0);
+  });
+});
+
+describe('resolveVisitCardHoldTotal', () => {
+  it('sums the hold fees a visit would authorise', () => {
+    expect(
+      resolveVisitCardHoldTotal([
+        { chargePence: 5000, chargeLabel: 'card_hold' },
+        { chargePence: 2500, chargeLabel: 'card_hold' },
+      ]),
+    ).toBe(7500);
+  });
+
+  it('ignores everything that is money now', () => {
+    // The mirror image of resolveVisitChargeTotal: a mixed visit owes both, and
+    // each total drives its own control.
+    expect(
+      resolveVisitCardHoldTotal([
+        { chargePence: 1000, chargeLabel: 'deposit' },
+        { chargePence: 6000, chargeLabel: 'full_payment' },
+        { chargePence: 5000, chargeLabel: 'card_hold' },
+      ]),
+    ).toBe(5000);
+  });
+
+  it('is zero when nothing takes a hold, so no toggle is offered', () => {
+    expect(
+      resolveVisitCardHoldTotal([
+        { chargePence: 1000, chargeLabel: 'deposit' },
+        { chargePence: null, chargeLabel: null },
+      ]),
     ).toBe(0);
   });
 });

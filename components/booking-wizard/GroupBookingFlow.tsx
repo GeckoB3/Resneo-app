@@ -10,6 +10,10 @@ import { PractitionerStep } from '@/components/booking-wizard/PractitionerStep';
 import { ServicePickerStep } from '@/components/booking-wizard/ServicePickerStep';
 import { TimeSlotStep } from '@/components/booking-wizard/TimeSlotStep';
 import { VariantStep } from '@/components/booking-wizard/VariantStep';
+import {
+  StaffCardHoldToggle,
+  StaffRequireChargeCheckbox,
+} from '@/components/booking-wizard/StaffChargeControls';
 import { WizardStepIndicator } from '@/components/booking-wizard/WizardStepIndicator';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -18,6 +22,11 @@ import { Text } from '@/components/ui/Text';
 import { ANALYTICS_EVENTS, track } from '@/lib/analytics';
 import { ApiError } from '@/lib/api/client';
 import { addMinutesToTime } from '@/lib/booking/booking-format';
+import {
+  multiServiceSegmentCharge,
+  resolveVisitCardHoldTotal,
+  resolveVisitChargeTotal,
+} from '@/lib/booking/appointment-online-charge';
 import {
   earliestStartAfterGroup,
   groupBusyIntervals,
@@ -32,6 +41,7 @@ import { hapticSelect, hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { normalizePhone } from '@/lib/phone/normalize';
 import { calendarDateInTimeZone } from '@/lib/queries/useBookingsList';
 import { useCreateGroupBooking } from '@/lib/queries/useCreateGroupBooking';
+import { useFeatureFlags } from '@/lib/queries/useVenueSettings';
 import { useMonthAvailability } from '@/lib/queries/useMonthAvailability';
 import { spacing, radius } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -128,6 +138,13 @@ export function GroupBookingFlow({
 
   const [organiser, setOrganiser] = useState<GuestDetails>(EMPTY_GUEST);
   const [returningGuest, setReturningGuest] = useState(false);
+  /**
+   * Staff's money decisions for the whole group — one organiser, one call, one
+   * decision. Opt-in for the charge and opt-out for the hold, matching the two
+   * defaults `/api/booking/create-group` applies to an omitted field.
+   */
+  const [requireDeposit, setRequireDeposit] = useState(false);
+  const [requireCardHold, setRequireCardHold] = useState(true);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [complianceError, setComplianceError] = useState<string | null>(null);
 
@@ -143,6 +160,21 @@ export function GroupBookingFlow({
   const draftSelectedAddons = draftAddonGroups
     .flatMap((g) => g.addons)
     .filter((a) => draftAddonIds.includes(a.id));
+
+  const cardHoldFlagEnabled = Boolean(useFeatureFlags().data?.resolved?.card_hold_deposits);
+  /**
+   * What the group asks for, summed across attendees.
+   *
+   * A group can owe both at once — one attendee's service takes a deposit while
+   * another's takes a card hold — so the two controls are independent rather
+   * than one replacing the other (§7.6's "never shown together" holds for a
+   * single booking, where only one is ever non-zero).
+   */
+  const groupCharge = useMemo(() => resolveVisitChargeTotal(people), [people]);
+  const groupCardHoldPence = useMemo(() => resolveVisitCardHoldTotal(people), [people]);
+  const showCardHoldToggle = cardHoldFlagEnabled && groupCardHoldPence > 0;
+  // Walk-ins never collect (spec 2.8), so there is no decision to offer them.
+  const showChargeCheckbox = groupCharge.amountPence > 0 && source !== 'walk-in';
 
   // Any at-home (`client_address`) attendee makes the organiser step collect a
   // visit address (web parity — the server marks it mandatory for those services).
@@ -246,6 +278,18 @@ export function GroupBookingFlow({
       addonIds: draftAddonIds.length ? draftAddonIds : undefined,
       addonTotalPence,
       locationType: draftService.locationType,
+      // Resolved here, once, so the confirm step can total the group. Variant
+      // overrides win for the deposit as they do for price and duration, and
+      // add-on price rolls into a full payment but not a deposit — the server's
+      // `resolveAppointmentServiceOnlineChargeWithAddons` rule.
+      ...multiServiceSegmentCharge(
+        {
+          price_pence: basePrice,
+          deposit_pence: draftVariant?.deposit_pence ?? draftService.depositPence,
+          payment_requirement: draftService.paymentRequirement,
+        },
+        addonTotalPence,
+      ),
     };
     setPeople((prev) => [...prev, person]);
     resetDraft();
@@ -280,6 +324,18 @@ export function GroupBookingFlow({
         },
         source,
         people,
+        /**
+         * Staff's decisions for the group. Sending nothing left the route's two
+         * defaults standing — no deposit, but a card hold ON — so a group
+         * containing a card-hold service always held a card and staff had no
+         * way to say otherwise. `buildGroupPayload` drops `require_deposit` for
+         * a walk-in and omits `require_card_hold` unless there is a hold to
+         * decide about.
+         */
+        charges: {
+          requireDeposit: showChargeCheckbox && requireDeposit,
+          ...(showCardHoldToggle ? { requireCardHold } : {}),
+        },
         // At-home attendees: thread the visit address collected on the organiser
         // step (buildGroupPayload drops empty fields via clientAddressPayloadFields).
         address: collectClientAddress
@@ -300,7 +356,19 @@ export function GroupBookingFlow({
         ...(overrideCompliance ? { override_compliance: true } : {}),
       };
     },
-    [organiser, venueId, source, people, ownerVenueId, returningGuest, collectClientAddress],
+    [
+      organiser,
+      venueId,
+      source,
+      people,
+      ownerVenueId,
+      returningGuest,
+      collectClientAddress,
+      showChargeCheckbox,
+      requireDeposit,
+      showCardHoldToggle,
+      requireCardHold,
+    ],
   );
 
   const handleCreate = useCallback(
@@ -740,7 +808,42 @@ export function GroupBookingFlow({
                 </Text>
               </View>
             ) : null}
+            {/* Money now and the no-show fee are separate lines: a group can owe
+                both, and nothing is collected at booking for a hold. */}
+            {groupCharge.amountPence > 0 ? (
+              <View style={styles.moneyRow}>
+                <Text variant="caption" tone="muted">
+                  {groupCharge.chargeLabel === 'full_payment' ? 'Pay now' : 'Deposit'}
+                </Text>
+                <Text variant="bodySmall">{formatPence(groupCharge.amountPence)}</Text>
+              </View>
+            ) : null}
+            {showCardHoldToggle ? (
+              <View style={styles.moneyRow}>
+                <Text variant="caption" tone="muted">
+                  No-show fee
+                </Text>
+                <Text variant="bodySmall">{formatPence(groupCardHoldPence)}</Text>
+              </View>
+            ) : null}
           </Card>
+
+          {showCardHoldToggle ? (
+            <StaffCardHoldToggle
+              checked={requireCardHold}
+              onChange={setRequireCardHold}
+              feePence={groupCardHoldPence}
+            />
+          ) : null}
+
+          {showChargeCheckbox ? (
+            <StaffRequireChargeCheckbox
+              checked={requireDeposit}
+              onChange={setRequireDeposit}
+              chargeLabel={groupCharge.chargeLabel}
+              amountPence={groupCharge.amountPence}
+            />
+          ) : null}
 
           {complianceError ? (
             <View style={[styles.noticeBlock, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -796,6 +899,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingTop: spacing.md,
     borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  moneyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: spacing.xs,
   },
   addToggle: {
     borderWidth: 1,

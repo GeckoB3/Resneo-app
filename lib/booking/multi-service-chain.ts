@@ -88,6 +88,17 @@ export interface GroupPerson {
   /** Where this attendee's service is delivered; 'client_address' makes the group
    *  flow collect a visit address. App-internal — not serialized into the payload. */
   locationType?: ServiceLocationType;
+  /**
+   * What this attendee's service asks for online, resolved from the catalogue
+   * when they were added — the same pair a chain segment carries, and read by
+   * the same `resolveVisitChargeTotal` / `resolveVisitCardHoldTotal`.
+   *
+   * Per attendee because the group's total is what staff decide about: one
+   * organiser makes one call for the whole group, so a deposit sitting on the
+   * third attendee's service still has to reach the confirm step.
+   */
+  chargePence?: number | null;
+  chargeLabel?: 'deposit' | 'full_payment' | 'card_hold' | null;
 }
 
 export type BookingSource = 'phone' | 'walk-in';

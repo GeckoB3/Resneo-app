@@ -271,9 +271,10 @@ describe('buildMultiServicePayload', () => {
       }
     });
 
-    it('leaves the card hold alone when the surface offers no toggle', () => {
-      // Omitted means the route's default (on) stands, which is what a chain
-      // wants: it has no hold toggle yet, so there is no decision to send.
+    it('leaves the card hold alone when there is no hold to decide about', () => {
+      // Omitted means the route's default (on) stands. A visit with no
+      // card-hold segment has nothing to report, so it sends nothing rather
+      // than asserting a decision staff were never shown.
       const payload = buildMultiServicePayload({
         ...base,
         source: 'phone',
@@ -303,6 +304,46 @@ describe('buildMultiServicePayload', () => {
         charges: { requireDeposit: false },
       });
       expect(payload.require_deposit).toBe(false);
+    });
+
+    it('sends the group card-hold decision, including on a walk-in', () => {
+      // The route reads an omitted `require_card_hold` as TRUE, so waiving a
+      // hold means sending false explicitly. Walk-ins are offered the hold
+      // (D6) even though they are never offered a deposit.
+      const holdPerson: GroupPerson = {
+        label: 'Alex',
+        serviceId: 's1',
+        serviceName: 'Service',
+        practitionerId: 'prac',
+        practitionerName: 'Pat',
+        bookingDate: '2026-06-20',
+        bookingTime: '09:00',
+        durationMinutes: 30,
+        pricePence: 1000,
+        chargePence: 5000,
+        chargeLabel: 'card_hold',
+      };
+      const walkIn = buildGroupPayload({
+        venueId: 'venue-1',
+        contact: { first_name: 'Org', last_name: 'Aniser' },
+        source: 'walk-in',
+        people: [holdPerson],
+        charges: { requireDeposit: true, requireCardHold: false },
+      });
+      expect(walkIn.require_card_hold).toBe(false);
+      // Walk-ins never collect, so the deposit flag is omitted entirely rather
+      // than sent as false.
+      expect(walkIn.require_deposit).toBeUndefined();
+
+      const phone = buildGroupPayload({
+        venueId: 'venue-1',
+        contact: { first_name: 'Org', last_name: 'Aniser' },
+        source: 'phone',
+        people: [holdPerson],
+        charges: { requireDeposit: false, requireCardHold: true },
+      });
+      expect(phone.require_card_hold).toBe(true);
+      expect(phone.require_deposit).toBe(false);
     });
   });
 
