@@ -19,6 +19,7 @@ import { LoadingState } from '@/components/ui/LoadingState';
 import { Stepper } from '@/components/ui/Stepper';
 import { Text } from '@/components/ui/Text';
 import { ANALYTICS_EVENTS, track } from '@/lib/analytics';
+import { ApiError } from '@/lib/api/client';
 import {
   formatBookingDate,
   formatBookingTime,
@@ -140,7 +141,18 @@ export function ClassBookingFlow({ onCreated }: ClassBookingFlowProps) {
         {offeringsQuery.isLoading ? (
           <LoadingState message="Loading classes…" />
         ) : offeringsQuery.isError ? (
-          <ErrorState message="Couldn't load classes." onRetry={() => void offeringsQuery.refetch()} />
+          <ErrorState
+            /* The server's own copy when it sent one — a fail-closed 503 reads
+               "Availability is temporarily unavailable. Please try again in a
+               moment.", which is both more accurate and more reassuring than a
+               generic failure. Falls back for network errors, which carry none. */
+            message={
+              offeringsQuery.error instanceof ApiError
+                ? offeringsQuery.error.message
+                : "Couldn't load classes."
+            }
+            onRetry={() => void offeringsQuery.refetch()}
+          />
         ) : classes.length === 0 ? (
           <EmptyState
             title="No classes available"

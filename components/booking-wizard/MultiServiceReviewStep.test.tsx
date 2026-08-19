@@ -18,6 +18,7 @@ const segments: MultiServiceSegment[] = [
     practitionerName: 'Pat',
     startTime: '09:00',
     durationMinutes: 30,
+    naturalDurationMinutes: 30,
     bufferMinutes: 0,
     pricePence: 2500,
   },
@@ -28,6 +29,7 @@ const segments: MultiServiceSegment[] = [
     practitionerName: 'Pat',
     startTime: '09:30',
     durationMinutes: 60,
+    naturalDurationMinutes: 60,
     bufferMinutes: 0,
     pricePence: 5000,
   },
@@ -115,6 +117,7 @@ describe('MultiServiceReviewStep', () => {
       practitionerName: 'Pat',
       startTime: '09:00',
       durationMinutes: 30,
+      naturalDurationMinutes: 30,
       bufferMinutes: 0,
       pricePence: 1000,
     }));

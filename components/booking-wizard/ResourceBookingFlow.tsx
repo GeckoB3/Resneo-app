@@ -19,6 +19,7 @@ import { ErrorState } from '@/components/ui/ErrorState';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { Text } from '@/components/ui/Text';
 import { ANALYTICS_EVENTS, track } from '@/lib/analytics';
+import { ApiError } from '@/lib/api/client';
 import {
   addMinutesToTime,
   formatBookingDate,
@@ -296,6 +297,13 @@ export function ResourceBookingFlow({ onCreated }: ResourceBookingFlowProps) {
           }}
           availableDates={resourceAvailableDates}
           isLoading={monthAvailabilityQuery.isLoading || monthAvailabilityQuery.isFetching}
+          isError={monthAvailabilityQuery.isError}
+          errorMessage={
+            monthAvailabilityQuery.error instanceof ApiError
+              ? monthAvailabilityQuery.error.message
+              : undefined
+          }
+          onRetry={() => void monthAvailabilityQuery.refetch()}
           canContinue={!!selectedDate}
           onContinue={() => setStep('duration')}
           weekShortcuts
@@ -352,7 +360,16 @@ export function ResourceBookingFlow({ onCreated }: ResourceBookingFlowProps) {
             <LoadingState message="Finding available times…" />
           ) : availabilityQuery.isError ? (
             <ErrorState
-              message="Couldn't load times."
+              /* The server's own copy when it sent one — a fail-closed 503 says
+                 "Availability is temporarily unavailable. Please try again in a
+                 moment.", which is more accurate and more reassuring than a
+                 generic failure. Falls back for network errors, which carry no
+                 server message. */
+              message={
+                availabilityQuery.error instanceof ApiError
+                  ? availabilityQuery.error.message
+                  : "Couldn't load times."
+              }
               onRetry={() => void availabilityQuery.refetch()}
             />
           ) : slots.length === 0 ? (

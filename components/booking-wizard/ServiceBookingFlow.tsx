@@ -358,15 +358,25 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
   /** Build the first chain segment from the picked service + slot. */
   const seedMultiServiceChain = useCallback((): MultiServiceSegment[] | null => {
     if (!selectedService || !selectedSlot) return null;
-    // create-multi-service has no per-service duration field: the server
-    // re-derives each segment's length as the (variant-resolved) catalogue
-    // duration + add-on minutes and 400s if our chain starts don't line up
-    // (expectedStart = prev end + buffer). A staff `durationOverride` therefore
-    // cannot be honoured here, so seed the chain from the server-reconstructable
-    // duration — otherwise an overridden non-last segment fails to book, and an
-    // overridden last/only segment silently books at natural length anyway.
-    const baseDuration =
+    // Two lengths, because they genuinely differ.
+    //
+    // `naturalDuration` is what the SERVER re-derives — catalogue (or variant)
+    // duration + add-on minutes. `create-multi-service` has no per-service
+    // duration field and 400s if our chain starts don't line up with its own
+    // arithmetic (expectedStart = prev end + buffer), so every chain of two or
+    // more MUST be built from it.
+    //
+    // A one-segment chain is different, and this used to get it wrong. It never
+    // reaches that route at all: the confirm step sends a single service through
+    // POST /api/venue/bookings, which DOES carry `duration_minutes`. So the
+    // booking was already made at the custom length while this review card
+    // showed the catalogue one — staff set 90 minutes, saw "9:00am–9:30am", and
+    // reasonably concluded the app had ignored them. Seed the working duration
+    // from the override so the card tells the truth; `addServiceToChain` puts it
+    // back to `naturalDuration` if a second service is ever appended.
+    const naturalBaseDuration =
       selectedVariant?.duration_minutes ?? selectedService.durationMinutes;
+    const baseDuration = durationOverride ?? naturalBaseDuration;
     const chosenAddons = addonGroups
       .flatMap((g) => g.addons)
       .filter((a) => selectedAddonIds.includes(a.id));
@@ -385,6 +395,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
       practitionerName: selectedSlot.practitioner_name ?? selectedService.practitionerName ?? '',
       startTime: selectedSlot.start_time.slice(0, 5),
       durationMinutes: baseDuration + addonMinutes,
+      naturalDurationMinutes: naturalBaseDuration + addonMinutes,
       bufferMinutes,
       pricePence: (selectedVariant?.price_pence ?? selectedService.pricePence) ?? null,
       addonIds: selectedAddonIds.length ? selectedAddonIds : undefined,
@@ -404,7 +415,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
       ),
     };
     return recomputeMultiServiceChain([seg], seg.startTime);
-  }, [selectedService, selectedSlot, selectedVariant, addonGroups, selectedAddonIds]);
+  }, [selectedService, selectedSlot, selectedVariant, addonGroups, selectedAddonIds, durationOverride]);
 
   /** Append another service (same practitioner) to the chain and recompute starts. */
   const addServiceToChain = useCallback(
@@ -435,6 +446,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           practitionerName: visitPractitioner.name,
           startTime: '00:00',
           durationMinutes: svc.duration_minutes,
+          naturalDurationMinutes: svc.duration_minutes,
           bufferMinutes: svc.buffer_minutes ?? 0,
           pricePence: svc.price_pence,
           // Appended services can carry a deposit of their own. Without this the
@@ -450,7 +462,32 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           ),
         };
         const firstStart = prev[0]!.startTime;
-        return recomputeMultiServiceChain([...prev, nextSeg], firstStart);
+        /**
+         * A staff custom duration cannot survive into a real chain — TODAY.
+         *
+         * `create-multi-service`'s `serviceEntrySchema` carries no per-service
+         * duration, so the server re-derives every segment's length and rejects
+         * the visit if our start times were computed from anything else ("must
+         * be consecutive"). Restoring from `naturalDurationMinutes` is exact
+         * even when the first segment has a variant or add-ons.
+         *
+         * REMOVE THIS once the web route accepts a per-service duration (being
+         * added there): send `durationMinutes` per segment instead of resetting
+         * it, and this whole block goes. Until then the reset is what keeps a
+         * chained booking from 400ing.
+         */
+        const first = prev[0]!;
+        const overridden = first.durationMinutes !== first.naturalDurationMinutes;
+        if (overridden) {
+          // Clear the flow's copy too, or removing the appended service later
+          // would leave a 90-minute override against a 30-minute segment card —
+          // the same display/booking mismatch this fix exists to remove.
+          setDurationOverride(null);
+        }
+        const base = overridden
+          ? [{ ...first, durationMinutes: first.naturalDurationMinutes }, ...prev.slice(1)]
+          : prev;
+        return recomputeMultiServiceChain([...base, nextSeg], firstStart);
       });
     },
     [visitPractitioner],
@@ -915,6 +952,11 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           }}
           availableDates={availableDates}
           isLoading={monthQuery.isLoading || monthQuery.isFetching}
+          isError={monthQuery.isError}
+          errorMessage={
+            monthQuery.error instanceof ApiError ? monthQuery.error.message : undefined
+          }
+          onRetry={() => void monthQuery.refetch()}
           canContinue={!selectedDateUnavailable}
           onContinue={() => advanceFrom('date')}
           weekShortcuts

@@ -40,6 +40,7 @@ import {
   useWaitlistAlerts,
 } from '@/lib/queries/useWaitlist';
 import { useVenueLiveSync } from '@/lib/realtime/useVenueLiveSync';
+import { waitlistOfferState } from '@/lib/waitlist/offer-state';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { radius, spacing } from '@/theme/index';
@@ -251,8 +252,10 @@ const WaitlistEntryRow = memo(function WaitlistEntryRow({
   const confirmedBookingId =
     status === 'confirmed' && entry.booking_id ? entry.booking_id : null;
 
-  // can_offer gating
-  const offerDisabled = isWaiting && entry.can_offer === false;
+  // can_offer gating — tri-state; see lib/waitlist/offer-state.ts for why an
+  // UNSET flag must never disable (a failed read arrives that way).
+  const offerState = waitlistOfferState(entry, isWaiting);
+  const offerDisabled = offerState === 'blocked';
 
   // joined-at
   const joinedLabel = entry.created_at ? `Joined ${formatJoinedAt(entry.created_at)}` : null;
@@ -309,6 +312,17 @@ const WaitlistEntryRow = memo(function WaitlistEntryRow({
         {offerDisabled && entry.offer_unavailable_reason ? (
           <Text variant="caption" color={colors.warning}>
             {entry.offer_unavailable_reason}
+          </Text>
+        ) : null}
+        {/* The availability check could not run for this entry. Muted, not
+            warning: nothing is wrong with the entry and the Offer button stays
+            enabled — `can_offer` is unknown rather than false, and the offer
+            itself re-validates (409 if no slot resolves). The two states need
+            different tones, which is why this is its own field rather than more
+            copy in `offer_unavailable_reason`. */}
+        {offerState === 'unchecked' ? (
+          <Text variant="caption" tone="muted">
+            Couldn&apos;t check availability — offering will re-check.
           </Text>
         ) : null}
         {/* Expiry countdown (notify_in_order only) */}

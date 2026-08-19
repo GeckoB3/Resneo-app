@@ -91,3 +91,63 @@ describe('MonthDatePicker', () => {
     expect(baseProps.onSelectDate).toHaveBeenCalledWith('2026-07-02');
   });
 });
+
+/**
+ * R20-3 — a FAILED month lookup must not look like a loading one.
+ *
+ * `availableDates: null` means "no constraint known", which leaves every date
+ * selectable. That is right while loading, and was silently also what an error
+ * produced: the grid rendered with nothing marked, which reads as "every date is
+ * fine" — a confident answer the app has no basis for. It matters now that web's
+ * Stage 7 makes these routes fail closed (503) instead of returning a 200 with
+ * dates quietly missing.
+ */
+describe('MonthDatePicker — failed lookup', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('replaces the calendar with a retry instead of an unmarked grid', async () => {
+    const onRetry = jest.fn();
+    await render(
+      <MonthDatePicker {...baseProps} isError errorMessage="Try again shortly." onRetry={onRetry} />,
+    );
+
+    expect(screen.getByText("Couldn't check availability")).toBeTruthy();
+    expect(screen.getByText('Try again shortly.')).toBeTruthy();
+    // The grid is gone — no day cells, and no availability hint implying we know.
+    expect(screen.queryByText('Green dates have open times for this service.')).toBeNull();
+
+    await press(() => screen.getByText('Try again'));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it("prefers the server's own copy, and falls back when there is none", async () => {
+    await render(<MonthDatePicker {...baseProps} isError onRetry={jest.fn()} />);
+    expect(screen.getByText('Could not load which dates are free.')).toBeTruthy();
+  });
+
+  it('keeps the walk-in shortcut reachable — it bypasses availability entirely', async () => {
+    const onStartNow = jest.fn();
+    await render(
+      <MonthDatePicker
+        {...baseProps}
+        isError
+        onRetry={jest.fn()}
+        source="walk-in"
+        onStartNow={onStartNow}
+        timeZone="Europe/London"
+      />,
+    );
+
+    expect(screen.getByText('Start Now')).toBeTruthy();
+    await press(() => screen.getByText('Start Now'));
+    expect(onStartNow).toHaveBeenCalled();
+  });
+
+  it('still renders the grid while merely loading', async () => {
+    await render(<MonthDatePicker {...baseProps} isLoading />);
+    expect(screen.queryByText("Couldn't check availability")).toBeNull();
+    expect(screen.getByText('Continue')).toBeTruthy();
+  });
+});

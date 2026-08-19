@@ -19,6 +19,7 @@ function seg(overrides: Partial<MultiServiceSegment>): MultiServiceSegment {
     practitionerName: 'Pat',
     startTime: '00:00',
     durationMinutes: 30,
+    naturalDurationMinutes: 30,
     bufferMinutes: 0,
     pricePence: 1000,
     ...overrides,

@@ -28,8 +28,27 @@ export interface WaitlistEntry {
   created_at?: string;
   expires_at?: string | null;
   offered_at?: string | null;
+  /**
+   * Whether this entry can be offered a slot right now. Tri-state on purpose:
+   * `undefined` means the check did not run — either the entry never qualified
+   * for one (not an appointment, or not `waiting`), or the read FAILED. Only an
+   * explicit `false` disables the Offer button.
+   */
   can_offer?: boolean;
+  /** Why `can_offer` is false. Never set when {@link offer_check_failed} is true. */
   offer_unavailable_reason?: string | null;
+  /**
+   * The availability check for this entry could not be completed — a schedule
+   * read failed, so `can_offer` is UNKNOWN rather than false.
+   *
+   * Per-entry rather than a 503 for the whole route: `can_offer` is folded into
+   * the list response, and is computed only for appointment entries that are
+   * still waiting, so failing the response would take the whole waitlist screen
+   * out over a read most entries never made. The Offer button stays enabled
+   * because the offer path re-validates and answers 409 if no slot resolves —
+   * this flag is advisory in front of a gate that re-checks.
+   */
+  offer_check_failed?: boolean;
   booking_id?: string | null;
 }
 

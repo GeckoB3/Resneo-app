@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
+import { ErrorState } from '@/components/ui/ErrorState';
 import { Text } from '@/components/ui/Text';
 import { getDateTimeFormat } from '@/lib/dates/formatters';
 import { addDaysToDateStr, addMonthsToDateStr, formatMonthLabel } from '@/lib/dates/venue-dates';
@@ -45,9 +46,25 @@ type MonthDatePickerProps = {
   today: string;
   selectedDate: string | null;
   onSelectDate: (isoDate: string) => void;
-  /** Dates with at least one bookable slot; null while loading. */
+  /**
+   * Dates with at least one bookable slot.
+   *
+   * `null` means "no constraint known" and leaves every date selectable — which
+   * is right while LOADING, and was silently also what a FAILED lookup produced.
+   * Pass {@link isError} so the two can be told apart: an unmarked grid is a
+   * confident-looking answer the app has no basis for.
+   */
   availableDates: Set<string> | null;
   isLoading?: boolean;
+  /**
+   * The month lookup failed. Renders a retry in place of the grid rather than a
+   * calendar with nothing marked — the server may have failed closed (503) and
+   * has no idea which dates are free, so neither do we.
+   */
+  isError?: boolean;
+  /** Message for the error state — prefer the server's own copy. */
+  errorMessage?: string;
+  onRetry?: () => void;
   /** Gate "Continue" — false while the selected date has no bookable slots, so
    *  the user can't advance onto an empty "No times available" screen. */
   canContinue?: boolean;
@@ -88,6 +105,9 @@ export function MonthDatePicker({
   onSelectDate,
   availableDates,
   isLoading = false,
+  isError = false,
+  errorMessage,
+  onRetry,
   canContinue = true,
   onContinue,
   source = 'phone',
@@ -129,6 +149,22 @@ export function MonthDatePicker({
         />
       ) : null}
 
+      {/* A failed lookup replaces the grid. Drawing the calendar with nothing
+          marked would read as "every date is fine", which is the one thing we
+          know we cannot say.
+
+          The walk-in "Start Now" button above stays reachable on purpose: it
+          bypasses availability entirely, so a lookup wobble should not stop
+          staff starting an appointment now. A date picked BEFORE the failure
+          also still allows Continue — the slot step re-checks and has its own
+          error state, so that is a second chance rather than a wrong answer. */}
+      {isError ? (
+        <ErrorState
+          title="Couldn't check availability"
+          message={errorMessage ?? 'Could not load which dates are free.'}
+          onRetry={onRetry}
+        />
+      ) : (
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
@@ -266,6 +302,7 @@ export function MonthDatePicker({
           </Text>
         )}
       </ScrollView>
+      )}
 
       <Button
         label="Continue"

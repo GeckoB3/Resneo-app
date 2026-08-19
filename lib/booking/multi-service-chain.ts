@@ -29,6 +29,24 @@ export interface MultiServiceSegment {
   startTime: string;
   /** Includes add-on minutes so chain start times line up with the server's consecutive check. */
   durationMinutes: number;
+  /**
+   * The length the SERVER will re-derive for this segment: catalogue (or
+   * variant) duration + add-on minutes, with no staff override applied.
+   *
+   * `durationMinutes` and this differ only while a chain has a single segment
+   * and staff set a custom duration. That case never reaches
+   * `create-multi-service` — the confirm step sends a one-segment visit through
+   * the single-booking route, which DOES carry `duration_minutes` — so the
+   * override is honoured and the review card can show it.
+   *
+   * The moment a second service is appended the override has to go: the route's
+   * `serviceEntrySchema` has no per-service duration field, so the server
+   * re-derives every length and rejects the chain if our start times were
+   * computed from anything else ("must be consecutive"). Web drops it at the
+   * same point and for the same reason. This field is what the append path
+   * restores from, so the reset is exact for a variant or add-on segment too.
+   */
+  naturalDurationMinutes: number;
   bufferMinutes: number;
   /** Service+variant price only (add-on price tracked separately). */
   pricePence: number | null;
