@@ -21,12 +21,23 @@ import { ConfirmSheet } from '@/components/ui/ConfirmSheet';
 import { Text } from '@/components/ui/Text';
 import { TimePickerField } from '@/components/ui/TimePickerField';
 import { ApiError, isRequiresConfirmationBody } from '@/lib/api/client';
+import {
+  calendarHoursOutsideVenue,
+  describeVenueDay,
+  venueDayContext,
+} from '@/lib/calendar/venue-hours-context';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { usePatchPractitioner } from '@/lib/queries/useAvailabilityManage';
+import {
+  NO_ROOM_FOR_PERIOD,
+  canAddPeriod,
+  nextPeriodAfter,
+} from '@/lib/scheduling/weekly-hours';
 import { useToast } from '@/providers/ToastProvider';
 import { spacing, radius } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { TimeRange, WorkingHoursMap } from '@/types/availability-manage';
+import type { OpeningHours } from '@/types/venue';
 
 const WEEKDAYS = [
   { key: '1', label: 'Monday' },
@@ -74,6 +85,12 @@ type Props = {
   practitionerId: string;
   practitionerName: string;
   currentWorkingHours?: WorkingHoursMap;
+  /**
+   * The venue's weekly opening hours, shown as read-only context beside each
+   * day. Taken as a prop rather than read from `VenueProvider` so this stays
+   * renderable on its own; the caller already holds the bootstrap.
+   */
+  venueOpeningHours?: OpeningHours | null;
   onClose: () => void;
 };
 
@@ -81,6 +98,7 @@ export function WorkingHoursEditor({
   practitionerId,
   practitionerName,
   currentWorkingHours,
+  venueOpeningHours,
   onClose,
 }: Props) {
   const { colors } = useTheme();
@@ -119,10 +137,20 @@ export function WorkingHoursEditor({
     });
   }
 
+  /**
+   * Append a split shift starting an hour after the current last one.
+   *
+   * This appended a fixed `DEFAULT_RANGE`, so on a calendar working 09:00–17:00
+   * — the seeded default for every new calendar — the first press produced a
+   * second range identical to the first. `nextPeriodAfter` is the shared rule
+   * (see `lib/scheduling/weekly-hours.ts`); the button is hidden entirely when
+   * there is no room left in the day.
+   */
   function addRange(key: string) {
     setDays((prev) => {
       const cur = prev[key]!;
-      return { ...prev, [key]: { ...cur, ranges: [...cur.ranges, { ...DEFAULT_RANGE }] } };
+      const next = nextPeriodAfter(cur.ranges[cur.ranges.length - 1], DEFAULT_RANGE.start);
+      return { ...prev, [key]: { ...cur, ranges: [...cur.ranges, next] } };
     });
   }
 
@@ -247,6 +275,11 @@ export function WorkingHoursEditor({
           const d = days[wd.key]!;
           const canCopyElsewhere =
             d.open && WEEKDAYS.some((o) => o.key !== wd.key && days[o.key]!.open);
+          const venueDay = venueDayContext(venueOpeningHours, wd.key);
+          const outsideVenue = calendarHoursOutsideVenue(
+            d.open ? d.ranges.map((r) => ({ open: minutesToHhmm(r.start), close: minutesToHhmm(r.end) })) : null,
+            venueDay,
+          );
           return (
             <View key={wd.key} style={[styles.dayRow, { borderBottomColor: colors.border }]}>
               <View style={styles.dayHeader}>
@@ -258,6 +291,19 @@ export function WorkingHoursEditor({
                   thumbColor={colors.surfaceRaised}
                 />
               </View>
+              {/* Venue hours for this day. Hidden entirely when the venue has
+                  never set opening hours: that imposes no constraint, so saying
+                  anything about it would be both wrong and alarming. */}
+              {venueDay.kind !== 'unset' ? (
+                <Text
+                  variant="caption"
+                  tone="muted"
+                  color={outsideVenue ? colors.warning : undefined}
+                  style={styles.venueContext}>
+                  Venue: {describeVenueDay(venueDay)}
+                  {outsideVenue ? ' (hours outside this are not bookable)' : ''}
+                </Text>
+              ) : null}
               {d.open ? (
                 <View style={styles.dayBody}>
                   {d.ranges.map((r, ri) => (
@@ -288,13 +334,19 @@ export function WorkingHoursEditor({
                     </View>
                   ))}
                   <View style={styles.dayActions}>
-                    <Button
-                      label="+ Add split"
-                      variant="ghost"
-                      size="sm"
-                      style={styles.inlineAction}
-                      onPress={() => addRange(wd.key)}
-                    />
+                    {canAddPeriod(d.ranges) ? (
+                      <Button
+                        label="+ Add split"
+                        variant="ghost"
+                        size="sm"
+                        style={styles.inlineAction}
+                        onPress={() => addRange(wd.key)}
+                      />
+                    ) : (
+                      <Text variant="caption" tone="muted" style={styles.noRoomLabel}>
+                        {NO_ROOM_FOR_PERIOD}
+                      </Text>
+                    )}
                     {canCopyElsewhere ? (
                       <Button
                         label="Copy to other open days"
@@ -394,6 +446,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
   },
   closedLabel: {
+    paddingLeft: spacing.sm,
+  },
+  noRoomLabel: {
+    flex: 1,
+    minWidth: 180,
+  },
+  venueContext: {
     paddingLeft: spacing.sm,
   },
   actions: {

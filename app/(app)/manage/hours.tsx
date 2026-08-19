@@ -45,6 +45,19 @@ function canonicalizeOpeningHours(raw: OpeningHours | null | undefined): Opening
   return out;
 }
 
+/**
+ * Client-side check, matching what the server actually rejects.
+ *
+ * The ONLY rule is `open < close` per period — that is all
+ * `openingHoursPeriodSchema` enforces, and the resolver unions a day's periods
+ * in whatever order they arrive. This also used to refuse "the second period
+ * must start after the first one ends", a rule web has at no layer, which meant
+ * the app could block a save the server would have accepted. Web keeps periods
+ * ordered by construction instead (`nextPeriodAfter`), which
+ * `OpeningHoursEditor` now does too.
+ *
+ * Days are no longer capped at two periods, so this checks every one of them.
+ */
 function validate(hours: OpeningHours): string | null {
   for (const day of Object.values(hours)) {
     if (!day || ('closed' in day && day.closed === true)) continue;
@@ -53,10 +66,6 @@ function validate(hours: OpeningHours): string | null {
         if (period.open >= period.close) {
           return `Close time must be after open time (${period.open}–${period.close}).`;
         }
-      }
-      const [first, second] = day.periods;
-      if (first && second && second.open < first.close) {
-        return 'The second period must start after the first one ends.';
       }
     }
   }

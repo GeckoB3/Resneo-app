@@ -10,6 +10,20 @@ type UsePractitionersOptions = {
   /** Linked-venue context, when acting on a partner venue's roster. */
   ownerVenueId?: string | null;
   enabled?: boolean;
+  /**
+   * Include RESOURCE calendar columns in the roster.
+   *
+   * Off by default, because almost every caller is picking a calendar to put a
+   * booking or a staff member on, and a resource is neither. The exception is
+   * the Calendar availability screen: a resource is a `unified_calendars` row
+   * like any other and its weekly hours are the same `working_hours` column
+   * (`/api/venue/resources` only ALIASES it as `availability_hours`), so
+   * excluding it there is what forced a second hours editor to exist.
+   *
+   * Mechanically this drops `staff_assignable=1`, which is the flag the web
+   * route filters `calendar_type = 'resource'` on.
+   */
+  includeResources?: boolean;
 };
 
 /**
@@ -19,21 +33,21 @@ type UsePractitionersOptions = {
 export function usePractitioners(options: UsePractitionersOptions = {}) {
   const accessToken = useAccessToken();
   const ownerVenueId = options.ownerVenueId ?? null;
+  const includeResources = options.includeResources ?? false;
   const queryEnabled =
     (options.enabled ?? true) && isBackendConfigured() && accessToken !== null;
 
   return useQuery({
-    queryKey: queryKeys.practitioners.list(accessToken, ownerVenueId),
+    queryKey: queryKeys.practitioners.list(accessToken, ownerVenueId, includeResources),
     enabled: queryEnabled,
     queryFn: async (): Promise<PractitionersResponse> => {
       if (!accessToken) {
         throw new Error('Missing access token');
       }
-      const params = new URLSearchParams({
-        roster: '1',
-        active_only: '1',
-        staff_assignable: '1',
-      });
+      const params = new URLSearchParams({ roster: '1', active_only: '1' });
+      if (!includeResources) {
+        params.set('staff_assignable', '1');
+      }
       if (ownerVenueId) {
         params.set('owner_venue_id', ownerVenueId);
       }

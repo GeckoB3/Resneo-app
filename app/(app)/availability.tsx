@@ -29,6 +29,10 @@ import { ApiError } from '@/lib/api/client';
 import { addDaysToDateStr, formatDayHeading } from '@/lib/dates/venue-dates';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import {
+  appointmentCalendarsOf,
+  isResourceCalendar,
+} from '@/lib/calendar/schedule-calendars';
+import {
   useCalendarBlocks,
   useCreateBlock,
   useCreateLeave,
@@ -205,10 +209,40 @@ export default function AvailabilityScreen() {
   const staff = staffQuery.data?.staff;
   const isAdmin = staff?.role === 'admin';
 
-  const practitionersQuery = usePractitioners();
+  /**
+   * Resources included: a resource is a `unified_calendars` row like any other
+   * and its weekly hours are the same `working_hours` column, so this is where
+   * they belong (`/api/venue/resources` only aliases the column as
+   * `availability_hours`). Everything on this screen that is NOT hours works on
+   * `appointmentCalendars` below instead — see the note there.
+   */
+  const practitionersQuery = usePractitioners({ includeResources: true });
+  /** Every calendar whose weekly schedule is editable here, resources included. */
   const practitioners = useMemo(
     () => practitionersQuery.data?.practitioners ?? [],
     [practitionersQuery.data?.practitioners],
+  );
+
+  /**
+   * The calendars that take BOOKINGS — everything except resources.
+   *
+   * Hours are the one thing a resource genuinely supports. Breaks and leave are
+   * not: the resource engine reads `break_times` from the host calendar row and
+   * never the resource's own, and `POST /api/venue/practitioner-leave` rejects
+   * a resource outright (`requireVenueHostCalendarId` filters them), so leave
+   * stored against one would be invisible to every engine. Offering either
+   * would be a control that saves and does nothing, which is why web excludes
+   * resources from its closures panel and refuses its breaks tab for them.
+   */
+  const appointmentCalendars = useMemo(
+    () => appointmentCalendarsOf(practitioners),
+    [practitioners],
+  );
+
+  const isResourceId = useCallback(
+    (id: string | null | undefined) =>
+      id != null && isResourceCalendar(practitioners.find((p) => p.id === id)),
+    [practitioners],
   );
 
   // Non-admins may only manage their OWN calendar's leave/blocks (web parity:
@@ -222,10 +256,24 @@ export default function AvailabilityScreen() {
     (id: string | null | undefined) => isAdmin || (id != null && ownCalendarIds.has(id)),
     [isAdmin, ownCalendarIds],
   );
-  // Practitioner chips a non-admin may target (self calendars only).
+  // Practitioner chips a non-admin may target (self calendars only). Built from
+  // `appointmentCalendars`, so leave and blocks are never offered a resource.
   const selectablePractitioners = useMemo(
-    () => (isAdmin ? practitioners : practitioners.filter((p) => ownCalendarIds.has(p.id))),
-    [isAdmin, practitioners, ownCalendarIds],
+    () =>
+      isAdmin
+        ? appointmentCalendars
+        : appointmentCalendars.filter((p) => ownCalendarIds.has(p.id)),
+    [isAdmin, appointmentCalendars, ownCalendarIds],
+  );
+
+  /**
+   * Calendars the breaks editor may write to with "Apply to all calendars" —
+   * the same permission pool as the chips, and resource-free for the reason
+   * given on `appointmentCalendars`.
+   */
+  const breakTargets = useMemo(
+    () => selectablePractitioners.map((p) => ({ id: p.id, name: p.name })),
+    [selectablePractitioners],
   );
 
   // Legacy per-calendar "days off" — older venues stored blocked DATES (YYYY-MM-DD)
@@ -233,10 +281,10 @@ export default function AvailabilityScreen() {
   // admins to re-add them as proper closures (web parity: amber legacy banner).
   const legacyDaysOffCalendars = useMemo(
     () =>
-      practitioners.filter((p) =>
+      appointmentCalendars.filter((p) =>
         (p.days_off ?? []).some((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)),
       ),
-    [practitioners],
+    [appointmentCalendars],
   );
 
   // Practitioner filter (null = all)
@@ -312,7 +360,9 @@ export default function AvailabilityScreen() {
     if (!isAdmin && staff?.linked_calendar_ids?.length) {
       return staff.linked_calendar_ids[0] ?? null;
     }
-    return practitioners[0]?.id ?? null;
+    // Appointment calendars only — this seeds the leave / block sheet, and
+    // neither can be stored against a resource.
+    return appointmentCalendars[0]?.id ?? null;
   }
 
   function openSheet(kind: 'block' | 'leave') {
@@ -404,6 +454,9 @@ export default function AvailabilityScreen() {
   }
 
   function openBreaksSheet(practId: string) {
+    // Belt and braces: the row hides the button for a resource, but a break
+    // written against one would save and do nothing, so never open the editor.
+    if (isResourceId(practId)) return;
     setHoursTargetId(practId);
     setSheet('breaks');
   }
@@ -610,17 +663,35 @@ export default function AvailabilityScreen() {
   function renderHoursRow(p: Practitioner) {
     const summary = summariseWorkingHours(p.working_hours);
     const breaks = summariseBreaks(p);
+    const isResource = isResourceCalendar(p);
     return (
       <View key={p.id} style={[styles.hoursItem, { borderBottomColor: colors.border }]}>
-        <Text variant="bodyMedium" numberOfLines={1}>
-          {p.name}
-        </Text>
+        <View style={styles.hoursNameRow}>
+          <Text variant="bodyMedium" numberOfLines={1} style={styles.flex1}>
+            {p.name}
+          </Text>
+          {isResource ? (
+            <Text variant="caption" tone="muted">
+              Resource
+            </Text>
+          ) : null}
+        </View>
         <Text variant="caption" tone={summary ? 'secondary' : 'muted'}>
           {summary ?? 'No working hours set'}
         </Text>
-        {breaks ? (
+        {!isResource && breaks ? (
           <Text variant="caption" tone="muted">
             Breaks · {breaks}
+          </Text>
+        ) : null}
+        {/* Breaks are not offered for a resource: the resource engine reads
+            `break_times` from the HOST calendar row, never the resource's own,
+            so a break saved here would be invisible to every engine. Saying so
+            beats a control that appears to work (web parity). */}
+        {isResource ? (
+          <Text variant="caption" tone="muted">
+            Breaks aren&apos;t available for resources yet. To keep this free at the same time
+            each day, add a break on the staff calendar it appears on.
           </Text>
         ) : null}
         <View style={styles.hoursActions}>
@@ -630,12 +701,14 @@ export default function AvailabilityScreen() {
             size="sm"
             onPress={() => openHoursSheet(p.id)}
           />
-          <Button
-            label="Edit breaks"
-            variant="ghost"
-            size="sm"
-            onPress={() => openBreaksSheet(p.id)}
-          />
+          {!isResource ? (
+            <Button
+              label="Edit breaks"
+              variant="ghost"
+              size="sm"
+              onPress={() => openBreaksSheet(p.id)}
+            />
+          ) : null}
         </View>
       </View>
     );
@@ -709,8 +782,15 @@ export default function AvailabilityScreen() {
             </Card>
           ) : null}
 
-          {/* Filter chips */}
-          {practitioners.length > 1 ? (
+          {/* Filter chips.
+
+              Appointment calendars only, deliberately. The filter feeds the
+              leave and blocks queries as well as the hours list, and
+              `GET /api/venue/practitioner-leave?practitioner_id=<resource>`
+              404s ("Calendar not found" — `requireVenueHostCalendarId` filters
+              resources out), which would blank this whole screen into an error
+              state. Resources are still listed under Working hours on "All". */}
+          {appointmentCalendars.length > 1 ? (
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -720,7 +800,7 @@ export default function AvailabilityScreen() {
                 selected={filterPractitionerId === null}
                 onPress={() => setFilterPractitionerId(null)}
               />
-              {practitioners.map((p) => (
+              {appointmentCalendars.map((p) => (
                 <Chip
                   key={p.id}
                   label={p.name}
@@ -1077,6 +1157,7 @@ export default function AvailabilityScreen() {
             currentWorkingHours={
               (hoursTarget as unknown as { working_hours?: WorkingHoursMap }).working_hours
             }
+            venueOpeningHours={venue?.opening_hours}
             onClose={() => setSheet(null)}
           />
         ) : null}
@@ -1099,6 +1180,7 @@ export default function AvailabilityScreen() {
             currentBreaks={
               (hoursTarget as unknown as { break_times?: TimeRange[] | null }).break_times
             }
+            applyToAllCalendars={breakTargets}
             onClose={() => setSheet(null)}
           />
         ) : null}
@@ -1146,6 +1228,11 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
     gap: spacing.xs,
+  },
+  hoursNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
   hoursActions: {
     flexDirection: 'row',

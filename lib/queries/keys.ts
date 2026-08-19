@@ -180,8 +180,20 @@ export const queryKeys = {
 
   practitioners: {
     all: () => [...queryKeys.all, 'practitioners'] as const,
-    list: (accessToken?: string | null, ownerVenueId?: string | null) =>
-      [...queryKeys.practitioners.all(), 'list', keyScope(accessToken), ownerVenueId ?? null] as const,
+    list: (
+      accessToken?: string | null,
+      ownerVenueId?: string | null,
+      includeResources = false,
+    ) =>
+      [
+        ...queryKeys.practitioners.all(),
+        'list',
+        keyScope(accessToken),
+        ownerVenueId ?? null,
+        // Resource columns are a different roster, not a filter over the same
+        // one — they must not share a cache entry with the staff-assignable list.
+        includeResources ? 'with-resources' : 'staff-assignable',
+      ] as const,
   },
 
   schedule: {

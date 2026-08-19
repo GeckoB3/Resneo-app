@@ -5,6 +5,12 @@ import { Button } from '@/components/ui/Button';
 import { Text } from '@/components/ui/Text';
 import { TimePickerField } from '@/components/ui/TimePickerField';
 import { hapticSelect } from '@/lib/haptics';
+import {
+  NO_ROOM_FOR_PERIOD,
+  canAddPeriod,
+  nextPeriodAfter,
+  type MinutePeriod,
+} from '@/lib/scheduling/weekly-hours';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { OpeningHours, OpeningHoursDay, OpeningHoursPeriod } from '@/types/venue';
@@ -42,6 +48,25 @@ function isOpen(day: OpeningHoursDay | undefined): boolean {
   return dayPeriods(day).length > 0;
 }
 
+/** HH:mm periods → the minutes shape the shared weekly-hours rules work in. */
+function toMinutePeriods(periods: OpeningHoursPeriod[]): MinutePeriod[] {
+  return periods.map((p) => ({ start: timeToMinutes(p.open), end: timeToMinutes(p.close) }));
+}
+
+/**
+ * The period the Add button hands back: an hour's gap after the last one
+ * closes, an hour long.
+ *
+ * This used to be a hardcoded `{ open: periods[0].close, close: '21:00' }`,
+ * which was wrong for any venue closing after 21:00 and only ever reachable on
+ * a day with exactly one period. See `lib/scheduling/weekly-hours.ts`.
+ */
+function addedPeriod(periods: OpeningHoursPeriod[]): OpeningHoursPeriod {
+  const minutes = toMinutePeriods(periods);
+  const next = nextPeriodAfter(minutes[minutes.length - 1], timeToMinutes(DEFAULT_PERIOD.open));
+  return { open: minutesToTime(next.start), close: minutesToTime(next.end) };
+}
+
 type OpeningHoursEditorProps = {
   value: OpeningHours;
   onChange: (next: OpeningHours) => void;
@@ -50,9 +75,16 @@ type OpeningHoursEditorProps = {
 };
 
 /**
- * Weekly opening-hours editor — per-day open/closed switch with 1–2 service
- * periods, native any-minute time pickers and a "Copy to other open days"
- * shortcut. Pure controlled component (mockable).
+ * Weekly opening-hours editor — per-day open/closed switch with any number of
+ * service periods, native any-minute time pickers and a "Copy to other open
+ * days" shortcut. Pure controlled component (mockable).
+ *
+ * There is no cap on periods per day. There used to be one of two, enforced
+ * here rather than by any product rule: the editor could draw a first and a
+ * second period and no more, so `openingHoursDaySchema.max(2)` on the backend
+ * existed to stop that display truncation becoming data loss on save. Web
+ * removed the schema cap (its `config-schemas.ts` is now `.min(1)` with no
+ * upper bound) once its editor rendered the array; this does the same.
  */
 export function OpeningHoursEditor({ value, onChange, editable = true }: OpeningHoursEditorProps) {
   const { colors } = useTheme();
@@ -174,18 +206,20 @@ export function OpeningHoursEditor({ value, onChange, editable = true }: Opening
                 ))
               : null}
 
-            {editable && open && periods.length === 1 ? (
+            {editable && open ? (
               <View style={styles.minTouchRow}>
-                <Button
-                  label="Add second period"
-                  variant="ghost"
-                  size="sm"
-                  onPress={() =>
-                    setDay(key, {
-                      periods: [...periods, { open: periods[0]!.close, close: '21:00' }],
-                    })
-                  }
-                />
+                {canAddPeriod(toMinutePeriods(periods)) ? (
+                  <Button
+                    label="+ Add period"
+                    variant="ghost"
+                    size="sm"
+                    onPress={() => setDay(key, { periods: [...periods, addedPeriod(periods)] })}
+                  />
+                ) : (
+                  <Text variant="caption" tone="muted">
+                    {NO_ROOM_FOR_PERIOD}
+                  </Text>
+                )}
               </View>
             ) : null}
           </View>

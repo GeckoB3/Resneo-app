@@ -10,6 +10,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   View,
 } from 'react-native';
 
@@ -115,6 +116,14 @@ type Props = {
   currentBreaksByDay?: BreakTimesByDayMap | null;
   /** Legacy every-day breaks — seeded onto each weekday when no per-day map exists. */
   currentBreaks?: TimeRange[] | null;
+  /**
+   * Every calendar this user may set breaks on, for the "Apply to all
+   * calendars" switch. Include the selected one; the caller is responsible for
+   * the permission filter AND for leaving RESOURCES out — the resource engine
+   * reads `break_times` from the host calendar row, never the resource's own,
+   * so a break written there would save and do nothing.
+   */
+  applyToAllCalendars?: { id: string; name: string }[];
   onClose: () => void;
 };
 
@@ -123,6 +132,7 @@ export function BreaksEditor({
   practitionerName,
   currentBreaksByDay,
   currentBreaks,
+  applyToAllCalendars,
   onClose,
 }: Props) {
   const { colors } = useTheme();
@@ -132,6 +142,19 @@ export function BreaksEditor({
   const [dayBreaks, setDayBreaks] = useState<Record<string, [number, number][]>>(() =>
     initialDayBreaks(currentBreaksByDay, currentBreaks),
   );
+  const [applyToAll, setApplyToAll] = useState(false);
+
+  const otherCalendars = (applyToAllCalendars ?? []).filter((c) => c.id !== practitionerId);
+  /**
+   * Offered only when there is somewhere else for the breaks to go AND the
+   * calendar on screen is itself in the permitted list.
+   *
+   * The second half matters for staff: `applyToAllCalendars` carries the
+   * calendars they may write to, but the editor can be opened on a colleague's.
+   * Without this check the switch would appear there and fan out a run of 403s.
+   */
+  const canApplyToAll =
+    otherCalendars.length > 0 && (applyToAllCalendars ?? []).some((c) => c.id === practitionerId);
 
   function addBreak(dayKey: string) {
     setDayBreaks((prev) => ({
@@ -184,18 +207,41 @@ export function BreaksEditor({
       );
     }
 
+    /**
+     * One PATCH at a time, because `/api/venue/practitioners` takes a single
+     * id — there is no batch endpoint to use instead. A partial failure
+     * therefore leaves some calendars updated, so the message reports what
+     * actually succeeded rather than what was attempted (web parity).
+     */
+    const targets =
+      applyToAll && canApplyToAll
+        ? [{ id: practitionerId, name: practitionerName }, ...otherCalendars]
+        : [{ id: practitionerId, name: practitionerName }];
+
+    let saved = 0;
     try {
-      await patchPractitioner.mutateAsync({
-        id: practitionerId,
-        // Clear the legacy every-day field so breaks don't double-apply (web parity).
-        break_times: [],
-        break_times_by_day: breaksByDay,
-      });
+      for (const target of targets) {
+        await patchPractitioner.mutateAsync({
+          id: target.id,
+          // Clear the legacy every-day field so breaks don't double-apply (web parity).
+          break_times: [],
+          break_times_by_day: breaksByDay,
+        });
+        saved += 1;
+      }
       hapticSuccess();
       onClose();
-      toast.success('Breaks saved.');
+      toast.success(
+        targets.length > 1 ? `Breaks saved to ${saved} calendars.` : 'Breaks saved.',
+      );
     } catch (e) {
       hapticWarning();
+      if (saved > 0) {
+        toast.error(
+          `Saved breaks to ${saved} of ${targets.length} calendars, then failed. Check the remaining ones.`,
+        );
+        return;
+      }
       toast.error(e instanceof ApiError ? e.message : 'Could not save. Please try again.');
     }
   }
@@ -212,6 +258,24 @@ export function BreaksEditor({
         size="sm"
         onPress={copyMondayToAll}
       />
+
+      {/* A lunch break is nearly always the same shape across a team, and
+          retyping it per calendar is how two calendars end up disagreeing by a
+          typo nobody notices. Leave already has its own apply-to-all. */}
+      {canApplyToAll ? (
+        <View style={styles.applyAllRow}>
+          <Text variant="bodyMedium" style={styles.applyAllLabel}>
+            Apply to all calendars
+          </Text>
+          <Switch
+            value={applyToAll}
+            onValueChange={setApplyToAll}
+            accessibilityLabel="Apply these breaks to all calendars"
+            trackColor={{ true: colors.brand, false: colors.border }}
+            thumbColor={colors.surfaceRaised}
+          />
+        </View>
+      ) : null}
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.list}>
         {WEEKDAYS.map((wd) => {
@@ -315,6 +379,15 @@ const styles = StyleSheet.create({
     // `fill` Sheets supply no horizontal padding (they delegate it to the
     // child), so pad the editor itself to match the standard sheet inset.
     paddingHorizontal: spacing.lg,
+  },
+  applyAllRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.base,
+  },
+  applyAllLabel: {
+    flex: 1,
   },
   list: { gap: 0 },
   dayBlock: {
