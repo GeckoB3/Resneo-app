@@ -699,6 +699,15 @@ const PREVIEW_CLOSED: PreviewSheetState = {
 export default function CommunicationsScreen() {
   const { venue, featureFlags, refetch: refetchVenue } = useVenueContext();
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
+  /**
+   * The sticky bar's measured height, so the scroll content can clear it while
+   * it is armed. Measured rather than assumed: the bar's height depends on the
+   * safe-area inset and on Dynamic Type, neither of which is a constant.
+   * Declared with the other top-level hooks — this component has early returns
+   * for the loading and error states below.
+   */
+  const [barHeight, setBarHeight] = useState(0);
   const isAdmin = venue?.current_user_role === 'admin';
   const waitlistEnabled = featureFlags?.resolved?.waitlist_v2 === true;
 
@@ -962,10 +971,18 @@ export default function CommunicationsScreen() {
     updatePolicies.isPending || updateSettings.isPending || updateVenue.isPending;
 
   return (
-    <Screen scroll={false} padded={false}>
+    /* `bottomInset={false}`: this screen reserves the home-indicator strip
+       itself — inside the sticky bar when it is armed, and in the scroll
+       content when it is not. Letting `Screen` reserve it too would pad the
+       CONTAINER, which on a screen that brings its own ScrollView leaves a
+       band of background the content can never scroll into. */
+    <Screen scroll={false} padded={false} bottomInset={false}>
       {header}
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[
+          styles.content,
+          { paddingBottom: spacing['2xl'] + (hasChanges ? barHeight : insets.bottom) },
+        ]}
         keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl
@@ -1097,6 +1114,7 @@ export default function CommunicationsScreen() {
           isSaving={isSaving}
           saveDisabled={ownerAlertEmailInvalid}
           onSave={handleSave}
+          onHeight={setBarHeight}
         />
       ) : null}
 
@@ -1123,6 +1141,7 @@ function StickyBar({
   isSaving,
   onSave,
   saveDisabled = false,
+  onHeight,
 }: {
   hasChanges: boolean;
   isSaving: boolean;
@@ -1130,6 +1149,8 @@ function StickyBar({
   /** Keeps the bar visible (it's armed by hasChanges) but blocks Save — e.g. a
    *  validation error elsewhere on the screen. */
   saveDisabled?: boolean;
+  /** Reports the measured bar height so the screen can clear it while armed. */
+  onHeight?: (height: number) => void;
 }) {
   const { colors } = useTheme();
   // Pad the bar past the bottom safe-area inset (home indicator / gesture nav),
@@ -1154,6 +1175,7 @@ function StickyBar({
 
   return (
     <Animated.View
+      onLayout={(e) => onHeight?.(e.nativeEvent.layout.height)}
       style={[
         styles.stickyBar,
         {
@@ -1297,7 +1319,23 @@ const styles = StyleSheet.create({
   spacer: {
     height: spacing.xl,
   },
+  /**
+   * OVERLAYS the scroll, it does not sit below it.
+   *
+   * This bar is armed by unsaved changes and animates out of view otherwise
+   * (opacity 0, translated down). In normal flow it went on reserving its full
+   * height — button, padding and safe-area inset, well over 100pt — while
+   * invisible, which is what a device sees as a large white bar under the page.
+   * Absolute is also what the slide-up animation always implied.
+   *
+   * `hours.tsx` uses the same styling but renders its bar ALWAYS VISIBLE, so
+   * in-flow is correct there; do not "unify" the two without checking that.
+   */
   stickyBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
     borderTopWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: spacing.base,
     paddingTop: spacing.base,

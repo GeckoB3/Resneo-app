@@ -1012,10 +1012,15 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
 }
 
 const styles = StyleSheet.create({
+  /**
+   * No bottom padding. Each step either pins its "Continue" at the foot of this
+   * column or ends its own scroll content with it, and `Screen` already reserves
+   * the page padding plus the home-indicator strip beneath. Padding here only
+   * added a third band of dead space and shortened every step's viewport.
+   */
   container: {
     flex: 1,
     gap: spacing.base,
-    paddingBottom: spacing.xl,
   },
   groupButton: {
     marginTop: spacing.sm,

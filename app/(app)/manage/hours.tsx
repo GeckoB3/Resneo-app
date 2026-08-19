@@ -167,7 +167,10 @@ export default function BusinessHoursScreen() {
   }
 
   return (
-    <Screen scroll={false} padded={false}>
+    /* `bottomInset={false}`: the sticky save bar below already pads past the
+       home indicator. Letting `Screen` reserve it too left a dead strip under
+       the Save button and shortened the scroll viewport by the same amount. */
+    <Screen scroll={false} padded={false} bottomInset={false}>
       {header}
       <ScrollView
         contentContainerStyle={styles.content}

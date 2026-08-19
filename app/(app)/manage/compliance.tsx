@@ -2,7 +2,6 @@ import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { Stack, useRouter, type Href } from 'expo-router';
 import { useState } from 'react';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 
 import { ComplianceCaptureSheet } from '@/components/compliance/ComplianceCaptureSheet';
@@ -135,7 +134,6 @@ type ComplianceAction =
 export default function ComplianceScreen() {
   const router = useRouter();
   const { colors } = useTheme();
-  const insets = useSafeAreaInsets();
   const toast = useToast();
   const { venue } = useVenueContext();
   const dashboard = useComplianceDashboard();
@@ -211,7 +209,7 @@ export default function ComplianceScreen() {
           }
         />
         {isAdmin ? (
-          <View style={[styles.enableBlock, { paddingBottom: insets.bottom + spacing.xl }]}>
+          <View style={styles.enableBlock}>
             <Button
               label="Enable compliance"
               fullWidth
@@ -777,6 +775,8 @@ const styles = StyleSheet.create({
   enableBlock: {
     gap: spacing.sm,
     paddingHorizontal: spacing.base,
+    // No safe-area inset here — the wrapping `Screen` already reserves it.
+    paddingBottom: spacing.xl,
   },
   todayCard: {
     // Override Card default surface color for the "act now" emphasis — done via inline style above

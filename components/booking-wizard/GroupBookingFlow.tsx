@@ -883,7 +883,8 @@ export function GroupBookingFlow({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, gap: spacing.base, paddingBottom: spacing.xl },
+  // No bottom padding — see the note in ServiceBookingFlow.
+  container: { flex: 1, gap: spacing.base },
   scroll: { gap: spacing.base, paddingBottom: spacing.lg },
   personRow: {
     flexDirection: 'row',

@@ -402,7 +402,8 @@ export function EventBookingFlow({ onCreated }: EventBookingFlowProps) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, gap: spacing.base, paddingBottom: spacing.xl },
+  // No bottom padding — see the note in ServiceBookingFlow.
+  container: { flex: 1, gap: spacing.base },
   list: { gap: spacing.md, paddingBottom: spacing.lg },
   subList: { gap: spacing.sm },
   ticketRow: { gap: spacing.xs },

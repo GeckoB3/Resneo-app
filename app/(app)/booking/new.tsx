@@ -1,7 +1,6 @@
 import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ClassBookingFlow } from '@/components/booking-wizard/ClassBookingFlow';
 import { EventBookingFlow } from '@/components/booking-wizard/EventBookingFlow';
@@ -91,7 +90,6 @@ export default function NewBookingScreen() {
 
 function NewBookingForm() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const form = useBookingFormVenue();
   const {
     type: typeParam,
@@ -257,12 +255,16 @@ function NewBookingForm() {
           <BookingTypeTabs tabs={tabs} active={tab} onChange={handleTabChange} />
         ) : null}
         {/* Key on the tab + reset token: switching tabs or re-entering the
-            screen remounts the flow so each starts from a clean step 1. The
-            bottom inset is reserved here so every flow's pinned "Continue"
-            button clears the home indicator / nav bar — the screen's Screen
-            wrapper only insets the top (edges={['top']}), and the modal card
-            runs to the device's bottom edge. */}
-        <View key={`${tab}-${resetKey}`} style={[styles.flow, { paddingBottom: insets.bottom }]}>
+            screen remounts the flow so each starts from a clean step 1.
+
+            NO bottom inset here. This used to add `insets.bottom`, on the
+            reasoning that `Screen` "only insets the top (edges={['top']})" —
+            true of the SafeAreaView EDGES, but `Screen` reserves the bottom
+            safe area separately through its `bottomInset` prop, which defaults
+            to on. So the home-indicator strip was reserved twice, leaving a
+            dead band of background below every step (~34pt on an iPhone) that
+            pushed each step's "Continue" toward or past the fold. */}
+        <View key={`${tab}-${resetKey}`} style={styles.flow}>
           {tab === 'service' ? <ServiceBookingFlow onCreated={handleCreated} /> : null}
           {tab === 'class' ? <ClassBookingFlow onCreated={handleCreated} /> : null}
           {tab === 'event' ? <EventBookingFlow onCreated={handleCreated} /> : null}
