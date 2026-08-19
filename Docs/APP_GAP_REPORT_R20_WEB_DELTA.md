@@ -226,7 +226,7 @@ Web accepted R20-1 as in scope — the Stage 7 scope note had not considered sta
 **read** routes at all — and returned four corrections plus five more routes.
 Our full reply is `Docs/R20-1_APP_REPLY.md`. What changed on our side:
 
-### R20-5 — the "Any available" fan-out is not fail closed  **(Medium, app-side, TRACKED)**
+### R20-5 — the "Any available" fan-out is not fail closed  **(Medium, app-side, BUILT 2026-08-19)**
 
 `lib/queries/useAppointmentAvailability.ts:184` aggregates the client-side
 per-practitioner fan-out as:
@@ -242,9 +242,18 @@ every "Any available" search — the wrap does not close that path.
 
 The comment on the line ("a single practitioner erroring shouldn't blank the
 merged list") is a fair trade for a transient network blip and a bad one for a
-deliberate 503. **Not built.** The likely shape is a visible partial state —
-"couldn't check every team member" with a retry — rather than either blanking the
-list or hiding the gap.
+deliberate 503.
+
+**BUILT.** `pooledAvailabilityFailureState(total, failed)` in
+`lib/queries/useAppointmentAvailability.ts` now owns both halves: nothing loaded
+is an error, some loaded is a partial answer carrying `unavailableCount`. The
+slots that DID load stay on screen — blanking them is the failure pooling exists
+to avoid — with a notice above both the list and the empty state:
+*"Couldn't check N team members — some times may be missing."* plus a Try again.
+Placed above both branches deliberately, because it changes what each one means:
+the empty state stops being "nobody is free" and the list stops being "these are
+all the times". Pure rule + 6 tests in
+`lib/queries/pooled-availability-failure.test.ts`.
 
 Note the divergence this rests on: the web guest route pools **server-side**, so
 its fail-closed is genuine; the app fans out client-side. That is a parity
@@ -268,11 +277,22 @@ justification, and the app calls it directly
 
 ### `calendar-grid` — NOT covered by web's change
 
-Recorded here so nothing later reads it as closed. `getCalendarGrid` has zero
-reporting sites, so wrapping it today would be a no-op; it discards `error` on
-five reads including `bookings`, which renders our calendar as an empty day.
-Instrumentation first, then the wrap. Our side already handles the 503
-(`app/(app)/(tabs)/index.tsx:2182`), so it needs no app change.
+Recorded here so nothing later reads it as closed. `getCalendarGrid` had zero
+reporting sites, so wrapping it would have been a no-op.
+
+**Corrected 2026-08-19 (web round 4):** instrumenting it found **seven**
+discarded reads, not the five first reported — `unified_calendars`, `bookings`,
+`calendar_blocks`, `event_sessions`, `guests`, `appointment_services`,
+`service_items`. `bookings` is the one that reaches us: a failed read there
+rendered an **empty day** on our calendar and staff concluded nobody was booked.
+
+Web has instrumented it (`ac4adbf4`) and deliberately **not** wrapped it, listing
+it in `MUST_NOT_WRAP` with the reason. Two of the seven are labelled
+`(label only)` — `guests` and the service-name lookups mislabel a bar rather than
+misstating the schedule — and the collector is flat, so whoever eventually wraps
+this route decides deliberately whether a failed guest-name lookup should blank
+the whole calendar. Our side already handles the 503
+(`app/(app)/(tabs)/index.tsx:2182`), so it needs no app change when that happens.
 
 ### `/api/venue/class-availability` — confirmed never called
 
@@ -285,3 +305,48 @@ string has never been in app source on any branch. Web is clear to delete it.
 `/api/venue/resource-calendar` are used by the WEB staff flows. The app's class,
 event and resource pickers call the **guest** routes instead. Worth doing on web's
 side, but it must not be counted as covering the app for those models.
+
+---
+
+## Part 6 — R20-1 closed by web (round 4, 2026-08-19)
+
+Web shipped four commits to `staging`: `4e44e246` (fail closed on the staff
+availability reads plus the two guest routes Stage 7 missed), `ac4adbf4`
+(instrument `getCalendarGrid`), `19f65f89` (delete `/api/venue/class-availability`),
+`a4b4856f` (waitlist per-entry degradation). **Eight routes now fail closed.**
+Their suite went 372/3596 → 376/3632 with no regressions. One operator step is
+still owed on their side: live injection on staging.
+
+**A correction to us, and the mechanism is the inverse of how we stated it.** We
+argued a unit test beats a comment because "a handler-level injection passes
+against a route whose per-entry context already swallowed the failures". Web ran
+it instead of reasoning about it: a handler-level injection lands *outside* the
+per-entry loop, so a re-added wrapper WOULD convert it. It is the per-entry
+injection that is swallowed.
+
+So combining a route-level wrap with per-entry contexts makes protection
+**partial**, not inert — the reads before the loop are covered, the ones inside
+are silently ignored. That is worse than either half, and it strengthens the
+argument for a test rather than weakening it, because Stage 7's own `[R3-91]`
+lesson tells people to inject at handler level: the fixture that catches this
+does so by accident and reports it as a confusing 503.
+
+They built the guard rather than writing back — three fixtures in
+`schedule-read-context.test.ts` (shadowing, partial protection, and the
+concurrent isolation our per-entry design depends on, which neither side had
+evidence for), a `MUST_NOT_WRAP` entry, and the hazard recorded on
+`withScheduleFailClosed` itself. One detail if we ever mirror the pattern: the
+guard has to match the CALL, not the name, because the waitlist route names the
+helper in the comment explaining why it must not use it.
+
+**If this area is audited again, read
+`src/lib/availability/schedule-fail-closed-coverage.test.ts` rather than
+re-deriving the route set.** The enumeration was the defect twice — once on each
+side — and a list that lives in a test cannot quietly go stale.
+
+### Still open on the app side
+
+1. **Release.** R20-3 and everything since is committed and pushed, but committed
+   is not released. Until it reaches installs, a month-read failure on an old
+   build shows staff a permissive calendar with no notice.
+2. Nothing else. R20-5 is built (above).

@@ -302,6 +302,9 @@ export function TimeSlotStep({
   const isError = isAnyAvailable ? pooledQuery.isError : singleQuery.isError;
   const errorValue = isAnyAvailable ? pooledQuery.error : singleQuery.error;
   const retry = isAnyAvailable ? pooledQuery.refetch : () => void singleQuery.refetch();
+  // Partial pooled failure — only the "Any available" path can be partial; a
+  // single-practitioner lookup is all-or-nothing and reports through `isError`.
+  const unavailableCount = isAnyAvailable ? pooledQuery.unavailableCount : 0;
 
   if (isLoading) {
     return <LoadingState message="Loading available times…" />;
@@ -327,6 +330,23 @@ export function TimeSlotStep({
           fullWidth
           onPress={() => onStartNow?.(venueTodayDate(timeZone))}
         />
+      ) : null}
+
+      {/* Some team members could not be checked (R20-5).
+          Shown ABOVE both branches, because it changes what each one means: the
+          empty state stops being "nobody is free" and the list stops being "these
+          are all the times". A silently short list is the failure web's Stage 7
+          fail-closed work exists to remove, and swallowing it here would put it
+          straight back one layer up. */}
+      {unavailableCount > 0 ? (
+        <View style={[styles.partialNotice, { borderColor: colors.warning }]}>
+          <Text variant="caption" color={colors.warning} style={styles.partialText}>
+            {unavailableCount === 1
+              ? "Couldn't check one team member — some times may be missing."
+              : `Couldn't check ${unavailableCount} team members — some times may be missing.`}
+          </Text>
+          <Button label="Try again" variant="ghost" size="sm" onPress={retry} />
+        </View>
       ) : null}
 
       {visibleSlots.length === 0 ? (
@@ -448,5 +468,18 @@ const styles = StyleSheet.create({
   emptyWrap: {
     flex: 1,
     gap: spacing.md,
+  },
+  partialNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radius.md,
+    paddingLeft: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  partialText: {
+    flex: 1,
   },
 });

@@ -114,6 +114,31 @@ export function useAppointmentAvailability({
 }
 
 /**
+ * How a pooled ("Any available") fan-out reports failure.
+ *
+ * Client-side pooling is silently lossy by construction: each practitioner is a
+ * separate request, and one that fails simply contributes no slots. Two rules,
+ * and the second is the one R20-5 existed to add:
+ *
+ *  - **nothing loaded** → a real error. There is no answer to show.
+ *  - **some loaded** → NOT an error. The slots we have are real and bookable, so
+ *    blanking them is the failure pooling exists to avoid — but the caller must
+ *    be told how many calendars are missing, or a short list reads as a complete
+ *    one. Web's Stage 7 makes the staff availability route fail closed rather
+ *    than answer with times missing; swallowing that here would convert one
+ *    silent partial answer into another.
+ *
+ * Pure so both halves can be pinned without rendering.
+ */
+export function pooledAvailabilityFailureState(
+  total: number,
+  failed: number,
+): { isError: boolean; unavailableCount: number } {
+  const isError = failed > 0 && failed === total;
+  return { isError, unavailableCount: isError ? 0 : failed };
+}
+
+/**
  * "Any available" pooling — fetches day slots for each candidate practitioner in
  * parallel and merges them, sorted by start time then practitioner name. The
  * backend's day endpoint requires a specific practitioner_id, so pooling is a
@@ -179,9 +204,10 @@ export function useAnyPractitionerAvailability({
   const isLoading = results.some((r) => r.isLoading);
   const isFetching = results.some((r) => r.isFetching);
   const errors = results.filter((r) => r.isError);
-  // Only fail when nothing loaded — a single practitioner erroring shouldn't
-  // blank the merged list.
-  const isError = errors.length > 0 && errors.length === results.length;
+  const { isError, unavailableCount } = pooledAvailabilityFailureState(
+    results.length,
+    errors.length,
+  );
   const error = errors[0]?.error ?? null;
 
   const slots: AppointmentSlot[] = results
@@ -199,6 +225,8 @@ export function useAnyPractitionerAvailability({
     isFetching,
     isError,
     error,
+    /** Practitioners whose availability could not be read; 0 when all loaded. */
+    unavailableCount,
     refetch: () => results.forEach((r) => void r.refetch()),
   };
 }

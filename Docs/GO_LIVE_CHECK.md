@@ -272,6 +272,87 @@ push delivery and one live card payment against the production backend.
 
 ---
 
+## Run 2026-08-19 — OTA to production, 1.0.6
+
+**Scope:** the 17 commits since the 1.0.6 release (`e131d98`) — R17 through R20,
+the hours editors, the bottom-inset layout fixes, the staff custom duration, and
+the fail-closed readiness work.
+
+**Verdict: cleared to OTA.** Nothing native changed, the version is correctly
+left at 1.0.6, and the EAS `production` environment carries every variable the
+bundle needs.
+
+### 1. Version and reach — the OTA will land
+
+| Check | Result |
+|---|---|
+| iOS version | **1.0.6** (`app.json:5`) |
+| Android version | **1.0.6** (`app.json:32`, `android.version`) |
+| `runtimeVersion.policy` | `appVersion` → runtime version **1.0.6** |
+| Live iOS production build | appVersion **1.0.6**, runtime **1.0.6**, channel `production`, commit `e131d98` |
+| Live Android production build | appVersion **1.0.6**, runtime **1.0.6**, channel `production`, commit `e131d98` |
+
+Both platforms share one runtime id (`019feda9-…`), so a single update serves
+them. **Do not bump the version** — under the `appVersion` policy that moves the
+runtime version and strands every existing install, which is the whole point of
+leaving it alone.
+
+### 2. OTA eligibility — nothing native moved
+
+`git diff e131d98..HEAD -- package.json package-lock.json app.json app.config.js eas.json`
+is **empty**. No dependency, native module or config change since the build that
+is live, so the JS bundle is the only thing shipping.
+
+### 3. Production environment — verified against EAS, not `eas.json`
+
+`eas update` reads `EXPO_PUBLIC_*` from the **EAS environment only**, never from
+`eas.json`. Run `eas env:list production`:
+
+| Variable | Value | Matches `eas.json` production? |
+|---|---|---|
+| `EXPO_PUBLIC_API_URL` | `https://www.resneo.com` | ✅ |
+| `EXPO_PUBLIC_SUPABASE_URL` | `njualfobtudvlugqkqho.supabase.co` | ✅ |
+| `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | `sb_publishable_faW-…` | ✅ |
+| `EXPO_PUBLIC_SENTRY_DSN` | Sentry DE ingest | ✅ |
+| `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` | **`pk_live_…`** | n/a — not in `eas.json` production, correctly EAS-only |
+
+No staging host anywhere in the production path: `reserve-ni.vercel.app` appears
+only under the `preview` build profile.
+
+**Three variables are absent from the environment, and all three are correct:**
+
+- `EXPO_PUBLIC_TERMINAL_SIMULATED` — `shouldSimulateCardReaders()` falls back to
+  `__DEV__` (`lib/env.ts:87`), which is `false` in a production bundle, so
+  readers are **real**. Checked rather than assumed, because the failure would be
+  simulated card payments in production.
+- `EXPO_PUBLIC_ALLOW_SCREENSHOTS` — must stay unset; it lifts `FLAG_SECURE` on
+  the compliance screen and is a dev-only opt-in.
+- `EXPO_PUBLIC_WEB_URL` — falls back to `EXPO_PUBLIC_API_URL`
+  (`booking-settings.tsx:911`), which is the production host.
+
+`EXPO_PUBLIC_ANALYTICS_KEY` is likewise unset, which leaves analytics off — the
+existing intent, not a regression.
+
+### 4. Publishing
+
+```
+npx eas-cli update --channel production --environment production --clear-cache
+```
+
+**`--clear-cache` is not optional.** Metro does not re-key its cache on
+`EXPO_PUBLIC_*` changes, so an OTA can otherwise ship a stale bundle carrying the
+wrong (or missing) backend URLs. `eas.json` also sets `requireCommit: true`, so
+the tree must be clean before publishing.
+
+### 5. What this release finally delivers
+
+R20-3 among other things: until this reaches installs, a failed month-availability
+read still shows staff a permissive calendar with no notice. Web has already
+shipped the server half that makes those reads fail closed, so this OTA is what
+closes the loop.
+
+---
+
 ## Run 2026-08-10 — 1.0.6, both platforms
 
 **Scope:** a JavaScript-only correctness and layout release (guest-notification
