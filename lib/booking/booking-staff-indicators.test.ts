@@ -3,6 +3,7 @@ import {
   canShowConfirmStaffAttendanceConfirmationAction,
   canShowStaffAttendanceToggle,
   depositPillAppliesToStatus,
+  hasSettleableDeposit,
   isAttendanceConfirmed,
   showAttendanceConfirmedSupplementPill,
   showDepositFailedPill,
@@ -197,5 +198,36 @@ describe('canShowStaffAttendanceToggle', () => {
     for (const status of ['Cancelled', 'No-Show', 'Completed', 'Seated'] as const) {
       expect(canShowStaffAttendanceToggle({ status }, undefined)).toBe(false);
     }
+  });
+});
+
+/**
+ * R21-1 / web F18. The gate this replaced was "not Paid and not Refunded", which
+ * left Send payment link / Record cash / Waive on every booking whose deposit was
+ * 'Not Required'. Since web `491832ca` the route answers 409 `invalid_state` for
+ * the last two, so the statuses below are exactly the ones the server will accept.
+ */
+describe('hasSettleableDeposit', () => {
+  it('is true only for Pending and Failed', () => {
+    expect(hasSettleableDeposit('Pending')).toBe(true);
+    expect(hasSettleableDeposit('Failed')).toBe(true);
+  });
+
+  it('is false for a deposit that was never required', () => {
+    // The case that made this necessary: recording cash here used to write
+    // 'Paid' with a zero amount beside a real outstanding balance.
+    expect(hasSettleableDeposit('Not Required')).toBe(false);
+  });
+
+  it('is false for settled and card-hold states', () => {
+    for (const status of ['Paid', 'Waived', 'Refunded', 'Charged', 'Card Held']) {
+      expect(hasSettleableDeposit(status)).toBe(false);
+    }
+  });
+
+  it('is false when the row carries no deposit status at all', () => {
+    expect(hasSettleableDeposit(null)).toBe(false);
+    expect(hasSettleableDeposit(undefined)).toBe(false);
+    expect(hasSettleableDeposit('')).toBe(false);
   });
 });

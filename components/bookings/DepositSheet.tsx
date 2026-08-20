@@ -19,6 +19,7 @@ import {
   formatCardHoldFeePence,
   type CardHoldUiState,
 } from '@/lib/booking/card-hold';
+import { hasSettleableDeposit } from '@/lib/booking/booking-staff-indicators';
 import { formatPositivePence } from '@/lib/format';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useBookingDeposit, type DepositAction } from '@/lib/queries/useBookingMutations';
@@ -333,7 +334,14 @@ export function DepositSheet({ target, onClose }: DepositSheetProps) {
               </View>
 
               <View style={styles.buttons}>
-                {target.status !== 'Paid' && target.status !== 'Refunded' ? (
+                {/*
+                  Offered only while a deposit is actually outstanding. This used to read
+                  "not Paid and not Refunded", which left all three on every booking whose
+                  deposit was 'Not Required' — and since web `491832ca` the server refuses
+                  `waive` and `record_cash` there with a 409, so they were three buttons
+                  that could only produce an error. Matches the route's own guard.
+                */}
+                {hasSettleableDeposit(target.status) ? (
                   <>
                     <Button
                       label="Send payment link"

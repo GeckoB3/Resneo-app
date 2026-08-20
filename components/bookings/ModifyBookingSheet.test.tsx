@@ -117,6 +117,11 @@ const ADDON_GROUP = {
 let mockServiceProcessingBlocks: unknown[] = [];
 /** A second service, so a test can switch away and swap patterns. */
 let mockOtherServiceProcessingBlocks: unknown[] = [];
+/**
+ * Variants on svc-1. Empty for every pre-existing case; the R21-5 suite sets two
+ * with different lengths, which is the shape web's F7 bug needed to show itself.
+ */
+let mockServiceVariants: { id: string; name: string; duration_minutes: number }[] = [];
 
 jest.mock('@/lib/queries/useAppointmentCatalog', () => ({
   useAppointmentCatalog: () => ({
@@ -130,7 +135,7 @@ jest.mock('@/lib/queries/useAppointmentCatalog', () => ({
               id: 'svc-1',
               name: 'Cut & Finish',
               duration_minutes: 45,
-              variants: [],
+              variants: mockServiceVariants,
               addon_groups: mockAddonGroups,
               processing_time_blocks: mockServiceProcessingBlocks,
             },
@@ -298,6 +303,7 @@ beforeEach(() => {
   mockDetailProcessingBlocks = undefined;
   mockServiceProcessingBlocks = [];
   mockOtherServiceProcessingBlocks = [];
+  mockServiceVariants = [];
   mockSlots = [
     { practitioner_id: 'prac-1', service_id: 'svc-1', start_time: '09:30' },
     { practitioner_id: 'prac-1', service_id: 'svc-1', start_time: '14:00' },
@@ -1434,5 +1440,194 @@ describe('ModifyBookingSheet', () => {
         jest.useRealTimers();
       }
     });
+  });
+});
+
+/**
+ * R21-5 — the duration must follow a variant switch.
+ *
+ * Web carried this as F7 (`491832ca`): its form adopted a catalogue duration only
+ * when the field was empty, and its variant `<select>` set the id alone. Switching
+ * Basic (30 min) to Premium (60 min) therefore posted 30, and the booking was saved
+ * as Premium, priced as Premium, and given half the time Premium needs. Web's §12.8
+ * flagged this app as likely carrying the same bug because that half of the fix was
+ * client-side.
+ *
+ * It does not: `selectVariant`/`selectService` move the id and the duration
+ * together. But nothing proved it — every other service fixture in this file uses
+ * `variants: []` — so these pin the behaviour rather than leaving it to structure.
+ */
+describe('ModifyBookingSheet — variant duration (R21-5)', () => {
+  /** Two lengths, so a stale duration is visible rather than coincidentally right. */
+  const VARIANTS = [
+    { id: 'var-basic', name: 'Basic', duration_minutes: 30 },
+    { id: 'var-premium', name: 'Premium', duration_minutes: 60 },
+  ];
+
+  /** The booking as opened: on Basic, 30 minutes, matching its variant. */
+  const ON_BASIC: ModifyBookingTarget = {
+    ...TARGET,
+    durationMinutes: 30,
+    serviceVariantId: 'var-basic',
+  };
+
+  beforeEach(() => {
+    mockServiceVariants = VARIANTS;
+  });
+
+  it('moves the duration to the variant that was picked', async () => {
+    await render(<ModifyBookingSheet target={ON_BASIC} onClose={onClose} />);
+    expect(stepperValue('Duration')).toBe('30 min');
+
+    await press('Premium (60m)');
+
+    // The bug's signature is this staying at "30 min".
+    expect(stepperValue('Duration')).toBe('1h');
+  });
+
+  it('sends the new variant length, not the one the form opened with', async () => {
+    jest.useFakeTimers();
+    try {
+      await render(<ModifyBookingSheet target={ON_BASIC} onClose={onClose} />);
+      await press('Premium (60m)');
+      await settleAvailability();
+      await press('Save changes');
+
+      expect(mockModify).toHaveBeenCalledWith(
+        expect.objectContaining({
+          service_variant_id: 'var-premium',
+          duration_minutes: 60,
+        }),
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('checks availability against the new length before saving', async () => {
+    // The dry run gates Save, so a stale duration here would pre-clear a slot the
+    // booking no longer fits — the server then judges the real one and 409s.
+    jest.useFakeTimers();
+    try {
+      await render(<ModifyBookingSheet target={ON_BASIC} onClose={onClose} />);
+      await press('Premium (60m)');
+      await settleAvailability();
+
+      expect(mockValidate).toHaveBeenCalledWith(
+        expect.objectContaining({ service_variant_id: 'var-premium', duration_minutes: 60 }),
+        expect.anything(),
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('switching back restores the original length', async () => {
+    await render(<ModifyBookingSheet target={ON_BASIC} onClose={onClose} />);
+    await press('Premium (60m)');
+    await press('Basic (30m)');
+
+    expect(stepperValue('Duration')).toBe('30 min');
+  });
+
+  it('keeps a booking length that differs from its own variant on open', async () => {
+    // Booked long, or trimmed by staff earlier. Opening the form must not quietly
+    // re-adopt the catalogue figure — that would arm Save on an untouched form and
+    // reschedule the appointment nobody asked to change.
+    await render(
+      <ModifyBookingSheet target={{ ...ON_BASIC, durationMinutes: 40 }} onClose={onClose} />,
+    );
+
+    expect(stepperValue('Duration')).toBe('40 min');
+    expect(screen.getByText('Adjust a field to check availability and enable save.')).toBeTruthy();
+  });
+});
+
+/**
+ * R21-3 — a booking whose service was archived must not lose its variant.
+ *
+ * `requiresVariant` is false for two unrelated reasons: the service has no options,
+ * or the service is no longer in the catalogue so the form knows nothing about its
+ * options. Both used to post `service_variant_id: null`, and since web `491832ca`
+ * that nulls `service_variant_name_snapshot` too — so adjusting only the TIME of an
+ * archived-service booking silently dropped the option, name and all.
+ *
+ * Web reached the same place from the other side: its save omits the key already,
+ * but its dry run does not (see Docs/R21_WEB_HANDOVER.md W2).
+ */
+describe('ModifyBookingSheet — archived service keeps its variant (R21-3)', () => {
+  /** The booked service is not in the catalogue; the booking still has an option. */
+  const ARCHIVED: ModifyBookingTarget = {
+    ...TARGET,
+    serviceId: 'svc-archived',
+    serviceVariantId: 'var-basic',
+  };
+
+  /** The single body the save actually posted. */
+  function savedBody(): Record<string, unknown> {
+    return mockModify.mock.calls[0]![0] as Record<string, unknown>;
+  }
+
+  it('says the service is gone but still lets the time be adjusted', async () => {
+    await render(<ModifyBookingSheet target={ARCHIVED} onClose={onClose} />);
+    expect(
+      screen.getByText(
+        "The booked service is no longer in the catalogue — pick a service below to change it, or just adjust the time and duration.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it('omits service_variant_id entirely when the catalogue cannot confirm it', async () => {
+    jest.useFakeTimers();
+    try {
+      await render(<ModifyBookingSheet target={ARCHIVED} onClose={onClose} />);
+      // Changed by hand rather than by slot: the slot list is keyed on the service
+      // id, so an archived service has none — which is precisely why the form tells
+      // staff to adjust the time and duration instead.
+      await press('1h');
+      await settleAvailability();
+      await press('Save changes');
+
+      // Not `null` — that is the value the route acts on, and acting on it here
+      // drops both the id and the name snapshot.
+      expect('service_variant_id' in savedBody()).toBe(false);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('still sends null for a service that really has no options', async () => {
+    // The other half of the same condition, and the one that must keep working:
+    // this is how switching to a plain service clears a stale variant, since the
+    // route only touches the column when the key is present.
+    jest.useFakeTimers();
+    try {
+      await render(<ModifyBookingSheet target={TARGET} onClose={onClose} />);
+      await moveAndSave();
+
+      expect(savedBody()).toEqual(expect.objectContaining({ service_variant_id: null }));
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('sends the variant when the catalogue does have it', async () => {
+    jest.useFakeTimers();
+    try {
+      mockServiceVariants = [{ id: 'var-basic', name: 'Basic', duration_minutes: 30 }];
+      await render(
+        <ModifyBookingSheet
+          target={{ ...TARGET, durationMinutes: 30, serviceVariantId: 'var-basic' }}
+          onClose={onClose}
+        />,
+      );
+      await moveAndSave();
+
+      expect(savedBody()).toEqual(
+        expect.objectContaining({ service_variant_id: 'var-basic' }),
+      );
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

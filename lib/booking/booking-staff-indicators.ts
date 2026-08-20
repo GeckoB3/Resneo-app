@@ -59,6 +59,32 @@ export function isAttendanceConfirmed(row: BookingStaffIndicatorInput): boolean 
 }
 
 /**
+ * Which bookings still have a deposit worth acting on (web parity, R21-1 / web F18).
+ *
+ * `deposit_status` is `'Pending'` at creation when a deposit or a card-hold fee is
+ * required and `'Not Required'` otherwise, then moves to `'Paid'`, `'Waived'`,
+ * `'Refunded'`, `'Charged'` and so on as it settles. Only `'Pending'` and `'Failed'`
+ * leave anything to collect, waive or record.
+ *
+ * The old gate here was "not Paid and not Refunded", which left the three deposit
+ * actions on every booking whose deposit was `'Not Required'` — any service with no
+ * deposit at all. `send_payment_link` has always been refused for those, but `waive`
+ * and `record_cash` were not, so recording cash wrote `deposit_status: 'Paid'` with
+ * `deposit_amount_pence: 0` and the row then read "£0.00 · Paid" beside its real
+ * outstanding balance, offering to refund £0. Web closed that server-side in
+ * `491832ca`, so those two now answer 409 `invalid_state`; this is the client half,
+ * so a button is never offered for an action the server refuses.
+ *
+ * Mirrors web `src/lib/booking/deposit-action-eligibility.ts`. Keep the two in step.
+ */
+export const DEPOSIT_SETTLEABLE_STATUSES = ['Pending', 'Failed'] as const;
+
+export function hasSettleableDeposit(depositStatus: string | null | undefined): boolean {
+  if (!depositStatus) return false;
+  return (DEPOSIT_SETTLEABLE_STATUSES as readonly string[]).includes(depositStatus);
+}
+
+/**
  * Second "Confirmed" pill for lists/cards: guest and/or staff confirmed, but
  * lifecycle `status` is not already `Confirmed` (the primary status pill already
  * shows Confirmed in that case).

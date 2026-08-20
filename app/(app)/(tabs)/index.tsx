@@ -22,6 +22,7 @@ import { BlockEditSheet, type BlockTarget } from '@/components/calendar/BlockEdi
 import { CalendarDayGrid } from '@/components/calendar/CalendarDayGrid';
 import { minutesToTime, timeToMinutes, type GridWindowOverride } from '@/components/calendar/grid-layout';
 import { resolveDayLoadState } from '@/lib/calendar/day-load-state';
+import { resolveGridErrorState } from '@/lib/calendar/grid-error-state';
 import { nextVisibleCalendars } from '@/lib/calendar/calendar-selection';
 import { resolveVenueDay, venueDayHours } from '@/lib/calendar/venue-closures';
 import { buildCalendarClosureOverlays } from '@/lib/calendar/schedule-closures';
@@ -1772,6 +1773,20 @@ export default function CalendarScreen() {
     isPlaceholderData: gridQuery.isPlaceholderData,
   });
 
+  /**
+   * R21-6. A failed 60-second poll must not take a working calendar off screen:
+   * the grid keeps rendering and a banner says it may be out of date. The error
+   * screen is reserved for a cold load, and for a failure over `keepPreviousData`
+   * from a different range — showing that under this date would be a wrong
+   * answer rather than a missing one. See grid-error-state.ts.
+   */
+  const { showErrorScreen: gridShowError, showStaleBanner: gridShowStale } =
+    resolveGridErrorState({
+      isError: gridQuery.isError,
+      hasData: gridQuery.data != null,
+      isPlaceholderData: gridQuery.isPlaceholderData,
+    });
+
   const refreshing = gridQuery.isFetching && !gridQuery.isLoading;
   // Pull-to-refresh refetches BOTH the grid and the schedule feed so a freshly
   // added class/event/resource surfaces immediately alongside bookings.
@@ -2107,6 +2122,34 @@ export default function CalendarScreen() {
                 calendar diary (status filtering lives on the Bookings tab). */}
           </View>
 
+          {/*
+            R21-6 — the grid below is still the last good data; this says so rather
+            than the screen pretending nothing happened. Only on the own-venue path:
+            `gridQuery` does not drive a linked venue's calendar, which has its own.
+            Deliberately not an error: the day on screen loaded fine, and a poll
+            failing is worth one line, not the loss of the screen.
+          */}
+          {!linkedContextActive && gridShowStale ? (
+            <View
+              style={[
+                styles.staleBanner,
+                { backgroundColor: colors.warningSurface, borderBottomColor: colors.warning },
+              ]}>
+              <Text variant="caption" color={colors.warning} style={styles.staleBannerText}>
+                Couldn&apos;t refresh — showing the last update, which may be out of date.
+              </Text>
+              <Pressable
+                onPress={() => void gridQuery.refetch()}
+                accessibilityRole="button"
+                accessibilityLabel="Retry loading the calendar"
+                hitSlop={spacing.sm}>
+                <Text variant="caption" color={colors.warning} style={styles.staleBannerAction}>
+                  Retry
+                </Text>
+              </Pressable>
+            </View>
+          ) : null}
+
           {linkedContextActive ? (
             linkedQuery.isLoading ? (
               <LoadingState message="Loading linked calendar…" />
@@ -2179,7 +2222,7 @@ export default function CalendarScreen() {
             )
           ) : gridQuery.isLoading ? (
             <LoadingState message="Loading appointments…" />
-          ) : gridQuery.isError ? (
+          ) : gridShowError ? (
             <ErrorState
               message={
                 gridQuery.error instanceof ApiError
@@ -2526,6 +2569,24 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.md,
     gap: spacing.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  // R21-6 stale-data notice. Thin and in flow above the grid, so it costs the
+  // calendar a line rather than covering it.
+  staleBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.base,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  staleBannerText: {
+    flexShrink: 1,
+  },
+  staleBannerAction: {
+    fontWeight: '700',
+    textDecorationLine: 'underline',
   },
   linkedContent: {
     paddingHorizontal: spacing.base,

@@ -78,6 +78,7 @@ import type { GuestBookingHistoryRow } from '@/types/guest-detail';
 import {
   canShowStaffAttendanceToggle,
   depositPillAppliesToStatus,
+  hasSettleableDeposit,
   showDepositFailedPill,
 } from '@/lib/booking/booking-staff-indicators';
 import {
@@ -707,12 +708,24 @@ export function BookingDetailContent({
   });
 
   // Web parity: deposit actions (send link / record cash / waive / refund) show
-  // whenever the booking is active; cancelled bookings instead get a refund
-  // banner + a permanent-delete card. Card-hold actions ignore the cancel gate:
-  // a kept late-cancellation hold stays chargeable/releasable on a Cancelled
-  // booking (§9.3 amended).
+  // whenever the booking is active AND there is something the sheet can do;
+  // cancelled bookings instead get a refund banner + a permanent-delete card.
+  // Card-hold actions ignore the cancel gate: a kept late-cancellation hold stays
+  // chargeable/releasable on a Cancelled booking (§9.3 amended).
+  //
+  // R21-1: the second half of that gate is new. This button opens `DepositSheet`,
+  // whose legacy branch offers the three settle actions while a deposit is
+  // outstanding and a Refund once it is `'Paid'` — nothing at all for
+  // `'Not Required'`, `'Waived'`, `'Refunded'` or a booking with no deposit. It
+  // used to open anyway, on a sheet whose only working control was Close (and,
+  // before web tightened the route, on three buttons that quietly corrupted the
+  // row). Taking money where no deposit was ever required is the in-person
+  // payment path, not this one.
   const isCancelled = booking.status === 'Cancelled';
-  const showDepositActions = cardHoldState ? cardHoldHasActions : !isCancelled;
+  const showDepositActions = cardHoldState
+    ? cardHoldHasActions
+    : !isCancelled &&
+      (hasSettleableDeposit(booking.deposit_status) || booking.deposit_status === 'Paid');
   const showRefundBanner =
     !cardHoldState && isCancelled && (booking.deposit_amount_pence ?? 0) > 0;
 
@@ -1496,14 +1509,12 @@ export function BookingDetailContent({
               />
             ) : null}
             {showDepositActions ? (
+              // No "Take deposit / payment" label any more: since R21-1 this button
+              // only appears when the booking HAS a deposit to settle or refund, so
+              // the no-deposit label could never be reached. Taking money on a
+              // booking that never owed a deposit is the in-person payment button.
               <Button
-                label={
-                  cardHoldState
-                    ? 'Card hold actions'
-                    : hasDeposit
-                      ? 'Deposit actions'
-                      : 'Take deposit / payment'
-                }
+                label={cardHoldState ? 'Card hold actions' : 'Deposit actions'}
                 variant="secondary"
                 fullWidth
                 onPress={() =>

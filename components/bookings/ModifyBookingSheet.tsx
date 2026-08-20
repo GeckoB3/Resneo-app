@@ -450,6 +450,34 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   const reassignedPractitionerId =
     practitionerId && practitionerId !== target?.practitionerId ? practitionerId : undefined;
 
+  /**
+   * `service_variant_id` for a payload, or nothing at all.
+   *
+   * `requiresVariant` is false for two unrelated reasons, and only one of them is a
+   * statement about the booking:
+   *
+   *  - the service resolved and genuinely has no options — `null` is right, and is
+   *    how switching a booking from a variant service to a plain one clears the
+   *    stale id (the route only clears it when this key is present);
+   *  - the service is **no longer in the catalogue**, so there are no variants to
+   *    list and the form knows nothing about them. This one used to send `null`
+   *    too, which silently dropped the option from a booking whose time was all
+   *    anyone touched — and since web `491832ca` it also nulls
+   *    `service_variant_name_snapshot`, so the booking loses the option's NAME as
+   *    well. Both survive if the key is simply omitted.
+   *
+   * The archived-service case is one the form deliberately supports ("pick a
+   * service below to change it, or just adjust the time and duration").
+   *
+   * `undefined` means "omit the key". Used by the dry run as well as the save, so the
+   * two cannot disagree about what is being asked for — the same reason
+   * `reassignedPractitionerId` above is derived once. Web omits on `!serviceVariantId`
+   * instead, which also leaves a dangling id behind on the variant-service →
+   * plain-service switch; keyed on the catalogue here so that switch still clears
+   * (see Docs/R21_WEB_HANDOVER.md W2).
+   */
+  const variantIdToSend = serviceInCatalog ? (requiresVariant ? variantId : null) : undefined;
+
   const selectService = (svc: AppointmentCatalogService) => {
     // Switching to a different service invalidates the current add-on choices
     // (groups are per-service). Re-selecting the same service keeps them.
@@ -1072,7 +1100,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
             ? { service_item_id: serviceId! }
             : { appointment_service_id: serviceId! }),
           duration_minutes: effectiveDuration,
-          service_variant_id: requiresVariant ? variantId : null,
+          ...(variantIdToSend !== undefined ? { service_variant_id: variantIdToSend } : {}),
           // The same fitted blocks the save will send, so this dry run judges
           // exactly what the PATCH will persist.
           ...(processingBlocksToSend ? { processing_time_blocks: processingBlocksToSend } : {}),
@@ -1109,6 +1137,9 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     effectiveDuration,
     processingBlocksToSend,
     requiresVariant,
+    // Derived from `serviceInCatalog` + `requiresVariant` + `variantId`; here so the
+    // dry run re-runs if the catalogue resolves late and the key starts being sent.
+    variantIdToSend,
     signature,
     validateMutate,
     visitScheduleAsync,
@@ -1286,7 +1317,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
           : { appointment_service_id: serviceId }),
         // Total length = base duration + selected add-on minutes (REPLACE).
         duration_minutes: effectiveDuration,
-        service_variant_id: requiresVariant ? variantId : null,
+        ...(variantIdToSend !== undefined ? { service_variant_id: variantIdToSend } : {}),
         // Full desired add-on set (REPLACE semantics). Only send the key when
         // the service has groups so non-add-on services keep a clean payload.
         ...(hasAddonGroups
