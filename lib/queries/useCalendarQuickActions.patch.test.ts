@@ -16,6 +16,7 @@ import { QueryClient } from '@tanstack/react-query';
 
 import { queryKeys } from '@/lib/queries/keys';
 import {
+  applyOptimisticGridPatch,
   patchCalendarGridBookings,
   revertCalendarGridBookings,
 } from '@/lib/queries/useCalendarQuickActions';
@@ -133,4 +134,49 @@ it('is a no-op for an empty id list', () => {
   expect(patchCalendarGridBookings(client, [], { status: 'Seated' }).size).toBe(0);
   // Same object: an empty batch must not even churn the cache identity.
   expect(client.getQueryData(KEY)).toBe(data);
+});
+
+/**
+ * The device-reported regression: "the bar responds immediately, but the state
+ * sometimes reverts after a few seconds."
+ *
+ * A read already in flight when the press lands — the 60-second poll, a resume
+ * refetch, or the reconcile from a previous press — resolves with pre-press rows
+ * and writes them straight over the patch. `applyOptimisticGridPatch` cancels
+ * those reads, and re-asserts afterwards because cancelling reverts the query to
+ * the state captured when the cancelled fetch STARTED.
+ */
+describe('applyOptimisticGridPatch', () => {
+  it('survives a fetch that was already in flight when the press landed', async () => {
+    let release: (value: CalendarGridResponse) => void = () => {};
+    const inFlight = new Promise<CalendarGridResponse>((resolve) => {
+      release = resolve;
+    });
+
+    client.setQueryData(KEY, grid([booking({ id: 'b1', status: 'Booked' })]));
+    // A poll starts BEFORE the press, holding pre-press rows.
+    const fetching = client.fetchQuery({ queryKey: KEY, queryFn: () => inFlight });
+
+    await applyOptimisticGridPatch(client, ['b1'], { status: 'Seated' });
+    expect(rows(client)[0].status).toBe('Seated');
+
+    // The poll now comes back with what it read before the press.
+    release(grid([booking({ id: 'b1', status: 'Booked' })]));
+    await fetching.catch(() => undefined);
+    await Promise.resolve();
+
+    // Was 'Booked' before the cancel — the bar visibly flipping back.
+    expect(rows(client)[0].status).toBe('Seated');
+  });
+
+  it('still reports the PRE-press values so a rollback restores the real status', async () => {
+    client.setQueryData(KEY, grid([booking({ id: 'b1', status: 'Booked' })]));
+
+    const snapshot = await applyOptimisticGridPatch(client, ['b1'], { status: 'Seated' });
+    revertCalendarGridBookings(client, snapshot);
+
+    // Not 'Seated': re-reading the snapshot after the re-assert would capture the
+    // optimistic value as "previous" and a failed write would never roll back.
+    expect(rows(client)[0].status).toBe('Booked');
+  });
 });

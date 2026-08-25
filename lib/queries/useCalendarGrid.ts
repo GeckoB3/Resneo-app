@@ -17,8 +17,12 @@ type UseCalendarGridOptions = {
   /**
    * Poll interval (ms) for near-realtime parity — a second device's changes
    * surface without a manual refresh. Omit to disable polling.
+   *
+   * `false` pauses it without unmounting the query: the calendar holds the poll
+   * while a quick action or drag is in flight, so a read started mid-write cannot
+   * put the pre-write status back over the optimistic patch.
    */
-  refetchInterval?: number;
+  refetchInterval?: number | false;
 };
 
 /**

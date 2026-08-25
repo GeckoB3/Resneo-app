@@ -72,8 +72,8 @@ import {
 } from '@/lib/queries/useBookingMutations';
 import { useVisitScheduleById } from '@/lib/queries/useVisitMutations';
 import {
+  applyOptimisticGridPatch,
   invalidateCalendarQuickAction,
-  patchCalendarGridBookings,
   revertCalendarGridBookings,
   useCalendarStatusAction,
   useCalendarArrivalAction,
@@ -650,7 +650,14 @@ export default function CalendarScreen() {
     enabled: calendarIds.length > 0,
     // Near-realtime: a second device's changes surface within ~60s (web has
     // live sync; the app polls). Pull-to-refresh forces an immediate refetch.
-    refetchInterval: 60_000,
+    //
+    // Paused while a quick action or a drag is in flight. `applyOptimisticGridPatch`
+    // cancels reads already running when the press lands, but a poll that STARTS
+    // during the write would read the row before it commits and put the old status
+    // back — the reconcile corrects it a moment later, which is precisely the
+    // flicker this is meant to avoid. The write's own reconcile is a fresher read
+    // than the poll would have been, so nothing is lost by holding it.
+    refetchInterval: pendingActionIds.size > 0 ? false : 60_000,
   });
 
   // Venue-wide CLASS / EVENT / RESOURCE blocks for the visible range, from the
@@ -1524,7 +1531,7 @@ export default function CalendarScreen() {
     ) => {
       if (bookingIds.length === 0) return;
       setPendingActionIds((prev) => new Set([...prev, ...bookingIds]));
-      const snapshot = patchCalendarGridBookings(queryClient, bookingIds, optimistic);
+      const snapshot = await applyOptimisticGridPatch(queryClient, bookingIds, optimistic);
       try {
         const results = await Promise.allSettled(bookingIds.map((id) => send(id)));
         const failures = results.flatMap((result, index) =>

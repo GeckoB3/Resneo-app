@@ -102,6 +102,42 @@ export function patchCalendarGridBookings(
 }
 
 /**
+ * Patch the grid for a press AND make the patch survive a read that is already
+ * in flight. Returns the pre-press values, for `revertCalendarGridBookings`.
+ *
+ * Without the cancel, an optimistic patch is only as durable as the next fetch to
+ * land on top of it: the grid polls every 60 seconds, refetches on resume and on
+ * reconnect, and the reconcile from a PREVIOUS press is itself a fetch. Any of
+ * those, started before this press and resolving after it, writes its pre-press
+ * rows straight over the patch — the bar flips forward, then back a beat later.
+ * That is the standard reason the optimistic recipe cancels first.
+ *
+ * The ORDER here is deliberate and is the part that bites:
+ *
+ *   * patch FIRST, so the bar answers on the same frame as the press;
+ *   * then cancel, which aborts the in-flight read;
+ *   * then patch AGAIN, because cancelling with `revert` (the default) restores
+ *     the query state captured when that fetch STARTED — i.e. the pre-press rows,
+ *     undoing the patch above. Cancelling after patching without re-asserting
+ *     causes the exact revert it is meant to prevent.
+ *
+ * The snapshot is taken from the FIRST patch only. Re-reading it after the
+ * re-assert would capture already-patched rows as the "previous" values, and a
+ * rollback would then restore the optimistic state instead of the real one.
+ */
+export async function applyOptimisticGridPatch(
+  queryClient: QueryClient,
+  ids: readonly string[],
+  patch: CalendarBookingPatch,
+): Promise<CalendarGridSnapshot> {
+  const snapshot = patchCalendarGridBookings(queryClient, ids, patch);
+  if (ids.length === 0) return snapshot;
+  await queryClient.cancelQueries({ queryKey: queryKeys.calendar.all() });
+  patchCalendarGridBookings(queryClient, ids, patch);
+  return snapshot;
+}
+
+/**
  * Put back the rows a write failed for. Only the ids in `snapshot` move, so a
  * part-failed bar keeps the segments that did land.
  */
