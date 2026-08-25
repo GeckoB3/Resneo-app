@@ -1,5 +1,119 @@
 # Go-live check — Resneo app
 
+## Run 2026-08-25 — 1.0.7, both platforms, on `main` @ `2db7f7f`
+
+**Scope:** a re-baselining store build. 24 commits since the 1.0.6 build, of
+which seven OTA groups are already live on the 1.0.6 runtime. JavaScript only.
+The calendar quick-action work in this batch has been device-tested by the owner
+after the final OTA; the rest has been live for up to two weeks.
+
+**Verdict: clear to build.** No blockers. Two pre-existing issues are recorded in
+§4 — neither is introduced by this release and neither is fixable inside it.
+
+### 1. Why a build at all, when the code is already live
+
+The OTAs moved the running JavaScript but not the EMBEDDED bundle. A new install
+therefore started 24 commits behind and ran that stale code for its whole first
+session — `expo-updates` fetches in the background and applies on the NEXT
+launch — which covers install, sign-in and the first look at the calendar. A
+rollback could also only fall back to that same stale bundle. This build makes
+the embedded bundle current again.
+
+### 2. Version and reach
+
+- `version` 1.0.6 → **1.0.7** (iOS) and `android.version` 1.0.6 → **1.0.7**.
+  Both were bumped; the two are kept in step deliberately.
+- `runtimeVersion` is `{policy: "appVersion"}`, so each platform's runtime moves
+  to **1.0.7**. **An OTA published from this commit reaches nobody until the
+  1.0.7 binaries are on devices.** Publish nothing to `production` between the
+  bump and the store release. The final 1.0.6-runtime update stays served to
+  anyone who has not taken the store update.
+- Build numbers are EAS-remote with `autoIncrement`, so nothing is set by hand.
+  Android's last store `versionCode` was 14.
+
+### 3. Build eligibility — nothing native moved
+
+`package.json`, `package-lock.json`, `patches/`, `eas.json` and the native config
+in `app.json` are **byte-identical to what the 1.0.6 build shipped** — same
+`expo@~56.0.16`, same `react-native@0.85.3`. The only delta is JavaScript that
+has already run in production. This is the lowest-risk build shape available:
+the native layer is exactly the one currently working in both stores.
+
+### 4. Production environment — verified against EAS, not `eas.json`
+
+`eas.json`'s `production` profile carries an `env` block AND
+`"environment": "production"`. The two were reconciled key by key rather than
+assumed, because the `env` block takes precedence and does not list every value:
+
+| Variable | Source | Value |
+|---|---|---|
+| `EXPO_PUBLIC_API_URL` | both, agreeing | `https://www.resneo.com` |
+| `EXPO_PUBLIC_SUPABASE_URL` | both, agreeing | live project `njualfobtudvlugqkqho` |
+| `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | both, agreeing | live |
+| `EXPO_PUBLIC_SENTRY_DSN` | both, agreeing | live |
+| `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` | **EAS only** | `pk_live_…` |
+| `GOOGLE_SERVICES_JSON` | EAS only (file secret) | required by `app.config.js` |
+| `SENTRY_AUTH_TOKEN` | EAS only (sensitive) | sourcemap upload |
+
+Absent-by-design in production, each with a safe default:
+
+- `EXPO_PUBLIC_WEB_URL` — `getWebUrl()` falls back to `EXPO_PUBLIC_API_URL`.
+- `EXPO_PUBLIC_TERMINAL_SIMULATED` — unset falls back to `__DEV__`, false in a
+  production build, so **real card readers**.
+- `EXPO_PUBLIC_ALLOW_SCREENSHOTS` — unset means `FLAG_SECURE` stays on.
+- `EXPO_PUBLIC_SUPABASE_ANON_KEY` — falls back to the publishable key.
+- `EXPO_PUBLIC_ANALYTICS_KEY` — unset means analytics off.
+
+No staging host is declared anywhere in the production path. The local
+`.env.development.local` (staging web app, dev Supabase) is **not** read by a
+production export — proven by exporting and grepping the bundle: the dev Supabase
+host is absent. `getApiUrl()` also throws on a missing URL, so a bundle built
+without env vars fails loudly rather than pointing somewhere wrong.
+
+One cosmetic exception, not a defect here: `webDashboardUrl()` in
+`app/(app)/(tabs)/settings.tsx` hardcodes `https://reserve-ni.vercel.app` as a
+fallback. It is unreachable in production because `getWebUrl()` resolves first,
+but a staging URL in shipped code on a path that leads to billing is worth
+deleting.
+
+### 5. Verified healthy
+
+- `tsc --noEmit` — clean.
+- `expo lint` — **0 errors**, 202 warnings (all pre-existing test-file style).
+- `jest` — **190 suites / 1,968 tests pass**.
+- `expo export` — Android and web both complete cleanly.
+
+### 6. Pre-existing issues, NOT from this batch
+
+**`expo-doctor` reports 20/22.** Both failures predate this release and are
+carried by the live 1.0.6 build too.
+
+1. **Hermes V1 memory regression.** `expo@56.0.16` bundles Hermes V1
+   `250829098.0.10`; the fix first appears in `250829098.0.16`, which requires
+   React Native 0.86.2 / **Expo SDK 57**. This build is no worse than what is
+   already in both stores, but it is a memory regression and the fix is an SDK
+   major upgrade. Plan it as its own piece of work with its own device testing —
+   NOT as part of a version bump.
+2. **19 packages behind their SDK 56 patch targets** (`expo` 56.0.16 vs 56.0.20,
+   `react-native-screens` 4.25.2 vs 4.26.0, and 17 others). Deliberately NOT
+   upgraded here: they change native code, and the point of this build is that
+   its native layer is identical to the one already working in production.
+   Upgrade on a build whose purpose is the upgrade.
+
+### 7. Not covered
+
+- No device pass on 1.0.7 itself. The calendar quick-action changes were
+  device-confirmed by the owner on the final 1.0.6 OTA, which is the same
+  JavaScript; the build adds no JS on top of it.
+- The R22-1 communications default (`deposit_payment_reminder` → email + SMS) has
+  not been eyeballed on the settings screen. It only renders for a venue whose
+  stored policy blob lacks that key, which the server fills in for everyone else.
+- Store review outcome, and Apple's treatment of a release whose content largely
+  shipped as OTA. Nothing here changes the app's purpose or permissions.
+
+---
+
+
 ## Run 2026-08-16 (second) — R17-2 / R17-3, the break-override pair, on `main` @ `05041d6`
 
 **Scope:** the app half of web's SA-H3 / SA-H5 — staff may place an appointment

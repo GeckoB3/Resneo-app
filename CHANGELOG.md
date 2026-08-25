@@ -15,6 +15,110 @@ on the other, and iOS 1.0.4 is the worked example.
 
 ---
 
+## iOS 1.0.7 / Android 1.0.7 — 2026-08-25
+
+A re-baselining release. Covers 2026-08-11 → 2026-08-25 on both platforms; the
+same commits ship to each, so the store copy is identical.
+
+**Almost all of it is already live.** Seven OTA updates went out on the 1.0.6
+runtime between 11 and 25 August, so most users are running this code already.
+The build exists to move the EMBEDDED bundle forward: a new install was starting
+24 commits behind and running that stale code for its whole first session
+(expo-updates fetches in the background and applies on the next launch), and a
+rollback could only fall back to that same stale bundle.
+
+**Nothing native changed.** `package.json`, `package-lock.json`, `patches/`,
+`eas.json` and the native config in `app.json` are byte-identical to what the
+1.0.6 build shipped — same `expo@~56.0.16`, same `react-native@0.85.3`. The only
+delta is JavaScript that has been running in production via OTA. This is the
+lowest-risk build shape available.
+
+As always, bumping both versions moves each platform's runtime version, so this
+cannot be delivered as an update to anyone still on 1.0.6 (see the 2026-08-25
+run, §2, in `Docs/GO_LIVE_CHECK.md`). The final 1.0.6-runtime update stays
+served to stragglers.
+
+Requires no backend change.
+
+### Play Store — "What's new" (490/500)
+
+```
+The calendar now shows closures, staff leave and amended hours, so the diary matches what the booking engine allows.
+
+A multi-service visit is one bar you can drag and resize as a whole, not one bar per service.
+
+Status buttons on a booking respond instantly.
+
+Staff can take a booking without collecting payment first, and set the amount on a group booking.
+
+Fixed: a tapped notification could crash the app, the opening-hours editors saved incorrectly, and content sat under the home bar.
+```
+
+### App Store — "What's new" (1,309/4,000)
+
+```
+A calendar that tells the truth
+
+Venue closures, staff leave and amended opening hours are drawn on
+the diary. They were always enforced when taking a booking, but were
+invisible on the one screen staff use to find space.
+
+Visits, as one thing
+
+Several services booked back to back for one guest now render as a
+single bar spanning the whole visit, and drag and resize as one. The
+booking detail reads and edits them as one visit too, and staff can
+change which services a visit is made of.
+
+Status buttons that answer
+
+Arrived, Start and Complete now update the bar the moment you press
+them, instead of after a round trip. On a multi-service booking the
+whole visit moves together.
+
+Money decisions belong to staff
+
+A booking can be taken without collecting payment first, and the
+amount on a group booking or a chain of services is yours to set.
+Bookings whose deposit failed are marked as such, and the app no
+longer offers deposit actions the server would refuse.
+
+Fixed
+
+Tapping a notification could clone the app's root screen and crash
+it. The opening-hours editors did not save correctly and left out
+resources. Reports, contacts, services and other pages ran their last
+row under the home bar. Availability now says when it could not check
+every staff member rather than quietly showing fewer slots.
+```
+
+### Added
+
+- Venue closures, amended hours and staff leave are drawn on the calendar; the
+  grid feed carries none of them, so the app resolves and renders them itself.
+- Multi-service visits: one bar per visit, dragged and resized through the visit
+  endpoint, read and edited as one booking, with its service list editable.
+- Staff money controls on group bookings and service chains, and the ability to
+  accept a booking without taking payment first.
+- Linked-venue and compliance parity work from the R13–R22 web-delta audits.
+
+### Fixed
+
+- A tapped notification could clone the navigation root and crash the app.
+- Calendar quick actions (Arrived / Start / Complete) left a spinner running
+  forever where the buttons belong, then — once that was fixed — took seconds to
+  settle and could visibly revert. All three causes are addressed: the shared
+  mutation's per-call callbacks, the per-segment invalidation storm, and a read
+  already in flight overwriting the optimistic update.
+- The opening-hours editors saved incorrectly and omitted resources.
+- Empty bars at the bottom of the booking and settings pages.
+- Availability now reports when a pooled search could not check every member,
+  instead of silently returning fewer slots.
+- The deposit-payment reminder defaulted to SMS only, which meant venues without
+  the SMS entitlement sent no reminder at all before a booking was released.
+
+---
+
 ## iOS 1.0.6 / Android 1.0.6 — 2026-08-10
 
 A correctness and layout release. Covers 2026-08-09 → 2026-08-10 on both
