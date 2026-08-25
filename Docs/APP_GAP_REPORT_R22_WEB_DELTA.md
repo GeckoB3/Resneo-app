@@ -21,7 +21,8 @@ Four strands:
 4. **A new web audit report** (`Docs/Resneo_Codebase_Audit_August_2026.md`) — 114 confirmed
    findings, committed as a basis for remediation. Findings, not fixes.
 
-**Verdict: one gap, and it is a latent one (R22-1). Everything else lands safely.** The
+**Verdict: one gap, and it is a latent one (R22-1) — built 2026-08-25 with a drift guard.
+Everything else lands safely.** The
 compliance and email work is entirely server-side behind endpoints the app already calls,
 with no request or response contract change, so the app inherits all of it. The one rule in
 this range that the app *does* implement client-side — the `person_label` party-vs-visit
@@ -86,8 +87,26 @@ is wrong in the direction web deemed a live money-path defect. Any future path t
 from the local default — an offline mode, a "reset to defaults" affordance, or a server that
 ever returns a partial blob — hands back the value web removed for being broken.
 
-**Fix:** one line, `['sms']` → `['email', 'sms']` at `communications.tsx:117`. Optionally
-pin the whole table with an app-side equivalent of web's drift guard.
+### Built (2026-08-25)
+
+- The table moved out of the screen to `lib/communications/message-defs.ts` — `MessageDef`,
+  `MESSAGE_DEFS`, `WAITLIST_DEF` and `defaultPolicy`, unchanged apart from the fix. It lives
+  in `lib/` so the guard can import it without dragging a React Native screen into the suite;
+  the screen imports it back and is 137 lines shorter.
+- `deposit_payment_reminder.defaultChannels` is now `['email', 'sms']`, with the reason
+  recorded inline.
+- `lib/communications/message-defs.test.ts` is the drift guard. `WEB_LANE_DEFAULTS`
+  transcribes `buildDefaultLanePolicies()` @ `18dac985` for the thirteen keys this screen
+  offers, and every key is asserted on `enabled`, `channels`, `hoursBefore` and `hoursAfter`.
+  A key present in the screen but missing from the transcription fails rather than passes,
+  so adding a message to the screen forces a decision about its web default.
+
+  Deliberately out of scope for the guard: keys web defines that the app does not surface
+  (`card_hold_*`, `class_*`, `compliance_*`) — a subset is a scope decision, not drift — and
+  the CDE lane's different offsets (`buildDefaultCdeLanePolicies`), which the app does not model.
+
+Verified by injecting the old `['sms']` value: the guard fails and names
+`deposit_payment_reminder`. 1953 tests pass, typecheck and lint clean.
 
 ---
 
@@ -190,7 +209,7 @@ reading before R23, since the next few web ranges will likely be drawn from it.
 
 | Id | Severity | Area | Status |
 |----|----------|------|--------|
-| R22-1 | LOW (latent) | Comms defaults — `deposit_payment_reminder` channels | Open, one line |
+| R22-1 | LOW (latent) | Comms defaults — `deposit_payment_reminder` channels | **Built**, + drift guard |
 | O1 | — | Visit dry-run reports a per-visit block the save would clear | Shared with web |
 | O2 | — | No inline compliance capture at create | Pre-existing, deliberate |
 | O3 | — | Web audit doc is findings only | Informational |

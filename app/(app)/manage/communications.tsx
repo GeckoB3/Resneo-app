@@ -22,6 +22,12 @@ import { Screen } from '@/components/ui/Screen';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import {
+  defaultPolicy,
+  MESSAGE_DEFS,
+  WAITLIST_DEF,
+  type MessageDef,
+} from '@/lib/communications/message-defs';
 import { hapticSelect, hapticSuccess, hapticWarning } from '@/lib/haptics';
 import {
   useCommunicationPolicies,
@@ -48,143 +54,6 @@ import type {
   MessageChannel,
   VenueNotificationSettings,
 } from '@/types/communications';
-
-/**
- * Per-message definitions — ported from the web `CommunicationTemplatesSection`
- * (appointments_other lane). Order matches the web page.
- */
-type MessageDef = {
-  key: CommunicationMessageKey;
-  label: string;
-  description: string;
-  allowedChannels: MessageChannel[];
-  /** Timing-controlled messages: hours before start / after end. */
-  timing?: { field: 'hoursBefore' | 'hoursAfter'; label: string; default: number };
-  defaultEnabled: boolean;
-  defaultChannels: MessageChannel[];
-};
-
-const MESSAGE_DEFS: MessageDef[] = [
-  {
-    key: 'booking_confirmation',
-    label: 'Booking confirmation',
-    description: 'Sent as soon as the booking is confirmed',
-    allowedChannels: ['email', 'sms'],
-    defaultEnabled: true,
-    defaultChannels: ['email'],
-  },
-  {
-    key: 'confirm_or_cancel_prompt',
-    label: 'Confirm or cancel prompt',
-    description: 'Ask the guest to confirm or cancel before the visit',
-    allowedChannels: ['email', 'sms'],
-    timing: { field: 'hoursBefore', label: 'before the visit', default: 24 },
-    defaultEnabled: true,
-    defaultChannels: ['email', 'sms'],
-  },
-  {
-    key: 'pre_visit_reminder',
-    label: 'Pre-visit reminder',
-    description: 'Reminder shortly before the booking starts',
-    allowedChannels: ['email', 'sms'],
-    timing: { field: 'hoursBefore', label: 'before the visit', default: 2 },
-    defaultEnabled: true,
-    defaultChannels: ['email'],
-  },
-  {
-    key: 'deposit_payment_request',
-    label: 'Deposit payment request',
-    description: 'Used when a booking needs a separate deposit payment link',
-    allowedChannels: ['email', 'sms'],
-    defaultEnabled: true,
-    defaultChannels: ['email', 'sms'],
-  },
-  {
-    key: 'deposit_confirmation',
-    label: 'Deposit confirmation',
-    description: 'Confirms that a deposit has been paid successfully',
-    allowedChannels: ['email'],
-    defaultEnabled: true,
-    defaultChannels: ['email'],
-  },
-  {
-    key: 'deposit_payment_reminder',
-    label: 'Deposit payment reminder',
-    description: 'Reminder for unpaid deposit bookings before they are released',
-    allowedChannels: ['email', 'sms'],
-    timing: { field: 'hoursBefore', label: 'before release', default: 2 },
-    defaultEnabled: true,
-    defaultChannels: ['sms'],
-  },
-  {
-    key: 'booking_modification',
-    label: 'Booking modification',
-    description: 'Sent when the booking details are changed',
-    allowedChannels: ['email', 'sms'],
-    defaultEnabled: true,
-    defaultChannels: ['email'],
-  },
-  {
-    key: 'cancellation_confirmation',
-    label: 'Cancellation confirmation',
-    description: 'Sent when a booking is cancelled',
-    allowedChannels: ['email', 'sms'],
-    defaultEnabled: true,
-    defaultChannels: ['email'],
-  },
-  {
-    key: 'auto_cancel_notification',
-    label: 'Auto-cancel notification',
-    description: 'Sent when an unpaid booking is automatically cancelled',
-    allowedChannels: ['email', 'sms'],
-    defaultEnabled: true,
-    defaultChannels: ['email', 'sms'],
-  },
-  {
-    key: 'no_show_notification',
-    label: 'No-show notification',
-    description: 'Optional notice when staff mark a booking as a no-show',
-    allowedChannels: ['email'],
-    defaultEnabled: false,
-    defaultChannels: ['email'],
-  },
-  {
-    key: 'post_visit_thankyou',
-    label: 'Post-visit thank you',
-    description: 'Follow-up after the booking has taken place',
-    allowedChannels: ['email'],
-    timing: { field: 'hoursAfter', label: 'after the visit', default: 4 },
-    defaultEnabled: true,
-    defaultChannels: ['email'],
-  },
-  {
-    key: 'custom_message',
-    label: 'Custom message',
-    description: 'Staff-composed message sent directly to the guest',
-    allowedChannels: ['email', 'sms'],
-    defaultEnabled: true,
-    defaultChannels: ['email', 'sms'],
-  },
-];
-
-const WAITLIST_DEF: MessageDef = {
-  key: 'appointment_waitlist_offer',
-  label: 'Waitlist invite',
-  description: 'Sent when staff offer an appointment slot to someone on the waitlist',
-  allowedChannels: ['email', 'sms'],
-  defaultEnabled: false,
-  defaultChannels: ['email'],
-};
-
-function defaultPolicy(def: MessageDef): LaneMessagePolicy {
-  return {
-    enabled: def.defaultEnabled,
-    channels: def.defaultChannels,
-    emailCustomMessage: null,
-    smsCustomMessage: null,
-    ...(def.timing ? { [def.timing.field]: def.timing.default } : {}),
-  };
-}
 
 /**
  * Loose email check matching the web "New booking alert" validation exactly
