@@ -364,6 +364,23 @@ export default function CalendarScreen() {
   // Pending action tracking for inline status tray + drag commits.
   const [pendingActionIds, setPendingActionIds] = useState<Set<string>>(new Set());
 
+  /**
+   * Every handler that adds to this set MUST clear it through `mutateAsync` in a
+   * `finally`, never through the `onSuccess`/`onError` passed to `mutate()`.
+   *
+   * Those per-call callbacks are bound to the mutation OBSERVER, and each of the
+   * mutations below is a single shared instance serving every bar on the grid.
+   * React Query's `MutationObserver.mutate()` detaches the observer from the
+   * in-flight mutation before starting the next one, so a second call drops the
+   * first call's callbacks entirely — the request still runs and the hook-level
+   * `onSuccess` still invalidates, but nothing ever removes that id and the bar
+   * spins forever behind its buttons (`actionPending` in CalendarDayGrid).
+   *
+   * Two presses is not a corner case: `handleBarStatusChange` fans ONE press on
+   * a merged visit or party bar out across every segment, synchronously.
+   * `mutateAsync` returns the mutation's own promise per call, so it cannot be
+   * stolen by a later press.
+   */
   const removePending = useCallback((bookingId: string) => {
     setPendingActionIds((prev) => {
       const next = new Set(prev);
@@ -1155,51 +1172,48 @@ export default function CalendarScreen() {
       // Every segment, so the whole bar shows one spinner rather than the lead
       // row spinning while its siblings look idle.
       setPendingActionIds((prev) => new Set([...prev, ...input.segmentIds]));
-      visitScheduleById.mutate(
-        {
-          groupBookingId: input.groupBookingId,
-          booking_date: anchor,
-          booking_time: input.time,
-          ...(input.totalDurationMinutes != null
-            ? { total_duration_minutes: input.totalDurationMinutes }
-            : {}),
-          ...(input.practitionerId ? { practitioner_id: input.practitionerId } : {}),
-          allow_outside_hours: true,
-          // Separate gate; see the restore path above (R17-3).
-          allow_during_breaks: true,
-          // Same rule as the single-booking path: a same-column drag has already
-          // been conflict-checked against the grid (now excluding the visit's own
-          // services), a cross-column move has not, so let the server 409 there.
-          allow_manual_overlap: input.practitionerId === undefined,
-          ...(notifyPlan.skip
-            ? { skip_booking_modification_guest_notification: true }
-            : { defer_modification_guest_notification: true }),
-        },
-        {
-          onSuccess: () => {
-            for (const id of input.segmentIds) removePending(id);
-            setMoveNotice({
-              // The endpoint notifies once, against the visit's first service.
-              bookingId: input.leadBookingId,
-              guestName: input.guestName,
-              previous: input.previousTarget,
-              startMoved: notifyPlan.prompt,
-              reassigned: input.practitionerId != null,
-              lengthChanged: input.totalDurationMinutes != null,
-            });
-          },
-          onError: (error) => {
-            for (const id of input.segmentIds) removePending(id);
-            // A 409 names the service and the time it could not take, and says
-            // the visit was not moved. Nothing here improves on that.
-            toast.error(
-              error instanceof ApiError
-                ? error.message
-                : 'Could not move this visit. Try another time.',
-            );
-          },
-        },
-      );
+      void (async () => {
+        try {
+          await visitScheduleById.mutateAsync({
+            groupBookingId: input.groupBookingId,
+            booking_date: anchor,
+            booking_time: input.time,
+            ...(input.totalDurationMinutes != null
+              ? { total_duration_minutes: input.totalDurationMinutes }
+              : {}),
+            ...(input.practitionerId ? { practitioner_id: input.practitionerId } : {}),
+            allow_outside_hours: true,
+            // Separate gate; see the restore path above (R17-3).
+            allow_during_breaks: true,
+            // Same rule as the single-booking path: a same-column drag has already
+            // been conflict-checked against the grid (now excluding the visit's own
+            // services), a cross-column move has not, so let the server 409 there.
+            allow_manual_overlap: input.practitionerId === undefined,
+            ...(notifyPlan.skip
+              ? { skip_booking_modification_guest_notification: true }
+              : { defer_modification_guest_notification: true }),
+          });
+          setMoveNotice({
+            // The endpoint notifies once, against the visit's first service.
+            bookingId: input.leadBookingId,
+            guestName: input.guestName,
+            previous: input.previousTarget,
+            startMoved: notifyPlan.prompt,
+            reassigned: input.practitionerId != null,
+            lengthChanged: input.totalDurationMinutes != null,
+          });
+        } catch (error) {
+          // A 409 names the service and the time it could not take, and says
+          // the visit was not moved. Nothing here improves on that.
+          toast.error(
+            error instanceof ApiError
+              ? error.message
+              : 'Could not move this visit. Try another time.',
+          );
+        } finally {
+          for (const id of input.segmentIds) removePending(id);
+        }
+      })();
     },
     [anchor, visitScheduleById, removePending, toast],
   );
@@ -1227,42 +1241,39 @@ export default function CalendarScreen() {
         nextTime: input.time,
       });
       setPendingActionIds((prev) => new Set([...prev, input.bookingId]));
-      rescheduleById.mutate(
-        {
-          bookingId: input.bookingId,
-          date: anchor,
-          time: input.time,
-          ...(input.endTime ? { endTime: input.endTime } : {}),
-          ...(input.practitionerId ? { practitionerId: input.practitionerId } : {}),
-          ...(notifyPlan.skip
-            ? { skipGuestNotification: true }
-            : { deferGuestNotification: true }),
-        },
-        {
-          onSuccess: () => {
-            // Drop haptic already fired in the drag worklet; confirm + prompt.
-            removePending(input.bookingId);
-            setMoveNotice({
-              bookingId: input.bookingId,
-              guestName: input.previousTarget.guestName,
-              previous: input.previousTarget,
-              startMoved: notifyPlan.prompt,
-              reassigned: input.practitionerId != null,
-              lengthChanged: input.durationChanged,
-            });
-          },
-          onError: (error) => {
-            removePending(input.bookingId);
-            toast.error(
-              error instanceof ApiError
-                ? error.message
-                : input.durationChanged
-                  ? 'Could not change duration. Try again.'
-                  : 'Could not reschedule. Try another time.',
-            );
-          },
-        },
-      );
+      void (async () => {
+        try {
+          await rescheduleById.mutateAsync({
+            bookingId: input.bookingId,
+            date: anchor,
+            time: input.time,
+            ...(input.endTime ? { endTime: input.endTime } : {}),
+            ...(input.practitionerId ? { practitionerId: input.practitionerId } : {}),
+            ...(notifyPlan.skip
+              ? { skipGuestNotification: true }
+              : { deferGuestNotification: true }),
+          });
+          // Drop haptic already fired in the drag worklet; confirm + prompt.
+          setMoveNotice({
+            bookingId: input.bookingId,
+            guestName: input.previousTarget.guestName,
+            previous: input.previousTarget,
+            startMoved: notifyPlan.prompt,
+            reassigned: input.practitionerId != null,
+            lengthChanged: input.durationChanged,
+          });
+        } catch (error) {
+          toast.error(
+            error instanceof ApiError
+              ? error.message
+              : input.durationChanged
+                ? 'Could not change duration. Try again.'
+                : 'Could not reschedule. Try another time.',
+          );
+        } finally {
+          removePending(input.bookingId);
+        }
+      })();
     },
     [anchor, rescheduleById, removePending, toast],
   );
@@ -1483,34 +1494,31 @@ export default function CalendarScreen() {
 
   const handleStatusChange = useCallback(
     (bookingId: string, status: string) => {
-      const run = (acceptUnpaid: boolean) => {
+      const run = async (acceptUnpaid: boolean) => {
         setPendingActionIds((prev) => new Set([...prev, bookingId]));
-        calendarStatusAction.mutate(
-          {
+        try {
+          await calendarStatusAction.mutateAsync({
             bookingId,
             status: status as import('@/types/booking-detail').BookingStatus,
             ...(acceptUnpaid ? { accept_unpaid: true as const } : {}),
-          },
-          {
-            onSuccess: () => {
-              hapticSuccess();
-              removePending(bookingId);
-            },
-            onError: (error) => {
-              removePending(bookingId);
-              // Accepting a Pending booking from the block tray hits the same
-              // unpaid guard as the detail sheet's Accept.
-              if (!acceptUnpaid && acceptUnpaidGuard.intercept(bookingId, error, () => run(true))) {
-                return;
-              }
-              toast.error(
-                error instanceof ApiError ? error.message : 'Could not update booking.',
-              );
-            },
-          },
-        );
+          });
+          hapticSuccess();
+        } catch (error) {
+          // Accepting a Pending booking from the block tray hits the same
+          // unpaid guard as the detail sheet's Accept. The replay re-adds this
+          // id, so the `finally` below clearing it first is harmless.
+          if (
+            !acceptUnpaid &&
+            acceptUnpaidGuard.intercept(bookingId, error, () => void run(true))
+          ) {
+            return;
+          }
+          toast.error(error instanceof ApiError ? error.message : 'Could not update booking.');
+        } finally {
+          removePending(bookingId);
+        }
       };
-      run(false);
+      void run(false);
     },
     [calendarStatusAction, removePending, toast, acceptUnpaidGuard],
   );
@@ -1518,21 +1526,18 @@ export default function CalendarScreen() {
   const handleArrivalToggle = useCallback(
     (bookingId: string, arrived: boolean) => {
       setPendingActionIds((prev) => new Set([...prev, bookingId]));
-      calendarArrivalAction.mutate(
-        { bookingId, client_arrived: arrived },
-        {
-          onSuccess: () => {
-            hapticSuccess();
-            removePending(bookingId);
-          },
-          onError: (error) => {
-            removePending(bookingId);
-            toast.error(
-              error instanceof ApiError ? error.message : 'Could not update attendance.',
-            );
-          },
-        },
-      );
+      void (async () => {
+        try {
+          await calendarArrivalAction.mutateAsync({ bookingId, client_arrived: arrived });
+          hapticSuccess();
+        } catch (error) {
+          toast.error(
+            error instanceof ApiError ? error.message : 'Could not update attendance.',
+          );
+        } finally {
+          removePending(bookingId);
+        }
+      })();
     },
     [calendarArrivalAction, removePending, toast],
   );
