@@ -29,6 +29,7 @@ import {
 } from '@/components/calendar/grid-layout';
 import { Text } from '@/components/ui/Text';
 import { minimumVisitFloorMinutes } from '@/lib/booking/appointment-visit';
+import { arrivalToggleTargets, statusChangeTargets } from '@/lib/calendar/bar-actions';
 import {
   clusterCalendarBookings,
   type CalendarBookingCluster,
@@ -153,9 +154,9 @@ type CalendarDayGridProps = {
   nowMinutes: number | null;
   onBlockPress: (bookingId: string) => void;
   /** Called when a quick-status tray button is tapped on an appointment block. */
-  onStatusChange?: (bookingId: string, status: string) => void;
+  onStatusChange?: (bookingIds: string[], status: string) => void;
   /** Called when the arrived toggle is tapped on an appointment block. */
-  onArrivalToggle?: (bookingId: string, arrived: boolean) => void;
+  onArrivalToggle?: (bookingIds: string[], arrived: boolean) => void;
   /** Set of booking ids currently in flight for status/arrival changes. */
   pendingActionIds?: Set<string>;
   /** Per-booking compliance flags (bookingId → flag) for the corner dot. */
@@ -477,13 +478,8 @@ export function CalendarDayGrid({
             const cluster = clusterByLeadId.get(leadId);
             // No cluster means the grid re-rendered between press and handler;
             // fall back to the id we were given rather than dropping the action.
-            if (!cluster) {
-              onStatusChange(leadId, status);
-              return;
-            }
-            for (const segment of cluster.bookings) {
-              if (segment.status !== status) onStatusChange(segment.id, status);
-            }
+            const ids = cluster ? statusChangeTargets(cluster, status) : [leadId];
+            if (ids.length > 0) onStatusChange(ids, status);
           }
         : undefined,
     [clusterByLeadId, onStatusChange],
@@ -494,15 +490,8 @@ export function CalendarDayGrid({
       onArrivalToggle
         ? (leadId: string, arrived: boolean) => {
             const cluster = clusterByLeadId.get(leadId);
-            if (!cluster) {
-              onArrivalToggle(leadId, arrived);
-              return;
-            }
-            for (const segment of cluster.bookings) {
-              if (Boolean(segment.client_arrived_at) !== arrived) {
-                onArrivalToggle(segment.id, arrived);
-              }
-            }
+            const ids = cluster ? arrivalToggleTargets(cluster, arrived) : [leadId];
+            if (ids.length > 0) onArrivalToggle(ids, arrived);
           }
         : undefined,
     [clusterByLeadId, onArrivalToggle],

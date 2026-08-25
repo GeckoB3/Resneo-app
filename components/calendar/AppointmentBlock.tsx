@@ -1,5 +1,5 @@
 import { SymbolView } from 'expo-symbols';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ComplianceFlagDot } from '@/components/compliance/ComplianceFlagBadge';
 import { Text } from '@/components/ui/Text';
@@ -339,8 +339,9 @@ export function AppointmentBlock({
   const trayActions = potentialActions.slice(
     Math.max(0, potentialActions.length - layout.maxActions),
   );
-  const showTray =
-    trayActions.length > 0 || (trayEnabled && actionPending && layout.maxActions > 0);
+  // The pending case no longer needs its own clause: the buttons stay rendered
+  // while a write is in flight, so there is no spinner to reserve a row for.
+  const showTray = trayActions.length > 0;
 
   function handleTrayAction(action: TrayAction) {
     if (action.kind === 'status') {
@@ -378,58 +379,68 @@ export function AppointmentBlock({
     },
   ];
 
+  /**
+   * The buttons stay put while a write is in flight — dimmed and inert, never
+   * swapped for a spinner.
+   *
+   * Replacing them read as "wait": the controls vanished for the whole round
+   * trip, and on a multi-service bar for as long as its slowest segment. The bar
+   * already shows the new status the moment it is pressed (the grid cache is
+   * patched optimistically in the calendar screen), so the honest signal is a
+   * settling control, not a missing one.
+   */
   const renderTrayButtons = () =>
-    actionPending ? (
-      <ActivityIndicator size="small" color={palette.text} />
-    ) : (
-      trayActions.map((action) => {
-        const actionColors = trayActionColors(action);
-        return (
-          <Pressable
-            key={action.label}
-            accessibilityRole="button"
-            accessibilityLabel={action.label}
-            onPress={(e) => {
-              e.stopPropagation?.();
-              handleTrayAction(action);
-            }}
-            hitSlop={6}
-            style={({ pressed }) => [
-              styles.trayBtn,
-              // Short bars compress the button's HEIGHT only (vertical padding
-              // goes first); the label font + horizontal padding are identical
-              // on every bar, so the button's WIDTH matches the normal-sized
-              // buttons on taller bars (web rule).
-              layout.mode === 'row'
-                ? {
-                    height: layout.buttonHeight,
-                    minHeight: layout.buttonHeight,
-                    paddingVertical: 0,
-                  }
-                : null,
-              actionColors
-                ? {
-                    backgroundColor: actionColors.background,
-                    borderColor: hexToRgba('#FFFFFF', 0.55),
-                    opacity: pressed ? 0.8 : 1,
-                  }
-                : {
-                    backgroundColor: hexToRgba('#FFFFFF', pressed ? 0.4 : 0.25),
-                    borderColor: hexToRgba('#FFFFFF', 0.45),
-                  },
+    trayActions.map((action) => {
+      const actionColors = trayActionColors(action);
+      return (
+        <Pressable
+          key={action.label}
+          accessibilityRole="button"
+          accessibilityLabel={action.label}
+          accessibilityState={{ disabled: actionPending }}
+          disabled={actionPending}
+          onPress={(e) => {
+            e.stopPropagation?.();
+            handleTrayAction(action);
+          }}
+          hitSlop={6}
+          style={({ pressed }) => [
+            styles.trayBtn,
+            // Short bars compress the button's HEIGHT only (vertical padding
+            // goes first); the label font + horizontal padding are identical
+            // on every bar, so the button's WIDTH matches the normal-sized
+            // buttons on taller bars (web rule).
+            layout.mode === 'row'
+              ? {
+                  height: layout.buttonHeight,
+                  minHeight: layout.buttonHeight,
+                  paddingVertical: 0,
+                }
+              : null,
+            actionColors
+              ? {
+                  backgroundColor: actionColors.background,
+                  borderColor: hexToRgba('#FFFFFF', 0.55),
+                  opacity: pressed ? 0.8 : 1,
+                }
+              : {
+                  backgroundColor: hexToRgba('#FFFFFF', pressed ? 0.4 : 0.25),
+                  borderColor: hexToRgba('#FFFFFF', 0.45),
+                },
+            // Settling, not gone. Sits last so it wins over the pressed opacity.
+            actionPending ? styles.trayBtnPending : null,
+          ]}>
+          <Text
+            numberOfLines={1}
+            style={[
+              styles.trayBtnLabel,
+              { color: actionColors ? actionColors.text : palette.text },
             ]}>
-            <Text
-              numberOfLines={1}
-              style={[
-                styles.trayBtnLabel,
-                { color: actionColors ? actionColors.text : palette.text },
-              ]}>
-              {action.label}
-            </Text>
-          </Pressable>
-        );
-      })
-    );
+            {action.label}
+          </Text>
+        </Pressable>
+      );
+    });
 
   return (
     <Pressable
@@ -655,6 +666,11 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  trayBtnPending: {
+    // Dimmed while the write is in flight. Enough to read as "working" without
+    // taking the control off the bar.
+    opacity: 0.45,
   },
   trayBtnLabel: {
     // Constant size on every bar — a button's width must never change with the

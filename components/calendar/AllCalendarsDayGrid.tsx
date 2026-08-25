@@ -58,6 +58,7 @@ import {
 } from '@/components/calendar/grid-layout';
 import { Text } from '@/components/ui/Text';
 import { minimumVisitFloorMinutes } from '@/lib/booking/appointment-visit';
+import { arrivalToggleTargets, statusChangeTargets } from '@/lib/calendar/bar-actions';
 import {
   clusterCalendarBookings,
   type CalendarBookingCluster,
@@ -144,9 +145,9 @@ type AllCalendarsDayGridProps = {
   /** Empty-slot tap → carries the column's practitioner id + the snapped time. */
   onEmptyPress: (practitionerId: string, time: string) => void;
   /** Quick-status tray action on an OWN booking (Confirm / Start / Complete …). */
-  onStatusChange?: (bookingId: string, status: string) => void;
+  onStatusChange?: (bookingIds: string[], status: string) => void;
   /** Arrived toggle on an OWN booking. */
-  onArrivalToggle?: (bookingId: string, arrived: boolean) => void;
+  onArrivalToggle?: (bookingIds: string[], arrived: boolean) => void;
   /** Per-booking compliance flags (bookingId → flag) for the corner dot (own columns). */
   complianceFlags?: Record<string, ComplianceBookingFlag>;
   /** Hold-drag MOVE release on an OWN column → new "HH:mm" (keeps the practitioner). */
@@ -624,8 +625,8 @@ function DayColumn({
   closedRanges: { start: number; end: number }[];
   onBlockPress: (bookingId: string) => void;
   onEmptyPress: (practitionerId: string, time: string) => void;
-  onStatusChange?: (bookingId: string, status: string) => void;
-  onArrivalToggle?: (bookingId: string, arrived: boolean) => void;
+  onStatusChange?: (bookingIds: string[], status: string) => void;
+  onArrivalToggle?: (bookingIds: string[], arrived: boolean) => void;
   complianceFlags?: Record<string, ComplianceBookingFlag>;
   onDragReschedule?: (bookingId: string, newTime: string) => void;
   onDragResize?: (bookingId: string, newDurationMinutes: number) => void;
@@ -662,13 +663,8 @@ function DayColumn({
       onStatusChange
         ? (leadId: string, status: string) => {
             const cluster = clusterByLeadId.get(leadId);
-            if (!cluster) {
-              onStatusChange(leadId, status);
-              return;
-            }
-            for (const segment of cluster.bookings) {
-              if (segment.status !== status) onStatusChange(segment.id, status);
-            }
+            const ids = cluster ? statusChangeTargets(cluster, status) : [leadId];
+            if (ids.length > 0) onStatusChange(ids, status);
           }
         : undefined,
     [clusterByLeadId, onStatusChange],
@@ -679,15 +675,8 @@ function DayColumn({
       onArrivalToggle
         ? (leadId: string, arrived: boolean) => {
             const cluster = clusterByLeadId.get(leadId);
-            if (!cluster) {
-              onArrivalToggle(leadId, arrived);
-              return;
-            }
-            for (const segment of cluster.bookings) {
-              if (Boolean(segment.client_arrived_at) !== arrived) {
-                onArrivalToggle(segment.id, arrived);
-              }
-            }
+            const ids = cluster ? arrivalToggleTargets(cluster, arrived) : [leadId];
+            if (ids.length > 0) onArrivalToggle(ids, arrived);
           }
         : undefined,
     [clusterByLeadId, onArrivalToggle],

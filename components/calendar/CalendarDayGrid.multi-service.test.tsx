@@ -178,7 +178,14 @@ describe('CalendarDayGrid — quick actions on a merged visit', () => {
    * starting the first service and leaving the rest Booked would be worse than
    * not offering it. "Start" is a Booked bar's tray action (`pickTrayActions`).
    */
-  it('advances EVERY service, skipping any already there', async () => {
+  /**
+   * ONE call carrying every segment, not one call per segment. The screen batches
+   * from this list — a single optimistic patch, concurrent PATCHes, and ONE
+   * reconcile — because invalidating per segment cancelled and restarted the
+   * calendar's own refetch once per service, which is what made a multi-service
+   * bar take seconds to settle. If this ever fires twice, that is back.
+   */
+  it('advances EVERY service in one call, skipping any already there', async () => {
     const onStatusChange = jest.fn();
     await renderGrid(
       [
@@ -191,11 +198,13 @@ describe('CalendarDayGrid — quick actions on a merged visit', () => {
 
     fireEvent.press(screen.getByLabelText('Start'));
 
-    const patched = onStatusChange.mock.calls.map(([id]) => id);
-    expect(patched).toEqual(expect.arrayContaining(['b1', 'b2']));
+    expect(onStatusChange).toHaveBeenCalledTimes(1);
+    const [ids, status] = onStatusChange.mock.calls[0];
+    expect(status).toBe('Seated');
+    expect(ids).toEqual(expect.arrayContaining(['b1', 'b2']));
     // Already Seated — skipping it is the point, and it keeps a part-done visit
     // from firing pointless mutations that each raise their own error toast.
-    expect(patched).not.toContain('b3');
+    expect(ids).not.toContain('b3');
   });
 
   it('marks the whole visit arrived from one tap', async () => {
@@ -210,7 +219,8 @@ describe('CalendarDayGrid — quick actions on a merged visit', () => {
 
     fireEvent.press(screen.getByLabelText('Arrived'));
 
-    expect(onArrivalToggle.mock.calls.map(([id]) => id)).toEqual(['b1', 'b2']);
+    expect(onArrivalToggle).toHaveBeenCalledTimes(1);
+    expect(onArrivalToggle.mock.calls[0]).toEqual([['b1', 'b2'], true]);
   });
 
   it('still acts on just the one booking when nothing is merged', async () => {
@@ -219,6 +229,6 @@ describe('CalendarDayGrid — quick actions on a merged visit', () => {
 
     fireEvent.press(screen.getByLabelText('Start'));
 
-    expect(onStatusChange.mock.calls).toEqual([['solo', 'Seated']]);
+    expect(onStatusChange.mock.calls).toEqual([[['solo'], 'Seated']]);
   });
 });

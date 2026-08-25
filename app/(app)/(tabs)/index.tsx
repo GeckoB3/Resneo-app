@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -71,9 +72,15 @@ import {
 } from '@/lib/queries/useBookingMutations';
 import { useVisitScheduleById } from '@/lib/queries/useVisitMutations';
 import {
+  invalidateCalendarQuickAction,
+  patchCalendarGridBookings,
+  revertCalendarGridBookings,
   useCalendarStatusAction,
   useCalendarArrivalAction,
+  type CalendarBookingPatch,
+  type CalendarGridSnapshot,
 } from '@/lib/queries/useCalendarQuickActions';
+import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { useCalendarGrid } from '@/lib/queries/useCalendarGrid';
 import { useComplianceBookingFlags } from '@/lib/queries/useCompliance';
 import {
@@ -390,6 +397,10 @@ export default function CalendarScreen() {
   }, []);
 
   const toast = useToast();
+  const queryClient = useQueryClient();
+  // Only for the per-booking detail key in `invalidateCalendarQuickAction` —
+  // every other key it touches is token-scoped already.
+  const accessToken = useAccessToken();
 
   /**
    * Role + assigned calendars, for the cross-column move gate in
@@ -1492,54 +1503,98 @@ export default function CalendarScreen() {
   const calendarArrivalAction = useCalendarArrivalAction();
   const acceptUnpaidGuard = useAcceptUnpaidGuard();
 
-  const handleStatusChange = useCallback(
-    (bookingId: string, status: string) => {
-      const run = async (acceptUnpaid: boolean) => {
-        setPendingActionIds((prev) => new Set([...prev, bookingId]));
-        try {
-          await calendarStatusAction.mutateAsync({
-            bookingId,
-            status: status as import('@/types/booking-detail').BookingStatus,
-            ...(acceptUnpaid ? { accept_unpaid: true as const } : {}),
-          });
+  /**
+   * One press on a bar = ONE action, however many bookings the bar stands for.
+   *
+   * The grid hands up every segment the press has to write (`statusChangeTargets`),
+   * and this runs them as a batch: patch the grid cache once so the bar answers on
+   * press, send the PATCHes concurrently, then reconcile ONCE. Doing any of those
+   * three per segment is what made a multi-service bar take seconds — see the note
+   * on `removePending` for the callback half of that story, and
+   * `useCalendarQuickActions` for why invalidating per segment restarted the
+   * calendar's own refetch once per service.
+   */
+  const runBatchAction = useCallback(
+    async (
+      bookingIds: string[],
+      optimistic: CalendarBookingPatch,
+      send: (bookingId: string) => Promise<unknown>,
+      onFailure: (bookingId: string, error: unknown) => boolean,
+      failureMessage: string,
+    ) => {
+      if (bookingIds.length === 0) return;
+      setPendingActionIds((prev) => new Set([...prev, ...bookingIds]));
+      const snapshot = patchCalendarGridBookings(queryClient, bookingIds, optimistic);
+      try {
+        const results = await Promise.allSettled(bookingIds.map((id) => send(id)));
+        const failures = results.flatMap((result, index) =>
+          result.status === 'rejected'
+            ? [{ bookingId: bookingIds[index], error: result.reason as unknown }]
+            : [],
+        );
+
+        if (failures.length === 0) {
           hapticSuccess();
-        } catch (error) {
-          // Accepting a Pending booking from the block tray hits the same
-          // unpaid guard as the detail sheet's Accept. The replay re-adds this
-          // id, so the `finally` below clearing it first is harmless.
-          if (
-            !acceptUnpaid &&
-            acceptUnpaidGuard.intercept(bookingId, error, () => void run(true))
-          ) {
-            return;
-          }
-          toast.error(error instanceof ApiError ? error.message : 'Could not update booking.');
-        } finally {
-          removePending(bookingId);
+          return;
         }
-      };
+
+        // Put back only what did not land — a part-failed bar keeps the segments
+        // that did, and the reconcile below is the backstop either way.
+        const failed: CalendarGridSnapshot = new Map();
+        for (const { bookingId } of failures) {
+          const previous = snapshot.get(bookingId);
+          if (previous) failed.set(bookingId, previous);
+        }
+        revertCalendarGridBookings(queryClient, failed);
+
+        // One sheet / one toast for the bar, not one per segment. The first
+        // failure is representative: the segments of a bar fail the same way.
+        const first = failures[0];
+        if (onFailure(first.bookingId, first.error)) return;
+        toast.error(first.error instanceof ApiError ? first.error.message : failureMessage);
+      } finally {
+        for (const id of bookingIds) removePending(id);
+        invalidateCalendarQuickAction(queryClient, accessToken, bookingIds);
+      }
+    },
+    [queryClient, accessToken, removePending, toast],
+  );
+
+  const handleStatusChange = useCallback(
+    (bookingIds: string[], status: string) => {
+      const run = (acceptUnpaid: boolean) =>
+        runBatchAction(
+          bookingIds,
+          { status },
+          (bookingId) =>
+            calendarStatusAction.mutateAsync({
+              bookingId,
+              status: status as import('@/types/booking-detail').BookingStatus,
+              ...(acceptUnpaid ? { accept_unpaid: true as const } : {}),
+            }),
+          // Accepting a Pending booking from the block tray hits the same unpaid
+          // guard as the detail sheet's Accept. The replay re-runs the WHOLE bar,
+          // so a visit is accepted as one thing rather than asking per service.
+          (bookingId, error) =>
+            !acceptUnpaid && acceptUnpaidGuard.intercept(bookingId, error, () => void run(true)),
+          'Could not update booking.',
+        );
       void run(false);
     },
-    [calendarStatusAction, removePending, toast, acceptUnpaidGuard],
+    [runBatchAction, calendarStatusAction, acceptUnpaidGuard],
   );
 
   const handleArrivalToggle = useCallback(
-    (bookingId: string, arrived: boolean) => {
-      setPendingActionIds((prev) => new Set([...prev, bookingId]));
-      void (async () => {
-        try {
-          await calendarArrivalAction.mutateAsync({ bookingId, client_arrived: arrived });
-          hapticSuccess();
-        } catch (error) {
-          toast.error(
-            error instanceof ApiError ? error.message : 'Could not update attendance.',
-          );
-        } finally {
-          removePending(bookingId);
-        }
-      })();
+    (bookingIds: string[], arrived: boolean) => {
+      void runBatchAction(
+        bookingIds,
+        { client_arrived_at: arrived ? new Date().toISOString() : null },
+        (bookingId) => calendarArrivalAction.mutateAsync({ bookingId, client_arrived: arrived }),
+        () => false,
+        'Could not update attendance.',
+      );
     },
-    [calendarArrivalAction, removePending, toast],
+    [runBatchAction, calendarArrivalAction],
   );
 
   // ---- Day data for the viewed calendar ----
@@ -1792,13 +1847,25 @@ export default function CalendarScreen() {
       isPlaceholderData: gridQuery.isPlaceholderData,
     });
 
-  const refreshing = gridQuery.isFetching && !gridQuery.isLoading;
+  /**
+   * The pull-to-refresh spinner answers a PULL, not every fetch.
+   *
+   * It used to be `gridQuery.isFetching`, so it also fired for the 60-second poll
+   * and for the reconcile after a quick action — a spinner sliding down the top of
+   * the calendar seconds after a button press, saying "still working" about a bar
+   * that was already correct. Background refreshes are meant to be invisible; the
+   * stale banner is what speaks up when one actually fails.
+   */
+  const [manualRefreshing, setManualRefreshing] = useState(false);
   // Pull-to-refresh refetches BOTH the grid and the schedule feed so a freshly
   // added class/event/resource surfaces immediately alongside bookings.
   const onRefresh = useCallback(() => {
-    void gridQuery.refetch();
-    void scheduleQuery.refetch();
+    setManualRefreshing(true);
+    void Promise.allSettled([gridQuery.refetch(), scheduleQuery.refetch()]).finally(() =>
+      setManualRefreshing(false),
+    );
   }, [gridQuery, scheduleQuery]);
+  const refreshing = manualRefreshing;
 
   // Class/event capacity blocks from the grid payload (rendered indigo).
   const daySessions = useMemo(() => day?.sessions ?? [], [day]);
