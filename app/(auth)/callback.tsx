@@ -54,12 +54,10 @@ export default function AuthCallbackScreen() {
         const initialUrl = await Linking.getInitialURL();
         const result = await completeAuthSession(supabase, params, initialUrl);
 
-        if (!active) {
-          return;
-        }
-
         if (!result.ok) {
-          setErrorReason(result.reason);
+          if (active) {
+            setErrorReason(result.reason);
+          }
           return;
         }
 
@@ -78,10 +76,13 @@ export default function AuthCallbackScreen() {
           );
         }
 
-        if (!active) {
-          return;
-        }
-
+        // Navigate even when `active` is false. Success here CREATES the session, which
+        // flips the root layout's !session guard and unmounts this screen mid-exchange:
+        // being unmounted is the normal success path, not a cancelled one. Gating these
+        // replaces on `active` silently skipped them, which cost recovery recipients the
+        // set-password screen (they landed signed in on the dashboard with their password
+        // unchanged). The router is a global, so calling it from this closure after
+        // unmount is safe; `active` still guards the setState calls above and below.
         // Invited staff + password-reset recipients must choose a password first.
         if (result.otpType && SET_PASSWORD_OTP_TYPES.has(result.otpType)) {
           router.replace('/set-password');
