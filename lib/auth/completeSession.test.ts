@@ -42,6 +42,7 @@ function makeSupabase(overrides: {
   session?: unknown;
   exchangeError?: { message: string } | null;
   verifyError?: { message: string } | null;
+  setSessionError?: { message: string } | null;
 }): SupabaseClient {
   return {
     auth: {
@@ -52,9 +53,20 @@ function makeSupabase(overrides: {
         Promise.resolve({ error: overrides.exchangeError ?? null }),
       ),
       verifyOtp: jest.fn(() => Promise.resolve({ error: overrides.verifyError ?? null })),
+      setSession: jest.fn(() => Promise.resolve({ error: overrides.setSessionError ?? null })),
     },
   } as unknown as SupabaseClient;
 }
+
+/**
+ * The exact 303 Location GoTrue returns for a magic link issued without a PKCE
+ * code_challenge, captured from the hosted project on 2026-08-26. Note there is no
+ * `code` and no `token_hash`: before the implicit branch existed this URL produced
+ * `generic` ("invalid or has expired") and magic-link sign-in was wholly broken.
+ */
+const IMPLICIT_CALLBACK_URL =
+  'resneo://callback#access_token=AT-123&expires_at=1787770530&expires_in=3600' +
+  '&refresh_token=RT-456&sb=&token_type=bearer&type=magiclink';
 
 describe('completeAuthSession', () => {
   it('short-circuits ok (with otpType) when a session already exists', async () => {
@@ -103,6 +115,47 @@ describe('completeAuthSession', () => {
       type: 'magiclink',
     });
     expect(result).toEqual({ ok: false, reason: 'exchange_failed', message: 'network down' });
+  });
+
+  it('completes an implicit-flow link that carries the session in the URL fragment', async () => {
+    const supabase = makeSupabase({});
+    const result = await completeAuthSession(supabase, {}, IMPLICIT_CALLBACK_URL);
+    expect(result).toEqual({ ok: true, otpType: 'magiclink' });
+    expect(supabase.auth.setSession).toHaveBeenCalledWith({
+      access_token: 'AT-123',
+      refresh_token: 'RT-456',
+    });
+    // Nothing to exchange in this shape.
+    expect(supabase.auth.exchangeCodeForSession).not.toHaveBeenCalled();
+    expect(supabase.auth.verifyOtp).not.toHaveBeenCalled();
+  });
+
+  it('routes an implicit recovery link to set-password via the resolved otpType', async () => {
+    const supabase = makeSupabase({});
+    const result = await completeAuthSession(
+      supabase,
+      {},
+      'resneo://callback#access_token=AT&refresh_token=RT&type=recovery',
+    );
+    expect(result).toEqual({ ok: true, otpType: 'recovery' });
+  });
+
+  it('classifies a failed setSession rather than reporting a missing link', async () => {
+    const supabase = makeSupabase({ setSessionError: { message: 'Token has expired' } });
+    const result = await completeAuthSession(supabase, {}, IMPLICIT_CALLBACK_URL);
+    expect(result).toMatchObject({ ok: false, reason: 'otp_expired' });
+  });
+
+  it('prefers a PKCE code over fragment tokens when both are present', async () => {
+    const supabase = makeSupabase({});
+    const result = await completeAuthSession(
+      supabase,
+      { code: 'pkce-code' },
+      IMPLICIT_CALLBACK_URL,
+    );
+    expect(result.ok).toBe(true);
+    expect(supabase.auth.exchangeCodeForSession).toHaveBeenCalledWith('pkce-code');
+    expect(supabase.auth.setSession).not.toHaveBeenCalled();
   });
 
   it('returns a generic reason when no code or token is present', async () => {

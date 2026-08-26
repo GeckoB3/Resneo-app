@@ -11,7 +11,7 @@ import {
  * `AuthErrorDetail` (`_reference/Resneo/src/lib/auth-link.ts`):
  *   - `otp_expired`   — the link was already used / has expired / is invalid.
  *   - `exchange_failed` — the PKCE code or OTP token could not be exchanged.
- *   - `generic`       — no usable code/token was present at all.
+ *   - `generic`       — no usable code/token/session was present at all.
  * `callback.tsx` maps each to reason-specific copy + a "Back to sign in" action.
  */
 export type AuthErrorReason = 'otp_expired' | 'exchange_failed' | 'generic';
@@ -31,7 +31,9 @@ const OTP_EXPIRED_HINTS = [
 ] as const;
 
 /**
- * Finish sign-in from a magic-link deep link (PKCE code or OTP token hash).
+ * Finish sign-in from a magic-link deep link. Accepts all three shapes GoTrue can
+ * deliver: a PKCE `code`, an OTP `token_hash` + `type`, or implicit-flow
+ * `access_token` + `refresh_token` in the URL fragment.
  * Returns ok when a session exists or was created successfully. On success the
  * resolved `otpType` is surfaced so the caller can route recovery/invite links
  * to the set-password screen.
@@ -68,6 +70,21 @@ export async function completeAuthSession(
     const { error } = await supabase.auth.verifyOtp({
       token_hash: params.tokenHash,
       type: params.otpType,
+    });
+    if (error) {
+      return { ok: false, reason: classifyAuthError(error.message), message: error.message };
+    }
+    return { ok: true, otpType: params.otpType };
+  }
+
+  // Implicit flow: the link carried the session itself in the URL fragment rather than
+  // an exchangeable code. Checked last so a PKCE code always wins when both are somehow
+  // present. Links minted by `admin.generateLink` never carry a code_challenge, so this
+  // branch is the only one that can complete them.
+  if (params.accessToken && params.refreshToken) {
+    const { error } = await supabase.auth.setSession({
+      access_token: params.accessToken,
+      refresh_token: params.refreshToken,
     });
     if (error) {
       return { ok: false, reason: classifyAuthError(error.message), message: error.message };

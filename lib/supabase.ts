@@ -49,6 +49,13 @@ export function getSupabase(): SupabaseClient {
         autoRefreshToken: true,
         persistSession: true,
         detectSessionInUrl: false,
+        // Must be set explicitly: supabase-js defaults to 'implicit'. Under implicit
+        // `signInWithOtp` sends no code_challenge, so GoTrue returns the session in the
+        // URL *fragment* (`resneo://callback#access_token=...`) rather than as `?code=`.
+        // `app/(auth)/callback.tsx` was written for the PKCE code exchange, so every magic
+        // link failed with "invalid or has expired" until this was pinned. `completeAuthSession`
+        // now also accepts the fragment form, but PKCE is the flow we intend.
+        flowType: 'pkce',
       },
     });
   }
