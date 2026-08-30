@@ -75,6 +75,12 @@
         }
       ],
       "expo-secure-store",
+      [
+        "@stripe/stripe-react-native",
+        {
+          "enableGooglePay": false
+        }
+      ],
       "expo-image",
       [
         "expo-notifications",

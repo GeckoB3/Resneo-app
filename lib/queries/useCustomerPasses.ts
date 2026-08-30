@@ -60,10 +60,24 @@ export interface CreditBalance {
   expires_at: string | null;
 }
 
+export interface CreditProduct {
+  id: string;
+  name: string;
+  venue_id: string;
+  credits_count: number | null;
+  price_pence: number | null;
+}
+
 interface CreditsResponse {
   balances: CreditBalance[];
   products: MembershipProduct[];
   venues: Venue[];
+  /**
+   * What this customer could buy, scoped SERVER-SIDE to venues they have
+   * actually been to. Not a shop: a venue they have never visited does not
+   * appear, which is the web's own rule rather than a decision made here.
+   */
+  purchase_catalog?: { venues: Venue[]; products: CreditProduct[] };
 }
 
 export function useCredits() {

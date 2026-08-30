@@ -5,6 +5,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { Text } from '@/components/ui/Text';
+import { BuyCreditsSection } from '@/components/customer/passes/BuyCreditsSection';
 import { useCredits } from '@/lib/queries/useCustomerPasses';
 import { nameById } from '@/components/customer/passes/lookup';
 import { spacing } from '@/theme/index';
@@ -28,12 +29,20 @@ export function CreditsSection() {
 
   const balances = (data?.balances ?? []).filter((b) => b.credits_remaining > 0);
 
+  const forSale = data?.purchase_catalog?.products ?? [];
+  const catalogVenues = data?.purchase_catalog?.venues ?? data?.venues;
+
   if (balances.length === 0) {
     return (
-      <EmptyState
-        title="No class credits"
-        message="Credits you buy from a venue will appear here, with anything you have left."
-      />
+      <View style={styles.list}>
+        <EmptyState
+          title="No class credits"
+          message="Credits you buy from a venue will appear here, with anything you have left."
+        />
+        {/* Still offered with none held: somebody looking at an empty credits
+            tab is very often looking for how to get some. */}
+        <BuyCreditsSection products={forSale} venues={catalogVenues} />
+      </View>
     );
   }
 
@@ -53,6 +62,7 @@ export function CreditsSection() {
           ) : null}
         </Card>
       ))}
+      <BuyCreditsSection products={forSale} venues={catalogVenues} />
     </View>
   );
 }

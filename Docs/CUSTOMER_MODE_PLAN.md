@@ -177,7 +177,25 @@ List, detail, cancel, reschedule. `GET /api/v1/me/bookings`, `GET` and `DELETE` 
 
 The detail GET returns AD9's shared booking DTO, the same object the web's own detail page renders, so the app screen is a rendering job against a settled shape rather than a second interpretation of a booking.
 
-### C3. Passes and commerce.
+### C3. Passes and commerce. DONE 2026-08-31, with one part unverifiable here.
+
+*(**Done, in two commits.** C3a is tabs plus the four sections a customer reads and manages; C3b is buying. 56 tests, 17 mutations caught, one equivalent.
+
+**Tabs are three, not the four decided.** Home, Bookings, Passes; Profile arrives with the screen behind it in C4, because a tab that leads nowhere is worse than one that is not there yet. The booking detail is pushed over the whole bar rather than becoming a fifth tab: it is a place you go into and come back from, and leaving the bar under it invites somebody to wander off mid-cancellation.
+
+**The copy carries the phase's real weight.** The membership line NAMES THE DATE when a cancellation is pending, which is the defect the web fixed: "Cancellation scheduled at period end" names no period and no end, and a customer who cannot tell whether they have lost what they already paid for stops booking. Leaving a course names a refund without naming a figure, because the amount is prorated server-side and a wrong number about money is worse than none.
+
+**Weekly reservations are read-only and say so.** Cancelling a standing rule has to explain what happens to the bookings it has already produced, and that is more than a button. Recorded here rather than half-built.
+
+**D4's real cost was larger than D4 knew.** `@stripe/stripe-react-native` also needs `react-native-webview`, so this is TWO native modules, not one. On iOS they pull `Stripe ~> 25.11.0` beside the `StripeTerminal ~> 5.5.0` this app already ships, and **Stripe documents nothing about the two SDKs coexisting**. `expo-doctor` reports exactly what it did before the install, 20 of 22, and flags neither package, so they are at the versions SDK 56 wants. That is as far as verification goes without a build.
+
+**So the SDK is confined to one file**, `lib/payments/customer-card-sheet.ts`. Everything else in the purchase flow is ordinary async code and is tested: which route opens which purchase, that a membership and a saved card are SetupIntents while credits and courses are not, that the sheet names the VENUE rather than ResNeo, and that a half-formed ticket is refused before a card field appears. If the two SDKs will not build together, one file changes rather than the flow.
+
+**Nothing is created client-side.** The subscription, credit grant and course place all come from the Stripe webhook, because the card is charged by the time the sheet closes and a client that lost its connection in between would leave somebody paid up with nothing bought. Success therefore means "paid", not "you have it", and the copy says the credits are on their way.
+
+**Two mistakes worth recording.** The Stripe config plugin was first added to `app.json` as a bare string spliced into `expo-notifications`' own config array, which made a three-element plugin entry and broke `expo config` entirely; anchoring on a name without checking it was a bare string is how. And a bare string is wrong anyway: the plugin reads `props.merchantIdentifier` and needs an object. It gets `{ enableGooglePay: false }`, with no merchant identifier, so neither the Apple Pay entitlement nor the Google Pay metadata is written. This is card entry, not wallets.
+
+**Not built:** membership and course purchase entry points. The engine handles all four kinds and is tested for each, and credits carry the only catalog surfaced so far.)*
 
 Memberships, credits, courses, recurring. Includes the resume-a-cancelled-membership action the web added in P2-6, which is the only way to clear a pending cancellation outside Stripe.
 
