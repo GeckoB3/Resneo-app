@@ -13,8 +13,9 @@ import { useTheme } from '@/theme/useTheme';
  * which Expo Router implements by dropping every history entry for that screen,
  * and which this app has already died from once (see `app/_layout.tsx`).
  *
- * It is a plain Stack for now because C1 ships one screen. Tabs arrive with the
- * screens that need them; a tab bar with a single tab is furniture.
+ * Still a plain Stack at C2. Tabs arrive with the screens that need them: a hub
+ * that already lists what is coming, plus one list behind it, is a stack, and a
+ * two-tab bar where one tab is a longer version of the other is furniture.
  */
 export default function CustomerLayout() {
   const { colors } = useTheme();
@@ -29,6 +30,8 @@ export default function CustomerLayout() {
         headerBackButtonDisplayMode: 'minimal',
       }}>
       <Stack.Screen name="index" options={{ headerShown: false }} />
+      <Stack.Screen name="bookings" options={{ headerShown: true, title: 'Your bookings' }} />
+      <Stack.Screen name="booking/[id]" options={{ headerShown: true, title: 'Booking' }} />
     </Stack>
   );
 }

@@ -1,3 +1,4 @@
+import { useRouter } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 
 import { Card } from '@/components/ui/Card';
@@ -20,6 +21,7 @@ type Props = { home: CustomerHome };
  * would waste the effort and reintroduce the bug.
  */
 export function NextBookingCard({ home }: Props) {
+  const router = useRouter();
   const booking = home.next_booking;
 
   if (!booking) {
@@ -37,7 +39,7 @@ export function NextBookingCard({ home }: Props) {
   const venue = venueNameFor(home, booking.venue_id);
 
   return (
-    <Card>
+    <Card onPress={() => router.push(`/booking/${booking.id}`)}>
       <Text variant="overline" tone="secondary">
         NEXT BOOKING
       </Text>

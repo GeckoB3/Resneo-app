@@ -52,6 +52,20 @@ export const queryKeys = {
       [...queryKeys.customer.all(), 'profile', keyScope(accessToken)] as const,
     home: (accessToken?: string | null) =>
       [...queryKeys.customer.all(), 'home', keyScope(accessToken)] as const,
+    bookings: (accessToken?: string | null) =>
+      [...queryKeys.customer.all(), 'bookings', keyScope(accessToken)] as const,
+    booking: (bookingId: string | null, accessToken?: string | null) =>
+      [...queryKeys.customer.all(), 'booking', bookingId, keyScope(accessToken)] as const,
+    rescheduleOptions: (bookingId: string | null, accessToken?: string | null) =>
+      [
+        ...queryKeys.customer.all(),
+        'rescheduleOptions',
+        bookingId,
+        keyScope(accessToken),
+      ] as const,
+    /** Public appointment slots for a reschedule. Not scoped to the caller. */
+    slots: (venueId: string | null, date: string | null, serviceId: string | null, practitionerId: string | null) =>
+      [...queryKeys.customer.all(), 'slots', venueId, date, serviceId, practitionerId] as const,
   },
 
   venue: {

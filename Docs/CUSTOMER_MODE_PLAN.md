@@ -157,7 +157,21 @@ Each phase is shippable and independently testable. C0 and C1 carry the routing 
 - **Acceptance, and it is about the crash rather than the screen:** a cold start with a slow or failing `staff/me` never unmounts a mounted navigator; a role resolving after first paint does not remount the provider tree; a token refresh mid-session does not bounce a customer out of an open screen. These are the three shapes of the 2026-08-16 failure and each gets a test.
 - **Stop and review here** before building C2 onward.
 
-### C2. Bookings.
+### C2. Bookings. DONE 2026-08-30.
+
+*(**Done.** A list split upcoming and past by a date comparison over ONE request, a detail screen rendering the shared DTO, and the four actions: cancel, confirm attendance, ask whether it can be moved, and move it. 30 tests, 10 mutations, all caught.
+
+**Rescheduling turned out to be buildable here, which the plan did not know.** `reschedule-options` returns no slots by design, and no `/api/v1/me/*` route offers any, because availability belongs to the venue rather than the caller. It comes instead from `/api/booking/availability`, a PUBLIC endpoint this app already reads in `useBookableOfferings`. So the picker needed no new web work and no credential; sending a Bearer token to a public route would only widen where it has been.
+
+**The move button reflects the server's answer, not a local guess.** `reschedule-options` knows the venue's own settings, the booking model and the deadline, and it returns the sentence to show when the answer is no. Events stay cancel-and-rebook and classes move by another mechanism; working that out in the client would be a second copy of rules that already exist and can already change without us.
+
+**Slots are narrowed to the booking's own practitioner.** The engine answers for everyone who could do the service, because the public booking page lets you choose. A reschedule is not that: a slot with a different practitioner is a different appointment, and offering it under "change my booking" is a surprise rather than a convenience.
+
+**The consequence copy is tested as strings**, following the web's own rule that the copy is the deliverable rather than the dialog. The deposit line is the one that matters: somebody who cancels inside the notice window and only afterwards finds the deposit gone has been charged by a button that did not warn them. Both directions are pinned, including staying silent when no deposit was paid, because a refund sentence on a booking with no deposit is a question the customer then has to answer for themselves.
+
+**The forms distinction survives the trip.** `compliance_forms_checked === false` renders a sentence saying the check failed. Rendering nothing there would tell somebody with an unsigned waiver they are ready to go.
+
+**Still a Stack, not tabs.** A hub that already lists what is coming, plus one list behind it, does not need a tab bar where one tab is a longer version of the other. Tabs arrive when C3 and C4 add destinations that are not versions of each other.)*
 
 List, detail, cancel, reschedule. `GET /api/v1/me/bookings`, `GET` and `DELETE` on `/bookings/[id]`, plus `reschedule-options`, `reschedule` and `confirm`. This is what push notifications deep-link into, so it precedes anything that sends one.
 

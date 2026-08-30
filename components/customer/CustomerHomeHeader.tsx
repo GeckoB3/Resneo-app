@@ -1,3 +1,4 @@
+import { useRouter } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 
 import { Text } from '@/components/ui/Text';
@@ -18,6 +19,7 @@ type Props = { home: CustomerHome };
  * thing they can reach, not something to go hunting for.
  */
 export function CustomerHomeHeader({ home }: Props) {
+  const router = useRouter();
   const { canSwitch, choose } = useAppMode();
   const profileQuery = useCustomerProfile();
 
@@ -34,6 +36,11 @@ export function CustomerHomeHeader({ home }: Props) {
           </Text>
         </View>
       </View>
+      <Button
+        label="See all your bookings"
+        variant="secondary"
+        onPress={() => router.push('/bookings')}
+      />
       {canSwitch ? (
         /*
           Only shown to somebody who actually has a venue to go back to. A
