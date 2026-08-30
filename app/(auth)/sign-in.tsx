@@ -56,13 +56,36 @@ export default function SignInScreen() {
     try {
       const result = await signInWithPassword(email, password);
       if (result.error) {
-        setError(result.error);
+        setError(passwordSignInMessage(result.error));
         track(ANALYTICS_EVENTS.signInFailed, { method: 'password', reason: result.error });
       }
       // Session update routes to (app) via Stack.Protected in root layout.
     } finally {
       setLoading(false);
     }
+  }
+
+  /*
+    "Invalid login credentials" is what GoTrue says both for a wrong password
+    and for an account that has NO password, and the two need different advice.
+
+    Customers overwhelmingly have no password: the web creates their account
+    lazily from the email address they booked with, so there was never a moment
+    when they chose one. Telling such a person their credentials are invalid
+    sends them to re-type something that does not exist, and this screen opens
+    on the Password tab, so it is the first thing they meet.
+
+    The tab default is deliberately NOT changed. Staff are the people signing in
+    today and they do have passwords; flipping the default would fix a stranger's
+    problem by making every existing user's sign-in slower. Naming the other way
+    in is enough, and it costs the person who really did mistype nothing but a
+    clause.
+  */
+  function passwordSignInMessage(raw: string): string {
+    if (/invalid login credentials/i.test(raw)) {
+      return 'That email and password did not match. If you have never set a password, use the Magic Link tab and we will email you a link to sign in.';
+    }
+    return raw;
   }
 
   async function handleMagicLink() {

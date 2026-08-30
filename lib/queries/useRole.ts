@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useSyncExternalStore } from 'react';
 
 import { ApiError } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
@@ -15,6 +15,63 @@ import { useStaffMe } from '@/lib/queries/useStaffMe';
  *                the check failed for a reason that is not "not staff").
  */
 export type Role = 'loading' | 'staff' | 'customer' | 'unknown';
+
+/**
+ * The role this session has already settled on, held for the process.
+ *
+ * **Without this, every customer is thrown back to the loading screen once an
+ * hour.** `useStaffMe` is keyed on the access token, which Supabase rotates
+ * roughly hourly, and a new key means no cached result. Staff survive that
+ * because `keepPreviousData` carries their profile across the re-key. A
+ * customer has no profile to carry: their settled answer is an ERROR, a 401,
+ * and keepPreviousData does not carry errors. So the query returns to pending,
+ * the role returns to `loading`, and the router unmounts the customer navigator
+ * and mounts the loading screen in its place.
+ *
+ * That is precisely the failure this phase exists to prevent, arriving on a
+ * timer rather than by chance. A role does not change during a session, so
+ * latching the first resolved answer is not merely a patch for it, it is the
+ * truth: nobody stops being staff because their token was refreshed.
+ *
+ * Cleared when the session ends, below, so the next person on a shared device
+ * inherits nothing.
+ */
+let latchedRole: Extract<Role, 'staff' | 'customer'> | null = null;
+const latchListeners = new Set<() => void>();
+
+function getLatchedRole(): Extract<Role, 'staff' | 'customer'> | null {
+  return latchedRole;
+}
+
+function subscribeLatchedRole(listener: () => void): () => void {
+  latchListeners.add(listener);
+  return () => {
+    latchListeners.delete(listener);
+  };
+}
+
+/**
+ * Settle the role for this session. WRITE ONCE.
+ *
+ * The no-op on an already-latched value is the invariant, not an optimisation.
+ * An earlier version overwrote on every resolved observation, which quietly
+ * defeated the whole mechanism: the latch could be moved from `staff` to
+ * `customer` mid-session by one unlucky refetch, and moving it is a mode
+ * change, and a mode change is a navigator unmount. Once settled, only signing
+ * out clears it.
+ */
+function setLatchedRole(role: Extract<Role, 'staff' | 'customer'>): void {
+  if (latchedRole !== null) return;
+  latchedRole = role;
+  latchListeners.forEach((l) => l());
+}
+
+/** Forget the settled role. Called when the access token disappears. */
+export function clearLatchedRole(): void {
+  if (latchedRole === null) return;
+  latchedRole = null;
+  latchListeners.forEach((l) => l());
+}
 
 /**
  * The role, derived from the staff profile check.
@@ -55,8 +112,16 @@ export function useRole(): Role {
   */
   const accessToken = useAccessToken();
   const staffQuery = useStaffMe();
+  /*
+    Read through `useSyncExternalStore` rather than by touching the module
+    variable during render. The latch is shared mutable state outside React, and
+    that is exactly what this hook is for: it subscribes, so a latch set by one
+    consumer re-renders the others, and the read is consistent within a render.
+  */
+  const latched = useSyncExternalStore(subscribeLatchedRole, getLatchedRole, getLatchedRole);
 
-  return useMemo(() => {
+  /** What the staff check says right now, computed with no side effects. */
+  const observed = useMemo<Role>(() => {
     if (!accessToken) {
       return 'unknown';
     }
@@ -75,11 +140,50 @@ export function useRole(): Role {
       if (staffQuery.error instanceof ApiError && staffQuery.error.status === 401) {
         return 'customer';
       }
+      /*
+        `unknown` is the absence of an answer rather than an answer, and the
+        effect below refuses to latch it. Because the latch is write-once, doing
+        so would be permanent: a staff member whose check hit a 500 on launch
+        would be stuck as `unknown` for the life of the process, however many
+        successful checks followed.
+      */
       return 'unknown';
     }
 
     return 'loading';
   }, [accessToken, staffQuery.data, staffQuery.isError, staffQuery.error]);
+
+  /*
+    Latching is a side effect, so it happens in an effect. Doing it during
+    render, which an earlier version did, means a render React discards can
+    still have written a permanent answer.
+
+    Only the two RESOLVED roles are latched. `unknown` is the absence of an
+    answer rather than an answer, and making one failed check permanent would
+    leave a staff member who hit a 500 on launch unrecognised for the rest of
+    the process, however many successful checks followed.
+  */
+  useEffect(() => {
+    if (!accessToken) {
+      clearLatchedRole();
+      return;
+    }
+    if (observed === 'staff' || observed === 'customer') {
+      setLatchedRole(observed);
+    }
+  }, [accessToken, observed]);
+
+  /*
+    The latch wins. It is what keeps a customer from being thrown back to the
+    loading screen every time the access token rotates: their settled answer is
+    a 401, `keepPreviousData` carries data but not errors, so without this the
+    query returns to pending and the router unmounts their navigator.
+
+    Signing out is handled before the latch is consulted, so a stale answer
+    cannot outlive the session that produced it.
+  */
+  if (!accessToken) return 'unknown';
+  return latched ?? observed;
 }
 
 /**

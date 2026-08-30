@@ -31,6 +31,7 @@ import { useNotifications } from '@/lib/queries/useNotifications';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { useUpdateVenue } from '@/lib/queries/useVenueSettings';
 import { useAppLock } from '@/providers/AppLockProvider';
+import { switchAppMode } from '@/lib/mode/app-mode-store';
 import { useAuth } from '@/providers/AuthProvider';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
@@ -89,6 +90,7 @@ export default function MoreScreen() {
   const router = useRouter();
   const { colors } = useTheme();
   const { signOut } = useAuth();
+
   const toast = useToast();
   const { data: staffData, isLoading: staffLoading } = useStaffMe();
   const { venue, name: venueName, isLoading: venueLoading } = useVenueContext();
@@ -443,6 +445,37 @@ export default function MoreScreen() {
         </>
       )}
 
+      {/*
+        The way across to the customer side, for somebody who is both.
+
+        Shown only when there is a customer side to reach: `canSwitch` is false
+        for a confirmed customer, who has no staff app, and this row lives in
+        the staff app anyway. It sits above sign out because it is the gentler
+        neighbour of the same idea, "I am done being staff for now", and a
+        person looking for one often wants the other.
+      */}
+      {/*
+        Always offered here, because everyone signed into the staff app has a
+        customer side: the customer routes read `user_profiles`, which every
+        signed-in user has, so "my own bookings" is a real place for a staff
+        member even if it is empty.
+
+        This writes the choice straight to the store rather than going through
+        `useAppMode`. That hook also resolves the role and reads the profile,
+        which this screen has no use for, and pulling it in here made the More
+        tab require a QueryClient it had never needed.
+      */}
+      <Group title="Your own bookings">
+        <Button
+          label="Switch to my account"
+          variant="secondary"
+          onPress={() => switchAppMode('customer')}
+        />
+        <Text variant="caption" tone="muted" style={styles.switchNote}>
+          See the bookings you have made as a customer. You can switch back at any time.
+        </Text>
+      </Group>
+
       {/* Sign out */}
       <Card padded={false}>
         <PressableScale
@@ -551,6 +584,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.base,
     paddingBottom: spacing.base,
   },
+  switchNote: { marginTop: 8 },
   signOutRow: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -135,7 +135,21 @@ Each phase is shippable and independently testable. C0 and C1 carry the routing 
 - **Acceptance:** a non-staff sign-in issues zero venue requests and registers zero staff devices, asserted in tests rather than by inspection.
 - **Ships alone.** It is a bug fix that stands on its own merits and needs no customer UI to be worth releasing.
 
-### C1. The routing spine, plus the hub. The decision point.
+### C1. The routing spine, plus the hub. The decision point. DONE 2026-08-30, AWAITING REVIEW.
+
+*(**Done, and this is the stop-and-review point.** The root router now guards four destinations, exactly one of which is active at any moment: `(auth)`, `(app)`, `(customer)`, and a real `mode-loading` screen. That fourth screen is not decoration. Expo Router sends the user to "the first available unprotected screen" when no guarded one is active, and the first unprotected sibling here is `set-password`, so without it every launch would flash a set-a-password form at somebody who already has one.
+
+**`useAppMode()` is what the router branches on, and it reports `resolving` rather than guessing.** Confirmed customer wins first; then an explicit switch; then the web's own `default_login_destination`; then staff. Nothing mounts until one of those decides, because mounting a side and correcting it is the unmount this phase exists to prevent.
+
+**The acceptance found a real bug before it was ever run, which is the best argument for having written it.** `useStaffMe` is keyed on the access token, which rotates roughly hourly. Staff survive the re-key because `keepPreviousData` carries their profile. A customer has no profile to carry: their settled answer is a 401, and keepPreviousData does not carry errors. So the query would return to pending, the role to `loading`, and the router would unmount the customer's navigator and show a loading screen. **Every hour, to every customer.** The role is now latched, write-once, cleared only on sign-out.
+
+**Three things the sweep caught that the tests had missed.** Latching during render was a React purity violation the linter was right to reject, so it moved into an effect behind `useSyncExternalStore`. The effect then OVERWROTE the latch on every resolved observation, which silently defeated it; write-once is the invariant, and `customer` to `staff` was the reachable direction because `keepPreviousData` already blocks the other. And a `waitFor` in the test for that passed on its first check, before the competing answer arrived, so it passed against the bug. 17 role tests, 12 mode tests, 11 mutations all caught.
+
+**Two things changed shape from the plan.** The mode store notifies through `useSyncExternalStore`, because the settings screen writing a module variable would never have reached the router: the user would tap switch and watch nothing happen. And the staff switcher writes through a light `switchAppMode` rather than the full hook, because pulling `useAppMode` into the More tab made it require a QueryClient it had never needed and broke eleven existing tests.
+
+**The sign-in tab default is NOT changed**, deliberately. Customers mostly have no password, since the web creates their account lazily from the address they booked with, and the screen opens on the Password tab. But staff are who signs in today and they do have passwords, so the fix is to name the other way in when a password fails rather than to slow every existing user down. GoTrue says "Invalid login credentials" for both a wrong password and no password at all.
+
+**Not built, and recorded rather than skipped quietly:** `'ask'` is treated as `'dashboard'`, so a person who asked to be asked gets staff plus the switcher. An ask-me-every-time screen is a real design and not what this phase is for.)*
 
 - The `(customer)` group, the role-aware routing, the switcher for dual-role people.
 - One screen: the customer hub, against `GET /api/v1/me/home`. The payload is already rich enough to be a real screen: next booking, whether it needs a form, how many later ones do, the upcoming list, outstanding payments, venue history, and credit and membership summaries.

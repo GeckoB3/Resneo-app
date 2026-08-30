@@ -11,6 +11,8 @@ import {
 } from 'react';
 import { AppState, Platform, type AppStateStatus } from 'react-native';
 
+import { clearAppMode } from '@/lib/mode/app-mode-store';
+import { clearLatchedRole } from '@/lib/queries/useRole';
 import { unregisterDevice } from '@/lib/push/registerDevice';
 import { ANALYTICS_EVENTS, identify, resetAnalytics, track } from '@/lib/analytics';
 import { setAccessTokenRefresher } from '@/lib/api/client';
@@ -278,6 +280,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
       console.warn('[AuthProvider] signOut failed:', error.message);
     }
     resetAnalytics();
+    /*
+      Forget which side of the app the departing person chose. The next user of
+      a device is very often somebody else, and on a shared salon tablet an
+      inherited choice would drop a staff member into customer mode with no
+      explanation of why their calendar had vanished.
+    */
+    clearAppMode();
+    clearLatchedRole();
     // Drop all cached venue data so a subsequent user can never transiently see
     // the previous user's bookings/clients before their own queries load.
     queryClient.clear();

@@ -41,6 +41,19 @@ export const queryKeys = {
       [...queryKeys.staff.all(), 'me', keyScope(accessToken)] as const,
   },
 
+  /**
+   * The customer's own account, which is a different surface from `venue`:
+   * these routes answer about the caller, never about a venue, and they are
+   * scoped server-side from the session rather than by any id we send.
+   */
+  customer: {
+    all: () => [...queryKeys.all, 'customer'] as const,
+    profile: (accessToken?: string | null) =>
+      [...queryKeys.customer.all(), 'profile', keyScope(accessToken)] as const,
+    home: (accessToken?: string | null) =>
+      [...queryKeys.customer.all(), 'home', keyScope(accessToken)] as const,
+  },
+
   venue: {
     all: () => [...queryKeys.all, 'venue'] as const,
     bootstrap: (accessToken?: string | null) =>

@@ -26,6 +26,7 @@ import {
   registerNavigationContainer,
 } from '@/lib/observability';
 import { useDeviceOrientationLock } from '@/lib/orientation';
+import { useAppMode } from '@/lib/mode/useAppMode';
 import { AppProviders } from '@/providers/AppProviders';
 import { useAuth } from '@/providers/AuthProvider';
 import { useTheme } from '@/theme/useTheme';
@@ -95,6 +96,26 @@ export default function RootLayout() {
 function RootLayoutNav() {
   const { colors, isDark } = useTheme();
   const { session, isLoading } = useAuth();
+  const { mode } = useAppMode();
+
+  /*
+    Exactly one of (auth), (app), (customer) and `mode-loading` is active at any
+    moment, and that invariant is doing real work. Expo Router sends the user to
+    "the first available unprotected screen" when no protected one is active,
+    and the first unprotected sibling here is `set-password`. Without the
+    mode-loading screen, every launch would flash a set-a-password form at
+    someone who has one.
+
+    The other half of the invariant is that a side, once mounted, is never
+    unmounted by anything except signing out or an explicit switch. Guards that
+    settle asynchronously are the hazard: Expo Router removes every history
+    entry for a screen whose guard goes true to false, and when that screen is a
+    navigator this app has already died from it (see the comment on the loading
+    overlay below). So the router waits for a decided mode rather than mounting
+    a side and correcting itself.
+  */
+  const signedIn = !!session;
+  const modeResolving = signedIn && mode === 'resolving';
 
   return (
     <>
@@ -103,8 +124,17 @@ function RootLayoutNav() {
           lives under AppProviders above this nav. */}
       <AuthNoticeBridge />
       <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Protected guard={!!session}>
+        <Stack.Protected guard={signedIn && mode === 'staff'}>
           <Stack.Screen name="(app)" />
+        </Stack.Protected>
+        <Stack.Protected guard={signedIn && mode === 'customer'}>
+          <Stack.Screen name="(customer)" />
+        </Stack.Protected>
+        {/* Not a spinner in place of the navigator, which is the thing that
+            killed the app on 2026-08-16: a real, routable screen, so the router
+            always has somewhere legitimate to be while the mode settles. */}
+        <Stack.Protected guard={modeResolving}>
+          <Stack.Screen name="mode-loading" />
         </Stack.Protected>
         <Stack.Protected guard={!session}>
           <Stack.Screen name="(auth)" />
