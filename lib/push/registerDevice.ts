@@ -10,6 +10,16 @@ export type DevicePlatform = 'ios' | 'android' | 'web';
 
 export interface RegisterDeviceInput {
   accessToken: string;
+  /**
+   * Which app this device is, so the server knows which pushes to send it.
+   *
+   * REQUIRED, with no default on purpose. The column defaults to `'staff'`
+   * server-side so that build 1.0.7, which sends nothing, keeps working; a
+   * default here would quietly inherit that for a customer and send them a
+   * venue's booking alerts, which carry a client's name and service. The caller
+   * must know who this is, and if it does not it must not register.
+   */
+  audience: 'staff' | 'customer';
 }
 
 export interface RegisterDeviceResult {
@@ -43,6 +53,10 @@ function projectIdFromConfig(): string | undefined {
  *
  * Safe to call multiple times — backend simply inserts a fresh row per call (web parity).
  * Skips simulator, web, and Expo Go because push tokens are unavailable there.
+ *
+ * `input.audience` stamps the row with which app it belongs to. The server fans
+ * out by that stamp, so it decides whether this device receives a venue's staff
+ * alerts or a customer's own booking reminders.
  */
 export async function registerCurrentDeviceForPush(
   input: RegisterDeviceInput,
@@ -96,6 +110,7 @@ export async function registerCurrentDeviceForPush(
 
   const payload: Record<string, unknown> = {
     platform,
+    audience: input.audience,
     push_token: pushToken,
     app_version: appVersionString(),
     os_version: Device.osVersion ?? null,

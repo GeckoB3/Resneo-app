@@ -120,7 +120,13 @@ The cost is that the app must render a Payment Element, and it has no SDK for on
 
 Each phase is shippable and independently testable. C0 and C1 carry the routing risk. C2 is screens against a settled contract. **C3 to C5 are screens against a contract that is settled but not versioned** (G1), so each needs its route access decided before it starts, and C3 and C4 additionally need G2's Stripe decision.
 
-### C0. Fix the live defect and lay the plumbing. No customer UI.
+### C0. Fix the live defect and lay the plumbing. No customer UI. DONE 2026-08-30.
+
+*(**Done.** `useRole()` is the single answer, lifted out of the staff gate so the gate, push registration and the venue bootstrap read one computation instead of three; the gate now consumes it and behaves identically, since `customer` is what it used to call `not_staff` and still lands on `<StaffRequired/>` until C1. Device registration sends `audience`, and `audienceForRole` returns **null** for an unresolved role so the provider registers nothing rather than falling back to the server's `'staff'` default, which is the defect itself. 18 tests, 7 mutations, all caught.
+
+**Two things were found by doing it rather than by planning it.** The typechecker turned up a second `registerCurrentDeviceForPush` call site in `manage/notification-preferences.tsx`, which is pinned to `'staff'` because it sits behind the staff gate: deriving its audience would only let a degraded venue API refuse an explicit request to turn push on. And `useRole` originally imported `useAuth`, which imports `registerDevice`, which imports `expo-notifications`; that dragged the native push stack into every module touching `useVenue` and **crashed two unrelated test suites outright**. It now reads `useAccessToken()`, which is lighter and is the same source `useStaffMe` keys off, so the two cannot disagree about whether a session exists.
+
+**The `useVenue` gate is `role !== 'customer'`, deliberately not `=== 'staff'`,** and a test pins the difference. Gating on a positive staff answer would put every staff member's venue bootstrap behind their staff/me round trip, where the two run in parallel today, and the tabs render off that data.)*
 
 - Gate push registration on a resolved role, so `<StaffRequired/>` stops registering staff devices for non-staff people.
 - Send `audience` on device registration: `'staff'` or `'customer'`. The web column already exists, defaults to `'staff'`, and has a value-domain CHECK.

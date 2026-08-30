@@ -6,6 +6,7 @@ import { Notifications } from '@/lib/push/notificationsModule';
 import { setPendingBookingRoute } from '@/lib/push/pendingNotificationRoute';
 import { isExpoGoClient } from '@/lib/push/runtime';
 import { registerCurrentDeviceForPush } from '@/lib/push/registerDevice';
+import { audienceForRole, useRole } from '@/lib/queries/useRole';
 import { useAuth } from '@/providers/AuthProvider';
 
 type PushNotificationsProviderProps = {
@@ -134,6 +135,18 @@ export function PushNotificationsProvider({ children }: PushNotificationsProvide
   const { session } = useAuth();
   const accessToken = session?.access_token ?? null;
   const userId = session?.user?.id ?? null;
+  /*
+    Which app this device belongs to, or null while we do not yet know.
+
+    Before this, registration was gated on having a session and nothing else,
+    and the payload carried no audience at all, so the server's `'staff'`
+    default applied to everyone. A person who signed in, failed the staff check
+    and landed on <StaffRequired/> was still silently registered as a staff
+    device, and `sendStaffPush` fans out by `user_id` and audience, so that
+    device received a venue's booking alerts. Those carry a client's name and
+    service. It is live in production today and is the reason this phase exists.
+  */
+  const audience = audienceForRole(useRole());
   // Dedupe registration on the stable user id, NOT the access token — the token
   // rotates ~hourly via autoRefreshToken and would otherwise re-register the
   // device on every refresh.
@@ -147,6 +160,19 @@ export function PushNotificationsProvider({ children }: PushNotificationsProvide
     if (!isBackendConfigured() || isExpoGoClient()) {
       return;
     }
+    /*
+      Wait for a resolved role rather than guessing one.
+
+      This does mean a staff member whose staff/me check is failing for some
+      reason OTHER than a 401 does not register on this pass. That is the right
+      way round: the effect re-runs when the access token rotates, roughly
+      hourly, so it self-heals, whereas a wrong audience persists in the
+      database until the row is deleted and sends the wrong person somebody
+      else's client details in the meantime.
+    */
+    if (!audience) {
+      return;
+    }
     if (registeredForUserRef.current === userId) {
       return;
     }
@@ -156,7 +182,7 @@ export function PushNotificationsProvider({ children }: PushNotificationsProvide
     // never registered for the rest of the session).
     registeredForUserRef.current = userId;
 
-    void registerCurrentDeviceForPush({ accessToken })
+    void registerCurrentDeviceForPush({ accessToken, audience })
       .then((result) => {
         if (!result.registered) {
           if (result.reason) console.info('[push] not registered:', result.reason);
@@ -177,7 +203,7 @@ export function PushNotificationsProvider({ children }: PushNotificationsProvide
           registeredForUserRef.current = null;
         }
       });
-  }, [userId, accessToken]);
+  }, [userId, accessToken, audience]);
 
   useEffect(() => {
     if (isExpoGoClient()) {

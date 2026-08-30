@@ -216,7 +216,12 @@ export default function NotificationPreferencesScreen() {
     }
     setEnabling(true);
     try {
-      const result = await registerCurrentDeviceForPush({ accessToken });
+      // 'staff' is settled by where this screen lives rather than by asking:
+      // it sits under `(app)/manage`, behind the staff gate, so anyone who can
+      // press this button is acting as staff. Deriving it from useRole() here
+      // would only add a way for a degraded venue API to refuse an explicit
+      // request to turn push on.
+      const result = await registerCurrentDeviceForPush({ accessToken, audience: 'staff' });
       if (result.registered) {
         toast.success('Push notifications enabled on this device.');
       } else if (result.reason === 'denied') {

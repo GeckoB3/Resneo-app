@@ -18,8 +18,19 @@ jest.mock('@/lib/api/client', () => ({
 }));
 jest.mock('expo-device', () => ({ osVersion: '17.0', modelName: 'iPhone', isDevice: true }));
 jest.mock('expo-notifications', () => ({}), { virtual: true });
+jest.mock('expo-constants', () => ({
+  expoConfig: { version: '1.0.8', extra: { eas: { projectId: 'proj-1' } } },
+}));
+jest.mock('@/lib/push/runtime', () => ({ isExpoGoClient: () => false }));
+jest.mock('@/lib/push/notificationsModule', () => ({
+  Notifications: {
+    getPermissionsAsync: async () => ({ status: 'granted' }),
+    requestPermissionsAsync: async () => ({ status: 'granted' }),
+    getExpoPushTokenAsync: async () => ({ data: 'ExponentPushToken[abc]' }),
+  },
+}));
 
-import { unregisterDevice } from '@/lib/push/registerDevice';
+import { registerCurrentDeviceForPush, unregisterDevice } from '@/lib/push/registerDevice';
 
 beforeEach(() => mockApiFetch.mockReset());
 
@@ -37,5 +48,34 @@ describe('unregisterDevice', () => {
   it('never throws, so a failure cannot block signing out', async () => {
     mockApiFetch.mockRejectedValueOnce(new Error('network'));
     await expect(unregisterDevice('token-A')).resolves.toBeUndefined();
+  });
+});
+
+describe('registerCurrentDeviceForPush: the audience stamp (C0)', () => {
+  function payloadOf(call: unknown[]): Record<string, unknown> {
+    const opts = call[1] as { body?: string };
+    return JSON.parse(opts.body ?? '{}');
+  }
+
+  it('sends the audience it was given', async () => {
+    /*
+      The field that decides which pushes this device receives. Before C0 the
+      client sent none, so the server's `'staff'` default applied to every
+      device, including one belonging to somebody who is not staff anywhere.
+    */
+    mockApiFetch.mockResolvedValueOnce({ device: { id: 'dev-1' } });
+    await registerCurrentDeviceForPush({ accessToken: 'token-A', audience: 'customer' });
+    expect(payloadOf(mockApiFetch.mock.calls[0]).audience).toBe('customer');
+  });
+
+  it('sends staff when that is who it is, rather than relying on the server default', async () => {
+    /*
+      Worth asserting even though the server would default to the same value.
+      Relying on the default is what made the customer case silently wrong, and
+      a client that states the answer cannot be broken by the default changing.
+    */
+    mockApiFetch.mockResolvedValueOnce({ device: { id: 'dev-2' } });
+    await registerCurrentDeviceForPush({ accessToken: 'token-A', audience: 'staff' });
+    expect(payloadOf(mockApiFetch.mock.calls[0]).audience).toBe('staff');
   });
 });
