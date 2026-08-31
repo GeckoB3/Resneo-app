@@ -89,3 +89,26 @@ describe('it never throws, because it runs before the app exists', () => {
     expect(webUrlToAppRoute('https://www.resneo.com/accounts/bookings')).toBe('/accounts/bookings');
   });
 });
+
+describe('paths Android claims but the app cannot serve', () => {
+  /*
+    Apple's AASA excludes them, so on iOS they never arrive. Android has no
+    exclusion: an intent filter claims a prefix, so `/account/bookingsXYZ`
+    matches `pathPrefix: '/account/bookings'` and reaches the app. Landing on a
+    not-found for a link the customer was invited to tap is the failure this
+    avoids.
+  */
+  it.each([
+    'https://www.resneo.com/account/bookingsXYZ',
+    'https://www.resneo.com/account/something-the-web-added-later',
+    'https://www.resneo.com/account/export',
+  ])('%s lands on the hub, not a not-found', async (url) => {
+    expect(webUrlToAppRoute(url)).toBe('/');
+  });
+
+  it('still does not claim a path merely starting with the same letters', async () => {
+    // `/accounts` is a different path, and swallowing it would be the app
+    // taking over a page it was never given.
+    expect(webUrlToAppRoute('https://www.resneo.com/accounts/bookings')).toBe('/accounts/bookings');
+  });
+});

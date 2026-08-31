@@ -15,6 +15,7 @@
     },
     "ios": {
       "supportsTablet": true,
+      "associatedDomains": ["applinks:www.resneo.com"],
       "bundleIdentifier": "com.resneo.app",
       "icon": {
         "light": "./assets/images/icon.png",
@@ -38,6 +39,20 @@
         "android.permission.READ_EXTERNAL_STORAGE"
       ],
       "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ],
+          "data": [
+            { "scheme": "https", "host": "www.resneo.com", "pathPrefix": "/account/bookings" },
+            { "scheme": "https", "host": "www.resneo.com", "pathPrefix": "/account/passes" },
+            { "scheme": "https", "host": "www.resneo.com", "path": "/account/profile" },
+            { "scheme": "https", "host": "www.resneo.com", "path": "/account" }
+          ]
+        },
         {
           "action": "VIEW",
           "category": [

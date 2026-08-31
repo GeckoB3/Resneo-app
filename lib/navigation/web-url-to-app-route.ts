@@ -39,6 +39,19 @@ export function webUrlToAppRoute(incoming: string): string {
   if (path === '/account' || path === '/account/') return '/';
 
   /*
+    Anything else under `/account` lands on the hub rather than passing through
+    to a not-found.
+
+    Apple lets the AASA EXCLUDE the paths the app cannot serve, so on iOS these
+    never arrive. Android has no equivalent: an intent filter claims a prefix,
+    and `pathPrefix: '/account/bookings'` also matches `/account/bookingsXYZ`.
+    So on Android a claimed-but-unroutable path is reachable, and the honest
+    landing is the customer's own hub rather than an error screen for a link
+    they were invited to tap.
+  */
+  if (path === '/account' || path.startsWith('/account/')) return '/';
+
+  /*
     Everything else is returned as it came, including the auth paths.
     `resneo://callback` carries magic-link and password-reset sign-in and has
     worked since long before any of this; rewriting a path this function does

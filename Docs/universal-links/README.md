@@ -28,7 +28,33 @@ every link the web emails and the app's production API host. The apex
 verifying, so declaring the apex would additionally require it to serve these
 files directly.
 
-## STILL BLOCKED, and not on credentials
+## DONE 2026-08-31. All three steps complete.
+
+1. **The web serves both files**, verified on production: 200,
+   `Content-Type: application/json`, no `location` header, and the BODIES
+   checked rather than only the headers, since a 200 serving the wrong JSON
+   passes a header check and fails verification silently. Correct Team ID, both
+   fingerprints, right package, and the exclusion present.
+2. **`app.json` restored**: `ios.associatedDomains: ["applinks:www.resneo.com"]`
+   and an `autoVerify` https intent filter for the same host. The `resneo://`
+   filter is a SEPARATE entry and untouched, so magic-link sign-in is unaffected.
+3. **A build is what remains.** Native config cannot ship over the air.
+
+**The Android filter is path-restricted**, to `/account/bookings`,
+`/account/passes`, `/account/profile` and `/account`. Without that it would
+claim every page on `www.resneo.com`, so a tap on the marketing site or the
+venue dashboard would open the customer app.
+
+**The apex is deliberately not claimed.** `resneo.com` still 307s to www, and
+neither platform follows a redirect when verifying.
+
+**Android's matching is coarser than Apple's**, which needed handling.
+`pathPrefix: '/account/bookings'` also matches `/account/bookingsXYZ`, and
+Android has no equivalent of the AASA's `exclude`, so a claimed-but-unroutable
+path can reach the app. `webUrlToAppRoute` therefore sends anything else under
+`/account` to the customer hub rather than passing it through to a not-found.
+
+## Superseded: what used to block this
 
 **The app cannot yet serve the paths these files would claim.** The web portal
 lives at `/account/bookings`, `/account/bookings/{id}`, `/account/passes` and
