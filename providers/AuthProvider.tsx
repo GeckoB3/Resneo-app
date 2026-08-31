@@ -17,7 +17,7 @@ import { unregisterDevice } from '@/lib/push/registerDevice';
 import { ANALYTICS_EVENTS, identify, resetAnalytics, track } from '@/lib/analytics';
 import { setAccessTokenRefresher, setAuthenticationLostHandler } from '@/lib/api/client';
 import { sendBrandedMagicLink } from '@/lib/auth/magic-link';
-import { getAuthCallbackRedirectUrl, getPasswordResetRedirectUrl } from '@/lib/auth/redirect';
+import { getAuthCallbackRedirectUrl } from '@/lib/auth/redirect';
 import { setObservabilityUser } from '@/lib/observability';
 import { setQueryAuthScope } from '@/lib/queries/keys';
 import { queryClient } from '@/lib/queries/queryClient';
@@ -44,7 +44,6 @@ type AuthContextValue = {
   /** Finish signing in with the code from that email. */
   verifySignInCode: (email: string, token: string) => Promise<{ error: string | null }>;
   signInWithPassword: (email: string, password: string) => Promise<{ error: string | null }>;
-  requestPasswordReset: (email: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
 };
 
@@ -264,6 +263,22 @@ export function AuthProvider({ children }: AuthProviderProps) {
         options: {
           // Opens this app via resneo://callback when the user taps the email link.
           emailRedirectTo: getAuthCallbackRedirectUrl(),
+          /*
+            NEVER create an account from this screen.
+
+            supabase-js defaults `shouldCreateUser` to true, so a mistyped
+            address silently produced a NEW empty account and a working sign-in
+            link for it. Somebody trying to get back into the account they
+            already have would be signed in to a stranger's-eye view of nothing
+            and conclude their bookings had been lost.
+
+            It is also what the branded route already does: `generateLink`
+            refuses an address it does not know, and this fallback was quietly
+            undoing that refusal. In ResNeo an account comes from making a
+            booking or being invited to a venue, never from typing an address
+            into this box.
+          */
+          shouldCreateUser: false,
         },
       });
 
@@ -347,31 +362,32 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   }, []);
 
-  const requestPasswordReset = useCallback(async (email: string) => {
-    try {
-      const supabase = getSupabase();
-      const parsed = signInEmailSchema.safeParse({ email });
-      if (!parsed.success) {
-        return { error: parsed.error.issues[0]?.message ?? 'Enter a valid email.' };
-      }
+  /*
+    THERE IS NO `requestPasswordReset` ANY MORE, deliberately.
 
-      // Recovery link opens the app at /callback, which verifies the link and then
-      // routes to the set-password screen (add URL in Supabase redirect allow-list).
-      const { error } = await supabase.auth.resetPasswordForEmail(parsed.data.email, {
-        redirectTo: getPasswordResetRedirectUrl(),
-      });
+    It called `supabase.auth.resetPasswordForEmail` with a `resneo://callback`
+    redirect, which is the last thing in this app that depended on a mail client
+    and a browser being willing to hand a custom scheme off from an HTTP 302.
+    That is the failure that made magic-link sign-in unreachable, and it fails
+    the same silent way here: the recovery link lands on the website and the
+    person never gets back in.
 
-      if (error) {
-        return { error: error.message };
-      }
+    Forgetting a password no longer needs its own email. The branded sign-in
+    code signs somebody in without one, and both sides of the app can then set a
+    password while signed in: staff on `manage/account`, customers on their
+    profile. The reset email was a second way to reach a screen that is already
+    reachable, over the one transport that does not work.
 
-      return { error: null };
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Could not send reset link.';
-      return { error: message };
-    }
-  }, []);
+    The email it sent was also Supabase's own, from
+    noreply@mail.app.supabase.io, because `resetPasswordForEmail` is sent BY
+    Supabase and no code here could change the sender. The branded route is the
+    only path this app has to a ResNeo-templated email.
+
+    `app/(auth)/callback.tsx` still HONOURS a `recovery` link. Not generating
+    them is different from refusing one, and a link already in somebody's inbox,
+    or one sent by the web, should still work. The same branch carries `invite`,
+    which is how staff are onboarded, so it is load-bearing regardless.
+  */
 
   const acknowledgeSessionExpiry = useCallback(() => setSessionExpired(false), []);
 
@@ -416,7 +432,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
       signInWithEmail,
       verifySignInCode,
       signInWithPassword,
-      requestPasswordReset,
       signOut,
     }),
     [
@@ -428,7 +443,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
       signInWithEmail,
       verifySignInCode,
       signInWithPassword,
-      requestPasswordReset,
       signOut,
     ],
   );

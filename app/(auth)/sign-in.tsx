@@ -44,8 +44,7 @@ function AuthShell({ children }: { children: ReactNode }) {
  * Staff sign-in — password or magic link, matching the web /login (staff default: Password tab).
  */
 export default function SignInScreen() {
-  const { signInWithEmail, verifySignInCode, signInWithPassword, requestPasswordReset, initError } =
-    useAuth();
+  const { signInWithEmail, verifySignInCode, signInWithPassword, initError } = useAuth();
 
   const [view, setView] = useState<SignInView>('sign-in');
   const [mode, setMode] = useState<SignInMode>('password');
@@ -139,17 +138,30 @@ export default function SignInScreen() {
     }
   }
 
+  /*
+    Forgetting a password sends a SIGN-IN CODE, not a reset link.
+
+    The code gets somebody in without a password at all, and once in, both sides
+    of the app can set one: staff on Manage > Account, customers on their
+    profile. The old reset email reached that same screen over a
+    `resneo://callback` redirect, which is the transport that silently fails by
+    landing on the website. This is the same destination by a route that works.
+  */
   async function handleForgotPassword() {
     setError(null);
     setSuccessMessage(null);
     setLoading(true);
+    track(ANALYTICS_EVENTS.signInStarted, { method: 'magic' });
     try {
-      const result = await requestPasswordReset(email);
+      const result = await signInWithEmail(email);
       if (result.error) {
         setError(result.error);
+        track(ANALYTICS_EVENTS.signInFailed, { method: 'magic', reason: result.error });
         return;
       }
-      setSuccessMessage('Check your inbox for a link to reset your password.');
+      setCode('');
+      setCodeSent(result.codeSent);
+      setView('magic-sent');
     } finally {
       setLoading(false);
     }
@@ -276,10 +288,17 @@ export default function SignInScreen() {
       <AuthShell>
         <View style={styles.headerBlock}>
           <Text variant="title" style={styles.center}>
-            Reset password
+            Forgotten your password?
           </Text>
+          {/*
+            Says what actually happens, because it is not what the old copy
+            promised. No reset link is sent: a code signs them in, and choosing
+            a new password is then something they do at their leisure rather
+            than a hoop before they are allowed back in.
+          */}
           <Text variant="bodySmall" tone="secondary" style={styles.center}>
-            Enter your email and we will send you a link to choose a new password.
+            You do not need it. Enter your email and we will send you a code that signs you in. You
+            can set a new password afterwards from your account.
           </Text>
         </View>
 
@@ -302,7 +321,7 @@ export default function SignInScreen() {
           ) : null}
 
           <Button
-            label={loading ? 'Sending…' : 'Send reset link'}
+            label={loading ? 'Sending…' : 'Email me a sign-in code'}
             loading={loading}
             onPress={() => {
               void handleForgotPassword();
