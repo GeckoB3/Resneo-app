@@ -29,6 +29,7 @@ export function ProfileDetailsSection() {
   const [firstName, setFirstName] = useState<string | null>(null);
   const [lastName, setLastName] = useState<string | null>(null);
   const [phone, setPhone] = useState<string | null>(null);
+  const [displayName, setDisplayName] = useState<string | null>(null);
 
   if (isLoading) return <LoadingState message="Loading your details…" />;
 
@@ -40,11 +41,13 @@ export function ProfileDetailsSection() {
   const firstValue = firstName ?? profile?.first_name ?? '';
   const lastValue = lastName ?? profile?.last_name ?? '';
   const phoneValue = phone ?? profile?.phone ?? '';
+  const displayValue = displayName ?? profile?.display_name ?? '';
 
   const dirty =
     (firstName !== null && firstName !== (profile?.first_name ?? '')) ||
     (lastName !== null && lastName !== (profile?.last_name ?? '')) ||
-    (phone !== null && phone !== (profile?.phone ?? ''));
+    (phone !== null && phone !== (profile?.phone ?? '')) ||
+    (displayName !== null && displayName !== (profile?.display_name ?? ''));
 
   return (
     <Card>
@@ -52,15 +55,53 @@ export function ProfileDetailsSection() {
         YOUR DETAILS
       </Text>
 
-      <Input label="First name" value={firstValue} onChangeText={setFirstName} autoCapitalize="words" />
-      <Input label="Last name" value={lastValue} onChangeText={setLastName} autoCapitalize="words" />
+      {/*
+        The lengths are the server's own, not invented here. `PATCH
+        /api/v1/me/profile` refuses the whole save with "A text field exceeds
+        the maximum length" past 100, 100, 32 and 200, and it does so without
+        naming the field. Stopping the typing is a better answer than losing an
+        edit to a message that does not say which box was wrong.
+      */}
+      <Input
+        label="First name"
+        value={firstValue}
+        onChangeText={setFirstName}
+        autoCapitalize="words"
+        autoComplete="given-name"
+        maxLength={100}
+      />
+      <Input
+        label="Last name"
+        value={lastValue}
+        onChangeText={setLastName}
+        autoCapitalize="words"
+        autoComplete="family-name"
+        maxLength={100}
+      />
       <Input
         label="Phone"
         value={phoneValue}
         onChangeText={setPhone}
         keyboardType="phone-pad"
+        autoComplete="tel"
+        maxLength={32}
         optional
         helper="Venues use this to reach you about a booking."
+      />
+      {/*
+        The web has this and the app did not, so a name chosen there was
+        invisible here and a save from this screen left it untouched but
+        unexplained.
+      */}
+      <Input
+        label="Preferred display name"
+        value={displayValue}
+        onChangeText={setDisplayName}
+        autoCapitalize="words"
+        maxLength={200}
+        optional
+        placeholder="How we greet you"
+        helper="Used in place of your first name when we address you."
       />
 
       <View style={styles.emailRow}>
@@ -87,12 +128,14 @@ export function ProfileDetailsSection() {
               ...(firstName !== null ? { first_name: firstName.trim() || null } : {}),
               ...(lastName !== null ? { last_name: lastName.trim() || null } : {}),
               ...(phone !== null ? { phone: phone.trim() || null } : {}),
+              ...(displayName !== null ? { display_name: displayName.trim() || null } : {}),
             },
             {
               onSuccess: () => {
                 setFirstName(null);
                 setLastName(null);
                 setPhone(null);
+                setDisplayName(null);
                 toast.success('Saved.');
               },
               onError: () => toast.error('Could not save. Please try again.'),

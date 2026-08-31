@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
+import { ApiError, isApiErrorBody } from '@/lib/api/client';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { ConfirmSheet } from '@/components/ui/ConfirmSheet';
@@ -29,9 +30,16 @@ export function AccountSecuritySection() {
   const signOutEverywhere = useSignOutEverywhere();
 
   const [password, setPasswordValue] = useState('');
+  const [confirm, setConfirmValue] = useState('');
   const [confirming, setConfirming] = useState(false);
 
   const tooShort = password.length > 0 && password.length < MIN_PASSWORD;
+  /*
+    Only once they have typed something to compare. Showing "does not match"
+    against an empty box would flag every password the moment it was entered.
+  */
+  const mismatch = confirm.length > 0 && password !== confirm;
+  const canSave = password.length >= MIN_PASSWORD && password === confirm;
 
   return (
     <Card>
@@ -50,20 +58,62 @@ export function AccountSecuritySection() {
         onChangeText={setPasswordValue}
         secureTextEntry
         autoCapitalize="none"
+        autoComplete="new-password"
+        textContentType="newPassword"
+        placeholder={`At least ${MIN_PASSWORD} characters`}
         error={tooShort ? `Use at least ${MIN_PASSWORD} characters` : undefined}
+      />
+
+      {/*
+        The second box, which the web has had all along and this did not.
+
+        Typing a password you cannot see and getting one character wrong locks
+        you out of the thing you were setting up, and you find out at the login
+        screen rather than here. That is the whole reason the pattern exists,
+        and it matters more on a phone keyboard than on a desktop one.
+      */}
+      <Input
+        label="Confirm password"
+        value={confirm}
+        onChangeText={setConfirmValue}
+        secureTextEntry
+        autoCapitalize="none"
+        autoComplete="new-password"
+        textContentType="newPassword"
+        placeholder="Repeat password"
+        error={mismatch ? 'Passwords do not match' : undefined}
+        containerStyle={styles.gap}
       />
 
       <Button
         label="Save password"
-        disabled={password.length < MIN_PASSWORD}
+        disabled={!canSave}
         loading={setPassword.isPending}
         onPress={() =>
           setPassword.mutate(password, {
             onSuccess: () => {
               setPasswordValue('');
-              toast.success('Password saved.');
+              setConfirmValue('');
+              /*
+                Says what the password is FOR. "Password saved" leaves somebody
+                who has only ever used email links unsure whether anything about
+                signing in has changed; the web spells out that email plus this
+                password now works, and the link still does.
+              */
+              toast.success('Password saved. You can now sign in with your email and password.');
             },
-            onError: () => toast.error('Could not save that password.'),
+            /*
+              The server's own words when it has them. It refuses a password
+              matching the current one with "New password must be different from
+              the current one.", and answering that with a flat "could not save"
+              turns a precise, actionable refusal into a mystery.
+            */
+            onError: (error) => {
+              const body = error instanceof ApiError ? error.body : undefined;
+              toast.error(
+                isApiErrorBody(body) ? body.error : 'Could not save that password.',
+              );
+            },
           })
         }
         style={styles.gap}

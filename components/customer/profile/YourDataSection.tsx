@@ -11,6 +11,7 @@ import {
   useCancelAccountDeletion,
   useRequestAccountDeletion,
 } from '@/lib/queries/useAccountDeletion';
+import { useAuth } from '@/providers/AuthProvider';
 import { useToast } from '@/providers/ToastProvider';
 import { spacing } from '@/theme/index';
 
@@ -28,6 +29,7 @@ import { spacing } from '@/theme/index';
  */
 export function YourDataSection() {
   const toast = useToast();
+  const { signOut } = useAuth();
   const exportData = useAccountExport();
   const status = useAccountDeletionStatus();
   const requestDeletion = useRequestAccountDeletion();
@@ -110,9 +112,22 @@ export function YourDataSection() {
         onConfirm={() => {
           setConfirming(false);
           requestDeletion.mutate(undefined, {
+            /*
+              Sign out locally, because the server has already signed us out
+              globally.
+
+              `POST /api/account/delete-request` revokes every session for the
+              user and deletes their registered devices. This screen used to
+              refetch and toast instead, leaving the app holding a token that
+              was dead the moment the request succeeded: every query would fail,
+              and the person who had just asked to close their account was left
+              looking at a broken version of it. The hook's own docblock says
+              the caller MUST sign out here, and the sign-out-everywhere button
+              two sections up already does exactly this.
+            */
             onSuccess: () => {
-              void status.refetch();
               toast.success('Your account is scheduled for deletion.');
+              void signOut();
             },
             onError: () => toast.error('Could not start that. Please try again.'),
           });
