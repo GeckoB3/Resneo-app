@@ -36,6 +36,22 @@ Constraints both platforms enforce strictly:
   is no extension to infer it from.
 - **HTTPS, on the exact host declared in the app** (`www.resneo.com`).
 
+## The middleware runs on these paths
+
+`src/middleware.ts`'s matcher excludes `_next/static`, `_next/image`,
+`favicon.ico`, `api/webhooks`, `api/cron` and image extensions. It does **not**
+exclude `/.well-known/`, so it runs on both files.
+
+Today that is harmless: production returns a clean 404 on both paths with no
+`location` header, which shows the middleware passes them through rather than
+redirecting. But that is an accident of the current logic, not a guarantee, and
+**any middleware change that returns a 3xx on these paths breaks verification
+silently.** The symptom would be deep links quietly opening the browser, weeks
+later, with nothing pointing at the middleware.
+
+Worth adding `.well-known` to the matcher's exclusion list while you are in
+there. It costs one string and removes a whole class of future accident.
+
 ## The domain, and the apex
 
 `www.resneo.com` only. That is the fallback base URL for every link the web
