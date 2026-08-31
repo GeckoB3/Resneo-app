@@ -9,7 +9,11 @@ import { Input } from '@/components/ui/Input';
 import { Screen } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/Text';
 import { ANALYTICS_EVENTS, track } from '@/lib/analytics';
-import { isLikelySignInCode, normaliseSignInCode } from '@/lib/auth/magic-link';
+import {
+  SIGN_IN_CODE_MAX_LENGTH,
+  isLikelySignInCode,
+  normaliseSignInCode,
+} from '@/lib/auth/magic-link';
 import { isBackendConfigured } from '@/lib/env';
 import { useAuth } from '@/providers/AuthProvider';
 import { minTouchTarget, spacing } from '@/theme/index';
@@ -51,7 +55,7 @@ export default function SignInScreen() {
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   /*
-    The six digits from the branded email, and whether that email is the one on
+    The code from the branded email, and whether that email is the one on
     its way. Supabase's fallback email carries no code, so the box is only
     offered when there is a code to type.
   */
@@ -191,19 +195,26 @@ export default function SignInScreen() {
             the app means a redirect into a custom scheme that depends on an
             allowlist entry and on the mail client and browser handing it off.
             When that fails it fails silently, on the website, with nothing to
-            show for it. Six digits depend on none of that.
+            show for it. A typed code depends on none of that.
           */
           <Card>
+            {/*
+              "Sign-in code", with no length in the label and none in the
+              placeholder. The number of digits is a per-project Supabase
+              setting: staging sends eight, and a label reading "Six-digit code"
+              above a box holding eight tells somebody their correct code is
+              wrong.
+            */}
             <Input
-              label="Six-digit code"
+              label="Sign-in code"
               value={code}
               onChangeText={(next) => setCode(normaliseSignInCode(next))}
               keyboardType="number-pad"
               textContentType="oneTimeCode"
               autoComplete="one-time-code"
               autoFocus
-              placeholder="123456"
-              maxLength={6}
+              placeholder="Code from the email"
+              maxLength={SIGN_IN_CODE_MAX_LENGTH}
             />
             <Button
               label="Sign in"

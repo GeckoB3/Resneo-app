@@ -13,13 +13,13 @@ import { ApiError, apiFetch, isApiErrorBody } from '@/lib/api/client';
  * website instead of the app with nothing logged anywhere.
  *
  * `POST /api/auth/send-magic-link` is the route the web signs in through. It is
- * public, it sends from `bookings@resneo.com`, and it puts a six-digit code in
+ * public, it sends from `bookings@resneo.com`, and it puts a numeric code in
  * the email for exactly this caller: the route's own comment says a native
  * client "CAN call `verifyOtp` directly against Supabase with this code, which
  * means the app needs no ResNeo route to sign in at all". The email says
  * "Using the ResNeo app? Enter this code instead". The app simply never asked.
  *
- * Typing six digits removes the whole class of failure above. There is no
+ * Typing the code removes the whole class of failure above. There is no
  * redirect, no custom scheme, no allowlist and no email client in the path.
  */
 export type MagicLinkOutcome =
@@ -68,12 +68,38 @@ export async function sendBrandedMagicLink(email: string): Promise<MagicLinkOutc
   }
 }
 
-/** Whether a typed code looks like the six digits the email contains. */
+/*
+  THE LENGTH IS NOT SIX, AND THE APP MUST NOT ASSUME IT.
+
+  Supabase's email OTP length is a per-project setting. `supabase/config.toml`
+  in the web repo says `otp_length = 6`, but that file configures a LOCAL
+  `supabase start` and has no bearing on a hosted project, which carries its own
+  dashboard value. Staging sends eight. Production is a different project again
+  and can differ from both.
+
+  This mattered rather than being a detail: capping the input at six truncated
+  an eight-digit code AS IT WAS TYPED, so the field silently refused to hold the
+  code the email had just given somebody, and nothing they did could get it in.
+
+  So the app takes any plausible run of digits and lets Supabase judge it. Six
+  is the floor Supabase allows, used only to decide when the button stops being
+  disabled; the ceiling is generous for the same reason the floor is low.
+*/
+const MIN_CODE_DIGITS = 6;
+const MAX_CODE_DIGITS = 12;
+
+/** Whether a typed code is worth sending to Supabase to be judged. */
 export function isLikelySignInCode(value: string): boolean {
-  return /^\d{6}$/.test(value.trim());
+  return normaliseSignInCode(value).length >= MIN_CODE_DIGITS;
 }
 
-/** Digits only, capped at six, so pasting "123 456" or a whole sentence still works. */
+/**
+ * Digits only, so pasting "123 456", or a whole sentence out of the email,
+ * still leaves the code behind.
+ */
 export function normaliseSignInCode(value: string): string {
-  return value.replace(/\D/g, '').slice(0, 6);
+  return value.replace(/\D/g, '').slice(0, MAX_CODE_DIGITS);
 }
+
+/** How long the field lets somebody type. Not a claim about the real length. */
+export const SIGN_IN_CODE_MAX_LENGTH = MAX_CODE_DIGITS;

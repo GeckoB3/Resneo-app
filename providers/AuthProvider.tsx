@@ -38,7 +38,7 @@ type AuthContextValue = {
   acknowledgeSessionExpiry: () => void;
   /**
    * Send a sign-in email. `codeSent` is true when ResNeo's branded email went
-   * out, which is the one carrying a six-digit code to type.
+   * out, which is the one carrying a code to type.
    */
   signInWithEmail: (email: string) => Promise<{ error: string | null; codeSent: boolean }>;
   /** Finish signing in with the code from that email. */
@@ -229,7 +229,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   /**
    * Send a sign-in email.
    *
-   * ResNeo's own branded email first, because it carries a six-digit code the
+   * ResNeo's own branded email first, because it carries a numeric code the
    * app can verify directly. Supabase's default email only offers a link, and
    * that link has to survive a redirect into a custom scheme, which depends on
    * an allowlist entry and on the mail client and browser cooperating. When it

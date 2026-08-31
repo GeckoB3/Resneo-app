@@ -8,7 +8,7 @@
  * being willing to hand a custom scheme off from an HTTP 302. When that fails
  * it fails silently, landing on the website.
  *
- * ResNeo's own route sends a branded email carrying a six-digit code, which the
+ * ResNeo's own route sends a branded email carrying a numeric code, which the
  * app can verify directly against Supabase with no redirect in the path at all.
  */
 import {
@@ -102,25 +102,54 @@ describe('a rate limit is an answer, not a failure', () => {
   });
 });
 
-describe('the code the email contains', () => {
-  it('accepts exactly six digits', () => {
-    expect(isLikelySignInCode('123456')).toBe(true);
-    expect(isLikelySignInCode(' 123456 ')).toBe(true);
+describe('the code the email contains, whose LENGTH IS NOT FIXED', () => {
+  /*
+    Supabase's email OTP length is a per-project dashboard setting. The web
+    repo's `supabase/config.toml` says `otp_length = 6`, but that configures a
+    local `supabase start` and says nothing about a hosted project: staging
+    sends EIGHT. Production is a different project again.
+
+    The first version of this hardcoded six, and the damage was not a rejected
+    code. `normaliseSignInCode` capped at six, so an eight-digit code was
+    truncated AS IT WAS TYPED and the field silently refused to hold the code
+    the email had just given somebody.
+  */
+  it('accepts the EIGHT digits staging actually sends', () => {
+    expect(isLikelySignInCode('12345678')).toBe(true);
   });
 
-  it('rejects anything shorter, longer or not a number', () => {
-    for (const bad of ['', '12345', '1234567', 'abcdef', '12 34 56']) {
+  it('keeps all eight rather than truncating them away', () => {
+    // The bug, pinned. Slicing to six here is what made the field unusable.
+    expect(normaliseSignInCode('12345678')).toBe('12345678');
+  });
+
+  it('still accepts six, because another project may well send six', () => {
+    expect(isLikelySignInCode('123456')).toBe(true);
+    expect(normaliseSignInCode('123456')).toBe('123456');
+  });
+
+  it('accepts ten, the longest Supabase offers', () => {
+    expect(isLikelySignInCode('1234567890')).toBe(true);
+    expect(normaliseSignInCode('1234567890')).toBe('1234567890');
+  });
+
+  it('rejects what is too short to be any project’s code', () => {
+    // Six is Supabase's floor, so fewer than six cannot be right anywhere. The
+    // check exists to disable a button, not to second-guess the server.
+    for (const bad of ['', '1', '12345', 'abcdef']) {
       expect(isLikelySignInCode(bad)).toBe(false);
     }
   });
 
   it('strips whatever came with a paste', () => {
     // People paste "123 456", and mail clients paste whole sentences.
-    expect(normaliseSignInCode('123 456')).toBe('123456');
-    expect(normaliseSignInCode('code: 123456 expires soon')).toBe('123456');
+    expect(normaliseSignInCode('1234 5678')).toBe('12345678');
+    expect(normaliseSignInCode('Enter this code instead: 12345678')).toBe('12345678');
   });
 
-  it('never yields more than six digits', () => {
-    expect(normaliseSignInCode('1234567890')).toBe('123456');
+  it('has a generous ceiling rather than a guessed one', () => {
+    // A cap stops a pasted paragraph becoming the "code", but it must sit well
+    // clear of any length a project might be configured for.
+    expect(normaliseSignInCode('1'.repeat(40)).length).toBeGreaterThanOrEqual(10);
   });
 });
