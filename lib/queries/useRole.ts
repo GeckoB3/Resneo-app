@@ -122,11 +122,36 @@ export function useRole(): Role {
 
   /** What the staff check says right now, computed with no side effects. */
   const observed = useMemo<Role>(() => {
+    /*
+      NO TOKEN IS 'loading', NOT 'unknown', and the difference is a bug that
+      reached a preview build.
+
+      `useAccessToken` reports null for a tick after signing in: it seeds from a
+      module cache that is empty on a cold start and fills in from an async
+      `getSession()`. This branch used to answer `unknown`, which `useAppMode`
+      reads as its fail-soft "assume staff". So the first frame after a customer
+      signed in said staff, the root router mounted the venue navigator, its
+      queries 401'd, and the customer was looking at "Something went wrong /
+      Unauthorised" on a dashboard that was not theirs.
+
+      The two states are genuinely different. `unknown` means WE ASKED AND COULD
+      NOT FIND OUT, which is what earns the fail-soft. Having no token yet means
+      nothing has been asked, and the honest answer is to wait.
+
+      Signed out lands here too and stays `loading` for good, which is harmless:
+      the root gates on the session rather than on the role, push registration
+      declines to register without a resolved role, and the venue bootstrap
+      needs a token of its own.
+    */
     if (!accessToken) {
-      return 'unknown';
+      return 'loading';
     }
 
-    // Venue API Bearer auth may not be configured yet — do not claim to know.
+    /*
+      A missing backend config DOES stay `unknown`. That is a build with no
+      venue API to ask, so the question can never be answered and the fail-soft
+      is what keeps a developer's app usable.
+    */
     if (!isBackendConfigured()) {
       return 'unknown';
     }
@@ -180,9 +205,13 @@ export function useRole(): Role {
     query returns to pending and the router unmounts their navigator.
 
     Signing out is handled before the latch is consulted, so a stale answer
-    cannot outlive the session that produced it.
+    cannot outlive the session that produced it. It answers `loading` rather
+    than `unknown` for the same reason the branch above does: no token means
+    nothing has been asked, and `unknown` would be read downstream as the
+    fail-soft "assume staff". This guard is the one that actually bit, because
+    it short-circuits past `observed` entirely.
   */
-  if (!accessToken) return 'unknown';
+  if (!accessToken) return 'loading';
   return latched ?? observed;
 }
 

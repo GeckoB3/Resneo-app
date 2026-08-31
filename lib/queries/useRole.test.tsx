@@ -97,10 +97,23 @@ describe('useRole', () => {
     await waitFor(() => expect(result.current).toBe('loading'));
   });
 
-  it('is unknown with no session at all', async () => {
+  it('is LOADING with no token, not unknown', async () => {
+    /*
+      Changed on 2026-08-31 after a preview build sent customers to the venue
+      dashboard. `unknown` means "we asked and could not find out", which is
+      what earns `useAppMode`'s fail-soft to staff. No token means nothing has
+      been asked, and `useAccessToken` reports null for a tick after sign-in
+      because it seeds from an empty module cache and fills in from an async
+      getSession(). Answering `unknown` there gave the router one frame of
+      "staff", which was enough to mount the venue navigator and 401.
+
+      A signed-out user therefore sits at `loading` for good, which nothing
+      minds: the root gates on the session, push declines to register without a
+      resolved role, and the venue bootstrap needs a token of its own.
+    */
     state.accessToken = null;
     const { result } = await renderHook(() => useRole(), { wrapper });
-    expect(result.current).toBe('unknown');
+    expect(result.current).toBe('loading');
   });
 
   it('is unknown when the backend is not configured, rather than guessing', async () => {
@@ -204,10 +217,12 @@ describe('the hourly token refresh (C1 crash shape three)', () => {
     const { result: first } = await renderHook(() => useRole(), { wrapper });
     await waitFor(() => expect(first.current).toBe('customer'));
 
-    // Signed out.
+    // Signed out. `loading` rather than `unknown` since the fix above, and the
+    // point of this assertion is unchanged: it must not still say 'customer'.
     state.accessToken = null;
     const { result: signedOut } = await renderHook(() => useRole(), { wrapper });
-    expect(signedOut.current).toBe('unknown');
+    expect(signedOut.current).toBe('loading');
+    expect(signedOut.current).not.toBe('customer');
 
     // The next person on this device is staff, and must not inherit 'customer'.
     state.accessToken = 'token-C';
