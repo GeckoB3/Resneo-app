@@ -1,4 +1,6 @@
-import { initPaymentSheet, presentPaymentSheet } from '@stripe/stripe-react-native';
+import { initPaymentSheet, initStripe, presentPaymentSheet } from '@stripe/stripe-react-native';
+
+import { getStripePublishableKey } from '@/lib/env';
 
 import type { PaymentIntentTicket } from '@/lib/payments/customer-purchase';
 
@@ -44,6 +46,34 @@ export async function presentCardSheet(args: {
   const { ticket, venueName, isSetupIntent } = args;
 
   try {
+    /*
+      Initialise the SDK before every sheet, not once at app start, because the
+      account it must talk to changes with the venue.
+
+      Every venue is its own Stripe connected account and the intent exists only
+      inside that account, so a sheet opened against the platform account finds
+      nothing. Since a customer can hold bookings at several venues, there is no
+      single account to configure at the root: the account is a property of the
+      purchase, so it is set with the purchase.
+
+      `urlScheme` is what a 3D Secure challenge returns to. It has to match the
+      scheme registered in `app.json`, or the customer completes their bank's
+      check and lands nowhere.
+    */
+    const publishableKey = getStripePublishableKey();
+    if (!publishableKey) {
+      return {
+        status: 'failed',
+        message: 'Card payments are not set up in this app build.',
+      };
+    }
+
+    await initStripe({
+      publishableKey,
+      stripeAccountId: ticket.stripe_account_id,
+      urlScheme: 'resneo',
+    });
+
     const init = await initPaymentSheet({
       merchantDisplayName: venueName,
       // The Element is scoped to the venue's connected account. Omitting this
