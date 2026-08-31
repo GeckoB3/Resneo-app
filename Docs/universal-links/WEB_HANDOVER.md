@@ -93,9 +93,87 @@ has been uploaded.
 
 ## Not part of this request
 
-Two things in the app repo remain, and both wait on step 2:
+One thing in the app repo remains, and it waits on step 2: restoring
+`ios.associatedDomains` and the Android intent filter in `app.json`.
 
-- Restoring `ios.associatedDomains` and the Android intent filter in `app.json`.
-- Wiring the web's `sendCustomerPush` to its call sites. That is web work too,
-  but it is independent of these files: push uses the `resneo://` scheme and the
-  notification payload, not universal links.
+---
+
+# Part two: wiring `sendCustomerPush`
+
+Separate work, and independent of everything above: push uses the `resneo://`
+scheme and the notification payload, not universal links. Nothing here blocks
+or is blocked by the association files.
+
+## The app side is ready
+
+- **The three channels exist**, created on every device at push registration:
+  `customer-reminders`, `customer-booking-changes`, `customer-waitlist`. Their
+  ids are pinned by a test on both sides.
+- **A tap routes to the booking.** The payload's `data.booking_id` is parked and
+  drained inside whichever navigator is mounted, and the customer stack now
+  carries that handler as the staff stack always has.
+- **Devices register with `audience: 'customer'`**, so `sendCustomerPush`'s
+  filter has something true to select on.
+
+## Where the three calls go
+
+`sendCustomerPush` already exists in
+`src/lib/communications/customer-push-notification.ts` and takes
+`{ bookingId, guestId?, event, body }`. Its three events map to three places
+that already send the customer an email, and the pattern to follow is
+`sendStaffPush`, which is called from the same functions:
+
+| Event | Call site |
+| --- | --- |
+| `reminder` | `src/app/api/cron/send-communications/route.ts`, where `pre_visit_reminder` is dispatched |
+| `booking_changed` | `sendBookingModificationNotification` and `sendCancellationNotification` in `src/lib/communications/send-templated.ts` |
+| `waitlist_offer` | `notifyAppointmentWaitlistOfferForEntry` in `src/lib/booking/notify-appointment-waitlist-offer.ts` |
+
+## Four things it does NOT need
+
+1. **No preference check.** `sendCustomerPush` consults P4-3's matrix itself,
+   through `customerAllowsMessageOnChannel`. Checking again outside would be a
+   second copy of a rule that can change.
+2. **No try/catch.** It fails soft in every direction and returns a result
+   rather than throwing. A push is a courtesy on top of an email that has
+   already gone, and nothing here is worth failing a booking flow over.
+3. **No device lookup.** It resolves booking to guest to user to devices itself,
+   filtered to `audience = 'customer'`. Passing `guestId` when the caller
+   already has it saves one query and is the only optimisation worth making.
+4. **No confirmations.** The customer push events are deliberately these three.
+   Confirmations and deposit requests have no controllable preference pair, so
+   pushing them would be a message the customer cannot switch off.
+
+## Ordering, and the body
+
+**Send the email first, then the push.** `sendCustomerPush` cannot throw, so
+this is habit rather than necessity, but it keeps the guarantee that the
+message a customer relies on is never at the mercy of a courtesy.
+
+The `body` is what shows on a lock screen. Keep it short, say what happened,
+and name the venue rather than the service: the venue is what makes it
+recognisable at a glance, and a service name on a lock screen is more detail
+than a passer-by needs. No em-dashes, per the house copy rule.
+
+Something like:
+
+- reminder: `Your appointment at The Studio is tomorrow at 10:00.`
+- booking_changed: `The Studio has changed your booking. Tap to see the new time.`
+- waitlist_offer: `A place has come up at The Studio.`
+
+## It will reach nobody at first, and that is expected
+
+Every `user_devices` row today is `audience = 'staff'`, because the shipped
+build sends no audience and the column defaults. Until a customer installs a
+build that registers as one, `sendCustomerPush` returns `{ sent: false, reason:
+'no_tokens' }` and does nothing. Wiring it now is what makes the app side a
+client change rather than a change on both sides at once, so **do not treat
+silence as a fault**.
+
+## How to tell it works
+
+`sendCustomerPush` returns a `reason` on every non-send: `no_guest`,
+`no_account`, `suppressed`, `no_tokens`, `not_sent`, `send_error`. Logging that
+at the call site is the cheapest way to distinguish "nobody has a customer
+device yet" from "we are suppressing these by mistake", and the two look
+identical from the outside.

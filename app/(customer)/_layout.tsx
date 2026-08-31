@@ -1,5 +1,7 @@
 import { Stack } from 'expo-router';
 
+import { PendingPushRouteHandler } from '@/components/push/PendingPushRouteHandler';
+
 import { fonts } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
@@ -22,16 +24,29 @@ export default function CustomerLayout() {
   const { colors } = useTheme();
 
   return (
-    <Stack
-      screenOptions={{
-        headerStyle: { backgroundColor: colors.background },
-        headerTintColor: colors.text,
-        headerTitleStyle: { fontFamily: fonts.semibold, fontSize: 17 },
-        headerShadowVisible: false,
-        headerBackButtonDisplayMode: 'minimal',
-      }}>
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="booking/[id]" options={{ headerShown: true, title: 'Booking' }} />
-    </Stack>
+    <>
+      <Stack
+        screenOptions={{
+          headerStyle: { backgroundColor: colors.background },
+          headerTintColor: colors.text,
+          headerTitleStyle: { fontFamily: fonts.semibold, fontSize: 17 },
+          headerShadowVisible: false,
+          headerBackButtonDisplayMode: 'minimal',
+        }}>
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="booking/[id]" options={{ headerShown: true, title: 'Booking' }} />
+      </Stack>
+      {/*
+        Routes a parked notification tap, exactly as the staff stack does.
+        Without it a customer's push would park a booking id that nothing ever
+        consumes, so the tap would open the app and go nowhere.
+
+        Safe in both stacks because only one is ever mounted, and
+        `takePendingBookingRoute` clears as it reads, so a tap cannot route
+        twice. It sits INSIDE the Stack for the same reason it does there: a
+        navigator must exist to receive the push.
+      */}
+      <PendingPushRouteHandler />
+    </>
   );
 }
