@@ -23,9 +23,9 @@
  * transformation, which is also what makes it testable without a device.
  */
 
-/** Anything not recognised passes through untouched. */
+/** Anything not recognised passes through untouched, QUERY AND FRAGMENT INCLUDED. */
 export function webUrlToAppRoute(incoming: string): string {
-  const path = pathOf(incoming);
+  const { path, rest } = splitIncoming(incoming);
 
   // The customer portal, in the order that matters: the most specific first, or
   // `/account/bookings/{id}` would be swallowed by the `/account/bookings` rule
@@ -52,35 +52,53 @@ export function webUrlToAppRoute(incoming: string): string {
   if (path === '/account' || path.startsWith('/account/')) return '/';
 
   /*
-    Everything else is returned as it came, including the auth paths.
-    `resneo://callback` carries magic-link and password-reset sign-in and has
-    worked since long before any of this; rewriting a path this function does
-    not understand would be how that breaks.
+    Everything else is returned AS IT CAME, query and fragment included.
+
+    That last part is not a detail. `resneo://callback?code=…` carries the
+    magic-link credential in its query, and the implicit flow carries tokens in
+    the fragment. Returning the bare path silently strips them, the callback
+    screen finds nothing to exchange, and every magic-link sign-in fails with
+    "this link is invalid or has expired". It shipped that way in C6 and broke
+    sign-in for anybody using a link instead of a password.
+
+    Mapped paths above deliberately DO drop the query, because there it is
+    campaign tracking on a web URL and the app has its own destination.
   */
-  return path;
+  return `${path}${rest}`;
 }
 
 /**
- * The path part of whatever arrived.
+ * Split whatever arrived into the path and everything after it.
  *
- * Expo's own docs warn that the incoming value is "not guaranteed to be a valid
+ * `rest` is the query and fragment, kept verbatim so a pass-through can put
+ * them back. They are separated rather than ignored because the path is what
+ * the routing rules match on, and the credentials live in what follows.
+ *
+ * Expo's own docs warn the incoming value is "not guaranteed to be a valid
  * URL", so this handles three shapes: a full https URL, a `resneo://` URL, and
- * a bare path. A parse failure returns the input rather than throwing, because
- * throwing here happens before the app exists and takes the launch with it.
+ * a bare path. A parse failure returns the input unchanged rather than
+ * throwing, because throwing here happens before the app exists and takes the
+ * launch with it.
  */
-function pathOf(incoming: string): string {
-  if (incoming.startsWith('/')) return incoming;
+function splitIncoming(incoming: string): { path: string; rest: string } {
+  if (incoming.startsWith('/')) {
+    const cut = incoming.search(/[?#]/);
+    return cut === -1
+      ? { path: incoming, rest: '' }
+      : { path: incoming.slice(0, cut), rest: incoming.slice(cut) };
+  }
   try {
     const url = new URL(incoming);
+    const rest = `${url.search}${url.hash}`;
     // A custom-scheme URL puts the first segment in `host`, so `resneo://callback`
     // parses with host 'callback' and an empty pathname. Rejoining them is what
     // keeps those links intact.
     if (url.protocol === 'resneo:') {
       const host = url.hostname ? `/${url.hostname}` : '';
-      return `${host}${url.pathname}` || '/';
+      return { path: `${host}${url.pathname}` || '/', rest };
     }
-    return url.pathname || '/';
+    return { path: url.pathname || '/', rest };
   } catch {
-    return incoming;
+    return { path: incoming, rest: '' };
   }
 }

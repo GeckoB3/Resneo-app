@@ -48,14 +48,41 @@ describe('web portal URLs become app routes', () => {
 });
 
 describe('what must pass through untouched', () => {
-  it('leaves the auth callback alone', async () => {
+  it('leaves the auth callback alone, CREDENTIAL AND ALL', async () => {
     /*
-      `resneo://callback` carries magic-link and password-reset sign-in and has
-      worked since long before any of this. Rewriting a path this function does
-      not understand is exactly how that would break, so the default is to
-      return what arrived.
+      This test used to assert `/callback`, with a comment about protecting
+      sign-in, while asserting the exact bug that broke it.
+
+      `resneo://callback?code=…` carries the magic-link credential in its query.
+      Returning the bare path drops it, the callback screen finds nothing to
+      exchange, and every magic-link sign-in fails with "this link is invalid or
+      has expired". That shipped in C6. A test naming the risk in prose and
+      pinning the broken value in code is worse than no test: it reads as a
+      guard and works as a lock.
     */
-    expect(webUrlToAppRoute('resneo://callback?code=abc')).toBe('/callback');
+    expect(webUrlToAppRoute('resneo://callback?code=abc')).toBe('/callback?code=abc');
+  });
+
+  it('keeps the implicit-flow tokens, which arrive in the FRAGMENT', async () => {
+    // A different half of the same mistake. Not every link uses PKCE, and
+    // recovery links in particular still arrive with a fragment.
+    expect(webUrlToAppRoute('resneo://callback#access_token=xyz&refresh_token=abc')).toBe(
+      '/callback#access_token=xyz&refresh_token=abc',
+    );
+  });
+
+  it('keeps the query on a bare path too', async () => {
+    // The same link can arrive already reduced to a path. Handling only the
+    // URL shape would fix half the launches.
+    expect(webUrlToAppRoute('/callback?code=abc')).toBe('/callback?code=abc');
+  });
+
+  it('keeps an error the link is reporting', async () => {
+    // An expired link says so in the query. Stripping that turns a precise
+    // "this link has expired" into a blank "sign-in failed".
+    expect(webUrlToAppRoute('resneo://callback?error=access_denied&error_code=otp_expired')).toBe(
+      '/callback?error=access_denied&error_code=otp_expired',
+    );
   });
 
   it('leaves an app path the app already owns', async () => {
