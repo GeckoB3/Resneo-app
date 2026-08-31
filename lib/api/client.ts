@@ -200,6 +200,46 @@ export function setAccessTokenRefresher(refresher: AccessTokenRefresher | null):
   accessTokenRefresher = refresher;
 }
 
+/**
+ * Called when the server has told us our credentials are dead and refreshing
+ * them did not help.
+ *
+ * There is no way back from this inside a request: the caller can only fail.
+ * The session has to end, and that decision belongs to the auth layer rather
+ * than here, so this is a hook rather than a `signOut()` call.
+ */
+export type AuthenticationLostHandler = () => void;
+
+let authenticationLostHandler: AuthenticationLostHandler | null = null;
+
+/** Register (or clear, with `null`) the dead-credentials hook. */
+export function setAuthenticationLostHandler(handler: AuthenticationLostHandler | null): void {
+  authenticationLostHandler = handler;
+}
+
+/**
+ * Whether a 401 means "your session is dead" rather than "you may not do this".
+ *
+ * **The difference is load-bearing and the codes are what carry it.** The
+ * account routes answer an unauthenticated caller with `UNAUTHENTICATED`.
+ * `GET /api/venue/staff/me` answers a perfectly valid customer session with a
+ * bare 401 and no code, because "you are not staff at any venue" is how this
+ * app IDENTIFIES a customer: `useRole` reads exactly that 401 and returns
+ * `customer`.
+ *
+ * So treating every 401 as a lost session would sign out every customer in the
+ * app the moment they opened it. Requiring the code is what keeps the two
+ * apart, and it is why this is a narrow test rather than `status === 401`.
+ */
+function isAuthenticationLost(err: ApiError): boolean {
+  // Both halves. The status alone catches the staff gate's "not staff"; the
+  // code alone would end the session on any status that happened to carry it,
+  // including a 500. Only a 401 is the server rejecting our credentials.
+  if (err.status !== 401) return false;
+  const body = err.body;
+  return isApiErrorBody(body) && body.code === 'UNAUTHENTICATED';
+}
+
 function parseApiResponseBody(text: string, url: string): unknown {
   if (!text) {
     return null;
@@ -335,8 +375,39 @@ export async function apiFetch<T>(
         refreshed = null;
       }
       if (refreshed && refreshed !== accessToken) {
-        return attempt(refreshed);
+        /*
+          The retry is checked too, and it has to be checked HERE. Returning it
+          bare would let its rejection leave this catch block without passing
+          the test below, so a session that refreshed cleanly and was then
+          rejected again, which is exactly what a revoked session does, would go
+          unnoticed. Found by the test rather than by reading.
+        */
+        try {
+          return await attempt(refreshed);
+        } catch (retryErr) {
+          if (retryErr instanceof ApiError && isAuthenticationLost(retryErr)) {
+            authenticationLostHandler?.();
+          }
+          throw retryErr;
+        }
       }
+    }
+    /*
+      A 401 that says UNAUTHENTICATED and survived the refresh above means the
+      credentials are dead rather than stale, and nothing the app does will fix
+      them. Say so, once, so the session can end and the person is sent to sign
+      in again.
+
+      Without this the app sits on a revoked session indefinitely. A session
+      revoked server-side, by signing out everywhere or by requesting account
+      deletion, leaves a JWT here that is not yet EXPIRED, so Supabase keeps
+      returning it from storage, never attempts a refresh, and never emits
+      SIGNED_OUT. Every request 401s and every screen shows its own error, which
+      is what "Could not load your account" was: not a connection problem, a
+      dead session with nobody to declare it.
+    */
+    if (err instanceof ApiError && accessToken && isAuthenticationLost(err)) {
+      authenticationLostHandler?.();
     }
     throw err;
   }

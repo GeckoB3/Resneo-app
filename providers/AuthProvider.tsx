@@ -15,7 +15,7 @@ import { clearAppMode } from '@/lib/mode/app-mode-store';
 import { clearLatchedRole } from '@/lib/queries/useRole';
 import { unregisterDevice } from '@/lib/push/registerDevice';
 import { ANALYTICS_EVENTS, identify, resetAnalytics, track } from '@/lib/analytics';
-import { setAccessTokenRefresher } from '@/lib/api/client';
+import { setAccessTokenRefresher, setAuthenticationLostHandler } from '@/lib/api/client';
 import { getAuthCallbackRedirectUrl, getPasswordResetRedirectUrl } from '@/lib/auth/redirect';
 import { setObservabilityUser } from '@/lib/observability';
 import { setQueryAuthScope } from '@/lib/queries/keys';
@@ -59,6 +59,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
   // True only while an explicit signOut() is in flight, so the resulting
   // SIGNED_OUT event isn't mistaken for an unexpected expiry/revocation.
   const isExplicitSignOutRef = useRef(false);
+  /*
+    Whether we have already torn down for a dead session. A revoked session
+    fails every in-flight query at once, and each failure calls the handler, so
+    without this the teardown runs a dozen times over. Reset when a session is
+    established, so the NEXT revocation is handled rather than ignored for the
+    life of the process.
+  */
+  const authLossHandledRef = useRef(false);
 
   useEffect(() => {
     let supabase: SupabaseClient;
@@ -103,6 +111,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       identify(userId);
 
       if (userId) {
+        // A live session again: re-arm the dead-session teardown.
+        authLossHandledRef.current = false;
         if (event === 'SIGNED_IN') {
           track(ANALYTICS_EVENTS.signInSucceeded);
         }
@@ -161,11 +171,51 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
     });
 
+    /*
+      End the session when the server has told us our credentials are dead.
+
+      This is the case Supabase cannot see. A session revoked server-side, by
+      signing out everywhere or by requesting account deletion, leaves a JWT in
+      storage that is not yet EXPIRED. `getSession()` keeps returning it, no
+      refresh is ever attempted, and no SIGNED_OUT is ever emitted. The app
+      stays "signed in" holding a token every route rejects, so the root router
+      mounts the customer stack and every screen shows its own error. That is
+      what "Could not load your account, check your connection" was: not a
+      connection problem at all.
+
+      `scope: 'local'` because the server has already done its half. Asking it
+      to revoke a session it has revoked is one more 401, and on a dead session
+      that call is what would fail and leave the teardown half-done.
+    */
+    setAuthenticationLostHandler(() => {
+      // Many queries fail together on a dead session. One teardown, not twelve.
+      if (!active || authLossHandledRef.current) return;
+      authLossHandledRef.current = true;
+
+      // NOT flagged as explicit, so the SIGNED_OUT below surfaces the friendly
+      // "your session ended, please sign in again" notice rather than passing
+      // as something the person asked for. They did not ask for this.
+      void getSupabase()
+        .auth.signOut({ scope: 'local' })
+        .catch(() => {
+          // Even a failed local sign-out must not strand them: the state
+          // listener is what routes to the login screen.
+          setSession(null);
+          setSessionExpired(true);
+        })
+        .finally(() => {
+          resetAnalytics();
+          clearAppMode();
+          clearLatchedRole();
+        });
+    });
+
     return () => {
       active = false;
       subscription.unsubscribe();
       appStateSub?.remove();
       setAccessTokenRefresher(null);
+      setAuthenticationLostHandler(null);
     };
   }, []);
 

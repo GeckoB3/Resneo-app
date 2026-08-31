@@ -148,7 +148,22 @@ export function AccountSecuritySection() {
               // does not sit holding a token it knows is dead.
               void signOut();
             },
-            onError: () => toast.error('Could not sign out everywhere. Please try again.'),
+            /*
+              A 401 here is not a failure to sign out. It means the session was
+              ALREADY revoked, so the only thing left to do is the local half,
+              and reporting "could not sign out, please try again" is both wrong
+              and a trap: this button is the escape hatch from a dead session,
+              and it was refusing to work in exactly the state you would reach
+              for it. Retrying could never succeed, because the request that
+              would prove the session valid is the one being rejected.
+            */
+            onError: (error) => {
+              if (error instanceof ApiError && error.status === 401) {
+                void signOut();
+                return;
+              }
+              toast.error('Could not sign out everywhere. Please try again.');
+            },
           });
         }}
       />
