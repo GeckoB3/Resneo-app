@@ -6,6 +6,7 @@ import { NotificationPreferencesSection } from '@/components/customer/profile/No
 import { PaymentHistorySection } from '@/components/customer/profile/PaymentHistorySection';
 import { ProfileDetailsSection } from '@/components/customer/profile/ProfileDetailsSection';
 import { SavedCardsSection } from '@/components/customer/profile/SavedCardsSection';
+import { YourDataSection } from '@/components/customer/profile/YourDataSection';
 import { Screen } from '@/components/ui/Screen';
 import { spacing } from '@/theme/index';
 
@@ -31,6 +32,9 @@ export default function CustomerProfileScreen() {
         <PaymentHistorySection />
         <SavedCardsSection />
         <AccountSecuritySection />
+        {/* Last, because closing the account is the most consequential thing
+            here and should not sit above the settings people came for. */}
+        <YourDataSection />
       </View>
     </Screen>
   );

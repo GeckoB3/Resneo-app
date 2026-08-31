@@ -219,7 +219,19 @@ Profile and the notification matrix (`/api/v1/me/profile`, PATCH merges and neve
 
 Adding a card here is D4's dependency again, so C4 and C3 share it. `password`, `marketing-preferences`, `sign-out-everywhere` and `payment-methods` are all called on `/api/account/*` per D3.
 
-### C5. The rest of parity.
+### C5. The rest of parity. DONE 2026-08-31.
+
+*(**Done.** Waitlist places on the bookings tab, the JSON export and account deletion under the profile. 20 tests, 4 mutations all caught.
+
+**Two 409s that mean opposite things**, which is the substance of this phase. Removing a card answers 409 to say the card pays for something, and NOTHING has changed, so the screen is still right and must not refetch. Leaving a waitlist answers 409 to say the place has already gone, which means the list on screen is ALREADY WRONG, so refetching is the point. Both are answers rather than failures, and both are tested for the refresh they do or do not trigger.
+
+**The export shares rather than downloads.** The web serves a `Content-Disposition` a browser understands; a phone has nowhere to download to, so the app fetches the same body and hands it to the share sheet, which is the platform's own answer to "save this file". It re-prints the JSON with an indent, because an export nobody can read is a compliance gesture rather than a right exercised. A MUTATION, not a query: as a query it would re-run on focus and open a share sheet nobody asked for.
+
+**The share mechanism was extracted rather than copied.** `lib/reports/csv-export.ts` already had the three-strategy fallback (real file plus native sheet, browser download, plain-text share), and a second copy would have drifted. It now lives in `lib/share/share-text-file.ts` with the mime type as a parameter; the CSV path passes its own and its seven tests still pass unchanged.
+
+**Deletion reuses the hooks the staff app already has.** Those routes are about a USER rather than a venue, so a customer closing their account is the same operation, and one implementation is what keeps the two identical. Export sits beside it deliberately: somebody about to delete an account is exactly the person who should be offered their data first.
+
+**The deletion dialog says what SURVIVES**, because it is not nothing. Venues keep their own booking records for their own accounting, and somebody who reads "delete" as "erase every trace" and later finds a venue still holds a record has been misled by the dialog rather than by the venue.)*
 
 Waitlist view and leave, JSON export, account deletion and cancellation. Deletion already has a client in `lib/queries/useAccountDeletion.ts` calling the un-aliased `/api/account/delete-request` directly.
 

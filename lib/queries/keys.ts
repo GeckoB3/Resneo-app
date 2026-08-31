@@ -63,6 +63,8 @@ export const queryKeys = {
         bookingId,
         keyScope(accessToken),
       ] as const,
+    waitlist: (accessToken?: string | null) =>
+      [...queryKeys.customer.all(), 'waitlist', keyScope(accessToken)] as const,
     payments: (bookingId: string | null, accessToken?: string | null) =>
       [...queryKeys.customer.all(), 'payments', bookingId, keyScope(accessToken)] as const,
     cards: (venueId: string | null, accessToken?: string | null) =>

@@ -3,6 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 
 import { CustomerBookingRow } from '@/components/customer/CustomerBookingRow';
+import { WaitlistSection } from '@/components/customer/WaitlistSection';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { LoadingState } from '@/components/ui/LoadingState';
@@ -55,6 +56,9 @@ export default function CustomerBookingsScreen() {
 
   return (
     <Screen scroll padded>
+      {/* Above the filter, because an offered place expires and burying it
+          under a list of confirmed bookings is how somebody misses it. */}
+      <WaitlistSection home={home} />
       <Segmented
         options={[
           { value: 'upcoming', label: 'Upcoming' },

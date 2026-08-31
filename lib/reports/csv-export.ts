@@ -14,7 +14,7 @@
  * correct CSV mime/UTI — is the default on device (a native build is required
  * for the module to load; in Expo Go / an old binary it falls through to (3)).
  */
-import { Platform, Share } from 'react-native';
+import { shareTextFile } from '@/lib/share/share-text-file';
 
 /**
  * Outcome of a share/download attempt. `buildAndShareCsv` resolves with this
@@ -85,65 +85,18 @@ export async function buildAndShareCsv(
   // extra yields, so the cost is negligible.
   const body = csvText ?? (await buildCsvTextChunked(rows));
 
-  // ── Try expo-file-system (legacy) + expo-sharing ─────────────────────────
-  try {
-    // Use legacy sub-path that exports cacheDirectory / writeAsStringAsync
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const FileSystem = require('expo-file-system/legacy') as any;
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const Sharing = require('expo-sharing') as any;
-
-    if (typeof Sharing?.isAvailableAsync === 'function') {
-      const isAvailable = (await Sharing.isAvailableAsync()) as boolean;
-      if (isAvailable && typeof FileSystem?.writeAsStringAsync === 'function') {
-        const cacheDir = (FileSystem.cacheDirectory as string | null) ?? '';
-        const uri = `${cacheDir}${filename}`;
-        await FileSystem.writeAsStringAsync(uri, body, {
-          encoding: FileSystem.EncodingType?.UTF8 ?? 'utf8',
-        });
-        await Sharing.shareAsync(uri, {
-          mimeType: 'text/csv',
-          dialogTitle: `Export ${filename}`,
-          UTI: 'public.comma-separated-values-text',
-        });
-        return { ok: true };
-      }
-    }
-  } catch {
-    // expo-file-system/legacy or expo-sharing not installed — fall through
-  }
-
-  // ── Web: Blob download ───────────────────────────────────────────────────
-  if (Platform.OS === 'web') {
-    try {
-      const blob = new Blob([body], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      a.click();
-      URL.revokeObjectURL(url);
-      return { ok: true };
-    } catch (err) {
-      // W2.7: surface the failure to the caller instead of only console.error,
-      // so a screen with a toast host can tell the user the download failed.
-      const message = err instanceof Error ? err.message : 'Browser download failed.';
-      console.error('[csv-export] browser download failed:', err);
-      return { ok: false, reason: 'web-download', message };
-    }
-  }
-
-  // ── Native fallback: share as plain text ─────────────────────────────────
-  try {
-    await Share.share({
-      title: filename,
-      message: body,
-    });
-    return { ok: true };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Could not open the share sheet.';
-    return { ok: false, reason: 'share', message };
-  }
+  /*
+    The share mechanism moved to `lib/share/share-text-file.ts` so the customer
+    account export could use the same three strategies rather than a second copy
+    of them. The CSV mime type and UTI are passed through unchanged, so this
+    path behaves exactly as it did.
+  */
+  return shareTextFile({
+    filename,
+    body,
+    mimeType: 'text/csv',
+    uti: 'public.comma-separated-values-text',
+  });
 }
 
 /** Aggregate booking source keys → display labels, same as web. */
