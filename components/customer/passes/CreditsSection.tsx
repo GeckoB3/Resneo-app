@@ -6,6 +6,7 @@ import { ErrorState } from '@/components/ui/ErrorState';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { Text } from '@/components/ui/Text';
 import { BuyCreditsSection } from '@/components/customer/passes/BuyCreditsSection';
+import { expiryPhrase } from '@/components/customer/passes/passes-copy';
 import { useCredits } from '@/lib/queries/useCustomerPasses';
 import { nameById } from '@/components/customer/passes/lookup';
 import { spacing } from '@/theme/index';
@@ -57,7 +58,7 @@ export function CreditsSection() {
           </Text>
           {balance.expires_at ? (
             <Text variant="caption" tone="muted">
-              Use by {new Date(balance.expires_at).toLocaleDateString()}
+              Use by {expiryPhrase(balance.expires_at)}
             </Text>
           ) : null}
         </Card>

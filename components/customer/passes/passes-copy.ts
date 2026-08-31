@@ -1,3 +1,5 @@
+import { getDateTimeFormat } from '@/lib/dates/formatters';
+import { getActiveFormatConfig } from '@/lib/i18n';
 import type { Membership } from '@/lib/queries/useCustomerPasses';
 
 /**
@@ -8,12 +10,26 @@ import type { Membership } from '@/lib/queries/useCustomerPasses';
  * whether a dialog opened. The web made the same call for the same reason.
  */
 
-/** When a period ends, in words a person would use. */
+/**
+ * When a period ends, in words a person would use.
+ *
+ * Formatted with the app's OWN locale rather than the device's default.
+ * `toLocaleDateString(undefined, ...)` asks the runtime, which gave "14
+ * September 2026" on a UK machine and "September 14, 2026" on CI, and would
+ * likewise disagree between two customers' phones. Worse, it disagreed with the
+ * money on the same card: `formatPence` has always read `getActiveFormatConfig`,
+ * so a price and a date could have come from two different locales.
+ */
 function periodEndPhrase(iso: string | null): string | null {
   if (!iso) return null;
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
+  const { formatLocale } = getActiveFormatConfig();
+  return getDateTimeFormat(formatLocale, {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }).format(date);
 }
 
 /**
@@ -92,4 +108,15 @@ export function recurringLine(
   if (day) return `Every ${day}.`;
   if (time) return `Every week at ${time}.`;
   return 'Repeats weekly.';
+}
+
+/**
+ * When a credit balance runs out, or null when it does not.
+ *
+ * Shares `periodEndPhrase`'s locale for the same reason: a credit expiry and a
+ * membership renewal sitting one tab apart should not be written in two
+ * different date formats.
+ */
+export function expiryPhrase(iso: string | null | undefined): string | null {
+  return periodEndPhrase(iso ?? null);
 }
