@@ -20,6 +20,16 @@ import { Platform } from 'react-native';
 
 const KEY = 'resneo_app_mode';
 
+/**
+ * Whether this person has already been offered the choice of sides.
+ *
+ * SEPARATE from the mode itself, because "I picked staff" and "I was asked and
+ * stayed put" are the same outcome but only one of them is a preference. Wiring
+ * the prompt to the mode alone would either nag somebody who already answered
+ * or silently record a preference they never expressed.
+ */
+const ASKED_KEY = 'resneo_dual_role_asked';
+
 export type AppModeChoice = 'staff' | 'customer';
 
 /**
@@ -105,13 +115,70 @@ export function rememberAppMode(mode: AppModeChoice): void {
 export function clearAppMode(): void {
   cached = null;
   loaded = true;
+  /*
+    The asked flag goes with it. The next person on a shared salon tablet has
+    never been offered the choice, and inheriting somebody else's "already
+    asked" would silently deny it to them.
+  */
+  askedCache = false;
+  askedLoaded = false;
   emit();
   if (Platform.OS === 'web') return;
   void SecureStore.deleteItemAsync(KEY).catch(() => {});
+  void SecureStore.deleteItemAsync(ASKED_KEY).catch(() => {});
 }
 
 /** Test seam: forget that the store was ever read. */
+let askedCache = false;
+let askedLoaded = false;
+
+/** Whether the dual-role prompt has already been shown to this person. */
+export function hasBeenAskedDualRole(): boolean {
+  return askedCache;
+}
+
+export function subscribeDualRoleAsked(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+/** Read the flag once per run. */
+export async function loadDualRoleAsked(): Promise<boolean> {
+  if (askedLoaded) return askedCache;
+  if (Platform.OS === 'web') {
+    askedLoaded = true;
+    return false;
+  }
+  try {
+    askedCache = (await SecureStore.getItemAsync(ASKED_KEY)) === '1';
+  } catch {
+    askedCache = false;
+  }
+  askedLoaded = true;
+  return askedCache;
+}
+
+/**
+ * Record that the choice was offered.
+ *
+ * Called however the prompt closes, including a dismissal. Somebody who saw the
+ * question and chose to carry on has answered it; asking again next launch
+ * would be nagging, and the switchers on both sides remain for when they change
+ * their mind.
+ */
+export function markDualRoleAsked(): void {
+  askedCache = true;
+  askedLoaded = true;
+  emit();
+  if (Platform.OS === 'web') return;
+  void SecureStore.setItemAsync(ASKED_KEY, '1').catch(() => {});
+}
+
 export function resetAppModeForTests(): void {
+  askedCache = false;
+  askedLoaded = false;
   cached = null;
   loaded = false;
   emit();

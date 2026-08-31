@@ -2,6 +2,7 @@ import { Stack } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
+import { DualRolePrompt } from '@/components/auth/DualRolePrompt';
 import { StaffRequired } from '@/components/auth/StaffRequired';
 import { PendingPushRouteHandler } from '@/components/push/PendingPushRouteHandler';
 import { LoadingState } from '@/components/ui/LoadingState';
@@ -65,6 +66,15 @@ export default function AppLayout() {
     <View style={{ flex: 1 }}>
       {/* Cross-dashboard waitlist open-slot alerts (renders null unless in staff_choose mode with a match). */}
       <WaitlistAvailabilityBanner />
+      {/*
+        Offers the customer side to somebody who is both, once. Renders null
+        unless they are staff, are also a customer somewhere, and have never
+        been asked. Sits here rather than on a tab so it does not depend on
+        where they landed, and OUTSIDE the routing decision on purpose: see the
+        component for why the question is asked after landing rather than
+        before.
+      */}
+      <DualRolePrompt />
       <Stack
       screenOptions={{
         headerShown: false,

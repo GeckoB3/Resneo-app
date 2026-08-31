@@ -136,3 +136,29 @@ describe('what must keep working', () => {
     await waitFor(() => expect(result.current.mode).toBe('staff'));
   });
 });
+
+describe('the dual-role signal stays OUT of the routing decision', () => {
+  it('useAppMode never reaches the venues endpoint', async () => {
+    /*
+      The structural guarantee behind asking after landing rather than before.
+
+      The web decides at login from two facts, hasStaff and hasGuest. Copying
+      that here would put a third asynchronous input into the guard sequence,
+      and the cost of a wrong frame there is a mounted navigator firing queries,
+      which is the bug this file was written for. The cost of a wrong answer in
+      the prompt is a prompt that does not appear.
+
+      If somebody later wires `useIsAlsoCustomer` into `useAppMode`, this fails.
+    */
+    /* eslint-disable @typescript-eslint/no-require-imports */
+    const fs = require('fs');
+    const path = require('path');
+    /* eslint-enable @typescript-eslint/no-require-imports */
+    const source: string = fs.readFileSync(
+      path.join(process.cwd(), 'lib/mode/useAppMode.ts'),
+      'utf8',
+    );
+    expect(source).not.toContain('useIsAlsoCustomer');
+    expect(source).not.toContain('me/venues');
+  });
+});
