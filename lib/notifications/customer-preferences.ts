@@ -89,11 +89,23 @@ export function preferencePatch(
   return { [preferenceKey(category, channel)]: enabled };
 }
 
-/** What a row is called on screen. */
+/**
+ * What a row is called on screen.
+ *
+ * **The marketing row is NOT called "offers".** Its category is named
+ * `marketing` server-side, and labelling it that way here was wrong: the only
+ * message in that category is `post_visit_thankyou`, a thank-you after a visit.
+ * Actual venue marketing is gated by the per-venue consent lower down the same
+ * screen. A customer who wanted to stop receiving offers would reasonably have
+ * used this switch, and it would not have stopped them.
+ *
+ * So each row is named for the messages it actually governs, and the screen
+ * says where offers are controlled instead.
+ */
 export function preferenceLabel(category: PreferenceCategory): string {
   if (category === 'reminders') return 'Booking reminders';
   if (category === 'changes') return 'Changes to your bookings';
-  return 'Offers and news';
+  return 'Thank-you messages after a visit';
 }
 
 export function channelLabel(channel: PreferenceChannel): string {
@@ -108,3 +120,12 @@ export function channelLabel(channel: PreferenceChannel): string {
  */
 export const ALWAYS_SENT_NOTE =
   'Confirmations, and emails about a booking that has changed, are always sent. They are how a venue tells you something about a booking you have made.';
+
+/**
+ * Points at the control that governs actual marketing.
+ *
+ * Without it the screen has two things a customer could read as "marketing",
+ * one narrow and one broad, with nothing saying which is which.
+ */
+export const MARKETING_ELSEWHERE_NOTE =
+  'Offers and news from a venue are controlled separately, under Offers from venues below.';

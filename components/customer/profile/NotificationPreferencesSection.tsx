@@ -5,6 +5,7 @@ import { LoadingState } from '@/components/ui/LoadingState';
 import { Text } from '@/components/ui/Text';
 import {
   ALWAYS_SENT_NOTE,
+  MARKETING_ELSEWHERE_NOTE,
   channelLabel,
   preferenceLabel,
   preferencePatch,
@@ -74,6 +75,9 @@ export function NotificationPreferencesSection() {
 
       <Text variant="caption" tone="muted" style={styles.note}>
         {ALWAYS_SENT_NOTE}
+      </Text>
+      <Text variant="caption" tone="muted" style={styles.note}>
+        {MARKETING_ELSEWHERE_NOTE}
       </Text>
     </Card>
   );

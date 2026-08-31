@@ -27,6 +27,7 @@ const {
   useRemoveCard,
   useSetPassword,
   useSignOutEverywhere,
+  useSetMarketingConsent,
   // eslint-disable-next-line @typescript-eslint/no-require-imports
 } = require('./useCustomerAccount') as typeof import('./useCustomerAccount');
 
@@ -169,5 +170,35 @@ describe('the ways in and out', () => {
       await result.current.mutateAsync();
     });
     expect(lastPath()).toBe('/api/account/sign-out-everywhere');
+  });
+});
+
+describe('marketing consent, which is per venue', () => {
+  it('identifies the relationship by guest id, not by venue', async () => {
+    /*
+      The route keys on `guest_id`, which is the caller's row AT THAT VENUE.
+      Sending a venue id would be sending the wrong kind of thing entirely, and
+      this section shipped read-only in C4 precisely because the venues response
+      did not carry a guest id to send.
+    */
+    const { result } = await renderHook(() => useSetMarketingConsent(), { wrapper });
+    await act(async () => {
+      await result.current.mutateAsync({ guestId: 'g-1', consent: false });
+    });
+    expect(lastPath()).toBe('/api/account/marketing-preferences');
+    const opts = mockApiFetch.mock.calls.at(-1)?.[1] as { method: string; body: string };
+    expect(opts.method).toBe('PATCH');
+    expect(JSON.parse(opts.body)).toEqual({ guest_id: 'g-1', marketing_consent: false });
+  });
+
+  it('sends the value asked for, in both directions', async () => {
+    // An opt-in and an opt-out are the same call with a different boolean, and
+    // getting the direction wrong about consent is the worst way to be wrong.
+    const { result } = await renderHook(() => useSetMarketingConsent(), { wrapper });
+    await act(async () => {
+      await result.current.mutateAsync({ guestId: 'g-1', consent: true });
+    });
+    const opts = mockApiFetch.mock.calls.at(-1)?.[1] as { body: string };
+    expect(JSON.parse(opts.body).marketing_consent).toBe(true);
   });
 });

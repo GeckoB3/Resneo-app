@@ -8,7 +8,9 @@
  */
 import {
   CONTROLLABLE,
+  MARKETING_ELSEWHERE_NOTE,
   preferenceKey,
+  preferenceLabel,
   preferencePatch,
   readPreferences,
 } from '@/lib/notifications/customer-preferences';
@@ -101,5 +103,50 @@ describe('the patch body', () => {
 
   it('uses the key shape the server stores', async () => {
     expect(preferenceKey('marketing', 'email')).toBe('marketing_email');
+  });
+});
+
+describe('each row is named for what it actually governs', () => {
+  /*
+    A real defect, found by a reader asking what the toggles did.
+
+    The `marketing` category contains exactly one message,
+    `post_visit_thankyou`. Labelling it "Offers and news" told a customer they
+    were switching off marketing, when actual venue marketing is gated by the
+    PER-VENUE consent lower down the same screen. Somebody wanting to stop
+    receiving offers would reasonably have used this switch, and it would not
+    have stopped them.
+
+    That is worse than a vague label: it is a control that appears to do
+    something it does not, about consent, which is the one area where appearing
+    to work is not good enough.
+  */
+  it('does not call the thank-you row "offers"', async () => {
+    const label = preferenceLabel('marketing');
+    expect(label).not.toMatch(/offer/i);
+    expect(label).not.toMatch(/news/i);
+    expect(label).toMatch(/thank/i);
+  });
+
+  it('names the two rows that do govern a category of messages', async () => {
+    expect(preferenceLabel('reminders')).toMatch(/reminder/i);
+    expect(preferenceLabel('changes')).toMatch(/change/i);
+  });
+
+  it('points at where offers are actually controlled', async () => {
+    // Without this the screen has two things a customer could read as
+    // marketing, one narrow and one broad, and nothing saying which is which.
+    expect(MARKETING_ELSEWHERE_NOTE).toMatch(/offers/i);
+    expect(MARKETING_ELSEWHERE_NOTE).toMatch(/venue/i);
+  });
+
+  it('uses no em-dashes', async () => {
+    const all = [
+      preferenceLabel('reminders'),
+      preferenceLabel('changes'),
+      preferenceLabel('marketing'),
+      MARKETING_ELSEWHERE_NOTE,
+    ].join(' ');
+    expect(all).not.toContain('—');
   });
 });

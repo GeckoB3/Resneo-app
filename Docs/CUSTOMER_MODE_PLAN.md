@@ -201,6 +201,16 @@ Memberships, credits, courses, recurring. Includes the resume-a-cancelled-member
 
 **Unblocked by D3 and D4.** These routes are called on their `/api/account/*` paths, and the three purchase paths use a per-venue Payment Element. The five server-only routes need no Stripe SDK at all, so they can land first within the phase if the dependency work runs long.
 
+### C4. Profile, preferences, payments. DONE 2026-08-31; two corrections the same day.
+
+*(**Corrected after a read of the finished screen.** Asked what the "what we send you" toggles actually did, and whether communications were not a venue's business, two things came out.
+
+**A mislabelled control, which is the more serious.** The server's category is called `marketing`, and I passed that name through to the customer as "Offers and news". It contains exactly ONE message, `post_visit_thankyou`. Actual venue marketing is gated by the per-venue consent lower down the same screen, so a customer wanting to stop receiving offers would reasonably have used that switch and it would not have stopped them. Worse than a vague label: a control that appears to do something it does not, about consent. Now named for the messages it governs, with a line pointing at where offers really are controlled.
+
+**And the per-venue consent is editable at last.** It shipped read-only because `PATCH /api/account/marketing-preferences` keys on `guest_id` and the venues route did not return one. The web added the field, so the switch followed.
+
+**The toggles ARE functional**, which was worth verifying rather than assuming: `service.ts` calls `filterChannelsForCustomer` before every send, which resolves guest to account, reads the preferences and drops the channels the customer has declined. There are three layers, not one: the venue decides what it sends, the customer's account preferences can decline some of it, and per-venue consent gates marketing separately. A guest who never claimed an account has no preferences, so venue settings alone govern them.)*
+
 ### C4. Profile, preferences, payments. DONE 2026-08-31.
 
 *(**Done.** The Profile tab arrives with the screen behind it, making the four the web settled on: Home, Bookings, Passes, Profile. One screen with sections rather than four routes, following P1-3's own folding, and each section loads its own data so one failed read does not blank the rest.

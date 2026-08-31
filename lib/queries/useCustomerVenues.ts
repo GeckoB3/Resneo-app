@@ -6,6 +6,14 @@ import { queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 
 export interface VenueRelationship {
+  /**
+   * The caller's guest row at this venue.
+   *
+   * `PATCH /api/account/marketing-preferences` identifies a relationship by
+   * this, so without it consent was readable and not writable. Added to the
+   * route on 2026-08-31 for exactly that reason.
+   */
+  guest_id: string;
   venue_id: string;
   venue_name: string | null;
   first_booked_at: string | null;
@@ -19,12 +27,9 @@ export interface VenueRelationship {
 /**
  * One row per venue the customer is known at.
  *
- * **Notably absent: the guest id.** The route returns the relationship without
- * it, and `PATCH /api/account/marketing-preferences` requires one, so marketing
- * consent is readable from the app and not writable. That is recorded rather
- * than worked around: adding `guest_id` to this response is a one-line,
- * additive web change, and making it is a decision for the web repo rather than
- * something to smuggle in from here.
+ * Carries `guest_id`, which is what makes marketing consent writable. It was
+ * absent when C4 was built, so that section shipped read-only and pointed at
+ * the website; the web added the field on 2026-08-31 and the toggle followed.
  */
 export function useCustomerVenueRelationships(enabled = true) {
   const accessToken = useAccessToken();
