@@ -34,6 +34,30 @@ const ANDROID_CHANNELS = {
 } as const;
 
 /**
+ * The CUSTOMER's channels, which are deliberately not the staff ones.
+ *
+ * These ids are a contract with the web sender
+ * (`src/lib/communications/customer-push-notification.ts`), which sets them on
+ * the payload; a mismatch means the notification lands on Android's fallback
+ * "Miscellaneous" channel instead.
+ *
+ * Separate from the staff set because a channel is something the USER sees and
+ * configures in system settings. `bookings-new` and its siblings are what a
+ * venue's staff app means by those words, and a customer who muted "New
+ * bookings" would not expect that to silence a reminder about their own
+ * haircut.
+ *
+ * A dual-role person has both sets on one device, which is the point: they can
+ * mute their venue's alerts overnight and still be reminded of their own
+ * appointment.
+ */
+const CUSTOMER_ANDROID_CHANNELS = {
+  reminders: 'customer-reminders',
+  bookingChanges: 'customer-booking-changes',
+  waitlist: 'customer-waitlist',
+} as const;
+
+/**
  * Create the Android notification channels. No-op off Android. Defensive:
  * setNotificationChannelAsync can reject on devices/permission states that do
  * not support channels, so failures are swallowed.
@@ -70,6 +94,37 @@ async function configureAndroidChannels(notifications: NonNullable<typeof Notifi
     await notifications.setNotificationChannelAsync(ANDROID_CHANNELS.reminders, {
       name: 'Reminders',
       importance: AndroidImportance.DEFAULT,
+      lockscreenVisibility: AndroidNotificationVisibility.PRIVATE,
+    });
+
+    /*
+      The customer's own channels, created for EVERYONE rather than only for
+      customers.
+
+      Channels are immutable once created, apart from name and description, and
+      Android requires the channel to exist before a notification can use it.
+      Creating them lazily when somebody switches to customer mode would mean
+      the first customer notification after an upgrade had nowhere to land. They
+      cost nothing when unused: a channel with no notifications is invisible in
+      system settings until one arrives.
+    */
+    await notifications.setNotificationChannelAsync(CUSTOMER_ANDROID_CHANNELS.reminders, {
+      name: 'Your booking reminders',
+      importance: AndroidImportance.DEFAULT,
+      lockscreenVisibility: AndroidNotificationVisibility.PRIVATE,
+    });
+    await notifications.setNotificationChannelAsync(CUSTOMER_ANDROID_CHANNELS.bookingChanges, {
+      name: 'Changes to your bookings',
+      // HIGH, unlike the staff equivalent. A venue moving your appointment is
+      // something you may need to act on today, and a customer sees far fewer
+      // of these than a venue does.
+      importance: AndroidImportance.HIGH,
+      lockscreenVisibility: AndroidNotificationVisibility.PRIVATE,
+    });
+    await notifications.setNotificationChannelAsync(CUSTOMER_ANDROID_CHANNELS.waitlist, {
+      name: 'Waitlist offers',
+      // HIGH because an offered place expires.
+      importance: AndroidImportance.HIGH,
       lockscreenVisibility: AndroidNotificationVisibility.PRIVATE,
     });
   } catch (error) {

@@ -4,8 +4,10 @@
     "target": {
       "namespace": "android_app",
       "package_name": "com.resneo.app",
-      "//": "TODO: replace <SHA256_FROM_EAS_CREDENTIALS> with the upload/app-signing SHA-256 fingerprint from `eas credentials` (Android > Keystore > SHA-256 Fingerprint). Colon-separated upper-case hex, e.g. AA:BB:CC:... If Play App Signing is enabled, use the Play Console's app-signing certificate SHA-256, not the upload key.",
-      "sha256_cert_fingerprints": ["<SHA256_FROM_EAS_CREDENTIALS>"]
+      "sha256_cert_fingerprints": [
+        "F5:5C:F0:06:D9:67:4B:49:CC:67:85:D3:C5:FC:57:C1:C4:5A:DB:8E:A5:8C:FD:5D:EC:15:62:DD:9A:9E:D4:F5",
+        "7A:A6:B8:E3:2F:65:35:B5:42:DD:91:38:C1:D6:99:A1:22:37:29:51:BE:BA:BF:B4:57:90:D1:90:48:8B:CE:AF"
+      ]
     }
   }
 ]

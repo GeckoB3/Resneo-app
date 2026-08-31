@@ -2,12 +2,32 @@
   "applinks": {
     "details": [
       {
-        "//": "TODO: replace <APPLE_TEAM_ID> with the 10-char Apple Developer Team ID (App Store Connect > Membership, or `eas credentials` > iOS). Final value looks like ABCDE12345.com.resneo.app",
-        "appIDs": ["<APPLE_TEAM_ID>.com.resneo.app"],
+        "appIDs": ["4V8S56N4XX.com.resneo.app"],
         "components": [
           {
-            "/": "/booking/*",
-            "comment": "Deep-links into a single booking detail screen."
+            "/": "/account/bookings/*",
+            "comment": "One booking. The app rewrites this to its own /booking/{id} in +native-intent."
+          },
+          {
+            "/": "/account/bookings",
+            "comment": "The bookings list."
+          },
+          {
+            "/": "/account/passes*",
+            "comment": "Passes and plans, including the web's per-tab links."
+          },
+          {
+            "/": "/account/profile",
+            "comment": "Profile, preferences and payments."
+          },
+          {
+            "/": "/account",
+            "comment": "The customer hub."
+          },
+          {
+            "/": "/account/*",
+            "exclude": true,
+            "comment": "Anything else under /account stays in the browser. The app has no screen for it, and opening the app on a not-found is worse than opening the page that exists."
           }
         ]
       }

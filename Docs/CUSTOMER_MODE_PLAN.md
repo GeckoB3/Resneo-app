@@ -235,7 +235,19 @@ Adding a card here is D4's dependency again, so C4 and C3 share it. `password`, 
 
 Waitlist view and leave, JSON export, account deletion and cancellation. Deletion already has a client in `lib/queries/useAccountDeletion.ts` calling the un-aliased `/api/account/delete-request` directly.
 
-### C6. Push delivery and deep links.
+### C6. Push delivery and deep links. APP SIDE DONE 2026-08-31; two steps remain, both outside this repo.
+
+*(**Done here.** 23 tests. The customer push channels, the URL translation that unblocked the association files, and the files themselves filled in with real values.
+
+**The blocker was never F7.** Its two credentials were obtained on 2026-08-31 and recorded in `Docs/universal-links/README.md`. Underneath was a mismatch nobody had looked for: the web portal lives at `/account/bookings/{id}` and the app routes at `/booking/[id]`, so a universal link would have arrived as a path Expo Router could not resolve and opened the app on a not-found. That is worse than opening the browser, which would at least have shown the booking.
+
+**Solved by translating at the boundary rather than renaming the app's routes.** `app/+native-intent.tsx` runs before Expo Router resolves an incoming link, and hands off to a pure function in `lib/navigation/`. Renaming every app route to match the website would have made the app's own navigation read like somebody else's URL structure for the sake of links arriving from outside. Anything unrecognised passes through untouched, which is what keeps `resneo://callback` working: it carries magic-link sign-in and predates all of this.
+
+**The channels are created for everyone, not only for customers.** Android channels are immutable once created and must exist before a notification can use one, so creating them lazily on a switch would leave the first customer notification after an upgrade with nowhere to land. Their ids are a contract with the web sender, and a mismatch FAILS SILENTLY: Android delivers on its fallback channel instead, so the customer gets the message with the wrong importance and nothing reports a problem. Pinned by a test that reads both sides.
+
+**Two steps remain and neither is in this repo.** The web must serve the two files, specified in `Docs/universal-links/WEB_HANDOVER.md`; only then may `app.json` regain `associatedDomains` and the intent filter, and only then a build. The order is what the 2026-08-09 removal was about: a FAILED Android verification stops the app being offered as a handler at all.
+
+**Also still web work:** wiring `sendCustomerPush` to its call sites. Independent of the files, since push uses the `resneo://` scheme and the payload rather than universal links.)*
 
 - Customer channel and category ids matching the web sender's `customer-reminders`, `customer-booking-changes`, `customer-waitlist`.
 - Wire the web sender to its call sites, which is deliberately deferred there until a real customer device exists.
