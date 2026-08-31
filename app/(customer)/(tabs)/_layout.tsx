@@ -11,13 +11,12 @@ import { useTheme } from '@/theme/useTheme';
 /**
  * The customer's tabs.
  *
- * **Three, not four, and the fourth is deliberate rather than forgotten.** The
- * web portal settled on Bookings, Passes and plans, Profile and Help, with the
- * hub reached by the wordmark rather than by a nav item. An app has no wordmark
- * to press, so the hub becomes a tab and Help becomes a link rather than a tab.
- * That gives Home, Bookings, Passes and Profile as the shape, and Profile
- * arrives with the screen behind it in C4. A tab that leads nowhere is worse
- * than one that is not there yet.
+ * **Four, matching the web portal's own conclusion.** It settled on Bookings,
+ * Passes and plans, Profile and Help, with the hub reached by the wordmark
+ * rather than by a nav item. An app has no wordmark to press, so the hub
+ * becomes a tab and Help becomes a link rather than a tab. Profile arrived in
+ * C4 with the screen behind it; it was deliberately absent in C3, because a tab
+ * that leads nowhere is worse than one that is not there yet.
  *
  * Styling follows the staff tab bar rather than inventing a second one: the
  * explicit height plus bottom inset is what keeps the bar clear of the home
@@ -71,6 +70,13 @@ export default function CustomerTabsLayout() {
         options={{
           title: 'Passes',
           tabBarIcon: (p) => <TabIcon {...p} ios="ticket" android="confirmation_number" />,
+        }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: 'Profile',
+          tabBarIcon: (p) => <TabIcon {...p} ios="person.crop.circle" android="account_circle" />,
         }}
       />
     </Tabs>

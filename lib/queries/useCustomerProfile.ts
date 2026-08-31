@@ -1,4 +1,4 @@
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
@@ -24,7 +24,10 @@ export interface CustomerProfile {
   display_name: string | null;
   first_name: string | null;
   last_name: string | null;
+  phone: string | null;
   default_login_destination: LoginDestination | null;
+  /** Free-form bag shared with the staff app. Read through the matrix helpers. */
+  notification_preferences?: Record<string, unknown> | null;
 }
 
 interface ProfileResponse {
@@ -61,6 +64,43 @@ export function useCustomerProfile() {
         throw new Error('Missing access token');
       }
       return apiFetch<ProfileResponse>('/api/v1/me/profile', { accessToken });
+    },
+  });
+}
+
+export interface ProfilePatch {
+  first_name?: string | null;
+  last_name?: string | null;
+  phone?: string | null;
+  default_login_destination?: LoginDestination | null;
+  notification_preferences?: Record<string, unknown>;
+}
+
+/**
+ * Save part of the profile.
+ *
+ * **Send only what changed.** The route MERGES into a free-form jsonb column
+ * that the staff app writes to as well, so a client posting its whole idea of
+ * the profile overwrites whatever it did not know about. That is not
+ * hypothetical: the web fixed exactly this, where a customer client sending its
+ * own two keys erased every staff push preference on the row, and linked
+ * accounts actively create users who have both.
+ */
+export function useUpdateCustomerProfile() {
+  const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (patch: ProfilePatch) => {
+      if (!accessToken) throw new Error('Missing access token');
+      return apiFetch('/api/v1/me/profile', {
+        accessToken,
+        method: 'PATCH',
+        body: JSON.stringify(patch),
+      });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.customer.all() });
     },
   });
 }

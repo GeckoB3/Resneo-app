@@ -63,6 +63,10 @@ export const queryKeys = {
         bookingId,
         keyScope(accessToken),
       ] as const,
+    payments: (bookingId: string | null, accessToken?: string | null) =>
+      [...queryKeys.customer.all(), 'payments', bookingId, keyScope(accessToken)] as const,
+    cards: (venueId: string | null, accessToken?: string | null) =>
+      [...queryKeys.customer.all(), 'cards', venueId, keyScope(accessToken)] as const,
     venues: (accessToken?: string | null) =>
       [...queryKeys.customer.all(), 'venues', keyScope(accessToken)] as const,
     memberships: (accessToken?: string | null) =>

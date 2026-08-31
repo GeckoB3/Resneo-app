@@ -1,14 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
-
-import { apiFetch } from '@/lib/api/client';
-import { isBackendConfigured } from '@/lib/env';
-import { queryKeys } from '@/lib/queries/keys';
-import { useAccessToken } from '@/lib/queries/useAccessToken';
+import { useCustomerVenueRelationships } from '@/lib/queries/useCustomerVenues';
 import { useRole } from '@/lib/queries/useRole';
-
-interface VenuesResponse {
-  venues: { venue_id: string; venue_name: string | null }[];
-}
 
 /**
  * Whether this staff member is ALSO somebody's customer.
@@ -32,20 +23,10 @@ interface VenuesResponse {
  * and an unresolved role has no landing to prompt over yet.
  */
 export function useIsAlsoCustomer() {
-  const accessToken = useAccessToken();
   const role = useRole();
-
-  const query = useQuery({
-    queryKey: queryKeys.customer.venues(accessToken),
-    enabled: isBackendConfigured() && accessToken !== null && role === 'staff',
-    // The answer does not change within a session, and it gates a once-ever
-    // prompt, so there is nothing to be gained by rechecking it.
-    staleTime: Infinity,
-    queryFn: async (): Promise<VenuesResponse> => {
-      if (!accessToken) throw new Error('Missing access token');
-      return apiFetch<VenuesResponse>('/api/v1/me/venues', { accessToken });
-    },
-  });
+  // Shares the profile screen's request rather than issuing a second one; the
+  // two ask the same question of the same endpoint.
+  const query = useCustomerVenueRelationships(role === 'staff');
 
   return {
     /**

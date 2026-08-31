@@ -201,7 +201,17 @@ Memberships, credits, courses, recurring. Includes the resume-a-cancelled-member
 
 **Unblocked by D3 and D4.** These routes are called on their `/api/account/*` paths, and the three purchase paths use a per-venue Payment Element. The five server-only routes need no Stripe SDK at all, so they can land first within the phase if the dependency work runs long.
 
-### C4. Profile, preferences, payments.
+### C4. Profile, preferences, payments. DONE 2026-08-31.
+
+*(**Done.** The Profile tab arrives with the screen behind it, making the four the web settled on: Home, Bookings, Passes, Profile. One screen with sections rather than four routes, following P1-3's own folding, and each section loads its own data so one failed read does not blank the rest.
+
+**The preference matrix is where the care went.** Its defaults are asymmetrical and the asymmetry is the product: reminders and changes default ON, because somebody who has expressed nothing still expects to hear about their own booking, and marketing defaults OFF, because consent is given rather than assumed. The pre-matrix `marketing_email` flag is still honoured when the matrix is silent, so nobody who opted in before is silently opted back out. A patch carries ONE key, because the column is shared with the staff app and the route merges; the web already had a bug where a client sending its own keys erased every staff push preference on the row.
+
+**Card removal honours the 409 as an ANSWER rather than a failure.** The server replies `requires_confirmation` with a message naming what the card pays for, and that message is shown VERBATIM: a summary here would be guessing at which membership, and guessing wrong about a recurring payment is worse than saying nothing. A 409 invalidates nothing, because nothing changed.
+
+**Two things are read-only, and say so on screen rather than only here.** Email changes go through their own two-step confirmation, so putting the field beside two that save instantly would misrepresent the button. And **marketing consent cannot be written from the app at all**: `PATCH /api/account/marketing-preferences` identifies the relationship by `guest_id`, and `GET /api/v1/me/venues` does not return one. Adding it is a one-line additive web change; making it is a decision for the web repo rather than something to smuggle in from here. Until then the app shows the state per venue and points at the website.
+
+**21 tests, 5 mutations all caught.** CI's four steps were run locally before pushing this time, the web export included, which is the step that would have caught C3's native-only import three days before a build did.)*
 
 Profile and the notification matrix (`/api/v1/me/profile`, PATCH merges and never assigns), payment history, saved cards including removal with its membership warning.
 
