@@ -8,6 +8,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { Text } from '@/components/ui/Text';
+import { BuyPassSection } from '@/components/customer/passes/BuyPassSection';
 import { nameById } from '@/components/customer/passes/lookup';
 import { membershipCancelConsequence, membershipStateLine } from '@/components/customer/passes/passes-copy';
 import {
@@ -43,6 +44,9 @@ export function MembershipsSection() {
   const resume = useResumeMembership();
   const [pending, setPending] = useState<Membership | null>(null);
 
+  const forSale = data?.purchase_catalog?.products ?? [];
+  const catalogVenues = data?.purchase_catalog?.venues ?? data?.venues;
+
   if (isLoading) return <LoadingState message="Loading your memberships…" />;
   if (isError) {
     return <ErrorState message="Could not load your memberships." onRetry={() => void refetch()} />;
@@ -52,10 +56,21 @@ export function MembershipsSection() {
 
   if (live.length === 0) {
     return (
-      <EmptyState
-        title="No memberships"
-        message="A membership you take out with a venue will appear here, with what it covers."
+      <View style={styles.list}>
+        <EmptyState
+          title="No memberships"
+          message="A membership you take out with a venue will appear here, with what it covers."
+        />
+        {/* Offered with none held: an empty tab is where somebody looks for how
+            to get one. */}
+      <BuyPassSection
+        heading="TAKE OUT A MEMBERSHIP"
+        kind="membership"
+        products={forSale}
+        venues={catalogVenues}
+        note="A membership renews until you cancel it. You can cancel here at any time, and it stays usable until the period you have paid for ends."
       />
+      </View>
     );
   }
 
@@ -97,6 +112,14 @@ export function MembershipsSection() {
           )}
         </Card>
       ))}
+
+      <BuyPassSection
+        heading="TAKE OUT A MEMBERSHIP"
+        kind="membership"
+        products={forSale}
+        venues={catalogVenues}
+        note="A membership renews until you cancel it. You can cancel here at any time, and it stays usable until the period you have paid for ends."
+      />
 
       <ConfirmSheet
         visible={pending !== null}

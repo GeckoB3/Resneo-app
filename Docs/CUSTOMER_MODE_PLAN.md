@@ -264,6 +264,18 @@ Waitlist view and leave, JSON export, account deletion and cancellation. Deletio
 - The `resneo://` route map, per the web repo's `Docs/MOBILE_API.md`.
 - **Universal links are out of scope until two things land:** F7's Apple Team ID and Play SHA-256, and `associatedDomains` plus Android intent filters in `app.json`. **Order is fixed and non-negotiable:** serve the files, verify 200 with the right content type and no redirect, then restore `app.json`, then ship a build. A failed Android verification stops the app being offered as a handler at all, which is why universal links were removed on 2026-08-09.
 
+### C7. The three things a real customer would notice. DONE 2026-08-31.
+
+*(**Done.** The items left over from C3 to C5, written up after a review asked what was actually finished. 15 tests, 4 mutations all caught.
+
+**The empty hub is answered by venue history, which is the web's own answer rather than one invented here.** A customer with nothing booked is rarely a customer with no history: they have been to a salon twice and have no appointment right now. A first-run banner would tell that person nothing they did not know. The hub now shows the venues they have used, how many times, whether anything is next, and a way back to each. A genuinely new account, with no bookings and no venues, still falls through to the honest "nothing booked" card. The header also stopped repeating that sentence beneath a card already saying it.
+
+**The money label is pinned by a test.** `deposits_paid_minor` sums paid deposits only and excludes the whole payments ledger, so a customer who paid five hundred pounds in full would see the fifty pound deposit. Calling it "spent" would tell them ResNeo had lost the rest, and the mutation that renames it fails.
+
+**Membership and course purchase are surfaced at last.** The engine handled all four kinds and was tested from C3; only credits had a screen. One component serves both, because the difference is a route and a noun. **A membership shows no price**, deliberately: the catalogue carries a `stripe_price_id` rather than an amount, since a recurring price can have intervals and trials the table does not model, and inventing a number about a thing that charges monthly is worse than showing none.
+
+**Weekly reservations can be stopped.** They shipped read-only in C3 because a control that ends a standing rule has to say what happens to the bookings the rule already made, and that answer had not been established. Reading the route settled it: it deletes the rule row and nothing else, so classes already booked stay booked. The copy says exactly that, and points at where to cancel them.)*
+
 ---
 
 ## Out of scope

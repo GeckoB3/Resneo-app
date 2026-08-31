@@ -5,6 +5,7 @@ import { NextBookingCard } from '@/components/customer/NextBookingCard';
 import { OutstandingPaymentsCard } from '@/components/customer/OutstandingPaymentsCard';
 import { PassesSummaryCard } from '@/components/customer/PassesSummaryCard';
 import { UpcomingList } from '@/components/customer/UpcomingList';
+import { VenueHistorySection } from '@/components/customer/VenueHistorySection';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { Screen } from '@/components/ui/Screen';
@@ -44,6 +45,9 @@ export default function CustomerHomeScreen() {
         <OutstandingPaymentsCard home={data} />
         <UpcomingList home={data} />
         <PassesSummaryCard home={data} />
+        {/* Last, and the reason an empty hub is not a dead end: a customer with
+            nothing booked usually still has venues to go back to. */}
+        <VenueHistorySection home={data} />
       </View>
     </Screen>
   );

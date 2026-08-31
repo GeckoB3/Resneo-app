@@ -8,6 +8,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { Text } from '@/components/ui/Text';
+import { BuyPassSection } from '@/components/customer/passes/BuyPassSection';
 import { nameById } from '@/components/customer/passes/lookup';
 import { courseCancelConsequence } from '@/components/customer/passes/passes-copy';
 import { useCancelCourse, useCourses, type CourseEnrollment } from '@/lib/queries/useCustomerPasses';
@@ -31,6 +32,9 @@ export function CoursesSection() {
   const cancel = useCancelCourse();
   const [pending, setPending] = useState<CourseEnrollment | null>(null);
 
+  const forSale = data?.purchase_catalog?.courses ?? [];
+  const catalogVenues = data?.purchase_catalog?.venues ?? data?.venues;
+
   if (isLoading) return <LoadingState message="Loading your courses…" />;
   if (isError) {
     return <ErrorState message="Could not load your courses." onRetry={() => void refetch()} />;
@@ -40,10 +44,21 @@ export function CoursesSection() {
 
   if (live.length === 0) {
     return (
-      <EmptyState
-        title="No courses"
-        message="A course you sign up for will appear here, with how far through it you are."
+      <View style={styles.list}>
+        <EmptyState
+          title="No courses"
+          message="A course you sign up for will appear here, with how far through it you are."
+        />
+        {/* Offered with none held: an empty tab is where somebody looks for how
+            to get one. */}
+      <BuyPassSection
+        heading="JOIN A COURSE"
+        kind="course"
+        products={forSale}
+        venues={catalogVenues}
+        note="A course is paid for once and covers every session in it. Any refund for leaving early is worked out by the venue."
       />
+      </View>
     );
   }
 
@@ -70,6 +85,14 @@ export function CoursesSection() {
           />
         </Card>
       ))}
+
+      <BuyPassSection
+        heading="JOIN A COURSE"
+        kind="course"
+        products={forSale}
+        venues={catalogVenues}
+        note="A course is paid for once and covers every session in it. Any refund for leaving early is worked out by the venue."
+      />
 
       <ConfirmSheet
         visible={pending !== null}

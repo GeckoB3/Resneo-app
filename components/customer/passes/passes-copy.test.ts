@@ -13,6 +13,7 @@
  */
 import {
   courseCancelConsequence,
+  recurringCancelConsequence,
   membershipCancelConsequence,
   membershipStateLine,
   recurringLine,
@@ -132,5 +133,32 @@ describe('the house style', () => {
       recurringLine(2, '18:30:00'),
     ].join(' ');
     expect(all).not.toContain('—');
+  });
+});
+
+describe('what stopping a weekly booking does, and does not do', () => {
+  it('says classes already booked STAY booked', async () => {
+    /*
+      The sentence the whole control waited on. The route deletes the rule row
+      and nothing else, so a customer who read "stop" as "cancel everything"
+      would either not turn up to a class they are still on the list for, or
+      turn up to one they thought they had left.
+    */
+    const text = recurringCancelConsequence();
+    expect(text).toMatch(/already booked stay booked/i);
+  });
+
+  it('says what it DOES stop', async () => {
+    expect(recurringCancelConsequence()).toMatch(/no new classes/i);
+  });
+
+  it('tells them where to cancel the ones that remain', async () => {
+    // Naming the consequence without naming the remedy leaves somebody knowing
+    // they have a problem and not where to fix it.
+    expect(recurringCancelConsequence()).toMatch(/bookings list/i);
+  });
+
+  it('uses no em-dashes', async () => {
+    expect(recurringCancelConsequence()).not.toContain('—');
   });
 });

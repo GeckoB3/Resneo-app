@@ -32,6 +32,30 @@ export interface CustomerVenue {
   name: string;
 }
 
+/**
+ * One card per venue the customer has actually booked with.
+ *
+ * The counts come from guest aggregates rather than from the bookings array,
+ * which is capped, so a loyal customer's history is not silently understated.
+ */
+export interface CustomerVenueHistory {
+  venue: { id: string; name: string; slug: string | null };
+  visits: number;
+  first_booked_at: string | null;
+  last_booked_at: string | null;
+  /**
+   * Deposits paid, in pence. NOT total spend, and must never be labelled as it.
+   *
+   * It sums paid deposits only and excludes the whole payments ledger, so a
+   * customer who paid five hundred pounds in full would see the fifty pound
+   * deposit and conclude ResNeo had lost the rest.
+   */
+  deposits_paid_minor: number;
+  next_booking: CustomerBooking | null;
+  /** Where "Book again" goes, or null when nothing can be carried over. */
+  rebook_href: string | null;
+}
+
 export interface CustomerHome {
   next_booking: CustomerBooking | null;
   next_booking_form_links: { name: string; url: string }[];
@@ -51,6 +75,9 @@ export interface CustomerHome {
   upcoming_after_next: CustomerBooking[];
   outstanding_payments: CustomerBooking[];
   venues: CustomerVenue[];
+  venue_history: CustomerVenueHistory[];
+  /** Relationships beyond the ones listed, so the count is never silently cut. */
+  venue_history_hidden: number;
   credits: { total_remaining: number; venue_count: number; next_expiry: string | null };
   memberships: { active_count: number; cancelling_count: number };
 }

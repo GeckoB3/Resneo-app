@@ -42,10 +42,25 @@ export interface MembershipProduct {
   price_pence?: number | null;
 }
 
+/**
+ * A membership on offer.
+ *
+ * NO price. The route selects `stripe_price_id` rather than an amount, because
+ * a recurring price lives in Stripe and can carry intervals and trials this
+ * table does not model. Printing a number the server did not give would be
+ * inventing one, about money, on a subscription.
+ */
+export interface MembershipCatalogProduct {
+  id: string;
+  name: string;
+  venue_id: string;
+}
+
 interface MembershipsResponse {
   memberships: Membership[];
   products: MembershipProduct[];
   venues: Venue[];
+  purchase_catalog?: { venues: Venue[]; products: MembershipCatalogProduct[] };
 }
 
 export function useMemberships() {
@@ -94,9 +109,17 @@ export interface CourseEnrollment {
   sessions_total?: number | null;
 }
 
+export interface CourseCatalogProduct {
+  id: string;
+  name: string;
+  venue_id: string;
+  price_pence: number | null;
+}
+
 interface CoursesResponse {
   enrollments: CourseEnrollment[];
   venues: Venue[];
+  purchase_catalog?: { venues: Venue[]; courses: CourseCatalogProduct[] };
 }
 
 export function useCourses() {
@@ -213,4 +236,33 @@ export function useEnrollInCourse() {
     '/api/account/courses/enroll',
     (a) => ({ course_id: a.courseId, venue_id: a.venueId }),
   );
+}
+
+/**
+ * Stop a standing weekly reservation.
+ *
+ * DELETE on the rule itself, which is why it is not built through
+ * `useAccountMutation`: that posts, and this is the only customer action that
+ * removes a resource by id.
+ *
+ * **It stops the rule, not the bookings.** The route deletes the
+ * `class_recurring_reservations` row and nothing else; classes the rule has
+ * already materialised through the cron remain booked. Saying otherwise would
+ * leave somebody expecting to be removed from next Tuesday's class and turning
+ * up to find they are still on the list, or worse, not turning up.
+ */
+export function useCancelRecurring() {
+  const accessToken = useAccessToken();
+  const invalidate = useInvalidateCustomer();
+
+  return useMutation({
+    mutationFn: async (reservationId: string) => {
+      if (!accessToken) throw new Error('Missing access token');
+      return apiFetch(
+        `/api/account/class-recurring/${encodeURIComponent(reservationId)}`,
+        { accessToken, method: 'DELETE' },
+      );
+    },
+    onSuccess: invalidate,
+  });
 }

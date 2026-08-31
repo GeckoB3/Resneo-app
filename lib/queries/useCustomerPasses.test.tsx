@@ -29,6 +29,7 @@ const {
   useResumeMembership,
   useCancelCourse,
   useEnrollInCourse,
+  useCancelRecurring,
   // eslint-disable-next-line @typescript-eslint/no-require-imports
 } = require('./useCustomerPasses') as typeof import('./useCustomerPasses');
 
@@ -169,6 +170,36 @@ describe('what a change refreshes', () => {
     const { result } = await renderHook(() => useCancelMembership(), { wrapper });
     await act(async () => {
       await expect(result.current.mutateAsync({ membershipId: 'm-1' })).rejects.toThrow();
+    });
+    expect(invalidate).not.toHaveBeenCalled();
+  });
+});
+
+describe('stopping a standing weekly reservation (C7)', () => {
+  it('DELETEs the rule by id, encoded', async () => {
+    const { result } = await renderHook(() => useCancelRecurring(), { wrapper });
+    await act(async () => {
+      await result.current.mutateAsync('r 1/2');
+    });
+    expect(lastPath()).toBe('/api/account/class-recurring/r%201%2F2');
+    expect((mockApiFetch.mock.calls.at(-1)?.[1] as { method: string }).method).toBe('DELETE');
+  });
+
+  it('refreshes, because the rule is gone from every list showing it', async () => {
+    const invalidate = jest.spyOn(client, 'invalidateQueries');
+    const { result } = await renderHook(() => useCancelRecurring(), { wrapper });
+    await act(async () => {
+      await result.current.mutateAsync('r-1');
+    });
+    await waitFor(() => expect(invalidate).toHaveBeenCalled());
+  });
+
+  it('does NOT refresh when the delete failed', async () => {
+    mockApiFetch.mockRejectedValueOnce(new Error('network'));
+    const invalidate = jest.spyOn(client, 'invalidateQueries');
+    const { result } = await renderHook(() => useCancelRecurring(), { wrapper });
+    await act(async () => {
+      await expect(result.current.mutateAsync('r-1')).rejects.toThrow();
     });
     expect(invalidate).not.toHaveBeenCalled();
   });

@@ -120,3 +120,17 @@ export function recurringLine(
 export function expiryPhrase(iso: string | null | undefined): string | null {
   return periodEndPhrase(iso ?? null);
 }
+
+/**
+ * What stopping a standing weekly reservation does, and does NOT do.
+ *
+ * The route deletes the rule and nothing else. Classes it has already booked
+ * stay booked, and the customer has to cancel those individually. That is the
+ * whole reason this section shipped read-only in C3: a button saying "stop"
+ * without this sentence would leave somebody expecting to be off next
+ * Tuesday's list, and either not turning up or turning up to find they still
+ * are.
+ */
+export function recurringCancelConsequence(): string {
+  return 'No new classes will be booked for you after this. Classes already booked stay booked, so cancel any you cannot make from your bookings list.';
+}

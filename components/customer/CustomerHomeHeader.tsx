@@ -31,9 +31,11 @@ export function CustomerHomeHeader({ home }: Props) {
       <View style={styles.row}>
         <View style={styles.titleCol}>
           <Text variant="heading">{greeting}</Text>
-          <Text variant="bodySmall" tone="secondary">
-            {summaryLine(home)}
-          </Text>
+          {summaryLine(home) ? (
+            <Text variant="bodySmall" tone="secondary">
+              {summaryLine(home)}
+            </Text>
+          ) : null}
         </View>
       </View>
       <Button
@@ -64,9 +66,15 @@ export function CustomerHomeHeader({ home }: Props) {
  * report rather than an answer, and the empty case is the first thing most new
  * customers will see.
  */
-function summaryLine(home: CustomerHome): string {
+function summaryLine(home: CustomerHome): string | null {
   if (home.upcoming_count === 0) {
-    return 'Nothing booked at the moment.';
+    /*
+      Says nothing rather than repeating the card below it. The next-booking
+      card already reads "Nothing booked", and stacking a second sentence
+      saying the same thing made an empty account look emptier than it is,
+      especially once the venue history below gives them somewhere to go.
+    */
+    return null;
   }
   if (home.upcoming_count === 1) {
     return 'One booking coming up.';
