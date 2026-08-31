@@ -4,55 +4,55 @@
  * See pendingNotificationRoute.ts for the crash loop that made it necessary.
  */
 import {
-  resetPendingBookingRoute,
-  setPendingBookingRoute,
-  subscribePendingBookingRoute,
-  takePendingBookingRoute,
+  resetPendingPushRoute,
+  setPendingPushRoute,
+  subscribePendingPushRoute,
+  takePendingPushRoute,
 } from '@/lib/push/pendingNotificationRoute';
 
 describe('pendingNotificationRoute', () => {
   beforeEach(() => {
-    resetPendingBookingRoute();
+    resetPendingPushRoute();
   });
 
   it('returns null when nothing is parked', () => {
-    expect(takePendingBookingRoute()).toBeNull();
+    expect(takePendingPushRoute()).toBeNull();
   });
 
   it('hands a parked booking id to the first taker and no one else', () => {
-    setPendingBookingRoute('booking-1');
+    setPendingPushRoute({ kind: 'booking', bookingId: 'booking-1' });
 
-    expect(takePendingBookingRoute()).toBe('booking-1');
+    expect(takePendingPushRoute()).toEqual({ kind: 'booking', bookingId: 'booking-1' });
     // The loop regression: a second consumer (a remounted handler) gets nothing.
-    expect(takePendingBookingRoute()).toBeNull();
-    expect(takePendingBookingRoute()).toBeNull();
+    expect(takePendingPushRoute()).toBeNull();
+    expect(takePendingPushRoute()).toBeNull();
   });
 
   it('notifies subscribers when a tap is parked', () => {
     const notify = jest.fn();
-    const unsubscribe = subscribePendingBookingRoute(notify);
+    const unsubscribe = subscribePendingPushRoute(notify);
 
-    setPendingBookingRoute('booking-2');
+    setPendingPushRoute({ kind: 'booking', bookingId: 'booking-2' });
     expect(notify).toHaveBeenCalledTimes(1);
 
     unsubscribe();
-    setPendingBookingRoute('booking-3');
+    setPendingPushRoute({ kind: 'booking', bookingId: 'booking-3' });
     expect(notify).toHaveBeenCalledTimes(1);
   });
 
   it('survives a subscriber unsubscribing while being notified', () => {
     const notify = jest.fn(() => unsubscribe());
-    const unsubscribe = subscribePendingBookingRoute(notify);
+    const unsubscribe = subscribePendingPushRoute(notify);
 
-    expect(() => setPendingBookingRoute('booking-4')).not.toThrow();
+    expect(() => setPendingPushRoute({ kind: 'booking', bookingId: 'booking-4' })).not.toThrow();
     expect(notify).toHaveBeenCalledTimes(1);
   });
 
   it('keeps only the most recent tap', () => {
-    setPendingBookingRoute('booking-5');
-    setPendingBookingRoute('booking-6');
+    setPendingPushRoute({ kind: 'booking', bookingId: 'booking-5' });
+    setPendingPushRoute({ kind: 'booking', bookingId: 'booking-6' });
 
-    expect(takePendingBookingRoute()).toBe('booking-6');
-    expect(takePendingBookingRoute()).toBeNull();
+    expect(takePendingPushRoute()).toEqual({ kind: 'booking', bookingId: 'booking-6' });
+    expect(takePendingPushRoute()).toBeNull();
   });
 });

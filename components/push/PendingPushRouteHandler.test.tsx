@@ -15,18 +15,18 @@ jest.mock('expo-router', () => ({
 
 import { PendingPushRouteHandler } from '@/components/push/PendingPushRouteHandler';
 import {
-  resetPendingBookingRoute,
-  setPendingBookingRoute,
+  resetPendingPushRoute,
+  setPendingPushRoute,
 } from '@/lib/push/pendingNotificationRoute';
 
 describe('PendingPushRouteHandler', () => {
   beforeEach(() => {
     mockPush.mockClear();
-    resetPendingBookingRoute();
+    resetPendingPushRoute();
   });
 
   it('routes a tap parked before it mounted (the cold-start case)', async () => {
-    setPendingBookingRoute('booking-1');
+    setPendingPushRoute({ kind: 'booking', bookingId: 'booking-1' });
 
     await act(async () => {
       render(<PendingPushRouteHandler />);
@@ -43,7 +43,7 @@ describe('PendingPushRouteHandler', () => {
     expect(mockPush).not.toHaveBeenCalled();
 
     await act(async () => {
-      setPendingBookingRoute('booking-2');
+      setPendingPushRoute({ kind: 'booking', bookingId: 'booking-2' });
     });
 
     expect(mockPush).toHaveBeenCalledTimes(1);
@@ -59,7 +59,7 @@ describe('PendingPushRouteHandler', () => {
   });
 
   it('never re-routes the same tap, however many handlers mount after it', async () => {
-    setPendingBookingRoute('booking-3');
+    setPendingPushRoute({ kind: 'booking', bookingId: 'booking-3' });
 
     await act(async () => {
       render(<PendingPushRouteHandler />);
@@ -78,7 +78,7 @@ describe('PendingPushRouteHandler', () => {
   });
 
   it('routes once even when two handlers are mounted at the same time', async () => {
-    setPendingBookingRoute('booking-4');
+    setPendingPushRoute({ kind: 'booking', bookingId: 'booking-4' });
 
     await act(async () => {
       render(

@@ -177,3 +177,40 @@ silence as a fault**.
 at the call site is the cheapest way to distinguish "nobody has a customer
 device yet" from "we are suppressing these by mistake", and the two look
 identical from the outside.
+
+---
+
+# Answered: what a waitlist tap does
+
+**The app opens `url`, in an in-app browser.** No new field needed; the payload
+you designed is sufficient.
+
+Your option 1 is unavailable and will stay so: the app has no native booking
+flow for a customer. Creating a booking is explicitly out of scope for this
+phase, because the web portal itself rebooks by handing off to the public
+booking page, and matching that natively is a larger piece of work than the
+portal's own screens.
+
+So option 2, and the reasoning is that a waitlist offer is the ONE notification
+with a deadline. The customer needs to be able to accept it, and `url` is the
+only place they can. An in-app browser rather than the system one, so the offer
+does not cost them a trip out to Chrome and back.
+
+**When `url` is absent** the app routes to the customer's own bookings, where
+the waitlist entry already shows that a place has come up. `venue_id` is
+received and deliberately unused: there is no screen to route it to, and
+inventing one would be worse than landing somewhere honest.
+
+**Two things worth knowing on your side.**
+
+The app refuses a `url` that is not `https` on `resneo.com` or a subdomain, and
+falls back to the bookings tab instead. Nothing you send is affected. It is
+there because a payload is chosen by whoever gets a push delivered, and opening
+one unchecked would make a notification an open redirect inside the app.
+
+A booking id always wins when both are present. So if a waitlist payload ever
+gains a `booking_id`, the tap will open that booking rather than the offer link,
+silently. Worth remembering rather than discovering.
+
+Your `booking_id` absent-not-null choice is exactly right and the app relies on
+it: the check is presence, not type, and it does not know about event types.

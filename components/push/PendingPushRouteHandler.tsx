@@ -1,9 +1,11 @@
 import { useRouter, type Href } from 'expo-router';
 import { useEffect } from 'react';
 
+import * as WebBrowser from 'expo-web-browser';
+
 import {
-  subscribePendingBookingRoute,
-  takePendingBookingRoute,
+  subscribePendingPushRoute,
+  takePendingPushRoute,
 } from '@/lib/push/pendingNotificationRoute';
 
 /**
@@ -24,13 +26,39 @@ export function PendingPushRouteHandler(): null {
   useEffect(() => {
     const flush = () => {
       // `take` clears as it reads, so this can never route the same tap twice.
-      const bookingId = takePendingBookingRoute();
-      if (!bookingId) return;
-      router.push(`/booking/${bookingId}` as Href);
+      const route = takePendingPushRoute();
+      if (!route) return;
+
+      if (route.kind === 'booking') {
+        router.push(`/booking/${route.bookingId}` as Href);
+        return;
+      }
+
+      if (route.kind === 'url') {
+        /*
+          A waitlist offer opens the venue's public booking page, because that
+          is where the offer can actually be ACCEPTED and this app has no
+          native booking flow for a customer. An in-app browser rather than the
+          system one: the offer expires, and sending somebody out to Chrome to
+          come back afterwards is friction on the one notification with a
+          deadline attached.
+
+          Failure is swallowed. A browser that will not open is not worth
+          crashing a tap over, and the customer still has the email.
+        */
+        void WebBrowser.openBrowserAsync(route.url).catch((error) => {
+          console.warn('[push] could not open the offer link:', error);
+        });
+        return;
+      }
+
+      // An offer with no bookable link. Their own bookings is where the
+      // waitlist entry shows that a place has come up.
+      router.push('/bookings' as Href);
     };
 
     flush();
-    return subscribePendingBookingRoute(flush);
+    return subscribePendingPushRoute(flush);
   }, [router]);
 
   return null;

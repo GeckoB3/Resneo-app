@@ -3,7 +3,8 @@ import { Platform } from 'react-native';
 
 import { isBackendConfigured } from '@/lib/env';
 import { Notifications } from '@/lib/push/notificationsModule';
-import { setPendingBookingRoute } from '@/lib/push/pendingNotificationRoute';
+import { extractPushRoute } from '@/lib/push/extract-push-route';
+import { setPendingPushRoute } from '@/lib/push/pendingNotificationRoute';
 import { isExpoGoClient } from '@/lib/push/runtime';
 import { registerCurrentDeviceForPush } from '@/lib/push/registerDevice';
 import { audienceForRole, useRole } from '@/lib/queries/useRole';
@@ -159,28 +160,13 @@ async function clearBadge(notifications: NonNullable<typeof Notifications>): Pro
   }
 }
 
-function extractBookingId(data: Record<string, unknown> | null | undefined): string | null {
-  if (!data) return null;
-  const candidates = [
-    data['booking_id'],
-    data['bookingId'],
-    (data['booking'] as Record<string, unknown> | undefined)?.['id'],
-  ];
-  for (const value of candidates) {
-    if (typeof value === 'string' && value.length > 0) {
-      return value;
-    }
-  }
-  return null;
-}
-
 /**
  * Registers the device for push notifications once a Supabase session is available, and
  * hands notification taps to the navigator to route.
  *
  * This provider deliberately does NOT navigate: it lives above the navigator, so
- * on a cold start its effects run before one exists. It parks the booking id via
- * `setPendingBookingRoute` and `PendingPushRouteHandler` (inside the (app)
+ * on a cold start its effects run before one exists. It parks the intent via
+ * `setPendingPushRoute` and `PendingPushRouteHandler` (inside each side's
  * Stack) does the routing — see lib/push/pendingNotificationRoute.ts for the
  * crash loop that taught us this.
  *
@@ -286,9 +272,9 @@ export function PushNotificationsProvider({ children }: PushNotificationsProvide
         action === 'CONFIRM' ||
         action === undefined;
       if (!routes) return;
-      const bookingId = extractBookingId(typed.notification.request.content.data);
-      if (bookingId) {
-        setPendingBookingRoute(bookingId);
+      const route = extractPushRoute(typed.notification.request.content.data);
+      if (route) {
+        setPendingPushRoute(route);
       }
       // The last response persists for the whole PROCESS, so any remount of this
       // provider would read the same tap back out of the native module and act on
