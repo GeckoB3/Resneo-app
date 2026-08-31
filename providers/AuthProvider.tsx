@@ -16,6 +16,7 @@ import { clearLatchedRole } from '@/lib/queries/useRole';
 import { unregisterDevice } from '@/lib/push/registerDevice';
 import { ANALYTICS_EVENTS, identify, resetAnalytics, track } from '@/lib/analytics';
 import { setAccessTokenRefresher, setAuthenticationLostHandler } from '@/lib/api/client';
+import { sendBrandedMagicLink } from '@/lib/auth/magic-link';
 import { getAuthCallbackRedirectUrl, getPasswordResetRedirectUrl } from '@/lib/auth/redirect';
 import { setObservabilityUser } from '@/lib/observability';
 import { setQueryAuthScope } from '@/lib/queries/keys';
@@ -35,7 +36,13 @@ type AuthContextValue = {
   sessionExpired: boolean;
   /** Clear the sessionExpired flag once the notice has been shown. */
   acknowledgeSessionExpiry: () => void;
-  signInWithEmail: (email: string) => Promise<{ error: string | null }>;
+  /**
+   * Send a sign-in email. `codeSent` is true when ResNeo's branded email went
+   * out, which is the one carrying a six-digit code to type.
+   */
+  signInWithEmail: (email: string) => Promise<{ error: string | null; codeSent: boolean }>;
+  /** Finish signing in with the code from that email. */
+  verifySignInCode: (email: string, token: string) => Promise<{ error: string | null }>;
   signInWithPassword: (email: string, password: string) => Promise<{ error: string | null }>;
   requestPasswordReset: (email: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
@@ -219,14 +226,39 @@ export function AuthProvider({ children }: AuthProviderProps) {
     };
   }, []);
 
+  /**
+   * Send a sign-in email.
+   *
+   * ResNeo's own branded email first, because it carries a six-digit code the
+   * app can verify directly. Supabase's default email only offers a link, and
+   * that link has to survive a redirect into a custom scheme, which depends on
+   * an allowlist entry and on the mail client and browser cooperating. When it
+   * does not, it fails silently by landing on the website.
+   *
+   * `codeSent` tells the caller which email is arriving, and therefore whether
+   * to offer the code box. Offering it for an email with no code in it would be
+   * asking for something that does not exist.
+   */
   const signInWithEmail = useCallback(async (email: string) => {
     try {
       const supabase = getSupabase();
       const parsed = signInEmailSchema.safeParse({ email });
       if (!parsed.success) {
-        return { error: parsed.error.issues[0]?.message ?? 'Enter a valid email.' };
+        return { error: parsed.error.issues[0]?.message ?? 'Enter a valid email.', codeSent: false };
       }
 
+      const branded = await sendBrandedMagicLink(parsed.data.email);
+      if (branded.status === 'sent') {
+        return { error: null, codeSent: true };
+      }
+      if (branded.status === 'error') {
+        // A rate limit, which is a real answer. Falling through to Supabase
+        // would send the mail the server just declined to send.
+        return { error: branded.message, codeSent: false };
+      }
+
+      // Fallback: the server could not send its own email. Supabase's is a
+      // worse experience, not a worse outcome, and it is better than no way in.
       const { error } = await supabase.auth.signInWithOtp({
         email: parsed.data.email,
         options: {
@@ -236,13 +268,43 @@ export function AuthProvider({ children }: AuthProviderProps) {
       });
 
       if (error) {
-        return { error: error.message };
+        return { error: error.message, codeSent: false };
       }
 
-      return { error: null };
+      return { error: null, codeSent: false };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not send magic link.';
-      return { error: message };
+      return { error: message, codeSent: false };
+    }
+  }, []);
+
+  /**
+   * Finish signing in with the code from the branded email.
+   *
+   * This is the whole point of the branded route. `verifyOtp` talks straight to
+   * Supabase and returns a session, so nothing here depends on a redirect, a
+   * custom scheme, an allowlist entry, or a mail client being willing to hand
+   * one off. `type: 'email'` is the magic-link OTP, which is what
+   * `generateLink` put in the message.
+   */
+  const verifySignInCode = useCallback(async (email: string, token: string) => {
+    try {
+      const supabase = getSupabase();
+      const { error } = await supabase.auth.verifyOtp({
+        email: email.trim().toLowerCase(),
+        token: token.trim(),
+        type: 'email',
+      });
+      if (error) {
+        return { error: error.message };
+      }
+      // The onAuthStateChange listener above picks the session up and the root
+      // router moves; there is nothing to navigate to from here.
+      return { error: null };
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error.message : 'Could not verify that code.',
+      };
     }
   }, []);
 
@@ -352,6 +414,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       sessionExpired,
       acknowledgeSessionExpiry,
       signInWithEmail,
+      verifySignInCode,
       signInWithPassword,
       requestPasswordReset,
       signOut,
@@ -363,6 +426,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       sessionExpired,
       acknowledgeSessionExpiry,
       signInWithEmail,
+      verifySignInCode,
       signInWithPassword,
       requestPasswordReset,
       signOut,

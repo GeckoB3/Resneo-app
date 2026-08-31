@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/Input';
 import { Screen } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/Text';
 import { ANALYTICS_EVENTS, track } from '@/lib/analytics';
+import { isLikelySignInCode, normaliseSignInCode } from '@/lib/auth/magic-link';
 import { isBackendConfigured } from '@/lib/env';
 import { useAuth } from '@/providers/AuthProvider';
 import { minTouchTarget, spacing } from '@/theme/index';
@@ -39,7 +40,8 @@ function AuthShell({ children }: { children: ReactNode }) {
  * Staff sign-in — password or magic link, matching the web /login (staff default: Password tab).
  */
 export default function SignInScreen() {
-  const { signInWithEmail, signInWithPassword, requestPasswordReset, initError } = useAuth();
+  const { signInWithEmail, verifySignInCode, signInWithPassword, requestPasswordReset, initError } =
+    useAuth();
 
   const [view, setView] = useState<SignInView>('sign-in');
   const [mode, setMode] = useState<SignInMode>('password');
@@ -48,6 +50,13 @@ export default function SignInScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  /*
+    The six digits from the branded email, and whether that email is the one on
+    its way. Supabase's fallback email carries no code, so the box is only
+    offered when there is a code to type.
+  */
+  const [code, setCode] = useState('');
+  const [codeSent, setCodeSent] = useState(false);
 
   async function handlePasswordSignIn() {
     setError(null);
@@ -99,7 +108,28 @@ export default function SignInScreen() {
         track(ANALYTICS_EVENTS.signInFailed, { method: 'magic', reason: result.error });
         return;
       }
+      setCode('');
+      setCodeSent(result.codeSent);
       setView('magic-sent');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleVerifyCode() {
+    setError(null);
+    setLoading(true);
+    try {
+      const result = await verifySignInCode(email, code);
+      if (result.error) {
+        // The server's own words. "Token has expired or is invalid" tells
+        // somebody to request a new one; a generic failure does not.
+        setError(result.error);
+        track(ANALYTICS_EVENTS.signInFailed, { method: 'magic', reason: result.error });
+        return;
+      }
+      // Nothing to navigate to: the session lands and the root router moves.
+      track(ANALYTICS_EVENTS.signInSucceeded, { method: 'magic' });
     } finally {
       setLoading(false);
     }
@@ -147,25 +177,69 @@ export default function SignInScreen() {
             Check your email
           </Text>
           <Text variant="bodySmall" tone="secondary" style={styles.center}>
-            We sent a sign-in link to {email.trim()}. Open it on this device to continue.
+            {codeSent
+              ? `We sent a code to ${email.trim()}. Enter it below to sign in.`
+              : `We sent a sign-in link to ${email.trim()}. Open it on this device to continue.`}
           </Text>
         </View>
 
-        <Card>
-          <Text variant="bodySmall" tone="secondary">
-            The link expires after a short time. If you do not see the email, check spam or try
-            another sign-in method below.
-          </Text>
-        </Card>
+        {codeSent ? (
+          /*
+            Typing the code is the reliable way in, so it leads.
+
+            The link in that email opens the website, and following it back into
+            the app means a redirect into a custom scheme that depends on an
+            allowlist entry and on the mail client and browser handing it off.
+            When that fails it fails silently, on the website, with nothing to
+            show for it. Six digits depend on none of that.
+          */
+          <Card>
+            <Input
+              label="Six-digit code"
+              value={code}
+              onChangeText={(next) => setCode(normaliseSignInCode(next))}
+              keyboardType="number-pad"
+              textContentType="oneTimeCode"
+              autoComplete="one-time-code"
+              autoFocus
+              placeholder="123456"
+              maxLength={6}
+            />
+            <Button
+              label="Sign in"
+              disabled={!isLikelySignInCode(code)}
+              loading={loading}
+              onPress={() => void handleVerifyCode()}
+              style={styles.codeButton}
+            />
+            {error ? (
+              <Text variant="caption" tone="danger" style={styles.codeError}>
+                {error}
+              </Text>
+            ) : null}
+            <Text variant="caption" tone="muted" style={styles.codeError}>
+              The email also has a button, which opens the ResNeo website. The code signs you in
+              here.
+            </Text>
+          </Card>
+        ) : (
+          <Card>
+            <Text variant="bodySmall" tone="secondary">
+              The link expires after a short time. If you do not see the email, check spam or try
+              another sign-in method below.
+            </Text>
+          </Card>
+        )}
 
         <View style={styles.formBlock}>
           <Button
-            label="Send another link"
+            label={codeSent ? 'Send another code' : 'Send another link'}
             variant="secondary"
             onPress={() => {
               setView('sign-in');
               setMode('magic');
               setError(null);
+              setCode('');
             }}
           />
           <Pressable
@@ -329,6 +403,8 @@ export default function SignInScreen() {
 }
 
 const styles = StyleSheet.create({
+  codeButton: { marginTop: spacing.base },
+  codeError: { marginTop: spacing.sm },
   container: {
     flexGrow: 1,
     justifyContent: 'center',
