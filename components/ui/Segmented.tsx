@@ -17,7 +17,13 @@ type SegmentedProps<T extends string> = {
   options: SegmentedOption<T>[];
   value: T;
   onChange: (value: T) => void;
-  /** Let long option labels wrap onto two lines instead of truncating. */
+  /**
+   * Let long option labels wrap onto two lines.
+   *
+   * Use it when a label is genuinely open-ended, such as a venue name. For a
+   * fixed set of words, leave it off: one line that shrinks slightly reads
+   * better than two lines that make the control twice as tall.
+   */
   wrapLabels?: boolean;
 };
 
@@ -108,6 +114,26 @@ export function Segmented<T extends string>({
               variant="label"
               color={isActive ? colors.brand : colors.textSecondary}
               numberOfLines={wrapLabels ? 2 : 1}
+              /*
+                Shrink to fit rather than truncate.
+
+                Segments are `flex: 1`, so each gets an equal quarter of the
+                track however long its word is, and the longest word decides
+                whether anything fits. On a phone that is about 82pt a segment,
+                which "Memberships" does not fit into; it was wrapping to two
+                lines and making the whole control twice as tall.
+
+                The alternative on this path was an ellipsis, and a tab reading
+                "Membership…" is worse than one a point smaller. Only the label
+                that overflows shrinks, and the floor stops it becoming a
+                different-sized control rather than a slightly tighter word.
+
+                Equal widths are also load-bearing: the sliding thumb is
+                positioned from `trackWidth / count`, so sizing segments to
+                their content would leave it under the wrong one.
+              */
+              adjustsFontSizeToFit={!wrapLabels}
+              minimumFontScale={0.85}
               style={styles.segmentLabel}>
               {option.label}
             </Text>

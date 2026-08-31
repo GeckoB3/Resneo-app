@@ -58,7 +58,6 @@ export function LoginDestinationSection() {
           { value: 'dashboard', label: 'Venue dashboard' },
         ]}
         value={value}
-        wrapLabels
         onChange={(next) =>
           update.mutate(
             { default_login_destination: next },

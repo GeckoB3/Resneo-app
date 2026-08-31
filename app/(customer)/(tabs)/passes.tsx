@@ -37,7 +37,6 @@ export default function CustomerPassesScreen() {
         ]}
         value={tab}
         onChange={(v) => setTab(v as Tab)}
-        wrapLabels
       />
       <View style={styles.body}>
         {tab === 'credits' ? <CreditsSection /> : null}
