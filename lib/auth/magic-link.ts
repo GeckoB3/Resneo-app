@@ -103,3 +103,40 @@ export function normaliseSignInCode(value: string): string {
 
 /** How long the field lets somebody type. Not a claim about the real length. */
 export const SIGN_IN_CODE_MAX_LENGTH = MAX_CODE_DIGITS;
+/**
+ * Whether a sign-in failure would tell the caller that an address has no
+ * account.
+ *
+ * Since the app stopped creating accounts from the sign-in box, an unknown
+ * address makes Supabase refuse rather than sign anybody up. Showing that
+ * refusal turns this screen into an account checker: type an address, learn
+ * whether that person has a ResNeo account. The web deliberately avoids exactly
+ * this, which is why `send-magic-link` returns the same `{ fallback: true }`
+ * whether link generation failed or the user simply does not exist.
+ *
+ * MATCHED BROADLY ON PURPOSE. The precise code comes from GoTrue on the server,
+ * not from anything enumerable in `@supabase/auth-js`, so it could not be
+ * verified from this repo and a single guessed string would fail open, leaking
+ * the thing it was written to protect. Several spellings and a status are
+ * checked instead: over-matching costs a person a slightly vaguer message,
+ * under-matching costs everyone the guarantee.
+ */
+export function isAccountEnumerationError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const { code, status, message } = error as {
+    code?: unknown;
+    status?: unknown;
+    message?: unknown;
+  };
+
+  if (typeof code === 'string') {
+    if (['otp_disabled', 'signup_disabled', 'user_not_found', 'email_not_confirmed'].includes(code))
+      return true;
+  }
+  if (typeof message === 'string') {
+    if (/signups?\s+not\s+allowed|user\s+not\s+found|no\s+account/i.test(message)) return true;
+  }
+  // 422 is what GoTrue answers when it will not create the user it was asked
+  // about. On this call there is no other reason to see one.
+  return status === 422;
+}

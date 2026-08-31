@@ -254,6 +254,20 @@ export default function SignInScreen() {
           </Card>
         )}
 
+        {/*
+          The one line that keeps the privacy stance from being a dead end.
+
+          An address with no account is answered exactly like one that has an
+          account, so this screen cannot say "no such account" without undoing
+          that. What it CAN do is name the two reasons nothing arrives, and the
+          second reason is the one nobody guesses: in ResNeo an account comes
+          from booking with a venue, not from typing an address here.
+        */}
+        <Text variant="caption" tone="muted" style={styles.center}>
+          Nothing arriving? Check the address for a typo. Your ResNeo account is created the first
+          time you book with a venue, so if you have never booked there may not be one yet.
+        </Text>
+
         <View style={styles.formBlock}>
           <Button
             label={codeSent ? 'Send another code' : 'Send another link'}

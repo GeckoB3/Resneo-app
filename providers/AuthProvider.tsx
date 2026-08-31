@@ -16,7 +16,7 @@ import { clearLatchedRole } from '@/lib/queries/useRole';
 import { unregisterDevice } from '@/lib/push/registerDevice';
 import { ANALYTICS_EVENTS, identify, resetAnalytics, track } from '@/lib/analytics';
 import { setAccessTokenRefresher, setAuthenticationLostHandler } from '@/lib/api/client';
-import { sendBrandedMagicLink } from '@/lib/auth/magic-link';
+import { isAccountEnumerationError, sendBrandedMagicLink } from '@/lib/auth/magic-link';
 import { getAuthCallbackRedirectUrl } from '@/lib/auth/redirect';
 import { setObservabilityUser } from '@/lib/observability';
 import { setQueryAuthScope } from '@/lib/queries/keys';
@@ -283,6 +283,24 @@ export function AuthProvider({ children }: AuthProviderProps) {
       });
 
       if (error) {
+        /*
+          An unknown address must not be reported as unknown.
+
+          Now that this screen never creates an account, Supabase refuses an
+          address it does not recognise, and passing that refusal on would turn
+          sign-in into an account checker: type an address, learn whether that
+          person has a ResNeo account. So it is answered exactly as a successful
+          send is, which is the same stance `send-magic-link` takes when it
+          returns `{ fallback: true }` for a user that does not exist.
+
+          The screen carries a line about what to do when nothing arrives, so
+          somebody who simply mistyped is not left guessing. That is the honest
+          way to keep this quiet: say nothing about the address, and say plainly
+          what to do next.
+        */
+        if (isAccountEnumerationError(error)) {
+          return { error: null, codeSent: false };
+        }
         return { error: error.message, codeSent: false };
       }
 

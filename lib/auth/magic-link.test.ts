@@ -12,6 +12,7 @@
  * app can verify directly against Supabase with no redirect in the path at all.
  */
 import {
+  isAccountEnumerationError,
   isLikelySignInCode,
   normaliseSignInCode,
   sendBrandedMagicLink,
@@ -151,5 +152,47 @@ describe('the code the email contains, whose LENGTH IS NOT FIXED', () => {
     // A cap stops a pasted paragraph becoming the "code", but it must sit well
     // clear of any length a project might be configured for.
     expect(normaliseSignInCode('1'.repeat(40)).length).toBeGreaterThanOrEqual(10);
+  });
+});
+
+describe('not telling anyone whether an address has an account', () => {
+  /*
+    Since the app stopped creating accounts from the sign-in box, Supabase
+    refuses an address it does not know. Passing that refusal to the screen
+    would turn sign-in into an account checker: type an address, learn whether
+    that person uses ResNeo. The web takes the same care, returning an identical
+    `{ fallback: true }` whether generation failed or the user does not exist.
+  */
+  it('spots the refusal by its code', () => {
+    expect(isAccountEnumerationError({ code: 'otp_disabled', status: 422 })).toBe(true);
+    expect(isAccountEnumerationError({ code: 'user_not_found' })).toBe(true);
+  });
+
+  it('spots it by wording too, since the exact code is the server’s to choose', () => {
+    // The code comes from GoTrue and is not enumerable in @supabase/auth-js, so
+    // a single guessed string would fail OPEN and leak what it exists to hide.
+    expect(isAccountEnumerationError({ message: 'Signups not allowed for otp' })).toBe(true);
+    expect(isAccountEnumerationError({ message: 'User not found' })).toBe(true);
+  });
+
+  it('spots a bare 422, which this call has no other reason to see', () => {
+    expect(isAccountEnumerationError({ status: 422 })).toBe(true);
+  });
+
+  it('does NOT swallow a rate limit, which the person needs to be told', () => {
+    // Over-matching costs a vaguer message; swallowing a 429 costs somebody the
+    // one piece of information that explains the wait.
+    expect(isAccountEnumerationError({ status: 429, message: 'Too many requests' })).toBe(false);
+  });
+
+  it('does NOT swallow a server or network failure', () => {
+    expect(isAccountEnumerationError({ status: 500, message: 'Internal error' })).toBe(false);
+    expect(isAccountEnumerationError({ message: 'Network request failed' })).toBe(false);
+  });
+
+  it('survives rubbish rather than throwing before sign-in can report anything', () => {
+    for (const junk of [null, undefined, 'nope', 7, []]) {
+      expect(isAccountEnumerationError(junk)).toBe(false);
+    }
   });
 });

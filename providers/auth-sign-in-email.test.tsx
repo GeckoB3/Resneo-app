@@ -26,9 +26,10 @@ jest.mock('@/lib/supabase', () => ({
   }),
   isSupabaseConfigured: () => true,
 }));
-jest.mock('@/lib/auth/magic-link', () => ({
-  sendBrandedMagicLink: (...a: unknown[]) => mockSendBranded(...a),
-}));
+jest.mock('@/lib/auth/magic-link', () => {
+  const actual = jest.requireActual('@/lib/auth/magic-link');
+  return { ...actual, sendBrandedMagicLink: (...a: unknown[]) => mockSendBranded(...a) };
+});
 jest.mock('@/lib/push/registerDevice', () => ({
   registerDevice: jest.fn(),
   unregisterDevice: jest.fn(),
@@ -178,5 +179,62 @@ describe('password reset is gone from this app', () => {
     expect(
       (result.current as unknown as Record<string, unknown>).requestPasswordReset,
     ).toBeUndefined();
+  });
+});
+
+describe('an unknown address is answered like any other', () => {
+  /*
+    The app no longer creates an account from this box, so Supabase refuses an
+    address it does not know. Reporting that refusal would turn sign-in into an
+    account checker: type an address, learn whether that person uses ResNeo.
+  */
+  it('reports success, revealing nothing, when the address has no account', async () => {
+    mockSendBranded.mockResolvedValue({ status: 'fallback' });
+    mockSignInWithOtp.mockResolvedValue({
+      error: { message: 'Signups not allowed for otp', status: 422, code: 'otp_disabled' },
+    });
+    const result = await auth();
+    let outcome;
+    await act(async () => {
+      outcome = await result.current.signInWithEmail('nobody@nowhere.com');
+    });
+    expect(outcome).toEqual({ error: null, codeSent: false });
+  });
+
+  it('is INDISTINGUISHABLE from a real send, which is the whole point', async () => {
+    // Any difference in what comes back is the leak, however small.
+    mockSendBranded.mockResolvedValue({ status: 'fallback' });
+    const result = await auth();
+
+    mockSignInWithOtp.mockResolvedValue({ error: null });
+    let real;
+    await act(async () => {
+      real = await result.current.signInWithEmail('real@person.com');
+    });
+
+    mockSignInWithOtp.mockResolvedValue({
+      error: { message: 'Signups not allowed for otp', status: 422, code: 'otp_disabled' },
+    });
+    let unknown;
+    await act(async () => {
+      unknown = await result.current.signInWithEmail('nobody@nowhere.com');
+    });
+
+    expect(unknown).toEqual(real);
+  });
+
+  it('still reports a failure that is NOT about the address existing', async () => {
+    // Silence is for enumeration only. Swallowing a real outage would leave
+    // somebody waiting for mail that never comes, with nothing to act on.
+    mockSendBranded.mockResolvedValue({ status: 'fallback' });
+    mockSignInWithOtp.mockResolvedValue({
+      error: { message: 'Email provider is disabled', status: 500 },
+    });
+    const result = await auth();
+    let outcome;
+    await act(async () => {
+      outcome = await result.current.signInWithEmail('a@b.com');
+    });
+    expect(outcome).toEqual({ error: 'Email provider is disabled', codeSent: false });
   });
 });
