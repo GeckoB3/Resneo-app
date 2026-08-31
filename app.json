@@ -2,7 +2,7 @@
   "expo": {
     "name": "Resneo",
     "slug": "resneo-app",
-    "version": "1.0.7",
+    "version": "1.1.0",
     "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "resneo",
@@ -29,7 +29,7 @@
       }
     },
     "android": {
-      "version": "1.0.7",
+      "version": "1.1.0",
       "package": "com.resneo.app",
       "googleServicesFile": "./google-services.json",
       "softwareKeyboardLayoutMode": "resize",

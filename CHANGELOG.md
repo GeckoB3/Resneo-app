@@ -15,6 +15,34 @@ on the other, and iOS 1.0.4 is the worked example.
 
 ---
 
+## iOS 1.1.0 / Android 1.1.0 — unreleased
+
+The customer side of the app. Until now this was the venue app only: anybody who
+signed in without a staff profile hit a dead end, and the customer portal lived
+on the web.
+
+**Native code changed, which the last few releases did not.** Two modules were
+added, `@stripe/stripe-react-native` and its `react-native-webview` peer, so this
+CANNOT ship as an OTA update on the 1.0.7 runtime. The minor bump is doing real
+work here rather than being cosmetic: the shipped 1.0.7 binaries do not contain
+the Stripe module, and the customer screens import it, so an update published to
+them would fail at require time. Moving to 1.1.0 moves the runtime with it and
+keeps the two apart.
+
+**Staff should notice nothing.** The routing now decides between a staff side and
+a customer side, but a staff profile resolves to the staff side exactly as
+before, and the venue tabs are untouched.
+
+**One fix that was already live in production.** Push registration was gated on
+having a session and nothing else, and the app sent no audience, so somebody who
+signed in without a staff profile was still registered as a STAFF device and
+received a venue's booking alerts, which carry a client's name and service. That
+is fixed here regardless of the customer work.
+
+**Store copy: not yet written.** This entry exists for the preview build.
+
+---
+
 ## iOS 1.0.7 / Android 1.0.7 — 2026-08-25
 
 A re-baselining release. Covers 2026-08-11 → 2026-08-25 on both platforms; the
