@@ -34,6 +34,7 @@ import {
   validateSchedule,
 } from '@/components/services/ServiceCustomAvailabilityEditor';
 import { BookingIntervalEditor } from '@/components/manage/BookingIntervalEditor';
+import { ServiceCategoriesManager } from '@/components/manage/ServiceCategoriesManager';
 import { ComplianceRequirementsEditor } from '@/components/compliance/ComplianceRequirementsEditor';
 import {
   StaffServiceOverrideSheet,
@@ -58,6 +59,11 @@ import { Sheet } from '@/components/ui/Sheet';
 import { ListSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import {
+  compareByCategoryThenServiceOrder,
+  serviceCategoryLookup,
+  UNCATEGORISED_GROUP_LABEL,
+} from '@/lib/booking/service-categories';
 import {
   DEFAULT_BOOKING_INTERVAL_MINUTES,
   bookingStartFingerprint,
@@ -102,7 +108,7 @@ type EditTarget = {
   practitionerIds: string[];
 };
 
-type ActiveTab = 'services' | 'addons';
+type ActiveTab = 'services' | 'categories' | 'addons';
 
 /** Web service colour presets (`APPOINTMENT_SERVICE_COLOUR_OPTIONS`). */
 const COLOUR_OPTIONS = [
@@ -681,6 +687,8 @@ export default function ServicesScreen() {
   const [deposit, setDeposit] = useState('');
   const [paymentReq, setPaymentReq] = useState<ServicePaymentRequirement>('none');
   const [colour, setColour] = useState(COLOUR_OPTIONS[0]!);
+  // Category heading on the booking pages (admin-only; null = none).
+  const [categoryId, setCategoryId] = useState<string | null>(null);
   const [advanceDays, setAdvanceDays] = useState('90');
   const [noticeHours, setNoticeHours] = useState('1');
   const [cancelHours, setCancelHours] = useState('48');
@@ -734,13 +742,40 @@ export default function ServicesScreen() {
     .filter((p) => p.is_active)
     .sort((a, b) => a.sort_order - b.sort_order);
 
+  // The venue's category headings (web 2026-09-02; absent on the legacy path).
+  const categories = useMemo(() => query.data?.categories ?? [], [query.data?.categories]);
+  const categoryFor = useMemo(() => serviceCategoryLookup(categories), [categories]);
+
+  // Booking-page order: category position, then the venue's drag order, then
+  // name — the same comparator the public page and the staff picker use, so this
+  // list, the picker and the customer see one order.
   const services = useMemo(
     () =>
-      [...(query.data?.services ?? [])].sort(
-        (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.name.localeCompare(b.name),
+      [...(query.data?.services ?? [])].sort((a, b) =>
+        compareByCategoryThenServiceOrder(
+          { name: a.name, sort_order: a.sort_order, category: categoryFor(a.category_id) },
+          { name: b.name, sort_order: b.sort_order, category: categoryFor(b.category_id) },
+        ),
       ),
-    [query.data?.services],
+    [query.data?.services, categoryFor],
   );
+  const hasCategories = categories.length > 0;
+  /** The heading a service sits under in this list (null = none / flat list). */
+  const headingFor = useCallback(
+    (service: ManagedService): string | null => {
+      if (!hasCategories) return null;
+      return categoryFor(service.category_id)?.name ?? UNCATEGORISED_GROUP_LABEL;
+    },
+    [hasCategories, categoryFor],
+  );
+  const serviceCountByCategory = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const s of query.data?.services ?? []) {
+      if (s.category_id) counts.set(s.category_id, (counts.get(s.category_id) ?? 0) + 1);
+    }
+    return counts;
+  }, [query.data?.services]);
+  const uncategorisedCount = (query.data?.services ?? []).filter((s) => !s.category_id).length;
 
   /** Expand a service and scroll its row into view (web parity with `?service=`). */
   const focusService = useCallback(
@@ -884,6 +919,7 @@ export default function ServicesScreen() {
     setDeposit(penceToPoundsInput(service.deposit_pence));
     setPaymentReq(service.payment_requirement ?? 'none');
     setColour(service.colour ?? COLOUR_OPTIONS[0]!);
+    setCategoryId(service.category_id ?? null);
     setAdvanceDays(String(service.max_advance_booking_days ?? 90));
     setNoticeHours(String(service.min_booking_notice_hours ?? 1));
     setCancelHours(String(service.cancellation_notice_hours ?? 48));
@@ -960,6 +996,7 @@ export default function ServicesScreen() {
     // an admin, only the staff member's managed calendars otherwise (web parity).
     setPractitionerIds(calendarsForServiceForm.map((p) => p.id));
     setIsActive(true);
+    setCategoryId(null);
     setStaffMay(DEFAULT_STAFF_MAY);
     setLocationType('business_venue');
     setMeetingUrl('');
@@ -1146,6 +1183,9 @@ export default function ServicesScreen() {
       allow_same_day_booking: sameDay,
       // Admin-only: staff permission flags (always sent when admin to allow clearing them)
       ...(isAdmin ? {
+        // Category heading; null clears it. Sent with every admin save so
+        // "None" persists (the API treats an omitted key as untouched).
+        category_id: categoryId,
         staff_may_customize_name: staffMay.name,
         staff_may_customize_description: staffMay.description,
         staff_may_customize_duration: staffMay.duration,
@@ -1338,6 +1378,9 @@ export default function ServicesScreen() {
       const from = ids.indexOf(serviceId);
       const to = from + direction;
       if (from < 0 || to < 0 || to >= ids.length) return;
+      // Within a heading only: the category decides the coarse order, so a swap
+      // across the boundary would save a new sort_order and move nothing on screen.
+      if (headingFor(services[from]!) !== headingFor(services[to]!)) return;
       const next = [...ids];
       next.splice(from, 1);
       next.splice(to, 0, serviceId);
@@ -1346,11 +1389,11 @@ export default function ServicesScreen() {
           toast.error(e instanceof ApiError ? e.message : 'Could not save the new order.'),
       });
     },
-    [services, reorderServices, toast],
+    [services, reorderServices, toast, headingFor],
   );
 
   const renderServiceItem = useCallback<ListRenderItem<ManagedService>>(
-    ({ item }) => {
+    ({ item, index }) => {
       const isExpanded = expandedId === item.id;
       // Per-row self-service data is only needed for the expanded, non-admin row;
       // computing it lazily keeps collapsed rows cheap.
@@ -1358,8 +1401,25 @@ export default function ServicesScreen() {
       const canOverride =
         !isAdmin && isExpanded && staffMayCustomizeAny(item) && staffOffersService(item.id);
       const orderIndex = isAdmin && isExpanded ? services.findIndex((s) => s.id === item.id) : -1;
+      // Category headings, drawn above the first service of each group. The list
+      // stays one flat array so scrollToIndex / focusService keep their indices.
+      const heading = headingFor(item);
+      const previous = index > 0 ? services[index - 1] : null;
+      const showHeading = heading !== null && (previous === null || headingFor(previous) !== heading);
+      const canMoveUp =
+        orderIndex > 0 && headingFor(services[orderIndex - 1]!) === heading;
+      const canMoveDown =
+        orderIndex >= 0 &&
+        orderIndex < services.length - 1 &&
+        headingFor(services[orderIndex + 1]!) === heading;
       return (
-        <ServiceRow
+        <>
+          {showHeading ? (
+            <Text variant="overline" tone="muted" style={styles.groupHeading}>
+              {heading}
+            </Text>
+          ) : null}
+          <ServiceRow
           service={item}
           expanded={isExpanded}
           isAdmin={isAdmin}
@@ -1372,17 +1432,15 @@ export default function ServicesScreen() {
           onDelete={handleDeleteService}
           onToggleCalendar={handleToggleCalendar}
           onOverride={handleOpenOverride}
-          onMoveUp={orderIndex > 0 ? () => handleMoveService(item.id, -1) : null}
-          onMoveDown={
-            orderIndex >= 0 && orderIndex < services.length - 1
-              ? () => handleMoveService(item.id, 1)
-              : null
-          }
+          onMoveUp={canMoveUp ? () => handleMoveService(item.id, -1) : null}
+          onMoveDown={canMoveDown ? () => handleMoveService(item.id, 1) : null}
           reorderPending={reorderServices.isPending}
         />
+        </>
       );
     },
     [
+      headingFor,
       expandedId,
       isAdmin,
       canManageService,
@@ -1441,7 +1499,7 @@ export default function ServicesScreen() {
 
       {/* Tab bar */}
       <View style={[styles.tabBar, { borderBottomColor: colors.border }]}>
-        {(['services', 'addons'] as ActiveTab[]).map((tab) => {
+        {(['services', 'categories', 'addons'] as ActiveTab[]).map((tab) => {
           const active = activeTab === tab;
           return (
             <Pressable
@@ -1453,7 +1511,7 @@ export default function ServicesScreen() {
               <Text
                 variant="label"
                 color={active ? colors.brand : colors.textSecondary}>
-                {tab === 'services' ? 'Services' : 'Add-ons'}
+                {tab === 'services' ? 'Services' : tab === 'categories' ? 'Categories' : 'Add-ons'}
               </Text>
               {active ? (
                 <View style={[styles.tabUnderline, { backgroundColor: colors.brand }]} />
@@ -1530,6 +1588,22 @@ export default function ServicesScreen() {
             windowSize={11}
             removeClippedSubviews={Platform.OS === 'android'}
           />
+        )
+      ) : null}
+
+      {/* ---- Categories tab ---- */}
+      {activeTab === 'categories' ? (
+        query.isLoading ? (
+          <ListSkeleton />
+        ) : (
+          <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+            <ServiceCategoriesManager
+              categories={categories}
+              serviceCountByCategory={serviceCountByCategory}
+              uncategorisedCount={uncategorisedCount}
+              isAdmin={isAdmin}
+            />
+          </ScrollView>
         )
       ) : null}
 
@@ -1828,6 +1902,49 @@ export default function ServicesScreen() {
               })}
             </View>
 
+            {/* Category — admin only (the non-admin PATCH path is field-restricted).
+                "None" lists the service last under "Other services" once the venue
+                has categories; a venue with none renders one flat list. */}
+            {isAdmin ? (
+              <>
+                <Text variant="overline" tone="muted">Category</Text>
+                {hasCategories ? (
+                  <View style={styles.calendarWrap}>
+                    {[{ id: null as string | null, name: 'None' }, ...categories].map((option) => {
+                      const selected = categoryId === option.id;
+                      return (
+                        <Pressable
+                          key={option.id ?? 'none'}
+                          accessibilityRole="radio"
+                          accessibilityState={{ selected }}
+                          onPress={() => setCategoryId(option.id)}
+                          style={({ pressed }) => [
+                            styles.calendarChip,
+                            {
+                              backgroundColor: selected ? colors.brand : colors.surface,
+                              borderColor: selected ? colors.brand : colors.border,
+                              opacity: pressed ? 0.75 : 1,
+                            },
+                          ]}>
+                          <Text
+                            variant="label"
+                            color={selected ? colors.onBrand : colors.textSecondary}
+                            numberOfLines={1}>
+                            {option.name}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                ) : (
+                  <Text variant="caption" tone="muted">
+                    No categories yet. Add headings on the Categories tab to group services on the
+                    booking page.
+                  </Text>
+                )}
+              </>
+            ) : null}
+
             {/* Offered by — admins pick from the full roster; a non-admin may
                 only toggle calendars they manage. Links the service already has
                 on other calendars stay in `practitionerIds` (seeded on open) and
@@ -2125,6 +2242,10 @@ const styles = StyleSheet.create({
   stateWrap: {
     flex: 1,
     padding: spacing.base,
+  },
+  groupHeading: {
+    marginTop: spacing.sm,
+    marginBottom: spacing.xs,
   },
   serviceCard: {
     overflow: 'hidden',

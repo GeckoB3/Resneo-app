@@ -1,4 +1,5 @@
 import { ApiError } from '@/lib/api/client';
+import { resolveServicesLayout, type ServicesLayout } from '@/lib/booking/service-categories';
 import { useLinkedVenueProfile } from '@/lib/queries/useLinkedCalendar';
 import { useLinkedVenueContext } from '@/providers/LinkedVenueProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
@@ -36,6 +37,8 @@ export interface BookingFormVenue {
   staffFirstEnabled: boolean;
   /** True when scoping to a linked owner venue rather than the own venue. */
   isLinked: boolean;
+  /** How the service picker lists services once the venue has categories (`booking_page_config.services_layout`). */
+  servicesLayout: ServicesLayout;
   ownerVenueId: string | null;
   /** Linked profile still loading (own venue is never loading here). */
   isLoading: boolean;
@@ -68,6 +71,7 @@ export function useBookingFormVenue(): BookingFormVenue {
       anyAvailableEnabled: Boolean(featureFlags?.resolved?.any_available_practitioner),
       staffFirstEnabled: Boolean(featureFlags?.resolved?.staff_first_booking_flow),
       isLinked: false,
+      servicesLayout: resolveServicesLayout(venue?.booking_page_config),
       ownerVenueId: null,
       isLoading: venueLoading,
       isForbidden: false,
@@ -106,6 +110,9 @@ export function useBookingFormVenue(): BookingFormVenue {
     // order our own staff already know.
     staffFirstEnabled: false,
     isLinked: true,
+    servicesLayout: resolveServicesLayout(
+      profileVenue.booking_page_config as { services_layout?: unknown } | null | undefined,
+    ),
     ownerVenueId,
     isLoading: profile.isLoading,
     isForbidden,

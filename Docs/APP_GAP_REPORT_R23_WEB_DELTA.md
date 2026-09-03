@@ -37,7 +37,7 @@ Six strands in this range:
 Plus marketing/homepage work, onboarding link fixes, E2E/CI fixes and a Collective RLS
 recursion fix — none of which reach the app.
 
-**Verdict (R23-1 and R23-2 built 2026-09-03, the rest open): seven gaps — two of them live behaviour regressions the app inherits the moment a
+**Verdict (R23-1, R23-2 and R23-3 built 2026-09-03, the rest open): seven gaps — two of them live behaviour regressions the app inherits the moment a
 venue uses the new web features (R23-1, R23-2), three feature gaps (R23-3, R23-4, R23-5) and
 two small ones (R23-6, R23-7). Nothing in the range breaks an endpoint the app calls.** The
 auth work is already matched by the app's own 2026-08-31 commits; the deleted public compliance
@@ -195,6 +195,21 @@ periods are not.
 
 **Severity: MEDIUM (feature).** Additive on the wire; the app lists flat and cannot manage
 headings.
+
+**BUILT 2026-09-03 (steps 1–3).** `lib/booking/service-categories.ts` ports web's pure helpers
+(ordering, grouping, search, `resolveServicesLayout`) with web's tests. The staff picker
+(`ServicePickerStep`) dedupes into booking-page order — category position, then the venue's
+drag order, then name — and renders headings in `sections` mode or collapsible categories in
+`accordion` mode (all closed on arrival except the one holding the chosen service), with the
+search box from six services showing matches flat under their category name; the layout comes
+from `useBookingFormVenue().servicesLayout`. The Services screen gained a **Categories** tab
+(`ServiceCategoriesManager`: add / rename inline / move / delete with the web's confirm copy,
+read-only for non-admins, over `lib/queries/useServiceCategories.ts`), lists services under
+their headings in the same order (move up/down stays within a heading), and the admin form has
+a Category chip row that sends `category_id` (null = None). The booking-page editor shows
+"How services are listed" (Sections / Collapsible → `services_layout`) once the venue has
+categories. Not built: collective catalogue categories (step 4 — the host manages those on the
+web).
 
 ### What web changed
 

@@ -12,6 +12,8 @@
  * @see _reference/Resneo/src/lib/booking/booking-page-font-presets.ts
  */
 
+import type { ServicesLayout } from '@/lib/booking/service-categories';
+
 // ---------------------------------------------------------------------------
 // Social links
 // ---------------------------------------------------------------------------
@@ -127,6 +129,12 @@ export interface BookingPageConfig {
   show_team_tab?: boolean;
   /** When true, show the About tab on the public booking page (off by default for new venues). */
   show_about_tab?: boolean;
+  /**
+   * How services are listed once the venue has categories: headed sections with a
+   * category menu (default, stored as absent) or collapsible categories. See
+   * `lib/booking/service-categories`.
+   */
+  services_layout?: ServicesLayout;
   /** Public photo gallery — ordered list of image URLs (≤ {@link BOOKING_GALLERY_MAX}). */
   gallery?: string[] | null;
   /** Per-member "Meet the team" profiles, keyed by member id. */

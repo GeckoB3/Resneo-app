@@ -3,6 +3,7 @@
  * @see _reference/reserve-ni/src/lib/availability/appointment-catalog.ts
  */
 
+import type { ServiceCategoryRef } from '@/lib/booking/service-categories';
 import type { ProcessingTimeBlock, ServiceLocationType } from '@/types/services-manage';
 
 export interface AppointmentCatalogVariant {
@@ -68,6 +69,10 @@ export interface AppointmentCatalogService {
   allow_same_day_booking?: boolean;
   /** Where the service is delivered; 'client_address' makes the guest step collect an address. */
   location_type?: ServiceLocationType;
+  /** Venue-chosen display order (lower first); the picker sorts by this, then name. */
+  sort_order?: number;
+  /** Category heading the venue lists this service under; null or absent when uncategorised. */
+  category?: ServiceCategoryRef | null;
   variants?: AppointmentCatalogVariant[];
   addon_groups?: AppointmentCatalogAddonGroup[];
   /**
@@ -86,6 +91,12 @@ export interface AppointmentCatalogPractitioner {
 
 export interface AppointmentCatalogResponse {
   practitioners: AppointmentCatalogPractitioner[];
+  /**
+   * Every category the venue has, in booking-page order, including empty ones
+   * (web 2026-09-02, additive). Absent on the legacy path; a venue with no
+   * categories returns `[]`.
+   */
+  categories?: ServiceCategoryRef[];
 }
 
 /** Sentinel practitioner id for "any available" pooling — matches the web constant. */
@@ -112,4 +123,10 @@ export interface AppointmentServiceOption {
   locationType?: ServiceLocationType;
   /** Real practitioner ids backing an "any available" row (slots are merged client-side). */
   candidatePractitionerIds?: string[];
+  /** Catalogue description, searched by the picker alongside the name and category. */
+  description?: string | null;
+  /** Venue drag order, so the grouped picker keeps it. */
+  sortOrder?: number;
+  /** Category heading on the booking pages; null when uncategorised. */
+  category?: ServiceCategoryRef | null;
 }

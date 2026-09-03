@@ -23,6 +23,7 @@ import { Text } from '@/components/ui/Text';
 import { ANALYTICS_EVENTS, track } from '@/lib/analytics';
 import { ApiError } from '@/lib/api/client';
 import { addMinutesToTime } from '@/lib/booking/booking-format';
+import type { ServicesLayout } from '@/lib/booking/service-categories';
 import {
   multiServiceSegmentCharge,
   resolveVisitCardHoldTotal,
@@ -94,6 +95,8 @@ type GroupBookingFlowProps = {
   venueId: string;
   timeZone: string;
   anyAvailableEnabled: boolean;
+  /** The venue's `services_layout`, for the service picker's category headings. */
+  servicesLayout?: ServicesLayout;
   ownerVenueId?: string | null;
   /** 'phone' | 'walk-in' — the group create posts this source. */
   source: 'phone' | 'walk-in';
@@ -116,6 +119,7 @@ export function GroupBookingFlow({
   venueId,
   timeZone,
   anyAvailableEnabled,
+  servicesLayout = 'sections',
   ownerVenueId,
   source,
   onCreated,
@@ -625,6 +629,7 @@ export function GroupBookingFlow({
         <WizardStepIndicator currentStep={stepIndex} labels={STEP_LABELS} />
         <ServicePickerStep
           catalog={catalog}
+          layout={servicesLayout}
           isLoading={false}
           isError={false}
           selectedServiceId={draftService?.serviceId ?? null}

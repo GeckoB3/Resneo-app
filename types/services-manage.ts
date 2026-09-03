@@ -1,3 +1,4 @@
+import type { ServiceCategoryRef } from '@/lib/booking/service-categories';
 import type {
   AppointmentCatalogAddonGroup,
   AppointmentCatalogVariant,
@@ -73,6 +74,8 @@ export interface ManagedService {
   colour?: string | null;
   is_active?: boolean;
   sort_order?: number;
+  /** Category heading on the booking pages; null or absent when uncategorised. */
+  category_id?: string | null;
   max_advance_booking_days?: number | null;
   min_booking_notice_hours?: number | null;
   cancellation_notice_hours?: number | null;
@@ -135,6 +138,8 @@ export interface PractitionerServiceLink {
 export interface ManagedServicesResponse {
   services: ManagedService[];
   practitioner_services?: PractitionerServiceLink[];
+  /** The venue's category headings in booking-page order (web 2026-09-02; absent on the legacy path). */
+  categories?: ServiceCategoryRef[];
 }
 
 /**
@@ -163,6 +168,8 @@ export interface UpdateServiceInput {
   payment_requirement?: ServicePaymentRequirement;
   colour?: string;
   is_active?: boolean;
+  /** Category heading on the booking pages; `null` clears it. Must be one of the venue's. */
+  category_id?: string | null;
   max_advance_booking_days?: number;
   min_booking_notice_hours?: number;
   cancellation_notice_hours?: number;
@@ -207,6 +214,8 @@ export interface CreateServiceInput {
   payment_requirement?: ServicePaymentRequirement;
   colour?: string;
   is_active?: boolean;
+  /** Category heading on the booking pages; omitted or `null` means none. */
+  category_id?: string | null;
   max_advance_booking_days?: number;
   min_booking_notice_hours?: number;
   cancellation_notice_hours?: number;

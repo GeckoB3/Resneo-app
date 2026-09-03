@@ -23,6 +23,7 @@ import { SectionHeader } from '@/components/ui/SectionHeader';
 import { Segmented } from '@/components/ui/Segmented';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import { resolveServicesLayout, type ServicesLayout } from '@/lib/booking/service-categories';
 import {
   BOOKING_ABOUT_MAX,
   BOOKING_ANNOUNCEMENT_MAX,
@@ -46,6 +47,7 @@ import {
 import { getWebUrl } from '@/lib/env';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useUpdateBookingPageConfig } from '@/lib/queries/useBookingPage';
+import { useManagedServices } from '@/lib/queries/useServicesManage';
 import { useSlugAvailable } from '@/lib/queries/useSlugAvailable';
 import {
   pickVenueImage,
@@ -82,6 +84,7 @@ function assembleConfig(raw: {
   showServices: boolean;
   showTeam: boolean;
   showAbout: boolean;
+  servicesLayout: ServicesLayout;
   coverFullWidth: boolean;
   logoCrop: BookingPageImageFraming | null;
   coverCropBox: BookingPageCoverCropBox | null;
@@ -103,6 +106,9 @@ function assembleConfig(raw: {
     show_services_tab: raw.showServices,
     show_team_tab: raw.showTeam,
     show_about_tab: raw.showAbout,
+    // Meaningful only once the venue has categories; the server stores the
+    // non-default value and drops 'sections', so this round-trips as absent.
+    services_layout: raw.servicesLayout,
     cover_full_width: raw.coverFullWidth,
     logo_crop: raw.logoCrop,
     cover_crop_box: raw.coverCropBox,
@@ -125,6 +131,7 @@ function configJsonFromStored(cfg: BookingPageConfig): string {
       showServices: cfg.show_services_tab === true,
       showTeam: cfg.show_team_tab === true,
       showAbout: cfg.show_about_tab === true,
+      servicesLayout: resolveServicesLayout(cfg),
       coverFullWidth: cfg.cover_full_width === true,
       logoCrop: cfg.logo_crop ?? null,
       coverCropBox: cfg.cover_crop_box ?? null,
@@ -143,6 +150,8 @@ function configJsonFromStored(cfg: BookingPageConfig): string {
 export default function BookingPageScreen() {
   const { colors } = useTheme();
   const toast = useToast();
+  // The layout control only means something once the venue has categories.
+  const venueHasCategories = (useManagedServices().data?.categories?.length ?? 0) > 0;
   const router = useRouter();
   const { venue, isLoading } = useVenueContext();
   const isAdmin = venue?.current_user_role === 'admin';
@@ -169,6 +178,7 @@ export default function BookingPageScreen() {
   const [showServices, setShowServices] = useState(false);
   const [showTeam, setShowTeam] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
+  const [servicesLayout, setServicesLayout] = useState<ServicesLayout>('sections');
   const [coverFullWidth, setCoverFullWidth] = useState(false);
   const [logoCrop, setLogoCrop] = useState<BookingPageImageFraming | null>(null);
   const [coverCropBox, setCoverCropBox] = useState<BookingPageCoverCropBox | null>(null);
@@ -214,6 +224,7 @@ export default function BookingPageScreen() {
     setShowServices(cfg.show_services_tab === true);
     setShowTeam(cfg.show_team_tab === true);
     setShowAbout(cfg.show_about_tab === true);
+    setServicesLayout(resolveServicesLayout(cfg));
     setCoverFullWidth(cfg.cover_full_width === true);
     setLogoCrop(cfg.logo_crop ?? null);
     setCoverCropBox(cfg.cover_crop_box ?? null);
@@ -243,10 +254,10 @@ export default function BookingPageScreen() {
       assembleConfig({
         primary, accent, fontPreset, announcement, about,
         instagram, facebook, tiktok, x,
-        showServices, showTeam, showAbout, coverFullWidth, logoCrop, coverCropBox,
+        showServices, showTeam, showAbout, servicesLayout, coverFullWidth, logoCrop, coverCropBox,
       }),
     [primary, accent, fontPreset, announcement, about, instagram, facebook, tiktok, x,
-      showServices, showTeam, showAbout, coverFullWidth, logoCrop, coverCropBox],
+      showServices, showTeam, showAbout, servicesLayout, coverFullWidth, logoCrop, coverCropBox],
   );
   const editorConfigJson = useMemo(() => JSON.stringify(editorConfig), [editorConfig]);
 
@@ -780,6 +791,26 @@ export default function BookingPageScreen() {
             onPress={() => setOpenSheet('service')}
           />
         ) : null}
+        {/* How services are listed — only once the venue has categories; a
+            venue with none renders one flat list whatever this says (web parity). */}
+        {venueHasCategories ? (
+          <View style={styles.layoutBlock}>
+            <Text variant="bodyMedium">How services are listed</Text>
+            <Segmented
+              options={[
+                { value: 'sections', label: 'Sections' },
+                { value: 'accordion', label: 'Collapsible' },
+              ]}
+              value={servicesLayout}
+              onChange={(next) => setServicesLayout(next)}
+            />
+            <Text variant="caption" tone="muted">
+              {servicesLayout === 'sections'
+                ? 'Every category as a headed section, with a menu that jumps between them.'
+                : 'Categories start closed; customers open the ones they want.'}
+            </Text>
+          </View>
+        ) : null}
 
         <View style={[styles.divider, { backgroundColor: colors.border }]} />
         <SwitchRow label="Meet the team tab" value={showTeam} onValueChange={handleToggleTeam} />
@@ -1139,6 +1170,10 @@ const styles = StyleSheet.create({
   multiline: {
     minHeight: 88,
     textAlignVertical: 'top',
+  },
+  layoutBlock: {
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
   },
   switchRow: {
     flexDirection: 'row',

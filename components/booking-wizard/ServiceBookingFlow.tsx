@@ -101,7 +101,7 @@ type ServiceBookingFlowProps = {
  */
 export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
   const router = useRouter();
-  const { venueId, timeZone, anyAvailableEnabled, staffFirstEnabled, isLinked } =
+  const { venueId, timeZone, anyAvailableEnabled, staffFirstEnabled, isLinked, servicesLayout } =
     useBookingFormVenue();
   const { ownerVenueId } = useLinkedVenueContext();
   const {
@@ -774,6 +774,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
         venueId={venueId}
         timeZone={timeZone}
         anyAvailableEnabled={anyAvailableEnabled}
+        servicesLayout={servicesLayout}
         ownerVenueId={ownerVenueId}
         source={source}
         onCreated={(bookingId) => onCreated(bookingId)}
@@ -826,6 +827,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
         <>
           <ServicePickerStep
           catalog={catalogQuery.data}
+          layout={servicesLayout}
           defaultPractitionerId={serviceScopePractitionerId}
           errorMessage={
             catalogQuery.error instanceof ApiError
