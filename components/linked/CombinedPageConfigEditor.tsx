@@ -40,7 +40,7 @@ import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { CombinedBookingPageConfig, CollectiveView } from '@/types/collectives';
 
-/** Quick-pick colour swatches for the brand/accent hex inputs (matches the venue editor). */
+/** Quick-pick colour swatches for the brand hex input (matches the venue editor). */
 const COLOUR_SWATCHES = [
   '#003b6f', '#0e7490', '#14532d', '#6b21a8', '#9f1239',
   '#1f2937', '#b45309', '#0f766e', '#4338ca', '#be123c',
@@ -58,7 +58,6 @@ type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
  */
 function assembleConfig(raw: {
   primary: string;
-  accent: string;
   fontPreset: BookingFontPreset | null;
   announcement: string;
   about: string;
@@ -75,7 +74,6 @@ function assembleConfig(raw: {
 }): CombinedBookingPageConfig {
   return {
     brand_primary: normalizeHexColor(raw.primary),
-    brand_accent: normalizeHexColor(raw.accent),
     font_preset: raw.fontPreset && raw.fontPreset !== 'default' ? raw.fontPreset : null,
     announcement: raw.announcement.trim() || null,
     about: raw.about.trim() || null,
@@ -139,7 +137,6 @@ export function CombinedPageConfigEditor({
 
   // Config form state.
   const [primary, setPrimary] = useState(cfg.brand_primary ?? '');
-  const [accent, setAccent] = useState(cfg.brand_accent ?? '');
   const [fontPreset, setFontPreset] = useState<BookingFontPreset | null>(
     isBookingFontPreset(cfg.font_preset) ? cfg.font_preset : 'default',
   );
@@ -175,7 +172,6 @@ export function CombinedPageConfigEditor({
     // eslint-disable-next-line react-hooks/set-state-in-effect -- seed local form state on entity switch
     setName(collective.name);
     setPrimary(c.brand_primary ?? '');
-    setAccent(c.brand_accent ?? '');
     setFontPreset(isBookingFontPreset(c.font_preset) ? c.font_preset : 'default');
     setAnnouncement(c.announcement ?? '');
     setAbout(c.about ?? '');
@@ -196,7 +192,6 @@ export function CombinedPageConfigEditor({
     lastSavedJsonRef.current = JSON.stringify(
       assembleConfig({
         primary: c.brand_primary ?? '',
-        accent: c.brand_accent ?? '',
         fontPreset: isBookingFontPreset(c.font_preset) ? c.font_preset : null,
         announcement: c.announcement ?? '',
         about: c.about ?? '',
@@ -216,19 +211,17 @@ export function CombinedPageConfigEditor({
   }, [collective.id]);
 
   const normalizedPrimary = useMemo(() => normalizeHexColor(primary), [primary]);
-  const normalizedAccent = useMemo(() => normalizeHexColor(accent), [accent]);
   const lowContrast = normalizedPrimary ? primaryNeedsDarkText(normalizedPrimary) : false;
-  const colourError =
-    (primary.trim() !== '' && !normalizedPrimary) || (accent.trim() !== '' && !normalizedAccent);
+  const colourError = primary.trim() !== '' && !normalizedPrimary;
 
   const editorConfig = useMemo(
     () =>
       assembleConfig({
-        primary, accent, fontPreset, announcement, about,
+        primary, fontPreset, announcement, about,
         instagram, facebook, tiktok, x, showServices, showTeam, showAbout, coverFullWidth,
         logoCrop, coverCropBox,
       }),
-    [primary, accent, fontPreset, announcement, about, instagram, facebook, tiktok, x,
+    [primary, fontPreset, announcement, about, instagram, facebook, tiktok, x,
       showServices, showTeam, showAbout, coverFullWidth, logoCrop, coverCropBox],
   );
   const editorConfigJson = useMemo(() => JSON.stringify(editorConfig), [editorConfig]);
@@ -255,9 +248,8 @@ export function CombinedPageConfigEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editorConfigJson, colourError]);
 
-  const applyPalette = (p: string, a: string) => {
+  const applyPalette = (p: string) => {
     setPrimary(p);
-    setAccent(a);
   };
 
   const commitName = () => {
@@ -371,7 +363,6 @@ export function CombinedPageConfigEditor({
         coverCropBox={editorConfig.cover_crop_box ?? null}
         logoCrop={editorConfig.logo_crop ?? null}
         primary={normalizedPrimary || null}
-        accent={normalizedAccent || null}
         fontPreset={fontPreset}
         announcement={announcement}
       />
@@ -455,15 +446,14 @@ export function CombinedPageConfigEditor({
         </Text>
         <View style={styles.paletteRow}>
           {BOOKING_THEME_PRESETS.map((preset) => {
-            const selected =
-              normalizedPrimary === preset.primary && normalizedAccent === preset.accent;
+            const selected = normalizedPrimary === preset.primary;
             return (
               <Pressable
                 key={preset.key}
                 accessibilityRole="button"
                 accessibilityLabel={`${preset.label} palette`}
                 accessibilityState={{ selected }}
-                onPress={() => applyPalette(preset.primary, preset.accent)}
+                onPress={() => applyPalette(preset.primary)}
                 style={({ pressed }) => [
                   styles.palette,
                   {
@@ -473,7 +463,6 @@ export function CombinedPageConfigEditor({
                   },
                 ]}>
                 <View style={[styles.paletteSwatch, { backgroundColor: preset.primary }]} />
-                <View style={[styles.paletteSwatch, { backgroundColor: preset.accent }]} />
               </Pressable>
             );
           })}
@@ -491,13 +480,6 @@ export function CombinedPageConfigEditor({
             This colour is light — white button text may be hard to read on the booking page.
           </Text>
         ) : null}
-        <ColourField
-          label="Accent colour"
-          value={accent}
-          preview={normalizedAccent}
-          onChange={setAccent}
-          onReset={() => setAccent('')}
-        />
         <View style={styles.swatchRow}>
           {COLOUR_SWATCHES.map((hex) => (
             <Pressable

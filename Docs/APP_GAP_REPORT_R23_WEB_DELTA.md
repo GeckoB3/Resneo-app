@@ -37,7 +37,7 @@ Six strands in this range:
 Plus marketing/homepage work, onboarding link fixes, E2E/CI fixes and a Collective RLS
 recursion fix — none of which reach the app.
 
-**Verdict (R23-1, R23-2, R23-3 and R23-5 built 2026-09-03; R23-4, R23-6, R23-7 open): seven gaps — two of them live behaviour regressions the app inherits the moment a
+**Verdict (R23-1, R23-2, R23-3, R23-5, R23-6 and R23-7 built 2026-09-03; R23-4 open): seven gaps — two of them live behaviour regressions the app inherits the moment a
 venue uses the new web features (R23-1, R23-2), three feature gaps (R23-3, R23-4, R23-5) and
 two small ones (R23-6, R23-7). Nothing in the range breaks an endpoint the app calls.** The
 auth work is already matched by the app's own 2026-08-31 commits; the deleted public compliance
@@ -343,6 +343,13 @@ read-only inside each service's card; counts pill reads "N required · +M for al
 
 **Severity: LOW.**
 
+**BUILT 2026-09-03.** `brand_accent` removed from `BookingPageConfig`, `CombinedBookingPageConfig`,
+both editors (input, second palette swatch, preview prop) and `BOOKING_THEME_PRESETS`; the preview's
+accent is the brand primary, as on the web page. "Use my brand colour in customer emails"
+(`brand_emails`) added under the brand colour on the venue editor only, disabled with "Choose a brand
+colour first." until a valid primary exists, with web's helper copy and the light-colour note.
+`services_layout` landed with R23-3.
+
 - `brand_accent` is **dead**: web's `sanitizeBookingPageConfig` no longer keeps it, the venue
   route schema dropped it (unknown keys stripped, not rejected), and nothing on the booking page
   ever consumed it. The app still shows an Accent input and a second swatch
@@ -358,7 +365,11 @@ read-only inside each service's card; counts pill reads "N required · +M for al
 
 ## Part 7 — R23-7: venue address parsing
 
-**Severity: LOW.** `lib/venue/addressFormat.ts` is a port of web's old `parseAddress`: it
+**Severity: LOW.**
+
+**BUILT 2026-09-03.** `lib/venue/addressFormat.ts` parses by position (web's Belfast / Paris / New
+York / Dublin round-trip tests ported), and the venue-profile save fills a blank building name with
+the business name once a street exists. `lib/venue/addressFormat.ts` is a port of web's old `parseAddress`: it
 decides whether the last part is a postcode with a UK regex, so a French or US postcode falls
 to the count-of-parts branch and a three-part address loses its building name; and an address
 saved with no building name reloads with the street in the Name field. Web now parses **by

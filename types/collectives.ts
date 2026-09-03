@@ -39,7 +39,6 @@ export interface BookingTeamProfile {
 
 export interface CombinedBookingPageConfig {
   brand_primary?: string | null;
-  brand_accent?: string | null;
   font_preset?: string | null;
   // Crop framing shares the canonical booking-page types so the single-venue
   // editor's croppers + preview wire in directly (the host editor reuses them).

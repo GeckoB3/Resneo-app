@@ -441,8 +441,13 @@ export default function VenueProfileScreen() {
 
     if (name.trim() !== (venue.name ?? '')) patch.name = name.trim();
 
+    // A blank building name is filled with the business name (web 2026-09-02,
+    // matching onboarding), so the stored address reads "Name, Street, Town,
+    // Postcode" and the booking page's map and directions link can find the
+    // business rather than a bare street. Only once there is a street: a venue
+    // with no address must not gain one of just its name.
     const newAddr = buildAddress({
-      name: addrName.trim(),
+      name: addrName.trim() || (addrStreet.trim() ? name.trim() : ''),
       street: addrStreet.trim(),
       town: addrTown.trim(),
       postcode: addrPostcode.trim(),

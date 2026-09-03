@@ -24,8 +24,6 @@ export type BookingPagePreviewProps = {
   logoCrop: BookingPageImageFraming | null;
   /** Normalized '#rrggbb' or null → falls back to the app brand navy. */
   primary: string | null;
-  /** Normalized '#rrggbb' or null → falls back to the app accent teal. */
-  accent: string | null;
   fontPreset: BookingFontPreset | null;
   announcement: string;
 };
@@ -61,14 +59,15 @@ export function BookingPagePreview({
   coverCropBox,
   logoCrop,
   primary,
-  accent,
   fontPreset,
   announcement,
 }: BookingPagePreviewProps): React.JSX.Element {
   const { colors } = useTheme();
 
   const brandPrimary = primary ?? DEFAULT_PRIMARY;
-  const brandAccent = accent ?? DEFAULT_ACCENT;
+  // The public page's accent IS the brand primary (web points --accent at it);
+  // the app's teal stands in only while no brand colour is chosen.
+  const brandAccent = primary ?? DEFAULT_ACCENT;
   const onPrimary = readableTextColor(brandPrimary);
 
   const preset = fontPreset ?? 'default';

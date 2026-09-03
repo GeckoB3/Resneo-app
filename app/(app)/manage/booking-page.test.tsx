@@ -70,6 +70,11 @@ const mockSlugAvail = { data: { available: true }, isFetching: false } as {
   data: { available: boolean } | undefined;
   isFetching: boolean;
 };
+// The editor reads the venue's categories to decide whether to offer the
+// services-layout control (R23-3); this surface has none.
+jest.mock('@/lib/queries/useServicesManage', () => ({
+  useManagedServices: () => ({ data: { services: [], categories: [] } }),
+}));
 jest.mock('@/lib/queries/useSlugAvailable', () => ({
   useSlugAvailable: () => mockSlugAvail,
 }));

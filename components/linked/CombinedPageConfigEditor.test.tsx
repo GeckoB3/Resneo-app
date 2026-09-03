@@ -73,7 +73,6 @@ function makeCollective(overrides: Partial<CollectiveView> = {}): CollectiveView
     timezone: 'Europe/London',
     bookingPageConfig: {
       brand_primary: '#003b6f',
-      brand_accent: '#0e7490',
       font_preset: 'elegant',
       announcement: 'Now booking autumn slots',
       cover_photo_url: 'https://img/cover.jpg',
@@ -107,9 +106,10 @@ describe('CombinedPageConfigEditor — live preview wiring', () => {
 
     const p = latestPreview();
     expect(p.venueName).toBe('Glow Collective');
-    // Normalised brand/accent (lower-cased hex) flow through as props.
+    // The normalised brand colour (lower-cased hex) flows through as a prop; there is
+    // no accent any more (web dropped the dead field 2026-09-02).
     expect(p.primary).toBe('#003b6f');
-    expect(p.accent).toBe('#0e7490');
+    expect(p.accent).toBeUndefined();
     expect(p.fontPreset).toBe('elegant');
     expect(p.announcement).toBe('Now booking autumn slots');
     expect(p.coverFullWidth).toBe(true);
@@ -130,7 +130,6 @@ describe('CombinedPageConfigEditor — live preview wiring', () => {
 
     const p = latestPreview();
     expect(p.primary).toBeNull();
-    expect(p.accent).toBeNull();
     expect(p.logoUrl).toBeNull();
     expect(p.coverUrl).toBeNull();
     expect(p.logoCrop).toBeNull();

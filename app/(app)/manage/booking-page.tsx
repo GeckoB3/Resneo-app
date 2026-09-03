@@ -60,7 +60,7 @@ import { useVenueContext } from '@/providers/VenueProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
-/** Quick-pick colour swatches for the brand/accent hex inputs. */
+/** Quick-pick colour swatches for the brand hex input. */
 const COLOUR_SWATCHES = [
   '#003b6f', '#0e7490', '#14532d', '#6b21a8', '#9f1239',
   '#1f2937', '#b45309', '#0f766e', '#4338ca', '#be123c',
@@ -73,7 +73,7 @@ type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
  *  which save themselves and are preserved by the server's key-by-key merge. */
 function assembleConfig(raw: {
   primary: string;
-  accent: string;
+  brandEmails: boolean;
   fontPreset: BookingFontPreset | null;
   announcement: string;
   about: string;
@@ -91,7 +91,9 @@ function assembleConfig(raw: {
 }): BookingPageConfig {
   return {
     brand_primary: normalizeHexColor(raw.primary),
-    brand_accent: normalizeHexColor(raw.accent),
+    // Only meaningful with a brand colour; the server keeps `true` and drops
+    // false, so an unset switch round-trips as absent.
+    brand_emails: raw.brandEmails,
     // 'default' (Clean/Inter) is the implicit default — send null so it round-trips
     // identically to an absent value (the server doesn't store 'default').
     font_preset: raw.fontPreset && raw.fontPreset !== 'default' ? raw.fontPreset : null,
@@ -120,7 +122,7 @@ function configJsonFromStored(cfg: BookingPageConfig): string {
   return JSON.stringify(
     assembleConfig({
       primary: cfg.brand_primary ?? '',
-      accent: cfg.brand_accent ?? '',
+      brandEmails: cfg.brand_emails === true,
       fontPreset: isBookingFontPreset(cfg.font_preset) ? cfg.font_preset : null,
       announcement: cfg.announcement ?? '',
       about: cfg.about ?? '',
@@ -167,7 +169,7 @@ export default function BookingPageScreen() {
 
   // Config form state.
   const [primary, setPrimary] = useState('');
-  const [accent, setAccent] = useState('');
+  const [brandEmails, setBrandEmails] = useState(false);
   const [fontPreset, setFontPreset] = useState<BookingFontPreset | null>(null);
   const [announcement, setAnnouncement] = useState('');
   const [about, setAbout] = useState('');
@@ -213,7 +215,7 @@ export default function BookingPageScreen() {
     const cfg = venue.booking_page_config ?? {};
     // eslint-disable-next-line react-hooks/set-state-in-effect -- seed local form state when the venue loads
     setPrimary(cfg.brand_primary ?? '');
-    setAccent(cfg.brand_accent ?? '');
+    setBrandEmails(cfg.brand_emails === true);
     setFontPreset(isBookingFontPreset(cfg.font_preset) ? cfg.font_preset : 'default');
     setAnnouncement(cfg.announcement ?? '');
     setAbout(cfg.about ?? '');
@@ -243,20 +245,18 @@ export default function BookingPageScreen() {
   }, [venue?.id]);
 
   const normalizedPrimary = useMemo(() => normalizeHexColor(primary), [primary]);
-  const normalizedAccent = useMemo(() => normalizeHexColor(accent), [accent]);
   const lowContrast = normalizedPrimary ? primaryNeedsDarkText(normalizedPrimary) : false;
-  const colourError =
-    (primary.trim() !== '' && !normalizedPrimary) || (accent.trim() !== '' && !normalizedAccent);
+  const colourError = primary.trim() !== '' && !normalizedPrimary;
 
   // Assembled editor config (the keys this screen autosaves) + the stored baseline.
   const editorConfig = useMemo(
     () =>
       assembleConfig({
-        primary, accent, fontPreset, announcement, about,
+        primary, brandEmails, fontPreset, announcement, about,
         instagram, facebook, tiktok, x,
         showServices, showTeam, showAbout, servicesLayout, coverFullWidth, logoCrop, coverCropBox,
       }),
-    [primary, accent, fontPreset, announcement, about, instagram, facebook, tiktok, x,
+    [primary, brandEmails, fontPreset, announcement, about, instagram, facebook, tiktok, x,
       showServices, showTeam, showAbout, servicesLayout, coverFullWidth, logoCrop, coverCropBox],
   );
   const editorConfigJson = useMemo(() => JSON.stringify(editorConfig), [editorConfig]);
@@ -319,9 +319,8 @@ export default function BookingPageScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [embedAccentNormalized, embedAccentInvalid, isAdmin, isLoading]);
 
-  const applyPalette = (palettePrimary: string, paletteAccent: string) => {
+  const applyPalette = (palettePrimary: string) => {
     setPrimary(palettePrimary);
-    setAccent(paletteAccent);
   };
 
   async function handleLogoUpload() {
@@ -520,7 +519,6 @@ export default function BookingPageScreen() {
         coverCropBox={coverCropBox}
         logoCrop={logoCrop}
         primary={normalizedPrimary}
-        accent={normalizedAccent}
         fontPreset={fontPreset}
         announcement={announcement}
       />
@@ -654,15 +652,14 @@ export default function BookingPageScreen() {
         <Text variant="label" tone="secondary">Quick palettes</Text>
         <View style={styles.paletteRow}>
           {BOOKING_THEME_PRESETS.map((preset) => {
-            const selected =
-              normalizedPrimary === preset.primary && normalizedAccent === preset.accent;
+            const selected = normalizedPrimary === preset.primary;
             return (
               <Pressable
                 key={preset.key}
                 accessibilityRole="button"
                 accessibilityLabel={`${preset.label} palette`}
                 accessibilityState={{ selected }}
-                onPress={() => applyPalette(preset.primary, preset.accent)}
+                onPress={() => applyPalette(preset.primary)}
                 style={({ pressed }) => [
                   styles.palette,
                   {
@@ -672,7 +669,6 @@ export default function BookingPageScreen() {
                   },
                 ]}>
                 <View style={[styles.paletteSwatch, { backgroundColor: preset.primary }]} />
-                <View style={[styles.paletteSwatch, { backgroundColor: preset.accent }]} />
               </Pressable>
             );
           })}
@@ -690,14 +686,28 @@ export default function BookingPageScreen() {
             This colour is light — white button text may be hard to read on the booking page.
           </Text>
         ) : null}
-        <ColourField
-          label="Accent colour"
-          value={accent}
-          preview={normalizedAccent}
-          onChange={setAccent}
-          onReset={() => setAccent('')}
-        />
         <SwatchRow onPick={(hex) => setPrimary(hex)} />
+
+        {/* Brand colour in customer emails (web 2026-09-02): off by default, and
+            nothing without a brand colour. A light colour is darkened server-side
+            until white button text stays readable. The "Powered by ResNeo" link
+            and platform mail keep the navy. Venue pages only. */}
+        <View style={styles.brandEmailsRow}>
+          <SwitchRow
+            label="Use my brand colour in customer emails"
+            value={brandEmails && normalizedPrimary !== null}
+            onValueChange={(next) => {
+              if (normalizedPrimary) setBrandEmails(next);
+            }}
+          />
+          <Text variant="caption" tone="muted">
+            {normalizedPrimary
+              ? `Buttons, links and highlights in booking confirmations, reminders and receipts. Leave this off to keep the ResNeo colours.${
+                  lowContrast ? ' A light colour is darkened a little in emails so white button text stays readable.' : ''
+                }`
+              : 'Choose a brand colour first.'}
+          </Text>
+        </View>
 
         <Text variant="label" tone="secondary" style={styles.fontLabel}>Font style</Text>
         <View style={styles.chipWrap}>
@@ -1174,6 +1184,9 @@ const styles = StyleSheet.create({
   layoutBlock: {
     gap: spacing.sm,
     paddingVertical: spacing.sm,
+  },
+  brandEmailsRow: {
+    gap: spacing.xs,
   },
   switchRow: {
     flexDirection: 'row',

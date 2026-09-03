@@ -99,10 +99,19 @@ export const FONT_PRESETS = BOOKING_FONT_PRESETS;
 // ---------------------------------------------------------------------------
 
 export interface BookingPageConfig {
-  /** Brand primary as `#rrggbb`; drives the booking-page colour ramp. */
+  /**
+   * Brand primary as `#rrggbb`; drives the booking-page colour ramp. This is the
+   * only colour the page consumes: a legacy `brand_accent` key may still sit in
+   * stored configs and is ignored (the server strips it on save, web 2026-09-02).
+   */
   brand_primary?: string | null;
-  /** Optional accent as `#rrggbb`; falls back to the primary when unset. */
-  brand_accent?: string | null;
+  /**
+   * When true, customer emails (confirmations, reminders, receipts and the like)
+   * use `brand_primary` for buttons, links and highlights instead of the ResNeo
+   * colours. Off by default; meaningless without a valid `brand_primary`. Venue
+   * pages only — a combined page's bookings send from the host venue.
+   */
+  brand_emails?: boolean;
   /** Curated heading/body font pairing. */
   font_preset?: BookingFontPreset | null;
   /** When true, the cover spans edge-to-edge; default (unset/false) is contained in the content column. */
@@ -331,7 +340,7 @@ export function coverCropLayout(box: BookingPageCoverCropBox): {
 export const BOOKING_COVER_DEFAULT_ASPECT = 16 / 9;
 
 // ---------------------------------------------------------------------------
-// Quick palettes (6 one-click {primary, accent} pairs)
+// Quick palettes (6 one-click brand primaries)
 // ---------------------------------------------------------------------------
 
 /** One-click colour palettes shown in the settings editor. */
@@ -339,14 +348,13 @@ export const BOOKING_THEME_PRESETS: {
   key: string;
   label: string;
   primary: string;
-  accent: string;
 }[] = [
-  { key: 'navy', label: 'ResNeo Navy', primary: '#003b6f', accent: '#00c2c7' },
-  { key: 'forest', label: 'Forest', primary: '#14532d', accent: '#65a30d' },
-  { key: 'plum', label: 'Plum', primary: '#6b21a8', accent: '#db2777' },
-  { key: 'charcoal', label: 'Charcoal', primary: '#1f2937', accent: '#f59e0b' },
-  { key: 'rose', label: 'Rose', primary: '#9f1239', accent: '#fb7185' },
-  { key: 'ocean', label: 'Ocean', primary: '#0e7490', accent: '#22d3ee' },
+  { key: 'navy', label: 'ResNeo Navy', primary: '#003b6f' },
+  { key: 'forest', label: 'Forest', primary: '#14532d' },
+  { key: 'plum', label: 'Plum', primary: '#6b21a8' },
+  { key: 'charcoal', label: 'Charcoal', primary: '#1f2937' },
+  { key: 'rose', label: 'Rose', primary: '#9f1239' },
+  { key: 'ocean', label: 'Ocean', primary: '#0e7490' },
 ];
 
 // ---------------------------------------------------------------------------
