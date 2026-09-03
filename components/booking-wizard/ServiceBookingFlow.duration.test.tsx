@@ -259,13 +259,13 @@ describe('ServiceBookingFlow — what the review step shows', () => {
 });
 
 /**
- * A custom duration cannot survive into a real chain while
- * `create-multi-service` carries no per-service duration: the server re-derives
- * every length and rejects start times computed from anything else. Delete this
- * suite along with the reset once the web route accepts one.
+ * A custom duration now survives into a chain: `create-multi-service` takes a
+ * per-segment `duration_minutes` (web 2026-09-02) and the payload sends it, so
+ * the second service chains from the stretched end rather than the catalogue
+ * one. (Before that the append path reset segment 1 to 30 min.)
  */
 describe('ServiceBookingFlow — appending a second service', () => {
-  it('restores the natural duration so the chain stays consecutive', async () => {
+  it('keeps the custom duration and chains the next service from its end', async () => {
     await act(async () => {
       renderFlow();
     });
@@ -284,8 +284,8 @@ describe('ServiceBookingFlow — appending a second service', () => {
     await press(() => screen.getByText('+ Add another service'));
     await press(() => screen.getAllByText('Extra')[0]!);
 
-    // Segment 1 is back to its catalogue 30 min, so segment 2 chains from 9:30.
-    await waitFor(() => expect(screen.getByText(/9:00am–9:30am/)).toBeTruthy());
-    expect(screen.getByText(/9:30am–9:50am/)).toBeTruthy();
+    // Segment 1 keeps its 90 min, so segment 2 chains from 10:30.
+    await waitFor(() => expect(screen.getByText(/10:30am–10:50am/)).toBeTruthy());
+    expect(screen.getByText(/9:00am–10:30am/)).toBeTruthy();
   });
 });

@@ -372,8 +372,8 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
     // booking was already made at the custom length while this review card
     // showed the catalogue one — staff set 90 minutes, saw "9:00am–9:30am", and
     // reasonably concluded the app had ignored them. Seed the working duration
-    // from the override so the card tells the truth; `addServiceToChain` puts it
-    // back to `naturalDuration` if a second service is ever appended.
+    // from the override so the card tells the truth; a chain keeps it too, and
+    // sends it per segment (`segmentCustomDurationMinutes`).
     const naturalBaseDuration =
       selectedVariant?.duration_minutes ?? selectedService.durationMinutes;
     const baseDuration = durationOverride ?? naturalBaseDuration;
@@ -462,32 +462,12 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           ),
         };
         const firstStart = prev[0]!.startTime;
-        /**
-         * A staff custom duration cannot survive into a real chain — TODAY.
-         *
-         * `create-multi-service`'s `serviceEntrySchema` carries no per-service
-         * duration, so the server re-derives every segment's length and rejects
-         * the visit if our start times were computed from anything else ("must
-         * be consecutive"). Restoring from `naturalDurationMinutes` is exact
-         * even when the first segment has a variant or add-ons.
-         *
-         * REMOVE THIS once the web route accepts a per-service duration (being
-         * added there): send `durationMinutes` per segment instead of resetting
-         * it, and this whole block goes. Until then the reset is what keeps a
-         * chained booking from 400ing.
-         */
-        const first = prev[0]!;
-        const overridden = first.durationMinutes !== first.naturalDurationMinutes;
-        if (overridden) {
-          // Clear the flow's copy too, or removing the appended service later
-          // would leave a 90-minute override against a 30-minute segment card —
-          // the same display/booking mismatch this fix exists to remove.
-          setDurationOverride(null);
-        }
-        const base = overridden
-          ? [{ ...first, durationMinutes: first.naturalDurationMinutes }, ...prev.slice(1)]
-          : prev;
-        return recomputeMultiServiceChain([...base, nextSeg], firstStart);
+        // A staff custom duration on the first segment now survives the chain:
+        // `create-multi-service` takes a per-segment `duration_minutes` (web
+        // 2026-09-02) and `buildMultiServicePayload` sends it, so the server
+        // derives the same end the chain maths uses here. (Until then this path
+        // had to reset the first segment to its catalogue length.)
+        return recomputeMultiServiceChain([...prev, nextSeg], firstStart);
       });
     },
     [visitPractitioner],

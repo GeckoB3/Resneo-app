@@ -19,7 +19,9 @@ function seg(overrides: Partial<MultiServiceSegment>): MultiServiceSegment {
     practitionerName: 'Pat',
     startTime: '00:00',
     durationMinutes: 30,
-    naturalDurationMinutes: 30,
+    // A segment books at its catalogue length unless a test says otherwise, so a
+    // fixture that only sets durationMinutes is not read as a staff override.
+    naturalDurationMinutes: overrides.durationMinutes ?? 30,
     bufferMinutes: 0,
     pricePence: 1000,
     ...overrides,
@@ -191,6 +193,27 @@ describe('buildMultiServicePayload', () => {
       { service_id: 'a', practitioner_id: 'prac', start_time: '09:00', service_variant_id: 'v1', addons: [{ addon_id: 'ad1' }] },
       { service_id: 'b', practitioner_id: 'prac', start_time: '09:30' },
     ]);
+  });
+
+  it('sends a staff custom duration per segment as the CORE length, add-ons taken back off', () => {
+    const chain = recomputeMultiServiceChain(
+      [
+        // 30 min catalogue + 20 min of add-ons, staff stretched the core to 60: 80 on the card.
+        seg({ serviceId: 'a', durationMinutes: 80, naturalDurationMinutes: 50, addonTotalMinutes: 20, addonIds: ['ad1'] }),
+        seg({ serviceId: 'b', durationMinutes: 45, naturalDurationMinutes: 45 }),
+      ],
+      '09:00',
+    );
+    const payload = buildMultiServicePayload({
+      venueId: 'venue-1',
+      bookingDate: '2026-06-20',
+      contact: { first_name: 'Jo', last_name: 'B' },
+      source: 'phone',
+      segments: chain,
+    });
+    expect(payload.services[0]).toMatchObject({ service_id: 'a', start_time: '09:00', duration_minutes: 60 });
+    // Segment 2 chains from the stretched end (09:00 + 80) and books at its catalogue length.
+    expect(payload.services[1]).toEqual({ service_id: 'b', practitioner_id: 'prac', start_time: '10:20' });
   });
 
   it('omits empty email/phone and folds the comment into dietary_notes', () => {

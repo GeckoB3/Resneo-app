@@ -33,18 +33,13 @@ export interface MultiServiceSegment {
    * The length the SERVER will re-derive for this segment: catalogue (or
    * variant) duration + add-on minutes, with no staff override applied.
    *
-   * `durationMinutes` and this differ only while a chain has a single segment
-   * and staff set a custom duration. That case never reaches
-   * `create-multi-service` — the confirm step sends a one-segment visit through
-   * the single-booking route, which DOES carry `duration_minutes` — so the
-   * override is honoured and the review card can show it.
-   *
-   * The moment a second service is appended the override has to go: the route's
-   * `serviceEntrySchema` has no per-service duration field, so the server
-   * re-derives every length and rejects the chain if our start times were
-   * computed from anything else ("must be consecutive"). Web drops it at the
-   * same point and for the same reason. This field is what the append path
-   * restores from, so the reset is exact for a variant or add-on segment too.
+   * `durationMinutes` and this differ when staff set a custom duration on the
+   * segment. Since web 2026-09-02 `create-multi-service` accepts a per-segment
+   * `duration_minutes` (the staff core override, honoured for the `phone` /
+   * `walk-in` sources), so the override travels with the chain:
+   * {@link buildMultiServicePayload} sends the core part of the difference and
+   * the server derives the same end the chain maths did. Before that the append
+   * path had to reset a chained segment to this value or the route 400ed.
    */
   naturalDurationMinutes: number;
   bufferMinutes: number;
@@ -171,6 +166,12 @@ export interface CreateMultiServicePayload {
     start_time: string;
     service_variant_id?: string;
     addons?: { addon_id: string }[];
+    /**
+     * Staff custom CORE duration for this segment (web 2026-09-02): the
+     * catalogue/variant length replaced, add-ons still stacked on top by the
+     * server. Honoured for `phone` / `walk-in` only. Omitted = catalogue length.
+     */
+    duration_minutes?: number;
   }>;
   dietary_notes?: string;
   /**
@@ -254,6 +255,18 @@ function trimTime(time: string): string {
  * `venueId` is the effective venue (own or linked owner). The caller must have
  * already run `recomputeMultiServiceChain` on the segments.
  */
+/**
+ * The staff core override a segment carries, or null when it books at its
+ * catalogue length. `durationMinutes` folds add-on minutes in (so the chain
+ * maths lines up with the server's end), but the route wants the CORE length
+ * and adds the add-ons itself, so they come back off here.
+ */
+export function segmentCustomDurationMinutes(seg: MultiServiceSegment): number | null {
+  if (seg.durationMinutes === seg.naturalDurationMinutes) return null;
+  const core = seg.durationMinutes - (seg.addonTotalMinutes ?? 0);
+  return core > 0 ? core : null;
+}
+
 export function buildMultiServicePayload(args: {
   venueId: string;
   bookingDate: string;
@@ -284,6 +297,10 @@ export function buildMultiServicePayload(args: {
       ...(seg.addonIds && seg.addonIds.length > 0
         ? { addons: seg.addonIds.map((id) => ({ addon_id: id })) }
         : {}),
+      ...(() => {
+        const custom = segmentCustomDurationMinutes(seg);
+        return custom != null ? { duration_minutes: custom } : {};
+      })(),
     })),
     ...(dietary ? { dietary_notes: dietary } : {}),
     ...staffChargePayloadFields(source, charges),
