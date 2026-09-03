@@ -69,6 +69,31 @@ describe('buildCalendarClosureOverlays', () => {
     });
   }
 
+  describe('rotating schedule (R23-2)', () => {
+    // MONDAY (24 Aug 2026) is week 2 of a two-week rota that started Mon 17 Aug.
+    const WEEK_ONE = { '1': [{ start: '09:00', end: '17:00' }] };
+    const WEEK_TWO = { '1': [{ start: '13:00', end: '17:00' }] };
+    const timeline = {
+      version: 1,
+      periods: [{ id: 'p', from: '2026-08-17', until: null, weeks: [WEEK_ONE, WEEK_TWO] }],
+    };
+
+    it('greys the hours of the rota week that covers the date, not the base week', () => {
+      const bands = build({ calendar: { working_hours: NINE_TO_FIVE, schedule_periods: timeline } });
+      expect(bands.map((b) => [b.start, b.end])).toEqual([['09:00', '13:00']]);
+    });
+
+    it('returns to the base week on a date no period covers', () => {
+      const ended = { ...timeline, periods: [{ ...timeline.periods[0]!, until: '2026-08-23' }] };
+      expect(build({ calendar: { working_hours: NINE_TO_FIVE, schedule_periods: ended } })).toEqual([]);
+    });
+
+    it('treats a calendar with an empty base week but a schedule as set up', () => {
+      const bands = build({ calendar: { working_hours: {}, schedule_periods: timeline } });
+      expect(bands.map((b) => [b.start, b.end])).toEqual([['09:00', '13:00']]);
+    });
+  });
+
   it('shades the venue hours a calendar does not work', () => {
     const bands = build({ calendar: { working_hours: { '1': [{ start: '12:00', end: '17:00' }] } } });
     expect(bands).toHaveLength(1);

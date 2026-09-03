@@ -26,6 +26,12 @@ import { Sheet } from '@/components/ui/Sheet';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import {
+  describePeriod,
+  describeScheduleSource,
+  resolveScheduleForDate,
+  scheduleForRow,
+} from '@/lib/calendar/working-hours-rota';
 import { addDaysToDateStr, formatDayHeading } from '@/lib/dates/venue-dates';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import {
@@ -661,7 +667,12 @@ export default function AvailabilityScreen() {
 
   // Single working-hours row — name + at-a-glance weekly summary + edit actions.
   function renderHoursRow(p: Practitioner) {
-    const summary = summariseWorkingHours(p.working_hours);
+    // Hours planned ahead or on a rota replace `working_hours` on the dates they
+    // cover, so the summary is the shape in force THIS week, named by the rule
+    // that set it; the standard weekly hours are what "Edit hours" changes.
+    const schedule = scheduleForRow(p);
+    const thisWeek = resolveScheduleForDate(p, today);
+    const summary = summariseWorkingHours(thisWeek.hours);
     const breaks = summariseBreaks(p);
     const isResource = isResourceCalendar(p);
     return (
@@ -679,6 +690,25 @@ export default function AvailabilityScreen() {
         <Text variant="caption" tone={summary ? 'secondary' : 'muted'}>
           {summary ?? 'No working hours set'}
         </Text>
+        {schedule ? (
+          <View style={styles.scheduleBlock}>
+            <Text variant="caption" tone="muted">
+              This week · {describeScheduleSource(thisWeek.source)}
+            </Text>
+            {schedule.periods.map((period) => (
+              <Text key={period.id} variant="caption" tone="muted">
+                {describePeriod(period)}
+              </Text>
+            ))}
+            {/* The timeline editor (periods, rotas, the planning calendar) lives on
+                the web dashboard for now; "Edit hours" here changes the standard
+                weekly hours that apply outside every period. */}
+            <Text variant="caption" tone="muted">
+              Planned changes and rotas are edited on the web dashboard. Edit hours changes the
+              standard weekly hours that apply outside them.
+            </Text>
+          </View>
+        ) : null}
         {!isResource && breaks ? (
           <Text variant="caption" tone="muted">
             Breaks · {breaks}
@@ -1233,6 +1263,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
+  },
+  scheduleBlock: {
+    gap: 2,
   },
   hoursActions: {
     flexDirection: 'row',

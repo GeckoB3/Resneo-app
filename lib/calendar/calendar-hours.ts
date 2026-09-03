@@ -17,7 +17,11 @@
  * 2. `days_off` shuts the day. Entries are either an exact ISO date or a
  *    recurring lowercase weekday name (`"mon"`); both are live in stored data,
  *    and the engines honour both, so the diary must too.
- * 3. The weekly `working_hours` template, keyed "0"–"6" (Sun–Sat) or "sun"–"sat".
+ * 3. The weekly shape for the date: a covering schedule period's week
+ *    (`unified_calendars.schedule_periods`, or the older `working_hours_rota`
+ *    while the timeline is null — see `working-hours-rota`), else the ordinary
+ *    `working_hours` template, keyed "0"–"6" (Sun–Sat) or "sun"–"sat". Same
+ *    precedence as web's `calendarHours`: below overrides and days off.
  *
  * Breaks are NOT part of this: the diary already draws them from the same
  * practitioner record, and they answer a different question (skippable with
@@ -27,6 +31,7 @@
  */
 
 import { timeToMinutes } from '@/components/calendar/grid-layout';
+import { effectiveWorkingHoursForDate, scheduleForRow } from '@/lib/calendar/working-hours-rota';
 
 export type MinuteRange = { start: number; end: number };
 
@@ -45,6 +50,13 @@ export interface CalendarScheduleRow {
   working_hours?: Record<string, { start: string; end: string }[]> | null;
   days_off?: string[] | null;
   availability_exceptions?: Record<string, CalendarDateOverride> | null;
+  /**
+   * Hours planned ahead or on a rota, and the older single-rota form read as a
+   * fallback. Both come straight off the practitioners feed as `unknown` and are
+   * parsed per call, so stored garbage degrades to "no periods".
+   */
+  schedule_periods?: unknown;
+  working_hours_rota?: unknown;
 }
 
 const DAY_NAMES = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
@@ -113,7 +125,10 @@ export function calendarHours(row: CalendarScheduleRow, dateStr: string): Minute
 
   if (calendarDayOff(row, dateStr)) return [];
 
-  const hours = row.working_hours ?? {};
+  // A schedule period supplies the weekly shape for the dates it covers; outside
+  // every period the ordinary `working_hours` apply. Reading the base template
+  // here was why a rota week greyed the wrong hours (R23-2).
+  const hours = effectiveWorkingHoursForDate(row, dateStr);
   const keys = dayKeys(dateStr);
   if (!keys) return [];
   return unionRanges(toRanges(hours[keys.key] ?? hours[keys.name]));
@@ -128,9 +143,16 @@ export function calendarHours(row: CalendarScheduleRow, dateStr: string): Minute
  * `opening_hours` as `unknown`.
  */
 export function calendarHasWeeklyTemplate(row: CalendarScheduleRow): boolean {
-  const hours = row.working_hours;
+  if (weeklyShapeHasHours(row.working_hours)) return true;
+  // A calendar whose base week is empty but whose schedule has hours HAS been
+  // described — its closed days are a statement, not an unset template.
+  const schedule = scheduleForRow(row);
+  return schedule?.periods.some((p) => p.weeks.some(weeklyShapeHasHours)) ?? false;
+}
+
+function weeklyShapeHasHours(hours: unknown): boolean {
   if (!hours || typeof hours !== 'object') return false;
-  return Object.values(hours).some((v) => Array.isArray(v) && v.length > 0);
+  return Object.values(hours as Record<string, unknown>).some((v) => Array.isArray(v) && v.length > 0);
 }
 
 /**

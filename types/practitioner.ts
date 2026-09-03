@@ -42,6 +42,14 @@ export interface Practitioner {
   break_times_by_day?: Record<string, PractitionerTimeRange[]> | null;
   /** Per-weekday working hours — keys "0"–"6" (Sun–Sat) or "sun"–"sat" (roster=1). */
   working_hours?: Record<string, PractitionerTimeRange[]> | null;
+  /**
+   * Hours planned ahead as a timeline (`unified_calendars.schedule_periods`) and
+   * the older single rota (`working_hours_rota`, a fallback while the timeline is
+   * null). Kept as `unknown` and parsed by `lib/calendar/working-hours-rota`
+   * wherever they are read; they replace `working_hours` on the dates they cover.
+   */
+  schedule_periods?: unknown;
+  working_hours_rota?: unknown;
 }
 
 export interface PractitionersResponse {

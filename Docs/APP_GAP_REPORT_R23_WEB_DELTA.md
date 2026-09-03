@@ -37,7 +37,7 @@ Six strands in this range:
 Plus marketing/homepage work, onboarding link fixes, E2E/CI fixes and a Collective RLS
 recursion fix — none of which reach the app.
 
-**Verdict (R23-1 built 2026-09-03, the rest open): seven gaps — two of them live behaviour regressions the app inherits the moment a
+**Verdict (R23-1 and R23-2 built 2026-09-03, the rest open): seven gaps — two of them live behaviour regressions the app inherits the moment a
 venue uses the new web features (R23-1, R23-2), three feature gaps (R23-3, R23-4, R23-5) and
 two small ones (R23-6, R23-7). Nothing in the range breaks an endpoint the app calls.** The
 auth work is already matched by the app's own 2026-08-31 commits; the deleted public compliance
@@ -120,6 +120,19 @@ advisory items in amber, then a **"Capture in venue"** link that opens the booki
 
 **Severity: HIGH (live, data correctness).** A calendar on a rota or with hours planned from a
 future date shows the wrong closed bands and the wrong hours summary in the app.
+
+**BUILT 2026-09-03.** `lib/calendar/working-hours-rota.ts` is a read-side port of web's resolver
+(parse/validate, legacy-rota fallback, `resolveScheduleForDate`, `weekIndexInPeriod`; no
+insert/trim arithmetic — editing stays on the web) with web's own fixtures in its test.
+`calendar-hours.ts` now resolves the weekly shape through it (same precedence: below overrides
+and days off) and `calendarHasWeeklyTemplate` counts a schedule's weeks, so the diary's closure
+bands follow the rota week; `types/practitioner.ts` carries `schedule_periods` /
+`working_hours_rota` off the feed. The Availability screen's hours row summarises the shape in
+force this week, names the rule that set it ("This week · Change from 7 Sep 2026, week 2 of 2"),
+lists every period as the web timeline words them, and says planned changes are edited on the
+web; "Edit hours" still edits the standard weekly hours. Steps 1–3 of the build list below; the
+in-app timeline editor (step 3's phase 2) and hosted resources (step 4 — resource columns are not
+on the diary's practitioner feed today) are not built.
 
 ### What web changed
 
