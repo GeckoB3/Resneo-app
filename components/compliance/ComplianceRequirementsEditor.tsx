@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { StyleSheet, TextInput, View } from 'react-native';
+import { ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -469,9 +469,18 @@ function AddRequirementSheet({
   const selectedType = availableTypes.find((t) => t.id === typeId);
   const supportsOnline = Boolean(selectedType) && typeSupportsClientOnline(selectedType?.capture_methods);
 
+  // `fill` + a flex:1 ScrollView: a content-sized Sheet cannot scroll, so once
+  // a type is chosen and the online-collection block appears the form grows past
+  // the sheet and the Add button sits off the bottom of the screen. The action
+  // row stays pinned under the scroller (see sheet-scroll-contract.test.ts).
   return (
-    <Sheet visible={visible} onClose={onClose}>
-      <View style={styles.sheetBody}>
+    <Sheet visible={visible} onClose={onClose} fill maxHeight="92%">
+      <View style={styles.sheetRoot}>
+        <ScrollView
+          style={styles.flex1}
+          contentContainerStyle={styles.sheetBody}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}>
         <Text variant="subheading">Add compliance requirement</Text>
         <Text variant="bodySmall" tone="secondary">
           {scope === 'venue'
@@ -554,6 +563,7 @@ function AddRequirementSheet({
             ) : null}
           </>
         ) : null}
+        </ScrollView>
 
         <View style={styles.sheetActions}>
           <Button label="Cancel" variant="secondary" style={styles.flex1} onPress={onClose} />
@@ -624,13 +634,20 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     minWidth: 120,
   },
+  sheetRoot: {
+    flex: 1,
+    // Fill mode drops the horizontal padding the content-sized Sheet supplies.
+    paddingHorizontal: spacing.lg,
+  },
   sheetBody: {
     gap: spacing.sm,
+    paddingBottom: spacing.md,
   },
   sheetActions: {
     flexDirection: 'row',
     gap: spacing.md,
     paddingTop: spacing.sm,
+    paddingBottom: spacing.sm,
   },
   flex1: {
     flex: 1,
