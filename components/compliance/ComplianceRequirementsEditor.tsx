@@ -19,8 +19,10 @@ import {
   useComplianceRequirements,
   useDeleteComplianceRequirement,
   useUpdateComplianceRequirement,
+  useVenueWideComplianceRequirements,
   type ComplianceEnforcement,
   type ComplianceOnlineCollection,
+  type ComplianceRequirementScope,
 } from '@/lib/queries/useComplianceRequirements';
 import { useComplianceTemplatesList } from '@/lib/queries/useComplianceTypeManage';
 import { useToast } from '@/providers/ToastProvider';
@@ -30,8 +32,20 @@ import { useTheme } from '@/theme/useTheme';
 import { CATEGORY_LABELS } from './complianceTypeLabels';
 
 type Props = {
-  /** The booked-service row id (the server resolves the polymorphic FK). */
-  serviceId: string;
+  /** The booked-service row id (the server resolves the polymorphic FK). Unused for `scope="venue"`. */
+  serviceId?: string | null;
+  /**
+   * `service` (default) edits one service's requirements; `venue` edits the
+   * "All bookings" row — the requirements every appointment booking must meet
+   * (web 2026-09-01, plan §4). A service row for the same type wins over the
+   * venue row at booking time.
+   */
+  scope?: ComplianceRequirementScope;
+  /**
+   * Names of the venue-wide types, shown read-only above a service's own list so
+   * nobody adds the same form twice. Only meaningful for `scope="service"`.
+   */
+  venueWideTypeNames?: string[];
   /** Whether compliance is enabled for the venue — hides the whole card if not. */
   complianceEnabled: boolean;
   /**
@@ -67,11 +81,20 @@ function parseLeadTime(raw: string): number | null {
  * Compliance settings Service requirements panel (`embedded`); hidden entirely
  * when compliance is off for the venue.
  */
-export function ComplianceRequirementsEditor({ serviceId, complianceEnabled, embedded }: Props) {
+export function ComplianceRequirementsEditor({
+  serviceId = null,
+  scope = 'service',
+  venueWideTypeNames,
+  complianceEnabled,
+  embedded,
+}: Props) {
   const { colors } = useTheme();
   const toast = useToast();
+  const isVenueScope = scope === 'venue';
 
-  const reqs = useComplianceRequirements(serviceId, complianceEnabled);
+  const serviceReqs = useComplianceRequirements(serviceId, complianceEnabled && !isVenueScope);
+  const venueReqs = useVenueWideComplianceRequirements(complianceEnabled && isVenueScope);
+  const reqs = isVenueScope ? venueReqs : serviceReqs;
   const typesList = useComplianceTemplatesList(false);
   const addReq = useAddComplianceRequirement();
   const updateReq = useUpdateComplianceRequirement();
@@ -148,8 +171,19 @@ export function ComplianceRequirementsEditor({ serviceId, complianceEnabled, emb
       />
     ) : undefined;
 
+  // Venue-wide rows apply on top of a service's own; listed here read-only so
+  // nobody adds the same form twice. Managed on the pinned "All bookings" row.
+  const venueWideNote =
+    !isVenueScope && venueWideTypeNames && venueWideTypeNames.length > 0 ? (
+      <Text variant="caption" tone="muted">
+        Also required for all bookings: {venueWideTypeNames.join(', ')}. Manage those under
+        Compliance settings, Requirements, All bookings.
+      </Text>
+    ) : null;
+
   const body = (
     <>
+      {venueWideNote}
       {reqs.isError ? (
           <Text variant="bodySmall" tone="danger">
             {reqs.error instanceof ApiError ? reqs.error.message : 'Could not load requirements.'}
@@ -160,8 +194,9 @@ export function ComplianceRequirementsEditor({ serviceId, complianceEnabled, emb
           </Text>
         ) : requirements.length === 0 ? (
           <Text variant="bodySmall" tone="secondary">
-            This service has no compliance requirements. Add one to warn or block bookings without a
-            valid record.
+            {isVenueScope
+              ? 'Nothing is required of every booking yet. Add a record every appointment must have, such as an intake form or a general consent.'
+              : 'This service has no compliance requirements. Add one to warn or block bookings without a valid record.'}
           </Text>
         ) : (
           <View style={styles.list}>
@@ -285,11 +320,14 @@ export function ComplianceRequirementsEditor({ serviceId, complianceEnabled, emb
       visible={adding}
       onClose={() => setAdding(false)}
       availableTypes={availableTypes}
+      scope={scope}
       submitting={addReq.isPending}
       onAdd={(input) => {
+        if (!isVenueScope && !serviceId) return;
         addReq.mutate(
           {
-            service_id: serviceId,
+            scope,
+            ...(isVenueScope ? {} : { service_id: serviceId ?? undefined }),
             compliance_type_id: input.typeId,
             enforcement: input.enforcement,
             lock_period_hours: input.lockPeriodHours,
@@ -328,7 +366,11 @@ export function ComplianceRequirementsEditor({ serviceId, complianceEnabled, emb
       <SectionCard.Header
         eyebrow="Compliance"
         title="Compliance requirements"
-        description="Records this service needs before a booking. Missing or expired records warn or block at booking time."
+        description={
+          isVenueScope
+            ? 'Records every appointment booking needs. Missing or expired records warn or block at booking time.'
+            : 'Records this service needs before a booking. Missing or expired records warn or block at booking time.'
+        }
         right={addButton}
       />
       <SectionCard.Body style={styles.body}>{body}</SectionCard.Body>
@@ -390,12 +432,14 @@ function AddRequirementSheet({
   visible,
   onClose,
   availableTypes,
+  scope,
   submitting,
   onAdd,
 }: {
   visible: boolean;
   onClose: () => void;
   availableTypes: AvailableType[];
+  scope: ComplianceRequirementScope;
   submitting: boolean;
   onAdd: (input: {
     typeId: string;
@@ -430,7 +474,9 @@ function AddRequirementSheet({
       <View style={styles.sheetBody}>
         <Text variant="subheading">Add compliance requirement</Text>
         <Text variant="bodySmall" tone="secondary">
-          Require a compliance record for this service.
+          {scope === 'venue'
+            ? 'Require a compliance record for every appointment booking.'
+            : 'Require a compliance record for this service.'}
         </Text>
 
         <Text variant="label" tone="secondary">

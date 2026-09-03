@@ -75,6 +75,7 @@ import {
 import { formatPence, formatPositivePence, parsePoundsToPence, penceToPoundsInput } from '@/lib/format';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useAddonGroups } from '@/lib/queries/useAddonGroups';
+import { useVenueWideRequirementNames } from '@/lib/queries/useComplianceRequirements';
 import {
   useCreateService,
   useDeleteService,
@@ -625,6 +626,8 @@ export default function ServicesScreen() {
   // Per-service compliance requirements editor is gated on the venue's
   // compliance feature flag (resolved server-side) and admin role.
   const complianceEnabled = venue?.feature_flags?.resolved?.compliance_records_enabled ?? false;
+  // Named read-only inside the service form's requirements editor (admin, edit mode).
+  const venueWideRequirementNames = useVenueWideRequirementNames(isAdmin && complianceEnabled);
 
   // Staff identity for non-admin self-service (web parity: currentStaffId +
   // linkedPractitionerIds). A non-admin may create services on calendars they
@@ -2106,6 +2109,7 @@ export default function ServicesScreen() {
             {isAdmin && complianceEnabled && editTarget ? (
               <ComplianceRequirementsEditor
                 serviceId={editTarget.id}
+                venueWideTypeNames={venueWideRequirementNames}
                 complianceEnabled={complianceEnabled}
               />
             ) : null}

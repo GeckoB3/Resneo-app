@@ -17,11 +17,14 @@ jest.mock('@/lib/api/client', () => {
 });
 
 import {
+  isVenueWideRequirement,
   useAddComplianceRequirement,
   useComplianceRequirementCounts,
   useComplianceRequirements,
   useDeleteComplianceRequirement,
   useUpdateComplianceRequirement,
+  useVenueWideComplianceRequirements,
+  useVenueWideRequirementNames,
 } from '@/lib/queries/useComplianceRequirements';
 
 function makeWrapper() {
@@ -67,6 +70,9 @@ describe('useComplianceRequirementCounts', () => {
         { id: 'r3', appointment_service_id: null, service_item_id: 'svc-3' },
         // A service not in the requested list is ignored.
         { id: 'r4', appointment_service_id: 'svc-other', service_item_id: null },
+        // A venue-wide row (web 2026-09-01) applies to every service and is
+        // counted on its own pinned row, never against a service.
+        { id: 'r5', scope: 'venue', appointment_service_id: null, service_item_id: null },
       ],
     });
     const { result } = await renderHook(
@@ -93,6 +99,43 @@ describe('useComplianceRequirementCounts', () => {
   });
 });
 
+describe('venue-wide requirements (web 2026-09-01)', () => {
+  it('recognises a venue row by scope, or by having no service FK on an older server', () => {
+    expect(isVenueWideRequirement({ scope: 'venue', appointment_service_id: null, service_item_id: null })).toBe(true);
+    expect(isVenueWideRequirement({ appointment_service_id: null, service_item_id: null })).toBe(true);
+    expect(isVenueWideRequirement({ scope: 'service', appointment_service_id: 'svc-1', service_item_id: null })).toBe(false);
+    expect(isVenueWideRequirement({ appointment_service_id: null, service_item_id: 'svc-3' })).toBe(false);
+  });
+
+  it('GETs ?scope=venue for the All bookings row', async () => {
+    mockApiFetch.mockResolvedValue({ requirements: [] });
+    const { result } = await renderHook(() => useVenueWideComplianceRequirements(), {
+      wrapper: makeWrapper(),
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(mockApiFetch).toHaveBeenCalledWith('/api/venue/compliance/requirements?scope=venue', {
+      accessToken: mockToken,
+    });
+  });
+
+  it('names the venue-wide types once each, from the one venue-wide fetch', async () => {
+    mockApiFetch.mockResolvedValue({
+      requirements: [
+        { id: 'r1', scope: 'venue', appointment_service_id: null, service_item_id: null, compliance_type_name: 'Intake form' },
+        { id: 'r2', scope: 'service', appointment_service_id: 'svc-1', service_item_id: null, compliance_type_name: 'Patch test' },
+        { id: 'r3', scope: 'venue', appointment_service_id: null, service_item_id: null, compliance_type_name: 'Intake form' },
+      ],
+    });
+    const { result } = await renderHook(() => useVenueWideRequirementNames(), {
+      wrapper: makeWrapper(),
+    });
+    await waitFor(() => expect(result.current).toEqual(['Intake form']));
+    expect(mockApiFetch).toHaveBeenCalledWith('/api/venue/compliance/requirements', {
+      accessToken: mockToken,
+    });
+  });
+});
+
 describe('useAddComplianceRequirement', () => {
   it('POSTs service_id + compliance_type_id + enforcement', async () => {
     mockApiFetch.mockResolvedValueOnce({ requirement: { id: 'r1' } });
@@ -111,6 +154,24 @@ describe('useAddComplianceRequirement', () => {
       service_id: 'svc-1',
       compliance_type_id: 'type-1',
       enforcement: 'block_online',
+    });
+  });
+
+  it('POSTs scope: venue with no service for an all-bookings requirement', async () => {
+    mockApiFetch.mockResolvedValueOnce({ requirement: { id: 'r1' } });
+    const { result } = await renderHook(() => useAddComplianceRequirement(), {
+      wrapper: makeWrapper(),
+    });
+    await result.current.mutateAsync({
+      scope: 'venue',
+      compliance_type_id: 'type-1',
+      enforcement: 'block_all',
+    });
+    const [, opts] = mockApiFetch.mock.calls[0]!;
+    expect(JSON.parse((opts as { body: string }).body)).toEqual({
+      scope: 'venue',
+      compliance_type_id: 'type-1',
+      enforcement: 'block_all',
     });
   });
 });

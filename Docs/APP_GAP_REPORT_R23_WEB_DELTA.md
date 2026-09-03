@@ -37,7 +37,7 @@ Six strands in this range:
 Plus marketing/homepage work, onboarding link fixes, E2E/CI fixes and a Collective RLS
 recursion fix — none of which reach the app.
 
-**Verdict (R23-1, R23-2 and R23-3 built 2026-09-03, the rest open): seven gaps — two of them live behaviour regressions the app inherits the moment a
+**Verdict (R23-1, R23-2, R23-3 and R23-5 built 2026-09-03; R23-4, R23-6, R23-7 open): seven gaps — two of them live behaviour regressions the app inherits the moment a
 venue uses the new web features (R23-1, R23-2), three feature gaps (R23-3, R23-4, R23-5) and
 two small ones (R23-6, R23-7). Nothing in the range breaks an endpoint the app calls.** The
 auth work is already matched by the app's own 2026-08-31 commits; the deleted public compliance
@@ -302,6 +302,16 @@ services". Group multi-service rows last.
 ## Part 5 — R23-5: venue-wide compliance requirements
 
 **Severity: MEDIUM (feature; the app cannot see or create them).**
+
+**BUILT 2026-09-03.** `ComplianceRequirementRow.scope` + `isVenueWideRequirement` (scope, or no
+service FK on an older server); `useVenueWideComplianceRequirements` (`?scope=venue`) and
+`useVenueWideRequirementNames` (from the one venue-wide fetch the counts share); the counts skip
+venue rows; `useAddComplianceRequirement` takes `scope` with `service_id` optional.
+`ComplianceRequirementsEditor` gained `scope="venue"` (web's copy for the empty state, the add
+sheet and the card) and a read-only "Also required for all bookings: …" note; the Requirements
+panel pins an **All bookings** card above the services with its own count pill; the service
+form's editor shows the note. Hook tests pin the `?scope=venue` GET, the `scope: 'venue'` POST
+and the venue-row exclusion from counts.
 
 ### What web changed
 

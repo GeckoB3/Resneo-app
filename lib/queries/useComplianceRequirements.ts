@@ -12,7 +12,9 @@ import { useAccessToken } from '@/lib/queries/useAccessToken';
  * the service editor). All four routes use `createVenueRouteClient` on the web,
  * so they're Bearer-callable directly:
  *  - GET    /requirements?service_id=…   list a service's requirements (any staff)
- *  - POST   /requirements                add one (admin)
+ *  - GET    /requirements?scope=venue     the rows that apply to EVERY appointment
+ *                                          booking (web 2026-09-01, plan §4)
+ *  - POST   /requirements                add one (admin); `scope: 'venue'` needs no service
  *  - PATCH  /requirements/[id]           change enforcement / lock period (admin)
  *  - DELETE /requirements/[id]           remove one (admin)
  *
@@ -95,9 +97,24 @@ export const COMPLIANCE_ONLINE_COLLECTION_DESCRIPTIONS: Record<string, string> =
   COMPLIANCE_ONLINE_COLLECTION_OPTIONS.map((o) => [o.value, o.description]),
 );
 
+/** Who a requirement binds to: one service, or every appointment booking at the venue. */
+export type ComplianceRequirementScope = 'service' | 'venue';
+
+/**
+ * A row applies to every booking when it is venue-scoped. Older servers send no
+ * `scope`; a row with neither service FK can only be venue-wide.
+ */
+export function isVenueWideRequirement(
+  row: Pick<ComplianceRequirementRow, 'scope' | 'appointment_service_id' | 'service_item_id'>,
+): boolean {
+  return row.scope === 'venue' || (!row.appointment_service_id && !row.service_item_id);
+}
+
 /** One row from GET /requirements (web `RequirementRow`). */
 export interface ComplianceRequirementRow {
   id: string;
+  /** `venue` rows apply to every appointment booking and carry no service FK (web plan §4). */
+  scope?: ComplianceRequirementScope;
   compliance_type_id: string;
   enforcement: ComplianceEnforcement;
   lock_period_hours: number | null;
@@ -119,6 +136,8 @@ const requirementKeys = {
     ] as const,
   forVenue: (accessToken: string | null) =>
     [...queryKeys.compliance.all(), 'requirements', keyScope(accessToken), '__venue__'] as const,
+  venueWide: (accessToken: string | null) =>
+    [...queryKeys.compliance.all(), 'requirements', keyScope(accessToken), '__scope_venue__'] as const,
 };
 
 /**
@@ -154,6 +173,63 @@ export function useComplianceRequirements(serviceId: string | null, enabled = tr
       return fetchRequirementsForService(accessToken, serviceId);
     },
   });
+}
+
+/**
+ * GET /api/venue/compliance/requirements?scope=venue — the requirements every
+ * appointment booking must meet (web 2026-09-01). A service row for the same
+ * type wins over the venue row at booking time, which is why the service editor
+ * lists these read-only: adding the same form twice changes nothing.
+ */
+export function useVenueWideComplianceRequirements(enabled = true) {
+  const accessToken = useAccessToken();
+  const queryEnabled = enabled && isBackendConfigured() && accessToken !== null;
+
+  return useQuery({
+    queryKey: requirementKeys.venueWide(accessToken),
+    enabled: queryEnabled,
+    retry: false, // 403/402 = plan gate
+    queryFn: async (): Promise<{ requirements: ComplianceRequirementRow[] }> => {
+      if (!accessToken) {
+        throw new Error('Missing parameters');
+      }
+      return apiFetch<{ requirements: ComplianceRequirementRow[] }>(
+        '/api/venue/compliance/requirements?scope=venue',
+        { accessToken },
+      );
+    },
+  });
+}
+
+/**
+ * The names of the venue-wide types, from the same venue-wide fetch the counts
+ * use (one request, shared cache). Shown read-only above a service's own list so
+ * nobody adds the same form twice.
+ */
+export function useVenueWideRequirementNames(enabled = true): string[] {
+  const accessToken = useAccessToken();
+  const queryEnabled = enabled && isBackendConfigured() && accessToken !== null;
+  const query = useQuery({
+    queryKey: requirementKeys.forVenue(accessToken),
+    enabled: queryEnabled,
+    retry: false,
+    queryFn: async (): Promise<{ requirements: ComplianceRequirementRow[] }> => {
+      if (!accessToken) {
+        throw new Error('Missing parameters');
+      }
+      return apiFetch<{ requirements: ComplianceRequirementRow[] }>(
+        '/api/venue/compliance/requirements',
+        { accessToken },
+      );
+    },
+  });
+  const names: string[] = [];
+  for (const row of query.data?.requirements ?? []) {
+    if (isVenueWideRequirement(row) && !names.includes(row.compliance_type_name)) {
+      names.push(row.compliance_type_name);
+    }
+  }
+  return names;
 }
 
 /**
@@ -193,6 +269,9 @@ export function useComplianceRequirementCounts(
   if (query.data) {
     const wanted = new Set(serviceIds);
     for (const row of query.data.requirements) {
+      // Venue-wide rows apply to every service and are counted on their own
+      // pinned row, not against each service.
+      if (isVenueWideRequirement(row)) continue;
       // Rows carry both polymorphic service FK columns; group by whichever is set.
       const serviceId = row.appointment_service_id ?? row.service_item_id;
       if (!serviceId || !wanted.has(serviceId)) continue;
@@ -206,14 +285,19 @@ export function useComplianceRequirementCounts(
   return counts;
 }
 
-/** POST /api/venue/compliance/requirements — add a requirement (admin). */
+/**
+ * POST /api/venue/compliance/requirements — add a requirement (admin). Omit
+ * `scope` (or send `service`) with a `service_id`; `scope: 'venue'` makes the
+ * type required on every appointment booking and needs no service.
+ */
 export function useAddComplianceRequirement() {
   const accessToken = useAccessToken();
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async (input: {
-      service_id: string;
+      scope?: ComplianceRequirementScope;
+      service_id?: string;
       compliance_type_id: string;
       enforcement: ComplianceEnforcement;
       lock_period_hours?: number | null;

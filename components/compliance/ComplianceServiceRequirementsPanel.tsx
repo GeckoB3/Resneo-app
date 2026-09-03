@@ -9,7 +9,10 @@ import { ErrorState } from '@/components/ui/ErrorState';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
-import { useComplianceRequirementCounts } from '@/lib/queries/useComplianceRequirements';
+import {
+  useComplianceRequirementCounts,
+  useVenueWideRequirementNames,
+} from '@/lib/queries/useComplianceRequirements';
 import { useManagedServices } from '@/lib/queries/useServicesManage';
 import { spacing } from '@/theme/index';
 
@@ -40,6 +43,9 @@ export function ComplianceServiceRequirementsPanel({ complianceEnabled }: Props)
   // the editor's per-service cache, so expanding a marked service is instant).
   const serviceIds = useMemo(() => services.map((s) => s.id), [services]);
   const requirementCounts = useComplianceRequirementCounts(serviceIds, complianceEnabled);
+  // The rows that apply to every booking (web 2026-09-01): their own pinned card,
+  // and named read-only inside each service so the same form is not added twice.
+  const venueWideNames = useVenueWideRequirementNames(complianceEnabled);
 
   if (!complianceEnabled) {
     return (
@@ -67,21 +73,44 @@ export function ComplianceServiceRequirementsPanel({ complianceEnabled }: Props)
     );
   }
 
+  const allBookingsCard = (
+    <CollapsibleCard
+      title="All bookings"
+      marker={
+        venueWideNames.length > 0 ? (
+          <CompliancePill
+            tone="current"
+            label={venueWideNames.length === 1 ? '1 required' : `${venueWideNames.length} required`}
+          />
+        ) : undefined
+      }
+      summary="Required on every appointment booking"
+      lazy
+      animateLayout={false}>
+      <ComplianceRequirementsEditor scope="venue" complianceEnabled={complianceEnabled} embedded />
+    </CollapsibleCard>
+  );
+
   if (services.length === 0) {
     return (
-      <EmptyState
-        title="No services yet"
-        message="Create a service first, then choose which compliance records it requires."
-      />
+      <View style={styles.panel}>
+        {allBookingsCard}
+        <EmptyState
+          title="No services yet"
+          message="Create a service first, then choose which compliance records it requires."
+        />
+      </View>
     );
   }
 
   return (
     <View style={styles.panel}>
       <Text variant="caption" tone="muted">
-        Choose which compliance records each service requires before a booking. Missing or expired
-        records warn or block at booking time.
+        Choose which compliance records every booking, or each service, requires. Missing or
+        expired records warn or block at booking time; a service&apos;s own rule for a type wins over
+        the all-bookings one.
       </Text>
+      {allBookingsCard}
       {services.map((service) => {
         const count = requirementCounts.get(service.id) ?? 0;
         return (
@@ -103,6 +132,7 @@ export function ComplianceServiceRequirementsPanel({ complianceEnabled }: Props)
             animateLayout={false}>
             <ComplianceRequirementsEditor
               serviceId={service.id}
+              venueWideTypeNames={venueWideNames}
               complianceEnabled={complianceEnabled}
               embedded
             />
