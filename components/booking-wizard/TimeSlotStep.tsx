@@ -14,10 +14,12 @@ import {
 } from '@/lib/booking/group-slot-availability';
 import { getDateTimeFormat } from '@/lib/dates/formatters';
 import { hapticSelect } from '@/lib/haptics';
+import type { ServiceChainSegmentParam } from '@/lib/booking/service-chain';
 import {
   useAnyPractitionerAvailability,
   useAppointmentAvailability,
 } from '@/lib/queries/useAppointmentAvailability';
+import { useChainAvailability } from '@/lib/queries/useChainAvailability';
 import { minTouchTarget, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { AppointmentSlot } from '@/types/appointment-availability';
@@ -38,8 +40,16 @@ type TimeSlotStepProps = {
   /** Staff duration override (minutes) chosen at the service/variant step, or
    *  null for the service default. Scopes the availability query. */
   durationMinutes: number | null;
-  /** Venue id — needed for the waitlist-join fallback. */
+  /** Venue id — needed for the waitlist-join fallback and the chain route. */
   venueId: string;
+  /**
+   * A multi-service visit (web 2026-09-02): two to four services in visit
+   * order. When set, the day's starts come from the public chain route — only
+   * those where the WHOLE visit fits with one person — labelled with the first
+   * service and carrying the span as `duration_minutes`. The single-service
+   * inputs above still name the first service for the waitlist and matching.
+   */
+  chain?: ServiceChainSegmentParam[] | null;
   selectedSlot: AppointmentSlot | null;
   onSelectSlot: (slot: AppointmentSlot) => void;
   onContinue: () => void;
@@ -174,9 +184,11 @@ export function TimeSlotStep({
   groupBusy,
   groupDurationMinutes = 0,
   earliestStart = null,
+  chain = null,
 }: TimeSlotStepProps) {
   const { colors } = useTheme();
   const isAnyAvailable = practitionerId === ANY_AVAILABLE_PRACTITIONER_ID;
+  const isChain = (chain?.length ?? 0) >= 2;
   const [waitlistOpen, setWaitlistOpen] = useState(false);
 
   const singleQuery = useAppointmentAvailability({
@@ -187,7 +199,7 @@ export function TimeSlotStep({
     variantId,
     addonIds,
     durationMinutes,
-    enabled: !isAnyAvailable,
+    enabled: !isAnyAvailable && !isChain,
   });
   const pooledQuery = useAnyPractitionerAvailability({
     date,
@@ -197,7 +209,16 @@ export function TimeSlotStep({
     variantId,
     addonIds,
     durationMinutes,
-    enabled: isAnyAvailable,
+    enabled: isAnyAvailable && !isChain,
+  });
+  // The chain route pools server-side for "any available" (only the people who
+  // offer every service), so one request covers both practitioner modes.
+  const chainQuery = useChainAvailability({
+    venueId,
+    date,
+    practitionerId,
+    chain: chain ?? [],
+    enabled: isChain,
   });
 
   const singleSlots = useMemo(() => {
@@ -217,10 +238,10 @@ export function TimeSlotStep({
 
   // For pooled "any available" rows, collapse to one button per clock time so
   // the same time under multiple practitioners doesn't show twice.
-  const slots = useMemo(
-    () => (isAnyAvailable ? dedupeSlotsByStartTime(pooledQuery.slots) : singleSlots),
-    [isAnyAvailable, pooledQuery.slots, singleSlots],
-  );
+  const slots = useMemo(() => {
+    if (isChain) return isAnyAvailable ? dedupeSlotsByStartTime(chainQuery.slots) : chainQuery.slots;
+    return isAnyAvailable ? dedupeSlotsByStartTime(pooledQuery.slots) : singleSlots;
+  }, [isChain, isAnyAvailable, chainQuery.slots, pooledQuery.slots, singleSlots]);
 
   // Same-day cutoff (web parity): the staff availability endpoint deliberately
   // returns past slots (skipPastSlotFilter), so we hide today's slots that are
@@ -297,14 +318,27 @@ export function TimeSlotStep({
     }
   }, [visibleSlots, earliestStart, selectedSlot, onSelectSlot]);
 
-  const isLoading = isAnyAvailable ? pooledQuery.isLoading : singleQuery.isLoading;
-  const isFetching = isAnyAvailable ? pooledQuery.isFetching : singleQuery.isFetching;
-  const isError = isAnyAvailable ? pooledQuery.isError : singleQuery.isError;
-  const errorValue = isAnyAvailable ? pooledQuery.error : singleQuery.error;
-  const retry = isAnyAvailable ? pooledQuery.refetch : () => void singleQuery.refetch();
-  // Partial pooled failure — only the "Any available" path can be partial; a
-  // single-practitioner lookup is all-or-nothing and reports through `isError`.
-  const unavailableCount = isAnyAvailable ? pooledQuery.unavailableCount : 0;
+  const isLoading = isChain
+    ? chainQuery.isLoading
+    : isAnyAvailable
+      ? pooledQuery.isLoading
+      : singleQuery.isLoading;
+  const isFetching = isChain
+    ? chainQuery.isFetching
+    : isAnyAvailable
+      ? pooledQuery.isFetching
+      : singleQuery.isFetching;
+  const isError = isChain ? chainQuery.isError : isAnyAvailable ? pooledQuery.isError : singleQuery.isError;
+  const errorValue = isChain ? chainQuery.error : isAnyAvailable ? pooledQuery.error : singleQuery.error;
+  const retry = isChain
+    ? () => void chainQuery.refetch()
+    : isAnyAvailable
+      ? pooledQuery.refetch
+      : () => void singleQuery.refetch();
+  // Partial pooled failure — only the client-side "Any available" fan-out can be
+  // partial; a single lookup and the server-pooled chain are all-or-nothing and
+  // report through `isError`.
+  const unavailableCount = isAnyAvailable && !isChain ? pooledQuery.unavailableCount : 0;
 
   if (isLoading) {
     return <LoadingState message="Loading available times…" />;

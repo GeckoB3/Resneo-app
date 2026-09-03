@@ -208,7 +208,8 @@ async function bookWithCustomDuration() {
   await press(() => screen.getByText('90m'));
   await press(() => screen.getByText('Done'));
   await press(() => screen.getByText('Cut'));
-
+  // Picker bar, then the date step's own Continue.
+  await press(() => screen.getByText('Continue'));
   await press(() => screen.getByText('Continue'));
   await press(() => screen.getByText('__pick_slot__'));
   await press(() => screen.getByText('__time_continue__'));
@@ -249,6 +250,7 @@ describe('ServiceBookingFlow — what the review step shows', () => {
     await press(() => screen.getByText('Done'));
     await press(() => screen.getByText('Cut'));
     await press(() => screen.getByText('Continue'));
+    await press(() => screen.getByText('Continue'));
     await press(() => screen.getByText('__pick_slot__'));
     await press(() => screen.getByText('__time_continue__'));
 
@@ -262,9 +264,9 @@ describe('ServiceBookingFlow — what the review step shows', () => {
  * A custom duration now survives into a chain: `create-multi-service` takes a
  * per-segment `duration_minutes` (web 2026-09-02) and the payload sends it, so
  * the second service chains from the stretched end rather than the catalogue
- * one. (Before that the append path reset segment 1 to 30 min.)
+ * one. The services are ticked together on the picker.
  */
-describe('ServiceBookingFlow — appending a second service', () => {
+describe('ServiceBookingFlow — a second service in the visit', () => {
   it('keeps the custom duration and chains the next service from its end', async () => {
     await act(async () => {
       renderFlow();
@@ -275,17 +277,16 @@ describe('ServiceBookingFlow — appending a second service', () => {
     await press(() => screen.getByText('90m'));
     await press(() => screen.getByText('Done'));
     await press(() => screen.getByText('Cut'));
+    await press(() => screen.getByText('Extra'));
+    // The bar books the ticked services at their chosen lengths.
+    expect(screen.getByText(/2 services · 110 min/)).toBeTruthy();
+    await press(() => screen.getByText('Continue'));
     await press(() => screen.getByText('Continue'));
     await press(() => screen.getByText('__pick_slot__'));
     await press(() => screen.getByText('__time_continue__'));
 
-    await waitFor(() => expect(screen.getByText(/9:00am–10:30am/)).toBeTruthy());
-
-    await press(() => screen.getByText('+ Add another service'));
-    await press(() => screen.getAllByText('Extra')[0]!);
-
     // Segment 1 keeps its 90 min, so segment 2 chains from 10:30.
-    await waitFor(() => expect(screen.getByText(/10:30am–10:50am/)).toBeTruthy());
-    expect(screen.getByText(/9:00am–10:30am/)).toBeTruthy();
+    await waitFor(() => expect(screen.getByText(/9:00am–10:30am/)).toBeTruthy());
+    expect(screen.getByText(/10:30am–10:50am/)).toBeTruthy();
   });
 });

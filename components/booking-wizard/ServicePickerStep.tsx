@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, View } from 'react-native';
 
 import { StaffDurationControl } from '@/components/booking-wizard/StaffDurationControl';
+import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
@@ -18,6 +19,9 @@ import {
   serviceMatchesSearch,
   type ServicesLayout,
 } from '@/lib/booking/service-categories';
+import { MAX_SERVICES_PER_VISIT } from '@/lib/booking/service-chain';
+import { formatPence } from '@/lib/format';
+import { hapticSelect } from '@/lib/haptics';
 import { fonts, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type {
@@ -49,7 +53,40 @@ type ServicePickerStepProps = {
    * closed except the one holding the selected service. Flat when there are none.
    */
   layout?: ServicesLayout;
+  /**
+   * `single` (default): tapping a service chooses it and moves on. `multi` (web
+   * 2026-09-02): tapping ticks it, up to {@link MAX_SERVICES_PER_VISIT}, and a
+   * bar under the list carries the count, total time and Continue — every
+   * service is chosen first, then the times where the whole visit fits.
+   */
+  selectionMode?: 'single' | 'multi';
+  /** Multi: the ticked service ids, in visit order. Owned by the flow so a return to the picker keeps them. */
+  selectedServiceIds?: string[];
+  /** Multi: a service was ticked or unticked. */
+  onToggleService?: (option: AppointmentServiceOption) => void;
+  onClearSelection?: () => void;
+  /** Multi: proceed with the ticked services, each with its staff duration override (null = default). */
+  onContinueSelection?: (
+    picks: { option: AppointmentServiceOption; durationOverride: number | null }[],
+  ) => void;
+  /** Multi: existing overrides by service id, so a return to the picker keeps the pills. */
+  initialDurationOverrides?: Record<string, number>;
 };
+
+/** One line of the picker bar: what is ticked, at the length it will be booked. */
+export function pickerBarSummary(
+  picks: readonly { row: ServiceRow; durationOverride: number | null }[],
+): { count: number; totalMinutes: number; fromPence: number | null; names: string } {
+  const count = picks.length;
+  const totalMinutes = picks.reduce(
+    (sum, p) => sum + (p.durationOverride ?? p.row.option.durationMinutes),
+    0,
+  );
+  const priced = picks.filter((p) => p.row.fromPricePence != null);
+  const fromPence =
+    priced.length > 0 ? priced.reduce((sum, p) => sum + (p.row.fromPricePence ?? 0), 0) : null;
+  return { count, totalMinutes, fromPence, names: picks.map((p) => p.row.option.serviceName).join(' + ') };
+}
 
 /** One UNIQUE service per row, carrying its cheapest price across practitioners. */
 export interface ServiceRow {
@@ -225,8 +262,15 @@ export function ServicePickerStep({
   selectedServiceId,
   initialDurationOverride,
   layout = 'sections',
+  selectionMode = 'single',
+  selectedServiceIds = [],
+  onToggleService,
+  onClearSelection,
+  onContinueSelection,
+  initialDurationOverrides,
 }: ServicePickerStepProps) {
   const { colors } = useTheme();
+  const isMulti = selectionMode === 'multi';
   const practitioners = catalog?.practitioners ?? [];
   const effectivePractitioner =
     defaultPractitionerId && practitioners.some((p) => p.id === defaultPractitionerId)
@@ -240,11 +284,12 @@ export function ServicePickerStep({
 
   // Per-service staff duration overrides (minutes). Seeded from the active
   // selection so going BACK to this step keeps a custom duration visible.
-  const [overrides, setOverrides] = useState<Record<string, number>>(() =>
-    selectedServiceId && initialDurationOverride != null
+  const [overrides, setOverrides] = useState<Record<string, number>>(() => ({
+    ...(initialDurationOverrides ?? {}),
+    ...(selectedServiceId && initialDurationOverride != null
       ? { [selectedServiceId]: initialDurationOverride }
-      : {},
-  );
+      : {}),
+  }));
 
   const setOverride = (serviceId: string, minutes: number | null) =>
     setOverrides((prev) => {
@@ -260,10 +305,12 @@ export function ServicePickerStep({
   // the one exception is the category holding the service already chosen, which
   // must never hide from someone coming back to change their mind.
   const [openCategoryIds, setOpenCategoryIds] = useState<Set<string | null>>(() => {
-    const selected = selectedServiceId
-      ? rows.find((r) => r.option.serviceId === selectedServiceId)
-      : null;
-    return selected ? new Set([selected.option.category?.id ?? null]) : new Set();
+    const keep = new Set<string>([...(selectedServiceId ? [selectedServiceId] : []), ...selectedServiceIds]);
+    const open = new Set<string | null>();
+    for (const r of rows) {
+      if (keep.has(r.option.serviceId)) open.add(r.option.category?.id ?? null);
+    }
+    return open;
   });
   const toggleCategory = (categoryId: string | null) =>
     setOpenCategoryIds((prev) => {
@@ -277,6 +324,24 @@ export function ServicePickerStep({
     () => buildPickerLines(rows, { layout, search, openCategoryIds }),
     [rows, layout, search, openCategoryIds],
   );
+
+  // The ticked rows in visit order (pick order is visit order — web parity).
+  const picks = useMemo(
+    () =>
+      isMulti
+        ? selectedServiceIds
+            .map((id) => rows.find((r) => r.option.serviceId === id))
+            .filter((r): r is ServiceRow => Boolean(r))
+            .map((row) => ({
+              row,
+              durationOverride:
+                (row.option.variants ?? []).length > 0 ? null : overrides[row.option.serviceId] ?? null,
+            }))
+        : [],
+    [isMulti, selectedServiceIds, rows, overrides],
+  );
+  const pickerFull = picks.length >= MAX_SERVICES_PER_VISIT;
+  const bar = pickerBarSummary(picks);
 
   if (isLoading) {
     return <LoadingState message="Loading services…" />;
@@ -309,6 +374,7 @@ export function ServicePickerStep({
 
       <FlatList
         data={lines}
+        style={styles.flex1}
         keyExtractor={(item) => item.key}
         contentContainerStyle={styles.list}
         ItemSeparatorComponent={Separator}
@@ -356,6 +422,9 @@ export function ServicePickerStep({
           const override = overrides[option.serviceId] ?? null;
           const displayedDuration = override ?? natural;
           const price = formatFromPrice(item.row);
+          const ticked = isMulti && selectedServiceIds.includes(option.serviceId);
+          // Each service can be chosen once per visit; at the cap the rest wait.
+          const tickDisabled = isMulti && !ticked && pickerFull;
           // Variant services choose their duration on the variant step (web parity).
           const metaParts = [
             hasVariants ? `From ${natural} min · ${practitionerSummary(item.row)}` : practitionerSummary(item.row),
@@ -367,14 +436,35 @@ export function ServicePickerStep({
               <View style={styles.row}>
                 <PressableScale
                   haptic
-                  onPress={() => onSelect(option, hasVariants ? null : override)}
+                  disabled={tickDisabled}
+                  onPress={() => {
+                    if (isMulti) {
+                      onToggleService?.(option);
+                      return;
+                    }
+                    onSelect(option, hasVariants ? null : override);
+                  }}
+                  accessibilityState={isMulti ? { selected: ticked, disabled: tickDisabled } : undefined}
                   accessibilityLabel={`${option.serviceName}, ${
                     hasVariants ? `from ${natural}` : displayedDuration
                   } minutes${price ? `, ${price}` : ''}`}
-                  style={styles.selectArea}>
-                  <Text variant="bodyMedium" numberOfLines={1}>
-                    {option.serviceName}
-                  </Text>
+                  style={[styles.selectArea, tickDisabled && styles.dimmed]}>
+                  <View style={styles.nameRow}>
+                    {isMulti ? (
+                      <SymbolView
+                        name={
+                          ticked
+                            ? { ios: 'checkmark.circle.fill', android: 'check_circle', web: 'check_circle' }
+                            : { ios: 'circle', android: 'radio_button_unchecked', web: 'radio_button_unchecked' }
+                        }
+                        tintColor={ticked ? colors.brand : colors.textMuted}
+                        size={20}
+                      />
+                    ) : null}
+                    <Text variant="bodyMedium" numberOfLines={1} style={styles.flex1}>
+                      {option.serviceName}
+                    </Text>
+                  </View>
                   <Text variant="caption" tone="muted" numberOfLines={1}>
                     {metaParts.join(' · ')}
                   </Text>
@@ -404,6 +494,47 @@ export function ServicePickerStep({
           );
         }}
       />
+
+      {/* The bar appears once something is ticked and stays under the list while
+          it scrolls, so Continue is always in reach (web's MultiServicePickerBar). */}
+      {isMulti && picks.length > 0 ? (
+        <Card style={styles.bar}>
+          <View style={styles.barText}>
+            <Text variant="label">
+              {bar.count} {bar.count === 1 ? 'service' : 'services'} · {bar.totalMinutes} min
+              {bar.fromPence != null && bar.fromPence > 0 ? ` · from ${formatPence(bar.fromPence)}` : ''}
+            </Text>
+            <Text variant="caption" tone="muted" numberOfLines={2}>
+              {bar.names}
+            </Text>
+            <Text variant="caption" tone="muted">
+              {pickerFull
+                ? `That's the most a visit can hold (${MAX_SERVICES_PER_VISIT}).`
+                : `Tick more to book them back to back with the same practitioner, up to ${MAX_SERVICES_PER_VISIT}.`}
+            </Text>
+          </View>
+          <View style={styles.barActions}>
+            <Button
+              label="Clear"
+              variant="ghost"
+              size="sm"
+              onPress={() => {
+                hapticSelect();
+                onClearSelection?.();
+              }}
+            />
+            <Button
+              label="Continue"
+              size="sm"
+              onPress={() =>
+                onContinueSelection?.(
+                  picks.map((p) => ({ option: p.row.option, durationOverride: p.durationOverride })),
+                )
+              }
+            />
+          </View>
+        </Card>
+      ) : null}
     </View>
   );
 }
@@ -454,6 +585,28 @@ const styles = StyleSheet.create({
     minWidth: 0,
     gap: 2,
     paddingVertical: spacing.sm,
+  },
+  flex1: {
+    flex: 1,
+  },
+  dimmed: {
+    opacity: 0.45,
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  bar: {
+    gap: spacing.sm,
+  },
+  barText: {
+    gap: 2,
+  },
+  barActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: spacing.sm,
   },
   rowRight: {
     alignItems: 'flex-end',

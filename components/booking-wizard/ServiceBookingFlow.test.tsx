@@ -74,6 +74,8 @@ jest.mock('expo-router', () => ({
 // Stub the slot picker — it has its own tests and a live availability fetch; here
 // we only need it to emit a concrete slot at a fixed time and continue, so the
 // flow seeds the multi-service chain from the chosen service + slot.
+/** The `services` chain the time step was handed (null for a single service). */
+const timeStepChains: unknown[] = [];
 jest.mock('@/components/booking-wizard/TimeSlotStep', () => {
   const { Pressable: P, Text: T, View: V } = require('react-native');
   // Two separate controls: selecting the slot sets state, and a distinct
@@ -86,12 +88,16 @@ jest.mock('@/components/booking-wizard/TimeSlotStep', () => {
       onContinue,
       serviceId,
       practitionerId,
+      chain,
     }: {
       onSelectSlot: (slot: unknown) => void;
       onContinue: () => void;
       serviceId: string;
       practitionerId: string;
-    }) => (
+      chain?: unknown;
+    }) => {
+      timeStepChains.push(chain ?? null);
+      return (
       <V>
         <P
           accessibilityRole="button"
@@ -112,7 +118,8 @@ jest.mock('@/components/booking-wizard/TimeSlotStep', () => {
           <T>__time_continue__</T>
         </P>
       </V>
-    ),
+      );
+    },
   };
 });
 
@@ -177,19 +184,28 @@ describe('ServiceBookingFlow — multi-service buffer (regression)', () => {
       renderFlow();
     });
 
-    // Pick the non-zero-buffer service (single practitioner → straight to date).
+    // Tick the non-zero-buffer service and the second one (web 2026-09-02: every
+    // service first), then continue from the picker bar (single practitioner →
+    // straight to date).
     await waitFor(() => expect(screen.getByText('Cut')).toBeTruthy());
     await press(() => screen.getByText('Cut'));
+    await press(() => screen.getByText('Blow-dry'));
+    expect(screen.getByText(/2 services · 50 min/)).toBeTruthy();
+    await press(() => screen.getByText('Continue'));
     // Date step: continue from the (auto-selected, available) date.
     await press(() => screen.getByText('Continue'));
-    // Time step (stubbed): select a 09:00 slot, then continue → seeds the chain.
+    // Time step (stubbed): select a 09:00 slot, then continue → builds the chain.
     await press(() => screen.getByText('__pick_slot__'));
     await press(() => screen.getByText('__time_continue__'));
 
-    // Multi-service review: append the second service.
     await waitFor(() => expect(screen.getByText('Review your services')).toBeTruthy());
-    await press(() => screen.getByText('+ Add another service'));
-    await press(() => screen.getByText('Blow-dry'));
+
+    // The time step was asked for starts where the WHOLE visit fits: the chain
+    // names both services in visit order (web's `services` parameter).
+    expect(timeStepChains[timeStepChains.length - 1]).toEqual([
+      expect.objectContaining({ service_id: 'svc-1' }),
+      expect.objectContaining({ service_id: 'svc-2' }),
+    ]);
 
     // Segment 1: 09:00–09:30 (30 min). Segment 2 MUST start at 09:45, NOT 09:30 —
     // i.e. first start + 30 min duration + 15 min buffer. The old hardcoded

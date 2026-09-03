@@ -9,10 +9,7 @@ import { GroupBookingFlow } from '@/components/booking-wizard/GroupBookingFlow';
 import type { GuestDetails } from '@/components/booking-wizard/GuestDetailsStep';
 import { GuestDetailsStep } from '@/components/booking-wizard/GuestDetailsStep';
 import { MonthDatePicker } from '@/components/booking-wizard/MonthDatePicker';
-import {
-  MAX_MULTI_SERVICE_SEGMENTS,
-  MultiServiceReviewStep,
-} from '@/components/booking-wizard/MultiServiceReviewStep';
+import { MultiServiceReviewStep } from '@/components/booking-wizard/MultiServiceReviewStep';
 import { PractitionerStep } from '@/components/booking-wizard/PractitionerStep';
 import { ServicePickerStep } from '@/components/booking-wizard/ServicePickerStep';
 import { StaffPickerStep } from '@/components/booking-wizard/StaffPickerStep';
@@ -31,6 +28,7 @@ import {
   type MultiServiceSegment,
   recomputeMultiServiceChain,
 } from '@/lib/booking/multi-service-chain';
+import { chainSpanMinutes, type ServiceChainSegmentParam } from '@/lib/booking/service-chain';
 import { useAppointmentCatalog } from '@/lib/queries/useAppointmentCatalog';
 import { useBookingFormVenue } from '@/lib/queries/useBookingFormVenue';
 import { calendarDateInTimeZone } from '@/lib/queries/useBookingsList';
@@ -57,6 +55,7 @@ type StepKey =
   | 'practitioner'
   | 'variant'
   | 'addons'
+  | 'chain_options'
   | 'date'
   | 'time'
   | 'multi_service'
@@ -69,6 +68,7 @@ const STEP_LABELS: Record<StepKey, string> = {
   practitioner: 'Practitioner',
   variant: 'Option',
   addons: 'Add-ons',
+  chain_options: 'Options',
   date: 'Date',
   time: 'Time',
   multi_service: 'Services',
@@ -80,6 +80,38 @@ const STEP_LABELS: Record<StepKey, string> = {
 type StaffPick =
   | { kind: 'any' }
   | { kind: 'practitioner'; practitioner: AppointmentCatalogPractitioner };
+
+/**
+ * A service after the first in a multi-service visit (web 2026-09-02's
+ * `chainExtras`): its own option, variant and add-on choices, collected in turn
+ * before the times. The first ticked service stays `selectedService`, so the
+ * single-service code keeps working unchanged.
+ */
+type ChainExtra = {
+  option: AppointmentServiceOption;
+  variant: AppointmentCatalogVariant | null;
+  addonIds: string[];
+  durationOverride: number | null;
+};
+
+/** Where the chain-options step is in its walk over the extras. */
+type ChainCursor = { index: number; phase: 'variant' | 'addons' };
+
+/** What an extra still has to ask for; null when nothing. */
+function chainExtraFirstPhase(extra: ChainExtra): 'variant' | 'addons' | null {
+  if ((extra.option.variants ?? []).length > 0) return 'variant';
+  if ((extra.option.addonGroups ?? []).length > 0) return 'addons';
+  return null;
+}
+
+/** The first extra from `from` that has options to collect, with its first phase. */
+function nextChainCursor(extras: ChainExtra[], from: number): ChainCursor | null {
+  for (let i = from; i < extras.length; i += 1) {
+    const phase = chainExtraFirstPhase(extras[i]!);
+    if (phase) return { index: i, phase };
+  }
+  return null;
+}
 
 const EMPTY_GUEST: GuestDetails = {
   first_name: '',
@@ -195,14 +227,23 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
   const [multiServiceError, setMultiServiceError] = useState<string | null>(null);
   // Group mode (multiple distinct attendees) hands off to GroupBookingFlow.
   const [groupMode, setGroupMode] = useState(false);
+  // Multi-service picker (web 2026-09-02): the ticks, in visit order, and the
+  // services after the first with their options. Owned here rather than by the
+  // picker so "Change services" returns with the choices still ticked.
+  const [pendingServiceIds, setPendingServiceIds] = useState<string[]>([]);
+  const [pendingOverrides, setPendingOverrides] = useState<Record<string, number>>({});
+  const [chainExtras, setChainExtras] = useState<ChainExtra[]>([]);
+  const [chainCursor, setChainCursor] = useState<ChainCursor | null>(null);
 
-  // Practitioners able to perform the selected service.
+  // Practitioners able to perform the selected service — and, for a multi-service
+  // visit, EVERY service in it: the whole visit is with one person.
   const servicePractitioners: AppointmentCatalogPractitioner[] = useMemo(() => {
     if (!selectedService || !catalogQuery.data) return [];
+    const wanted = [selectedService.serviceId, ...chainExtras.map((e) => e.option.serviceId)];
     return catalogQuery.data.practitioners.filter((p) =>
-      p.services.some((s) => s.id === selectedService.serviceId),
+      wanted.every((id) => p.services.some((s) => s.id === id)),
     );
-  }, [selectedService, catalogQuery.data]);
+  }, [selectedService, chainExtras, catalogQuery.data]);
 
   // Booking-window settings for the selected service (min notice / same-day).
   // The staff availability endpoint returns past + inside-notice slots, so the
@@ -260,12 +301,16 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
     // slot has been chosen (segments seeded), so a single-service booking never
     // sees it unless the user chooses to add more.
     const includeMultiService = (multiServiceSegments?.length ?? 0) > 0;
+    // The extras' options (variants, add-ons) are asked in turn, first extra
+    // first, before the times — one step that walks them.
+    const includeChainOptions = nextChainCursor(chainExtras, 0) !== null;
     return [
       ...(isStaffFirst ? (['staff_pick'] as StepKey[]) : []),
       'service',
       ...(includePractitioner ? (['practitioner'] as StepKey[]) : []),
       ...(hasVariants ? (['variant'] as StepKey[]) : []),
       ...(hasAddons ? (['addons'] as StepKey[]) : []),
+      ...(includeChainOptions ? (['chain_options'] as StepKey[]) : []),
       'date',
       'time',
       ...(includeMultiService ? (['multi_service'] as StepKey[]) : []),
@@ -278,6 +323,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
     needsPractitionerStep,
     hasVariants,
     hasAddons,
+    chainExtras,
     multiServiceSegments,
   ]);
 
@@ -302,6 +348,67 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
 
   const goToStep = useCallback((key: StepKey) => setCurrentStepKey(key), []);
 
+  /**
+   * The first service of the visit was chosen, with the extras that follow it.
+   * Decides the practitioner step (only people who offer EVERY service count),
+   * widens a pooled staff-first pick, seeds the extras' options walk, and moves
+   * on: practitioner → the first service's option / add-ons → the extras'
+   * options → date.
+   */
+  const chooseService = useCallback(
+    (option: AppointmentServiceOption, customDuration: number | null, extras: ChainExtra[]) => {
+      const wanted = [option.serviceId, ...extras.map((e) => e.option.serviceId)];
+      const practitioners = catalogQuery.data
+        ? catalogQuery.data.practitioners.filter((p) =>
+            wanted.every((id) => p.services.some((s) => s.id === id)),
+          )
+        : [];
+      // Staff-first already has the person. A named practitioner arrives
+      // scoped by `dedupeCatalogServices`; a pooled pick has to be widened
+      // to the sentinel here, exactly as the practitioner step does it.
+      const resolved: AppointmentServiceOption =
+        isStaffFirst && staffPick?.kind === 'any'
+          ? {
+              ...option,
+              practitionerId: ANY_AVAILABLE_PRACTITIONER_ID,
+              practitionerName: 'Any available',
+              candidatePractitionerIds: practitioners.map((p) => p.id),
+            }
+          : option;
+      setSelectedService(resolved);
+      setSelectedSlot(null);
+      setSelectedVariant(null);
+      setSelectedAddonIds([]);
+      setMultiServiceSegments(null);
+      setMultiServiceError(null);
+      // Custom duration is chosen here (web parity); variant services
+      // defer it to the variant step and pass null.
+      setDurationOverride(customDuration ?? null);
+      setRequireDeposit(false);
+      setChainExtras(extras);
+      const cursor = nextChainCursor(extras, 0);
+      setChainCursor(cursor);
+      // Decide whether this flow runs the practitioner-choice step:
+      // only when 2+ staff offer every service and it wasn't pre-scoped.
+      // Staff-first never does — the person came first.
+      const needsPractitioner =
+        !isStaffFirst && !prefilledPractitionerId && practitioners.length >= 2;
+      setNeedsPractitionerStep(needsPractitioner);
+      if (needsPractitioner) {
+        goToStep('practitioner');
+      } else if ((resolved.variants ?? []).length > 0) {
+        goToStep('variant');
+      } else if ((resolved.addonGroups ?? []).length > 0) {
+        goToStep('addons');
+      } else if (cursor) {
+        goToStep('chain_options');
+      } else {
+        goToStep('date');
+      }
+    },
+    [catalogQuery.data, isStaffFirst, staffPick, prefilledPractitionerId, goToStep],
+  );
+
   /** Advance to the next step KEY after `from` in the active steps array. */
   const advanceFrom = useCallback(
     (from: StepKey) => {
@@ -312,52 +419,13 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
     [steps],
   );
 
-  // Walk-in "Start Now" (web parity: the staff walk-in button on the date/time
-  // step). Books the chosen service at the current venue-local time
-  // WITHOUT picking a slot — synthesise a slot at "now" and skip straight to the
-  // (optional) guest step. The create posts source:'walk-in', so the server
-  // stamps it "Started" and it lands on the calendar immediately.
-  const startWalkInNow = useCallback(
-    (todayIso: string) => {
-      if (!selectedService) return;
-      const nowTime = venueLocalTime(timeZone); // HH:mm in the venue timezone
-      const duration =
-        durationOverride ?? selectedVariant?.duration_minutes ?? selectedService.durationMinutes;
-      // An "Any available" pick carries a sentinel id — resolve a concrete
-      // practitioner so the booking targets a real column on the calendar.
-      const practitionerId =
-        selectedService.practitionerId === ANY_AVAILABLE_PRACTITIONER_ID
-          ? selectedService.candidatePractitionerIds?.[0] ?? selectedService.practitionerId
-          : selectedService.practitionerId;
-      const nowSlot: AppointmentSlot = {
-        practitioner_id: practitionerId,
-        practitioner_name: selectedService.practitionerName ?? '',
-        service_id: selectedService.serviceId,
-        service_name: selectedService.serviceName,
-        start_time: `${nowTime}:00`,
-        duration_minutes: duration,
-        price_pence: (selectedVariant?.price_pence ?? selectedService.pricePence) ?? null,
-      };
-      setMonthAnchor(todayIso);
-      setSelectedDate(todayIso);
-      setSelectedSlot(nowSlot);
-      goToStep('guest');
-    },
-    [selectedService, selectedVariant, durationOverride, timeZone, goToStep],
-  );
-
-  // ── Multi-service (back-to-back) visit ────────────────────────────────────
-  // The concrete practitioner the whole visit is with — resolved from the chosen
-  // slot ("Any available" rows pick the slot's real practitioner). Used to offer
-  // "Add another service" with that same practitioner only (server requires it).
-  const visitPractitioner: AppointmentCatalogPractitioner | null = useMemo(() => {
-    if (!catalogQuery.data || !selectedSlot) return null;
-    return catalogQuery.data.practitioners.find((p) => p.id === selectedSlot.practitioner_id) ?? null;
-  }, [catalogQuery.data, selectedSlot]);
-
-  /** Build the first chain segment from the picked service + slot. */
-  const seedMultiServiceChain = useCallback((): MultiServiceSegment[] | null => {
-    if (!selectedService || !selectedSlot) return null;
+  /**
+   * Build the visit's segments from the picked service + a start slot: the first
+   * service as before, then every extra with its own variant, add-ons and staff
+   * duration, lined up back to back (web's buildChainFromStart).
+   */
+  const buildChainFromSlot = useCallback((selectedSlot: AppointmentSlot): MultiServiceSegment[] | null => {
+    if (!selectedService) return null;
     // Two lengths, because they genuinely differ.
     //
     // `naturalDuration` is what the SERVER re-derives — catalogue (or variant)
@@ -414,64 +482,155 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
         addonPence,
       ),
     };
-    return recomputeMultiServiceChain([seg], seg.startTime);
-  }, [selectedService, selectedSlot, selectedVariant, addonGroups, selectedAddonIds, durationOverride]);
+    const extras: MultiServiceSegment[] = chainExtras.map((extra) => {
+      const { option, variant } = extra;
+      const naturalBase = variant?.duration_minutes ?? option.durationMinutes;
+      const base = extra.durationOverride ?? naturalBase;
+      const chosen = (option.addonGroups ?? [])
+        .flatMap((g) => g.addons)
+        .filter((a) => extra.addonIds.includes(a.id));
+      const extraAddonMinutes = chosen.reduce((sum, a) => sum + a.additional_duration_minutes, 0);
+      const extraAddonPence = chosen.reduce((sum, a) => sum + a.additional_price_pence, 0);
+      const price = (variant?.price_pence ?? option.pricePence) ?? null;
+      return {
+        serviceId: option.serviceId,
+        serviceName: option.serviceName,
+        serviceVariantId: variant?.id ?? null,
+        practitionerId: seg.practitionerId,
+        practitionerName: seg.practitionerName,
+        startTime: '00:00',
+        durationMinutes: base + extraAddonMinutes,
+        naturalDurationMinutes: naturalBase + extraAddonMinutes,
+        bufferMinutes: variant?.buffer_minutes ?? option.buffer_minutes ?? 0,
+        pricePence: price,
+        addonIds: extra.addonIds.length ? extra.addonIds : undefined,
+        addonTotalPence: extraAddonPence,
+        addonTotalMinutes: extraAddonMinutes,
+        ...multiServiceSegmentCharge(
+          {
+            price_pence: price,
+            deposit_pence: variant?.deposit_pence ?? option.depositPence,
+            payment_requirement: option.paymentRequirement,
+          },
+          extraAddonPence,
+        ),
+      };
+    });
+    return recomputeMultiServiceChain([seg, ...extras], seg.startTime);
+  }, [selectedService, selectedVariant, addonGroups, selectedAddonIds, durationOverride, chainExtras]);
 
-  /** Append another service (same practitioner) to the chain and recompute starts. */
-  const addServiceToChain = useCallback(
-    (serviceId: string) => {
-      setMultiServiceError(null);
-      setMultiServiceSegments((prev) => {
-        if (!prev || prev.length === 0 || !visitPractitioner) return prev;
-        // Defensive cap — the UI hides the toggle at MAX, but never append past it
-        // (the server rejects services.length > 4).
-        if (prev.length >= MAX_MULTI_SERVICE_SEGMENTS) return prev;
-        const svc = visitPractitioner.services.find((s) => s.id === serviceId);
-        if (!svc) {
-          setMultiServiceError('That service is not offered by this practitioner.');
-          return prev;
-        }
-        // A service with options needs a variant choice the append path can't
-        // make; adding it with the base duration fails the server's consecutive
-        // check. The review list already hides these — guard defensively too.
-        if ((svc.variants?.length ?? 0) > 0) {
-          setMultiServiceError('Services with options must be booked on their own.');
-          return prev;
-        }
-        const nextSeg: MultiServiceSegment = {
-          serviceId: svc.id,
-          serviceName: svc.name,
-          serviceVariantId: null,
-          practitionerId: visitPractitioner.id,
-          practitionerName: visitPractitioner.name,
-          startTime: '00:00',
-          durationMinutes: svc.duration_minutes,
-          naturalDurationMinutes: svc.duration_minutes,
-          bufferMinutes: svc.buffer_minutes ?? 0,
-          pricePence: svc.price_pence,
-          // Appended services can carry a deposit of their own. Without this the
-          // visit total ignored them, so a chain whose only deposit sat on an
-          // appended service offered staff no way to waive it.
-          ...multiServiceSegmentCharge(
-            {
-              price_pence: svc.price_pence,
-              deposit_pence: svc.deposit_pence,
-              payment_requirement: svc.payment_requirement,
-            },
-            0,
-          ),
-        };
-        const firstStart = prev[0]!.startTime;
-        // A staff custom duration on the first segment now survives the chain:
-        // `create-multi-service` takes a per-segment `duration_minutes` (web
-        // 2026-09-02) and `buildMultiServicePayload` sends it, so the server
-        // derives the same end the chain maths uses here. (Until then this path
-        // had to reset the first segment to its catalogue length.)
-        return recomputeMultiServiceChain([...prev, nextSeg], firstStart);
-      });
-    },
-    [visitPractitioner],
+  /** Build the chain from the picked slot. */
+  const seedMultiServiceChain = useCallback(
+    (): MultiServiceSegment[] | null => (selectedSlot ? buildChainFromSlot(selectedSlot) : null),
+    [selectedSlot, buildChainFromSlot],
   );
+
+  /** Minutes a service books at, add-ons included: the chain's own arithmetic. */
+  const segmentLength = (
+    option: AppointmentServiceOption,
+    variant: AppointmentCatalogVariant | null,
+    addonIds: string[],
+    override: number | null,
+  ) => ({
+    durationMinutes:
+      (override ?? variant?.duration_minutes ?? option.durationMinutes) +
+      (option.addonGroups ?? [])
+        .flatMap((g) => g.addons)
+        .filter((a) => addonIds.includes(a.id))
+        .reduce((sum, a) => sum + a.additional_duration_minutes, 0),
+    bufferMinutes: variant?.buffer_minutes ?? option.buffer_minutes ?? 0,
+  });
+
+  /**
+   * The `services` chain the day view carries once the visit has more than one
+   * service: each segment with its variant, add-ons and staff duration, so the
+   * server offers only the starts where the whole visit fits with one person.
+   */
+  const serviceChainParam: ServiceChainSegmentParam[] | null = useMemo(() => {
+    if (!selectedService || chainExtras.length === 0) return null;
+    return [
+      {
+        service_id: selectedService.serviceId,
+        variant_id: selectedVariant?.id ?? null,
+        addon_ids: selectedAddonIds,
+        duration_minutes: durationOverride,
+      },
+      ...chainExtras.map((e) => ({
+        service_id: e.option.serviceId,
+        variant_id: e.variant?.id ?? null,
+        addon_ids: e.addonIds,
+        duration_minutes: e.durationOverride,
+      })),
+    ];
+  }, [selectedService, chainExtras, selectedVariant, selectedAddonIds, durationOverride]);
+
+  // The month route only knows one length: the visit as one block (web parity;
+  // a green day can still show no times when breaks split it — the day view is exact).
+  const chainSpanForMonth: number | null =
+    serviceChainParam && selectedService
+      ? chainSpanMinutes([
+          segmentLength(selectedService, selectedVariant, selectedAddonIds, durationOverride),
+          ...chainExtras.map((e) => segmentLength(e.option, e.variant, e.addonIds, e.durationOverride)),
+        ])
+      : null;
+
+  // Walk-in "Start Now" (web parity: the staff walk-in button on the date/time
+  // step). Books the chosen service at the current venue-local time
+  // WITHOUT picking a slot — synthesise a slot at "now" and skip straight to the
+  // (optional) guest step. The create posts source:'walk-in', so the server
+  // stamps it "Started" and it lands on the calendar immediately.
+  const startWalkInNow = useCallback(
+    (todayIso: string) => {
+      if (!selectedService) return;
+      const nowTime = venueLocalTime(timeZone); // HH:mm in the venue timezone
+      const duration =
+        durationOverride ?? selectedVariant?.duration_minutes ?? selectedService.durationMinutes;
+      // An "Any available" pick carries a sentinel id — resolve a concrete
+      // practitioner so the booking targets a real column on the calendar.
+      const practitionerId =
+        selectedService.practitionerId === ANY_AVAILABLE_PRACTITIONER_ID
+          ? selectedService.candidatePractitionerIds?.[0] ?? selectedService.practitionerId
+          : selectedService.practitionerId;
+      const nowSlot: AppointmentSlot = {
+        practitioner_id: practitionerId,
+        practitioner_name: selectedService.practitionerName ?? '',
+        service_id: selectedService.serviceId,
+        service_name: selectedService.serviceName,
+        start_time: `${nowTime}:00`,
+        duration_minutes: duration,
+        price_pence: (selectedVariant?.price_pence ?? selectedService.pricePence) ?? null,
+      };
+      setMonthAnchor(todayIso);
+      setSelectedDate(todayIso);
+      setSelectedSlot(nowSlot);
+      // A multi-service walk-in lines every segment up from now (web's
+      // buildChainFromStart); a single service keeps the plain create path.
+      if (chainExtras.length > 0) {
+        setMultiServiceSegments(buildChainFromSlot(nowSlot));
+        setMultiServiceError(null);
+      }
+      goToStep('guest');
+    },
+    [selectedService, selectedVariant, durationOverride, timeZone, goToStep, chainExtras, buildChainFromSlot],
+  );
+
+  // ── Multi-service (back-to-back) visit ────────────────────────────────────
+  // The concrete practitioner the whole visit is with — resolved from the chosen
+  // slot ("Any available" rows pick the slot's real practitioner). Used to offer
+  // "Add another service" with that same practitioner only (server requires it).
+  const visitPractitioner: AppointmentCatalogPractitioner | null = useMemo(() => {
+    if (!catalogQuery.data || !selectedSlot) return null;
+    return catalogQuery.data.practitioners.find((p) => p.id === selectedSlot.practitioner_id) ?? null;
+  }, [catalogQuery.data, selectedSlot]);
+
+
+  /** "Change services": back to the picker with the visit's services still ticked. */
+  const changeServices = useCallback(() => {
+    setMultiServiceSegments(null);
+    setMultiServiceError(null);
+    setSelectedSlot(null);
+    goToStep('service');
+  }, [goToStep]);
 
   const removeServiceFromChain = useCallback((index: number) => {
     setMultiServiceError(null);
@@ -642,6 +801,10 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
     setRebookContactReadOnly(false);
     setMultiServiceSegments(null);
     setMultiServiceError(null);
+    setPendingServiceIds([]);
+    setPendingOverrides({});
+    setChainExtras([]);
+    setChainCursor(null);
     setSelectedDate(calendarDateInTimeZone(new Date(), timeZone));
     setMonthAnchor(calendarDateInTimeZone(new Date(), timeZone));
     setSource(isWalkInIntent ? 'walk-in' : 'phone');
@@ -680,6 +843,8 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
     activeKey = selectedDate ? 'time' : 'date';
   } else if (activeKey === 'time' && !selectedDate) {
     activeKey = 'date';
+  } else if (activeKey === 'chain_options' && !chainCursor) {
+    activeKey = 'date';
   }
 
   const stepLabels = steps.map((key) => STEP_LABELS[key]);
@@ -702,7 +867,8 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
     month: monthMonth ?? 1,
     variantId: selectedVariant?.id ?? null,
     addonIds: selectedAddonIds,
-    durationMinutes: durationOverride,
+    // A multi-service visit asks the month for one block of the whole span.
+    durationMinutes: chainSpanForMonth ?? durationOverride,
     ownerVenueId,
     enabled: activeKey === 'date' && !!selectedService,
   });
@@ -792,6 +958,10 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
             // under the previous one may survive.
             setStaffPick(practitioner ? { kind: 'practitioner', practitioner } : { kind: 'any' });
             setSelectedService(null);
+            setPendingServiceIds([]);
+            setPendingOverrides({});
+            setChainExtras([]);
+            setChainCursor(null);
             setNeedsPractitionerStep(false);
             setSelectedVariant(null);
             setSelectedAddonIds([]);
@@ -819,48 +989,43 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           onRetry={() => void catalogQuery.refetch()}
           selectedServiceId={selectedService?.serviceId ?? null}
           initialDurationOverride={durationOverride}
-          onSelect={(option, customDuration) => {
-            const practitioners = catalogQuery.data
-              ? catalogQuery.data.practitioners.filter((p) =>
-                  p.services.some((s) => s.id === option.serviceId),
-                )
-              : [];
-            // Staff-first already has the person. A named practitioner arrives
-            // scoped by `dedupeCatalogServices`; a pooled pick has to be widened
-            // to the sentinel here, exactly as the practitioner step does it.
-            const resolved: AppointmentServiceOption =
-              isStaffFirst && staffPick?.kind === 'any'
-                ? {
-                    ...option,
-                    practitionerId: ANY_AVAILABLE_PRACTITIONER_ID,
-                    practitionerName: 'Any available',
-                    candidatePractitionerIds: practitioners.map((p) => p.id),
-                  }
-                : option;
-            setSelectedService(resolved);
-            setSelectedSlot(null);
-            setSelectedVariant(null);
-            setSelectedAddonIds([]);
-            // Custom duration is chosen here (web parity); variant services
-            // defer it to the variant step and pass null.
-            setDurationOverride(customDuration ?? null);
-            setRequireDeposit(false);
-            // Decide whether this flow runs the practitioner-choice step:
-            // only when 2+ staff offer the service and it wasn't pre-scoped.
-            // Staff-first never does — the person came first.
-            const needsPractitioner =
-              !isStaffFirst && !prefilledPractitionerId && practitioners.length >= 2;
-            setNeedsPractitionerStep(needsPractitioner);
-            if (needsPractitioner) {
-              goToStep('practitioner');
-            } else if ((resolved.variants ?? []).length > 0) {
-              goToStep('variant');
-            } else if ((resolved.addonGroups ?? []).length > 0) {
-              goToStep('addons');
-            } else {
-              goToStep('date');
-            }
+          // Tick every service first (web 2026-09-02); the times then come from
+          // the chain route, only where the whole visit fits with one person.
+          selectionMode="multi"
+          selectedServiceIds={pendingServiceIds}
+          initialDurationOverrides={pendingOverrides}
+          onToggleService={(option) =>
+            setPendingServiceIds((prev) =>
+              prev.includes(option.serviceId)
+                ? prev.filter((id) => id !== option.serviceId)
+                : [...prev, option.serviceId],
+            )
+          }
+          onClearSelection={() => {
+            setPendingServiceIds([]);
+            setPendingOverrides({});
           }}
+          onContinueSelection={(picks) => {
+            const [first, ...rest] = picks;
+            if (!first) return;
+            // Remember the pills so "Change services" brings them back.
+            const overrides: Record<string, number> = {};
+            for (const p of picks) {
+              if (p.durationOverride != null) overrides[p.option.serviceId] = p.durationOverride;
+            }
+            setPendingOverrides(overrides);
+            chooseService(
+              first.option,
+              first.durationOverride,
+              rest.map((p) => ({
+                option: p.option,
+                variant: null,
+                addonIds: [],
+                durationOverride: p.durationOverride,
+              })),
+            );
+          }}
+          onSelect={(option, customDuration) => chooseService(option, customDuration, [])}
         />
           <Button
             label="Book for a group"
@@ -889,11 +1054,56 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
               goToStep('variant');
             } else if ((option.addonGroups ?? []).length > 0) {
               goToStep('addons');
+            } else if (chainCursor) {
+              goToStep('chain_options');
             } else {
               goToStep('date');
             }
           }}
         />
+      ) : null}
+
+      {/* The extras' options, asked in turn (first extra first) before the times:
+          the same variant / add-ons steps, pointed at the extra under the cursor. */}
+      {activeKey === 'chain_options' && chainCursor && chainExtras[chainCursor.index] ? (
+        (() => {
+          const extra = chainExtras[chainCursor.index]!;
+          const updateExtra = (patch: Partial<ChainExtra>) =>
+            setChainExtras((prev) =>
+              prev.map((e, i) => (i === chainCursor.index ? { ...e, ...patch } : e)),
+            );
+          const moveOn = () => {
+            // Next phase of this extra, else the next extra with options, else the date.
+            const next: ChainCursor | null =
+              chainCursor.phase === 'variant' && (extra.option.addonGroups ?? []).length > 0
+                ? { index: chainCursor.index, phase: 'addons' }
+                : nextChainCursor(chainExtras, chainCursor.index + 1);
+            setChainCursor(next);
+            if (!next) advanceFrom('chain_options');
+          };
+          return chainCursor.phase === 'variant' ? (
+            <VariantStep
+              key={`chain-variant-${chainCursor.index}`}
+              serviceName={extra.option.serviceName}
+              variants={extra.option.variants ?? []}
+              selected={extra.variant}
+              initialDurationOverride={extra.durationOverride}
+              onSelect={(variant) => updateExtra({ variant })}
+              onContinue={(customDuration) => {
+                updateExtra({ durationOverride: customDuration });
+                moveOn();
+              }}
+            />
+          ) : (
+            <AddonsStep
+              key={`chain-addons-${chainCursor.index}`}
+              groups={extra.option.addonGroups ?? []}
+              value={extra.addonIds}
+              onChange={(ids) => updateExtra({ addonIds: ids })}
+              onContinue={moveOn}
+            />
+          );
+        })()
       ) : null}
 
       {activeKey === 'variant' && selectedService ? (
@@ -974,6 +1184,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           serviceId={selectedService.serviceId}
           variantId={selectedVariant?.id ?? null}
           venueId={venueId}
+          chain={serviceChainParam}
           startNow={source === 'walk-in' && selectedDate === today}
           onStartNow={startWalkInNow}
           timeZone={timeZone}
@@ -986,7 +1197,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
         <MultiServiceReviewStep
           segments={multiServiceSegments}
           visitPractitioner={visitPractitioner}
-          onAddService={addServiceToChain}
+          onChangeServices={changeServices}
           onRemoveSegment={removeServiceFromChain}
           onContinue={() => advanceFrom('multi_service')}
           errorMessage={multiServiceError}

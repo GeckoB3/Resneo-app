@@ -50,7 +50,7 @@ describe('MultiServiceReviewStep', () => {
       <MultiServiceReviewStep
         segments={segments}
         visitPractitioner={visitPractitioner}
-        onAddService={jest.fn()}
+        onChangeServices={jest.fn()}
         onRemoveSegment={jest.fn()}
         onContinue={jest.fn()}
       />,
@@ -62,21 +62,23 @@ describe('MultiServiceReviewStep', () => {
     expect(screen.getByText(/9:30am–10:30am/)).toBeTruthy();
   });
 
-  it('opens the service list and appends a chosen service', async () => {
-    const onAddService = jest.fn();
+  it('offers "Change services" back to the picker instead of appending here', async () => {
+    const onChangeServices = jest.fn();
     await render(
       <MultiServiceReviewStep
         segments={segments}
         visitPractitioner={visitPractitioner}
-        onAddService={onAddService}
+        onChangeServices={onChangeServices}
         onRemoveSegment={jest.fn()}
         onContinue={jest.fn()}
       />,
     );
-    await press(() => screen.getByText('+ Add another service'));
-    // The practitioner's service appears in the list.
-    await press(() => screen.getByText('Blow-dry'));
-    expect(onAddService).toHaveBeenCalledWith('c');
+    // The services are chosen first and the times found for the whole visit, so
+    // there is no "add another" here — appending would offer a start the chain
+    // may not fit (web 2026-09-02).
+    expect(screen.queryByText('+ Add another service')).toBeNull();
+    await press(() => screen.getByText('Change services'));
+    expect(onChangeServices).toHaveBeenCalledTimes(1);
   });
 
   it('fires onRemoveSegment for an extra segment', async () => {
@@ -85,7 +87,7 @@ describe('MultiServiceReviewStep', () => {
       <MultiServiceReviewStep
         segments={segments}
         visitPractitioner={visitPractitioner}
-        onAddService={jest.fn()}
+        onChangeServices={jest.fn()}
         onRemoveSegment={onRemoveSegment}
         onContinue={jest.fn()}
       />,
@@ -100,7 +102,7 @@ describe('MultiServiceReviewStep', () => {
       <MultiServiceReviewStep
         segments={segments}
         visitPractitioner={visitPractitioner}
-        onAddService={jest.fn()}
+        onChangeServices={jest.fn()}
         onRemoveSegment={jest.fn()}
         onContinue={onContinue}
       />,
@@ -109,7 +111,7 @@ describe('MultiServiceReviewStep', () => {
     expect(onContinue).toHaveBeenCalledTimes(1);
   });
 
-  it('hides the remove control and add-service toggle limits at the cap', async () => {
+  it('states the visit cap', async () => {
     const fourSegments: MultiServiceSegment[] = [0, 1, 2, 3].map((i) => ({
       serviceId: `s${i}`,
       serviceName: `Service ${i}`,
@@ -125,13 +127,11 @@ describe('MultiServiceReviewStep', () => {
       <MultiServiceReviewStep
         segments={fourSegments}
         visitPractitioner={visitPractitioner}
-        onAddService={jest.fn()}
+        onChangeServices={jest.fn()}
         onRemoveSegment={jest.fn()}
         onContinue={jest.fn()}
       />,
     );
-    // At 4 segments the "add another" affordance is replaced by the cap hint.
-    expect(screen.queryByText('+ Add another service')).toBeNull();
-    expect(screen.getByText(/up to 4 services/)).toBeTruthy();
+    expect(screen.getByText(/Up to 4 services in one visit/)).toBeTruthy();
   });
 });

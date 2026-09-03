@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
@@ -9,7 +8,7 @@ import type { MultiServiceSegment } from '@/lib/booking/multi-service-chain';
 import { chainTotalPence } from '@/lib/booking/multi-service-chain';
 import { formatPence } from '@/lib/format';
 import { hapticSelect } from '@/lib/haptics';
-import { radius, spacing } from '@/theme/index';
+import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { AppointmentCatalogPractitioner } from '@/types/appointment-catalog';
 
@@ -28,8 +27,12 @@ type MultiServiceReviewStepProps = {
   segments: MultiServiceSegment[];
   /** The practitioner the whole visit is with (concrete, never the "any" sentinel). */
   visitPractitioner: AppointmentCatalogPractitioner | null;
-  /** Append a service (by catalog service id) to the chain; returns once revalidated. */
-  onAddService: (serviceId: string) => void;
+  /**
+   * Back to the picker with the visit's services ticked (web 2026-09-02: the
+   * services are chosen first and the times found for the whole visit, so
+   * "add another" here would offer a start the chain may not fit).
+   */
+  onChangeServices?: () => void;
   onRemoveSegment: (index: number) => void;
   onContinue: () => void;
   /** Inline error from a failed append/remove (e.g. server rejects the chain). */
@@ -38,31 +41,21 @@ type MultiServiceReviewStepProps = {
 
 /**
  * Review step for a multi-service (back-to-back) visit. Lists each chosen
- * segment with its auto-computed start/end, lets staff append more services with
- * the same practitioner (start times recompute automatically) or remove extras,
- * then continue to guest details. Mirrors the web `multi_service` step.
+ * segment with its auto-computed start/end, lets staff remove an extra or go
+ * back to the picker to change the set, then continue to guest details.
+ * Mirrors the web `multi_service` step.
  */
 export function MultiServiceReviewStep({
   segments,
   visitPractitioner,
-  onAddService,
+  onChangeServices,
   onRemoveSegment,
   onContinue,
   errorMessage,
 }: MultiServiceReviewStepProps) {
   const { colors } = useTheme();
-  const [showServiceList, setShowServiceList] = useState(false);
   const totalPence = chainTotalPence(segments);
-  const canAddMore = segments.length < MAX_MULTI_SERVICE_SEGMENTS;
   const practitionerName = visitPractitioner?.name ?? segments[0]?.practitionerName ?? '';
-
-  // Only services WITHOUT options can be appended: the append path can't carry a
-  // variant choice, so a variant-driven service would be added with its base
-  // duration and the server's consecutive-chain check fails ("must be
-  // consecutive"). Such services are booked on their own instead.
-  const appendableServices = (visitPractitioner?.services ?? []).filter(
-    (svc) => (svc.variants?.length ?? 0) === 0,
-  );
 
   return (
     <View style={styles.container}>
@@ -70,8 +63,8 @@ export function MultiServiceReviewStep({
         <Text variant="heading">Review your services</Text>
         <Text variant="bodySmall" tone="muted">
           {practitionerName
-            ? `Same visit with ${practitionerName}, back-to-back. Add more or continue to details.`
-            : 'Add more services (back-to-back) or continue to details.'}
+            ? `Same visit with ${practitionerName}, back-to-back. Change the services or continue to details.`
+            : 'Change the services or continue to details.'}
         </Text>
 
         <Card>
@@ -119,61 +112,21 @@ export function MultiServiceReviewStep({
           ) : null}
         </Card>
 
-        {canAddMore ? (
-          <Pressable
-            accessibilityRole="button"
+        {onChangeServices ? (
+          <Button
+            label="Change services"
+            variant="secondary"
+            fullWidth
             onPress={() => {
               hapticSelect();
-              setShowServiceList((v) => !v);
+              onChangeServices();
             }}
-            style={({ pressed }) => [
-              styles.addToggle,
-              { borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
-            ]}>
-            <Text variant="bodyMedium" tone="brand">
-              {showServiceList ? 'Hide service list' : '+ Add another service'}
-            </Text>
-          </Pressable>
-        ) : (
-          <Text variant="caption" tone="muted">
-            You can book up to {MAX_MULTI_SERVICE_SEGMENTS} services in one visit.
-          </Text>
-        )}
-
-        {showServiceList && visitPractitioner ? (
-          <View style={[styles.serviceList, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Text variant="caption" tone="muted">
-              Next start time is calculated automatically.
-            </Text>
-            {appendableServices.length > 0 ? (
-              <View style={styles.chips}>
-                {appendableServices.map((svc) => (
-                  <Pressable
-                    key={svc.id}
-                    accessibilityRole="button"
-                    onPress={() => {
-                      hapticSelect();
-                      onAddService(svc.id);
-                      setShowServiceList(false);
-                    }}
-                    style={({ pressed }) => [
-                      styles.serviceChip,
-                      { borderColor: colors.border, backgroundColor: colors.surfaceRaised, opacity: pressed ? 0.7 : 1 },
-                    ]}>
-                    <Text variant="bodySmall">{svc.name}</Text>
-                    <Text variant="caption" tone="muted">
-                      {svc.duration_minutes} min
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-            ) : (
-              <Text variant="caption" tone="muted">
-                No more services can be added to this visit. Services with options are booked on their own.
-              </Text>
-            )}
-          </View>
+          />
         ) : null}
+        <Text variant="caption" tone="muted">
+          Up to {MAX_MULTI_SERVICE_SEGMENTS} services in one visit; the times offered are where the
+          whole visit fits.
+        </Text>
 
         {errorMessage ? (
           <Text variant="bodySmall" tone="danger">
@@ -206,27 +159,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingTop: spacing.md,
     borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  addToggle: {
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    borderRadius: radius.md,
-    paddingVertical: spacing.md,
-    alignItems: 'center',
-  },
-  serviceList: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    gap: spacing.sm,
-  },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  serviceChip: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    gap: 2,
   },
   actions: { gap: spacing.sm },
 });

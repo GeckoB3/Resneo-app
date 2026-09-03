@@ -37,7 +37,7 @@ Six strands in this range:
 Plus marketing/homepage work, onboarding link fixes, E2E/CI fixes and a Collective RLS
 recursion fix — none of which reach the app.
 
-**Verdict (R23-1, R23-2, R23-3, R23-5, R23-6, R23-7 and the R23-4 minimum built 2026-09-03; the R23-4 picker port open): seven gaps — two of them live behaviour regressions the app inherits the moment a
+**Verdict (all seven built 2026-09-03; the one remaining sliver is multi-service attendees in group bookings): seven gaps — two of them live behaviour regressions the app inherits the moment a
 venue uses the new web features (R23-1, R23-2), three feature gaps (R23-3, R23-4, R23-5) and
 two small ones (R23-6, R23-7). Nothing in the range breaks an endpoint the app calls.** The
 auth work is already matched by the app's own 2026-08-31 commits; the deleted public compliance
@@ -267,8 +267,17 @@ New table `service_categories` (`id, venue_id, name, sort_order`), nullable
 (`segmentCustomDurationMinutes`: the core override with add-on minutes taken back off, since the
 route stacks add-ons itself) and `addServiceToChain` no longer resets the first segment to its
 catalogue length, so a staff duration override survives a chain and the second service starts
-from the stretched end. The picker port (`services` chain on availability, tick-first UX,
-multi-service group attendees) is still open.
+from the stretched end. The picker port followed the same day: `ServicePickerStep` has a `multi`
+selection mode (tick up to four, a bar with count / total minutes / from-price / Clear /
+Continue; pick order is visit order); the flow keeps `pendingServiceIds` + `chainExtras`, asks
+each extra's variant and add-ons in turn on a `chain_options` step before the date, narrows the
+practitioner step to people who offer every service, and hands `TimeSlotStep` a `chain` — which
+calls the PUBLIC `/api/booking/availability?services=[…]` via `useChainAvailability` (the staff
+route never got the chain; web's staff modal uses the public one too), pooling server-side for
+"any available". The month picker asks for one block of the chain span. The review step's
+"+ Add another service" became "Change services" (back to the picker with the ticks kept); a
+walk-in "Start now" lines the whole chain up from now. Still open: several services per attendee
+in a GROUP booking (`create-group` 40 rows) — the group flow keeps one service per person.
 
 ### What web changed
 

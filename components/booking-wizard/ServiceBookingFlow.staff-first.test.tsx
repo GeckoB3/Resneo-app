@@ -186,6 +186,7 @@ describe('ServiceBookingFlow — staff-first ordering', () => {
     await press(() => screen.getByText('Sam'));
     await waitFor(() => expect(screen.getByText('Cut')).toBeTruthy());
     await press(() => screen.getByText('Cut'));
+    await press(() => screen.getByText('Continue'));
 
     await waitFor(() => expect(screen.queryByText('Choose a service')).toBeNull());
     expect(screen.queryByText('Choose a practitioner')).toBeNull();
@@ -208,6 +209,7 @@ describe('ServiceBookingFlow — staff-first ordering', () => {
     await press(() => screen.getByText('Pat'));
     await waitFor(() => expect(screen.getByText('Blow-dry')).toBeTruthy());
     await press(() => screen.getByText('Blow-dry'));
+    await press(() => screen.getByText('Continue'));
     // Blow-dry has no options, so that landed on the date step: back through the
     // service list, then back again to the person, and switch to someone who
     // does not offer it.
@@ -252,6 +254,7 @@ describe('ServiceBookingFlow — toggle off keeps the old order', () => {
 
     // Cut is offered by two people, so the practitioner step still follows it.
     await press(() => screen.getByText('Cut'));
+    await press(() => screen.getByText('Continue'));
     await waitFor(() => expect(screen.getByText('Choose a practitioner')).toBeTruthy());
   });
 });
