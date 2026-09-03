@@ -64,20 +64,30 @@ export interface CreateBookingPayload {
    * links the booking to the existing client rather than minting a new one.
    */
   returning_guest?: boolean;
-  /** Admin override for compliance pre-check failures (409 COMPLIANCE_REQUIREMENT_UNMET). */
-  override_compliance?: boolean;
 }
 
 /**
- * A non-blocking (warn_staff / warn_client) compliance requirement that was unmet
- * when the booking was created. The server returns these in the 201 so staff can
- * be nudged to collect or send the form before the appointment (audit M2).
+ * How loudly an unmet requirement should be shown to staff. `required` is a
+ * `block_all` rule: the venue requires the record of everyone and the booking
+ * only went through because staff are never blocked. `advisory` is every other
+ * rule. Older servers omit the field; treat that as advisory.
+ */
+export type ComplianceWarningSeverity = 'required' | 'advisory';
+
+/**
+ * A compliance requirement the guest had not met when a staff booking was
+ * created. Since web 2026-09-01 staff are never blocked by compliance, so this
+ * is EVERY unmet requirement — the venue's block_all rules included — and the
+ * server returns them in the 201 (`required` first) so the confirmation can
+ * prompt for capture before the appointment. There is no admin override any
+ * more: nothing is blocked, so nothing is left to override.
  */
 export interface ComplianceBookingWarning {
   compliance_type_id: string;
   compliance_type_name: string;
   enforcement: string;
   state: string;
+  severity?: ComplianceWarningSeverity;
 }
 
 export interface CreateBookingResponse {

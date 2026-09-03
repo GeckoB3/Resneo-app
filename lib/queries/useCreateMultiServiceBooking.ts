@@ -8,6 +8,7 @@ import {
 } from '@/lib/queries/invalidateAvailability';
 import { queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
+import type { ComplianceBookingWarning } from '@/lib/queries/useCreateBooking';
 
 /**
  * Response from POST /api/booking/create-multi-service (and create-group — same
@@ -35,6 +36,13 @@ export interface GroupedBookingResponse {
    */
   payment_mode?: 'payment' | 'setup' | 'payment_with_setup';
   card_hold_fee_pence?: number | null;
+  /**
+   * Unmet compliance requirements across every segment / attendee, merged by
+   * type, `required` first. Staff are never blocked (web 2026-09-01), so a
+   * venue's block_all rule arrives HERE rather than as a 409 — dropping this
+   * field hides that rule entirely.
+   */
+  compliance_warnings?: ComplianceBookingWarning[];
 }
 
 /**

@@ -368,7 +368,7 @@ export function EventBookingFlow({ onCreated }: EventBookingFlowProps) {
           guestName={[first, last].filter(Boolean).join(' ')}
           successTitle="Event booking confirmed"
           successSubtitle={`${totalTickets} ticket${totalTickets === 1 ? '' : 's'} for ${selectedEvent.event_name} on ${formatBookingDate(occ.event_date)}.`}
-          buildPayload={({ source, requireDeposit, overrideCompliance }) => ({
+          buildPayload={({ source, requireDeposit }) => ({
             booking_date: occ.event_date,
             booking_time: occ.start_time.slice(0, 5),
             party_size: totalTickets,
@@ -388,7 +388,6 @@ export function EventBookingFlow({ onCreated }: EventBookingFlowProps) {
             ...(hasDeposit && requireDeposit && source !== 'walk-in' ? { require_deposit: true } : {}),
             ...(returningGuest ? { returning_guest: true } : {}),
             ...(ownerVenueId ? { owner_venue_id: ownerVenueId } : {}),
-            ...(overrideCompliance ? { override_compliance: true } : {}),
           })}
           onCreated={(bookingId) => {
             track(ANALYTICS_EVENTS.createBookingCompleted, { mode: 'event' });

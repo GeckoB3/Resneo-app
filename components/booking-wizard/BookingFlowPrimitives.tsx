@@ -24,7 +24,6 @@ import {
   type CreateBookingPayload,
 } from '@/lib/queries/useCreateBooking';
 import { useFeatureFlags } from '@/lib/queries/useVenueSettings';
-import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { fonts, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
@@ -135,7 +134,6 @@ export type SummaryRowItem = { label: string; value: string };
 type BuildPayloadArgs = {
   source: 'phone' | 'walk-in';
   requireDeposit: boolean;
-  overrideCompliance: boolean;
 };
 
 type BookingFlowConfirmProps = {
@@ -160,7 +158,7 @@ type BookingFlowConfirmProps = {
   cardHoldFeePerUnitPence?: number | null;
   /** Units the fee multiplies by (spots / tickets); defaults to 1. */
   cardHoldUnits?: number;
-  /** Build the create payload for the chosen source/deposit/override flags. */
+  /** Build the create payload for the chosen source/deposit flags. */
   buildPayload: (args: BuildPayloadArgs) => CreateBookingPayload;
   guestName: string;
   successTitle: string;
@@ -223,7 +221,6 @@ export function BookingFlowConfirm({
 }: BookingFlowConfirmProps) {
   const { colors } = useTheme();
   const createBooking = useCreateBooking();
-  const isAdmin = useStaffMe().data?.staff?.role === 'admin';
   // Controlled when the flow passes source/onSourceChange (it then renders the
   // selector itself, e.g. on the guest step); otherwise own the state here.
   const [internalSource, setInternalSource] = useState<'phone' | 'walk-in'>(initialSource);
@@ -251,11 +248,11 @@ export function BookingFlowConfirm({
   const hasDeposit = depositPence != null && depositPence > 0;
   const depositLabel = hasDeposit ? money(depositPence) : null;
 
-  const submit = (overrideCompliance: boolean) => {
+  const submit = () => {
     setComplianceError(null);
     setSubmitError(null);
     const payload: CreateBookingPayload = {
-      ...buildPayload({ source, requireDeposit, overrideCompliance }),
+      ...buildPayload({ source, requireDeposit }),
       // The card-hold toggle rides its own flag; sending false waives the hold
       // for this booking (the server defaults to true when omitted).
       ...(staffCardHold ? { require_card_hold: requireCardHold } : {}),
@@ -276,6 +273,9 @@ export function BookingFlowConfirm({
       onError: (error) => {
         const apiError = error instanceof ApiError ? error : null;
         const body = apiError?.body as { error?: string; message?: string } | null | undefined;
+        // Staff are never blocked by compliance (web 2026-09-01): unmet rules
+        // arrive as `compliance_warnings` on the 201. The 409 is kept as the
+        // helper's contract for the online context.
         if (apiError?.status === 409 && body?.error === 'COMPLIANCE_REQUIREMENT_UNMET') {
           hapticWarning();
           setComplianceError(body?.message ?? 'A compliance requirement is unmet for this guest.');
@@ -348,7 +348,10 @@ export function BookingFlowConfirm({
           ) : null}
         </Card>
 
-        <ComplianceWarningNotice warnings={confirmation.compliance_warnings} />
+        <ComplianceWarningNotice
+          warnings={confirmation.compliance_warnings}
+          onCapture={() => onCreated(confirmation.booking_id)}
+        />
 
         <View style={styles.actions}>
           <Button label="View booking" fullWidth onPress={() => onCreated(confirmation.booking_id)} />
@@ -478,19 +481,9 @@ export function BookingFlowConfirm({
           <Text variant="bodySmall" tone="danger">
             {complianceError}
           </Text>
-          {isAdmin ? (
-            <Button
-              label="Book anyway (admin override)"
-              variant="secondary"
-              fullWidth
-              onPress={() => submit(true)}
-              loading={createBooking.isPending}
-            />
-          ) : (
-            <Text variant="caption" tone="muted">
-              Ask an admin to override, or collect the required record or send the form first.
-            </Text>
-          )}
+          <Text variant="caption" tone="muted">
+            Collect the required record or send the form, then try again.
+          </Text>
         </View>
       ) : null}
 
@@ -504,7 +497,7 @@ export function BookingFlowConfirm({
         label="Create booking"
         fullWidth
         loading={createBooking.isPending}
-        onPress={() => submit(false)}
+        onPress={submit}
       />
     </ScrollView>
   );

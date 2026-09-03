@@ -221,8 +221,6 @@ export function useRescheduleBooking(bookingId: string) {
       date: string;
       time: string;
       durationMinutes?: number;
-      /** Admin acknowledgement of an edit-time compliance block (409 → override). */
-      overrideCompliance?: boolean;
     }): Promise<BookingDetail> => {
       if (!accessToken) {
         throw new Error('Missing access token');
@@ -245,7 +243,6 @@ export function useRescheduleBooking(bookingId: string) {
           ...(input.durationMinutes !== undefined
             ? { duration_minutes: input.durationMinutes }
             : {}),
-          ...(input.overrideCompliance ? { override_compliance: true } : {}),
         }),
       });
     },
@@ -299,8 +296,6 @@ export function useRescheduleBookingById() {
       skipGuestNotification?: boolean;
       /** New practitioner/calendar id — reassigns the booking when set. */
       practitionerId?: string;
-      /** Admin acknowledgement of an edit-time compliance block (409 → override). */
-      overrideCompliance?: boolean;
     }): Promise<BookingDetail> => {
       if (!accessToken) {
         throw new Error('Missing access token');
@@ -341,7 +336,6 @@ export function useRescheduleBookingById() {
           ...(input.practitionerId !== undefined
             ? { practitioner_id: input.practitionerId }
             : {}),
-          ...(input.overrideCompliance ? { override_compliance: true } : {}),
         }),
       });
     },
@@ -418,8 +412,6 @@ export interface ModifyAppointmentInput {
    * otherwise. Equivalent to `defer` at the server; the difference is intent.
    */
   skip_booking_modification_guest_notification?: boolean;
-  /** Admin acknowledgement of an edit-time compliance block (409 → override). */
-  override_compliance?: boolean;
 }
 
 /** PATCH /api/venue/bookings/[id] — full appointment modify. */

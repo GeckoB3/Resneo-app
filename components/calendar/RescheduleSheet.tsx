@@ -18,7 +18,6 @@ import { formatDayHeading } from '@/lib/dates/venue-dates';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useRescheduleBooking } from '@/lib/queries/useBookingMutations';
 import { useVisitSchedule } from '@/lib/queries/useVisitMutations';
-import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
@@ -66,7 +65,6 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
   const { colors } = useTheme();
   const mutation = useRescheduleBooking(target?.id ?? '');
   const visitMutation = useVisitSchedule(target?.visit?.groupBookingId);
-  const isAdmin = useStaffMe().data?.staff?.role === 'admin';
   const visit = target?.visit ?? null;
   const pending = visit ? visitMutation.isPending : mutation.isPending;
   /**
@@ -118,7 +116,7 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
       ? `${minutesToTime((minutes + duration) % (24 * 60))}${crossesMidnight ? ' (next day)' : ''}`
       : null;
 
-  async function handleConfirm(overrideCompliance?: boolean) {
+  async function handleConfirm() {
     if (!target) return;
     setError(null);
     setComplianceError(null);
@@ -129,10 +127,9 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
          * against the availability engine and rolls back anything it already
          * wrote if one is refused, so the visit either moves whole or not at all.
          *
-         * No `overrideCompliance` here: the visit endpoint has no such flag. A
-         * compliance block on a visit is reported and the move is refused, which
-         * is the safe direction — the admin override stays available on the
-         * single-booking path.
+         * Staff are never blocked by compliance (web 2026-09-01), so neither
+         * path carries an override any more; a compliance refusal here can only
+         * be the helper's contract 409 and is shown as a plain refusal.
          */
         await visitMutation.mutateAsync({
           booking_date: date,
@@ -152,7 +149,6 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
           // Only send the duration when it changed — table bookings have a lower
           // server-side cap, so an untouched duration must not be re-asserted.
           ...(durationChanged ? { durationMinutes: duration } : {}),
-          ...(overrideCompliance ? { overrideCompliance: true } : {}),
         });
       }
       hapticSuccess();
@@ -160,12 +156,10 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
       onClose();
     } catch (e) {
       hapticWarning();
-      // A visit's compliance block is shown as a plain refusal: the visit
-      // endpoint takes no override flag, so offering an admin an override button
-      // that cannot be honoured would be worse than not offering one.
+      // A compliance refusal is shown as a plain refusal on both paths: staff
+      // are never blocked by compliance, so there is nothing to override.
       const compMsg = visit ? null : complianceBlockMessage(e);
       if (compMsg) {
-        // An edit-time compliance block (block_all). An admin can override.
         setComplianceError(compMsg);
       } else {
         setError(e instanceof ApiError ? e.message : 'Could not reschedule. Try another time.');
@@ -245,18 +239,9 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
                   <Text variant="bodySmall" tone="danger">
                     {complianceError}
                   </Text>
-                  {isAdmin ? (
-                    <Button
-                      label="Reschedule anyway (admin override)"
-                      variant="secondary"
-                      onPress={() => void handleConfirm(true)}
-                      loading={pending}
-                    />
-                  ) : (
-                    <Text variant="caption" tone="muted">
-                      Ask an admin to override, or collect the required record first.
-                    </Text>
-                  )}
+                  <Text variant="caption" tone="muted">
+                    Collect the required record first, then try again.
+                  </Text>
                 </View>
               ) : null}
 

@@ -25,6 +25,10 @@ jest.mock('@/lib/analytics', () => ({
 jest.mock('@/lib/queries/useVenueSettings', () => ({
   useFeatureFlags: () => ({ data: { resolved: { card_hold_deposits: true } } }),
 }));
+// The flow announces unmet compliance requirements on the way to the booking
+// (it has no confirmation screen of its own), so it needs the toast host.
+const mockToast = { success: jest.fn(), error: jest.fn(), info: jest.fn() };
+jest.mock('@/providers/ToastProvider', () => ({ useToast: () => mockToast }));
 
 import { GroupBookingFlow } from '@/components/booking-wizard/GroupBookingFlow';
 import type { AppointmentCatalogResponse } from '@/types/appointment-catalog';

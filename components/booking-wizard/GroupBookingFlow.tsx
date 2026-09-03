@@ -15,6 +15,7 @@ import {
   StaffRequireChargeCheckbox,
 } from '@/components/booking-wizard/StaffChargeControls';
 import { WizardStepIndicator } from '@/components/booking-wizard/WizardStepIndicator';
+import { splitComplianceWarnings } from '@/components/compliance/ComplianceWarningNotice';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
@@ -43,6 +44,7 @@ import { calendarDateInTimeZone } from '@/lib/queries/useBookingsList';
 import { useCreateGroupBooking } from '@/lib/queries/useCreateGroupBooking';
 import { useFeatureFlags } from '@/lib/queries/useVenueSettings';
 import { useMonthAvailability } from '@/lib/queries/useMonthAvailability';
+import { useToast } from '@/providers/ToastProvider';
 import { spacing, radius } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { AppointmentSlot } from '@/types/appointment-availability';
@@ -120,6 +122,7 @@ export function GroupBookingFlow({
   onExitGroup,
 }: GroupBookingFlowProps) {
   const { colors } = useTheme();
+  const toast = useToast();
   const createGroup = useCreateGroupBooking();
   const today = calendarDateInTimeZone(new Date(), timeZone);
 
@@ -311,7 +314,7 @@ export function GroupBookingFlow({
   }, []);
 
   const buildPayload = useCallback(
-    (overrideCompliance?: boolean) => {
+    () => {
       const comment = (organiser.special_requests ?? '').trim();
       const base = buildGroupPayload({
         venueId,
@@ -349,11 +352,10 @@ export function GroupBookingFlow({
       });
       return {
         ...base,
-        // create-group has no owner_venue_id/returning_guest/override params in
-        // its schema today; thread them only if the backend later accepts them.
+        // create-group has no owner_venue_id/returning_guest params in its
+        // schema today; thread them only if the backend later accepts them.
         ...(ownerVenueId ? { owner_venue_id: ownerVenueId } : {}),
         ...(returningGuest ? { returning_guest: true } : {}),
-        ...(overrideCompliance ? { override_compliance: true } : {}),
       };
     },
     [
@@ -372,7 +374,7 @@ export function GroupBookingFlow({
   );
 
   const handleCreate = useCallback(
-    (overrideCompliance?: boolean) => {
+    () => {
       setSubmitError(null);
       setComplianceError(null);
       // create-group requires the organiser's first + last name.
@@ -381,7 +383,7 @@ export function GroupBookingFlow({
         setSubmitError("Enter the organiser's first and last name.");
         return;
       }
-      createGroup.mutate(buildPayload(overrideCompliance), {
+      createGroup.mutate(buildPayload(), {
         onSuccess: (res) => {
           hapticSuccess();
           // ── Stripe in-app capture extension point (DEFERRED) ───────────────
@@ -396,11 +398,29 @@ export function GroupBookingFlow({
             source,
             partySize: people.length,
           });
+          // The group flow has no confirmation screen — it lands on the booking,
+          // whose compliance card shows the records and captures them — so the
+          // unmet requirements are announced on the way. Staff are never blocked
+          // by compliance (web 2026-09-01): a venue's block_all rule arrives here
+          // as a `required` warning, and it must not go unsaid.
+          const { required, advisory } = splitComplianceWarnings(res.compliance_warnings);
+          if (required.length > 0) {
+            toast.error(
+              `This venue requires ${required.join(', ')} for this booking. Capture the record in venue or send the form.`,
+              { duration: 6000 },
+            );
+          } else if (advisory.length > 0) {
+            toast.info(`${advisory.join(', ')} not on file yet. Collect the record or send the form.`, {
+              duration: 5000,
+            });
+          }
           if (primary) onCreated(primary);
         },
         onError: (error) => {
           const apiError = error instanceof ApiError ? error : null;
           const body = apiError?.body as { error?: string; message?: string } | null | undefined;
+          // Staff are never blocked by compliance; the 409 is the helper's
+          // contract for the online context and is shown as a plain refusal.
           if (apiError?.status === 409 && body?.error === 'COMPLIANCE_REQUIREMENT_UNMET') {
             hapticWarning();
             setComplianceError(body?.message ?? 'A compliance requirement is unmet for an attendee.');
@@ -411,7 +431,7 @@ export function GroupBookingFlow({
         },
       });
     },
-    [createGroup, buildPayload, onCreated, source, people.length],
+    [createGroup, buildPayload, onCreated, source, people.length, toast],
   );
 
   // ===================== render =====================
@@ -850,10 +870,6 @@ export function GroupBookingFlow({
               <Text variant="bodySmall" tone="danger">
                 {complianceError}
               </Text>
-              {/* No admin-override here: the create-group route has no override
-                  path (unlike single-create), so an override resubmit just 409s
-                  again. Resolve the flagged attendee's requirement (or book them
-                  individually) to proceed. */}
               <Text variant="caption" tone="muted">
                 Resolve the flagged requirement, or book the affected guest individually, to continue.
               </Text>

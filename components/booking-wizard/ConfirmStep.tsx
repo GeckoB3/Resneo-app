@@ -32,7 +32,6 @@ import { normalizePhone } from '@/lib/phone/normalize';
 import { useCreateBooking, type ComplianceBookingWarning } from '@/lib/queries/useCreateBooking';
 import { useCreateMultiServiceBooking } from '@/lib/queries/useCreateMultiServiceBooking';
 import { useFeatureFlags } from '@/lib/queries/useVenueSettings';
-import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { AppointmentSlot } from '@/types/appointment-availability';
@@ -200,7 +199,7 @@ function BookingConfirmationView({
         ) : null}
       </Card>
 
-      <ComplianceWarningNotice warnings={confirmation.compliance_warnings} />
+      <ComplianceWarningNotice warnings={confirmation.compliance_warnings} onCapture={onViewBooking} />
 
       <View style={styles.confirmationActions}>
         <Button label="View booking" fullWidth onPress={onViewBooking} />
@@ -242,7 +241,6 @@ export function ConfirmStep({
   const createBooking = useCreateBooking();
   const createMultiService = useCreateMultiServiceBooking();
   const isMultiService = (multiServiceSegments?.length ?? 0) > 1;
-  const isAdmin = useStaffMe().data?.staff?.role === 'admin';
   const first_name = guest.first_name.trim();
   const last_name = guest.last_name.trim();
   const fullName = [first_name, last_name].filter(Boolean).join(' ');
@@ -354,7 +352,7 @@ export function ConfirmStep({
         }
       : {};
 
-  const buildPayload = (overrideCompliance?: boolean) => ({
+  const buildPayload = () => ({
     booking_date: date,
     booking_time: slot.start_time.slice(0, 5),
     party_size: 1,
@@ -380,7 +378,6 @@ export function ConfirmStep({
     ...(returningGuest ? { returning_guest: true } : {}),
     source,
     ...(ownerVenueId ? { owner_venue_id: ownerVenueId } : {}),
-    ...(overrideCompliance ? { override_compliance: true } : {}),
     ...addressFields,
   });
 
@@ -417,6 +414,9 @@ export function ConfirmStep({
     const apiError = error instanceof ApiError ? error : null;
     const body = apiError?.body as { error?: string; message?: string } | null | undefined;
     const errorCode = body?.error;
+    // Staff are never blocked by compliance (web 2026-09-01): unmet rules come
+    // back as `compliance_warnings` on the 201 instead. The 409 remains the
+    // helper's contract for the online context, so keep reading it verbatim.
     if (apiError?.status === 409 && errorCode === 'COMPLIANCE_REQUIREMENT_UNMET') {
       hapticWarning();
       const detail = body?.message ?? 'A compliance requirement is unmet for this guest.';
@@ -429,7 +429,7 @@ export function ConfirmStep({
     setSubmitError(apiError ? apiError.message : 'Could not create booking. Please try again.');
   };
 
-  const handleConfirm = (overrideCompliance?: boolean) => {
+  const handleConfirm = () => {
     setComplianceError(null);
     setSubmitError(null);
 
@@ -465,6 +465,8 @@ export function ConfirmStep({
             card_hold_requested: res.payment_mode === 'setup',
             card_hold_fee_pence: res.card_hold_fee_pence ?? null,
             cancellation_notice_hours: res.cancellation_notice_hours,
+            // Every segment's unmet requirements, merged by type (`required` first).
+            compliance_warnings: res.compliance_warnings,
             service_name: `${multiServiceSegments!.length} services`,
             guest_name: fullName,
             date_label: formatSummaryDate(date),
@@ -477,7 +479,7 @@ export function ConfirmStep({
       return;
     }
 
-    createBooking.mutate(buildPayload(overrideCompliance), {
+    createBooking.mutate(buildPayload(), {
       onSuccess: (response) => {
         hapticSuccess();
         // ── Stripe in-app capture extension point (DEFERRED) ─────────────────
@@ -630,21 +632,9 @@ export function ConfirmStep({
           <Text variant="bodySmall" tone="danger">
             {complianceError}
           </Text>
-          {isAdmin && !isMultiService ? (
-            <Button
-              label="Book anyway (admin override)"
-              variant="secondary"
-              fullWidth
-              onPress={() => handleConfirm(true)}
-              loading={createBooking.isPending}
-            />
-          ) : (
-            <Text variant="caption" tone="muted">
-              {isMultiService
-                ? 'Collect the required record or send the form, then create the visit.'
-                : 'Ask an admin to override, or collect the required record or send the form first.'}
-            </Text>
-          )}
+          <Text variant="caption" tone="muted">
+            Collect the required record or send the form, then try again.
+          </Text>
         </View>
       ) : null}
 

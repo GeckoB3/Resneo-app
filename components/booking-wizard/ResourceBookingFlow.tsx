@@ -450,7 +450,7 @@ export function ResourceBookingFlow({ onCreated }: ResourceBookingFlowProps) {
           guestName={[first, last].filter(Boolean).join(' ')}
           successTitle="Resource booking confirmed"
           successSubtitle={`${resource.name} on ${formatBookingDate(selectedDate)}, ${formatTimeRange(slot.start_time, endTime)}.`}
-          buildPayload={({ source, requireDeposit, overrideCompliance }) => ({
+          buildPayload={({ source, requireDeposit }) => ({
             booking_date: selectedDate,
             booking_time: slot.start_time.slice(0, 5),
             booking_end_time: endTime,
@@ -465,7 +465,6 @@ export function ResourceBookingFlow({ onCreated }: ResourceBookingFlowProps) {
             ...(hasDeposit && requireDeposit && source !== 'walk-in' ? { require_deposit: true } : {}),
             ...(returningGuest ? { returning_guest: true } : {}),
             ...(ownerVenueId ? { owner_venue_id: ownerVenueId } : {}),
-            ...(overrideCompliance ? { override_compliance: true } : {}),
           })}
           onCreated={(bookingId) => {
             track(ANALYTICS_EVENTS.createBookingCompleted, { mode: 'resource' });

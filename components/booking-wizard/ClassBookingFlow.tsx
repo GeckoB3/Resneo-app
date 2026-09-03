@@ -327,7 +327,7 @@ export function ClassBookingFlow({ onCreated }: ClassBookingFlowProps) {
           guestName={[first, last].filter(Boolean).join(' ')}
           successTitle="Class booking confirmed"
           successSubtitle={`${selectedClass.class_name} on ${formatBookingDate(inst.instance_date)} at ${formatBookingTime(inst.start_time)}.`}
-          buildPayload={({ source, requireDeposit, overrideCompliance }) => ({
+          buildPayload={({ source, requireDeposit }) => ({
             booking_date: inst.instance_date,
             booking_time: inst.start_time.slice(0, 5),
             party_size: safeSpots,
@@ -341,7 +341,6 @@ export function ClassBookingFlow({ onCreated }: ClassBookingFlowProps) {
             ...(hasDeposit && requireDeposit && source !== 'walk-in' ? { require_deposit: true } : {}),
             ...(returningGuest ? { returning_guest: true } : {}),
             ...(ownerVenueId ? { owner_venue_id: ownerVenueId } : {}),
-            ...(overrideCompliance ? { override_compliance: true } : {}),
           })}
           onCreated={(bookingId) => {
             track(ANALYTICS_EVENTS.createBookingCompleted, { mode: 'class' });
