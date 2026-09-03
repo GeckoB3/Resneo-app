@@ -1,5 +1,91 @@
 # Go-live check — Resneo app
 
+## Run 2026-09-03 — OTA to production, 1.1.0, "ResNeo R23 Web Parity"
+
+**Scope:** the nine commits since the 1.1.0 store builds (`ce1d85c`, both platforms,
+2026-08-31): the whole R23 web-parity batch (`f6bddf1`…`8c302a1`) plus two device fixes
+(`7a76148` add-requirement sheet scroll, `54058d8` catalog Bearer for linked venues).
+JavaScript only. Not device-tested as a set: the owner's device pass is pending.
+
+**Verdict: cleared to OTA** with the command below. Nothing native changed since the
+binaries, the version is correctly left at 1.1.0, the EAS `production` environment carries
+every variable the bundle needs, and a cleared-cache export bakes the live hosts in.
+
+### 1. Version and reach — the OTA will land
+
+| Check | Result |
+|---|---|
+| iOS version | **1.1.0** (`app.json` `version`) |
+| Android version | **1.1.0** (`app.json` `android.version`) |
+| `runtimeVersion.policy` | `appVersion` → runtime version **1.1.0** |
+| Live iOS production build | appVersion **1.1.0**, build 22, commit `ce1d85c`, 2026-08-31 |
+| Live Android production build | appVersion **1.1.0**, build 16, commit `ce1d85c`, 2026-08-31 |
+| `production` channel today | branch `production`, latest group on runtime **1.0.6** |
+
+This is the **first update on the 1.1.0 runtime**. It reaches only installs running the
+1.1.0 binaries; anyone still on 1.0.6 keeps the last 1.0.6 group, and 1.0.7 installs never
+had an update (none was published on that runtime). **Do not bump the version** — under the
+`appVersion` policy that moves the runtime and strands every 1.1.0 install.
+
+### 2. OTA eligibility — nothing native moved
+
+`git diff ce1d85c..HEAD -- app.json app.config.js eas.json package.json package-lock.json
+patches ios android` is **empty**, and no import of an `expo-*`, Stripe or
+`react-native-*` module was added in the range. The `associatedDomains` / https intent
+filter change (`89816b0`) predates the builds and is in the shipped binaries.
+
+### 3. Production environment — verified against EAS, not `eas.json`
+
+`eas env:list --environment production`:
+
+| Variable | Value | Matches `eas.json` production? |
+|---|---|---|
+| `EXPO_PUBLIC_API_URL` | `https://www.resneo.com` | ✅ |
+| `EXPO_PUBLIC_SUPABASE_URL` | `njualfobtudvlugqkqho.supabase.co` (live) | ✅ |
+| `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | `sb_publishable_faW-…` (live) | ✅ |
+| `EXPO_PUBLIC_SENTRY_DSN` | Sentry DE ingest | ✅ |
+| `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` | **`pk_live_…`** | EAS-only, correctly |
+| `GOOGLE_SERVICES_JSON`, `SENTRY_AUTH_TOKEN` | secrets, build-time only | n/a for an update |
+
+Absent by design, each with its safe default as before: `EXPO_PUBLIC_TERMINAL_SIMULATED`
+(real readers), `EXPO_PUBLIC_ALLOW_SCREENSHOTS` (FLAG_SECURE stays on),
+`EXPO_PUBLIC_WEB_URL` (falls back to the API URL), `EXPO_PUBLIC_ANALYTICS_KEY` (off).
+
+### 4. The cache trap, demonstrated
+
+A local `expo export` with production values in the environment but **without clearing
+Metro's cache** produced bundles containing the dev Supabase host
+(`zkppmyyvkjvbsvemakbb`) and NOT the live one — the cache still held a bundle keyed on the
+`.env.development.local` values. The same export with `--clear` carried the live host on
+both platforms and no dev host. **`--clear-cache` is not optional**, and it is in the
+command below. The only staging string left in a clean bundle is the
+`https://reserve-ni.vercel.app` fallback in `webDashboardUrl()`
+(`app/(app)/(tabs)/settings.tsx`), unreachable in production because `getWebUrl()`
+resolves first — recorded on the 2026-08-25 run as worth deleting, still not deleted.
+
+### 5. Verified healthy
+
+- `tsc --noEmit` — clean; `eslint` — 0 errors on every touched file.
+- `jest` — **225 suites / 2,347 tests pass** (full run at `8c302a1`; `54058d8` is one line).
+- `expo export --clear` — Android and iOS both complete (11 MB Hermes bundles each).
+- `eas.json` `requireCommit: true` — the tree is clean at the publishing commit.
+
+### 6. Publishing
+
+```
+npx eas-cli update --channel production --environment production --clear-cache --message "ResNeo R23 Web Parity"
+```
+
+### 7. Not covered
+
+- The device pass on this batch. What it should look at is listed in the R23 report's
+  closing section; the linked-calendar "New booking" fix also needs web `main` @
+  `09a7174a` (#173) deployed.
+- Multi-service attendees in a group booking — deliberately not built (one service per
+  person still).
+
+---
+
 ## Run 2026-08-25 — 1.0.7, both platforms, on `main` @ `2db7f7f`
 
 **Scope:** a re-baselining store build. 24 commits since the 1.0.6 build, of
