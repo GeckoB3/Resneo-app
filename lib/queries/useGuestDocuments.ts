@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { ApiError, apiFetch } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
+import { checkGuestDocument } from '@/lib/guests/guest-document-limits';
 import { keyScope, queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 
@@ -20,6 +21,13 @@ export interface GuestDocumentRow {
   file_size_bytes: number | null;
   category: string | null;
   created_at: string;
+  uploaded_at?: string | null;
+  /**
+   * A short-lived signed link (15 minutes) for photos and PDFs, the thumbnail
+   * the Records grid shows (web 2026-09-05); null for other files. Opening a
+   * file asks for a fresh link with `intent=view`, which the audit records.
+   */
+  preview_url?: string | null;
 }
 
 export interface GuestDocumentsResponse {
@@ -57,6 +65,17 @@ export interface SignDocumentInput {
 export interface SignDocumentResponse {
   signed_url: string;
   document_id: string;
+  /** The type the row was recorded with; sent as the PUT's Content-Type (web 2026-09-05). */
+  mime_type?: string;
+}
+
+export interface UploadGuestDocumentInput {
+  fileUri: string;
+  fileName: string;
+  /** What the picker reported; may be empty or generic, so the allowlist resolves by extension too. */
+  mimeType: string | null | undefined;
+  /** What the picker reported; the real byte count is read from the file before signing. */
+  sizeBytes?: number | null;
 }
 
 /**
@@ -64,6 +83,12 @@ export interface SignDocumentResponse {
  * 1. POST /sign → get signed_url + document_id
  * 2. PUT to signed_url with file bytes
  * 3. POST /complete to confirm
+ *
+ * The file is read first, because a photo comes back re-encoded by the picker
+ * and its reported size is not the upload's. Size and type are then checked
+ * against the same rules the sign route and the bucket apply
+ * (`checkGuestDocument`), so a refusal reads as a sentence naming the file
+ * rather than a failed request; the route and the bucket check again.
  */
 export function useUploadGuestDocument(guestId: string) {
   const accessToken = useAccessToken();
@@ -71,14 +96,21 @@ export function useUploadGuestDocument(guestId: string) {
 
   return useMutation({
     mutationFn: async ({
-      signInput,
       fileUri,
-    }: {
-      signInput: SignDocumentInput;
-      fileUri: string;
-    }): Promise<void> => {
+      fileName,
+      mimeType,
+      sizeBytes,
+    }: UploadGuestDocumentInput): Promise<void> => {
       if (!accessToken) {
         throw new Error('Missing access token');
+      }
+
+      const fileResponse = await fetch(fileUri);
+      const blob = await fileResponse.blob();
+      const realSize = blob.size > 0 ? blob.size : (sizeBytes ?? 0);
+      const accepted = checkGuestDocument({ fileName, mimeType, sizeBytes: realSize });
+      if (!accepted.ok) {
+        throw new ApiError(accepted.message, 400);
       }
 
       // Step 1: Get signed URL
@@ -87,15 +119,17 @@ export function useUploadGuestDocument(guestId: string) {
         {
           accessToken,
           method: 'POST',
-          body: JSON.stringify(signInput),
+          body: JSON.stringify({
+            file_name: fileName,
+            mime_type: accepted.mimeType,
+            file_size_bytes: realSize,
+          } satisfies SignDocumentInput),
         },
       );
 
       // Step 2: PUT the file bytes to the signed URL. Time-box it with an
       // AbortController (mirrors apiFetch) so a stalled upload rejects instead
       // of spinning until the OS socket times out.
-      const fileResponse = await fetch(fileUri);
-      const blob = await fileResponse.blob();
       const controller = new AbortController();
       let timedOut = false;
       const timeoutId = setTimeout(() => {
@@ -107,7 +141,7 @@ export function useUploadGuestDocument(guestId: string) {
         putRes = await fetch(signRes.signed_url, {
           method: 'PUT',
           body: blob,
-          headers: { 'Content-Type': signInput.mime_type },
+          headers: { 'Content-Type': signRes.mime_type ?? accepted.mimeType },
           signal: controller.signal,
         });
       } catch (err) {
@@ -159,14 +193,20 @@ export function useDeleteGuestDocument(guestId: string) {
   });
 }
 
-/** GET /api/venue/guests/[guestId]/documents/[docId]/download — get pre-signed download URL. */
+/**
+ * GET /api/venue/guests/[guestId]/documents/[docId]/download — a fresh pre-signed
+ * link. `intent: 'view'` marks the read as an in-app view (the Records viewer)
+ * rather than a download, so the contact's audit trail says which happened
+ * (web 2026-09-05).
+ */
 export async function fetchDocumentDownloadUrl(
   accessToken: string,
   guestId: string,
   docId: string,
+  intent: 'view' | 'download' = 'download',
 ): Promise<string> {
   const res = await apiFetch<{ url: string }>(
-    `/api/venue/guests/${guestId}/documents/${docId}/download`,
+    `/api/venue/guests/${guestId}/documents/${docId}/download${intent === 'view' ? '?intent=view' : ''}`,
     { accessToken },
   );
   return res.url;

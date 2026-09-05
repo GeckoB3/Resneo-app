@@ -22,6 +22,7 @@ import {
 } from '@/components/bookings/ModifyBookingSheet';
 import { RescheduleSheet, type RescheduleTarget } from '@/components/calendar/RescheduleSheet';
 import { minutesToTime, timeToMinutes } from '@/components/calendar/grid-layout';
+import { DocumentsSection } from '@/components/clients/DocumentsSection';
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge, StatusPill } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -1546,6 +1547,11 @@ export function BookingDetailContent({
           </View>
         </CollapsibleCard>
       ) : null}
+
+      {/* Records: the guest's documents and photos, the same card the contact
+          screen shows. They belong to the person, not this booking, so every
+          booking for the guest shows the same files (web 2026-09-05). */}
+      {guestProfileId ? <DocumentsSection guestId={guestProfileId} collapsible /> : null}
 
       {/* Refund banner — cancelled booking that still holds a deposit (web parity) */}
       {showRefundBanner ? (

@@ -505,7 +505,8 @@ export default function ClientDetailScreen() {
         collapsible
       />
 
-      {/* Documents */}
+      {/* Records: the guest's documents and photos (web 2026-09-05); the booking
+          detail shows the same card for the same person. */}
       <DocumentsSection guestId={guestId} collapsible />
 
       {/* Compliance — per-guest records + audit trail (feature-flagged, read-only) */}
