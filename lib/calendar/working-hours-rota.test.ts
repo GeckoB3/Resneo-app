@@ -20,6 +20,7 @@ import {
   weekIndexInPeriod,
   type CalendarSchedule,
   type SchedulePeriod,
+  schedulePeriodHasEnded,
 } from '@/lib/calendar/working-hours-rota';
 
 /** Monday 7 September 2026. */
@@ -186,5 +187,14 @@ describe('describing', () => {
         weekIndex: 0,
       }),
     ).toBe('Change from 7 Sep 2026');
+  });
+});
+
+describe('schedulePeriodHasEnded', () => {
+  it('ends the day after its last day; an open-ended period never ends', () => {
+    const period = { until: '2026-09-06' };
+    expect(schedulePeriodHasEnded(period, '2026-09-06')).toBe(false);
+    expect(schedulePeriodHasEnded(period, '2026-09-07')).toBe(true);
+    expect(schedulePeriodHasEnded({ until: null }, '2030-01-01')).toBe(false);
   });
 });

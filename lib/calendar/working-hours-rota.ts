@@ -344,3 +344,16 @@ export function describeScheduleSource(source: ScheduleSource): string {
       : '';
   return `Change from ${describeYmdShort(source.period.from)}${week}`;
 }
+
+/**
+ * True once the period's last day is before `todayYmd`; an open-ended period
+ * never ends. The web's schedule timeline lists the change running now and any
+ * still to come, and moves ended ones behind "Show N past changes"
+ * (2026-09-04); the app's read-only list does the same.
+ */
+export function schedulePeriodHasEnded(
+  period: Pick<SchedulePeriod, 'until'>,
+  todayYmd: string,
+): boolean {
+  return period.until != null && ymdToDayNumber(period.until) < ymdToDayNumber(todayYmd);
+}

@@ -30,6 +30,7 @@ import {
   describePeriod,
   describeScheduleSource,
   resolveScheduleForDate,
+  schedulePeriodHasEnded,
   scheduleForRow,
 } from '@/lib/calendar/working-hours-rota';
 import { addDaysToDateStr, formatDayHeading } from '@/lib/dates/venue-dates';
@@ -210,6 +211,9 @@ export default function AvailabilityScreen() {
   const timeZone = venue?.timezone ?? 'Europe/London';
   const today = calendarDateInTimeZone(new Date(), timeZone);
   const to = addDaysToDateStr(today, RANGE_DAYS - 1);
+  // Ended schedule changes stay in the timeline but sit behind a per-calendar
+  // "Show N past changes" toggle (web 2026-09-04).
+  const [pastChangesShownFor, setPastChangesShownFor] = useState<Set<string>>(() => new Set());
 
   const staffQuery = useStaffMe();
   const staff = staffQuery.data?.staff;
@@ -672,6 +676,15 @@ export default function AvailabilityScreen() {
     // that set it; the standard weekly hours are what "Edit hours" changes.
     const schedule = scheduleForRow(p);
     const thisWeek = resolveScheduleForDate(p, today);
+    const endedPeriods = schedule
+      ? schedule.periods.filter((period) => schedulePeriodHasEnded(period, today))
+      : [];
+    const showPast = pastChangesShownFor.has(p.id);
+    const listedPeriods = schedule
+      ? showPast
+        ? schedule.periods
+        : schedule.periods.filter((period) => !schedulePeriodHasEnded(period, today))
+      : [];
     const summary = summariseWorkingHours(thisWeek.hours);
     const breaks = summariseBreaks(p);
     const isResource = isResourceCalendar(p);
@@ -695,11 +708,33 @@ export default function AvailabilityScreen() {
             <Text variant="caption" tone="muted">
               This week · {describeScheduleSource(thisWeek.source)}
             </Text>
-            {schedule.periods.map((period) => (
+            {/* The change running now and any still to come. An ended change
+                stays in the stored timeline (the web's planning calendar pages
+                back through it) but moves behind a toggle (web 2026-09-04). */}
+            {listedPeriods.map((period) => (
               <Text key={period.id} variant="caption" tone="muted">
                 {describePeriod(period)}
               </Text>
             ))}
+            {endedPeriods.length > 0 ? (
+              <Pressable
+                accessibilityRole="button"
+                hitSlop={8}
+                onPress={() =>
+                  setPastChangesShownFor((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(p.id)) next.delete(p.id);
+                    else next.add(p.id);
+                    return next;
+                  })
+                }>
+                <Text variant="caption" color={colors.brand}>
+                  {showPast
+                    ? 'Hide past changes'
+                    : `Show ${endedPeriods.length} past change${endedPeriods.length === 1 ? '' : 's'}`}
+                </Text>
+              </Pressable>
+            ) : null}
             {/* The timeline editor (periods, rotas, the planning calendar) lives on
                 the web dashboard for now; "Edit hours" here changes the standard
                 weekly hours that apply outside every period. */}
