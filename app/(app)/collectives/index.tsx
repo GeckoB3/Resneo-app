@@ -16,6 +16,7 @@ import { Screen } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { getWebUrl } from '@/lib/env';
+import { collectivePublicPath } from '@/lib/linked/collective-page';
 import { fullMutualLinks } from '@/lib/linked/grants';
 import {
   useCollectiveMemberAction,
@@ -55,9 +56,11 @@ export default function CollectivesScreen() {
   );
   const hasLiveCollective = collectives.some((c) => c.status !== 'dissolved');
 
-  const openWeb = (slug: string) => {
+  // The address customers actually use: a member venue's own page when the
+  // collective adopted it, else the dedicated combined address (web 2026-09-05).
+  const openWeb = (publicPath: string) => {
     const base = getWebUrl() || 'https://app.resneo.com';
-    const url = `${base}/book/c/${slug}`;
+    const url = `${base}${publicPath}`;
     void WebBrowser.openBrowserAsync(url).catch(() =>
       Linking.openURL(url).catch(() => toast.error('Could not open the browser.')),
     );
@@ -174,7 +177,7 @@ export default function CollectivesScreen() {
             collective={c}
             busy={busy}
             onManage={() => router.push(`/collectives/${c.id}` as Href)}
-            onViewPage={() => openWeb(c.slug)}
+            onViewPage={() => openWeb(collectivePublicPath(c))}
             onAccept={() =>
               runMember(c.id, { action: 'accept' }, `Joined ${c.name}.`)
             }

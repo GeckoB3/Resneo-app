@@ -69,6 +69,8 @@ export interface CollectiveBranding {
 export interface CollectiveMemberView {
   venueId: string;
   venueName: string;
+  /** The venue's own booking-page slug (`/book/{slug}`), the combined page's address when adopted (web 2026-09-05). */
+  venueSlug?: string | null;
   status: CollectiveMemberStatus;
   displayOrder: number;
   soloPageBehavior: SoloPageBehavior;
@@ -89,6 +91,9 @@ export interface CollectiveView {
   bookingPageConfig: CombinedBookingPageConfig | null;
   isHost: boolean;
   hostVenueId: string;
+  /** The host venue's two flow flags, which the combined page follows (shown in the manager's note). */
+  hostAnyAvailablePractitioner?: boolean;
+  hostStaffFirstBookingFlow?: boolean;
   myVenueId: string;
   myMembershipStatus: CollectiveMemberStatus | null;
   myConfig: {

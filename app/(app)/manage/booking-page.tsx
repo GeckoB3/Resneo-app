@@ -12,6 +12,7 @@ import { GalleryEditorSheet } from '@/components/bookingPage/GalleryEditorSheet'
 import { LogoFramingSheet } from '@/components/bookingPage/LogoFramingSheet';
 import { ServicePhotosSheet } from '@/components/bookingPage/ServicePhotosSheet';
 import { TeamProfilesSheet } from '@/components/bookingPage/TeamProfilesSheet';
+import { CombinedPageNotice } from '@/components/linked/CombinedPageNotice';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -23,6 +24,7 @@ import { SectionHeader } from '@/components/ui/SectionHeader';
 import { Segmented } from '@/components/ui/Segmented';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import { settingsCollectiveNote } from '@/lib/linked/collective-page';
 import { resolveServicesLayout, type ServicesLayout } from '@/lib/booking/service-categories';
 import {
   BOOKING_ABOUT_MAX,
@@ -47,6 +49,7 @@ import {
 import { getWebUrl } from '@/lib/env';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useUpdateBookingPageConfig } from '@/lib/queries/useBookingPage';
+import { useCollectives } from '@/lib/queries/useCollectives';
 import { useManagedServices } from '@/lib/queries/useServicesManage';
 import { useSlugAvailable } from '@/lib/queries/useSlugAvailable';
 import {
@@ -157,6 +160,14 @@ export default function BookingPageScreen() {
   const router = useRouter();
   const { venue, isLoading } = useVenueContext();
   const isAdmin = venue?.current_user_role === 'admin';
+
+  // A live venue collective this venue belongs to: the screen then opens with a
+  // pointer to Manage combined page (hosts) or to Linked venues (web 2026-09-05).
+  const collectivesQuery = useCollectives({ enabled: isAdmin });
+  const collectiveNote = useMemo(
+    () => settingsCollectiveNote(collectivesQuery.data?.collectives ?? [], venue?.id),
+    [collectivesQuery.data?.collectives, venue?.id],
+  );
 
   const updateConfig = useUpdateBookingPageConfig();
   const uploadLogo = useUploadVenueLogo();
@@ -509,6 +520,14 @@ export default function BookingPageScreen() {
             ) : null,
         }}
       />
+
+      {collectiveNote ? (
+        <CombinedPageNotice
+          collective={collectiveNote}
+          onManage={() => router.push(`/collectives/${collectiveNote.id}` as Href)}
+          onOpenLinkedAccounts={() => router.push('/linked-venues' as Href)}
+        />
+      ) : null}
 
       {/* Live preview */}
       <BookingPagePreview

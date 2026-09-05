@@ -78,6 +78,11 @@ jest.mock('@/lib/queries/useServicesManage', () => ({
 jest.mock('@/lib/queries/useSlugAvailable', () => ({
   useSlugAvailable: () => mockSlugAvail,
 }));
+// The combined-page notice (R24-3) reads the venue's collectives; this surface
+// tests a venue that books for itself, so the list is empty.
+jest.mock('@/lib/queries/useCollectives', () => ({
+  useCollectives: () => ({ data: { collectives: [] }, isLoading: false }),
+}));
 
 let mockVenue: Record<string, unknown> | null;
 jest.mock('@/providers/VenueProvider', () => ({

@@ -34,9 +34,9 @@ import type {
 // ---------------------------------------------------------------------------
 
 /** GET /api/venue/collectives — every collective this venue hosts or belongs to. */
-export function useCollectives() {
+export function useCollectives(options?: { enabled?: boolean }) {
   const accessToken = useAccessToken();
-  const enabled = isBackendConfigured() && accessToken !== null;
+  const enabled = isBackendConfigured() && accessToken !== null && (options?.enabled ?? true);
 
   return useQuery({
     queryKey: queryKeys.collectives.list(accessToken),

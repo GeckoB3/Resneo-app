@@ -30,6 +30,7 @@ import {
   type BookingPageImageFraming,
 } from '@/lib/booking/bookingPageConfig';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
+import { collectiveAdoptedSlug } from '@/lib/linked/collective-page';
 import {
   pickVenueImage,
   useUpdateCollective,
@@ -133,6 +134,7 @@ export function CombinedPageConfigEditor({
 
   // Address strategy.
   const adopt = collective.slugStrategy === 'adopt_member';
+  const adoptedSlug = collectiveAdoptedSlug(collective);
   const activeMembers = collective.members.filter((m) => m.status === 'active');
 
   // Config form state.
@@ -434,6 +436,11 @@ export function CombinedPageConfigEditor({
               That venue’s own page will show the combined page. It can keep a separate page only
               under a new address.
             </Text>
+            {adoptedSlug ? (
+              <Text variant="caption" tone="muted">
+                {`Customers reach it at /book/${adoptedSlug}.`}
+              </Text>
+            ) : null}
           </View>
         ) : null}
       </Card>
@@ -610,6 +617,9 @@ export function CombinedPageConfigEditor({
       {/* Photo gallery (lives on the About tab on the public page). */}
       <CombinedPageGallery collectiveId={collective.id} config={cfg} onChanged={onChanged} />
 
+      {/* Settings the combined page follows from the host venue (web 2026-09-05). */}
+      <HostInheritedSettingsNote collective={collective} />
+
       {colourError ? (
         <Text variant="bodySmall" tone="danger">
           Colours must be a 6-digit hex like #003b6f — fix to keep saving.
@@ -645,6 +655,44 @@ export function CombinedPageConfigEditor({
 // ---------------------------------------------------------------------------
 // Sub-components (ported from the venue booking-page editor)
 // ---------------------------------------------------------------------------
+
+/**
+ * The combined page has no settings of its own for the things below: it works
+ * like one venue and follows the HOST venue. Say so, because a host looking
+ * for these switches here would otherwise conclude the combined page cannot do
+ * them (web 2026-09-05, `HostInheritedSettingsNote`, copy verbatim).
+ */
+function HostInheritedSettingsNote({ collective }: { collective: CollectiveView }) {
+  const host =
+    collective.members.find((m) => m.venueId === collective.hostVenueId)?.venueName ??
+    'the host venue';
+  const anyAvailable = collective.hostAnyAvailablePractitioner ? 'on' : 'off';
+  const staffFirst = collective.hostStaffFirstBookingFlow ? 'on' : 'off';
+  return (
+    <>
+      <SectionHeader title="Settings that follow the host venue" />
+      <Card style={styles.card}>
+        <Text variant="caption" tone="muted">
+          {`Your combined page follows ${host} for these. Change them in that venue's Settings and the combined page updates with it.`}
+        </Text>
+        <Text variant="bodySmall" tone="secondary">
+          {`Any available practitioner (currently ${anyAvailable}) and staff-first booking (currently ${staffFirst}): Settings, Booking settings.`}
+        </Text>
+        <Text variant="bodySmall" tone="secondary">
+          Address, phone, website and opening hours shown in the header: Settings, Profile.
+        </Text>
+        <Text variant="bodySmall" tone="secondary">
+          Currency and wording (for example &ldquo;appointment&rdquo;): Settings, Profile.
+        </Text>
+        <Text variant="caption" tone="muted">
+          Prices, durations, deposits and cancellation notice come from each member venue&rsquo;s own
+          service, because every booking is made with that venue. If any member requires customers
+          to sign in to book, the combined page asks them to sign in too.
+        </Text>
+      </Card>
+    </>
+  );
+}
 
 function RadioRow({
   label,
