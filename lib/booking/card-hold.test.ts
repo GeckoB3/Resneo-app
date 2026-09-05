@@ -230,12 +230,11 @@ describe('isRosterChargeLinkCandidate', () => {
 });
 
 describe('resolveStaffEntityCardHold', () => {
-  it('resolves the fee with units for card_hold entities when the flag is on', () => {
+  it('resolves the fee with units for card_hold entities', () => {
     expect(
       resolveStaffEntityCardHold({
         paymentRequirement: 'card_hold',
         feePerUnitPence: 500,
-        cardHoldFlagEnabled: true,
         units: 3,
       }),
     ).toEqual({ feePence: 1500 });
@@ -243,31 +242,21 @@ describe('resolveStaffEntityCardHold', () => {
       resolveStaffEntityCardHold({
         paymentRequirement: 'card_hold',
         feePerUnitPence: 2500,
-        cardHoldFlagEnabled: true,
       }),
     ).toEqual({ feePence: 2500 });
   });
 
-  it('returns null when the flag is off, the requirement differs, or the fee is not positive', () => {
-    expect(
-      resolveStaffEntityCardHold({
-        paymentRequirement: 'card_hold',
-        feePerUnitPence: 500,
-        cardHoldFlagEnabled: false,
-      }),
-    ).toBeNull();
+  it('returns null when the requirement differs or the fee is not positive', () => {
     expect(
       resolveStaffEntityCardHold({
         paymentRequirement: 'deposit',
         feePerUnitPence: 500,
-        cardHoldFlagEnabled: true,
       }),
     ).toBeNull();
     expect(
       resolveStaffEntityCardHold({
         paymentRequirement: 'card_hold',
         feePerUnitPence: 0,
-        cardHoldFlagEnabled: true,
       }),
     ).toBeNull();
   });
@@ -277,7 +266,6 @@ describe('resolveStaffEntityCardHold', () => {
       resolveStaffEntityCardHold({
         paymentRequirement: 'card_hold',
         feePerUnitPence: 500,
-        cardHoldFlagEnabled: true,
         units: 2.9,
       }),
     ).toEqual({ feePence: 1000 });
@@ -285,7 +273,6 @@ describe('resolveStaffEntityCardHold', () => {
       resolveStaffEntityCardHold({
         paymentRequirement: 'card_hold',
         feePerUnitPence: 500,
-        cardHoldFlagEnabled: true,
         units: 0,
       }),
     ).toEqual({ feePence: 500 });

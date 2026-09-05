@@ -31,7 +31,6 @@ import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { normalizePhone } from '@/lib/phone/normalize';
 import { useCreateBooking, type ComplianceBookingWarning } from '@/lib/queries/useCreateBooking';
 import { useCreateMultiServiceBooking } from '@/lib/queries/useCreateMultiServiceBooking';
-import { useFeatureFlags } from '@/lib/queries/useVenueSettings';
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { AppointmentSlot } from '@/types/appointment-availability';
@@ -315,20 +314,16 @@ export function ConfirmStep({
   // both controls. Sending nothing here used to leave the route's default (on)
   // standing, which meant a chain containing one card-hold service always held
   // a card and staff had no way to say otherwise.
-  const cardHoldFlagEnabled = Boolean(
-    useFeatureFlags().data?.resolved?.card_hold_deposits,
-  );
   const chainCardHoldPence = isMultiService
     ? resolveVisitCardHoldTotal(multiServiceSegments!)
     : 0;
   const staffCardHold = isMultiService
-    ? cardHoldFlagEnabled && chainCardHoldPence > 0
+    ? chainCardHoldPence > 0
       ? { feePence: chainCardHoldPence }
       : null
     : resolveStaffEntityCardHold({
         paymentRequirement: service.paymentRequirement,
         feePerUnitPence: baseDeposit,
-        cardHoldFlagEnabled,
       });
   const [requireCardHold, setRequireCardHold] = useState(true);
 

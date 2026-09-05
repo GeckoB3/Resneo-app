@@ -145,8 +145,8 @@ export interface ManagedServicesResponse {
 /**
  * `'card_hold'` (web 2026-07, spec D5/6.2): no payment at booking; the card is
  * stored and a no-show fee (kept in the same `deposit_pence` column) may be
- * charged. Only offered in editors when the venue's `card_hold_deposits`
- * feature flag is on.
+ * charged. A standard option in every editor; the `card_hold_deposits` venue
+ * flag that used to gate it was retired on 2026-09-05.
  */
 export type ServicePaymentRequirement = 'none' | 'deposit' | 'full_payment' | 'card_hold';
 

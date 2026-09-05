@@ -21,10 +21,6 @@ jest.mock('@/lib/analytics', () => ({
   ANALYTICS_EVENTS: { createBookingCompleted: 'x' },
   track: jest.fn(),
 }));
-// The confirm step's card-hold toggle is flag-gated; the flow reads it on mount.
-jest.mock('@/lib/queries/useVenueSettings', () => ({
-  useFeatureFlags: () => ({ data: { resolved: { card_hold_deposits: true } } }),
-}));
 // The flow announces unmet compliance requirements on the way to the booking
 // (it has no confirmation screen of its own), so it needs the toast host.
 const mockToast = { success: jest.fn(), error: jest.fn(), info: jest.fn() };

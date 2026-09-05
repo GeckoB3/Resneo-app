@@ -116,9 +116,6 @@ jest.mock('@/lib/queries/usePractitioners', () => ({
 jest.mock('@/lib/queries/useSetupStatus', () => ({
   useSetupStatus: () => ({ data: { stripe_connected: true } }),
 }));
-jest.mock('@/lib/queries/useVenueSettings', () => ({
-  useFeatureFlags: () => ({ data: { resolved: { card_hold_deposits: true } } }),
-}));
 
 import { ResourceEditorSheet } from '@/components/resources/ResourceEditorSheet';
 
@@ -127,6 +124,23 @@ async function press(getEl: () => Parameters<typeof fireEvent.press>[0]) {
     fireEvent.press(getEl());
   });
 }
+
+describe('ResourceEditorSheet payment options', () => {
+  it('offers Card hold to every venue without reading a feature flag', async () => {
+    // The card_hold_deposits flag was retired on 2026-09-05. This file mounts the
+    // editor with no useVenueSettings mock on purpose: the option must be listed
+    // (and the old "disabled for this venue" note must not appear) with nothing
+    // but the entity's own payment_requirement in play.
+    await render(
+      <ResourceEditorSheet target={{ mode: 'create' }} hostCalendars={[]} onClose={jest.fn()} />,
+    );
+
+    await press(() => screen.getByText('Card hold'));
+
+    expect(screen.getByText('No-show fee (£)')).toBeTruthy();
+    expect(screen.queryByText(/Card hold is disabled for this venue/i)).toBeNull();
+  });
+});
 
 describe('ResourceEditorSheet help tooltips', () => {
   it('opens the start-time-step tooltip to reveal the ported help copy', async () => {

@@ -30,7 +30,6 @@ import {
   type HostCalendar,
 } from '@/lib/queries/useResourcesManage';
 import { useSetupStatus } from '@/lib/queries/useSetupStatus';
-import { useFeatureFlags } from '@/lib/queries/useVenueSettings';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { radius, spacing } from '@/theme/index';
@@ -42,18 +41,20 @@ const TYPE_SUGGESTIONS = [
   'Tennis Court', 'Meeting Room', 'Studio', 'Pitch', 'Equipment', 'Desk', 'Bay', 'Lane', 'Pod',
 ];
 
+/**
+ * The four payment options every venue can choose from (exact web copy). Card
+ * hold (spec 6.2) is a standard option; it is no longer gated by a venue flag.
+ */
 const PAYMENT_OPTIONS: { value: ResourcePaymentRequirement; label: string; hint: string }[] = [
   { value: 'none', label: 'No online payment', hint: 'Pay at the venue or arrange separately' },
   { value: 'deposit', label: 'Custom deposit', hint: 'Fixed amount paid online when booking' },
   { value: 'full_payment', label: 'Pay in full online', hint: 'Full price taken at booking' },
+  {
+    value: 'card_hold',
+    label: 'Card hold',
+    hint: 'No payment is taken when the client books. Their card is stored securely and you can charge a no-show fee if they do not attend.',
+  },
 ];
-
-/** Fourth payment option (spec 6.2), shown only when `card_hold_deposits` is on. */
-const CARD_HOLD_PAYMENT_OPTION: { value: ResourcePaymentRequirement; label: string; hint: string } = {
-  value: 'card_hold',
-  label: 'Card hold',
-  hint: 'No payment is taken when the client books. Their card is stored securely and you can charge a no-show fee if they do not attend.',
-};
 
 /** Shortest-booking floor (server `resourceSchema` min). */
 const MIN_BOOKING_FLOOR = 15;
@@ -197,8 +198,6 @@ export function ResourceEditorSheet({
   const createCalendar = useCreateHostCalendar();
   const setupStatus = useSetupStatus();
   const stripeConnected = setupStatus.data?.stripe_connected ?? true;
-  // Card-hold payment option shown only when the venue flag is on (spec 6.2).
-  const cardHoldEnabled = Boolean(useFeatureFlags().data?.resolved?.card_hold_deposits);
 
   const editing = target?.mode === 'edit' ? target.resource : null;
 
@@ -770,7 +769,7 @@ export function ResourceEditorSheet({
             onChangeText={setPrice}
             keyboardType="decimal-pad"
           />
-          {(cardHoldEnabled ? [...PAYMENT_OPTIONS, CARD_HOLD_PAYMENT_OPTION] : PAYMENT_OPTIONS).map((option) => {
+          {PAYMENT_OPTIONS.map((option) => {
             const selected = paymentReq === option.value;
             return (
               <Pressable
@@ -810,11 +809,6 @@ export function ResourceEditorSheet({
               onChangeText={setDeposit}
               keyboardType="decimal-pad"
             />
-          ) : null}
-          {paymentReq === 'card_hold' && !cardHoldEnabled ? (
-            <Text variant="caption" color={colors.warning}>
-              Card hold is disabled for this venue; this resource currently takes no deposit.
-            </Text>
           ) : null}
           {paymentReq !== 'none' && !stripeConnected ? (
             <Text variant="caption" color={colors.warning}>

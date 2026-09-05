@@ -11,7 +11,6 @@ import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useCreateClassType, useUpdateClassType } from '@/lib/queries/useClassesManage';
 import { useCreateHostCalendar } from '@/lib/queries/usePractitioners';
 import { useSetupStatus } from '@/lib/queries/useSetupStatus';
-import { useFeatureFlags } from '@/lib/queries/useVenueSettings';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { radius, spacing } from '@/theme/index';
@@ -31,18 +30,20 @@ const COLOUR_OPTIONS = [
 /** Matches the server `colour` field — `#rrggbb`. */
 const HEX_COLOUR_RE = /^#[0-9a-fA-F]{6}$/;
 
+/**
+ * The four payment options every venue can choose from (exact web copy). Card
+ * hold (spec 6.2) is a standard option; it is no longer gated by a venue flag.
+ */
 const PAYMENT_OPTIONS: { value: ClassPaymentRequirement; label: string; hint: string }[] = [
   { value: 'none', label: 'No online payment', hint: 'Pay at the venue or arrange separately' },
   { value: 'deposit', label: 'Custom deposit', hint: 'Fixed amount paid online when booking' },
   { value: 'full_payment', label: 'Pay in full online', hint: 'Full price taken at booking' },
+  {
+    value: 'card_hold',
+    label: 'Card hold',
+    hint: 'No payment is taken when the client books. Their card is stored securely and you can charge a no-show fee if they do not attend.',
+  },
 ];
-
-/** Fourth payment option (spec 6.2), shown only when `card_hold_deposits` is on. */
-const CARD_HOLD_PAYMENT_OPTION: { value: ClassPaymentRequirement; label: string; hint: string } = {
-  value: 'card_hold',
-  label: 'Card hold',
-  hint: 'No payment is taken when the client books. Their card is stored securely and you can charge a no-show fee if they do not attend.',
-};
 
 /** What the sheet is editing: a brand-new class type, or an existing one. */
 export type ClassTypeEditorTarget =
@@ -66,9 +67,9 @@ type ClassTypeEditorSheetProps = {
  * Full create/edit editor for a class type. Sections: Basics (name,
  * description, colour, active), Session defaults (duration, capacity), Calendar
  * column (required single-select), Booking rules, and Price & payment (radio
- * none/deposit/full_payment + conditional deposit). Client validation mirrors
- * the server `classTypeSchema` so errors surface before the request, matching
- * how the services editor's `handleSave` validates.
+ * none/deposit/full_payment/card_hold + conditional deposit or no-show fee).
+ * Client validation mirrors the server `classTypeSchema` so errors surface
+ * before the request, matching how the services editor's `handleSave` validates.
  *
  * @see _reference/Resneo/src/app/api/venue/classes/route.ts (classTypeSchema)
  */
@@ -88,8 +89,6 @@ export function ClassTypeEditorSheet({
   // Stripe-connected state for the deposit/full-payment warning (web parity).
   const setupStatus = useSetupStatus(isAdmin);
   const stripeConnected = setupStatus.data?.stripe_connected ?? true;
-  // Card-hold payment option shown only when the venue flag is on (spec 6.2).
-  const cardHoldEnabled = Boolean(useFeatureFlags().data?.resolved?.card_hold_deposits);
 
   const editing = target?.mode === 'edit' ? target.classType : null;
 
@@ -547,7 +546,7 @@ export function ClassTypeEditorSheet({
 
           {/* Price & payment */}
           <Text variant="overline" tone="muted">Price &amp; payment</Text>
-          {(cardHoldEnabled ? [...PAYMENT_OPTIONS, CARD_HOLD_PAYMENT_OPTION] : PAYMENT_OPTIONS).map((option) => {
+          {PAYMENT_OPTIONS.map((option) => {
             const selected = paymentReq === option.value;
             return (
               <Pressable
@@ -600,11 +599,6 @@ export function ClassTypeEditorSheet({
               </View>
             ) : null}
           </View>
-          {paymentReq === 'card_hold' && !cardHoldEnabled ? (
-            <Text variant="caption" color={colors.warning}>
-              Card hold is disabled for this venue; this class currently takes no deposit.
-            </Text>
-          ) : null}
           {/* Stripe-not-connected warning when an online payment is required (web parity). */}
           {paymentReq !== 'none' && !stripeConnected ? (
             <Text variant="caption" color={colors.warning}>

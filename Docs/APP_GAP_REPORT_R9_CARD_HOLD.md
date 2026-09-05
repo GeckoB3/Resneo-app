@@ -5,6 +5,10 @@
 **Previous parity point:** web `main @ 2e37ea66` (2026-07-01) — the state the R8 compliance
 work and the 2026-07-02 calendar/compliance parity commits were built against.
 
+> **Update 2026-09-05:** the `card_hold_deposits` feature flag is retired on the web and in
+> the app. Card hold is a standard payment option for every venue, the Booking settings toggle
+> is gone, and no app surface gates on the flag. The flag gating described below is historical.
+
 ## Scope
 
 Everything merged to the web `main` between those two commits, which squash-merges

@@ -391,11 +391,12 @@ export interface StaffCardHoldContext {
 
 /**
  * Appointments, classes, events, resources (the app has no staff table form).
- * The public offering payloads the app lists from (`/api/booking/*`) are
- * flag-resolved server-side (spec 6.3: `card_hold` reaches the client only when
- * the owner venue's `card_hold_deposits` flag is on AND a positive fee is
- * configured), but the flag is still checked client-side to mirror the web's
- * staff surfaces and stay safe against unresolved payload paths.
+ * These entity payloads carry the configured `payment_requirement`; a
+ * `card_hold` entity takes a hold whenever its fee is positive (spec 6.3: the
+ * public offering payloads the app lists from resolve zero-fee holds to
+ * `none` server-side, and this check mirrors that). Card hold is a standard
+ * payment option for every venue since the `card_hold_deposits` flag was
+ * retired on 2026-09-05, so there is no venue-level gate here.
  *
  * `feePerUnitPence` is the per-unit no-show fee (per person for classes and
  * events, per booking for appointments and resources); `units` multiplies it
@@ -404,10 +405,8 @@ export interface StaffCardHoldContext {
 export function resolveStaffEntityCardHold(args: {
   paymentRequirement: string | null | undefined;
   feePerUnitPence: number | null | undefined;
-  cardHoldFlagEnabled: boolean;
   units?: number;
 }): StaffCardHoldContext | null {
-  if (!args.cardHoldFlagEnabled) return null;
   if (args.paymentRequirement !== 'card_hold') return null;
   const perUnit = args.feePerUnitPence;
   if (typeof perUnit !== 'number' || !Number.isFinite(perUnit) || perUnit <= 0) return null;

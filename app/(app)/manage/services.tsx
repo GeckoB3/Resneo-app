@@ -86,7 +86,6 @@ import {
 } from '@/lib/queries/useServicesManage';
 import { useCreateHostCalendar, usePractitioners } from '@/lib/queries/usePractitioners';
 import { useSetupStatus } from '@/lib/queries/useSetupStatus';
-import { useFeatureFlags } from '@/lib/queries/useVenueSettings';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import {
   nextCalendarServiceIds,
@@ -117,25 +116,20 @@ const COLOUR_OPTIONS = [
   '#EC4899', '#06B6D4', '#84CC16', '#F97316', '#6366F1',
 ];
 
+/**
+ * The four payment options every venue can choose from (exact web copy). Card
+ * hold (spec 6.2) is a standard option; it is no longer gated by a venue flag.
+ */
 const PAYMENT_OPTIONS: { value: ServicePaymentRequirement; label: string; hint: string }[] = [
   { value: 'none', label: 'No online payment', hint: 'Pay at the venue or arrange separately' },
   { value: 'deposit', label: 'Custom deposit', hint: 'Fixed amount paid online when booking' },
   { value: 'full_payment', label: 'Pay in full online', hint: 'Full price taken at booking' },
+  {
+    value: 'card_hold',
+    label: 'Card hold',
+    hint: 'No payment is taken when the client books. Their card is stored securely and you can charge a no-show fee if they do not attend.',
+  },
 ];
-
-/**
- * Fourth payment option (spec 6.2), appended only when the venue's
- * `card_hold_deposits` flag is on. Exact web copy.
- */
-const CARD_HOLD_PAYMENT_OPTION: { value: ServicePaymentRequirement; label: string; hint: string } = {
-  value: 'card_hold',
-  label: 'Card hold',
-  hint: 'No payment is taken when the client books. Their card is stored securely and you can charge a no-show fee if they do not attend.',
-};
-
-/** Editor note when a service is configured card_hold but the venue flag is off (spec 6.3). */
-const CARD_HOLD_DISABLED_NOTE =
-  'Card hold is disabled for this venue; this service currently takes no deposit.';
 
 /** Short label for a service's delivery location (collapsed-section summary). */
 const LOCATION_TYPE_LABELS: Record<ServiceLocationType, string> = {
@@ -242,7 +236,6 @@ function ServiceRowBase({
   const addonGroups = service.addon_groups ?? [];
   // D5: for card-hold services the deposit column holds the no-show fee.
   const isCardHold = service.payment_requirement === 'card_hold';
-  const cardHoldEnabled = Boolean(useFeatureFlags().data?.resolved?.card_hold_deposits);
 
   return (
     <Card padded={false} style={styles.serviceCard}>
@@ -289,11 +282,6 @@ function ServiceRowBase({
             {!isCardHold && service.payment_requirement && service.payment_requirement !== 'none' ? (
               <Text variant="caption" tone="muted">
                 Payment: {service.payment_requirement.replace('_', ' ')}
-              </Text>
-            ) : null}
-            {isCardHold && !cardHoldEnabled ? (
-              <Text variant="caption" color={colors.warning}>
-                Card holds are switched off in Settings
               </Text>
             ) : null}
             {service.cancellation_notice_hours != null ? (
@@ -733,11 +721,6 @@ export default function ServicesScreen() {
   const setupStatus = useSetupStatus(isAdmin);
   const stripeConnected = setupStatus.data?.stripe_connected ?? true;
 
-  // Card-hold payment option shown only when the venue flag is on (spec 6.2).
-  const cardHoldEnabled = Boolean(useFeatureFlags().data?.resolved?.card_hold_deposits);
-  const paymentOptions = cardHoldEnabled
-    ? [...PAYMENT_OPTIONS, CARD_HOLD_PAYMENT_OPTION]
-    : PAYMENT_OPTIONS;
   const isCardHoldSelected = paymentReq === 'card_hold';
 
   const practitionersQuery = usePractitioners();
@@ -1755,7 +1738,7 @@ export default function ServicesScreen() {
 
             {/* Online payment */}
             <Text variant="overline" tone="muted">Online payment</Text>
-            {paymentOptions.map((option) => {
+            {PAYMENT_OPTIONS.map((option) => {
               const selected = paymentReq === option.value;
               return (
                 <Pressable
@@ -1787,13 +1770,6 @@ export default function ServicesScreen() {
                 </Pressable>
               );
             })}
-            {isCardHoldSelected && !cardHoldEnabled ? (
-              <View style={[styles.stripeWarning, { backgroundColor: colors.warningSurface }]}>
-                <Text variant="caption" color={colors.warning}>
-                  {CARD_HOLD_DISABLED_NOTE}
-                </Text>
-              </View>
-            ) : null}
             {!usesVariants || paymentReq === 'deposit' || isCardHoldSelected ? (
               <View style={styles.moneyRow}>
                 {!usesVariants ? (

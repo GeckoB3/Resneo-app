@@ -19,7 +19,6 @@ import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useCreateEvent, useUpdateEvent } from '@/lib/queries/useEventsManage';
 import { useCreateHostCalendar, usePractitioners } from '@/lib/queries/usePractitioners';
 import { useSetupStatus } from '@/lib/queries/useSetupStatus';
-import { useFeatureFlags } from '@/lib/queries/useVenueSettings';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { radius, spacing } from '@/theme/index';
@@ -31,18 +30,20 @@ import type {
   ManagedEvent,
 } from '@/types/events-manage';
 
+/**
+ * The four payment options every venue can choose from (exact web copy). Card
+ * hold (spec 6.2) is a standard option; it is no longer gated by a venue flag.
+ */
 const PAYMENT_OPTIONS: { value: EventPaymentRequirement; label: string; hint: string }[] = [
   { value: 'none', label: 'No online payment', hint: 'Pay at the venue or arrange separately' },
   { value: 'deposit', label: 'Custom deposit', hint: 'Fixed amount paid online when booking' },
   { value: 'full_payment', label: 'Pay in full online', hint: 'Full ticket price taken at booking' },
+  {
+    value: 'card_hold',
+    label: 'Card hold',
+    hint: 'No payment is taken when the client books. Their card is stored securely and you can charge a no-show fee if they do not attend.',
+  },
 ];
-
-/** Fourth payment option (spec 6.2), shown only when `card_hold_deposits` is on. */
-const CARD_HOLD_PAYMENT_OPTION: { value: EventPaymentRequirement; label: string; hint: string } = {
-  value: 'card_hold',
-  label: 'Card hold',
-  hint: 'No payment is taken when the client books. Their card is stored securely and you can charge a no-show fee if they do not attend.',
-};
 
 /** One editable ticket-tier row. `key` is a stable local id for the list. */
 type TicketDraft = { key: string; name: string; price: string; capacity: string };
@@ -176,8 +177,6 @@ export function EventEditorSheet({ target, onClose, onSaved }: EventEditorSheetP
   const update = useUpdateEvent();
   const setupStatus = useSetupStatus();
   const stripeConnected = setupStatus.data?.stripe_connected ?? true;
-  // Card-hold payment option shown only when the venue flag is on (spec 6.2).
-  const cardHoldEnabled = Boolean(useFeatureFlags().data?.resolved?.card_hold_deposits);
   const practitionersQuery = usePractitioners();
   const createCalendar = useCreateHostCalendar();
 
@@ -818,7 +817,7 @@ export function EventEditorSheet({ target, onClose, onSaved }: EventEditorSheetP
 
           {/* Payment */}
           <Text variant="overline" tone="muted">Online payment</Text>
-          {(cardHoldEnabled ? [...PAYMENT_OPTIONS, CARD_HOLD_PAYMENT_OPTION] : PAYMENT_OPTIONS).map((option) => {
+          {PAYMENT_OPTIONS.map((option) => {
             const selected = paymentReq === option.value;
             return (
               <Pressable
@@ -858,11 +857,6 @@ export function EventEditorSheet({ target, onClose, onSaved }: EventEditorSheetP
               onChangeText={setDeposit}
               keyboardType="decimal-pad"
             />
-          ) : null}
-          {paymentReq === 'card_hold' && !cardHoldEnabled ? (
-            <Text variant="caption" color={colors.warning}>
-              Card hold is disabled for this venue; this event currently takes no deposit.
-            </Text>
           ) : null}
           {paymentReq !== 'none' && !stripeConnected ? (
             <Text variant="caption" color={colors.warning}>

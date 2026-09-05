@@ -43,7 +43,6 @@ import { hapticSelect, hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { normalizePhone } from '@/lib/phone/normalize';
 import { calendarDateInTimeZone } from '@/lib/queries/useBookingsList';
 import { useCreateGroupBooking } from '@/lib/queries/useCreateGroupBooking';
-import { useFeatureFlags } from '@/lib/queries/useVenueSettings';
 import { useMonthAvailability } from '@/lib/queries/useMonthAvailability';
 import { useToast } from '@/providers/ToastProvider';
 import { spacing, radius } from '@/theme/index';
@@ -168,7 +167,6 @@ export function GroupBookingFlow({
     .flatMap((g) => g.addons)
     .filter((a) => draftAddonIds.includes(a.id));
 
-  const cardHoldFlagEnabled = Boolean(useFeatureFlags().data?.resolved?.card_hold_deposits);
   /**
    * What the group asks for, summed across attendees.
    *
@@ -179,7 +177,7 @@ export function GroupBookingFlow({
    */
   const groupCharge = useMemo(() => resolveVisitChargeTotal(people), [people]);
   const groupCardHoldPence = useMemo(() => resolveVisitCardHoldTotal(people), [people]);
-  const showCardHoldToggle = cardHoldFlagEnabled && groupCardHoldPence > 0;
+  const showCardHoldToggle = groupCardHoldPence > 0;
   // Walk-ins never collect (spec 2.8), so there is no decision to offer them.
   const showChargeCheckbox = groupCharge.amountPence > 0 && source !== 'walk-in';
 

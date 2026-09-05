@@ -23,7 +23,6 @@ import {
   type ComplianceBookingWarning,
   type CreateBookingPayload,
 } from '@/lib/queries/useCreateBooking';
-import { useFeatureFlags } from '@/lib/queries/useVenueSettings';
 import { fonts, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
@@ -147,9 +146,9 @@ type BookingFlowConfirmProps = {
   /** Deposit in pence — when > 0 a "Require deposit" toggle appears. */
   depositPence?: number | null;
   /**
-   * The offering's resolved `payment_requirement`. When it is `card_hold` (and
-   * the venue's `card_hold_deposits` flag is on with a positive fee) the
-   * "Require deposit" toggle is replaced by the default-on "Card hold" toggle
+   * The offering's resolved `payment_requirement`. When it is `card_hold` with
+   * a positive fee the "Require deposit" toggle is replaced by the default-on
+   * "Card hold" toggle
    * (spec §7.6/D6, walk-ins included) and the payload carries
    * `require_card_hold`.
    */
@@ -237,11 +236,9 @@ export function BookingFlowConfirm({
   const [complianceError, setComplianceError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const cardHoldFlagEnabled = Boolean(useFeatureFlags().data?.resolved?.card_hold_deposits);
   const staffCardHold = resolveStaffEntityCardHold({
     paymentRequirement,
     feePerUnitPence: cardHoldFeePerUnitPence,
-    cardHoldFlagEnabled,
     units: cardHoldUnits,
   });
 

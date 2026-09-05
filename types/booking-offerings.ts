@@ -15,9 +15,10 @@
 
 /**
  * `'card_hold'` (web 2026-07): no payment at booking; the card is saved and a
- * no-show fee may be charged. The public offering payloads resolve the venue's
- * `card_hold_deposits` flag server-side, so `'card_hold'` here implies the flag
- * is on and a positive fee is configured. The fee rides the same
+ * no-show fee may be charged. The public offering payloads resolve zero-fee
+ * holds to `'none'` server-side (spec 6.3), so `'card_hold'` here implies a
+ * positive fee is configured. Card hold is a standard option for every venue;
+ * there is no venue flag to check. The fee rides the same
  * `deposit_amount_pence` field as deposits (spec D5).
  */
 export type BookingPaymentRequirement = 'none' | 'deposit' | 'full_payment' | 'card_hold';

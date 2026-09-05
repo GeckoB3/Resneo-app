@@ -21,13 +21,19 @@ export interface VenueTerminology {
   area?: string;
 }
 
+/**
+ * Venue feature-flag keys the app reads or toggles. Retired keys are not
+ * listed: `card_hold_deposits` (retired 2026-09-05; card hold is a standard
+ * payment option for every venue) is still served as
+ * `resolved.card_hold_deposits: true` for compatibility only and must not be
+ * read or written.
+ */
 export type AppointmentsFeatureFlagKey =
   | 'waitlist_v2'
   | 'guest_self_reschedule'
   | 'any_available_practitioner'
   | 'compliance_records_enabled'
   | 'class_commerce_enabled'
-  | 'card_hold_deposits'
   | 'staff_first_booking_flow';
 
 /**

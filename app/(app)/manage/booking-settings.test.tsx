@@ -138,39 +138,15 @@ describe('Booking settings — waitlist enable + mode', () => {
   });
 });
 
-describe('Booking settings — card hold deposits flag', () => {
-  it('renders the Card hold deposits toggle and PATCHes card_hold_deposits: true when switched on', async () => {
-    mockResolvedFlags = { waitlist_v2: true, card_hold_deposits: false };
-    mockRawFlags = { waitlist_v2: true, waitlist_config: { mode: 'staff_choose' } };
-    await render(<BookingSettingsScreen />);
-
-    // The toggle that gates every card-hold surface must be present.
-    expect(screen.getByText('Card hold deposits')).toBeTruthy();
-
-    await act(async () => {
-      fireEvent(screen.getByLabelText('Card hold deposits'), 'valueChange', true);
-    });
-
-    expect(mockUpdateFlagsAsync).toHaveBeenCalledTimes(1);
-    const patch = mockUpdateFlagsAsync.mock.calls[0][0] as Record<string, unknown>;
-    expect(patch.card_hold_deposits).toBe(true);
-  });
-
-  it('PATCHes card_hold_deposits: false when switched off', async () => {
+describe('Booking settings: retired flags', () => {
+  it('does not render a Card hold deposits toggle even though the API still serves the key', async () => {
+    // card_hold_deposits was retired on 2026-09-05 (card hold is a standard payment
+    // option for every venue). GET /api/venue keeps serving resolved.card_hold_deposits
+    // as true for older builds; this screen must not grow a toggle from it.
     mockResolvedFlags = { waitlist_v2: true, card_hold_deposits: true };
-    mockRawFlags = {
-      waitlist_v2: true,
-      waitlist_config: { mode: 'staff_choose' },
-      card_hold_deposits: true,
-    };
     await render(<BookingSettingsScreen />);
 
-    await act(async () => {
-      fireEvent(screen.getByLabelText('Card hold deposits'), 'valueChange', false);
-    });
-
-    expect(mockUpdateFlagsAsync).toHaveBeenCalledTimes(1);
-    const patch = mockUpdateFlagsAsync.mock.calls[0][0] as Record<string, unknown>;
-    expect(patch.card_hold_deposits).toBe(false);
+    expect(screen.queryByText('Card hold deposits')).toBeNull();
+    expect(screen.queryByLabelText('Card hold deposits')).toBeNull();
   });
 });
