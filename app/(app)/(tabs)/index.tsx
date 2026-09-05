@@ -27,6 +27,8 @@ import { resolveGridErrorState } from '@/lib/calendar/grid-error-state';
 import { nextVisibleCalendars } from '@/lib/calendar/calendar-selection';
 import { resolveVenueDay, venueDayHours } from '@/lib/calendar/venue-closures';
 import { buildCalendarClosureOverlays } from '@/lib/calendar/schedule-closures';
+import { calendarHasAvailableHoursOnDate } from '@/lib/calendar/calendar-has-hours-on-date';
+import { openRangesForDate } from '@/lib/linked/working-hours';
 import { MonthGrid, type MonthDayDatum } from '@/components/calendar/MonthGrid';
 import { MonthPickerSheet } from '@/components/calendar/MonthPickerSheet';
 import { type RescheduleTarget } from '@/components/calendar/RescheduleSheet';
@@ -339,6 +341,10 @@ export default function CalendarScreen() {
   // `selectedId`. Persisted per venue alongside the other prefs.
   const [visibleIds, setVisibleIds] = useState<string[] | null>(null);
 
+  // Filter menu (web 2026-09-05): in the wide day view, show only the columns
+  // with working hours on the selected date. Persisted with the other prefs.
+  const [workingHoursOnly, setWorkingHoursOnly] = useState(false);
+
   // Visible-window override (web parity: From/Until). null edges auto-fit. Held
   // locally and persisted via the F5 prefs hook; threaded into every grid.
   const [windowOverride, setWindowOverride] = useState<GridWindowOverride | null>(null);
@@ -568,6 +574,7 @@ export default function CalendarScreen() {
     setSelectedId(pruned.selectedId);
     setVisibleIds(prunedVisible);
     setCompactDay(pruned.compactDay);
+    setWorkingHoursOnly(pruned.workingHoursOnly);
     if (pruned.startHourOverride != null || pruned.endHourOverride != null) {
       setWindowOverride({
         startHour: pruned.startHourOverride,
@@ -602,8 +609,9 @@ export default function CalendarScreen() {
       startHourOverride: windowOverride?.startHour ?? null,
       endHourOverride: windowOverride?.endHour ?? null,
       compactDay,
+      workingHoursOnly,
     } satisfies Partial<CalendarPrefs>);
-  }, [persistPrefs, scope, selectedId, visibleIds, windowOverride, compactDay]);
+  }, [persistPrefs, scope, selectedId, visibleIds, windowOverride, compactDay, workingHoursOnly]);
 
   // ---- Linked venues (cross-venue calendars) ----
   // Any accepted link that shares calendar visibility surfaces as a chip in the
@@ -1670,9 +1678,49 @@ export default function CalendarScreen() {
   const ownColumnsSource = wideFilterEmpty ? practitioners : dayOwnPractitioners;
   const linkedColumnsSource = wideFilterEmpty ? linkedVenues : linkedVenuesForDay;
 
+  // "Only calendars working on the selected day" (web 2026-09-05). An own
+  // column answers from its rota-resolved hours minus leave and the venue's
+  // closures; a linked column from the weekly template its owner shares (not
+  // its leave or closures, which are not in the feed). It asks whether the
+  // column has hours to show, not whether it is busy, so block time does not
+  // count. Never a blank grid: if nobody works, every column stays.
+  const workingFilterOn = isWideDay && workingHoursOnly;
+  const { ownColumnsShown, linkedColumnsShown } = useMemo(() => {
+    if (!workingFilterOn) {
+      return { ownColumnsShown: ownColumnsSource, linkedColumnsShown: linkedColumnsSource };
+    }
+    const own = ownColumnsSource.filter((p) =>
+      calendarHasAvailableHoursOnDate({
+        calendarId: p.id,
+        row: p,
+        dateYmd: anchor,
+        leavePeriods,
+        openingHours,
+        venueWideBlocks,
+      }),
+    );
+    const linked = linkedColumnsSource.filter((v) =>
+      v.practitioners.some(
+        (p) => p.isActive !== false && openRangesForDate(p.workingHours, anchor).length > 0,
+      ),
+    );
+    if (own.length + linked.length === 0) {
+      return { ownColumnsShown: ownColumnsSource, linkedColumnsShown: linkedColumnsSource };
+    }
+    return { ownColumnsShown: own, linkedColumnsShown: linked };
+  }, [
+    workingFilterOn,
+    ownColumnsSource,
+    linkedColumnsSource,
+    anchor,
+    leavePeriods,
+    openingHours,
+    venueWideBlocks,
+  ]);
+
   const allCalendarsForDay = useMemo(() => {
     if (!showAllCalendars) return [];
-    return ownColumnsSource.map((p) => {
+    return ownColumnsShown.map((p) => {
       const calendar = gridQuery.data?.calendars.find((c) => c.calendarId === p.id);
       const calDay = calendar?.dates.find((d) => d.date === anchor) ?? null;
       return {
@@ -1686,7 +1734,7 @@ export default function CalendarScreen() {
         scheduleBlocks: scheduleByCalendarDate.get(scheduleKey(p.id, anchor)) ?? [],
       };
     });
-  }, [showAllCalendars, ownColumnsSource, gridQuery.data, anchor, getDayBlocks, scheduleByCalendarDate]);
+  }, [showAllCalendars, ownColumnsShown, gridQuery.data, anchor, getDayBlocks, scheduleByCalendarDate]);
 
   // Linked venues as side-by-side columns in the SAME grid — one column per
   // linked venue, appended after the own practitioners. Driven by
@@ -1695,7 +1743,7 @@ export default function CalendarScreen() {
   // Grant-gated like the linked day grid: time_only → grey "busy" overlays
   // (no appointment bars), full_details → appointment bars + class/event blocks.
   const linkedColumnsForDay = useMemo<AllCalendarColumn[]>(() => {
-    return linkedColumnsSource.map((v) => {
+    return linkedColumnsShown.map((v) => {
       const timeOnly = v.visibility === 'time_only';
       const dayBookings = v.bookings.filter((b) => b.bookingDate === anchor);
       const openRanges = linkedOpenRanges(v, anchor);
@@ -1713,7 +1761,7 @@ export default function CalendarScreen() {
         accent: colors.warning,
       };
     });
-  }, [linkedColumnsSource, anchor, colors.warning]);
+  }, [linkedColumnsShown, anchor, colors.warning]);
 
   // Own practitioner columns + linked venue columns, side by side in one grid.
   const allColumnsForDay = useMemo(
@@ -2143,6 +2191,16 @@ export default function CalendarScreen() {
                       count={totalDayCount}
                       selected={visibleIds == null}
                       onPress={selectAllCalendars}
+                    />
+                    {/* Only the columns with working hours on the selected date
+                        (web 2026-09-05's Filter menu toggle). */}
+                    <Chip
+                      label={anchor === today ? 'Working today' : 'Working this day'}
+                      selected={workingHoursOnly}
+                      onPress={() => {
+                        hapticSelect();
+                        setWorkingHoursOnly((value) => !value);
+                      }}
                     />
                     {practitioners.map((p) => (
                       <Chip

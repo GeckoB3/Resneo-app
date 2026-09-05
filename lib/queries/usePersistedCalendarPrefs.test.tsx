@@ -44,6 +44,7 @@ describe('pruneStaleSelectedId', () => {
     startHourOverride: 8,
     endHourOverride: 20,
     compactDay: false,
+    workingHoursOnly: false,
   };
 
   it('keeps a selectedId that still exists (same reference back)', () => {
@@ -129,6 +130,7 @@ describe('usePersistedCalendarPrefs', () => {
       startHourOverride: 7,
       endHourOverride: null,
       compactDay: false,
+      workingHoursOnly: false,
     });
   });
 

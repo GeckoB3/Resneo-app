@@ -36,6 +36,11 @@ export interface CalendarPrefs {
    * shrink their vertical scale to fit the whole day on screen.
    */
   compactDay: boolean;
+  /**
+   * Day view filter (web 2026-09-05): hide the columns with no working hours on
+   * the selected date. Wide-day multi-column view only.
+   */
+  workingHoursOnly: boolean;
 }
 
 export const DEFAULT_CALENDAR_PREFS: CalendarPrefs = {
@@ -45,6 +50,7 @@ export const DEFAULT_CALENDAR_PREFS: CalendarPrefs = {
   startHourOverride: null,
   endHourOverride: null,
   compactDay: false,
+  workingHoursOnly: false,
 };
 
 const STORAGE_PREFIX = 'reserveni.calendar.prefs.';
@@ -77,6 +83,7 @@ function coercePrefs(raw: unknown): CalendarPrefs {
     startHourOverride: typeof o.startHourOverride === 'number' ? o.startHourOverride : null,
     endHourOverride: typeof o.endHourOverride === 'number' ? o.endHourOverride : null,
     compactDay: o.compactDay === true,
+    workingHoursOnly: o.workingHoursOnly === true,
   };
 }
 
