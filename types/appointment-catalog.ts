@@ -57,8 +57,9 @@ export interface AppointmentCatalogService {
   deposit_pence: number | null;
   /**
    * Resolved payment requirement ('none' | 'deposit' | 'full_payment' | 'card_hold').
-   * The catalog folds the venue's `card_hold_deposits` flag in server-side, so
-   * 'card_hold' here implies the flag is on and a positive fee is configured.
+   * The catalog resolves zero-fee holds to 'none' server-side (spec 6.3), so
+   * 'card_hold' here implies a positive no-show fee is configured. Card hold is
+   * a standard option for every venue; there is no venue flag to check.
    */
   payment_requirement?: string | null;
   cancellation_notice_hours?: number;
@@ -73,6 +74,20 @@ export interface AppointmentCatalogService {
   sort_order?: number;
   /** Category heading the venue lists this service under; null or absent when uncategorised. */
   category?: ServiceCategoryRef | null;
+  /**
+   * A member venue's own service on a collective's staff catalogue (web
+   * 2026-09-05): not a combined-page offering, listed under a "{Venue} only"
+   * heading, and booked as a plain booking in the owning venue. Absent
+   * everywhere else.
+   */
+  venue_only?: boolean;
+  /**
+   * Whether the pooled "Any available" choice is offered for this service. The
+   * collective catalogue sets it per offering (`allow_any_available`) and per
+   * member venue for its own services; a venue's own catalogue omits it and the
+   * venue flag decides. Only an explicit `false` withholds the option.
+   */
+  any_available?: boolean;
   variants?: AppointmentCatalogVariant[];
   addon_groups?: AppointmentCatalogAddonGroup[];
   /**
@@ -85,8 +100,12 @@ export interface AppointmentCatalogService {
 
 export interface AppointmentCatalogPractitioner {
   id: string;
+  /** On a collective catalogue, qualified by venue when two members share a name (server-side). */
   name: string;
   services: AppointmentCatalogService[];
+  /** The venue this calendar belongs to; only on a collective catalogue, where calendars span members. */
+  owning_venue_id?: string;
+  owning_venue_name?: string;
 }
 
 export interface AppointmentCatalogResponse {
@@ -129,4 +148,6 @@ export interface AppointmentServiceOption {
   sortOrder?: number;
   /** Category heading on the booking pages; null when uncategorised. */
   category?: ServiceCategoryRef | null;
+  /** The catalogue's per-service `any_available`; an explicit `false` withholds the pooled row. */
+  anyAvailable?: boolean;
 }

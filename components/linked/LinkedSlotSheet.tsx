@@ -17,6 +17,12 @@ export type LinkedSlotTarget = {
   date: string;
   /** The tapped slot time ("HH:mm"). */
   time?: string;
+  /**
+   * The live collective this column books through (web 2026-09-04): the form
+   * then opens for the whole collective, and the booking lands in the owning
+   * venue. Null or absent keeps the single-partner form.
+   */
+  collective?: { id: string; name: string } | null;
 };
 
 /**
@@ -54,13 +60,16 @@ export function LinkedSlotSheet({
 
   const open = (intent: 'new' | 'walk-in') => {
     if (!target) return;
-    const { venue, date, time } = target;
+    const { venue, date, time, collective } = target;
     onClose();
     router.push({
       pathname: '/booking/new',
       params: {
-        ownerVenueId: venue.venueId,
-        ownerVenueName: venue.venueName,
+        // A column that books through a live collective opens the form over the
+        // whole collective (web 2026-09-04); the booking still lands in the
+        // owning venue. Otherwise the partner venue, as before.
+        ownerVenueId: collective ? collective.id : venue.venueId,
+        ownerVenueName: collective ? collective.name : venue.venueName,
         date,
         // Only sent when a slot was tapped; the wizard validates the shape and
         // ignores anything else, and a bare `date` still prefills the day.
@@ -77,7 +86,9 @@ export function LinkedSlotSheet({
           venue's calendar, so the booking's destination has to be said out loud
           (web parity: the menu's "In {venue name}" heading). */}
       <Text variant="caption" tone="muted" style={styles.venue}>
-        In {target?.venue.venueName ?? ''}
+        {target?.collective
+          ? `For ${target.collective.name}: every member venue's calendars and the combined services`
+          : `In ${target?.venue.venueName ?? ''}`}
       </Text>
       <View style={styles.actions}>
         {/* Fixed labels, not `newBookingActionLabel`: that resolves the VIEWING

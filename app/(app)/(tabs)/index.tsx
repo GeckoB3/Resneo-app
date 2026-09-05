@@ -33,6 +33,11 @@ import { type RescheduleTarget } from '@/components/calendar/RescheduleSheet';
 import { WeekGrid, type WeekDayColumn } from '@/components/calendar/WeekGrid';
 import { WeekMatrixGrid } from '@/components/calendar/WeekMatrixGrid';
 import { LinkedSlotSheet, type LinkedSlotTarget } from '@/components/linked/LinkedSlotSheet';
+import {
+  collectiveBookingParams,
+  collectiveBookingTargetFor,
+} from '@/lib/linked/collective-booking-target';
+import { useStaffCollective } from '@/lib/queries/useStaffCollective';
 import { Button } from '@/components/ui/Button';
 import { Chip } from '@/components/ui/Chip';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -618,6 +623,24 @@ export default function CalendarScreen() {
   const linkedVenues = useMemo<LinkedVenueCalendar[]>(
     () => linkedQuery.data?.venues ?? [],
     [linkedQuery.data?.venues],
+  );
+  // The live venue collective this venue books for as one business (web
+  // 2026-09-04): New, Walk-in and a slot on any of its calendars open the
+  // booking form over the collective. Only a venue with linked calendars can
+  // be a member, so the lookup waits for the linked feed to name one.
+  const staffCollectiveQuery = useStaffCollective({ enabled: linkedVenues.length > 0 });
+  const staffCollective =
+    linkedVenues.length > 0 ? (staffCollectiveQuery.data?.collective ?? null) : null;
+  /**
+   * Route params that send a new booking on one of OUR columns to the
+   * collective: the own venue as the column's venue, and the tapped calendar
+   * when there is one. Empty when the venue books for itself, so the wizard's
+   * own-venue path is untouched.
+   */
+  const collectiveParamsFor = useCallback(
+    (calendarId: string | null) =>
+      collectiveBookingParams(collectiveBookingTargetFor(staffCollective, venue?.id, calendarId)),
+    [staffCollective, venue?.id],
   );
   const isLinkedActive = !!ownerVenueId;
   const activeLinkedVenue = useMemo(
@@ -1732,13 +1755,21 @@ export default function CalendarScreen() {
         // Empty-slot create is only offered when the grant allows it; otherwise
         // a tap on a view-only / time-only linked column is a no-op.
         if (venue.action === 'create_edit_cancel') {
-          setLinkedSlot({ venue, date: anchor, time });
+          setLinkedSlot({
+            venue,
+            date: anchor,
+            time,
+            // The "All" view draws a partner as ONE column, so the tap names the
+            // venue and time but no calendar: a member books through the
+            // collective, and the form asks for the calendar.
+            collective: collectiveBookingTargetFor(staffCollective, venue.venueId),
+          });
         }
         return;
       }
       createAtFor(calendarId, time);
     },
-    [linkedColumnVenue, createAtFor, anchor],
+    [linkedColumnVenue, createAtFor, anchor, staffCollective],
   );
 
   // ---- Week view data ----
@@ -2264,7 +2295,15 @@ export default function CalendarScreen() {
                       // Re-anchor to the tapped day (own-venue week parity),
                       // then offer New booking / Walk-in for this linked venue.
                       if (date) setAnchor(date);
-                      setLinkedSlot({ venue: activeLinkedVenue, date: date ?? anchor, time });
+                      setLinkedSlot({
+                        venue: activeLinkedVenue,
+                        date: date ?? anchor,
+                        time,
+                        collective: collectiveBookingTargetFor(
+                          staffCollective,
+                          activeLinkedVenue.venueId,
+                        ),
+                      });
                     }}
                     onDayPress={(date) => {
                       hapticSelect();
@@ -2294,7 +2333,15 @@ export default function CalendarScreen() {
                     setLinkedSheet({ kind: 'detail', venue: activeLinkedVenue, booking: b })
                   }
                   onCreate={(time) =>
-                    setLinkedSlot({ venue: activeLinkedVenue, date: anchor, time })
+                    setLinkedSlot({
+                      venue: activeLinkedVenue,
+                      date: anchor,
+                      time,
+                      collective: collectiveBookingTargetFor(
+                        staffCollective,
+                        activeLinkedVenue.venueId,
+                      ),
+                    })
                   }
                 />
               </ScrollView>
@@ -2449,9 +2496,15 @@ export default function CalendarScreen() {
               closeAddSheet();
               router.push({
                 pathname: '/booking/new',
-                params: slot
-                  ? { date: anchor, practitionerId: slot.practitionerId, time: slot.time }
-                  : {},
+                params: {
+                  // A live collective takes the booking (web 2026-09-04): New
+                  // and Walk-in open the form over the whole collective, a slot
+                  // on one of its calendars with that calendar preselected.
+                  ...collectiveParamsFor(slot?.practitionerId || null),
+                  ...(slot
+                    ? { date: anchor, practitionerId: slot.practitionerId, time: slot.time }
+                    : {}),
+                },
               });
             }}
           />
@@ -2467,14 +2520,17 @@ export default function CalendarScreen() {
               closeAddSheet();
               router.push({
                 pathname: '/booking/new',
-                params: slot
-                  ? {
-                      date: anchor,
-                      practitionerId: slot.practitionerId,
-                      time: slot.time,
-                      intent: 'walk-in',
-                    }
-                  : { date: anchor, time: nowTime, intent: 'walk-in' },
+                params: {
+                  ...collectiveParamsFor(slot?.practitionerId || null),
+                  ...(slot
+                    ? {
+                        date: anchor,
+                        practitionerId: slot.practitionerId,
+                        time: slot.time,
+                        intent: 'walk-in',
+                      }
+                    : { date: anchor, time: nowTime, intent: 'walk-in' }),
+                },
               });
             }}
           />

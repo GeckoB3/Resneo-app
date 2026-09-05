@@ -128,6 +128,32 @@ describe('LinkedSlotSheet', () => {
     expect(params.intent).toBe('walk-in');
   });
 
+  it('opens the form over the collective when the column books through one', async () => {
+    await render(
+      <LinkedSlotSheet
+        target={{
+          venue: VENUE,
+          date: '2026-08-07',
+          time: '14:30',
+          collective: { id: 'col-1', name: 'The Hair Collective' },
+        }}
+        onClose={onClose}
+      />,
+    );
+    expect(screen.getByText(/For The Hair Collective/)).toBeTruthy();
+    await press('New booking');
+
+    expect(mockPush).toHaveBeenCalledWith({
+      pathname: '/booking/new',
+      params: {
+        ownerVenueId: 'col-1',
+        ownerVenueName: 'The Hair Collective',
+        date: '2026-08-07',
+        time: '14:30',
+      },
+    });
+  });
+
   it('offers no Block time — there is no grant for blocking a linked diary', async () => {
     await render(
       <LinkedSlotSheet

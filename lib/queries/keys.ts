@@ -369,6 +369,13 @@ export const queryKeys = {
       [...queryKeys.linkedCalendar.all(), 'venueProfile', keyScope(accessToken), venueId ?? null] as const,
   },
 
+  /** GET /api/venue/staff-collective: the live collective the venue books for (web 2026-09-04). */
+  staffCollective: {
+    all: () => [...queryKeys.all, 'staffCollective'] as const,
+    current: (accessToken?: string | null) =>
+      [...queryKeys.staffCollective.all(), keyScope(accessToken)] as const,
+  },
+
   collectives: {
     all: () => [...queryKeys.all, 'collectives'] as const,
     list: (accessToken?: string | null) =>

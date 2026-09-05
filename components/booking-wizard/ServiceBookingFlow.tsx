@@ -133,8 +133,15 @@ type ServiceBookingFlowProps = {
  */
 export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
   const router = useRouter();
-  const { venueId, timeZone, anyAvailableEnabled, staffFirstEnabled, isLinked, servicesLayout } =
-    useBookingFormVenue();
+  const {
+    venueId,
+    timeZone,
+    anyAvailableEnabled,
+    staffFirstEnabled,
+    isLinked,
+    isCollective,
+    servicesLayout,
+  } = useBookingFormVenue();
   const { ownerVenueId } = useLinkedVenueContext();
   const {
     guestId: guestIdParam,
@@ -166,8 +173,12 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
   // Catalog comes from the public, venue_id-keyed endpoint — for a linked venue
   // we pass its id, not our own. `include_hidden` (staff-only add-on groups) is
   // honoured only for an authenticated session on the SAME venue, so it's off
-  // when booking into a linked venue.
-  const catalogQuery = useAppointmentCatalog(venueId, { includeHidden: !isLinked });
+  // when booking into a linked venue. A collective is the exception (web
+  // 2026-09-05): a member's session gets the hidden groups AND every member's
+  // own services next to the combined offerings, so it is on there.
+  const catalogQuery = useAppointmentCatalog(venueId, {
+    includeHidden: !isLinked || isCollective,
+  });
   // Staff service list — the reliable source of each service's booking window
   // (min notice / same-day). The booking catalog omits min_booking_notice_hours
   // for legacy venues, so we read it from here for every venue type.
@@ -694,6 +705,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
               addonGroups: service.addon_groups ?? [],
               variants: service.variants ?? [],
               locationType: service.location_type,
+              anyAvailable: service.any_available,
             };
             setSelectedService(serviceOption);
             // Apply variant if present and valid.
@@ -1185,6 +1197,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           variantId={selectedVariant?.id ?? null}
           venueId={venueId}
           chain={serviceChainParam}
+          staffSession={isCollective}
           startNow={source === 'walk-in' && selectedDate === today}
           onStartNow={startWalkInNow}
           timeZone={timeZone}

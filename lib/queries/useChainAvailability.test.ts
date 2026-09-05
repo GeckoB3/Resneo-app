@@ -40,4 +40,12 @@ describe('chainAvailabilityPath', () => {
     expect(url.searchParams.get('any_available')).toBe('1');
     expect(url.searchParams.get('practitioner_id')).toBeNull();
   });
+
+  it('sends staff=1 only when booking for a collective, so member-own services resolve', () => {
+    const base = { venueId: 'col-1', date: '2026-09-07', practitionerId: 'prac-1', chain };
+    const withStaff = new URL(chainAvailabilityPath({ ...base, staff: true }), 'https://x');
+    expect(withStaff.searchParams.get('staff')).toBe('1');
+    const without = new URL(chainAvailabilityPath(base), 'https://x');
+    expect(without.searchParams.get('staff')).toBeNull();
+  });
 });

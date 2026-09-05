@@ -163,6 +163,7 @@ export function dedupeCatalogServices(
             description: service.description ?? null,
             sortOrder: service.sort_order ?? 0,
             category: service.category ?? null,
+            anyAvailable: service.any_available,
           },
           fromPricePence: price,
           multiplePractitioners: false,

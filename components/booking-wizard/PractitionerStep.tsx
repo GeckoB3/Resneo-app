@@ -70,7 +70,10 @@ export function PractitionerStep({
 }: PractitionerStepProps) {
   const rows: PractitionerRow[] = [];
 
-  if (allowAnyAvailable && practitioners.length >= 2) {
+  // A collective catalogue can withhold the pooled choice per offering
+  // (`any_available: false`, web 2026-09-04); a venue's own catalogue never
+  // sets it, so only an explicit false hides the row.
+  if (allowAnyAvailable && practitioners.length >= 2 && serviceOption.anyAvailable !== false) {
     rows.push({
       id: ANY_AVAILABLE_PRACTITIONER_ID,
       name: 'Any available',

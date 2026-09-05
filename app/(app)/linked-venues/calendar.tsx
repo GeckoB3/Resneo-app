@@ -16,7 +16,9 @@ import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { getDateTimeFormat } from '@/lib/dates/formatters';
 import { calendarDateInTimeZone, formatDayHeading } from '@/lib/dates/venue-dates';
+import { collectiveBookingTargetFor } from '@/lib/linked/collective-booking-target';
 import { useLinkedCalendar } from '@/lib/queries/useLinkedCalendar';
+import { useStaffCollective } from '@/lib/queries/useStaffCollective';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -61,6 +63,10 @@ export default function LinkedCalendarScreen() {
   // Single-day fetch (from === to). The hook polls every 60s as a fallback.
   const query = useLinkedCalendar({ from: date, to: date });
   const venues = useMemo<LinkedVenueCalendar[]>(() => query.data?.venues ?? [], [query.data?.venues]);
+  // A partner that books through a live collective opens the form over the
+  // collective (web 2026-09-04); the others keep the per-venue form.
+  const staffCollectiveQuery = useStaffCollective({ enabled: venues.length > 0 });
+  const staffCollective = venues.length > 0 ? (staffCollectiveQuery.data?.collective ?? null) : null;
 
   // Tick the now-line each minute, only while viewing today.
   const [tick, setTick] = useState(0);
@@ -163,7 +169,14 @@ export default function LinkedCalendarScreen() {
           date={date}
           nowMinutes={nowMinutes}
           onOpenBooking={(booking) => setSheet({ kind: 'detail', venue: v, booking })}
-          onCreate={(time) => setSlot({ venue: v, date, time })}
+          onCreate={(time) =>
+            setSlot({
+              venue: v,
+              date,
+              time,
+              collective: collectiveBookingTargetFor(staffCollective, v.venueId),
+            })
+          }
         />
       ))}
 

@@ -31,6 +31,14 @@ export interface LinkedVenueProfileResponse {
   booking_model: string | null;
   enabled_models: string[];
   currency: string;
+  /**
+   * Present when `venueId` was a live venue collective the caller's venue is an
+   * active member of (web 2026-09-04): `venue` is then the collective's virtual
+   * venue (`is_collective: true`, the host's flow flags, `enabled_models: []`)
+   * and a booking made with this id as `owner_venue_id` lands in the owning
+   * member venue. A partner venue id answers as before, with no `collective`.
+   */
+  collective?: { id: string; member_venue_ids: string[] } | null;
 }
 
 /**

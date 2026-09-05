@@ -83,8 +83,11 @@ export function StaffPickerStep({
 
   const rows: StaffRow[] = [];
 
-  // Pooled row first, matching the practitioner step and the public page.
-  if (allowAnyAvailable && practitioners.length >= 2) {
+  // Pooled row first, matching the practitioner step and the public page. On a
+  // collective catalogue the pooled choice is per offering (web 2026-09-04), so
+  // the row is offered only while some service still allows it.
+  const somePooled = practitioners.some((p) => p.services.some((s) => s.any_available !== false));
+  if (allowAnyAvailable && practitioners.length >= 2 && somePooled) {
     rows.push({
       id: ANY_AVAILABLE_PRACTITIONER_ID,
       name: 'Any available',

@@ -50,6 +50,12 @@ type TimeSlotStepProps = {
    * inputs above still name the first service for the waitlist and matching.
    */
   chain?: ServiceChainSegmentParam[] | null;
+  /**
+   * Booking for a venue collective (web 2026-09-05): the chain route is public,
+   * so the form says a member's session is on the request and the server,
+   * having verified it, includes the members' own services. Ignored otherwise.
+   */
+  staffSession?: boolean;
   selectedSlot: AppointmentSlot | null;
   onSelectSlot: (slot: AppointmentSlot) => void;
   onContinue: () => void;
@@ -185,6 +191,7 @@ export function TimeSlotStep({
   groupDurationMinutes = 0,
   earliestStart = null,
   chain = null,
+  staffSession = false,
 }: TimeSlotStepProps) {
   const { colors } = useTheme();
   const isAnyAvailable = practitionerId === ANY_AVAILABLE_PRACTITIONER_ID;
@@ -219,6 +226,7 @@ export function TimeSlotStep({
     practitionerId,
     chain: chain ?? [],
     enabled: isChain,
+    staff: staffSession,
   });
 
   const singleSlots = useMemo(() => {

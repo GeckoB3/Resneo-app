@@ -433,3 +433,26 @@ export function resolveLinkedNotificationPrefs(raw: unknown): LinkedNotification
   }
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// Staff booking for a venue collective (web 2026-09-04)
+// ---------------------------------------------------------------------------
+
+/**
+ * The live venue collective the caller's venue books for as one business, as
+ * `GET /api/venue/staff-collective` answers it.
+ */
+export interface StaffCollectiveSummary {
+  id: string;
+  name: string;
+  host_venue_id: string;
+  /** Active member venue ids, the caller's own included. */
+  member_venue_ids: string[];
+  /** Every active people calendar of the eligible members: any of them books through the collective. */
+  calendar_ids: string[];
+}
+
+export interface StaffCollectiveResponse {
+  /** Null when the venue books for itself (no live collective, or pairwise links only). */
+  collective: StaffCollectiveSummary | null;
+}

@@ -37,6 +37,13 @@ export interface BookingFormVenue {
   staffFirstEnabled: boolean;
   /** True when scoping to a linked owner venue rather than the own venue. */
   isLinked: boolean;
+  /**
+   * True when the linked target is a live venue collective (web 2026-09-04):
+   * the form then books for the whole collective as one business. `venueId`
+   * is the collective id, which the catalogue, availability and create routes
+   * all resolve to the owning member venue.
+   */
+  isCollective: boolean;
   /** How the service picker lists services once the venue has categories (`booking_page_config.services_layout`). */
   servicesLayout: ServicesLayout;
   ownerVenueId: string | null;
@@ -71,6 +78,7 @@ export function useBookingFormVenue(): BookingFormVenue {
       anyAvailableEnabled: Boolean(featureFlags?.resolved?.any_available_practitioner),
       staffFirstEnabled: Boolean(featureFlags?.resolved?.staff_first_booking_flow),
       isLinked: false,
+      isCollective: false,
       servicesLayout: resolveServicesLayout(venue?.booking_page_config),
       ownerVenueId: null,
       isLoading: venueLoading,
@@ -81,6 +89,16 @@ export function useBookingFormVenue(): BookingFormVenue {
 
   const data = profile.data;
   const profileVenue = (data?.venue ?? {}) as Record<string, unknown>;
+  // A live collective answers with its virtual venue and a `collective` object.
+  const isCollective = Boolean(data?.collective && typeof data.collective === 'object');
+  // The virtual venue carries the HOST venue's two flow flags (the combined
+  // public page reads the same), so the collective form asks in the host's
+  // order and pools the way the host does. A plain partner's profile carries
+  // none, and guessing at another venue's setup is worse than our own order.
+  const collectiveFlags = isCollective
+    ? ((profileVenue.feature_flags as { resolved?: Record<string, unknown> } | undefined)?.resolved ??
+      null)
+    : null;
   const isForbidden = profile.error instanceof ApiError && profile.error.status === 403;
   const otherError =
     !isForbidden && profile.error
@@ -103,13 +121,12 @@ export function useBookingFormVenue(): BookingFormVenue {
     // models alone (the server's resolved venue mode).
     pricingTier: null,
     // Pooled "any available practitioner" is not offered when booking into a
-    // linked venue (mirrors the web, which scopes it to the own venue).
-    anyAvailableEnabled: false,
-    // Same reasoning: the linked venue's profile does not carry its feature
-    // flags, and guessing at another venue's booking setup is worse than the
-    // order our own staff already know.
-    staffFirstEnabled: false,
+    // linked venue (mirrors the web, which scopes it to the own venue); a
+    // collective follows its host, and the catalogue can withhold it per offering.
+    anyAvailableEnabled: Boolean(collectiveFlags?.any_available_practitioner),
+    staffFirstEnabled: Boolean(collectiveFlags?.staff_first_booking_flow),
     isLinked: true,
+    isCollective,
     servicesLayout: resolveServicesLayout(
       profileVenue.booking_page_config as { services_layout?: unknown } | null | undefined,
     ),

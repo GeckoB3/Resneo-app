@@ -11,9 +11,11 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { Screen } from '@/components/ui/Screen';
+import { Text } from '@/components/ui/Text';
 import { ANALYTICS_EVENTS, track } from '@/lib/analytics';
 import { useBookingFormVenue } from '@/lib/queries/useBookingFormVenue';
 import { LinkedVenueContext, useLinkedVenueContext } from '@/providers/LinkedVenueProvider';
+import { spacing } from '@/theme/index';
 
 const APPOINTMENT_PLAN_TIERS = new Set(['appointments', 'light', 'plus']);
 const APPOINTMENT_MODELS = ['practitioner_appointment', 'unified_scheduling'];
@@ -251,6 +253,14 @@ function NewBookingForm() {
   return (
     <Screen>
       <View style={styles.container}>
+        {form.isCollective ? (
+          // Booking for a live venue collective (web 2026-09-04): say so, and
+          // that every member's calendars and the combined services are on
+          // offer. The booking lands in the owning venue.
+          <Text variant="caption" tone="muted" style={styles.collectiveNote}>
+            {`Booking for ${form.venueName ?? 'the collective'}: every member venue's calendars and the combined services.`}
+          </Text>
+        ) : null}
         {tabs.length > 1 ? (
           <BookingTypeTabs tabs={tabs} active={tab} onChange={handleTabChange} />
         ) : null}
@@ -278,6 +288,9 @@ function NewBookingForm() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  collectiveNote: {
+    paddingBottom: spacing.sm,
   },
   flow: {
     flex: 1,
