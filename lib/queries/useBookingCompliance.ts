@@ -43,6 +43,60 @@ export function useBookingCompliance(bookingId: string | null, enabled = true) {
   });
 }
 
+export type LinkedBookingComplianceResult =
+  | { kind: 'data'; data: BookingComplianceResponse }
+  /** A refusal that is an answer, not a fault: shown as a plain note. */
+  | { kind: 'note'; text: string };
+
+const LINKED_NOT_ENABLED_NOTE =
+  'That venue does not use compliance records, so there is nothing to show here.';
+
+/**
+ * The compliance state of a LINKED venue's booking, read through the link (web
+ * 2026-09-05). The route looks the booking up owner-first and allows the read
+ * only when the link shares full details and personal data, gated on the
+ * OWNER's plan and audited; the answer carries `linked: true`. Two refusals are
+ * answers rather than faults and come back as notes instead of errors: the link
+ * does not share compliance records (403 `linked_no_pii`, with the server's
+ * sentence) and the owner venue does not use compliance records (403 "Feature
+ * not available").
+ */
+export function useLinkedBookingCompliance(bookingId: string | null, enabled = true) {
+  const accessToken = useAccessToken();
+
+  return useQuery({
+    queryKey: [...queryKeys.compliance.booking(accessToken, bookingId), 'linked'] as const,
+    enabled: enabled && isBackendConfigured() && accessToken !== null && !!bookingId,
+    retry: (failureCount, error) => {
+      if (error instanceof ApiError && (error.status === 402 || error.status === 403)) {
+        return false;
+      }
+      return failureCount < 2;
+    },
+    queryFn: async (): Promise<LinkedBookingComplianceResult> => {
+      if (!accessToken || !bookingId) {
+        throw new Error('Missing compliance parameters');
+      }
+      try {
+        const data = await apiFetch<BookingComplianceResponse>(
+          `/api/venue/bookings/${bookingId}/compliance`,
+          { accessToken },
+        );
+        return { kind: 'data', data };
+      } catch (error) {
+        if (error instanceof ApiError && (error.status === 402 || error.status === 403)) {
+          const body = error.body as { code?: string; error?: string } | undefined;
+          if (body?.code === 'linked_no_pii' && typeof body.error === 'string') {
+            return { kind: 'note', text: body.error };
+          }
+          return { kind: 'note', text: LINKED_NOT_ENABLED_NOTE };
+        }
+        throw error;
+      }
+    },
+  });
+}
+
 export type ComplianceSendVia = 'email' | 'sms' | 'manual_copy';
 
 export interface SendComplianceFormLinkInput {

@@ -41,7 +41,7 @@ type CaptureTarget = {
 };
 
 /** Web `requirementStatePill` mapping. */
-function requirementPill(state: ComplianceRequirementState): { label: string; tone: BadgeTone } {
+export function requirementPill(state: ComplianceRequirementState): { label: string; tone: BadgeTone } {
   switch (state) {
     case 'satisfied':
       return { label: 'Current', tone: 'success' };
@@ -62,7 +62,7 @@ function requirementNeedsAction(state: ComplianceRequirementState): boolean {
 }
 
 /** Web `recordStatusPill` mapping. */
-function recordPill(record: ComplianceRecordRow): { label: string; tone: BadgeTone } {
+export function recordPill(record: ComplianceRecordRow): { label: string; tone: BadgeTone } {
   if (record.voided_at || record.status === 'voided') return { label: 'Voided', tone: 'neutral' };
   if (record.status === 'expired') return { label: 'Expired', tone: 'danger' };
   if (record.expires_at && new Date(record.expires_at).getTime() <= Date.now()) {
@@ -72,7 +72,7 @@ function recordPill(record: ComplianceRecordRow): { label: string; tone: BadgeTo
 }
 
 /** dd/mm/yyyy — matches web `formatComplianceDate`. */
-function formatComplianceDate(iso: string | null | undefined): string {
+export function formatComplianceDate(iso: string | null | undefined): string {
   if (!iso) return '—';
   const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso.trim());
   if (dateOnly) return `${dateOnly[3]}/${dateOnly[2]}/${dateOnly[1]}`;

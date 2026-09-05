@@ -18,6 +18,7 @@ import { Text } from '@/components/ui/Text';
 import { TimePickerField } from '@/components/ui/TimePickerField';
 import { ApiError } from '@/lib/api/client';
 import { hapticSelect } from '@/lib/haptics';
+import { LinkedComplianceSection } from '@/components/linked/LinkedComplianceSection';
 import { linkedBookingLabel } from '@/lib/linked/linked-calendar-view';
 import { pingLinkedBookingView, useUpdateLinkedBooking } from '@/lib/queries/useLinkedCalendar';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
@@ -359,6 +360,14 @@ export function LinkedBookingDetailSheet({
                     </View>
                   ) : null}
                 </Card>
+              ) : null}
+
+              {/* Compliance, read through the link (web 2026-09-05): only when the
+                  link shares full details and personal data, since a compliance
+                  record is the most sensitive thing a guest row carries. The
+                  route gates on the owner's plan and answers a note otherwise. */}
+              {!timeOnly && venue?.pii && booking.guestId ? (
+                <LinkedComplianceSection bookingId={booking.id} />
               ) : null}
 
               {/* Manage (editable links) */}

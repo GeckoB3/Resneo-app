@@ -61,6 +61,12 @@ export interface BookingComplianceResponse {
   applicable: boolean;
   requirements: ResolvedRequirementData[];
   records: ComplianceRecordRow[];
+  /**
+   * True when the booking belongs to a linked venue and its records were read
+   * through the link (web 2026-09-05): shown read only, since capture, send and
+   * record actions write to the owner's data.
+   */
+  linked?: boolean;
 }
 
 export function complianceJoinedTypeName(join: ComplianceJoinedType): string {
