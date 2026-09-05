@@ -1,5 +1,105 @@
 # Go-live check — Resneo app
 
+## Run 2026-09-05: OTA to production, 1.1.0, "ResNeo R24 Web Parity"
+
+**Scope:** the eight commits since the R23 OTA (`8c318f3`…`af21ac9`): the card-hold flag
+retirement (`8c318f3`), the R24 audit docs (`a7ade45`), and six R24 builds: staff booking for a
+venue collective (`2d70a06`), contact Records (`5831bf9`), combined-page links and the Booking page
+notice (`0c67ce2`), a linked booking's compliance read through the link (`145b1e8`), the
+working-today calendar filter (`b24b438`) and past schedule changes (`af21ac9`). Report:
+`Docs/APP_GAP_REPORT_R24_WEB_DELTA.md`. JavaScript only. Not device-tested as a set: the owner's
+device pass is pending.
+
+**Verdict: cleared to OTA**, and published by the owner the same day as group
+`556bbef3-df9c-473c-b0d8-4ff672f096f2` on the `production` branch, runtime 1.1.0, Android and iOS.
+
+### 1. Version and reach: the OTA lands on the 1.1.0 installs
+
+| Check | Result |
+|---|---|
+| iOS version | **1.1.0** (`app.json` `version`) |
+| Android version | **1.1.0** (`app.json` `android.version`) |
+| `runtimeVersion.policy` | `appVersion`, so runtime version **1.1.0** |
+| Live iOS production build | runtime **1.1.0**, EAS build `0173cf91`, 31 Aug 2026 |
+| Live Android production build | runtime **1.1.0**, EAS build `3b8e5207`, 31 Aug 2026 |
+| `production` channel before | branch `production`, latest group R23 (`3ac5e157`) on runtime **1.1.0** |
+
+The second update on the 1.1.0 runtime. **Do not bump the version**: under the `appVersion`
+policy that moves the runtime and strands every 1.1.0 install.
+
+### 2. OTA eligibility: nothing native moved
+
+`git diff 20bab97..af21ac9 -- app.json app.config.js eas.json package.json package-lock.json
+patches ios android` is **empty**. The Records card imports expo-document-picker,
+expo-image-picker, expo-web-browser, expo-image and expo-symbols, all of which the 1.1.0
+binaries already contain (`package.json` is unchanged since the `ce1d85c` builds); no new native
+module was added, and `react-native-webview` was deliberately not used.
+
+### 3. Production environment: verified against EAS, not `eas.json`
+
+`eas env:list --environment production --format long`: all five app variables carry **PUBLIC**
+visibility, so an update can read them.
+
+| Variable | Value |
+|---|---|
+| `EXPO_PUBLIC_API_URL` | `https://www.resneo.com` |
+| `EXPO_PUBLIC_SUPABASE_URL` | `njualfobtudvlugqkqho.supabase.co` (live) |
+| `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | live |
+| `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` | `pk_live_…` |
+| `EXPO_PUBLIC_SENTRY_DSN` | Sentry DE ingest |
+| `GOOGLE_SERVICES_JSON`, `SENTRY_AUTH_TOKEN` | secrets, build-time only; n/a for an update |
+
+Absent by design, each with its safe default: `EXPO_PUBLIC_TERMINAL_SIMULATED` (real readers),
+`EXPO_PUBLIC_ALLOW_SCREENSHOTS` (FLAG_SECURE stays on), `EXPO_PUBLIC_WEB_URL` (falls back to the
+API URL), `EXPO_PUBLIC_ANALYTICS_KEY` (off). The only local env file is
+`.env.development.local` (staging values), which a production-mode export never loads.
+
+### 4. The bundle, checked before publishing
+
+`eas env:exec production "npx expo export --clear --platform all"` was run first and both Hermes
+bundles searched:
+
+| String | iOS | Android |
+|---|---|---|
+| live Supabase host `njualfobtudvlugqkqho` | present | present |
+| staging Supabase host `zkppmyyvkjvbsvemakbb` | absent | absent |
+| `www.resneo.com` | present | present |
+| `pk_live_` | present | present |
+| `pk_test_` | absent | absent |
+
+The one staging string still present is the `https://reserve-ni.vercel.app` fallback in
+`webDashboardUrl()` (`app/(app)/(tabs)/settings.tsx`), unreachable in production because
+`getWebUrl()` resolves first; recorded on 2026-08-25 as worth deleting, still not deleted.
+
+### 5. Verified healthy
+
+- `tsc --noEmit`: clean; `eslint`: 0 errors on every touched file.
+- `jest`: **231 suites / 2,385 tests pass** at `af21ac9`.
+- `eas.json` `requireCommit: true`: the tree was clean at `af21ac9`, pushed to `origin/main`
+  (that push also carried the ten R23 commits that had never left the machine).
+- `eas-cli` 23.0.0 via `npx`, logged in as `resneo` (Owner).
+
+### 6. Publishing
+
+```
+npx eas-cli update --channel production --environment production --clear-cache --message "ResNeo R24 Web Parity"
+```
+
+### 7. Not covered
+
+- The device pass on this batch, above all the collective booking path (a venue in a live
+  collective: New, Walk-in, an own-column slot, a partner-column slot, a member-only service, a
+  visit, a group), then the Records card (photos, files, the viewer), the linked booking's
+  compliance section, the Working today chip and the past-changes toggle.
+- R24-6 (bookings nested in a processing gap) waits on the web adding the processing snapshot to
+  the calendar-grid rows: `Docs/R24-6_WEB_HANDOVER.md`. Web `main` moved to `cff80edb` (#177) the
+  same day with a refinement of that nesting rule; nothing in it reaches the app yet.
+- The web's card-hold compatibility key can be deleted once this update is the minimum in use:
+  `Docs/CARD_HOLD_FLAG_RETIREMENT_WEB_HANDOVER.md`.
+
+---
+
+
 ## Run 2026-09-03 — OTA to production, 1.1.0, "ResNeo R23 Web Parity"
 
 **Scope:** the nine commits since the 1.1.0 store builds (`ce1d85c`, both platforms,
