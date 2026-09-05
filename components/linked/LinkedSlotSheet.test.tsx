@@ -115,6 +115,22 @@ describe('LinkedSlotSheet', () => {
     });
   });
 
+  it("carries the tapped column's calendar so the form opens on it", async () => {
+    await render(
+      <LinkedSlotSheet
+        target={{ venue: VENUE, date: '2026-08-07', time: '14:30', practitionerId: 'cal-jenny' }}
+        onClose={onClose}
+      />,
+    );
+    await press('Walk-in');
+
+    expect(mockPush.mock.calls[0][0].params).toMatchObject({
+      ownerVenueId: VENUE.venueId,
+      practitionerId: 'cal-jenny',
+      time: '14:30',
+    });
+  });
+
   it('omits time when opened from the header button, keeping the date', async () => {
     await render(
       <LinkedSlotSheet target={{ venue: VENUE, date: '2026-08-07' }} onClose={onClose} />,

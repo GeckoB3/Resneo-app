@@ -600,3 +600,17 @@ every engine, so `card_hold` in a public payload still implies a positive fee.
 3. **R24-3**, **R24-7**, **R24-5** (half a day each; R24-3 can reuse R24-1's hook).
 4. **R24-4** (half a day).
 5. **R24-6** after the web feed change (delivered in #178 the same evening; built).
+
+## Device pass findings (2026-09-05)
+
+1. **Linked columns were named after the venue.** On the combined day grid a linked venue was one
+   column headed with the venue's name ("light2"), where the web diary draws one column per
+   calendar the partner shares, headed with the calendar's name ("Jenny"; `LinkedColumn` in
+   `PractitionerCalendarView.tsx`, keyed `linked:<venueId>:<practitionerId>`). Fixed the same
+   evening: `linkedVenueColumns` in `lib/linked/linked-calendar-view.ts` splits a partner into
+   per-calendar columns (each with its own template for the closed shading and the working-today
+   filter; an inactive calendar only while it holds a booking; a venue-level column only for
+   bookings naming no listed calendar), the header shows the venue under the calendar's name, a
+   tap on the column carries the calendar into the booking form, and the bar keeps the bare
+   service. The wide-day filter chips still toggle a partner as a whole; the phone's single-venue
+   view and the linked calendar screen keep their merged per-venue grid.

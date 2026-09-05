@@ -56,8 +56,15 @@ export function linkedActionLabel(venue: LinkedVenueCalendar): string | null {
 export function linkedGridBooking(
   b: LinkedBooking,
   practitioners: LinkedPractitioner[],
+  options: { practitionerInLabel?: boolean } = {},
 ): CalendarGridBooking {
-  const pracName = practitioners.find((p) => p.id === b.practitionerId)?.name;
+  // On a per-calendar column the header already names the practitioner, so
+  // the bar keeps the bare service; the merged per-venue grids still fold the
+  // name in, since there the column is the venue.
+  const pracName =
+    options.practitionerInLabel === false
+      ? undefined
+      : practitioners.find((p) => p.id === b.practitionerId)?.name;
   return {
     id: b.id,
     guestName: linkedBookingLabel(b),
@@ -136,5 +143,119 @@ export function linkedScheduleBlocksForDate(
   date: string,
 ): CalendarScheduleBlock[] {
   const dtos = (venue.scheduleBlocks ?? []).filter((b) => b.date === date);
+  return dedupeScheduleDTOs(dtos).map(toCalendarScheduleBlock);
+}
+
+/**
+ * The combined grid's column key for a linked calendar (web `linkedColumnKey`,
+ * §8.2): `linked:<venueId>:<practitionerId>`. Without a practitioner it is the
+ * venue-level key `linked:<venueId>`, which the wide-day filter prefs still
+ * store per venue and which the grid keeps for bookings naming no calendar.
+ */
+export function linkedColumnKey(venueId: string, practitionerId?: string | null): string {
+  return practitionerId ? `linked:${venueId}:${practitionerId}` : `linked:${venueId}`;
+}
+
+/** The venue (and calendar, when the key names one) behind a linked column key; null for any other id. */
+export function parseLinkedColumnKey(
+  key: string,
+): { venueId: string; practitionerId: string | null } | null {
+  if (!key.startsWith('linked:')) return null;
+  const rest = key.slice('linked:'.length);
+  const sep = rest.indexOf(':');
+  if (sep === -1) return rest ? { venueId: rest, practitionerId: null } : null;
+  const venueId = rest.slice(0, sep);
+  const practitionerId = rest.slice(sep + 1);
+  return venueId ? { venueId, practitionerId: practitionerId || null } : null;
+}
+
+/** One column of a linked venue on the combined day grid. */
+export interface LinkedVenueColumn {
+  key: string;
+  venue: LinkedVenueCalendar;
+  /** Null for the venue-level column, which holds the bookings naming no listed calendar. */
+  practitionerId: string | null;
+  /** The header: the calendar's name (web parity), or the venue's on the venue-level column. */
+  name: string;
+  /** This calendar's open ranges for the date (the venue's union on the venue-level column). */
+  openRanges: MinuteRange[];
+  /** Whether a working-hours template exists at all, for the closed-versus-unknown shading. */
+  hasTemplate: boolean;
+  /** The date's bookings that belong to this column. */
+  bookings: LinkedBooking[];
+}
+
+/**
+ * A linked venue's columns for a date: one per calendar the partner shares,
+ * named after the calendar, as the web diary draws them (`linkedColumns` in
+ * `PractitionerCalendarView.tsx`: "Jenny", not "light2"). Each carries its own
+ * weekly template, so its closed shading and the working-today filter answer
+ * for that calendar rather than for the venue's union.
+ *
+ * An inactive calendar earns a column only for bookings it still holds. Bookings
+ * that name no listed calendar (a scoped link, a legacy row, a feed without
+ * calendar ids) keep a venue-level column so nothing the feed shares drops off
+ * the grid, and a venue that lists no calendars keeps that column too.
+ */
+export function linkedVenueColumns(venue: LinkedVenueCalendar, date: string): LinkedVenueColumn[] {
+  const known = new Set(venue.practitioners.map((p) => p.id));
+  const byPractitioner = new Map<string, LinkedBooking[]>();
+  const unassigned: LinkedBooking[] = [];
+  for (const b of venue.bookings) {
+    if (b.bookingDate !== date) continue;
+    if (b.practitionerId && known.has(b.practitionerId)) {
+      const list = byPractitioner.get(b.practitionerId) ?? [];
+      list.push(b);
+      byPractitioner.set(b.practitionerId, list);
+    } else {
+      unassigned.push(b);
+    }
+  }
+  const out: LinkedVenueColumn[] = [];
+  for (const p of venue.practitioners) {
+    const bookings = byPractitioner.get(p.id) ?? [];
+    if (p.isActive === false && bookings.length === 0) continue;
+    out.push({
+      key: linkedColumnKey(venue.venueId, p.id),
+      venue,
+      practitionerId: p.id,
+      name: p.name,
+      openRanges: openRangesForDate(p.workingHours, date),
+      hasTemplate: hasAnyWorkingHours(p.workingHours),
+      bookings,
+    });
+  }
+  if (unassigned.length > 0 || out.length === 0) {
+    out.push({
+      key: linkedColumnKey(venue.venueId),
+      venue,
+      practitionerId: null,
+      name: venue.venueName,
+      openRanges: linkedOpenRanges(venue, date),
+      hasTemplate: linkedHasTemplate(venue),
+      bookings: unassigned,
+    });
+  }
+  return out;
+}
+
+/**
+ * The column's classes, events and resource bookings for the date (web
+ * `linkedVenueScheduleBlocksForColumn`): the blocks on this calendar, or, on
+ * the venue-level column, the ones naming no listed calendar.
+ */
+export function linkedScheduleBlocksForColumn(
+  venue: LinkedVenueCalendar,
+  column: Pick<LinkedVenueColumn, 'practitionerId'>,
+  date: string,
+): CalendarScheduleBlock[] {
+  const known = new Set(venue.practitioners.map((p) => p.id));
+  const dtos = (venue.scheduleBlocks ?? []).filter((b) => {
+    if (b.date !== date) return false;
+    const calendarId = b.calendar_id ?? null;
+    return column.practitionerId
+      ? calendarId === column.practitionerId
+      : !(calendarId && known.has(calendarId));
+  });
   return dedupeScheduleDTOs(dtos).map(toCalendarScheduleBlock);
 }

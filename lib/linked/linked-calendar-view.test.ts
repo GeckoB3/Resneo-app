@@ -6,8 +6,12 @@ import {
   linkedGridBooking,
   linkedHasTemplate,
   linkedOpenRanges,
+  linkedColumnKey,
+  linkedScheduleBlocksForColumn,
   linkedScheduleBlocksForDate,
+  linkedVenueColumns,
   linkedVenueDayHours,
+  parseLinkedColumnKey,
   rangesToWorkingHours,
 } from '@/lib/linked/linked-calendar-view';
 import type {
@@ -243,5 +247,117 @@ describe('linkedScheduleBlocksForDate', () => {
     const result = linkedScheduleBlocksForDate(v, DATE);
     expect(result).toHaveLength(1);
     expect(result[0]!.id).toBe('b');
+  });
+});
+
+describe('linkedGridBooking on a per-calendar column', () => {
+  it('keeps the bare service when the column already names the practitioner', () => {
+    const result = linkedGridBooking(booking(), [practitioner({ id: 'p1', name: 'Sam' })], {
+      practitionerInLabel: false,
+    });
+    expect(result.serviceName).toBe('Cut & Finish');
+  });
+});
+
+describe('linkedColumnKey / parseLinkedColumnKey', () => {
+  it('namespaces a calendar under its venue and parses both shapes back', () => {
+    expect(linkedColumnKey('v1', 'p1')).toBe('linked:v1:p1');
+    expect(linkedColumnKey('v1')).toBe('linked:v1');
+    expect(parseLinkedColumnKey('linked:v1:p1')).toEqual({ venueId: 'v1', practitionerId: 'p1' });
+    expect(parseLinkedColumnKey('linked:v1')).toEqual({ venueId: 'v1', practitionerId: null });
+    expect(parseLinkedColumnKey('p1')).toBeNull();
+    expect(parseLinkedColumnKey('linked:')).toBeNull();
+  });
+});
+
+describe('linkedVenueColumns', () => {
+  const HOURS = { [WEEKDAY]: [{ start: '09:00', end: '17:00' }] };
+  const jenny = practitioner({ id: 'p1', name: 'Jenny', workingHours: HOURS });
+  const sam = practitioner({ id: 'p2', name: 'Sam' });
+
+  it('draws one column per calendar, named after it, with its own bookings and hours', () => {
+    const v = venue({
+      venueName: 'light2',
+      practitioners: [jenny, sam],
+      bookings: [
+        booking({ id: 'b1', practitionerId: 'p1' }),
+        booking({ id: 'b2', practitionerId: 'p2' }),
+        booking({ id: 'b3', practitionerId: 'p1', bookingDate: '2026-06-16' }),
+      ],
+    });
+    const cols = linkedVenueColumns(v, DATE);
+    expect(cols.map((c) => [c.key, c.name])).toEqual([
+      ['linked:v1:p1', 'Jenny'],
+      ['linked:v1:p2', 'Sam'],
+    ]);
+    expect(cols[0]!.bookings.map((b) => b.id)).toEqual(['b1']);
+    expect(cols[1]!.bookings.map((b) => b.id)).toEqual(['b2']);
+    expect(cols[0]!.openRanges).toEqual([{ start: 540, end: 1020 }]);
+    expect(cols[0]!.hasTemplate).toBe(true);
+    expect(cols[1]!.openRanges).toEqual([]);
+    expect(cols[1]!.hasTemplate).toBe(false);
+    expect(cols[0]!.venue).toBe(v);
+  });
+
+  it('drops an inactive calendar unless it still holds a booking that day', () => {
+    const idle = practitioner({ id: 'p3', name: 'Idle', isActive: false });
+    expect(
+      linkedVenueColumns(venue({ practitioners: [jenny, idle] }), DATE).map((c) => c.name),
+    ).toEqual(['Jenny']);
+    const withBooking = venue({
+      practitioners: [jenny, idle],
+      bookings: [booking({ id: 'b9', practitionerId: 'p3' })],
+    });
+    expect(linkedVenueColumns(withBooking, DATE).map((c) => c.name)).toEqual(['Jenny', 'Idle']);
+  });
+
+  it('keeps a venue-level column for bookings that name no listed calendar', () => {
+    const v = venue({
+      venueName: 'light2',
+      practitioners: [jenny],
+      bookings: [
+        booking({ id: 'b1', practitionerId: 'p1' }),
+        booking({ id: 'b2', practitionerId: null }),
+        booking({ id: 'b3', practitionerId: 'p-unknown' }),
+      ],
+    });
+    const cols = linkedVenueColumns(v, DATE);
+    expect(cols.map((c) => c.key)).toEqual(['linked:v1:p1', 'linked:v1']);
+    expect(cols[1]).toMatchObject({ name: 'light2', practitionerId: null });
+    expect(cols[1]!.bookings.map((b) => b.id)).toEqual(['b2', 'b3']);
+    // The venue-level column reads the venue's union of templates.
+    expect(cols[1]!.openRanges).toEqual([{ start: 540, end: 1020 }]);
+  });
+
+  it('keeps one venue column when the partner lists no calendars at all', () => {
+    const cols = linkedVenueColumns(venue({ practitioners: [], bookings: [booking()] }), DATE);
+    expect(cols).toHaveLength(1);
+    expect(cols[0]).toMatchObject({
+      key: 'linked:v1',
+      name: 'Mirror & Co',
+      practitionerId: null,
+      hasTemplate: false,
+    });
+    expect(cols[0]!.bookings).toHaveLength(1);
+  });
+});
+
+describe('linkedScheduleBlocksForColumn', () => {
+  it('gives a calendar its own blocks and the venue-level column the unassigned ones', () => {
+    const v = venue({
+      practitioners: [practitioner({ id: 'p1', name: 'Jenny' })],
+      scheduleBlocks: [
+        scheduleDto({ id: 's1', date: DATE, title: 'Yoga', calendar_id: 'p1' }),
+        scheduleDto({ id: 's2', date: DATE, title: 'Pop-up', calendar_id: null }),
+        scheduleDto({ id: 's3', date: DATE, title: 'Elsewhere', calendar_id: 'p-unknown' }),
+        scheduleDto({ id: 's4', date: '2026-06-16', title: 'Tomorrow', calendar_id: 'p1' }),
+      ],
+    });
+    expect(
+      linkedScheduleBlocksForColumn(v, { practitionerId: 'p1' }, DATE).map((b) => b.id),
+    ).toEqual(['s1']);
+    expect(
+      linkedScheduleBlocksForColumn(v, { practitionerId: null }, DATE).map((b) => b.id),
+    ).toEqual(['s2', 's3']);
   });
 });

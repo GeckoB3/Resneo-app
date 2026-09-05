@@ -109,6 +109,12 @@ const SESSION_ACCENT = '#6366F1';
 export type AllCalendarColumn = {
   calendarId: string;
   calendarName: string;
+  /**
+   * A second header line under the name: a linked calendar's venue, since a
+   * linked column is named after the calendar (web parity: "Jenny", with the
+   * venue alongside), not after the venue.
+   */
+  caption?: string;
   workingHours: CalendarGridWorkingHours[];
   bookings: CalendarGridBooking[];
   sessions: CalendarGridSession[];
@@ -467,12 +473,17 @@ export function AllCalendarsDayGrid({
   // viewport (web parity: measured slot height floored at 16px/15min). The fit
   // subtracts the chrome above the time canvas (scroll padding + the column-
   // header row) and a small bottom gutter.
+  // The header row grows a line when any column carries a caption (a linked
+  // calendar's venue), and the time gutter starts below it either way.
+  const headerHeight = calendars.some((c) => Boolean(c.caption))
+    ? HEADER_HEIGHT + CAPTION_HEIGHT
+    : HEADER_HEIGHT;
   const pxPerMinute = compact
     ? computeCompactPxPerMinute(
         viewportHeight,
         startHour,
         endHour,
-        PADDING_TOP + HEADER_HEIGHT + COMPACT_BOTTOM_GUTTER,
+        PADDING_TOP + headerHeight + COMPACT_BOTTOM_GUTTER,
       )
     : PX_PER_MINUTE;
   const minBlockHeight = compact ? COMPACT_MIN_BLOCK_HEIGHT : MIN_BLOCK_HEIGHT;
@@ -493,7 +504,8 @@ export function AllCalendarsDayGrid({
   const body = (
       <View style={styles.row}>
         {/* Sticky time gutter — hour labels shared by every column. */}
-        <View style={[styles.gutter, { height: totalHeight + PADDING_TOP }]}>
+        <View
+          style={[styles.gutter, { height: totalHeight + PADDING_TOP, marginTop: headerHeight }]}>
           {hours.map((hour) => (
             <Text
               key={hour}
@@ -521,7 +533,7 @@ export function AllCalendarsDayGrid({
           }}>
           <View>
             {/* Column headers (practitioner names) */}
-            <View style={styles.headerRow}>
+            <View style={[styles.headerRow, { height: headerHeight }]}>
               {calendars.map((cal) => {
                 // Linked venues read amber (matching the linked chip); own
                 // practitioner columns stay neutral.
@@ -540,6 +552,15 @@ export function AllCalendarsDayGrid({
                       style={tint ? { color: tint } : undefined}>
                       {cal.calendarName}
                     </Text>
+                    {cal.caption ? (
+                      <Text
+                        variant="caption"
+                        tone={tint ? undefined : 'muted'}
+                        numberOfLines={1}
+                        style={[styles.headerCaption, tint ? { color: tint } : null]}>
+                        {cal.caption}
+                      </Text>
+                    ) : null}
                   </View>
                 );
               })}
@@ -1128,6 +1149,8 @@ function DayColumn({
 }
 
 const HEADER_HEIGHT = 32;
+/** The extra header line for a column caption (a linked calendar's venue). */
+const CAPTION_HEIGHT = 14;
 
 const styles = StyleSheet.create({
   scrollContent: {
@@ -1139,7 +1162,7 @@ const styles = StyleSheet.create({
   },
   gutter: {
     width: TIME_GUTTER_WIDTH,
-    marginTop: HEADER_HEIGHT,
+    // marginTop is set on the element: the header row's resolved height.
   },
   gutterLabel: {
     position: 'absolute',
@@ -1149,7 +1172,13 @@ const styles = StyleSheet.create({
   },
   headerRow: {
     flexDirection: 'row',
-    height: HEADER_HEIGHT,
+    // height is set on the element: HEADER_HEIGHT, plus a caption line if any.
+  },
+  headerCaption: {
+    fontSize: 10,
+    lineHeight: CAPTION_HEIGHT,
+    opacity: 0.85,
+    maxWidth: '100%',
   },
   headerCell: {
     // width is set dynamically (fill-to-width) on the element.

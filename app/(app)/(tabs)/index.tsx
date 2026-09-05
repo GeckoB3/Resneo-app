@@ -28,7 +28,6 @@ import { nextVisibleCalendars } from '@/lib/calendar/calendar-selection';
 import { resolveVenueDay, venueDayHours } from '@/lib/calendar/venue-closures';
 import { buildCalendarClosureOverlays } from '@/lib/calendar/schedule-closures';
 import { calendarHasAvailableHoursOnDate } from '@/lib/calendar/calendar-has-hours-on-date';
-import { openRangesForDate } from '@/lib/linked/working-hours';
 import { MonthGrid, type MonthDayDatum } from '@/components/calendar/MonthGrid';
 import { MonthPickerSheet } from '@/components/calendar/MonthPickerSheet';
 import { type RescheduleTarget } from '@/components/calendar/RescheduleSheet';
@@ -122,12 +121,13 @@ import {
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import {
   linkedBusyBlock,
+  linkedColumnKey,
   linkedGridBooking,
-  linkedHasTemplate,
-  linkedOpenRanges,
-  linkedScheduleBlocksForDate,
+  linkedScheduleBlocksForColumn,
+  linkedVenueColumns,
   linkedVenueDayHours,
   rangesToWorkingHours,
+  type LinkedVenueColumn,
 } from '@/lib/linked/linked-calendar-view';
 import { useLinkedCalendar } from '@/lib/queries/useLinkedCalendar';
 import { useLinkedVenueContext } from '@/providers/LinkedVenueProvider';
@@ -789,7 +789,7 @@ export default function CalendarScreen() {
   // multi-select: their column id (`linked:<venueId>`) joins the own calendar
   // ids in the visible set, so the filter governs own AND linked columns alike.
   const linkedKeys = useMemo(
-    () => linkedVenues.map((v) => `linked:${v.venueId}`),
+    () => linkedVenues.map((v) => linkedColumnKey(v.venueId)),
     [linkedVenues],
   );
   const selectableDayIds = useMemo(
@@ -1680,7 +1680,7 @@ export default function CalendarScreen() {
   const linkedVenuesForDay = useMemo(() => {
     if (isWideDay) {
       return wideFilterActive
-        ? linkedVenues.filter((v) => wideFilterSet.has(`linked:${v.venueId}`))
+        ? linkedVenues.filter((v) => wideFilterSet.has(linkedColumnKey(v.venueId)))
         : linkedVenues;
     }
     return isAllView ? linkedVenues : [];
@@ -1699,9 +1699,16 @@ export default function CalendarScreen() {
   // column has hours to show, not whether it is busy, so block time does not
   // count. Never a blank grid: if nobody works, every column stays.
   const workingFilterOn = isWideDay && workingHoursOnly;
+  // A linked venue becomes one column per calendar the partner shares, named
+  // after the calendar (web §8.2: "Jenny", not "light2"), each with its own
+  // template; see `linkedVenueColumns`.
+  const linkedSourceColumns = useMemo<LinkedVenueColumn[]>(
+    () => linkedColumnsSource.flatMap((v) => linkedVenueColumns(v, anchor)),
+    [linkedColumnsSource, anchor],
+  );
   const { ownColumnsShown, linkedColumnsShown } = useMemo(() => {
     if (!workingFilterOn) {
-      return { ownColumnsShown: ownColumnsSource, linkedColumnsShown: linkedColumnsSource };
+      return { ownColumnsShown: ownColumnsSource, linkedColumnsShown: linkedSourceColumns };
     }
     const own = ownColumnsSource.filter((p) =>
       calendarHasAvailableHoursOnDate({
@@ -1713,19 +1720,17 @@ export default function CalendarScreen() {
         venueWideBlocks,
       }),
     );
-    const linked = linkedColumnsSource.filter((v) =>
-      v.practitioners.some(
-        (p) => p.isActive !== false && openRangesForDate(p.workingHours, anchor).length > 0,
-      ),
-    );
+    // A linked column answers from its own calendar's weekly template (the
+    // venue-level column from the venue's union).
+    const linked = linkedSourceColumns.filter((c) => c.openRanges.length > 0);
     if (own.length + linked.length === 0) {
-      return { ownColumnsShown: ownColumnsSource, linkedColumnsShown: linkedColumnsSource };
+      return { ownColumnsShown: ownColumnsSource, linkedColumnsShown: linkedSourceColumns };
     }
     return { ownColumnsShown: own, linkedColumnsShown: linked };
   }, [
     workingFilterOn,
     ownColumnsSource,
-    linkedColumnsSource,
+    linkedSourceColumns,
     anchor,
     leavePeriods,
     openingHours,
@@ -1750,27 +1755,33 @@ export default function CalendarScreen() {
     });
   }, [showAllCalendars, ownColumnsShown, gridQuery.data, anchor, getDayBlocks, scheduleByCalendarDate]);
 
-  // Linked venues as side-by-side columns in the SAME grid — one column per
-  // linked venue, appended after the own practitioners. Driven by
+  // Linked calendars as side-by-side columns in the SAME grid: one column per
+  // calendar the partner shares, headed with the calendar's name and the venue
+  // under it, appended after the own practitioners. Driven by
   // `linkedColumnsSource`: on a wide day the multi-select subset, on a phone the
   // explicit "All" view, otherwise none.
   // Grant-gated like the linked day grid: time_only → grey "busy" overlays
   // (no appointment bars), full_details → appointment bars + class/event blocks.
   const linkedColumnsForDay = useMemo<AllCalendarColumn[]>(() => {
-    return linkedColumnsShown.map((v) => {
+    return linkedColumnsShown.map((col) => {
+      const v = col.venue;
       const timeOnly = v.visibility === 'time_only';
-      const dayBookings = v.bookings.filter((b) => b.bookingDate === anchor);
-      const openRanges = linkedOpenRanges(v, anchor);
       return {
-        calendarId: `linked:${v.venueId}`,
-        calendarName: v.venueName,
-        workingHours: rangesToWorkingHours(openRanges),
-        bookings: timeOnly ? [] : dayBookings.map((b) => linkedGridBooking(b, v.practitioners)),
+        calendarId: col.key,
+        calendarName: col.name,
+        caption: col.practitionerId ? v.venueName : undefined,
+        workingHours: rangesToWorkingHours(col.openRanges),
+        // The header names the calendar, so a bar keeps the bare service.
+        bookings: timeOnly
+          ? []
+          : col.bookings.map((b) =>
+              linkedGridBooking(b, v.practitioners, { practitionerInLabel: false }),
+            ),
         sessions: [],
-        timeBlocks: timeOnly ? dayBookings.map((b) => linkedBusyBlock(b, v.venueName)) : [],
-        scheduleBlocks: timeOnly ? [] : linkedScheduleBlocksForDate(v, anchor),
-        // This venue's OWN open/closed hours drive its column's closure shading.
-        venueHours: linkedVenueDayHours(openRanges, linkedHasTemplate(v)),
+        timeBlocks: timeOnly ? col.bookings.map((b) => linkedBusyBlock(b, v.venueName)) : [],
+        scheduleBlocks: timeOnly ? [] : linkedScheduleBlocksForColumn(v, col, anchor),
+        // This calendar's OWN hours drive its column's closure shading.
+        venueHours: linkedVenueDayHours(col.openRanges, col.hasTemplate),
         linked: true,
         accent: colors.warning,
         // The partner's own service patterns draw its bars' gaps (R24-6).
@@ -1785,12 +1796,18 @@ export default function CalendarScreen() {
     [allCalendarsForDay, linkedColumnsForDay],
   );
 
-  // Tap routing for the combined grid: a column id of `linked:<venueId>` (and
-  // any booking id belonging to a linked venue) routes to the linked sheets /
-  // cross-venue create flow; everything else is an own-venue practitioner.
+  // Tap routing for the combined grid: a linked column key (`linked:<venueId>`
+  // or `linked:<venueId>:<calendarId>`) and any booking id belonging to a linked
+  // venue route to the linked sheets / cross-venue create flow; everything else
+  // is an own-venue practitioner.
   const linkedColumnVenue = useMemo(() => {
-    const m = new Map<string, LinkedVenueCalendar>();
-    for (const v of linkedVenues) m.set(`linked:${v.venueId}`, v);
+    const m = new Map<string, { venue: LinkedVenueCalendar; practitionerId: string | null }>();
+    for (const v of linkedVenues) {
+      m.set(linkedColumnKey(v.venueId), { venue: v, practitionerId: null });
+      for (const p of v.practitioners) {
+        m.set(linkedColumnKey(v.venueId, p.id), { venue: v, practitionerId: p.id });
+      }
+    }
     return m;
   }, [linkedVenues]);
 
@@ -1814,8 +1831,9 @@ export default function CalendarScreen() {
 
   const handleAllEmptyPress = useCallback(
     (calendarId: string, time: string) => {
-      const venue = linkedColumnVenue.get(calendarId);
-      if (venue) {
+      const hit = linkedColumnVenue.get(calendarId);
+      if (hit) {
+        const { venue, practitionerId } = hit;
         // Empty-slot create is only offered when the grant allows it; otherwise
         // a tap on a view-only / time-only linked column is a no-op.
         if (venue.action === 'create_edit_cancel') {
@@ -1823,10 +1841,12 @@ export default function CalendarScreen() {
             venue,
             date: anchor,
             time,
-            // The "All" view draws a partner as ONE column, so the tap names the
-            // venue and time but no calendar: a member books through the
-            // collective, and the form asks for the calendar.
-            collective: collectiveBookingTargetFor(staffCollective, venue.venueId),
+            // The column names the partner's calendar (web parity), so the form
+            // opens on it; the venue-level column names none and the form asks.
+            practitionerId: practitionerId ?? undefined,
+            // A member books through the collective when that calendar is one
+            // of its calendars (or when the tap names no calendar).
+            collective: collectiveBookingTargetFor(staffCollective, venue.venueId, practitionerId),
           });
         }
         return;
@@ -2229,7 +2249,7 @@ export default function CalendarScreen() {
                       />
                     ))}
                     {linkedVenues.map((v) => {
-                      const key = `linked:${v.venueId}`;
+                      const key = linkedColumnKey(v.venueId);
                       return (
                         <Chip
                           key={key}
@@ -2281,7 +2301,7 @@ export default function CalendarScreen() {
                         toggleable columns in the multi-select above.) */}
                     {linkedVenues.map((v) => (
                       <Chip
-                        key={`linked:${v.venueId}`}
+                        key={linkedColumnKey(v.venueId)}
                         label={v.venueName}
                         count={
                           scope === 'day'

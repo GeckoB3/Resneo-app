@@ -18,6 +18,12 @@ export type LinkedSlotTarget = {
   /** The tapped slot time ("HH:mm"). */
   time?: string;
   /**
+   * The partner's calendar the tapped column stands for (web parity: a linked
+   * column is one calendar). Omitted when the tap named no calendar; the form
+   * then asks for one.
+   */
+  practitionerId?: string;
+  /**
    * The live collective this column books through (web 2026-09-04): the form
    * then opens for the whole collective, and the booking lands in the owning
    * venue. Null or absent keeps the single-partner form.
@@ -60,7 +66,7 @@ export function LinkedSlotSheet({
 
   const open = (intent: 'new' | 'walk-in') => {
     if (!target) return;
-    const { venue, date, time, collective } = target;
+    const { venue, date, time, collective, practitionerId } = target;
     onClose();
     router.push({
       pathname: '/booking/new',
@@ -74,6 +80,7 @@ export function LinkedSlotSheet({
         // Only sent when a slot was tapped; the wizard validates the shape and
         // ignores anything else, and a bare `date` still prefills the day.
         ...(time ? { time } : {}),
+        ...(practitionerId ? { practitionerId } : {}),
         ...(intent === 'walk-in' ? { intent: 'walk-in' } : {}),
       },
     });
