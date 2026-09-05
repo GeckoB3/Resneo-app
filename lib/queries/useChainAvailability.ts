@@ -27,15 +27,8 @@ export function chainAvailabilityPath(params: {
   date: string;
   practitionerId: string;
   chain: readonly ServiceChainSegmentParam[];
-  /**
-   * The staff form's hint that a member venue's session is on the request (web
-   * 2026-09-05). Verified server-side, it widens a collective's catalogue to
-   * the members' own services; a venue's own id ignores it.
-   */
-  staff?: boolean;
 }): string {
   const search = new URLSearchParams({ venue_id: params.venueId, date: params.date });
-  if (params.staff) search.set('staff', '1');
   if (params.practitionerId === ANY_AVAILABLE_PRACTITIONER_ID) {
     search.set('any_available', '1');
   } else {
@@ -51,7 +44,6 @@ export function useChainAvailability({
   practitionerId,
   chain,
   enabled = true,
-  staff = false,
 }: {
   venueId: string | null | undefined;
   date: string | null | undefined;
@@ -59,8 +51,6 @@ export function useChainAvailability({
   practitionerId: string | null | undefined;
   chain: readonly ServiceChainSegmentParam[];
   enabled?: boolean;
-  /** Booking for a venue collective: send the staff hint (see `chainAvailabilityPath`). */
-  staff?: boolean;
 }) {
   const accessToken = useAccessToken();
   const chainKey = serialiseServiceChainParam(chain);
@@ -80,7 +70,6 @@ export function useChainAvailability({
       date ?? null,
       practitionerId ?? null,
       chainKey,
-      staff ? 'staff' : 'public',
     ] as const,
     enabled: queryEnabled,
     queryFn: async (): Promise<AppointmentAvailabilityResponse> => {
@@ -88,7 +77,7 @@ export function useChainAvailability({
         throw new Error('Missing chain availability parameters');
       }
       return apiFetch<AppointmentAvailabilityResponse>(
-        chainAvailabilityPath({ venueId, date, practitionerId, chain, staff }),
+        chainAvailabilityPath({ venueId, date, practitionerId, chain }),
         { accessToken },
       );
     },

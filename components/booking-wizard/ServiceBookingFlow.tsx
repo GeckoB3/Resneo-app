@@ -174,8 +174,9 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
   // we pass its id, not our own. `include_hidden` (staff-only add-on groups) is
   // honoured only for an authenticated session on the SAME venue, so it's off
   // when booking into a linked venue. A collective is the exception (web
-  // 2026-09-05): a member's session gets the hidden groups AND every member's
-  // own services next to the combined offerings, so it is on there.
+  // 2026-09-05): a member's session gets the hidden groups there too. (Web #178
+  // withdrew the members' own services from that catalogue again: every
+  // service a collective resolves is one of its combined offerings.)
   const catalogQuery = useAppointmentCatalog(venueId, {
     includeHidden: !isLinked || isCollective,
   });
@@ -1197,7 +1198,6 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           variantId={selectedVariant?.id ?? null}
           venueId={venueId}
           chain={serviceChainParam}
-          staffSession={isCollective}
           startNow={source === 'walk-in' && selectedDate === today}
           onStartNow={startWalkInNow}
           timeZone={timeZone}

@@ -75,17 +75,10 @@ export interface AppointmentCatalogService {
   /** Category heading the venue lists this service under; null or absent when uncategorised. */
   category?: ServiceCategoryRef | null;
   /**
-   * A member venue's own service on a collective's staff catalogue (web
-   * 2026-09-05): not a combined-page offering, listed under a "{Venue} only"
-   * heading, and booked as a plain booking in the owning venue. Absent
-   * everywhere else.
-   */
-  venue_only?: boolean;
-  /**
    * Whether the pooled "Any available" choice is offered for this service. The
-   * collective catalogue sets it per offering (`allow_any_available`) and per
-   * member venue for its own services; a venue's own catalogue omits it and the
-   * venue flag decides. Only an explicit `false` withholds the option.
+   * collective catalogue sets it per offering (`allow_any_available`); a
+   * venue's own catalogue omits it and the venue flag decides. Only an explicit
+   * `false` withholds the option.
    */
   any_available?: boolean;
   variants?: AppointmentCatalogVariant[];
