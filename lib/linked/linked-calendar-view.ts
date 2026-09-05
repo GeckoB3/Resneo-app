@@ -70,6 +70,13 @@ export function linkedGridBooking(
     client_arrived_at: b.clientArrivedAt ?? null,
     staff_attendance_confirmed_at: b.staffAttendanceConfirmedAt ?? null,
     guest_attendance_confirmed_at: b.guestAttendanceConfirmedAt ?? null,
+    // What the booking is for, so the partner column can read the service's
+    // processing gaps. The linked feed carries no snapshot: null means "derive
+    // from the pattern in `services[]`" (see `lib/calendar/processing-gaps`).
+    appointment_service_id: b.appointmentServiceId ?? null,
+    service_item_id: b.serviceItemId ?? null,
+    service_variant_id: b.serviceVariantId ?? null,
+    processing_time_blocks: null,
   };
 }
 

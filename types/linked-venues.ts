@@ -265,6 +265,13 @@ export interface LinkedService {
   processingTimeBlocks?: unknown;
   colour?: string;
   pricePence?: number | null;
+  isActive?: boolean;
+  /**
+   * The service's options with their own processing patterns (web #176). A
+   * linked booking carries no snapshot, so a partner column reads its gaps
+   * from these; see `patternLookupFromLinkedServices`.
+   */
+  variants?: { id: string; name: string; processingTimeBlocks?: unknown }[];
 }
 
 export interface LinkedResource {

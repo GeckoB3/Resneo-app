@@ -48,11 +48,15 @@ five small ones (R24-3 to R24-7), one item blocked on a web-side feed change (R2
 already built (R24-8). No live regression: the app keeps working for a venue in a collective, it
 just books it the old single-partner way.**
 
-**Build status (2026-09-05, same day): R24-1, R24-2, R24-3, R24-4, R24-5 and R24-7 built; R24-6
-handed to the web (`Docs/R24-6_WEB_HANDOVER.md`); R24-8 was already built. Typecheck, lint and
+**Build status (2026-09-05, same day): R24-1, R24-2, R24-3, R24-4, R24-5 and R24-7 built and
+shipped in the R24 OTA; R24-8 was already built. R24-6 was handed to the web
+(`Docs/R24-6_WEB_HANDOVER.md`), the feed change landed on web `main` in #178 the same evening,
+and the app half was built that evening (Part 6). #178 also withdrew the members' own services
+from the collective staff catalogue, and R24-1 was trimmed to match (Part 1). Typecheck, lint and
 the full jest suite pass. Needs a device pass, above all on the collective booking path (a venue
-in a live collective: New, Walk-in, an own-column slot, a partner-column slot, a member-only
-service, a visit, a group).**
+in a live collective: New, Walk-in, an own-column slot, a partner-column slot, a visit, a group)
+and on the nested bars (a booking taken inside a colour's processing gap, on the day grid, the
+multi-column grid and a partner column).**
 
 ---
 
@@ -78,6 +82,18 @@ says "Booking for {name}: every member venue's calendars and the combined servic
 `any_available`, `owning_venue_id`, `owning_venue_name`. Tests: the routing helper, the hook, the
 form-venue hook's three branches, the chain path's `staff=1`, the slot sheet's collective case.
 Not needed: name qualification (the server already suffixes duplicate names with the venue).
+
+**Trimmed 2026-09-05 evening (web #178, `4463ac38`).** The web withdrew the members' own services
+from the collective staff catalogue the same day it had added them: `venue_only`, the "{Venue}
+only" headings and the synthetic "Other services" heading are gone, `includeMemberOwnServices`
+left the bridge and the eight routes, and every service a collective resolves is one of its
+combined offerings. The `staff=1` hint on the chain route and the `staff: true` flag are still
+accepted but no longer read. The app dropped its side of that: `useChainAvailability` lost its
+`staff` option (and the query-key scope), `TimeSlotStep` its `staffSession` prop,
+`ServiceBookingFlow` the `staffSession={isCollective}` pass, and the catalogue type its
+`venue_only` marker. Kept: the catalogue is still asked with `include_hidden` in collective mode
+(the hidden add-on groups are still served to a member session), the per-offering
+`any_available` gate, and the practitioners' `owning_venue_id` / `owning_venue_name`.
 
 ### What web changed
 
@@ -431,16 +447,47 @@ Half a day.
 
 ---
 
-## Part 6: R24-6, bookings nested inside a processing gap (BLOCKED on the grid feed)
+## Part 6: R24-6, bookings nested inside a processing gap
 
-**Severity: LOW, and not buildable app-side yet.** Web's `booking-cluster-layout.ts` draws a
+**Severity: LOW, and buildable app-side only once the grid feed carried the snapshot.** Web's `booking-cluster-layout.ts` draws a
 booking that sits entirely inside another booking's processing gap INSIDE the host bar, indented
 5 px, with the host's text and action tray laid out around it; anything else still splits into
 lanes. The web diary computes each booking's gaps from its stored `processing_time_blocks`
 snapshot, falling back to the service's (and variant's) pattern.
 
-**HANDED OVER 2026-09-05:** `Docs/R24-6_WEB_HANDOVER.md` asks for the four fields below on the
-grid feed. The app half follows once they land.
+**HANDED OVER 2026-09-05, DELIVERED in web #178** (`4463ac38`; `getCalendarGrid` in
+`src/lib/unified-availability.ts`, granular commit `e116f8d8`; section "Processing snapshot on
+calendar-grid rows" in the web's `Docs/MOBILE_API.md`). Each `GET /api/venue/calendar-grid`
+booking row now carries `appointment_service_id`, `service_item_id`, `service_variant_id` (null
+when absent) and `processing_time_blocks` (`[{ id, start_minute, duration_minutes }]`, minutes
+from the booking's start; a stored snapshot wins even when empty, and only a missing one is null).
+
+**BUILT 2026-09-05 (evening).** Two new modules under `lib/calendar/`:
+`booking-cluster-layout.ts` is the web module ported in wall-clock minutes
+(`layoutOverlapClusters` with the #177 rules: a booking nests when it starts inside a host's gap
+and stays inside it for as long as the host lasts, may run on past the host's end, one level deep,
+two non-overlapping nested bars may share a host, and the host's lane stays reserved until the
+last nested bar ends; `hostRegionsAroundNested`; `NESTED_BOOKING_INSET_PX`), with the web's test
+cases. `processing-gaps.ts` resolves a booking's blocks (the snapshot wins even when empty, else
+the service's pattern or the chosen option's, through a `ProcessingPatternLookup`), turns them
+into clipped wall-clock gap ranges, unions a visit's segments, and subtracts the gaps from the
+drag conflict ranges (the server takes a booking inside a gap, so the guard must not refuse it).
+`types/calendar-grid.ts` has the four fields. `CalendarDayGrid` and `AllCalendarsDayGrid` take
+a `processingPatternFor` lookup (the multi-column grid also per column, for a partner venue) and
+lay bars out with `layoutOverlapClusters` instead of `computeLaneLayouts`; `computeBlockHeights`
+keeps the degenerate floor. `AppointmentBlock` draws each gap as a lighter band with hairline
+edges (the web's hatch has no plain-View equivalent) under the text and, on a host, keeps its text
+and buttons to the region above the first nested bar; a nested bar is indented 5 px, gets a larger
+radius, a left shadow and a higher z-order, on `DraggableAppointmentBlock` and on the read-only
+linked bar alike. Sources: the calendar tab feeds `useManagedServices` patterns for own columns
+and each partner's `services[]` (now typed with `variants[].processingTimeBlocks` and
+`isActive`) for linked columns; `LinkedVenueCalendarGrid` does the same on the linked screens;
+`linkedGridBooking` copies the service and variant ids with a null snapshot. An older backend
+sends none of the fields, so every booking reads as gap-free and the grid draws what it drew
+before. The week grid stays lanes only. Tests: the ported layout suite,
+`processing-gaps.test.ts`, and three grid cases in `CalendarDayGrid.overlap.test.tsx` (nests
+full width with the band at the right offset, re-lanes when the booking spills past the gap,
+reads the gap from the pattern when there is no snapshot).
 
 ### What the app has
 
@@ -453,7 +500,7 @@ less informative.
 
 ### Build
 
-Two steps, the first on the web:
+Two steps, the first on the web (both done 2026-09-05):
 
 1. **Web handover**: add `appointment_service_id`, `service_item_id`, `service_variant_id` and the
    `processing_time_blocks` snapshot to the calendar-grid rows (additive).
@@ -542,7 +589,7 @@ every engine, so `card_hold` in a public payload still implies a positive fee.
 ## Web handover items from this audit
 
 1. Calendar-grid rows: add the service and variant ids and the `processing_time_blocks` snapshot
-   (unblocks R24-6).
+   (unblocks R24-6). Done in web #178; the app half is built.
 2. Delete the card-hold compatibility shim once the app build without the reads is the minimum in
    use (existing handover doc).
 
@@ -552,4 +599,4 @@ every engine, so `card_hold` in a public payload still implies a positive fee.
 2. **R24-2** (one day, plus the native-dependency decision).
 3. **R24-3**, **R24-7**, **R24-5** (half a day each; R24-3 can reuse R24-1's hook).
 4. **R24-4** (half a day).
-5. **R24-6** after the web feed change.
+5. **R24-6** after the web feed change (delivered in #178 the same evening; built).

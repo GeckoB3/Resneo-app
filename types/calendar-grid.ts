@@ -3,6 +3,8 @@
  * @see _reference/reserve-ni/src/app/api/venue/calendar-grid/route.ts
  */
 
+import type { ProcessingTimeBlock } from '@/types/services-manage';
+
 export interface CalendarGridBooking {
   id: string;
   guestName: string;
@@ -41,6 +43,22 @@ export interface CalendarGridBooking {
    * people (each labelled) — the latter must stay as separate bars.
    */
   person_label?: string | null;
+  /**
+   * What the booking is for (web #178, 2026-09-05; absent on an older
+   * backend): the unified catalogue item, the legacy appointment service and
+   * the chosen option. They find the service's processing pattern when the
+   * booking carries no snapshot of its own.
+   */
+  appointment_service_id?: string | null;
+  service_item_id?: string | null;
+  service_variant_id?: string | null;
+  /**
+   * The processing-time blocks snapshotted on the booking, minutes from its
+   * start. A snapshot wins EVEN WHEN EMPTY (a gap deliberately removed at
+   * booking time stays removed); only null means "derive from the service or
+   * option pattern". See `lib/calendar/processing-gaps`.
+   */
+  processing_time_blocks?: ProcessingTimeBlock[] | null;
 }
 
 export interface CalendarGridBlock {

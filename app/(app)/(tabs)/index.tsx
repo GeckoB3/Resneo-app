@@ -87,6 +87,10 @@ import {
   type CalendarBookingPatch,
   type CalendarGridSnapshot,
 } from '@/lib/queries/useCalendarQuickActions';
+import {
+  patternLookupFromLinkedServices,
+  patternLookupFromManagedServices,
+} from '@/lib/calendar/processing-gaps';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { useCalendarGrid } from '@/lib/queries/useCalendarGrid';
 import { useComplianceBookingFlags } from '@/lib/queries/useCompliance';
@@ -98,6 +102,7 @@ import {
 } from '@/lib/queries/usePersistedCalendarPrefs';
 import { usePractitioners } from '@/lib/queries/usePractitioners';
 import { useResourcesManageList } from '@/lib/queries/useResourcesManage';
+import { useManagedServices } from '@/lib/queries/useServicesManage';
 import { useSchedule } from '@/lib/queries/useSchedule';
 import { useAvailabilityBlocks } from '@/lib/queries/useAvailabilityBlocks';
 import { usePractitionerLeave } from '@/lib/queries/useAvailabilityManage';
@@ -363,6 +368,15 @@ export default function CalendarScreen() {
   // calendar ids — same guard `reconcileOwnerVenue` applies to linked venues.
   const calendarPrefs = usePersistedCalendarPrefs(venue?.id ?? null);
   const prefsHydratedRef = useRef(false);
+
+  // R24-6: the venue's service patterns, so a booking without a snapshot still
+  // shows its processing gap on the grid and another booking can nest in it.
+  const managedServicesQuery = useManagedServices();
+  const managedServices = managedServicesQuery.data?.services;
+  const processingPatternFor = useMemo(
+    () => patternLookupFromManagedServices(managedServices),
+    [managedServices],
+  );
 
   // Deep-link support: a `?date=YYYY-MM-DD` param (e.g. from a notification)
   // jumps the diary to that day.
@@ -1759,6 +1773,8 @@ export default function CalendarScreen() {
         venueHours: linkedVenueDayHours(openRanges, linkedHasTemplate(v)),
         linked: true,
         accent: colors.warning,
+        // The partner's own service patterns draw its bars' gaps (R24-6).
+        processingPatternFor: patternLookupFromLinkedServices(v.services),
       };
     });
   }, [linkedColumnsShown, anchor, colors.warning]);
@@ -1986,6 +2002,7 @@ export default function CalendarScreen() {
       timeBlocks={dayBlocks}
       sessions={daySessions}
       scheduleBlocks={daySchedule}
+      processingPatternFor={processingPatternFor}
       venueHours={venueHoursForAnchor}
       windowOverride={windowOverride}
       nowMinutes={nowMinutes}
@@ -2484,6 +2501,7 @@ export default function CalendarScreen() {
             <View style={styles.weekBody}>
               <AllCalendarsDayGrid
                 calendars={allColumnsForDay}
+                processingPatternFor={processingPatternFor}
                 venueHours={venueHoursForAnchor}
                 windowOverride={windowOverride}
                 nowMinutes={nowMinutes}

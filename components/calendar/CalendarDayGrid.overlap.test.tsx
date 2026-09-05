@@ -46,7 +46,9 @@ function booking(id: string, startTime: string, endTime: string): CalendarGridBo
   };
 }
 
-/** The rendered top/height of each appointment bar, in document order. */
+type RenderedBar = { top: number; height: number; width: unknown };
+
+/** The rendered top/height (and lane width) of each appointment bar, in document order. */
 function renderedBars() {
   return screen
     .getAllByLabelText(/Guest/)
@@ -56,13 +58,13 @@ function renderedBars() {
       for (let depth = 0; current && depth < 6; depth += 1) {
         const style = StyleSheet_flatten(current.props?.style);
         if (style && typeof style.top === 'number' && typeof style.height === 'number') {
-          return { top: style.top, height: style.height };
+          return { top: style.top, height: style.height, width: style.width };
         }
         current = current.parent;
       }
       return null;
     })
-    .filter((v): v is { top: number; height: number } => v != null);
+    .filter((v): v is RenderedBar => v != null);
 }
 
 /** Minimal style flattener — RN's own needs the runtime, this needs plain objects. */
@@ -134,5 +136,80 @@ describe('CalendarDayGrid — short bookings keep to their own time', () => {
       />,
     );
     expect(renderedBars()[0].height).toBe(60 * PX_PER_MINUTE);
+  });
+});
+
+/**
+ * R24-6 (web #177): a booking taken inside another booking's processing gap
+ * (the client is under the colour, the chair is free) nests in the host bar
+ * instead of splitting the column into lanes, and the host shows the gap.
+ */
+describe('CalendarDayGrid: a booking taken in a processing gap nests in its host', () => {
+  const tint: CalendarGridBooking = {
+    ...booking('tint', '11:00', '12:30'),
+    serviceName: 'Tint',
+    processing_time_blocks: [{ start_minute: 30, duration_minutes: 30 }],
+  };
+
+  it('keeps both bars full width and draws the gap band on the host', async () => {
+    await render(
+      <CalendarDayGrid
+        bookings={[tint, booking('cut', '11:30', '12:00')]}
+        workingHours={workingHours}
+        nowMinutes={null}
+        onBlockPress={jest.fn()}
+        onEmptyPress={jest.fn()}
+      />,
+    );
+
+    const bars = renderedBars();
+    expect(bars).toHaveLength(2);
+    expect(bars.map((bar) => bar.width)).toEqual(['100%', '100%']);
+
+    // One band, spanning the gap: 30 minutes down the host, 30 minutes tall.
+    const bands = screen.getAllByTestId('processing-band');
+    expect(bands).toHaveLength(1);
+    const band = StyleSheet_flatten(bands[0].props.style);
+    expect(band?.top).toBe(30 * PX_PER_MINUTE);
+    expect(band?.height).toBe(30 * PX_PER_MINUTE);
+  });
+
+  it('falls back to side-by-side lanes when the booking spills past the gap', async () => {
+    await render(
+      <CalendarDayGrid
+        bookings={[tint, booking('cut', '11:30', '12:15')]}
+        workingHours={workingHours}
+        nowMinutes={null}
+        onBlockPress={jest.fn()}
+        onEmptyPress={jest.fn()}
+      />,
+    );
+
+    expect(renderedBars().map((bar) => bar.width)).toEqual(['50%', '50%']);
+  });
+
+  it('reads the gap from the service pattern when the booking has no snapshot', async () => {
+    const fromPattern: CalendarGridBooking = {
+      ...booking('tint', '11:00', '12:30'),
+      service_item_id: 'svc-tint',
+      processing_time_blocks: null,
+    };
+    await render(
+      <CalendarDayGrid
+        bookings={[fromPattern, booking('cut', '11:30', '12:00')]}
+        workingHours={workingHours}
+        nowMinutes={null}
+        onBlockPress={jest.fn()}
+        onEmptyPress={jest.fn()}
+        processingPatternFor={(id) =>
+          id === 'svc-tint'
+            ? { processing_time_blocks: [{ start_minute: 30, duration_minutes: 30 }] }
+            : undefined
+        }
+      />,
+    );
+
+    expect(renderedBars().map((bar) => bar.width)).toEqual(['100%', '100%']);
+    expect(screen.getAllByTestId('processing-band')).toHaveLength(1);
   });
 });

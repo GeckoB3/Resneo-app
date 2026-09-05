@@ -44,3 +44,11 @@ web; older app builds ignore unknown fields.
 
 Whenever convenient; nothing on the app side is waiting on a deadline. Say which commit carries
 it and the app will pick it up in its next delta audit.
+
+---
+
+**Delivered (2026-09-05 evening):** web #178 (`4463ac38`) serves the four fields on every
+calendar-grid booking row (`getCalendarGrid` in `src/lib/unified-availability.ts`, tests in
+`unified-availability.calendar-grid.test.ts`, section "Processing snapshot on calendar-grid rows"
+in `Docs/MOBILE_API.md`). The app half (the ported layout, the gap bands and the nested bars) was
+built the same evening; see Part 6 of `Docs/APP_GAP_REPORT_R24_WEB_DELTA.md`.

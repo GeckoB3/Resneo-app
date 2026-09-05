@@ -38,13 +38,26 @@ import {
 } from '@/components/calendar/CalendarDayGrid';
 import { DraggableAppointmentBlock } from '@/components/calendar/DraggableAppointmentBlock';
 import {
+  hostRegionsAroundNested,
+  layoutOverlapClusters,
+  NESTED_BOOKING_INSET_PX,
+  type BookingClusterLayout,
+  type MinuteRange,
+} from '@/lib/calendar/booking-cluster-layout';
+import {
+  bookingProcessingBlocks,
+  clusterProcessingGaps,
+  occupiedRangesMinusGaps,
+  processingGapRanges,
+  type ProcessingPatternLookup,
+} from '@/lib/calendar/processing-gaps';
+import {
   COMPACT_MIN_BLOCK_HEIGHT,
   computeBlockHeights,
   computeColumnMinWidth,
   computeCompactPxPerMinute,
   computeFillColumnWidth,
   computeGridBounds,
-  computeLaneLayouts,
   computeRangeHeights,
   hourLabel,
   MIN_BLOCK_HEIGHT,
@@ -116,6 +129,11 @@ export type AllCalendarColumn = {
   linked?: boolean;
   /** Header / column accent colour (e.g. amber for a linked venue). */
   accent?: string;
+  /**
+   * This column's own processing-pattern lookup (a linked venue's services);
+   * own columns fall back to the grid-level `processingPatternFor`.
+   */
+  processingPatternFor?: ProcessingPatternLookup | null;
 };
 
 type PositionedBooking = {
@@ -128,6 +146,21 @@ type PositionedBooking = {
   /** True duration (end − start) in minutes — feeds the resize gesture. */
   durationMinutes: number;
   timeLabel: string;
+  /**
+   * Set when this bar rides inside another bar's processing gap (web #177):
+   * drawn indented and above its host, in the host's lane.
+   */
+  nestedInKey?: string;
+  /**
+   * This bar's processing gaps as px bands from its own top: the client is
+   * under the colour and the column is free. Drawn as a lighter band.
+   */
+  processingBands: { top: number; height: number }[];
+  /**
+   * When this bar hosts nested bars, the px region (from its own top) its text
+   * and buttons keep to, so a nested bar never covers them.
+   */
+  contentInset?: { top: number; height: number };
 };
 
 type AllCalendarsDayGridProps = {
@@ -165,6 +198,12 @@ type AllCalendarsDayGridProps = {
   ) => void;
   /** Bookings with an in-flight move/resize — drives each block's pending + snap-home. */
   pendingActionIds?: Set<string>;
+  /**
+   * Finds an own service's processing pattern by id, for bookings without a
+   * snapshot (see `lib/calendar/processing-gaps`). A linked column carries its
+   * own lookup on the column.
+   */
+  processingPatternFor?: ProcessingPatternLookup | null;
   refreshing?: boolean;
   onRefresh?: () => void;
   /**
@@ -186,6 +225,7 @@ function positionColumn(
   gridStartMin: number,
   pxPerMinute: number,
   minBlockHeight: number,
+  processingPatternFor: ProcessingPatternLookup | null | undefined,
 ): PositionedBooking[] {
   const raw = clusterCalendarBookings(
     bookings.map((booking) => {
@@ -196,12 +236,24 @@ function positionColumn(
     }),
   );
 
+  // Nesting + lanes on true minute ranges (web `layoutOverlapClusters`, #177):
+  // a booking taken inside another's processing gap rides in the host's lane,
+  // drawn over the host's band; whatever still overlaps splits into lanes.
+  const gapsByLead = new Map<string, MinuteRange[]>();
+  for (const cluster of raw) {
+    gapsByLead.set(
+      cluster.lead.id,
+      clusterProcessingGaps(cluster.bookings, processingPatternFor, DEFAULT_DURATION_MINUTES),
+    );
+  }
+  const lanes = layoutOverlapClusters(
+    raw.map(({ lead, start, end }) => ({ key: lead.id, start, end, gaps: gapsByLead.get(lead.id) })),
+  );
   const laneInputs: LaneInput[] = raw.map(({ lead, start, end }) => ({
     id: lead.id,
     top: (start - gridStartMin) * pxPerMinute,
     bottom: (end - gridStartMin) * pxPerMinute,
   }));
-  const lanes = computeLaneLayouts(laneInputs);
   // True extents; the degenerate floor grows a block only into free space, so a
   // bar never runs past the start of the next booking in its lane.
   const heights = computeBlockHeights(
@@ -211,7 +263,13 @@ function positionColumn(
 
   return raw.map((cluster) => {
     const { lead, start, end } = cluster;
-    const lane = lanes.get(lead.id) ?? { laneIndex: 0, laneCount: 1 };
+    const lane: BookingClusterLayout = lanes.get(lead.id) ?? { laneIndex: 0, laneCount: 1 };
+    const gaps = gapsByLead.get(lead.id) ?? [];
+    // A host keeps its text and buttons above the first nested bar (or below
+    // one at its top edge); see the same step in CalendarDayGrid.
+    const regions = lane.nestedRanges
+      ? hostRegionsAroundNested({ start, end }, lane.nestedRanges, 0)
+      : null;
     return {
       cluster,
       top: (start - gridStartMin) * pxPerMinute,
@@ -220,6 +278,17 @@ function positionColumn(
       laneCount: lane.laneCount,
       durationMinutes: end - start,
       timeLabel: `${minutesToTime(start)}–${minutesToTime(end)}`,
+      nestedInKey: lane.nestedInKey,
+      processingBands: gaps.map((gap) => ({
+        top: (gap.start - start) * pxPerMinute,
+        height: (gap.end - gap.start) * pxPerMinute,
+      })),
+      contentInset: regions
+        ? {
+            top: (regions.textStart - start) * pxPerMinute,
+            height: Math.max(0, (regions.textEnd - regions.textStart) * pxPerMinute),
+          }
+        : undefined,
     };
   });
 }
@@ -243,6 +312,7 @@ export function AllCalendarsDayGrid({
   onDragConflictReject,
   onDragMoveToColumn,
   pendingActionIds,
+  processingPatternFor,
   refreshing = false,
   onRefresh,
   compact = false,
@@ -540,6 +610,7 @@ export function AllCalendarsDayGrid({
                     onDragConflictReject={onDragConflictReject}
                     onDragMoveToColumn={onDragMoveToColumn}
                     pendingActionIds={pendingActionIds}
+                    processingPatternFor={cal.processingPatternFor ?? processingPatternFor}
                   />
                 ))}
               </View>
@@ -598,6 +669,7 @@ function DayColumn({
   onDragConflictReject,
   onDragMoveToColumn,
   pendingActionIds,
+  processingPatternFor,
 }: {
   column: AllCalendarColumn;
   /** This column's index in the grid (own columns are first). */
@@ -638,11 +710,19 @@ function DayColumn({
     fromCalendarId: string,
   ) => void;
   pendingActionIds?: Set<string>;
+  processingPatternFor?: ProcessingPatternLookup | null;
 }) {
   const { colors } = useTheme();
   const positioned = useMemo(
-    () => positionColumn(column.bookings, gridStartMin, pxPerMinute, minBlockHeight),
-    [column.bookings, gridStartMin, pxPerMinute, minBlockHeight],
+    () =>
+      positionColumn(
+        column.bookings,
+        gridStartMin,
+        pxPerMinute,
+        minBlockHeight,
+        processingPatternFor,
+      ),
+    [column.bookings, gridStartMin, pxPerMinute, minBlockHeight, processingPatternFor],
   );
 
   /**
@@ -766,7 +846,10 @@ function DayColumn({
       const start = timeToMinutes(b.startTime);
       let end = b.endTime ? timeToMinutes(b.endTime) : start + DEFAULT_DURATION_MINUTES;
       if (end <= start) end = start + DEFAULT_DURATION_MINUTES;
-      out.push({ id: b.id, start, end });
+      // A processing gap is free time for the drag check too (web parity); the
+      // server takes a booking inside another's gap.
+      const gaps = processingGapRanges(start, end, bookingProcessingBlocks(b, processingPatternFor));
+      out.push(...occupiedRangesMinusGaps(b.id, start, end, gaps));
     }
     // R17-2: breaks and closures are advice, not walls (see occupying-blocks).
     // They stay drawn; they just stop refusing the drop.
@@ -777,7 +860,7 @@ function DayColumn({
     for (const { session, start, end } of sessions) out.push({ id: session.id, start, end });
     for (const { block, start, end } of scheduleBlocks) out.push({ id: block.id, start, end });
     return out;
-  }, [column.bookings, overlays, sessions, scheduleBlocks]);
+  }, [column.bookings, overlays, sessions, scheduleBlocks, processingPatternFor]);
 
   const workingRanges = useMemo<BusyRange[]>(() => {
     const working = column.workingHours.map((wh) => ({
@@ -957,6 +1040,9 @@ function DayColumn({
                   left: `${item.laneIndex * widthPct}%` as const,
                   width: `${widthPct}%` as const,
                 },
+                // A nested bar sits over its host, indented so the host's stripe
+                // and a sliver of its band stay visible (web #177).
+                item.nestedInKey != null && styles.nestedWrap,
               ]}>
               <AppointmentBlock
                 id={item.cluster.lead.id}
@@ -971,6 +1057,9 @@ function DayColumn({
                 widthPx={laneWidthPx}
                 laneIndex={item.laneIndex}
                 laneCount={item.laneCount}
+                nested={item.nestedInKey != null}
+                processingBands={item.processingBands}
+                contentInset={item.contentInset}
                 onPress={onBlockPress}
               />
             </View>
@@ -1005,6 +1094,9 @@ function DayColumn({
             laneWidthPx={laneWidthPx}
             laneIndex={item.laneIndex}
             laneCount={item.laneCount}
+            nested={item.nestedInKey != null}
+            processingBands={item.processingBands}
+            contentInset={item.contentInset}
             pxPerMinute={pxPerMinute}
             startTime={item.cluster.lead.startTime}
             durationMinutes={item.durationMinutes}
@@ -1100,6 +1192,15 @@ const styles = StyleSheet.create({
   blockWrap: {
     position: 'absolute',
     paddingHorizontal: 1,
+  },
+  nestedWrap: {
+    paddingLeft: NESTED_BOOKING_INSET_PX + 1,
+    zIndex: 20,
+    elevation: 4,
+    shadowColor: '#022047',
+    shadowOffset: { width: -6, height: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
   },
   /**
    * A closure band fills its span exactly and carries no border by default, so

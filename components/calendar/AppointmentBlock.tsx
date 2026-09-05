@@ -285,6 +285,21 @@ type AppointmentBlockProps = {
    * only a few characters wide, and the guest name must never be squeezed out.
    */
   paid?: boolean;
+  /**
+   * This bar rides inside another bar's processing gap (web #177): a larger
+   * radius, so it reads as a card laid over the host.
+   */
+  nested?: boolean;
+  /**
+   * The bar's processing gaps as px bands from its top (the client is under
+   * the colour, the column is free): drawn as a lighter band under the text.
+   */
+  processingBands?: readonly { top: number; height: number }[];
+  /**
+   * When nested bars cover parts of this bar, the px region (from its top) the
+   * text and buttons keep to. Omitted: the whole bar.
+   */
+  contentInset?: { top: number; height: number } | null;
 };
 
 /**
@@ -312,6 +327,9 @@ export function AppointmentBlock({
   actionPending = false,
   complianceFlag,
   paid = false,
+  nested = false,
+  processingBands,
+  contentInset,
 }: AppointmentBlockProps) {
   const palette = bookingCalendarBlockPalette({
     status,
@@ -330,12 +348,22 @@ export function AppointmentBlock({
   const potentialActions = trayEnabled
     ? pickTrayActions({ status, clientArrivedAt, max: 2 })
     : [];
+  // A host lays its text and buttons out in the region its nested bars leave
+  // (the tray moves up with them; the corner markers follow the region's top).
+  const contentHeight = contentInset ? contentInset.height : height;
   const layout = pickBlockLayout({
-    height,
+    height: contentHeight,
     laneCount,
     widthPx,
     hasActions: potentialActions.length > 0,
   });
+  const insetStyle = contentInset
+    ? { alignSelf: 'flex-start' as const, marginTop: contentInset.top, height: contentInset.height }
+    : null;
+  const trayInsetStyle = contentInset
+    ? { bottom: 2 + Math.max(0, height - contentInset.top - contentInset.height) }
+    : null;
+  const dotInsetStyle = contentInset ? { top: 3 + contentInset.top } : null;
   const trayActions = potentialActions.slice(
     Math.max(0, potentialActions.length - layout.maxActions),
   );
@@ -452,6 +480,7 @@ export function AppointmentBlock({
       onPress={() => onPress(id)}
       style={({ pressed }) => [
         styles.block,
+        nested && styles.blockNested,
         {
           backgroundColor: palette.bg,
           borderColor: palette.border,
@@ -461,11 +490,31 @@ export function AppointmentBlock({
       {/* Status accent stripe (web parity: left colour bar). */}
       <View style={[styles.accentStripe, { backgroundColor: palette.accent }]} />
 
+      {/* Processing gaps (web: the hatched band): the client is under the
+          colour and the column is free. Lighter than the bar and under the
+          text; a booking taken in the gap is drawn over it as a nested bar. */}
+      {processingBands?.map((band, index) => (
+        <View
+          key={index}
+          pointerEvents="none"
+          testID="processing-band"
+          style={[
+            styles.processingBand,
+            {
+              top: band.top,
+              height: band.height,
+              backgroundColor: hexToRgba('#FFFFFF', 0.42),
+              borderColor: hexToRgba(palette.text, 0.28),
+            },
+          ]}
+        />
+      ))}
+
       {layout.mode === 'row' ? (
         // SHORT bar (web compact-bar parity): name (flex, truncating, centred)
         // beside the height-tracked action row. The name always keeps its
         // reserve — buttons that don't fit were already dropped by the layout.
-        <View style={[styles.rowShell, squeezed && styles.contentSqueezed]}>
+        <View style={[styles.rowShell, squeezed && styles.contentSqueezed, insetStyle]}>
           <View style={styles.rowText} pointerEvents="none">
             <View style={styles.nameRow}>
               <Text numberOfLines={1} style={[nameStyle, styles.nameFlex]}>
@@ -491,7 +540,7 @@ export function AppointmentBlock({
         <>
           {/* Paid + compliance markers — top-right corner. */}
           {paid || complianceFlag ? (
-            <View style={styles.complianceDot} pointerEvents="none">
+            <View style={[styles.complianceDot, dotInsetStyle]} pointerEvents="none">
               {paid ? <PaidGlyph color={subtleText} /> : null}
               {complianceFlag ? <ComplianceFlagDot flag={complianceFlag} /> : null}
             </View>
@@ -502,6 +551,7 @@ export function AppointmentBlock({
               styles.content,
               squeezed && styles.contentSqueezed,
               showTray && { paddingBottom: TRAY_HEIGHT },
+              insetStyle,
             ]}
             pointerEvents="none">
             <Text numberOfLines={1} style={nameStyle}>
@@ -534,7 +584,7 @@ export function AppointmentBlock({
 
           {/* Quick-status tray — bottom-right, compact, never overlaps content. */}
           {showTray ? (
-            <View style={styles.tray} onStartShouldSetResponder={() => true}>
+            <View style={[styles.tray, trayInsetStyle]} onStartShouldSetResponder={() => true}>
               {renderTrayButtons()}
             </View>
           ) : null}
@@ -551,6 +601,17 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
     flexDirection: 'row',
+  },
+  blockNested: {
+    borderRadius: radius.lg,
+  },
+  processingBand: {
+    position: 'absolute',
+    // Starts past the status stripe so the stripe stays solid down the bar.
+    left: 5,
+    right: 0,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   accentStripe: {
     width: 5,

@@ -9,6 +9,7 @@ import {
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Text } from '@/components/ui/Text';
+import { patternLookupFromLinkedServices } from '@/lib/calendar/processing-gaps';
 import { type MinuteRange, type VenueDayHours } from '@/lib/calendar/venue-closures';
 import {
   linkedActionLabel,
@@ -144,6 +145,14 @@ export function LinkedVenueCalendarGrid({
     return dayBookings.map((b) => linkedGridBooking(b, venue.practitioners));
   }, [timeOnly, dayBookings, venue.practitioners]);
 
+  // Processing gaps for the partner's bars: the linked feed carries no
+  // snapshot, so every gap comes from the service and option patterns the
+  // venue shares (web #176/#178); see `lib/calendar/processing-gaps`.
+  const processingPatternFor = useMemo(
+    () => patternLookupFromLinkedServices(venue.services),
+    [venue.services],
+  );
+
   // full_details → the venue's classes / ticketed events / resource bookings for
   // the day, rendered as read-only overlays via the same mapper the main
   // calendar uses (class instances deduped). time_only never carries these.
@@ -219,6 +228,7 @@ export function LinkedVenueCalendarGrid({
             venueHours={venueHours}
             timeBlocks={timeBlocks}
             scheduleBlocks={scheduleBlocks}
+            processingPatternFor={processingPatternFor}
             nowMinutes={nowMinutes}
             onBlockPress={handleBlockPress}
             onEmptyPress={(time) => {

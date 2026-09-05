@@ -15,7 +15,6 @@ import {
   computeBlockHeights,
   computeCompactPxPerMinute,
   computeGridBounds,
-  computeLaneLayouts,
   computeRangeHeights,
   hourLabel,
   MIN_BLOCK_HEIGHT,
@@ -31,6 +30,12 @@ import { Text } from '@/components/ui/Text';
 import { minimumVisitFloorMinutes } from '@/lib/booking/appointment-visit';
 import { arrivalToggleTargets, statusChangeTargets } from '@/lib/calendar/bar-actions';
 import {
+  hostRegionsAroundNested,
+  layoutOverlapClusters,
+  type BookingClusterLayout,
+  type MinuteRange,
+} from '@/lib/calendar/booking-cluster-layout';
+import {
   clusterCalendarBookings,
   type CalendarBookingCluster,
 } from '@/lib/calendar/cluster-bookings';
@@ -40,6 +45,13 @@ import {
   clampClosureBlocksToWindow,
   isScheduleClosureBlockType,
 } from '@/lib/calendar/schedule-closures';
+import {
+  bookingProcessingBlocks,
+  clusterProcessingGaps,
+  occupiedRangesMinusGaps,
+  processingGapRanges,
+  type ProcessingPatternLookup,
+} from '@/lib/calendar/processing-gaps';
 import { venueClosedRanges, type VenueDayHours } from '@/lib/calendar/venue-closures';
 import { hexToRgba } from '@/lib/color';
 import type { ComplianceBookingFlag } from '@/lib/queries/useCompliance';
@@ -64,6 +76,21 @@ type PositionedBooking = {
   laneCount: number;
   durationMinutes: number;
   timeLabel: string;
+  /**
+   * Set when this bar rides inside another bar's processing gap (web #177):
+   * drawn indented and above its host, in the host's lane.
+   */
+  nestedInKey?: string;
+  /**
+   * This bar's processing gaps as px bands from its own top: the client is
+   * under the colour and the column is free. Drawn as a lighter band.
+   */
+  processingBands: { top: number; height: number }[];
+  /**
+   * When this bar hosts nested bars, the px region (from its own top) its text
+   * and buttons keep to, so a nested bar never covers them.
+   */
+  contentInset?: { top: number; height: number };
 };
 
 /** Blocked-out time (break / leave / manual block) rendered as a grey overlay. */
@@ -191,6 +218,12 @@ type CalendarDayGridProps = {
    * viewport, so compact there renders at the floor scale.
    */
   compact?: boolean;
+  /**
+   * Finds a service's processing pattern by id, for bookings that carry no
+   * snapshot of their own (see `lib/calendar/processing-gaps`). Omitted: only
+   * snapshots draw gaps, and nothing nests where a pattern would have applied.
+   */
+  processingPatternFor?: ProcessingPatternLookup | null;
 };
 
 const DEFAULT_DURATION_MINUTES = 30;
@@ -222,6 +255,7 @@ export function CalendarDayGrid({
   onRefresh,
   embedded = false,
   compact = false,
+  processingPatternFor,
 }: CalendarDayGridProps) {
   const { colors } = useTheme();
   const scrollRef = useRef<ScrollViewType | null>(null);
@@ -362,17 +396,34 @@ export function CalendarDayGrid({
     const gridStartMin = bounds.startHour * 60;
     const total = (bounds.endHour - bounds.startHour) * 60 * pxPerMinute;
 
-    // Pack lanes on TRUE minute ranges so non-overlapping short bookings stay
-    // full-width — the visual min-height is applied AFTER lane assignment so it
-    // never inflates extents into false overlaps (web lane model).
-    // Lanes are packed on the CLUSTER's extent, so a merged visit occupies the
-    // column for its whole length and nothing else is placed over it.
+    // Lanes AND nesting on TRUE minute ranges (web `layoutOverlapClusters`,
+    // #177): a booking that starts inside another's processing gap and keeps to
+    // it for as long as the host lasts rides in the host's lane, drawn over the
+    // host's band, so neither bar loses half the column. Anything that still
+    // overlaps is split into side-by-side lanes. The visual min-height is
+    // applied AFTER lane assignment so it never inflates extents into false
+    // overlaps, and lanes are packed on the CLUSTER's extent, so a merged visit
+    // occupies the column for its whole length.
+    const gapsByLead = new Map<string, MinuteRange[]>();
+    for (const cluster of rawBlocks) {
+      gapsByLead.set(
+        cluster.lead.id,
+        clusterProcessingGaps(cluster.bookings, processingPatternFor, DEFAULT_DURATION_MINUTES),
+      );
+    }
+    const lanes = layoutOverlapClusters(
+      rawBlocks.map(({ lead, start, end }) => ({
+        key: lead.id,
+        start,
+        end,
+        gaps: gapsByLead.get(lead.id),
+      })),
+    );
     const laneInputs: LaneInput[] = rawBlocks.map(({ lead, start, end }) => ({
       id: lead.id,
       top: (start - gridStartMin) * pxPerMinute,
       bottom: (end - gridStartMin) * pxPerMinute,
     }));
-    const lanes = computeLaneLayouts(laneInputs);
     // Heights are the TRUE extents; the degenerate floor may only grow a block
     // into free space, so a bar never runs past the next booking's start.
     const heights = computeBlockHeights(
@@ -385,9 +436,15 @@ export function CalendarDayGrid({
 
     const blocks: PositionedBooking[] = rawBlocks.map((cluster) => {
       const { lead, start, end } = cluster;
-      const lane = lanes.get(lead.id) ?? { laneIndex: 0, laneCount: 1 };
+      const lane: BookingClusterLayout = lanes.get(lead.id) ?? { laneIndex: 0, laneCount: 1 };
       const top = (start - gridStartMin) * pxPerMinute;
       const height = heights.get(lead.id) ?? (end - start) * pxPerMinute;
+      const gaps = gapsByLead.get(lead.id) ?? [];
+      // A host keeps its text (and its buttons, which share the region on the
+      // app's bars) above the first nested bar, or below one at its top edge.
+      const regions = lane.nestedRanges
+        ? hostRegionsAroundNested({ start, end }, lane.nestedRanges, 0)
+        : null;
       return {
         cluster,
         top,
@@ -396,6 +453,17 @@ export function CalendarDayGrid({
         laneCount: lane.laneCount,
         durationMinutes: Math.max(end - start, TAP_SNAP_MINUTES),
         timeLabel: `${minutesToTime(start)}–${minutesToTime(end)}`,
+        nestedInKey: lane.nestedInKey,
+        processingBands: gaps.map((gap) => ({
+          top: (gap.start - start) * pxPerMinute,
+          height: (gap.end - gap.start) * pxPerMinute,
+        })),
+        contentInset: regions
+          ? {
+              top: (regions.textStart - start) * pxPerMinute,
+              height: Math.max(0, (regions.textEnd - regions.textStart) * pxPerMinute),
+            }
+          : undefined,
       };
     });
 
@@ -451,7 +519,7 @@ export function CalendarDayGrid({
       positionedSessions: sessionItems,
       positionedScheduleBlocks: scheduleItems,
     };
-  }, [bounds, rawBlocks, rawTimeBlocks, rawSessions, rawScheduleBlocks, pxPerMinute, minBlockHeight]);
+  }, [processingPatternFor, bounds, rawBlocks, rawTimeBlocks, rawSessions, rawScheduleBlocks, pxPerMinute, minBlockHeight]);
 
   /**
    * A quick action on a merged bar applies to the WHOLE visit — web parity with
@@ -562,7 +630,15 @@ export function CalendarDayGrid({
       const start = timeToMinutes(booking.startTime);
       let end = booking.endTime ? timeToMinutes(booking.endTime) : start + DEFAULT_DURATION_MINUTES;
       if (end <= start) end = start + DEFAULT_DURATION_MINUTES;
-      out.push({ id: booking.id, start, end });
+      // A processing gap is free time for the drag check too (web parity): the
+      // server takes a booking inside another's gap, so the guard must not
+      // refuse a drop the server would accept.
+      const gaps = processingGapRanges(
+        start,
+        end,
+        bookingProcessingBlocks(booking, processingPatternFor),
+      );
+      out.push(...occupiedRangesMinusGaps(booking.id, start, end, gaps));
     }
     // R17-2: breaks and closures are advice, not walls — staff routinely work
     // past closing and over a break, and the server now accepts both overrides.
@@ -584,7 +660,7 @@ export function CalendarDayGrid({
       if (end > start) out.push({ id: block.id, start, end });
     }
     return out;
-  }, [conflictBookings, bookings, timeBlocks, sessions, scheduleBlocks]);
+  }, [conflictBookings, bookings, timeBlocks, sessions, scheduleBlocks, processingPatternFor]);
 
   // The time grid itself: one full-day-height layer holding the hour lines,
   // closed-time shading, the now-line and the positioned appointment blocks.
@@ -825,6 +901,9 @@ export function CalendarDayGrid({
               }
               laneIndex={item.laneIndex}
               laneCount={item.laneCount}
+              nested={item.nestedInKey != null}
+              processingBands={item.processingBands}
+              contentInset={item.contentInset}
               pxPerMinute={pxPerMinute}
               startTime={item.cluster.lead.startTime}
               durationMinutes={item.durationMinutes}

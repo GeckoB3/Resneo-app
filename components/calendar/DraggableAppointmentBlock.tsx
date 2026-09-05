@@ -32,6 +32,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { AppointmentBlock } from '@/components/calendar/AppointmentBlock';
+import { NESTED_BOOKING_INSET_PX } from '@/lib/calendar/booking-cluster-layout';
 import {
   DRAG_SNAP_MINUTES,
   minutesToTime,
@@ -159,6 +160,15 @@ type DraggableAppointmentBlockProps = {
   laneIndex: number;
   laneCount: number;
   /**
+   * This bar rides inside another bar's processing gap (web #177): indented
+   * from the left and stacked above its host, which shares its lane.
+   */
+  nested?: boolean;
+  /** Processing gaps as px bands from the bar's top; see AppointmentBlock. */
+  processingBands?: { top: number; height: number }[];
+  /** The px region the text and buttons keep to when nested bars cover the rest. */
+  contentInset?: { top: number; height: number };
+  /**
    * Vertical scale (px per minute) the parent grid is rendering at. Drives the
    * drag/resize minute↔px math so a compact-day grid drags accurately. Defaults
    * to the comfortable module scale.
@@ -279,6 +289,9 @@ export function DraggableAppointmentBlock({
   laneWidthPx,
   laneIndex,
   laneCount,
+  nested = false,
+  processingBands,
+  contentInset,
   pxPerMinute = PX_PER_MINUTE,
   startTime,
   durationMinutes,
@@ -696,11 +709,13 @@ export function DraggableAppointmentBlock({
         { scale: scale.value },
       ],
       height: heightOverride.value >= 0 ? heightOverride.value : height,
-      zIndex: dragging ? 999 : settled.value ? 50 : 10 + laneIndex,
-      elevation: dragging ? 12 : 0,
-      shadowOpacity: dragging ? 0.25 : 0,
+      // A nested bar stacks above its host (which shares its lane) and carries
+      // a soft left shadow so it reads as a card laid over the host's band.
+      zIndex: dragging ? 999 : settled.value ? 50 : 10 + laneIndex + (nested ? 10 : 0),
+      elevation: dragging ? 12 : nested ? 4 : 0,
+      shadowOpacity: dragging ? 0.25 : nested ? 0.22 : 0,
     };
-  }, [height, laneIndex]);
+  }, [height, laneIndex, nested]);
 
   // Arming progress — fades in ~90ms into the hold, fills left→right.
   const holdBarStyle = useAnimatedStyle(() => {
@@ -727,6 +742,7 @@ export function DraggableAppointmentBlock({
             left: `${leftPct}%`,
             width: `${widthPct}%`,
           },
+          nested && styles.nestedRoot,
           animatedWrapperStyle,
         ]}>
         {/* Live badge — time while moving, duration while resizing. Tints amber
@@ -764,6 +780,9 @@ export function DraggableAppointmentBlock({
           widthPx={laneWidthPx}
           laneIndex={laneIndex}
           laneCount={laneCount}
+          nested={nested}
+          processingBands={processingBands}
+          contentInset={contentInset}
           onPress={onPress}
           onStatusChange={onStatusChange}
           onArrivalToggle={onArrivalToggle}
@@ -809,6 +828,13 @@ const styles = StyleSheet.create({
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowRadius: 8,
+  },
+  nestedRoot: {
+    // Indented past the host's stripe and a sliver of its band (web #177).
+    paddingLeft: NESTED_BOOKING_INSET_PX + 1,
+    shadowColor: '#022047',
+    shadowOffset: { width: -6, height: 0 },
+    shadowRadius: 6,
   },
   liveLabel: {
     position: 'absolute',
