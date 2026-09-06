@@ -36,7 +36,11 @@ export interface BookingListRow {
   calendar_name?: string | null;
   appointment_service_id?: string | null;
   service_item_id?: string | null;
+  service_variant_id?: string | null;
   service_variant_name?: string | null;
+  /** The visit's end, for a rebook's length and the upcoming/previous split. */
+  booking_end_time?: string | null;
+  estimated_end_time?: string | null;
   addons_count?: number;
   booking_addon_labels?: string[];
   guest_attendance_confirmed_at?: string | null;

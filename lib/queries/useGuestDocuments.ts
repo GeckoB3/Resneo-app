@@ -61,24 +61,59 @@ export interface GuestDocumentsResponse {
   documents: GuestDocumentRow[];
 }
 
-const documentsKey = (accessToken: string | null, guestId: string | null | undefined) =>
-  [...queryKeys.guests.all(), 'documents', keyScope(accessToken), guestId ?? null] as const;
+/**
+ * Whose guest the documents belong to. A linked venue's booking names the
+ * partner as the owner venue (the guest is the partner's client), and every
+ * documents route is asked with `owner_venue_id` so the server can resolve the
+ * guest under that venue and apply the link grant, as the bookings list route
+ * does for a partner's guest history. Empty for our own guests.
+ */
+export interface GuestDocumentScope {
+  ownerVenueId?: string | null;
+}
+
+const documentsKey = (
+  accessToken: string | null,
+  guestId: string | null | undefined,
+  ownerVenueId?: string | null,
+) =>
+  [
+    ...queryKeys.guests.all(),
+    'documents',
+    keyScope(accessToken),
+    guestId ?? null,
+    ownerVenueId ?? null,
+  ] as const;
+
+/** A documents route path with the owner-venue scope (and any other query) appended. */
+function documentsPath(
+  path: string,
+  ownerVenueId: string | null | undefined,
+  extra: Record<string, string> = {},
+): string {
+  const params = new URLSearchParams(extra);
+  if (ownerVenueId) params.set('owner_venue_id', ownerVenueId);
+  const qs = params.toString();
+  return qs ? `${path}?${qs}` : path;
+}
 
 /** GET /api/venue/guests/[guestId]/documents — list uploaded documents. */
-export function useGuestDocuments(guestId: string | null | undefined) {
+export function useGuestDocuments(guestId: string | null | undefined, scope: GuestDocumentScope = {}) {
   const accessToken = useAccessToken();
+  const ownerVenueId = scope.ownerVenueId ?? null;
   const enabled = isBackendConfigured() && accessToken !== null && Boolean(guestId);
 
   return useQuery({
-    queryKey: documentsKey(accessToken, guestId),
+    queryKey: documentsKey(accessToken, guestId, ownerVenueId),
     enabled,
     queryFn: async (): Promise<GuestDocumentsResponse> => {
       if (!accessToken || !guestId) {
         throw new Error('Missing documents parameters');
       }
-      return apiFetch<GuestDocumentsResponse>(`/api/venue/guests/${guestId}/documents`, {
-        accessToken,
-      });
+      return apiFetch<GuestDocumentsResponse>(
+        documentsPath(`/api/venue/guests/${guestId}/documents`, ownerVenueId),
+        { accessToken },
+      );
     },
   });
 }
@@ -126,9 +161,10 @@ export interface UploadGuestDocumentInput {
  * store at all, and a refusal now carries the storage service's own status and
  * message rather than a bare "failed".
  */
-export function useUploadGuestDocument(guestId: string) {
+export function useUploadGuestDocument(guestId: string, scope: GuestDocumentScope = {}) {
   const accessToken = useAccessToken();
   const queryClient = useQueryClient();
+  const ownerVenueId = scope.ownerVenueId ?? null;
 
   return useMutation({
     mutationFn: async ({
@@ -153,7 +189,7 @@ export function useUploadGuestDocument(guestId: string) {
 
       // Step 1: Get signed URL
       const signRes = await apiFetch<SignDocumentResponse>(
-        `/api/venue/guests/${guestId}/documents/sign`,
+        documentsPath(`/api/venue/guests/${guestId}/documents/sign`, ownerVenueId),
         {
           accessToken,
           method: 'POST',
@@ -202,36 +238,40 @@ export function useUploadGuestDocument(guestId: string) {
 
       // Step 3: Mark upload as complete
       await apiFetch<unknown>(
-        `/api/venue/guests/${guestId}/documents/${signRes.document_id}/complete`,
+        documentsPath(
+          `/api/venue/guests/${guestId}/documents/${signRes.document_id}/complete`,
+          ownerVenueId,
+        ),
         { accessToken, method: 'POST' },
       );
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({
-        queryKey: documentsKey(accessToken, guestId),
+        queryKey: documentsKey(accessToken, guestId, ownerVenueId),
       });
     },
   });
 }
 
 /** DELETE /api/venue/guests/[guestId]/documents/[docId] — remove a document. */
-export function useDeleteGuestDocument(guestId: string) {
+export function useDeleteGuestDocument(guestId: string, scope: GuestDocumentScope = {}) {
   const accessToken = useAccessToken();
   const queryClient = useQueryClient();
+  const ownerVenueId = scope.ownerVenueId ?? null;
 
   return useMutation({
     mutationFn: async (docId: string): Promise<unknown> => {
       if (!accessToken) {
         throw new Error('Missing access token');
       }
-      return apiFetch<unknown>(`/api/venue/guests/${guestId}/documents/${docId}`, {
-        accessToken,
-        method: 'DELETE',
-      });
+      return apiFetch<unknown>(
+        documentsPath(`/api/venue/guests/${guestId}/documents/${docId}`, ownerVenueId),
+        { accessToken, method: 'DELETE' },
+      );
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({
-        queryKey: documentsKey(accessToken, guestId),
+        queryKey: documentsKey(accessToken, guestId, ownerVenueId),
       });
     },
   });
@@ -248,9 +288,14 @@ export async function fetchDocumentDownloadUrl(
   guestId: string,
   docId: string,
   intent: 'view' | 'download' = 'download',
+  scope: GuestDocumentScope = {},
 ): Promise<string> {
   const res = await apiFetch<{ url: string }>(
-    `/api/venue/guests/${guestId}/documents/${docId}/download${intent === 'view' ? '?intent=view' : ''}`,
+    documentsPath(
+      `/api/venue/guests/${guestId}/documents/${docId}/download`,
+      scope.ownerVenueId ?? null,
+      intent === 'view' ? { intent: 'view' } : {},
+    ),
     { accessToken },
   );
   return res.url;

@@ -5,7 +5,9 @@
  * The panel is the same one an own booking opens; the grant the partner gave us
  * decides which of its actions stay. The server applies the same grant to every
  * write, so this is about not offering what would be refused, not about
- * enforcing anything.
+ * enforcing anything. The sections a partner's guest brings with them (the
+ * guest's history and Records) are read from the partner's venue instead of
+ * ours, through the owner-venue scope the routes take, and stay in the panel.
  */
 import type { LinkActionLevel } from '@/types/linked-venues';
 
@@ -34,19 +36,16 @@ export interface LinkedDetailPolicy {
   limitedEdit: boolean;
   /**
    * Status changes, attendance, Modify and Reschedule, notes, messaging the
-   * guest, deposit actions and resending the confirmation.
+   * guest, deposit actions, resending the confirmation, adding and removing
+   * the guest's Records.
    */
   canEdit: boolean;
   /** Cancelling, and permanently deleting a cancelled booking. */
   canCancel: boolean;
-  /** Rebooking the guest, into the booking's own venue. */
+  /** Rebooking the guest, or a new booking for them, at the booking's own venue. */
   canRebook: boolean;
-  /**
-   * Things that are ours and not the partner's: the guest's Records, "Open in
-   * Contacts", "New for guest" and the guest's history, which the app reads from
-   * our own venue's routes.
-   */
-  ownVenueOnly: boolean;
+  /** "Open in Contacts": a partner's guest is not in our Contacts. */
+  showContactsLink: boolean;
   /** The banner over the panel, or null for an own booking or a full grant. */
   banner: string | null;
 }
@@ -66,7 +65,7 @@ export function linkedDetailPolicy(act: LinkActionLevel | null | undefined): Lin
       canEdit: true,
       canCancel: true,
       canRebook: true,
-      ownVenueOnly: true,
+      showContactsLink: true,
       banner: null,
     };
   }
@@ -80,7 +79,7 @@ export function linkedDetailPolicy(act: LinkActionLevel | null | undefined): Lin
     canEdit: !viewOnly,
     canCancel: full,
     canRebook: full,
-    ownVenueOnly: false,
+    showContactsLink: false,
     banner: viewOnly ? LINKED_VIEW_ONLY_BANNER : limitedEdit ? LINKED_LIMITED_EDIT_BANNER : null,
   };
 }

@@ -139,18 +139,28 @@ catalogue and roster routes) and dry-runs
   never emails the guest either. The app sends `skip_booking_modification_guest_notification`
   and says nothing it cannot do; see `Docs/R26_WEB_HANDOVER.md`. The partner's own staff are
   told by the server's cross-venue notification, as before.
-- **Guest history is hidden on a partner's booking.** The web reads it from the bookings list
-  route with `owner_venue_id`; the app's history reads our own guests route, which does not
-  know the partner's client. Building a list-route history for linked bookings is the one
-  piece of §1.3 not ported.
+- **Guest history on a partner's booking is read at the partner's venue** (the owner asked
+  for the panel to match an own booking's, 2026-09-06): `useLinkedGuestHistory` asks the
+  bookings list route in its guest-history mode with `owner_venue_id`, exactly as the web's
+  accordion does; the rows open the same panel with the link carried along, a full grant
+  may rebook from a row at the partner's venue, and there is no "View all in Contacts"
+  (no Contacts screen holds a partner's guest), so the cap says how many more there are.
+- **Records on a partner's booking are asked for under the partner's venue.** The web hides
+  the card in a linked context because every guest documents route is scoped to the
+  caller's own venue. The app sends `owner_venue_id` on all five documents calls and, until
+  the web accepts it (second ask in `Docs/R26_WEB_HANDOVER.md`), the collapsed card reads
+  "Held by {venue} and not shared through this link yet"; a view-only link can never add or
+  remove. Once the routes accept the scope the card fills in with no app release.
 - **Customer notes and tags are read only on any linked booking**, whatever the grant: they
   are written through our guests route, which is our own venue's. The booking's own notes
   follow the grant, through the booking route the link covers.
-- **Compliance** shows through the link when the link shares personal details (the R24-4
-  decision); the web always renders the card and lets the route say no.
-- **Rebook** on a full grant opens the booking form over the partner's venue (the
-  `ownerVenueId` route params the slot sheet already uses), with the guest's details seeded;
-  "New for guest" stays off a partner's booking, as on the web.
+- **Compliance** is always drawn on a linked booking, as on the web, and the route's answer
+  ("does not share personal data", "does not use compliance records") reads as a note behind
+  the closed header.
+- **Rebook and "New for guest"** on a full grant open the booking form over the partner's
+  venue (the `ownerVenueId` route params the slot sheet already uses), with the guest's
+  details seeded; an edit-only grant offers neither, since the link does not allow creating.
+  Only "Open in Contacts" stays off a partner's booking: its guest is not in our Contacts.
 - **The venue-level column** (bookings naming no listed calendar; the web has none) takes no
   cross-column move in or out, since it names no calendar to reassign to.
 - **Visits** on a partner's column are separate bars: the linked feed carries no group id, and
@@ -163,16 +173,20 @@ catalogue and roster routes) and dry-runs
 
 ## 5. Web handover
 
-`Docs/R26_WEB_HANDOVER.md`: the deferred-notification route is scoped to the caller's own
+`Docs/R26_WEB_HANDOVER.md`: (1) the deferred-notification route is scoped to the caller's own
 venue, so neither the web's follow-up bar nor the app can release a partner's deferred guest
-email. Nothing else in this batch needs the web.
+email; (2) the five guest documents routes should accept `owner_venue_id` for a partner's
+guest (list and download on a full-details link that shares PII, sign, complete and delete on
+an edit grant), so a linked booking's Records card can fill in. Nothing else needs the web.
 
 ## 6. Tests
 
 `lib/linked/linked-calendar-view.test.ts` (the rule, the id unwrap, the copy),
 `lib/linked/linked-detail-policy.test.ts`, `lib/calendar/column-move-groups.test.ts`,
 `lib/queries/useCalendarQuickActions.patch.test.ts` (the linked feed patched, reverted and
-kept through a cancelled read), `components/calendar/AllCalendarsDayGrid.test.tsx` (an
+kept through a cancelled read), `lib/queries/useLinkedGuestHistory.test.tsx` (the list route
+asked under the owner venue), `lib/queries/useGuestDocuments.owner.test.tsx` (the documents
+routes scoped, our own unscoped), `components/calendar/AllCalendarsDayGrid.test.tsx` (an
 editable linked column draws the interactive bar, a plain one does not),
 `components/linked/LinkedVenueCalendarGrid.test.tsx` (edit grants join the grid, view only
 stays static, the edit-existing slot note), `components/bookings/BookingDetailSheet.test.tsx`

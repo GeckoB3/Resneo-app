@@ -74,6 +74,7 @@ import {
 } from '@/lib/queries/useBookingMutations';
 import { useGuestDetail } from '@/lib/queries/useGuestDetail';
 import { useGroupVisitBookings } from '@/lib/queries/useGroupVisit';
+import { useLinkedGuestHistory } from '@/lib/queries/useLinkedGuestHistory';
 import { useManagedServices } from '@/lib/queries/useServicesManage';
 import { linkedDetailPolicy, type LinkedBookingContext } from '@/lib/linked/linked-detail-policy';
 import { writeRebookBootstrap, type RebookBootstrapPayload } from '@/lib/rebook-bootstrap';
@@ -94,6 +95,7 @@ import { useVenueContext } from '@/providers/VenueProvider';
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { BookingDetail, BookingStatus } from '@/types/booking-detail';
+import type { BookingListRow } from '@/types/booking-list';
 
 type SymbolName = SymbolViewProps['name'];
 
@@ -137,8 +139,10 @@ type BookingDetailContentProps = {
    * `lib/linked/linked-detail-policy`): a view-only link shows everything and
    * changes nothing; an edit grant keeps the status, attendance, Modify,
    * Reschedule, notes, messaging and deposit actions; only a full grant may
-   * cancel or rebook. Our own venue's things (the guest's Records and
-   * history, "Open in Contacts", "New for guest") stay off a partner's booking.
+   * cancel, rebook or start a new booking for the guest. The guest's history
+   * and Records are read under the partner's venue, so the panel keeps them;
+   * only "Open in Contacts" goes, since a partner's guest is not in our
+   * Contacts.
    */
   linked?: LinkedBookingContext | null;
 };
@@ -349,6 +353,145 @@ function GuestHistoryBody({
   );
 }
 
+/**
+ * The guest's other visits at the PARTNER's venue, for a linked booking (web:
+ * the same accordion with `historyVenueId`). Read through the bookings list
+ * route under the owner venue, since our guests route does not know the
+ * partner's client. A row opens the same panel with the link carried along;
+ * a full grant may rebook from one, at the partner's venue. There is no
+ * Contacts screen to view the rest in, so the cap says how many more there are.
+ */
+function LinkedGuestHistoryBody({
+  guestId,
+  currentBookingId,
+  guest,
+  linked,
+  canRebook,
+}: {
+  guestId: string;
+  currentBookingId: string;
+  guest: BookingDetail['guest'];
+  linked: LinkedBookingContext;
+  canRebook: boolean;
+}) {
+  const router = useRouter();
+  const { colors } = useTheme();
+  const HISTORY_VISIBLE_CAP = 10;
+  const history = useLinkedGuestHistory(linked.venueId, guestId);
+  // Latest first, as our own guest history reads.
+  const otherVisits = (history.data?.bookings ?? [])
+    .filter((row) => row.id !== currentBookingId)
+    .sort(
+      (a, b) =>
+        b.booking_date.localeCompare(a.booking_date) ||
+        (b.booking_time ?? '').localeCompare(a.booking_time ?? ''),
+    );
+  const rows = otherVisits.slice(0, HISTORY_VISIBLE_CAP);
+  const hiddenCount = otherVisits.length - rows.length;
+
+  const openRow = (row: BookingListRow) =>
+    router.push({
+      pathname: '/booking/[id]',
+      params: {
+        id: row.id,
+        linkedAct: linked.act,
+        linkedVenueId: linked.venueId,
+        linkedVenueName: linked.venueName,
+        linkedPii: linked.pii ? '1' : '0',
+        ...(row.calendar_name ? { linkedPractitionerName: row.calendar_name } : {}),
+      },
+    } as Href);
+
+  /** Rebook a past visit at the partner's venue: the same seeding as our own rows. */
+  const handleRebookRow = (row: BookingListRow) => {
+    void (async () => {
+      const practitionerId = row.practitioner_id ?? row.calendar_id ?? null;
+      const serviceId = row.appointment_service_id ?? row.service_item_id ?? null;
+      const start = row.booking_time ? timeToMinutes(row.booking_time) : null;
+      const end = row.booking_end_time ? timeToMinutes(row.booking_end_time) : null;
+      const appointment =
+        practitionerId && serviceId
+          ? {
+              serviceId,
+              practitionerId,
+              variantId: row.service_variant_id ?? null,
+              durationMinutes: start != null && end != null && end > start ? end - start : null,
+            }
+          : null;
+      await writeRebookBootstrap({
+        v: 1,
+        guest: {
+          firstName: guest?.first_name ?? undefined,
+          lastName: guest?.last_name ?? undefined,
+          email: guest?.email ?? null,
+          phone: guest?.phone ?? null,
+        },
+        ...(appointment ? { appointment } : {}),
+      });
+      router.push({
+        pathname: '/booking/new',
+        params: { ownerVenueId: linked.venueId, ownerVenueName: linked.venueName },
+      });
+    })();
+  };
+
+  return (
+    <View style={styles.historyBody}>
+      {history.isLoading ? (
+        <Text variant="bodySmall" tone="muted">
+          Loading…
+        </Text>
+      ) : history.isError ? (
+        <Text variant="bodySmall" tone="muted">
+          {`Could not load the guest's bookings at ${linked.venueName}.`}
+        </Text>
+      ) : rows.length === 0 ? (
+        <Text variant="bodySmall" tone="muted">
+          No other bookings for this guest.
+        </Text>
+      ) : (
+        rows.map((row) => (
+          <Pressable
+            key={row.id}
+            accessibilityRole="button"
+            onPress={() => openRow(row)}
+            style={[styles.historyRow, { borderBottomColor: colors.border }]}>
+            <View style={styles.historyText}>
+              <Text variant="bodySmall" numberOfLines={1}>
+                {row.booking_item_name?.trim() ||
+                  (row.booking_model ? bookingModelShortLabel(row.booking_model) : 'Booking')}
+              </Text>
+              <Text variant="caption" tone="muted">
+                {row.booking_date}
+                {row.booking_time ? ` · ${row.booking_time.slice(0, 5)}` : ''}
+              </Text>
+            </View>
+            <View style={styles.historyTrailing}>
+              <StatusPill
+                status={row.status}
+                isTableReservation={row.booking_model === 'table_reservation'}
+              />
+              {canRebook ? (
+                <Button
+                  label="Rebook"
+                  variant="ghost"
+                  size="sm"
+                  onPress={() => handleRebookRow(row)}
+                />
+              ) : null}
+            </View>
+          </Pressable>
+        ))
+      )}
+      {hiddenCount > 0 ? (
+        <Text variant="caption" tone="muted">
+          {`${hiddenCount} more at ${linked.venueName}.`}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
 function formatDurationLabel(total: number): string {
   const h = Math.floor(total / 60);
   const m = total % 60;
@@ -473,7 +616,7 @@ export function BookingDetailContent({
   const guestProfileId = booking.guest?.id ?? booking.guest_id ?? null;
   // A partner's guest is not in our Contacts (web: no contacts link in a linked context).
   const openGuestContact =
-    guestProfileId && policy.ownVenueOnly
+    guestProfileId && policy.showContactsLink
       ? () => router.push(`/client/${guestProfileId}` as Href)
       : null;
   const isTable = isTableReservationBooking(booking);
@@ -1162,7 +1305,7 @@ export function BookingDetailContent({
                     }}
                   />
                 ) : null}
-                {booking.guest_id && policy.ownVenueOnly ? (
+                {booking.guest_id && policy.canRebook ? (
                   <QuickAction
                     icon={{ ios: 'plus.circle', android: 'add_circle', web: 'add_circle' }}
                     label="New for guest"
@@ -1182,7 +1325,11 @@ export function BookingDetailContent({
                             phone: g?.phone ?? null,
                           },
                         });
-                        router.push({ pathname: '/booking/new' });
+                        // A partner's guest is booked at the partner's venue.
+                        router.push({
+                          pathname: '/booking/new',
+                          ...(linkedFormParams ? { params: linkedFormParams } : {}),
+                        });
                       })();
                     }}
                   />
@@ -1441,20 +1588,30 @@ export function BookingDetailContent({
       </CollapsibleCard>
 
       {/* Guest history — other visits, lazy-loaded on first expand. A partner's
-          guest is read from our own guests route, which does not know them. */}
-      {booking.guest_id && policy.ownVenueOnly ? (
+          guest's visits are read at the partner's venue (web `historyVenueId`). */}
+      {booking.guest_id ? (
         <CollapsibleCard title="Guest history" lazy>
-          <GuestHistoryBody guestId={booking.guest_id} currentBookingId={booking.id} />
+          {linked ? (
+            <LinkedGuestHistoryBody
+              guestId={booking.guest_id}
+              currentBookingId={booking.id}
+              guest={booking.guest}
+              linked={linked}
+              canRebook={policy.canRebook}
+            />
+          ) : (
+            <GuestHistoryBody guestId={booking.guest_id} currentBookingId={booking.id} />
+          )}
         </CollapsibleCard>
       ) : null}
 
       {/* Compliance — requirement states + guest records (feature-flagged). A
-          partner's booking reads its state through the link, read only, when
-          the link shares personal details (R24-4). */}
+          partner's booking reads its state through the link, read only; the
+          route answers with a note when the link does not share the person's
+          details or the owner does not use compliance (web parity: the card is
+          always drawn and the route says no). */}
       {linked ? (
-        linked.pii ? (
-          <LinkedComplianceSection bookingId={booking.id} />
-        ) : null
+        <LinkedComplianceSection bookingId={booking.id} />
       ) : complianceEnabled ? (
         <ComplianceCard
           bookingId={booking.id}
@@ -1621,8 +1778,16 @@ export function BookingDetailContent({
       {/* Records: the guest's documents and photos, the same card the contact
           screen shows. They belong to the person, not this booking, so every
           booking for the guest shows the same files (web 2026-09-05). */}
-      {guestProfileId && policy.ownVenueOnly ? (
-        <DocumentsSection guestId={guestProfileId} collapsible />
+      {guestProfileId ? (
+        <DocumentsSection
+          guestId={guestProfileId}
+          collapsible
+          // A partner's guest's files live under the partner's venue; a
+          // view-only link may look but not add or remove.
+          ownerVenueId={linked?.venueId ?? null}
+          ownerVenueName={linked?.venueName ?? null}
+          readOnly={!policy.canEdit}
+        />
       ) : null}
 
       {/* Refund banner — cancelled booking that still holds a deposit (web parity) */}

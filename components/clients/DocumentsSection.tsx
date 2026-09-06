@@ -39,6 +39,17 @@ type DocumentsSectionProps = {
   /** Render inside a tap-to-expand CollapsibleCard instead of a plain Card. */
   collapsible?: boolean;
   defaultExpanded?: boolean;
+  /**
+   * A linked venue's guest: the files are read (and, with an edit grant,
+   * added and removed) under that venue, through `owner_venue_id` on the
+   * documents routes. Until the web accepts the scope the routes answer 404
+   * for a partner's guest, which reads as "not shared through this link yet".
+   */
+  ownerVenueId?: string | null;
+  /** The partner's name, for that note. */
+  ownerVenueName?: string | null;
+  /** No adding or removing: a view-only link. */
+  readOnly?: boolean;
 };
 
 /** One file as either picker hands it over. */
@@ -146,13 +157,25 @@ export function DocumentsSection({
   guestId,
   collapsible = false,
   defaultExpanded = false,
+  ownerVenueId = null,
+  ownerVenueName = null,
+  readOnly = false,
 }: DocumentsSectionProps) {
   const { colors } = useTheme();
   const accessToken = useAccessToken();
   const toast = useToast();
-  const docsQuery = useGuestDocuments(guestId);
-  const uploadMutation = useUploadGuestDocument(guestId);
-  const deleteMutation = useDeleteGuestDocument(guestId);
+  const scope = { ownerVenueId };
+  const docsQuery = useGuestDocuments(guestId, scope);
+  const uploadMutation = useUploadGuestDocument(guestId, scope);
+  const deleteMutation = useDeleteGuestDocument(guestId, scope);
+  // A partner's guest the routes do not (yet) serve under the link: a note,
+  // not a fault. Anything else that fails is an error to say so.
+  const notSharedThroughLink =
+    ownerVenueId != null &&
+    docsQuery.isError &&
+    docsQuery.error instanceof ApiError &&
+    (docsQuery.error.status === 403 || docsQuery.error.status === 404);
+  const canChange = !readOnly && !notSharedThroughLink;
   const [openingId, setOpeningId] = useState<string | null>(null);
   const [uploading, setUploading] = useState<{ done: number; total: number } | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -224,7 +247,7 @@ export function DocumentsSection({
     if (kind === 'image') {
       setViewing({ doc, url: null });
       try {
-        const url = await fetchDocumentDownloadUrl(accessToken, guestId, doc.id, 'view');
+        const url = await fetchDocumentDownloadUrl(accessToken, guestId, doc.id, 'view', scope);
         setViewing((current) => (current && current.doc.id === doc.id ? { doc, url } : current));
       } catch (e) {
         setViewing(null);
@@ -239,6 +262,7 @@ export function DocumentsSection({
         guestId,
         doc.id,
         kind === 'pdf' ? 'view' : 'download',
+        scope,
       );
       if (kind === 'pdf' && Platform.OS !== 'web') {
         await WebBrowser.openBrowserAsync(url);
@@ -285,9 +309,11 @@ export function DocumentsSection({
 
   const body = (
     <>
-      <Text variant="caption" tone="muted">
-        {HELPER_COPY}
-      </Text>
+      {canChange ? (
+        <Text variant="caption" tone="muted">
+          {HELPER_COPY}
+        </Text>
+      ) : null}
 
       {uploadError ? (
         <Text variant="bodySmall" tone="danger" style={styles.errorText}>
@@ -298,6 +324,14 @@ export function DocumentsSection({
       {docsQuery.isLoading ? (
         <Text variant="caption" tone="muted">
           Loading files…
+        </Text>
+      ) : notSharedThroughLink ? (
+        <Text variant="bodySmall" tone="muted" style={styles.emptyText}>
+          {`Held by ${ownerVenueName ?? 'the linked venue'} and not shared through this link yet.`}
+        </Text>
+      ) : docsQuery.isError ? (
+        <Text variant="bodySmall" tone="danger" style={styles.emptyText}>
+          Could not load the files. Pull to refresh to try again.
         </Text>
       ) : documents.length === 0 ? (
         <Text variant="bodySmall" tone="muted" style={styles.emptyText}>
@@ -341,16 +375,18 @@ export function DocumentsSection({
                     {meta}
                   </Text>
                 ) : null}
-                <Pressable
-                  onPress={() => setPendingDelete({ id: doc.id, fileName: doc.file_name })}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Remove ${doc.file_name}`}
-                  hitSlop={8}
-                  style={({ pressed }) => [styles.removeAction, pressed && { opacity: 0.6 }]}>
-                  <Text variant="caption" tone="danger">
-                    Remove
-                  </Text>
-                </Pressable>
+                {canChange ? (
+                  <Pressable
+                    onPress={() => setPendingDelete({ id: doc.id, fileName: doc.file_name })}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Remove ${doc.file_name}`}
+                    hitSlop={8}
+                    style={({ pressed }) => [styles.removeAction, pressed && { opacity: 0.6 }]}>
+                    <Text variant="caption" tone="danger">
+                      Remove
+                    </Text>
+                  </Pressable>
+                ) : null}
               </View>
             );
           })}
@@ -362,9 +398,13 @@ export function DocumentsSection({
   const docCount = documents.length;
   const summary = docsQuery.isLoading
     ? 'Documents & photos'
-    : docCount === 0
-      ? 'No files yet'
-      : `${docCount} file${docCount === 1 ? '' : 's'}`;
+    : notSharedThroughLink
+      ? 'Not available'
+      : docsQuery.isError
+        ? 'Could not load'
+        : docCount === 0
+          ? 'No files yet'
+          : `${docCount} file${docCount === 1 ? '' : 's'}`;
 
   return (
     <>
@@ -374,7 +414,7 @@ export function DocumentsSection({
             Documents and photos
           </Text>
           {body}
-          {addButtons}
+          {canChange ? addButtons : null}
         </CollapsibleCard>
       ) : (
         <Card>
@@ -382,7 +422,7 @@ export function DocumentsSection({
             <Text variant="label">Documents and photos</Text>
           </View>
           {body}
-          {addButtons}
+          {canChange ? addButtons : null}
         </Card>
       )}
 

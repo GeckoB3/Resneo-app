@@ -13,7 +13,7 @@ describe('linkedDetailPolicy', () => {
       canEdit: true,
       canCancel: true,
       canRebook: true,
-      ownVenueOnly: true,
+      showContactsLink: true,
       banner: null,
     });
     expect(linkedDetailPolicy(undefined).linked).toBe(false);
@@ -28,7 +28,7 @@ describe('linkedDetailPolicy', () => {
       canEdit: false,
       canCancel: false,
       canRebook: false,
-      ownVenueOnly: false,
+      showContactsLink: false,
     });
     expect(policy.banner).toBe(LINKED_VIEW_ONLY_BANNER);
   });
@@ -42,12 +42,12 @@ describe('linkedDetailPolicy', () => {
       canEdit: true,
       canCancel: false,
       canRebook: false,
-      ownVenueOnly: false,
+      showContactsLink: false,
     });
     expect(policy.banner).toBe(LINKED_LIMITED_EDIT_BANNER);
   });
 
-  it('gives a full grant everything but our own venue-only things, and no banner', () => {
+  it("gives a full grant everything but our own Contacts link, and no banner", () => {
     const policy = linkedDetailPolicy('create_edit_cancel');
     expect(policy).toMatchObject({
       linked: true,
@@ -56,7 +56,7 @@ describe('linkedDetailPolicy', () => {
       canEdit: true,
       canCancel: true,
       canRebook: true,
-      ownVenueOnly: false,
+      showContactsLink: false,
       banner: null,
     });
   });
