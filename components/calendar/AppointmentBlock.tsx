@@ -12,6 +12,7 @@ import {
 import { bookingStatusDisplayLabel } from '@/lib/booking/infer-booking-row-model';
 import { hexToRgba } from '@/lib/color';
 import { fonts, radius } from '@/theme/index';
+import { useTheme } from '@/theme/useTheme';
 
 // ---------------------------------------------------------------------------
 // Layout rules — how the bar arranges its text + quick actions at a given size.
@@ -38,6 +39,16 @@ const NAME_RESERVE_PX = 58;
  * corner tray's per-button budget.
  */
 const ROW_PER_BUTTON_PX = 62;
+/**
+ * The bar's edge chrome on each side, top and bottom: a 1px pale ring in the
+ * grid's surface colour outside a 1px border in the status's deeper hue (the
+ * web's `bookingCalendarBlockCardStyle`). Two bars of one status that touch,
+ * or one drawn inside another's processing gap, share a hue and a border
+ * colour, so their edges melted together; the ring keeps every bar's outline
+ * readable against its neighbours. Not content area: the layout is sized to
+ * what is left.
+ */
+const BAR_EDGE_PX = 2;
 /** Horizontal chrome in a bar the row layout can't use (accent stripe + paddings). */
 const ROW_CHROME_PX = 20;
 /**
@@ -331,6 +342,7 @@ export function AppointmentBlock({
   processingBands,
   contentInset,
 }: AppointmentBlockProps) {
+  const { colors } = useTheme();
   const palette = bookingCalendarBlockPalette({
     status,
     client_arrived_at: clientArrivedAt,
@@ -350,7 +362,8 @@ export function AppointmentBlock({
     : [];
   // A host lays its text and buttons out in the region its nested bars leave
   // (the tray moves up with them; the corner markers follow the region's top).
-  const contentHeight = contentInset ? contentInset.height : height;
+  // Less the edge chrome, which the content cannot use (see `BAR_EDGE_PX`).
+  const contentHeight = (contentInset ? contentInset.height : height) - 2 * BAR_EDGE_PX;
   const layout = pickBlockLayout({
     height: contentHeight,
     laneCount,
@@ -471,6 +484,15 @@ export function AppointmentBlock({
     });
 
   return (
+    // The pale ring: the grid's surface colour drawn as a hairline outside the
+    // bar's own border, so touching bars of one hue stay two bars.
+    <View
+      testID="bar-ring"
+      style={[
+        styles.ring,
+        nested && styles.ringNested,
+        { borderColor: hexToRgba(colors.background, 0.9) },
+      ]}>
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`${timeLabel}, ${guestName}, ${serviceName}, ${statusLabel}${
@@ -487,8 +509,10 @@ export function AppointmentBlock({
           opacity: pressed ? 0.85 : 1,
         },
       ]}>
-      {/* Status accent stripe (web parity: left colour bar). */}
-      <View style={[styles.accentStripe, { backgroundColor: palette.accent }]} />
+      {/* Leading edge (web parity: `CalendarBookingStatusStripe`). The bold
+          fill carries the status, so this is a luminous glass edge that
+          catches the light down the bar, not a second status colour. */}
+      <View style={[styles.accentStripe, { backgroundColor: hexToRgba('#FFFFFF', 0.28) }]} />
 
       {/* Processing gaps (web: the hatched band): the client is under the
           colour and the column is free. Lighter than the bar and under the
@@ -590,20 +614,56 @@ export function AppointmentBlock({
           ) : null}
         </>
       )}
+
+      {/* A glossy top edge and a grounded base edge (the web's inset
+          highlight and shade), which give the lozenge its dimension without
+          a shadow, which Android would turn into elevation. */}
+      <View
+        pointerEvents="none"
+        testID="bar-gloss"
+        style={[styles.glossTop, { backgroundColor: hexToRgba('#FFFFFF', 0.3) }]}
+      />
+      <View
+        pointerEvents="none"
+        style={[styles.glossBase, { backgroundColor: hexToRgba('#000000', 0.12) }]}
+      />
     </Pressable>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  ring: {
+    flex: 1,
+    borderRadius: radius.md + 1,
+    borderWidth: 1,
+  },
+  ringNested: {
+    borderRadius: radius.lg + 1,
+  },
   block: {
     flex: 1,
     borderRadius: radius.md,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1,
     overflow: 'hidden',
     flexDirection: 'row',
   },
   blockNested: {
     borderRadius: radius.lg,
+  },
+  glossTop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 1,
+  },
+  glossBase: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 1,
   },
   processingBand: {
     position: 'absolute',

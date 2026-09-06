@@ -669,6 +669,15 @@ every engine, so `card_hold` in a public payload still implies a positive fee.
    the calendar with the venue under it (`linkedDayHeading`), and a partner sharing several
    calendars keeps the headers, as the own "All" view does.
 
+6. **Adjacent bars melted together (2026-09-06, owner's finding on the device).** Two bars of one
+   status booked back to back share a hue and a hairline border, so on a busy column they read as
+   one tall bar. The web's `bookingCalendarBlockCardStyle` names the same problem and solves it with
+   a pale hairline ring outside a 1px border, a glossy top edge and a shaded base; `AppointmentBlock`
+   now carries that treatment (the ring in the grid's surface colour, so it works in dark mode too;
+   the leading stripe is the web's glass edge rather than a second status colour; the layout is
+   sized to the area inside the chrome). The web's drop shadows are left out: on Android they would
+   become elevation and change the bars' draw order under the drag lift.
+
 7. **One switcher chip per linked calendar (2026-09-06, owner's request on the device).** The
    switcher row had a chip per own calendar but one chip per linked venue, which opened every
    shared calendar at once. Now `linkedSwitcherEntries` lists one chip per calendar a partner
