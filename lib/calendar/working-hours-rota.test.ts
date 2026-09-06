@@ -7,12 +7,20 @@ import {
   addDaysYmd,
   describePeriod,
   describeScheduleSource,
+  describeScheduleTrim,
+  describeYmdLong,
   effectiveWorkingHoursForDate,
+  insertSchedulePeriod,
   isMondayYmd,
   legacyRotaToSchedule,
   mondayOnOrBefore,
+  newSchedulePeriodId,
   parseCalendarSchedule,
   parseWorkingHoursRota,
+  periodCyclesForEnd,
+  periodEndForCycles,
+  pruneEndedSchedulePeriods,
+  removeSchedulePeriod,
   resolveScheduleForDate,
   scheduleForRow,
   sundayOnOrAfter,
@@ -196,5 +204,157 @@ describe('schedulePeriodHasEnded', () => {
     expect(schedulePeriodHasEnded(period, '2026-09-06')).toBe(false);
     expect(schedulePeriodHasEnded(period, '2026-09-07')).toBe(true);
     expect(schedulePeriodHasEnded({ until: null }, '2030-01-01')).toBe(false);
+  });
+});
+
+// ── Editing (web's own cases, so the app plans the same timeline the server keeps) ──
+
+let counter = 0;
+const newId = () => `new-${++counter}`;
+
+describe('insertSchedulePeriod', () => {
+  it('removes a period the new one swallows, and keeps the rest', () => {
+    const existing = schedule(
+      period({ id: 'inner', from: '2026-09-14', until: '2026-09-27', weeks: [WEEK_C] }),
+      period({ id: 'far', from: '2027-01-04', until: null, weeks: [WEEK_C] }),
+    );
+    const { schedule: out, trims } = insertSchedulePeriod(
+      existing,
+      period({ id: 'new', until: '2026-10-04' }),
+      newId,
+    );
+    expect(trims).toEqual([{ id: 'inner', kind: 'removed' }]);
+    expect(out.periods.map((p) => p.id)).toEqual(['new', 'far']);
+  });
+
+  it('shortens a period that starts before, and starts later a period that ends after', () => {
+    const existing = schedule(
+      period({ id: 'before', from: '2026-08-31', cycle_start: '2026-08-31', until: '2026-09-20', weeks: [WEEK_C] }),
+      period({ id: 'after', from: '2026-09-28', cycle_start: '2026-09-28', until: null, weeks: [WEEK_C] }),
+    );
+    const { schedule: out, trims } = insertSchedulePeriod(
+      existing,
+      period({ id: 'new', from: '2026-09-14', until: '2026-10-04', cycle_start: '2026-09-14' }),
+      newId,
+    );
+    expect(trims).toEqual([
+      { id: 'before', kind: 'shortened', until: '2026-09-13' },
+      { id: 'after', kind: 'starts_later', from: '2026-10-05' },
+    ]);
+    expect(out.periods.map((p) => [p.id, p.from, p.until])).toEqual([
+      ['before', '2026-08-31', '2026-09-13'],
+      ['new', '2026-09-14', '2026-10-04'],
+      ['after', '2026-10-05', null],
+    ]);
+    expect(validateCalendarSchedule(out).ok).toBe(true);
+  });
+
+  it('splits an open-ended rota around the new period without changing its rhythm', () => {
+    const existing = schedule(period({ id: 'rota' }));
+    const { schedule: out, trims } = insertSchedulePeriod(
+      existing,
+      period({ id: 'new', from: '2026-09-21', until: '2026-10-04', cycle_start: '2026-09-21', weeks: [WEEK_C] }),
+      newId,
+    );
+    expect(trims).toHaveLength(1);
+    expect(trims[0]).toMatchObject({ id: 'rota', kind: 'split', until: '2026-09-20', resumesFrom: '2026-10-05' });
+    const right = out.periods[2]!;
+    expect(right.cycle_start).toBe(START);
+    expect(right.from).toBe('2026-10-05');
+    // 2026-10-05 is four weeks after the cycle start: week index 0, exactly as before the split.
+    expect(weekIndexInPeriod(right, '2026-10-05')).toBe(0);
+    expect(validateCalendarSchedule(out).ok).toBe(true);
+  });
+
+  it('replaces a period being edited rather than overlapping itself', () => {
+    const existing = schedule(period({ id: 'p1', until: '2026-10-04' }));
+    const { schedule: out, trims } = insertSchedulePeriod(
+      existing,
+      period({ id: 'p1', until: '2026-10-18' }),
+      newId,
+    );
+    expect(trims).toEqual([]);
+    expect(out.periods).toHaveLength(1);
+    expect(out.periods[0]!.until).toBe('2026-10-18');
+  });
+
+  it('removes a period and returns null when none remain', () => {
+    expect(removeSchedulePeriod(schedule(period()), 'p1')).toBeNull();
+    expect(
+      removeSchedulePeriod(
+        schedule(period(), period({ id: 'p2', from: '2027-01-04', cycle_start: '2027-01-04' })),
+        'p1',
+      )?.periods.map((p) => p.id),
+    ).toEqual(['p2']);
+  });
+
+  it('words each trim as the web form previews it', () => {
+    const byId = new Map([['before', period({ id: 'before', from: '2026-08-31' })]]);
+    expect(describeScheduleTrim({ id: 'before', kind: 'removed' }, byId)).toBe(
+      'Replaces the change from 31 Aug 2026 entirely.',
+    );
+    expect(describeScheduleTrim({ id: 'before', kind: 'shortened', until: '2026-09-13' }, byId)).toBe(
+      'Shortens the change from 31 Aug 2026 to end on 13 Sep 2026.',
+    );
+    expect(describeScheduleTrim({ id: 'gone', kind: 'starts_later', from: '2026-10-05' }, byId)).toBe(
+      'Moves the start of an existing change to 5 Oct 2026.',
+    );
+    expect(
+      describeScheduleTrim(
+        { id: 'before', kind: 'split', until: '2026-09-20', resumesFrom: '2026-10-05', newId: 'x' },
+        byId,
+      ),
+    ).toBe(
+      'Splits the change from 31 Aug 2026: it pauses on 20 Sep 2026 and resumes on 5 Oct 2026, keeping its rhythm.',
+    );
+  });
+});
+
+describe('cycle arithmetic', () => {
+  it('turns "for N cycles" into an inclusive Sunday and back', () => {
+    expect(periodEndForCycles(START, 2, 1)).toBe('2026-09-20');
+    expect(periodEndForCycles(START, 2, 6)).toBe('2026-11-29');
+    expect(periodEndForCycles(START, 1, 3)).toBe('2026-09-27');
+    expect(periodCyclesForEnd({ from: START, until: '2026-11-29', weeks: [WEEK_A, WEEK_B] })).toBe(6);
+    expect(periodCyclesForEnd({ from: START, until: '2026-12-06', weeks: [WEEK_A, WEEK_B] })).toBeNull();
+    expect(periodCyclesForEnd({ from: START, until: null, weeks: [WEEK_A] })).toBeNull();
+    expect(periodEndForCycles(START, 2, 10_000)).toBe(periodEndForCycles(START, 2, 52));
+  });
+});
+
+describe('pruneEndedSchedulePeriods', () => {
+  const week = (from: string, id: string): SchedulePeriod => ({
+    id,
+    from,
+    until: addDaysYmd(from, 6),
+    cycle_start: from,
+    weeks: [{}],
+  });
+  const today = '2026-09-04';
+
+  it('leaves a timeline within the cap alone', () => {
+    const timeline: CalendarSchedule = { version: 1, periods: [week('2026-08-03', 'a'), week('2026-09-07', 'b')] };
+    expect(pruneEndedSchedulePeriods(timeline, today, 2)).toEqual({ schedule: timeline, removed: [] });
+  });
+
+  it('drops the changes that ended longest ago first, and never a current or upcoming one', () => {
+    const timeline: CalendarSchedule = {
+      version: 1,
+      periods: [week('2026-08-03', 'oldest'), week('2026-08-17', 'older'), week('2026-08-31', 'current'), week('2026-09-14', 'next')],
+    };
+    const out = pruneEndedSchedulePeriods(timeline, today, 3);
+    expect(out.removed.map((p) => p.id)).toEqual(['oldest']);
+    expect(out.schedule.periods.map((p) => p.id)).toEqual(['older', 'current', 'next']);
+    // Only ended changes can go: a cap below the number of live ones is left for the validator.
+    const tight = pruneEndedSchedulePeriods(timeline, today, 1);
+    expect(tight.schedule.periods.map((p) => p.id)).toEqual(['current', 'next']);
+  });
+});
+
+describe('ids and long dates', () => {
+  it('mints distinct sp- ids and words a date in full without a locale', () => {
+    expect(newSchedulePeriodId()).toMatch(/^sp-/);
+    expect(newSchedulePeriodId()).not.toBe(newSchedulePeriodId());
+    expect(describeYmdLong('2026-09-07')).toBe('Monday 7 September 2026');
   });
 });

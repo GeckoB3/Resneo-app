@@ -17,6 +17,7 @@
  * fill Sheet) and as the dedicated `availability/calendars` Stack route.
  */
 import * as Clipboard from 'expo-clipboard';
+import * as WebBrowser from 'expo-web-browser';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   RefreshControl,
@@ -26,6 +27,7 @@ import {
   View,
 } from 'react-native';
 
+import { CalendarAssignmentsSheet } from '@/components/availability/CalendarAssignmentsSheet';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { ConfirmSheet } from '@/components/ui/ConfirmSheet';
@@ -33,6 +35,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { IconButton } from '@/components/ui/IconButton';
 import { Input } from '@/components/ui/Input';
+import { Sheet } from '@/components/ui/Sheet';
 import { ListSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
@@ -47,6 +50,15 @@ import { useManagedEvents } from '@/lib/queries/useEventsManage';
 import { useCreateHostCalendar, usePractitioners } from '@/lib/queries/usePractitioners';
 import { useResourcesManageList } from '@/lib/queries/useResourcesManage';
 import { useManagedServices } from '@/lib/queries/useServicesManage';
+import {
+  useCalendarColumnConflicts,
+  useCalendarEntitlement,
+} from '@/lib/queries/useCalendarEntitlement';
+import {
+  calendarEntitlementPill,
+  calendarLimitMessage,
+  calendarLimitReached,
+} from '@/lib/venue/calendar-entitlement';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { radius, spacing } from '@/theme/index';
@@ -104,6 +116,8 @@ function CalendarCard({
   onToggleActive,
   onSaveSlug,
   onDelete,
+  conflicts,
+  onEditAssignments,
 }: {
   calendar: Practitioner;
   index: number;
@@ -116,6 +130,9 @@ function CalendarCard({
   onToggleActive: (active: boolean) => void;
   onSaveSlug: (slug: string | null) => Promise<void>;
   onDelete: () => void;
+  /** Resource-overlap messages for this column from `/api/venue/calendar-column-conflicts`. */
+  conflicts: string[];
+  onEditAssignments: () => void;
 }) {
   const { colors } = useTheme();
   const toast = useToast();
@@ -182,17 +199,31 @@ function CalendarCard({
     }
   }
 
+  const bookingUrl =
+    venueSlug && savedSlug
+      ? `${getWebUrl() || 'https://app.resneo.com'}/book/${encodeURIComponent(venueSlug)}/${encodeURIComponent(savedSlug)}`
+      : null;
+
   async function handleCopy() {
-    if (!canCopy || !venueSlug) return;
-    const url = `${getWebUrl() || 'https://app.resneo.com'}/book/${encodeURIComponent(venueSlug)}/${encodeURIComponent(savedSlug)}`;
+    if (!canCopy || !bookingUrl) return;
     try {
-      await Clipboard.setStringAsync(url);
+      await Clipboard.setStringAsync(bookingUrl);
       hapticSuccess();
       setCopied(true);
       if (copyTimer.current) clearTimeout(copyTimer.current);
       copyTimer.current = setTimeout(() => setCopied(false), 2500);
     } catch {
       toast.error('Could not copy to clipboard.');
+    }
+  }
+
+  /** The public booking page for this calendar, in the in-app browser (web "Open page"). */
+  async function handleOpenPage() {
+    if (!canCopy || !bookingUrl) return;
+    try {
+      await WebBrowser.openBrowserAsync(bookingUrl);
+    } catch {
+      toast.error('Could not open the booking page.');
     }
   }
 
@@ -217,6 +248,17 @@ function CalendarCard({
                 {calendar.is_active ? 'Active' : 'Inactive'}
               </Text>
             </View>
+            {conflicts.length > 0 ? (
+              <View
+                style={[
+                  styles.statusPill,
+                  { backgroundColor: colors.warningSurface, borderColor: colors.warning },
+                ]}>
+                <Text variant="overline" color={colors.warning}>
+                  Conflict
+                </Text>
+              </View>
+            ) : null}
           </View>
         </View>
         <View style={styles.headerActions}>
@@ -248,6 +290,29 @@ function CalendarCard({
           ) : null}
         </View>
       </View>
+
+      {/* Two resources on this column offer overlapping slots (web parity). */}
+      {conflicts.length > 0 ? (
+        <View
+          style={[
+            styles.noticeBanner,
+            { backgroundColor: colors.warningSurface, borderColor: colors.warning },
+          ]}>
+          <Text variant="label" color={colors.warning}>
+            Resource availability overlap
+          </Text>
+          {conflicts.map((message, i) => (
+            <Text key={i} variant="caption" color={colors.warning}>
+              • {message}
+            </Text>
+          ))}
+          <Text variant="caption" tone="muted">
+            Classes, appointments, events, and resources can share a column; adjust weekly hours
+            or move a resource if two resources offer overlapping slots here. Specific times are
+            checked when you book or schedule.
+          </Text>
+        </View>
+      ) : null}
 
       {/* Active toggle */}
       <View style={styles.switchRow}>
@@ -321,6 +386,14 @@ function CalendarCard({
                 onPress={() => void handleCopy()}
               />
             </View>
+            {canCopy ? (
+              <Button
+                label="Open page"
+                variant="ghost"
+                size="sm"
+                onPress={() => void handleOpenPage()}
+              />
+            ) : null}
           </>
         ) : (
           <Text variant="caption" tone="muted">
@@ -330,7 +403,20 @@ function CalendarCard({
         )}
       </View>
 
-      {/* Assignments — read-only summary (assignment editing lives in each editor) */}
+      {/* Assignments: what sits on this column, edited from the column (web
+          "Edit calendar") or from each offering's own editor. */}
+      <View style={styles.assignHeader}>
+        <Text variant="overline" tone="muted">
+          On this calendar
+        </Text>
+        <Button
+          label="Edit assignments"
+          variant="ghost"
+          size="sm"
+          disabled={busy}
+          onPress={onEditAssignments}
+        />
+      </View>
       <View style={styles.assignBlock}>
         <AssignmentLine label="Services" names={svc} />
         <AssignmentLine label="Classes" names={cls} />
@@ -370,6 +456,16 @@ export function BookableCalendarsManager() {
   const classesQuery = useManagedClasses();
   const resourcesQuery = useResourcesManageList();
   const eventsQuery = useManagedEvents();
+  // The plan's allowance and the column conflicts (both unknown, and silent,
+  // until the web accepts the app's Bearer on those routes).
+  const entitlementQuery = useCalendarEntitlement(isAdmin);
+  const conflictsQuery = useCalendarColumnConflicts(isAdmin);
+  const entitlement = entitlementQuery.data ?? null;
+  const conflictsById = useMemo(
+    () => new Map((conflictsQuery.data ?? []).map((c) => [c.calendar_id, c.messages] as const)),
+    [conflictsQuery.data],
+  );
+  const canAddCalendar = !calendarLimitReached(entitlement);
 
   const patch = usePatchPractitioner();
   const create = useCreateHostCalendar();
@@ -426,6 +522,8 @@ export function BookableCalendarsManager() {
 
   // Delete confirm
   const [deleteTarget, setDeleteTarget] = useState<Practitioner | null>(null);
+  // The assignments sheet (services, classes, resources, events on one column).
+  const [assignTarget, setAssignTarget] = useState<Practitioner | null>(null);
 
   // Track which calendar has an in-flight mutation (so we can disable its row).
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -610,9 +708,43 @@ export function BookableCalendarsManager() {
         />
       }>
       <Text variant="caption" tone="muted">
-        Each calendar is a bookable column on your public page and the staff calendar. Reorder to set
-        the column order. Assign services, classes, resources and events from their own editors.
+        Each column is a bookable schedule on your public page and in the app. Edit a calendar to
+        set its name, services, classes, resources and events; set its weekly hours under
+        Availability. Reorder to set the column order on the calendar.
       </Text>
+
+      {entitlement ? (
+        <View style={styles.planRow}>
+          <View
+            style={[
+              styles.statusPill,
+              {
+                backgroundColor: entitlement.at_calendar_limit
+                  ? colors.warningSurface
+                  : colors.surface,
+                borderColor: entitlement.at_calendar_limit ? colors.warning : colors.border,
+              },
+            ]}>
+            <Text
+              variant="overline"
+              color={entitlement.at_calendar_limit ? colors.warning : colors.textMuted}>
+              {calendarEntitlementPill(entitlement)}
+            </Text>
+          </View>
+        </View>
+      ) : null}
+
+      {calendarLimitReached(entitlement) ? (
+        <View
+          style={[
+            styles.noticeBanner,
+            { backgroundColor: colors.warningSurface, borderColor: colors.warning },
+          ]}>
+          <Text variant="caption" color={colors.warning}>
+            {calendarLimitMessage(entitlement)}
+          </Text>
+        </View>
+      ) : null}
 
       {calendars.length === 0 ? (
         <EmptyState
@@ -634,6 +766,8 @@ export function BookableCalendarsManager() {
             onToggleActive={(active) => void toggleActive(c.id, active)}
             onSaveSlug={(slug) => saveSlug(c.id, slug)}
             onDelete={() => setDeleteTarget(c)}
+            conflicts={conflictsById.get(c.id) ?? []}
+            onEditAssignments={() => setAssignTarget(c)}
           />
         ))
       )}
@@ -689,7 +823,7 @@ export function BookableCalendarsManager() {
             />
           </View>
         </Card>
-      ) : (
+      ) : canAddCalendar ? (
         <Button
           label="Add calendar"
           variant="secondary"
@@ -700,9 +834,38 @@ export function BookableCalendarsManager() {
             setShowCreate(true);
           }}
         />
-      )}
+      ) : null}
 
       <View style={styles.spacer} />
+
+      <Sheet
+        visible={assignTarget != null}
+        onClose={() => setAssignTarget(null)}
+        fill
+        maxHeight="92%">
+        {assignTarget ? (
+          <CalendarAssignmentsSheet
+            calendar={assignTarget}
+            calendars={calendars}
+            services={(servicesQuery.data?.services ?? []).map((s) => ({ id: s.id, name: s.name }))}
+            practitionerServices={servicesQuery.data?.practitioner_services ?? []}
+            classes={(classesQuery.data?.class_types ?? []).map((ct) => ({
+              id: ct.id,
+              name: ct.name,
+              calendarId: ct.instructor_calendar_id ?? ct.instructor_id ?? null,
+            }))}
+            resources={(resourcesQuery.data ?? []).map((r) => ({
+              id: r.id,
+              name: r.name,
+              calendarId: r.display_on_calendar_id,
+            }))}
+            events={(eventsQuery.data ?? [])
+              .filter((e) => e.is_active !== false)
+              .map((e) => ({ id: e.id, name: e.name, calendarId: e.calendar_id }))}
+            onClose={() => setAssignTarget(null)}
+          />
+        ) : null}
+      </Sheet>
 
       <ConfirmSheet
         visible={deleteTarget != null}
@@ -774,6 +937,15 @@ const styles = StyleSheet.create({
   },
   slugActions: {
     flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  planRow: {
+    flexDirection: 'row',
+  },
+  assignHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     gap: spacing.sm,
   },
   assignBlock: {

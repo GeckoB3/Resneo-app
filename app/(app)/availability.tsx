@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 
 import { BreaksEditor } from '@/components/availability/BreaksEditor';
+import { ScheduleTimelineSheet } from '@/components/availability/ScheduleTimelineSheet';
 import { TeamLeaveCalendar } from '@/components/availability/TeamLeaveCalendar';
 import { WorkingHoursEditor } from '@/components/availability/WorkingHoursEditor';
 import { minutesToTime } from '@/components/calendar/grid-layout';
@@ -200,7 +201,7 @@ function SectionHeader({ title, caption }: { title: string; caption?: string }) 
 }
 
 // ---- Sheet mode types -------------------------------------------------------
-type SheetKind = 'block' | 'leave' | 'hours' | 'breaks' | null;
+type SheetKind = 'block' | 'leave' | 'hours' | 'breaks' | 'schedule' | null;
 type BlockType = 'allday' | 'window';
 
 export default function AvailabilityScreen() {
@@ -463,6 +464,12 @@ export default function AvailabilityScreen() {
     setSheet('hours');
   }
 
+  /** Plan hours ahead (schedule changes, rotas, the planning calendar). */
+  function openScheduleSheet(practId: string) {
+    setHoursTargetId(practId);
+    setSheet('schedule');
+  }
+
   function openBreaksSheet(practId: string) {
     // Belt and braces: the row hides the button for a resource, but a break
     // written against one would save and do nothing, so never open the editor.
@@ -676,6 +683,9 @@ export default function AvailabilityScreen() {
     // that set it; the standard weekly hours are what "Edit hours" changes.
     const schedule = scheduleForRow(p);
     const thisWeek = resolveScheduleForDate(p, today);
+    // An admin may change every calendar; a staff member only those linked to
+    // their account (web `canEditWorkingHoursFor`).
+    const canEdit = ownsCalendar(p.id);
     const endedPeriods = schedule
       ? schedule.periods.filter((period) => schedulePeriodHasEnded(period, today))
       : [];
@@ -735,13 +745,6 @@ export default function AvailabilityScreen() {
                 </Text>
               </Pressable>
             ) : null}
-            {/* The timeline editor (periods, rotas, the planning calendar) lives on
-                the web dashboard for now; "Edit hours" here changes the standard
-                weekly hours that apply outside every period. */}
-            <Text variant="caption" tone="muted">
-              Planned changes and rotas are edited on the web dashboard. Edit hours changes the
-              standard weekly hours that apply outside them.
-            </Text>
           </View>
         ) : null}
         {!isResource && breaks ? (
@@ -759,14 +762,19 @@ export default function AvailabilityScreen() {
             each day, add a break on the staff calendar it appears on.
           </Text>
         ) : null}
+        {/* Only a calendar the viewer may change gets its editors (web parity:
+            `canEditWorkingHoursFor`); a colleague's reads as view only, and its
+            planned hours can still be looked at. */}
         <View style={styles.hoursActions}>
-          <Button
-            label="Edit hours"
-            variant="secondary"
-            size="sm"
-            onPress={() => openHoursSheet(p.id)}
-          />
-          {!isResource ? (
+          {canEdit ? (
+            <Button
+              label="Edit hours"
+              variant="secondary"
+              size="sm"
+              onPress={() => openHoursSheet(p.id)}
+            />
+          ) : null}
+          {canEdit && !isResource ? (
             <Button
               label="Edit breaks"
               variant="ghost"
@@ -774,7 +782,21 @@ export default function AvailabilityScreen() {
               onPress={() => openBreaksSheet(p.id)}
             />
           ) : null}
+          {!isResource && (canEdit || schedule) ? (
+            <Button
+              label={canEdit ? 'Plan hours ahead' : 'View planned hours'}
+              variant="ghost"
+              size="sm"
+              onPress={() => openScheduleSheet(p.id)}
+            />
+          ) : null}
         </View>
+        {!canEdit ? (
+          <Text variant="caption" tone="muted">
+            View only — you can change hours and breaks for calendars linked to your account. Ask
+            an admin to edit other calendars.
+          </Text>
+        ) : null}
       </View>
     );
   }
@@ -1182,7 +1204,8 @@ export default function AvailabilityScreen() {
             label={sheet === 'block' ? 'Reason (optional)' : 'Notes (optional)'}
             value={reason}
             onChangeText={setReason}
-            maxLength={200}
+            // The server caps leave notes at 500 characters and a block's reason at 200.
+            maxLength={sheet === 'leave' ? 500 : 200}
           />
 
           {sheetError ? (
@@ -1246,6 +1269,30 @@ export default function AvailabilityScreen() {
               (hoursTarget as unknown as { break_times?: TimeRange[] | null }).break_times
             }
             applyToAllCalendars={breakTargets}
+            onClose={() => setSheet(null)}
+          />
+        ) : null}
+      </Sheet>
+
+      {/* Plan hours ahead: the schedule timeline, its form and planning calendar. */}
+      <Sheet
+        visible={sheet === 'schedule'}
+        onClose={() => setSheet(null)}
+        fill
+        maxHeight="92%">
+        {hoursTarget ? (
+          <ScheduleTimelineSheet
+            calendar={hoursTarget}
+            venueOpeningHours={venue?.opening_hours}
+            readOnly={!ownsCalendar(hoursTarget.id)}
+            copyTargets={
+              isAdmin
+                ? appointmentCalendars
+                    .filter((c) => c.id !== hoursTarget.id)
+                    .map((c) => ({ id: c.id, name: c.name }))
+                : []
+            }
+            todayYmd={today}
             onClose={() => setSheet(null)}
           />
         ) : null}

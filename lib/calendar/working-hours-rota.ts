@@ -12,11 +12,12 @@
  * fallback only while `schedule_periods` is null (the server nulls it whenever
  * it writes the timeline).
  *
- * The app needs this for one reason: the diary draws a calendar's non-working
- * time itself (`schedule-closures`), and it must agree with the server about
- * which week's hours apply. Editing stays on the web — this module carries no
- * insert/trim arithmetic. Everything here is pure, timezone-free and tolerant
- * of stored garbage (malformed → "no periods", never a throw).
+ * The diary draws a calendar's non-working time itself (`schedule-closures`),
+ * and it must agree with the server about which week's hours apply; the
+ * availability screen plans hours ahead with the same module (the insert,
+ * trim, cycle and prune arithmetic under "Editing", ported 2026-09-06 with the
+ * web's tests). Everything here is pure, timezone-free and tolerant of stored
+ * garbage (malformed → "no periods", never a throw).
  */
 
 export interface RotaTimeRange {
@@ -29,6 +30,8 @@ export type RotaWeeklyHours = Record<string, RotaTimeRange[]>;
 
 export const ROTA_MIN_WEEKS = 1;
 export const ROTA_MAX_WEEKS = 6;
+/** The most cycles "For N cycles" runs a change for (a year of weekly changes). */
+export const ROTA_MAX_CYCLES = 52;
 export const SCHEDULE_MAX_PERIODS = 50;
 
 export interface SchedulePeriod {
@@ -356,4 +359,171 @@ export function schedulePeriodHasEnded(
   todayYmd: string,
 ): boolean {
   return period.until != null && ymdToDayNumber(period.until) < ymdToDayNumber(todayYmd);
+}
+
+const WEEKDAYS_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const MONTHS_LONG = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+/** "Monday 7 September 2026", from the date alone (web `describeYmd`; no locale, same on every device). */
+export function describeYmdLong(ymd: string): string {
+  const [y, m, d] = ymd.split('-').map(Number);
+  return `${WEEKDAYS_LONG[dayOfWeekYmd(ymd)]} ${d} ${MONTHS_LONG[(m ?? 1) - 1]} ${y}`;
+}
+
+// ── Editing (web `insertSchedulePeriod` and friends, ported with its tests) ──
+
+/** A fresh period id (`sp-…`), as the web mints them. */
+export function newSchedulePeriodId(): string {
+  const random =
+    typeof globalThis.crypto !== 'undefined' && 'randomUUID' in globalThis.crypto
+      ? globalThis.crypto.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  return `sp-${random}`;
+}
+
+/** The inclusive Sunday a period ends on when it runs for `cycles` full cycles from `from`. */
+export function periodEndForCycles(from: string, weekCount: number, cycles: number): string {
+  const safeCycles = Math.max(1, Math.min(ROTA_MAX_CYCLES, Math.floor(cycles)));
+  return addDaysYmd(from, weekCount * safeCycles * 7 - 1);
+}
+
+/** Full cycles a period runs for when its end lands on a cycle boundary; null otherwise or when open-ended. */
+export function periodCyclesForEnd(
+  period: Pick<SchedulePeriod, 'from' | 'until' | 'weeks'>,
+): number | null {
+  if (!period.until) return null;
+  const days = ymdToDayNumber(period.until) - ymdToDayNumber(period.from) + 1;
+  const cycleDays = period.weeks.length * 7;
+  if (days <= 0 || days % cycleDays !== 0) return null;
+  return days / cycleDays;
+}
+
+export type ScheduleTrim =
+  | { id: string; kind: 'removed' }
+  | { id: string; kind: 'shortened'; until: string }
+  | { id: string; kind: 'starts_later'; from: string }
+  | { id: string; kind: 'split'; until: string; resumesFrom: string; newId: string };
+
+/**
+ * Add a period, trimming or splitting whatever it overlaps so no two periods
+ * cover the same date. The new period wins in full. Boundaries stay aligned
+ * because a period starts on a Monday and ends on a Sunday; a split keeps the
+ * right-hand part's `cycle_start`, so a rota keeps its rhythm across the gap.
+ * `newId` mints ids for split-off parts.
+ */
+export function insertSchedulePeriod(
+  schedule: CalendarSchedule | null,
+  incoming: SchedulePeriod,
+  newId: () => string,
+): { schedule: CalendarSchedule; trims: ScheduleTrim[] } {
+  const start = ymdToDayNumber(incoming.from);
+  const end = incoming.until == null ? Number.POSITIVE_INFINITY : ymdToDayNumber(incoming.until);
+  const trims: ScheduleTrim[] = [];
+  const kept: SchedulePeriod[] = [];
+  for (const p of (schedule?.periods ?? []).filter((x) => x.id !== incoming.id)) {
+    const pStart = ymdToDayNumber(p.from);
+    const pEnd = p.until == null ? Number.POSITIVE_INFINITY : ymdToDayNumber(p.until);
+    const overlaps = pStart <= end && pEnd >= start;
+    if (!overlaps) {
+      kept.push(p);
+      continue;
+    }
+    const startsBefore = pStart < start;
+    const endsAfter = pEnd > end;
+    if (!startsBefore && !endsAfter) {
+      trims.push({ id: p.id, kind: 'removed' });
+      continue;
+    }
+    if (startsBefore && endsAfter) {
+      const until = addDaysYmd(incoming.from, -1);
+      const resumesFrom = addDaysYmd(incoming.until as string, 1);
+      const rightId = newId();
+      kept.push({ ...p, until });
+      kept.push({ ...p, id: rightId, from: resumesFrom });
+      trims.push({ id: p.id, kind: 'split', until, resumesFrom, newId: rightId });
+      continue;
+    }
+    if (startsBefore) {
+      const until = addDaysYmd(incoming.from, -1);
+      kept.push({ ...p, until });
+      trims.push({ id: p.id, kind: 'shortened', until });
+      continue;
+    }
+    const from = addDaysYmd(incoming.until as string, 1);
+    kept.push({ ...p, from });
+    trims.push({ id: p.id, kind: 'starts_later', from });
+  }
+  kept.push(incoming);
+  kept.sort((a, b) => ymdToDayNumber(a.from) - ymdToDayNumber(b.from));
+  return { schedule: { version: 1, periods: kept }, trims };
+}
+
+/** The timeline without a period; null once none remain (the server stores null, not an empty list). */
+export function removeSchedulePeriod(
+  schedule: CalendarSchedule | null,
+  id: string,
+): CalendarSchedule | null {
+  const periods = (schedule?.periods ?? []).filter((p) => p.id !== id);
+  return periods.length === 0 ? null : { version: 1, periods };
+}
+
+/**
+ * Drop the oldest ended periods until the timeline is within `max`.
+ *
+ * Ended periods are kept on purpose: the planning calendar pages back through
+ * them, so a venue can see what its hours were. They only cost anything once
+ * the timeline is full, which a calendar that changes its hours every few
+ * weeks reaches within a couple of years. Rather than refuse the new change,
+ * the change that finished longest ago makes room; nothing current or
+ * upcoming is ever dropped, so if the timeline is full of those the caller
+ * still gets the validator's error.
+ */
+export function pruneEndedSchedulePeriods(
+  schedule: CalendarSchedule,
+  todayYmd: string,
+  max: number = SCHEDULE_MAX_PERIODS,
+): { schedule: CalendarSchedule; removed: SchedulePeriod[] } {
+  if (schedule.periods.length <= max) return { schedule, removed: [] };
+  const ended = schedule.periods
+    .filter((p) => schedulePeriodHasEnded(p, todayYmd))
+    .sort((a, b) => ymdToDayNumber(a.until as string) - ymdToDayNumber(b.until as string));
+  const dropped = new Set<string>();
+  for (const p of ended) {
+    if (schedule.periods.length - dropped.size <= max) break;
+    dropped.add(p.id);
+  }
+  if (dropped.size === 0) return { schedule, removed: [] };
+  return {
+    schedule: { version: 1, periods: schedule.periods.filter((p) => !dropped.has(p.id)) },
+    removed: schedule.periods.filter((p) => dropped.has(p.id)),
+  };
+}
+
+/** What saving a change does to the changes it overlaps, worded as the web's form previews it. */
+export function describeScheduleTrim(trim: ScheduleTrim, byId: Map<string, SchedulePeriod>): string {
+  const existing = byId.get(trim.id);
+  const label = existing ? `the change from ${describeYmdShort(existing.from)}` : 'an existing change';
+  switch (trim.kind) {
+    case 'removed':
+      return `Replaces ${label} entirely.`;
+    case 'shortened':
+      return `Shortens ${label} to end on ${describeYmdShort(trim.until)}.`;
+    case 'starts_later':
+      return `Moves the start of ${label} to ${describeYmdShort(trim.from)}.`;
+    case 'split':
+      return `Splits ${label}: it pauses on ${describeYmdShort(trim.until)} and resumes on ${describeYmdShort(trim.resumesFrom)}, keeping its rhythm.`;
+  }
 }

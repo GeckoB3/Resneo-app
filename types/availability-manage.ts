@@ -85,4 +85,11 @@ export interface PatchPractitionerInput {
   sort_order?: number;
   /** Per-calendar booking-link slug. */
   slug?: string | null;
+  /**
+   * Hours planned ahead (`unified_calendars.schedule_periods`, the timeline
+   * `lib/calendar/working-hours-rota` validates); null clears every change.
+   * Like `working_hours`, narrowing what upcoming bookings sit inside answers
+   * 409 `requires_confirmation` until re-sent with `acknowledge`.
+   */
+  schedule_periods?: unknown;
 }

@@ -78,12 +78,31 @@ jest.mock('@/lib/queries/useServicesManage', () => ({
 }));
 jest.mock('@/lib/queries/useClassesManage', () => ({
   useManagedClasses: () => ({ data: { class_types: [] } }),
+  useUpdateClassType: () => ({ mutateAsync: mockUpdateClassType }),
 }));
 jest.mock('@/lib/queries/useResourcesManage', () => ({
   useResourcesManageList: () => ({ data: [] }),
+  useUpdateResource: () => ({ mutateAsync: mockUpdateResource }),
 }));
 jest.mock('@/lib/queries/useEventsManage', () => ({
   useManagedEvents: () => ({ data: [] }),
+  useUpdateEvent: () => ({ mutateAsync: mockUpdateEvent }),
+}));
+const mockUpdateClassType = jest.fn((_input?: unknown) => Promise.resolve({}));
+const mockUpdateResource = jest.fn((_input?: unknown) => Promise.resolve({}));
+const mockUpdateEvent = jest.fn((_input?: unknown) => Promise.resolve({}));
+const mockSetServices = jest.fn((_input?: unknown) => Promise.resolve({}));
+jest.mock('@/lib/queries/useToggleCalendarService', () => ({
+  useToggleCalendarService: () => ({ mutateAsync: mockSetServices }),
+}));
+
+// The plan allowance and the column conflicts: unknown (null / none) unless a
+// test sets them, which is also what the app gets while the routes are cookie-only.
+let mockEntitlement: unknown = null;
+let mockConflicts: unknown[] = [];
+jest.mock('@/lib/queries/useCalendarEntitlement', () => ({
+  useCalendarEntitlement: () => ({ data: mockEntitlement }),
+  useCalendarColumnConflicts: () => ({ data: mockConflicts }),
 }));
 
 import { BookableCalendarsManager } from '@/components/availability/BookableCalendarsManager';
@@ -102,6 +121,12 @@ beforeEach(() => {
   mockToast.success.mockClear();
   mockToast.error.mockClear();
   mockRefetch.mockClear();
+  mockUpdateClassType.mockClear();
+  mockUpdateResource.mockClear();
+  mockUpdateEvent.mockClear();
+  mockSetServices.mockClear();
+  mockEntitlement = null;
+  mockConflicts = [];
 });
 
 describe('BookableCalendarsManager', () => {
@@ -174,5 +199,51 @@ describe('BookableCalendarsManager', () => {
     // The plan-limit message surfaces inline (not as a raw error toast).
     await waitFor(() => expect(screen.getByText(/Upgrade your plan/)).toBeTruthy());
     expect(mockToast.error).not.toHaveBeenCalled();
+  });
+
+  it('shows the plan pill and, at the limit, withholds Add calendar and says why', async () => {
+    mockEntitlement = {
+      pricing_tier: 'plus',
+      calendar_count: null,
+      active_practitioners: 5,
+      calendar_limit: 5,
+      unlimited: false,
+      at_calendar_limit: true,
+      can_add_practitioner: false,
+      unified_calendar_count: 5,
+    };
+    await render(<BookableCalendarsManager />);
+    expect(screen.getByText('5 / 5 on plan')).toBeTruthy();
+    expect(screen.queryByText('Add calendar')).toBeNull();
+    expect(screen.getByText(/Appointments Plus includes up to five bookable calendars/)).toBeTruthy();
+  });
+
+  it('keeps Add calendar while the allowance is unknown or has room', async () => {
+    await render(<BookableCalendarsManager />);
+    expect(screen.getByText('Add calendar')).toBeTruthy();
+    expect(screen.queryByText(/on plan/)).toBeNull();
+  });
+
+  it('flags a resource overlap on its card', async () => {
+    mockConflicts = [{ calendar_id: 'c1', messages: ['Room A and Room B both offer 10:00–11:00.'] }];
+    await render(<BookableCalendarsManager />);
+    expect(screen.getByText('Conflict')).toBeTruthy();
+    expect(screen.getByText('Resource availability overlap')).toBeTruthy();
+    expect(screen.getByText(/Room A and Room B both offer/)).toBeTruthy();
+  });
+
+  it('edits the services on a calendar from the calendar and PUTs the full set', async () => {
+    await render(<BookableCalendarsManager />);
+    await press(() => screen.getAllByText('Edit assignments')[0]!);
+    expect(screen.getByText('Assignments — Alex')).toBeTruthy();
+    // "Cut" is on Alex; untick it and save.
+    await act(async () => {
+      fireEvent(screen.getByLabelText('Cut'), 'valueChange', false);
+    });
+    await press(() => screen.getByText('Save'));
+    await waitFor(() =>
+      expect(mockSetServices).toHaveBeenCalledWith({ practitioner_id: 'c1', service_ids: [] }),
+    );
+    expect(mockToast.success).toHaveBeenCalledWith('Calendar updated.');
   });
 });
