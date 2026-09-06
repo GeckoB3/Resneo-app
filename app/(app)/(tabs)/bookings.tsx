@@ -997,8 +997,13 @@ export default function BookingsScreen() {
           onChangeText={setSearch}
           right={
             <View style={styles.toolbarIcons}>
+              {/* Sort is a pair of up/down arrows on every platform. Material's
+                  `sort` glyph is three horizontal lines, near-identical to the
+                  filter button's `filter_list` beside it, and the owner kept
+                  tapping the wrong one (2026-09-06); `swap_vert` matches the
+                  iOS arrows and the design-system sample. */}
               <IconButton
-                icon={{ ios: 'arrow.up.arrow.down', android: 'sort', web: 'sort' }}
+                icon={{ ios: 'arrow.up.arrow.down', android: 'swap_vert', web: 'swap_vert' }}
                 accessibilityLabel="Sort bookings"
                 variant="bordered"
                 active={sortKey !== 'time'}
