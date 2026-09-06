@@ -1,5 +1,142 @@
 # Go-live check — Resneo app
 
+## Run 2026-09-06: OTA to production, 1.1.0, "ResNeo R27 Web Parity Ask ResNeo"
+
+**Scope:** the fourteen commits since the last published group (`b9ecddf`…`9ab7d6c`). Note the
+published tip is NOT `af21ac9`, which is what the R24 entry below records: two further groups went
+out that evening ("part 2" and "part 3"), the last of them at `b9ecddf`. This batch is R25
+(`717fed3` the Calendar availability page: schedule periods, calendar assignments, the plan pill
+and conflicts), R26 (`e8f13ee` a partner's columns on the native grid, `f0edeed` the two
+concertinas, `a1f491d` the partner's guest history and Records), R27 (`b01452c` the linked
+guest email and the full-management gate on removing a partner's file, `72ddb57` + `9ab7d6c` Ask
+ResNeo), and the polish alongside them (`4196e06`, `82a799e`, `67ee066`, `6e8e50b`, `5c646c0`,
+`994388f`, `c7d4ad5`). Reports: `Docs/APP_GAP_REPORT_R25_CALENDAR_AVAILABILITY.md`,
+`Docs/APP_GAP_REPORT_R26_LINKED_COLUMNS.md`, `Docs/APP_GAP_REPORT_R27_WEB_DELTA.md`. JavaScript
+only. Not device-tested as a set: the owner's device pass is pending, and now covers three batches.
+
+**Verdict: cleared to OTA**, with one thing to decide knowingly (§7): Ask ResNeo ships as an entry
+point to a feature the web has not switched on yet, so until it is, the row leads to "Ask ResNeo is
+not available right now. The Support form is always available."
+
+### 1. Version and reach: the OTA lands on the 1.1.0 installs
+
+| Check | Result |
+|---|---|
+| iOS version | **1.1.0** (`app.json` `version`) |
+| Android version | **1.1.0** (`app.json` `android.version`) |
+| `runtimeVersion.policy` | `appVersion`, so runtime version **1.1.0** on both |
+| Live iOS production build | appVersion **1.1.0**, commit `ce1d85c`, 31 Aug 2026 |
+| Live Android production build | appVersion **1.1.0**, commit `ce1d85c`, 31 Aug 2026 |
+| `production` channel before | branch `production`, latest group "ResNeo R24 Web Parity part 3" (`b9ecddf`) on runtime **1.1.0** |
+
+The fourth update on the 1.1.0 runtime. **Do not bump the version**: under the `appVersion` policy
+that moves the runtime and strands every 1.1.0 install. `eas update` does not touch it.
+
+### 2. OTA eligibility: nothing native moved
+
+`git diff b9ecddf..HEAD -- app.json app.config.js eas.json package.json package-lock.json patches
+ios android` is **empty**, and so is the same diff back to the `ce1d85c` binaries.
+
+The one new native surface this batch could have needed is **`expo/fetch`**, which Ask ResNeo
+streams the answer with (React Native's own fetch buffers the whole body, which would mean a blank
+screen for the length of an answer). It is a native module, `ExpoFetchModule`, but it is registered
+by the `expo` package itself (`node_modules/expo/expo-module.config.json` lists it for both
+platforms) and `package.json` / `package-lock.json` are byte-identical to the build commit, so it
+is already inside the shipped 1.1.0 binaries. Everything else the new screens import
+(expo-symbols, expo-web-browser, expo-router, reanimated, safe-area-context) has shipped for
+releases.
+
+### 3. Production environment: verified against EAS, not `eas.json`
+
+`eas env:list --environment production --format long`: all five app variables carry **PUBLIC**
+visibility, which an update needs (a SECRET variable is build-only and would silently drop out).
+
+| Variable | Value |
+|---|---|
+| `EXPO_PUBLIC_API_URL` | `https://www.resneo.com` |
+| `EXPO_PUBLIC_SUPABASE_URL` | `njualfobtudvlugqkqho.supabase.co` (live) |
+| `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | live |
+| `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` | `pk_live_…` |
+| `EXPO_PUBLIC_SENTRY_DSN` | Sentry DE ingest |
+| `GOOGLE_SERVICES_JSON`, `SENTRY_AUTH_TOKEN` | secrets, build-time only; n/a for an update |
+
+Absent by design, each with its safe default: `EXPO_PUBLIC_TERMINAL_SIMULATED` (real readers),
+`EXPO_PUBLIC_ALLOW_SCREENSHOTS` (FLAG_SECURE stays on), `EXPO_PUBLIC_WEB_URL` (falls back to the
+API URL), `EXPO_PUBLIC_ANALYTICS_KEY` (off). The only local env file is `.env.development.local`
+(staging values), which a production-mode export never loads.
+
+### 4. The bundle, checked before publishing
+
+`eas env:exec production "npx expo export --clear --platform all --output-dir …"` was run first and
+both Hermes bundles searched (11 MB each):
+
+| String | iOS | Android |
+|---|---|---|
+| live Supabase host `njualfobtudvlugqkqho` | present | present |
+| staging Supabase host `zkppmyyvkjvbsvemakbb` | absent | absent |
+| `www.resneo.com` | present | present |
+| `pk_live_` | present | present |
+| `pk_test_` | absent | absent |
+| Sentry DE ingest | present | present |
+| `/api/venue/assistant` | present | present |
+
+The last row is this batch's positive control: the assistant client is really in the production
+bundle.
+
+The one staging string still present is the `https://reserve-ni.vercel.app` fallback, unreachable
+in production because `getWebUrl()` resolves first. It is now in **two** places, `webDashboardUrl()`
+in `app/(app)/(tabs)/settings.tsx` and `FALLBACK_WEB_ORIGIN` in `lib/assistant/links.ts`; the first
+was recorded on 2026-08-25 as worth deleting and still is, and the second should go with it rather
+than be kept in step.
+
+### 5. The web side this batch depends on is deployed
+
+An unauthenticated POST to production answers `401` on `/api/venue/assistant` and `405` on
+`/api/venue/calendar-entitlement` and `/api/venue/calendar-column-conflicts` (both GET-only), so
+web #181 and #182 are live on `www.resneo.com`; a missing route would answer 404. The assistant
+route checks the session before the feature flag, so this says nothing about whether
+`ASSISTANT_ENABLED` is set, which is §7.
+
+### 6. Verified healthy
+
+- `tsc --noEmit`: clean; `expo lint`: 0 errors, no new warnings on any touched file.
+- `jest`: **251 suites / 2,550 tests pass** at `9ab7d6c`.
+- `eas.json` `requireCommit: true`: the tree is clean at `9ab7d6c` and pushed to `origin/main`
+  (this record is committed before publishing, as it must be).
+- `eas-cli` 23.0.0 via `npx`, logged in as `resneo` (Owner).
+
+### 7. Publishing
+
+```
+npx eas-cli update --channel production --environment production --clear-cache --message "ResNeo R27 Web Parity Ask ResNeo"
+```
+
+`--channel production` is equivalent to `--branch production` here (the channel maps to that one
+branch). `--environment production` is what supplies the variables in §3, since `update` ignores
+the `env` block in `eas.json`. `--clear-cache` is not optional: Metro's transform cache does not
+re-key when `EXPO_PUBLIC_*` values change.
+
+### 8. Not covered, and one decision
+
+- **Ask ResNeo is off at the server.** Web's own `Docs/help-assistant-plan.md` §11 lists
+  `ASSISTANT_ENABLED`, the `assistant_conversations` migration and the sub-processor update as
+  owed, so today the route answers a staff Bearer with 404 and the screen says the assistant is not
+  available and points at the Support form. That is the web's own copy for exactly this case, and
+  the feature lights up with no further app release the moment the flag is set. Publishing anyway
+  is a judgement call about showing a door that does not open yet;
+  `Docs/R27_WEB_HANDOVER.md` asks web for a way to hide it.
+- **The device pass**, which now spans three batches: the Calendar availability screen (schedule
+  periods, assignments, the plan pill), a partner's columns on the diary (tap through to the full
+  panel, quick actions, drag to move and resize, the cross-venue clamp, and now the Notify prompt
+  after a partner's move), the partner's guest history and Records (including that Remove is hidden
+  below a full-management grant), and Ask ResNeo end to end: a real question, the streaming answer,
+  the thinking dots, a link tap into the in-app browser, a rating, and the Support handoff.
+- **Ask ResNeo on a real device has never run.** The streaming read path (`expo/fetch` with a
+  `ReadableStream`) and the composer's keyboard behaviour on Android under edge-to-edge have been
+  exercised in jest and in a full production export, not on a phone.
+
+---
+
 ## Run 2026-09-05: OTA to production, 1.1.0, "ResNeo R24 Web Parity"
 
 **Scope:** the eight commits since the R23 OTA (`8c318f3`…`af21ac9`): the card-hold flag
