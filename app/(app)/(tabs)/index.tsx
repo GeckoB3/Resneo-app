@@ -653,6 +653,11 @@ export default function CalendarScreen() {
   const staffCollectiveQuery = useStaffCollective({ enabled: linkedVenues.length > 0 });
   const staffCollective =
     linkedVenues.length > 0 ? (staffCollectiveQuery.data?.collective ?? null) : null;
+  // False until the collective lookup has answered either way (web parity). A
+  // partner's own "New booking" button waits for it: shown and then taken away
+  // is worse than shown a moment late.
+  const staffCollectiveResolved =
+    linkedVenues.length === 0 || staffCollectiveQuery.isSuccess || staffCollectiveQuery.isError;
   /**
    * Route params that send a new booking on one of OUR columns to the
    * collective: the own venue as the column's venue, and the tapped calendar
@@ -669,6 +674,21 @@ export default function CalendarScreen() {
     () => (ownerVenueId ? linkedVenues.find((v) => v.venueId === ownerVenueId) ?? null : null),
     [ownerVenueId, linkedVenues],
   );
+  /**
+   * The live collective the active linked venue books through with us, or null
+   * when it books for itself. A partner inside the collective is one business
+   * with us on the diary: its grid loses its own "New booking" header button
+   * and the tab's Plus button (New and Walk-in over the collective) takes its
+   * place, as the web's toolbar does for a partner column inside the
+   * collective. A partner outside it keeps its button and the per-venue form.
+   */
+  const activeLinkedCollective = useMemo(
+    () => collectiveBookingTargetFor(staffCollective, activeLinkedVenue?.venueId),
+    [staffCollective, activeLinkedVenue?.venueId],
+  );
+  // The partner's header button: only once the lookup has answered, and only
+  // for a partner that books for itself.
+  const linkedCreateButton = staffCollectiveResolved && !activeLinkedCollective;
 
   // Validate a persisted linked selection against the live feed: if a link was
   // revoked/suspended/deleted while the app was closed, the venue drops out of
@@ -2052,6 +2072,14 @@ export default function CalendarScreen() {
   const closeAddSheet = useCallback(() => setAddSheetTarget(null), []);
 
   const addSheetSlot = addSheetTarget?.kind === 'slot' ? addSheetTarget : null;
+  // The collective this sheet's New and Walk-in book for, when one takes the
+  // booking (the same rule `collectiveParamsFor` applies), so the sheet can say
+  // so: from a partner's linked view the FAB is the only way to it.
+  const addSheetCollective = collectiveBookingTargetFor(
+    staffCollective,
+    venue?.id,
+    addSheetSlot?.practitionerId ?? null,
+  );
 
   // Resources hosted on the tapped slot's calendar column → "Book <resource>"
   // entries in the empty-slot menu (web parity: `resourcesHere`). Empty when the
@@ -2376,6 +2404,7 @@ export default function CalendarScreen() {
                 <View style={styles.weekBody}>
                   <LinkedVenueWeekGrid
                     venue={activeLinkedVenue}
+                    showCreateButton={linkedCreateButton}
                     weekDays={week.days}
                     today={today}
                     nowMinutes={nowMinutes}
@@ -2422,6 +2451,7 @@ export default function CalendarScreen() {
                   embedded
                   compact={compactDay}
                   venue={activeLinkedVenue}
+                  showCreateButton={linkedCreateButton}
                   date={anchor}
                   nowMinutes={nowMinutes}
                   onOpenBooking={(b) =>
@@ -2572,10 +2602,14 @@ export default function CalendarScreen() {
             </GestureDetector>
           )}
 
-          {/* Linked calendars have their own per-grid "New booking" button
-              (grant-gated); the primary FAB is hidden only in the full-screen
-              linked context (not on a wide day, where linked are just columns). */}
-          {!linkedContextActive ? (
+          {/* A linked calendar has its own per-grid "New booking" button
+              (grant-gated), so the primary FAB is hidden in the full-screen
+              linked context (not on a wide day, where linked are just columns),
+              EXCEPT for a partner inside our live collective: it is one business
+              with us, its header button is withheld, and the FAB books for the
+              collective, New and Walk-in alike, exactly as it does on our own
+              calendars (`collectiveParamsFor`). */}
+          {!linkedContextActive || activeLinkedCollective ? (
             <Fab
               accessibilityLabel={newBookingActionLabel(terminology, isAppointmentVenue)}
               onPress={() => setAddSheetTarget({ kind: 'fab' })}
@@ -2589,6 +2623,13 @@ export default function CalendarScreen() {
         <Text variant="subheading">
           {addSheetSlot ? `Add at ${addSheetSlot.time}` : 'Add to calendar'}
         </Text>
+        {/* Where the booking lands when a live collective takes it (web parity
+            with the linked slot sheet: the destination is said out loud). */}
+        {addSheetCollective ? (
+          <Text variant="caption" tone="muted" style={styles.addSheetSectionLabel}>
+            {`For ${addSheetCollective.name}: every member venue's calendars and the combined services`}
+          </Text>
+        ) : null}
         <View style={styles.addSheetActions}>
           <Button
             label={newBookingActionLabel(terminology, isAppointmentVenue)}

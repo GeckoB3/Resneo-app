@@ -52,6 +52,7 @@ export function LinkedVenueCalendarGrid({
   nowMinutes,
   onOpenBooking,
   onCreate,
+  showCreateButton = true,
   refreshing,
   onRefresh,
   embedded,
@@ -72,6 +73,17 @@ export function LinkedVenueCalendarGrid({
    * calendar, and the header button passes neither.
    */
   onCreate: (time?: string, practitionerId?: string) => void;
+  /**
+   * Show the header's "New booking" button (default true; the grant still
+   * gates it, and empty-slot taps are unaffected). The calendar tab passes
+   * false for a partner that books through the caller's live collective, whose
+   * New and Walk-in live on the tab's Plus button over the collective instead
+   * (web parity: a partner column inside the collective loses its own button,
+   * since the toolbar already books that calendar through the collective
+   * form), and while that lookup is still pending, since shown-then-taken-away
+   * is worse than shown a moment late.
+   */
+  showCreateButton?: boolean;
   refreshing?: boolean;
   onRefresh?: () => void;
   /**
@@ -201,7 +213,7 @@ export function LinkedVenueCalendarGrid({
         ) : null}
         {/* `onCreate` is wrapped, not passed directly: `onPress` hands the press
             event to its handler, which would arrive as the slot time. */}
-        {canCreate ? (
+        {canCreate && showCreateButton ? (
           <Button label="New booking" size="sm" variant="primary" onPress={() => onCreate()} />
         ) : null}
       </View>

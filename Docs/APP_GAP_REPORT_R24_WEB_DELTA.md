@@ -629,3 +629,17 @@ every engine, so `card_hold` in a public payload still implies a positive fee.
    (`linkedWeekHeading`). Neither this nor finding 1 is in the R24 OTA (group `556bbef3`, which
    stops at `af21ac9`); both need the next update.
 
+3. **A collective member's linked view kept its own "New booking" button (2026-09-06).** The web
+   diary withholds a partner column's header button once the staff-collective lookup has answered
+   and the partner is a member (`staffCollectiveResolved && !collectiveTargetFor(...)` in
+   `PractitionerCalendarView.tsx`): the toolbar's New and Walk-in already book through the
+   collective form, so the button would only duplicate them. The app's single-venue view showed
+   the button regardless and hid the tab's Plus button whenever a linked venue was active. Now:
+   `LinkedVenueCalendarGrid` and `LinkedVenueWeekGrid` take `showCreateButton`; the calendar tab
+   passes `staffCollectiveResolved && !activeLinkedCollective`, shows its Plus button in the
+   linked view for a partner inside the collective (the add sheet's New and Walk-in already book
+   for the collective through `collectiveParamsFor`, and the sheet now says so), and a partner
+   outside any collective keeps its header button and the per-venue form. The linked calendar
+   screen (stacked partners, no Plus button of its own) keeps every header button; there a member's
+   button already opens the collective form through the slot sheet.
+

@@ -71,6 +71,7 @@ function venue(overrides: Partial<LinkedVenueCalendar> = {}): LinkedVenueCalenda
 async function renderGrid(
   v: LinkedVenueCalendar,
   onCreate: (time?: string, practitionerId?: string) => void = jest.fn(),
+  showCreateButton?: boolean,
 ): Promise<void> {
   await render(
     <LinkedVenueCalendarGrid
@@ -80,6 +81,7 @@ async function renderGrid(
       nowMinutes={null}
       onOpenBooking={jest.fn()}
       onCreate={onCreate}
+      showCreateButton={showCreateButton}
     />,
   );
 }
@@ -136,6 +138,21 @@ describe('LinkedVenueCalendarGrid', () => {
     expect(onCreate).toHaveBeenLastCalledWith(expect.stringMatching(/^\d{2}:\d{2}$/), 'p1');
     await tapEmptySlot('light2');
     expect(onCreate).toHaveBeenLastCalledWith(expect.stringMatching(/^\d{2}:\d{2}$/), undefined);
+  });
+
+  it('shows the header New booking button for a partner that books for itself', async () => {
+    await renderGrid(venue({ action: 'create_edit_cancel' }));
+    expect(screen.getByText('New booking')).toBeTruthy();
+  });
+
+  it('withholds the header button when told to, keeping the empty-slot tap', async () => {
+    // A partner inside the caller's collective: the tab's Plus button books for
+    // the collective instead, so the header button would only duplicate it.
+    const onCreate = jest.fn();
+    await renderGrid(venue({ action: 'create_edit_cancel' }), onCreate, false);
+    expect(screen.queryByText('New booking')).toBeNull();
+    await tapEmptySlot('Jenny');
+    expect(onCreate).toHaveBeenCalledWith(expect.any(String), 'p1');
   });
 
   it('ignores an empty-slot tap when the grant does not allow creating', async () => {

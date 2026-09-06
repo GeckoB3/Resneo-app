@@ -48,6 +48,7 @@ export function LinkedVenueWeekGrid({
   nowMinutes,
   onOpenBooking,
   onCreate,
+  showCreateButton = true,
   onDayPress,
   refreshing,
   onRefresh,
@@ -66,6 +67,14 @@ export function LinkedVenueWeekGrid({
    * time opens the booking at that slot. The header button passes neither.
    */
   onCreate: (date?: string, time?: string) => void;
+  /**
+   * Show the header's "New booking" button (default true; the grant still
+   * gates it, and empty-slot taps are unaffected). False for a partner that
+   * books through the caller's live collective, whose New and Walk-in live on
+   * the calendar tab's Plus button instead, and while that lookup is pending;
+   * see the same prop on `LinkedVenueCalendarGrid`.
+   */
+  showCreateButton?: boolean;
   /** Tap a day header to open that day in the Day view (stays in linked context). */
   onDayPress: (date: string) => void;
   refreshing?: boolean;
@@ -156,7 +165,7 @@ export function LinkedVenueWeekGrid({
             <Badge label={pill} tone="neutral" />
           </View>
         ) : null}
-        {canCreate ? (
+        {canCreate && showCreateButton ? (
           <Button label="New booking" size="sm" variant="primary" onPress={() => onCreate()} />
         ) : null}
       </View>
