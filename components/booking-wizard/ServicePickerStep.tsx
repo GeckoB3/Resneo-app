@@ -508,11 +508,11 @@ export function ServicePickerStep({
             <Text variant="caption" tone="muted" numberOfLines={2}>
               {bar.names}
             </Text>
-            <Text variant="caption" tone="muted">
-              {pickerFull
-                ? `That's the most a visit can hold (${MAX_SERVICES_PER_VISIT}).`
-                : `Tick more to book them back to back with the same practitioner, up to ${MAX_SERVICES_PER_VISIT}.`}
-            </Text>
+            {pickerFull ? (
+              <Text variant="caption" tone="muted">
+                {`That's the most a visit can hold (${MAX_SERVICES_PER_VISIT}).`}
+              </Text>
+            ) : null}
           </View>
           <View style={styles.barActions}>
             <Button
