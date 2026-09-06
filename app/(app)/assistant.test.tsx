@@ -103,6 +103,20 @@ describe('Ask ResNeo screen', () => {
     expect(screen.getByText(ASSISTANT_COPY.feedbackPrompt)).toBeTruthy();
   });
 
+  it('shows the thinking dots while the first token is still coming', async () => {
+    mockStream.mockImplementation(() => new Promise<void>(() => {}));
+
+    await render(<AssistantScreen />);
+    await ask('How do I add a calendar?');
+
+    expect(screen.getByText(`${ASSISTANT_COPY.thinking}…`)).toBeTruthy();
+    // Hidden from the accessibility tree on purpose (the words beside them say
+    // the same thing), so the query has to look past that.
+    expect(
+      screen.getByTestId('assistant-thinking-dots', { includeHiddenElements: true }),
+    ).toBeTruthy();
+  });
+
   it('keeps the question on screen and offers Stop while the answer streams', async () => {
     let finish: (() => void) | null = null;
     mockStream.mockImplementation(

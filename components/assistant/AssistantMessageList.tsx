@@ -10,6 +10,7 @@ import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
 import { AssistantMarkdown } from './AssistantMarkdown';
+import { ThinkingDots } from './ThinkingDots';
 
 export interface AssistantMessageListProps {
   messages: AssistantChatMessage[];
@@ -81,9 +82,14 @@ function AssistantTurn({
         {message.content ? (
           <AssistantMarkdown markdown={message.content} onPressLink={onPressLink} />
         ) : message.pending ? (
-          <Text variant="body" tone="muted" accessibilityLiveRegion="polite">
-            {`${ASSISTANT_COPY.thinking}…`}
-          </Text>
+          // Nothing has arrived yet: the dots are what say the app is still
+          // listening, as they do on the web.
+          <View style={styles.thinking}>
+            <ThinkingDots />
+            <Text variant="body" tone="muted" accessibilityLiveRegion="polite">
+              {`${ASSISTANT_COPY.thinking}…`}
+            </Text>
+          </View>
         ) : null}
 
         {message.error ? (
@@ -203,6 +209,11 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     borderBottomLeftRadius: radius.sm,
     borderWidth: StyleSheet.hairlineWidth,
+  },
+  thinking: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
   spaced: {
     marginTop: spacing.sm,
