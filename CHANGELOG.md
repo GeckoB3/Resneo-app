@@ -39,6 +39,16 @@ signed in without a staff profile was still registered as a STAFF device and
 received a venue's booking alerts, which carry a client's name and service. That
 is fixed here regardless of the customer work.
 
+**Ask ResNeo.** The help assistant the web dashboard gained is in the app, at the
+top of **More** where the settings search field used to be. It answers how-to
+questions from the ResNeo help centre, made specific with this venue's plan and
+settings and the person's role, and it knows it is answering somebody on the app,
+so the steps it gives are the app's steps and it says when a job can only be done
+on the web. It cannot change anything, and a question it cannot answer can be
+handed to Support with the conversation attached. The settings search went to
+make room for it. The assistant is switched on server-side, so until it is turned
+on for a venue the row says so and points at the Support form.
+
 **Store copy: not yet written.** This entry exists for the preview build.
 
 ---

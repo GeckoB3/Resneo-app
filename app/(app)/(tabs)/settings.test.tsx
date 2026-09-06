@@ -1,9 +1,9 @@
 /**
- * More tab (settings.tsx) — search keyword filter (Navigation & IA, Domain 01).
+ * More tab (settings.tsx) — the Ask ResNeo entry (R27).
  *
- * Render test proving the new `keywords` synonyms surface the right row when a
- * user searches the web's vocabulary (e.g. "stripe" → Plan & payments, "csv" →
- * Import contacts). The pure `buildDestinations` gating lives in
+ * The settings search field used to sit at the top of this tab; Ask ResNeo
+ * took its place, so what is worth pinning is that the row is there and that
+ * it opens the assistant screen. The pure `buildDestinations` gating lives in
  * `settings-destinations.test.ts`.
  *
  * jest hoists mock factories above imports, so closed-over vars are `mock*`.
@@ -74,35 +74,22 @@ jest.mock('@/providers/VenueProvider', () => ({
 
 import MoreScreen from '@/app/(app)/(tabs)/settings';
 
-describe('More tab — search keyword filter', () => {
+describe('More tab — Ask ResNeo', () => {
   beforeEach(() => {
     mockPush.mockClear();
   });
 
-  it('surfaces "Plan & payments" when searching the synonym "stripe"', async () => {
+  it('offers Ask ResNeo where the settings search used to be', async () => {
     await render(<MoreScreen />);
-    await act(async () => {
-      fireEvent.changeText(screen.getByPlaceholderText('Search settings'), 'stripe');
-    });
-    // "stripe" appears in neither the label nor the hint of any other row, so a
-    // hit proves the keyword index is consulted.
-    expect(screen.getByText('Plan & payments')).toBeTruthy();
-    expect(screen.queryByText('Communications')).toBeNull();
+    expect(screen.getByText('Ask ResNeo')).toBeTruthy();
+    expect(screen.queryByPlaceholderText('Search settings')).toBeNull();
   });
 
-  it('surfaces "Import contacts" when searching the synonym "csv"', async () => {
+  it('opens the assistant screen when the row is pressed', async () => {
     await render(<MoreScreen />);
     await act(async () => {
-      fireEvent.changeText(screen.getByPlaceholderText('Search settings'), 'csv');
+      fireEvent.press(screen.getByLabelText('Ask ResNeo'));
     });
-    expect(screen.getByText('Import contacts')).toBeTruthy();
-  });
-
-  it('shows the empty state for a query that matches no label, hint or keyword', async () => {
-    await render(<MoreScreen />);
-    await act(async () => {
-      fireEvent.changeText(screen.getByPlaceholderText('Search settings'), 'zzzznomatch');
-    });
-    expect(screen.getByText(/No settings match/)).toBeTruthy();
+    expect(mockPush).toHaveBeenCalledWith('/assistant');
   });
 });

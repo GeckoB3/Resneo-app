@@ -1,27 +1,19 @@
 import { useEffect, type ReactNode } from 'react';
 import {
-  Keyboard,
   Modal,
-  Platform,
   Pressable,
   StyleSheet,
   View,
   type DimensionValue,
-  type KeyboardEvent,
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, {
-  runOnJS,
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-  withTiming,
-} from 'react-native-reanimated';
+import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useKeyboardInset } from '@/components/ui/useKeyboardInset';
 import { useReduceMotion } from '@/lib/motion';
 import { AppLockCover } from '@/providers/AppLockProvider';
-import { motion, radius, spacing } from '@/theme/index';
+import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
 /** Drag the handle/header down past this many points to dismiss the sheet. */
@@ -56,47 +48,6 @@ type SheetProps = {
   children: ReactNode;
 };
 
-/**
- * Drives an animated keyboard inset from the OS keyboard events.
- *
- * The app's sheets are `transparent` Modals. On Android a transparent Modal's
- * window does NOT resize for the keyboard, so the stock `KeyboardAvoidingView`
- * (which measures the keyboard from window-frame changes) reports nothing and
- * inputs end up hidden behind the keyboard. Listening to the keyboard events
- * directly works on both platforms regardless of window resize behaviour, runs
- * on the UI thread via a shared value (no re-render), and is a no-op on web
- * where the events never fire — so the field is never obscured.
- *
- * The returned value already nets off the bottom safe-area inset (the base pad
- * carries that), so callers add it straight onto a base pad.
- */
-function useKeyboardInset(bottomInset: number) {
-  const inset = useSharedValue(0);
-
-  useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-
-    const onShow = (event: KeyboardEvent) => {
-      const height = event.endCoordinates?.height ?? 0;
-      const duration = event.duration && event.duration > 0 ? event.duration : motion.normal;
-      inset.value = withTiming(Math.max(0, height - bottomInset), { duration });
-    };
-    const onHide = (event: KeyboardEvent) => {
-      const duration = event?.duration && event.duration > 0 ? event.duration : motion.normal;
-      inset.value = withTiming(0, { duration });
-    };
-
-    const showSub = Keyboard.addListener(showEvent, onShow);
-    const hideSub = Keyboard.addListener(hideEvent, onHide);
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, [bottomInset, inset]);
-
-  return inset;
-}
 
 /**
  * Bottom sheet — the one Modal-based sheet used across the app. Theme-aware

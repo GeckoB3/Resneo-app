@@ -201,6 +201,25 @@ export function setAccessTokenRefresher(refresher: AccessTokenRefresher | null):
 }
 
 /**
+ * Ask the registered refresher for a fresh token, exactly as `apiFetch` does on
+ * a 401: a null answer, the same token back, or a throw all mean "this 401 is
+ * not an expiry, do not retry".
+ *
+ * Exported for the one caller that cannot go through `apiFetch` — the Ask
+ * ResNeo stream reads a `text/event-stream` body itself, so it owns its own
+ * refresh-and-retry-once rather than inheriting this one.
+ */
+export async function refreshExpiredAccessToken(expiredToken: string): Promise<string | null> {
+  if (!accessTokenRefresher) return null;
+  try {
+    const refreshed = await accessTokenRefresher(expiredToken);
+    return refreshed && refreshed !== expiredToken ? refreshed : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Called when the server has told us our credentials are dead and refreshing
  * them did not help.
  *

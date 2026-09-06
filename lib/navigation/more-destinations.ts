@@ -65,9 +65,12 @@ export type Destination = {
   /** Opens an external surface — shows the "open" glyph. */
   external?: boolean;
   /**
-   * Search synonyms so users searching the web's vocabulary land on the right
-   * row (e.g. "payments"/"stripe" → Plan & payments, "SMS"/"templates" →
-   * Communications). Matched alongside the visible label & hint. Not rendered.
+   * The web's vocabulary for this destination, kept from the settings search
+   * the More tab used to carry (Ask ResNeo stands in its place since R27). Not
+   * rendered, and nothing filters on it today: it is the mapping to restore if
+   * a find-a-screen field comes back
+   * (e.g. "payments"/"stripe" → Plan & payments, "SMS"/"templates" →
+   * Communications).
    */
   keywords?: string[];
 };

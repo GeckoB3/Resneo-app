@@ -10,6 +10,7 @@ import { Screen } from '@/components/ui/Screen';
 import { Segmented } from '@/components/ui/Segmented';
 import { Text } from '@/components/ui/Text';
 import { ApiError, apiFetch } from '@/lib/api/client';
+import { takeHandoff } from '@/lib/assistant/handoff';
 import { hapticSuccess } from '@/lib/haptics';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { useToast } from '@/providers/ToastProvider';
@@ -40,9 +41,17 @@ export default function SupportScreen() {
   const accessToken = useAccessToken();
   const toast = useToast();
 
+  /*
+    A question that started in Ask ResNeo and did not get there arrives as a
+    parked transcript ("Send this to support"), which fills the subject and the
+    message so the person only has to say what they still need. Taken once, in
+    the initialiser rather than an effect: reading it clears it, so a later
+    visit opens blank.
+  */
+  const [handoff] = useState(() => takeHandoff());
   const [category, setCategory] = useState<SupportCategory>('general');
-  const [subject, setSubject] = useState('');
-  const [message, setMessage] = useState('');
+  const [subject, setSubject] = useState(handoff?.subject ?? '');
+  const [message, setMessage] = useState(handoff?.message ?? '');
   const [contactEmail, setContactEmail] = useState('');
   const [contactPhone, setContactPhone] = useState('');
   const [sent, setSent] = useState(false);
