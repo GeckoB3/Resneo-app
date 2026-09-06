@@ -2,13 +2,14 @@ import { format, parseISO } from 'date-fns';
 import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import {
-  FlatList,
   Linking,
   Pressable,
   RefreshControl,
+  SectionList,
   StyleSheet,
   View,
-  type ListRenderItem,
+  type SectionListData,
+  type SectionListRenderItem,
 } from 'react-native';
 
 import { BookingDetailSheet } from '@/components/bookings/BookingDetailSheet';
@@ -38,6 +39,7 @@ import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { formatPence } from '@/lib/format';
+import { guestBookingsSummary, splitGuestHistory } from '@/lib/guests/guest-history-sections';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useGuestDetail } from '@/lib/queries/useGuestDetail';
 import { useGuestTimeline, useSendGuestMessage, useUpdateGuest } from '@/lib/queries/useGuestMutations';
@@ -211,6 +213,24 @@ export default function ClientDetailScreen() {
   const [messageTarget, setMessageTarget] = useState<GuestMessageTarget | null>(null);
   const [bookingDetailId, setBookingDetailId] = useState<string | null>(null);
   const [mergeOpen, setMergeOpen] = useState(false);
+  /**
+   * The "Guest bookings" accordion (web `GuestBookingsForGuestAccordion`):
+   * closed on open, with the counts on its header, and the visits behind it
+   * split into upcoming and previous. The rows are the list's sections rather
+   * than the card's body so they stay virtualised.
+   */
+  const [bookingsOpen, setBookingsOpen] = useState(false);
+  const historySections = useMemo(() => {
+    const rows = detailQuery.data?.booking_history ?? [];
+    return splitGuestHistory(rows, new Date(), venue?.timezone ?? 'Europe/London');
+  }, [detailQuery.data?.booking_history, venue?.timezone]);
+  const historyListSections = useMemo(
+    () => [
+      { title: 'Upcoming', data: historySections.upcoming },
+      { title: 'Previous', data: historySections.previous },
+    ],
+    [historySections],
+  );
 
   const handleBookingPress = useCallback((bookingId: string) => {
     setBookingDetailId(bookingId);
@@ -337,14 +357,31 @@ export default function ClientDetailScreen() {
     }
   };
 
-  const renderHistoryRow: ListRenderItem<GuestBookingHistoryRow> = ({ item, index }) => (
+  type HistorySection = SectionListData<GuestBookingHistoryRow, { title: string }>;
+  const renderHistoryRow: SectionListRenderItem<GuestBookingHistoryRow, { title: string }> = ({
+    item,
+    index,
+    section,
+  }) => (
     <HistoryRow
       booking={item}
       isFirst={index === 0}
-      isLast={index === booking_history.length - 1}
+      isLast={index === section.data.length - 1}
       onPress={() => handleBookingPress(item.id)}
     />
   );
+  const renderHistorySectionHeader = ({ section }: { section: HistorySection }) => (
+    <Text variant="overline" tone="muted" style={styles.historySectionLabel}>
+      {section.title}
+    </Text>
+  );
+  // The web says "None" under an empty group rather than dropping it.
+  const renderHistorySectionFooter = ({ section }: { section: HistorySection }) =>
+    section.data.length === 0 ? (
+      <Text variant="caption" tone="muted" style={styles.historySectionEmpty}>
+        None
+      </Text>
+    ) : null;
 
   // Everything above the (virtualized) booking-history list. The booking rows
   // are the FlatList data; the profile chrome + section header ride along here.
@@ -453,18 +490,26 @@ export default function ClientDetailScreen() {
       {/* New booking CTA */}
       <Button label="New booking for this client" fullWidth onPress={handleNewBookingForClient} />
 
-      {/* Booking history */}
-      <SectionHeader title="Booking history" action={<LiveDot state={liveState} />} />
-      {booking_history.length === 0 ? (
-        <EmptyState
-          title="No bookings yet"
-          message={
-            stats.days_as_customer > 0
-              ? `Client since ${stats.days_as_customer} day${stats.days_as_customer === 1 ? '' : 's'} ago.`
-              : 'This client has no booking history.'
-          }
-        />
-      ) : null}
+      {/* Guest bookings — the web's closed accordion, its counts on the header.
+          Opening it renders the Upcoming / Previous sections below this header
+          (the list's sections), so the rows stay virtualised. */}
+      <CollapsibleCard
+        title="Guest bookings"
+        summary={booking_history.length === 0 ? 'No bookings yet' : guestBookingsSummary(historySections)}
+        marker={<LiveDot state={liveState} />}
+        expanded={bookingsOpen}
+        onToggle={() => setBookingsOpen((open) => !open)}>
+        {booking_history.length === 0 ? (
+          <EmptyState
+            title="No bookings yet"
+            message={
+              stats.days_as_customer > 0
+                ? `Client since ${stats.days_as_customer} day${stats.days_as_customer === 1 ? '' : 's'} ago.`
+                : 'This client has no booking history.'
+            }
+          />
+        ) : null}
+      </CollapsibleCard>
     </View>
   );
 
@@ -557,10 +602,15 @@ export default function ClientDetailScreen() {
 
   return (
     <Screen padded={false} scroll={false}>
-      <FlatList
-        data={booking_history}
+      <SectionList
+        // Closed: no sections at all, so the "More details" footer follows the
+        // header straight away, as the web's closed accordion reads.
+        sections={bookingsOpen && booking_history.length > 0 ? historyListSections : []}
         keyExtractor={(booking) => booking.id}
         renderItem={renderHistoryRow}
+        renderSectionHeader={renderHistorySectionHeader}
+        renderSectionFooter={renderHistorySectionFooter}
+        stickySectionHeadersEnabled={false}
         ListHeaderComponent={listHeader}
         ListFooterComponent={listFooter}
         contentContainerStyle={styles.scrollContent}
@@ -683,9 +733,16 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     gap: spacing.md,
   },
-  historyRowFirst: {
-    // Gap from the section header above + the card's top edge.
+  historySectionLabel: {
+    // Gap from the accordion header (or the group above) to this group's label.
     marginTop: spacing.base,
+  },
+  historySectionEmpty: {
+    marginTop: spacing.xs,
+  },
+  historyRowFirst: {
+    // Gap from the group label above + the card's top edge.
+    marginTop: spacing.sm,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopLeftRadius: radius.card,
     borderTopRightRadius: radius.card,

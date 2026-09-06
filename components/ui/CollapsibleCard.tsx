@@ -26,6 +26,15 @@ type CollapsibleCardProps = {
    * white gap on Android. The expand/collapse then snaps instead of sliding.
    */
   animateLayout?: boolean;
+  /**
+   * Controlled mode: the host owns the open state and answers `onToggle`. For
+   * a section whose rows live outside the card (a virtualised list under the
+   * header, as the contact screen's guest bookings), where the card can only
+   * be the accordion's header. Omit both for the usual self-contained card.
+   */
+  expanded?: boolean;
+  onToggle?: () => void;
+  /** The body; `null` draws the header alone (the rows sit elsewhere). */
   children: ReactNode;
 };
 
@@ -41,25 +50,30 @@ export function CollapsibleCard({
   defaultExpanded = false,
   lazy = false,
   animateLayout = true,
+  expanded: controlledExpanded,
+  onToggle,
   children,
 }: CollapsibleCardProps) {
   const { colors } = useTheme();
   const reduceMotion = useReduceMotion();
-  const [expanded, setExpanded] = useState(defaultExpanded);
+  const [ownExpanded, setOwnExpanded] = useState(defaultExpanded);
   const [hasExpanded, setHasExpanded] = useState(defaultExpanded);
+  const expanded = controlledExpanded ?? ownExpanded;
 
   const toggle = () => {
     hapticSelect();
-    setExpanded((cur) => !cur);
+    if (controlledExpanded === undefined) setOwnExpanded((cur) => !cur);
     setHasExpanded(true);
+    onToggle?.();
   };
 
   // Keep the body mounted once seen (for non-lazy sections, so toggling is
   // cheap) but only render it into layout when expanded — a gated
   // `LinearTransition` on the card content then tweens the height as the body
   // appears/disappears, and a gated `FadeIn` softens the body itself. Both
-  // collapse to instant when reduce-motion is on.
-  const showBody = expanded || (!lazy && hasExpanded);
+  // collapse to instant when reduce-motion is on. No body at all when there is
+  // nothing to show, so a header-only card carries no empty gap.
+  const showBody = children != null && children !== false && (expanded || (!lazy && hasExpanded));
 
   return (
     <Card>

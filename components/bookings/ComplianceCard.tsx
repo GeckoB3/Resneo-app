@@ -57,7 +57,7 @@ export function requirementPill(state: ComplianceRequirementState): { label: str
 }
 
 /** Whether a requirement needs action (matches web's `needsAction` guard). */
-function requirementNeedsAction(state: ComplianceRequirementState): boolean {
+export function requirementNeedsAction(state: ComplianceRequirementState): boolean {
   return state === 'missing' || state === 'expired' || state === 'expiring_soon';
 }
 

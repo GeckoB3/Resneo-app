@@ -54,6 +54,13 @@ export interface GuestBookingHistoryRow {
   service_name: string | null;
   area_name: string | null;
   /**
+   * The visit's end, as the route returns it: the server's estimate as an
+   * instant, and the stored wall-clock end. They decide whether a visit is
+   * still upcoming (`lib/guests/guest-history-sections`).
+   */
+  estimated_end_time?: string | null;
+  booking_end_time?: string | null;
+  /**
    * Anchor ids the GET route already returns (route maps them at
    * `guests/[guestId]` ~L333-339) — used to pre-seed a per-visit rebook. The app
    * just hadn't surfaced them. practitioner_id/calendar_id are the practitioner

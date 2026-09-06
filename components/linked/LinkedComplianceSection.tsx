@@ -4,10 +4,11 @@ import { StyleSheet, View } from 'react-native';
 import {
   formatComplianceDate,
   recordPill,
+  requirementNeedsAction,
   requirementPill,
 } from '@/components/bookings/ComplianceCard';
 import { Badge } from '@/components/ui/Badge';
-import { Card } from '@/components/ui/Card';
+import { CollapsibleCard } from '@/components/ui/CollapsibleCard';
 import { Text } from '@/components/ui/Text';
 import { useLinkedBookingCompliance } from '@/lib/queries/useBookingCompliance';
 import { spacing } from '@/theme/index';
@@ -20,24 +21,34 @@ import { complianceJoinedTypeName } from '@/types/booking-compliance';
  * its own dashboard. The two refusals the route can give (the link does not
  * share personal data; the owner does not use compliance records) are answers,
  * not faults, and read as plain notes.
+ *
+ * Collapsed by default, like the own-venue compliance card beside which it
+ * sits in the booking panel (the owner found it open on a partner's booking
+ * while closed on their own, 2026-09-06); anything needing action keeps a
+ * danger marker on the header, as that card does.
  */
 export function LinkedComplianceSection({ bookingId }: { bookingId: string }) {
   const query = useLinkedBookingCompliance(bookingId);
 
   let body: ReactNode;
+  let summary: string | null = null;
+  let needsActionCount = 0;
   if (query.isLoading) {
+    summary = 'Loading…';
     body = (
       <Text variant="caption" tone="muted">
         Loading compliance…
       </Text>
     );
   } else if (query.isError || !query.data) {
+    summary = 'Unavailable';
     body = (
       <Text variant="bodySmall" tone="danger">
         Couldn’t load compliance details. Please refresh to try again.
       </Text>
     );
   } else if (query.data.kind === 'note') {
+    summary = 'Not available';
     body = (
       <Text variant="bodySmall" tone="secondary">
         {query.data.text}
@@ -45,6 +56,17 @@ export function LinkedComplianceSection({ bookingId }: { bookingId: string }) {
     );
   } else {
     const { applicable, requirements, records } = query.data.data;
+    needsActionCount = requirements.filter((r) => requirementNeedsAction(r.state)).length;
+    // The own card's collapsed wording: the marker speaks when something needs
+    // action, else "All current", else the record count.
+    summary =
+      needsActionCount > 0
+        ? null
+        : requirements.length > 0
+          ? 'All current'
+          : records.length > 0
+            ? `${records.length} record${records.length === 1 ? '' : 's'}`
+            : 'None required';
     body = (
       <>
         <Text variant="caption" tone="muted">
@@ -97,17 +119,19 @@ export function LinkedComplianceSection({ bookingId }: { bookingId: string }) {
   }
 
   return (
-    <Card style={styles.card}>
-      <Text variant="overline" tone="muted">
-        Compliance
-      </Text>
-      {body}
-    </Card>
+    <CollapsibleCard
+      title="Compliance"
+      summary={summary}
+      marker={
+        needsActionCount > 0 ? <Badge label={`${needsActionCount} to action`} tone="danger" /> : null
+      }>
+      <View style={styles.body}>{body}</View>
+    </CollapsibleCard>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
+  body: {
     gap: spacing.sm,
   },
   row: {

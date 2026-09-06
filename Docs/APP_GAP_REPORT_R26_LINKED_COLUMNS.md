@@ -178,7 +178,30 @@ editable linked column draws the interactive bar, a plain one does not),
 stays static, the edit-existing slot note), `components/bookings/BookingDetailSheet.test.tsx`
 (the venue caption; the pinned action withheld on a view-only link).
 
-## 7. Device pass owed
+## 7. Device pass findings (2026-09-06, first pass on the live pair)
+
+1. **The compliance card opened expanded on a partner's booking, closed on our own.**
+   `LinkedComplianceSection` (R24-4) was a plain card with everything listed, built for the
+   small linked sheet; on the full panel it sat beside the own-venue `ComplianceCard`, which
+   is a collapsed `CollapsibleCard`. It is now the same collapsed card: the own card's
+   header wording ("All current", the record count, "None required", "Not available" for a
+   refusal) and the danger "N to action" marker on the closed header. Test:
+   `components/linked/LinkedComplianceSection.test.tsx`.
+2. **The contact screen listed every visit; the web keeps them behind a closed "Guest
+   bookings" accordion** (`GuestBookingsForGuestAccordion`, summary "N upcoming · M
+   previous", the body split into Upcoming and Previous). Not linked-specific, fixed in the
+   same pass: the screen's "Booking history" header and open list became a closed
+   `CollapsibleCard` titled "Guest bookings" with the counts on its header (and the live
+   dot as its marker); opening it renders Upcoming and Previous groups as the list's
+   sections, so the rows stay virtualised. `lib/guests/guest-history-sections.ts` ports the
+   web's split (`isBookingUpcomingBeforeScheduledEnd`: the scheduled end, else the start, in
+   the venue's timezone; cancelled never upcoming) and its ordering (upcoming soonest first,
+   previous latest first); `CollapsibleCard` gained a controlled mode (`expanded` /
+   `onToggle`) and draws no body for `null` children. The guest route already returned
+   `estimated_end_time` and `booking_end_time` on history rows; the type now says so.
+   Tests: `lib/guests/guest-history-sections.test.ts`.
+
+## 8. Device pass owed
 
 On the live pair (`plus1@reserveni.com` viewing `light2`'s "Jenny"), with the link at
 full details + edit: the tray buttons on Jenny's bars (Confirm, Arrived, Start, Complete) and
