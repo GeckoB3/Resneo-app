@@ -1437,30 +1437,30 @@ export default function CalendarScreen() {
       practitionerId?: string;
       previousTarget: RescheduleTarget;
       durationChanged: boolean;
-      /**
-       * A partner's booking, moved from an editable linked column. The guest
-       * email is skipped outright and no Notify offer follows: the deferred
-       * send is released by a route scoped to our own venue's bookings
-       * (`guest-modification-notify` looks the booking up under our venue id),
-       * so on a partner's booking the offer could only fail. The partner's own
-       * staff are told of the change by the server's cross-venue notification.
-       */
-      linked?: boolean;
     }) => {
-      // Derived from the slots themselves rather than the caller's flag: a MOVE
-      // defers the guest email so the prompt below can offer Notify/Skip, and a
-      // RESIZE (same start, new length) skips it — the guest is still due at
-      // the same time. Both flags suppress the send server-side; sending the
-      // one that matches the intent keeps this readable, and `prompt` is what
-      // actually stops the app offering to announce a move that never happened.
-      const notifyPlan = input.linked
-        ? { skip: true, prompt: false }
-        : guestNotifyPlanForChange({
-            previousDate: input.previousTarget.date,
-            nextDate: anchor,
-            previousTime: input.previousTarget.time,
-            nextTime: input.time,
-          });
+      /*
+        Derived from the slots themselves: a MOVE defers the guest email so the
+        prompt below can offer Notify/Skip, and a RESIZE (same start, new
+        length) skips it — the guest is still due at the same time. Both flags
+        suppress the send server-side; sending the one that matches the intent
+        keeps this readable, and `prompt` is what actually stops the app
+        offering to announce a move that never happened.
+
+        A PARTNER'S booking takes the same path as our own. It used to be forced
+        down the skip branch with no Notify offer, because the route that
+        releases the deferred send looked the booking up under the caller's
+        venue id and answered 404 for a partner's. Web #182 loads it through
+        `loadStaffAccessibleBooking` and gates on the link grant instead, and
+        sends as the OWNER venue — and a column is only draggable when the grant
+        is `full_details` + edit, which is exactly that gate. So there is no
+        longer a case where the offer could only fail.
+      */
+      const notifyPlan = guestNotifyPlanForChange({
+        previousDate: input.previousTarget.date,
+        nextDate: anchor,
+        previousTime: input.previousTarget.time,
+        nextTime: input.time,
+      });
       setPendingActionIds((prev) => new Set([...prev, input.bookingId]));
       void (async () => {
         try {
@@ -1612,7 +1612,6 @@ export default function CalendarScreen() {
           ...(fromPractitionerId ? { practitionerId: fromPractitionerId } : {}),
         },
         durationChanged: false,
-        linked: linkedHit != null,
       });
     },
     [
@@ -1690,10 +1689,9 @@ export default function CalendarScreen() {
           durationMinutes: end != null && end > start ? end - start : null,
         },
         durationChanged: true,
-        linked: linkedBookingVenue.has(bookingId),
       });
     },
-    [findBookingOnAnchor, findVisitOnAnchor, linkedBookingVenue, anchor, commitDrag, commitVisitDrag],
+    [findBookingOnAnchor, findVisitOnAnchor, anchor, commitDrag, commitVisitDrag],
   );
 
   // Drag dropped on a conflicting slot — the grid refuses the move; surface why.

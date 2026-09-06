@@ -36,11 +36,15 @@ export interface LinkedDetailPolicy {
   limitedEdit: boolean;
   /**
    * Status changes, attendance, Modify and Reschedule, notes, messaging the
-   * guest, deposit actions, resending the confirmation, adding and removing
-   * the guest's Records.
+   * guest, deposit actions, resending the confirmation, and adding to the
+   * guest's Records. REMOVING one of their files is not here: it follows
+   * `canCancel`, because web gates that DELETE with the cancel-level grant.
    */
   canEdit: boolean;
-  /** Cancelling, and permanently deleting a cancelled booking. */
+  /**
+   * Cancelling, permanently deleting a cancelled booking, and removing a file
+   * from the guest's Records.
+   */
   canCancel: boolean;
   /** Rebooking the guest, or a new booking for them, at the booking's own venue. */
   canRebook: boolean;

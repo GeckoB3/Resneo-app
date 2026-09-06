@@ -14,8 +14,9 @@
  * sending no deposit reminder at all before the booking was auto-released.
  *
  * WEB_LANE_DEFAULTS below is a transcription of `buildDefaultLanePolicies()` at
- * resneo `main` @ 18dac985, restricted to the keys this screen offers. When web changes
- * a default, this test fails and both sides get updated together.
+ * resneo `main` @ 2c8c2bd7, restricted to the keys this screen offers. When web changes
+ * a default, this test fails and both sides get updated together — which is how R27
+ * caught `confirm_or_cancel_prompt` moving to email only.
  *
  * Deliberately NOT asserted here:
  *   - keys web defines but the app's screen does not surface (card_hold_*, class_*,
@@ -42,7 +43,8 @@ interface WebDefault {
 /** Transcribed from web `buildDefaultLanePolicies()` @ 18dac985. */
 const WEB_LANE_DEFAULTS: Partial<Record<CommunicationMessageKey, WebDefault>> = {
   booking_confirmation: { enabled: true, channels: ['email'] },
-  confirm_or_cancel_prompt: { enabled: true, channels: ['email', 'sms'], hoursBefore: 24 },
+  // Email only since web #179 (2026-09-05); SMS stays an allowed channel.
+  confirm_or_cancel_prompt: { enabled: true, channels: ['email'], hoursBefore: 24 },
   pre_visit_reminder: { enabled: true, channels: ['email'], hoursBefore: 2 },
   deposit_payment_request: { enabled: true, channels: ['email', 'sms'] },
   deposit_confirmation: { enabled: true, channels: ['email'] },

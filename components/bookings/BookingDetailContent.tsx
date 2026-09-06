@@ -1783,10 +1783,13 @@ export function BookingDetailContent({
           guestId={guestProfileId}
           collapsible
           // A partner's guest's files live under the partner's venue; a
-          // view-only link may look but not add or remove.
+          // view-only link may look but not add, and removing one needs the
+          // full management grant (web gates the DELETE with the same rule it
+          // uses for cancelling their booking).
           ownerVenueId={linked?.venueId ?? null}
           ownerVenueName={linked?.venueName ?? null}
           readOnly={!policy.canEdit}
+          canDelete={policy.canCancel}
         />
       ) : null}
 

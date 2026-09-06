@@ -44,7 +44,10 @@ export const MESSAGE_DEFS: MessageDef[] = [
     allowedChannels: ['email', 'sms'],
     timing: { field: 'hoursBefore', label: 'before the visit', default: 24 },
     defaultEnabled: true,
-    defaultChannels: ['email', 'sms'],
+    // Email only, matching web's `buildDefaultLanePolicies` and the
+    // `venues.communication_policies` column default since 2026-09-05 (web
+    // #179). SMS stays an allowed channel, so the toggle is still offered.
+    defaultChannels: ['email'],
   },
   {
     key: 'pre_visit_reminder',

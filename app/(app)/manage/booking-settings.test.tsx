@@ -90,7 +90,7 @@ describe('Booking settings — waitlist enable + mode', () => {
     expect(screen.getByText('Appointment waitlist')).toBeTruthy();
     // Mode labels mirrored from the web WAITLIST_MODE_LABELS.
     expect(screen.getByText('Staff choose')).toBeTruthy();
-    expect(screen.getByText('First in line — notify in order')).toBeTruthy();
+    expect(screen.getByText('First in line, notify in order')).toBeTruthy();
     expect(screen.getByText('Offer to all')).toBeTruthy();
   });
 

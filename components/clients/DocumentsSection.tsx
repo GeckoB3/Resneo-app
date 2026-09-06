@@ -41,15 +41,24 @@ type DocumentsSectionProps = {
   defaultExpanded?: boolean;
   /**
    * A linked venue's guest: the files are read (and, with an edit grant,
-   * added and removed) under that venue, through `owner_venue_id` on the
-   * documents routes. Until the web accepts the scope the routes answer 404
-   * for a partner's guest, which reads as "not shared through this link yet".
+   * added) under that venue, through `owner_venue_id` on the documents routes.
+   * Web #182 serves the scope on all five routes for a `full_details` link that
+   * also shares personal data; a link that shares less answers 403, which reads
+   * as "not shared through this link yet".
    */
   ownerVenueId?: string | null;
   /** The partner's name, for that note. */
   ownerVenueName?: string | null;
   /** No adding or removing: a view-only link. */
   readOnly?: boolean;
+  /**
+   * Whether Remove is offered. Deleting a partner's file needs the FULL
+   * MANAGEMENT grant, not the edit grant that adding needs: web gates the
+   * DELETE with `linkedGrantAllowsCancel`, because destroying a file the owner
+   * venue holds is as final as cancelling their booking. Own-venue callers
+   * leave this alone.
+   */
+  canDelete?: boolean;
 };
 
 /** One file as either picker hands it over. */
@@ -160,6 +169,7 @@ export function DocumentsSection({
   ownerVenueId = null,
   ownerVenueName = null,
   readOnly = false,
+  canDelete = true,
 }: DocumentsSectionProps) {
   const { colors } = useTheme();
   const accessToken = useAccessToken();
@@ -168,14 +178,18 @@ export function DocumentsSection({
   const docsQuery = useGuestDocuments(guestId, scope);
   const uploadMutation = useUploadGuestDocument(guestId, scope);
   const deleteMutation = useDeleteGuestDocument(guestId, scope);
-  // A partner's guest the routes do not (yet) serve under the link: a note,
-  // not a fault. Anything else that fails is an error to say so.
+  // A partner's guest whose records the link does not share (no full-details
+  // grant, or no personal data): a note, not a fault. Anything else that fails
+  // is an error to say so.
   const notSharedThroughLink =
     ownerVenueId != null &&
     docsQuery.isError &&
     docsQuery.error instanceof ApiError &&
     (docsQuery.error.status === 403 || docsQuery.error.status === 404);
+  /** Adding: the edit grant is enough. */
   const canChange = !readOnly && !notSharedThroughLink;
+  /** Removing: the full management grant, per the server's stricter DELETE gate. */
+  const canRemove = canChange && canDelete;
   const [openingId, setOpeningId] = useState<string | null>(null);
   const [uploading, setUploading] = useState<{ done: number; total: number } | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -375,7 +389,7 @@ export function DocumentsSection({
                     {meta}
                   </Text>
                 ) : null}
-                {canChange ? (
+                {canRemove ? (
                   <Pressable
                     onPress={() => setPendingDelete({ id: doc.id, fileName: doc.file_name })}
                     accessibilityRole="button"
