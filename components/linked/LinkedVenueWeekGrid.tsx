@@ -15,6 +15,7 @@ import {
   linkedOpenRanges,
   linkedScheduleBlocksForDate,
   linkedVenueDayHours,
+  linkedWeekHeading,
   rangesToWorkingHours,
 } from '@/lib/linked/linked-calendar-view';
 import { spacing } from '@/theme/index';
@@ -123,12 +124,25 @@ export function LinkedVenueWeekGrid({
 
   const pill = linkedActionLabel(venue);
 
+  // Headed with the calendar's name when the partner shares one ("Jenny", as
+  // its day column is), with the venue under it; the venue's name over several,
+  // listing them, since this one grid merges every calendar's week. See
+  // `linkedWeekHeading`.
+  const heading = linkedWeekHeading(venue);
+
   return (
     <View style={styles.root}>
       <View style={styles.header}>
-        <Text variant="bodyMedium" numberOfLines={1} style={styles.title}>
-          {venue.venueName}
-        </Text>
+        <View style={styles.title}>
+          <Text variant="bodyMedium" numberOfLines={1}>
+            {heading.title}
+          </Text>
+          {heading.caption ? (
+            <Text variant="caption" tone="muted" numberOfLines={1}>
+              {heading.caption}
+            </Text>
+          ) : null}
+        </View>
         <Badge label="Linked" tone="warning" />
         {pill ? (
           <View style={styles.lockPill}>

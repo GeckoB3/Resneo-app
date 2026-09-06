@@ -259,3 +259,32 @@ export function linkedScheduleBlocksForColumn(
   });
   return dedupeScheduleDTOs(dtos).map(toCalendarScheduleBlock);
 }
+
+/**
+ * The calendars a partner shares that the grids draw: every active one, plus an
+ * inactive one still holding a booking in the feed (the rule
+ * `linkedVenueColumns` applies per day, here over the whole feed).
+ */
+export function linkedSharedCalendars(venue: LinkedVenueCalendar): LinkedPractitioner[] {
+  const booked = new Set(venue.bookings.map((b) => b.practitionerId));
+  return venue.practitioners.filter((p) => p.isActive !== false || booked.has(p.id));
+}
+
+/**
+ * What heads a partner's merged week grid, which draws one 7-day grid for the
+ * whole venue and so cannot be one column per calendar. A partner sharing a
+ * single calendar is headed with that calendar's name ("Jenny", not "light2",
+ * as its day column is), with the venue as the caption; one sharing several
+ * keeps the venue's name and lists the calendars, since every bar of theirs is
+ * in the one grid.
+ */
+export function linkedWeekHeading(venue: LinkedVenueCalendar): {
+  title: string;
+  caption?: string;
+} {
+  const calendars = linkedSharedCalendars(venue);
+  const [only] = calendars;
+  if (only && calendars.length === 1) return { title: only.name, caption: venue.venueName };
+  if (calendars.length === 0) return { title: venue.venueName };
+  return { title: venue.venueName, caption: calendars.map((c) => c.name).join(', ') };
+}

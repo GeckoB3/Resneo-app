@@ -219,6 +219,17 @@ type AllCalendarsDayGridProps = {
    * (density rules drop text rows/actions) and the resize affordance is hidden.
    */
   compact?: boolean;
+  /**
+   * Render at full intrinsic height inside a plain View instead of the grid's
+   * own vertical ScrollView, so a PARENT scroll container owns the vertical
+   * scroll (a linked venue's card on the linked calendar screen, the calendar
+   * tab's single linked venue view). Same reason as `CalendarDayGrid`: a
+   * same-axis ScrollView stacked inside another swallows the parent's pan. The
+   * horizontal column scroll is orthogonal and stays. `refreshing`/`onRefresh`
+   * are then owned by the parent and ignored here, and compact mode renders at
+   * its floor scale, since the fit needs a viewport to measure.
+   */
+  embedded?: boolean;
 };
 
 /**
@@ -322,6 +333,7 @@ export function AllCalendarsDayGrid({
   refreshing = false,
   onRefresh,
   compact = false,
+  embedded = false,
 }: AllCalendarsDayGridProps) {
   const { colors } = useTheme();
 
@@ -640,6 +652,11 @@ export function AllCalendarsDayGrid({
         </Animated.ScrollView>
       </View>
   );
+
+  // Embedded: hand vertical scrolling to the parent (see the prop).
+  if (embedded) {
+    return <View style={styles.embeddedContent}>{body}</View>;
+  }
 
   return (
     <ScrollView
@@ -1156,6 +1173,10 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingTop: spacing.sm,
     paddingBottom: spacing['3xl'] + spacing.xl,
+  },
+  embeddedContent: {
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.md,
   },
   row: {
     flexDirection: 'row',

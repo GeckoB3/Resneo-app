@@ -127,6 +127,11 @@ jest.mock('react-native-reanimated', () => {
     },
     useAnimatedReaction: () => {},
     useAnimatedRef: () => ({ current: null }),
+    // The multi-calendar day grid's cross-column drag: a scroll handler, a
+    // frame loop (armed only mid-drag) and an imperative scroll. Inert here.
+    useAnimatedScrollHandler: () => () => {},
+    useFrameCallback: () => ({ setActive: () => {}, isActive: false }),
+    scrollTo: () => {},
     withSpring: (toValue) => toValue,
     withTiming: (toValue) => toValue,
     withRepeat: (animation) => animation,

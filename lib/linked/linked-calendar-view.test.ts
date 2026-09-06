@@ -9,8 +9,10 @@ import {
   linkedColumnKey,
   linkedScheduleBlocksForColumn,
   linkedScheduleBlocksForDate,
+  linkedSharedCalendars,
   linkedVenueColumns,
   linkedVenueDayHours,
+  linkedWeekHeading,
   parseLinkedColumnKey,
   rangesToWorkingHours,
 } from '@/lib/linked/linked-calendar-view';
@@ -359,5 +361,39 @@ describe('linkedScheduleBlocksForColumn', () => {
     expect(
       linkedScheduleBlocksForColumn(v, { practitionerId: null }, DATE).map((b) => b.id),
     ).toEqual(['s2', 's3']);
+  });
+});
+
+describe('linkedSharedCalendars / linkedWeekHeading', () => {
+  const jenny = practitioner({ id: 'p1', name: 'Jenny' });
+  const sam = practitioner({ id: 'p2', name: 'Sam' });
+  const idle = practitioner({ id: 'p3', name: 'Idle', isActive: false });
+
+  it('lists the active calendars, plus an inactive one still holding a booking', () => {
+    expect(linkedSharedCalendars(venue({ practitioners: [jenny, idle] })).map((p) => p.name)).toEqual([
+      'Jenny',
+    ]);
+    expect(
+      linkedSharedCalendars(
+        venue({ practitioners: [jenny, idle], bookings: [booking({ practitionerId: 'p3' })] }),
+      ).map((p) => p.name),
+    ).toEqual(['Jenny', 'Idle']);
+  });
+
+  it('heads a single shared calendar with its name, the venue under it', () => {
+    expect(linkedWeekHeading(venue({ venueName: 'light2', practitioners: [jenny] }))).toEqual({
+      title: 'Jenny',
+      caption: 'light2',
+    });
+  });
+
+  it('keeps the venue name over several calendars, listing them, and alone over none', () => {
+    expect(linkedWeekHeading(venue({ venueName: 'light2', practitioners: [jenny, sam] }))).toEqual({
+      title: 'light2',
+      caption: 'Jenny, Sam',
+    });
+    expect(linkedWeekHeading(venue({ venueName: 'light2', practitioners: [] }))).toEqual({
+      title: 'light2',
+    });
   });
 });

@@ -169,12 +169,15 @@ export default function LinkedCalendarScreen() {
           date={date}
           nowMinutes={nowMinutes}
           onOpenBooking={(booking) => setSheet({ kind: 'detail', venue: v, booking })}
-          onCreate={(time) =>
+          onCreate={(time, practitionerId) =>
             setSlot({
               venue: v,
               date,
               time,
-              collective: collectiveBookingTargetFor(staffCollective, v.venueId),
+              // The tapped column names the partner's calendar (web parity), so
+              // the form opens on it; the header button names none.
+              practitionerId,
+              collective: collectiveBookingTargetFor(staffCollective, v.venueId, practitionerId),
             })
           }
         />

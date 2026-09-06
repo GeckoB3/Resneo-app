@@ -2427,14 +2427,21 @@ export default function CalendarScreen() {
                   onOpenBooking={(b) =>
                     setLinkedSheet({ kind: 'detail', venue: activeLinkedVenue, booking: b })
                   }
-                  onCreate={(time) =>
+                  onCreate={(time, practitionerId) =>
                     setLinkedSlot({
                       venue: activeLinkedVenue,
                       date: anchor,
                       time,
+                      // The tapped column names the partner's calendar (web
+                      // parity), so the form opens on it; the header button
+                      // and the venue-level column name none, and the form asks.
+                      practitionerId,
+                      // A member books through the collective when that
+                      // calendar is one of its calendars (or none is named).
                       collective: collectiveBookingTargetFor(
                         staffCollective,
                         activeLinkedVenue.venueId,
+                        practitionerId,
                       ),
                     })
                   }

@@ -614,3 +614,18 @@ every engine, so `card_hold` in a public payload still implies a positive fee.
    tap on the column carries the calendar into the booking form, and the bar keeps the bare
    service. The wide-day filter chips still toggle a partner as a whole; the phone's single-venue
    view and the linked calendar screen keep their merged per-venue grid.
+
+2. **The single-venue views still named the venue (2026-09-06).** Finding 1 fixed the combined
+   grid only. A partner's own views were untouched: the calendar tab's single-venue view (the
+   partner's chip, which on a phone with one own calendar is the only way to its diary, since the
+   "All" chip needs two own calendars) and the linked calendar screen both drew the partner's day
+   as ONE merged `CalendarDayGrid` headed "light2", and its week the same. Fixed:
+   `LinkedVenueCalendarGrid` now draws one column per calendar on the shared `AllCalendarsDayGrid`
+   (which gained an `embedded` mode for the stacked screen and the tab's scroll), headed "Jenny",
+   through the same `linkedVenueColumns` builder as the combined grid, with the venue in the card
+   header and a slot tap carrying the calendar into the booking form. The merged week grid stays
+   one grid per venue (the web has no linked week) but is headed with the calendar's name when the
+   partner shares one, and lists the calendars under the venue's name when it shares several
+   (`linkedWeekHeading`). Neither this nor finding 1 is in the R24 OTA (group `556bbef3`, which
+   stops at `af21ac9`); both need the next update.
+
