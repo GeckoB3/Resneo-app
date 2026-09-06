@@ -66,6 +66,15 @@ export type ModifyBookingTarget = {
   usesServiceItem: boolean;
   serviceVariantId: string | null;
   /**
+   * The booking's venue when it is a linked venue's (web
+   * `StaffExpandedBookingModifyModal`'s `catalogOwnerVenueId`): the services,
+   * staff and free slots are read from THAT venue's catalogue and diary, not
+   * ours, and the calendar picker is not narrowed to our own assignments (the
+   * server skips its role check for a cross-venue edit; only the link grant
+   * applies). Null or absent for our own booking.
+   */
+  ownerVenueId?: string | null;
+  /**
    * Set when this booking is one service of a multi-service visit. The form then
    * edits the VISIT: one start, one calendar and ONE wall-clock duration, written
    * through the visit endpoint so the services cannot come apart.
@@ -184,7 +193,10 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   const { colors } = useTheme();
   const { venue } = useVenueContext();
   const toast = useToast();
-  const catalogQuery = useAppointmentCatalog(target ? venue?.id ?? null : null);
+  // A linked venue's booking reads that venue's catalogue (see the target).
+  const catalogQuery = useAppointmentCatalog(
+    target ? target.ownerVenueId ?? venue?.id ?? null : null,
+  );
   const modify = useModifyAppointment(target?.id ?? '');
   const validate = useValidateAppointmentModification(target?.id ?? '');
   /**
@@ -428,6 +440,10 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
      * picker with nothing selected and make an unrelated edit look like a
      * reassign. Selecting it changes nothing, so it never arms the gate.
      */
+    // A linked venue's booking is not narrowed: our calendar assignments say
+    // nothing about the partner's calendars, and the server applies the link
+    // grant instead of its role check for a cross-venue edit.
+    if (target?.ownerVenueId) return offering;
     const usable = filterToUsableCalendars(
       {
         role: staffMe.data?.staff.role,
@@ -437,7 +453,15 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     );
     const current = offering.find((p) => p.id === target?.practitionerId);
     return current && !usable.some((p) => p.id === current.id) ? [current, ...usable] : usable;
-  }, [isVisit, serviceId, offeredBy, practitioners, staffMe.data, target?.practitionerId]);
+  }, [
+    isVisit,
+    serviceId,
+    offeredBy,
+    practitioners,
+    staffMe.data,
+    target?.practitionerId,
+    target?.ownerVenueId,
+  ]);
 
   /**
    * The calendar id to SEND, or undefined when it has not changed.
@@ -805,6 +829,8 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     variantId,
     durationMinutes: effectiveDuration,
     excludeBookingId: target?.id,
+    // A linked venue's booking asks that venue's diary (web parity).
+    ownerVenueId: target?.ownerVenueId ?? null,
     // Wait for the duration to resolve rather than querying without one (the
     // server would answer for the catalogue default, not this booking).
     //
@@ -837,6 +863,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     month: monthMonth ?? 1,
     variantId: requiresVariant ? variantId : null,
     durationMinutes: effectiveDuration,
+    ownerVenueId: target?.ownerVenueId ?? null,
     enabled:
       !isVisit &&
       mode === 'date' &&

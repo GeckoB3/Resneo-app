@@ -16,6 +16,11 @@
  * The screen owns both instead, once per bar action:
  * `patchCalendarGridBookings` before the writes, `revertCalendarGridBookings` for
  * whichever segments failed, `invalidateCalendarQuickAction` once at the end.
+ *
+ * A partner's bar on an editable linked column (web `linkedColumnUsesNativeGrid`)
+ * takes the same actions through the same PATCH, but its row lives in the
+ * linked-calendar feed rather than the grid, so the patch, the revert and the
+ * reconcile cover that feed too.
  */
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
@@ -24,6 +29,7 @@ import { queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import type { BookingStatus } from '@/types/booking-detail';
 import type { CalendarGridBooking, CalendarGridResponse } from '@/types/calendar-grid';
+import type { LinkedBooking, LinkedCalendarResponse } from '@/types/linked-venues';
 
 type QueryClient = ReturnType<typeof useQueryClient>;
 
@@ -44,6 +50,23 @@ function isGridResponse(value: unknown): value is CalendarGridResponse {
   );
 }
 
+/** A cached value under `linkedCalendar.all()` that is actually the linked feed. */
+function isLinkedFeed(value: unknown): value is LinkedCalendarResponse {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    Array.isArray((value as LinkedCalendarResponse).venues)
+  );
+}
+
+/** The grid patch in the linked feed's own field names, only the keys that are set. */
+function linkedBookingPatch(patch: CalendarBookingPatch): Partial<LinkedBooking> {
+  const out: Partial<LinkedBooking> = {};
+  if ('status' in patch && patch.status !== undefined) out.status = patch.status;
+  if ('client_arrived_at' in patch) out.clientArrivedAt = patch.client_arrived_at ?? null;
+  return out;
+}
+
 /**
  * Apply `patch` to every cached calendar-grid row whose id is in `ids`, and return
  * what those rows held before.
@@ -56,7 +79,8 @@ function isGridResponse(value: unknown): value is CalendarGridResponse {
  *
  * Rows are matched across every cached range, so a booking visible in more than
  * one loaded range moves everywhere at once. The returned snapshot keeps the first
- * value seen per id — they agree, being the same row.
+ * value seen per id — they agree, being the same row. A partner's booking is
+ * matched in the linked-calendar feed instead, with the same snapshot shape.
  */
 export function patchCalendarGridBookings(
   queryClient: QueryClient,
@@ -66,6 +90,31 @@ export function patchCalendarGridBookings(
   const wanted = new Set(ids);
   const previous: CalendarGridSnapshot = new Map();
   if (wanted.size === 0) return previous;
+
+  queryClient.setQueriesData<LinkedCalendarResponse>(
+    { queryKey: queryKeys.linkedCalendar.all() },
+    (old) => {
+      if (!isLinkedFeed(old)) return old;
+      const fields = linkedBookingPatch(patch);
+      let anyChanged = false;
+      const venues = old.venues.map((venue) => {
+        if (!venue.bookings.some((b) => wanted.has(b.id))) return venue;
+        anyChanged = true;
+        const bookings = venue.bookings.map((booking) => {
+          if (!wanted.has(booking.id)) return booking;
+          if (!previous.has(booking.id)) {
+            previous.set(booking.id, {
+              status: booking.status,
+              client_arrived_at: booking.clientArrivedAt ?? null,
+            });
+          }
+          return { ...booking, ...fields };
+        });
+        return { ...venue, bookings };
+      });
+      return anyChanged ? { ...old, venues } : old;
+    },
+  );
 
   queryClient.setQueriesData<CalendarGridResponse>(
     { queryKey: queryKeys.calendar.all() },
@@ -132,7 +181,10 @@ export async function applyOptimisticGridPatch(
 ): Promise<CalendarGridSnapshot> {
   const snapshot = patchCalendarGridBookings(queryClient, ids, patch);
   if (ids.length === 0) return snapshot;
-  await queryClient.cancelQueries({ queryKey: queryKeys.calendar.all() });
+  await Promise.all([
+    queryClient.cancelQueries({ queryKey: queryKeys.calendar.all() }),
+    queryClient.cancelQueries({ queryKey: queryKeys.linkedCalendar.all() }),
+  ]);
   patchCalendarGridBookings(queryClient, ids, patch);
   return snapshot;
 }
@@ -169,6 +221,8 @@ export function invalidateCalendarQuickAction(
     });
   }
   void queryClient.invalidateQueries({ queryKey: queryKeys.calendar.all() });
+  // A partner's bar answers from the linked feed (see the module note).
+  void queryClient.invalidateQueries({ queryKey: queryKeys.linkedCalendar.all() });
   void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all() });
   void queryClient.invalidateQueries({ queryKey: queryKeys.schedule.all() });
   void queryClient.invalidateQueries({ queryKey: queryKeys.waitlist.all() });

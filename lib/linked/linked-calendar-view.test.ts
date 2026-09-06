@@ -1,8 +1,13 @@
 import {
   fmtTime,
+  LINKED_MOVE_SAME_VENUE_ERROR,
   linkedActionLabel,
   linkedBookingLabel,
+  linkedBookingUsesExpandedDetail,
   linkedBusyBlock,
+  linkedColumnPractitionerIdForPatch,
+  linkedColumnUsesNativeGrid,
+  linkedCreateNotGrantedMessage,
   linkedGridBooking,
   linkedHasTemplate,
   linkedOpenRanges,
@@ -499,5 +504,45 @@ describe('linkedDayHeading', () => {
     expect(linkedDayHeading(light2, [{ practitionerId: null, name: 'light2' }])).toEqual({
       title: 'light2',
     });
+  });
+});
+
+describe('linkedColumnUsesNativeGrid / linkedBookingUsesExpandedDetail (web parity)', () => {
+  it('joins the interactive grid on full details with an edit grant only', () => {
+    expect(linkedColumnUsesNativeGrid({ visibility: 'full_details', action: 'edit_existing' })).toBe(
+      true,
+    );
+    expect(
+      linkedColumnUsesNativeGrid({ visibility: 'full_details', action: 'create_edit_cancel' }),
+    ).toBe(true);
+    expect(linkedColumnUsesNativeGrid({ visibility: 'full_details', action: 'none' })).toBe(false);
+    // A time-only link stays read only whatever the action, as on the web.
+    expect(linkedColumnUsesNativeGrid({ visibility: 'time_only', action: 'create_edit_cancel' })).toBe(
+      false,
+    );
+    expect(linkedColumnUsesNativeGrid({ visibility: 'none', action: 'none' })).toBe(false);
+  });
+
+  it('opens the full panel for any full-details link, the busy sheet for time only', () => {
+    expect(linkedBookingUsesExpandedDetail({ visibility: 'full_details' })).toBe(true);
+    expect(linkedBookingUsesExpandedDetail({ visibility: 'time_only' })).toBe(false);
+  });
+});
+
+describe('linkedColumnPractitionerIdForPatch', () => {
+  it('unwraps the calendar id a linked column key carries, and leaves other ids alone', () => {
+    expect(linkedColumnPractitionerIdForPatch('linked:v1:p1')).toBe('p1');
+    expect(linkedColumnPractitionerIdForPatch('own-cal')).toBe('own-cal');
+    // The venue-level column names no calendar; it never takes a reassign.
+    expect(linkedColumnPractitionerIdForPatch('linked:v1')).toBe('linked:v1');
+  });
+});
+
+describe('linked copy', () => {
+  it('carries the web wording', () => {
+    expect(LINKED_MOVE_SAME_VENUE_ERROR).toBe('A booking can only be moved within the same venue.');
+    expect(linkedCreateNotGrantedMessage('light2')).toBe(
+      'light2 hasn’t granted permission to create bookings on this calendar.',
+    );
   });
 });

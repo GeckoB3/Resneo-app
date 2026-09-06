@@ -13,6 +13,7 @@ import { patternLookupFromLinkedServices } from '@/lib/calendar/processing-gaps'
 import {
   linkedActionLabel,
   linkedBusyBlock,
+  linkedColumnUsesNativeGrid,
   linkedDayHeading,
   linkedGridBooking,
   linkedHasTemplate,
@@ -36,19 +37,21 @@ import type { LinkedBooking, LinkedVenueCalendar } from '@/types/linked-venues';
  * columns carry the names and the card names the venue (`linkedDayHeading`).
  * The columns come from `linkedVenueColumns`, the builder the calendar tab's
  * combined grid uses too, so the two views cannot diverge.
- * Interaction is gated by the link grant (§2.5):
+ * Interaction is gated by the link grant (§2.5, web `linkedColumnUsesNativeGrid`):
  *
  *  · `time_only`             → bookings render as non-interactive grey "busy"
  *                              overlays ("{venue} — busy"); no tap, no drag.
- *  · `full_details`+`none`   → appointment bars open a read-only detail (lock);
- *                              drag/resize disabled.
+ *  · `full_details`+`none`   → appointment bars open the full booking panel,
+ *                              read only; no tray, no drag.
  *  · `edit_existing` /
- *    `create_edit_cancel`    → appointment bars open the edit sheet.
+ *    `create_edit_cancel`    → the bars are the interactive bars an own column
+ *                              has: the quick-action tray, hold-drag move and
+ *                              resize (across the partner's own calendars only)
+ *                              and the full booking panel, through the drag and
+ *                              action callbacks the host passes in.
  *
- * The parent owns the sheets; this component only resolves which booking was
- * tapped and which calendar's column an empty-slot tap landed on. The detail
- * sheet itself gates view vs edit by the link grant, so a single
- * `onOpenBooking` covers both.
+ * The parent owns the sheets and the writes; this component only resolves which
+ * booking was tapped and which calendar's column an empty-slot tap landed on.
  */
 export function LinkedVenueCalendarGrid({
   venue,
@@ -56,7 +59,16 @@ export function LinkedVenueCalendarGrid({
   nowMinutes,
   onOpenBooking,
   onCreate,
+  onCreateRefused,
   showCreateButton = true,
+  onStatusChange,
+  onArrivalToggle,
+  pendingActionIds,
+  onDragReschedule,
+  onDragResize,
+  onDragConflictReject,
+  onDragMoveToColumn,
+  onDragColumnReject,
   refreshing,
   onRefresh,
   embedded,
@@ -67,7 +79,7 @@ export function LinkedVenueCalendarGrid({
   date: string;
   /** Minutes-since-midnight for the now-line, or null when not today. */
   nowMinutes: number | null;
-  /** Open the booking's expanded detail (read-only or editable per the grant). */
+  /** Open the booking's detail (the host picks the panel by the grant). */
   onOpenBooking: (booking: LinkedBooking) => void;
   /**
    * Start a new cross-venue booking (only shown for create_edit_cancel). An
@@ -77,6 +89,12 @@ export function LinkedVenueCalendarGrid({
    * calendar, and the header button passes neither.
    */
   onCreate: (time?: string, practitionerId?: string) => void;
+  /**
+   * An empty slot was tapped on a column the grant lets us edit but not book
+   * on (`edit_existing`). The web answers with a note naming the venue; the
+   * host shows it. A read-only column's slots stay inert, as on the web.
+   */
+  onCreateRefused?: () => void;
   /**
    * Show the header's "New booking" button (default true; the grant still
    * gates it, and empty-slot taps are unaffected). The calendar tab passes
@@ -88,6 +106,25 @@ export function LinkedVenueCalendarGrid({
    * is worse than shown a moment late.
    */
   showCreateButton?: boolean;
+  /**
+   * The bar's quick actions and hold-drag gestures, exactly as the calendar
+   * tab wires them for its own columns (`AllCalendarsDayGrid`'s props). Only
+   * used on a link the grant lets us edit; a read-only link ignores them.
+   */
+  onStatusChange?: (bookingIds: string[], status: string) => void;
+  onArrivalToggle?: (bookingIds: string[], arrived: boolean) => void;
+  pendingActionIds?: Set<string>;
+  onDragReschedule?: (bookingId: string, newTime: string) => void;
+  onDragResize?: (bookingId: string, newDurationMinutes: number) => void;
+  onDragConflictReject?: () => void;
+  /** A drop on another of the partner's calendars; the target is that column's key. */
+  onDragMoveToColumn?: (
+    bookingId: string,
+    newTime: string,
+    targetCalendarId: string,
+    fromCalendarId: string,
+  ) => void;
+  onDragColumnReject?: () => void;
   refreshing?: boolean;
   onRefresh?: () => void;
   /**
@@ -111,6 +148,8 @@ export function LinkedVenueCalendarGrid({
 
   const timeOnly = venue.visibility === 'time_only';
   const canCreate = venue.action === 'create_edit_cancel';
+  // The link shares full details and lets us edit: the bars are interactive.
+  const editable = linkedColumnUsesNativeGrid(venue);
 
   // One column per calendar the partner shares on this date (an inactive one
   // only while it holds a booking; a venue-level column for bookings naming no
@@ -162,23 +201,20 @@ export function LinkedVenueCalendarGrid({
         // Drawn like an own column: the card header above already carries the
         // Linked pill, and the owner wants no amber (2026-09-06).
         linked: true,
+        // Interactive on an edit grant (web `linkedColumnUsesNativeGrid`); a
+        // move may cross onto the partner's other calendars, never onto the
+        // venue-level column, which names no calendar to reassign to.
+        editable,
+        moveGroup: col.practitionerId ? venue.venueId : undefined,
         processingPatternFor,
       })),
-    [linkedColumns, timeOnly, venue, date, processingPatternFor],
+    [linkedColumns, timeOnly, venue, date, processingPatternFor, editable],
   );
 
   const handleBlockPress = (bookingId: string) => {
     const booking = bookingsById.get(bookingId);
     if (booking) onOpenBooking(booking);
   };
-
-  // Hold-drag move/resize is intentionally NOT wired: the web linked calendar
-  // has no drag — every edit (including reschedule) goes through the edit sheet,
-  // which records the change in the cross-venue audit log with a clear diff.
-  // Omitting onDragReschedule/onDragResize disables the gesture in the grid, a
-  // `linked` column never offers the own-column quick actions or the
-  // cross-column move, so time_only and read-only columns are non-interactive
-  // and editable columns open the sheet on tap.
 
   // Render the grid when there's anything to show — bookings, hours today on
   // any calendar, a working-hours template (so a closed day shades correctly),
@@ -254,10 +290,24 @@ export function LinkedVenueCalendarGrid({
             onEmptyPress={(calendarId, time) => {
               // Tapping empty space starts a new booking only when allowed, at
               // the tapped time (the grid resolves it from the tap's Y) on the
-              // tapped column's calendar; the venue-level column names none.
-              if (!canCreate) return;
+              // tapped column's calendar; the venue-level column names none. On
+              // an editable link without a create grant the web says why.
+              if (!canCreate) {
+                if (editable) onCreateRefused?.();
+                return;
+              }
               onCreate(time, parseLinkedColumnKey(calendarId)?.practitionerId ?? undefined);
             }}
+            // The interactive bars' callbacks, on an edit grant only; the grid
+            // draws a static bar otherwise and would ignore them anyway.
+            onStatusChange={editable ? onStatusChange : undefined}
+            onArrivalToggle={editable ? onArrivalToggle : undefined}
+            pendingActionIds={editable ? pendingActionIds : undefined}
+            onDragReschedule={editable ? onDragReschedule : undefined}
+            onDragResize={editable ? onDragResize : undefined}
+            onDragConflictReject={editable ? onDragConflictReject : undefined}
+            onDragMoveToColumn={editable ? onDragMoveToColumn : undefined}
+            onDragColumnReject={editable ? onDragColumnReject : undefined}
             refreshing={refreshing}
             onRefresh={onRefresh}
           />

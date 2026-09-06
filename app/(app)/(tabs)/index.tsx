@@ -120,8 +120,13 @@ import {
 } from '@/lib/calendar/managed-calendars';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import {
+  LINKED_MOVE_SAME_VENUE_ERROR,
+  linkedBookingUsesExpandedDetail,
   linkedBusyBlock,
   linkedColumnKey,
+  linkedColumnPractitionerIdForPatch,
+  linkedColumnUsesNativeGrid,
+  linkedCreateNotGrantedMessage,
   linkedGridBooking,
   linkedNameRepeatsVenue,
   linkedScheduleBlocksForColumn,
@@ -134,7 +139,8 @@ import {
   rangesToWorkingHours,
   type LinkedVenueColumn,
 } from '@/lib/linked/linked-calendar-view';
-import { useLinkedCalendar } from '@/lib/queries/useLinkedCalendar';
+import type { LinkedBookingContext } from '@/lib/linked/linked-detail-policy';
+import { pingLinkedBookingView, useLinkedCalendar } from '@/lib/queries/useLinkedCalendar';
 import { useLinkedVenueContext } from '@/providers/LinkedVenueProvider';
 import type { CalendarGridBooking, CalendarGridDay } from '@/types/calendar-grid';
 import type { Practitioner } from '@/types/practitioner';
@@ -394,6 +400,12 @@ export default function CalendarScreen() {
     }
   }, [params.date]);
   const [detailBookingId, setDetailBookingId] = useState<string | null>(null);
+  /**
+   * The link behind the open detail when it is a partner's booking: the same
+   * panel opens (web: the native `BookingDetailPanel` with `linkedAct`), and
+   * the grant decides what it offers. Null for an own booking.
+   */
+  const [detailLinked, setDetailLinked] = useState<LinkedBookingContext | null>(null);
   const [blockTarget, setBlockTarget] = useState<BlockTarget | null>(null);
   const [addSheetTarget, setAddSheetTarget] = useState<AddSheetTarget | null>(null);
   // Month-picker sheet (date jump) — opened by tapping the header date label.
@@ -747,6 +759,29 @@ export default function CalendarScreen() {
   // `addSheetTarget`, which is the own-venue sheet and carries a practitioner
   // column plus Block time / resource actions that a linked venue must not get.
   const [linkedSlot, setLinkedSlot] = useState<LinkedSlotTarget | null>(null);
+
+  // Tap routing for the combined grid: a linked column key (`linked:<venueId>`
+  // or `linked:<venueId>:<calendarId>`) and any booking id belonging to a linked
+  // venue route to the linked sheets / cross-venue create flow; everything else
+  // is an own-venue practitioner. The booking map also serves the drag and
+  // tray handlers, which look a partner's bar up here when the own grid does
+  // not know it.
+  const linkedColumnVenue = useMemo(() => {
+    const m = new Map<string, { venue: LinkedVenueCalendar; practitionerId: string | null }>();
+    for (const v of linkedVenues) {
+      m.set(linkedColumnKey(v.venueId), { venue: v, practitionerId: null });
+      for (const p of v.practitioners) {
+        m.set(linkedColumnKey(v.venueId, p.id), { venue: v, practitionerId: p.id });
+      }
+    }
+    return m;
+  }, [linkedVenues]);
+
+  const linkedBookingVenue = useMemo(() => {
+    const m = new Map<string, { venue: LinkedVenueCalendar; booking: LinkedBooking }>();
+    for (const v of linkedVenues) for (const b of v.bookings) m.set(b.id, { venue: v, booking: b });
+    return m;
+  }, [linkedVenues]);
 
   const gridQuery = useCalendarGrid({
     calendarIds,
@@ -1178,7 +1213,37 @@ export default function CalendarScreen() {
   );
 
   // Tap a block → full booking detail
-  const openDetail = useCallback((id: string) => setDetailBookingId(id), []);
+  const openDetail = useCallback((id: string) => {
+    setDetailLinked(null);
+    setDetailBookingId(id);
+  }, []);
+
+  /**
+   * Tap a partner's bar (web `openLinkedBooking` / `openGridBookingDetail`): a
+   * full-details link opens the same full panel an own booking does, carrying
+   * the grant so the panel offers what the link allows, after the read-audit
+   * ping the web sends; a time-only link keeps the small busy-block sheet,
+   * since the detail route refuses it.
+   */
+  const openLinkedBooking = useCallback(
+    (venue: LinkedVenueCalendar, booking: LinkedBooking) => {
+      if (!linkedBookingUsesExpandedDetail(venue)) {
+        setLinkedSheet({ kind: 'detail', venue, booking });
+        return;
+      }
+      pingLinkedBookingView(booking.id, accessToken);
+      setDetailLinked({
+        act: venue.action,
+        venueId: venue.venueId,
+        venueName: venue.venueName,
+        pii: venue.pii,
+        practitionerName:
+          venue.practitioners.find((p) => p.id === booking.practitionerId)?.name ?? null,
+      });
+      setDetailBookingId(booking.id);
+    },
+    [accessToken],
+  );
 
   // Practitioner name for the open booking — found via the column it sits in.
   // The detail GET now returns `practitioner_name`, but pass this through as a
@@ -1216,18 +1281,33 @@ export default function CalendarScreen() {
     [effectiveId],
   );
 
-  /** Look up a booking on the viewed calendar for the anchor date. */
+  /**
+   * Look up a booking on the viewed calendar for the anchor date: an own
+   * booking from the grid, or a partner's from the linked feed in the grid's
+   * shape, since an editable linked column drags and resizes through the same
+   * commit path (web parity: `allGridBookings` holds both).
+   */
   const findBookingOnAnchor = useCallback(
-    (bookingId: string) => {
+    (bookingId: string): CalendarGridBooking | null => {
       for (const cal of gridQuery.data?.calendars ?? []) {
         const dateData = cal.dates.find((d) => d.date === anchor);
         if (!dateData) continue;
         const booking = dateData.bookings.find((b) => b.id === bookingId);
         if (booking) return booking;
       }
+      const hit = linkedBookingVenue.get(bookingId);
+      if (hit && hit.booking.bookingDate === anchor) {
+        // The web keeps resource bookings off the drag; the feed names one by
+        // its resource id, which the grid row shape does not carry.
+        const row: CalendarGridBooking & { resource_id?: string | null } = {
+          ...linkedGridBooking(hit.booking, hit.venue.practitioners, { practitionerInLabel: false }),
+          resource_id: hit.booking.resourceId ?? null,
+        };
+        return row;
+      }
       return null;
     },
-    [gridQuery.data, anchor],
+    [gridQuery.data, anchor, linkedBookingVenue],
   );
 
   /**
@@ -1357,6 +1437,15 @@ export default function CalendarScreen() {
       practitionerId?: string;
       previousTarget: RescheduleTarget;
       durationChanged: boolean;
+      /**
+       * A partner's booking, moved from an editable linked column. The guest
+       * email is skipped outright and no Notify offer follows: the deferred
+       * send is released by a route scoped to our own venue's bookings
+       * (`guest-modification-notify` looks the booking up under our venue id),
+       * so on a partner's booking the offer could only fail. The partner's own
+       * staff are told of the change by the server's cross-venue notification.
+       */
+      linked?: boolean;
     }) => {
       // Derived from the slots themselves rather than the caller's flag: a MOVE
       // defers the guest email so the prompt below can offer Notify/Skip, and a
@@ -1364,12 +1453,14 @@ export default function CalendarScreen() {
       // the same time. Both flags suppress the send server-side; sending the
       // one that matches the intent keeps this readable, and `prompt` is what
       // actually stops the app offering to announce a move that never happened.
-      const notifyPlan = guestNotifyPlanForChange({
-        previousDate: input.previousTarget.date,
-        nextDate: anchor,
-        previousTime: input.previousTarget.time,
-        nextTime: input.time,
-      });
+      const notifyPlan = input.linked
+        ? { skip: true, prompt: false }
+        : guestNotifyPlanForChange({
+            previousDate: input.previousTarget.date,
+            nextDate: anchor,
+            previousTime: input.previousTarget.time,
+            nextTime: input.time,
+          });
       setPendingActionIds((prev) => new Set([...prev, input.bookingId]));
       void (async () => {
         try {
@@ -1421,6 +1512,9 @@ export default function CalendarScreen() {
     ) => {
       const booking = findBookingOnAnchor(bookingId);
       if (!booking || !isMovableBooking(booking)) return;
+      // A partner's booking: the server applies the link grant in place of its
+      // role check for a cross-venue write, so the gate below is ours alone.
+      const linkedHit = linkedBookingVenue.get(bookingId);
       /**
        * R16-1 — refuse a cross-column move a non-admin is not allowed to make,
        * BEFORE the mutation rather than after it.
@@ -1435,13 +1529,14 @@ export default function CalendarScreen() {
        * `practitioner_id`, so the server never runs the check — and gating it
        * here would stop a non-admin dragging a booking around their OWN column.
        *
-       * The target is always an own-venue calendar. `AllCalendarsDayGrid`
-       * restricts cross-column drops to non-linked columns (`ownColumnIds`), which
-       * matches the server's `isOwnVenue` condition, so there is no linked-venue
-       * carve-out to make here.
+       * The target of an own booking is always an own-venue calendar:
+       * `AllCalendarsDayGrid` keeps a bar's cross-column drops to its own
+       * venue's columns, which matches the server's `isOwnVenue` condition. A
+       * partner's bar lands on that partner's calendars, where the grant rules.
        */
       if (
         reassign &&
+        !linkedHit &&
         !canStaffUseCalendar(
           { role: staffMe.data?.staff.role, managedCalendarIds: staffMe.data?.staff.linked_calendar_ids },
           reassign.toPractitionerId,
@@ -1450,6 +1545,15 @@ export default function CalendarScreen() {
         toast.error(CANNOT_MOVE_TO_CALENDAR_ERROR);
         return;
       }
+      // The calendar ids the PATCH names: a partner's column arrives as its
+      // column key, and the server wants the raw calendar id behind it (web
+      // `resolveLinkedGridPractitionerIdForPatch`); an own column's id is one.
+      const toPractitionerId = reassign
+        ? linkedColumnPractitionerIdForPatch(reassign.toPractitionerId)
+        : undefined;
+      const fromPractitionerId = reassign
+        ? linkedColumnPractitionerIdForPatch(reassign.fromPractitionerId)
+        : undefined;
       // A pure time-move to the SAME time is a no-op; a reassign to the same time
       // is still a real move (the practitioner changed).
       if (!reassign && newTime === booking.startTime.slice(0, 5)) return;
@@ -1463,7 +1567,7 @@ export default function CalendarScreen() {
           segmentIds: visit.services.map((s) => s.id),
           guestName: booking.guestName ?? 'booking',
           time: `${newTime}:00`,
-          ...(reassign ? { practitionerId: reassign.toPractitionerId } : {}),
+          ...(toPractitionerId ? { practitionerId: toPractitionerId } : {}),
           // No length: every service keeps its own, and the endpoint re-lays them
           // behind the new start.
           previousTarget: {
@@ -1472,7 +1576,7 @@ export default function CalendarScreen() {
             date: anchor,
             time: visit.startHm,
             durationMinutes: visit.totalMinutes,
-            ...(reassign ? { practitionerId: reassign.fromPractitionerId } : {}),
+            ...(fromPractitionerId ? { practitionerId: fromPractitionerId } : {}),
             visit: {
               groupBookingId,
               startHm: visit.startHm,
@@ -1497,7 +1601,7 @@ export default function CalendarScreen() {
         bookingId,
         time: `${newTime}:00`,
         ...(endTime ? { endTime } : {}),
-        ...(reassign ? { practitionerId: reassign.toPractitionerId } : {}),
+        ...(toPractitionerId ? { practitionerId: toPractitionerId } : {}),
         previousTarget: {
           id: bookingId,
           guestName: booking.guestName ?? 'booking',
@@ -1505,12 +1609,22 @@ export default function CalendarScreen() {
           time: booking.startTime,
           durationMinutes: duration,
           // So a cross-column move's Undo returns the booking to its source column.
-          ...(reassign ? { practitionerId: reassign.fromPractitionerId } : {}),
+          ...(fromPractitionerId ? { practitionerId: fromPractitionerId } : {}),
         },
         durationChanged: false,
+        linked: linkedHit != null,
       });
     },
-    [findBookingOnAnchor, findVisitOnAnchor, anchor, commitDrag, commitVisitDrag, staffMe, toast],
+    [
+      findBookingOnAnchor,
+      findVisitOnAnchor,
+      linkedBookingVenue,
+      anchor,
+      commitDrag,
+      commitVisitDrag,
+      staffMe,
+      toast,
+    ],
   );
 
   const handleDragReschedule = useCallback(
@@ -1576,14 +1690,21 @@ export default function CalendarScreen() {
           durationMinutes: end != null && end > start ? end - start : null,
         },
         durationChanged: true,
+        linked: linkedBookingVenue.has(bookingId),
       });
     },
-    [findBookingOnAnchor, findVisitOnAnchor, anchor, commitDrag, commitVisitDrag],
+    [findBookingOnAnchor, findVisitOnAnchor, linkedBookingVenue, anchor, commitDrag, commitVisitDrag],
   );
 
   // Drag dropped on a conflicting slot — the grid refuses the move; surface why.
   const handleDragConflictReject = useCallback(() => {
     toast.error("That time isn't available");
+  }, [toast]);
+
+  // Drag dropped on another venue's column — a booking never changes venue
+  // (web `handleDragEnd`); the grid refused it, this says why.
+  const handleDragColumnReject = useCallback(() => {
+    toast.error(LINKED_MOVE_SAME_VENUE_ERROR);
   }, [toast]);
 
   // Cross-column drag (multi-calendar grid): drop a booking onto a DIFFERENT own
@@ -1866,6 +1987,13 @@ export default function CalendarScreen() {
         // Drawn like an own column, marked by the small Linked pill next to
         // the calendar's name (the owner wants no amber, 2026-09-06).
         badge: 'Linked',
+        // A link that shares full details and grants edits joins the
+        // interactive grid (web `linkedColumnUsesNativeGrid`): the same bars,
+        // tray, move and resize as our own columns, moving only among this
+        // partner's calendars (never onto the venue-level column, which names
+        // no calendar to reassign to).
+        editable: linkedColumnUsesNativeGrid(v),
+        moveGroup: col.practitionerId ? v.venueId : undefined,
         // The partner's own service patterns draw its bars' gaps (R24-6).
         processingPatternFor: patternLookupFromLinkedServices(v.services),
       };
@@ -1878,37 +2006,16 @@ export default function CalendarScreen() {
     [allCalendarsForDay, linkedColumnsForDay],
   );
 
-  // Tap routing for the combined grid: a linked column key (`linked:<venueId>`
-  // or `linked:<venueId>:<calendarId>`) and any booking id belonging to a linked
-  // venue route to the linked sheets / cross-venue create flow; everything else
-  // is an own-venue practitioner.
-  const linkedColumnVenue = useMemo(() => {
-    const m = new Map<string, { venue: LinkedVenueCalendar; practitionerId: string | null }>();
-    for (const v of linkedVenues) {
-      m.set(linkedColumnKey(v.venueId), { venue: v, practitionerId: null });
-      for (const p of v.practitioners) {
-        m.set(linkedColumnKey(v.venueId, p.id), { venue: v, practitionerId: p.id });
-      }
-    }
-    return m;
-  }, [linkedVenues]);
-
-  const linkedBookingVenue = useMemo(() => {
-    const m = new Map<string, { venue: LinkedVenueCalendar; booking: LinkedBooking }>();
-    for (const v of linkedVenues) for (const b of v.bookings) m.set(b.id, { venue: v, booking: b });
-    return m;
-  }, [linkedVenues]);
-
   const handleAllBlockPress = useCallback(
     (bookingId: string) => {
       const hit = linkedBookingVenue.get(bookingId);
       if (hit) {
-        setLinkedSheet({ kind: 'detail', venue: hit.venue, booking: hit.booking });
+        openLinkedBooking(hit.venue, hit.booking);
         return;
       }
       openDetail(bookingId);
     },
-    [linkedBookingVenue, openDetail],
+    [linkedBookingVenue, openLinkedBooking, openDetail],
   );
 
   const handleAllEmptyPress = useCallback(
@@ -1930,12 +2037,15 @@ export default function CalendarScreen() {
             // of its calendars (or when the tap names no calendar).
             collective: collectiveBookingTargetFor(staffCollective, venue.venueId, practitionerId),
           });
+        } else if (linkedColumnUsesNativeGrid(venue)) {
+          // An editable column without a create grant says why (web parity).
+          toast.info(linkedCreateNotGrantedMessage(venue.venueName));
         }
         return;
       }
       createAtFor(calendarId, time);
     },
-    [linkedColumnVenue, createAtFor, anchor, staffCollective],
+    [linkedColumnVenue, createAtFor, anchor, staffCollective, toast],
   );
 
   // ---- Week view data ----
@@ -2481,9 +2591,7 @@ export default function CalendarScreen() {
                     nowMinutes={nowMinutes}
                     refreshing={linkedQuery.isRefetching}
                     onRefresh={() => void linkedQuery.refetch()}
-                    onOpenBooking={(b) =>
-                      setLinkedSheet({ kind: 'detail', venue: activeLinkedVenue, booking: b })
-                    }
+                    onOpenBooking={(b) => openLinkedBooking(activeLinkedVenue, b)}
                     onCreate={(date, time) => {
                       // Empty-slot tap carries the tapped day and time; the
                       // header button passes neither → use the current anchor.
@@ -2528,8 +2636,20 @@ export default function CalendarScreen() {
                   showCreateButton={linkedCreateButton}
                   date={anchor}
                   nowMinutes={nowMinutes}
-                  onOpenBooking={(b) =>
-                    setLinkedSheet({ kind: 'detail', venue: activeLinkedVenue, booking: b })
+                  onOpenBooking={(b) => openLinkedBooking(activeLinkedVenue, b)}
+                  // An editable link's bars take the same actions and gestures
+                  // as our own columns, through the same handlers (the grid
+                  // ignores these on a read-only link).
+                  onStatusChange={handleStatusChange}
+                  onArrivalToggle={handleArrivalToggle}
+                  pendingActionIds={pendingActionIds}
+                  onDragReschedule={handleDragReschedule}
+                  onDragResize={handleDragResize}
+                  onDragConflictReject={handleDragConflictReject}
+                  onDragMoveToColumn={handleDragMoveToColumn}
+                  onDragColumnReject={handleDragColumnReject}
+                  onCreateRefused={() =>
+                    toast.info(linkedCreateNotGrantedMessage(activeLinkedVenue.venueName))
                   }
                   onCreate={(time, practitionerId) =>
                     setLinkedSlot({
@@ -2646,6 +2766,7 @@ export default function CalendarScreen() {
                 onDragResize={handleDragResize}
                 onDragConflictReject={handleDragConflictReject}
                 onDragMoveToColumn={handleDragMoveToColumn}
+                onDragColumnReject={handleDragColumnReject}
                 pendingActionIds={pendingActionIds}
                 refreshing={refreshing || linkedQuery.isRefetching}
                 onRefresh={() => {
@@ -2873,19 +2994,23 @@ export default function CalendarScreen() {
           web; the manual Snackbar timer is gone). */}
       <BookingDetailSheet
         bookingId={detailBookingId}
-        onClose={() => setDetailBookingId(null)}
-        fallbackPractitionerName={detailPractitionerName}
+        onClose={() => {
+          setDetailBookingId(null);
+          setDetailLinked(null);
+        }}
+        fallbackPractitionerName={detailLinked?.practitionerName ?? detailPractitionerName}
+        linked={detailLinked}
       />
       <BlockEditSheet
         target={blockTarget}
         onClose={() => setBlockTarget(null)}
       />
 
-      {/* Linked cross-venue booking detail — one rich expanded detail (read-only
-          or editable per the grant). It carries its own venue, so it works for a
-          single focused linked venue or any of several shown together in the
-          "All" view. Creating goes through the slot menu below, which opens the
-          full form scoped to the linked venue. */}
+      {/* A time-only link's busy block (web `LinkedBookingDetailModal`): the
+          detail route refuses such a link, so this small sheet shows what the
+          feed shares. A full-details link opens the full panel above instead,
+          for every grant (`openLinkedBooking`). Creating goes through the slot
+          menu below, which opens the full form scoped to the linked venue. */}
       <LinkedBookingDetailSheet
         visible={linkedSheet?.kind === 'detail'}
         venue={linkedSheet?.kind === 'detail' ? linkedSheet.venue : null}

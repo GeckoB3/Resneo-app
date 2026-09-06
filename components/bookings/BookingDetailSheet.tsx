@@ -23,6 +23,7 @@ import { useDashboardHome } from '@/lib/queries/useDashboardHome';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { useAcceptUnpaidGuard } from '@/components/bookings/AcceptUnpaidSheet';
 import { useUpdateBookingStatus } from '@/lib/queries/useBookingMutations';
+import { linkedDetailPolicy, type LinkedBookingContext } from '@/lib/linked/linked-detail-policy';
 import { isAppointmentExperience } from '@/lib/venue/venue-experience';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { minTouchTarget, spacing } from '@/theme/index';
@@ -42,6 +43,13 @@ type BookingDetailSheetProps = {
   fallbackServiceName?: string | null;
   /** Practitioner/staff name from the list row — the detail GET omits it. */
   fallbackPractitionerName?: string | null;
+  /**
+   * Set when the booking belongs to a linked venue and was reached through the
+   * link (a partner's column on the diary, its row on the Bookings tab). The
+   * same panel opens; the grant decides what it offers
+   * (`lib/linked/linked-detail-policy`, web `linkedAct`).
+   */
+  linked?: LinkedBookingContext | null;
 };
 
 /**
@@ -131,12 +139,14 @@ export function BookingDetailSheet({
   onOpenFull,
   fallbackServiceName,
   fallbackPractitionerName,
+  linked = null,
 }: BookingDetailSheetProps) {
   const router = useRouter();
   const { colors } = useTheme();
   const reduceMotion = useReduceMotion();
   const toast = useToast();
   const { venue } = useVenueContext();
+  const policy = linkedDetailPolicy(linked?.act);
   const detailQuery = useBookingDetail(bookingId ?? undefined);
   const dashboardQuery = useDashboardHome();
   const staffQuery = useStaffMe();
@@ -184,6 +194,20 @@ export function BookingDetailSheet({
     if (!bookingId) return;
     if (onOpenFull) {
       onOpenFull(bookingId);
+    } else if (linked) {
+      // The full-screen route has no diary to learn the link from, so the
+      // context rides along as params (see `app/(app)/booking/[id].tsx`).
+      router.push({
+        pathname: '/booking/[id]',
+        params: {
+          id: bookingId,
+          linkedAct: linked.act,
+          linkedVenueId: linked.venueId,
+          linkedVenueName: linked.venueName,
+          linkedPii: linked.pii ? '1' : '0',
+          ...(linked.practitionerName ? { linkedPractitionerName: linked.practitionerName } : {}),
+        },
+      } as Href);
     } else {
       router.push(`/booking/${bookingId}` as Href);
     }
@@ -193,15 +217,24 @@ export function BookingDetailSheet({
   const booking = detailQuery.data;
   const isTable = booking ? isTableReservationBooking(booking) : false;
   // The pinned bar surfaces only the forward transition (Confirm / Start /
-  // Complete); reverts and destructive actions stay in the scrollable body.
-  const primaryAction = booking
-    ? bookingDetailActions(booking.status, isTable).find((a) => a.kind === 'primary')
-    : undefined;
+  // Complete); reverts and destructive actions stay in the scrollable body. A
+  // view-only link has no transitions to offer (web: the actions bar is hidden).
+  const primaryAction =
+    booking && policy.canEdit
+      ? bookingDetailActions(booking.status, isTable).find((a) => a.kind === 'primary')
+      : undefined;
 
   return (
     <Sheet visible={!!bookingId} onClose={onClose} fill maxHeight="94%" keyboardAvoidance="overlay">
       <View style={styles.header}>
-        <Text variant="subheading">{isAppointmentVenue ? 'Appointment' : 'Booking'}</Text>
+        <View style={styles.headerTitle}>
+          <Text variant="subheading">{isAppointmentVenue ? 'Appointment' : 'Booking'}</Text>
+          {linked ? (
+            <Text variant="caption" tone="muted" numberOfLines={1}>
+              {`Linked · ${linked.venueName}`}
+            </Text>
+          ) : null}
+        </View>
         <View style={styles.headerActions}>
           <Pressable
             accessibilityRole="button"
@@ -277,6 +310,7 @@ export function BookingDetailSheet({
                 showPrimaryAction={false}
                 fallbackServiceName={fallbackServiceName}
                 fallbackPractitionerName={fallbackPractitionerName}
+                linked={linked}
               />
             </Animated.View>
           </ScrollView>
@@ -308,6 +342,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
+  },
+  headerTitle: {
+    flexShrink: 1,
   },
   headerActions: {
     flexDirection: 'row',

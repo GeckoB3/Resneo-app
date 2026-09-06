@@ -114,3 +114,78 @@ describe('AllCalendarsDayGrid — linked columns', () => {
     expect(screen.queryByText('Linked')).toBeNull();
   });
 });
+
+describe('AllCalendarsDayGrid — an editable linked column', () => {
+  const booked = {
+    id: 'b1',
+    guestName: 'Ada Lovelace',
+    serviceName: 'Cut',
+    startTime: '10:00',
+    endTime: '10:30',
+    status: 'Booked',
+  };
+  const RESIZE_HANDLE = 'Touch and hold the bottom edge to change duration';
+
+  it('draws the interactive bar, with its resize grip, on a linked column marked editable', async () => {
+    await render(
+      <AllCalendarsDayGrid
+        embedded
+        calendars={[
+          column({
+            calendarId: 'linked:v1:p1',
+            calendarName: 'Jenny',
+            linked: true,
+            editable: true,
+            moveGroup: 'v1',
+            bookings: [booked],
+          }),
+        ]}
+        nowMinutes={null}
+        onBlockPress={jest.fn()}
+        onEmptyPress={jest.fn()}
+        onDragReschedule={jest.fn()}
+        onDragResize={jest.fn()}
+      />,
+    );
+    expect(screen.getByText('Ada Lovelace')).toBeTruthy();
+    expect(screen.getByLabelText(RESIZE_HANDLE)).toBeTruthy();
+  });
+
+  it('keeps a static bar on a linked column that is not editable, whatever callbacks it is given', async () => {
+    await render(
+      <AllCalendarsDayGrid
+        embedded
+        calendars={[
+          column({
+            calendarId: 'linked:v1:p1',
+            calendarName: 'Jenny',
+            linked: true,
+            bookings: [booked],
+          }),
+        ]}
+        nowMinutes={null}
+        onBlockPress={jest.fn()}
+        onEmptyPress={jest.fn()}
+        onDragReschedule={jest.fn()}
+        onDragResize={jest.fn()}
+      />,
+    );
+    expect(screen.getByText('Ada Lovelace')).toBeTruthy();
+    expect(screen.queryByLabelText(RESIZE_HANDLE)).toBeNull();
+  });
+
+  it('draws the interactive bar on an own column as before', async () => {
+    await render(
+      <AllCalendarsDayGrid
+        embedded
+        calendars={[column({ calendarId: 'own-1', calendarName: 'Sam', bookings: [booked] })]}
+        nowMinutes={null}
+        onBlockPress={jest.fn()}
+        onEmptyPress={jest.fn()}
+        onDragReschedule={jest.fn()}
+        onDragResize={jest.fn()}
+      />,
+    );
+    expect(screen.getByLabelText(RESIZE_HANDLE)).toBeTruthy();
+  });
+});

@@ -70,7 +70,9 @@ import type { BookingListRow } from '@/types/booking-list';
 import type { SortKey, SortDir } from '@/components/bookings/BookingSortSheet';
 import { LinkedBookingDetailSheet } from '@/components/linked/LinkedBookingDetailSheet';
 import { LinkedBookingListRow } from '@/components/linked/LinkedBookingListRow';
-import { useLinkedCalendar } from '@/lib/queries/useLinkedCalendar';
+import { linkedBookingUsesExpandedDetail } from '@/lib/linked/linked-calendar-view';
+import type { LinkedBookingContext } from '@/lib/linked/linked-detail-policy';
+import { pingLinkedBookingView, useLinkedCalendar } from '@/lib/queries/useLinkedCalendar';
 import { useLinkedVenueContext } from '@/providers/LinkedVenueProvider';
 import type { LinkedBooking, LinkedVenueCalendar } from '@/types/linked-venues';
 
@@ -546,6 +548,40 @@ export default function BookingsScreen() {
   const [linkedSheet, setLinkedSheet] = useState<
     { venue: LinkedVenueCalendar; booking: LinkedBooking } | null
   >(null);
+  /**
+   * A full-details link's booking, open in the full panel the calendar tab
+   * uses (web parity: any full-details link opens the native detail, the
+   * grant deciding what it offers); a time-only link keeps the small sheet.
+   */
+  const [linkedDetail, setLinkedDetail] = useState<{
+    booking: LinkedBooking;
+    venue: LinkedVenueCalendar;
+    linked: LinkedBookingContext;
+  } | null>(null);
+  // For the read-audit ping a linked booking's detail sends (web parity).
+  const accessToken = useAccessToken();
+  const openLinkedBooking = useCallback(
+    (venue: LinkedVenueCalendar, booking: LinkedBooking) => {
+      if (!linkedBookingUsesExpandedDetail(venue)) {
+        setLinkedSheet({ venue, booking });
+        return;
+      }
+      pingLinkedBookingView(booking.id, accessToken);
+      setLinkedDetail({
+        booking,
+        venue,
+        linked: {
+          act: venue.action,
+          venueId: venue.venueId,
+          venueName: venue.venueName,
+          pii: venue.pii,
+          practitionerName:
+            venue.practitioners.find((p) => p.id === booking.practitionerId)?.name ?? null,
+        },
+      });
+    },
+    [accessToken],
+  );
 
   // Service label for the open booking's detail sheet. The detail GET omits the
   // base service name for plain (non-variant) services, so hand the list row's
@@ -853,9 +889,7 @@ export default function BookingsScreen() {
               booking={linkedMeta.booking}
               venueName={linkedMeta.venue.venueName}
               visibility={linkedMeta.venue.visibility}
-              onPress={() =>
-                setLinkedSheet({ venue: linkedMeta.venue, booking: linkedMeta.booking })
-              }
+              onPress={() => openLinkedBooking(linkedMeta.venue, linkedMeta.booking)}
             />
           ) : (
             <BookingSwipeRow
@@ -875,6 +909,7 @@ export default function BookingsScreen() {
     [
       isAppointment,
       openBooking,
+      openLinkedBooking,
       toggleSelect,
       selectedIds,
       selectionMode,
@@ -1194,14 +1229,22 @@ export default function BookingsScreen() {
       {acceptUnpaidGuard.sheet}
 
       <BookingDetailSheet
-        bookingId={openBookingId}
-        onClose={() => setOpenBookingId(null)}
-        fallbackServiceName={openServiceName}
-        fallbackPractitionerName={openCalendarName}
+        bookingId={openBookingId ?? linkedDetail?.booking.id ?? null}
+        onClose={() => {
+          setOpenBookingId(null);
+          setLinkedDetail(null);
+        }}
+        fallbackServiceName={
+          openBookingId ? openServiceName : linkedDetail?.booking.serviceName ?? null
+        }
+        fallbackPractitionerName={
+          openBookingId ? openCalendarName : linkedDetail?.linked.practitionerName ?? null
+        }
+        linked={openBookingId ? null : linkedDetail?.linked ?? null}
       />
 
-      {/* Expanded detail for a linked venue's booking — read-only or editable
-          per the link grant (same rich sheet as the Calendar tab). */}
+      {/* A time-only link's busy block; a full-details link's booking opens
+          the full panel above (same routing as the Calendar tab). */}
       <LinkedBookingDetailSheet
         visible={linkedSheet !== null}
         venue={linkedSheet?.venue ?? null}

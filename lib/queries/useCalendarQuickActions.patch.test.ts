@@ -21,6 +21,7 @@ import {
   revertCalendarGridBookings,
 } from '@/lib/queries/useCalendarQuickActions';
 import type { CalendarGridBooking, CalendarGridResponse } from '@/types/calendar-grid';
+import type { LinkedBooking, LinkedCalendarResponse } from '@/types/linked-venues';
 
 function booking(over: Partial<CalendarGridBooking> & { id: string }): CalendarGridBooking {
   return {
@@ -178,5 +179,89 @@ describe('applyOptimisticGridPatch', () => {
     // Not 'Seated': re-reading the snapshot after the re-assert would capture the
     // optimistic value as "previous" and a failed write would never roll back.
     expect(rows(client)[0].status).toBe('Booked');
+  });
+});
+
+/**
+ * A partner's bar on an editable linked column answers from the linked feed,
+ * not the grid, so the same press patches that feed in its own field names.
+ */
+describe("a linked venue's booking", () => {
+  const LINKED_KEY = queryKeys.linkedCalendar.range('tok', '2026-08-25', '2026-08-25');
+
+  function linkedBooking(over: Partial<LinkedBooking> & { id: string }): LinkedBooking {
+    return {
+      practitionerId: 'p1',
+      bookingDate: '2026-08-25',
+      bookingTime: '10:00:00',
+      bookingEndTime: '10:30:00',
+      status: 'Booked',
+      guestName: 'Ada',
+      serviceName: 'Cut',
+      editable: true,
+      ...over,
+    };
+  }
+
+  function feed(bookings: LinkedBooking[]): LinkedCalendarResponse {
+    return {
+      from: '2026-08-25',
+      to: '2026-08-25',
+      venues: [
+        {
+          venueId: 'v1',
+          venueName: 'light2',
+          linkId: 'l1',
+          visibility: 'full_details',
+          action: 'edit_existing',
+          pii: true,
+          practitioners: [],
+          services: [],
+          resources: [],
+          bookings,
+        },
+      ],
+    };
+  }
+
+  function linkedRows(): LinkedBooking[] {
+    return client.getQueryData<LinkedCalendarResponse>(LINKED_KEY)!.venues[0].bookings;
+  }
+
+  it('patches the status and the arrival stamp in the feed, and reports what they were', () => {
+    client.setQueryData(
+      LINKED_KEY,
+      feed([linkedBooking({ id: 'lb1', clientArrivedAt: null }), linkedBooking({ id: 'other' })]),
+    );
+
+    const snapshot = patchCalendarGridBookings(client, ['lb1'], {
+      status: 'Seated',
+      client_arrived_at: '2026-08-25T09:55:00Z',
+    });
+
+    expect(linkedRows().map((b) => [b.id, b.status, b.clientArrivedAt ?? null])).toEqual([
+      ['lb1', 'Seated', '2026-08-25T09:55:00Z'],
+      ['other', 'Booked', null],
+    ]);
+    expect(snapshot.get('lb1')).toEqual({ status: 'Booked', client_arrived_at: null });
+
+    revertCalendarGridBookings(client, snapshot);
+    expect(linkedRows()[0]).toMatchObject({ status: 'Booked', clientArrivedAt: null });
+  });
+
+  it('leaves the other feed rows and a venue with no match untouched', () => {
+    const value = feed([linkedBooking({ id: 'other' })]);
+    client.setQueryData(LINKED_KEY, value);
+
+    patchCalendarGridBookings(client, ['lb1'], { status: 'Seated' });
+    expect(client.getQueryData(LINKED_KEY)).toBe(value);
+  });
+
+  it('survives an in-flight read of the feed, like the grid does', async () => {
+    client.setQueryData(LINKED_KEY, feed([linkedBooking({ id: 'lb1' })]));
+
+    const snapshot = await applyOptimisticGridPatch(client, ['lb1'], { status: 'Completed' });
+    expect(linkedRows()[0].status).toBe('Completed');
+    expect(snapshot.get('lb1')?.status).toBe('Booked');
   });
 });

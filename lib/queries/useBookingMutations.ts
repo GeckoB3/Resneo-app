@@ -28,6 +28,10 @@ export function invalidateBookingCaches(
   void queryClient.invalidateQueries({ queryKey: queryKeys.guests.all() });
   // Keep the calendar grid in sync after status/reschedule changes.
   void queryClient.invalidateQueries({ queryKey: queryKeys.calendar.all() });
+  // A partner's booking, edited through the same routes from an editable
+  // linked column (web `linkedColumnUsesNativeGrid`), is drawn from the linked
+  // feed; refresh it too so the diary and the partner's card agree.
+  void queryClient.invalidateQueries({ queryKey: queryKeys.linkedCalendar.all() });
   // A booking can be surfaced via the schedule feed (class/event/resource rosters)
   // or originate from a waitlist offer — refresh those so a status change made from
   // the detail sheet doesn't leave a stale roster/waitlist row during a polling gap.

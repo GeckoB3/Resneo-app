@@ -23,6 +23,7 @@ import {
 import { RescheduleSheet, type RescheduleTarget } from '@/components/calendar/RescheduleSheet';
 import { minutesToTime, timeToMinutes } from '@/components/calendar/grid-layout';
 import { DocumentsSection } from '@/components/clients/DocumentsSection';
+import { LinkedComplianceSection } from '@/components/linked/LinkedComplianceSection';
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge, StatusPill } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -74,6 +75,7 @@ import {
 import { useGuestDetail } from '@/lib/queries/useGuestDetail';
 import { useGroupVisitBookings } from '@/lib/queries/useGroupVisit';
 import { useManagedServices } from '@/lib/queries/useServicesManage';
+import { linkedDetailPolicy, type LinkedBookingContext } from '@/lib/linked/linked-detail-policy';
 import { writeRebookBootstrap, type RebookBootstrapPayload } from '@/lib/rebook-bootstrap';
 import type { GuestBookingHistoryRow } from '@/types/guest-detail';
 import {
@@ -129,6 +131,16 @@ type BookingDetailContentProps = {
    * the moment before the full detail lands.
    */
   detailPending?: boolean;
+  /**
+   * Set when the booking belongs to a linked venue and was reached through the
+   * link. The grant then decides what the panel offers (web `linkedAct`,
+   * `lib/linked/linked-detail-policy`): a view-only link shows everything and
+   * changes nothing; an edit grant keeps the status, attendance, Modify,
+   * Reschedule, notes, messaging and deposit actions; only a full grant may
+   * cancel or rebook. Our own venue's things (the guest's Records and
+   * history, "Open in Contacts", "New for guest") stay off a partner's booking.
+   */
+  linked?: LinkedBookingContext | null;
 };
 
 const TERMINAL_STATUSES = new Set<BookingStatus>(['Cancelled', 'Completed', 'No-Show']);
@@ -363,11 +375,18 @@ export function BookingDetailContent({
   fallbackServiceName,
   fallbackPractitionerName,
   detailPending = false,
+  linked = null,
 }: BookingDetailContentProps) {
   const { colors } = useTheme();
   const router = useRouter();
   const toast = useToast();
   const { venue, featureFlags } = useVenueContext();
+  // What a linked venue's booking lets us do; everything, for our own.
+  const policy = linkedDetailPolicy(linked?.act);
+  // A rebook of a partner's guest opens the form over the partner's venue.
+  const linkedFormParams = linked
+    ? { ownerVenueId: linked.venueId, ownerVenueName: linked.venueName }
+    : undefined;
   // Resolve the service name from the staff service list when neither the detail
   // nor the list row supplied it (covers entry points other than the bookings
   // list — calendar, contacts, the full-screen route). Cached + staff-readable.
@@ -452,9 +471,11 @@ export function BookingDetailContent({
   // Contact this booking belongs to — drives "Open in Contacts" (web parity) and
   // the guest-history "View contact" link. Falls back to the flat guest_id.
   const guestProfileId = booking.guest?.id ?? booking.guest_id ?? null;
-  const openGuestContact = guestProfileId
-    ? () => router.push(`/client/${guestProfileId}` as Href)
-    : null;
+  // A partner's guest is not in our Contacts (web: no contacts link in a linked context).
+  const openGuestContact =
+    guestProfileId && policy.ownVenueOnly
+      ? () => router.push(`/client/${guestProfileId}` as Href)
+      : null;
   const isTable = isTableReservationBooking(booking);
 
   const actions = bookingDetailActions(booking.status, isTable);
@@ -468,7 +489,7 @@ export function BookingDetailContent({
     isAppointment: isAppointmentVenue,
     isTableReservation: isTable,
   });
-  const canReschedule = !TERMINAL_STATUSES.has(booking.status);
+  const canReschedule = !TERMINAL_STATUSES.has(booking.status) && policy.canEdit;
 
   // Booked length — feeds the duration stepper on the reschedule sheet AND the
   // seed for the Modify sheet. Reads BOTH end columns: a guest-created
@@ -552,7 +573,8 @@ export function BookingDetailContent({
   const canModify =
     !isTable &&
     isAppointmentBooking &&
-    ['Pending', 'Booked', 'Confirmed', 'Seated'].includes(booking.status);
+    ['Pending', 'Booked', 'Confirmed', 'Seated'].includes(booking.status) &&
+    policy.canEdit;
   const complianceEnabled =
     featureFlags?.resolved?.compliance_records_enabled === true &&
     !!booking.guest &&
@@ -593,6 +615,8 @@ export function BookingDetailContent({
       usesServiceItem: !booking.appointment_service_id && !!booking.service_item_id,
       serviceVariantId: booking.service_variant_id ?? null,
       visit: visitEdit,
+      // A partner's booking is modified against the partner's catalogue.
+      ownerVenueId: linked?.venueId ?? null,
     });
 
   const primaryAction = actions.find((a) => a.kind === 'primary');
@@ -606,12 +630,16 @@ export function BookingDetailContent({
   const revertIsInstant =
     !!revertAction &&
     (booking.status !== 'Seated' || revertAction.target !== 'Booked' || !isTable);
-  const destructiveActions = actions.filter((a) => a.kind === 'destructive');
+  // Cancelling a partner's booking needs the full grant (web `canCancel`);
+  // no-show is an ordinary status change and stays with an edit grant.
+  const destructiveActions = actions.filter(
+    (a) => a.kind === 'destructive' && (policy.canCancel || a.target !== 'Cancelled'),
+  );
   const timelineEvents = bookingTimelineEventsForDisplay(booking.events ?? []);
 
   const guestEmail = booking.guest?.email?.trim();
   const guestPhone = booking.guest?.phone?.trim();
-  const canResend = !!guestEmail;
+  const canResend = !!guestEmail && policy.canEdit;
   const hasDeposit = booking.deposit_amount_pence != null || !!booking.deposit_status;
   // Card-hold state (§9.1): when non-null the legacy deposit UI is replaced by
   // the card-aware pill/lines/actions everywhere in this component.
@@ -630,13 +658,17 @@ export function BookingDetailContent({
   // In-person payments (Tap to Pay §3.4/§7.8). The gate is deliberately strict:
   // when it is false the button does not exist in the tree at all, so a venue
   // that has not enabled the feature sees exactly today's screen.
-  const canTakePayment = canTakeInPersonPayment({
-    inPersonPaymentsEnabled: venue?.in_person_payments_enabled === true,
-    isAppointmentVenue,
-    status: booking.status,
-    paymentState: booking.payment_state,
-    balanceDuePence: booking.balance_due_pence,
-  });
+  // Money actions follow the edit grant on a linked booking (web: the deposit
+  // and card actions are withheld for a view-only link, the figures stay).
+  const canTakePayment =
+    policy.canEdit &&
+    canTakeInPersonPayment({
+      inPersonPaymentsEnabled: venue?.in_person_payments_enabled === true,
+      isAppointmentVenue,
+      status: booking.status,
+      paymentState: booking.payment_state,
+      balanceDuePence: booking.balance_due_pence,
+    });
   const paymentStateLabel = booking.payment_state
     ? bookingPaymentStateLabel(booking.payment_state)
     : null;
@@ -701,12 +733,14 @@ export function BookingDetailContent({
    * are admin-only, need a settled row to act on, and the server 403s every
    * payment route when in-person payments are off (the kill switch is total).
    */
-  const showInPersonRefund = canRefundInPerson({
-    inPersonPaymentsEnabled: venue?.in_person_payments_enabled,
-    isAppointmentVenue,
-    isAdmin,
-    payments: booking.payments,
-  });
+  const showInPersonRefund =
+    policy.canEdit &&
+    canRefundInPerson({
+      inPersonPaymentsEnabled: venue?.in_person_payments_enabled,
+      isAppointmentVenue,
+      isAdmin,
+      payments: booking.payments,
+    });
 
   // Web parity: deposit actions (send link / record cash / waive / refund) show
   // whenever the booking is active AND there is something the sheet can do;
@@ -723,10 +757,12 @@ export function BookingDetailContent({
   // row). Taking money where no deposit was ever required is the in-person
   // payment path, not this one.
   const isCancelled = booking.status === 'Cancelled';
-  const showDepositActions = cardHoldState
-    ? cardHoldHasActions
-    : !isCancelled &&
-      (hasSettleableDeposit(booking.deposit_status) || booking.deposit_status === 'Paid');
+  const showDepositActions =
+    policy.canEdit &&
+    (cardHoldState
+      ? cardHoldHasActions
+      : !isCancelled &&
+        (hasSettleableDeposit(booking.deposit_status) || booking.deposit_status === 'Paid'));
   const showRefundBanner =
     !cardHoldState && isCancelled && (booking.deposit_amount_pence ?? 0) > 0;
 
@@ -865,13 +901,15 @@ export function BookingDetailContent({
    */
   const showToolbarRow =
     showArrivedToggle || showAttendanceConfirmToggle || showPaymentToolbarAction;
+  // A view-only link has no actions at all (web: the actions bar is hidden).
   const showActionsCard =
-    showInlinePrimary ||
-    showArrivedToggle ||
-    showAttendanceConfirmToggle ||
-    showPaymentToolbarAction ||
-    !!revertAction ||
-    destructiveActions.length > 0;
+    policy.canEdit &&
+    (showInlinePrimary ||
+      showArrivedToggle ||
+      showAttendanceConfirmToggle ||
+      showPaymentToolbarAction ||
+      !!revertAction ||
+      destructiveActions.length > 0);
 
   const attendanceBadges =
     attendanceRelevant && (guestConfirmed || staffConfirmed || arrived) ? (
@@ -884,6 +922,21 @@ export function BookingDetailContent({
 
   return (
     <View style={styles.container}>
+      {/* A partner's booking says so first, with what the link lets us do (the
+          web's banner copy for a view-only or edit-only grant). */}
+      {linked ? (
+        <View
+          style={[
+            styles.linkedNote,
+            { backgroundColor: colors.surfaceRaised, borderColor: colors.border },
+          ]}>
+          <Badge label="Linked" tone="warning" />
+          <Text variant="bodySmall" tone="secondary" style={styles.linkedNoteText}>
+            {policy.banner ?? `A booking at ${linked.venueName}.`}
+          </Text>
+        </View>
+      ) : null}
+
       {/* Hero — identity, then the appointment at a glance, then contact + quick actions */}
       <Card padded={false} style={styles.hero}>
         <View style={[styles.heroAccent, { backgroundColor: statusVisual.backgroundColor }]} />
@@ -1051,7 +1104,7 @@ export function BookingDetailContent({
                     onPress={openModify}
                   />
                 ) : null}
-                {booking.guest_id ? (
+                {booking.guest_id && policy.canRebook ? (
                   <QuickAction
                     icon={{ ios: 'arrow.clockwise', android: 'autorenew', web: 'autorenew' }}
                     label="Rebook"
@@ -1093,18 +1146,23 @@ export function BookingDetailContent({
                                 }
                               : {}),
                           });
-                          router.push({ pathname: '/booking/new' });
+                          // A partner's guest is rebooked at the partner's venue
+                          // (web: the rebook form opens over the owner venue).
+                          router.push({
+                            pathname: '/booking/new',
+                            ...(linkedFormParams ? { params: linkedFormParams } : {}),
+                          });
                           return;
                         }
                         router.push({
                           pathname: '/booking/new',
-                          params: { guestId: booking.guest_id },
+                          params: linkedFormParams ?? { guestId: booking.guest_id },
                         });
                       })();
                     }}
                   />
                 ) : null}
-                {booking.guest_id ? (
+                {booking.guest_id && policy.ownVenueOnly ? (
                   <QuickAction
                     icon={{ ios: 'plus.circle', android: 'add_circle', web: 'add_circle' }}
                     label="New for guest"
@@ -1374,18 +1432,30 @@ export function BookingDetailContent({
         title="Notes"
         summary={hasNotes ? 'Added' : 'None'}
         animateLayout={false}>
-        <BookingNotesSection booking={booking} isTable={isTable} />
+        <BookingNotesSection
+          booking={booking}
+          isTable={isTable}
+          readOnly={policy.viewOnly}
+          customerReadOnly={policy.linked}
+        />
       </CollapsibleCard>
 
-      {/* Guest history — other visits, lazy-loaded on first expand */}
-      {booking.guest_id ? (
+      {/* Guest history — other visits, lazy-loaded on first expand. A partner's
+          guest is read from our own guests route, which does not know them. */}
+      {booking.guest_id && policy.ownVenueOnly ? (
         <CollapsibleCard title="Guest history" lazy>
           <GuestHistoryBody guestId={booking.guest_id} currentBookingId={booking.id} />
         </CollapsibleCard>
       ) : null}
 
-      {/* Compliance — requirement states + guest records (feature-flagged) */}
-      {complianceEnabled ? (
+      {/* Compliance — requirement states + guest records (feature-flagged). A
+          partner's booking reads its state through the link, read only, when
+          the link shares personal details (R24-4). */}
+      {linked ? (
+        linked.pii ? (
+          <LinkedComplianceSection bookingId={booking.id} />
+        ) : null
+      ) : complianceEnabled ? (
         <ComplianceCard
           bookingId={booking.id}
           guestId={booking.guest?.id ?? booking.guest_id}
@@ -1551,7 +1621,9 @@ export function BookingDetailContent({
       {/* Records: the guest's documents and photos, the same card the contact
           screen shows. They belong to the person, not this booking, so every
           booking for the guest shows the same files (web 2026-09-05). */}
-      {guestProfileId ? <DocumentsSection guestId={guestProfileId} collapsible /> : null}
+      {guestProfileId && policy.ownVenueOnly ? (
+        <DocumentsSection guestId={guestProfileId} collapsible />
+      ) : null}
 
       {/* Refund banner — cancelled booking that still holds a deposit (web parity) */}
       {showRefundBanner ? (
@@ -1570,7 +1642,7 @@ export function BookingDetailContent({
                 {formatTimelineEventTime(booking.cancellation_deadline)}
               </Text>
             ) : null}
-            {booking.deposit_status === 'Paid' ? (
+            {booking.deposit_status === 'Paid' && policy.canEdit ? (
               <Button
                 label="Refund deposit"
                 variant="danger"
@@ -1589,8 +1661,9 @@ export function BookingDetailContent({
         </Card>
       ) : null}
 
-      {/* Permanent delete — cancelled bookings only (web "Remove from diary") */}
-      {isCancelled ? (
+      {/* Permanent delete — cancelled bookings only (web "Remove from diary");
+          a partner's needs the full grant, as the route requires. */}
+      {isCancelled && policy.canCancel ? (
         <Card>
           <View style={styles.cardStack}>
             <Text variant="overline" tone="danger">
@@ -1612,7 +1685,7 @@ export function BookingDetailContent({
       ) : null}
 
       {/* SMS / Email the guest — composer + sent log (web parity) */}
-      <MessageGuestSection booking={booking} />
+      <MessageGuestSection booking={booking} readOnly={policy.viewOnly} />
 
       {/* Activity timeline */}
       {timelineEvents.length > 0 ? (
@@ -1668,6 +1741,18 @@ export function BookingDetailContent({
 const styles = StyleSheet.create({
   container: {
     gap: spacing.base,
+  },
+  linkedNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 12,
+  },
+  linkedNoteText: {
+    flex: 1,
   },
   hero: {
     overflow: 'hidden',

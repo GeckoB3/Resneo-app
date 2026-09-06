@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { RefreshControl, StyleSheet, View } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 
+import { BookingDetailSheet } from '@/components/bookings/BookingDetailSheet';
 import { LinkedBookingDetailSheet } from '@/components/linked/LinkedBookingDetailSheet';
 import { LinkedSlotSheet, type LinkedSlotTarget } from '@/components/linked/LinkedSlotSheet';
 import { LinkedVenueCalendarGrid } from '@/components/linked/LinkedVenueCalendarGrid';
@@ -17,7 +18,10 @@ import { ApiError } from '@/lib/api/client';
 import { getDateTimeFormat } from '@/lib/dates/formatters';
 import { calendarDateInTimeZone, formatDayHeading } from '@/lib/dates/venue-dates';
 import { collectiveBookingTargetFor } from '@/lib/linked/collective-booking-target';
-import { useLinkedCalendar } from '@/lib/queries/useLinkedCalendar';
+import { linkedBookingUsesExpandedDetail } from '@/lib/linked/linked-calendar-view';
+import type { LinkedBookingContext } from '@/lib/linked/linked-detail-policy';
+import { useAccessToken } from '@/lib/queries/useAccessToken';
+import { pingLinkedBookingView, useLinkedCalendar } from '@/lib/queries/useLinkedCalendar';
 import { useStaffCollective } from '@/lib/queries/useStaffCollective';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { spacing } from '@/theme/index';
@@ -45,18 +49,44 @@ type SheetState =
  * Dedicated linked-calendar screen (any staff role — NOT admin-gated). Shows a
  * date picker and one grant-gated `LinkedVenueCalendarGrid` per accessible
  * linked venue for that day. Tapping an empty slot opens the linked slot menu
- * (New booking / Walk-in); editing and cancelling go through the per-grid detail
- * sheet. 60s refetch is the realtime fallback (handled in the hook). Reached
- * from the link detail / the venue switcher.
+ * (New booking / Walk-in); a full-details link's booking opens the full
+ * booking panel (the grant deciding what it offers, as on the calendar tab),
+ * a time-only link's busy block the small linked sheet. The bars stay static
+ * here: the diary's drag and tray live on the calendar tab, which owns the
+ * commit pipeline. 60s refetch is the realtime fallback (handled in the hook).
+ * Reached from the link detail / the venue switcher.
  */
 export default function LinkedCalendarScreen() {
   const { colors } = useTheme();
   const { venue } = useVenueContext();
+  const accessToken = useAccessToken();
   const timeZone = venue?.timezone ?? 'Europe/London';
   const today = calendarDateInTimeZone(new Date(), timeZone);
 
   const [date, setDate] = useState(today);
   const [sheet, setSheet] = useState<SheetState>(null);
+  /** A full-details link's booking, open in the full panel. */
+  const [detail, setDetail] = useState<{
+    bookingId: string;
+    linked: LinkedBookingContext;
+  } | null>(null);
+  const openBooking = (v: LinkedVenueCalendar, booking: LinkedBooking) => {
+    if (!linkedBookingUsesExpandedDetail(v)) {
+      setSheet({ kind: 'detail', venue: v, booking });
+      return;
+    }
+    pingLinkedBookingView(booking.id, accessToken);
+    setDetail({
+      bookingId: booking.id,
+      linked: {
+        act: v.action,
+        venueId: v.venueId,
+        venueName: v.venueName,
+        pii: v.pii,
+        practitionerName: v.practitioners.find((p) => p.id === booking.practitionerId)?.name ?? null,
+      },
+    });
+  };
   // The linked slot menu (New booking / Walk-in) for whichever grid was tapped.
   const [slot, setSlot] = useState<LinkedSlotTarget | null>(null);
 
@@ -168,7 +198,7 @@ export default function LinkedCalendarScreen() {
           venue={v}
           date={date}
           nowMinutes={nowMinutes}
-          onOpenBooking={(booking) => setSheet({ kind: 'detail', venue: v, booking })}
+          onOpenBooking={(booking) => openBooking(v, booking)}
           onCreate={(time, practitionerId) =>
             setSlot({
               venue: v,
@@ -183,6 +213,12 @@ export default function LinkedCalendarScreen() {
         />
       ))}
 
+      <BookingDetailSheet
+        bookingId={detail?.bookingId ?? null}
+        linked={detail?.linked ?? null}
+        fallbackPractitionerName={detail?.linked.practitionerName}
+        onClose={() => setDetail(null)}
+      />
       <LinkedBookingDetailSheet
         visible={sheet?.kind === 'detail'}
         venue={sheet?.kind === 'detail' ? sheet.venue : null}

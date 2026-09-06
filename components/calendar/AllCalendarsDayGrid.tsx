@@ -10,8 +10,11 @@
  * there (cross-column). All reuse DraggableAppointmentBlock — the same proven
  * gesture config (hold-to-arm + failOffsetX) the single-calendar grid uses, so a
  * plain vertical swipe still scrolls the grid and a horizontal swipe still pages
- * the columns. Linked-venue columns stay READ-ONLY (no drag — and aren't valid
- * cross-column drop targets, since you can't move a booking across venues).
+ * the columns. A linked-venue column marked `editable` (web
+ * `linkedColumnUsesNativeGrid`: a full-details link with an edit grant) gets the
+ * same bars, tray actions, move and resize; its cross-column moves keep to that
+ * partner's own calendars, since a booking never changes venue
+ * (`lib/calendar/column-move-groups`). Other linked columns stay READ-ONLY.
  * Tapping a block opens its detail; tapping an empty slot starts a new booking.
  */
 
@@ -37,6 +40,10 @@ import {
   type CalendarTimeBlock,
 } from '@/components/calendar/CalendarDayGrid';
 import { DraggableAppointmentBlock } from '@/components/calendar/DraggableAppointmentBlock';
+import {
+  columnMoveRanges,
+  type ColumnMoveRange,
+} from '@/lib/calendar/column-move-groups';
 import {
   hostRegionsAroundNested,
   layoutOverlapClusters,
@@ -130,11 +137,23 @@ export type AllCalendarColumn = {
   venueHours?: VenueDayHours;
   /**
    * A linked venue's column (cross-venue): drawn like an own column (the owner
-   * wants linked calendars to look the same, 2026-09-06), with the
-   * "hold to move to another practitioner" long-press disabled (you can't
-   * reassign across venues). Mark it with `badge`, not a colour.
+   * wants linked calendars to look the same, 2026-09-06) and read only unless
+   * `editable`. Mark it with `badge`, not a colour.
    */
   linked?: boolean;
+  /**
+   * This linked column joins the interactive grid (web
+   * `linkedColumnUsesNativeGrid`: the link shares full details and grants
+   * edits): its bars carry the quick-action tray, hold-drag move and resize,
+   * exactly like an own column's. Ignored on an own column, which always is.
+   */
+  editable?: boolean;
+  /**
+   * The venue whose columns a bar of this column may be dragged onto (a
+   * partner's venue id): a booking never changes venue. Own columns need none;
+   * a linked column without one accepts no cross-column move at all.
+   */
+  moveGroup?: string;
   /**
    * A small pill next to the header name: the combined grid marks a linked
    * calendar "Linked" (a partner's own view leaves that to its card header).
@@ -202,13 +221,20 @@ type AllCalendarsDayGridProps = {
   onDragResize?: (bookingId: string, newDurationMinutes: number) => void;
   /** A drag/resize was refused (overlap) → surface a "slot taken" message. */
   onDragConflictReject?: () => void;
-  /** Drag-onto-another-own-column release → reassign (new time + target calendar). */
+  /**
+   * Drag-onto-another-column release → reassign (new time + target calendar).
+   * The target is always a column of the booking's own venue: an own column
+   * for an own booking, one of the partner's calendars for a linked one (a
+   * linked target arrives as its column key, `linked:<venueId>:<calendarId>`).
+   */
   onDragMoveToColumn?: (
     bookingId: string,
     newTime: string,
     targetCalendarId: string,
     fromCalendarId: string,
   ) => void;
+  /** A move was dropped on another venue's column and refused (web: "…within the same venue"). */
+  onDragColumnReject?: () => void;
   /** Bookings with an in-flight move/resize — drives each block's pending + snap-home. */
   pendingActionIds?: Set<string>;
   /**
@@ -341,6 +367,7 @@ export function AllCalendarsDayGrid({
   onDragResize,
   onDragConflictReject,
   onDragMoveToColumn,
+  onDragColumnReject,
   pendingActionIds,
   processingPatternFor,
   refreshing = false,
@@ -376,16 +403,15 @@ export function AllCalendarsDayGrid({
    *  cross-column drag's translationX into a target-column delta. */
   const columnPitch = columnWidth + COLUMN_GAP;
 
-  // Cross-column drag: own (non-linked) columns come FIRST in `calendars`, so a
-  // column's array index doubles as its own-column index. `liftedColumn` holds
-  // the index of the column currently being dragged (or -1); each column reads it
-  // to raise its z-order so the dragged block can float over its neighbours.
+  // Cross-column drag: a bar converts its finger travel into a column delta, so
+  // every column is addressed by its index in `calendars`, and each column is
+  // told the index range it may drop on (its own venue's columns; own columns
+  // come FIRST, then each partner's calendars together). `liftedColumn` holds
+  // the index of the column currently being dragged (or -1); each column reads
+  // it to raise its z-order so the dragged block can float over its neighbours.
   const liftedColumn = useSharedValue(-1);
-  const ownColumnCount = useMemo(() => calendars.filter((c) => !c.linked).length, [calendars]);
-  const ownColumnIds = useMemo(
-    () => calendars.filter((c) => !c.linked).map((c) => c.calendarId),
-    [calendars],
-  );
+  const columnIds = useMemo(() => calendars.map((c) => c.calendarId), [calendars]);
+  const moveRanges = useMemo(() => columnMoveRanges(calendars), [calendars]);
 
   // ── Edge auto-scroll during a cross-column drag ───────────────────────────
   // The columns ScrollView is frozen while a drag is armed (the pan owns the
@@ -661,8 +687,8 @@ export function AllCalendarsDayGrid({
                     columnIndex={index}
                     columnWidth={columnWidth}
                     columnPitch={columnPitch}
-                    ownColumnCount={ownColumnCount}
-                    ownColumnIds={ownColumnIds}
+                    columnIds={columnIds}
+                    moveRange={moveRanges[index]!}
                     liftedColumn={liftedColumn}
                     dragAbsX={dragAbsX}
                     autoScrollDelta={autoScrollDelta}
@@ -690,6 +716,7 @@ export function AllCalendarsDayGrid({
                     onDragResize={compact ? undefined : onDragResize}
                     onDragConflictReject={onDragConflictReject}
                     onDragMoveToColumn={onDragMoveToColumn}
+                    onDragColumnReject={onDragColumnReject}
                     pendingActionIds={pendingActionIds}
                     processingPatternFor={cal.processingPatternFor ?? processingPatternFor}
                   />
@@ -734,8 +761,8 @@ function DayColumn({
   columnIndex,
   columnWidth,
   columnPitch,
-  ownColumnCount,
-  ownColumnIds,
+  columnIds,
+  moveRange,
   liftedColumn,
   dragAbsX,
   autoScrollDelta,
@@ -754,6 +781,7 @@ function DayColumn({
   onDragResize,
   onDragConflictReject,
   onDragMoveToColumn,
+  onDragColumnReject,
   pendingActionIds,
   processingPatternFor,
 }: {
@@ -764,10 +792,10 @@ function DayColumn({
   columnWidth: number;
   /** Column width + gap — the cross-column drag's translationX→column conversion. */
   columnPitch: number;
-  /** Number of own (non-linked) columns — the valid cross-column target range. */
-  ownColumnCount: number;
-  /** Own columns' calendar ids, indexed — target index → calendar id at drop. */
-  ownColumnIds: string[];
+  /** Every column's calendar id, indexed — target index → calendar id at drop. */
+  columnIds: string[];
+  /** The index range a bar of this column may be dropped on (its venue's columns). */
+  moveRange: ColumnMoveRange;
   /** Shared "which column is dragging" value (this column lifts when it matches). */
   liftedColumn: SharedValue<number>;
   dragAbsX: SharedValue<number>;
@@ -795,10 +823,17 @@ function DayColumn({
     targetCalendarId: string,
     fromCalendarId: string,
   ) => void;
+  onDragColumnReject?: () => void;
   pendingActionIds?: Set<string>;
   processingPatternFor?: ProcessingPatternLookup | null;
 }) {
   const { colors } = useTheme();
+  /**
+   * Whether this column's bars take actions and gestures: every own column,
+   * and a linked column the grant lets us edit (web
+   * `linkedColumnUsesNativeGrid`). The rest draw a static, tap-to-open bar.
+   */
+  const interactive = !column.linked || column.editable === true;
   const positioned = useMemo(
     () =>
       positionColumn(
@@ -921,10 +956,11 @@ function DayColumn({
     [scheduleBlocks, gridStartMin, pxPerMinute, minBlockHeight],
   );
 
-  // Conflict inputs for the hold-drag/resize gesture on OWN columns: every
-  // wall-holding range in THIS column (bookings minus Cancelled/No-Show, manual
-  // blocks, capacity sessions, schedule blocks), plus the column's open hours (a
-  // drop outside them is allowed but flagged amber). Linked columns never drag.
+  // Conflict inputs for the hold-drag/resize gesture on an interactive column:
+  // every wall-holding range in THIS column (bookings minus Cancelled/No-Show,
+  // manual blocks, capacity sessions, schedule blocks), plus the column's open
+  // hours (a drop outside them is allowed but flagged amber). A read-only linked
+  // column never drags, so these go unused there.
   const busyRanges = useMemo<(BusyRange & { id: string })[]>(() => {
     const out: (BusyRange & { id: string })[] = [];
     for (const b of column.bookings) {
@@ -1103,17 +1139,18 @@ function DayColumn({
         );
       })}
 
-      {/* Appointment blocks. Own-venue movable bookings are hold-draggable
-          (vertical = move time, bottom edge = resize) via the same proven block
-          the single grid uses; a plain swipe still scrolls/pages. Linked-venue
-          bookings are read-only — a static, tap-to-open card. */}
+      {/* Appointment blocks. Movable bookings on an interactive column (own, or
+          a linked one the grant lets us edit) are hold-draggable (vertical =
+          move time, bottom edge = resize) via the same proven block the single
+          grid uses; a plain swipe still scrolls/pages. A read-only linked
+          column's bookings are a static, tap-to-open card. */}
       {positioned.map((item) => {
         // The bar's true px width — the resolved column width split across its
         // overlap lanes. Budgets how many tray actions fit (buttons show where
         // space allows, web parity), since a multi-calendar column is far
         // narrower than the single-calendar grid's full-screen column.
         const laneWidthPx = Math.floor(columnWidth / item.laneCount);
-        if (column.linked) {
+        if (!interactive) {
           const widthPct = 100 / item.laneCount;
           return (
             <View
@@ -1197,10 +1234,13 @@ function DayColumn({
             onDragResize={onDragResize}
             onDragConflictReject={onDragConflictReject}
             onDragMoveToColumn={onDragMoveToColumn}
+            onDragColumnReject={onDragColumnReject}
             crossColumnSourceIndex={columnIndex}
-            crossColumnCount={ownColumnCount}
+            crossColumnCount={columnIds.length}
             crossColumnPitch={columnPitch}
-            crossColumnIds={ownColumnIds}
+            crossColumnIds={columnIds}
+            crossColumnMinIndex={moveRange.min}
+            crossColumnMaxIndex={moveRange.max}
             liftedColumn={liftedColumn}
             dragAbsX={dragAbsX}
             autoScrollDelta={autoScrollDelta}

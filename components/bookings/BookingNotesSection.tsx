@@ -183,9 +183,24 @@ function InlineEditableNote({
 export function BookingNotesSection({
   booking,
   isTable,
+  readOnly = false,
+  customerReadOnly = false,
 }: {
   booking: BookingDetail;
   isTable: boolean;
+  /**
+   * A linked venue's booking seen through a view-only link (web: the notes
+   * panel is disabled for `linkedAct === 'none'`): every field reads, none
+   * edits.
+   */
+  readOnly?: boolean;
+  /**
+   * The customer notes and tags read only, whatever the grant: on any linked
+   * booking they belong to the partner's client record, which our guests route
+   * does not hold, where the booking's own notes go through the booking route
+   * the link covers.
+   */
+  customerReadOnly?: boolean;
 }) {
   const { colors } = useTheme();
   const updateBooking = useUpdateBookingDetails(booking.id);
@@ -218,6 +233,7 @@ export function BookingNotesSection({
           value={booking.dietary_notes}
           placeholder="e.g. Gluten free, nut allergy"
           multiline
+          disabled={readOnly}
           onSave={saveBookingField('dietary_notes')}
         />
       ) : null}
@@ -231,6 +247,7 @@ export function BookingNotesSection({
             : 'Notes, comments or requests the guest entered when booking'
         }
         multiline
+        disabled={readOnly}
         onSave={saveBookingField('special_requests')}
       />
 
@@ -239,6 +256,7 @@ export function BookingNotesSection({
         value={booking.internal_notes}
         placeholder="Internal notes (not visible to the guest)"
         multiline
+        disabled={readOnly}
         onSave={saveBookingField('internal_notes')}
       />
 
@@ -256,6 +274,7 @@ export function BookingNotesSection({
             accessibilityLabel="Edit customer notes"
             placeholder="e.g. Allergies, accessibility, VIP or payment preferences"
             multiline
+            disabled={readOnly || customerReadOnly}
             onSave={(next) => updateGuest.mutateAsync({ customer_profile_notes: next })}
           />
         </View>
@@ -265,6 +284,7 @@ export function BookingNotesSection({
         <View style={styles.tagsBlock}>
           <GuestTagEditor
             tags={booking.guest?.tags ?? []}
+            disabled={readOnly || customerReadOnly}
             onTagsChange={(next) => updateGuest.mutateAsync({ tags: next })}
           />
         </View>

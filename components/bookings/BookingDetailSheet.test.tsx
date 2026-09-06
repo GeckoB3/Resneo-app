@@ -128,6 +128,38 @@ function renderSheet() {
   return render(<BookingDetailSheet bookingId="bk-1" onClose={jest.fn()} />);
 }
 
+/**
+ * A linked venue's booking opens the same sheet; the grant decides whether the
+ * pinned status action exists at all (web: no actions bar on a view-only link).
+ */
+describe('BookingDetailSheet for a linked booking', () => {
+  function renderLinked(act: 'none' | 'edit_existing' | 'create_edit_cancel') {
+    return render(
+      <BookingDetailSheet
+        bookingId="bk-1"
+        onClose={jest.fn()}
+        linked={{ act, venueId: 'v1', venueName: 'light2', pii: true }}
+      />,
+    );
+  }
+
+  it('names the venue and withholds the pinned action on a view-only link', async () => {
+    await act(async () => {
+      renderLinked('none');
+    });
+    expect(screen.getByText('Linked · light2')).toBeTruthy();
+    expect(screen.queryByText('Accept')).toBeNull();
+  });
+
+  it('keeps the pinned action on an edit grant', async () => {
+    await act(async () => {
+      renderLinked('edit_existing');
+    });
+    expect(screen.getByText('Linked · light2')).toBeTruthy();
+    expect(screen.getByText('Accept')).toBeTruthy();
+  });
+});
+
 describe('BookingDetailSheet action bar', () => {
   it('shows the primary action while the keyboard is down', async () => {
     await act(async () => {

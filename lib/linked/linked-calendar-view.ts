@@ -169,6 +169,57 @@ export function parseLinkedColumnKey(
   return venueId ? { venueId, practitionerId: practitionerId || null } : null;
 }
 
+/**
+ * Whether a linked column joins the interactive grid (web
+ * `linkedColumnUsesNativeGrid`, §8.2): a full-details link with an edit grant.
+ * Its bars then carry the quick-action tray, hold-drag move and resize, and
+ * open the full booking panel, exactly as an own column's do; every write goes
+ * through the ordinary booking routes, which derive the owner venue from the
+ * booking and apply the grant. A view-only full-details link and a time-only
+ * link stay read only. The collective plays no part in this: it only decides
+ * where a NEW booking is made.
+ */
+export function linkedColumnUsesNativeGrid(
+  column: Pick<LinkedVenueCalendar, 'visibility' | 'action'>,
+): boolean {
+  return (
+    column.visibility === 'full_details' &&
+    (column.action === 'edit_existing' || column.action === 'create_edit_cancel')
+  );
+}
+
+/**
+ * Whether a tap on a linked booking opens the full booking panel (web
+ * `linkedBookingUsesExpandedDetail`): any full-details link, the grant deciding
+ * what the panel lets staff do. A time-only link keeps the small busy-block
+ * sheet, since the detail route refuses it.
+ */
+export function linkedBookingUsesExpandedDetail(
+  column: Pick<LinkedVenueCalendar, 'visibility'>,
+): boolean {
+  return column.visibility === 'full_details';
+}
+
+/**
+ * The calendar id a PATCH names for a column (web
+ * `resolveLinkedGridPractitionerIdForPatch`): a linked column's key carries the
+ * partner's raw calendar id behind the `linked:<venueId>:` prefix; an own
+ * column's id is already the calendar id. The venue-level column names no
+ * calendar and never takes a reassign, so it resolves to itself.
+ */
+export function linkedColumnPractitionerIdForPatch(columnId: string): string {
+  const parsed = parseLinkedColumnKey(columnId);
+  return parsed?.practitionerId ?? columnId;
+}
+
+/** The web's refusal when a drag would take a booking to another venue's column. */
+export const LINKED_MOVE_SAME_VENUE_ERROR = 'A booking can only be moved within the same venue.';
+
+/** The web's note when an empty slot is tapped on a linked column that may be edited but not booked. */
+export function linkedCreateNotGrantedMessage(venueName: string): string {
+  return `${venueName} hasn’t granted permission to create bookings on this calendar.`;
+}
+
 /** One column of a linked venue on the combined day grid. */
 export interface LinkedVenueColumn {
   key: string;

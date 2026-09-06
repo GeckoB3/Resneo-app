@@ -172,3 +172,60 @@ describe('LinkedVenueCalendarGrid', () => {
     expect(screen.queryByText('Ada Lovelace')).toBeNull();
   });
 });
+
+describe('LinkedVenueCalendarGrid — an edit grant joins the interactive grid', () => {
+  const RESIZE_HANDLE = 'Touch and hold the bottom edge to change duration';
+
+  async function renderInteractive(
+    v: LinkedVenueCalendar,
+    extra: { onCreateRefused?: () => void } = {},
+  ): Promise<void> {
+    await render(
+      <LinkedVenueCalendarGrid
+        embedded
+        venue={v}
+        date={DATE}
+        nowMinutes={null}
+        onOpenBooking={jest.fn()}
+        onCreate={jest.fn()}
+        onDragReschedule={jest.fn()}
+        onDragResize={jest.fn()}
+        onStatusChange={jest.fn()}
+        onArrivalToggle={jest.fn()}
+        onCreateRefused={extra.onCreateRefused}
+      />,
+    );
+  }
+
+  it('gives an edit-existing link the same draggable bar as an own column', async () => {
+    await renderInteractive(venue({ action: 'edit_existing' }));
+    // The interactive bar may fold the service into the name's line.
+    expect(screen.getByText(/Ada Lovelace/)).toBeTruthy();
+    expect(screen.getByLabelText(RESIZE_HANDLE)).toBeTruthy();
+  });
+
+  it('gives a create-edit-cancel link the same', async () => {
+    await renderInteractive(venue({ action: 'create_edit_cancel' }));
+    expect(screen.getByLabelText(RESIZE_HANDLE)).toBeTruthy();
+  });
+
+  it('keeps a view-only link static, even when handed the gestures', async () => {
+    await renderInteractive(venue({ action: 'none' }));
+    expect(screen.getByText(/Ada Lovelace/)).toBeTruthy();
+    expect(screen.queryByLabelText(RESIZE_HANDLE)).toBeNull();
+  });
+
+  it('says why an empty slot cannot be booked on an edit-existing link', async () => {
+    const onCreateRefused = jest.fn();
+    await renderInteractive(venue({ action: 'edit_existing' }), { onCreateRefused });
+    await tapEmptySlot('Jenny');
+    expect(onCreateRefused).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays quiet on an empty slot of a view-only link', async () => {
+    const onCreateRefused = jest.fn();
+    await renderInteractive(venue({ action: 'none' }), { onCreateRefused });
+    await tapEmptySlot('Jenny');
+    expect(onCreateRefused).not.toHaveBeenCalled();
+  });
+});

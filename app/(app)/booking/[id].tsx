@@ -1,4 +1,5 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useMemo } from 'react';
 import { ScrollView, StyleSheet } from 'react-native';
 
 import { useAcceptUnpaidGuard } from '@/components/bookings/AcceptUnpaidSheet';
@@ -8,6 +9,7 @@ import { Screen } from '@/components/ui/Screen';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { ApiError } from '@/lib/api/client';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
+import type { LinkedBookingContext } from '@/lib/linked/linked-detail-policy';
 import { useUpdateBookingStatus } from '@/lib/queries/useBookingMutations';
 import { useBookingDetail } from '@/lib/queries/useBookingDetail';
 import { useDashboardHome } from '@/lib/queries/useDashboardHome';
@@ -16,9 +18,27 @@ import { isAppointmentExperience } from '@/lib/venue/venue-experience';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import type { BookingStatus } from '@/types/booking-detail';
+import type { LinkActionLevel } from '@/types/linked-venues';
+
+const LINK_ACTS: readonly LinkActionLevel[] = ['none', 'edit_existing', 'create_edit_cancel'];
+
+type Params = {
+  id: string;
+  /**
+   * A linked venue's booking opened full screen from the diary's sheet: the
+   * grant and the venue ride along, since this route has no diary to learn
+   * them from. Absent for our own booking.
+   */
+  linkedAct?: string;
+  linkedVenueId?: string;
+  linkedVenueName?: string;
+  linkedPii?: string;
+  linkedPractitionerName?: string;
+};
 
 export default function BookingDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, linkedAct, linkedVenueId, linkedVenueName, linkedPii, linkedPractitionerName } =
+    useLocalSearchParams<Params>();
   const router = useRouter();
   const toast = useToast();
   const bookingId = typeof id === 'string' ? id : undefined;
@@ -29,6 +49,22 @@ export default function BookingDetailScreen() {
   const updateStatus = useUpdateBookingStatus(bookingId ?? '');
   const acceptUnpaidGuard = useAcceptUnpaidGuard();
   const isAdmin = staffQuery.data?.staff?.role === 'admin';
+
+  // The link context, only when the params spell out a real grant and venue.
+  const linked = useMemo<LinkedBookingContext | null>(() => {
+    const act = LINK_ACTS.find((a) => a === linkedAct);
+    if (!act || typeof linkedVenueId !== 'string' || !linkedVenueId) return null;
+    return {
+      act,
+      venueId: linkedVenueId,
+      venueName: typeof linkedVenueName === 'string' && linkedVenueName ? linkedVenueName : 'Linked venue',
+      pii: linkedPii === '1',
+      practitionerName:
+        typeof linkedPractitionerName === 'string' && linkedPractitionerName
+          ? linkedPractitionerName
+          : null,
+    };
+  }, [linkedAct, linkedVenueId, linkedVenueName, linkedPii, linkedPractitionerName]);
 
   const actionLoading = updateStatus.isPending;
 
@@ -116,6 +152,8 @@ export default function BookingDetailScreen() {
           isAppointmentVenue={isAppointmentVenue}
           onStatusChange={handleStatusChange}
           onDeleted={() => router.back()}
+          fallbackPractitionerName={linked?.practitionerName}
+          linked={linked}
         />
       </ScrollView>
       {acceptUnpaidGuard.sheet}

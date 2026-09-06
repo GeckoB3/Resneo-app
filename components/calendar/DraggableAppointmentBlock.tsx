@@ -212,15 +212,28 @@ type DraggableAppointmentBlockProps = {
   /** The day's working-hour minute-ranges — a drop outside these is amber. */
   workingRanges?: { start: number; end: number }[];
   /**
-   * Multi-calendar cross-column drag (own columns only). When ALL of these are
-   * provided, an armed MOVE may also travel horizontally onto another own column
-   * to reassign the booking there. The single-calendar grid passes none, so the
-   * gesture stays vertical-only there.
+   * Multi-calendar cross-column drag. When ALL of these are provided, an armed
+   * MOVE may also travel horizontally onto another column to reassign the
+   * booking there. The single-calendar grid passes none, so the gesture stays
+   * vertical-only there.
    */
   crossColumnSourceIndex?: number;
+  /** How many columns the grid has (`crossColumnIds.length`). */
   crossColumnCount?: number;
   crossColumnPitch?: number;
   crossColumnIds?: string[];
+  /**
+   * The index range (inclusive) of the columns this bar may be dropped on;
+   * defaults to every column. A booking never changes venue, so an own bar
+   * keeps to the own columns and a partner's bar to that partner's columns
+   * (`lib/calendar/column-move-groups`). A drop on a column outside the range
+   * is refused and reported through `onDragColumnReject`; one beyond the grid
+   * altogether just glides home.
+   */
+  crossColumnMinIndex?: number;
+  crossColumnMaxIndex?: number;
+  /** A move was dropped on a column this booking may not move to (another venue's). */
+  onDragColumnReject?: () => void;
   /** Set to the source index while dragging so the parent lifts this column's
    *  z-order above its siblings (else the block hides behind the next column). */
   liftedColumn?: SharedValue<number>;
@@ -312,6 +325,9 @@ export function DraggableAppointmentBlock({
   crossColumnCount,
   crossColumnPitch,
   crossColumnIds,
+  crossColumnMinIndex,
+  crossColumnMaxIndex,
+  onDragColumnReject,
   liftedColumn,
   onDragMoveToColumn,
   dragAbsX,
@@ -347,6 +363,9 @@ export function DraggableAppointmentBlock({
   const ccPitch = crossColumnPitch ?? 0;
   const ccSource = crossColumnSourceIndex ?? -1;
   const ccCount = crossColumnCount ?? 0;
+  /** The columns this bar may land on; every column unless the parent narrows it. */
+  const ccMin = crossColumnMinIndex ?? 0;
+  const ccMax = crossColumnMaxIndex ?? ccCount - 1;
 
   /**
    * Which busy ranges this bar owns. Memoised so the gesture worklets capture one
@@ -356,8 +375,15 @@ export function DraggableAppointmentBlock({
     () => (segmentIds && segmentIds.length > 0 ? segmentIds : [id]),
     [segmentIds, id],
   );
+  // A range of one column (a partner's venue-level column, a lone own column)
+  // has nowhere to go, so the gesture stays vertical there.
   const crossColumnEnabled =
-    onDragMoveToColumn != null && liftedColumn != null && ccPitch > 0 && ccCount > 1 && ccSource >= 0;
+    onDragMoveToColumn != null &&
+    liftedColumn != null &&
+    ccPitch > 0 &&
+    ccCount > 1 &&
+    ccSource >= 0 &&
+    ccMax > ccMin;
 
   // ---- Shared animated values (UI thread) ----
   const mode = useSharedValue<DragMode>(0);
@@ -484,6 +510,7 @@ export function DraggableAppointmentBlock({
     },
     [id, crossColumnIds, crossColumnSourceIndex, onDragMoveToColumn],
   );
+  const jsColumnReject = useCallback(() => onDragColumnReject?.(), [onDragColumnReject]);
 
   const originalMinutes = timeToMinutes(startTime);
 
@@ -604,8 +631,10 @@ export function DraggableAppointmentBlock({
           const raw =
             ccSource +
             Math.round((translateX.value + (autoScrollDelta ? autoScrollDelta.value : 0)) / ccPitch);
-          // Dropped onto a DIFFERENT own column → reassign (new time + practitioner).
-          if (raw !== ccSource && raw >= 0 && raw <= ccCount - 1) {
+          // Dropped onto a DIFFERENT column of this booking's own group (an own
+          // column, or another calendar of the same partner) → reassign (new
+          // time + practitioner).
+          if (raw !== ccSource && raw >= ccMin && raw <= ccMax) {
             settled.value = true;
             conflict.value = 0;
             mode.value = 0;
@@ -613,13 +642,24 @@ export function DraggableAppointmentBlock({
             runOnJS(jsCommitToColumn)(newMinutes, raw);
             return;
           }
-          // Dropped beyond the own columns (e.g. onto a linked venue) — refuse.
+          // Dropped past the grid altogether — glide home.
           if (raw < 0 || raw > ccCount - 1) {
             translateX.value = withSpring(0, SNAP_SPRING);
             translateY.value = withSpring(0, SNAP_SPRING);
             conflict.value = 0;
             mode.value = 0;
             runOnJS(jsHapticCancel)();
+            return;
+          }
+          // Dropped on another venue's column — refuse and say why (web parity:
+          // "A booking can only be moved within the same venue.").
+          if (raw < ccMin || raw > ccMax) {
+            translateX.value = withSpring(0, SNAP_SPRING);
+            translateY.value = withSpring(0, SNAP_SPRING);
+            conflict.value = 0;
+            mode.value = 0;
+            runOnJS(jsHapticCancel)();
+            runOnJS(jsColumnReject)();
             return;
           }
         }

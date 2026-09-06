@@ -178,13 +178,24 @@ function MessageGuestCompose({
  * swaps the composer for a "no contact on file" note. It only hides entirely when
  * there is no guest and nothing has ever been sent.
  */
-export function MessageGuestSection({ booking }: { booking: BookingDetail }) {
+export function MessageGuestSection({
+  booking,
+  readOnly = false,
+}: {
+  booking: BookingDetail;
+  /**
+   * Show the sent log without the composer: a linked venue's booking seen
+   * through a view-only link (web: the composer is disabled for `linkedAct
+   * === 'none'`, the log stays).
+   */
+  readOnly?: boolean;
+}) {
   const { colors } = useTheme();
   const communications = booking.communications ?? [];
   const guestEmail = booking.guest?.email?.trim() || null;
   const guestPhone = booking.guest?.phone?.trim() || null;
   const guestId = booking.guest?.id ?? booking.guest_id ?? null;
-  const canMessage = !!guestEmail || !!guestPhone;
+  const canMessage = (!!guestEmail || !!guestPhone) && !readOnly;
 
   if (!guestId && communications.length === 0) return null;
 
@@ -209,6 +220,10 @@ export function MessageGuestSection({ booking }: { booking: BookingDetail }) {
           guestEmail={guestEmail}
           guestPhone={guestPhone}
         />
+      ) : readOnly ? (
+        <Text variant="bodySmall" tone="muted" style={styles.noContact}>
+          This link is view only, so the guest cannot be messaged from here.
+        </Text>
       ) : (
         <Text variant="bodySmall" tone="muted" style={styles.noContact}>
           No email or phone on file — add contact details to message this guest.
