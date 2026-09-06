@@ -12,11 +12,11 @@ guest email and the full-management gate on removing a partner's file, `72ddb57`
 ResNeo), and the polish alongside them (`4196e06`, `82a799e`, `67ee066`, `6e8e50b`, `5c646c0`,
 `994388f`, `c7d4ad5`). Reports: `Docs/APP_GAP_REPORT_R25_CALENDAR_AVAILABILITY.md`,
 `Docs/APP_GAP_REPORT_R26_LINKED_COLUMNS.md`, `Docs/APP_GAP_REPORT_R27_WEB_DELTA.md`. JavaScript
-only. Not device-tested as a set: the owner's device pass is pending, and now covers three batches.
+only. Device-tested as a set by the owner in Expo Go against staging, with the caveats in §9.
 
-**Verdict: cleared to OTA**, with one thing to decide knowingly (§7): Ask ResNeo ships as an entry
-point to a feature the web has not switched on yet, so until it is, the row leads to "Ask ResNeo is
-not available right now. The Support form is always available."
+**Verdict: cleared to OTA.** The one thing that was left to decide (§8, Ask ResNeo shipping
+ahead of its server-side flag) and the outstanding device pass were both closed the same day,
+before publishing: see §9.
 
 ### 1. Version and reach: the OTA lands on the 1.1.0 installs
 
@@ -134,6 +134,27 @@ re-key when `EXPO_PUBLIC_*` values change.
 - **Ask ResNeo on a real device has never run.** The streaming read path (`expo/fetch` with a
   `ReadableStream`) and the composer's keyboard behaviour on Android under edge-to-edge have been
   exercised in jest and in a full production export, not on a phone.
+
+### 9. Both of §8 closed the same day, before publishing
+
+- **The flag is on.** The owner set `ASSISTANT_ENABLED=true` in Vercel for staging AND production,
+  so the route answers a staff Bearer rather than 404 and the row leads to a working assistant.
+  The decision in §8 no longer arises.
+- **The device pass is done**, in Expo Go, and everything worked. Two things that pass does not
+  reach, neither of which blocks this update:
+  - **It ran against staging.** A dev-mode run loads `.env.development.local`, which points at
+    `reserve-ni.vercel.app` and the staging Supabase project. That is why the owner needed the flag
+    on staging too. What the pass proves is the app's half of the chain end to end against a real
+    backend: the Bearer, the SSE read, the parse and the render. The production half is proven
+    separately by §3 and §4.
+  - **Expo Go is not this binary.** It carries its own native module set, so a pass there says
+    nothing about anything Stripe or Terminal shaped. Nothing in this batch touches those, and the
+    one native module the new code does need (`ExpoFetchModule`) is in both Expo Go and the 1.1.0
+    binaries (§2), so the gap is not load-bearing here.
+- **Still worth checking on the web side**, since it changes what the app can show rather than
+  whether it works: the `assistant_conversations` migration. Until it runs, the route logs nothing
+  and returns a null `assistantMessageId`, so both clients hide the thumbs and the weekly gap
+  review has nothing to read.
 
 ---
 
