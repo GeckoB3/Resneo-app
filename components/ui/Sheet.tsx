@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useKeyboardInset } from '@/components/ui/useKeyboardInset';
 import { useReduceMotion } from '@/lib/motion';
+import { SHEET_MAX_WIDTH, useContentMaxWidth } from '@/lib/responsive';
 import { AppLockCover } from '@/providers/AppLockProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -66,6 +67,11 @@ export function Sheet({
   const reduceMotion = useReduceMotion();
   const insets = useSafeAreaInsets();
   const keyboardInset = useKeyboardInset(insets.bottom);
+  // A sheet is one task, not a whole screen: on a tablet it stops at a card in
+  // the middle instead of running the full width of the window with its title at
+  // one edge and its buttons at the other. Undefined on a phone, where the cap
+  // never bites.
+  const sheetMaxWidth = useContentMaxWidth(SHEET_MAX_WIDTH);
 
   // Lift the content above the keyboard. `fill` sheets keep their fixed height
   // and shrink the body from the bottom (no top clipping); content-sized sheets
@@ -150,6 +156,7 @@ export function Sheet({
           style={[
             styles.sheet,
             { backgroundColor: colors.surfaceRaised },
+            sheetMaxWidth ? { maxWidth: sheetMaxWidth } : null,
             fill ? { height: maxHeight } : { maxHeight },
             sheetTransform,
           ]}>
@@ -185,6 +192,8 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   sheet: {
+    width: '100%',
+    alignSelf: 'center',
     borderTopLeftRadius: radius.surface,
     borderTopRightRadius: radius.surface,
   },

@@ -49,6 +49,17 @@ handed to Support with the conversation attached. The settings search went to
 make room for it. The assistant is switched on server-side, so until it is turned
 on for a venue the row says so and points at the Support form.
 
+**Tablets.** Ask ResNeo answered in a phone-width column on a tablet, with the
+"Was this helpful?" row and "Send this to support" hidden behind the answer. An
+answer bubble was sized by its own content, and a numbered step contributes
+nothing to that, so with room to spare the bubble collapsed to the longest plain
+line it happened to hold — and having been measured at one width and drawn at
+another, the text ran over the row underneath. The answer now fills a column of
+its own, capped so a line stays readable rather than running the full width of
+the window, and Support does the same. Sheets stop at a card in the middle of a
+tablet instead of stretching edge to edge, and the tile grids on More and Today
+lay out three or four across where there is room for them rather than two.
+
 **Store copy: not yet written.** This entry exists for the preview build.
 
 ---

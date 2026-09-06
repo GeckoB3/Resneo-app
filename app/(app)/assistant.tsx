@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AssistantComposer } from '@/components/assistant/AssistantComposer';
 import { AssistantMessageList } from '@/components/assistant/AssistantMessageList';
+import { ContentColumn } from '@/components/ui/ContentColumn';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Screen } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/Text';
@@ -107,9 +108,11 @@ export default function AssistantScreen() {
           details" has to be on screen while the person is typing, not two
           answers up. */}
       <View style={[styles.intro, { borderBottomColor: colors.border }]}>
-        <Text variant="caption" tone="muted">
-          {ASSISTANT_COPY.description}
-        </Text>
+        <ContentColumn>
+          <Text variant="caption" tone="muted">
+            {ASSISTANT_COPY.description}
+          </Text>
+        </ContentColumn>
       </View>
 
       <ScrollView
@@ -118,52 +121,62 @@ export default function AssistantScreen() {
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
         onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}>
-        {state.messages.length > 0 ? (
-          <AssistantMessageList
-            messages={state.messages}
-            onRate={rate}
-            onSendToSupport={sendToSupport}
-            onPressLink={openLink}
-          />
-        ) : (
-          <EmptyState
-            title={ASSISTANT_COPY.emptyTitle}
-            message={ASSISTANT_COPY.emptyBody}
-            icon={
-              <SymbolView
-                name={{ ios: 'sparkles', android: 'auto_awesome', web: 'auto_awesome' }}
-                tintColor={colors.brand}
-                size={34}
-              />
-            }
-          />
-        )}
+        {/* The conversation is prose. A tablet has room to run it the full
+            width of the window, and it must not: the column is capped and
+            centred so a line of an answer stays as readable as it is on a
+            phone, and the rules that hold the bubble together (the answer
+            stretches, the question hugs the right) go on meaning the same
+            thing at every width. */}
+        <ContentColumn style={styles.column}>
+          {state.messages.length > 0 ? (
+            <AssistantMessageList
+              messages={state.messages}
+              onRate={rate}
+              onSendToSupport={sendToSupport}
+              onPressLink={openLink}
+            />
+          ) : (
+            <EmptyState
+              title={ASSISTANT_COPY.emptyTitle}
+              message={ASSISTANT_COPY.emptyBody}
+              icon={
+                <SymbolView
+                  name={{ ios: 'sparkles', android: 'auto_awesome', web: 'auto_awesome' }}
+                  tintColor={colors.brand}
+                  size={34}
+                />
+              }
+            />
+          )}
+        </ContentColumn>
       </ScrollView>
 
       <Animated.View
         style={[styles.footer, { borderTopColor: colors.border }, footerStyle]}>
-        {state.notice ? (
-          <View
-            style={[
-              styles.notice,
-              { backgroundColor: colors.warningSurface, borderColor: colors.warning },
-            ]}>
-            <Text variant="bodySmall" color={colors.warning}>
-              {state.notice}
-            </Text>
-          </View>
-        ) : null}
+        <ContentColumn style={styles.footerColumn}>
+          {state.notice ? (
+            <View
+              style={[
+                styles.notice,
+                { backgroundColor: colors.warningSurface, borderColor: colors.warning },
+              ]}>
+              <Text variant="bodySmall" color={colors.warning}>
+                {state.notice}
+              </Text>
+            </View>
+          ) : null}
 
-        <AssistantComposer
-          streaming={streaming}
-          disabled={state.blocked === 'daily_cap' || state.blocked === 'unavailable'}
-          onSend={send}
-          onStop={stop}
-        />
+          <AssistantComposer
+            streaming={streaming}
+            disabled={state.blocked === 'daily_cap' || state.blocked === 'unavailable'}
+            onSend={send}
+            onStop={stop}
+          />
 
-        <Text variant="caption" tone="muted">
-          {ASSISTANT_COPY.disclaimer}
-        </Text>
+          <Text variant="caption" tone="muted">
+            {ASSISTANT_COPY.disclaimer}
+          </Text>
+        </ContentColumn>
       </Animated.View>
     </Screen>
   );
@@ -182,6 +195,14 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     padding: spacing.base,
     gap: spacing.base,
+  },
+  // Grows with the scroll content so the empty state (which is `flex: 1`) still
+  // centres itself in the whole screen rather than collapsing to its text.
+  column: {
+    flexGrow: 1,
+  },
+  footerColumn: {
+    gap: spacing.sm,
   },
   footer: {
     paddingHorizontal: spacing.base,

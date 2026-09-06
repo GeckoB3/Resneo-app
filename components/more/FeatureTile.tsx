@@ -4,6 +4,7 @@ import { StyleSheet, View } from 'react-native';
 import { PressableScale } from '@/components/ui/PressableScale';
 import { Text } from '@/components/ui/Text';
 import { hexToRgba } from '@/lib/color';
+import { useTileBasis } from '@/lib/responsive';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
@@ -21,11 +22,14 @@ type FeatureTileProps = {
  * faint colour-washed card with the title and hint stacked below. Each tile owns
  * its hue so the grid reads as a set of distinct, glanceable destinations.
  *
- * Sizing is fluid: `flexBasis: 47%` + `flexGrow` lays the tiles out two-per-row
- * inside a `flexWrap` row, with a lone trailing tile growing to fill the width.
+ * Sizing is fluid: a flex basis + `flexGrow` inside a `flexWrap` row, with a
+ * lone trailing tile growing to fill its row. The basis comes from the width in
+ * hand (`useTileBasis`) — two across on a phone, three or four on a tablet,
+ * rather than two half-window tiles each holding one line of text.
  */
 export function FeatureTile({ icon, tint, label, hint, onPress }: FeatureTileProps) {
   const { colors, isDark } = useTheme();
+  const flexBasis = useTileBasis();
   const washAlpha = isDark ? 0.18 : 0.07;
   const borderAlpha = isDark ? 0.34 : 0.16;
 
@@ -37,7 +41,7 @@ export function FeatureTile({ icon, tint, label, hint, onPress }: FeatureTilePro
       accessibilityHint={hint}
       style={[
         styles.tile,
-        { backgroundColor: colors.surfaceRaised, borderColor: hexToRgba(tint, borderAlpha) },
+        { flexBasis, backgroundColor: colors.surfaceRaised, borderColor: hexToRgba(tint, borderAlpha) },
       ]}>
       {/* Opaque card + a translucent colour wash = a tinted, still-raised surface. */}
       <View style={[StyleSheet.absoluteFill, { backgroundColor: hexToRgba(tint, washAlpha) }]} />
@@ -66,7 +70,6 @@ export function FeatureTile({ icon, tint, label, hint, onPress }: FeatureTilePro
 const styles = StyleSheet.create({
   tile: {
     flexGrow: 1,
-    flexBasis: '47%',
     minWidth: 150,
     minHeight: 124,
     borderRadius: radius.surface,

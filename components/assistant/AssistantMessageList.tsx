@@ -12,6 +12,13 @@ import { useTheme } from '@/theme/useTheme';
 import { AssistantMarkdown } from './AssistantMarkdown';
 import { ThinkingDots } from './ThinkingDots';
 
+/**
+ * "Yes" and "No" are two-letter captions. Without slop they are a ~20pt target,
+ * well under the 44pt minimum — and a tablet is held further from the eye and
+ * tapped with a thumb at arm's length, so this is where it shows first.
+ */
+const HIT_SLOP = { top: 12, bottom: 12, left: 10, right: 10 };
+
 export interface AssistantMessageListProps {
   messages: AssistantChatMessage[];
   onRate: (id: string, rating: 1 | -1, comment?: string) => void;
@@ -75,6 +82,7 @@ function AssistantTurn({
   return (
     <View style={styles.assistantRow}>
       <View
+        testID="assistant-answer"
         style={[
           styles.assistantBubble,
           { backgroundColor: colors.surfaceRaised, borderColor: colors.border },
@@ -105,41 +113,45 @@ function AssistantTurn({
 
         {finished && message.content ? (
           <View style={[styles.actions, { borderTopColor: colors.border }]}>
-            {message.serverId ? (
-              message.rating ? (
-                <Text variant="caption" tone="muted">
-                  {ASSISTANT_COPY.feedbackThanks}
-                </Text>
-              ) : (
-                <View style={styles.feedbackRow}>
+            {/* Always rendered, even when there is nothing to rate yet, so the
+                support link keeps its place at the end of the row instead of
+                sliding under the answer when the rating half disappears. */}
+            <View style={styles.feedbackRow}>
+              {message.serverId ? (
+                message.rating ? (
                   <Text variant="caption" tone="muted">
-                    {ASSISTANT_COPY.feedbackPrompt}
+                    {ASSISTANT_COPY.feedbackThanks}
                   </Text>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="Yes, this was helpful"
-                    hitSlop={8}
-                    onPress={() => onRate(message.id, 1)}>
-                    <Text variant="caption" tone="brand">
-                      {ASSISTANT_COPY.feedbackYes}
+                ) : (
+                  <>
+                    <Text variant="caption" tone="muted">
+                      {ASSISTANT_COPY.feedbackPrompt}
                     </Text>
-                  </Pressable>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="No, this was not helpful"
-                    hitSlop={8}
-                    onPress={() => setCommentOpen(true)}>
-                    <Text variant="caption" tone="brand">
-                      {ASSISTANT_COPY.feedbackNo}
-                    </Text>
-                  </Pressable>
-                </View>
-              )
-            ) : null}
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Yes, this was helpful"
+                      hitSlop={HIT_SLOP}
+                      onPress={() => onRate(message.id, 1)}>
+                      <Text variant="caption" tone="brand">
+                        {ASSISTANT_COPY.feedbackYes}
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="No, this was not helpful"
+                      hitSlop={HIT_SLOP}
+                      onPress={() => setCommentOpen(true)}>
+                      <Text variant="caption" tone="brand">
+                        {ASSISTANT_COPY.feedbackNo}
+                      </Text>
+                    </Pressable>
+                  </>
+                )
+              ) : null}
+            </View>
             <Pressable
               accessibilityRole="button"
-              hitSlop={8}
-              style={styles.supportAction}
+              hitSlop={HIT_SLOP}
               onPress={() => onSendToSupport(message.id)}>
               <Text variant="caption" tone="brand">
                 {ASSISTANT_COPY.sendToSupport}
@@ -200,10 +212,20 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: radius.sm,
   },
   assistantRow: {
-    alignItems: 'flex-start',
+    alignItems: 'stretch',
   },
   assistantBubble: {
-    maxWidth: '96%',
+    // Deliberately NOT shrink-to-fit. An answer is paragraphs and numbered
+    // steps, and a step's text is `flex: 1` inside its row — which contributes
+    // nothing to an intrinsic width — so a bubble sized by its content collapses
+    // to the longest plain line it happens to contain. On a phone that line is
+    // usually wider than the screen, so the bubble filled it and nobody saw the
+    // bug; on a tablet there is room to spare, so the same answer drew itself in
+    // a phone-width column, and (on the native layout engine, which measured the
+    // text at one width and drew it at another) the answer ran over the feedback
+    // row underneath it. A stretched bubble has a definite width before the text
+    // is measured, which is what makes the height right.
+    alignSelf: 'stretch',
     paddingHorizontal: spacing.base,
     paddingVertical: spacing.md,
     borderRadius: radius.lg,
@@ -224,16 +246,21 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     flexWrap: 'wrap',
-    gap: spacing.md,
+    columnGap: spacing.md,
+    rowGap: spacing.sm,
   },
   feedbackRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
-  },
-  supportAction: {
-    marginLeft: 'auto',
+    flexWrap: 'wrap',
+    // Shrinks before it overflows: on a narrow phone "Was this helpful? Yes No"
+    // and "Send this to support" together are wider than the bubble, and this
+    // is what lets the pair wrap instead of running off the edge.
+    flexShrink: 1,
+    columnGap: spacing.sm,
+    rowGap: spacing.xs,
   },
   commentBox: {
     marginTop: spacing.sm,

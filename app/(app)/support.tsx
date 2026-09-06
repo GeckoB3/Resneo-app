@@ -5,6 +5,7 @@ import { useMutation } from '@tanstack/react-query';
 
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { ContentColumn } from '@/components/ui/ContentColumn';
 import { Input } from '@/components/ui/Input';
 import { Screen } from '@/components/ui/Screen';
 import { Segmented } from '@/components/ui/Segmented';
@@ -107,18 +108,20 @@ export default function SupportScreen() {
       <Screen padded>
         {header}
         <View style={styles.successContainer}>
-          <Card>
-            <View style={styles.successContent}>
-              <Text variant="heading" style={styles.successTitle}>
-                Message sent
-              </Text>
-              <Text variant="bodySmall" tone="secondary" style={styles.successBody}>
-                Our support team will get back to you as soon as possible. We typically respond within
-                24 hours.
-              </Text>
-              <Button label="Send another message" variant="secondary" onPress={handleReset} />
-            </View>
-          </Card>
+          <ContentColumn>
+            <Card>
+              <View style={styles.successContent}>
+                <Text variant="heading" style={styles.successTitle}>
+                  Message sent
+                </Text>
+                <Text variant="bodySmall" tone="secondary" style={styles.successBody}>
+                  Our support team will get back to you as soon as possible. We typically respond within
+                  24 hours.
+                </Text>
+                <Button label="Send another message" variant="secondary" onPress={handleReset} />
+              </View>
+            </Card>
+          </ContentColumn>
         </View>
       </Screen>
     );
@@ -128,100 +131,104 @@ export default function SupportScreen() {
     <Screen scroll={false} padded={false}>
       {header}
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <Text variant="bodySmall" tone="secondary">
-          Need help? Send us a message and we&apos;ll get back to you as soon as we can.
-        </Text>
+        {/* One column of fields, capped and centred on a tablet — a label at the
+            far left of a 1000dp row is nowhere near the input it names. */}
+        <ContentColumn style={styles.column}>
+          <Text variant="bodySmall" tone="secondary">
+            Need help? Send us a message and we&apos;ll get back to you as soon as we can.
+          </Text>
 
-        {/* Help centre link */}
-        <Card onPress={() => void Linking.openURL('https://resneo.com/help').catch(() => undefined)}>
-          <View style={styles.helpRow}>
-            <View style={styles.helpText}>
-              <Text variant="label">Browse the help centre</Text>
-              <Text variant="caption" tone="muted">
-                Find guides and answers before contacting support.
-              </Text>
+          {/* Help centre link */}
+          <Card onPress={() => void Linking.openURL('https://resneo.com/help').catch(() => undefined)}>
+            <View style={styles.helpRow}>
+              <View style={styles.helpText}>
+                <Text variant="label">Browse the help centre</Text>
+                <Text variant="caption" tone="muted">
+                  Find guides and answers before contacting support.
+                </Text>
+              </View>
             </View>
-          </View>
-        </Card>
+          </Card>
 
-        {/* Form */}
-        <Card>
-          <View style={styles.form}>
-            <View>
-              <Text variant="label" tone="secondary" style={styles.fieldLabel}>
-                Category
+          {/* Form */}
+          <Card>
+            <View style={styles.form}>
+              <View>
+                <Text variant="label" tone="secondary" style={styles.fieldLabel}>
+                  Category
+                </Text>
+                <Segmented options={CATEGORY_OPTIONS} value={category} onChange={setCategory} />
+              </View>
+
+              <Input
+                label="Subject"
+                value={subject}
+                onChangeText={setSubject}
+                placeholder="Brief summary of your question"
+                maxLength={200}
+                returnKeyType="next"
+              />
+
+              <Input
+                label="Message"
+                value={message}
+                onChangeText={setMessage}
+                placeholder="Describe your issue or question in detail…"
+                multiline
+                style={styles.messageInput}
+                maxLength={5000}
+              />
+              <Text variant="caption" tone="muted" style={styles.charCount}>
+                {message.length}/5000
               </Text>
-              <Segmented options={CATEGORY_OPTIONS} value={category} onChange={setCategory} />
+
+              <Input
+                label="Your email (optional)"
+                value={contactEmail}
+                onChangeText={setContactEmail}
+                placeholder="Best address to reach you"
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                helper="Helps us reply directly if it differs from your login email."
+                maxLength={255}
+              />
+
+              <Input
+                label="Phone number (optional)"
+                value={contactPhone}
+                onChangeText={setContactPhone}
+                placeholder="e.g. +44 7700 900000"
+                keyboardType="phone-pad"
+                maxLength={40}
+              />
+
+              <Button
+                label="Send message"
+                fullWidth
+                loading={mutation.isPending}
+                disabled={!subject.trim() || !message.trim()}
+                onPress={() => void handleSubmit()}
+              />
             </View>
+          </Card>
 
-            <Input
-              label="Subject"
-              value={subject}
-              onChangeText={setSubject}
-              placeholder="Brief summary of your question"
-              maxLength={200}
-              returnKeyType="next"
-            />
-
-            <Input
-              label="Message"
-              value={message}
-              onChangeText={setMessage}
-              placeholder="Describe your issue or question in detail…"
-              multiline
-              style={styles.messageInput}
-              maxLength={5000}
-            />
-            <Text variant="caption" tone="muted" style={styles.charCount}>
-              {message.length}/5000
+          {/* Other contact methods */}
+          <Card>
+            <Text variant="label" style={styles.otherContactTitle}>
+              Other ways to reach us
             </Text>
+            <Text
+              variant="bodySmall"
+              tone="secondary"
+              style={styles.emailLink}
+              onPress={() => void Linking.openURL('mailto:support@resneo.com').catch(() => undefined)}>
+              support@resneo.com
+            </Text>
+          </Card>
 
-            <Input
-              label="Your email (optional)"
-              value={contactEmail}
-              onChangeText={setContactEmail}
-              placeholder="Best address to reach you"
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-              helper="Helps us reply directly if it differs from your login email."
-              maxLength={255}
-            />
-
-            <Input
-              label="Phone number (optional)"
-              value={contactPhone}
-              onChangeText={setContactPhone}
-              placeholder="e.g. +44 7700 900000"
-              keyboardType="phone-pad"
-              maxLength={40}
-            />
-
-            <Button
-              label="Send message"
-              fullWidth
-              loading={mutation.isPending}
-              disabled={!subject.trim() || !message.trim()}
-              onPress={() => void handleSubmit()}
-            />
-          </View>
-        </Card>
-
-        {/* Other contact methods */}
-        <Card>
-          <Text variant="label" style={styles.otherContactTitle}>
-            Other ways to reach us
-          </Text>
-          <Text
-            variant="bodySmall"
-            tone="secondary"
-            style={styles.emailLink}
-            onPress={() => void Linking.openURL('mailto:support@resneo.com').catch(() => undefined)}>
-            support@resneo.com
-          </Text>
-        </Card>
-
-        <View style={styles.spacer} />
+          <View style={styles.spacer} />
+        </ContentColumn>
       </ScrollView>
     </Screen>
   );
@@ -230,6 +237,8 @@ export default function SupportScreen() {
 const styles = StyleSheet.create({
   content: {
     padding: spacing.base,
+  },
+  column: {
     gap: spacing.md,
   },
   fieldLabel: {

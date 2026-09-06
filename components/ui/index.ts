@@ -6,6 +6,7 @@ export { Card } from './Card';
 export { Chip } from './Chip';
 export { CollapsibleCard } from './CollapsibleCard';
 export { ConfirmSheet } from './ConfirmSheet';
+export { ContentColumn } from './ContentColumn';
 export { Dot } from './Dot';
 export { EmptyState } from './EmptyState';
 export { ErrorBoundary } from './ErrorBoundary';

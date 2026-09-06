@@ -1,6 +1,7 @@
 import { StyleSheet, View } from 'react-native';
 
 import { StatTile } from '@/components/ui/StatTile';
+import { useTileBasis } from '@/lib/responsive';
 import { spacing } from '@/theme/index';
 
 import type { DashboardForecastDay, DashboardTodayStats } from '@/types/dashboard';
@@ -13,6 +14,9 @@ type KpiGridProps = {
 };
 
 export function KpiGrid({ today, isAppointment, forecast }: KpiGridProps) {
+  // Two across on a phone, four on a tablet: the same four numbers, rather
+  // than two half-window tiles each holding one short line.
+  const flexBasis = useTileBasis();
   const bookings = today.bookings;
   const confirmed = today.confirmed;
   const pending = today.pending;
@@ -57,27 +61,27 @@ export function KpiGrid({ today, isAppointment, forecast }: KpiGridProps) {
   return (
     <View style={styles.grid}>
       <StatTile
-        style={styles.kpi}
+        style={[styles.kpi, { flexBasis }]}
         label={isAppointment ? 'Today' : 'Covers today'}
         value={todayValue}
         caption={todayCaption}
         sparkline={spark.length >= 2 ? spark : undefined}
       />
       <StatTile
-        style={styles.kpi}
+        style={[styles.kpi, { flexBasis }]}
         label="Confirmed"
         value={confirmedValue}
         caption={confirmedExtra ? `${confirmedCaption} · ${confirmedExtra}` : confirmedCaption}
       />
       {!isAppointment ? (
         <StatTile
-          style={styles.kpi}
+          style={[styles.kpi, { flexBasis }]}
           label="Arriving soon"
           value={String(today.arriving_within_30_min)}
           caption="next 30 min"
         />
       ) : null}
-      <StatTile style={styles.kpi} label="Next up" value={nextValue} caption={nextCaption} />
+      <StatTile style={[styles.kpi, { flexBasis }]} label="Next up" value={nextValue} caption={nextCaption} />
     </View>
   );
 }
@@ -90,7 +94,6 @@ const styles = StyleSheet.create({
   },
   kpi: {
     flexGrow: 1,
-    flexBasis: '46%',
     minWidth: 140,
   },
 });
