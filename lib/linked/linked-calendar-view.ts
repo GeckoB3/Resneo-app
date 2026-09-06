@@ -271,6 +271,20 @@ export function linkedSharedCalendars(venue: LinkedVenueCalendar): LinkedPractit
 }
 
 /**
+ * True when a calendar is named after its venue ("light 3" in "light 3", a
+ * one-chair venue's usual default): a venue caption under that name would only
+ * repeat it, so the headings and the combined grid's column caption leave it out.
+ */
+export function linkedNameRepeatsVenue(calendarName: string, venueName: string): boolean {
+  return calendarName.trim().toLowerCase() === venueName.trim().toLowerCase();
+}
+
+/** The venue as a caption under a calendar's name, unless it would only repeat the name. */
+function venueCaptionUnder(calendarName: string, venue: LinkedVenueCalendar): string | undefined {
+  return linkedNameRepeatsVenue(calendarName, venue.venueName) ? undefined : venue.venueName;
+}
+
+/**
  * What heads a partner's merged week grid, which draws one 7-day grid for the
  * whole venue and so cannot be one column per calendar. A partner sharing a
  * single calendar is headed with that calendar's name ("Jenny", not "light2",
@@ -284,7 +298,108 @@ export function linkedWeekHeading(venue: LinkedVenueCalendar): {
 } {
   const calendars = linkedSharedCalendars(venue);
   const [only] = calendars;
-  if (only && calendars.length === 1) return { title: only.name, caption: venue.venueName };
+  if (only && calendars.length === 1) {
+    return { title: only.name, caption: venueCaptionUnder(only.name, venue) };
+  }
   if (calendars.length === 0) return { title: venue.venueName };
   return { title: venue.venueName, caption: calendars.map((c) => c.name).join(', ') };
+}
+
+/**
+ * A partner's calendars as switcher chips: one per shared calendar, as for our
+ * own calendars (web parity: the diary lists linked columns per calendar, not
+ * per venue), or one for the whole venue when the partner lists none. A
+ * calendar named like an own calendar or another partner's ("Jenny" at two
+ * salons) carries its venue so the two chips read apart, as the combined page's
+ * team list does.
+ */
+export interface LinkedSwitcherEntry {
+  /** `linked:<venueId>:<practitionerId>`, or the venue-level key for a partner that lists no calendars. */
+  key: string;
+  venue: LinkedVenueCalendar;
+  /** Null for the whole-venue entry. */
+  practitionerId: string | null;
+  label: string;
+}
+
+export function linkedSwitcherEntries(
+  venues: readonly LinkedVenueCalendar[],
+  ownCalendarNames: readonly string[],
+): LinkedSwitcherEntry[] {
+  type RawEntry = Omit<LinkedSwitcherEntry, 'label'> & { name: string };
+  const raw = venues.flatMap((venue): RawEntry[] => {
+    const calendars = linkedSharedCalendars(venue);
+    if (calendars.length === 0) {
+      return [
+        { key: linkedColumnKey(venue.venueId), venue, practitionerId: null, name: venue.venueName },
+      ];
+    }
+    return calendars.map((p) => ({
+      key: linkedColumnKey(venue.venueId, p.id),
+      venue,
+      practitionerId: p.id,
+      name: p.name,
+    }));
+  });
+  const norm = (name: string) => name.trim().toLowerCase();
+  const counts = new Map<string, number>();
+  for (const name of [...ownCalendarNames, ...raw.map((e) => e.name)]) {
+    counts.set(norm(name), (counts.get(norm(name)) ?? 0) + 1);
+  }
+  return raw.map(({ name, ...entry }) => ({
+    ...entry,
+    label:
+      entry.practitionerId &&
+      (counts.get(norm(name)) ?? 0) > 1 &&
+      !linkedNameRepeatsVenue(name, entry.venue.venueName)
+        ? `${name} · ${entry.venue.venueName}`
+        : name,
+  }));
+}
+
+/** The entry's bookings on a date, for its chip's count. */
+export function linkedSwitcherEntryCount(entry: LinkedSwitcherEntry, date: string): number {
+  return entry.venue.bookings.filter(
+    (b) =>
+      b.bookingDate === date &&
+      (entry.practitionerId === null || b.practitionerId === entry.practitionerId),
+  ).length;
+}
+
+/**
+ * The partner's feed narrowed to one calendar: that practitioner, its bookings
+ * and its class/event blocks only, so the single-venue grids draw the calendar
+ * alone (one column, no header, the card naming it) when a switcher chip picks
+ * it. The venue's grant, services and name are untouched.
+ */
+export function narrowLinkedVenueToCalendar(
+  venue: LinkedVenueCalendar,
+  practitionerId: string,
+): LinkedVenueCalendar {
+  return {
+    ...venue,
+    practitioners: venue.practitioners.filter((p) => p.id === practitionerId),
+    bookings: venue.bookings.filter((b) => b.practitionerId === practitionerId),
+    scheduleBlocks: (venue.scheduleBlocks ?? []).filter(
+      (b) => (b.calendar_id ?? null) === practitionerId,
+    ),
+  };
+}
+
+/**
+ * What heads a partner's own day view, above its columns for the date. With a
+ * single calendar column the grid draws no column header (the own
+ * single-calendar view has none), so the card names the calendar, the venue
+ * under it; with several columns, or only the venue-level one, the columns
+ * carry the names and the card names the venue.
+ */
+export function linkedDayHeading(
+  venue: LinkedVenueCalendar,
+  columns: readonly Pick<LinkedVenueColumn, 'practitionerId' | 'name'>[],
+): { title: string; caption?: string } {
+  const [only] = columns;
+  if (only && columns.length === 1 && only.practitionerId) {
+    return { title: only.name, caption: venueCaptionUnder(only.name, venue) };
+  }
+  return { title: venue.venueName };
 }

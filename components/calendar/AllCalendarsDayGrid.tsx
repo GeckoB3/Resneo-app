@@ -69,6 +69,7 @@ import {
   type GridWindowOverride,
   type LaneInput,
 } from '@/components/calendar/grid-layout';
+import { Badge } from '@/components/ui/Badge';
 import { Text } from '@/components/ui/Text';
 import { minimumVisitFloorMinutes } from '@/lib/booking/appointment-visit';
 import { arrivalToggleTargets, statusChangeTargets } from '@/lib/calendar/bar-actions';
@@ -128,12 +129,18 @@ export type AllCalendarColumn = {
    */
   venueHours?: VenueDayHours;
   /**
-   * A linked venue's column (cross-venue). Tinted with `accent`, and the
-   * "hold to move to another practitioner" long-press is disabled (you can't
-   * reassign across venues).
+   * A linked venue's column (cross-venue): drawn like an own column (the owner
+   * wants linked calendars to look the same, 2026-09-06), with the
+   * "hold to move to another practitioner" long-press disabled (you can't
+   * reassign across venues). Mark it with `badge`, not a colour.
    */
   linked?: boolean;
-  /** Header / column accent colour (e.g. amber for a linked venue). */
+  /**
+   * A small pill next to the header name: the combined grid marks a linked
+   * calendar "Linked" (a partner's own view leaves that to its card header).
+   */
+  badge?: string;
+  /** An explicit header / column tint. Nothing implies one; linked columns stay neutral. */
   accent?: string;
   /**
    * This column's own processing-pattern lookup (a linked venue's services);
@@ -230,6 +237,12 @@ type AllCalendarsDayGridProps = {
    * its floor scale, since the fit needs a viewport to measure.
    */
   embedded?: boolean;
+  /**
+   * Draw the column-header row (default true). A partner's own view with a
+   * single column leaves it out, so it reads like the own single-calendar
+   * grid, which has none: the card above names the calendar instead.
+   */
+  showColumnHeaders?: boolean;
 };
 
 /**
@@ -334,6 +347,7 @@ export function AllCalendarsDayGrid({
   onRefresh,
   compact = false,
   embedded = false,
+  showColumnHeaders = true,
 }: AllCalendarsDayGridProps) {
   const { colors } = useTheme();
 
@@ -487,9 +501,11 @@ export function AllCalendarsDayGrid({
   // header row) and a small bottom gutter.
   // The header row grows a line when any column carries a caption (a linked
   // calendar's venue), and the time gutter starts below it either way.
-  const headerHeight = calendars.some((c) => Boolean(c.caption))
-    ? HEADER_HEIGHT + CAPTION_HEIGHT
-    : HEADER_HEIGHT;
+  const headerHeight = !showColumnHeaders
+    ? 0
+    : calendars.some((c) => Boolean(c.caption))
+      ? HEADER_HEIGHT + CAPTION_HEIGHT
+      : HEADER_HEIGHT;
   const pxPerMinute = compact
     ? computeCompactPxPerMinute(
         viewportHeight,
@@ -544,52 +560,84 @@ export function AllCalendarsDayGrid({
             setColumnsViewportWidth(w);
           }}>
           <View>
-            {/* Column headers (practitioner names) */}
-            <View style={[styles.headerRow, { height: headerHeight }]}>
-              {calendars.map((cal) => {
-                // Linked venues read amber (matching the linked chip); own
-                // practitioner columns stay neutral.
-                const tint = cal.linked ? cal.accent ?? colors.warning : null;
+            {/* Column headers (practitioner names); a single-column partner
+                view leaves them out (see `showColumnHeaders`). */}
+            {showColumnHeaders ? (
+              <View testID="column-headers" style={[styles.headerRow, { height: headerHeight }]}>
+                {calendars.map((cal) => {
+                  // Every column reads neutral, a linked one included; only an
+                  // explicit accent tints a header.
+                  const tint = cal.accent ?? null;
+                  return (
+                    <View
+                      key={cal.calendarId}
+                      style={[
+                        styles.headerCell,
+                        { width: columnWidth, borderColor: tint ?? colors.border },
+                        tint ? { backgroundColor: hexToRgba(tint, 0.1) } : null,
+                      ]}>
+                      <View style={styles.headerName}>
+                        <Text
+                          variant="label"
+                          numberOfLines={1}
+                          style={[styles.headerNameText, tint ? { color: tint } : null]}>
+                          {cal.calendarName}
+                        </Text>
+                        {cal.badge ? <Badge label={cal.badge} tone="warning" /> : null}
+                      </View>
+                      {cal.caption ? (
+                        <Text
+                          variant="caption"
+                          tone={tint ? undefined : 'muted'}
+                          numberOfLines={1}
+                          style={[styles.headerCaption, tint ? { color: tint } : null]}>
+                          {cal.caption}
+                        </Text>
+                      ) : null}
+                    </View>
+                  );
+                })}
+              </View>
+            ) : null}
+
+            <View style={{ height: totalHeight }}>
+              {/* Shared hour rows across the full column band: the hour line,
+                  the same subtle alternate-hour banding and lighter half-hour
+                  line as the single-calendar grid (web parity), so a partner's
+                  columns read like own ones (owner's finding, 2026-09-06). */}
+              {hours.map((hour, index) => {
+                const isLast = hour === endHour;
                 return (
                   <View
-                    key={cal.calendarId}
+                    key={hour}
+                    pointerEvents="none"
                     style={[
-                      styles.headerCell,
-                      { width: columnWidth, borderColor: tint ?? colors.border },
-                      tint ? { backgroundColor: hexToRgba(tint, 0.1) } : null,
+                      styles.hourRow,
+                      {
+                        top: (hour - startHour) * 60 * pxPerMinute,
+                        height: isLast ? 0 : 60 * pxPerMinute,
+                      },
                     ]}>
-                    <Text
-                      variant="label"
-                      numberOfLines={1}
-                      style={tint ? { color: tint } : undefined}>
-                      {cal.calendarName}
-                    </Text>
-                    {cal.caption ? (
-                      <Text
-                        variant="caption"
-                        tone={tint ? undefined : 'muted'}
-                        numberOfLines={1}
-                        style={[styles.headerCaption, tint ? { color: tint } : null]}>
-                        {cal.caption}
-                      </Text>
+                    <View style={[styles.hourLine, { backgroundColor: colors.border }]} />
+                    {!isLast ? (
+                      <>
+                        {index % 2 === 1 ? (
+                          <View
+                            testID="hour-band"
+                            style={[styles.hourBand, { backgroundColor: colors.text, opacity: 0.025 }]}
+                          />
+                        ) : null}
+                        <View
+                          style={[
+                            styles.halfHourLine,
+                            { top: 30 * pxPerMinute, backgroundColor: colors.border },
+                          ]}
+                        />
+                      </>
                     ) : null}
                   </View>
                 );
               })}
-            </View>
-
-            <View style={{ height: totalHeight }}>
-              {/* Shared hour lines across the full column band. */}
-              {hours.map((hour) => (
-                <View
-                  key={hour}
-                  pointerEvents="none"
-                  style={[
-                    styles.hourLine,
-                    { top: (hour - startHour) * 60 * pxPerMinute, backgroundColor: colors.border },
-                  ]}
-                />
-              ))}
 
               {/* Now-line spanning all columns. */}
               {nowTop != null ? (
@@ -913,8 +961,8 @@ function DayColumn({
     return narrowWorkingRanges(working, nonWorking);
   }, [column.workingHours, overlays]);
 
-  // Linked columns read amber (matching the linked chip) with a faint wash.
-  const accent = column.linked ? column.accent ?? colors.warning : null;
+  // Only an explicit accent washes a column; a linked one is drawn like an own one.
+  const accent = column.accent ?? null;
 
   // Raise this column's DRAW ORDER (zIndex only — NOT elevation) while ITS block
   // is being dragged, so the dragged block can travel over the neighbouring
@@ -1208,11 +1256,42 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
+  headerName: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    maxWidth: '100%',
+    paddingHorizontal: spacing.xs,
+  },
+  headerNameText: {
+    flexShrink: 1,
+  },
+  hourRow: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    // top and height are set on the element (an hour's span at the scale).
+  },
   hourLine: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: StyleSheet.hairlineWidth,
+  },
+  hourBand: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+  },
+  halfHourLine: {
     position: 'absolute',
     left: 0,
     right: 0,
     height: StyleSheet.hairlineWidth,
+    opacity: 0.55,
   },
   closedBand: {
     position: 'absolute',

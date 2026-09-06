@@ -123,9 +123,14 @@ import {
   linkedBusyBlock,
   linkedColumnKey,
   linkedGridBooking,
+  linkedNameRepeatsVenue,
   linkedScheduleBlocksForColumn,
+  linkedSharedCalendars,
+  linkedSwitcherEntries,
+  linkedSwitcherEntryCount,
   linkedVenueColumns,
   linkedVenueDayHours,
+  narrowLinkedVenueToCalendar,
   rangesToWorkingHours,
   type LinkedVenueColumn,
 } from '@/lib/linked/linked-calendar-view';
@@ -631,7 +636,7 @@ export default function CalendarScreen() {
   // Any accepted link that shares calendar visibility surfaces as a chip in the
   // switcher row; picking one sets ownerVenueId and renders that venue's day via
   // LinkedVenueCalendarGrid (grant-gated). ownerVenueId persists across launches.
-  const { ownerVenueId, setOwnerVenueId, clearOwnerVenue, reconcileOwnerVenue } =
+  const { ownerVenueId, ownerPractitionerId, setOwnerVenueId, clearOwnerVenue, reconcileOwnerVenue } =
     useLinkedVenueContext();
   // Linked calendars render in day + week scope (month is own-venue only), so
   // fetch the whole week in week scope and just the anchor day otherwise —
@@ -675,6 +680,28 @@ export default function CalendarScreen() {
     [ownerVenueId, linkedVenues],
   );
   /**
+   * The partner's calendar the switcher picked (web parity: one chip per
+   * linked calendar, as for our own), or null for the whole venue: a partner
+   * that lists no calendars, or a pick the feed no longer names, which the
+   * reconcile effect below re-points.
+   */
+  const activeLinkedCalendarId = useMemo(
+    () =>
+      ownerPractitionerId &&
+      activeLinkedVenue?.practitioners.some((p) => p.id === ownerPractitionerId)
+        ? ownerPractitionerId
+        : null,
+    [ownerPractitionerId, activeLinkedVenue],
+  );
+  /** The feed the linked grids draw: the picked calendar alone, or the whole venue. */
+  const activeLinkedView = useMemo(
+    () =>
+      activeLinkedVenue && activeLinkedCalendarId
+        ? narrowLinkedVenueToCalendar(activeLinkedVenue, activeLinkedCalendarId)
+        : activeLinkedVenue,
+    [activeLinkedVenue, activeLinkedCalendarId],
+  );
+  /**
    * The live collective the active linked venue books through with us, or null
    * when it books for itself. A partner inside the collective is one business
    * with us on the diary: its grid loses its own "New booking" header button
@@ -701,6 +728,19 @@ export default function CalendarScreen() {
     if (!linkedQuery.isSuccess) return;
     reconcileOwnerVenue(linkedVenues.map((v) => v.venueId));
   }, [linkedQuery.isSuccess, linkedVenues, reconcileOwnerVenue]);
+  // The picked calendar, likewise: a partner that shares calendars is viewed
+  // one at a time (its first when none is picked, or the pick is gone), a
+  // partner that lists none as a whole.
+  useEffect(() => {
+    if (!linkedQuery.isSuccess || !activeLinkedVenue) return;
+    const shared = linkedSharedCalendars(activeLinkedVenue);
+    const valid = shared.some((p) => p.id === ownerPractitionerId);
+    if (shared.length > 0 && !valid) {
+      setOwnerVenueId(activeLinkedVenue.venueId, activeLinkedVenue.venueName, shared[0]?.id ?? null);
+    } else if (shared.length === 0 && ownerPractitionerId) {
+      setOwnerVenueId(activeLinkedVenue.venueId, activeLinkedVenue.venueName, null);
+    }
+  }, [linkedQuery.isSuccess, activeLinkedVenue, ownerPractitionerId, setOwnerVenueId]);
 
   const [linkedSheet, setLinkedSheet] = useState<LinkedSheet>(null);
   // The linked-column slot menu (New booking / Walk-in). Separate from
@@ -805,13 +845,20 @@ export default function CalendarScreen() {
   // single-select switcher driven by `selectedId`.
   const isWideDay = scope === 'day' && isWideViewport && practitioners.length > 1;
 
-  // On a wide DAY viewport, linked venues are FIRST-CLASS entries in the
-  // multi-select: their column id (`linked:<venueId>`) joins the own calendar
-  // ids in the visible set, so the filter governs own AND linked columns alike.
-  const linkedKeys = useMemo(
-    () => linkedVenues.map((v) => linkedColumnKey(v.venueId)),
-    [linkedVenues],
+  // One switcher entry per calendar a partner shares, as for our own calendars
+  // (web parity: the diary lists linked columns per calendar), or one for a
+  // partner that lists none; a name shared with an own calendar or another
+  // partner's carries its venue. See `linkedSwitcherEntries`.
+  const linkedEntries = useMemo(
+    () => linkedSwitcherEntries(linkedVenues, practitioners.map((p) => p.name)),
+    [linkedVenues, practitioners],
   );
+  // On a wide DAY viewport, linked calendars are FIRST-CLASS entries in the
+  // multi-select: each column key (`linked:<venueId>:<calendarId>`) joins the
+  // own calendar ids in the visible set, so the filter governs own AND linked
+  // columns alike. A venue-level key from an older preference still stands for
+  // all of that partner's columns.
+  const linkedKeys = useMemo(() => linkedEntries.map((e) => e.key), [linkedEntries]);
   const selectableDayIds = useMemo(
     () => [...calendarIds, ...linkedKeys],
     [calendarIds, linkedKeys],
@@ -1697,14 +1744,21 @@ export default function CalendarScreen() {
 
   // Linked venues shown as columns: on a wide day filtered by the visible set;
   // on a phone only when "All" (selectedId) is picked (existing behaviour).
+  // A linked column is visible under its own key or, from an older preference
+  // that toggled the partner as a whole, its venue-level key.
+  const linkedColumnVisible = useCallback(
+    (col: LinkedVenueColumn) =>
+      wideFilterSet.has(col.key) || wideFilterSet.has(linkedColumnKey(col.venue.venueId)),
+    [wideFilterSet],
+  );
   const linkedVenuesForDay = useMemo(() => {
     if (isWideDay) {
       return wideFilterActive
-        ? linkedVenues.filter((v) => wideFilterSet.has(linkedColumnKey(v.venueId)))
+        ? linkedVenues.filter((v) => linkedVenueColumns(v, anchor).some(linkedColumnVisible))
         : linkedVenues;
     }
     return isAllView ? linkedVenues : [];
-  }, [isWideDay, wideFilterActive, wideFilterSet, linkedVenues, isAllView]);
+  }, [isWideDay, wideFilterActive, linkedColumnVisible, linkedVenues, isAllView, anchor]);
 
   // If a (stale) filter resolves to zero columns, show everything instead.
   const wideFilterEmpty =
@@ -1722,10 +1776,11 @@ export default function CalendarScreen() {
   // A linked venue becomes one column per calendar the partner shares, named
   // after the calendar (web §8.2: "Jenny", not "light2"), each with its own
   // template; see `linkedVenueColumns`.
-  const linkedSourceColumns = useMemo<LinkedVenueColumn[]>(
-    () => linkedColumnsSource.flatMap((v) => linkedVenueColumns(v, anchor)),
-    [linkedColumnsSource, anchor],
-  );
+  const linkedSourceColumns = useMemo<LinkedVenueColumn[]>(() => {
+    const columns = linkedColumnsSource.flatMap((v) => linkedVenueColumns(v, anchor));
+    // The wide-day filter picks linked columns one calendar at a time.
+    return wideFilterActive && !wideFilterEmpty ? columns.filter(linkedColumnVisible) : columns;
+  }, [linkedColumnsSource, anchor, wideFilterActive, wideFilterEmpty, linkedColumnVisible]);
   const { ownColumnsShown, linkedColumnsShown } = useMemo(() => {
     if (!workingFilterOn) {
       return { ownColumnsShown: ownColumnsSource, linkedColumnsShown: linkedSourceColumns };
@@ -1789,7 +1844,12 @@ export default function CalendarScreen() {
       return {
         calendarId: col.key,
         calendarName: col.name,
-        caption: col.practitionerId ? v.venueName : undefined,
+        // The venue under the calendar's name, unless the calendar is named
+        // after the venue and the caption would only repeat it.
+        caption:
+          col.practitionerId && !linkedNameRepeatsVenue(col.name, v.venueName)
+            ? v.venueName
+            : undefined,
         workingHours: rangesToWorkingHours(col.openRanges),
         // The header names the calendar, so a bar keeps the bare service.
         bookings: timeOnly
@@ -1803,12 +1863,14 @@ export default function CalendarScreen() {
         // This calendar's OWN hours drive its column's closure shading.
         venueHours: linkedVenueDayHours(col.openRanges, col.hasTemplate),
         linked: true,
-        accent: colors.warning,
+        // Drawn like an own column, marked by the small Linked pill next to
+        // the calendar's name (the owner wants no amber, 2026-09-06).
+        badge: 'Linked',
         // The partner's own service patterns draw its bars' gaps (R24-6).
         processingPatternFor: patternLookupFromLinkedServices(v.services),
       };
     });
-  }, [linkedColumnsShown, anchor, colors.warning]);
+  }, [linkedColumnsShown, anchor]);
 
   // Own practitioner columns + linked venue columns, side by side in one grid.
   const allColumnsForDay = useMemo(
@@ -2276,19 +2338,19 @@ export default function CalendarScreen() {
                         onPress={() => toggleVisibleCalendar(p.id)}
                       />
                     ))}
-                    {linkedVenues.map((v) => {
-                      const key = linkedColumnKey(v.venueId);
-                      return (
-                        <Chip
-                          key={key}
-                          label={v.venueName}
-                          count={v.bookings.filter((b) => b.bookingDate === anchor).length}
-                          selected={visibleIds == null || visibleIds.includes(key)}
-                          selectedColor={colors.warning}
-                          onPress={() => toggleVisibleCalendar(key)}
-                        />
-                      );
-                    })}
+                    {linkedEntries.map((entry) => (
+                      <Chip
+                        key={entry.key}
+                        label={entry.label}
+                        count={linkedSwitcherEntryCount(entry, anchor)}
+                        selected={
+                          visibleIds == null ||
+                          visibleIds.includes(entry.key) ||
+                          visibleIds.includes(linkedColumnKey(entry.venue.venueId))
+                        }
+                        onPress={() => toggleVisibleCalendar(entry.key)}
+                      />
+                    ))}
                   </>
                 ) : (
                   <>
@@ -2323,29 +2385,38 @@ export default function CalendarScreen() {
                         }}
                       />
                     ))}
-                    {/* Linked venues' calendars — selecting one sets the linked
-                        context (ownerVenueId) and renders that venue's day/week
-                        grid full-screen. (On a wide day they instead appear as
-                        toggleable columns in the multi-select above.) */}
-                    {linkedVenues.map((v) => (
-                      <Chip
-                        key={linkedColumnKey(v.venueId)}
-                        label={v.venueName}
-                        count={
-                          scope === 'day'
-                            ? v.bookings.filter((b) => b.bookingDate === anchor).length
-                            : undefined
-                        }
-                        selected={ownerVenueId === v.venueId}
-                        selectedColor={colors.warning}
-                        onPress={() => {
-                          if (ownerVenueId !== v.venueId) {
-                            hapticSelect();
-                            setOwnerVenueId(v.venueId, v.venueName);
+                    {/* Linked calendars, one chip each like our own (web
+                        parity) — selecting one sets the linked context
+                        (ownerVenueId plus the calendar) and renders that
+                        calendar's day/week grid full-screen; a partner that
+                        lists no calendars is one chip for the whole venue. (On
+                        a wide day they instead appear as toggleable columns in
+                        the multi-select above.) */}
+                    {linkedEntries.map((entry) => {
+                      const active =
+                        ownerVenueId === entry.venue.venueId &&
+                        activeLinkedCalendarId === entry.practitionerId;
+                      return (
+                        <Chip
+                          key={entry.key}
+                          label={entry.label}
+                          count={
+                            scope === 'day' ? linkedSwitcherEntryCount(entry, anchor) : undefined
                           }
-                        }}
-                      />
-                    ))}
+                          selected={active}
+                          onPress={() => {
+                            if (!active) {
+                              hapticSelect();
+                              setOwnerVenueId(
+                                entry.venue.venueId,
+                                entry.venue.venueName,
+                                entry.practitionerId,
+                              );
+                            }
+                          }}
+                        />
+                      );
+                    })}
                   </>
                 )}
               </ScrollView>
@@ -2403,7 +2474,7 @@ export default function CalendarScreen() {
               <GestureDetector gesture={swipeGesture}>
                 <View style={styles.weekBody}>
                   <LinkedVenueWeekGrid
-                    venue={activeLinkedVenue}
+                    venue={activeLinkedView ?? activeLinkedVenue}
                     showCreateButton={linkedCreateButton}
                     weekDays={week.days}
                     today={today}
@@ -2423,9 +2494,12 @@ export default function CalendarScreen() {
                         venue: activeLinkedVenue,
                         date: date ?? anchor,
                         time,
+                        // The picked calendar, so the form opens on it.
+                        practitionerId: activeLinkedCalendarId ?? undefined,
                         collective: collectiveBookingTargetFor(
                           staffCollective,
                           activeLinkedVenue.venueId,
+                          activeLinkedCalendarId,
                         ),
                       });
                     }}
@@ -2450,7 +2524,7 @@ export default function CalendarScreen() {
                 <LinkedVenueCalendarGrid
                   embedded
                   compact={compactDay}
-                  venue={activeLinkedVenue}
+                  venue={activeLinkedView ?? activeLinkedVenue}
                   showCreateButton={linkedCreateButton}
                   date={anchor}
                   nowMinutes={nowMinutes}
@@ -2463,15 +2537,16 @@ export default function CalendarScreen() {
                       date: anchor,
                       time,
                       // The tapped column names the partner's calendar (web
-                      // parity), so the form opens on it; the header button
-                      // and the venue-level column name none, and the form asks.
-                      practitionerId,
+                      // parity), else the picked one, so the form opens on it;
+                      // a whole-venue view's header button names none, and the
+                      // form asks.
+                      practitionerId: practitionerId ?? activeLinkedCalendarId ?? undefined,
                       // A member books through the collective when that
                       // calendar is one of its calendars (or none is named).
                       collective: collectiveBookingTargetFor(
                         staffCollective,
                         activeLinkedVenue.venueId,
-                        practitionerId,
+                        practitionerId ?? activeLinkedCalendarId,
                       ),
                     })
                   }

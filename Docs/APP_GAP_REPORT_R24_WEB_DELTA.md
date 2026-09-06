@@ -654,3 +654,30 @@ every engine, so `card_hold` in a public payload still implies a positive fee.
    module the 1.1.0 binaries already contain, and a refusal carries the storage service's status and
    `message` (`Upload to storage failed (413: …)`) so the next one is diagnosable from the phone.
    Not device-verified here; the owner's device pass is the check.
+
+5. **Linked calendars no longer amber (2026-09-06, owner's call on the device).** A selected linked
+   venue's chip filled amber and its columns took an amber header and wash. The owner wants linked
+   calendars to look the same as own ones, told apart only by the small Linked pill: the chips use
+   the ordinary selected fill, `AllCalendarsDayGrid` no longer implies a tint from `linked`
+   (`accent` is an explicit override nobody sets now), the combined grid marks a linked calendar
+   with the pill next to its name through the new `AllCalendarColumn.badge`, and the partner's own
+   view keeps the pill it already had in its card header. The same pass gave the multi-column grid
+   the single-calendar grid's alternate-hour banding and half-hour lines, which the owner missed on a
+   partner's columns (they had hour lines only); the own venue's "All" view gains them too. And the
+   column header the multi-column grid always drew, which the own single-calendar view never has,
+   now goes when a partner's view has a single column (`showColumnHeaders`): the card header names
+   the calendar with the venue under it (`linkedDayHeading`), and a partner sharing several
+   calendars keeps the headers, as the own "All" view does.
+
+7. **One switcher chip per linked calendar (2026-09-06, owner's request on the device).** The
+   switcher row had a chip per own calendar but one chip per linked venue, which opened every
+   shared calendar at once. Now `linkedSwitcherEntries` lists one chip per calendar a partner
+   shares (the web diary lists linked columns per calendar), keyed `linked:<venueId>:<calendarId>`,
+   a name shared with an own calendar or another partner's carrying its venue, and one whole-venue
+   chip for a partner that lists none. The linked context gained the picked calendar
+   (`LinkedVenueProvider.ownerPractitionerId`, persisted with the venue; the calendar tab
+   re-points a stale or missing pick to the partner's first shared calendar), and the linked day
+   and week grids draw `narrowLinkedVenueToCalendar`, so the pick is one column with no header and
+   the card names it; a slot tap or the header button carries the picked calendar into the form.
+   The wide-day multi-select toggles linked columns per calendar under the same keys, an older
+   preference's venue-level key still standing for all of that partner's columns.

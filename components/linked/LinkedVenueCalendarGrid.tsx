@@ -13,6 +13,7 @@ import { patternLookupFromLinkedServices } from '@/lib/calendar/processing-gaps'
 import {
   linkedActionLabel,
   linkedBusyBlock,
+  linkedDayHeading,
   linkedGridBooking,
   linkedHasTemplate,
   linkedScheduleBlocksForColumn,
@@ -28,10 +29,13 @@ import type { LinkedBooking, LinkedVenueCalendar } from '@/types/linked-venues';
 /**
  * Grant-gated adapter that renders ONE linked venue's day onto the shared
  * multi-calendar `AllCalendarsDayGrid` (never forked — §12): one column per
- * calendar the partner shares, headed with the calendar's name ("Jenny", not
- * "light2"), as the web diary draws them, with the venue named in the card
- * header above. The columns come from `linkedVenueColumns`, the builder the
- * calendar tab's combined grid uses too, so the two views cannot diverge.
+ * calendar the partner shares, named after the calendar ("Jenny", not
+ * "light2"), as the web diary draws them. With a single column the grid draws
+ * no column header, as the own single-calendar view has none, and the card
+ * header above names the calendar with the venue under it; with several the
+ * columns carry the names and the card names the venue (`linkedDayHeading`).
+ * The columns come from `linkedVenueColumns`, the builder the calendar tab's
+ * combined grid uses too, so the two views cannot diverge.
  * Interaction is gated by the link grant (§2.5):
  *
  *  · `time_only`             → bookings render as non-interactive grey "busy"
@@ -155,11 +159,12 @@ export function LinkedVenueCalendarGrid({
         timeBlocks: timeOnly ? col.bookings.map((b) => linkedBusyBlock(b, venue.venueName)) : [],
         scheduleBlocks: timeOnly ? [] : linkedScheduleBlocksForColumn(venue, col, date),
         venueHours: linkedVenueDayHours(col.openRanges, col.hasTemplate),
+        // Drawn like an own column: the card header above already carries the
+        // Linked pill, and the owner wants no amber (2026-09-06).
         linked: true,
-        accent: colors.warning,
         processingPatternFor,
       })),
-    [linkedColumns, timeOnly, venue, date, colors.warning, processingPatternFor],
+    [linkedColumns, timeOnly, venue, date, processingPatternFor],
   );
 
   const handleBlockPress = (bookingId: string) => {
@@ -192,12 +197,23 @@ export function LinkedVenueCalendarGrid({
 
   const pill = linkedActionLabel(venue);
 
+  // The calendar's name when it is the only column (the grid then draws no
+  // column header), the venue's otherwise; see `linkedDayHeading`.
+  const heading = linkedDayHeading(venue, linkedColumns);
+
   return (
     <View style={styles.card}>
       <View style={styles.header}>
-        <Text variant="bodyMedium" numberOfLines={1} style={styles.title}>
-          {venue.venueName}
-        </Text>
+        <View style={styles.title}>
+          <Text variant="bodyMedium" numberOfLines={1}>
+            {heading.title}
+          </Text>
+          {heading.caption ? (
+            <Text variant="caption" tone="muted" numberOfLines={1}>
+              {heading.caption}
+            </Text>
+          ) : null}
+        </View>
         <Badge label="Linked" tone="warning" />
         {pill ? (
           <View style={styles.lockPill}>
@@ -229,6 +245,9 @@ export function LinkedVenueCalendarGrid({
           <AllCalendarsDayGrid
             embedded={embedded}
             compact={compact}
+            // One column needs no header over it (the own single-calendar view
+            // has none; the card above names the calendar); several do.
+            showColumnHeaders={columns.length > 1}
             calendars={columns}
             nowMinutes={nowMinutes}
             onBlockPress={handleBlockPress}

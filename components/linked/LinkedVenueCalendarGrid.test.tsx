@@ -96,26 +96,29 @@ async function tapEmptySlot(calendarName: string): Promise<void> {
 }
 
 describe('LinkedVenueCalendarGrid', () => {
-  it("heads the column with the calendar's name and names the venue only in the card header", async () => {
+  it("names the calendar in the card header, the venue under it, with no column header over a single column", async () => {
     await renderGrid(venue());
-    // The column header.
+    // The card header names the calendar; the venue is its caption.
     expect(screen.getByText('Jenny')).toBeTruthy();
-    // The venue once, in the card header, not as a column.
     expect(screen.getAllByText('light2')).toHaveLength(1);
+    // No column-header row: the own single-calendar view has none either.
+    expect(screen.queryByTestId('column-headers')).toBeNull();
     // The bar keeps the bare service: the header already names the practitioner.
     expect(screen.getByText('Ada Lovelace')).toBeTruthy();
     expect(screen.queryByText(/Cut & Finish · Jenny/)).toBeNull();
   });
 
-  it('draws one column per calendar the partner shares', async () => {
+  it('draws one headed column per calendar the partner shares, the venue in the card header', async () => {
     await renderGrid(
       venue({
         practitioners: [practitioner(), practitioner({ id: 'p2', name: 'Sam' })],
         bookings: [booking(), booking({ id: 'b2', practitionerId: 'p2', guestName: 'Grace' })],
       }),
     );
+    expect(screen.getByTestId('column-headers')).toBeTruthy();
     expect(screen.getByText('Jenny')).toBeTruthy();
     expect(screen.getByText('Sam')).toBeTruthy();
+    expect(screen.getByText('light2')).toBeTruthy();
   });
 
   it('adds a venue-level column only for a booking that names no listed calendar', async () => {

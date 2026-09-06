@@ -21,10 +21,24 @@ type LinkedVenueContextValue = {
   ownerVenueId: string | null;
   /** Display name of the active linked venue (for the context banner/switcher). */
   ownerVenueName: string | null;
+  /**
+   * The linked venue's calendar the calendar tab's switcher picked (one chip
+   * per linked calendar, as for our own; web parity), or null for the whole
+   * venue. Only the calendar tab reads it; every other consumer scopes to the
+   * venue alone.
+   */
+  ownerPractitionerId: string | null;
   /** False until the persisted selection has been read on cold start. */
   hydrated: boolean;
-  /** Switch the active linked venue (pass null to return to the primary venue). */
-  setOwnerVenueId: (venueId: string | null, venueName?: string | null) => void;
+  /**
+   * Switch the active linked venue (pass null to return to the primary venue),
+   * optionally to one of its calendars.
+   */
+  setOwnerVenueId: (
+    venueId: string | null,
+    venueName?: string | null,
+    practitionerId?: string | null,
+  ) => void;
   /** Clear any active linked-venue context (e.g. on sign-out). */
   clearOwnerVenue: () => void;
   /**
@@ -46,7 +60,7 @@ export const LinkedVenueContext = createContext<LinkedVenueContextValue | null>(
 
 const STORAGE_KEY = 'reserveni.linked.ownerVenue';
 
-type StoredOwner = { id: string; name: string | null };
+type StoredOwner = { id: string; name: string | null; practitionerId?: string | null };
 
 async function readStoredOwner(): Promise<StoredOwner | null> {
   // Web preview is in-memory only (per project rules) — no persistence there.
@@ -88,6 +102,7 @@ type LinkedVenueProviderProps = {
 export function LinkedVenueProvider({ children }: LinkedVenueProviderProps) {
   const [ownerVenueId, setOwnerVenueIdState] = useState<string | null>(null);
   const [ownerVenueName, setOwnerVenueName] = useState<string | null>(null);
+  const [ownerPractitionerId, setOwnerPractitionerId] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
 
   // Restore any persisted selection on cold start.
@@ -98,6 +113,7 @@ export function LinkedVenueProvider({ children }: LinkedVenueProviderProps) {
       if (stored) {
         setOwnerVenueIdState(stored.id);
         setOwnerVenueName(stored.name);
+        setOwnerPractitionerId(stored.practitionerId ?? null);
       }
       setHydrated(true);
     });
@@ -107,10 +123,13 @@ export function LinkedVenueProvider({ children }: LinkedVenueProviderProps) {
   }, []);
 
   const setOwnerVenueId = useCallback(
-    (venueId: string | null, venueName: string | null = null) => {
+    (venueId: string | null, venueName: string | null = null, practitionerId: string | null = null) => {
       setOwnerVenueIdState(venueId);
       setOwnerVenueName(venueId ? venueName : null);
-      void writeStoredOwner(venueId ? { id: venueId, name: venueName } : null);
+      setOwnerPractitionerId(venueId ? practitionerId : null);
+      void writeStoredOwner(
+        venueId ? { id: venueId, name: venueName, practitionerId: practitionerId ?? null } : null,
+      );
     },
     [],
   );
@@ -118,6 +137,7 @@ export function LinkedVenueProvider({ children }: LinkedVenueProviderProps) {
   const clearOwnerVenue = useCallback(() => {
     setOwnerVenueIdState(null);
     setOwnerVenueName(null);
+    setOwnerPractitionerId(null);
     void writeStoredOwner(null);
   }, []);
 
@@ -146,12 +166,21 @@ export function LinkedVenueProvider({ children }: LinkedVenueProviderProps) {
     () => ({
       ownerVenueId,
       ownerVenueName,
+      ownerPractitionerId,
       hydrated,
       setOwnerVenueId,
       clearOwnerVenue,
       reconcileOwnerVenue,
     }),
-    [ownerVenueId, ownerVenueName, hydrated, setOwnerVenueId, clearOwnerVenue, reconcileOwnerVenue],
+    [
+      ownerVenueId,
+      ownerVenueName,
+      ownerPractitionerId,
+      hydrated,
+      setOwnerVenueId,
+      clearOwnerVenue,
+      reconcileOwnerVenue,
+    ],
   );
 
   return (

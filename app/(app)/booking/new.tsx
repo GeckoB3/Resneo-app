@@ -77,10 +77,16 @@ export default function NewBookingScreen() {
 
   // Scope the linked context to the targeted venue for this screen only. The
   // global provider higher up still owns persistence/sign-out; this just shadows
-  // `ownerVenueId` for the form (and every hook it calls).
+  // `ownerVenueId` for the form (and every hook it calls). The calendar tab's
+  // picked calendar belongs to the tab's own venue, so a targeted venue drops it.
   const overridden = useMemo(
-    () => ({ ...linked, ownerVenueId: targetOwnerId, ownerVenueName: targetOwnerName }),
-    [linked, targetOwnerId, targetOwnerName],
+    () => ({
+      ...linked,
+      ownerVenueId: targetOwnerId,
+      ownerVenueName: targetOwnerName,
+      ownerPractitionerId: paramOwnerId ? null : linked.ownerPractitionerId,
+    }),
+    [linked, targetOwnerId, targetOwnerName, paramOwnerId],
   );
 
   return (

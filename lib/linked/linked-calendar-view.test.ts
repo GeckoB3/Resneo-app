@@ -7,12 +7,16 @@ import {
   linkedHasTemplate,
   linkedOpenRanges,
   linkedColumnKey,
+  linkedDayHeading,
   linkedScheduleBlocksForColumn,
   linkedScheduleBlocksForDate,
   linkedSharedCalendars,
+  linkedSwitcherEntries,
+  linkedSwitcherEntryCount,
   linkedVenueColumns,
   linkedVenueDayHours,
   linkedWeekHeading,
+  narrowLinkedVenueToCalendar,
   parseLinkedColumnKey,
   rangesToWorkingHours,
 } from '@/lib/linked/linked-calendar-view';
@@ -393,6 +397,106 @@ describe('linkedSharedCalendars / linkedWeekHeading', () => {
       caption: 'Jenny, Sam',
     });
     expect(linkedWeekHeading(venue({ venueName: 'light2', practitioners: [] }))).toEqual({
+      title: 'light2',
+    });
+  });
+});
+
+describe('linkedSwitcherEntries / linkedSwitcherEntryCount', () => {
+  const jenny = practitioner({ id: 'p1', name: 'Jenny' });
+  const sam = practitioner({ id: 'p2', name: 'Sam' });
+
+  it('lists one chip per shared calendar, keyed by the column, counting its bookings', () => {
+    const v = venue({
+      venueName: 'light2',
+      practitioners: [jenny, sam],
+      bookings: [
+        booking({ id: 'b1', practitionerId: 'p1' }),
+        booking({ id: 'b2', practitionerId: 'p1' }),
+        booking({ id: 'b3', practitionerId: 'p2', bookingDate: '2026-06-16' }),
+      ],
+    });
+    const entries = linkedSwitcherEntries([v], ['Alex']);
+    expect(entries.map((e) => [e.key, e.label, e.practitionerId])).toEqual([
+      ['linked:v1:p1', 'Jenny', 'p1'],
+      ['linked:v1:p2', 'Sam', 'p2'],
+    ]);
+    expect(entries.map((e) => linkedSwitcherEntryCount(e, DATE))).toEqual([2, 0]);
+  });
+
+  it('carries the venue on a name shared with an own calendar or another partner', () => {
+    const a = venue({ venueId: 'v1', venueName: 'light2', practitioners: [jenny] });
+    const b = venue({
+      venueId: 'v2',
+      venueName: 'light3',
+      practitioners: [practitioner({ id: 'p9', name: 'jenny' }), sam],
+    });
+    expect(linkedSwitcherEntries([a, b], ['Sam']).map((e) => e.label)).toEqual([
+      'Jenny · light2',
+      'jenny · light3',
+      'Sam · light3',
+    ]);
+  });
+
+  it('keeps one whole-venue chip for a partner that lists no calendars', () => {
+    const v = venue({ venueName: 'light2', practitioners: [], bookings: [booking()] });
+    const entries = linkedSwitcherEntries([v], []);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ key: 'linked:v1', label: 'light2', practitionerId: null });
+    expect(linkedSwitcherEntryCount(entries[0]!, DATE)).toBe(1);
+  });
+});
+
+describe('narrowLinkedVenueToCalendar', () => {
+  it("keeps only the calendar's practitioner, bookings and blocks", () => {
+    const v = venue({
+      practitioners: [practitioner({ id: 'p1', name: 'Jenny' }), practitioner({ id: 'p2', name: 'Sam' })],
+      bookings: [booking({ id: 'b1', practitionerId: 'p1' }), booking({ id: 'b2', practitionerId: 'p2' })],
+      scheduleBlocks: [
+        scheduleDto({ id: 's1', calendar_id: 'p1' }),
+        scheduleDto({ id: 's2', calendar_id: 'p2' }),
+        scheduleDto({ id: 's3', calendar_id: null }),
+      ],
+    });
+    const narrowed = narrowLinkedVenueToCalendar(v, 'p1');
+    expect(narrowed.practitioners.map((p) => p.id)).toEqual(['p1']);
+    expect(narrowed.bookings.map((b) => b.id)).toEqual(['b1']);
+    expect((narrowed.scheduleBlocks ?? []).map((b) => b.id)).toEqual(['s1']);
+    expect(narrowed.venueName).toBe(v.venueName);
+    expect(narrowed.action).toBe(v.action);
+  });
+});
+
+describe('linkedDayHeading', () => {
+  const light2 = venue({ venueName: 'light2' });
+
+  it("names the calendar, the venue under it, when the day has one calendar column", () => {
+    expect(linkedDayHeading(light2, [{ practitionerId: 'p1', name: 'Jenny' }])).toEqual({
+      title: 'Jenny',
+      caption: 'light2',
+    });
+  });
+
+  it('drops the venue caption when the calendar is named after the venue', () => {
+    const light3 = venue({ venueName: 'light 3' });
+    expect(linkedDayHeading(light3, [{ practitionerId: 'p1', name: 'Light 3 ' }])).toEqual({
+      title: 'Light 3 ',
+    });
+    expect(
+      linkedWeekHeading(
+        venue({ venueName: 'light 3', practitioners: [practitioner({ id: 'p1', name: 'light 3' })] }),
+      ),
+    ).toEqual({ title: 'light 3' });
+  });
+
+  it('names the venue over several columns, and over the venue-level column alone', () => {
+    expect(
+      linkedDayHeading(light2, [
+        { practitionerId: 'p1', name: 'Jenny' },
+        { practitionerId: 'p2', name: 'Sam' },
+      ]),
+    ).toEqual({ title: 'light2' });
+    expect(linkedDayHeading(light2, [{ practitionerId: null, name: 'light2' }])).toEqual({
       title: 'light2',
     });
   });
