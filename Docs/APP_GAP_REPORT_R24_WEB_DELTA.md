@@ -643,3 +643,14 @@ every engine, so `card_hold` in a public payload still implies a positive fee.
    screen (stacked partners, no Plus button of its own) keeps every header button; there a member's
    button already opens the collective form through the slot sheet.
 
+4. **Records: "Upload to storage failed." on the device (2026-09-06).** R24-2's upload read the
+   picked file with `fetch(fileUri).blob()` and PUT that Blob to the signed URL through React
+   Native's blob store; on the device the PUT came back non-2xx, where the same PUT (raw bytes,
+   `Content-Type` = the recorded type, no auth) succeeds from a browser. The sign step, the bucket
+   rules (10 MB, the eleven-type allowlist, `20270205120000_guest_documents_limits.sql`) and the
+   storage host are identical for both, so the transport is the difference. `useUploadGuestDocument`
+   now reads the size with `getInfoAsync` and streams the file from disk through
+   `expo-file-system`'s upload task (`httpMethod: 'PUT'`, `BINARY_CONTENT`, the same header), the
+   module the 1.1.0 binaries already contain, and a refusal carries the storage service's status and
+   `message` (`Upload to storage failed (413: …)`) so the next one is diagnosable from the phone.
+   Not device-verified here; the owner's device pass is the check.

@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import * as FileSystem from 'expo-file-system/legacy';
 
 import { ApiError, apiFetch } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
@@ -8,11 +9,37 @@ import { useAccessToken } from '@/lib/queries/useAccessToken';
 
 /**
  * Storage upload timeout. Longer than apiFetch's 15s default because document
- * uploads carry the full file payload over a signed URL; without an abort a
- * stalled PUT never rejects, so the upload button spins until the OS socket
+ * uploads carry the full file payload over a signed URL; without a cancel a
+ * stalled upload never settles, so the upload button spins until the OS socket
  * times out.
  */
 const UPLOAD_TIMEOUT_MS = 60_000;
+
+/** The upload's time-box was hit, and the task cancelled. */
+function uploadTimedOut(): ApiError {
+  return new ApiError('Upload timed out. Check your connection and try again.', 408);
+}
+
+/**
+ * What the storage service said when it refused the bytes: Supabase Storage
+ * answers with JSON carrying `message` (and `error`, its code), which is what a
+ * refusal needs to be diagnosable from the phone's own error text.
+ */
+function storageErrorMessage(body: string | null | undefined): string | null {
+  if (!body) return null;
+  try {
+    const json = JSON.parse(body) as { message?: unknown; error?: unknown };
+    const text =
+      typeof json.message === 'string'
+        ? json.message
+        : typeof json.error === 'string'
+          ? json.error
+          : '';
+    return text.trim() || null;
+  } catch {
+    return null;
+  }
+}
 
 export interface GuestDocumentRow {
   id: string;
@@ -79,16 +106,25 @@ export interface UploadGuestDocumentInput {
 }
 
 /**
- * Three-step upload flow:
+ * Three-step upload flow (web `ContactDocumentsSection.uploadOne`):
  * 1. POST /sign → get signed_url + document_id
- * 2. PUT to signed_url with file bytes
+ * 2. PUT the file's bytes to signed_url
  * 3. POST /complete to confirm
  *
- * The file is read first, because a photo comes back re-encoded by the picker
- * and its reported size is not the upload's. Size and type are then checked
- * against the same rules the sign route and the bucket apply
- * (`checkGuestDocument`), so a refusal reads as a sentence naming the file
- * rather than a failed request; the route and the bucket check again.
+ * The file's size is read from disk first, because a photo comes back
+ * re-encoded by the picker and its reported size is not the upload's. Size and
+ * type are then checked against the same rules the sign route and the bucket
+ * apply (`checkGuestDocument`), so a refusal reads as a sentence naming the
+ * file rather than a failed request; the route and the bucket check again.
+ *
+ * Step 2 goes through the native uploader (`expo-file-system`'s upload task),
+ * which streams the file from disk as the request body with the headers given,
+ * the way the browser PUTs the File itself. It used to `fetch()` the local file
+ * into a Blob and PUT that through React Native's blob store: on the device
+ * that PUT came back non-2xx ("Upload to storage failed") where the same
+ * request succeeds in a browser, so the bytes no longer pass through the blob
+ * store at all, and a refusal now carries the storage service's own status and
+ * message rather than a bare "failed".
  */
 export function useUploadGuestDocument(guestId: string) {
   const accessToken = useAccessToken();
@@ -105,9 +141,11 @@ export function useUploadGuestDocument(guestId: string) {
         throw new Error('Missing access token');
       }
 
-      const fileResponse = await fetch(fileUri);
-      const blob = await fileResponse.blob();
-      const realSize = blob.size > 0 ? blob.size : (sizeBytes ?? 0);
+      const info = await FileSystem.getInfoAsync(fileUri);
+      if (!info.exists) {
+        throw new ApiError(`${fileName} could not be read from this device.`, 400);
+      }
+      const realSize = info.size > 0 ? info.size : (sizeBytes ?? 0);
       const accepted = checkGuestDocument({ fileName, mimeType, sizeBytes: realSize });
       if (!accepted.ok) {
         throw new ApiError(accepted.message, 400);
@@ -127,33 +165,39 @@ export function useUploadGuestDocument(guestId: string) {
         },
       );
 
-      // Step 2: PUT the file bytes to the signed URL. Time-box it with an
-      // AbortController (mirrors apiFetch) so a stalled upload rejects instead
-      // of spinning until the OS socket times out.
-      const controller = new AbortController();
+      // Step 2: PUT the file's bytes to the signed URL, streamed from disk by
+      // the native uploader with the type the row was recorded with. Time-boxed
+      // (mirrors apiFetch) so a stalled upload is cancelled instead of spinning
+      // until the OS socket times out; a cancelled task settles empty.
+      const task = FileSystem.createUploadTask(signRes.signed_url, fileUri, {
+        httpMethod: 'PUT',
+        uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+        headers: { 'Content-Type': signRes.mime_type ?? accepted.mimeType },
+      });
       let timedOut = false;
       const timeoutId = setTimeout(() => {
         timedOut = true;
-        controller.abort();
+        void task.cancelAsync();
       }, UPLOAD_TIMEOUT_MS);
-      let putRes: Response;
+      let putRes: FileSystem.FileSystemUploadResult | null | undefined;
       try {
-        putRes = await fetch(signRes.signed_url, {
-          method: 'PUT',
-          body: blob,
-          headers: { 'Content-Type': signRes.mime_type ?? accepted.mimeType },
-          signal: controller.signal,
-        });
+        putRes = await task.uploadAsync();
       } catch (err) {
-        if (timedOut) {
-          throw new ApiError('Upload timed out. Check your connection and try again.', 408);
-        }
+        if (timedOut) throw uploadTimedOut();
         throw err;
       } finally {
         clearTimeout(timeoutId);
       }
-      if (!putRes.ok) {
-        throw new ApiError('Upload to storage failed', putRes.status);
+      if (!putRes) {
+        throw timedOut ? uploadTimedOut() : new ApiError('Upload was cancelled.', 499);
+      }
+      if (putRes.status < 200 || putRes.status >= 300) {
+        const detail = storageErrorMessage(putRes.body);
+        throw new ApiError(
+          `Upload to storage failed (${putRes.status}${detail ? `: ${detail}` : ''}).`,
+          putRes.status,
+          detail ? { error: detail } : undefined,
+        );
       }
 
       // Step 3: Mark upload as complete
