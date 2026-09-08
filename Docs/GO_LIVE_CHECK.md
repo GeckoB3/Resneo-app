@@ -1,5 +1,78 @@
 # Go-live check — Resneo app
 
+## Run 2026-09-08: OTA to production, 1.1.0, "ResNeo R28 Web Parity Processing Periods"
+
+**Scope:** the three commits since the last published group. The published tip was read from
+`eas update:list --branch production`, not from the record below: it is `96329af` ("Tablets: Ask
+ResNeo answered in a phone-width column"), published as "ResNeo R27 Web Parity Ask ResNeo v2"
+(group `cb6b3fdc`, 2026-09-06 21:40 UTC), a group the R27 entry below does not mention. The batch
+is `f4637e4` (the guest-details step clear of the keyboard, and the three fixes to the shared
+keyboard hook), `463fba6` (R28-1/2/3: processing periods may run past the end of a service — the
+wizard's chain, the service form's validator, the two-ended re-fit) and `99c0379` (R28-4/5/6/7/9:
+calendar holes, free-foot taps, buffer bands and nesting chains; the Ask ResNeo flag; the add-on
+library's linked-services picker; the service card's facts row; darker grid lines). Report:
+`Docs/APP_GAP_REPORT_R28_WEB_DELTA.md`. JavaScript and styling only.
+
+**Verdict: cleared to OTA**, with one caveat: no device pass on this batch yet (the owner's last
+Expo Go pass was on the keyboard fix's first cut, before the coordinate and focus-watch fixes).
+Type check, lint and the full suite (256 suites, 2,616 tests) pass.
+
+### 1. Version and reach
+
+| Check | Result |
+|---|---|
+| iOS version | **1.1.0** (`app.json` `version`) |
+| Android version | **1.1.0** (`app.json` `android.version`) |
+| `runtimeVersion.policy` | `appVersion`, so runtime **1.1.0** on both |
+| `production` channel before | branch `production`, latest group `cb6b3fdc` at `96329af`, runtime **1.1.0**, both platforms |
+
+Fifth update on the 1.1.0 runtime. The version is not bumped (it would move the runtime and
+strand every 1.1.0 install); `eas update` does not touch it.
+
+### 2. OTA eligibility
+
+`git diff 96329af..HEAD -- app.json app.config.js eas.json package.json package-lock.json patches
+ios android` is **empty**, and so is the same diff back to the `ce1d85c` binaries. No new native
+surface: the only new import in the batch is `expo-symbols` on the services screen, shipped for
+releases. Working tree clean, `main` level with `origin/main` before this record.
+
+### 3. Production environment (EAS, not `eas.json`)
+
+`eas env:list --environment production --format long` (eas-cli 23.0.0; 23.2.0 is available and
+was not taken mid-check): the same five app variables as the R27 run, all **PUBLIC**:
+`EXPO_PUBLIC_API_URL` = `https://www.resneo.com`, `EXPO_PUBLIC_SUPABASE_URL` =
+`njualfobtudvlugqkqho.supabase.co` (live), `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (live),
+`EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` = `pk_live_…`, `EXPO_PUBLIC_SENTRY_DSN` (Sentry DE ingest).
+`GOOGLE_SERVICES_JSON` and `SENTRY_AUTH_TOKEN` are build-time secrets, n/a. Logged in as the
+`resneo` owner account. Local env files: `.env.development.local` and `.env.example` only; a
+production-mode export loads neither.
+
+### 4. The bundle, checked before publishing
+
+`eas env:exec production "npx expo export --clear --platform all --output-dir …"`, both Hermes
+bundles grepped (iOS 11 MB, Android 12 MB):
+
+| String | iOS | Android |
+|---|---|---|
+| live Supabase host `njualfobtudvlugqkqho` | present | present |
+| staging Supabase host `zkppmyyvkjvbsvemakbb` | absent | absent |
+| `www.resneo.com` | present | present |
+| `pk_live_` | present | present |
+| `pk_test_` | absent | absent |
+| Sentry DE ingest | present | present |
+| `assistant_enabled`, `processing-hole` (this batch's code) | present | present |
+
+`reserve-ni.vercel.app` is present in both, as in every run: the fallback in `webDashboardUrl()`
+(settings.tsx), unreachable while `EXPO_PUBLIC_API_URL` is set.
+
+### 5. The command
+
+`npx eas-cli update --channel production --environment production --clear-cache --message
+"ResNeo R28 Web Parity Processing Periods"` — the channel maps to the one `production` branch;
+`--environment production` is what supplies the variables above; `--clear-cache` is mandatory
+(see the R17 note). This record is committed before the run because `eas.json` has
+`requireCommit: true`; push after.
+
 ## Run 2026-09-06: OTA to production, 1.1.0, "ResNeo R27 Web Parity Ask ResNeo"
 
 **Scope:** the fourteen commits since the last published group (`b9ecddf`…`9ab7d6c`). Note the
