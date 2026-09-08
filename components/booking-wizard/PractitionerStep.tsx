@@ -104,9 +104,12 @@ export function PractitionerStep({
         practitionerId: practitioner.id,
         practitionerName: practitioner.name,
         candidatePractitionerIds: undefined,
-        // Use the practitioner-scoped service attributes (price/duration/buffer may differ).
+        // Use the practitioner-scoped service attributes (price/duration/buffer
+        // may differ; the pattern follows the same row, re-fitted server-side to
+        // a custom staff length).
         durationMinutes: service.duration_minutes,
         buffer_minutes: service.buffer_minutes,
+        processing_time_blocks: service.processing_time_blocks,
         pricePence: service.price_pence,
         depositPence: service.deposit_pence ?? null,
         paymentRequirement: service.payment_requirement ?? serviceOption.paymentRequirement ?? null,

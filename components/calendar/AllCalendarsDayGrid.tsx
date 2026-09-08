@@ -970,7 +970,11 @@ function DayColumn({
       if (end <= start) end = start + DEFAULT_DURATION_MINUTES;
       // A processing gap is free time for the drag check too (web parity); the
       // server takes a booking inside another's gap.
-      const gaps = processingGapRanges(start, end, bookingProcessingBlocks(b, processingPatternFor));
+      const gaps = processingGapRanges(
+        start,
+        end,
+        bookingProcessingBlocks(b, processingPatternFor, end - start),
+      );
       out.push(...occupiedRangesMinusGaps(b.id, start, end, gaps));
     }
     // R17-2: breaks and closures are advice, not walls (see occupying-blocks).

@@ -1,6 +1,7 @@
 import { timeToMinutes } from '@/components/calendar/grid-layout';
 import {
   effectiveProcessingTemplate,
+  fitProcessingBlocksToDuration,
   parseProcessingTimeBlocks,
 } from '@/lib/booking/processing-time-fit';
 import type { MinuteRange } from '@/lib/calendar/booking-cluster-layout';
@@ -23,10 +24,23 @@ import type { ManagedService, ProcessingTimeBlock } from '@/types/services-manag
  * then reads as gap-free, which is what the grid drew before.
  */
 
-/** What a pattern source must offer: the service's own blocks and its options'. */
+/**
+ * What a pattern source must offer: the service's own blocks and its options',
+ * each with the catalogue length the pattern was drawn against (web #185: a
+ * wait after the service moves with the end, so a booking of another length
+ * has the template re-fitted to its own span). Lengths are optional; without
+ * them the pattern is used as it is.
+ */
 export interface ProcessingPatternSource {
   processing_time_blocks?: ProcessingTimeBlock[] | null;
-  variants?: readonly { id: string; processing_time_blocks?: ProcessingTimeBlock[] | null }[] | null;
+  duration_minutes?: number | null;
+  variants?:
+    | readonly {
+        id: string;
+        processing_time_blocks?: ProcessingTimeBlock[] | null;
+        duration_minutes?: number | null;
+      }[]
+    | null;
 }
 
 /** Finds a service's pattern by id; undefined when the service is not known. */
@@ -42,10 +56,18 @@ export function bookingServiceId(booking: BookingProcessingFields): string | nul
   return booking.service_item_id ?? booking.appointment_service_id ?? null;
 }
 
-/** The blocks that apply to one booking, in minutes from its start (precedence above). */
+/**
+ * The blocks that apply to one booking, in minutes from its start (precedence
+ * above). `bookingDurationMinutes` is the booking's own span: a booking with no
+ * snapshot takes the catalogue pattern re-fitted from the catalogue length to
+ * that span (web `bookingTemplateProcessingBlocks`, #185), so a wait after the
+ * service follows the booking's real end. Omitted, or with no catalogue length
+ * to fit from, the pattern is used as it is.
+ */
 export function bookingProcessingBlocks(
   booking: BookingProcessingFields,
   lookup: ProcessingPatternLookup | null | undefined,
+  bookingDurationMinutes?: number | null,
 ): ProcessingTimeBlock[] {
   const snapshot = booking.processing_time_blocks;
   if (snapshot !== null && snapshot !== undefined) return parseProcessingTimeBlocks(snapshot);
@@ -55,10 +77,25 @@ export function bookingProcessingBlocks(
   if (!service) return [];
   const variantId = booking.service_variant_id;
   const variant = variantId ? service.variants?.find((v) => v.id === variantId) : undefined;
-  return effectiveProcessingTemplate({
+  const templateDuration = variant?.duration_minutes ?? service.duration_minutes ?? null;
+  const template = effectiveProcessingTemplate({
     parentBlocks: service.processing_time_blocks ?? [],
     variantBlocks: variant?.processing_time_blocks,
+    parentDurationMinutes: service.duration_minutes,
+    variantDurationMinutes: templateDuration,
   });
+  if (
+    bookingDurationMinutes == null ||
+    templateDuration == null ||
+    templateDuration === bookingDurationMinutes ||
+    template.length === 0
+  ) {
+    return template;
+  }
+  return fitProcessingBlocksToDuration(template, {
+    fromDurationMinutes: templateDuration,
+    toDurationMinutes: bookingDurationMinutes,
+  }).blocks;
 }
 
 function mergeRanges(ranges: MinuteRange[]): MinuteRange[] {
@@ -113,7 +150,9 @@ export function clusterProcessingGaps(
   const ranges: MinuteRange[] = [];
   for (const booking of bookings) {
     const { start, end } = bookingSpan(booking, defaultDurationMinutes);
-    ranges.push(...processingGapRanges(start, end, bookingProcessingBlocks(booking, lookup)));
+    ranges.push(
+      ...processingGapRanges(start, end, bookingProcessingBlocks(booking, lookup, end - start)),
+    );
   }
   return mergeRanges(ranges);
 }
@@ -150,9 +189,11 @@ export function patternLookupFromManagedServices(
   for (const service of services) {
     byId.set(service.id, {
       processing_time_blocks: service.processing_time_blocks ?? null,
+      duration_minutes: service.duration_minutes ?? null,
       variants: (service.variants ?? []).map((v) => ({
         id: v.id,
         processing_time_blocks: v.processing_time_blocks ?? null,
+        duration_minutes: v.duration_minutes ?? null,
       })),
     });
   }
@@ -172,6 +213,9 @@ export function patternLookupFromLinkedServices(
   for (const service of services) {
     byId.set(service.id, {
       processing_time_blocks: parseProcessingTimeBlocks(service.processingTimeBlocks),
+      duration_minutes: service.durationMinutes ?? null,
+      // The linked feed shares no per-option length, so an option inheriting
+      // the parent's pattern reads it at the parent's length.
       variants: (service.variants ?? []).map((v) => ({
         id: v.id,
         processing_time_blocks: parseProcessingTimeBlocks(v.processingTimeBlocks),

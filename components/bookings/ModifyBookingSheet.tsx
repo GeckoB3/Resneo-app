@@ -276,6 +276,14 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   const [originalProcessingBlocks, setOriginalProcessingBlocks] = useState<
     ProcessingTimeBlock[] | null
   >(null);
+  /**
+   * The length those gaps were drawn against: the booking's own span as opened
+   * (add-ons seeded). A wait after the service moves with the end when the
+   * length changes (web #185), so the re-fit needs to know where the end WAS.
+   */
+  const [originalProcessingDuration, setOriginalProcessingDuration] = useState<number | null>(
+    null,
+  );
   /** True once an Undo PATCH is in flight, so the pane can show it working. */
   const [undoing, setUndoing] = useState(false);
   /**
@@ -353,6 +361,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     setAddonsSeeded(false);
     originalAddonIds.current = [];
     setOriginalProcessingBlocks(null);
+    setOriginalProcessingDuration(null);
     setChecked({ sig: null, result: { state: 'idle' } });
     setError(null);
     setUndoing(false);
@@ -690,12 +699,21 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
    */
   const selectedTemplateBlocks = useMemo(() => {
     if (!selectedService) return [];
+    const variant = variants.find((v) => v.id === variantId);
     return effectiveProcessingTemplate({
       parentBlocks: parseProcessingTimeBlocks(selectedService.processing_time_blocks),
-      variantBlocks: parseProcessingTimeBlocks(
-        variants.find((v) => v.id === variantId)?.processing_time_blocks,
-      ),
+      variantBlocks: parseProcessingTimeBlocks(variant?.processing_time_blocks),
+      // An option inheriting the parent's pattern gets it re-fitted to its own
+      // length, so a wait after the service still starts where the option ends.
+      parentDurationMinutes: selectedService.duration_minutes,
+      variantDurationMinutes: variant?.duration_minutes ?? selectedService.duration_minutes,
     });
+  }, [selectedService, variants, variantId]);
+
+  /** The catalogue length that template belongs to: the option's, else the service's. */
+  const selectedTemplateDuration = useMemo(() => {
+    if (!selectedService) return null;
+    return variants.find((v) => v.id === variantId)?.duration_minutes ?? selectedService.duration_minutes;
   }, [selectedService, variants, variantId]);
 
   /** Switching service or option means a different catalogue pattern applies. */
@@ -716,10 +734,25 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     // A null snapshot needs the catalogue to resolve; wait for it rather than
     // latching an empty list that would later read as "this booking has none".
     if (bookingSnapshotRaw === null && !selectedService) return;
+    // Wait for the add-ons too, so the length latched alongside is the span as
+    // opened (`effectiveDuration` at rest), not the base before they were seeded.
+    if (!isVisit && !addonsSeeded) return;
+    const openedDuration = effectiveDuration ?? target.durationMinutes ?? null;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot latch once the detail (and, for a null snapshot, the catalogue) resolves
+    setOriginalProcessingDuration(openedDuration);
     setOriginalProcessingBlocks(
       bookingSnapshotRaw === null
-        ? selectedTemplateBlocks
+        ? // The inherited template belongs to the catalogue length; a booking of
+          // another length has any wait after the service moved to follow its
+          // own end, the way the server resolves it (web #185).
+          openedDuration != null &&
+            selectedTemplateDuration != null &&
+            openedDuration !== selectedTemplateDuration
+          ? fitProcessingBlocksToDuration(selectedTemplateBlocks, {
+              fromDurationMinutes: selectedTemplateDuration,
+              toDurationMinutes: openedDuration,
+            }).blocks
+          : selectedTemplateBlocks
         : parseProcessingTimeBlocks(bookingSnapshotRaw),
     );
   }, [
@@ -730,6 +763,10 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     bookingSnapshotRaw,
     selectedService,
     selectedTemplateBlocks,
+    selectedTemplateDuration,
+    isVisit,
+    addonsSeeded,
+    effectiveDuration,
   ]);
 
   /**
@@ -743,9 +780,24 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     [processingServiceChanged, selectedTemplateBlocks, originalProcessingBlocks],
   );
 
+  /**
+   * The length the source pattern was drawn against, so the re-fit knows where
+   * the end WAS: the booking's own span as opened when its snapshot is the
+   * source, the chosen service's (or option's) catalogue length when the service
+   * changed (web `sourceProcessingDuration`, #185). Unknown: fit from the target
+   * length itself, which moves nothing.
+   */
+  const sourceProcessingDuration = processingServiceChanged
+    ? (selectedTemplateDuration ?? effectiveDuration ?? 0)
+    : (originalProcessingDuration ?? effectiveDuration ?? 0);
+
   const processingFit = useMemo(
-    () => fitProcessingBlocksToDuration(sourceProcessingBlocks, effectiveDuration ?? 0),
-    [sourceProcessingBlocks, effectiveDuration],
+    () =>
+      fitProcessingBlocksToDuration(sourceProcessingBlocks, {
+        fromDurationMinutes: sourceProcessingDuration,
+        toDurationMinutes: effectiveDuration ?? 0,
+      }),
+    [sourceProcessingBlocks, sourceProcessingDuration, effectiveDuration],
   );
 
   /**
@@ -775,6 +827,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     return describeProcessingChange({
       removed: processingFit.removed.length,
       trimmed: processingFit.trimmed.length,
+      shifted: processingFit.shifted.length,
       serviceChanged: processingServiceChanged && sourceProcessingBlocks.length > 0,
     });
   }, [

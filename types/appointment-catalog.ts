@@ -120,8 +120,15 @@ export interface AppointmentServiceOption {
   serviceName: string;
   durationMinutes: number;
   /** Gap after the service before the next one — folds into the multi-service chain's
-   *  consecutive-start check (the server validates each start = prev end + buffer). */
+   *  consecutive-start check (the server validates each start = prev end + processing tail + buffer). */
   buffer_minutes?: number;
+  /**
+   * The service's processing pattern (web #185). A period that runs past the
+   * service's end is a wait the next service of a visit stands behind, so the
+   * chain planner needs it (`segmentProcessing`). Options carry their own on
+   * `variants[]`.
+   */
+  processing_time_blocks?: ProcessingTimeBlock[];
   pricePence: number | null;
   depositPence: number | null;
   /** Resolved payment requirement of the service; 'card_hold' switches the staff toggle. */

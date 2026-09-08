@@ -27,6 +27,7 @@ import { multiServiceSegmentCharge } from '@/lib/booking/appointment-online-char
 import {
   type MultiServiceSegment,
   recomputeMultiServiceChain,
+  segmentProcessing,
 } from '@/lib/booking/multi-service-chain';
 import { chainSpanMinutes, type ServiceChainSegmentParam } from '@/lib/booking/service-chain';
 import { useAppointmentCatalog } from '@/lib/queries/useAppointmentCatalog';
@@ -477,6 +478,17 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
       durationMinutes: baseDuration + addonMinutes,
       naturalDurationMinutes: naturalBaseDuration + addonMinutes,
       bufferMinutes,
+      // The wait after this service (processing past its end, web #185): the
+      // next segment starts behind it and the buffer, and the server checks
+      // exactly that, so it is resolved at the length this segment books at.
+      ...segmentProcessing({
+        service: {
+          durationMinutes: selectedService.durationMinutes,
+          processingTimeBlocks: selectedService.processing_time_blocks,
+        },
+        variant: selectedVariant,
+        segmentDurationMinutes: baseDuration + addonMinutes,
+      }),
       pricePence: (selectedVariant?.price_pence ?? selectedService.pricePence) ?? null,
       addonIds: selectedAddonIds.length ? selectedAddonIds : undefined,
       addonTotalPence: addonPence,
@@ -514,6 +526,14 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
         durationMinutes: base + extraAddonMinutes,
         naturalDurationMinutes: naturalBase + extraAddonMinutes,
         bufferMinutes: variant?.buffer_minutes ?? option.buffer_minutes ?? 0,
+        ...segmentProcessing({
+          service: {
+            durationMinutes: option.durationMinutes,
+            processingTimeBlocks: option.processing_time_blocks,
+          },
+          variant,
+          segmentDurationMinutes: base + extraAddonMinutes,
+        }),
         pricePence: price,
         addonIds: extra.addonIds.length ? extra.addonIds : undefined,
         addonTotalPence: extraAddonPence,
@@ -537,21 +557,32 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
     [selectedSlot, buildChainFromSlot],
   );
 
-  /** Minutes a service books at, add-ons included: the chain's own arithmetic. */
+  /** Minutes a service books at, add-ons included, and the gap after it: the chain's own arithmetic. */
   const segmentLength = (
     option: AppointmentServiceOption,
     variant: AppointmentCatalogVariant | null,
     addonIds: string[],
     override: number | null,
-  ) => ({
-    durationMinutes:
+  ) => {
+    const durationMinutes =
       (override ?? variant?.duration_minutes ?? option.durationMinutes) +
       (option.addonGroups ?? [])
         .flatMap((g) => g.addons)
         .filter((a) => addonIds.includes(a.id))
-        .reduce((sum, a) => sum + a.additional_duration_minutes, 0),
-    bufferMinutes: variant?.buffer_minutes ?? option.buffer_minutes ?? 0,
-  });
+        .reduce((sum, a) => sum + a.additional_duration_minutes, 0);
+    return {
+      durationMinutes,
+      bufferMinutes: variant?.buffer_minutes ?? option.buffer_minutes ?? 0,
+      processingTailMinutes: segmentProcessing({
+        service: {
+          durationMinutes: option.durationMinutes,
+          processingTimeBlocks: option.processing_time_blocks,
+        },
+        variant,
+        segmentDurationMinutes: durationMinutes,
+      }).processingTailMinutes,
+    };
+  };
 
   /**
    * The `services` chain the day view carries once the visit has more than one
@@ -698,6 +729,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
               serviceName: service.name,
               durationMinutes: service.duration_minutes,
               buffer_minutes: service.buffer_minutes,
+              processing_time_blocks: service.processing_time_blocks,
               pricePence: service.price_pence,
               depositPence: service.deposit_pence ?? null,
               paymentRequirement: service.payment_requirement ?? null,

@@ -2,11 +2,13 @@ import { timeToMinutes } from '@/lib/booking/booking-format';
 import {
   buildGroupPayload,
   buildMultiServicePayload,
+  chainSegmentGapMinutes,
   chainTotalMinutes,
   chainTotalPence,
   clientAddressPayloadFields,
   groupTotalPence,
   recomputeMultiServiceChain,
+  segmentProcessing,
   type GroupPerson,
   type MultiServiceSegment,
 } from '@/lib/booking/multi-service-chain';
@@ -102,6 +104,77 @@ describe('recomputeMultiServiceChain', () => {
       timeToMinutes(chain[0]!.startTime) + firstDuration + firstBuffer;
     expect(timeToMinutes(chain[1]!.startTime)).toBe(expectedSecondStartMin);
   });
+
+  it('waits behind processing that runs past the previous service (web #185)', () => {
+    // A 60-minute colour with a 30-minute wait after it and a 10-minute buffer:
+    // the cut starts at 10:00 + 60 + 30 + 10 = 11:40. The server enforces
+    // exactly this ("each start = previous end + processing time + buffer").
+    const chain = recomputeMultiServiceChain(
+      [
+        seg({ serviceId: 'colour', durationMinutes: 60, bufferMinutes: 10, processingTailMinutes: 30 }),
+        seg({ serviceId: 'cut', durationMinutes: 30, bufferMinutes: 0 }),
+      ],
+      '10:00',
+    );
+    expect(chain.map((s) => s.startTime)).toEqual(['10:00', '11:40']);
+    // An absent tail (an older caller) reads as 0.
+    expect(chainSegmentGapMinutes({ bufferMinutes: 10 })).toBe(10);
+    expect(chainSegmentGapMinutes({ bufferMinutes: 10, processingTailMinutes: -5 })).toBe(10);
+  });
+});
+
+describe('segmentProcessing', () => {
+  const colour = {
+    durationMinutes: 60,
+    processingTimeBlocks: [{ id: 't', start_minute: 60, duration_minutes: 30 }],
+  };
+
+  it('reads the tail off the service pattern at the catalogue length', () => {
+    expect(segmentProcessing({ service: colour, segmentDurationMinutes: 60 })).toEqual({
+      processingTimeBlocks: colour.processingTimeBlocks,
+      processingTailMinutes: 30,
+    });
+  });
+
+  it('re-fits the pattern to the length the segment books at, so the wait follows the whole segment', () => {
+    // Booked with a 15-minute add-on: the wait sits at minute 75, still 30 long.
+    expect(segmentProcessing({ service: colour, segmentDurationMinutes: 75 })).toEqual({
+      processingTimeBlocks: [{ id: 't', start_minute: 75, duration_minutes: 30 }],
+      processingTailMinutes: 30,
+    });
+  });
+
+  it('uses the option’s own pattern at the option’s length, else the parent’s re-fitted', () => {
+    const own = segmentProcessing({
+      service: colour,
+      variant: {
+        duration_minutes: 90,
+        processing_time_blocks: [{ id: 'v', start_minute: 90, duration_minutes: 45 }],
+      },
+      segmentDurationMinutes: 90,
+    });
+    expect(own.processingTailMinutes).toBe(45);
+    const inherited = segmentProcessing({
+      service: colour,
+      variant: { duration_minutes: 90, processing_time_blocks: [] },
+      segmentDurationMinutes: 90,
+    });
+    expect(inherited.processingTimeBlocks).toEqual([{ id: 't', start_minute: 90, duration_minutes: 30 }]);
+    expect(inherited.processingTailMinutes).toBe(30);
+  });
+
+  it('a middle gap has no tail, and a service without processing has none', () => {
+    expect(
+      segmentProcessing({
+        service: { durationMinutes: 60, processingTimeBlocks: [{ start_minute: 20, duration_minutes: 20 }] },
+        segmentDurationMinutes: 60,
+      }).processingTailMinutes,
+    ).toBe(0);
+    expect(segmentProcessing({ service: { durationMinutes: 30 }, segmentDurationMinutes: 30 })).toEqual({
+      processingTimeBlocks: [],
+      processingTailMinutes: 0,
+    });
+  });
 });
 
 describe('chain totals', () => {
@@ -116,6 +189,18 @@ describe('chain totals', () => {
         seg({ durationMinutes: 45, bufferMinutes: 10 }),
       ]),
     ).toBe(80);
+  });
+
+  it('counts the wait after a service as time the client is here (web #185)', () => {
+    // 60 colour + 30 wait + 10 buffer + 30 cut = 130; the cut's own buffer is not.
+    expect(
+      chainTotalMinutes([
+        seg({ durationMinutes: 60, bufferMinutes: 10, processingTailMinutes: 30 }),
+        seg({ durationMinutes: 30, bufferMinutes: 15 }),
+      ]),
+    ).toBe(130);
+    // A lone service's tail is not counted either: it ends at the service's end.
+    expect(chainTotalMinutes([seg({ durationMinutes: 60, processingTailMinutes: 30 })])).toBe(60);
   });
 
   it('reduces a one-service chain to its bare duration', () => {

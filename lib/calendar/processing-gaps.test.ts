@@ -78,6 +78,42 @@ describe('bookingProcessingBlocks', () => {
     expect(bookingProcessingBlocks(booking({ service_item_id: 'svc-tint' }), null)).toEqual([]);
     expect(bookingProcessingBlocks(booking({}), lookup)).toEqual([]);
   });
+
+  it('re-fits an inherited template to the booking’s own span, so a wait after the service follows its end (web #185)', () => {
+    const tail = [{ id: 't', start_minute: 60, duration_minutes: 30 }];
+    const colourLookup = patternLookupFromManagedServices([
+      {
+        id: 'svc-colour',
+        name: 'Colour',
+        duration_minutes: 60,
+        processing_time_blocks: tail,
+        variants: [{ id: 'var-long', name: 'Long hair', duration_minutes: 90, processing_time_blocks: [] }],
+      } as unknown as ManagedService,
+    ]);
+    // At the catalogue length, or with no span given: the pattern as it is.
+    expect(bookingProcessingBlocks(booking({ service_item_id: 'svc-colour' }), colourLookup, 60)).toEqual(tail);
+    expect(bookingProcessingBlocks(booking({ service_item_id: 'svc-colour' }), colourLookup)).toEqual(tail);
+    // Booked with a 15-minute add-on: the wait sits at minute 75.
+    expect(bookingProcessingBlocks(booking({ service_item_id: 'svc-colour' }), colourLookup, 75)).toEqual([
+      { id: 't', start_minute: 75, duration_minutes: 30 },
+    ]);
+    // An option inheriting the parent's pattern reads it at the option's length.
+    expect(
+      bookingProcessingBlocks(
+        booking({ service_item_id: 'svc-colour', service_variant_id: 'var-long' }),
+        colourLookup,
+        90,
+      ),
+    ).toEqual([{ id: 't', start_minute: 90, duration_minutes: 30 }]);
+    // A snapshot is never re-fitted: it was drawn against this booking.
+    expect(
+      bookingProcessingBlocks(
+        booking({ service_item_id: 'svc-colour', processing_time_blocks: tail }),
+        colourLookup,
+        75,
+      ),
+    ).toEqual(tail);
+  });
 });
 
 describe('processingGapRanges and clusterProcessingGaps', () => {

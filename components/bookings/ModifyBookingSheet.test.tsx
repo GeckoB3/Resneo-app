@@ -539,14 +539,18 @@ describe('ModifyBookingSheet', () => {
     // sheet sent nothing, so shortening a booking below its last gap's end was
     // rejected ("Processing blocks must lie within the service duration") with
     // no way to resolve it from the app.
-    const GAP = { id: 'blk-1', start_minute: 15, duration_minutes: 30 };
+    //
+    // A gap in the MIDDLE of the 45-minute booking (20 to 40). A gap that reaches
+    // the end is a wait after the practitioner's last stretch and moves with the
+    // end instead (web #185); that case has its own test below.
+    const GAP = { id: 'blk-1', start_minute: 20, duration_minutes: 20 };
 
     it('sends the gaps fitted to the new duration', async () => {
       mockDetailProcessingBlocks = [GAP];
       jest.useFakeTimers();
       try {
         await render(<ModifyBookingSheet target={TARGET} onClose={onClose} />);
-        // 45 → 30: the 15-45 gap no longer fits and is trimmed to end with it.
+        // 45 → 30: the 20-40 gap no longer fits and is trimmed to end with it.
         await press('30 min');
         await settleAvailability();
         await press('Save changes');
@@ -554,7 +558,31 @@ describe('ModifyBookingSheet', () => {
         expect(mockModify).toHaveBeenCalledWith(
           expect.objectContaining({
             duration_minutes: 30,
-            processing_time_blocks: [{ id: 'blk-1', start_minute: 15, duration_minutes: 15 }],
+            processing_time_blocks: [{ id: 'blk-1', start_minute: 20, duration_minutes: 10 }],
+          }),
+        );
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('moves a wait that reaches the end of the booking with the new end (web #185)', async () => {
+      // 15 to 45 on a 45-minute booking: the practitioner is free from minute
+      // 15 to the end. Shortened to 30, the wait keeps its 30 minutes and its
+      // distance from the end, so it now runs 0 to 30 rather than being clamped.
+      mockDetailProcessingBlocks = [{ id: 'blk-1', start_minute: 15, duration_minutes: 30 }];
+      jest.useFakeTimers();
+      try {
+        await render(<ModifyBookingSheet target={TARGET} onClose={onClose} />);
+        await press('30 min');
+        await settleAvailability();
+        expect(screen.getByText('The wait after the service moves with the new end.')).toBeTruthy();
+        await press('Save changes');
+
+        expect(mockModify).toHaveBeenCalledWith(
+          expect.objectContaining({
+            duration_minutes: 30,
+            processing_time_blocks: [{ id: 'blk-1', start_minute: 0, duration_minutes: 30 }],
           }),
         );
       } finally {
@@ -591,7 +619,7 @@ describe('ModifyBookingSheet', () => {
         expect(mockValidate).toHaveBeenLastCalledWith(
           expect.objectContaining({
             duration_minutes: 30,
-            processing_time_blocks: [{ id: 'blk-1', start_minute: 15, duration_minutes: 15 }],
+            processing_time_blocks: [{ id: 'blk-1', start_minute: 20, duration_minutes: 10 }],
           }),
           expect.anything(),
         );
@@ -615,7 +643,7 @@ describe('ModifyBookingSheet', () => {
 
         expect(mockModify).toHaveBeenCalledWith(
           expect.objectContaining({
-            processing_time_blocks: [{ id: 'blk-1', start_minute: 15, duration_minutes: 15 }],
+            processing_time_blocks: [{ id: 'blk-1', start_minute: 20, duration_minutes: 10 }],
           }),
         );
       } finally {

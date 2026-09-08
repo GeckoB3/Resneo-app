@@ -15,7 +15,12 @@
  */
 
 import { minutesToTime, timeToMinutes } from '@/lib/booking/booking-format';
-import type { ServiceLocationType } from '@/types/services-manage';
+import {
+  effectiveProcessingTemplate,
+  fitProcessingBlocksToDuration,
+  processingTailMinutes,
+} from '@/lib/booking/processing-time-fit';
+import type { ProcessingTimeBlock, ServiceLocationType } from '@/types/services-manage';
 
 /** A single service in a multi-service (back-to-back) visit for one client. */
 export interface MultiServiceSegment {
@@ -43,6 +48,15 @@ export interface MultiServiceSegment {
    */
   naturalDurationMinutes: number;
   bufferMinutes: number;
+  /**
+   * Processing that runs past this segment's end (web #185): the client waits,
+   * the practitioner is free, and the next segment starts after it AND the
+   * buffer. Computed by {@link segmentProcessing} at the length the segment is
+   * actually booked for. Absent (an older caller) reads as 0.
+   */
+  processingTailMinutes?: number;
+  /** This segment's pattern at `durationMinutes`, for the review card and any phantom use. */
+  processingTimeBlocks?: ProcessingTimeBlock[];
   /** Service+variant price only (add-on price tracked separately). */
   pricePence: number | null;
   /** Chosen add-on ids for this segment. */
@@ -64,11 +78,20 @@ export interface MultiServiceSegment {
   chargeLabel?: 'deposit' | 'full_payment' | 'card_hold' | null;
 }
 
+/** The gap between one segment's end and the next one's start: its processing tail, then its buffer. */
+export function chainSegmentGapMinutes(seg: {
+  bufferMinutes: number;
+  processingTailMinutes?: number;
+}): number {
+  return Math.max(0, seg.processingTailMinutes ?? 0) + Math.max(0, seg.bufferMinutes);
+}
+
 /**
  * Re-chain the segment start times so each starts at the previous segment's
- * end + buffer, anchored at `firstStart` (HH:mm). Verbatim mirror of the web's
- * `recomputeMultiServiceChain` — the server re-validates the same invariant
- * (`each start === previous end + buffer`) in /api/booking/create-multi-service.
+ * end + processing tail + buffer, anchored at `firstStart` (HH:mm). Mirror of
+ * the web's `recomputeMultiServiceChain` — the server re-validates the same
+ * invariant (`each start === previous end + processing time + buffer`, web #185)
+ * in /api/booking/create-multi-service and 400s otherwise.
  */
 export function recomputeMultiServiceChain(
   segments: MultiServiceSegment[],
@@ -77,9 +100,46 @@ export function recomputeMultiServiceChain(
   let runningMinutes = timeToMinutes(firstStart);
   return segments.map((seg) => {
     const row = { ...seg, startTime: minutesToTime(runningMinutes) };
-    runningMinutes += seg.durationMinutes + seg.bufferMinutes;
+    runningMinutes += seg.durationMinutes + chainSegmentGapMinutes(seg);
     return row;
   });
+}
+
+/**
+ * A segment's processing pattern and the wait after it, at the length the
+ * segment is actually booked for (a staff override or add-on minutes included),
+ * so the chain maths and the server's consecutive check agree (web
+ * `segmentProcessing`, #185).
+ *
+ * The pattern belongs to a catalogue length: the option's own when it has one,
+ * otherwise the parent's re-fitted to the option's length; then re-fitted from
+ * that catalogue length to `segmentDurationMinutes`, so a wait after the service
+ * follows the whole segment rather than ending where the catalogue service would.
+ */
+export function segmentProcessing(params: {
+  service: { durationMinutes: number; processingTimeBlocks?: ProcessingTimeBlock[] | null };
+  variant?: { duration_minutes: number; processing_time_blocks?: ProcessingTimeBlock[] | null } | null;
+  segmentDurationMinutes: number;
+}): { processingTimeBlocks: ProcessingTimeBlock[]; processingTailMinutes: number } {
+  const { service, variant, segmentDurationMinutes } = params;
+  const template = effectiveProcessingTemplate({
+    parentBlocks: service.processingTimeBlocks ?? [],
+    variantBlocks: variant?.processing_time_blocks,
+    parentDurationMinutes: service.durationMinutes,
+    variantDurationMinutes: variant?.duration_minutes ?? service.durationMinutes,
+  });
+  const templateDuration = variant?.duration_minutes ?? service.durationMinutes;
+  const blocks =
+    templateDuration === segmentDurationMinutes
+      ? template
+      : fitProcessingBlocksToDuration(template, {
+          fromDurationMinutes: templateDuration,
+          toDurationMinutes: segmentDurationMinutes,
+        }).blocks;
+  return {
+    processingTimeBlocks: blocks,
+    processingTailMinutes: processingTailMinutes(blocks, segmentDurationMinutes),
+  };
 }
 
 /** One attendee in a group booking (a distinct person, own service + slot). */
@@ -365,7 +425,7 @@ export function buildGroupPayload(args: {
 export function chainTotalMinutes(segments: MultiServiceSegment[]): number {
   return segments.reduce(
     (sum, s, index) =>
-      sum + s.durationMinutes + (index < segments.length - 1 ? s.bufferMinutes : 0),
+      sum + s.durationMinutes + (index < segments.length - 1 ? chainSegmentGapMinutes(s) : 0),
     0,
   );
 }

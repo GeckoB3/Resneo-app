@@ -3,13 +3,19 @@ import { StyleSheet, View } from 'react-native';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Text } from '@/components/ui/Text';
+import {
+  PROCESSING_BLOCK_MIN_MINUTES,
+  PROCESSING_TAIL_MAX_MINUTES,
+  placeNewProcessingBlock,
+  processingTailMinutes,
+  resizeProcessingBlock,
+} from '@/lib/booking/processing-time-fit';
 import { hapticSelect } from '@/lib/haptics';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { ProcessingTimeBlock } from '@/types/services-manage';
 
-/** Minimum block length the API enforces (`PROCESSING_BLOCK_MIN_MINUTES`). */
-export const PROCESSING_BLOCK_MIN_MINUTES = 5;
+export { PROCESSING_BLOCK_MIN_MINUTES };
 /** Server cap (`processingTimeBlocksSchema.max(20)`). */
 const MAX_BLOCKS = 20;
 
@@ -51,8 +57,9 @@ export interface ProcessingBlocksValidation {
 
 /**
  * Validate + normalise drafts against the service duration. Mirrors the web
- * `validateProcessingTimeBlocks`: each block ≥ 5 min, must lie within the core
- * duration (before buffer), and blocks must not overlap.
+ * `validateProcessingTimeBlocks` (#185): each block at least 5 min, starting
+ * inside the service or exactly at its end, running no more than
+ * `PROCESSING_TAIL_MAX_MINUTES` past the end, and no overlaps.
  */
 export function validateProcessingBlocks(
   drafts: ProcessingBlockDraft[],
@@ -75,10 +82,16 @@ export function validateProcessingBlocks(
         error: `Each processing period must be at least ${PROCESSING_BLOCK_MIN_MINUTES} minutes.`,
       };
     }
-    if (start + duration > durationMinutes) {
+    if (start > durationMinutes) {
       return {
         ok: false,
-        error: 'Processing periods must fit within the service duration (before buffer).',
+        error: 'Processing periods must start within the service, or at its end.',
+      };
+    }
+    if (start + duration > durationMinutes + PROCESSING_TAIL_MAX_MINUTES) {
+      return {
+        ok: false,
+        error: `Processing time cannot run more than ${PROCESSING_TAIL_MAX_MINUTES} minutes past the end of the service.`,
       };
     }
     parsed.push({ ...(d.id ? { id: d.id } : {}), start_minute: start, duration_minutes: duration });
@@ -94,18 +107,39 @@ export function validateProcessingBlocks(
   return { ok: true, blocks: sorted };
 }
 
+/** The drafts as numbers, for the placement and resize helpers; unparsable fields read as 0. */
+function draftBlocks(drafts: ProcessingBlockDraft[]): ProcessingTimeBlock[] {
+  return drafts.map((d) => ({
+    start_minute: Number(d.start) || 0,
+    duration_minutes: Number(d.duration) || 0,
+  }));
+}
+
+/** Where a period sits relative to the service, in words (web's per-row hint). */
+export function describeProcessingBlockPlacement(
+  block: Pick<ProcessingTimeBlock, 'start_minute' | 'duration_minutes'>,
+  durationMinutes: number,
+): string {
+  const end = block.start_minute + block.duration_minutes;
+  if (block.start_minute >= durationMinutes) return `After the service, ${block.duration_minutes} min`;
+  if (end > durationMinutes) return `Runs ${end - durationMinutes} min past the end of the service`;
+  return `${block.start_minute} to ${end} min into the service`;
+}
+
 interface ProcessingTimeBlocksEditorProps {
   drafts: ProcessingBlockDraft[];
   onChange: (next: ProcessingBlockDraft[]) => void;
-  /** Service core duration in minutes (drives the "fits within" hint + defaults). */
+  /** Service core duration in minutes (drives placement, the hints and the summary). */
   durationMinutes: number;
   bufferMinutes?: number;
 }
 
 /**
- * Simple add/remove list of processing-time periods — gaps inside the
- * appointment where the client stays but the practitioner can take another
- * booking. Deliberately NOT a drag timeline (web parity kept to the data, not
+ * Simple add/remove list of processing-time periods — waits where the client
+ * stays but the practitioner can take another booking. A period can sit inside
+ * the service, or start at its end and run on afterwards (web #185): that tail
+ * is not part of the service length, and the next service of a visit waits
+ * behind it. Deliberately NOT a drag timeline (web parity kept to the data, not
  * the gesture). Controlled component: parent owns the draft array.
  */
 export function ProcessingTimeBlocksEditor({
@@ -123,23 +157,45 @@ export function ProcessingTimeBlocksEditor({
 
   const add = () => {
     hapticSelect();
-    // Default the next start to the end of the last block (clamped into range).
-    const sorted = [...drafts].sort((a, b) => Number(a.start) - Number(b.start));
-    const last = sorted[sorted.length - 1];
-    const lastEnd = last ? Number(last.start || '0') + Number(last.duration || '0') : 0;
-    const maxStart = Math.max(0, durationMinutes - PROCESSING_BLOCK_MIN_MINUTES);
-    const start = Math.max(0, Math.min(Number.isFinite(lastEnd) ? lastEnd : 0, maxStart));
-    const duration = Math.min(
-      PROCESSING_BLOCK_MIN_MINUTES * 2,
-      Math.max(PROCESSING_BLOCK_MIN_MINUTES, durationMinutes - start),
-    );
+    // The first period goes after the service (the common case: the client
+    // waits while colour develops and the chair is free); further ones fill
+    // backwards inside it. Nothing fits: fall back to a block at the start so
+    // the validator's message explains why rather than the button silently
+    // doing nothing.
+    const placed = placeNewProcessingBlock(draftBlocks(drafts), durationMinutes) ?? {
+      start_minute: 0,
+      duration_minutes: PROCESSING_BLOCK_MIN_MINUTES,
+    };
     onChange([
       ...drafts,
-      { key: nextKey(), start: String(start), duration: String(duration) },
+      { key: nextKey(), start: String(placed.start_minute), duration: String(placed.duration_minutes) },
     ]);
   };
 
-  const activeTotal = drafts.reduce((sum, d) => sum + (Number(d.duration) || 0), 0);
+  /**
+   * A length edit. A period that ends exactly at the end of the service stays
+   * anchored there (longer = starts earlier); one that starts at the end grows
+   * on past it, which is how a wait after the service is set. A field that is
+   * not a usable number yet (cleared, mid-typing) is stored as typed and judged
+   * by the validator on save.
+   */
+  const updateLength = (draft: ProcessingBlockDraft, raw: string) => {
+    const next = Number(raw);
+    if (!Number.isInteger(next) || next < PROCESSING_BLOCK_MIN_MINUTES) {
+      patch(draft.key, { duration: raw });
+      return;
+    }
+    const resized = resizeProcessingBlock(
+      { start_minute: Number(draft.start) || 0, duration_minutes: Number(draft.duration) || 0 },
+      next,
+      durationMinutes,
+    );
+    patch(draft.key, { start: String(resized.start_minute), duration: raw });
+  };
+
+  const blocks = draftBlocks(drafts);
+  const activeTotal = blocks.reduce((sum, b) => sum + b.duration_minutes, 0);
+  const tail = processingTailMinutes(blocks, durationMinutes);
 
   return (
     <View style={styles.container}>
@@ -147,43 +203,51 @@ export function ProcessingTimeBlocksEditor({
         Processing time
       </Text>
       <Text variant="caption" tone="muted">
-        Gaps inside the {durationMinutes || '—'} min appointment where the client stays but you are
-        free to take another booking{bufferMinutes ? ` (buffer of ${bufferMinutes} min applies after)` : ''}.
+        Time the client waits (colour developing, a mask setting) while you are free to see someone
+        else. A period can sit inside the {durationMinutes || '—'} min service, or start at its end
+        and run on afterwards. The next service in the same visit waits until it has finished.
+        {bufferMinutes ? ` Your ${bufferMinutes} min buffer comes after all of it.` : ''}
       </Text>
 
       {drafts.length > 0 ? (
         <View style={styles.list}>
-          {drafts.map((draft) => (
+          {drafts.map((draft, index) => (
             <View
               key={draft.key}
               style={[styles.row, { borderColor: colors.border, backgroundColor: colors.surface }]}>
-              <View style={styles.field}>
-                <Input
-                  label="Start (min)"
-                  value={draft.start}
-                  onChangeText={(start) => patch(draft.key, { start })}
-                  keyboardType="number-pad"
+              <View style={styles.fields}>
+                <View style={styles.field}>
+                  <Input
+                    label="Start (min)"
+                    value={draft.start}
+                    onChangeText={(start) => patch(draft.key, { start })}
+                    keyboardType="number-pad"
+                  />
+                </View>
+                <View style={styles.field}>
+                  <Input
+                    label="Length (min)"
+                    value={draft.duration}
+                    onChangeText={(duration) => updateLength(draft, duration)}
+                    keyboardType="number-pad"
+                  />
+                </View>
+                <Button
+                  label="Remove"
+                  variant="ghost"
+                  size="sm"
+                  onPress={() => remove(draft.key)}
                 />
               </View>
-              <View style={styles.field}>
-                <Input
-                  label="Length (min)"
-                  value={draft.duration}
-                  onChangeText={(duration) => patch(draft.key, { duration })}
-                  keyboardType="number-pad"
-                />
-              </View>
-              <Button
-                label="Remove"
-                variant="ghost"
-                size="sm"
-                onPress={() => remove(draft.key)}
-              />
+              <Text variant="caption" tone="muted" testID={`processing-placement-${index}`}>
+                {describeProcessingBlockPlacement(blocks[index]!, durationMinutes)}
+              </Text>
             </View>
           ))}
           <Text variant="caption" tone="muted">
             {activeTotal} min of processing across {drafts.length} period
             {drafts.length === 1 ? '' : 's'}.
+            {tail > 0 ? ` Service: ${durationMinutes} min, then ${tail} min after it.` : ''}
           </Text>
         </View>
       ) : null}
@@ -207,12 +271,15 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   row: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: spacing.sm,
+    gap: spacing.xs,
     padding: spacing.sm,
     borderWidth: 1,
     borderRadius: radius.md,
+  },
+  fields: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: spacing.sm,
   },
   field: {
     flex: 1,

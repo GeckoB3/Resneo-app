@@ -33,4 +33,13 @@ describe('chainSpanMinutes', () => {
     expect(chainSpanMinutes([{ durationMinutes: 30, bufferMinutes: 15 }])).toBe(30);
     expect(chainSpanMinutes([])).toBe(0);
   });
+
+  it('counts a wait after a service (its processing tail) before the buffer, web #185', () => {
+    expect(
+      chainSpanMinutes([
+        { durationMinutes: 60, bufferMinutes: 10, processingTailMinutes: 30 },
+        { durationMinutes: 30, bufferMinutes: 15, processingTailMinutes: 20 },
+      ]),
+    ).toBe(60 + 30 + 10 + 30);
+  });
 });

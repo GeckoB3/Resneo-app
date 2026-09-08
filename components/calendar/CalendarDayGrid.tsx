@@ -636,7 +636,7 @@ export function CalendarDayGrid({
       const gaps = processingGapRanges(
         start,
         end,
-        bookingProcessingBlocks(booking, processingPatternFor),
+        bookingProcessingBlocks(booking, processingPatternFor, end - start),
       );
       out.push(...occupiedRangesMinusGaps(booking.id, start, end, gaps));
     }
