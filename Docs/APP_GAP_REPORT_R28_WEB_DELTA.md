@@ -26,12 +26,12 @@ agrees with the code and names the app directly:
 | R28-1 | A visit whose earlier service carries a tail now 400s from the app's wizard: the chain places the next service at `end + buffer`, the server wants `end + tail + buffer` | **Breaks live bookings** | **Built** 2026-09-08 (§3, §13) |
 | R28-2 | The service form's validator still refuses a period that reaches past the service, so a service given a tail on the web can no longer be SAVED from the app (any field), and the app cannot create one | **Breaks live editing** | **Built** 2026-09-08 (§4, §13) |
 | R28-3 | The processing-time module is one-ended: a re-fit clamps a tail to the new end instead of moving it with the end; a variant inheriting the parent's pattern is not re-fitted to its own length; a null-snapshot booking is not re-fitted to its own length | Wrong gaps drawn and sent | **Built** 2026-09-08 (§5, §13) |
-| R28-4 | Calendar: a tail is clamped to the bar; the practitioner's free foot is painted as busy; a middle gap is a pale band, not a hole; nested bars are inset, and cannot chain; no buffer band; visits show no gap before a service that waits | Visual parity, plus a mis-drawn diary once tails exist | Build (in the order below) |
-| R28-5 | Ask ResNeo: web answered R27-8 with `assistant_enabled` on `GET /api/venue` and a new `GET /api/venue/assistant`; the More row still shows unconditionally | Polish, closes R27-8 | Build (small) |
-| R28-6 | Add-on library: the group editor gained a "Linked services" picker and the PATCH takes `service_links`; the app's group editor has no picker (links are made from the service form only) | Parity | Build (medium) or defer |
-| R28-7 | Service card facts row: web shows price first, then duration with a clock glyph; the app shows duration then price | Copy/order | Build (tiny) |
+| R28-4 | Calendar: a tail is clamped to the bar; the practitioner's free foot is painted as busy; a middle gap is a pale band, not a hole; nested bars are inset, and cannot chain; no buffer band; visits show no gap before a service that waits | Visual parity, plus a mis-drawn diary once tails exist | **Built** 2026-09-08 (§14) |
+| R28-5 | Ask ResNeo: web answered R27-8 with `assistant_enabled` on `GET /api/venue` and a new `GET /api/venue/assistant`; the More row still shows unconditionally | Polish, closes R27-8 | **Built** 2026-09-08 (§14) |
+| R28-6 | Add-on library: the group editor gained a "Linked services" picker and the PATCH takes `service_links`; the app's group editor has no picker (links are made from the service form only) | Parity | **Built** 2026-09-08 (§14) |
+| R28-7 | Service card facts row: web shows price first, then duration with a clock glyph; the app shows duration then price | Copy/order | **Built** 2026-09-08 (§14) |
 | R28-8 | The calendar-grid feed is unchanged, but its `processing_time_blocks` snapshots may now contain a block that ends past `booking_end_time` | Contract note | No change beyond R28-4 |
-| R28-9 | Grid lines and the alternate-slot band went one step darker on the web ("a grid staff can see") | Visual | Build with R28-4 |
+| R28-9 | Grid lines and the alternate-slot band went one step darker on the web ("a grid staff can see") | Visual | **Built** 2026-09-08 (§14) |
 
 Everything else in the delta is web-only or server-side and inherited: the dashboard's 375px
 layout fixes (settings tab bar, support-session toolbar, walk-in modal, table combinations,
@@ -417,5 +417,66 @@ extras and `segmentLength` (the month span) all call `segmentProcessing`. Chain 
 tailed visit (10:00 colour 60 + wait 30 + buffer 10, cut at 11:40), the totals case and four
 `segmentProcessing` cases. Group bookings are unchained and untouched.
 
-**Still open from this delta:** R28-4 (calendar), R28-5 (assistant flag), R28-6 (add-on
-picker), R28-7 (facts row), R28-9 (grid lines).
+## 14. Built later the same day: R28-4, R28-5, R28-6, R28-7, R28-9
+
+Type check, lint and the full suite (256 suites, 2,616 tests) pass. All JavaScript and styling:
+no native module, no config, so the whole R28 batch is one OTA on the current runtime.
+
+**R28-4, the calendar.** The port follows section 6's order, adapted to the app's one-card bar
+rather than the web's per-lozenge DOM:
+
+1. `lib/calendar/processing-gaps.ts` `processingGapRanges` no longer clamps a block to the
+   booking's end (a tail is a free range another booking may share the lane in); the drag guard
+   still clips through `occupiedRangesMinusGaps`, so nothing changes there.
+2. New `bookingFreeRegions` (active end, middle bands, tail) and `clusterPaintRegions` (per
+   visit: `holes` the bar leaves unpainted, `freeTaps` the bookable parts of them, and
+   `bufferBands`). `ProcessingPatternSource` carries `buffer_minutes` for the service and each
+   option, filled by both lookups (`ManagedService.buffer_minutes`, `LinkedService.bufferMinutes`),
+   and `bookingBufferMinutes` reads it.
+3. `AppointmentBlock` paints each hole in the grid's own surface, full width, with a hairline
+   at either end, so a middle gap, the free foot and the wait between a visit's services read as
+   the diary showing between lozenges; the free parts carry a `Pressable` that hands the
+   wall-clock minute under the finger (snapped down to five) to `onFreePress`, and both grids
+   route that to their empty-slot handler, so booking someone else into a colour's developing
+   time is the same gesture as tapping empty grid and never opens the host. The host's text and
+   tray keep off its own holes as they keep off nested bars (`hostRegionsAroundNested` takes
+   both). The buffer hangs under the card as a hatched-look "Buffer" band (dashed top, muted
+   fill, label from 14px), untouchable, skipped for Cancelled and No-Show, one per bar (a
+   visit's last segment's; an inner one sits inside the wait hole).
+4. `lib/calendar/booking-cluster-layout.ts` is the #184 port: `hostChain`, `nestDepth`,
+   `laneOwnerOf`, nested ranges propagated to every host in the chain; a host may itself be
+   nested. Nested bars take the full lane (the 5px inset and the left shadow are gone from
+   `DraggableAppointmentBlock` and the read-only wrap; `NESTED_BOOKING_INSET_PX` stays exported,
+   marked historical) and stack by depth (`10 + lane + 10 * depth`, capped under the settled and
+   dragging tiers).
+5. The linked-column path draws holes and the buffer band too; its free time is not tappable,
+   since a read-only column takes no bookings.
+
+Left for later, on purpose: the guest's name repeated on a lozenge after a wait (the app's bar
+has one text region; the visit's later lozenge shows colour only), and the drag footprint
+covering the buffer (the server refuses a landing on one).
+
+**R28-9.** Hour lines `colors.borderStrong`, half-hour lines `colors.border` at full opacity
+(was 0.55), the alternate band 0.045 (was 0.025), in the single grid, the multi-column grid and
+the week grid. No new token.
+
+**R28-5.** `VenueBootstrap.assistant_enabled`; the More tab renders the Ask ResNeo row unless
+the flag is exactly `false`, so an older deploy keeps the row. Closes R27-8.
+
+**R28-6.** `useUpdateAddonGroup` takes `service_links`; `AddonGroupEditorSheet` gains a
+"Linked services" section when opened from the library on an existing group (search, Select
+all, Clear, a checkbox row per service, seeded from the groups query's `service_links`), and
+the save sends the ticked ids in BOTH `service_item_ids` and `appointment_service_ids` because
+the server reads only the array for its schema. The service form's path passes nothing and its
+links are untouched. Creating a group from the library has no picker (the create route takes
+no links); link it from a service form or edit it once made.
+
+**R28-7.** The service card reads price, then a clock glyph (`SymbolView`, object form) and the
+duration, then the option and add-on counts.
+
+**Tests.** `booking-cluster-layout.test.ts` gained the chain and no-loop cases and `nestDepth`
+on every nested expectation; `processing-gaps.test.ts` pins the no-clamp rule; new
+`processing-gaps.paint.test.ts` covers buffers, free regions and the paint regions (lone tail,
+middle gap plus foot, a visit's wait vs buffer, cancelled segments);
+`CalendarDayGrid.overlap.test.tsx` moved to the `processing-hole` test id and gained a free-foot
+tap and buffer-band case.

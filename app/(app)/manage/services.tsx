@@ -1,4 +1,5 @@
 import { Stack, useLocalSearchParams } from 'expo-router';
+import { SymbolView } from 'expo-symbols';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
@@ -248,12 +249,26 @@ function ServiceRowBase({
           <Text variant="bodyMedium" numberOfLines={1}>
             {service.name}
           </Text>
-          <Text variant="caption" tone="muted" numberOfLines={1}>
-            {service.duration_minutes} min
-            {price ? ` · ${price}` : ''}
-            {variants.length ? ` · ${variants.length} option${variants.length === 1 ? '' : 's'}` : ''}
-            {addonGroups.length ? ` · ${addonGroups.length} add-on group${addonGroups.length === 1 ? '' : 's'}` : ''}
-          </Text>
+          {/* Price first, then the duration behind a clock glyph (web #184). */}
+          <View style={styles.serviceFacts}>
+            {price ? (
+              <Text variant="caption" tone="muted" numberOfLines={1}>
+                {price} ·{' '}
+              </Text>
+            ) : null}
+            <SymbolView
+              name={{ ios: 'clock', android: 'schedule', web: 'schedule' }}
+              tintColor={colors.textMuted}
+              size={12}
+              accessibilityLabel="Duration"
+            />
+            <Text variant="caption" tone="muted" numberOfLines={1} style={styles.serviceFactsText}>
+              {' '}
+              {service.duration_minutes} min
+              {variants.length ? ` · ${variants.length} option${variants.length === 1 ? '' : 's'}` : ''}
+              {addonGroups.length ? ` · ${addonGroups.length} add-on group${addonGroups.length === 1 ? '' : 's'}` : ''}
+            </Text>
+          </View>
         </View>
         {service.is_active === false ? <Badge label="Inactive" tone="neutral" /> : null}
         <Text variant="title" tone="muted">
@@ -1618,6 +1633,21 @@ export default function ServicesScreen() {
       <AddonGroupEditorSheet
         target={addonGroupEditorTarget}
         onClose={() => setAddonGroupEditorTarget(null)}
+        // From the library the sheet also edits which services offer the
+        // group (web #184); from a service form it must not touch links.
+        linkableServices={
+          addonEditorContext === 'library'
+            ? services.map((s) => ({ id: s.id, name: s.name }))
+            : undefined
+        }
+        linkedServiceIds={
+          addonEditorContext === 'library' && addonGroupEditorTarget?.mode === 'edit'
+            ? (addonGroupsQuery.data?.service_links ?? [])
+                .filter((link) => link.addon_group_id === addonGroupEditorTarget.group.id)
+                .map((link) => link.service_item_id ?? link.appointment_service_id)
+                .filter((id): id is string => !!id)
+            : undefined
+        }
         onSaved={(result, mode) => {
           if (addonEditorContext !== 'form') return;
           // Keep the service form's linked list in step with the edit.
@@ -2245,6 +2275,14 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     gap: 1,
+  },
+  serviceFacts: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minWidth: 0,
+  },
+  serviceFactsText: {
+    flexShrink: 1,
   },
   serviceBody: {
     padding: spacing.base,

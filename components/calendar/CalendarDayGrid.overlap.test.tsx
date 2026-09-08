@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react-native';
+import { act, fireEvent, render, screen } from '@testing-library/react-native';
 
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
 
@@ -166,12 +166,16 @@ describe('CalendarDayGrid: a booking taken in a processing gap nests in its host
     expect(bars).toHaveLength(2);
     expect(bars.map((bar) => bar.width)).toEqual(['100%', '100%']);
 
-    // One band, spanning the gap: 30 minutes down the host, 30 minutes tall.
-    const bands = screen.getAllByTestId('processing-band');
-    expect(bands).toHaveLength(1);
-    const band = StyleSheet_flatten(bands[0].props.style);
-    expect(band?.top).toBe(30 * PX_PER_MINUTE);
-    expect(band?.height).toBe(30 * PX_PER_MINUTE);
+    // One hole, spanning the gap: 30 minutes down the host, 30 minutes tall
+    // (web #185: a middle gap is a see-through hole, not a pale band).
+    const holes = screen.getAllByTestId('processing-hole');
+    expect(holes).toHaveLength(1);
+    const hole = StyleSheet_flatten(holes[0].props.style);
+    expect(hole?.top).toBe(30 * PX_PER_MINUTE);
+    expect(hole?.height).toBe(30 * PX_PER_MINUTE);
+    // And the gap takes a tap of its own, which books someone else in rather
+    // than opening the tint.
+    expect(screen.getAllByTestId('processing-free-tap')).toHaveLength(1);
   });
 
   it('falls back to side-by-side lanes when the booking spills past the gap', async () => {
@@ -210,6 +214,44 @@ describe('CalendarDayGrid: a booking taken in a processing gap nests in its host
     );
 
     expect(renderedBars().map((bar) => bar.width)).toEqual(['100%', '100%']);
-    expect(screen.getAllByTestId('processing-band')).toHaveLength(1);
+    expect(screen.getAllByTestId('processing-hole')).toHaveLength(1);
+  });
+
+  it('leaves the free foot unpainted and tappable, and hangs the buffer under the bar (web #185)', async () => {
+    // A 60-minute colour, free from minute 30 to its end, with a 10-minute
+    // buffer: the foot is a hole, a tap on it books someone else in at that
+    // minute, and the buffer band starts where the booking ends.
+    const onEmptyPress = jest.fn();
+    const colour: CalendarGridBooking = {
+      ...booking('colour', '11:00', '12:00'),
+      service_item_id: 'svc-colour',
+      processing_time_blocks: [{ start_minute: 30, duration_minutes: 30 }],
+    };
+    await render(
+      <CalendarDayGrid
+        bookings={[colour]}
+        workingHours={workingHours}
+        nowMinutes={null}
+        onBlockPress={jest.fn()}
+        onEmptyPress={onEmptyPress}
+        processingPatternFor={(id) => (id === 'svc-colour' ? { buffer_minutes: 10 } : undefined)}
+      />,
+    );
+
+    const holes = screen.getAllByTestId('processing-hole');
+    expect(holes).toHaveLength(1);
+    expect(StyleSheet_flatten(holes[0].props.style)?.top).toBe(30 * PX_PER_MINUTE);
+
+    const buffer = screen.getByTestId('buffer-band');
+    const bufferStyle = StyleSheet_flatten(buffer.props.style);
+    expect(bufferStyle?.top).toBe(60 * PX_PER_MINUTE);
+    expect(bufferStyle?.height).toBe(10 * PX_PER_MINUTE);
+
+    // A tap 10 minutes into the free foot books at 11:40.
+    const tap = screen.getByTestId('processing-free-tap');
+    await act(async () => {
+      fireEvent(tap, 'press', { nativeEvent: { locationY: 10 * PX_PER_MINUTE } });
+    });
+    expect(onEmptyPress).toHaveBeenCalledWith('11:40');
   });
 });

@@ -47,6 +47,7 @@ import {
 } from '@/lib/calendar/schedule-closures';
 import {
   bookingProcessingBlocks,
+  clusterPaintRegions,
   clusterProcessingGaps,
   occupiedRangesMinusGaps,
   processingGapRanges,
@@ -78,17 +79,23 @@ type PositionedBooking = {
   timeLabel: string;
   /**
    * Set when this bar rides inside another bar's processing gap (web #177):
-   * drawn indented and above its host, in the host's lane.
+   * drawn above its host in the host's lane, `nestDepth` levels down a chain.
    */
   nestedInKey?: string;
+  nestDepth?: number;
   /**
-   * This bar's processing gaps as px bands from its own top: the client is
-   * under the colour and the column is free. Drawn as a lighter band.
+   * Stretches of the bar left unpainted (web #185), as px bands from its own
+   * top: middle processing gaps, the free foot where processing runs to the
+   * end, the wait between a visit's services. The grid shows through.
    */
-  processingBands: { top: number; height: number }[];
+  holes: { top: number; height: number }[];
+  /** The bookable parts of those holes, with the wall-clock minutes they span. */
+  freeTaps: { top: number; height: number; startMinute: number; endMinute: number }[];
+  /** The turnover band under the bar (px from its top), or null without a buffer. */
+  bufferBand: { top: number; height: number } | null;
   /**
-   * When this bar hosts nested bars, the px region (from its own top) its text
-   * and buttons keep to, so a nested bar never covers them.
+   * When nested bars or the bar's own holes cover parts of this bar, the px
+   * region (from its own top) its text and buttons keep to.
    */
   contentInset?: { top: number; height: number };
 };
@@ -439,12 +446,16 @@ export function CalendarDayGrid({
       const lane: BookingClusterLayout = lanes.get(lead.id) ?? { laneIndex: 0, laneCount: 1 };
       const top = (start - gridStartMin) * pxPerMinute;
       const height = heights.get(lead.id) ?? (end - start) * pxPerMinute;
-      const gaps = gapsByLead.get(lead.id) ?? [];
+      // What the bar paints and leaves open (web #185): middle gaps and the
+      // free foot are holes the grid shows through, the wait between a visit's
+      // services too; the bookable parts take taps; the buffer hangs under it.
+      const paint = clusterPaintRegions(cluster.bookings, processingPatternFor, DEFAULT_DURATION_MINUTES);
       // A host keeps its text (and its buttons, which share the region on the
-      // app's bars) above the first nested bar, or below one at its top edge.
-      const regions = lane.nestedRanges
-        ? hostRegionsAroundNested({ start, end }, lane.nestedRanges, 0)
-        : null;
+      // app's bars) off the bars nested in it AND off its own free time, above
+      // the first band or below one at its top edge.
+      const covered = [...(lane.nestedRanges ?? []), ...paint.holes];
+      const regions = covered.length > 0 ? hostRegionsAroundNested({ start, end }, covered, 0) : null;
+      const lastBuffer = paint.bufferBands[paint.bufferBands.length - 1] ?? null;
       return {
         cluster,
         top,
@@ -454,10 +465,25 @@ export function CalendarDayGrid({
         durationMinutes: Math.max(end - start, TAP_SNAP_MINUTES),
         timeLabel: `${minutesToTime(start)}–${minutesToTime(end)}`,
         nestedInKey: lane.nestedInKey,
-        processingBands: gaps.map((gap) => ({
-          top: (gap.start - start) * pxPerMinute,
-          height: (gap.end - gap.start) * pxPerMinute,
+        nestDepth: lane.nestDepth,
+        holes: paint.holes.map((hole) => ({
+          top: (hole.start - start) * pxPerMinute,
+          height: (Math.min(hole.end, end) - hole.start) * pxPerMinute,
         })),
+        freeTaps: paint.freeTaps.map((tap) => ({
+          top: (tap.start - start) * pxPerMinute,
+          height: (Math.min(tap.end, end) - tap.start) * pxPerMinute,
+          startMinute: tap.start,
+          endMinute: Math.min(tap.end, end),
+        })),
+        // One band per bar: the visit's LAST segment's turnover (an inner
+        // segment's sits inside the wait hole, which already reads as free).
+        bufferBand: lastBuffer
+          ? {
+              top: (lastBuffer.start - start) * pxPerMinute,
+              height: (lastBuffer.end - lastBuffer.start) * pxPerMinute,
+            }
+          : null,
         contentInset: regions
           ? {
               top: (regions.textStart - start) * pxPerMinute,
@@ -686,20 +712,23 @@ export function CalendarDayGrid({
                 <Text variant="caption" tone="muted" style={styles.hourLabel}>
                   {hourLabel(hour)}
                 </Text>
-                <View style={[styles.hourLine, { backgroundColor: colors.border }]} />
+                {/* One step darker than before (web #185: "a grid staff can
+                    see"): the hour line reads as a rule, the half hour as a
+                    clear division, the band as something to count by. */}
+                <View style={[styles.hourLine, { backgroundColor: colors.borderStrong }]} />
               </View>
               {!isLast ? (
                 <>
-                  {/* Subtle alternate-hour banding (web parity). */}
+                  {/* Alternate-hour banding (web parity). */}
                   {index % 2 === 1 ? (
                     <View
                       style={[
                         styles.hourBand,
-                        { backgroundColor: colors.text, opacity: 0.025 },
+                        { backgroundColor: colors.text, opacity: 0.045 },
                       ]}
                     />
                   ) : null}
-                  {/* Lighter half-hour line. */}
+                  {/* Half-hour line. */}
                   <View
                     style={[
                       styles.halfHourLine,
@@ -902,7 +931,13 @@ export function CalendarDayGrid({
               laneIndex={item.laneIndex}
               laneCount={item.laneCount}
               nested={item.nestedInKey != null}
-              processingBands={item.processingBands}
+              nestDepth={item.nestDepth}
+              holes={item.holes}
+              freeTaps={item.freeTaps}
+              // A tap on the bar's free time books someone else in, the same
+              // gesture as tapping empty grid (web #185).
+              onFreePress={(minute) => onEmptyPress(minutesToTime(minute))}
+              bufferBand={item.bufferBand}
               contentInset={item.contentInset}
               pxPerMinute={pxPerMinute}
               startTime={item.cluster.lead.startTime}
@@ -1015,7 +1050,6 @@ const styles = StyleSheet.create({
     left: TIME_GUTTER_WIDTH,
     right: 0,
     height: StyleSheet.hairlineWidth,
-    opacity: 0.55,
   },
   closedBand: {
     position: 'absolute',

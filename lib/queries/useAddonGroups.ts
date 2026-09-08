@@ -55,20 +55,41 @@ export function useCreateAddonGroup() {
   });
 }
 
+/**
+ * The full set of services a group should be linked to (web #184, the
+ * library's "Linked services" picker). The server reads the array for the
+ * schema the venue uses (`service_item_ids` on a unified venue,
+ * `appointment_service_ids` on a legacy one) and ignores the other, so a
+ * caller that does not know which sends the same ids in both. Omitted, the
+ * PATCH leaves links alone — the service form manages them from its side.
+ */
+export interface AddonGroupServiceLinks {
+  service_item_ids?: string[];
+  appointment_service_ids?: string[];
+}
+
 /** PATCH /api/venue/addon-groups/[id] — admin only. Updates an existing group. */
 export function useUpdateAddonGroup() {
   const accessToken = useAccessToken();
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ id, group }: { id: string; group: AddonGroupInput }): Promise<AddonGroupUpsertResponse> => {
+    mutationFn: async ({
+      id,
+      group,
+      service_links,
+    }: {
+      id: string;
+      group: AddonGroupInput;
+      service_links?: AddonGroupServiceLinks;
+    }): Promise<AddonGroupUpsertResponse> => {
       if (!accessToken) {
         throw new Error('Missing access token');
       }
       return apiFetch<AddonGroupUpsertResponse>(`/api/venue/addon-groups/${id}`, {
         accessToken,
         method: 'PATCH',
-        body: JSON.stringify({ group }),
+        body: JSON.stringify(service_links ? { group, service_links } : { group }),
       });
     },
     onSuccess: () => invalidateAddonGroups(queryClient),

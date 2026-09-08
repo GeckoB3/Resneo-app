@@ -287,7 +287,8 @@ export function WeekGrid({
               pointerEvents="none"
               style={[
                 styles.hourLine,
-                { top: (hour - startHour) * 60 * PX_PER_MINUTE, backgroundColor: colors.border },
+                // One step darker (web #185), as the day grids.
+                { top: (hour - startHour) * 60 * PX_PER_MINUTE, backgroundColor: colors.borderStrong },
               ]}
             />
           ))}
@@ -649,7 +650,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: 60 * PX_PER_MINUTE,
-    opacity: 0.03,
+    opacity: 0.045,
   },
   columnsRow: {
     flexDirection: 'row',

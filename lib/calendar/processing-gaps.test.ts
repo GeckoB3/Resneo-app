@@ -117,15 +117,20 @@ describe('bookingProcessingBlocks', () => {
 });
 
 describe('processingGapRanges and clusterProcessingGaps', () => {
-  it('turns blocks into wall-clock ranges clipped to the booking', () => {
+  it('turns blocks into wall-clock ranges, merged, and never clamped to the booking (web #185)', () => {
     expect(processingGapRanges(660, 750, tintPattern)).toEqual([{ start: 690, end: 720 }]);
-    // A block that runs past the booking's end is clipped; one starting after it is dropped.
+    // A block that runs past the booking's end is a wait the practitioner is
+    // free for, so it stays whole; touching blocks merge.
     expect(
       processingGapRanges(660, 700, [
         { start_minute: 30, duration_minutes: 30 },
         { start_minute: 50, duration_minutes: 10 },
       ]),
-    ).toEqual([{ start: 690, end: 700 }]);
+    ).toEqual([{ start: 690, end: 720 }]);
+    // A wait AFTER a 60-minute service: 720 to 750 on a booking that ends at 720.
+    expect(processingGapRanges(660, 720, [{ start_minute: 60, duration_minutes: 30 }])).toEqual([
+      { start: 720, end: 750 },
+    ]);
   });
 
   it('unions the gaps of a visit, each against its own segment', () => {

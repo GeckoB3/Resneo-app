@@ -45,7 +45,12 @@ describe('layoutOverlapClusters', () => {
       laneCount: 1,
       nestedRanges: [{ start: t(11, 30), end: t(12) }],
     });
-    expect(layouts.get('cut')).toEqual({ laneIndex: 0, laneCount: 1, nestedInKey: 'tint' });
+    expect(layouts.get('cut')).toEqual({
+      laneIndex: 0,
+      laneCount: 1,
+      nestedInKey: 'tint',
+      nestDepth: 1,
+    });
   });
 
   it('nests a shorter booking that fills only part of the gap', () => {
@@ -89,14 +94,43 @@ describe('layoutOverlapClusters', () => {
     expect(layouts.get('a')?.laneIndex).toBe(layouts.get('host')?.laneIndex);
   });
 
-  it('never nests more than one level deep', () => {
+  it('chains: a bar nested in a gap can host a third in a gap of its own (web #184)', () => {
+    // A trim booked into the processing time of a cut that was itself booked
+    // into a colour's: one lane, each level above the one it rides in, and the
+    // colour's text keeps off the trim's span too (it covers the colour as well).
     const layouts = layoutOverlapClusters([
       tint('tint', t(11)),
       { key: 'cut', start: t(11, 30), end: t(12), gaps: [{ start: t(11, 40), end: t(11, 50) }] },
       { key: 'trim', start: t(11, 40), end: t(11, 50) },
     ]);
+    expect(layouts.get('cut')).toEqual({
+      laneIndex: 0,
+      laneCount: 1,
+      nestedInKey: 'tint',
+      nestDepth: 1,
+      nestedRanges: [{ start: t(11, 40), end: t(11, 50) }],
+    });
+    expect(layouts.get('trim')).toEqual({
+      laneIndex: 0,
+      laneCount: 1,
+      nestedInKey: 'cut',
+      nestDepth: 2,
+    });
+    expect(layouts.get('tint')?.nestedRanges).toEqual([
+      { start: t(11, 30), end: t(12) },
+      { start: t(11, 40), end: t(11, 50) },
+    ]);
+  });
+
+  it('never nests a host inside something that sits inside it', () => {
+    // The cut's gap covers the trim, and the trim (placed later) could look
+    // like a host for nothing; the guard is that a chain never loops.
+    const layouts = layoutOverlapClusters([
+      tint('tint', t(11)),
+      { key: 'cut', start: t(11, 30), end: t(12), gaps: [{ start: t(11, 30), end: t(12) }] },
+    ]);
     expect(layouts.get('cut')?.nestedInKey).toBe('tint');
-    expect(layouts.get('trim')?.nestedInKey).toBeUndefined();
+    expect(layouts.get('tint')?.nestedInKey).toBeUndefined();
   });
 
   it('nests inside the host even when the host is itself in a lane', () => {
@@ -112,6 +146,7 @@ describe('layoutOverlapClusters', () => {
       laneIndex: tintLayout.laneIndex,
       laneCount: 2,
       nestedInKey: 'tint',
+      nestDepth: 1,
     });
   });
 
@@ -120,7 +155,12 @@ describe('layoutOverlapClusters', () => {
       balayage('colour', t(13, 30)),
       { key: 'cut', start: t(16), end: t(17) },
     ]);
-    expect(layouts.get('cut')).toEqual({ laneIndex: 0, laneCount: 1, nestedInKey: 'colour' });
+    expect(layouts.get('cut')).toEqual({
+      laneIndex: 0,
+      laneCount: 1,
+      nestedInKey: 'colour',
+      nestDepth: 1,
+    });
     expect(layouts.get('colour')).toEqual({
       laneIndex: 0,
       laneCount: 1,

@@ -47,12 +47,12 @@ import {
 import {
   hostRegionsAroundNested,
   layoutOverlapClusters,
-  NESTED_BOOKING_INSET_PX,
   type BookingClusterLayout,
   type MinuteRange,
 } from '@/lib/calendar/booking-cluster-layout';
 import {
   bookingProcessingBlocks,
+  clusterPaintRegions,
   clusterProcessingGaps,
   occupiedRangesMinusGaps,
   processingGapRanges,
@@ -180,17 +180,19 @@ type PositionedBooking = {
   timeLabel: string;
   /**
    * Set when this bar rides inside another bar's processing gap (web #177):
-   * drawn indented and above its host, in the host's lane.
+   * drawn above its host in the host's lane, `nestDepth` levels down a chain.
    */
   nestedInKey?: string;
+  nestDepth?: number;
+  /** Unpainted stretches of the bar (web #185), as px bands from its own top. */
+  holes: { top: number; height: number }[];
+  /** The bookable parts of those holes, with the wall-clock minutes they span. */
+  freeTaps: { top: number; height: number; startMinute: number; endMinute: number }[];
+  /** The turnover band under the bar (px from its top), or null without a buffer. */
+  bufferBand: { top: number; height: number } | null;
   /**
-   * This bar's processing gaps as px bands from its own top: the client is
-   * under the colour and the column is free. Drawn as a lighter band.
-   */
-  processingBands: { top: number; height: number }[];
-  /**
-   * When this bar hosts nested bars, the px region (from its own top) its text
-   * and buttons keep to, so a nested bar never covers them.
+   * When nested bars or the bar's own holes cover parts of this bar, the px
+   * region (from its own top) its text and buttons keep to.
    */
   contentInset?: { top: number; height: number };
 };
@@ -320,12 +322,13 @@ function positionColumn(
   return raw.map((cluster) => {
     const { lead, start, end } = cluster;
     const lane: BookingClusterLayout = lanes.get(lead.id) ?? { laneIndex: 0, laneCount: 1 };
-    const gaps = gapsByLead.get(lead.id) ?? [];
-    // A host keeps its text and buttons above the first nested bar (or below
-    // one at its top edge); see the same step in CalendarDayGrid.
-    const regions = lane.nestedRanges
-      ? hostRegionsAroundNested({ start, end }, lane.nestedRanges, 0)
-      : null;
+    // What the bar paints and leaves open (web #185); see CalendarDayGrid.
+    const paint = clusterPaintRegions(cluster.bookings, processingPatternFor, DEFAULT_DURATION_MINUTES);
+    // A host keeps its text and buttons off the bars nested in it and off its
+    // own free time; see the same step in CalendarDayGrid.
+    const covered = [...(lane.nestedRanges ?? []), ...paint.holes];
+    const regions = covered.length > 0 ? hostRegionsAroundNested({ start, end }, covered, 0) : null;
+    const lastBuffer = paint.bufferBands[paint.bufferBands.length - 1] ?? null;
     return {
       cluster,
       top: (start - gridStartMin) * pxPerMinute,
@@ -335,10 +338,23 @@ function positionColumn(
       durationMinutes: end - start,
       timeLabel: `${minutesToTime(start)}–${minutesToTime(end)}`,
       nestedInKey: lane.nestedInKey,
-      processingBands: gaps.map((gap) => ({
-        top: (gap.start - start) * pxPerMinute,
-        height: (gap.end - gap.start) * pxPerMinute,
+      nestDepth: lane.nestDepth,
+      holes: paint.holes.map((hole) => ({
+        top: (hole.start - start) * pxPerMinute,
+        height: (Math.min(hole.end, end) - hole.start) * pxPerMinute,
       })),
+      freeTaps: paint.freeTaps.map((tap) => ({
+        top: (tap.start - start) * pxPerMinute,
+        height: (Math.min(tap.end, end) - tap.start) * pxPerMinute,
+        startMinute: tap.start,
+        endMinute: Math.min(tap.end, end),
+      })),
+      bufferBand: lastBuffer
+        ? {
+            top: (lastBuffer.start - start) * pxPerMinute,
+            height: (lastBuffer.end - lastBuffer.start) * pxPerMinute,
+          }
+        : null,
       contentInset: regions
         ? {
             top: (regions.textStart - start) * pxPerMinute,
@@ -644,13 +660,14 @@ export function AllCalendarsDayGrid({
                         height: isLast ? 0 : 60 * pxPerMinute,
                       },
                     ]}>
-                    <View style={[styles.hourLine, { backgroundColor: colors.border }]} />
+                    {/* One step darker than before (web #185), as the single grid. */}
+                    <View style={[styles.hourLine, { backgroundColor: colors.borderStrong }]} />
                     {!isLast ? (
                       <>
                         {index % 2 === 1 ? (
                           <View
                             testID="hour-band"
-                            style={[styles.hourBand, { backgroundColor: colors.text, opacity: 0.025 }]}
+                            style={[styles.hourBand, { backgroundColor: colors.text, opacity: 0.045 }]}
                           />
                         ) : null}
                         <View
@@ -1166,10 +1183,10 @@ function DayColumn({
                   height: item.height,
                   left: `${item.laneIndex * widthPct}%` as const,
                   width: `${widthPct}%` as const,
+                  // A nested bar sits over its host in the host's whole lane
+                  // (web #184), each level of a chain above the last.
+                  zIndex: 10 + item.laneIndex + 10 * (item.nestDepth ?? 0),
                 },
-                // A nested bar sits over its host, indented so the host's stripe
-                // and a sliver of its band stay visible (web #177).
-                item.nestedInKey != null && styles.nestedWrap,
               ]}>
               <AppointmentBlock
                 id={item.cluster.lead.id}
@@ -1185,7 +1202,10 @@ function DayColumn({
                 laneIndex={item.laneIndex}
                 laneCount={item.laneCount}
                 nested={item.nestedInKey != null}
-                processingBands={item.processingBands}
+                holes={item.holes}
+                // A read-only column takes no bookings, so its free time is
+                // drawn but not tappable.
+                bufferBand={item.bufferBand}
                 contentInset={item.contentInset}
                 onPress={onBlockPress}
               />
@@ -1222,7 +1242,13 @@ function DayColumn({
             laneIndex={item.laneIndex}
             laneCount={item.laneCount}
             nested={item.nestedInKey != null}
-            processingBands={item.processingBands}
+            nestDepth={item.nestDepth}
+            holes={item.holes}
+            freeTaps={item.freeTaps}
+            // A tap on the bar's free time books someone else in on this
+            // column, the same gesture as tapping empty grid (web #185).
+            onFreePress={(minute) => onEmptyPress(column.calendarId, minutesToTime(minute))}
+            bufferBand={item.bufferBand}
             contentInset={item.contentInset}
             pxPerMinute={pxPerMinute}
             startTime={item.cluster.lead.startTime}
@@ -1335,7 +1361,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: StyleSheet.hairlineWidth,
-    opacity: 0.55,
   },
   closedBand: {
     position: 'absolute',
@@ -1365,15 +1390,6 @@ const styles = StyleSheet.create({
   blockWrap: {
     position: 'absolute',
     paddingHorizontal: 1,
-  },
-  nestedWrap: {
-    paddingLeft: NESTED_BOOKING_INSET_PX + 1,
-    zIndex: 20,
-    elevation: 4,
-    shadowColor: '#022047',
-    shadowOffset: { width: -6, height: 0 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
   },
   /**
    * A closure band fills its span exactly and carries no border by default, so

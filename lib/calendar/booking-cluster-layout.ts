@@ -1,17 +1,19 @@
 /**
  * Horizontal layout for calendar bars that overlap in time on one column.
  * Ported from the web's `src/lib/calendar/booking-cluster-layout.ts` (#175,
- * #177, 2026-09-05) so both diaries run the same arithmetic.
+ * #177, #184) so both diaries run the same arithmetic.
  *
  * Two mechanisms, in order of preference:
  *
  * 1. NESTING. A booking that starts inside another booking's processing gap
  *    (the client is under the colour and the chair is free) and keeps to that
- *    gap for as long as the host lasts is drawn INSIDE the host bar, indented
- *    from the left, so only the left edge of the host's processing band stays
- *    visible. It may run on past the host's end when the gap reaches the end
- *    too. Staff see at a glance that the slot was used, and neither bar loses
- *    half the column.
+ *    gap for as long as the host lasts is drawn INSIDE the host bar, taking the
+ *    host's whole lane and sitting above it, so it covers the free band it was
+ *    booked into and reads as an ordinary booking. It may run on past the
+ *    host's end when the gap reaches the end too. Nesting chains (web #184): a
+ *    bar nested in a gap can host a third bar in a gap of its own (a trim
+ *    booked into the processing time of a cut that was itself booked into a
+ *    colour's), so consecutive processing periods read as one line of bookings.
  *
  * 2. LANES. Anything that still overlaps is split into side-by-side lanes, the
  *    same interval-colouring the grid always did.
@@ -30,7 +32,8 @@ export interface ClusterLayoutItem extends MinuteRange {
   /**
    * Wall-clock minute ranges inside this item during which its column is free
    * (processing time). Another item that starts inside one of these, and stays
-   * inside it until this item ends, can nest in this one.
+   * inside it until this item ends, can nest in this one. A range may run past
+   * `end` (a wait after the service, web #185).
    */
   gaps?: MinuteRange[];
 }
@@ -41,16 +44,23 @@ export interface BookingClusterLayout {
   /** Key of the host this item is drawn inside, when it nests in a processing gap. */
   nestedInKey?: string;
   /**
-   * Wall-clock ranges of the items nested inside this one, when it hosts any.
+   * How many hosts this item sits inside: 1 when nested directly in a lane's
+   * bar, 2 when nested in a bar that is itself nested, and so on. Each level is
+   * drawn above the one it rides in.
+   */
+  nestDepth?: number;
+  /**
+   * Wall-clock ranges of the items nested inside this one, when it hosts any,
+   * including items nested deeper down the chain (they cover this bar too).
    * The host lays its text and buttons out around these.
    */
   nestedRanges?: MinuteRange[];
 }
 
 /**
- * How far a nested bar is indented from its host's left edge: a thin strip of
- * the host (its status stripe and a sliver of the processing band), so the
- * nested booking keeps almost the full column width.
+ * Historical: nested bars were once indented by this much so a sliver of the
+ * host showed on the left. They now take the full lane (web #184); the constant
+ * remains only for anything still reading it.
  */
 export const NESTED_BOOKING_INSET_PX = 5;
 
@@ -75,13 +85,14 @@ export interface HostRegions {
 }
 
 /**
- * Lays a host's text and tray out around the bars nested in it.
+ * Lays a host's text and tray out around the bars nested in it (and, since
+ * web #185, around its own free bands: nothing about a booking is written on
+ * time the practitioner is free for).
  *
- * A nested bar covers everything under it except the left inset, so the host's
- * text keeps to the span above the first nested bar (or below a band that
- * starts at the very top). The tray prefers the free strip under the lowest
- * nested bar; when that strip is shorter than `minTraySpan` (or a nested bar
- * runs to the host's end, as a tail processing gap does) it moves up into the
+ * The host's text keeps to the span above the first band (or below a band
+ * that starts at the very top). The tray prefers the free strip under the
+ * lowest band; when that strip is shorter than `minTraySpan` (or a band runs
+ * to the host's end, as a tail processing gap does) it moves up into the
  * text's span instead.
  *
  * Returns null when nothing is nested, so callers can keep their plain layout.
@@ -134,14 +145,27 @@ function startsInGapAndStaysFree(host: ClusterLayoutItem, item: MinuteRange): bo
   );
 }
 
+/** The chain of hosts above an item, nearest first; empty for a lane's own bar. */
+function hostChain(nestedIn: Map<string, string>, key: string): string[] {
+  const chain: string[] = [];
+  let cur = nestedIn.get(key);
+  while (cur !== undefined && !chain.includes(cur)) {
+    chain.push(cur);
+    cur = nestedIn.get(cur);
+  }
+  return chain;
+}
+
 /**
  * Chooses, for every item, the host it nests in (if any).
  *
  * Longer items are considered as hosts first, so a booking prefers the longest
- * host it could ride in. An item that already hosts cannot itself nest, and an
- * item that nests cannot host, so nesting is one level deep. Two nested items
- * may share a host only if they do not overlap each other; a third that would
- * overlap them falls back to a lane.
+ * host it could ride in. A host may itself be nested, so chains form: a third
+ * booking rides in the gap of the second, which rides in the gap of the first.
+ * Items are placed in start order, so a bar is always settled before anything
+ * that could nest in it is considered. Two items may share a host's gap only
+ * if they do not overlap each other; an item that would overlap them tries the
+ * next host and otherwise falls back to a lane.
  */
 function assignNesting(items: ClusterLayoutItem[]): Map<string, string> {
   const nestedIn = new Map<string, string>();
@@ -155,7 +179,8 @@ function assignNesting(items: ClusterLayoutItem[]): Map<string, string> {
     if (hosted.has(item.key)) continue;
     for (const host of hostCandidates) {
       if (host.key === item.key) continue;
-      if (nestedIn.has(host.key)) continue;
+      // Never nest in something that sits inside this item.
+      if (hostChain(nestedIn, host.key).includes(item.key)) continue;
       if (!startsInGapAndStaysFree(host, item)) continue;
       const already = hosted.get(host.key) ?? [];
       if (already.some((r) => rangesOverlap(r, item))) continue;
@@ -169,10 +194,10 @@ function assignNesting(items: ClusterLayoutItem[]): Map<string, string> {
 
 /**
  * Lays out one column's items. Items are grouped into runs of transitive
- * overlap; within a run, nested items take their host's lane and the rest are
- * assigned lanes greedily by start time. A host's lane stays taken until the
- * last bar nested in it ends, which is after the host itself when a nested bar
- * runs out of a tail gap.
+ * overlap; within a run, nested items take the lane of the bar at the top of
+ * their host chain and the rest are assigned lanes greedily by start time. A
+ * lane stays taken until the last bar nested anywhere in its chain ends, which
+ * is after the host itself when a nested bar runs out of a tail gap.
  */
 export function layoutOverlapClusters(
   items: readonly ClusterLayoutItem[],
@@ -186,12 +211,17 @@ export function layoutOverlapClusters(
   const flush = () => {
     if (run.length === 0) return;
     const nestedIn = assignNesting(run);
+    // The lane's own bar is the top of each item's host chain.
+    const laneOwnerOf = (key: string): string => {
+      const chain = hostChain(nestedIn, key);
+      return chain.length > 0 ? chain[chain.length - 1]! : key;
+    };
     const laneReach = new Map<string, number>();
     for (const item of run) laneReach.set(item.key, item.end);
     for (const item of run) {
-      const hostKey = nestedIn.get(item.key);
-      if (hostKey === undefined) continue;
-      laneReach.set(hostKey, Math.max(laneReach.get(hostKey) ?? item.end, item.end));
+      if (!nestedIn.has(item.key)) continue;
+      const owner = laneOwnerOf(item.key);
+      laneReach.set(owner, Math.max(laneReach.get(owner) ?? item.end, item.end));
     }
     const laneEnds: number[] = [];
     const laneOf = new Map<string, number>();
@@ -208,24 +238,27 @@ export function layoutOverlapClusters(
       laneOf.set(item.key, laneIndex);
     }
     const laneCount = Math.max(1, laneEnds.length);
+    // Every host up the chain is covered by the nested bar, so each gets the range.
     const rangesByHost = new Map<string, MinuteRange[]>();
     for (const item of run) {
-      const hostKey = nestedIn.get(item.key);
-      if (hostKey === undefined) continue;
-      const list = rangesByHost.get(hostKey) ?? [];
-      list.push({ start: item.start, end: item.end });
-      rangesByHost.set(hostKey, list);
+      for (const hostKey of hostChain(nestedIn, item.key)) {
+        const list = rangesByHost.get(hostKey) ?? [];
+        list.push({ start: item.start, end: item.end });
+        rangesByHost.set(hostKey, list);
+      }
     }
     for (const item of run) {
       const hostKey = nestedIn.get(item.key);
+      const nestedRanges = rangesByHost.get(item.key);
       if (hostKey !== undefined) {
         layouts.set(item.key, {
-          laneIndex: laneOf.get(hostKey) ?? 0,
+          laneIndex: laneOf.get(laneOwnerOf(item.key)) ?? 0,
           laneCount,
           nestedInKey: hostKey,
+          nestDepth: hostChain(nestedIn, item.key).length,
+          ...(nestedRanges ? { nestedRanges } : {}),
         });
       } else {
-        const nestedRanges = rangesByHost.get(item.key);
         layouts.set(item.key, {
           laneIndex: laneOf.get(item.key) ?? 0,
           laneCount,

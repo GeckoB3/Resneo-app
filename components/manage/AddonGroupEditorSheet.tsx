@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
@@ -51,6 +51,15 @@ type Props = {
   onClose: () => void;
   /** Reports the saved group so a caller (the service form) can auto-link it. */
   onSaved?: (result: AddonGroupUpsertResponse, mode: 'create' | 'edit') => void;
+  /**
+   * The venue's services, when the sheet is opened from the Add-ons LIBRARY
+   * (web #184): an edit then shows a "Linked services" picker and the save
+   * makes the group's links match the ticked set. Omitted (the service form
+   * opened the sheet), links are left to the form, which manages its own.
+   */
+  linkableServices?: readonly { id: string; name: string }[];
+  /** The services the group is linked to today, for seeding the picker. */
+  linkedServiceIds?: readonly string[];
 };
 
 // ---------------------------------------------------------------------------
@@ -84,7 +93,13 @@ const SELECTION_TYPES = [
  * Handles the group metadata + inline add-on list.
  * Admin-only — the parent screen must ensure isAdmin before opening.
  */
-export function AddonGroupEditorSheet({ target, onClose, onSaved }: Props) {
+export function AddonGroupEditorSheet({
+  target,
+  onClose,
+  onSaved,
+  linkableServices,
+  linkedServiceIds,
+}: Props) {
   const { colors } = useTheme();
   const createMutation = useCreateAddonGroup();
   const updateMutation = useUpdateAddonGroup();
@@ -99,6 +114,18 @@ export function AddonGroupEditorSheet({ target, onClose, onSaved }: Props) {
   const [maxSelect, setMaxSelect] = useState('');
   const [hiddenFromOnline, setHiddenFromOnline] = useState(false);
   const [isActive, setIsActive] = useState(true);
+
+  // Linked services (library context only; web #184). The ticked set is what
+  // the save makes the group's links match.
+  const [linkedIds, setLinkedIds] = useState<Set<string>>(() => new Set());
+  const [serviceSearch, setServiceSearch] = useState('');
+  const showLinkPicker = !!linkableServices && target?.mode === 'edit';
+  const visibleLinkable = useMemo(() => {
+    const q = serviceSearch.trim().toLowerCase();
+    const all = linkableServices ?? [];
+    const filtered = q ? all.filter((s) => s.name.toLowerCase().includes(q)) : all;
+    return [...filtered].sort((a, b) => a.name.localeCompare(b.name));
+  }, [linkableServices, serviceSearch]);
 
   // Add-on rows
   const [addons, setAddons] = useState<DraftAddon[]>([]);
@@ -142,6 +169,8 @@ export function AddonGroupEditorSheet({ target, onClose, onSaved }: Props) {
 
       setIsActive(true);
 
+      setLinkedIds(new Set());
+
       // Web parity: seed one blank option row — the API requires at least one option.
       setAddons([
         { key: 'new-addon-seed', name: '', description: '', price: '', cost: '', duration: '0', isActive: true },
@@ -166,7 +195,9 @@ export function AddonGroupEditorSheet({ target, onClose, onSaved }: Props) {
       setHiddenFromOnline(g.hidden_from_online);
        
       setIsActive(g.is_active);
-       
+
+      setLinkedIds(new Set(linkedServiceIds ?? []));
+
       setAddons(target.addons.map((a) => toDraftAddon(a)));
        
       setExpandedAddonKey(null);
@@ -175,6 +206,8 @@ export function AddonGroupEditorSheet({ target, onClose, onSaved }: Props) {
     setError(null);
 
     setConfirmingDelete(false);
+
+    setServiceSearch('');
 
     setSeededId(seedKey);
   // seededId intentionally omitted — including it would cause an infinite loop
@@ -301,9 +334,19 @@ export function AddonGroupEditorSheet({ target, onClose, onSaved }: Props) {
     };
 
     try {
+      // From the library the save also makes the group's links match the
+      // ticked services; the server reads the id array for its own schema
+      // and ignores the other, so both carry the same ids (web #184).
+      const linkIds = showLinkPicker ? [...linkedIds] : null;
       const result =
         target?.mode === 'edit'
-          ? await updateMutation.mutateAsync({ id: target.group.id, group: groupInput })
+          ? await updateMutation.mutateAsync({
+              id: target.group.id,
+              group: groupInput,
+              ...(linkIds
+                ? { service_links: { service_item_ids: linkIds, appointment_service_ids: linkIds } }
+                : {}),
+            })
           : await createMutation.mutateAsync({ group: groupInput });
       hapticSuccess();
       onSaved?.(result, target?.mode === 'edit' ? 'edit' : 'create');
@@ -507,6 +550,103 @@ export function AddonGroupEditorSheet({ target, onClose, onSaved }: Props) {
               <Text variant="bodyMedium">Active</Text>
               <Switch value={isActive} onValueChange={setIsActive} />
             </View>
+
+            {/* Linked services (library context; web #184): which services
+                offer this group. Ticking one here is the same as adding the
+                group from that service's form; saving makes the links match. */}
+            {showLinkPicker ? (
+              <View style={styles.linkSection}>
+                <Text variant="overline" tone="muted">
+                  Linked services ({linkedIds.size})
+                </Text>
+                <Text variant="caption" tone="muted">
+                  The services that offer this group at booking. Untick one to take the group off it.
+                </Text>
+                <Input
+                  label="Find a service"
+                  optional
+                  placeholder="Search services"
+                  value={serviceSearch}
+                  onChangeText={setServiceSearch}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  returnKeyType="search"
+                />
+                <View style={styles.linkActions}>
+                  <Button
+                    label="Select all"
+                    variant="ghost"
+                    size="sm"
+                    onPress={() =>
+                      setLinkedIds((cur) => {
+                        const next = new Set(cur);
+                        for (const s of visibleLinkable) next.add(s.id);
+                        return next;
+                      })
+                    }
+                  />
+                  <Button
+                    label="Clear"
+                    variant="ghost"
+                    size="sm"
+                    onPress={() =>
+                      setLinkedIds((cur) => {
+                        const next = new Set(cur);
+                        for (const s of visibleLinkable) next.delete(s.id);
+                        return next;
+                      })
+                    }
+                  />
+                </View>
+                {visibleLinkable.length === 0 ? (
+                  <Text variant="bodySmall" tone="muted">
+                    {serviceSearch.trim() ? 'No services match.' : 'No services to link yet.'}
+                  </Text>
+                ) : (
+                  visibleLinkable.map((service) => {
+                    const checked = linkedIds.has(service.id);
+                    return (
+                      <Pressable
+                        key={service.id}
+                        accessibilityRole="checkbox"
+                        accessibilityState={{ checked }}
+                        accessibilityLabel={service.name}
+                        onPress={() => {
+                          hapticSelect();
+                          setLinkedIds((cur) => {
+                            const next = new Set(cur);
+                            if (next.has(service.id)) next.delete(service.id);
+                            else next.add(service.id);
+                            return next;
+                          });
+                        }}
+                        style={({ pressed }) => [
+                          styles.linkRow,
+                          {
+                            borderColor: checked ? colors.brand : colors.border,
+                            backgroundColor: checked ? colors.brandSubtle : colors.surface,
+                            opacity: pressed ? 0.7 : 1,
+                          },
+                        ]}>
+                        <View
+                          style={[
+                            styles.checkbox,
+                            {
+                              borderColor: checked ? colors.brand : colors.borderStrong,
+                              backgroundColor: checked ? colors.brand : 'transparent',
+                            },
+                          ]}>
+                          {checked ? <Text style={styles.checkmark}>✓</Text> : null}
+                        </View>
+                        <Text variant="bodyMedium" numberOfLines={1} style={styles.linkName}>
+                          {service.name}
+                        </Text>
+                      </Pressable>
+                    );
+                  })
+                )}
+              </View>
+            ) : null}
 
             {/* Add-ons list */}
             <Text variant="overline" tone="muted">
@@ -737,5 +877,40 @@ const styles = StyleSheet.create({
   },
   flex1: {
     flex: 1,
+  },
+  // ---- Linked services picker (library context) ----
+  linkSection: {
+    gap: spacing.sm,
+  },
+  linkActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  linkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.md,
+    borderWidth: 1,
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: radius.sm,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkmark: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    lineHeight: 15,
+    fontWeight: '700',
+  },
+  linkName: {
+    flex: 1,
+    minWidth: 0,
   },
 });

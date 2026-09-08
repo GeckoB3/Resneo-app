@@ -297,18 +297,36 @@ type AppointmentBlockProps = {
    */
   paid?: boolean;
   /**
-   * This bar rides inside another bar's processing gap (web #177): a larger
-   * radius, so it reads as a card laid over the host.
+   * This bar rides inside another bar's processing gap (web #177). Since web
+   * #184 it looks like any other booking (full lane, ordinary radius); the flag
+   * only lifts it above its host.
    */
   nested?: boolean;
   /**
-   * The bar's processing gaps as px bands from its top (the client is under
-   * the colour, the column is free): drawn as a lighter band under the text.
+   * Stretches of the bar the card does NOT paint, as px bands from its top
+   * (web #185): processing time in the middle of the appointment, the free
+   * foot where processing runs to the end, and the wait between a visit's
+   * services. The grid shows through, so the boundary either side reads like
+   * the end of any booking bar, and the time reads as bookable.
    */
-  processingBands?: readonly { top: number; height: number }[];
+  holes?: readonly { top: number; height: number }[];
   /**
-   * When nested bars cover parts of this bar, the px region (from its top) the
-   * text and buttons keep to. Omitted: the whole bar.
+   * The parts of those holes a tap should treat as empty grid: pressing one
+   * calls `onFreePress` with the wall-clock minute under the finger (snapped
+   * down to five minutes) rather than opening the booking.
+   */
+  freeTaps?: readonly { top: number; height: number; startMinute: number; endMinute: number }[];
+  onFreePress?: (wallMinute: number) => void;
+  /**
+   * The booking's turnover, drawn as a hatched "Buffer" band under the bar: px
+   * from the bar's top (after any processing that runs past the end) and its
+   * height. Nothing can be booked into it; it takes no touches.
+   */
+  bufferBand?: { top: number; height: number } | null;
+  /**
+   * When nested bars or the bar's own free bands cover parts of this bar, the
+   * px region (from its top) the text and buttons keep to. Omitted: the whole
+   * bar.
    */
   contentInset?: { top: number; height: number } | null;
 };
@@ -338,8 +356,10 @@ export function AppointmentBlock({
   actionPending = false,
   complianceFlag,
   paid = false,
-  nested = false,
-  processingBands,
+  holes,
+  freeTaps,
+  onFreePress,
+  bufferBand,
   contentInset,
 }: AppointmentBlockProps) {
   const { colors } = useTheme();
@@ -488,11 +508,7 @@ export function AppointmentBlock({
     // bar's own border, so touching bars of one hue stay two bars.
     <View
       testID="bar-ring"
-      style={[
-        styles.ring,
-        nested && styles.ringNested,
-        { borderColor: hexToRgba(colors.background, 0.9) },
-      ]}>
+      style={[styles.ring, { borderColor: hexToRgba(colors.background, 0.9) }]}>
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`${timeLabel}, ${guestName}, ${serviceName}, ${statusLabel}${
@@ -502,7 +518,6 @@ export function AppointmentBlock({
       onPress={() => onPress(id)}
       style={({ pressed }) => [
         styles.block,
-        nested && styles.blockNested,
         {
           backgroundColor: palette.bg,
           borderColor: palette.border,
@@ -514,21 +529,24 @@ export function AppointmentBlock({
           catches the light down the bar, not a second status colour. */}
       <View style={[styles.accentStripe, { backgroundColor: hexToRgba('#FFFFFF', 0.28) }]} />
 
-      {/* Processing gaps (web: the hatched band): the client is under the
-          colour and the column is free. Lighter than the bar and under the
-          text; a booking taken in the gap is drawn over it as a nested bar. */}
-      {processingBands?.map((band, index) => (
+      {/* Holes (web #185): time the practitioner is free for — processing in
+          the middle of the appointment, the free foot where processing runs to
+          the end, the wait between a visit's services. Painted in the grid's
+          own surface so the bar reads as separate lozenges with the diary
+          showing between them; a booking taken in that time is drawn over it
+          as a nested bar. */}
+      {holes?.map((hole, index) => (
         <View
           key={index}
           pointerEvents="none"
-          testID="processing-band"
+          testID="processing-hole"
           style={[
-            styles.processingBand,
+            styles.hole,
             {
-              top: band.top,
-              height: band.height,
-              backgroundColor: hexToRgba('#FFFFFF', 0.42),
-              borderColor: hexToRgba(palette.text, 0.28),
+              top: hole.top,
+              height: hole.height,
+              backgroundColor: colors.background,
+              borderColor: hexToRgba(palette.border, 0.9),
             },
           ]}
         />
@@ -627,9 +645,68 @@ export function AppointmentBlock({
         pointerEvents="none"
         style={[styles.glossBase, { backgroundColor: hexToRgba('#000000', 0.12) }]}
       />
+
+      {/* The bookable part of each hole takes the tap itself, so booking
+          someone else into a colour's developing time is the same gesture as
+          tapping empty grid, and never opens this booking (web #185). */}
+      {onFreePress
+        ? freeTaps?.map((tap, index) => (
+            <Pressable
+              key={index}
+              testID="processing-free-tap"
+              accessibilityRole="button"
+              accessibilityLabel={`Free from ${minuteLabel(tap.startMinute)} to ${minuteLabel(
+                tap.endMinute,
+              )}: tap to book`}
+              onPress={(event) => {
+                const y = event.nativeEvent.locationY;
+                const frac = tap.height > 0 ? Math.max(0, Math.min(1, y / tap.height)) : 0;
+                const minute = tap.startMinute + frac * (tap.endMinute - tap.startMinute);
+                onFreePress(Math.max(tap.startMinute, Math.floor(minute / 5) * 5));
+              }}
+              style={({ pressed }) => [
+                styles.freeTap,
+                { top: tap.top, height: tap.height },
+                pressed ? { backgroundColor: hexToRgba(palette.accent, 0.12) } : null,
+              ]}
+            />
+          ))
+        : null}
     </Pressable>
+
+    {/* Turnover after the service (and after any processing that runs past
+        it): hatched, labelled, untouchable. It was invisible before, so staff
+        saw empty grid they could not book into (web #185). */}
+    {bufferBand && bufferBand.height > 0 ? (
+      <View
+        pointerEvents="none"
+        testID="buffer-band"
+        style={[
+          styles.bufferBand,
+          {
+            top: bufferBand.top,
+            height: bufferBand.height,
+            backgroundColor: hexToRgba(colors.text, 0.08),
+            borderColor: hexToRgba(colors.text, 0.28),
+          },
+        ]}>
+        {bufferBand.height >= 14 ? (
+          <Text numberOfLines={1} style={[styles.bufferLabel, { color: colors.textMuted }]}>
+            Buffer
+          </Text>
+        ) : null}
+      </View>
+    ) : null}
     </View>
   );
+}
+
+/** "HH:mm" for a wall-clock minute, for the free-tap accessibility label. */
+function minuteLabel(minute: number): string {
+  const clamped = Math.max(0, Math.min(24 * 60 - 1, Math.round(minute)));
+  const h = Math.floor(clamped / 60);
+  const m = clamped % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
 const styles = StyleSheet.create({
@@ -638,18 +715,12 @@ const styles = StyleSheet.create({
     borderRadius: radius.md + 1,
     borderWidth: 1,
   },
-  ringNested: {
-    borderRadius: radius.lg + 1,
-  },
   block: {
     flex: 1,
     borderRadius: radius.md,
     borderWidth: 1,
     overflow: 'hidden',
     flexDirection: 'row',
-  },
-  blockNested: {
-    borderRadius: radius.lg,
   },
   glossTop: {
     position: 'absolute',
@@ -665,13 +736,39 @@ const styles = StyleSheet.create({
     right: 0,
     height: 1,
   },
-  processingBand: {
+  hole: {
     position: 'absolute',
-    // Starts past the status stripe so the stripe stays solid down the bar.
-    left: 5,
+    // Full width, stripe included: the bar stops here and starts again below.
+    left: 0,
     right: 0,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    zIndex: 1,
+  },
+  freeTap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 3,
+  },
+  bufferBand: {
+    position: 'absolute',
+    left: 2,
+    right: 2,
+    borderTopWidth: 1,
+    borderStyle: 'dashed',
+    borderBottomLeftRadius: radius.sm,
+    borderBottomRightRadius: radius.sm,
+    overflow: 'hidden',
+    paddingHorizontal: 6,
+    justifyContent: 'flex-start',
+  },
+  bufferLabel: {
+    fontFamily: fonts.semibold,
+    fontSize: 9,
+    lineHeight: 12,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
   },
   accentStripe: {
     width: 5,

@@ -268,7 +268,12 @@ export default function MoreScreen() {
         </PressableScale>
       ) : null}
 
-      <AskResneoRow onPress={() => router.push('/assistant' as Href)} />
+      {/* Hidden only on an explicit "off" from the venue bootstrap (web #183);
+          an older deploy sends no flag and keeps the row, whose screen still
+          explains a 404. */}
+      {venue?.assistant_enabled !== false ? (
+        <AskResneoRow onPress={() => router.push('/assistant' as Href)} />
+      ) : null}
 
       <View style={styles.section}>
         <Text variant="overline" tone="muted" style={styles.sectionLabel}>

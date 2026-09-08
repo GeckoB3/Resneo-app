@@ -165,4 +165,12 @@ export interface VenueBootstrap {
    * re-sanitises + merges it on PATCH /api/venue.
    */
   booking_page_config?: BookingPageConfig | null;
+  /**
+   * Whether Ask ResNeo is switched on for this venue (web #183, the R27-8
+   * answer): the same check the assistant route runs, so a client can hide its
+   * entry point instead of leading someone to the unavailable message. Absent
+   * on an older deploy, which the More tab reads as "show the row" (the
+   * assistant screen still explains a 404).
+   */
+  assistant_enabled?: boolean;
 }

@@ -3,6 +3,8 @@ import {
   effectiveProcessingTemplate,
   fitProcessingBlocksToDuration,
   parseProcessingTimeBlocks,
+  processingActiveEndMinutes,
+  processingTailMinutes,
 } from '@/lib/booking/processing-time-fit';
 import type { MinuteRange } from '@/lib/calendar/booking-cluster-layout';
 import type { CalendarGridBooking } from '@/types/calendar-grid';
@@ -34,11 +36,14 @@ import type { ManagedService, ProcessingTimeBlock } from '@/types/services-manag
 export interface ProcessingPatternSource {
   processing_time_blocks?: ProcessingTimeBlock[] | null;
   duration_minutes?: number | null;
+  /** Turnover after the service (and after any processing that runs past it); drawn as the buffer band. */
+  buffer_minutes?: number | null;
   variants?:
     | readonly {
         id: string;
         processing_time_blocks?: ProcessingTimeBlock[] | null;
         duration_minutes?: number | null;
+        buffer_minutes?: number | null;
       }[]
     | null;
 }
@@ -110,19 +115,21 @@ function mergeRanges(ranges: MinuteRange[]): MinuteRange[] {
 }
 
 /**
- * The wall-clock free ranges inside a booking that runs `startMin` to `endMin`:
- * each block clipped to the booking, merged and sorted. A block that starts at
- * or after the booking's end is dropped.
+ * The wall-clock free ranges of a booking that starts at `startMin`: each
+ * block from the booking's start, merged and sorted. NOT clamped to `endMin`
+ * (web #185): a block that runs past the booking's end is a wait the
+ * practitioner is free for, which another booking may share the lane in. The
+ * drag guard clips to the span itself (`occupiedRangesMinusGaps`).
  */
 export function processingGapRanges(
   startMin: number,
-  endMin: number,
+  _endMin: number,
   blocks: readonly ProcessingTimeBlock[],
 ): MinuteRange[] {
   return mergeRanges(
     blocks.map((b) => ({
       start: Math.max(startMin, startMin + b.start_minute),
-      end: Math.min(endMin, startMin + b.start_minute + b.duration_minutes),
+      end: startMin + b.start_minute + b.duration_minutes,
     })),
   );
 }
@@ -180,6 +187,116 @@ export function occupiedRangesMinusGaps(
   return out;
 }
 
+/**
+ * The turnover after one booking: the chosen option's buffer, else the
+ * service's, from the pattern lookup (the grid feed carries none). 0 when the
+ * service is not known.
+ */
+export function bookingBufferMinutes(
+  booking: BookingProcessingFields,
+  lookup: ProcessingPatternLookup | null | undefined,
+): number {
+  const serviceId = bookingServiceId(booking);
+  if (!serviceId || !lookup) return 0;
+  const service = lookup(serviceId);
+  if (!service) return 0;
+  const variantId = booking.service_variant_id;
+  const variant = variantId ? service.variants?.find((v) => v.id === variantId) : undefined;
+  return Math.max(0, variant?.buffer_minutes ?? service.buffer_minutes ?? 0);
+}
+
+/**
+ * A booking's free time, split the way the diary treats it (web #185):
+ * `middle` bands sit before the practitioner's last busy stretch; the stretch
+ * from `activeEnd` to the booking's end is not painted at all (the
+ * practitioner is free for good from there); `tailMinutes` runs on past the
+ * booking's end, and the buffer follows it. Wall-clock minutes.
+ */
+export interface BookingFreeRegions {
+  start: number;
+  end: number;
+  /** Where the practitioner's last busy stretch ends; `end` when nothing reaches it. */
+  activeEnd: number;
+  /** Free bands inside the busy part of the booking. */
+  middle: MinuteRange[];
+  /** Processing that runs past `end`. */
+  tailMinutes: number;
+}
+
+export function bookingFreeRegions(
+  booking: BookingProcessingFields,
+  lookup: ProcessingPatternLookup | null | undefined,
+  start: number,
+  end: number,
+): BookingFreeRegions {
+  const core = Math.max(0, end - start);
+  const blocks = bookingProcessingBlocks(booking, lookup, core);
+  const activeEnd = start + processingActiveEndMinutes(blocks, core);
+  const middle = mergeRanges(
+    blocks
+      .map((b) => ({
+        start: start + b.start_minute,
+        end: Math.min(activeEnd, start + b.start_minute + b.duration_minutes),
+      }))
+      .filter((r) => r.end > r.start && r.start < activeEnd),
+  );
+  return { start, end, activeEnd, middle, tailMinutes: processingTailMinutes(blocks, core) };
+}
+
+/**
+ * What a bar paints and what it leaves open, for one visit's cluster.
+ *
+ * - `holes`: wall-clock stretches inside the bar that are NOT painted, so the
+ *   grid shows through: each segment's middle gaps, its trailing free stretch
+ *   (from its active end to its end), and the whole wait between two segments
+ *   (the tail, then the buffer).
+ * - `freeTaps`: the parts of those holes a tap should treat as empty grid and
+ *   book someone else into: middle gaps, trailing stretches, and the WAIT part
+ *   of an inter-segment gap (never the buffer, which nothing can be booked in).
+ * - `bufferBands`: each segment's turnover, from its end plus its tail.
+ */
+export interface ClusterPaintRegions {
+  holes: MinuteRange[];
+  freeTaps: MinuteRange[];
+  bufferBands: MinuteRange[];
+}
+
+export function clusterPaintRegions(
+  bookings: readonly CalendarGridBooking[],
+  lookup: ProcessingPatternLookup | null | undefined,
+  defaultDurationMinutes: number,
+): ClusterPaintRegions {
+  const segments = bookings
+    .map((booking) => ({ booking, ...bookingSpan(booking, defaultDurationMinutes) }))
+    .sort((a, b) => a.start - b.start || a.end - b.end);
+  const holes: MinuteRange[] = [];
+  const freeTaps: MinuteRange[] = [];
+  const bufferBands: MinuteRange[] = [];
+  segments.forEach((seg, index) => {
+    const free = bookingFreeRegions(seg.booking, lookup, seg.start, seg.end);
+    holes.push(...free.middle);
+    freeTaps.push(...free.middle);
+    if (free.activeEnd < seg.end) {
+      holes.push({ start: free.activeEnd, end: seg.end });
+      freeTaps.push({ start: free.activeEnd, end: seg.end });
+    }
+    const next = segments[index + 1];
+    if (next && next.start > seg.end) {
+      holes.push({ start: seg.end, end: next.start });
+      const wait = Math.min(next.start - seg.end, free.tailMinutes);
+      if (wait > 0) freeTaps.push({ start: seg.end, end: seg.end + wait });
+    }
+    if (seg.booking.status !== 'Cancelled' && seg.booking.status !== 'No-Show') {
+      const buffer = bookingBufferMinutes(seg.booking, lookup);
+      if (buffer > 0) {
+        const bandStart = seg.end + free.tailMinutes;
+        bufferBands.push({ start: bandStart, end: bandStart + buffer });
+      }
+    }
+  });
+  return { holes: mergeRanges(holes), freeTaps: mergeRanges(freeTaps), bufferBands };
+}
+
 /** The venue's own services, from `GET /api/venue/appointment-services`. */
 export function patternLookupFromManagedServices(
   services: readonly ManagedService[] | null | undefined,
@@ -190,10 +307,12 @@ export function patternLookupFromManagedServices(
     byId.set(service.id, {
       processing_time_blocks: service.processing_time_blocks ?? null,
       duration_minutes: service.duration_minutes ?? null,
+      buffer_minutes: service.buffer_minutes ?? null,
       variants: (service.variants ?? []).map((v) => ({
         id: v.id,
         processing_time_blocks: v.processing_time_blocks ?? null,
         duration_minutes: v.duration_minutes ?? null,
+        buffer_minutes: v.buffer_minutes ?? null,
       })),
     });
   }
@@ -214,6 +333,7 @@ export function patternLookupFromLinkedServices(
     byId.set(service.id, {
       processing_time_blocks: parseProcessingTimeBlocks(service.processingTimeBlocks),
       duration_minutes: service.durationMinutes ?? null,
+      buffer_minutes: service.bufferMinutes ?? null,
       // The linked feed shares no per-option length, so an option inheriting
       // the parent's pattern reads it at the parent's length.
       variants: (service.variants ?? []).map((v) => ({

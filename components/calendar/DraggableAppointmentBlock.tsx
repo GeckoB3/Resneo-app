@@ -32,7 +32,6 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { AppointmentBlock } from '@/components/calendar/AppointmentBlock';
-import { NESTED_BOOKING_INSET_PX } from '@/lib/calendar/booking-cluster-layout';
 import {
   DRAG_SNAP_MINUTES,
   minutesToTime,
@@ -160,13 +159,21 @@ type DraggableAppointmentBlockProps = {
   laneIndex: number;
   laneCount: number;
   /**
-   * This bar rides inside another bar's processing gap (web #177): indented
-   * from the left and stacked above its host, which shares its lane.
+   * This bar rides inside another bar's processing gap (web #177): it takes
+   * the host's whole lane and stacks above it (web #184), one level per
+   * `nestDepth` so a chain reads top-down.
    */
   nested?: boolean;
-  /** Processing gaps as px bands from the bar's top; see AppointmentBlock. */
-  processingBands?: { top: number; height: number }[];
-  /** The px region the text and buttons keep to when nested bars cover the rest. */
+  nestDepth?: number;
+  /** Unpainted stretches of the bar, as px bands from its top; see AppointmentBlock. */
+  holes?: { top: number; height: number }[];
+  /** The bookable parts of those holes; see AppointmentBlock. */
+  freeTaps?: { top: number; height: number; startMinute: number; endMinute: number }[];
+  /** A tap on a free stretch: the wall-clock minute under the finger. */
+  onFreePress?: (wallMinute: number) => void;
+  /** The turnover band under the bar; see AppointmentBlock. */
+  bufferBand?: { top: number; height: number } | null;
+  /** The px region the text and buttons keep to when nested bars or holes cover the rest. */
   contentInset?: { top: number; height: number };
   /**
    * Vertical scale (px per minute) the parent grid is rendering at. Drives the
@@ -303,7 +310,11 @@ export function DraggableAppointmentBlock({
   laneIndex,
   laneCount,
   nested = false,
-  processingBands,
+  nestDepth = nested ? 1 : 0,
+  holes,
+  freeTaps,
+  onFreePress,
+  bufferBand,
   contentInset,
   pxPerMinute = PX_PER_MINUTE,
   startTime,
@@ -749,13 +760,18 @@ export function DraggableAppointmentBlock({
         { scale: scale.value },
       ],
       height: heightOverride.value >= 0 ? heightOverride.value : height,
-      // A nested bar stacks above its host (which shares its lane) and carries
-      // a soft left shadow so it reads as a card laid over the host's band.
-      zIndex: dragging ? 999 : settled.value ? 50 : 10 + laneIndex + (nested ? 10 : 0),
-      elevation: dragging ? 12 : nested ? 4 : 0,
-      shadowOpacity: dragging ? 0.25 : nested ? 0.22 : 0,
+      // A nested bar stacks above its host (which shares its lane), and each
+      // deeper level above the one it rides in (web #184). Capped under the
+      // settled/dragging tiers whatever the depth.
+      zIndex: dragging
+        ? 999
+        : settled.value
+          ? 50
+          : Math.min(49, 10 + laneIndex + 10 * Math.max(0, nestDepth)),
+      elevation: dragging ? 12 : 0,
+      shadowOpacity: dragging ? 0.25 : 0,
     };
-  }, [height, laneIndex, nested]);
+  }, [height, laneIndex, nestDepth]);
 
   // Arming progress — fades in ~90ms into the hold, fills left→right.
   const holdBarStyle = useAnimatedStyle(() => {
@@ -782,7 +798,6 @@ export function DraggableAppointmentBlock({
             left: `${leftPct}%`,
             width: `${widthPct}%`,
           },
-          nested && styles.nestedRoot,
           animatedWrapperStyle,
         ]}>
         {/* Live badge — time while moving, duration while resizing. Tints amber
@@ -821,7 +836,10 @@ export function DraggableAppointmentBlock({
           laneIndex={laneIndex}
           laneCount={laneCount}
           nested={nested}
-          processingBands={processingBands}
+          holes={holes}
+          freeTaps={freeTaps}
+          onFreePress={onFreePress}
+          bufferBand={bufferBand}
           contentInset={contentInset}
           onPress={onPress}
           onStatusChange={onStatusChange}
@@ -868,13 +886,6 @@ const styles = StyleSheet.create({
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowRadius: 8,
-  },
-  nestedRoot: {
-    // Indented past the host's stripe and a sliver of its band (web #177).
-    paddingLeft: NESTED_BOOKING_INSET_PX + 1,
-    shadowColor: '#022047',
-    shadowOffset: { width: -6, height: 0 },
-    shadowRadius: 6,
   },
   liveLabel: {
     position: 'absolute',
