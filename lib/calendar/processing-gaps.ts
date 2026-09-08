@@ -259,6 +259,41 @@ export interface ClusterPaintRegions {
   holes: MinuteRange[];
   freeTaps: MinuteRange[];
   bufferBands: MinuteRange[];
+  /**
+   * The stretches the bar PAINTS, one rounded lozenge each (web
+   * `paintedPiecesMinutes`): the cluster's span with the holes taken out, so
+   * the boundary either side of a processing period looks exactly like the
+   * end of any booking bar.
+   */
+  pieces: MinuteRange[];
+  /**
+   * Each service of the visit, in start order, with where its painted part
+   * ends (its active end): the grids label every service's busy stretch.
+   */
+  segments: { booking: CalendarGridBooking; start: number; end: number; activeEnd: number }[];
+}
+
+/**
+ * The stretches of `[start, end)` that are not inside any hole, in order (web
+ * `paintedPiecesMinutes`). Holes may run past `end`; they are clipped.
+ */
+export function paintedPieceRanges(
+  start: number,
+  end: number,
+  holes: readonly MinuteRange[],
+): MinuteRange[] {
+  const sorted = [...holes]
+    .map((h) => ({ start: Math.max(start, h.start), end: Math.min(end, h.end) }))
+    .filter((h) => h.end > h.start)
+    .sort((a, b) => a.start - b.start);
+  const pieces: MinuteRange[] = [];
+  let cursor = start;
+  for (const h of sorted) {
+    if (h.start > cursor) pieces.push({ start: cursor, end: h.start });
+    cursor = Math.max(cursor, h.end);
+  }
+  if (cursor < end) pieces.push({ start: cursor, end });
+  return pieces;
 }
 
 export function clusterPaintRegions(
@@ -272,8 +307,10 @@ export function clusterPaintRegions(
   const holes: MinuteRange[] = [];
   const freeTaps: MinuteRange[] = [];
   const bufferBands: MinuteRange[] = [];
+  const labelled: ClusterPaintRegions['segments'] = [];
   segments.forEach((seg, index) => {
     const free = bookingFreeRegions(seg.booking, lookup, seg.start, seg.end);
+    labelled.push({ booking: seg.booking, start: seg.start, end: seg.end, activeEnd: free.activeEnd });
     holes.push(...free.middle);
     freeTaps.push(...free.middle);
     if (free.activeEnd < seg.end) {
@@ -294,7 +331,17 @@ export function clusterPaintRegions(
       }
     }
   });
-  return { holes: mergeRanges(holes), freeTaps: mergeRanges(freeTaps), bufferBands };
+  const mergedHoles = mergeRanges(holes);
+  const first = segments[0];
+  const last = segments[segments.length - 1];
+  const span = first && last ? { start: first.start, end: Math.max(...segments.map((s) => s.end)) } : null;
+  return {
+    holes: mergedHoles,
+    freeTaps: mergeRanges(freeTaps),
+    bufferBands,
+    pieces: span ? paintedPieceRanges(span.start, span.end, mergedHoles) : [],
+    segments: labelled,
+  };
 }
 
 /** The venue's own services, from `GET /api/venue/appointment-services`. */

@@ -84,12 +84,15 @@ type PositionedBooking = {
   nestedInKey?: string;
   nestDepth?: number;
   /**
-   * Stretches of the bar left unpainted (web #185), as px bands from its own
-   * top: middle processing gaps, the free foot where processing runs to the
-   * end, the wait between a visit's services. The grid shows through.
+   * The lozenges the bar paints (web #185), as px bands from its own top: its
+   * span less the middle processing gaps, the free foot where processing runs
+   * to the end, and the wait between a visit's services. The grid shows
+   * through between them and every lozenge end is rounded like a bar end.
    */
-  holes: { top: number; height: number }[];
-  /** The bookable parts of those holes, with the wall-clock minutes they span. */
+  pieces: { top: number; height: number }[];
+  /** A visit's later services, each labelled on its own block of service time. */
+  segments: { top: number; height: number; serviceName: string; timeLabel: string }[];
+  /** The bookable parts of the holes, with the wall-clock minutes they span. */
   freeTaps: { top: number; height: number; startMinute: number; endMinute: number }[];
   /** The turnover band under the bar (px from its top), or null without a buffer. */
   bufferBand: { top: number; height: number } | null;
@@ -452,8 +455,18 @@ export function CalendarDayGrid({
       const paint = clusterPaintRegions(cluster.bookings, processingPatternFor, DEFAULT_DURATION_MINUTES);
       // A host keeps its text (and its buttons, which share the region on the
       // app's bars) off the bars nested in it AND off its own free time, above
-      // the first band or below one at its top edge.
-      const covered = [...(lane.nestedRanges ?? []), ...paint.holes];
+      // the first band or below one at its top edge. On a visit the main text
+      // also stops where the FIRST service's busy stretch ends, so the later
+      // services' own labels never sit under it.
+      const firstSegment = paint.segments[0];
+      const laterSegments = paint.segments.slice(1);
+      const covered = [
+        ...(lane.nestedRanges ?? []),
+        ...paint.holes,
+        ...(laterSegments.length > 0 && firstSegment
+          ? [{ start: firstSegment.activeEnd, end }]
+          : []),
+      ];
       const regions = covered.length > 0 ? hostRegionsAroundNested({ start, end }, covered, 0) : null;
       const lastBuffer = paint.bufferBands[paint.bufferBands.length - 1] ?? null;
       return {
@@ -466,9 +479,15 @@ export function CalendarDayGrid({
         timeLabel: `${minutesToTime(start)}–${minutesToTime(end)}`,
         nestedInKey: lane.nestedInKey,
         nestDepth: lane.nestDepth,
-        holes: paint.holes.map((hole) => ({
-          top: (hole.start - start) * pxPerMinute,
-          height: (Math.min(hole.end, end) - hole.start) * pxPerMinute,
+        pieces: paint.pieces.map((piece) => ({
+          top: (piece.start - start) * pxPerMinute,
+          height: (piece.end - piece.start) * pxPerMinute,
+        })),
+        segments: laterSegments.map((segment) => ({
+          top: (segment.start - start) * pxPerMinute,
+          height: (segment.activeEnd - segment.start) * pxPerMinute,
+          serviceName: segment.booking.serviceName ?? '',
+          timeLabel: `${minutesToTime(segment.start)}–${minutesToTime(segment.end)}`,
         })),
         freeTaps: paint.freeTaps.map((tap) => ({
           top: (tap.start - start) * pxPerMinute,
@@ -932,7 +951,8 @@ export function CalendarDayGrid({
               laneCount={item.laneCount}
               nested={item.nestedInKey != null}
               nestDepth={item.nestDepth}
-              holes={item.holes}
+              pieces={item.pieces}
+              segments={item.segments}
               freeTaps={item.freeTaps}
               // A tap on the bar's free time books someone else in, the same
               // gesture as tapping empty grid (web #185).

@@ -165,8 +165,10 @@ type DraggableAppointmentBlockProps = {
    */
   nested?: boolean;
   nestDepth?: number;
-  /** Unpainted stretches of the bar, as px bands from its top; see AppointmentBlock. */
-  holes?: { top: number; height: number }[];
+  /** The painted lozenges, as px bands from the bar's top; see AppointmentBlock. */
+  pieces?: { top: number; height: number }[];
+  /** A visit's later services, each labelled on its own block; see AppointmentBlock. */
+  segments?: { top: number; height: number; serviceName: string; timeLabel: string }[];
   /** The bookable parts of those holes; see AppointmentBlock. */
   freeTaps?: { top: number; height: number; startMinute: number; endMinute: number }[];
   /** A tap on a free stretch: the wall-clock minute under the finger. */
@@ -311,7 +313,8 @@ export function DraggableAppointmentBlock({
   laneCount,
   nested = false,
   nestDepth = nested ? 1 : 0,
-  holes,
+  pieces,
+  segments,
   freeTaps,
   onFreePress,
   bufferBand,
@@ -836,7 +839,8 @@ export function DraggableAppointmentBlock({
           laneIndex={laneIndex}
           laneCount={laneCount}
           nested={nested}
-          holes={holes}
+          pieces={pieces}
+          segments={segments}
           freeTaps={freeTaps}
           onFreePress={onFreePress}
           bufferBand={bufferBand}

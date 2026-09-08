@@ -2,6 +2,7 @@ import {
   bookingBufferMinutes,
   bookingFreeRegions,
   clusterPaintRegions,
+  paintedPieceRanges,
   patternLookupFromLinkedServices,
   patternLookupFromManagedServices,
 } from '@/lib/calendar/processing-gaps';
@@ -148,6 +149,27 @@ describe('clusterPaintRegions', () => {
       { start: 690, end: 700 },
       { start: 730, end: 745 },
     ]);
+    // Two lozenges, one per service, with the wait between them open; and
+    // each service reported with its busy stretch so the grid can label it.
+    expect(regions.pieces).toEqual([
+      { start: 600, end: 660 },
+      { start: 700, end: 730 },
+    ]);
+    expect(regions.segments.map((s) => [s.booking.id, s.start, s.end, s.activeEnd])).toEqual([
+      ['colour', 600, 660, 660],
+      ['cut', 700, 730, 730],
+    ]);
+  });
+
+  it('paints a middle gap as two lozenges and a free foot as a shorter one (paintedPieceRanges)', () => {
+    expect(paintedPieceRanges(600, 660, [{ start: 620, end: 640 }])).toEqual([
+      { start: 600, end: 620 },
+      { start: 640, end: 660 },
+    ]);
+    // A hole that runs past the end is clipped; one that reaches the end
+    // leaves the foot unpainted.
+    expect(paintedPieceRanges(600, 660, [{ start: 630, end: 700 }])).toEqual([{ start: 600, end: 630 }]);
+    expect(paintedPieceRanges(600, 660, [])).toEqual([{ start: 600, end: 660 }]);
   });
 
   it('draws no buffer for a cancelled or no-show segment', () => {

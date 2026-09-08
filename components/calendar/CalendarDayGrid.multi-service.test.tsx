@@ -114,6 +114,36 @@ describe('CalendarDayGrid — a multi-service visit is one bar', () => {
     expect(screen.getByText('Cut → Colour')).toBeTruthy();
   });
 
+  it('labels every later service on its own block of service time (web #185)', async () => {
+    await renderGrid([
+      booking('b1', '10:00', '10:30', { group_booking_id: 'g1', serviceName: 'Cut' }),
+      booking('b2', '10:30', '11:00', { group_booking_id: 'g1', serviceName: 'Colour' }),
+      booking('b3', '11:00', '11:30', { group_booking_id: 'g1', serviceName: 'Blow-dry' }),
+    ]);
+    // The first service keeps the card's main text; the second and third each
+    // get their own block with the guest's name, the service and the time.
+    const labels = screen.getAllByTestId('segment-label');
+    expect(labels).toHaveLength(2);
+    expect(labels.map((l) => flatten(l.props.style)?.top)).toEqual([
+      30 * PX_PER_MINUTE,
+      60 * PX_PER_MINUTE,
+    ]);
+    expect(screen.getAllByText('Sam Patel')).toHaveLength(3);
+    expect(screen.getByText('Colour')).toBeTruthy();
+    expect(screen.getByText('10:30–11:00')).toBeTruthy();
+    expect(screen.getByText('Blow-dry')).toBeTruthy();
+    expect(screen.getByText('11:00–11:30')).toBeTruthy();
+  });
+
+  it('writes nothing on a later service too short to hold a line', async () => {
+    await renderGrid([
+      booking('b1', '10:00', '10:30', { group_booking_id: 'g1', serviceName: 'Cut' }),
+      booking('b2', '10:30', '10:35', { group_booking_id: 'g1', serviceName: 'Toner' }),
+    ]);
+    // A 5-minute block is 10px at the comfortable scale: below the 14px floor.
+    expect(screen.queryAllByTestId('segment-label')).toHaveLength(0);
+  });
+
   it('opens the visit from its earliest booking', async () => {
     const onBlockPress = jest.fn();
     await renderGrid(

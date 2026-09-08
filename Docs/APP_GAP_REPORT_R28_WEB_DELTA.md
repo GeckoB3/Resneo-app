@@ -452,9 +452,22 @@ rather than the web's per-lozenge DOM:
 5. The linked-column path draws holes and the buffer band too; its free time is not tappable,
    since a read-only column takes no bookings.
 
-Left for later, on purpose: the guest's name repeated on a lozenge after a wait (the app's bar
-has one text region; the visit's later lozenge shows colour only), and the drag footprint
-covering the buffer (the server refuses a landing on one).
+Left for later, on purpose: the drag footprint covering the buffer (the server refuses a
+landing on one).
+
+**Follow-up the same evening (owner's ask): rounded pieces and per-service labels.** The
+first cut painted a hole over a single card, so the boundary at a processing period was a
+straight cut. The bar now paints the web's way (`BookingBarPieces`): `clusterPaintRegions`
+returns `pieces` (`paintedPieceRanges`, the span less the holes) and `AppointmentBlock` draws
+one rounded lozenge per piece, each with the full finish (fill, status border, the pale ring,
+the glass edge, the gloss top and base), while the bar's own box paints nothing, so every
+lozenge end looks like a bar end and the diary shows between them. And every later service of
+a visit is labelled on its own block of service time (`segments`: the guest's name, the
+service and the time, three rows from 42px, two from 28px, one from 14px, nothing below), with
+the first service's main text stopped at its own busy stretch so the labels never sit under it.
+`AppointmentBlock.edges.test.tsx` moved its ring and border assertions to the piece
+(`bar-piece`, `bar-piece-card`); `CalendarDayGrid.multi-service.test.tsx` gained the labels
+cases.
 
 **R28-9.** Hour lines `colors.borderStrong`, half-hour lines `colors.border` at full opacity
 (was 0.55), the alternate band 0.045 (was 0.025), in the single grid, the multi-column grid and

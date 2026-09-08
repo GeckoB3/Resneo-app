@@ -303,13 +303,28 @@ type AppointmentBlockProps = {
    */
   nested?: boolean;
   /**
-   * Stretches of the bar the card does NOT paint, as px bands from its top
-   * (web #185): processing time in the middle of the appointment, the free
-   * foot where processing runs to the end, and the wait between a visit's
-   * services. The grid shows through, so the boundary either side reads like
-   * the end of any booking bar, and the time reads as bookable.
+   * The stretches the bar PAINTS, as px bands from its top (web #185,
+   * `BookingBarPieces`): one rounded lozenge per busy stretch, each with the
+   * full card finish, so processing time in the middle of the appointment,
+   * the free foot where processing runs to the end, and the wait between a
+   * visit's services are gaps the grid shows through, and the boundary either
+   * side of them looks exactly like the end of any booking bar. Omitted: one
+   * piece, the whole bar.
    */
-  holes?: readonly { top: number; height: number }[];
+  pieces?: readonly { top: number; height: number }[];
+  /**
+   * The services of a visit after the first, each with its px band from the
+   * bar's top (its busy stretch) and its own labels: the guest's name, the
+   * service and the time are written on every block of service time where
+   * the space allows, so a later service in a visit reads like a booking of
+   * its own. The first service keeps the card's main text.
+   */
+  segments?: readonly {
+    top: number;
+    height: number;
+    serviceName: string;
+    timeLabel: string;
+  }[];
   /**
    * The parts of those holes a tap should treat as empty grid: pressing one
    * calls `onFreePress` with the wall-clock minute under the finger (snapped
@@ -356,7 +371,8 @@ export function AppointmentBlock({
   actionPending = false,
   complianceFlag,
   paid = false,
-  holes,
+  pieces,
+  segments,
   freeTaps,
   onFreePress,
   bufferBand,
@@ -506,9 +522,7 @@ export function AppointmentBlock({
   return (
     // The pale ring: the grid's surface colour drawn as a hairline outside the
     // bar's own border, so touching bars of one hue stay two bars.
-    <View
-      testID="bar-ring"
-      style={[styles.ring, { borderColor: hexToRgba(colors.background, 0.9) }]}>
+    <View testID="bar-ring" style={styles.ring}>
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`${timeLabel}, ${guestName}, ${serviceName}, ${statusLabel}${
@@ -516,40 +530,36 @@ export function AppointmentBlock({
       }`}
       accessibilityHint="Tap to open. Touch and hold to move."
       onPress={() => onPress(id)}
-      style={({ pressed }) => [
-        styles.block,
-        {
-          backgroundColor: palette.bg,
-          borderColor: palette.border,
-          opacity: pressed ? 0.85 : 1,
-        },
-      ]}>
-      {/* Leading edge (web parity: `CalendarBookingStatusStripe`). The bold
-          fill carries the status, so this is a luminous glass edge that
-          catches the light down the bar, not a second status colour. */}
-      <View style={[styles.accentStripe, { backgroundColor: hexToRgba('#FFFFFF', 0.28) }]} />
-
-      {/* Holes (web #185): time the practitioner is free for — processing in
-          the middle of the appointment, the free foot where processing runs to
-          the end, the wait between a visit's services. Painted in the grid's
-          own surface so the bar reads as separate lozenges with the diary
-          showing between them; a booking taken in that time is drawn over it
-          as a nested bar. */}
-      {holes?.map((hole, index) => (
+      style={({ pressed }) => [styles.block, { opacity: pressed ? 0.85 : 1 }]}>
+      {/* The paint: one rounded lozenge per busy stretch, each with the full
+          card finish (fill, border, the pale ring outside it, the glass edge
+          on the left, the gloss top and grounded base), so the boundary either
+          side of a processing gap or a visit's wait looks exactly like the end
+          of any booking bar and the diary shows through between them (web
+          #185, `BookingBarPieces`). The box itself paints nothing. */}
+      {(pieces && pieces.length > 0 ? pieces : [{ top: 0, height }]).map((piece, index) => (
         <View
           key={index}
           pointerEvents="none"
-          testID="processing-hole"
+          testID="bar-piece"
           style={[
-            styles.hole,
-            {
-              top: hole.top,
-              height: hole.height,
-              backgroundColor: colors.background,
-              borderColor: hexToRgba(palette.border, 0.9),
-            },
-          ]}
-        />
+            styles.pieceRing,
+            { top: piece.top, height: piece.height, borderColor: hexToRgba(colors.background, 0.9) },
+          ]}>
+          <View
+            testID="bar-piece-card"
+            style={[styles.piece, { backgroundColor: palette.bg, borderColor: palette.border }]}>
+            {/* Leading edge (web parity: `CalendarBookingStatusStripe`). The
+                bold fill carries the status, so this is a luminous glass edge
+                that catches the light down the bar, not a second colour. */}
+            <View style={[styles.accentStripe, { backgroundColor: hexToRgba('#FFFFFF', 0.28) }]} />
+            <View
+              testID="bar-gloss"
+              style={[styles.glossTop, { backgroundColor: hexToRgba('#FFFFFF', 0.3) }]}
+            />
+            <View style={[styles.glossBase, { backgroundColor: hexToRgba('#000000', 0.12) }]} />
+          </View>
+        </View>
       ))}
 
       {layout.mode === 'row' ? (
@@ -633,18 +643,44 @@ export function AppointmentBlock({
         </>
       )}
 
-      {/* A glossy top edge and a grounded base edge (the web's inset
-          highlight and shade), which give the lozenge its dimension without
-          a shadow, which Android would turn into elevation. */}
-      <View
-        pointerEvents="none"
-        testID="bar-gloss"
-        style={[styles.glossTop, { backgroundColor: hexToRgba('#FFFFFF', 0.3) }]}
-      />
-      <View
-        pointerEvents="none"
-        style={[styles.glossBase, { backgroundColor: hexToRgba('#000000', 0.12) }]}
-      />
+      {/* Every later service of a visit is labelled on its own block of
+          service time (web #185): the guest's name, the service and the time,
+          as many rows as the block's height allows, so a service after a wait
+          reads like a booking of its own rather than an unmarked stretch. */}
+      {segments?.map((segment, index) => {
+        const rows = segmentLabelRows(segment.height);
+        if (rows === 0) return null;
+        return (
+          <View
+            key={index}
+            pointerEvents="none"
+            testID="segment-label"
+            style={[
+              styles.segmentLabel,
+              squeezed && styles.contentSqueezed,
+              { top: segment.top, height: segment.height },
+            ]}>
+            <Text
+              numberOfLines={1}
+              style={[
+                styles.rowName,
+                { color: palette.text, fontSize: 12, lineHeight: 15 },
+              ]}>
+              {rows === 1 ? `${guestName} · ${segment.serviceName || segment.timeLabel}` : guestName}
+            </Text>
+            {rows >= 2 ? (
+              <Text numberOfLines={1} style={[styles.rowMeta, { color: subtleText }]}>
+                {segment.serviceName || segment.timeLabel}
+              </Text>
+            ) : null}
+            {rows >= 3 && segment.serviceName ? (
+              <Text numberOfLines={1} style={[styles.rowMeta, { color: subtleText }]}>
+                {segment.timeLabel}
+              </Text>
+            ) : null}
+          </View>
+        );
+      })}
 
       {/* The bookable part of each hole takes the tap itself, so booking
           someone else into a colour's developing time is the same gesture as
@@ -701,6 +737,19 @@ export function AppointmentBlock({
   );
 }
 
+/**
+ * How many text rows a later service's block of service time can hold: the
+ * name (with the service folded in) from 14px, name + service from 28px, name
+ * + service + time from 42px. Below 14px nothing is written; the piece's
+ * colour is the honest amount of information.
+ */
+export function segmentLabelRows(heightPx: number): 0 | 1 | 2 | 3 {
+  if (heightPx >= 42) return 3;
+  if (heightPx >= 28) return 2;
+  if (heightPx >= 14) return 1;
+  return 0;
+}
+
 /** "HH:mm" for a wall-clock minute, for the free-tap accessibility label. */
 function minuteLabel(minute: number): string {
   const clamped = Math.max(0, Math.min(24 * 60 - 1, Math.round(minute)));
@@ -710,17 +759,41 @@ function minuteLabel(minute: number): string {
 }
 
 const styles = StyleSheet.create({
+  // The bar's box paints nothing (the pieces do); it keeps the layout and
+  // clips the content to the bar.
   ring: {
     flex: 1,
+  },
+  block: {
+    flex: 1,
+    overflow: 'hidden',
+    flexDirection: 'row',
+  },
+  // One busy stretch: the pale ring in the grid's surface colour outside the
+  // card's own border, both rounded, so every lozenge end reads as a bar end.
+  pieceRing: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
     borderRadius: radius.md + 1,
     borderWidth: 1,
   },
-  block: {
+  piece: {
     flex: 1,
     borderRadius: radius.md,
     borderWidth: 1,
     overflow: 'hidden',
     flexDirection: 'row',
+  },
+  segmentLabel: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    paddingTop: 3,
+    paddingHorizontal: 7,
+    gap: 1,
+    overflow: 'hidden',
+    zIndex: 2,
   },
   glossTop: {
     position: 'absolute',
@@ -735,15 +808,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: 1,
-  },
-  hole: {
-    position: 'absolute',
-    // Full width, stripe included: the bar stops here and starts again below.
-    left: 0,
-    right: 0,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    zIndex: 1,
   },
   freeTap: {
     position: 'absolute',

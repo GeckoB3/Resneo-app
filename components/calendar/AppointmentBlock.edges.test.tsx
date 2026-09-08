@@ -25,16 +25,25 @@ function flatStyle(style: unknown): Record<string, unknown> {
 }
 
 describe('AppointmentBlock edges', () => {
-  it('draws a pale ring outside a 1px status border', async () => {
+  it('draws a pale ring outside a 1px status border, on every painted piece', async () => {
     await render(<AppointmentBlock {...base} />);
-    const ring = flatStyle(screen.getByTestId('bar-ring').props.style);
+    // Since web #185 the bar paints one rounded lozenge per busy stretch, each
+    // carrying the ring and the border; a bar with no gaps is one piece.
+    const pieces = screen.getAllByTestId('bar-piece');
+    expect(pieces).toHaveLength(1);
+    const ring = flatStyle(pieces[0].props.style);
     expect(ring.borderWidth).toBe(1);
     expect(typeof ring.borderColor).toBe('string');
-    const bar = flatStyle(screen.getByLabelText(/Ada Lovelace/).props.style);
-    expect(bar.borderWidth).toBe(1);
+    expect(ring.top).toBe(0);
+    expect(ring.height).toBe(120);
+    const card = flatStyle(screen.getAllByTestId('bar-piece-card')[0].props.style);
+    expect(card.borderWidth).toBe(1);
     // Confirmed: navy fill with its deeper border hue.
-    expect(bar.backgroundColor).toBe('#003B6F');
-    expect(bar.borderColor).toBe('#00284B');
+    expect(card.backgroundColor).toBe('#003B6F');
+    expect(card.borderColor).toBe('#00284B');
+    // The bar's own box paints nothing: the diary shows between pieces.
+    const bar = flatStyle(screen.getByLabelText(/Ada Lovelace/).props.style);
+    expect(bar.backgroundColor).toBeUndefined();
   });
 
   it('adds a glossy top edge', async () => {

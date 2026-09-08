@@ -184,9 +184,11 @@ type PositionedBooking = {
    */
   nestedInKey?: string;
   nestDepth?: number;
-  /** Unpainted stretches of the bar (web #185), as px bands from its own top. */
-  holes: { top: number; height: number }[];
-  /** The bookable parts of those holes, with the wall-clock minutes they span. */
+  /** The lozenges the bar paints (web #185), as px bands from its own top. */
+  pieces: { top: number; height: number }[];
+  /** A visit's later services, each labelled on its own block of service time. */
+  segments: { top: number; height: number; serviceName: string; timeLabel: string }[];
+  /** The bookable parts of the holes, with the wall-clock minutes they span. */
   freeTaps: { top: number; height: number; startMinute: number; endMinute: number }[];
   /** The turnover band under the bar (px from its top), or null without a buffer. */
   bufferBand: { top: number; height: number } | null;
@@ -324,9 +326,16 @@ function positionColumn(
     const lane: BookingClusterLayout = lanes.get(lead.id) ?? { laneIndex: 0, laneCount: 1 };
     // What the bar paints and leaves open (web #185); see CalendarDayGrid.
     const paint = clusterPaintRegions(cluster.bookings, processingPatternFor, DEFAULT_DURATION_MINUTES);
-    // A host keeps its text and buttons off the bars nested in it and off its
-    // own free time; see the same step in CalendarDayGrid.
-    const covered = [...(lane.nestedRanges ?? []), ...paint.holes];
+    // A host keeps its text and buttons off the bars nested in it, off its
+    // own free time, and (on a visit) off the later services' own labels; see
+    // the same step in CalendarDayGrid.
+    const firstSegment = paint.segments[0];
+    const laterSegments = paint.segments.slice(1);
+    const covered = [
+      ...(lane.nestedRanges ?? []),
+      ...paint.holes,
+      ...(laterSegments.length > 0 && firstSegment ? [{ start: firstSegment.activeEnd, end }] : []),
+    ];
     const regions = covered.length > 0 ? hostRegionsAroundNested({ start, end }, covered, 0) : null;
     const lastBuffer = paint.bufferBands[paint.bufferBands.length - 1] ?? null;
     return {
@@ -339,9 +348,15 @@ function positionColumn(
       timeLabel: `${minutesToTime(start)}–${minutesToTime(end)}`,
       nestedInKey: lane.nestedInKey,
       nestDepth: lane.nestDepth,
-      holes: paint.holes.map((hole) => ({
-        top: (hole.start - start) * pxPerMinute,
-        height: (Math.min(hole.end, end) - hole.start) * pxPerMinute,
+      pieces: paint.pieces.map((piece) => ({
+        top: (piece.start - start) * pxPerMinute,
+        height: (piece.end - piece.start) * pxPerMinute,
+      })),
+      segments: laterSegments.map((segment) => ({
+        top: (segment.start - start) * pxPerMinute,
+        height: (segment.activeEnd - segment.start) * pxPerMinute,
+        serviceName: segment.booking.serviceName ?? '',
+        timeLabel: `${minutesToTime(segment.start)}–${minutesToTime(segment.end)}`,
       })),
       freeTaps: paint.freeTaps.map((tap) => ({
         top: (tap.start - start) * pxPerMinute,
@@ -1202,7 +1217,8 @@ function DayColumn({
                 laneIndex={item.laneIndex}
                 laneCount={item.laneCount}
                 nested={item.nestedInKey != null}
-                holes={item.holes}
+                pieces={item.pieces}
+                segments={item.segments}
                 // A read-only column takes no bookings, so its free time is
                 // drawn but not tappable.
                 bufferBand={item.bufferBand}
@@ -1243,7 +1259,8 @@ function DayColumn({
             laneCount={item.laneCount}
             nested={item.nestedInKey != null}
             nestDepth={item.nestDepth}
-            holes={item.holes}
+            pieces={item.pieces}
+            segments={item.segments}
             freeTaps={item.freeTaps}
             // A tap on the bar's free time books someone else in on this
             // column, the same gesture as tapping empty grid (web #185).

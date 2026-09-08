@@ -166,13 +166,15 @@ describe('CalendarDayGrid: a booking taken in a processing gap nests in its host
     expect(bars).toHaveLength(2);
     expect(bars.map((bar) => bar.width)).toEqual(['100%', '100%']);
 
-    // One hole, spanning the gap: 30 minutes down the host, 30 minutes tall
-    // (web #185: a middle gap is a see-through hole, not a pale band).
-    const holes = screen.getAllByTestId('processing-hole');
-    expect(holes).toHaveLength(1);
-    const hole = StyleSheet_flatten(holes[0].props.style);
-    expect(hole?.top).toBe(30 * PX_PER_MINUTE);
-    expect(hole?.height).toBe(30 * PX_PER_MINUTE);
+    // The tint paints two lozenges either side of the gap (0–30 and 60–90
+    // minutes down the bar), and the cut one; each lozenge end is a bar end
+    // (web #185: a middle gap is a see-through gap between rounded pieces).
+    const pieces = screen.getAllByTestId('bar-piece').map((p) => StyleSheet_flatten(p.props.style));
+    expect(pieces.map((p) => [p?.top, p?.height])).toEqual([
+      [0, 30 * PX_PER_MINUTE],
+      [60 * PX_PER_MINUTE, 30 * PX_PER_MINUTE],
+      [0, 30 * PX_PER_MINUTE],
+    ]);
     // And the gap takes a tap of its own, which books someone else in rather
     // than opening the tint.
     expect(screen.getAllByTestId('processing-free-tap')).toHaveLength(1);
@@ -214,7 +216,8 @@ describe('CalendarDayGrid: a booking taken in a processing gap nests in its host
     );
 
     expect(renderedBars().map((bar) => bar.width)).toEqual(['100%', '100%']);
-    expect(screen.getAllByTestId('processing-hole')).toHaveLength(1);
+    // Two lozenges for the tint, one for the cut.
+    expect(screen.getAllByTestId('bar-piece')).toHaveLength(3);
   });
 
   it('leaves the free foot unpainted and tappable, and hangs the buffer under the bar (web #185)', async () => {
@@ -238,9 +241,13 @@ describe('CalendarDayGrid: a booking taken in a processing gap nests in its host
       />,
     );
 
-    const holes = screen.getAllByTestId('processing-hole');
-    expect(holes).toHaveLength(1);
-    expect(StyleSheet_flatten(holes[0].props.style)?.top).toBe(30 * PX_PER_MINUTE);
+    // The card stops where the practitioner stops: one lozenge, 30 minutes
+    // tall, and nothing painted in the foot.
+    const pieces = screen.getAllByTestId('bar-piece');
+    expect(pieces).toHaveLength(1);
+    const piece = StyleSheet_flatten(pieces[0].props.style);
+    expect(piece?.top).toBe(0);
+    expect(piece?.height).toBe(30 * PX_PER_MINUTE);
 
     const buffer = screen.getByTestId('buffer-band');
     const bufferStyle = StyleSheet_flatten(buffer.props.style);
