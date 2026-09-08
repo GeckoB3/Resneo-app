@@ -154,7 +154,8 @@ export function BookingDetailSheet({
   const acceptUnpaidGuard = useAcceptUnpaidGuard();
   const isAdmin = staffQuery.data?.staff?.role === 'admin';
   const scrollRef = useRef<ScrollView>(null);
-  const { onScroll, spacerStyle } = useSheetKeyboardScroll(scrollRef);
+  const { onScroll, onLayout, onContentSizeChange, spacerStyle } =
+    useSheetKeyboardScroll(scrollRef);
 
   const payload = dashboardQuery.data;
   const isAppointmentVenue = payload
@@ -294,6 +295,8 @@ export function BookingDetailSheet({
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="interactive"
             onScroll={onScroll}
+            onLayout={onLayout}
+            onContentSizeChange={onContentSizeChange}
             scrollEventThrottle={16}
             showsVerticalScrollIndicator={false}>
             {/* Keyboard overlays the body; this spacer adds scrollable room at the

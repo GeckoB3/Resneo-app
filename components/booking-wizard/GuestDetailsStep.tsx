@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import Animated from 'react-native-reanimated';
 
+import { useSheetKeyboardScroll } from '@/components/bookings/sheet-scroll-context';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Segmented } from '@/components/ui/Segmented';
@@ -90,6 +92,14 @@ export function GuestDetailsStep({
   onSourceChange,
 }: GuestDetailsStepProps) {
   const { colors } = useTheme();
+  // Keyboard avoidance. The wizard lives on a plain `Screen` (no
+  // `keyboardAvoiding`), and the app runs edge-to-edge, so nothing built-in
+  // lifts a field off the soft keyboard on Android (see the note in
+  // sheet-scroll-context.tsx). Let the keyboard overlay the scroll body, pad the
+  // scroll CONTENT by its height, and lift the focused field by only its overlap.
+  const scrollRef = useRef<ScrollView>(null);
+  const { onScroll, onLayout, onContentSizeChange, spacerStyle } =
+    useSheetKeyboardScroll(scrollRef);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<GuestField, string>>>({});
   const [addressErrors, setAddressErrors] = useState<Partial<Record<AddressField, string>>>({});
   const [searchInput, setSearchInput] = useState('');
@@ -164,225 +174,233 @@ export function GuestDetailsStep({
 
   return (
     <ScrollView
+      ref={scrollRef}
       style={styles.flex}
-      contentContainerStyle={styles.container}
+      contentContainerStyle={styles.scroll}
       keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
+      onScroll={onScroll}
+      onLayout={onLayout}
+      onContentSizeChange={onContentSizeChange}
+      scrollEventThrottle={16}
       showsVerticalScrollIndicator={false}>
-      <Text variant="heading">Guest details</Text>
+      <Animated.View style={[styles.container, spacerStyle]}>
+        <Text variant="heading">Guest details</Text>
 
-      {source && onSourceChange ? (
-        <View style={styles.sourceBlock}>
-          <Text variant="label" tone="secondary">
-            Booking type
-          </Text>
-          <Segmented
-            options={[
-              { value: 'phone', label: 'Phone' },
-              { value: 'walk-in', label: 'Walk-in' },
-            ]}
-            value={source}
-            onChange={onSourceChange}
+        {source && onSourceChange ? (
+          <View style={styles.sourceBlock}>
+            <Text variant="label" tone="secondary">
+              Booking type
+            </Text>
+            <Segmented
+              options={[
+                { value: 'phone', label: 'Phone' },
+                { value: 'walk-in', label: 'Walk-in' },
+              ]}
+              value={source}
+              onChange={onSourceChange}
+            />
+          </View>
+        ) : null}
+
+        {!readOnlyContact ? (
+          <Input
+            label="Find an existing guest"
+            optional
+            placeholder="Search name or phone"
+            value={searchInput}
+            onChangeText={setSearchInput}
+            autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="search"
           />
-        </View>
-      ) : null}
+        ) : null}
 
-      {!readOnlyContact ? (
-        <Input
-          label="Find an existing guest"
-          optional
-          placeholder="Search name or phone"
-          value={searchInput}
-          onChangeText={setSearchInput}
-          autoCapitalize="none"
-          autoCorrect={false}
-          returnKeyType="search"
-        />
-      ) : null}
-
-      {!readOnlyContact ? (
-        <>
-          {results.length > 0 ? (
-            <View style={styles.results}>
-              {results.map((guest) => (
-                <Pressable
-                  key={guest.id}
-                  accessibilityRole="button"
-                  onPress={() => pickGuest(guest)}
-                  style={({ pressed }) => [
-                    styles.resultRow,
-                    { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? 0.85 : 1 },
-                  ]}>
-                  <Text variant="bodyMedium" numberOfLines={1}>
-                    {guestDisplayName(guest)}
-                  </Text>
-                  {guestMeta(guest) ? (
-                    <Text variant="caption" tone="muted" numberOfLines={1}>
-                      {guestMeta(guest)}
+        {!readOnlyContact ? (
+          <>
+            {results.length > 0 ? (
+              <View style={styles.results}>
+                {results.map((guest) => (
+                  <Pressable
+                    key={guest.id}
+                    accessibilityRole="button"
+                    onPress={() => pickGuest(guest)}
+                    style={({ pressed }) => [
+                      styles.resultRow,
+                      { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? 0.85 : 1 },
+                    ]}>
+                    <Text variant="bodyMedium" numberOfLines={1}>
+                      {guestDisplayName(guest)}
                     </Text>
-                  ) : null}
-                </Pressable>
-              ))}
-            </View>
-          ) : debouncedSearch.length >= MIN_SEARCH_LENGTH && guestsQuery.isFetching ? (
-            // Loading affordance — on a slow link the search would otherwise
-            // appear to do nothing until results pop in. (results is empty here
-            // because keepPreviousData has no prior page for a first search.)
-            <View
-              style={[styles.loadingRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
-              accessibilityRole="progressbar"
-              accessibilityLabel="Searching guests">
-              <ActivityIndicator size="small" color={colors.brand} />
+                    {guestMeta(guest) ? (
+                      <Text variant="caption" tone="muted" numberOfLines={1}>
+                        {guestMeta(guest)}
+                      </Text>
+                    ) : null}
+                  </Pressable>
+                ))}
+              </View>
+            ) : debouncedSearch.length >= MIN_SEARCH_LENGTH && guestsQuery.isFetching ? (
+              // Loading affordance — on a slow link the search would otherwise
+              // appear to do nothing until results pop in. (results is empty here
+              // because keepPreviousData has no prior page for a first search.)
+              <View
+                style={[styles.loadingRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                accessibilityRole="progressbar"
+                accessibilityLabel="Searching guests">
+                <ActivityIndicator size="small" color={colors.brand} />
+                <Text variant="caption" tone="muted">
+                  Searching…
+                </Text>
+              </View>
+            ) : debouncedSearch.length >= MIN_SEARCH_LENGTH ? (
               <Text variant="caption" tone="muted">
-                Searching…
+                No matching guests — enter details below.
               </Text>
-            </View>
-          ) : debouncedSearch.length >= MIN_SEARCH_LENGTH ? (
-            <Text variant="caption" tone="muted">
-              No matching guests — enter details below.
-            </Text>
-          ) : null}
+            ) : null}
 
-          <View style={styles.divider}>
-            <View style={[styles.line, { backgroundColor: colors.border }]} />
-            <Text variant="caption" tone="muted">
-              or enter details
-            </Text>
-            <View style={[styles.line, { backgroundColor: colors.border }]} />
+            <View style={styles.divider}>
+              <View style={[styles.line, { backgroundColor: colors.border }]} />
+              <Text variant="caption" tone="muted">
+                or enter details
+              </Text>
+              <View style={[styles.line, { backgroundColor: colors.border }]} />
+            </View>
+          </>
+        ) : null}
+
+        <View style={styles.nameRow}>
+          <View style={styles.nameField}>
+            <Input
+              autoCapitalize="words"
+              autoComplete="given-name"
+              editable={!readOnlyContact}
+              error={fieldErrors.first_name}
+              label="First name"
+              optional
+              onChangeText={(first_name) => editContact({ first_name })}
+              placeholder="First name"
+              value={value.first_name}
+            />
           </View>
-        </>
-      ) : null}
-
-      <View style={styles.nameRow}>
-        <View style={styles.nameField}>
-          <Input
-            autoCapitalize="words"
-            autoComplete="given-name"
-            editable={!readOnlyContact}
-            error={fieldErrors.first_name}
-            label="First name"
-            optional
-            onChangeText={(first_name) => editContact({ first_name })}
-            placeholder="First name"
-            value={value.first_name}
-          />
-        </View>
-        <View style={styles.nameField}>
-          <Input
-            autoCapitalize="words"
-            autoComplete="family-name"
-            editable={!readOnlyContact}
-            error={fieldErrors.last_name}
-            label="Surname"
-            optional
-            onChangeText={(last_name) => editContact({ last_name })}
-            placeholder="Surname"
-            value={value.last_name}
-          />
-        </View>
-      </View>
-      <Input
-        autoCapitalize="none"
-        autoComplete="email"
-        editable={!readOnlyContact}
-        error={fieldErrors.email}
-        keyboardType="email-address"
-        label="Email"
-        optional
-        onChangeText={(email) => editContact({ email })}
-        placeholder="you@example.com"
-        textContentType="emailAddress"
-        value={value.email}
-      />
-      <Input
-        autoComplete="tel"
-        editable={!readOnlyContact}
-        error={fieldErrors.phone}
-        keyboardType="phone-pad"
-        label="Phone"
-        optional={isWalkIn}
-        required={!isWalkIn}
-        onChangeText={(phone) => editContact({ phone })}
-        placeholder="Phone number"
-        textContentType="telephoneNumber"
-        value={value.phone}
-      />
-
-      {collectClientAddress ? (
-        <View style={styles.addressBlock}>
-          <Text variant="label" tone="secondary">
-            Service address
-          </Text>
-          <Text variant="caption" tone="muted">
-            Where should the practitioner travel to for this appointment?
-          </Text>
-          <Input
-            autoCapitalize="words"
-            autoComplete="address-line1"
-            error={addressErrors.address_line1}
-            label="Address line 1"
-            required={!isWalkIn}
-            optional={isWalkIn}
-            onChangeText={(address_line1) => onChange({ ...value, address_line1 })}
-            placeholder="Street address"
-            textContentType="streetAddressLine1"
-            value={value.address_line1 ?? ''}
-          />
-          <Input
-            autoCapitalize="words"
-            autoComplete="address-line2"
-            label="Address line 2"
-            optional
-            onChangeText={(address_line2) => onChange({ ...value, address_line2 })}
-            placeholder="Flat, building (optional)"
-            textContentType="streetAddressLine2"
-            value={value.address_line2 ?? ''}
-          />
-          <View style={styles.nameRow}>
-            <View style={styles.nameField}>
-              <Input
-                autoCapitalize="words"
-                error={addressErrors.address_city}
-                label="Town or city"
-                required={!isWalkIn}
-                optional={isWalkIn}
-                onChangeText={(address_city) => onChange({ ...value, address_city })}
-                placeholder="Town or city"
-                textContentType="addressCity"
-                value={value.address_city ?? ''}
-              />
-            </View>
-            <View style={styles.nameField}>
-              <Input
-                autoCapitalize="characters"
-                error={addressErrors.address_postcode}
-                label="Postcode"
-                required={!isWalkIn}
-                optional={isWalkIn}
-                onChangeText={(address_postcode) => onChange({ ...value, address_postcode })}
-                placeholder="Postcode"
-                textContentType="postalCode"
-                value={value.address_postcode ?? ''}
-              />
-            </View>
+          <View style={styles.nameField}>
+            <Input
+              autoCapitalize="words"
+              autoComplete="family-name"
+              editable={!readOnlyContact}
+              error={fieldErrors.last_name}
+              label="Surname"
+              optional
+              onChangeText={(last_name) => editContact({ last_name })}
+              placeholder="Surname"
+              value={value.last_name}
+            />
           </View>
         </View>
-      ) : null}
+        <Input
+          autoCapitalize="none"
+          autoComplete="email"
+          editable={!readOnlyContact}
+          error={fieldErrors.email}
+          keyboardType="email-address"
+          label="Email"
+          optional
+          onChangeText={(email) => editContact({ email })}
+          placeholder="you@example.com"
+          textContentType="emailAddress"
+          value={value.email}
+        />
+        <Input
+          autoComplete="tel"
+          editable={!readOnlyContact}
+          error={fieldErrors.phone}
+          keyboardType="phone-pad"
+          label="Phone"
+          optional={isWalkIn}
+          required={!isWalkIn}
+          onChangeText={(phone) => editContact({ phone })}
+          placeholder="Phone number"
+          textContentType="telephoneNumber"
+          value={value.phone}
+        />
 
-      <Input
-        label="Comments or requests"
-        optional
-        placeholder="Anything we should know (access needs, preferences, running late…)"
-        value={value.special_requests ?? ''}
-        onChangeText={(special_requests) =>
-          onChange({ ...value, special_requests: special_requests || undefined })
-        }
-        autoCapitalize="sentences"
-        maxLength={500}
-        multiline
-        numberOfLines={2}
-      />
+        {collectClientAddress ? (
+          <View style={styles.addressBlock}>
+            <Text variant="label" tone="secondary">
+              Service address
+            </Text>
+            <Text variant="caption" tone="muted">
+              Where should the practitioner travel to for this appointment?
+            </Text>
+            <Input
+              autoCapitalize="words"
+              autoComplete="address-line1"
+              error={addressErrors.address_line1}
+              label="Address line 1"
+              required={!isWalkIn}
+              optional={isWalkIn}
+              onChangeText={(address_line1) => onChange({ ...value, address_line1 })}
+              placeholder="Street address"
+              textContentType="streetAddressLine1"
+              value={value.address_line1 ?? ''}
+            />
+            <Input
+              autoCapitalize="words"
+              autoComplete="address-line2"
+              label="Address line 2"
+              optional
+              onChangeText={(address_line2) => onChange({ ...value, address_line2 })}
+              placeholder="Flat, building (optional)"
+              textContentType="streetAddressLine2"
+              value={value.address_line2 ?? ''}
+            />
+            <View style={styles.nameRow}>
+              <View style={styles.nameField}>
+                <Input
+                  autoCapitalize="words"
+                  error={addressErrors.address_city}
+                  label="Town or city"
+                  required={!isWalkIn}
+                  optional={isWalkIn}
+                  onChangeText={(address_city) => onChange({ ...value, address_city })}
+                  placeholder="Town or city"
+                  textContentType="addressCity"
+                  value={value.address_city ?? ''}
+                />
+              </View>
+              <View style={styles.nameField}>
+                <Input
+                  autoCapitalize="characters"
+                  error={addressErrors.address_postcode}
+                  label="Postcode"
+                  required={!isWalkIn}
+                  optional={isWalkIn}
+                  onChangeText={(address_postcode) => onChange({ ...value, address_postcode })}
+                  placeholder="Postcode"
+                  textContentType="postalCode"
+                  value={value.address_postcode ?? ''}
+                />
+              </View>
+            </View>
+          </View>
+        ) : null}
 
-      <Button label="Continue" fullWidth onPress={handleContinue} />
+        <Input
+          label="Comments or requests"
+          optional
+          placeholder="Anything we should know (access needs, preferences, running late…)"
+          value={value.special_requests ?? ''}
+          onChangeText={(special_requests) =>
+            onChange({ ...value, special_requests: special_requests || undefined })
+          }
+          autoCapitalize="sentences"
+          maxLength={500}
+          multiline
+          numberOfLines={2}
+        />
+
+        <Button label="Continue" fullWidth onPress={handleContinue} />
+      </Animated.View>
     </ScrollView>
   );
 }
@@ -390,6 +408,9 @@ export function GuestDetailsStep({
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
+  },
+  scroll: {
+    flexGrow: 1,
   },
   container: {
     gap: spacing.md,
