@@ -416,8 +416,8 @@ describe('buildMultiServicePayload', () => {
     });
 
     it('sends the group card-hold decision, including on a walk-in', () => {
-      // The route reads an omitted `require_card_hold` as TRUE, so waiving a
-      // hold means sending false explicitly. Walk-ins are offered the hold
+      // The decision is sent explicitly either way (since web #187 an omitted
+      // `require_card_hold` means no hold). Walk-ins are offered the hold
       // (D6) even though they are never offered a deposit.
       const holdPerson: GroupPerson = {
         label: 'Alex',

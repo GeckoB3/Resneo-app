@@ -220,7 +220,7 @@ export interface CreateMultiServicePayload {
   email?: string;
   phone?: string;
   source: BookingSource;
-  services: Array<{
+  services: {
     service_id: string;
     practitioner_id: string;
     start_time: string;
@@ -232,7 +232,7 @@ export interface CreateMultiServicePayload {
      * server. Honoured for `phone` / `walk-in` only. Omitted = catalogue length.
      */
     duration_minutes?: number;
-  }>;
+  }[];
   dietary_notes?: string;
   /**
    * Staff discretion over money. Honoured by the route only for the `phone` /
@@ -255,7 +255,7 @@ export interface CreateGroupPayload {
   email?: string;
   phone?: string;
   source: BookingSource;
-  people: Array<{
+  people: {
     person_label: string;
     practitioner_id: string;
     appointment_service_id: string;
@@ -263,7 +263,7 @@ export interface CreateGroupPayload {
     addons?: { addon_id: string }[];
     booking_date: string;
     booking_time: string;
-  }>;
+  }[];
   dietary_notes?: string;
   /** As `CreateMultiServicePayload`: one decision covers the whole group. */
   require_deposit?: boolean;
@@ -278,7 +278,7 @@ export interface CreateGroupPayload {
 export interface StaffChargeDecision {
   /** Staff ticked "Require deposit" / "Require payment". */
   requireDeposit?: boolean;
-  /** Staff left the card-hold toggle on. Defaults to on server-side when omitted. */
+  /** Staff turned the card-hold toggle on. Omitted means no hold server-side (web #187). */
   requireCardHold?: boolean;
 }
 

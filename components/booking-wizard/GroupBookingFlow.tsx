@@ -150,7 +150,7 @@ export function GroupBookingFlow({
    * defaults `/api/booking/create-group` applies to an omitted field.
    */
   const [requireDeposit, setRequireDeposit] = useState(false);
-  const [requireCardHold, setRequireCardHold] = useState(true);
+  const [requireCardHold, setRequireCardHold] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [complianceError, setComplianceError] = useState<string | null>(null);
 
@@ -330,12 +330,11 @@ export function GroupBookingFlow({
         source,
         people,
         /**
-         * Staff's decisions for the group. Sending nothing left the route's two
-         * defaults standing — no deposit, but a card hold ON — so a group
-         * containing a card-hold service always held a card and staff had no
-         * way to say otherwise. `buildGroupPayload` drops `require_deposit` for
-         * a walk-in and omits `require_card_hold` unless there is a hold to
-         * decide about.
+         * Staff's decisions for the group, sent explicitly: the route's
+         * defaults for an omitted field are no deposit and (since web #187) no
+         * hold, and the toggles here match them. `buildGroupPayload` drops
+         * `require_deposit` for a walk-in and omits `require_card_hold` unless
+         * there is a hold to decide about.
          */
         charges: {
           requireDeposit: showChargeCheckbox && requireDeposit,

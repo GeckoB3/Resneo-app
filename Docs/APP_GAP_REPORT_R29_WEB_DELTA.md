@@ -29,7 +29,7 @@ web summary was corrected where the code disagrees with it (§2).
 | R29-7 | Per-calendar amended hours, read side: closure bands and the Working-today chip already honour `availability_exceptions`; the web deploy alone lights them up. The schedule-preview month grid ignores overrides | Wrong data (small) | **Built** 2026-09-09 (§9, §23) |
 | R29-8 | Per-calendar amended hours, write side: no editor in the app (`PUT/DELETE /api/venue/calendar-amended-hours`) | Parity | §9 |
 | R29-9 | Staff "Override availability": additive; the app has no tick box. Walk-in keeps its own silent bypass | Parity, a feature | §10 |
-| R29-10 | Card holds: the server default flipped to no hold; the app always sends the toggle explicitly for a card-hold entity, so nothing changes on the wire. The app's toggle still DEFAULTS ON and its copy is the old one; seven comments state the wrong server default | Parity (UX drift) | Build (§11) |
+| R29-10 | Card holds: the server default flipped to no hold; the app always sends the toggle explicitly for a card-hold entity, so nothing changes on the wire. The app's toggle still DEFAULTS ON and its copy is the old one; seven comments state the wrong server default | Parity (UX drift) | **Built** 2026-09-09 (§11, §24) |
 | R29-11 | Canonical processing shape: the calendar, wizard chain, Modify sheet and detail already agree with it. But lengthening a service in the app's form without touching its periods silently reverts the length on save (the server re-fits the stored blocks and canonicalises) | Wrong data, both sides; local fix | Build (§12) |
 | R29-12 | Collective service sync: additive; the app's catalogue builder keeps working but shows no sync state and lacks the three new actions. Booking-page settings: the combined page URL has no Copy in the app | Parity | §13 |
 | R29-13 | #186: the app already sends the outside-hours override on every calendar move, reschedule and Modify save. The dry runs now echo `outside_hours`; the app could show the web's amber note | Parity (minor) | §14 |
@@ -596,3 +596,14 @@ a day off does not reopen an amended day, and leave still wins. The month grid d
 day plain with an "Amended" chip and a warning-coloured border rather than a period tint, and
 the picked-day detail reads "Rule: amended hours for this date (note), set on the Closures tab."
 `ScheduleTimelineSheet` passes the calendar's overrides. Five unit tests on the summariser.
+
+## 24. Built: R29-10, the card-hold toggle (2026-09-09)
+
+The three staff toggles (`ConfirmStep`, `BookingFlowPrimitives`, `GroupBookingFlow`) default
+OFF, matching the web's four flows and the server's omitted-field default. The sublabel follows
+the switch (`staffCardHoldToggleSublabel`): "On: the guest gets a link to add their card, charged
+only if they do not show. The booking is cancelled if no card is added within 24 hours." /
+"Off: no card is taken, so a no-show cannot be charged." (`CARD_HOLD_LINK_TIMEOUT_HOURS = 24`).
+The fee line under the toggle is gone; the fee still shows on the confirmation. The seven
+comments that stated the old server default are corrected. The wire is unchanged: the app
+already sent the toggle's value explicitly for every card-hold entity.

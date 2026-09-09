@@ -325,7 +325,7 @@ export function ConfirmStep({
         paymentRequirement: service.paymentRequirement,
         feePerUnitPence: baseDeposit,
       });
-  const [requireCardHold, setRequireCardHold] = useState(true);
+  const [requireCardHold, setRequireCardHold] = useState(false);
 
   // The web folds the appointment's free-text comment into `dietary_notes`
   // (DetailsStep maps "Comments or requests" → dietary_notes). Mirror that: the
@@ -391,9 +391,9 @@ export function ConfirmStep({
       source,
       segments: multiServiceSegments ?? [],
       // Both toggles' values used to be dropped here, so each was a silent
-      // no-op on every chain: the deposit was charged whatever the catalogue
-      // said, and the hold defaulted on because the route treats an omitted
-      // `require_card_hold` as true.
+      // no-op on every chain. The hold is sent explicitly for a card-hold
+      // entity: since web #187 an omitted `require_card_hold` means NO hold,
+      // and the toggle defaults off to match.
       charges: { requireDeposit, ...(staffCardHold ? { requireCardHold } : {}) },
       address: collectClientAddress
         ? {

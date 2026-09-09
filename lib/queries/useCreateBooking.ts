@@ -52,10 +52,10 @@ export interface CreateBookingPayload {
   /** Force Stripe deposit link generation even for phone bookings. */
   require_deposit?: boolean;
   /**
-   * Staff card-hold toggle (spec §7.6/D6): for a card-hold entity, `false`
-   * waives the hold (booking created like a no-deposit booking). Omitted or
-   * `true` keeps the default-on hold: booking held Pending + card request link
-   * sent. Walk-ins included (unlike `require_deposit`).
+   * Staff card-hold toggle (spec §7.6/D6): for a card-hold entity, `true`
+   * asks the guest for their card (booking held Pending + card request link
+   * sent); `false` or omitted takes no hold (since web #187 the server reads an
+   * omitted value as no hold). Walk-ins included (unlike `require_deposit`).
    */
   require_card_hold?: boolean;
   /**

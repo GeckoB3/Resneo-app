@@ -12,7 +12,7 @@ import { ApiError } from '@/lib/api/client';
 import {
   STAFF_CARD_HOLD_LINK_SENT_LINE,
   STAFF_CARD_HOLD_TOGGLE_LABEL,
-  STAFF_CARD_HOLD_TOGGLE_SUBLABEL,
+  staffCardHoldToggleSublabel,
   resolveStaffEntityCardHold,
   staffCardHoldFeeLine,
 } from '@/lib/booking/card-hold';
@@ -147,8 +147,8 @@ type BookingFlowConfirmProps = {
   depositPence?: number | null;
   /**
    * The offering's resolved `payment_requirement`. When it is `card_hold` with
-   * a positive fee the "Require deposit" toggle is replaced by the default-on
-   * "Card hold" toggle
+   * a positive fee the "Require deposit" toggle is replaced by the "Card hold"
+   * toggle (off by default since web #187, as the server's omitted value is)
    * (spec §7.6/D6, walk-ins included) and the payload carries
    * `require_card_hold`.
    */
@@ -231,7 +231,7 @@ export function BookingFlowConfirm({
   const requireDeposit = false;
   // Card hold toggle (spec §7.6/D6): default ON (the entity requires it);
   // staff may switch it off case by case. Walk-ins included.
-  const [requireCardHold, setRequireCardHold] = useState(true);
+  const [requireCardHold, setRequireCardHold] = useState(false);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const [complianceError, setComplianceError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -250,8 +250,8 @@ export function BookingFlowConfirm({
     setSubmitError(null);
     const payload: CreateBookingPayload = {
       ...buildPayload({ source, requireDeposit }),
-      // The card-hold toggle rides its own flag; sending false waives the hold
-      // for this booking (the server defaults to true when omitted).
+      // The card-hold toggle rides its own flag, sent explicitly either way:
+      // since web #187 an omitted `require_card_hold` means NO hold.
       ...(staffCardHold ? { require_card_hold: requireCardHold } : {}),
     };
     createBooking.mutate(payload, {
@@ -428,7 +428,7 @@ export function BookingFlowConfirm({
         <Pressable
           accessibilityRole="checkbox"
           accessibilityState={{ checked: requireCardHold }}
-          accessibilityLabel={`${STAFF_CARD_HOLD_TOGGLE_LABEL}. ${STAFF_CARD_HOLD_TOGGLE_SUBLABEL}`}
+          accessibilityLabel={`${STAFF_CARD_HOLD_TOGGLE_LABEL}. ${staffCardHoldToggleSublabel(requireCardHold)}`}
           onPress={() => setRequireCardHold((prev) => !prev)}
           style={({ pressed }) => [
             styles.depositToggle,
@@ -453,13 +453,8 @@ export function BookingFlowConfirm({
           <View style={styles.depositToggleLabel}>
             <Text variant="bodyMedium">{STAFF_CARD_HOLD_TOGGLE_LABEL}</Text>
             <Text variant="caption" tone="muted">
-              {STAFF_CARD_HOLD_TOGGLE_SUBLABEL}
+              {staffCardHoldToggleSublabel(requireCardHold)}
             </Text>
-            {requireCardHold ? (
-              <Text variant="caption" tone="muted">
-                {staffCardHoldFeeLine(staffCardHold.feePence)}
-              </Text>
-            ) : null}
           </View>
         </Pressable>
       ) : null}

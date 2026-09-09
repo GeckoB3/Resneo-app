@@ -3,10 +3,10 @@
  *
  * Staff are always allowed to take a booking without collecting anything: they
  * take payment at the counter, on account, or not at all, and that is a
- * per-booking call. So the charge control is an opt-IN, unchecked by default,
- * and the card hold is an opt-OUT, on by default — the same two defaults the
- * server applies to an omitted field (`resolveStaffVisitChargeDiscretion`:
- * `require_deposit ?? false`, `require_card_hold ?? true`).
+ * per-booking call. So both controls are opt-INs, unchecked by default — the
+ * same two defaults the server applies to an omitted field
+ * (`resolveStaffVisitChargeDiscretion`: `require_deposit ?? false`,
+ * `require_card_hold ?? false` since web #187).
  *
  * Extracted because a third caller needed them. A single booking can only ever
  * carry ONE of the two, so the confirm step used to render whichever applied
@@ -20,8 +20,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { Text } from '@/components/ui/Text';
 import {
   STAFF_CARD_HOLD_TOGGLE_LABEL,
-  STAFF_CARD_HOLD_TOGGLE_SUBLABEL,
-  staffCardHoldFeeLine,
+  staffCardHoldToggleSublabel,
 } from '@/lib/booking/card-hold';
 import { formatPence } from '@/lib/format';
 import { hapticSelect } from '@/lib/haptics';
@@ -117,35 +116,33 @@ export function StaffRequireChargeCheckbox({
 }
 
 /**
- * "Card hold" — the opt-out for authorising a no-show fee (§7.6/D6).
+ * "Card hold" — the opt-in for authorising a no-show fee (§7.6/D6).
  *
- * Default on, and offered on walk-ins too: unlike a deposit, a hold takes no
- * money at booking, so there is nothing for staff to collect at the counter
- * instead.
+ * Off by default since web #187 (as the server reads an omitted field), and
+ * offered on walk-ins too: unlike a deposit, a hold takes no money at booking,
+ * so there is nothing for staff to collect at the counter instead. The
+ * sublabel follows the switch so staff can see what each position does; the
+ * fee is shown on the confirmation, not here.
  */
 export function StaffCardHoldToggle({
   checked,
   onChange,
-  feePence,
 }: {
   checked: boolean;
   onChange: (next: boolean) => void;
-  feePence: number;
+  /** Kept for callers; the fee is no longer shown under the toggle. */
+  feePence?: number;
 }) {
+  const sublabel = staffCardHoldToggleSublabel(checked);
   return (
     <CheckRow
       checked={checked}
       onToggle={() => onChange(!checked)}
-      accessibilityLabel={`${STAFF_CARD_HOLD_TOGGLE_LABEL}. ${STAFF_CARD_HOLD_TOGGLE_SUBLABEL}`}
+      accessibilityLabel={`${STAFF_CARD_HOLD_TOGGLE_LABEL}. ${sublabel}`}
       title={STAFF_CARD_HOLD_TOGGLE_LABEL}>
       <Text variant="caption" tone="muted">
-        {STAFF_CARD_HOLD_TOGGLE_SUBLABEL}
+        {sublabel}
       </Text>
-      {checked ? (
-        <Text variant="caption" tone="muted">
-          {staffCardHoldFeeLine(feePence)}
-        </Text>
-      ) : null}
     </CheckRow>
   );
 }
