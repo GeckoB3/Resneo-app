@@ -38,6 +38,7 @@ import {
   PX_PER_MINUTE,
   timeToMinutes,
 } from '@/components/calendar/grid-layout';
+import { resizePaintPieces, shiftBufferBand, trimPaintRegions } from '@/lib/calendar/resize-paint';
 import { hapticError, hapticSelect, hapticSuccess } from '@/lib/haptics';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -790,6 +791,15 @@ export function DraggableAppointmentBlock({
   // The block is rendered at the override height while/after a resize; feed that
   // same height to the content so its row density matches the visible size.
   const densityHeight = renderHeightOverride >= 0 ? renderHeightOverride : height;
+  // The painted regions describe the stored length; while the bottom edge is
+  // held at another height the last busy stretch follows it and the buffer
+  // band rides the edge, so the bar visibly grows and shrinks with the drag
+  // and its trailing corner stays rounded (see `resize-paint.ts`).
+  const resizing = renderHeightOverride >= 0 && renderHeightOverride !== height;
+  const livePieces = resizing ? resizePaintPieces(pieces, height, densityHeight) : pieces;
+  const liveSegments = resizing ? trimPaintRegions(segments, densityHeight) : segments;
+  const liveFreeTaps = resizing ? trimPaintRegions(freeTaps, densityHeight) : freeTaps;
+  const liveBufferBand = resizing ? shiftBufferBand(bufferBand, height, densityHeight) : bufferBand;
 
   return (
     <GestureDetector gesture={dragGesture}>
@@ -839,11 +849,11 @@ export function DraggableAppointmentBlock({
           laneIndex={laneIndex}
           laneCount={laneCount}
           nested={nested}
-          pieces={pieces}
-          segments={segments}
-          freeTaps={freeTaps}
+          pieces={livePieces}
+          segments={liveSegments}
+          freeTaps={liveFreeTaps}
           onFreePress={onFreePress}
-          bufferBand={bufferBand}
+          bufferBand={liveBufferBand}
           contentInset={contentInset}
           onPress={onPress}
           onStatusChange={onStatusChange}

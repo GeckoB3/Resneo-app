@@ -542,6 +542,27 @@ export default function CalendarScreen() {
 
   const closeMoveNotice = useCallback(() => setMoveNotice(null), []);
 
+  /**
+   * Announce a committed drag. A move (or a reassign) opens the notify sheet,
+   * because the guest may need telling. A pure resize has nothing to ask: the
+   * guest is due when they were and the server sent no email, so a sheet with
+   * only Undo and Done just got in the way of the next drag. It gets a toast,
+   * keeping Undo as its action.
+   */
+  const raiseChangeNotice = useCallback(
+    (notice: NonNullable<typeof moveNotice>) => {
+      if (notice.startMoved || notice.reassigned) {
+        setMoveNotice(notice);
+        return;
+      }
+      toast.success(notice.previous.visit ? 'Visit length updated' : 'Duration updated', {
+        actionLabel: 'Undo',
+        onAction: () => undoReschedule(notice.previous, { restoreLength: notice.lengthChanged }),
+      });
+    },
+    [toast, undoReschedule],
+  );
+
   const handleNotifyMove = useCallback(() => {
     if (!moveNotice) return;
     const name = moveNotice.guestName;
@@ -1403,7 +1424,7 @@ export default function CalendarScreen() {
               ? { skip_booking_modification_guest_notification: true }
               : { defer_modification_guest_notification: true }),
           });
-          setMoveNotice({
+          raiseChangeNotice({
             // The endpoint notifies once, against the visit's first service.
             bookingId: input.leadBookingId,
             guestName: input.guestName,
@@ -1425,7 +1446,7 @@ export default function CalendarScreen() {
         }
       })();
     },
-    [anchor, visitScheduleById, removePending, toast],
+    [anchor, visitScheduleById, removePending, toast, raiseChangeNotice],
   );
 
   const commitDrag = useCallback(
@@ -1475,7 +1496,7 @@ export default function CalendarScreen() {
               : { deferGuestNotification: true }),
           });
           // Drop haptic already fired in the drag worklet; confirm + prompt.
-          setMoveNotice({
+          raiseChangeNotice({
             bookingId: input.bookingId,
             guestName: input.previousTarget.guestName,
             previous: input.previousTarget,
@@ -1496,7 +1517,7 @@ export default function CalendarScreen() {
         }
       })();
     },
-    [anchor, rescheduleById, removePending, toast],
+    [anchor, rescheduleById, removePending, toast, raiseChangeNotice],
   );
 
   // Shared commit for a drag MOVE — vertical (same column) or cross-column (with
@@ -2918,24 +2939,16 @@ export default function CalendarScreen() {
       {/* After a drag MOVE the guest notification is deferred, so prompt the
           staff member: notify the guest of the new time, skip, or undo.
 
-          After a drag RESIZE there is nothing to notify about: the guest is due
-          at the same time, and the server only emails when the start moves.
-          This sheet drops the notify offer accordingly, keeping Undo (the app's
-          only undo for a drag). Offering "Notify" here told a guest their
-          appointment had moved when it had not. */}
+          A reassign at the same time is still a move (to another person's
+          column), but the guest is due when they were and the server sent no
+          email, so the notify offer is withheld and only Undo and Done remain.
+          A pure RESIZE never opens this sheet: `raiseChangeNotice` gives it a
+          toast with Undo instead. */}
       <Sheet visible={moveNotice !== null} onClose={closeMoveNotice}>
         <Text variant="subheading">
-          {/* A reassign at the same time is still a move, just to another
-              person's column, so it must not read as "Duration updated". A visit
-              says so: what moved was several services, and Undo puts all of them
-              back. */}
-          {moveNotice?.startMoved || moveNotice?.reassigned
-            ? moveNotice?.previous.visit
-              ? 'Visit moved'
-              : 'Booking moved'
-            : moveNotice?.previous.visit
-              ? 'Visit length updated'
-              : 'Duration updated'}
+          {/* A visit says so: what moved was several services, and Undo puts
+              all of them back. */}
+          {moveNotice?.previous.visit ? 'Visit moved' : 'Booking moved'}
         </Text>
         <Text variant="caption" tone="muted">
           {!moveNotice
