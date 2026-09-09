@@ -166,6 +166,13 @@ type DraggableAppointmentBlockProps = {
    */
   nested?: boolean;
   nestDepth?: number;
+  /** "Visit 1/2" on one service of a multi-service visit (web #187); see AppointmentBlock. */
+  visitChip?: string | null;
+  /** A seam with a sibling of the visit at the top / bottom edge. */
+  spineTop?: boolean;
+  spineBottom?: boolean;
+  /** The status whose colour the bar takes, when not its own (a visit shares its anchor's). */
+  paletteStatus?: string | null;
   /** The painted lozenges, as px bands from the bar's top; see AppointmentBlock. */
   pieces?: { top: number; height: number }[];
   /** A visit's later services, each labelled on its own block; see AppointmentBlock. */
@@ -313,6 +320,10 @@ export function DraggableAppointmentBlock({
   laneIndex,
   laneCount,
   nested = false,
+  visitChip,
+  spineTop,
+  spineBottom,
+  paletteStatus,
   nestDepth = nested ? 1 : 0,
   pieces,
   segments,
@@ -849,6 +860,10 @@ export function DraggableAppointmentBlock({
           laneIndex={laneIndex}
           laneCount={laneCount}
           nested={nested}
+          visitChip={visitChip}
+          spineTop={spineTop}
+          spineBottom={spineBottom}
+          paletteStatus={paletteStatus}
           pieces={livePieces}
           segments={liveSegments}
           freeTaps={liveFreeTaps}

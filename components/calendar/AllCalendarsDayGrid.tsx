@@ -81,8 +81,13 @@ import { Text } from '@/components/ui/Text';
 
 import { arrivalToggleTargets, statusChangeTargets } from '@/lib/calendar/bar-actions';
 import {
+  visitChipLabel,
+  visitSiblingIndex,
+  visitTouchingEdges,
+  type VisitPosition,
+} from '@/lib/calendar/visit-siblings';
+import {
   clusterCalendarBookings,
-  clusterLengthFloorMinutes,
   type CalendarBookingCluster,
 } from '@/lib/calendar/cluster-bookings';
 import { isNonWorkingBlock, isOccupyingBlock, narrowWorkingRanges } from '@/lib/calendar/occupying-blocks';
@@ -179,6 +184,13 @@ type PositionedBooking = {
   /** True duration (end − start) in minutes — feeds the resize gesture. */
   durationMinutes: number;
   timeLabel: string;
+  /** One service of a visit (web #187): chip, seams with its siblings, the visit's colour. */
+  visitChip: string | null;
+  spineTop: boolean;
+  spineBottom: boolean;
+  paletteStatus: string | null;
+  /** Rows the drag's conflict check ignores: the bar's own, plus its visit's siblings here. */
+  conflictIds: string[];
   /**
    * Set when this bar rides inside another bar's processing gap (web #177):
    * drawn above its host in the host's lane, `nestDepth` levels down a chain.
@@ -277,9 +289,9 @@ type AllCalendarsDayGridProps = {
 };
 
 /**
- * Lay out one column's VISITS into lanes on TRUE minute ranges. Bookings sharing
- * a group id become one bar spanning the whole visit, so a multi-service
- * appointment stops looking like several back-to-back ones.
+ * Lay out one column's bookings into lanes on TRUE minute ranges. One bar per
+ * row (web #187): a visit's services are independent bars that carry a chip,
+ * the visit's colour and a spine where two of them touch.
  */
 function positionColumn(
   bookings: CalendarGridBooking[],
@@ -287,25 +299,30 @@ function positionColumn(
   pxPerMinute: number,
   minBlockHeight: number,
   processingPatternFor: ProcessingPatternLookup | null | undefined,
+  /** Where each row stands in its visit, counted over the whole day (every column). */
+  siblings?: Map<string, VisitPosition>,
+  /** Every row's status on the day, so a visit's anchor colour is found across columns. */
+  anchorStatusById?: Map<string, string>,
 ): PositionedBooking[] {
-  const raw = clusterCalendarBookings(
-    bookings.map((booking) => {
-      const start = timeToMinutes(booking.startTime);
-      let end = booking.endTime ? timeToMinutes(booking.endTime) : start + DEFAULT_DURATION_MINUTES;
-      if (end <= start) end = start + DEFAULT_DURATION_MINUTES;
-      return { booking, start, end };
-    }),
-  );
+  const items = bookings.map((booking) => {
+    const start = timeToMinutes(booking.startTime);
+    let end = booking.endTime ? timeToMinutes(booking.endTime) : start + DEFAULT_DURATION_MINUTES;
+    if (end <= start) end = start + DEFAULT_DURATION_MINUTES;
+    return { booking, start, end };
+  });
+  const raw = clusterCalendarBookings(items, siblings);
 
   // Nesting + lanes on true minute ranges (web `layoutOverlapClusters`, #177):
   // a booking taken inside another's processing gap rides in the host's lane,
   // drawn over the host's band; whatever still overlaps splits into lanes.
   const gapsByLead = new Map<string, MinuteRange[]>();
+  const spanById = new Map<string, number>();
   for (const cluster of raw) {
     gapsByLead.set(
       cluster.lead.id,
       clusterProcessingGaps(cluster.bookings, processingPatternFor, DEFAULT_DURATION_MINUTES),
     );
+    spanById.set(cluster.lead.id, cluster.end - cluster.start);
   }
   const lanes = layoutOverlapClusters(
     raw.map(({ lead, start, end }) => ({ key: lead.id, start, end, gaps: gapsByLead.get(lead.id) })),
@@ -339,6 +356,18 @@ function positionColumn(
     ];
     const regions = covered.length > 0 ? hostRegionsAroundNested({ start, end }, covered, 0) : null;
     const lastBuffer = paint.bufferBands[paint.bufferBands.length - 1] ?? null;
+    // One service of a visit (web #187): chip, seams within this column, and
+    // the colour of the visit's earliest service on the day.
+    const visitEdges = cluster.visit
+      ? visitTouchingEdges({
+          row: lead,
+          rows: bookings,
+          columnIdOf: () => 'column',
+          spanMinutesOf: (row) => spanById.get(row.id) ?? DEFAULT_DURATION_MINUTES,
+          toMinutes: timeToMinutes,
+        })
+      : null;
+    const anchorStatus = cluster.visit ? anchorStatusById?.get(cluster.visit.anchorId) : undefined;
     return {
       cluster,
       top: (start - gridStartMin) * pxPerMinute,
@@ -347,6 +376,20 @@ function positionColumn(
       laneCount: lane.laneCount,
       durationMinutes: end - start,
       timeLabel: `${minutesToTime(start)}–${minutesToTime(end)}`,
+      visitChip: cluster.visit ? visitChipLabel(cluster.visit) : null,
+      spineTop: visitEdges?.top ?? false,
+      spineBottom: visitEdges?.bottom ?? false,
+      paletteStatus:
+        anchorStatus != null && cluster.visit!.anchorId !== lead.id ? anchorStatus : null,
+      conflictIds: cluster.visit
+        ? bookings
+            .filter(
+              (b) =>
+                b.group_booking_id?.trim() === cluster.visit!.groupId &&
+                !CONFLICT_IGNORED_STATUSES.has(b.status),
+            )
+            .map((b) => b.id)
+        : cluster.ids,
       nestedInKey: lane.nestedInKey,
       nestDepth: lane.nestDepth,
       pieces: paint.pieces.map((piece) => ({
@@ -444,6 +487,14 @@ export function AllCalendarsDayGrid({
   const liftedColumn = useSharedValue(-1);
   const columnIds = useMemo(() => calendars.map((c) => c.calendarId), [calendars]);
   const moveRanges = useMemo(() => columnMoveRanges(calendars), [calendars]);
+  // A visit's services may sit on different columns (web #187): the chip counts
+  // every service on the day, and every bar wears the earliest one's colour.
+  const allBookings = useMemo(() => calendars.flatMap((c) => c.bookings), [calendars]);
+  const visitPositions = useMemo(() => visitSiblingIndex(allBookings), [allBookings]);
+  const anchorStatusById = useMemo(
+    () => new Map(allBookings.map((b) => [b.id, b.status] as const)),
+    [allBookings],
+  );
 
   // ── Edge auto-scroll during a cross-column drag ───────────────────────────
   // The columns ScrollView is frozen while a drag is armed (the pan owns the
@@ -717,6 +768,8 @@ export function AllCalendarsDayGrid({
                   <DayColumn
                     key={cal.calendarId}
                     column={cal}
+                    visitPositions={visitPositions}
+                    anchorStatusById={anchorStatusById}
                     columnIndex={index}
                     columnWidth={columnWidth}
                     columnPitch={columnPitch}
@@ -817,8 +870,13 @@ function DayColumn({
   onDragColumnReject,
   pendingActionIds,
   processingPatternFor,
+  visitPositions,
+  anchorStatusById,
 }: {
   column: AllCalendarColumn;
+  /** See `positionColumn`: a visit's chip and colour count the whole day, not one column. */
+  visitPositions?: Map<string, VisitPosition>;
+  anchorStatusById?: Map<string, string>;
   /** This column's index in the grid (own columns are first). */
   columnIndex: number;
   /** Resolved (fill-to-width) column width. */
@@ -875,16 +933,24 @@ function DayColumn({
         pxPerMinute,
         minBlockHeight,
         processingPatternFor,
+        visitPositions,
+        anchorStatusById,
       ),
-    [column.bookings, gridStartMin, pxPerMinute, minBlockHeight, processingPatternFor],
+    [
+      column.bookings,
+      gridStartMin,
+      pxPerMinute,
+      minBlockHeight,
+      processingPatternFor,
+      visitPositions,
+      anchorStatusById,
+    ],
   );
 
   /**
-   * A quick action on a merged bar applies to the WHOLE visit (web parity with
-   * `quickPatchBookingCluster`) — advancing one service and leaving its siblings
-   * behind would be worse than not offering the action. Segments already in the
-   * target state are skipped. One stable handler per column rather than a
-   * closure per bar.
+   * A quick action on a bar writes that bar's booking (web #187); a row
+   * already in the target state is skipped. One stable handler per column
+   * rather than a closure per bar.
    */
   const clusterByLeadId = useMemo(() => {
     const map = new Map<string, CalendarBookingCluster>();
@@ -1210,6 +1276,10 @@ function DayColumn({
                 serviceName={item.cluster.serviceLabel}
                 timeLabel={item.timeLabel}
                 status={item.cluster.status}
+            visitChip={item.visitChip}
+            spineTop={item.spineTop}
+            spineBottom={item.spineBottom}
+            paletteStatus={item.paletteStatus}
                 clientArrivedAt={item.cluster.lead.client_arrived_at}
                 staffAttendanceConfirmedAt={item.cluster.lead.staff_attendance_confirmed_at}
                 guestAttendanceConfirmedAt={item.cluster.lead.guest_attendance_confirmed_at}
@@ -1237,19 +1307,13 @@ function DayColumn({
             serviceName={item.cluster.serviceLabel}
             timeLabel={item.timeLabel}
             status={item.cluster.status}
-            // A merged VISIT drags and resizes as one booking (the commit goes
-            // through the visit endpoint); a merged PARTY does not. See the same
-            // gate in CalendarDayGrid.
-            draggable={
-              (!item.cluster.isMultiSegment || item.cluster.isVisit) &&
-              MOVABLE_STATUSES.has(item.cluster.status)
-            }
-            segmentIds={item.cluster.ids}
-            minDurationMinutes={
-              item.cluster.isVisit
-                ? clusterLengthFloorMinutes(item.cluster)
-                : undefined
-            }
+            visitChip={item.visitChip}
+            spineTop={item.spineTop}
+            spineBottom={item.spineBottom}
+            paletteStatus={item.paletteStatus}
+            // One service of a visit drags and resizes on its own (web #187).
+            draggable={MOVABLE_STATUSES.has(item.cluster.status)}
+            segmentIds={item.conflictIds}
             clientArrivedAt={item.cluster.lead.client_arrived_at}
             staffAttendanceConfirmedAt={item.cluster.lead.staff_attendance_confirmed_at}
             guestAttendanceConfirmedAt={item.cluster.lead.guest_attendance_confirmed_at}

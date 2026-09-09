@@ -344,6 +344,23 @@ export function toVisitEditTarget(visit: AppointmentVisit, groupBookingId: strin
 }
 
 /**
+ * The editing view of ONE service of a visit (web #187: services move and
+ * resize alone on the diary). `services` holds that row only, so a request
+ * built from it names nothing else and an undo restores nothing else.
+ */
+export function visitEditTargetForService(
+  visit: AppointmentVisit,
+  groupBookingId: string,
+  bookingId: string,
+): VisitEditTarget {
+  const whole = toVisitEditTarget(visit, groupBookingId);
+  return {
+    ...whole,
+    services: whole.services.filter((s) => s.bookingId === bookingId),
+  };
+}
+
+/**
  * The shortest a visit can be made by its length control: the whole visit less
  * whatever the LAST service can give up. Since web #187 a length change is that
  * service's alone (shortening one service no longer pulls the next forward), so

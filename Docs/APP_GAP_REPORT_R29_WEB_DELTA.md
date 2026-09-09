@@ -23,7 +23,7 @@ web summary was corrected where the code disagrees with it (§2).
 | R29-1 | The visit schedule endpoint's body is now `shift` OR `services`; the app still sends the deleted flat fields, so every visit move, resize, reschedule, Modify open/check/save and undo answers 400. A multi-service visit cannot be moved or modified from the app | **Breaks live flow** | **Built** 2026-09-09 (§3, §16) |
 | R29-2 | Start and Complete are per service now; the app's bar quick actions fan Seated/Completed out to every row of a visit (re-imposing the old cascade), the bar takes its colour and actions from the lead row, and the detail panel has no per-row Start/Complete and no derived visit status | Wrong behaviour | **Built** 2026-09-09 (§4, §17) |
 | R29-3 | The app's visit model assumes one day and one calendar; the web now lets a visit's services sit on different days and calendars, so chain/gap maths and the Bookings-tab collapse are wrong for such a visit | Wrong data | **Built** 2026-09-09 (§5, §18) |
-| R29-4 | Calendar: the app merges a visit into one bar; the web now draws one bar per service with a visit chip, shared palette and spine, and per-row drag/resize | Parity, a decision | §6 |
+| R29-4 | Calendar: the app merges a visit into one bar; the web now draws one bar per service with a visit chip, shared palette and spine, and per-row drag/resize | Parity, a decision | **Built** 2026-09-09, option 2 (§6, §19) |
 | R29-5 | Linked venues: the siblings query never sends `owner_venue_id`, so a visit opened from a partner column shows one service; the linked-calendar feed's new `groupBookingId` / `personLabel` are ignored | Parity | §7 |
 | R29-6 | Hours: the app already meets the whole written-down contract (409 → confirm → acknowledge, ISO `days_off` never sent). The "crashed and did not save" report matches a pre-existing APP defect: the "Save anyway?" ConfirmSheet is a second modal opened over the hours Sheet, which iOS drops silently | **Breaks live flow (iOS), app-side** | Build (§8) |
 | R29-7 | Per-calendar amended hours, read side: closure bands and the Working-today chip already honour `availability_exceptions`; the web deploy alone lights them up. The schedule-preview month grid ignores overrides | Wrong data (small) | Build (§9) |
@@ -498,3 +498,32 @@ The visit model carries each service's day and calendar:
 
 Not in this build: a per-service date/time editor in the Modify sheet (the web's `services`
 mode editors); the app changes a visit's services' lengths only through the last service.
+
+## 19. Built: R29-4, option 2 (2026-09-09)
+
+One bar per service, as the web draws it since #187:
+
+- `clusterCalendarBookings` no longer merges the rows sharing a `group_booking_id` (visit or
+  party): one cluster per booking, keeping the cluster shape so the grids, the tray targets and
+  the drag kept their plumbing. Each cluster carries `visit: VisitPosition | null` from the new
+  `lib/calendar/visit-siblings.ts` (a port of the web module: `visitSiblingIndex`,
+  `visitChipLabel`, `visitTouchingEdges`, `ownSiblingOverlapCount`).
+- The bar: a "Visit 1/2" chip ahead of the name, the visit's earliest service's colour on every
+  bar (`paletteStatus`; the tray and label still read the row's own status), and a short spine
+  in the visit's accent across the seam where two of its bars touch in one column. The
+  multi-calendar grid counts the chip over the whole day (a visit split across columns), the
+  spine only within a column.
+- The drag: each service moves and resizes on its own. `commitVisitDrag` names that row alone
+  (`services` mode, no known-rows guard), undo restores that row, the guest email is deferred
+  against the moved row, and a bar's conflict check ignores its visit's live siblings so landing
+  on one is allowed but toasted ("This now overlaps another service of the same visit."). The
+  notice reads "Service moved" / "Service length updated". No "move the rest" follow-up: the web
+  has none.
+- Quick actions write the pressed bar's row; R29-2's per-service targeting on a merged bar is
+  gone with the merged bar (the server still cascades the visit-wide facts).
+- Gone: the visit-wide drag floor, the merged bar's per-segment labels and wait holes (the wait
+  between two services is grid now), and the drag gate on `isVisit`. `bar-actions.ts` is back
+  to its one rule.
+
+Device pass owed: three services of a visit drawn as three bars with chips and spines; one
+dragged onto another (allowed, toasted); one resized; Start on the second bar only.

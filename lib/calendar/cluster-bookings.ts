@@ -1,42 +1,21 @@
 /**
- * Merge the bookings of one visit into a single calendar bar.
+ * One calendar bar per booking row, with what a row of a visit needs to say so.
  *
- * A visit taken as several bookings — back-to-back services for one client, or a
- * group booked together — shares a `group_booking_id`. The grid drew one bar per
- * ROW, so a three-service visit looked like three separate appointments stacked
- * up the column. This turns each group into one bar.
+ * Until web #187 the grid MERGED the rows sharing a `group_booking_id` — a
+ * multi-service visit or a party — into one bar spanning the lot. The services
+ * of a visit are independent now (each has its own day, calendar, length and
+ * Start / Complete), so the web draws one bar per service, and so does the app.
+ * What still says "these belong together" is identity rather than geometry:
+ * a chip on every bar ("Visit 1/2"), the earliest service's colour shared by
+ * all of them, and a spine across the seam where two meet — see
+ * `visit-siblings.ts`.
  *
- * WEB PARITY, deliberately: clustering keys on `group_booking_id` ALONE, exactly
- * like the web calendar's `clusterMultiServiceBookings`. It does NOT apply the
- * bookings list's extra rule (`isMultiServiceVisitGroup`, which excludes rows
- * carrying a `person_label`), so a group of several PEOPLE in one column merges
- * too. That is the owner's call: group bookings are taken under a single contact
- * and the individuals are freetext names, so little is lost, and the booking
- * detail still tells the two apart — `GroupVisitCards` switches on `person_label`
- * to render "Services in this visit" or a per-person list.
- *
- * Because a party merges too, `isVisit` is what the drag path gates on — several
- * services of one guest may be moved and resized as one bar (the visit endpoint
- * re-lays them), several PEOPLE may not.
- *
- * ONE DELIBERATE DIFFERENCE from the web. Its `clusterTimeRange` ends the bar at
- * the LAST-STARTING segment's end:
- *
- *     const last = items[items.length - 1];
- *     const end = timeToMinutes(last.booking_time) + getDuration(last);
- *
- * For consecutive services that is right — the last to start is the last to
- * finish. For a group booked at the SAME time it is not: three people starting
- * at 10:00 for 60, 30 and 45 minutes sort arbitrarily among themselves, so if
- * the 30-minute one lands last the bar renders 10:00–10:30 for a visit that runs
- * to 11:00 — too short, and the grid would then let something else sit on top of
- * it. We take the MAXIMUM end instead: identical for every consecutive visit,
- * and correct for concurrent ones.
+ * The cluster shape survives (one booking per cluster) so the grids, the tray
+ * targets and the drag keep their plumbing: `lead` is the booking, `ids` is
+ * `[lead.id]`, and `visit` says where the row stands in its visit, or null.
  */
 
-import { timeToMinutes } from '@/components/calendar/grid-layout';
-import { isServiceVisit, visitLengthFloorMinutes } from '@/lib/booking/appointment-visit';
-import { visitLifecycleStatus } from '@/lib/booking/visit-status';
+import { visitSiblingIndex, type VisitPosition } from '@/lib/calendar/visit-siblings';
 import type { CalendarGridBooking } from '@/types/calendar-grid';
 
 /** A booking with its resolved minute range, as every grid already computes. */
@@ -49,53 +28,35 @@ export interface ClusterInput {
 }
 
 export interface CalendarBookingCluster {
-  /**
-   * The earliest-starting segment. It is the React key, the tap target (its
-   * detail sheet lists the whole visit), and the row whose status and arrival
-   * state colour the bar — matching the web, which takes its palette from
-   * `first`.
-   */
+  /** The booking this bar stands for: the React key, the tap target, the tray's row. */
   lead: CalendarGridBooking;
-  /** Every segment, ordered by start then id. One entry for a standalone booking. */
+  /** Always one entry since web #187; kept as a list for the tray-target and drag plumbing. */
   bookings: CalendarGridBooking[];
-  /** Every segment's id. Quick actions fan out across these (web parity). */
+  /** `[lead.id]`. */
   ids: string[];
-  /** Earliest start, in minutes since midnight. */
+  /** Start, in minutes since midnight. */
   start: number;
-  /** LATEST end across segments — see the note above on why not the last-starting one. */
   end: number;
-  /** True when this bar stands for more than one booking. */
+  /** Always false since web #187: a bar never stands for more than one booking. */
   isMultiSegment: boolean;
-  /**
-   * The shared `group_booking_id`, when these segments have one.
-   */
+  /** The shared `group_booking_id`, when this row has one. */
   groupBookingId: string | null;
   /**
-   * Several services of ONE guest's visit, as opposed to several PEOPLE booked
-   * together. Only a visit may be dragged or resized as one bar: it goes through
-   * the visit endpoint, which re-lays every service behind the change.
-   *
-   * A party must not, and this is the only thing that tells them apart here —
-   * clustering keys on `group_booking_id` alone (see the note above), so
-   * `isMultiSegment` is true for both. Re-sequencing a party would take four
-   * people booked at 10:00 and stack them back to back.
+   * Always false since web #187 (a bar is never a whole visit). Kept so the
+   * grids' drag gate reads the same; the row's own movability decides.
    */
   isVisit: boolean;
-  /**
-   * The status the bar shows and acts from. A standalone booking's own; a
-   * visit's DERIVED one (`visitLifecycleStatus`, web #187): Completed only when
-   * every live service is, Seated while any is in progress, else the earliest
-   * stage — so a colour finished with the cut still to come reads as Seated,
-   * not as the lead row's Completed.
-   */
+  /** The row's own status: the bar's colour, tray and drag gate. */
   status: string;
   /**
-   * Service names joined with an arrow, mirroring the web's
-   * `calendarMultiServiceDisplayTitle`. Not de-duplicated, also web parity: a
-   * group of three all booking a Cut reads "Cut → Cut → Cut".
+   * Where this row stands in its visit on this grid, or null for an ordinary
+   * booking, a party's row, or a lone service whose siblings are elsewhere.
+   * The chip, the shared palette and the seam spine all come from this.
    */
+  visit: VisitPosition | null;
+  /** The row's own service name. */
   serviceLabel: string;
-  /** Only when EVERY segment is settled — a part-paid visit is not paid. */
+  /** The row is settled. */
   paid: boolean;
 }
 
@@ -105,86 +66,30 @@ function groupKeyOf(booking: CalendarGridBooking): string | null {
   return raw ? raw : null;
 }
 
-function serviceLabelFor(bookings: CalendarGridBooking[]): string {
-  return bookings
-    .map((booking) => booking.serviceName?.trim())
-    .filter((name): name is string => Boolean(name))
-    .join(' → ');
-}
-
-function toCluster(segments: ClusterInput[]): CalendarBookingCluster {
-  // Start order is the visit's order. Ties break on id so a group booked at one
-  // time renders identically on every load rather than following row order.
-  const sorted = [...segments].sort(
-    (a, b) => a.start - b.start || a.booking.id.localeCompare(b.booking.id),
-  );
-  const bookings = sorted.map((segment) => segment.booking);
-  const isMultiSegment = bookings.length > 1;
-  const isVisit = isMultiSegment && isServiceVisit(bookings);
-  return {
-    lead: bookings[0]!,
-    bookings,
-    ids: bookings.map((booking) => booking.id),
-    start: sorted[0]!.start,
-    end: sorted.reduce((latest, segment) => Math.max(latest, segment.end), sorted[0]!.end),
-    isMultiSegment,
-    groupBookingId: groupKeyOf(bookings[0]!),
-    isVisit,
-    status: isVisit ? visitLifecycleStatus(bookings, bookings[0]!.status) : bookings[0]!.status,
-    serviceLabel: serviceLabelFor(bookings),
-    paid: bookings.every((booking) => booking.payment_state === 'paid'),
-  };
-}
-
 /**
- * One cluster per visit, in the order each visit first appears in `items`.
- *
- * A booking with no group id is its own cluster, as is a group with only one row
- * present — which happens routinely, because the caller has already applied the
- * status filter and the grid only ever holds one calendar's rows for one day.
- * Such a cluster reports `isMultiSegment: false` and behaves exactly as the
- * booking did before, drag included.
+ * One cluster per booking, in input order, each carrying its place in its
+ * visit (`visitSiblingIndex` over every row handed in, so a visit split across
+ * the grid's columns still counts every service on screen). Pass `siblings`
+ * to count across a wider set than `items` — the multi-calendar grid positions
+ * one column at a time but the chip should count the whole day.
  */
-export function clusterCalendarBookings(items: ClusterInput[]): CalendarBookingCluster[] {
-  const byGroup = new Map<string, ClusterInput[]>();
-  for (const item of items) {
-    const key = groupKeyOf(item.booking);
-    if (!key) continue;
-    const existing = byGroup.get(key);
-    if (existing) existing.push(item);
-    else byGroup.set(key, [item]);
-  }
-
-  const emitted = new Set<string>();
-  const clusters: CalendarBookingCluster[] = [];
-  for (const item of items) {
-    const key = groupKeyOf(item.booking);
-    const segments = key ? byGroup.get(key) : undefined;
-    // Alone in its group here: nothing to merge, so treat it as a plain booking.
-    if (!key || !segments || segments.length <= 1) {
-      clusters.push(toCluster([item]));
-      continue;
-    }
-    if (emitted.has(key)) continue;
-    emitted.add(key);
-    clusters.push(toCluster(segments));
-  }
-  return clusters;
-}
-
-/**
- * The shortest a visit bar may be dragged to. A length change is the LAST
- * service's alone (web #187), so the floor is the bar less what that service
- * can give up. Falls back to one floor when a segment has no end time.
- */
-export function clusterLengthFloorMinutes(cluster: CalendarBookingCluster): number {
-  const rows = cluster.bookings
-    .filter((b) => b.startTime && b.endTime)
-    .map((b) => ({
-      bookingId: b.id,
-      startHm: b.startTime.slice(0, 5),
-      durationMinutes: timeToMinutes(b.endTime) - timeToMinutes(b.startTime),
-    }))
-    .sort((a, b) => timeToMinutes(a.startHm) - timeToMinutes(b.startHm));
-  return visitLengthFloorMinutes(cluster.end - cluster.start, rows);
+export function clusterCalendarBookings(
+  items: ClusterInput[],
+  siblings?: Map<string, VisitPosition>,
+): CalendarBookingCluster[] {
+  const positions = siblings ?? visitSiblingIndex(items.map((item) => item.booking));
+  return items.map(({ booking, start, end }) => ({
+    lead: booking,
+    bookings: [booking],
+    ids: [booking.id],
+    start,
+    end,
+    isMultiSegment: false,
+    groupBookingId: groupKeyOf(booking),
+    isVisit: false,
+    status: booking.status,
+    visit: positions.get(booking.id) ?? null,
+    serviceLabel: booking.serviceName?.trim() ?? '',
+    paid: booking.payment_state === 'paid',
+  }));
 }

@@ -92,59 +92,56 @@ function renderGrid(bookings: CalendarGridBooking[], props: Record<string, unkno
   );
 }
 
-describe('CalendarDayGrid — a multi-service visit is one bar', () => {
-  it('draws three services as ONE bar spanning the whole visit', async () => {
+describe('CalendarDayGrid — a multi-service visit is one bar per service (web #187)', () => {
+  it('draws three services as THREE bars, each its own length', async () => {
     await renderGrid([
       booking('b1', '10:00', '10:30', { group_booking_id: 'g1', serviceName: 'Cut' }),
       booking('b2', '10:30', '11:00', { group_booking_id: 'g1', serviceName: 'Colour' }),
-      booking('b3', '11:00', '11:30', { group_booking_id: 'g1', serviceName: 'Blow-dry' }),
+      booking('b3', '11:00', '11:45', { group_booking_id: 'g1', serviceName: 'Blow-dry' }),
     ]);
 
-    const bars = renderedBars();
-    expect(bars).toHaveLength(1);
-    // 10:00 → 11:30 is 90 minutes, not the 30 of its first service.
-    expect(bars[0].height).toBe(90 * PX_PER_MINUTE);
-  });
-
-  it('names every service on the bar, in visit order', async () => {
-    await renderGrid([
-      booking('b2', '10:30', '11:00', { group_booking_id: 'g1', serviceName: 'Colour' }),
-      booking('b1', '10:00', '10:30', { group_booking_id: 'g1', serviceName: 'Cut' }),
-    ]);
-    expect(screen.getByText('Cut → Colour')).toBeTruthy();
-  });
-
-  it('labels every later service on its own block of service time (web #185)', async () => {
-    await renderGrid([
-      booking('b1', '10:00', '10:30', { group_booking_id: 'g1', serviceName: 'Cut' }),
-      booking('b2', '10:30', '11:00', { group_booking_id: 'g1', serviceName: 'Colour' }),
-      booking('b3', '11:00', '11:30', { group_booking_id: 'g1', serviceName: 'Blow-dry' }),
-    ]);
-    // The first service keeps the card's main text; the second and third each
-    // get their own block with the guest's name, the service and the time.
-    const labels = screen.getAllByTestId('segment-label');
-    expect(labels).toHaveLength(2);
-    expect(labels.map((l) => flatten(l.props.style)?.top)).toEqual([
+    const bars = renderedBars().sort((a, b) => a.top - b.top);
+    expect(bars).toHaveLength(3);
+    expect(bars.map((b) => b.height)).toEqual([
       30 * PX_PER_MINUTE,
-      60 * PX_PER_MINUTE,
+      30 * PX_PER_MINUTE,
+      45 * PX_PER_MINUTE,
     ]);
-    expect(screen.getAllByText('Sam Patel')).toHaveLength(3);
+    // Each bar names its own service, not the whole visit.
+    expect(screen.getByText('Cut')).toBeTruthy();
     expect(screen.getByText('Colour')).toBeTruthy();
-    expect(screen.getByText('10:30–11:00')).toBeTruthy();
-    expect(screen.getByText('Blow-dry')).toBeTruthy();
-    expect(screen.getByText('11:00–11:30')).toBeTruthy();
+    expect(screen.queryByText('Cut → Colour → Blow-dry')).toBeNull();
   });
 
-  it('writes nothing on a later service too short to hold a line', async () => {
+  it('marks every service with its place in the visit', async () => {
     await renderGrid([
-      booking('b1', '10:00', '10:30', { group_booking_id: 'g1', serviceName: 'Cut' }),
-      booking('b2', '10:30', '10:35', { group_booking_id: 'g1', serviceName: 'Toner' }),
+      booking('b2', '10:30', '11:00', { group_booking_id: 'g1' }),
+      booking('b1', '10:00', '10:30', { group_booking_id: 'g1' }),
     ]);
-    // A 5-minute block is 10px at the comfortable scale: below the 14px floor.
-    expect(screen.queryAllByTestId('segment-label')).toHaveLength(0);
+    expect(screen.getByLabelText('Visit 1/2')).toBeTruthy();
+    expect(screen.getByLabelText('Visit 2/2')).toBeTruthy();
   });
 
-  it('opens the visit from its earliest booking', async () => {
+  it('draws a spine across the seam where two services of a visit touch', async () => {
+    await renderGrid([
+      booking('b1', '10:00', '10:30', { group_booking_id: 'g1' }),
+      booking('b2', '10:30', '11:00', { group_booking_id: 'g1' }),
+      booking('b3', '11:15', '11:45', { group_booking_id: 'g1' }),
+    ]);
+    // b1 and b2 touch: one bottom spine and one top spine. b3 waits 15 minutes: none.
+    expect(screen.getAllByTestId('visit-spine-bottom')).toHaveLength(1);
+    expect(screen.getAllByTestId('visit-spine-top')).toHaveLength(1);
+  });
+
+  it('gives a lone member of a group, and an ordinary booking, no chip', async () => {
+    await renderGrid([
+      booking('b1', '10:00', '10:30', { group_booking_id: 'g1' }),
+      booking('other', '11:00', '11:30', { guestName: 'Other Guest' }),
+    ]);
+    expect(screen.queryAllByTestId('visit-chip')).toHaveLength(0);
+  });
+
+  it('opens the tapped service, not the visit’s first', async () => {
     const onBlockPress = jest.fn();
     await renderGrid(
       [
@@ -154,25 +151,11 @@ describe('CalendarDayGrid — a multi-service visit is one bar', () => {
       { onBlockPress },
     );
 
-    fireEvent.press(screen.getAllByLabelText(/Sam Patel/)[0]!);
-    expect(onBlockPress).toHaveBeenCalledWith('b-early');
+    fireEvent.press(screen.getByLabelText(/10:30–11:00, Sam Patel/));
+    expect(onBlockPress).toHaveBeenCalledWith('b-late');
   });
 
-  it('spans to the LATEST end when a group is booked at one time', async () => {
-    // Three people at 10:00 for 60, 30 and 45 minutes. Ending the bar at the
-    // last-starting segment (what the web does) would draw 30 minutes here.
-    await renderGrid([
-      booking('b-long', '10:00', '11:00', { group_booking_id: 'g1' }),
-      booking('b-mid', '10:00', '10:45', { group_booking_id: 'g1' }),
-      booking('b-short', '10:00', '10:30', { group_booking_id: 'g1' }),
-    ]);
-
-    const bars = renderedBars();
-    expect(bars).toHaveLength(1);
-    expect(bars[0].height).toBe(60 * PX_PER_MINUTE);
-  });
-
-  it('leaves unrelated bookings as their own bars, and clear of the visit', async () => {
+  it('keeps unrelated bookings clear of the visit’s bars', async () => {
     await renderGrid([
       booking('b1', '10:00', '10:30', { group_booking_id: 'g1' }),
       booking('b2', '10:30', '11:00', { group_booking_id: 'g1' }),
@@ -180,35 +163,18 @@ describe('CalendarDayGrid — a multi-service visit is one bar', () => {
     ]);
 
     const bars = renderedBars().sort((a, b) => a.top - b.top);
-    expect(bars).toHaveLength(2);
-    // The merged visit must not run into the booking that follows it.
-    expect(bars[0].top + bars[0].height).toBeLessThanOrEqual(bars[1].top);
-  });
-
-  it('still draws a lone member of a group as an ordinary booking', async () => {
-    // Its siblings are hidden by the status filter, or sit on another calendar.
-    await renderGrid([booking('b1', '10:00', '10:30', { group_booking_id: 'g1' })]);
-    expect(renderedBars()[0].height).toBe(30 * PX_PER_MINUTE);
-  });
-
-  it('does not merge two different visits that happen to be adjacent', async () => {
-    await renderGrid([
-      booking('b1', '10:00', '10:30', { group_booking_id: 'g1' }),
-      booking('b2', '10:30', '11:00', { group_booking_id: 'g1' }),
-      booking('c1', '11:00', '11:30', { group_booking_id: 'g2', guestName: 'Other Guest' }),
-      booking('c2', '11:30', '12:00', { group_booking_id: 'g2', guestName: 'Other Guest' }),
-    ]);
-    expect(renderedBars()).toHaveLength(2);
+    expect(bars).toHaveLength(3);
+    expect(bars[1].top + bars[1].height).toBeLessThanOrEqual(bars[2].top);
   });
 });
 
-describe('CalendarDayGrid — quick actions on a merged visit', () => {
+describe('CalendarDayGrid — quick actions on a service of a visit', () => {
   /**
    * Start and Complete are per service (web #187): a merged bar's tray acts on
    * the service the press means, and reads its status from the visit's derived
    * one. ONE call, not one per segment — the screen batches from this list.
    */
-  it('starts the next service not yet begun, from the visit’s derived status', async () => {
+  it('starts the pressed service only', async () => {
     const onStatusChange = jest.fn();
     await renderGrid(
       [
@@ -219,8 +185,8 @@ describe('CalendarDayGrid — quick actions on a merged visit', () => {
       { onStatusChange },
     );
 
-    // Colour done, cut and finish to come: the bar reads Booked and offers Start.
-    fireEvent.press(screen.getByLabelText('Start'));
+    // Colour done; the cut and the finish each carry their own Start.
+    fireEvent.press(screen.getAllByLabelText('Start')[0]!);
 
     expect(onStatusChange).toHaveBeenCalledTimes(1);
     expect(onStatusChange.mock.calls[0]).toEqual([['b2'], 'Seated']);
@@ -241,7 +207,7 @@ describe('CalendarDayGrid — quick actions on a merged visit', () => {
     expect(onStatusChange.mock.calls[0]).toEqual([['b1'], 'Completed']);
   });
 
-  it('marks the whole visit arrived from one tap', async () => {
+  it('marks one service arrived; the server cascades it across the visit', async () => {
     const onArrivalToggle = jest.fn();
     await renderGrid(
       [
@@ -251,10 +217,10 @@ describe('CalendarDayGrid — quick actions on a merged visit', () => {
       { onArrivalToggle },
     );
 
-    fireEvent.press(screen.getByLabelText('Arrived'));
+    fireEvent.press(screen.getAllByLabelText('Arrived')[0]!);
 
     expect(onArrivalToggle).toHaveBeenCalledTimes(1);
-    expect(onArrivalToggle.mock.calls[0]).toEqual([['b1', 'b2'], true]);
+    expect(onArrivalToggle.mock.calls[0]).toEqual([['b1'], true]);
   });
 
   it('still acts on just the one booking when nothing is merged', async () => {

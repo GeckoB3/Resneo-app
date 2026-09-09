@@ -186,6 +186,17 @@ export function pickBlockLayout(params: {
  * name must keep its reserve. The block's accessibility label carries the word
  * "paid" so the meaning is not colour- or icon-only.
  */
+/** "Visit 1/2" — one service of a multi-service visit (web #187 `VisitChip`). */
+function VisitChip({ label, color }: { label: string; color: string }) {
+  return (
+    <View style={styles.visitChip} testID="visit-chip" accessibilityLabel={label}>
+      <Text numberOfLines={1} style={[styles.visitChipText, { color }]}>
+        {label}
+      </Text>
+    </View>
+  );
+}
+
 function PaidGlyph({ color }: { color: string }) {
   return (
     <SymbolView
@@ -303,6 +314,21 @@ type AppointmentBlockProps = {
    */
   nested?: boolean;
   /**
+   * "Visit 1/2": this bar is one service of a multi-service visit (web #187).
+   * The visit's services are independent bars; the chip, the shared colour
+   * and the seam spines are what say they belong together.
+   */
+  visitChip?: string | null;
+  /** A sibling of the visit meets this bar edge to edge at the top / bottom. */
+  spineTop?: boolean;
+  spineBottom?: boolean;
+  /**
+   * The status whose colour the bar takes when it is not its own: a visit's
+   * services all wear the earliest service's colour. The tray and the label
+   * still read `status`.
+   */
+  paletteStatus?: string | null;
+  /**
    * The stretches the bar PAINTS, as px bands from its top (web #185,
    * `BookingBarPieces`): one rounded lozenge per busy stretch, each with the
    * full card finish, so processing time in the middle of the appointment,
@@ -377,10 +403,14 @@ export function AppointmentBlock({
   onFreePress,
   bufferBand,
   contentInset,
+  visitChip,
+  spineTop,
+  spineBottom,
+  paletteStatus,
 }: AppointmentBlockProps) {
   const { colors } = useTheme();
   const palette = bookingCalendarBlockPalette({
-    status,
+    status: paletteStatus ?? status,
     client_arrived_at: clientArrivedAt,
     staff_attendance_confirmed_at: staffAttendanceConfirmedAt,
     guest_attendance_confirmed_at: guestAttendanceConfirmedAt,
@@ -562,6 +592,23 @@ export function AppointmentBlock({
         </View>
       ))}
 
+      {/* Seams with the visit's siblings (web #187): a short spine in the
+          visit's accent across each edge where two of its bars touch. */}
+      {spineTop ? (
+        <View
+          testID="visit-spine-top"
+          pointerEvents="none"
+          style={[styles.spine, styles.spineTop, { backgroundColor: palette.accent }]}
+        />
+      ) : null}
+      {spineBottom ? (
+        <View
+          testID="visit-spine-bottom"
+          pointerEvents="none"
+          style={[styles.spine, styles.spineBottom, { backgroundColor: palette.accent }]}
+        />
+      ) : null}
+
       {layout.mode === 'row' ? (
         // SHORT bar (web compact-bar parity): name (flex, truncating, centred)
         // beside the height-tracked action row. The name always keeps its
@@ -569,6 +616,7 @@ export function AppointmentBlock({
         <View style={[styles.rowShell, squeezed && styles.contentSqueezed, insetStyle]}>
           <View style={styles.rowText} pointerEvents="none">
             <View style={styles.nameRow}>
+              {visitChip ? <VisitChip label={visitChip} color={palette.text} /> : null}
               <Text numberOfLines={1} style={[nameStyle, styles.nameFlex]}>
                 {guestName}
                 {trayActions.length === 0 ? ` · ${timeLabel.split('–')[0]}` : ''}
@@ -606,9 +654,12 @@ export function AppointmentBlock({
               insetStyle,
             ]}
             pointerEvents="none">
-            <Text numberOfLines={1} style={nameStyle}>
-              {layout.rows === 1 ? `${guestName} · ${timeLabel.split('–')[0]}` : guestName}
-            </Text>
+            <View style={styles.nameRow}>
+              {visitChip ? <VisitChip label={visitChip} color={palette.text} /> : null}
+              <Text numberOfLines={1} style={[nameStyle, styles.nameFlex]}>
+                {layout.rows === 1 ? `${guestName} · ${timeLabel.split('–')[0]}` : guestName}
+              </Text>
+            </View>
             {layout.rows >= 2 ? (
               // Service name is prioritised over the time text: the bar's
               // position + height already encode when/how-long, so the service
@@ -837,6 +888,34 @@ const styles = StyleSheet.create({
   accentStripe: {
     width: 5,
   },
+  // "Visit 1/2" on one service of a visit (web #187, `VisitChip`): a small
+  // translucent pill ahead of the name, in the bar's own text colour.
+  visitChip: {
+    flexShrink: 0,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(255,255,255,0.28)',
+  },
+  visitChipText: {
+    fontSize: 8,
+    fontWeight: '700',
+    lineHeight: 11,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+  },
+  // A short spine across the seam where this bar meets a sibling of its visit
+  // edge to edge, so two touching bars read as one booking without merging.
+  spine: {
+    position: 'absolute',
+    left: '38%',
+    right: '38%',
+    height: 3,
+    borderRadius: 2,
+    zIndex: 3,
+  },
+  spineTop: { top: -1 },
+  spineBottom: { bottom: -1 },
   complianceDot: {
     position: 'absolute',
     top: 3,

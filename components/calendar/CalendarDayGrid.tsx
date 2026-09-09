@@ -29,6 +29,7 @@ import {
 import { Text } from '@/components/ui/Text';
 
 import { arrivalToggleTargets, statusChangeTargets } from '@/lib/calendar/bar-actions';
+import { visitChipLabel, visitTouchingEdges } from '@/lib/calendar/visit-siblings';
 import {
   hostRegionsAroundNested,
   layoutOverlapClusters,
@@ -37,7 +38,6 @@ import {
 } from '@/lib/calendar/booking-cluster-layout';
 import {
   clusterCalendarBookings,
-  clusterLengthFloorMinutes,
   type CalendarBookingCluster,
 } from '@/lib/calendar/cluster-bookings';
 import { isNonWorkingBlock, isOccupyingBlock, narrowWorkingRanges } from '@/lib/calendar/occupying-blocks';
@@ -78,6 +78,17 @@ type PositionedBooking = {
   laneCount: number;
   durationMinutes: number;
   timeLabel: string;
+  /**
+   * One service of a multi-service visit (web #187): the chip's label, whether
+   * a sibling meets this bar edge to edge above / below, and the status whose
+   * colour the whole visit wears (its earliest service's).
+   */
+  visitChip: string | null;
+  spineTop: boolean;
+  spineBottom: boolean;
+  paletteStatus: string | null;
+  /** Rows the drag's conflict check ignores: the bar's own, plus its visit's siblings here. */
+  conflictIds: string[];
   /**
    * Set when this bar rides inside another bar's processing gap (web #177):
    * drawn above its host in the host's lane, `nestDepth` levels down a chain.
@@ -297,10 +308,8 @@ export function CalendarDayGrid({
         working.push(r);
       }
 
-      // One entry per VISIT, not per booking: a multi-service visit or a group
-      // booked together shares a group id and draws as one bar spanning the lot.
-      // Clustering happens before the grid bounds are measured so a merged bar
-      // can extend them, exactly as its segments used to.
+      // One bar per booking row (web #187: a visit's services are independent
+      // bars, each knowing its place in the visit; see `clusterCalendarBookings`).
       const blocks = clusterCalendarBookings(
         bookings.map((booking) => {
           const start = timeToMinutes(booking.startTime);
@@ -416,11 +425,13 @@ export function CalendarDayGrid({
     // overlaps, and lanes are packed on the CLUSTER's extent, so a merged visit
     // occupies the column for its whole length.
     const gapsByLead = new Map<string, MinuteRange[]>();
+    const spanById = new Map<string, number>();
     for (const cluster of rawBlocks) {
       gapsByLead.set(
         cluster.lead.id,
         clusterProcessingGaps(cluster.bookings, processingPatternFor, DEFAULT_DURATION_MINUTES),
       );
+      spanById.set(cluster.lead.id, cluster.end - cluster.start);
     }
     const lanes = layoutOverlapClusters(
       rawBlocks.map(({ lead, start, end }) => ({
@@ -470,6 +481,18 @@ export function CalendarDayGrid({
       ];
       const regions = covered.length > 0 ? hostRegionsAroundNested({ start, end }, covered, 0) : null;
       const lastBuffer = paint.bufferBands[paint.bufferBands.length - 1] ?? null;
+      // One service of a visit (web #187): its chip, the seams with its
+      // siblings in this column, and the colour of the visit's earliest service.
+      const visitEdges = cluster.visit
+        ? visitTouchingEdges({
+            row: lead,
+            rows: bookings,
+            columnIdOf: () => 'column',
+            spanMinutesOf: (row) => spanById.get(row.id) ?? DEFAULT_DURATION_MINUTES,
+            toMinutes: timeToMinutes,
+          })
+        : null;
+      const anchor = cluster.visit ? rawBlocks.find((c) => c.lead.id === cluster.visit!.anchorId) : null;
       return {
         cluster,
         top,
@@ -478,6 +501,19 @@ export function CalendarDayGrid({
         laneCount: lane.laneCount,
         durationMinutes: Math.max(end - start, TAP_SNAP_MINUTES),
         timeLabel: `${minutesToTime(start)}–${minutesToTime(end)}`,
+        visitChip: cluster.visit ? visitChipLabel(cluster.visit) : null,
+        spineTop: visitEdges?.top ?? false,
+        spineBottom: visitEdges?.bottom ?? false,
+        paletteStatus: anchor && anchor.lead.id !== lead.id ? anchor.status : null,
+        conflictIds: cluster.visit
+          ? bookings
+              .filter(
+                (b) =>
+                  b.group_booking_id?.trim() === cluster.visit!.groupId &&
+                  !CONFLICT_IGNORED_STATUSES.has(b.status),
+              )
+              .map((b) => b.id)
+          : cluster.ids,
         nestedInKey: lane.nestedInKey,
         nestDepth: lane.nestDepth,
         pieces: paint.pieces.map((piece) => ({
@@ -568,13 +604,9 @@ export function CalendarDayGrid({
   }, [processingPatternFor, bounds, rawBlocks, rawTimeBlocks, rawSessions, rawScheduleBlocks, pxPerMinute, minBlockHeight]);
 
   /**
-   * A quick action on a merged bar applies to the WHOLE visit — web parity with
-   * `quickPatchBookingCluster`, which patches every booking in the cluster.
-   * Doing otherwise would advance one service and leave its siblings behind.
-   *
-   * Segments already in the target state are skipped, so a part-completed visit
-   * fires only the mutations it needs (and, since each failure raises its own
-   * toast upstream, does not multiply the noise).
+   * A quick action on a bar writes that bar's booking (web #187: Start and
+   * Complete belong to one service; the server cascades the visit-wide facts).
+   * A row already in the target state is skipped.
    *
    * One stable handler per grid rather than a closure per bar: the block is not
    * memoised, so per-bar closures would be pure allocation on a busy column.
@@ -920,24 +952,18 @@ export function CalendarDayGrid({
               serviceName={item.cluster.serviceLabel}
               timeLabel={item.timeLabel}
               status={item.cluster.status}
-              // A merged VISIT drags and resizes as one booking: the commit goes
-              // through the visit endpoint, which plans every service before
-              // writing any. A merged PARTY does not — several people booked at
-              // one time are not a thing to re-sequence — and that is why the
-              // gate is `isVisit` rather than `isMultiSegment`.
-              draggable={
-                (!item.cluster.isMultiSegment || item.cluster.isVisit) &&
-                MOVABLE_STATUSES.has(item.cluster.status)
+              visitChip={item.visitChip}
+              spineTop={item.spineTop}
+              spineBottom={item.spineBottom}
+              paletteStatus={item.paletteStatus}
+              // One service of a visit drags and resizes on its own (web #187);
+              // the commit names that row alone on the visit endpoint.
+              draggable={MOVABLE_STATUSES.has(item.cluster.status)
               }
               // Every row this bar owns, so the drag's conflict check does not
               // see the visit's own services as occupying the space it is moving
               // into, and so a resize cannot go below the services' own floors.
-              segmentIds={item.cluster.ids}
-              minDurationMinutes={
-                item.cluster.isVisit
-                  ? clusterLengthFloorMinutes(item.cluster)
-                  : undefined
-              }
+              segmentIds={item.conflictIds}
               clientArrivedAt={item.cluster.lead.client_arrived_at}
               staffAttendanceConfirmedAt={item.cluster.lead.staff_attendance_confirmed_at}
               guestAttendanceConfirmedAt={item.cluster.lead.guest_attendance_confirmed_at}

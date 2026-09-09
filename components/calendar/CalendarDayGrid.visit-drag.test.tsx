@@ -1,5 +1,8 @@
 import { render } from '@testing-library/react-native';
 
+import { CalendarDayGrid } from '@/components/calendar/CalendarDayGrid';
+import type { CalendarGridBooking } from '@/types/calendar-grid';
+
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
 
 /**
@@ -19,9 +22,6 @@ jest.mock('@/components/calendar/DraggableAppointmentBlock', () => {
     },
   };
 });
-
-import { CalendarDayGrid } from '@/components/calendar/CalendarDayGrid';
-import type { CalendarGridBooking } from '@/types/calendar-grid';
 
 function booking(
   id: string,
@@ -65,45 +65,38 @@ beforeEach(() => {
   mockBlockProps.length = 0;
 });
 
-describe('CalendarDayGrid — dragging a merged bar', () => {
-  it('lets a multi-service visit drag and resize as one', async () => {
+describe('CalendarDayGrid — dragging one service of a visit (web #187)', () => {
+  it('lets each service of a visit drag and resize on its own', async () => {
     await renderGrid([
       booking('b1', '10:00', '10:30', { group_booking_id: 'g1' }),
       booking('b2', '10:30', '11:00', { group_booking_id: 'g1' }),
       booking('b3', '11:00', '11:30', { group_booking_id: 'g1' }),
     ]);
     expect(bar('b1').draggable).toBe(true);
+    expect(bar('b2').draggable).toBe(true);
+    expect(bar('b3').draggable).toBe(true);
+    // No visit-wide floor any more: each bar keeps the block's own one-snap floor.
+    expect(bar('b2').minDurationMinutes).toBeUndefined();
   });
 
-  it('refuses to drag a PARTY, which merges into a bar the same way', async () => {
-    // The trap: clustering keys on group_booking_id alone, so a party is a
-    // merged bar too. Dragging it as a visit would re-sequence four people
-    // booked at one time into four consecutive bookings.
+  it('lets each person of a party drag on their own, as any booking', async () => {
     await renderGrid([
       booking('p1', '10:00', '11:00', { group_booking_id: 'g1', person_label: 'Person 1' }),
       booking('p2', '10:00', '10:30', { group_booking_id: 'g1', person_label: 'Person 2' }),
     ]);
-    expect(bar('p1').draggable).toBe(false);
+    expect(bar('p1').draggable).toBe(true);
+    expect(bar('p1').segmentIds).toEqual(['p1']);
   });
 
-  it('tells a visit bar every row it owns, so it cannot clash with itself', async () => {
-    // Busy ranges are per booking row. Without this the bar would go red against
-    // its own next service the moment it was picked up.
+  it('tells a service every live sibling of its visit in the column, so a move over one is allowed', async () => {
+    // Overlapping a sibling is permitted (and toasted) rather than refused as
+    // a clash, so the busy-range check must not see the visit's own rows.
     await renderGrid([
       booking('b1', '10:00', '10:30', { group_booking_id: 'g1' }),
       booking('b2', '10:30', '11:00', { group_booking_id: 'g1' }),
+      booking('b3', '11:00', '11:30', { group_booking_id: 'g1', status: 'Cancelled' }),
     ]);
     expect(bar('b1').segmentIds).toEqual(['b1', 'b2']);
-  });
-
-  it('floors a visit resize at what its last service can give up', async () => {
-    await renderGrid([
-      booking('b1', '10:00', '10:30', { group_booking_id: 'g1' }),
-      booking('b2', '10:30', '11:00', { group_booking_id: 'g1' }),
-      booking('b3', '11:00', '11:30', { group_booking_id: 'g1' }),
-    ]);
-    // 90 minutes less the 30-minute last service, plus its 5-minute floor (web #187).
-    expect(bar('b1').minDurationMinutes).toBe(65);
   });
 
   it('leaves an ordinary booking exactly as it was', async () => {

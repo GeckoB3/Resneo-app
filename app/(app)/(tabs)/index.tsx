@@ -55,11 +55,12 @@ import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import {
   resolveAppointmentVisit,
-  toVisitEditTarget,
+  visitEditTargetForService,
   type VisitServiceRow,
 } from '@/lib/booking/appointment-visit';
 import { guestNotifyPlanForChange } from '@/lib/booking/modification-notify';
 import { visitRestoreRequest, visitScheduleRequest } from '@/lib/booking/visit-schedule-request';
+import { ownSiblingOverlapCount } from '@/lib/calendar/visit-siblings';
 import { newBookingActionLabel } from '@/lib/booking/terminology';
 import { isAppointmentFromVenue } from '@/lib/venue/venue-experience';
 import { hapticSelect, hapticSuccess } from '@/lib/haptics';
@@ -149,6 +150,9 @@ import type { Practitioner } from '@/types/practitioner';
 import type { CalendarTimeBlock } from '@/components/calendar/CalendarDayGrid';
 import type { CalendarScheduleBlock, ScheduleBlockDTO } from '@/types/schedule-blocks';
 import type { LinkedBooking, LinkedVenueCalendar } from '@/types/linked-venues';
+
+/** A row with no usable end reads as this long, as on the grids. */
+const DEFAULT_SERVICE_MINUTES = 30;
 
 type Scope = 'day' | 'week' | 'month';
 
@@ -558,7 +562,7 @@ export default function CalendarScreen() {
         setMoveNotice(notice);
         return;
       }
-      toast.success(notice.previous.visit ? 'Visit length updated' : 'Duration updated', {
+      toast.success(notice.previous.visit ? 'Service length updated' : 'Duration updated', {
         actionLabel: 'Undo',
         onAction: () => undoReschedule(notice.previous, { restoreLength: notice.lengthChanged }),
       });
@@ -1389,15 +1393,15 @@ export default function CalendarScreen() {
   const commitVisitDrag = useCallback(
     (input: {
       groupBookingId: string;
-      /** The visit's FIRST service: the row the guest email is sent against. */
-      leadBookingId: string;
-      segmentIds: string[];
+      /** The service being moved or resized: the row the request names and the email is sent against. */
+      bookingId: string;
       guestName: string;
       /** "HH:mm:ss" */
       time: string;
-      /** Only on a resize: the bar's new height, the visit's new span. */
-      totalDurationMinutes?: number;
+      /** Only on a resize: the bar's new height, this service's new length. */
+      durationMinutes?: number;
       practitionerId?: string;
+      /** `visit.services` holds exactly the row being changed. */
       previousTarget: RescheduleTarget;
     }) => {
       const notifyPlan = guestNotifyPlanForChange({
@@ -1406,16 +1410,15 @@ export default function CalendarScreen() {
         previousTime: input.previousTarget.time,
         nextTime: input.time,
       });
-      // Every segment, so the whole bar shows one spinner rather than the lead
-      // row spinning while its siblings look idle.
-      setPendingActionIds((prev) => new Set([...prev, ...input.segmentIds]));
+      setPendingActionIds((prev) => new Set([...prev, input.bookingId]));
       void (async () => {
         try {
           await visitScheduleById.mutateAsync({
             groupBookingId: input.groupBookingId,
-            // The grid holds one day, so the bar names the rows it can see and
-            // moves those (a service of the visit on another day stays put); a
-            // resize puts the change on the last visible service (web #187).
+            // One service of a visit (web #187): the request names this row
+            // alone, so its siblings stay where they are; a resize is this
+            // service's new length. No known-rows guard: the grid holds one
+            // day and cannot know the visit's other days.
             ...visitScheduleRequest({
               services: input.previousTarget.visit?.services ?? [],
               fromDate: input.previousTarget.date,
@@ -1424,7 +1427,7 @@ export default function CalendarScreen() {
               toTime: input.time,
               practitionerId: input.practitionerId,
               fromTotalMinutes: input.previousTarget.durationMinutes,
-              toTotalMinutes: input.totalDurationMinutes ?? input.previousTarget.durationMinutes,
+              toTotalMinutes: input.durationMinutes ?? input.previousTarget.durationMinutes,
               mode: 'services',
               guardKnownRows: false,
             }),
@@ -1439,14 +1442,45 @@ export default function CalendarScreen() {
               ? { skip_booking_modification_guest_notification: true }
               : { defer_modification_guest_notification: true }),
           });
+          // Landing on a sibling of the same visit is allowed, as any overlap
+          // is, but never silent (web #187).
+          const calendars = gridQuery.data?.calendars ?? [];
+          const bookingsOf = (calendarId: string | undefined) =>
+            calendars.find((c) => c.calendarId === calendarId)?.dates.find((d) => d.date === anchor)
+              ?.bookings ?? [];
+          const homeCalendarId = calendars.find((c) =>
+            c.dates.find((d) => d.date === anchor)?.bookings.some((b) => b.id === input.bookingId),
+          )?.calendarId;
+          // The column the service landed on: the chosen one, else its own.
+          const dayRows = bookingsOf(input.practitionerId ?? homeCalendarId);
+          const movedStart = timeToMinutes(input.time);
+          const movedSpan =
+            input.durationMinutes ?? input.previousTarget.durationMinutes ?? DEFAULT_SERVICE_MINUTES;
+          const clash = ownSiblingOverlapCount({
+            moved: { id: input.bookingId, group_booking_id: input.groupBookingId },
+            startMin: movedStart,
+            endMin: movedStart + movedSpan,
+            columnId: 'column',
+            rows: dayRows,
+            columnIdOf: () => 'column',
+            spanMinutesOf: (row) => {
+              const { endTime, startTime } = row as CalendarGridBooking;
+              return endTime && timeToMinutes(endTime) > timeToMinutes(startTime)
+                ? timeToMinutes(endTime) - timeToMinutes(startTime)
+                : DEFAULT_SERVICE_MINUTES;
+            },
+            toMinutes: timeToMinutes,
+          });
+          if (clash > 0) {
+            toast.info('This now overlaps another service of the same visit.');
+          }
           raiseChangeNotice({
-            // The endpoint notifies once, against the visit's first service.
-            bookingId: input.leadBookingId,
+            bookingId: input.bookingId,
             guestName: input.guestName,
             previous: input.previousTarget,
             startMoved: notifyPlan.prompt,
             reassigned: input.practitionerId != null,
-            lengthChanged: input.totalDurationMinutes != null,
+            lengthChanged: input.durationMinutes != null,
           });
         } catch (error) {
           // A 409 names the service and the time it could not take, and says
@@ -1457,7 +1491,7 @@ export default function CalendarScreen() {
               : 'Could not move this visit. Try another time.',
           );
         } finally {
-          for (const id of input.segmentIds) removePending(id);
+          removePending(input.bookingId);
         }
       })();
     },
@@ -1597,23 +1631,23 @@ export default function CalendarScreen() {
       const grouped = findVisitOnAnchor(bookingId);
       if (grouped) {
         const { groupBookingId, visit } = grouped;
+        // One service of a visit moves alone (web #187): the request names
+        // this row only, and its siblings stay where they are.
+        const service = visit.services.find((s) => s.id === bookingId) ?? visit.services[0]!;
         commitVisitDrag({
           groupBookingId,
-          leadBookingId: visit.services[0]!.id,
-          segmentIds: visit.services.map((s) => s.id),
+          bookingId,
           guestName: booking.guestName ?? 'booking',
           time: `${newTime}:00`,
           ...(toPractitionerId ? { practitionerId: toPractitionerId } : {}),
-          // No length: every service keeps its own, and the endpoint re-lays them
-          // behind the new start.
           previousTarget: {
             id: bookingId,
             guestName: booking.guestName ?? 'booking',
             date: anchor,
-            time: visit.startHm,
-            durationMinutes: visit.totalMinutes,
+            time: service.startHm,
+            durationMinutes: service.durationMinutes,
             ...(fromPractitionerId ? { practitionerId: fromPractitionerId } : {}),
-            visit: toVisitEditTarget(visit, groupBookingId),
+            visit: visitEditTargetForService(visit, groupBookingId, bookingId),
           },
         });
         return;
@@ -1670,25 +1704,23 @@ export default function CalendarScreen() {
       const grouped = findVisitOnAnchor(bookingId);
       if (grouped) {
         const { groupBookingId, visit } = grouped;
-        // The bar's new height IS the visit's new wall-clock span, gaps included,
-        // which is exactly what the endpoint distributes: growth onto the tail
-        // service, shrinkage off the tail and then back through the earlier ones,
-        // each to its own floor.
-        if (newDurationMinutes === visit.totalMinutes) return;
+        // One service of a visit resizes alone (web #187): the bar's new height
+        // is that service's new length, and its siblings keep theirs.
+        const service = visit.services.find((s) => s.id === bookingId) ?? visit.services[0]!;
+        if (newDurationMinutes === service.durationMinutes) return;
         commitVisitDrag({
           groupBookingId,
-          leadBookingId: visit.services[0]!.id,
-          segmentIds: visit.services.map((s) => s.id),
+          bookingId,
           guestName: booking.guestName ?? 'booking',
-          time: `${visit.startHm}:00`,
-          totalDurationMinutes: newDurationMinutes,
+          time: `${service.startHm}:00`,
+          durationMinutes: newDurationMinutes,
           previousTarget: {
             id: bookingId,
             guestName: booking.guestName ?? 'booking',
             date: anchor,
-            time: visit.startHm,
-            durationMinutes: visit.totalMinutes,
-            visit: toVisitEditTarget(visit, groupBookingId),
+            time: service.startHm,
+            durationMinutes: service.durationMinutes,
+            visit: visitEditTargetForService(visit, groupBookingId, bookingId),
           },
         });
         return;
@@ -2949,7 +2981,7 @@ export default function CalendarScreen() {
         <Text variant="subheading">
           {/* A visit says so: what moved was several services, and Undo puts
               all of them back. */}
-          {moveNotice?.previous.visit ? 'Visit moved' : 'Booking moved'}
+          {moveNotice?.previous.visit ? 'Service moved' : 'Booking moved'}
         </Text>
         <Text variant="caption" tone="muted">
           {!moveNotice
