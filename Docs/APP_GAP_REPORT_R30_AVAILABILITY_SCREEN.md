@@ -113,3 +113,14 @@ the full jest run green (see the commit). New or changed suites:
   confirms it. `CalendarBookingPatch` gained the two time fields (linked feed: `bookingTime` /
   `bookingEndTime`). A cross-column move is left to the refetch (the row changes column, which
   a time patch on the old column cannot express), so its error fallback is unchanged.
+- **Per-service Start / Complete on the calendar (2026-09-10, after the OTA check).** Every
+  path was already per row (the tray reads the row's own status, the press writes that one id,
+  the route writes one row for Seated / Completed, the grid feed returns each row's own
+  status). What read as coupling was the colour: the app followed the web's rule that every bar
+  of a visit wears the earliest service's status colour, so starting or completing the first
+  service recoloured all of them and starting the second changed nothing visible. Each bar now
+  wears its own status colour (`paletteStatus` is no longer set by either grid; the chip and the
+  spine still say the bars belong together). A deliberate divergence from the web's tint.
+- **"Refreshing" bar.** Not in the app: no screen renders such a banner (pull-to-refresh is a
+  spinner, background refetches are invisible by design, the offline banner says Offline). It is
+  Expo Go's own overlay while it reloads the JavaScript bundle in development.

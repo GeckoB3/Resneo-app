@@ -492,7 +492,6 @@ export function CalendarDayGrid({
             toMinutes: timeToMinutes,
           })
         : null;
-      const anchor = cluster.visit ? rawBlocks.find((c) => c.lead.id === cluster.visit!.anchorId) : null;
       return {
         cluster,
         top,
@@ -504,7 +503,13 @@ export function CalendarDayGrid({
         visitChip: cluster.visit ? visitChipLabel(cluster.visit) : null,
         spineTop: visitEdges?.top ?? false,
         spineBottom: visitEdges?.bottom ?? false,
-        paletteStatus: anchor && anchor.lead.id !== lead.id ? anchor.status : null,
+        // Each service wears ITS OWN status colour. The web tints every bar of
+        // a visit with the earliest service's status, but Start and Complete
+        // are per service, and that tint hid the very state a press changes:
+        // starting the first service recoloured all of them, starting the
+        // second changed nothing on screen. The chip and the spine still say
+        // the bars belong together.
+        paletteStatus: null,
         conflictIds: cluster.visit
           ? bookings
               .filter(

@@ -301,8 +301,6 @@ function positionColumn(
   processingPatternFor: ProcessingPatternLookup | null | undefined,
   /** Where each row stands in its visit, counted over the whole day (every column). */
   siblings?: Map<string, VisitPosition>,
-  /** Every row's status on the day, so a visit's anchor colour is found across columns. */
-  anchorStatusById?: Map<string, string>,
 ): PositionedBooking[] {
   const items = bookings.map((booking) => {
     const start = timeToMinutes(booking.startTime);
@@ -367,7 +365,6 @@ function positionColumn(
           toMinutes: timeToMinutes,
         })
       : null;
-    const anchorStatus = cluster.visit ? anchorStatusById?.get(cluster.visit.anchorId) : undefined;
     return {
       cluster,
       top: (start - gridStartMin) * pxPerMinute,
@@ -379,8 +376,8 @@ function positionColumn(
       visitChip: cluster.visit ? visitChipLabel(cluster.visit) : null,
       spineTop: visitEdges?.top ?? false,
       spineBottom: visitEdges?.bottom ?? false,
-      paletteStatus:
-        anchorStatus != null && cluster.visit!.anchorId !== lead.id ? anchorStatus : null,
+      // Own status colour per service (see CalendarDayGrid for why).
+      paletteStatus: null,
       conflictIds: cluster.visit
         ? bookings
             .filter(
@@ -487,14 +484,10 @@ export function AllCalendarsDayGrid({
   const liftedColumn = useSharedValue(-1);
   const columnIds = useMemo(() => calendars.map((c) => c.calendarId), [calendars]);
   const moveRanges = useMemo(() => columnMoveRanges(calendars), [calendars]);
-  // A visit's services may sit on different columns (web #187): the chip counts
-  // every service on the day, and every bar wears the earliest one's colour.
+  // A visit's services may sit on different columns (web #187): the chip
+  // counts every service on the day. Each bar wears its own status colour.
   const allBookings = useMemo(() => calendars.flatMap((c) => c.bookings), [calendars]);
   const visitPositions = useMemo(() => visitSiblingIndex(allBookings), [allBookings]);
-  const anchorStatusById = useMemo(
-    () => new Map(allBookings.map((b) => [b.id, b.status] as const)),
-    [allBookings],
-  );
 
   // ── Edge auto-scroll during a cross-column drag ───────────────────────────
   // The columns ScrollView is frozen while a drag is armed (the pan owns the
@@ -769,7 +762,6 @@ export function AllCalendarsDayGrid({
                     key={cal.calendarId}
                     column={cal}
                     visitPositions={visitPositions}
-                    anchorStatusById={anchorStatusById}
                     columnIndex={index}
                     columnWidth={columnWidth}
                     columnPitch={columnPitch}
@@ -871,12 +863,10 @@ function DayColumn({
   pendingActionIds,
   processingPatternFor,
   visitPositions,
-  anchorStatusById,
 }: {
   column: AllCalendarColumn;
-  /** See `positionColumn`: a visit's chip and colour count the whole day, not one column. */
+  /** See `positionColumn`: a visit's chip counts the whole day, not one column. */
   visitPositions?: Map<string, VisitPosition>;
-  anchorStatusById?: Map<string, string>;
   /** This column's index in the grid (own columns are first). */
   columnIndex: number;
   /** Resolved (fill-to-width) column width. */
@@ -934,7 +924,6 @@ function DayColumn({
         minBlockHeight,
         processingPatternFor,
         visitPositions,
-        anchorStatusById,
       ),
     [
       column.bookings,
@@ -943,7 +932,6 @@ function DayColumn({
       minBlockHeight,
       processingPatternFor,
       visitPositions,
-      anchorStatusById,
     ],
   );
 
