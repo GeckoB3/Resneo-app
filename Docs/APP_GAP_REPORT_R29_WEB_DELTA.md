@@ -27,7 +27,7 @@ web summary was corrected where the code disagrees with it (§2).
 | R29-5 | Linked venues: the siblings query never sends `owner_venue_id`, so a visit opened from a partner column shows one service; the linked-calendar feed's new `groupBookingId` / `personLabel` are ignored | Parity | **Built** 2026-09-09 (§7, §21) |
 | R29-6 | Hours: the app already meets the whole written-down contract (409 → confirm → acknowledge, ISO `days_off` never sent). The "crashed and did not save" report matches a pre-existing APP defect: the "Save anyway?" ConfirmSheet is a second modal opened over the hours Sheet, which iOS drops silently | **Breaks live flow (iOS), app-side** | **Built** 2026-09-09 (§8, §22) |
 | R29-7 | Per-calendar amended hours, read side: closure bands and the Working-today chip already honour `availability_exceptions`; the web deploy alone lights them up. The schedule-preview month grid ignores overrides | Wrong data (small) | **Built** 2026-09-09 (§9, §23) |
-| R29-8 | Per-calendar amended hours, write side: no editor in the app (`PUT/DELETE /api/venue/calendar-amended-hours`) | Parity | §9 |
+| R29-8 | Per-calendar amended hours, write side: no editor in the app (`PUT/DELETE /api/venue/calendar-amended-hours`) | Parity | **Built** 2026-09-09 (§9, §27) |
 | R29-9 | Staff "Override availability": additive; the app has no tick box. Walk-in keeps its own silent bypass | Parity, a feature | §10 |
 | R29-10 | Card holds: the server default flipped to no hold; the app always sends the toggle explicitly for a card-hold entity, so nothing changes on the wire. The app's toggle still DEFAULTS ON and its copy is the old one; seven comments state the wrong server default | Parity (UX drift) | **Built** 2026-09-09 (§11, §24) |
 | R29-11 | Canonical processing shape: the calendar, wizard chain, Modify sheet and detail already agree with it. But lengthening a service in the app's form without touching its periods silently reverts the length on save (the server re-fits the stored blocks and canonicalises) | Wrong data, both sides; local fix | **Built** 2026-09-09 (§12, §25) |
@@ -629,3 +629,39 @@ booking's `validate-appointment-modification`, the visit's `schedule` and `servi
 `outside_hours` into the check state, and a valid check outside hours shows the web's amber note
 under "Time available": "This time is outside the working hours for this calendar. You can still
 save it." Two sheet tests. The calendar's own amber note keeps reading the closure bands.
+
+## 27. Built: R29-8, the amended-hours editor (2026-09-09)
+
+The Availability screen's "Time off & blocks" section is now "Closures & amended hours", the
+web's Closures tab as built (`StaffLeaveCalendarPanel`, `Docs/calendar-amended-hours-plan.md`):
+
+- **Pure module** `lib/availability/calendar-amended-hours.ts`: the wire shapes, the route's
+  period normalisation with its exact refusals, `enumerateDatesInclusive`,
+  `firstFullDayLeaveDate`, the leave note (full-day leave BLOCKS the save, as the route refuses
+  it; part-day leave is named and stays blocked inside the hours) and the venue-hours note ("Your
+  venue is closed on …" / "Hours outside 09:00 to 17:00 on … are not bookable by guests. Staff
+  can still book. To open to guests as well, amend your business hours for these dates too"),
+  resolved per date through `resolveVenueDay` with the venue's weekly hours and its venue-wide
+  blocks. Ten unit tests.
+- **Queries** `lib/queries/useCalendarAmendedHours.ts`: GET in a window (per calendar or all),
+  PUT with the `acknowledge` re-send, DELETE by range; every write invalidates the calendars too,
+  since `availability_exceptions` rides on the practitioners feed (so the diary's bands, the
+  Working-today chip and the schedule preview update at once).
+- **The sheet.** "New entry" opens with an Entry type choice, "Closed" (the existing closure
+  form: leave type, all day or a window) or "Working different hours": up to three open/close
+  periods ("Add another period (for a break in the middle of the day)", "Remove period N"), the
+  note (200 characters, "e.g. Late opening for the fair"), "Apply to all active calendars" for
+  an admin with the per-kind hint, the two notes, and the 409 "Save these hours anyway?" asked
+  as an in-sheet `ConfirmPanel` (R29-6). Editing a run loads it back (its range is `replace`d on
+  save); Save is held while full-day leave sits in the range.
+- **The list** interleaves both kinds by date under Upcoming and Past: an amended run reads
+  "Mon 21 Sep – Wed 23 Sep · Sarah · Amended hours · 10:00–14:00 · note", with Edit and the
+  two-step Remove ("Amended hours removed. The dates go back to the usual hours.").
+- **The month grid** (`TeamLeaveCalendar`) marks an amended day with an amber "Hrs" tag unless
+  full-day leave covers it (leave wins), adds the legend entry, and a tap on such a day with no
+  leave opens the run, as the web's grid does.
+- The schedule preview's rule text now points at "Closures & amended hours on the Availability
+  screen" rather than a Closures tab.
+
+Left as the web left it: no `closed` override for staff calendars (a closure is leave), and
+resources keep their own editor.

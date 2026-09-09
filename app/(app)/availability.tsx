@@ -17,6 +17,7 @@ import { minutesToTime } from '@/components/calendar/grid-layout';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Chip } from '@/components/ui/Chip';
+import { ConfirmPanel } from '@/components/ui/ConfirmPanel';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { IconButton } from '@/components/ui/IconButton';
@@ -26,7 +27,7 @@ import { Segmented } from '@/components/ui/Segmented';
 import { Sheet } from '@/components/ui/Sheet';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
-import { ApiError } from '@/lib/api/client';
+import { ApiError, isRequiresConfirmationBody } from '@/lib/api/client';
 import {
   describePeriod,
   describeScheduleSource,
@@ -50,6 +51,23 @@ import {
   useUpdateBlock,
   useUpdateLeave,
 } from '@/lib/queries/useAvailabilityManage';
+import {
+  AMENDED_HOURS_MAX_PERIODS,
+  AMENDED_HOURS_MAX_REASON_LENGTH,
+  amendedHoursLeaveNote,
+  amendedHoursVenueNote,
+  describeAmendedRange,
+  describeHoursPeriods,
+  minutesToHm,
+  normaliseHoursPeriods,
+  type AmendedHoursEntry,
+} from '@/lib/availability/calendar-amended-hours';
+import { useAvailabilityBlocks } from '@/lib/queries/useAvailabilityBlocks';
+import {
+  useAmendedHours,
+  useDeleteAmendedHours,
+  usePutAmendedHours,
+} from '@/lib/queries/useCalendarAmendedHours';
 import { calendarDateInTimeZone } from '@/lib/queries/useBookingsList';
 import { usePractitioners } from '@/lib/queries/usePractitioners';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
@@ -185,6 +203,17 @@ function summariseBreaks(p: Practitioner): string | null {
 }
 
 // ---- Section header ---------------------------------------------------------
+/** One line of the closures list: a leave period, or a run of amended hours (web #187). */
+type ClosureItem = { key: string; sort: string; ended: boolean } & (
+  | { type: 'closed'; row: LeavePeriod }
+  | { type: 'hours'; row: AmendedHoursEntry }
+);
+
+/** A run of amended hours is keyed by calendar and start: it has no id of its own. */
+function amendedKey(row: Pick<AmendedHoursEntry, 'calendar_id' | 'date_start'>): string {
+  return `hours-${row.calendar_id}-${row.date_start}`;
+}
+
 function SectionHeader({ title, caption }: { title: string; caption?: string }) {
   return (
     <View style={styles.sectionHeader}>
@@ -310,6 +339,13 @@ export default function AvailabilityScreen() {
   const createLeave = useCreateLeave();
   const updateLeave = useUpdateLeave();
   const deleteLeave = useDeleteLeave();
+  // Amended hours (web #187): a calendar working different hours on a date or a
+  // range, listed and edited beside its closures.
+  const amendedQuery = useAmendedHours(today, to, filterPractitionerId);
+  const putAmended = usePutAmendedHours();
+  const deleteAmended = useDeleteAmendedHours();
+  // Venue-wide closures and amended hours, for the note under the hours form.
+  const venueBlocksQuery = useAvailabilityBlocks();
 
   // Track per-id pending deletes to prevent double-delete and scope loading state
   const [deletingBlockIds, setDeletingBlockIds] = useState<Set<string>>(new Set());
@@ -361,6 +397,20 @@ export default function AvailabilityScreen() {
   const [reason, setReason] = useState('');
   const [leaveType, setLeaveType] = useState<LeaveType>('annual');
   const [sheetError, setSheetError] = useState<string | null>(null);
+  /**
+   * The leave sheet's two kinds of entry (web #187): a closure (leave, hard) or
+   * working different hours (an override the diary and every engine read).
+   */
+  const [entryKind, setEntryKind] = useState<'closed' | 'hours'>('closed');
+  /** The hours form's periods, in minutes since midnight; up to three. */
+  const [hoursPeriods, setHoursPeriods] = useState<{ start: number; end: number }[]>([
+    { start: 9 * 60, end: 17 * 60 },
+  ]);
+  /** The run being edited; its range is replaced on save. */
+  const [editingAmended, setEditingAmended] = useState<AmendedHoursEntry | null>(null);
+  /** The 409 "save anyway?" for amended hours, asked as a step of this sheet. */
+  const [amendedAck, setAmendedAck] = useState<{ message: string } | null>(null);
+  const [deletingAmendedKeys, setDeletingAmendedKeys] = useState<Set<string>>(new Set());
 
   // Hours/breaks sheet
   const [hoursTargetId, setHoursTargetId] = useState<string | null>(null);
@@ -388,6 +438,10 @@ export default function AvailabilityScreen() {
     setEndMinutes(13 * 60);
     setReason('');
     setLeaveType('annual');
+    setEntryKind('closed');
+    setHoursPeriods([{ start: 9 * 60, end: 17 * 60 }]);
+    setEditingAmended(null);
+    setAmendedAck(null);
     setSheetError(null);
     setSheet(kind);
   }
@@ -409,6 +463,10 @@ export default function AvailabilityScreen() {
     setEndMinutes(13 * 60);
     setReason('');
     setLeaveType('annual');
+    setEntryKind('closed');
+    setHoursPeriods([{ start: 9 * 60, end: 17 * 60 }]);
+    setEditingAmended(null);
+    setAmendedAck(null);
     setSheetError(null);
     setSheet('leave');
   }
@@ -440,6 +498,9 @@ export default function AvailabilityScreen() {
     }
     setEditingLeaveId(period.id);
     setEditingBlockId(null);
+    setEditingAmended(null);
+    setEntryKind('closed');
+    setAmendedAck(null);
     setPractitionerId(period.practitioner_id);
     setDate(period.start_date);
     setEndDate(period.end_date);
@@ -457,6 +518,90 @@ export default function AvailabilityScreen() {
     setApplyToAll(false);
     setSheetError(null);
     setSheet('leave');
+  }
+
+  /** Load a run of amended hours back into the sheet (web: `editAmended`). */
+  function openEditAmended(row: AmendedHoursEntry) {
+    if (!ownsCalendar(row.calendar_id)) {
+      toast.error('You can only amend hours on your own calendar.');
+      return;
+    }
+    setEditingBlockId(null);
+    setEditingLeaveId(null);
+    setEditingAmended(row);
+    setEntryKind('hours');
+    setPractitionerId(row.calendar_id);
+    setApplyToAll(false);
+    setDate(row.date_start);
+    setEndDate(row.date_end);
+    setHoursPeriods(
+      row.periods.length > 0
+        ? row.periods.map((p) => ({
+            start: timeStringToMinutes(p.start),
+            end: timeStringToMinutes(p.end),
+          }))
+        : [{ start: 9 * 60, end: 17 * 60 }],
+    );
+    setReason(row.reason ?? '');
+    setAmendedAck(null);
+    setSheetError(null);
+    setSheet('leave');
+  }
+
+  /**
+   * Save the hours form: PUT the range (replacing the run being edited). A 409
+   * `requires_confirmation` (an upcoming booking now sits outside the hours)
+   * asks in the sheet and re-sends acknowledged; a plain 409 is a full-day
+   * closure in the range, which the route refuses and the note already named.
+   */
+  async function saveAmendedHours(acknowledge: boolean) {
+    if (endDate < date) {
+      setSheetError('End date must be on or after the start date.');
+      return;
+    }
+    const normalised = normaliseHoursPeriods(
+      hoursPeriods.map((p) => ({ start: minutesToHm(p.start), end: minutesToHm(p.end) })),
+    );
+    if (!normalised.ok) {
+      setSheetError(normalised.error);
+      return;
+    }
+    if (!editingAmended && !applyToAll && !practitionerId) {
+      setSheetError('Please select a practitioner.');
+      return;
+    }
+    setSheetError(null);
+    try {
+      await putAmended.mutateAsync({
+        ...(!editingAmended && applyToAll
+          ? { apply_to_all_active: true }
+          : { practitioner_id: editingAmended?.calendar_id ?? practitionerId! }),
+        date_start: date,
+        date_end: endDate,
+        periods: normalised.periods,
+        reason: reason.trim() || null,
+        replace: editingAmended
+          ? { date_start: editingAmended.date_start, date_end: editingAmended.date_end }
+          : null,
+        acknowledge,
+      });
+      setAmendedAck(null);
+      hapticSuccess();
+      setSheet(null);
+      toast.success(editingAmended ? 'Amended hours updated.' : 'Amended hours saved.');
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409 && isRequiresConfirmationBody(e.body)) {
+        hapticWarning();
+        setAmendedAck({
+          message:
+            e.body.message ?? 'Some upcoming bookings fall outside these hours. Save anyway?',
+        });
+        return;
+      }
+      setAmendedAck(null);
+      hapticWarning();
+      setSheetError(e instanceof ApiError ? e.message : 'Could not save. Try again.');
+    }
   }
 
   function openHoursSheet(practId: string) {
@@ -509,6 +654,9 @@ export default function AvailabilityScreen() {
             ...(payload.reason ? { reason: payload.reason } : {}),
           });
         }
+      } else if (entryKind === 'hours') {
+        await saveAmendedHours(false);
+        return;
       } else {
         // leave
         if (endDate < date) {
@@ -585,6 +733,29 @@ export default function AvailabilityScreen() {
     }
   }
 
+  async function handleDeleteAmended(row: AmendedHoursEntry) {
+    const key = amendedKey(row);
+    clearConfirm();
+    if (deletingAmendedKeys.has(key)) return;
+    setDeletingAmendedKeys((prev) => new Set(prev).add(key));
+    try {
+      await deleteAmended.mutateAsync({
+        practitioner_id: row.calendar_id,
+        date_start: row.date_start,
+        date_end: row.date_end,
+      });
+      toast.success('Amended hours removed. The dates go back to the usual hours.');
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Could not remove. An error occurred.');
+    } finally {
+      setDeletingAmendedKeys((prev) => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
+    }
+  }
+
   async function handleDeleteLeave(leaveId: string) {
     clearConfirm();
     if (deletingLeaveIds.has(leaveId)) return;
@@ -607,30 +778,109 @@ export default function AvailabilityScreen() {
   const blocks = (blocksQuery.data?.blocks ?? []).filter((b) => !b.class_instance_id);
   const leave = useMemo(() => leaveQuery.data?.periods ?? [], [leaveQuery.data?.periods]);
 
-  // Upcoming first (asc), past collapsed behind a toggle (desc) — web parity.
+  const amended = useMemo(
+    () => (amendedQuery.data ?? []).filter((e) => e.kind === 'hours'),
+    [amendedQuery.data],
+  );
+  // Both kinds in one list, interleaved by date (web #187): upcoming first
+  // (asc), past collapsed behind a toggle (desc).
+  const closureItems = useMemo<ClosureItem[]>(
+    () => [
+      ...leave.map(
+        (p): ClosureItem => ({ key: `leave-${p.id}`, sort: p.start_date, ended: p.end_date < today, type: 'closed', row: p }),
+      ),
+      ...amended.map(
+        (a): ClosureItem => ({ key: amendedKey(a), sort: a.date_start, ended: a.date_end < today, type: 'hours', row: a }),
+      ),
+    ],
+    [leave, amended, today],
+  );
   const upcomingLeave = useMemo(
-    () =>
-      leave
-        .filter((p) => p.end_date >= today)
-        .sort((a, b) => a.start_date.localeCompare(b.start_date)),
-    [leave, today],
+    () => closureItems.filter((i) => !i.ended).sort((a, b) => a.sort.localeCompare(b.sort)),
+    [closureItems],
   );
   const pastLeave = useMemo(
-    () =>
-      leave
-        .filter((p) => p.end_date < today)
-        .sort((a, b) => b.start_date.localeCompare(a.start_date)),
-    [leave, today],
+    () => closureItems.filter((i) => i.ended).sort((a, b) => b.sort.localeCompare(a.sort)),
+    [closureItems],
   );
+  const venueBlocks = useMemo(
+    () => (venueBlocksQuery.data ?? []).filter((b) => b.service_id == null),
+    [venueBlocksQuery.data],
+  );
+  const selectedCalendarName = practitionerName(
+    editingAmended?.calendar_id ?? (applyToAll ? null : practitionerId),
+  );
+  const hoursPeriodsHm = hoursPeriods.map((p) => ({ start: minutesToHm(p.start), end: minutesToHm(p.end) }));
+  const amendedLeaveNote =
+    sheet === 'leave' && entryKind === 'hours'
+      ? amendedHoursLeaveNote({
+          dateStart: date,
+          dateEnd: endDate,
+          leave: leave.filter((l) =>
+            applyToAll && !editingAmended
+              ? true
+              : l.practitioner_id === (editingAmended?.calendar_id ?? practitionerId),
+          ),
+          calendarName: applyToAll && !editingAmended ? 'A calendar' : selectedCalendarName,
+        })
+      : null;
+  const amendedVenueNote =
+    sheet === 'leave' && entryKind === 'hours'
+      ? amendedHoursVenueNote({
+          dateStart: date,
+          dateEnd: endDate,
+          periods: hoursPeriodsHm,
+          venueHours: venue?.opening_hours,
+          venueBlocks,
+        })
+      : null;
   const isLoading = blocksQuery.isLoading || leaveQuery.isLoading || practitionersQuery.isLoading;
   const isError = blocksQuery.isError || leaveQuery.isError;
   const saving =
     createBlock.isPending ||
     updateBlock.isPending ||
     createLeave.isPending ||
-    updateLeave.isPending;
+    updateLeave.isPending ||
+    putAmended.isPending;
 
   const hoursTarget = practitioners.find((p) => p.id === hoursTargetId);
+
+  /** One run of amended hours (web: the "Amended hours" chip line). */
+  function renderAmendedRow(row: AmendedHoursEntry) {
+    const key = amendedKey(row);
+    const canManage = ownsCalendar(row.calendar_id);
+    return (
+      <View key={key} style={[styles.row, { borderBottomColor: colors.border }]}>
+        <View style={styles.rowBody}>
+          <Text variant="bodyMedium">{describeAmendedRange(row.date_start, row.date_end)}</Text>
+          <Text variant="caption" tone="muted" numberOfLines={2}>
+            {row.calendar_name} · <Text variant="caption" color={colors.warning}>Amended hours</Text>{' '}
+            · {describeHoursPeriods(row.periods)}
+            {row.reason ? ` · ${row.reason}` : ''}
+          </Text>
+        </View>
+        {canManage ? (
+          <View style={styles.rowActions}>
+            <Button label="Edit" variant="ghost" size="sm" onPress={() => openEditAmended(row)} />
+            <Button
+              label={pendingConfirm === key ? 'Tap to confirm' : 'Remove'}
+              variant="ghost"
+              size="sm"
+              loading={deletingAmendedKeys.has(key)}
+              disabled={deletingAmendedKeys.has(key)}
+              onPress={() =>
+                pendingConfirm === key ? void handleDeleteAmended(row) : armConfirm(key)
+              }
+            />
+          </View>
+        ) : null}
+      </View>
+    );
+  }
+
+  function renderClosureItem(item: ClosureItem) {
+    return item.type === 'hours' ? renderAmendedRow(item.row) : renderLeaveRow(item.row);
+  }
 
   // Single leave row — shared by the Upcoming and Past groups below.
   function renderLeaveRow(period: LeavePeriod) {
@@ -928,8 +1178,8 @@ export default function AvailabilityScreen() {
 
           {/* ===== Time off & blocks ===== */}
           <SectionHeader
-            title="Time off & blocks"
-            caption="Add leave, mark an unavailable window, or block out a one-off slot."
+            title="Closures & amended hours"
+            caption="Take a calendar out for a date or a range, give it different hours on those dates, or block out a one-off slot."
           />
           {/* Action buttons */}
           <View style={styles.actionRow}>
@@ -950,6 +1200,7 @@ export default function AvailabilityScreen() {
             today={today}
             filterPractitionerId={filterPractitionerId}
             onEditLeave={openEditLeave}
+            onEditAmended={openEditAmended}
             onCreateRange={openCreateLeaveRange}
             onDeleteLeave={handleDeleteLeave}
             deletingLeaveIds={deletingLeaveIds}
@@ -1014,9 +1265,12 @@ export default function AvailabilityScreen() {
 
           {/* Leave card — upcoming first, past collapsed (web parity) */}
           <Card>
-            <Text variant="label">Leave / Unavailability</Text>
-            {leave.length === 0 ? (
-              <EmptyState title="No leave booked" message="Leave periods will appear here." />
+            <Text variant="label">Closures & amended hours</Text>
+            {closureItems.length === 0 ? (
+              <EmptyState
+                title="No closures or amended hours"
+                message="Leave and amended hours will appear here."
+              />
             ) : (
               <>
                 {upcomingLeave.length > 0 ? (
@@ -1024,11 +1278,11 @@ export default function AvailabilityScreen() {
                     <Text variant="caption" tone="secondary" style={styles.groupHeading}>
                       Upcoming
                     </Text>
-                    {upcomingLeave.map(renderLeaveRow)}
+                    {upcomingLeave.map(renderClosureItem)}
                   </View>
                 ) : (
                   <Text variant="caption" tone="muted" style={styles.groupHeading}>
-                    No upcoming leave.
+                    No upcoming closures or amended hours.
                   </Text>
                 )}
 
@@ -1047,7 +1301,7 @@ export default function AvailabilityScreen() {
                       </Text>
                     </Pressable>
                     {showPastLeave ? (
-                      <View style={styles.list}>{pastLeave.map(renderLeaveRow)}</View>
+                      <View style={styles.list}>{pastLeave.map(renderClosureItem)}</View>
                     ) : null}
                   </View>
                 ) : null}
@@ -1075,13 +1329,45 @@ export default function AvailabilityScreen() {
                 : 'Block time'
               : editingLeaveId
                 ? 'Edit leave'
-                : 'Add leave'}
+                : editingAmended
+                  ? 'Edit amended hours'
+                  : 'New entry'}
           </Text>
 
+          {/* Entry type (web #187): a closure, or working different hours. Create only. */}
+          {sheet === 'leave' && !editingLeaveId && !editingAmended ? (
+            <>
+              <Segmented
+                options={[
+                  { value: 'closed', label: 'Closed' },
+                  { value: 'hours', label: 'Working different hours' },
+                ]}
+                value={entryKind}
+                onChange={(next) => {
+                  setEntryKind(next);
+                  setSheetError(null);
+                  setAmendedAck(null);
+                }}
+              />
+              <Text variant="caption" tone="muted">
+                {entryKind === 'hours'
+                  ? 'Open on these dates with these hours.'
+                  : 'All day, or a window each day.'}
+              </Text>
+            </>
+          ) : null}
+
           {/* Apply to all — admin only, create only */}
-          {sheet === 'leave' && isAdmin && !editingLeaveId ? (
+          {sheet === 'leave' && isAdmin && !editingLeaveId && !editingAmended ? (
             <View style={styles.switchRow}>
-              <Text variant="bodyMedium">Apply to all practitioners</Text>
+              <View style={styles.flex1}>
+                <Text variant="bodyMedium">Apply to all active calendars</Text>
+                <Text variant="caption" tone="muted">
+                  {entryKind === 'hours'
+                    ? 'Same dates and hours on every active calendar column at once.'
+                    : 'Same dates and times on every active calendar column at once.'}
+                </Text>
+              </View>
               <Switch
                 value={applyToAll}
                 onValueChange={setApplyToAll}
@@ -1094,7 +1380,7 @@ export default function AvailabilityScreen() {
           {/* Practitioner chips — hidden when applying to all or editing leave (can't change
               owner). Non-admins only see their own calendar(s); a single self-calendar shows a
               read-only label instead of a picker (web parity: locked calendarId, hidden picker). */}
-          {!(sheet === 'leave' && applyToAll) && !editingLeaveId ? (
+          {!(sheet === 'leave' && applyToAll) && !editingLeaveId && !editingAmended ? (
             selectablePractitioners.length === 0 ? (
               <Text variant="bodySmall" tone="muted">
                 {isAdmin
@@ -1154,7 +1440,80 @@ export default function AvailabilityScreen() {
           )}
 
           {/* Leave-specific: type + block type (all-day vs window) */}
-          {sheet === 'leave' ? (
+          {sheet === 'leave' && entryKind === 'hours' ? (
+            <>
+              <Text variant="caption" tone="muted">
+                These hours replace the calendar&rsquo;s usual hours on every date in the range,
+                including days it does not normally work. Breaks still apply.
+              </Text>
+              {hoursPeriods.map((p, idx) => (
+                <View key={idx} style={styles.periodBlock}>
+                  <Stepper
+                    label={hoursPeriods.length > 1 ? `Period ${idx + 1} open` : 'Open'}
+                    value={minutesToTime(p.start)}
+                    onDecrement={() =>
+                      setHoursPeriods((all) =>
+                        all.map((q, i) =>
+                          i === idx ? { ...q, start: Math.max(0, q.start - STEP_MINUTES) } : q,
+                        ),
+                      )
+                    }
+                    onIncrement={() =>
+                      setHoursPeriods((all) =>
+                        all.map((q, i) =>
+                          i === idx
+                            ? { ...q, start: Math.min(MAX_MINUTES, q.start + STEP_MINUTES) }
+                            : q,
+                        ),
+                      )
+                    }
+                  />
+                  <Stepper
+                    label={hoursPeriods.length > 1 ? `Period ${idx + 1} close` : 'Close'}
+                    value={minutesToTime(p.end)}
+                    onDecrement={() =>
+                      setHoursPeriods((all) =>
+                        all.map((q, i) =>
+                          i === idx ? { ...q, end: Math.max(0, q.end - STEP_MINUTES) } : q,
+                        ),
+                      )
+                    }
+                    onIncrement={() =>
+                      setHoursPeriods((all) =>
+                        all.map((q, i) =>
+                          i === idx ? { ...q, end: Math.min(MAX_MINUTES, q.end + STEP_MINUTES) } : q,
+                        ),
+                      )
+                    }
+                  />
+                  {hoursPeriods.length > 1 ? (
+                    <Button
+                      label={`Remove period ${idx + 1}`}
+                      variant="ghost"
+                      size="sm"
+                      onPress={() => setHoursPeriods((all) => all.filter((_, i) => i !== idx))}
+                    />
+                  ) : null}
+                </View>
+              ))}
+              {hoursPeriods.length < AMENDED_HOURS_MAX_PERIODS ? (
+                <Button
+                  label="Add another period (for a break in the middle of the day)"
+                  variant="secondary"
+                  size="sm"
+                  onPress={() =>
+                    setHoursPeriods((all) => {
+                      const last = all[all.length - 1];
+                      const start = Math.min(MAX_MINUTES, (last?.end ?? 12 * 60) + 60);
+                      return [...all, { start, end: Math.min(MAX_MINUTES, start + 3 * 60) }];
+                    })
+                  }
+                />
+              ) : null}
+            </>
+          ) : null}
+
+          {sheet === 'leave' && entryKind === 'closed' ? (
             <>
               <Segmented
                 options={[
@@ -1204,9 +1563,31 @@ export default function AvailabilityScreen() {
             label={sheet === 'block' ? 'Reason (optional)' : 'Notes (optional)'}
             value={reason}
             onChangeText={setReason}
-            // The server caps leave notes at 500 characters and a block's reason at 200.
-            maxLength={sheet === 'leave' ? 500 : 200}
+            placeholder={
+              sheet === 'leave'
+                ? entryKind === 'hours'
+                  ? 'e.g. Late opening for the fair'
+                  : 'e.g. Training day, equipment maintenance'
+                : undefined
+            }
+            // The server caps leave notes at 500 characters, an amended-hours note
+            // and a block's reason at 200.
+            maxLength={
+              sheet === 'leave' && entryKind === 'closed' ? 500 : AMENDED_HOURS_MAX_REASON_LENGTH
+            }
           />
+
+          {/* What the hours form is about to do to leave and to the venue's hours (web #187). */}
+          {amendedLeaveNote ? (
+            <Text variant="bodySmall" tone={amendedLeaveNote.blocking ? 'danger' : 'secondary'}>
+              {amendedLeaveNote.text}
+            </Text>
+          ) : null}
+          {amendedVenueNote ? (
+            <Text variant="bodySmall" tone="secondary">
+              {amendedVenueNote}
+            </Text>
+          ) : null}
 
           {sheetError ? (
             <Text variant="bodySmall" tone="danger">
@@ -1214,21 +1595,37 @@ export default function AvailabilityScreen() {
             </Text>
           ) : null}
 
-          <View style={styles.actionRow}>
-            <Button
-              label="Cancel"
-              variant="secondary"
-              style={styles.flex1}
-              onPress={() => setSheet(null)}
+          {amendedAck ? (
+            <ConfirmPanel
+              title="Save these hours anyway?"
+              message={amendedAck.message}
+              confirmLabel="Save anyway"
+              loading={putAmended.isPending}
+              onConfirm={() => void saveAmendedHours(true)}
+              onCancel={() => {
+                if (!putAmended.isPending) setAmendedAck(null);
+              }}
             />
-            <Button
-              label={editingBlockId || editingLeaveId ? 'Update' : 'Save'}
-              style={styles.flex1}
-              loading={saving}
-              disabled={!applyToAll && !practitionerId && !editingLeaveId}
-              onPress={() => void handleSave()}
-            />
-          </View>
+          ) : (
+            <View style={styles.actionRow}>
+              <Button
+                label="Cancel"
+                variant="secondary"
+                style={styles.flex1}
+                onPress={() => setSheet(null)}
+              />
+              <Button
+                label={editingBlockId || editingLeaveId || editingAmended ? 'Update' : 'Save'}
+                style={styles.flex1}
+                loading={saving}
+                disabled={
+                  (!applyToAll && !practitionerId && !editingLeaveId && !editingAmended) ||
+                  amendedLeaveNote?.blocking === true
+                }
+                onPress={() => void handleSave()}
+              />
+            </View>
+          )}
         </ScrollView>
       </Sheet>
 
@@ -1400,6 +1797,9 @@ const styles = StyleSheet.create({
   chipRow: {
     gap: spacing.sm,
     paddingVertical: spacing.xs,
+  },
+  periodBlock: {
+    gap: spacing.sm,
   },
   switchRow: {
     flexDirection: 'row',

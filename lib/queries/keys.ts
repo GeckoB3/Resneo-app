@@ -166,6 +166,21 @@ export const queryKeys = {
       [...queryKeys.availabilityManage.all(), 'blocks', keyScope(accessToken), from ?? null, to ?? null] as const,
     leave: (accessToken?: string | null, from?: string | null, to?: string | null) =>
       [...queryKeys.availabilityManage.all(), 'leave', keyScope(accessToken), from ?? null, to ?? null] as const,
+    /** `/api/venue/calendar-amended-hours` runs in a window, optionally for one calendar (web #187). */
+    amendedHours: (
+      accessToken?: string | null,
+      from?: string | null,
+      to?: string | null,
+      practitionerId?: string | null,
+    ) =>
+      [
+        ...queryKeys.availabilityManage.all(),
+        'amendedHours',
+        keyScope(accessToken),
+        from ?? null,
+        to ?? null,
+        practitionerId ?? null,
+      ] as const,
   },
 
   bookings: {

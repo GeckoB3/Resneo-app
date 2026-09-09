@@ -18,6 +18,8 @@ import {
   formatMonthLabel,
 } from '@/lib/dates/venue-dates';
 import { hapticSelect, hapticWarning } from '@/lib/haptics';
+import { amendedHoursOnDate, type AmendedHoursEntry } from '@/lib/availability/calendar-amended-hours';
+import { useAmendedHours } from '@/lib/queries/useCalendarAmendedHours';
 import { useTeamLeaveMonth } from '@/lib/queries/useTeamLeave';
 import { fonts, minTouchTarget, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -67,6 +69,8 @@ type TeamLeaveCalendarProps = {
   filterPractitionerId: string | null;
   /** Opens the existing leave edit sheet with this period. */
   onEditLeave: (period: LeavePeriod) => void;
+  /** Opens the leave sheet on a run of amended hours (web #187). */
+  onEditAmended?: (row: AmendedHoursEntry) => void;
   /** Opens the leave create sheet prefilled with the tapped date range. */
   onCreateRange: (startDate: string, endDate: string) => void;
   /** Existing page delete handler (confirm + mutation). */
@@ -84,6 +88,7 @@ export function TeamLeaveCalendar({
   today,
   filterPractitionerId,
   onEditLeave,
+  onEditAmended,
   onCreateRange,
   onDeleteLeave,
   deletingLeaveIds,
@@ -101,6 +106,9 @@ export function TeamLeaveCalendar({
 
   const monthRange = getMonthRangeFromDate(monthAnchor);
   const leaveQuery = useTeamLeaveMonth(monthRange.from, monthRange.to, filterPractitionerId);
+  // Amended hours in the month (web #187): drawn amber, and edited on tap.
+  const amendedQuery = useAmendedHours(monthRange.from, monthRange.to, filterPractitionerId);
+  const amended = amendedQuery.data ?? [];
   const periods = useMemo(() => leaveQuery.data?.periods ?? [], [leaveQuery.data?.periods]);
 
   // date → distinct leave types present (for the day dots).
@@ -156,6 +164,13 @@ export function TeamLeaveCalendar({
     if (onDay.length === 1) {
       clearRange();
       onEditLeave(onDay[0]!);
+      return;
+    }
+    // A day with no leave but amended hours opens that run (web parity).
+    const amendedOnDay = onDay.length === 0 ? amendedHoursOnDate(amended, dateStr) : null;
+    if (amendedOnDay && onEditAmended) {
+      clearRange();
+      onEditAmended(amendedOnDay);
       return;
     }
 
@@ -259,6 +274,12 @@ export function TeamLeaveCalendar({
                 const isRange = inRange(dateStr);
                 const dayTypes = LEAVE_TYPE_ORDER.filter((t) => typesByDay[dateStr]?.has(t));
                 const awayCount = periodsOnDay(periods, dateStr).length;
+                // Amended hours show unless full-day leave covers the day: leave wins.
+                const amendedDay =
+                  amendedHoursOnDate(amended, dateStr) != null &&
+                  !periodsOnDay(periods, dateStr).some(
+                    (p) => !p.unavailable_start_time || !p.unavailable_end_time,
+                  );
 
                 return (
                   <Pressable
@@ -266,7 +287,7 @@ export function TeamLeaveCalendar({
                     onPress={() => handleDayPress(dateStr)}
                     accessibilityRole="button"
                     accessibilityState={{ selected: isSelected || isRange }}
-                    accessibilityLabel={`${format(cell, 'd MMMM')}, ${awayCount} ${awayCount === 1 ? 'leave period' : 'leave periods'}`}
+                    accessibilityLabel={`${format(cell, 'd MMMM')}, ${awayCount} ${awayCount === 1 ? 'leave period' : 'leave periods'}${amendedDay ? ', amended hours' : ''}`}
                     style={({ pressed }) => [
                       styles.dayCell,
                       { borderColor: colors.border },
@@ -289,6 +310,11 @@ export function TeamLeaveCalendar({
                           style={[styles.dot, { backgroundColor: typeColors[t].dot }]}
                         />
                       ))}
+                      {amendedDay ? (
+                        <Text style={[styles.amendedTag, { color: colors.warning }]} testID="amended-day">
+                          Hrs
+                        </Text>
+                      ) : null}
                     </View>
                   </Pressable>
                 );
@@ -306,6 +332,12 @@ export function TeamLeaveCalendar({
                 </Text>
               </View>
             ))}
+            <View style={styles.legendItem}>
+              <Text style={[styles.amendedTag, { color: colors.warning }]}>Hrs</Text>
+              <Text variant="caption" tone="secondary">
+                Amended hours
+              </Text>
+            </View>
           </View>
 
           {/* In-progress range selection → create leave prefilled (web parity) */}
@@ -532,6 +564,11 @@ const styles = StyleSheet.create({
     width: 7,
     height: 7,
     borderRadius: radius.full,
+  },
+  amendedTag: {
+    fontSize: 8,
+    fontFamily: fonts.bold,
+    lineHeight: 10,
   },
   legendRow: {
     flexDirection: 'row',

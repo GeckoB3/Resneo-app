@@ -341,7 +341,7 @@ export function ScheduleTimelineSheet({
                       (selectedSummary.overrideReason != null && selectedSummary.reason === 'no-hours')
                         ? `Rule: amended hours for this date${
                             selectedSummary.overrideReason ? ` (${selectedSummary.overrideReason})` : ''
-                          }, set on the Closures tab.`
+                          }, set under Closures & amended hours on the Availability screen.`
                         : selectedSummary.source.kind === 'period'
                           ? `Rule: change from ${describeYmdShort(selectedSummary.source.period.from)}${
                               selectedSummary.source.period.weeks.length > 1
