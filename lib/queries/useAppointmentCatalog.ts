@@ -12,6 +12,12 @@ export interface UseAppointmentCatalogOptions {
    * are returned. Requires a valid access token.
    */
   includeHidden?: boolean;
+  /**
+   * Staff "Override availability" (web #187): `?override=1` lists every active
+   * calendar with every active service, each with `assigned`, and implies the
+   * hidden add-on groups. Needs a staff session for the venue.
+   */
+  overrideAvailability?: boolean;
 }
 
 /**
@@ -30,12 +36,12 @@ export function useAppointmentCatalog(
   venueId: string | null | undefined,
   options: UseAppointmentCatalogOptions = {},
 ) {
-  const { includeHidden = false } = options;
+  const { includeHidden = false, overrideAvailability = false } = options;
   const accessToken = useAccessToken();
   const enabled = isBackendConfigured() && Boolean(venueId);
 
   return useQuery({
-    queryKey: [...queryKeys.appointments.catalog(venueId), includeHidden] as const,
+    queryKey: [...queryKeys.appointments.catalog(venueId), includeHidden, overrideAvailability] as const,
     enabled,
     queryFn: async (): Promise<AppointmentCatalogResponse> => {
       if (!venueId) {
@@ -44,6 +50,9 @@ export function useAppointmentCatalog(
       const params = new URLSearchParams({ venue_id: venueId });
       if (includeHidden) {
         params.set('include_hidden', 'true');
+      }
+      if (overrideAvailability) {
+        params.set('override', '1');
       }
       return apiFetch<AppointmentCatalogResponse>(
         `/api/booking/appointment-catalog?${params.toString()}`,

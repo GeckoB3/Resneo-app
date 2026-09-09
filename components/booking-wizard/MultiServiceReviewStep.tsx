@@ -8,6 +8,7 @@ import type { MultiServiceSegment } from '@/lib/booking/multi-service-chain';
 import { chainTotalPence } from '@/lib/booking/multi-service-chain';
 import { formatPence } from '@/lib/format';
 import { hapticSelect } from '@/lib/haptics';
+import { AvailabilityOverrideWarnings } from '@/components/booking-wizard/AvailabilityOverrideControls';
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { AppointmentCatalogPractitioner } from '@/types/appointment-catalog';
@@ -37,6 +38,11 @@ type MultiServiceReviewStepProps = {
   onContinue: () => void;
   /** Inline error from a failed append/remove (e.g. server rejects the chain). */
   errorMessage?: string | null;
+  /**
+   * With "Override availability" on (web #187): what the engine would have
+   * refused, from the dry run. An empty list still shows the box ("Nothing").
+   */
+  overrideWarnings?: string[] | null;
 };
 
 /**
@@ -52,6 +58,7 @@ export function MultiServiceReviewStep({
   onRemoveSegment,
   onContinue,
   errorMessage,
+  overrideWarnings = null,
 }: MultiServiceReviewStepProps) {
   const { colors } = useTheme();
   const totalPence = chainTotalPence(segments);
@@ -127,6 +134,8 @@ export function MultiServiceReviewStep({
           Up to {MAX_MULTI_SERVICE_SEGMENTS} services in one visit; the times offered are where the
           whole visit fits.
         </Text>
+
+        {overrideWarnings ? <AvailabilityOverrideWarnings warnings={overrideWarnings} /> : null}
 
         {errorMessage ? (
           <Text variant="bodySmall" tone="danger">

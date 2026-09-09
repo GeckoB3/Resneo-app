@@ -28,7 +28,7 @@ web summary was corrected where the code disagrees with it (§2).
 | R29-6 | Hours: the app already meets the whole written-down contract (409 → confirm → acknowledge, ISO `days_off` never sent). The "crashed and did not save" report matches a pre-existing APP defect: the "Save anyway?" ConfirmSheet is a second modal opened over the hours Sheet, which iOS drops silently | **Breaks live flow (iOS), app-side** | **Built** 2026-09-09 (§8, §22) |
 | R29-7 | Per-calendar amended hours, read side: closure bands and the Working-today chip already honour `availability_exceptions`; the web deploy alone lights them up. The schedule-preview month grid ignores overrides | Wrong data (small) | **Built** 2026-09-09 (§9, §23) |
 | R29-8 | Per-calendar amended hours, write side: no editor in the app (`PUT/DELETE /api/venue/calendar-amended-hours`) | Parity | **Built** 2026-09-09 (§9, §27) |
-| R29-9 | Staff "Override availability": additive; the app has no tick box. Walk-in keeps its own silent bypass | Parity, a feature | §10 |
+| R29-9 | Staff "Override availability": additive; the app has no tick box. Walk-in keeps its own silent bypass | Parity, a feature | **Built** 2026-09-09 (§10, §28) |
 | R29-10 | Card holds: the server default flipped to no hold; the app always sends the toggle explicitly for a card-hold entity, so nothing changes on the wire. The app's toggle still DEFAULTS ON and its copy is the old one; seven comments state the wrong server default | Parity (UX drift) | **Built** 2026-09-09 (§11, §24) |
 | R29-11 | Canonical processing shape: the calendar, wizard chain, Modify sheet and detail already agree with it. But lengthening a service in the app's form without touching its periods silently reverts the length on save (the server re-fits the stored blocks and canonicalises) | Wrong data, both sides; local fix | **Built** 2026-09-09 (§12, §25) |
 | R29-12 | Collective service sync: additive; the app's catalogue builder keeps working but shows no sync state and lacks the three new actions. Booking-page settings: the combined page URL has no Copy in the app | Parity | §13 |
@@ -665,3 +665,41 @@ web's Closures tab as built (`StaffLeaveCalendarPanel`, `Docs/calendar-amended-h
 
 Left as the web left it: no `closed` override for staff calendars (a closure is leave), and
 resources keep their own editor.
+
+## 28. Built: R29-9, "Override availability" (2026-09-09)
+
+The staff booking wizard gained the web's tick box (`AvailabilityOverrideToggle`, the web's
+label and help verbatim) on its first step: the person picker on a staff-first venue, the
+service list otherwise. Off by default, per booking, never sticky. With it on:
+
+- **Catalogue.** `useAppointmentCatalog` sends `override=1`, so every active calendar lists
+  every active service with `assigned`; "Any available" is hidden (no engine to pick for you);
+  a service the scoped person is not assigned reads "Not usually offered by Sam" on its card and
+  a person not assigned the chosen service reads "Does not usually offer this service" on the
+  practitioner step. `assigned` rides `AppointmentCatalogService` and `AppointmentServiceOption`.
+- **Date.** No availability calls at all: the month query is disabled and every date from today
+  is selectable (the picker already refuses the past); no "Start now" (the override covers it).
+- **Time.** `OverrideTimeStep`: a typed time on the OS picker in five-minute steps, opened at
+  the venue's clock, with the web's note. Continue lays the chain out from that start exactly
+  as a walk-in is (`buildChainFromSlot`) and checks it ONCE per service through the new
+  `useValidateAppointmentSlot` (`POST /api/booking/validate-appointment-slot` with the Bearer,
+  `override_availability`, `staff`, the earlier segments as phantoms and the staff length;
+  bodies from the pure `overrideDryRunBodies`). A refusal the override cannot lift ("Choose
+  today or a later date.", an unknown person, a length outside the limits) stays on the step;
+  otherwise the review step opens.
+- **Review.** "What this overrides" (`AvailabilityOverrideWarnings`) lists the server's own
+  reasons, each prefixed with its service ("Cut: Outside working hours"), or "Nothing: this time
+  would have been offered anyway." Nothing in it stops the save.
+- **Create.** Both create payloads carry `override_availability: true` (`CreateBookingPayload`,
+  `buildMultiServicePayload`), and the confirmation repeats `availability_override_warnings`
+  from the 201.
+- **Unticking** clears every choice (a person, service, date or time the engine would not offer
+  must not survive with the override off) and returns to the first step; ticking keeps them.
+- Walk-ins unchanged: `source: 'walk-in'` keeps its own silent bypass; the override is an
+  additional tick, as on the web. Linked venues: the flag rides the same `owner_venue_id` /
+  collective `venue_id` the wizard already sends; the server's actor check decides.
+
+Tests: `ServiceBookingFlow.override.test.tsx` (catalogue + pooled row, the unassigned note,
+every-date + typed-time + dry run + review box, a refusal held on the step, the flag reaching
+the confirm step, unticking) and `availability-override.test.ts` (the dry-run bodies, the copy).
+The three other flow suites mock the new dry-run hook.

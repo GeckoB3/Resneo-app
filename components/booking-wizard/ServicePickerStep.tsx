@@ -1,5 +1,5 @@
 import { SymbolView } from 'expo-symbols';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { FlatList, Pressable, StyleSheet, View } from 'react-native';
 
 import { StaffDurationControl } from '@/components/booking-wizard/StaffDurationControl';
@@ -21,6 +21,7 @@ import {
 } from '@/lib/booking/service-categories';
 import { MAX_SERVICES_PER_VISIT } from '@/lib/booking/service-chain';
 import { formatPence } from '@/lib/format';
+import { notUsuallyOfferedBy } from '@/lib/booking/availability-override';
 import { hapticSelect } from '@/lib/haptics';
 import { fonts, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -30,6 +31,10 @@ import type {
 } from '@/types/appointment-catalog';
 
 type ServicePickerStepProps = {
+  /** The staff "Override availability" tick box, above the list on a service-first venue (web #187). */
+  overrideToggle?: ReactNode;
+  /** The override is on: a service the scoped person is not assigned says so. */
+  overrideAvailability?: boolean;
   catalog: AppointmentCatalogResponse | undefined;
   isLoading: boolean;
   isError: boolean;
@@ -165,6 +170,7 @@ export function dedupeCatalogServices(
             sortOrder: service.sort_order ?? 0,
             category: service.category ?? null,
             anyAvailable: service.any_available,
+            assigned: service.assigned,
           },
           fromPricePence: price,
           multiplePractitioners: false,
@@ -270,6 +276,8 @@ export function ServicePickerStep({
   onClearSelection,
   onContinueSelection,
   initialDurationOverrides,
+  overrideToggle,
+  overrideAvailability = false,
 }: ServicePickerStepProps) {
   const { colors } = useTheme();
   const isMulti = selectionMode === 'multi';
@@ -365,6 +373,7 @@ export function ServicePickerStep({
   return (
     <View style={styles.container}>
       <Text variant="heading">Choose a service</Text>
+      {overrideToggle}
 
       {rows.length >= SERVICE_SEARCH_MIN_SERVICES ? (
         <SearchBar
@@ -432,6 +441,11 @@ export function ServicePickerStep({
             hasVariants ? `From ${natural} min · ${practitionerSummary(item.row)}` : practitionerSummary(item.row),
             // A search result shows its category so a flat match still says where it lives.
             ...(item.categoryName ? [item.categoryName] : []),
+            // The override lists every service for the scoped person; one they are not
+            // assigned says so, so the choice is knowing rather than accidental.
+            ...(overrideAvailability && effectivePractitioner && option.assigned === false
+              ? [notUsuallyOfferedBy(option.practitionerName)]
+              : []),
           ];
           return (
             <Card padded={false}>

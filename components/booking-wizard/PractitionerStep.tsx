@@ -3,6 +3,7 @@ import { FlatList, StyleSheet, View } from 'react-native';
 import { Avatar } from '@/components/ui/Avatar';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
+import { DOES_NOT_USUALLY_OFFER } from '@/lib/booking/availability-override';
 import { hapticSelect } from '@/lib/haptics';
 import { spacing } from '@/theme/index';
 import {
@@ -23,6 +24,8 @@ type PractitionerStepProps = {
   durationOverride?: number | null;
   /** Called when the user picks a specific practitioner or "Any available". */
   onSelect: (option: AppointmentServiceOption) => void;
+  /** Staff "Override availability" on (web #187): every person is listed, some unassigned. */
+  overrideAvailability?: boolean;
 };
 
 type PractitionerRow = {
@@ -33,6 +36,8 @@ type PractitionerRow = {
   pricePence: number | null;
   /** Practitioner-scoped duration (minutes) for the row caption. */
   durationMinutes: number | null;
+  /** Override catalogue only: false when this person is not assigned the service. */
+  assigned?: boolean;
   option: AppointmentServiceOption;
 };
 
@@ -41,7 +46,11 @@ function formatPrice(pricePence: number | null): string | null {
   return `£${(pricePence / 100).toFixed(2)}`;
 }
 
-function rowCaption(row: PractitionerRow, durationOverride: number | null): string | null {
+function rowCaption(
+  row: PractitionerRow,
+  durationOverride: number | null,
+  overrideAvailability: boolean,
+): string | null {
   if (row.isAnyAvailable) {
     return 'First available staff member will be assigned';
   }
@@ -52,6 +61,8 @@ function rowCaption(row: PractitionerRow, durationOverride: number | null): stri
   if (duration != null) parts.push(`${duration} min`);
   const price = formatPrice(row.pricePence);
   if (price) parts.push(price);
+  // The override lists every person; one not assigned the service says so.
+  if (overrideAvailability && row.assigned === false) parts.push(DOES_NOT_USUALLY_OFFER);
   return parts.length ? parts.join(' · ') : null;
 }
 
@@ -67,6 +78,7 @@ export function PractitionerStep({
   allowAnyAvailable,
   durationOverride = null,
   onSelect,
+  overrideAvailability = false,
 }: PractitionerStepProps) {
   const rows: PractitionerRow[] = [];
 
@@ -99,6 +111,7 @@ export function PractitionerStep({
       isAnyAvailable: false,
       pricePence: service.price_pence,
       durationMinutes: service.duration_minutes,
+      assigned: service.assigned,
       option: {
         ...serviceOption,
         practitionerId: practitioner.id,
@@ -133,7 +146,7 @@ export function PractitionerStep({
         contentContainerStyle={styles.list}
         ItemSeparatorComponent={Separator}
         renderItem={({ item }) => {
-          const caption = rowCaption(item, durationOverride);
+          const caption = rowCaption(item, durationOverride, overrideAvailability);
           const price = item.isAnyAvailable ? null : formatPrice(item.pricePence);
           return (
             <Card

@@ -13,6 +13,8 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import type { AppointmentCatalogResponse } from '@/types/appointment-catalog';
 
+import { ServiceBookingFlow } from '@/components/booking-wizard/ServiceBookingFlow';
+
 const catalog: AppointmentCatalogResponse = {
   practitioners: [
     {
@@ -26,6 +28,12 @@ const catalog: AppointmentCatalogResponse = {
   ],
 };
 
+jest.mock('@/lib/queries/useValidateAppointmentSlot', () => ({
+  useValidateAppointmentSlot: () => ({
+    mutateAsync: jest.fn().mockResolvedValue({ ok: true, warnings: [] }),
+    isPending: false,
+  }),
+}));
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
 
 jest.mock('@/components/ui/Sheet', () => {
@@ -158,8 +166,6 @@ jest.mock('@/components/booking-wizard/ConfirmStep', () => {
     },
   };
 });
-
-import { ServiceBookingFlow } from '@/components/booking-wizard/ServiceBookingFlow';
 
 async function press(getEl: () => Parameters<typeof fireEvent.press>[0]) {
   await act(async () => {

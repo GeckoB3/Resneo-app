@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
+import { AvailabilityOverrideWarnings } from '@/components/booking-wizard/AvailabilityOverrideControls';
 import { ComplianceWarningNotice } from '@/components/compliance/ComplianceWarningNotice';
 import {
   StaffCardHoldToggle,
@@ -78,6 +79,11 @@ type ConfirmStepProps = {
    * instead of the single-booking create. null/undefined → single booking.
    */
   multiServiceSegments?: MultiServiceSegment[] | null;
+  /**
+   * Staff "Override availability" (web #187): the create carries the flag and
+   * the confirmation repeats what it overrode.
+   */
+  overrideAvailability?: boolean;
 };
 
 interface BookingConfirmation {
@@ -90,6 +96,8 @@ interface BookingConfirmation {
   card_hold_fee_pence?: number | null;
   cancellation_notice_hours?: number;
   compliance_warnings?: ComplianceBookingWarning[];
+  /** With the override: the engine's reasons, repeated from the 201. */
+  availability_override_warnings?: string[];
   service_name: string;
   guest_name: string;
   date_label: string;
@@ -199,6 +207,9 @@ function BookingConfirmationView({
       </Card>
 
       <ComplianceWarningNotice warnings={confirmation.compliance_warnings} onCapture={onViewBooking} />
+      {confirmation.availability_override_warnings ? (
+        <AvailabilityOverrideWarnings warnings={confirmation.availability_override_warnings} />
+      ) : null}
 
       <View style={styles.confirmationActions}>
         <Button label="View booking" fullWidth onPress={onViewBooking} />
@@ -235,6 +246,7 @@ export function ConfirmStep({
   venueId,
   collectClientAddress = false,
   multiServiceSegments = null,
+  overrideAvailability = false,
 }: ConfirmStepProps) {
   const { colors } = useTheme();
   const createBooking = useCreateBooking();
@@ -371,6 +383,7 @@ export function ConfirmStep({
     ...(hasDeposit && requireDeposit && source !== 'walk-in' ? { require_deposit: true } : {}),
     // Existing-contact / rebook → flag as a returning guest (web parity).
     ...(returningGuest ? { returning_guest: true } : {}),
+    ...(overrideAvailability ? { override_availability: true } : {}),
     source,
     ...(ownerVenueId ? { owner_venue_id: ownerVenueId } : {}),
     ...addressFields,
@@ -395,6 +408,7 @@ export function ConfirmStep({
       // entity: since web #187 an omitted `require_card_hold` means NO hold,
       // and the toggle defaults off to match.
       charges: { requireDeposit, ...(staffCardHold ? { requireCardHold } : {}) },
+      overrideAvailability,
       address: collectClientAddress
         ? {
             client_address_line1: guest.address_line1,
@@ -462,6 +476,7 @@ export function ConfirmStep({
             cancellation_notice_hours: res.cancellation_notice_hours,
             // Every segment's unmet requirements, merged by type (`required` first).
             compliance_warnings: res.compliance_warnings,
+            availability_override_warnings: res.availability_override_warnings,
             service_name: `${multiServiceSegments!.length} services`,
             guest_name: fullName,
             date_label: formatSummaryDate(date),
@@ -494,6 +509,7 @@ export function ConfirmStep({
           card_hold_fee_pence: staffCardHold?.feePence ?? null,
           cancellation_notice_hours: response.cancellation_notice_hours,
           compliance_warnings: response.compliance_warnings,
+          availability_override_warnings: response.availability_override_warnings,
           service_name: `${service.serviceName}${variant ? ` · ${variant.name}` : ''}`,
           guest_name: fullName,
           date_label: formatSummaryDate(date),

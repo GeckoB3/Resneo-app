@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { FlatList, StyleSheet, View } from 'react-native';
 
 import { Avatar } from '@/components/ui/Avatar';
@@ -37,6 +38,8 @@ type StaffPickerStepProps = {
   selectedPractitionerId?: string | null;
   /** `null` id = "Any available". */
   onSelect: (practitioner: AppointmentCatalogPractitioner | null) => void;
+  /** The staff "Override availability" tick box, above the list (web #187). */
+  overrideToggle?: ReactNode;
 };
 
 /**
@@ -55,6 +58,7 @@ export function StaffPickerStep({
   errorMessage,
   onRetry,
   allowAnyAvailable,
+  overrideToggle,
   selectedPractitionerId = null,
   onSelect,
 }: StaffPickerStepProps) {
@@ -112,6 +116,7 @@ export function StaffPickerStep({
       <Text variant="bodyMedium" tone="muted">
         Pick the person, then choose from what they offer.
       </Text>
+      {overrideToggle}
 
       <FlatList
         data={rows}

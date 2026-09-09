@@ -43,6 +43,8 @@ export interface GroupedBookingResponse {
    * field hides that rule entirely.
    */
   compliance_warnings?: ComplianceBookingWarning[];
+  /** With `override_availability`: every segment's reasons, prefixed with the service (web #187). */
+  availability_override_warnings?: string[];
 }
 
 /**

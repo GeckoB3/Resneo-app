@@ -4,6 +4,8 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import type { AppointmentCatalogResponse } from '@/types/appointment-catalog';
 
+import { ServiceBookingFlow } from '@/components/booking-wizard/ServiceBookingFlow';
+
 // ── Module mocks ──────────────────────────────────────────────────────────────
 // Catalog: ONE service with a NON-ZERO buffer (the regressed case) offered by a
 // single practitioner, so the flow skips the practitioner step and the service's
@@ -21,6 +23,12 @@ const catalog: AppointmentCatalogResponse = {
   ],
 };
 
+jest.mock('@/lib/queries/useValidateAppointmentSlot', () => ({
+  useValidateAppointmentSlot: () => ({
+    mutateAsync: jest.fn().mockResolvedValue({ ok: true, warnings: [] }),
+    isPending: false,
+  }),
+}));
 jest.mock('@/lib/queries/useAppointmentCatalog', () => ({
   useAppointmentCatalog: () => ({
     data: catalog,
@@ -128,8 +136,6 @@ jest.mock('@/components/booking-wizard/TimeSlotStep', () => {
 jest.mock('@/components/booking-wizard/ConfirmStep', () => ({
   ConfirmStep: () => null,
 }));
-
-import { ServiceBookingFlow } from '@/components/booking-wizard/ServiceBookingFlow';
 
 async function press(getEl: () => Parameters<typeof fireEvent.press>[0]) {
   await act(async () => {

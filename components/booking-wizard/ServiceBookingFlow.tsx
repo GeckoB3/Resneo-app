@@ -14,6 +14,15 @@ import { PractitionerStep } from '@/components/booking-wizard/PractitionerStep';
 import { ServicePickerStep } from '@/components/booking-wizard/ServicePickerStep';
 import { StaffPickerStep } from '@/components/booking-wizard/StaffPickerStep';
 import { TimeSlotStep, venueLocalTime } from '@/components/booking-wizard/TimeSlotStep';
+import { AvailabilityOverrideToggle } from '@/components/booking-wizard/AvailabilityOverrideControls';
+import { OverrideTimeStep } from '@/components/booking-wizard/OverrideTimeStep';
+import {
+  AVAILABILITY_OVERRIDE_PAST_DATE_ERROR,
+  overrideDryRunBodies,
+  prefixOverrideWarnings,
+} from '@/lib/booking/availability-override';
+import { segmentCustomDurationMinutes } from '@/lib/booking/multi-service-chain';
+import { useValidateAppointmentSlot } from '@/lib/queries/useValidateAppointmentSlot';
 import { VariantStep } from '@/components/booking-wizard/VariantStep';
 import { WizardStepIndicator } from '@/components/booking-wizard/WizardStepIndicator';
 import { Button } from '@/components/ui/Button';
@@ -178,9 +187,21 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
   // 2026-09-05): a member's session gets the hidden groups there too. (Web #178
   // withdrew the members' own services from that catalogue again: every
   // service a collective resolves is one of its combined offerings.)
+  /**
+   * Staff "Override availability" (web #187): book any service with anyone, on
+   * any date from today and at any time, over anything, with the engine's
+   * reasons shown rather than enforced. Off by default, per booking, never
+   * sticky. With it on the catalogue lists every person with every service.
+   */
+  const [availabilityOverride, setAvailabilityOverride] = useState(false);
+  /** The dry run's reasons for the chosen time, shown on the review step. */
+  const [overrideWarnings, setOverrideWarnings] = useState<string[] | null>(null);
+  const [overrideChecking, setOverrideChecking] = useState(false);
   const catalogQuery = useAppointmentCatalog(venueId, {
     includeHidden: !isLinked || isCollective,
+    overrideAvailability: availabilityOverride,
   });
+  const validateSlot = useValidateAppointmentSlot();
   // Staff service list — the reliable source of each service's booking window
   // (min notice / same-day). The booking catalog omits min_booking_notice_hours
   // for legacy venues, so we read it from here for every venue type.
@@ -238,6 +259,11 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
     null,
   );
   const [multiServiceError, setMultiServiceError] = useState<string | null>(null);
+  /** The override's typed start, minutes since midnight; opens at the venue's clock, on a 5-minute step. */
+  const [overrideMinutes, setOverrideMinutes] = useState<number>(() => {
+    const [h, m] = venueLocalTime(timeZone).split(':').map(Number);
+    return Math.round(((h ?? 9) * 60 + (m ?? 0)) / 5) * 5;
+  });
   // Group mode (multiple distinct attendees) hands off to GroupBookingFlow.
   const [groupMode, setGroupMode] = useState(false);
   // Multi-service picker (web 2026-09-02): the ticks, in visit order, and the
@@ -829,7 +855,110 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
   // would unmount the whole flow). Clears every per-booking selection plus the
   // guest and returning/rebook flags; date + month + source fall back to their
   // initial defaults so the next booking starts exactly like a fresh open.
+  /**
+   * Tick or untick "Override availability". Ticking keeps what is chosen (every
+   * choice is still bookable); unticking clears every choice, since a person,
+   * service, date or time the engine would not offer must not survive with the
+   * override off, and returns to the first step (web #187, §9).
+   */
+  const toggleAvailabilityOverride = useCallback(
+    (next: boolean) => {
+      setAvailabilityOverride(next);
+      setOverrideWarnings(null);
+      setMultiServiceError(null);
+      if (next) return;
+      setSelectedService(null);
+      setNeedsPractitionerStep(false);
+      setSelectedSlot(null);
+      setSelectedVariant(null);
+      setSelectedAddonIds([]);
+      setDurationOverride(null);
+      setMultiServiceSegments(null);
+      setPendingServiceIds([]);
+      setPendingOverrides({});
+      setChainExtras([]);
+      setChainCursor(null);
+      setStaffPick(null);
+      setCurrentStepKey(isStaffFirst ? 'staff_pick' : 'service');
+    },
+    [isStaffFirst],
+  );
+
+  /**
+   * The override's Continue: the typed time becomes the chain, laid out from
+   * that start exactly as a walk-in is, and checked ONCE per service through the
+   * dry run so the review step can say what it overrides (web
+   * `continueWithOverrideTime`). A refusal the override cannot lift (an unknown
+   * person or service, a length outside the limits) stays a refusal.
+   */
+  const continueWithOverrideTime = useCallback(async () => {
+    if (!selectedService || !selectedDate) return;
+    if (selectedDate < today) {
+      setMultiServiceError(AVAILABILITY_OVERRIDE_PAST_DATE_ERROR);
+      return;
+    }
+    const hm = `${String(Math.floor(overrideMinutes / 60)).padStart(2, '0')}:${String(overrideMinutes % 60).padStart(2, '0')}`;
+    const duration =
+      durationOverride ?? selectedVariant?.duration_minutes ?? selectedService.durationMinutes;
+    const practitionerId =
+      selectedService.practitionerId === ANY_AVAILABLE_PRACTITIONER_ID
+        ? (selectedService.candidatePractitionerIds?.[0] ?? selectedService.practitionerId)
+        : selectedService.practitionerId;
+    const slot: AppointmentSlot = {
+      practitioner_id: practitionerId,
+      practitioner_name: selectedService.practitionerName ?? '',
+      service_id: selectedService.serviceId,
+      service_name: selectedService.serviceName,
+      start_time: `${hm}:00`,
+      duration_minutes: duration,
+      price_pence: (selectedVariant?.price_pence ?? selectedService.pricePence) ?? null,
+    };
+    const chain = buildChainFromSlot(slot);
+    if (!chain) return;
+    setOverrideChecking(true);
+    setMultiServiceError(null);
+    try {
+      const bodies = overrideDryRunBodies({
+        venueId: venueId ?? '',
+        bookingDate: selectedDate,
+        chain,
+        customDurationOf: segmentCustomDurationMinutes,
+      });
+      const collected: string[] = [];
+      for (let i = 0; i < bodies.length; i += 1) {
+        const res = await validateSlot.mutateAsync(bodies[i]!);
+        if (!res.ok) {
+          setMultiServiceError(res.error ?? 'This time cannot be booked.');
+          return;
+        }
+        collected.push(...prefixOverrideWarnings(chain[i]!, res.warnings));
+      }
+      setOverrideWarnings(collected);
+      setSelectedSlot(slot);
+      setMultiServiceSegments(chain);
+      goToStep('multi_service');
+    } catch (e) {
+      setMultiServiceError(
+        e instanceof ApiError ? e.message : 'Could not check this time. Try again.',
+      );
+    } finally {
+      setOverrideChecking(false);
+    }
+  }, [
+    selectedService,
+    selectedDate,
+    today,
+    overrideMinutes,
+    durationOverride,
+    selectedVariant,
+    buildChainFromSlot,
+    venueId,
+    validateSlot,
+    goToStep,
+  ]);
+
   const resetWizard = useCallback(() => {
+    setOverrideWarnings(null);
     setSelectedService(null);
     setNeedsPractitionerStep(false);
     setSelectedSlot(null);
@@ -915,9 +1044,11 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
     // A multi-service visit asks the month for one block of the whole span.
     durationMinutes: chainSpanForMonth ?? durationOverride,
     ownerVenueId,
-    enabled: activeKey === 'date' && !!selectedService,
+    // No availability calls at all with the override on: every date from today is open.
+    enabled: activeKey === 'date' && !!selectedService && !availabilityOverride,
   });
-  const availableDates = monthQuery.data ? new Set(monthQuery.data.available_dates) : null;
+  const availableDates =
+    !availabilityOverride && monthQuery.data ? new Set(monthQuery.data.available_dates) : null;
   // First bookable date in the loaded month (>= today), sorted — used to auto-
   // advance off an empty default and to gate "Continue". Mirrors the web flow,
   // which lands the user on the first day the engine can actually fit the
@@ -990,7 +1121,14 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
               : catalogQuery.error?.message
           }
           onRetry={() => void catalogQuery.refetch()}
-          allowAnyAvailable={anyAvailableEnabled}
+          // No engine to pick for you while the override is on (web #187).
+          allowAnyAvailable={anyAvailableEnabled && !availabilityOverride}
+          overrideToggle={
+            <AvailabilityOverrideToggle
+              checked={availabilityOverride}
+              onChange={toggleAvailabilityOverride}
+            />
+          }
           selectedPractitionerId={
             staffPick?.kind === 'practitioner'
               ? staffPick.practitioner.id
@@ -1034,6 +1172,16 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           onRetry={() => void catalogQuery.refetch()}
           selectedServiceId={selectedService?.serviceId ?? null}
           initialDurationOverride={durationOverride}
+          overrideAvailability={availabilityOverride}
+          // On a service-first venue this is the first step, so the tick box lives here.
+          overrideToggle={
+            !isStaffFirst ? (
+              <AvailabilityOverrideToggle
+                checked={availabilityOverride}
+                onChange={toggleAvailabilityOverride}
+              />
+            ) : undefined
+          }
           // Tick every service first (web 2026-09-02); the times then come from
           // the chain route, only where the whole visit fits with one person.
           selectionMode="multi"
@@ -1085,7 +1233,8 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
         <PractitionerStep
           practitioners={servicePractitioners}
           serviceOption={selectedService}
-          allowAnyAvailable={anyAvailableEnabled}
+          allowAnyAvailable={anyAvailableEnabled && !availabilityOverride}
+          overrideAvailability={availabilityOverride}
           durationOverride={durationOverride}
           onSelect={(option) => {
             setSelectedService(option);
@@ -1188,7 +1337,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
             setSelectedSlot(null);
           }}
           availableDates={availableDates}
-          isLoading={monthQuery.isLoading || monthQuery.isFetching}
+          isLoading={!availabilityOverride && (monthQuery.isLoading || monthQuery.isFetching)}
           isError={monthQuery.isError}
           errorMessage={
             monthQuery.error instanceof ApiError ? monthQuery.error.message : undefined
@@ -1199,11 +1348,24 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           weekShortcuts
           source={source}
           timeZone={timeZone}
-          onStartNow={startWalkInNow}
+          // The override covers "now": pick it on the time step.
+          onStartNow={availabilityOverride ? undefined : startWalkInNow}
         />
       ) : null}
 
-      {activeKey === 'time' && selectedService && selectedDate ? (
+      {activeKey === 'time' && selectedService && selectedDate && availabilityOverride ? (
+        <OverrideTimeStep
+          date={selectedDate}
+          minutes={overrideMinutes}
+          onChangeMinutes={(next) => {
+            setOverrideMinutes(next);
+            setMultiServiceError(null);
+          }}
+          onContinue={() => void continueWithOverrideTime()}
+          checking={overrideChecking}
+          errorMessage={multiServiceError}
+        />
+      ) : activeKey === 'time' && selectedService && selectedDate ? (
         <TimeSlotStep
           addonIds={selectedAddonIds}
           candidatePractitionerIds={selectedService.candidatePractitionerIds}
@@ -1246,6 +1408,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           onRemoveSegment={removeServiceFromChain}
           onContinue={() => advanceFrom('multi_service')}
           errorMessage={multiServiceError}
+          overrideWarnings={availabilityOverride ? (overrideWarnings ?? []) : null}
         />
       ) : null}
 
@@ -1284,6 +1447,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           multiServiceSegments={
             multiServiceSegments && multiServiceSegments.length > 1 ? multiServiceSegments : null
           }
+          overrideAvailability={availabilityOverride}
         />
       ) : null}
 

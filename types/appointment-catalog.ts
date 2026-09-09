@@ -62,6 +62,11 @@ export interface AppointmentCatalogService {
    * a standard option for every venue; there is no venue flag to check.
    */
   payment_requirement?: string | null;
+  /**
+   * Override catalogue only (`?override=1`, web #187): false when this person is
+   * not assigned the service. The override books it anyway, at the base price.
+   */
+  assigned?: boolean;
   cancellation_notice_hours?: number;
   /** Minimum lead time (hours) before a slot — same-day slots earlier than
    *  now + this are not bookable. Mirrors the web booking window. */
@@ -146,6 +151,8 @@ export interface AppointmentServiceOption {
   description?: string | null;
   /** Venue drag order, so the grouped picker keeps it. */
   sortOrder?: number;
+  /** Override catalogue only: false when the row's person is not assigned this service. */
+  assigned?: boolean;
   /** Category heading on the booking pages; null when uncategorised. */
   category?: ServiceCategoryRef | null;
   /** The catalogue's per-service `any_available`; an explicit `false` withholds the pooled row. */

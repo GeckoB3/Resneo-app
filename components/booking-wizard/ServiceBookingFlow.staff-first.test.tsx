@@ -18,6 +18,8 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import type { AppointmentCatalogResponse } from '@/types/appointment-catalog';
 
+import { ServiceBookingFlow } from '@/components/booking-wizard/ServiceBookingFlow';
+
 // Two practitioners with DIFFERENT catalogues, so scoping is observable: Sam
 // offers only Cut, Pat offers Cut and Blow-dry. Cut is offered by both, which is
 // what makes the service-first flow show a practitioner step.
@@ -41,6 +43,12 @@ const catalog: AppointmentCatalogResponse = {
   ],
 };
 
+jest.mock('@/lib/queries/useValidateAppointmentSlot', () => ({
+  useValidateAppointmentSlot: () => ({
+    mutateAsync: jest.fn().mockResolvedValue({ ok: true, warnings: [] }),
+    isPending: false,
+  }),
+}));
 jest.mock('@/lib/queries/useAppointmentCatalog', () => ({
   useAppointmentCatalog: () => ({
     data: catalog,
@@ -105,8 +113,6 @@ jest.mock('@/components/booking-wizard/TimeSlotStep', () => {
   return { venueLocalTime: () => '09:00', TimeSlotStep: () => <V><T>__time_step__</T></V> };
 });
 jest.mock('@/components/booking-wizard/ConfirmStep', () => ({ ConfirmStep: () => null }));
-
-import { ServiceBookingFlow } from '@/components/booking-wizard/ServiceBookingFlow';
 
 async function press(getEl: () => Parameters<typeof fireEvent.press>[0]) {
   await act(async () => {

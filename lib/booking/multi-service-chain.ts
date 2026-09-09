@@ -241,6 +241,8 @@ export interface CreateMultiServicePayload {
    */
   require_deposit?: boolean;
   require_card_hold?: boolean;
+  /** Staff "Override availability" (web #187): the chain is booked exactly as laid out. */
+  override_availability?: boolean;
   client_address_line1?: string;
   client_address_line2?: string;
   client_address_city?: string;
@@ -336,8 +338,10 @@ export function buildMultiServicePayload(args: {
   address?: ClientAddressInput | null;
   /** Staff's per-booking money decisions; omitted means "do not charge". */
   charges?: StaffChargeDecision;
+  /** Staff "Override availability" (web #187): the chain is booked exactly as laid out. */
+  overrideAvailability?: boolean;
 }): CreateMultiServicePayload {
-  const { venueId, bookingDate, contact, source, segments, address, charges } = args;
+  const { venueId, bookingDate, contact, source, segments, address, charges, overrideAvailability } = args;
   const email = contact.email?.trim();
   const phone = contact.phone?.trim();
   const dietary = contact.dietary_notes?.trim();
@@ -364,6 +368,7 @@ export function buildMultiServicePayload(args: {
     })),
     ...(dietary ? { dietary_notes: dietary } : {}),
     ...staffChargePayloadFields(source, charges),
+    ...(overrideAvailability ? { override_availability: true } : {}),
     ...clientAddressPayloadFields(address),
   };
 }

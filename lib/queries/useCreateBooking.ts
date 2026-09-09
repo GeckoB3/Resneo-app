@@ -18,6 +18,12 @@ import type { BookingTicketLine } from '@/types/booking-offerings';
  * which anchor ids are present (appointment vs class vs event vs resource).
  */
 export interface CreateBookingPayload {
+  /**
+   * Staff "Override availability" (web #187): book exactly as asked, over
+   * anything, from today; the 201 carries `availability_override_warnings`.
+   * Staff sources only; a public source is refused.
+   */
+  override_availability?: boolean;
   booking_date: string;
   booking_time: string;
   party_size: number;
@@ -101,6 +107,8 @@ export interface CreateBookingResponse {
   cancellation_notice_hours?: number;
   /** Unmet non-blocking compliance requirements, surfaced on the confirmation. */
   compliance_warnings?: ComplianceBookingWarning[];
+  /** With `override_availability`: the engine's reasons in plain words (web #187). */
+  availability_override_warnings?: string[];
 }
 
 /**
