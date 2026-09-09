@@ -3,7 +3,8 @@
  *
  * Narrowing a calendar's working hours can orphan upcoming bookings; the route
  * replies 409 `{ requires_confirmation, message }`. The editor must surface an
- * armed ConfirmSheet (web parity with window.confirm) and, on confirm, re-run the
+ * in-sheet ConfirmPanel (web parity with window.confirm; a second Sheet never
+ * presents on iOS) and, on confirm, re-run the
  * PATCH with `{ acknowledge: true }` — keeping the bookings but saving knowingly.
  *
  * The hook-level query-param threading is covered by useAcknowledgeHoursFlow.test;

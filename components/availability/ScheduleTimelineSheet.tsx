@@ -9,7 +9,8 @@
  * Web parity: `ScheduleTimelineEditor.tsx` (+ `saveSchedule` /
  * `copyScheduleTo` in `AppointmentAvailabilitySettings.tsx`). The web's
  * `window.confirm` questions are a two-step "Tap to confirm" on the row and
- * one ConfirmSheet, since a native alert never fires on the web preview.
+ * one in-sheet ConfirmPanel, since a native alert never fires on the web preview
+ * and a second Sheet never presents on iOS.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
@@ -21,7 +22,7 @@ import {
   type DaySummary,
 } from '@/components/availability/SchedulePreviewCalendar';
 import { Button } from '@/components/ui/Button';
-import { ConfirmSheet } from '@/components/ui/ConfirmSheet';
+import { ConfirmPanel } from '@/components/ui/ConfirmPanel';
 import { Text } from '@/components/ui/Text';
 import { ApiError, isRequiresConfirmationBody } from '@/lib/api/client';
 import {
@@ -98,7 +99,7 @@ export function ScheduleTimelineSheet({
   const editing = mode.kind === 'edit' ? (periods.find((p) => p.id === mode.id) ?? null) : null;
   const saving = patch.isPending || copying;
 
-  /** Ask through the ConfirmSheet and wait for the answer. */
+  /** Ask through the in-sheet ConfirmPanel and wait for the answer. */
   function askAsync(title: string, message: string): Promise<boolean> {
     return new Promise((resolve) => setAsk({ title, message, resolve }));
   }
@@ -440,31 +441,35 @@ export function ScheduleTimelineSheet({
         )}
       </ScrollView>
 
-      {mode.kind === 'idle' ? (
+      {/* One confirm for every question: "save anyway" after a 409, per
+          calendar. Drawn as a step of THIS sheet: a second Sheet over it never
+          presents on iOS (`ios-no-stacked-modals`), and the copy-to-several
+          loop awaits one answer per calendar, so a confirm that could not
+          show left "nothing happened, nothing saved". */}
+      {ask ? (
+        <View style={styles.footer}>
+          <ConfirmPanel
+            title={ask.title}
+            message={ask.message}
+            confirmLabel="Save anyway"
+            loading={patch.isPending}
+            onConfirm={() => {
+              const current = ask;
+              setAsk(null);
+              current.resolve(true);
+            }}
+            onCancel={() => {
+              const current = ask;
+              setAsk(null);
+              current.resolve(false);
+            }}
+          />
+        </View>
+      ) : mode.kind === 'idle' ? (
         <View style={styles.footer}>
           <Button label="Done" variant="secondary" onPress={onClose} />
         </View>
       ) : null}
-
-      {/* One confirm for every question: "save anyway" after a 409, per calendar. */}
-      <ConfirmSheet
-        visible={ask != null}
-        title={ask?.title ?? 'Save anyway?'}
-        message={ask?.message}
-        confirmLabel="Save anyway"
-        destructive={false}
-        loading={patch.isPending}
-        onConfirm={() => {
-          const current = ask;
-          setAsk(null);
-          current?.resolve(true);
-        }}
-        onClose={() => {
-          const current = ask;
-          setAsk(null);
-          current?.resolve(false);
-        }}
-      />
     </View>
   );
 }

@@ -19,7 +19,7 @@ import {
   type WeekState,
 } from '@/components/availability/WeeklyHoursFields';
 import { Button } from '@/components/ui/Button';
-import { ConfirmSheet } from '@/components/ui/ConfirmSheet';
+import { ConfirmPanel } from '@/components/ui/ConfirmPanel';
 import { Text } from '@/components/ui/Text';
 import { ApiError, isRequiresConfirmationBody } from '@/lib/api/client';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
@@ -135,33 +135,36 @@ export function WorkingHoursEditor({
           value={days}
           onChange={setDays}
           venueOpeningHours={venueOpeningHours}
-          disabled={patchPractitioner.isPending}
+          disabled={patchPractitioner.isPending || ackConfirm != null}
         />
       </ScrollView>
 
-      <View style={styles.actions}>
-        <Button label="Cancel" variant="secondary" style={styles.flex1} onPress={onClose} />
-        <Button
-          label="Save hours"
-          style={styles.flex1}
+      {/* "Save anyway?" — orphan-bookings confirmation (409 requires_confirmation).
+          A step of THIS sheet, in place of its actions: a second Sheet over the
+          hours Sheet never presents on iOS (`ios-no-stacked-modals`), which is
+          how "changed several calendars' hours, nothing saved" happened. */}
+      {ackConfirm ? (
+        <ConfirmPanel
+          title="Save these hours anyway?"
+          message={ackConfirm.message}
+          confirmLabel="Save anyway"
           loading={patchPractitioner.isPending}
-          onPress={() => void handleSave()}
+          onConfirm={() => void handleConfirmAck()}
+          onCancel={() => {
+            if (!patchPractitioner.isPending) setAckConfirm(null);
+          }}
         />
-      </View>
-
-      {/* "Save anyway?" — orphan-bookings confirmation (409 requires_confirmation). */}
-      <ConfirmSheet
-        visible={ackConfirm != null}
-        title="Save these hours anyway?"
-        message={ackConfirm?.message}
-        confirmLabel="Save anyway"
-        destructive={false}
-        loading={patchPractitioner.isPending}
-        onConfirm={() => void handleConfirmAck()}
-        onClose={() => {
-          if (!patchPractitioner.isPending) setAckConfirm(null);
-        }}
-      />
+      ) : (
+        <View style={styles.actions}>
+          <Button label="Cancel" variant="secondary" style={styles.flex1} onPress={onClose} />
+          <Button
+            label="Save hours"
+            style={styles.flex1}
+            loading={patchPractitioner.isPending}
+            onPress={() => void handleSave()}
+          />
+        </View>
+      )}
     </View>
   );
 }
