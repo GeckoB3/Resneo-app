@@ -1,5 +1,6 @@
 import {
   amendedHoursLeaveNote,
+  amendedClosedOnDate,
   amendedHoursOnDate,
   amendedHoursVenueNote,
   describeHoursPeriods,
@@ -131,5 +132,23 @@ describe('amendedHoursOnDate and describeHoursPeriods', () => {
     expect(amendedHoursOnDate(entries, '2026-09-22', 'cal-2')).toBeNull();
     expect(amendedHoursOnDate(entries, '2026-09-24')).toBeNull();
     expect(describeHoursPeriods(entries[0]!.periods)).toBe('10:00–14:00');
+  });
+
+  it('a stored closed override reads as closed, never as hours', () => {
+    const entries = [
+      {
+        kind: 'closed' as const,
+        date_start: '2026-09-21',
+        date_end: '2026-09-21',
+        periods: [],
+        reason: null,
+        calendar_id: 'cal-1',
+        calendar_name: 'Sarah',
+      },
+    ];
+    expect(amendedHoursOnDate(entries, '2026-09-21', 'cal-1')).toBeNull();
+    expect(amendedClosedOnDate(entries, '2026-09-21', 'cal-1')).toBe(true);
+    expect(amendedClosedOnDate(entries, '2026-09-21', 'cal-2')).toBe(false);
+    expect(amendedClosedOnDate(entries, '2026-09-22')).toBe(false);
   });
 });

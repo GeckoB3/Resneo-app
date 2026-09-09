@@ -1,5 +1,6 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 
+import { HelpTooltip } from '@/components/ui/HelpTooltip';
 import { Text } from '@/components/ui/Text';
 import {
   AVAILABILITY_OVERRIDE_BOX_TITLE,
@@ -15,6 +16,10 @@ import { useTheme } from '@/theme/useTheme';
  * The staff "Override availability" tick box (web `AvailabilityOverrideToggle`,
  * #187), on the first step of the staff booking flow: the person picker on a
  * staff-first venue, the service list otherwise. Never on a public page.
+ *
+ * One line, as on the web: the tick, the label, and an (i) that opens the
+ * explanation (the web shows it as the label's hover tooltip). The flow is a
+ * full-screen route, so the tooltip's small Sheet is the only modal here.
  */
 export function AvailabilityOverrideToggle({
   checked,
@@ -25,40 +30,46 @@ export function AvailabilityOverrideToggle({
 }) {
   const { colors } = useTheme();
   return (
-    <Pressable
-      accessibilityRole="checkbox"
-      accessibilityState={{ checked }}
-      accessibilityLabel={`${AVAILABILITY_OVERRIDE_LABEL}. ${AVAILABILITY_OVERRIDE_HELP}`}
-      testID="availability-override-toggle"
-      onPress={() => {
-        hapticSelect();
-        onChange(!checked);
-      }}
-      style={({ pressed }) => [
+    <View
+      style={[
         styles.row,
         {
-          backgroundColor: checked ? colors.warningSurface : colors.surface,
-          borderColor: checked ? colors.warning : colors.border,
-          opacity: pressed ? 0.9 : 1,
+          backgroundColor: checked ? colors.warningSurface : 'transparent',
+          borderColor: checked ? colors.warning : 'transparent',
         },
       ]}>
-      <View
-        style={[
-          styles.check,
-          {
-            borderColor: checked ? colors.warning : colors.borderStrong,
-            backgroundColor: checked ? colors.warning : 'transparent',
-          },
-        ]}>
-        {checked ? <Text style={[styles.checkMark, { color: colors.onBrand }]}>✓</Text> : null}
-      </View>
-      <View style={styles.label}>
-        <Text variant="bodyMedium">{AVAILABILITY_OVERRIDE_LABEL}</Text>
-        <Text variant="caption" tone="muted">
-          {AVAILABILITY_OVERRIDE_HELP}
+      <Pressable
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked }}
+        accessibilityLabel={AVAILABILITY_OVERRIDE_LABEL}
+        accessibilityHint={AVAILABILITY_OVERRIDE_HELP}
+        testID="availability-override-toggle"
+        onPress={() => {
+          hapticSelect();
+          onChange(!checked);
+        }}
+        style={({ pressed }) => [styles.toggle, { opacity: pressed ? 0.8 : 1 }]}>
+        <View
+          style={[
+            styles.check,
+            {
+              borderColor: checked ? colors.warning : colors.borderStrong,
+              backgroundColor: checked ? colors.warning : 'transparent',
+            },
+          ]}>
+          {checked ? <Text style={[styles.checkMark, { color: colors.onBrand }]}>✓</Text> : null}
+        </View>
+        <Text variant="bodySmall" numberOfLines={1} style={styles.label}>
+          {AVAILABILITY_OVERRIDE_LABEL}
         </Text>
-      </View>
-    </Pressable>
+      </Pressable>
+      <HelpTooltip
+        iconSize={16}
+        title={AVAILABILITY_OVERRIDE_LABEL}
+        accessibilityLabel="What overriding availability does">
+        {AVAILABILITY_OVERRIDE_HELP}
+      </HelpTooltip>
+    </View>
   );
 }
 
@@ -91,23 +102,33 @@ export function AvailabilityOverrideWarnings({ warnings }: { warnings: readonly 
 }
 
 const styles = StyleSheet.create({
+  // A single compact line under the step heading: a bordered box only while
+  // the override is on, so an unticked row costs the service list no space.
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
+    gap: spacing.xs,
     borderWidth: 1,
     borderRadius: radius.md,
-    padding: spacing.base,
-    marginBottom: spacing.sm,
+    paddingVertical: 0,
+    paddingLeft: spacing.sm,
+    paddingRight: 0,
+  },
+  toggle: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    minHeight: 34,
   },
   label: {
     flex: 1,
     minWidth: 0,
-    gap: 2,
   },
   check: {
-    width: 22,
-    height: 22,
+    width: 20,
+    height: 20,
     borderRadius: radius.sm,
     borderWidth: 1.5,
     alignItems: 'center',

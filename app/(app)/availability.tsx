@@ -1,4 +1,19 @@
-import { Stack, useRouter, type Href } from 'expo-router';
+/**
+ * Availability Settings — the web's four tabs, one screen:
+ *
+ *   Calendars (admin only) · Availability · Breaks · Closures & amended hours
+ *
+ * Availability and Breaks share one selected calendar and render their editors
+ * inline (the standard weekly hours, the schedule timeline with its planning
+ * calendar, the per-weekday breaks). Closures & amended hours is the team
+ * month grid, the Upcoming / Past lists, and one sheet for a closure or a run
+ * of amended hours. One-off time blocks are not here: as on the web they live
+ * on the Calendar tab (`BlockEditSheet`), where the slot is.
+ *
+ * Web parity: `AppointmentAvailabilitySettings.tsx` (+ `BookableCalendarsPanel`,
+ * `StaffLeaveCalendarPanel`, `ScheduleTimelineEditor`).
+ */
+import { Stack, useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Pressable,
@@ -9,52 +24,39 @@ import {
   View,
 } from 'react-native';
 
-import { BreaksEditor } from '@/components/availability/BreaksEditor';
+import { BookableCalendarsManager } from '@/components/availability/BookableCalendarsManager';
+import {
+  BREAKS_INTRO,
+  BREAKS_READ_ONLY_HINT,
+  BREAKS_RESOURCE_NOTE,
+  BreaksEditor,
+} from '@/components/availability/BreaksEditor';
 import { ScheduleTimelineSheet } from '@/components/availability/ScheduleTimelineSheet';
 import { TeamLeaveCalendar } from '@/components/availability/TeamLeaveCalendar';
-import { WorkingHoursEditor } from '@/components/availability/WorkingHoursEditor';
-import { minutesToTime } from '@/components/calendar/grid-layout';
+import {
+  WORKING_HOURS_READ_ONLY_HINT,
+  WorkingHoursEditor,
+} from '@/components/availability/WorkingHoursEditor';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Chip } from '@/components/ui/Chip';
 import { ConfirmPanel } from '@/components/ui/ConfirmPanel';
+import { DatePickerField } from '@/components/ui/DatePickerField';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
-import { IconButton } from '@/components/ui/IconButton';
 import { Input } from '@/components/ui/Input';
 import { Screen } from '@/components/ui/Screen';
 import { Segmented } from '@/components/ui/Segmented';
 import { Sheet } from '@/components/ui/Sheet';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
+import { TimePickerField } from '@/components/ui/TimePickerField';
 import { ApiError, isRequiresConfirmationBody } from '@/lib/api/client';
-import {
-  describePeriod,
-  describeScheduleSource,
-  resolveScheduleForDate,
-  schedulePeriodHasEnded,
-  scheduleForRow,
-} from '@/lib/calendar/working-hours-rota';
-import { addDaysToDateStr, formatDayHeading } from '@/lib/dates/venue-dates';
-import { hapticSuccess, hapticWarning } from '@/lib/haptics';
-import {
-  appointmentCalendarsOf,
-  isResourceCalendar,
-} from '@/lib/calendar/schedule-calendars';
-import {
-  useCalendarBlocks,
-  useCreateBlock,
-  useCreateLeave,
-  useDeleteBlock,
-  useDeleteLeave,
-  usePractitionerLeave,
-  useUpdateBlock,
-  useUpdateLeave,
-} from '@/lib/queries/useAvailabilityManage';
 import {
   AMENDED_HOURS_MAX_PERIODS,
   AMENDED_HOURS_MAX_REASON_LENGTH,
   amendedHoursLeaveNote,
+  amendedHoursOnDate,
   amendedHoursVenueNote,
   describeAmendedRange,
   describeHoursPeriods,
@@ -62,6 +64,21 @@ import {
   normaliseHoursPeriods,
   type AmendedHoursEntry,
 } from '@/lib/availability/calendar-amended-hours';
+import {
+  parseAvailabilityTab,
+  resolveAvailabilityTab,
+  visibleAvailabilityTabs,
+  type AvailabilityTab,
+} from '@/lib/availability/availability-tabs';
+import { appointmentCalendarsOf, isResourceCalendar } from '@/lib/calendar/schedule-calendars';
+import { addDaysToDateStr } from '@/lib/dates/venue-dates';
+import { hapticSuccess, hapticWarning } from '@/lib/haptics';
+import {
+  useCreateLeave,
+  useDeleteLeave,
+  usePractitionerLeave,
+  useUpdateLeave,
+} from '@/lib/queries/useAvailabilityManage';
 import { useAvailabilityBlocks } from '@/lib/queries/useAvailabilityBlocks';
 import {
   useAmendedHours,
@@ -73,21 +90,15 @@ import { usePractitioners } from '@/lib/queries/usePractitioners';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
-import { fonts, minTouchTarget, spacing } from '@/theme/index';
+import { fonts, minTouchTarget, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
-import type {
-  BreakTimesByDayMap,
-  LeavePeriod,
-  LeaveType,
-  TimeRange,
-  WorkingHoursMap,
-} from '@/types/availability-manage';
-import type { Practitioner, PractitionerTimeRange } from '@/types/practitioner';
+import type { LeavePeriod, LeaveType } from '@/types/availability-manage';
+import type { Practitioner } from '@/types/practitioner';
 
+type Tab = AvailabilityTab;
 
+/** How far the Upcoming and Past lists reach either side of today. */
 const RANGE_DAYS = 90;
-const STEP_MINUTES = 15;
-const MAX_MINUTES = 23 * 60 + 45;
 
 // ---- Leave type display labels (web parity) --------------------------------
 const LEAVE_TYPE_LABELS: Record<string, string> = {
@@ -100,109 +111,6 @@ function leaveTypeLabel(t: string): string {
   return LEAVE_TYPE_LABELS[t] ?? t;
 }
 
-// ---- Stepper primitive ------------------------------------------------------
-function Stepper({
-  label,
-  value,
-  onDecrement,
-  onIncrement,
-}: {
-  label: string;
-  value: string;
-  onDecrement: () => void;
-  onIncrement: () => void;
-}) {
-  const { colors } = useTheme();
-  return (
-    <View style={styles.stepperRow}>
-      <Text variant="label" tone="secondary">
-        {label}
-      </Text>
-      <View style={styles.stepperControl}>
-        <Pressable
-          onPress={onDecrement}
-          accessibilityRole="button"
-          accessibilityLabel={`Decrease ${label}`}
-          style={({ pressed }) => [
-            styles.stepButton,
-            { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
-          ]}>
-          <Text style={[styles.stepSymbol, { color: colors.brand }]}>−</Text>
-        </Pressable>
-        <Text variant="subheading" style={styles.stepperValue}>
-          {value}
-        </Text>
-        <Pressable
-          onPress={onIncrement}
-          accessibilityRole="button"
-          accessibilityLabel={`Increase ${label}`}
-          style={({ pressed }) => [
-            styles.stepButton,
-            { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
-          ]}>
-          <Text style={[styles.stepSymbol, { color: colors.brand }]}>+</Text>
-        </Pressable>
-      </View>
-    </View>
-  );
-}
-
-// ---- Working-hours / breaks summaries (web parity: at-a-glance schedule) -----
-const WH_DAYS: { key: string; short: string }[] = [
-  { key: '1', short: 'Mon' },
-  { key: '2', short: 'Tue' },
-  { key: '3', short: 'Wed' },
-  { key: '4', short: 'Thu' },
-  { key: '5', short: 'Fri' },
-  { key: '6', short: 'Sat' },
-  { key: '0', short: 'Sun' },
-];
-
-function rangeSignature(ranges?: PractitionerTimeRange[] | null): string {
-  if (!ranges || ranges.length === 0) return '';
-  return ranges.map((r) => `${r.start.slice(0, 5)}–${r.end.slice(0, 5)}`).join(', ');
-}
-
-/**
- * Compact weekly hours summary (e.g. "Mon–Fri 09:00–17:00 · Sat 10:00–14:00"),
- * grouping consecutive open days that share identical hours. Returns null when
- * the calendar has no open days so the caller can show a "not set" hint.
- */
-function summariseWorkingHours(
-  wh?: Record<string, PractitionerTimeRange[]> | null,
-): string | null {
-  if (!wh) return null;
-  const days = WH_DAYS.map((d) => ({ short: d.short, sig: rangeSignature(wh[d.key]) }));
-  if (days.every((d) => d.sig === '')) return null;
-  const parts: string[] = [];
-  let i = 0;
-  while (i < days.length) {
-    const cur = days[i]!;
-    if (!cur.sig) {
-      i += 1;
-      continue;
-    }
-    let j = i;
-    while (j + 1 < days.length && days[j + 1]!.sig === cur.sig) j += 1;
-    const label = i === j ? cur.short : `${days[i]!.short}–${days[j]!.short}`;
-    parts.push(`${label} ${cur.sig}`);
-    i = j + 1;
-  }
-  return parts.join(' · ');
-}
-
-/** Short list of weekdays that carry at least one break (or "Every day" for legacy). */
-function summariseBreaks(p: Practitioner): string | null {
-  const byDay = p.break_times_by_day;
-  if (byDay && typeof byDay === 'object' && Object.keys(byDay).length > 0) {
-    const daysWith = WH_DAYS.filter((d) => (byDay[d.key]?.length ?? 0) > 0).map((d) => d.short);
-    return daysWith.length > 0 ? daysWith.join(', ') : null;
-  }
-  if (Array.isArray(p.break_times) && p.break_times.length > 0) return 'Every day';
-  return null;
-}
-
-// ---- Section header ---------------------------------------------------------
 /** One line of the closures list: a leave period, or a run of amended hours (web #187). */
 type ClosureItem = { key: string; sort: string; ended: boolean } & (
   | { type: 'closed'; row: LeavePeriod }
@@ -214,52 +122,122 @@ function amendedKey(row: Pick<AmendedHoursEntry, 'calendar_id' | 'date_start'>):
   return `hours-${row.calendar_id}-${row.date_start}`;
 }
 
-function SectionHeader({ title, caption }: { title: string; caption?: string }) {
+function timeStringToMinutes(t: string): number {
+  const [h, m] = t.split(':').map(Number);
+  return (h ?? 0) * 60 + (m ?? 0);
+}
+
+/**
+ * Which calendar the Availability / Breaks tabs land on (web
+ * `pickScheduleCalendarId`): keep a still-valid selection, a resource included;
+ * a fresh pick prefers the viewer's own staff calendar, then any staff calendar.
+ */
+function pickScheduleCalendarId(
+  previous: string | null,
+  calendars: readonly Practitioner[],
+  ownIds: ReadonlySet<string>,
+): string | null {
+  if (previous && calendars.some((c) => c.id === previous)) return previous;
+  const staff = calendars.filter((c) => !isResourceCalendar(c));
   return (
-    <View style={styles.sectionHeader}>
-      <Text variant="overline" tone="muted">
-        {title}
-      </Text>
-      {caption ? (
-        <Text variant="caption" tone="muted">
-          {caption}
-        </Text>
-      ) : null}
+    staff.find((c) => ownIds.has(c.id))?.id ?? staff[0]?.id ?? calendars[0]?.id ?? null
+  );
+}
+
+// ---- The tab strip -------------------------------------------------------------
+function TabStrip({
+  tabs,
+  value,
+  onChange,
+}: {
+  tabs: { key: Tab; label: string }[];
+  value: Tab;
+  onChange: (tab: Tab) => void;
+}) {
+  const { colors } = useTheme();
+  return (
+    <View style={[styles.tabStrip, { borderBottomColor: colors.border }]}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.tabStripContent}>
+        {tabs.map((t) => {
+          const selected = t.key === value;
+          return (
+            <Pressable
+              key={t.key}
+              accessibilityRole="tab"
+              accessibilityState={{ selected }}
+              onPress={() => onChange(t.key)}
+              style={({ pressed }) => [
+                styles.tab,
+                { borderBottomColor: selected ? colors.brand : 'transparent' },
+                pressed ? { opacity: 0.7 } : null,
+              ]}>
+              <Text
+                variant="bodyMedium"
+                color={selected ? colors.text : colors.textSecondary}
+                style={selected ? styles.tabLabelSelected : null}>
+                {t.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
     </View>
   );
 }
 
-// ---- Sheet mode types -------------------------------------------------------
-type SheetKind = 'block' | 'leave' | 'hours' | 'breaks' | 'schedule' | null;
+// ---- Sheet mode ---------------------------------------------------------------
 type BlockType = 'allday' | 'window';
 
 export default function AvailabilityScreen() {
   const { colors } = useTheme();
   const toast = useToast();
   const router = useRouter();
+  const params = useLocalSearchParams<{ tab?: string | string[] }>();
   const { venue } = useVenueContext();
   const timeZone = venue?.timezone ?? 'Europe/London';
   const today = calendarDateInTimeZone(new Date(), timeZone);
-  const to = addDaysToDateStr(today, RANGE_DAYS - 1);
-  // Ended schedule changes stay in the timeline but sit behind a per-calendar
-  // "Show N past changes" toggle (web 2026-09-04).
-  const [pastChangesShownFor, setPastChangesShownFor] = useState<Set<string>>(() => new Set());
 
   const staffQuery = useStaffMe();
   const staff = staffQuery.data?.staff;
   const isAdmin = staff?.role === 'admin';
 
+  // ---- Tabs ------------------------------------------------------------------
+  const visibleTabs = useMemo(() => visibleAvailabilityTabs(isAdmin), [isAdmin]);
+  const [chosenTab, setTab] = useState<Tab>(() => resolveAvailabilityTab(params.tab, false));
+  const [tabSeeded, setTabSeeded] = useState(false);
+  // The default is Calendars for an admin, Availability for everyone else;
+  // the role is only known once `staff/me` answers, so seed then. A later
+  // `?tab=` (a link from elsewhere in the app) wins over the chosen tab.
+  // Both are "adjust state during render", not effects.
+  if (!tabSeeded && staff) {
+    setTabSeeded(true);
+    setTab(resolveAvailabilityTab(params.tab, isAdmin));
+  }
+  const [seenParamTab, setSeenParamTab] = useState(params.tab);
+  if (seenParamTab !== params.tab) {
+    setSeenParamTab(params.tab);
+    const fromUrl = parseAvailabilityTab(params.tab);
+    if (fromUrl) setTab(fromUrl);
+  }
+  // A non-admin never sees Calendars: bounce to Availability (web parity).
+  const tab: Tab = staff && !isAdmin && chosenTab === 'team' ? 'hours' : chosenTab;
+
   /**
    * Resources included: a resource is a `unified_calendars` row like any other
-   * and its weekly hours are the same `working_hours` column, so this is where
-   * they belong (`/api/venue/resources` only aliases the column as
-   * `availability_hours`). Everything on this screen that is NOT hours works on
-   * `appointmentCalendars` below instead — see the note there.
+   * and its weekly hours are the same `working_hours` column, so the
+   * Availability tab edits them here too. Breaks and closures work on
+   * `appointmentCalendars` instead — see the note there.
    */
   const practitionersQuery = usePractitioners({ includeResources: true });
-  /** Every calendar whose weekly schedule is editable here, resources included. */
+  /** Every calendar whose weekly schedule is editable here, in column order. */
   const practitioners = useMemo(
-    () => practitionersQuery.data?.practitioners ?? [],
+    () =>
+      [...(practitionersQuery.data?.practitioners ?? [])].sort(
+        (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0),
+      ),
     [practitionersQuery.data?.practitioners],
   );
 
@@ -279,15 +257,9 @@ export default function AvailabilityScreen() {
     [practitioners],
   );
 
-  const isResourceId = useCallback(
-    (id: string | null | undefined) =>
-      id != null && isResourceCalendar(practitioners.find((p) => p.id === id)),
-    [practitioners],
-  );
-
-  // Non-admins may only manage their OWN calendar's leave/blocks (web parity:
-  // StaffLeaveCalendarPanel locks calendarId to the self calendar and hides the
-  // picker). Admins manage every calendar.
+  // Non-admins may only change their OWN calendars (web `canEditWorkingHoursFor`,
+  // `canEditBreaksFor`, and the closures panel's locked `calendarId`). Admins
+  // change every calendar.
   const ownCalendarIds = useMemo(
     () => new Set(staff?.linked_calendar_ids ?? []),
     [staff?.linked_calendar_ids],
@@ -296,8 +268,8 @@ export default function AvailabilityScreen() {
     (id: string | null | undefined) => isAdmin || (id != null && ownCalendarIds.has(id)),
     [isAdmin, ownCalendarIds],
   );
-  // Practitioner chips a non-admin may target (self calendars only). Built from
-  // `appointmentCalendars`, so leave and blocks are never offered a resource.
+  // Calendars a non-admin may put a closure on (self calendars only). Built from
+  // `appointmentCalendars`, so leave is never offered a resource.
   const selectablePractitioners = useMemo(
     () =>
       isAdmin
@@ -305,51 +277,50 @@ export default function AvailabilityScreen() {
         : appointmentCalendars.filter((p) => ownCalendarIds.has(p.id)),
     [isAdmin, appointmentCalendars, ownCalendarIds],
   );
-
-  /**
-   * Calendars the breaks editor may write to with "Apply to all calendars" —
-   * the same permission pool as the chips, and resource-free for the reason
-   * given on `appointmentCalendars`.
-   */
+  /** Calendars the breaks editor may write to with "Save to all calendars". */
   const breakTargets = useMemo(
     () => selectablePractitioners.map((p) => ({ id: p.id, name: p.name })),
     [selectablePractitioners],
   );
+  const canManageUnavailability = selectablePractitioners.length > 0;
+
+  // ---- The calendar the Availability and Breaks tabs work on ----------------
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selectedCalendarId = pickScheduleCalendarId(selectedId, practitioners, ownCalendarIds);
+  const selectedCalendar = practitioners.find((p) => p.id === selectedCalendarId) ?? null;
+  const selectedIsResource = isResourceCalendar(selectedCalendar);
+  const canEditSelected = ownsCalendar(selectedCalendarId);
 
   // Legacy per-calendar "days off" — older venues stored blocked DATES (YYYY-MM-DD)
-  // in `days_off`. Those still block booking but aren't editable here, so warn
-  // admins to re-add them as proper closures (web parity: amber legacy banner).
-  const legacyDaysOffCalendars = useMemo(
+  // in `days_off`. Those still block booking but aren't editable here (web
+  // parity: the amber legacy banner, shown to every role).
+  const hasLegacyDaysOff = useMemo(
     () =>
-      appointmentCalendars.filter((p) =>
+      appointmentCalendars.some((p) =>
         (p.days_off ?? []).some((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)),
       ),
     [appointmentCalendars],
   );
 
-  // Practitioner filter (null = all)
+  // ---- Closures: filter, lists, mutations -------------------------------------
   const [filterPractitionerId, setFilterPractitionerId] = useState<string | null>(null);
+  // Past entries are real (web lists the displayed month either way), so the
+  // lists reach back as far as they reach forward.
+  const listFrom = addDaysToDateStr(today, -RANGE_DAYS);
+  const listTo = addDaysToDateStr(today, RANGE_DAYS - 1);
+  const leaveQuery = usePractitionerLeave(listFrom, listTo, filterPractitionerId);
+  const amendedQuery = useAmendedHours(listFrom, listTo, filterPractitionerId);
 
-  const blocksQuery = useCalendarBlocks(today, to, filterPractitionerId);
-  const leaveQuery = usePractitionerLeave(today, to, filterPractitionerId);
-
-  const createBlock = useCreateBlock();
-  const updateBlock = useUpdateBlock();
-  const deleteBlock = useDeleteBlock();
   const createLeave = useCreateLeave();
   const updateLeave = useUpdateLeave();
   const deleteLeave = useDeleteLeave();
-  // Amended hours (web #187): a calendar working different hours on a date or a
-  // range, listed and edited beside its closures.
-  const amendedQuery = useAmendedHours(today, to, filterPractitionerId);
   const putAmended = usePutAmendedHours();
   const deleteAmended = useDeleteAmendedHours();
   // Venue-wide closures and amended hours, for the note under the hours form.
   const venueBlocksQuery = useAvailabilityBlocks();
 
-  // Track per-id pending deletes to prevent double-delete and scope loading state
-  const [deletingBlockIds, setDeletingBlockIds] = useState<Set<string>>(new Set());
   const [deletingLeaveIds, setDeletingLeaveIds] = useState<Set<string>>(new Set());
+  const [deletingAmendedKeys, setDeletingAmendedKeys] = useState<Set<string>>(new Set());
 
   // Two-step confirm for destructive removes. `Alert.alert` confirms never fire
   // on react-native-web (the dev-preview path), so arm a button then confirm.
@@ -374,19 +345,15 @@ export default function AvailabilityScreen() {
 
   const practitionerName = useCallback(
     (id: string | null) =>
-      id ? (practitioners.find((p) => p.id === id)?.name ?? 'Calendar') : 'Staff member',
+      id ? (practitioners.find((p) => p.id === id)?.name ?? 'Calendar') : 'A calendar',
     [practitioners],
   );
 
-  // ---- Sheet state -----------------------------------------------------------
-  const [sheet, setSheet] = useState<SheetKind>(null);
-  const [editingBlockId, setEditingBlockId] = useState<string | null>(null);
+  // ---- The closure / amended-hours sheet -------------------------------------
+  const [sheetOpen, setSheetOpen] = useState(false);
   const [editingLeaveId, setEditingLeaveId] = useState<string | null>(null);
-
-  // Collapsible past-leave group (mirrors web's collapsible "Past blocks").
   const [showPastLeave, setShowPastLeave] = useState(false);
 
-  // Block/leave form
   const [practitionerId, setPractitionerId] = useState<string | null>(null);
   const [applyToAll, setApplyToAll] = useState(false);
   const [date, setDate] = useState(today);
@@ -398,7 +365,7 @@ export default function AvailabilityScreen() {
   const [leaveType, setLeaveType] = useState<LeaveType>('annual');
   const [sheetError, setSheetError] = useState<string | null>(null);
   /**
-   * The leave sheet's two kinds of entry (web #187): a closure (leave, hard) or
+   * The sheet's two kinds of entry (web #187): a closure (leave, hard) or
    * working different hours (an override the diary and every engine read).
    */
   const [entryKind, setEntryKind] = useState<'closed' | 'hours'>('closed');
@@ -410,94 +377,43 @@ export default function AvailabilityScreen() {
   const [editingAmended, setEditingAmended] = useState<AmendedHoursEntry | null>(null);
   /** The 409 "save anyway?" for amended hours, asked as a step of this sheet. */
   const [amendedAck, setAmendedAck] = useState<{ message: string } | null>(null);
-  const [deletingAmendedKeys, setDeletingAmendedKeys] = useState<Set<string>>(new Set());
 
-  // Hours/breaks sheet
-  const [hoursTargetId, setHoursTargetId] = useState<string | null>(null);
-
-  // ---- Helpers ---------------------------------------------------------------
   function defaultPractitionerId(): string | null {
-    // Non-admin: default to own calendar
-    if (!isAdmin && staff?.linked_calendar_ids?.length) {
-      return staff.linked_calendar_ids[0] ?? null;
-    }
-    // Appointment calendars only — this seeds the leave / block sheet, and
-    // neither can be stored against a resource.
+    if (!isAdmin) return selectablePractitioners[0]?.id ?? null;
     return appointmentCalendars[0]?.id ?? null;
   }
 
-  function openSheet(kind: 'block' | 'leave') {
-    setEditingBlockId(null);
+  /** A fresh sheet: a closure by default, on the given dates (or today). */
+  function openNewEntry(
+    startDate = today,
+    finishDate = startDate,
+    kind: 'closed' | 'hours' = 'closed',
+    calendarId: string | null = null,
+  ) {
     setEditingLeaveId(null);
-    setPractitionerId(defaultPractitionerId());
-    setApplyToAll(false);
-    setDate(today);
-    setEndDate(today);
-    setBlockType('allday');
-    setStartMinutes(12 * 60);
-    setEndMinutes(13 * 60);
-    setReason('');
-    setLeaveType('annual');
-    setEntryKind('closed');
-    setHoursPeriods([{ start: 9 * 60, end: 17 * 60 }]);
     setEditingAmended(null);
-    setAmendedAck(null);
-    setSheetError(null);
-    setSheet(kind);
-  }
-
-  /**
-   * Calendar-first add: open the leave sheet prefilled with a tapped date range.
-   * Same fresh-create reset as `openSheet('leave')`, but keep the chosen dates
-   * (steppers below still work as a fine-adjust fallback).
-   */
-  function openCreateLeaveRange(startDate: string, endDate: string) {
-    setEditingBlockId(null);
-    setEditingLeaveId(null);
-    setPractitionerId(defaultPractitionerId());
+    setPractitionerId(calendarId ?? defaultPractitionerId());
     setApplyToAll(false);
     setDate(startDate);
-    setEndDate(endDate);
+    setEndDate(finishDate);
     setBlockType('allday');
     setStartMinutes(12 * 60);
     setEndMinutes(13 * 60);
     setReason('');
     setLeaveType('annual');
-    setEntryKind('closed');
+    setEntryKind(kind);
     setHoursPeriods([{ start: 9 * 60, end: 17 * 60 }]);
-    setEditingAmended(null);
     setAmendedAck(null);
     setSheetError(null);
-    setSheet('leave');
-  }
-
-  function openEditBlock(id: string) {
-    const block = (blocksQuery.data?.blocks ?? []).find((b) => b.id === id);
-    if (!block) return;
-    // Non-admins can only edit blocks on their own calendar.
-    if (!ownsCalendar(block.practitioner_id ?? block.calendar_id)) {
-      toast.error('You can only edit blocks on your own calendar.');
-      return;
-    }
-    setEditingBlockId(id);
-    setEditingLeaveId(null);
-    setPractitionerId(block.practitioner_id ?? block.calendar_id);
-    setDate(block.block_date);
-    setStartMinutes(timeStringToMinutes(block.start_time));
-    setEndMinutes(timeStringToMinutes(block.end_time));
-    setReason(block.reason ?? '');
-    setSheetError(null);
-    setSheet('block');
+    setSheetOpen(true);
   }
 
   function openEditLeave(period: LeavePeriod) {
-    // Non-admins can only edit leave on their own calendar.
     if (!ownsCalendar(period.practitioner_id)) {
-      toast.error('You can only edit leave on your own calendar.');
+      toast.error('You can only edit closures on your own calendar.');
       return;
     }
     setEditingLeaveId(period.id);
-    setEditingBlockId(null);
     setEditingAmended(null);
     setEntryKind('closed');
     setAmendedAck(null);
@@ -517,7 +433,7 @@ export default function AvailabilityScreen() {
     }
     setApplyToAll(false);
     setSheetError(null);
-    setSheet('leave');
+    setSheetOpen(true);
   }
 
   /** Load a run of amended hours back into the sheet (web: `editAmended`). */
@@ -526,7 +442,6 @@ export default function AvailabilityScreen() {
       toast.error('You can only amend hours on your own calendar.');
       return;
     }
-    setEditingBlockId(null);
     setEditingLeaveId(null);
     setEditingAmended(row);
     setEntryKind('hours');
@@ -545,7 +460,37 @@ export default function AvailabilityScreen() {
     setReason(row.reason ?? '');
     setAmendedAck(null);
     setSheetError(null);
-    setSheet('leave');
+    setSheetOpen(true);
+  }
+
+  /**
+   * The planning calendar's "Amend hours for this date" (web
+   * `amendedHoursHref`): jump to Closures & amended hours and open the sheet
+   * on that date — the existing run when there is one, else a new hours entry.
+   */
+  function amendHoursFromPlanner(calendar: Practitioner, dateYmd: string, existing: boolean) {
+    setTab('daysoff');
+    if (existing) {
+      const listed = amendedHoursOnDate(amendedQuery.data ?? [], dateYmd, calendar.id);
+      if (listed) {
+        openEditAmended(listed);
+        return;
+      }
+      const stored = calendar.availability_exceptions?.[dateYmd];
+      if (stored && 'periods' in stored) {
+        openEditAmended({
+          kind: 'hours',
+          date_start: dateYmd,
+          date_end: dateYmd,
+          periods: stored.periods.map((p) => ({ start: p.start.slice(0, 5), end: p.end.slice(0, 5) })),
+          reason: null,
+          calendar_id: calendar.id,
+          calendar_name: calendar.name,
+        });
+        return;
+      }
+    }
+    openNewEntry(dateYmd, dateYmd, 'hours', calendar.id);
   }
 
   /**
@@ -556,7 +501,7 @@ export default function AvailabilityScreen() {
    */
   async function saveAmendedHours(acknowledge: boolean) {
     if (endDate < date) {
-      setSheetError('End date must be on or after the start date.');
+      setSheetError('End date must be on or after start date.');
       return;
     }
     const normalised = normaliseHoursPeriods(
@@ -567,7 +512,7 @@ export default function AvailabilityScreen() {
       return;
     }
     if (!editingAmended && !applyToAll && !practitionerId) {
-      setSheetError('Please select a practitioner.');
+      setSheetError('Select a calendar.');
       return;
     }
     setSheetError(null);
@@ -587,7 +532,7 @@ export default function AvailabilityScreen() {
       });
       setAmendedAck(null);
       hapticSuccess();
-      setSheet(null);
+      setSheetOpen(false);
       toast.success(editingAmended ? 'Amended hours updated.' : 'Amended hours saved.');
     } catch (e) {
       if (e instanceof ApiError && e.status === 409 && isRequiresConfirmationBody(e.body)) {
@@ -604,132 +549,55 @@ export default function AvailabilityScreen() {
     }
   }
 
-  function openHoursSheet(practId: string) {
-    setHoursTargetId(practId);
-    setSheet('hours');
-  }
-
-  /** Plan hours ahead (schedule changes, rotas, the planning calendar). */
-  function openScheduleSheet(practId: string) {
-    setHoursTargetId(practId);
-    setSheet('schedule');
-  }
-
-  function openBreaksSheet(practId: string) {
-    // Belt and braces: the row hides the button for a resource, but a break
-    // written against one would save and do nothing, so never open the editor.
-    if (isResourceId(practId)) return;
-    setHoursTargetId(practId);
-    setSheet('breaks');
-  }
-
-  // ---- Create / update handler -----------------------------------------------
   async function handleSave() {
-    if (!practitionerId && !applyToAll) {
-      setSheetError('Please select a practitioner.');
+    if (!practitionerId && !applyToAll && !editingLeaveId && !editingAmended) {
+      setSheetError('Select a calendar.');
       return;
     }
     setSheetError(null);
-
+    if (entryKind === 'hours') {
+      await saveAmendedHours(false);
+      return;
+    }
     try {
-      if (sheet === 'block') {
-        if (endMinutes <= startMinutes) {
-          setSheetError('End time must be after the start time.');
-          return;
-        }
-        const payload = {
-          block_date: date,
-          start_time: minutesToTime(startMinutes),
-          end_time: minutesToTime(endMinutes),
-          reason: reason.trim() || null,
-        };
-        if (editingBlockId) {
-          await updateBlock.mutateAsync({ blockId: editingBlockId, ...payload });
-        } else {
-          await createBlock.mutateAsync({
-            practitioner_id: practitionerId!,
-            block_date: payload.block_date,
-            start_time: payload.start_time,
-            end_time: payload.end_time,
-            ...(payload.reason ? { reason: payload.reason } : {}),
-          });
-        }
-      } else if (entryKind === 'hours') {
-        await saveAmendedHours(false);
+      if (endDate < date) {
+        setSheetError('End date must be on or after start date.');
         return;
-      } else {
-        // leave
-        if (endDate < date) {
-          setSheetError('End date must be on or after the start date.');
-          return;
-        }
-        if (blockType === 'window' && endMinutes <= startMinutes) {
-          setSheetError('End time must be after the start time.');
-          return;
-        }
-        const unavailableStart =
-          blockType === 'window' ? minutesToTime(startMinutes) : null;
-        const unavailableEnd =
-          blockType === 'window' ? minutesToTime(endMinutes) : null;
-
-        if (editingLeaveId) {
-          await updateLeave.mutateAsync({
-            id: editingLeaveId,
-            start_date: date,
-            end_date: endDate,
-            leave_type: leaveType,
-            notes: reason.trim() || null,
-            unavailable_start_time: unavailableStart,
-            unavailable_end_time: unavailableEnd,
-          });
-        } else {
-          await createLeave.mutateAsync({
-            ...(applyToAll
-              ? { apply_to_all_active: true }
-              : { practitioner_id: practitionerId! }),
-            start_date: date,
-            end_date: endDate,
-            leave_type: leaveType,
-            ...(reason.trim() ? { notes: reason.trim() } : {}),
-            unavailable_start_time: unavailableStart,
-            unavailable_end_time: unavailableEnd,
-          });
-        }
       }
+      if (blockType === 'window' && endMinutes <= startMinutes) {
+        setSheetError('End time must be after start time.');
+        return;
+      }
+      const unavailableStart = blockType === 'window' ? minutesToHm(startMinutes) : null;
+      const unavailableEnd = blockType === 'window' ? minutesToHm(endMinutes) : null;
 
+      if (editingLeaveId) {
+        await updateLeave.mutateAsync({
+          id: editingLeaveId,
+          start_date: date,
+          end_date: endDate,
+          leave_type: leaveType,
+          notes: reason.trim() || null,
+          unavailable_start_time: unavailableStart,
+          unavailable_end_time: unavailableEnd,
+        });
+      } else {
+        await createLeave.mutateAsync({
+          ...(applyToAll ? { apply_to_all_active: true } : { practitioner_id: practitionerId! }),
+          start_date: date,
+          end_date: endDate,
+          leave_type: leaveType,
+          ...(reason.trim() ? { notes: reason.trim() } : {}),
+          unavailable_start_time: unavailableStart,
+          unavailable_end_time: unavailableEnd,
+        });
+      }
       hapticSuccess();
-      setSheet(null);
-      toast.success(
-        sheet === 'block'
-          ? editingBlockId
-            ? 'Block updated.'
-            : 'Time blocked.'
-          : editingLeaveId
-            ? 'Leave updated.'
-            : 'Leave added.',
-      );
+      setSheetOpen(false);
+      toast.success(editingLeaveId ? 'Closure updated.' : 'Closure added to the calendar.');
     } catch (e) {
       hapticWarning();
       setSheetError(e instanceof ApiError ? e.message : 'Could not save. Try again.');
-    }
-  }
-
-  // ---- Delete handlers -------------------------------------------------------
-  async function handleDeleteBlock(blockId: string) {
-    clearConfirm();
-    if (deletingBlockIds.has(blockId)) return;
-    setDeletingBlockIds((prev) => new Set(prev).add(blockId));
-    try {
-      await deleteBlock.mutateAsync(blockId);
-      toast.success('Block removed.');
-    } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Could not remove. An error occurred.');
-    } finally {
-      setDeletingBlockIds((prev) => {
-        const next = new Set(prev);
-        next.delete(blockId);
-        return next;
-      });
     }
   }
 
@@ -744,6 +612,7 @@ export default function AvailabilityScreen() {
         date_start: row.date_start,
         date_end: row.date_end,
       });
+      if (editingAmended && amendedKey(editingAmended) === key) setSheetOpen(false);
       toast.success('Amended hours removed. The dates go back to the usual hours.');
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : 'Could not remove. An error occurred.');
@@ -762,7 +631,8 @@ export default function AvailabilityScreen() {
     setDeletingLeaveIds((prev) => new Set(prev).add(leaveId));
     try {
       await deleteLeave.mutateAsync(leaveId);
-      toast.success('Leave removed.');
+      if (editingLeaveId === leaveId) setSheetOpen(false);
+      toast.success('Closure removed from the calendar.');
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : 'Could not remove. An error occurred.');
     } finally {
@@ -774,45 +644,38 @@ export default function AvailabilityScreen() {
     }
   }
 
-  // ---- Derived data ----------------------------------------------------------
-  const blocks = (blocksQuery.data?.blocks ?? []).filter((b) => !b.class_instance_id);
+  // ---- Derived data ------------------------------------------------------------
   const leave = useMemo(() => leaveQuery.data?.periods ?? [], [leaveQuery.data?.periods]);
-
   const amended = useMemo(
     () => (amendedQuery.data ?? []).filter((e) => e.kind === 'hours'),
     [amendedQuery.data],
   );
   // Both kinds in one list, interleaved by date (web #187): upcoming first
   // (asc), past collapsed behind a toggle (desc).
-  const closureItems = useMemo<ClosureItem[]>(
-    () => [
-      ...leave.map(
-        (p): ClosureItem => ({ key: `leave-${p.id}`, sort: p.start_date, ended: p.end_date < today, type: 'closed', row: p }),
-      ),
-      ...amended.map(
-        (a): ClosureItem => ({ key: amendedKey(a), sort: a.date_start, ended: a.date_end < today, type: 'hours', row: a }),
-      ),
-    ],
-    [leave, amended, today],
-  );
-  const upcomingLeave = useMemo(
-    () => closureItems.filter((i) => !i.ended).sort((a, b) => a.sort.localeCompare(b.sort)),
-    [closureItems],
-  );
-  const pastLeave = useMemo(
-    () => closureItems.filter((i) => i.ended).sort((a, b) => b.sort.localeCompare(a.sort)),
-    [closureItems],
-  );
+  const closureItems: ClosureItem[] = [
+    ...leave.map(
+      (p): ClosureItem => ({ key: `leave-${p.id}`, sort: p.start_date, ended: p.end_date < today, type: 'closed', row: p }),
+    ),
+    ...amended.map(
+      (a): ClosureItem => ({ key: amendedKey(a), sort: a.date_start, ended: a.date_end < today, type: 'hours', row: a }),
+    ),
+  ];
+  const upcomingItems = closureItems
+    .filter((i) => !i.ended)
+    .sort((a, b) => a.sort.localeCompare(b.sort));
+  const pastItems = closureItems
+    .filter((i) => i.ended)
+    .sort((a, b) => b.sort.localeCompare(a.sort));
   const venueBlocks = useMemo(
     () => (venueBlocksQuery.data ?? []).filter((b) => b.service_id == null),
     [venueBlocksQuery.data],
   );
-  const selectedCalendarName = practitionerName(
+  const sheetCalendarName = practitionerName(
     editingAmended?.calendar_id ?? (applyToAll ? null : practitionerId),
   );
   const hoursPeriodsHm = hoursPeriods.map((p) => ({ start: minutesToHm(p.start), end: minutesToHm(p.end) }));
   const amendedLeaveNote =
-    sheet === 'leave' && entryKind === 'hours'
+    sheetOpen && entryKind === 'hours'
       ? amendedHoursLeaveNote({
           dateStart: date,
           dateEnd: endDate,
@@ -821,11 +684,11 @@ export default function AvailabilityScreen() {
               ? true
               : l.practitioner_id === (editingAmended?.calendar_id ?? practitionerId),
           ),
-          calendarName: applyToAll && !editingAmended ? 'A calendar' : selectedCalendarName,
+          calendarName: applyToAll && !editingAmended ? 'A calendar' : sheetCalendarName,
         })
       : null;
   const amendedVenueNote =
-    sheet === 'leave' && entryKind === 'hours'
+    sheetOpen && entryKind === 'hours'
       ? amendedHoursVenueNote({
           dateStart: date,
           dateEnd: endDate,
@@ -834,508 +697,471 @@ export default function AvailabilityScreen() {
           venueBlocks,
         })
       : null;
-  const isLoading = blocksQuery.isLoading || leaveQuery.isLoading || practitionersQuery.isLoading;
-  const isError = blocksQuery.isError || leaveQuery.isError;
-  const saving =
-    createBlock.isPending ||
-    updateBlock.isPending ||
-    createLeave.isPending ||
-    updateLeave.isPending ||
-    putAmended.isPending;
+  const saving = createLeave.isPending || updateLeave.isPending || putAmended.isPending;
+  const editing = editingLeaveId != null || editingAmended != null;
+  const deletingCurrent =
+    (editingLeaveId != null && deletingLeaveIds.has(editingLeaveId)) ||
+    (editingAmended != null && deletingAmendedKeys.has(amendedKey(editingAmended)));
 
-  const hoursTarget = practitioners.find((p) => p.id === hoursTargetId);
-
-  /** One run of amended hours (web: the "Amended hours" chip line). */
-  function renderAmendedRow(row: AmendedHoursEntry) {
-    const key = amendedKey(row);
-    const canManage = ownsCalendar(row.calendar_id);
+  // ---- Rows of the Upcoming / Past lists ---------------------------------------
+  function renderClosureItem(item: ClosureItem) {
+    const isHours = item.type === 'hours';
+    const row = item.row;
+    const calendarId = isHours ? item.row.calendar_id : item.row.practitioner_id;
+    const canManage = ownsCalendar(calendarId);
+    const key = item.key;
+    const deleting = isHours
+      ? deletingAmendedKeys.has(key)
+      : deletingLeaveIds.has(item.row.id);
+    const partial =
+      !isHours && Boolean(item.row.unavailable_start_time && item.row.unavailable_end_time);
+    const chip = isHours
+      ? { label: 'Amended hours', surface: colors.warningSurface, ink: colors.warning }
+      : partial
+        ? { label: 'Part day', surface: colors.infoSurface, ink: colors.info }
+        : { label: 'All day', surface: colors.dangerSurface, ink: colors.danger };
+    const range = isHours
+      ? describeAmendedRange(item.row.date_start, item.row.date_end)
+      : describeAmendedRange(item.row.start_date, item.row.end_date);
+    const times = isHours
+      ? describeHoursPeriods(item.row.periods)
+      : partial
+        ? `${item.row.unavailable_start_time!.slice(0, 5)}–${item.row.unavailable_end_time!.slice(0, 5)} each day`
+        : null;
+    const calendarName = isHours
+      ? item.row.calendar_name
+      : (item.row.practitioner_name ?? practitionerName(item.row.practitioner_id));
+    const note = isHours ? item.row.reason : item.row.notes;
+    const onEdit = () => (isHours ? openEditAmended(item.row) : openEditLeave(item.row));
+    const onRemove = () =>
+      isHours ? void handleDeleteAmended(item.row) : void handleDeleteLeave(item.row.id);
     return (
-      <View key={key} style={[styles.row, { borderBottomColor: colors.border }]}>
+      <Pressable
+        key={key}
+        accessibilityRole={canManage ? 'button' : undefined}
+        disabled={!canManage}
+        onPress={onEdit}
+        style={({ pressed }) => [
+          styles.row,
+          { borderBottomColor: colors.border },
+          item.ended ? { opacity: 0.75 } : null,
+          pressed && canManage ? { opacity: 0.6 } : null,
+        ]}>
         <View style={styles.rowBody}>
-          <Text variant="bodyMedium">{describeAmendedRange(row.date_start, row.date_end)}</Text>
+          <View style={styles.rowTitle}>
+            <View style={[styles.chip, { backgroundColor: chip.surface }]}>
+              <Text variant="caption" color={chip.ink}>
+                {chip.label}
+              </Text>
+            </View>
+            <Text variant="bodyMedium" style={styles.flexShrink} numberOfLines={1}>
+              {range}
+            </Text>
+          </View>
           <Text variant="caption" tone="muted" numberOfLines={2}>
-            {row.calendar_name} · <Text variant="caption" color={colors.warning}>Amended hours</Text>{' '}
-            · {describeHoursPeriods(row.periods)}
-            {row.reason ? ` · ${row.reason}` : ''}
+            {calendarName}
+            {times ? ` · ${times}` : ''}
+            {!isHours ? ` · ${leaveTypeLabel((row as LeavePeriod).leave_type)}` : ''}
+            {note ? ` · ${note}` : ''}
           </Text>
         </View>
         {canManage ? (
           <View style={styles.rowActions}>
-            <Button label="Edit" variant="ghost" size="sm" onPress={() => openEditAmended(row)} />
             <Button
               label={pendingConfirm === key ? 'Tap to confirm' : 'Remove'}
               variant="ghost"
               size="sm"
-              loading={deletingAmendedKeys.has(key)}
-              disabled={deletingAmendedKeys.has(key)}
-              onPress={() =>
-                pendingConfirm === key ? void handleDeleteAmended(row) : armConfirm(key)
-              }
+              loading={deleting}
+              disabled={deleting}
+              customColors={{ background: 'transparent', text: colors.danger }}
+              onPress={() => (pendingConfirm === key ? onRemove() : armConfirm(key))}
             />
           </View>
+        ) : null}
+      </Pressable>
+    );
+  }
+
+  // ---- The calendar selector shared by Availability and Breaks -----------------
+  function renderCalendarSelector() {
+    return (
+      <View style={styles.selector}>
+        <Text variant="label">Calendar</Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.chipRow}>
+          {practitioners.map((p) => (
+            <Chip
+              key={p.id}
+              label={isResourceCalendar(p) ? `${p.name} (resource)` : p.name}
+              selected={p.id === selectedCalendarId}
+              onPress={() => setSelectedId(p.id)}
+            />
+          ))}
+        </ScrollView>
+        {!isAdmin && selectedCalendar && !canEditSelected ? (
+          <Text variant="caption" tone="secondary">
+            View only - you can change hours and breaks for calendars linked to your account.
+            Ask an admin to edit other calendars.
+          </Text>
         ) : null}
       </View>
     );
   }
 
-  function renderClosureItem(item: ClosureItem) {
-    return item.type === 'hours' ? renderAmendedRow(item.row) : renderLeaveRow(item.row);
-  }
-
-  // Single leave row — shared by the Upcoming and Past groups below.
-  function renderLeaveRow(period: LeavePeriod) {
-    const isPartial = period.unavailable_start_time && period.unavailable_end_time;
-    // Non-admins can only edit/remove leave on their own calendar.
-    const canManage = ownsCalendar(period.practitioner_id);
+  // ---- Availability tab ------------------------------------------------------------
+  function renderHoursTab() {
+    if (practitioners.length === 0) {
+      return (
+        <Card>
+          <EmptyState
+            title="No calendars yet"
+            message="Add calendars first to set their schedule."
+          />
+        </Card>
+      );
+    }
     return (
-      <View key={period.id} style={[styles.row, { borderBottomColor: colors.border }]}>
-        <View style={styles.rowBody}>
-          <Text variant="bodyMedium">
-            {formatDayHeading(period.start_date)}
-            {period.end_date !== period.start_date
-              ? ` → ${formatDayHeading(period.end_date)}`
-              : ''}
+      <>
+        {renderCalendarSelector()}
+
+        {/* How calendar hours and business hours work together (web banner). */}
+        <View
+          style={[
+            styles.infoBanner,
+            { backgroundColor: colors.brandSubtle, borderColor: colors.brandBorder },
+          ]}>
+          <Text variant="label">How calendar hours and business hours work together</Text>
+          <Text variant="caption" tone="secondary" style={styles.infoText}>
+            The hours you set below are when this calendar can take bookings, but a time is only
+            bookable where it also falls inside your venue&apos;s business hours. If you set
+            calendar hours wider than your business hours, the extra time outside them won&apos;t
+            be bookable, and days your venue is closed stay closed here too.
           </Text>
-          <Text variant="caption" tone="muted" numberOfLines={2}>
-            {period.practitioner_name ?? practitionerName(period.practitioner_id)} ·{' '}
-            {leaveTypeLabel(period.leave_type)}
-            {isPartial
-              ? ` · ${period.unavailable_start_time?.slice(0, 5)}–${period.unavailable_end_time?.slice(0, 5)} (window)`
-              : ''}
-            {period.notes ? ` · ${period.notes}` : ''}
-          </Text>
+          <Pressable
+            accessibilityRole="link"
+            onPress={() => router.push('/manage/hours' as Href)}
+            hitSlop={4}>
+            <Text variant="caption" tone="secondary" style={styles.infoText}>
+              To open bookings earlier or later, widen your{' '}
+              <Text variant="caption" color={colors.brand}>
+                Settings → Business hours
+              </Text>{' '}
+              as well. If you haven&apos;t set business hours, the calendar hours below apply on
+              their own.
+            </Text>
+          </Pressable>
         </View>
-        {canManage ? (
-          <View style={styles.rowActions}>
-            <Button label="Edit" variant="ghost" size="sm" onPress={() => openEditLeave(period)} />
-            <Button
-              label={pendingConfirm === `leave-${period.id}` ? 'Tap to confirm' : 'Remove'}
-              variant="ghost"
-              size="sm"
-              loading={deletingLeaveIds.has(period.id)}
-              disabled={deletingLeaveIds.has(period.id)}
-              onPress={() =>
-                pendingConfirm === `leave-${period.id}`
-                  ? void handleDeleteLeave(period.id)
-                  : armConfirm(`leave-${period.id}`)
+
+        {selectedCalendar ? (
+          <Card>
+            <Text variant="label">Working hours</Text>
+            <WorkingHoursEditor
+              key={`${selectedCalendar.id}:${JSON.stringify(selectedCalendar.working_hours ?? null)}`}
+              inline
+              practitionerId={selectedCalendar.id}
+              practitionerName={selectedCalendar.name}
+              currentWorkingHours={selectedCalendar.working_hours ?? undefined}
+              venueOpeningHours={venue?.opening_hours}
+              readOnly={!canEditSelected}
+              readOnlyHint={!isAdmin ? WORKING_HOURS_READ_ONLY_HINT : undefined}
+            />
+          </Card>
+        ) : null}
+
+        {selectedCalendar && !selectedIsResource ? (
+          <Card>
+            <ScheduleTimelineSheet
+              key={`${selectedCalendar.id}:${JSON.stringify(
+                selectedCalendar.schedule_periods ?? selectedCalendar.working_hours_rota ?? null,
+              )}`}
+              inline
+              calendar={selectedCalendar}
+              venueOpeningHours={venue?.opening_hours}
+              readOnly={!canEditSelected}
+              copyTargets={
+                isAdmin
+                  ? appointmentCalendars
+                      .filter((c) => c.id !== selectedCalendar.id)
+                      .map((c) => ({ id: c.id, name: c.name }))
+                  : []
+              }
+              todayYmd={today}
+              onAmendHours={(dateYmd, existing) =>
+                amendHoursFromPlanner(selectedCalendar, dateYmd, existing)
               }
             />
-          </View>
+          </Card>
         ) : null}
-      </View>
+      </>
     );
   }
 
-  // Single working-hours row — name + at-a-glance weekly summary + edit actions.
-  function renderHoursRow(p: Practitioner) {
-    // Hours planned ahead or on a rota replace `working_hours` on the dates they
-    // cover, so the summary is the shape in force THIS week, named by the rule
-    // that set it; the standard weekly hours are what "Edit hours" changes.
-    const schedule = scheduleForRow(p);
-    const thisWeek = resolveScheduleForDate(p, today);
-    // An admin may change every calendar; a staff member only those linked to
-    // their account (web `canEditWorkingHoursFor`).
-    const canEdit = ownsCalendar(p.id);
-    const endedPeriods = schedule
-      ? schedule.periods.filter((period) => schedulePeriodHasEnded(period, today))
-      : [];
-    const showPast = pastChangesShownFor.has(p.id);
-    const listedPeriods = schedule
-      ? showPast
-        ? schedule.periods
-        : schedule.periods.filter((period) => !schedulePeriodHasEnded(period, today))
-      : [];
-    const summary = summariseWorkingHours(thisWeek.hours);
-    const breaks = summariseBreaks(p);
-    const isResource = isResourceCalendar(p);
+  // ---- Breaks tab ----------------------------------------------------------------------
+  function renderBreaksTab() {
+    if (practitioners.length === 0) {
+      return (
+        <Card>
+          <EmptyState
+            title="No calendars yet"
+            message="Add calendars first to set their schedule."
+          />
+        </Card>
+      );
+    }
     return (
-      <View key={p.id} style={[styles.hoursItem, { borderBottomColor: colors.border }]}>
-        <View style={styles.hoursNameRow}>
-          <Text variant="bodyMedium" numberOfLines={1} style={styles.flex1}>
-            {p.name}
-          </Text>
-          {isResource ? (
-            <Text variant="caption" tone="muted">
-              Resource
+      <>
+        {renderCalendarSelector()}
+        {selectedCalendar && selectedIsResource ? (
+          <Card>
+            <Text variant="bodySmall" tone="secondary">
+              {BREAKS_RESOURCE_NOTE}
             </Text>
-          ) : null}
-        </View>
-        <Text variant="caption" tone={summary ? 'secondary' : 'muted'}>
-          {summary ?? 'No working hours set'}
-        </Text>
-        {schedule ? (
-          <View style={styles.scheduleBlock}>
-            <Text variant="caption" tone="muted">
-              This week · {describeScheduleSource(thisWeek.source)}
-            </Text>
-            {/* The change running now and any still to come. An ended change
-                stays in the stored timeline (the web's planning calendar pages
-                back through it) but moves behind a toggle (web 2026-09-04). */}
-            {listedPeriods.map((period) => (
-              <Text key={period.id} variant="caption" tone="muted">
-                {describePeriod(period)}
+          </Card>
+        ) : selectedCalendar ? (
+          <>
+            {canEditSelected ? (
+              <Text variant="caption" tone="secondary">
+                {BREAKS_INTRO}
               </Text>
-            ))}
-            {endedPeriods.length > 0 ? (
-              <Pressable
-                accessibilityRole="button"
-                hitSlop={8}
-                onPress={() =>
-                  setPastChangesShownFor((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(p.id)) next.delete(p.id);
-                    else next.add(p.id);
-                    return next;
-                  })
-                }>
-                <Text variant="caption" color={colors.brand}>
-                  {showPast
-                    ? 'Hide past changes'
-                    : `Show ${endedPeriods.length} past change${endedPeriods.length === 1 ? '' : 's'}`}
-                </Text>
-              </Pressable>
             ) : null}
-          </View>
+            <Card>
+              <BreaksEditor
+                key={`${selectedCalendar.id}:${JSON.stringify(selectedCalendar.break_times ?? null)}:${JSON.stringify(selectedCalendar.break_times_by_day ?? null)}`}
+                inline
+                practitionerId={selectedCalendar.id}
+                practitionerName={selectedCalendar.name}
+                currentBreaksByDay={selectedCalendar.break_times_by_day}
+                currentBreaks={selectedCalendar.break_times}
+                applyToAllCalendars={breakTargets}
+                readOnly={!canEditSelected}
+                readOnlyHint={!isAdmin ? BREAKS_READ_ONLY_HINT : undefined}
+              />
+            </Card>
+          </>
         ) : null}
-        {!isResource && breaks ? (
-          <Text variant="caption" tone="muted">
-            Breaks · {breaks}
-          </Text>
-        ) : null}
-        {/* Breaks are not offered for a resource: the resource engine reads
-            `break_times` from the HOST calendar row, never the resource's own,
-            so a break saved here would be invisible to every engine. Saying so
-            beats a control that appears to work (web parity). */}
-        {isResource ? (
-          <Text variant="caption" tone="muted">
-            Breaks aren&apos;t available for resources yet. To keep this free at the same time
-            each day, add a break on the staff calendar it appears on.
-          </Text>
-        ) : null}
-        {/* Only a calendar the viewer may change gets its editors (web parity:
-            `canEditWorkingHoursFor`); a colleague's reads as view only, and its
-            planned hours can still be looked at. */}
-        <View style={styles.hoursActions}>
-          {canEdit ? (
-            <Button
-              label="Edit hours"
-              variant="secondary"
-              size="sm"
-              onPress={() => openHoursSheet(p.id)}
-            />
-          ) : null}
-          {canEdit && !isResource ? (
-            <Button
-              label="Edit breaks"
-              variant="ghost"
-              size="sm"
-              onPress={() => openBreaksSheet(p.id)}
-            />
-          ) : null}
-          {!isResource && (canEdit || schedule) ? (
-            <Button
-              label={canEdit ? 'Plan hours ahead' : 'View planned hours'}
-              variant="ghost"
-              size="sm"
-              onPress={() => openScheduleSheet(p.id)}
-            />
-          ) : null}
-        </View>
-        {!canEdit ? (
-          <Text variant="caption" tone="muted">
-            View only — you can change hours and breaks for calendars linked to your account. Ask
-            an admin to edit other calendars.
-          </Text>
-        ) : null}
-      </View>
+      </>
     );
   }
 
-  // ---- Render ----------------------------------------------------------------
+  // ---- Closures & amended hours tab --------------------------------------------------
+  function renderClosuresTab() {
+    if (appointmentCalendars.length === 0) {
+      return (
+        <Card>
+          <EmptyState
+            title="No calendars yet"
+            message="Add calendars first to set full-day closures and unavailability."
+          />
+        </Card>
+      );
+    }
+    if (leaveQuery.isError) {
+      return (
+        <ErrorState
+          title="Could not load calendar unavailability"
+          message={
+            leaveQuery.error instanceof ApiError
+              ? leaveQuery.error.message
+              : 'Could not load closures.'
+          }
+          onRetry={() => void leaveQuery.refetch()}
+        />
+      );
+    }
+    const filterChips = isAdmin ? appointmentCalendars : selectablePractitioners;
+    return (
+      <>
+        {hasLegacyDaysOff ? (
+          <Card style={[styles.legacyBanner, { backgroundColor: colors.warningSurface, borderColor: colors.warning }]}>
+            <Text variant="label" color={colors.warning}>
+              Legacy blocked dates
+            </Text>
+            <Text variant="caption" tone="secondary">
+              Some calendars still have dates in the older per-calendar &ldquo;days off&rdquo;
+              list. Those dates still block booking. Add new blocks here so full-day
+              unavailability stays visible in one place.
+            </Text>
+          </Card>
+        ) : null}
+
+        <Text variant="caption" tone="secondary">
+          Take one calendar out for a date or a range, or give it different hours on those dates.
+          Tap dates on the calendar to select a range, then set the details.
+        </Text>
+
+        {!canManageUnavailability ? (
+          <Text variant="caption" tone="muted">
+            You cannot manage calendar unavailability until your account is assigned to a
+            calendar. Ask an admin to link your staff profile to the right calendar column.
+          </Text>
+        ) : null}
+
+        {/* Which calendar the grid and lists show. An admin may look at any;
+            a staff member only their own (web hides the picker and locks the
+            calendar), so the chips never offer a calendar the leave route
+            would 403. */}
+        {filterChips.length > 1 ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chipRow}>
+            <Chip
+              label="All"
+              selected={filterPractitionerId === null}
+              onPress={() => setFilterPractitionerId(null)}
+            />
+            {filterChips.map((p) => (
+              <Chip
+                key={p.id}
+                label={p.name}
+                selected={filterPractitionerId === p.id}
+                onPress={() =>
+                  setFilterPractitionerId((prev) => (prev === p.id ? null : p.id))
+                }
+              />
+            ))}
+          </ScrollView>
+        ) : null}
+
+        {canManageUnavailability ? (
+          <Button label="New entry" onPress={() => openNewEntry()} />
+        ) : null}
+
+        <TeamLeaveCalendar
+          today={today}
+          filterPractitionerId={filterPractitionerId}
+          onEditLeave={openEditLeave}
+          onEditAmended={openEditAmended}
+          onCreateRange={(start, end) => openNewEntry(start, end)}
+          onDeleteLeave={handleDeleteLeave}
+          deletingLeaveIds={deletingLeaveIds}
+        />
+
+        <Card>
+          <Text variant="label">Upcoming</Text>
+          {amendedQuery.isError ? (
+            <View style={styles.inlineError}>
+              <Text variant="caption" tone="danger" style={styles.flex1}>
+                Could not load amended hours.
+              </Text>
+              <Button
+                label="Retry"
+                variant="ghost"
+                size="sm"
+                onPress={() => void amendedQuery.refetch()}
+              />
+            </View>
+          ) : null}
+          {closureItems.length === 0 ? (
+            <Text variant="caption" tone="muted" style={styles.groupHeading}>
+              No closures or amended hours for this calendar. Tap dates on the calendar to add
+              one.
+            </Text>
+          ) : (
+            <>
+              {upcomingItems.length > 0 ? (
+                <View style={styles.list}>{upcomingItems.map(renderClosureItem)}</View>
+              ) : (
+                <Text variant="caption" tone="muted" style={styles.groupHeading}>
+                  No upcoming closures or amended hours.
+                </Text>
+              )}
+
+              {pastItems.length > 0 ? (
+                <View style={styles.pastGroup}>
+                  <Pressable
+                    onPress={() => setShowPastLeave((v) => !v)}
+                    accessibilityRole="button"
+                    accessibilityState={{ expanded: showPastLeave }}
+                    style={styles.pastToggle}>
+                    <Text variant="caption" tone="secondary">
+                      Past entries ({pastItems.length})
+                    </Text>
+                    <Text variant="caption" tone="muted">
+                      {showPastLeave ? '▴' : '▾'}
+                    </Text>
+                  </Pressable>
+                  {showPastLeave ? (
+                    <View style={styles.list}>{pastItems.map(renderClosureItem)}</View>
+                  ) : null}
+                </View>
+              ) : null}
+            </>
+          )}
+          <Text variant="caption" tone="muted" style={styles.groupHeading}>
+            Upcoming: the next {RANGE_DAYS} days. Past: the last {RANGE_DAYS} days.
+          </Text>
+        </Card>
+      </>
+    );
+  }
+
+  // ---- Render --------------------------------------------------------------------------
+  const isLoading = practitionersQuery.isLoading || (staffQuery.isLoading && !staff);
+  const refreshing = practitionersQuery.isRefetching || leaveQuery.isRefetching;
+  const refetchAll = () => {
+    void practitionersQuery.refetch();
+    void leaveQuery.refetch();
+    void amendedQuery.refetch();
+  };
+
   return (
     <Screen scroll={false} padded={false}>
-      <Stack.Screen
-        options={{
-          headerShown: true,
-          title: 'Availability',
-          // Admin-only entry to the bookable-calendar management surface
-          // (create/rename/activate/reorder/booking-link/delete + assignments).
-          headerRight: isAdmin
-            ? () => (
-                <IconButton
-                  icon={{ ios: 'calendar.badge.plus', android: 'edit_calendar', web: 'edit_calendar' }}
-                  accessibilityLabel="Manage calendars"
-                  tint={colors.brand}
-                  iconSize={22}
-                  onPress={() => router.push('/availability/calendars' as Href)}
-                />
-              )
-            : undefined,
-        }}
-      />
+      <Stack.Screen options={{ headerShown: true, title: 'Availability Settings' }} />
 
       {isLoading ? (
         <DetailSkeleton />
-      ) : isError ? (
+      ) : practitionersQuery.isError ? (
         <View style={styles.stateWrap}>
           <ErrorState
             message={
-              blocksQuery.error instanceof ApiError
-                ? blocksQuery.error.message
+              practitionersQuery.error instanceof ApiError
+                ? practitionersQuery.error.message
                 : 'Could not load availability.'
             }
-            onRetry={() => {
-              void blocksQuery.refetch();
-              void leaveQuery.refetch();
-            }}
+            onRetry={refetchAll}
           />
         </View>
       ) : (
-        <ScrollView
-          contentContainerStyle={styles.content}
-          refreshControl={
-            <RefreshControl
-              refreshing={blocksQuery.isRefetching || leaveQuery.isRefetching}
-              onRefresh={() => {
-                void blocksQuery.refetch();
-                void leaveQuery.refetch();
-              }}
-            />
-          }>
-
-          {/* Legacy days-off migration notice (web parity) */}
-          {isAdmin && legacyDaysOffCalendars.length > 0 ? (
-            <Card style={[styles.legacyBanner, { backgroundColor: colors.warningSurface, borderColor: colors.warning }]}>
-              <Text variant="label" color={colors.warning}>
-                Legacy blocked dates
-              </Text>
-              <Text variant="caption" tone="secondary">
-                {legacyDaysOffCalendars.map((p) => p.name).join(', ')}{' '}
-                {legacyDaysOffCalendars.length === 1 ? 'has' : 'have'} blocked dates saved in an older
-                field. Those dates still block booking but can&apos;t be edited here — re-add them as
-                closures (Business hours → Closures &amp; Exceptions) or time blocks so they stay
-                visible.
-              </Text>
-            </Card>
+        <>
+          {!isAdmin ? (
+            <Text variant="caption" tone="secondary" style={styles.intro}>
+              Browse any team member for reference; only your calendar can be changed here. Venue
+              admins can adjust everyone.
+            </Text>
           ) : null}
+          <TabStrip tabs={visibleTabs} value={tab} onChange={setTab} />
 
-          {/* Filter chips.
-
-              Appointment calendars only, deliberately. The filter feeds the
-              leave and blocks queries as well as the hours list, and
-              `GET /api/venue/practitioner-leave?practitioner_id=<resource>`
-              404s ("Calendar not found" — `requireVenueHostCalendarId` filters
-              resources out), which would blank this whole screen into an error
-              state. Resources are still listed under Working hours on "All". */}
-          {appointmentCalendars.length > 1 ? (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.filterRow}>
-              <Chip
-                label="All"
-                selected={filterPractitionerId === null}
-                onPress={() => setFilterPractitionerId(null)}
-              />
-              {appointmentCalendars.map((p) => (
-                <Chip
-                  key={p.id}
-                  label={p.name}
-                  selected={filterPractitionerId === p.id}
-                  onPress={() =>
-                    setFilterPractitionerId((prev) => (prev === p.id ? null : p.id))
-                  }
-                />
-              ))}
-            </ScrollView>
-          ) : null}
-
-          {/* ===== Working hours & breaks (primary section, top) ===== */}
-          <SectionHeader
-            title="Working hours"
-            caption="When each calendar can take bookings. Times must also sit within your venue's business hours."
-          />
-          {practitioners.length === 0 ? (
-            <Card>
-              <EmptyState
-                title="No calendars yet"
-                message={
-                  isAdmin
-                    ? 'Add a calendar to set its weekly working hours and breaks.'
-                    : 'Ask an admin to link a calendar to your account.'
-                }
-              />
-            </Card>
+          {tab === 'team' ? (
+            <BookableCalendarsManager />
           ) : (
-            <Card>
-              <View style={styles.hoursList}>
-                {practitioners
-                  .filter((p) => (filterPractitionerId ? p.id === filterPractitionerId : true))
-                  .map(renderHoursRow)}
-              </View>
-            </Card>
+            <ScrollView
+              contentContainerStyle={styles.content}
+              keyboardShouldPersistTaps="handled"
+              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refetchAll} />}>
+              {tab === 'hours' ? renderHoursTab() : null}
+              {tab === 'breaks' ? renderBreaksTab() : null}
+              {tab === 'daysoff' ? renderClosuresTab() : null}
+              <View style={styles.spacer} />
+            </ScrollView>
           )}
-
-          {/* ===== Time off & blocks ===== */}
-          <SectionHeader
-            title="Closures & amended hours"
-            caption="Take a calendar out for a date or a range, give it different hours on those dates, or block out a one-off slot."
-          />
-          {/* Action buttons */}
-          <View style={styles.actionRow}>
-            <Button
-              label="Block time"
-              style={styles.flex1}
-              onPress={() => openSheet('block')}
-            />
-            <Button
-              label="Add leave"
-              variant="secondary"
-              style={styles.flex1}
-              onPress={() => openSheet('leave')}
-            />
-          </View>
-          {/* Team leave calendar — whole team's time off, month view (web parity) */}
-          <TeamLeaveCalendar
-            today={today}
-            filterPractitionerId={filterPractitionerId}
-            onEditLeave={openEditLeave}
-            onEditAmended={openEditAmended}
-            onCreateRange={openCreateLeaveRange}
-            onDeleteLeave={handleDeleteLeave}
-            deletingLeaveIds={deletingLeaveIds}
-          />
-
-          <Text variant="caption" tone="muted">
-            Next {RANGE_DAYS} days
-          </Text>
-
-          {/* Time blocks card */}
-          <Card>
-            <Text variant="label">Time blocks</Text>
-            {blocks.length === 0 ? (
-              <EmptyState title="No blocks" message="Blocked-out time will appear here." />
-            ) : (
-              <View style={styles.list}>
-                {blocks.map((block) => {
-                  // Non-admins can only edit/remove blocks on their own calendar.
-                  const canManage = ownsCalendar(block.practitioner_id ?? block.calendar_id);
-                  return (
-                  <View key={block.id} style={[styles.row, { borderBottomColor: colors.border }]}>
-                    <View style={styles.rowBody}>
-                      <Text variant="bodyMedium">
-                        {formatDayHeading(block.block_date)} · {block.start_time.slice(0, 5)}–
-                        {block.end_time.slice(0, 5)}
-                      </Text>
-                      <Text variant="caption" tone="muted" numberOfLines={1}>
-                        {practitionerName(block.practitioner_id ?? block.calendar_id)}
-                        {block.reason ? ` · ${block.reason}` : ''}
-                      </Text>
-                    </View>
-                    {canManage ? (
-                      <View style={styles.rowActions}>
-                        <Button
-                          label="Edit"
-                          variant="ghost"
-                          size="sm"
-                          onPress={() => openEditBlock(block.id)}
-                        />
-                        <Button
-                          label={
-                            pendingConfirm === `block-${block.id}` ? 'Tap to confirm' : 'Remove'
-                          }
-                          variant="ghost"
-                          size="sm"
-                          loading={deletingBlockIds.has(block.id)}
-                          disabled={deletingBlockIds.has(block.id)}
-                          onPress={() =>
-                            pendingConfirm === `block-${block.id}`
-                              ? void handleDeleteBlock(block.id)
-                              : armConfirm(`block-${block.id}`)
-                          }
-                        />
-                      </View>
-                    ) : null}
-                  </View>
-                  );
-                })}
-              </View>
-            )}
-          </Card>
-
-          {/* Leave card — upcoming first, past collapsed (web parity) */}
-          <Card>
-            <Text variant="label">Closures & amended hours</Text>
-            {closureItems.length === 0 ? (
-              <EmptyState
-                title="No closures or amended hours"
-                message="Leave and amended hours will appear here."
-              />
-            ) : (
-              <>
-                {upcomingLeave.length > 0 ? (
-                  <View style={styles.list}>
-                    <Text variant="caption" tone="secondary" style={styles.groupHeading}>
-                      Upcoming
-                    </Text>
-                    {upcomingLeave.map(renderClosureItem)}
-                  </View>
-                ) : (
-                  <Text variant="caption" tone="muted" style={styles.groupHeading}>
-                    No upcoming closures or amended hours.
-                  </Text>
-                )}
-
-                {pastLeave.length > 0 ? (
-                  <View style={styles.pastGroup}>
-                    <Pressable
-                      onPress={() => setShowPastLeave((v) => !v)}
-                      accessibilityRole="button"
-                      accessibilityState={{ expanded: showPastLeave }}
-                      style={styles.pastToggle}>
-                      <Text variant="caption" tone="secondary">
-                        Past ({pastLeave.length})
-                      </Text>
-                      <Text variant="caption" tone="muted">
-                        {showPastLeave ? '▴' : '▾'}
-                      </Text>
-                    </Pressable>
-                    {showPastLeave ? (
-                      <View style={styles.list}>{pastLeave.map(renderClosureItem)}</View>
-                    ) : null}
-                  </View>
-                ) : null}
-              </>
-            )}
-          </Card>
-
-          <View style={styles.spacer} />
-        </ScrollView>
+        </>
       )}
 
-      {/* Block / Leave create + edit sheet */}
-      <Sheet
-        visible={sheet === 'block' || sheet === 'leave'}
-        onClose={() => setSheet(null)}
-        maxHeight="92%">
+      {/* One sheet for a closure or a run of amended hours (web: the form). */}
+      <Sheet visible={sheetOpen} onClose={() => setSheetOpen(false)} maxHeight="92%">
         <ScrollView
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.sheetBody}>
           <Text variant="overline" tone="muted">
-            {sheet === 'block'
-              ? editingBlockId
-                ? 'Edit block'
-                : 'Block time'
-              : editingLeaveId
-                ? 'Edit leave'
-                : editingAmended
-                  ? 'Edit amended hours'
-                  : 'New entry'}
+            {editingLeaveId ? 'Edit block' : editingAmended ? 'Edit amended hours' : 'New entry'}
           </Text>
 
           {/* Entry type (web #187): a closure, or working different hours. Create only. */}
-          {sheet === 'leave' && !editingLeaveId && !editingAmended ? (
+          {!editing ? (
             <>
               <Segmented
                 options={[
@@ -1358,7 +1184,7 @@ export default function AvailabilityScreen() {
           ) : null}
 
           {/* Apply to all — admin only, create only */}
-          {sheet === 'leave' && isAdmin && !editingLeaveId && !editingAmended ? (
+          {isAdmin && !editing ? (
             <View style={styles.switchRow}>
               <View style={styles.flex1}>
                 <Text variant="bodyMedium">Apply to all active calendars</Text>
@@ -1377,14 +1203,14 @@ export default function AvailabilityScreen() {
             </View>
           ) : null}
 
-          {/* Practitioner chips — hidden when applying to all or editing leave (can't change
-              owner). Non-admins only see their own calendar(s); a single self-calendar shows a
-              read-only label instead of a picker (web parity: locked calendarId, hidden picker). */}
-          {!(sheet === 'leave' && applyToAll) && !editingLeaveId && !editingAmended ? (
+          {/* Calendar chips — hidden when applying to all or editing (the owner cannot
+              change). Non-admins only see their own calendar(s); a single self-calendar
+              shows a read-only label instead of a picker (web: locked calendarId). */}
+          {!applyToAll && !editing ? (
             selectablePractitioners.length === 0 ? (
               <Text variant="bodySmall" tone="muted">
                 {isAdmin
-                  ? 'No practitioners found. Add a calendar from the Calendars screen first.'
+                  ? 'No calendars found. Add a calendar on the Calendars tab first.'
                   : 'No calendar is linked to your account. Ask an admin to link one.'}
               </Text>
             ) : !isAdmin && selectablePractitioners.length === 1 ? (
@@ -1392,55 +1218,49 @@ export default function AvailabilityScreen() {
                 {selectablePractitioners[0]!.name}
               </Text>
             ) : (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.chipRow}>
-                {selectablePractitioners.map((p) => (
-                  <Chip
-                    key={p.id}
-                    label={p.name}
-                    selected={practitionerId === p.id}
-                    onPress={() => setPractitionerId(p.id)}
-                  />
-                ))}
-              </ScrollView>
+              <View style={styles.field}>
+                <Text variant="label" tone="secondary">
+                  Calendar
+                </Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.chipRow}>
+                  {selectablePractitioners.map((p) => (
+                    <Chip
+                      key={p.id}
+                      label={p.name}
+                      selected={practitionerId === p.id}
+                      onPress={() => setPractitionerId(p.id)}
+                    />
+                  ))}
+                </ScrollView>
+              </View>
             )
           ) : null}
 
-          {/* Date stepper(s) */}
-          <Stepper
-            label={sheet === 'leave' ? 'From' : 'Date'}
-            value={formatDayHeading(date)}
-            onDecrement={() => setDate((d) => addDaysToDateStr(d, -1))}
-            onIncrement={() => setDate((d) => addDaysToDateStr(d, 1))}
-          />
-          {sheet === 'leave' ? (
-            <Stepper
-              label="To"
-              value={formatDayHeading(endDate)}
-              onDecrement={() => setEndDate((d) => addDaysToDateStr(d, -1))}
-              onIncrement={() => setEndDate((d) => addDaysToDateStr(d, 1))}
+          {/* Dates */}
+          <View style={styles.pickerRow}>
+            <Text variant="label" tone="secondary">
+              Start date
+            </Text>
+            <DatePickerField
+              value={date}
+              onChange={(iso) => {
+                setDate(iso);
+                if (endDate < iso) setEndDate(iso);
+              }}
+              accessibilityLabel="Start date"
             />
-          ) : (
-            <>
-              <Stepper
-                label="Start"
-                value={minutesToTime(startMinutes)}
-                onDecrement={() => setStartMinutes((m) => Math.max(0, m - STEP_MINUTES))}
-                onIncrement={() => setStartMinutes((m) => Math.min(MAX_MINUTES, m + STEP_MINUTES))}
-              />
-              <Stepper
-                label="End"
-                value={minutesToTime(endMinutes)}
-                onDecrement={() => setEndMinutes((m) => Math.max(0, m - STEP_MINUTES))}
-                onIncrement={() => setEndMinutes((m) => Math.min(MAX_MINUTES, m + STEP_MINUTES))}
-              />
-            </>
-          )}
+          </View>
+          <View style={styles.pickerRow}>
+            <Text variant="label" tone="secondary">
+              End date
+            </Text>
+            <DatePickerField value={endDate} onChange={setEndDate} accessibilityLabel="End date" />
+          </View>
 
-          {/* Leave-specific: type + block type (all-day vs window) */}
-          {sheet === 'leave' && entryKind === 'hours' ? (
+          {entryKind === 'hours' ? (
             <>
               <Text variant="caption" tone="muted">
                 These hours replace the calendar&rsquo;s usual hours on every date in the range,
@@ -1448,44 +1268,34 @@ export default function AvailabilityScreen() {
               </Text>
               {hoursPeriods.map((p, idx) => (
                 <View key={idx} style={styles.periodBlock}>
-                  <Stepper
-                    label={hoursPeriods.length > 1 ? `Period ${idx + 1} open` : 'Open'}
-                    value={minutesToTime(p.start)}
-                    onDecrement={() =>
-                      setHoursPeriods((all) =>
-                        all.map((q, i) =>
-                          i === idx ? { ...q, start: Math.max(0, q.start - STEP_MINUTES) } : q,
-                        ),
-                      )
-                    }
-                    onIncrement={() =>
-                      setHoursPeriods((all) =>
-                        all.map((q, i) =>
-                          i === idx
-                            ? { ...q, start: Math.min(MAX_MINUTES, q.start + STEP_MINUTES) }
-                            : q,
-                        ),
-                      )
-                    }
-                  />
-                  <Stepper
-                    label={hoursPeriods.length > 1 ? `Period ${idx + 1} close` : 'Close'}
-                    value={minutesToTime(p.end)}
-                    onDecrement={() =>
-                      setHoursPeriods((all) =>
-                        all.map((q, i) =>
-                          i === idx ? { ...q, end: Math.max(0, q.end - STEP_MINUTES) } : q,
-                        ),
-                      )
-                    }
-                    onIncrement={() =>
-                      setHoursPeriods((all) =>
-                        all.map((q, i) =>
-                          i === idx ? { ...q, end: Math.min(MAX_MINUTES, q.end + STEP_MINUTES) } : q,
-                        ),
-                      )
-                    }
-                  />
+                  <View style={styles.pickerRow}>
+                    <Text variant="label" tone="secondary">
+                      {hoursPeriods.length > 1 ? `Period ${idx + 1} open` : 'Open'}
+                    </Text>
+                    <TimePickerField
+                      value={p.start}
+                      onChange={(m) =>
+                        setHoursPeriods((all) =>
+                          all.map((q, i) => (i === idx ? { ...q, start: m } : q)),
+                        )
+                      }
+                      accessibilityLabel={`Period ${idx + 1} open`}
+                    />
+                  </View>
+                  <View style={styles.pickerRow}>
+                    <Text variant="label" tone="secondary">
+                      {hoursPeriods.length > 1 ? `Period ${idx + 1} close` : 'Close'}
+                    </Text>
+                    <TimePickerField
+                      value={p.end}
+                      onChange={(m) =>
+                        setHoursPeriods((all) =>
+                          all.map((q, i) => (i === idx ? { ...q, end: m } : q)),
+                        )
+                      }
+                      accessibilityLabel={`Period ${idx + 1} close`}
+                    />
+                  </View>
                   {hoursPeriods.length > 1 ? (
                     <Button
                       label={`Remove period ${idx + 1}`}
@@ -1504,26 +1314,19 @@ export default function AvailabilityScreen() {
                   onPress={() =>
                     setHoursPeriods((all) => {
                       const last = all[all.length - 1];
-                      const start = Math.min(MAX_MINUTES, (last?.end ?? 12 * 60) + 60);
-                      return [...all, { start, end: Math.min(MAX_MINUTES, start + 3 * 60) }];
+                      const start = Math.min(23 * 60 + 45, (last?.end ?? 12 * 60) + 60);
+                      return [...all, { start, end: Math.min(23 * 60 + 59, start + 3 * 60) }];
                     })
                   }
                 />
               ) : null}
             </>
-          ) : null}
-
-          {sheet === 'leave' && entryKind === 'closed' ? (
+          ) : (
             <>
-              <Segmented
-                options={[
-                  { value: 'annual', label: 'Closed' },
-                  { value: 'sick', label: 'Unavailable' },
-                  { value: 'other', label: 'Other' },
-                ]}
-                value={leaveType}
-                onChange={setLeaveType}
-              />
+              <Text variant="caption" tone="muted">
+                All day blocks the whole day. A time window blocks that window on every date in
+                the range.
+              </Text>
               <Segmented
                 options={[
                   { value: 'allday', label: 'All day' },
@@ -1534,47 +1337,56 @@ export default function AvailabilityScreen() {
               />
               {blockType === 'window' ? (
                 <>
-                  <Stepper
-                    label="Window start"
-                    value={minutesToTime(startMinutes)}
-                    onDecrement={() =>
-                      setStartMinutes((m) => Math.max(0, m - STEP_MINUTES))
-                    }
-                    onIncrement={() =>
-                      setStartMinutes((m) => Math.min(MAX_MINUTES, m + STEP_MINUTES))
-                    }
-                  />
-                  <Stepper
-                    label="Window end"
-                    value={minutesToTime(endMinutes)}
-                    onDecrement={() =>
-                      setEndMinutes((m) => Math.max(0, m - STEP_MINUTES))
-                    }
-                    onIncrement={() =>
-                      setEndMinutes((m) => Math.min(MAX_MINUTES, m + STEP_MINUTES))
-                    }
-                  />
+                  <View style={styles.pickerRow}>
+                    <Text variant="label" tone="secondary">
+                      Start time
+                    </Text>
+                    <TimePickerField
+                      value={startMinutes}
+                      onChange={setStartMinutes}
+                      accessibilityLabel="Start time"
+                    />
+                  </View>
+                  <View style={styles.pickerRow}>
+                    <Text variant="label" tone="secondary">
+                      End time
+                    </Text>
+                    <TimePickerField
+                      value={endMinutes}
+                      onChange={setEndMinutes}
+                      accessibilityLabel="End time"
+                    />
+                  </View>
                 </>
               ) : null}
+              <View style={styles.field}>
+                <Text variant="label" tone="secondary">
+                  Label (optional)
+                </Text>
+                <Segmented
+                  options={[
+                    { value: 'annual', label: 'Closed' },
+                    { value: 'sick', label: 'Unavailable' },
+                    { value: 'other', label: 'Other' },
+                  ]}
+                  value={leaveType}
+                  onChange={setLeaveType}
+                />
+              </View>
             </>
-          ) : null}
+          )}
 
           <Input
-            label={sheet === 'block' ? 'Reason (optional)' : 'Notes (optional)'}
+            label="Notes (optional)"
             value={reason}
             onChangeText={setReason}
             placeholder={
-              sheet === 'leave'
-                ? entryKind === 'hours'
-                  ? 'e.g. Late opening for the fair'
-                  : 'e.g. Training day, equipment maintenance'
-                : undefined
+              entryKind === 'hours'
+                ? 'e.g. Late opening for the fair'
+                : 'e.g. Training day, equipment maintenance'
             }
-            // The server caps leave notes at 500 characters, an amended-hours note
-            // and a block's reason at 200.
-            maxLength={
-              sheet === 'leave' && entryKind === 'closed' ? 500 : AMENDED_HOURS_MAX_REASON_LENGTH
-            }
+            // The server caps closure notes at 500 characters, an amended-hours note at 200.
+            maxLength={entryKind === 'closed' ? 500 : AMENDED_HOURS_MAX_REASON_LENGTH}
           />
 
           {/* What the hours form is about to do to leave and to the venue's hours (web #187). */}
@@ -1584,9 +1396,17 @@ export default function AvailabilityScreen() {
             </Text>
           ) : null}
           {amendedVenueNote ? (
-            <Text variant="bodySmall" tone="secondary">
-              {amendedVenueNote}
-            </Text>
+            <Pressable
+              accessibilityRole="link"
+              onPress={() => {
+                setSheetOpen(false);
+                router.push('/manage/hours' as Href);
+              }}
+              hitSlop={4}>
+              <Text variant="bodySmall" tone="secondary">
+                {amendedVenueNote}
+              </Text>
+            </Pressable>
           ) : null}
 
           {sheetError ? (
@@ -1607,114 +1427,115 @@ export default function AvailabilityScreen() {
               }}
             />
           ) : (
-            <View style={styles.actionRow}>
-              <Button
-                label="Cancel"
-                variant="secondary"
-                style={styles.flex1}
-                onPress={() => setSheet(null)}
-              />
-              <Button
-                label={editingBlockId || editingLeaveId || editingAmended ? 'Update' : 'Save'}
-                style={styles.flex1}
-                loading={saving}
-                disabled={
-                  (!applyToAll && !practitionerId && !editingLeaveId && !editingAmended) ||
-                  amendedLeaveNote?.blocking === true
-                }
-                onPress={() => void handleSave()}
-              />
-            </View>
+            <>
+              <View style={styles.actionRow}>
+                <Button
+                  label="Cancel"
+                  variant="secondary"
+                  style={styles.flex1}
+                  onPress={() => setSheetOpen(false)}
+                />
+                <Button
+                  label={editing ? 'Save changes' : 'Add to calendar'}
+                  style={styles.flex1}
+                  loading={saving}
+                  disabled={
+                    (!applyToAll && !practitionerId && !editing) ||
+                    amendedLeaveNote?.blocking === true ||
+                    deletingCurrent
+                  }
+                  onPress={() => void handleSave()}
+                />
+              </View>
+              {/* Delete while editing (web: the red Delete button in the form). */}
+              {editing ? (
+                <Button
+                  label={
+                    pendingConfirm === 'sheet-delete'
+                      ? 'Tap to confirm'
+                      : editingAmended
+                        ? 'Delete these amended hours'
+                        : 'Delete this closure'
+                  }
+                  variant="ghost"
+                  loading={deletingCurrent}
+                  disabled={saving || deletingCurrent}
+                  customColors={{ background: 'transparent', text: colors.danger }}
+                  onPress={() => {
+                    if (pendingConfirm !== 'sheet-delete') {
+                      armConfirm('sheet-delete');
+                      return;
+                    }
+                    if (editingAmended) void handleDeleteAmended(editingAmended);
+                    else if (editingLeaveId) void handleDeleteLeave(editingLeaveId);
+                  }}
+                />
+              ) : null}
+              {pendingConfirm === 'sheet-delete' && editing ? (
+                <Text variant="caption" tone="muted">
+                  {editingAmended
+                    ? 'Remove these amended hours? The dates go back to the calendar’s usual hours.'
+                    : 'Remove this closure from the calendar?'}
+                </Text>
+              ) : null}
+            </>
           )}
         </ScrollView>
-      </Sheet>
-
-      {/* Working hours sheet */}
-      <Sheet
-        visible={sheet === 'hours'}
-        onClose={() => setSheet(null)}
-        fill
-        maxHeight="92%">
-        {hoursTarget ? (
-          <WorkingHoursEditor
-            practitionerId={hoursTarget.id}
-            practitionerName={hoursTarget.name}
-            currentWorkingHours={
-              (hoursTarget as unknown as { working_hours?: WorkingHoursMap }).working_hours
-            }
-            venueOpeningHours={venue?.opening_hours}
-            onClose={() => setSheet(null)}
-          />
-        ) : null}
-      </Sheet>
-
-      {/* Breaks sheet */}
-      <Sheet
-        visible={sheet === 'breaks'}
-        onClose={() => setSheet(null)}
-        fill
-        maxHeight="92%">
-        {hoursTarget ? (
-          <BreaksEditor
-            practitionerId={hoursTarget.id}
-            practitionerName={hoursTarget.name}
-            currentBreaksByDay={
-              (hoursTarget as unknown as { break_times_by_day?: BreakTimesByDayMap | null })
-                .break_times_by_day
-            }
-            currentBreaks={
-              (hoursTarget as unknown as { break_times?: TimeRange[] | null }).break_times
-            }
-            applyToAllCalendars={breakTargets}
-            onClose={() => setSheet(null)}
-          />
-        ) : null}
-      </Sheet>
-
-      {/* Plan hours ahead: the schedule timeline, its form and planning calendar. */}
-      <Sheet
-        visible={sheet === 'schedule'}
-        onClose={() => setSheet(null)}
-        fill
-        maxHeight="92%">
-        {hoursTarget ? (
-          <ScheduleTimelineSheet
-            calendar={hoursTarget}
-            venueOpeningHours={venue?.opening_hours}
-            readOnly={!ownsCalendar(hoursTarget.id)}
-            copyTargets={
-              isAdmin
-                ? appointmentCalendars
-                    .filter((c) => c.id !== hoursTarget.id)
-                    .map((c) => ({ id: c.id, name: c.name }))
-                : []
-            }
-            todayYmd={today}
-            onClose={() => setSheet(null)}
-          />
-        ) : null}
       </Sheet>
     </Screen>
   );
 }
 
-function timeStringToMinutes(t: string): number {
-  const [h, m] = t.split(':').map(Number);
-  return (h ?? 0) * 60 + (m ?? 0);
-}
-
 const styles = StyleSheet.create({
+  intro: {
+    paddingHorizontal: spacing.base,
+    paddingTop: spacing.sm,
+  },
+  tabStrip: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  tabStripContent: {
+    paddingHorizontal: spacing.base,
+    gap: spacing.base,
+  },
+  tab: {
+    minHeight: minTouchTarget,
+    justifyContent: 'center',
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 2,
+  },
+  tabLabelSelected: {
+    fontFamily: fonts.bold,
+  },
   content: {
     padding: spacing.base,
     gap: spacing.base,
   },
-  filterRow: {
+  selector: {
+    gap: spacing.xs,
+  },
+  chipRow: {
     gap: spacing.sm,
     paddingVertical: spacing.xs,
+  },
+  infoBanner: {
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    gap: spacing.xs,
+  },
+  infoText: {
+    lineHeight: 18,
   },
   legacyBanner: {
     borderWidth: 1,
     gap: spacing.xs,
+  },
+  inlineError: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.xs,
   },
   actionRow: {
     flexDirection: 'row',
@@ -1723,33 +1544,10 @@ const styles = StyleSheet.create({
   flex1: {
     flex: 1,
   },
+  flexShrink: {
+    flexShrink: 1,
+  },
   list: {
-    marginTop: spacing.xs,
-  },
-  sectionHeader: {
-    gap: spacing.xxs,
-    marginTop: spacing.sm,
-  },
-  hoursList: {
-    marginTop: spacing.xs,
-  },
-  hoursItem: {
-    paddingVertical: spacing.md,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    gap: spacing.xs,
-  },
-  hoursNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  scheduleBlock: {
-    gap: 2,
-  },
-  hoursActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
     marginTop: spacing.xs,
   },
   groupHeading: {
@@ -1776,7 +1574,17 @@ const styles = StyleSheet.create({
   rowBody: {
     flex: 1,
     minWidth: 0,
-    gap: 1,
+    gap: 2,
+  },
+  rowTitle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  chip: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: radius.pill,
   },
   rowActions: {
     flexDirection: 'row',
@@ -1794,9 +1602,14 @@ const styles = StyleSheet.create({
     gap: spacing.lg,
     paddingBottom: spacing.xl,
   },
-  chipRow: {
-    gap: spacing.sm,
-    paddingVertical: spacing.xs,
+  field: {
+    gap: spacing.xs,
+  },
+  pickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
   },
   periodBlock: {
     gap: spacing.sm,
@@ -1805,34 +1618,5 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-  },
-  stepperRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  stepperControl: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.base,
-  },
-  stepperValue: {
-    minWidth: 132,
-    textAlign: 'center',
-    fontVariant: ['tabular-nums'],
-  },
-  stepButton: {
-    width: minTouchTarget,
-    height: minTouchTarget,
-    minWidth: minTouchTarget,
-    borderRadius: 9999,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stepSymbol: {
-    fontSize: 22,
-    lineHeight: 26,
-    fontFamily: fonts.bold,
   },
 });

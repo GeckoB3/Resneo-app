@@ -325,10 +325,17 @@ export function effectiveWorkingHoursForDate(row: ScheduleCarrier, dateYmd: stri
 
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-/** "7 Sep 2026", from the date alone (no locale, so the wording is the same on every device). */
+const WEEKDAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+/**
+ * "Mon 7 Sep 2026", from the date alone (no locale, so the wording is the same
+ * on every device). The weekday is what the web prints too: a schedule change
+ * runs from a week's Monday, and the day name is how a reader checks that.
+ */
 export function describeYmdShort(ymd: string): string {
   const [y, m, d] = ymd.split('-').map(Number);
-  return `${d} ${MONTHS_SHORT[(m ?? 1) - 1]} ${y}`;
+  const weekday = WEEKDAYS_SHORT[new Date(Date.UTC(y ?? 1970, (m ?? 1) - 1, d ?? 1)).getUTCDay()];
+  return `${weekday} ${d} ${MONTHS_SHORT[(m ?? 1) - 1]} ${y}`;
 }
 
 /** One line per period, worded as the web timeline lists them. */

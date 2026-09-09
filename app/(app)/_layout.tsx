@@ -103,8 +103,10 @@ export default function AppLayout() {
       <Stack.Screen
         name="booking/new"
         options={{
-          headerShown: true,
-          title: 'New booking',
+          // No native header: it cost the first step a row of two icons. The
+          // route draws its own chrome (the booking-type tabs and the close on
+          // one line) and each flow its own inline Back.
+          headerShown: false,
           // Present from the "+" FAB as a modal sheet the staff can swipe to dismiss.
           presentation: 'modal',
         }}

@@ -56,6 +56,10 @@ let client: QueryClient;
 beforeEach(() => {
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 });
+// The cache's garbage-collection timers otherwise keep a lone jest run alive.
+afterEach(() => {
+  client.clear();
+});
 
 it('patches every listed booking and leaves the rest alone', () => {
   client.setQueryData(
@@ -243,7 +247,7 @@ describe("a linked venue's booking", () => {
       ['lb1', 'Seated', '2026-08-25T09:55:00Z'],
       ['other', 'Booked', null],
     ]);
-    expect(snapshot.get('lb1')).toEqual({ status: 'Booked', client_arrived_at: null });
+    expect(snapshot.get('lb1')).toMatchObject({ status: 'Booked', client_arrived_at: null });
 
     revertCalendarGridBookings(client, snapshot);
     expect(linkedRows()[0]).toMatchObject({ status: 'Booked', clientArrivedAt: null });
@@ -264,4 +268,21 @@ describe("a linked venue's booking", () => {
     expect(linkedRows()[0].status).toBe('Completed');
     expect(snapshot.get('lb1')?.status).toBe('Booked');
   });
+});
+
+it('a drag patch moves the row and its snapshot puts the old times back', async () => {
+  client.setQueryData(KEY, grid([booking({ id: 'b1' }), booking({ id: 'b2', startTime: '11:00', endTime: '11:30' })]));
+
+  const snapshot = await applyOptimisticGridPatch(client, ['b1'], {
+    startTime: '10:00',
+    endTime: '11:00',
+  });
+
+  // The resized row holds its new length on the same tick; the neighbour is untouched.
+  expect(rows(client).find((b) => b.id === 'b1')).toMatchObject({ startTime: '10:00', endTime: '11:00' });
+  expect(rows(client).find((b) => b.id === 'b2')).toMatchObject({ startTime: '11:00', endTime: '11:30' });
+  expect(snapshot.get('b1')).toMatchObject({ startTime: '10:00', endTime: '10:30', status: 'Booked' });
+
+  revertCalendarGridBookings(client, snapshot);
+  expect(rows(client).find((b) => b.id === 'b1')).toMatchObject({ startTime: '10:00', endTime: '10:30' });
 });

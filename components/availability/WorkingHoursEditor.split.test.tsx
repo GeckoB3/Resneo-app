@@ -10,6 +10,9 @@
  */
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 
+import { WorkingHoursEditor } from '@/components/availability/WorkingHoursEditor';
+import type { OpeningHours } from '@/types/venue';
+
 // Native date picker pulled in by TimePickerField — stub to a host element.
 jest.mock('@react-native-community/datetimepicker', () => 'DateTimePicker');
 
@@ -29,9 +32,6 @@ jest.mock('@/lib/queries/useAvailabilityManage', () => ({
 
 const mockToast = { success: jest.fn(), error: jest.fn() };
 jest.mock('@/providers/ToastProvider', () => ({ useToast: () => mockToast }));
-
-import { WorkingHoursEditor } from '@/components/availability/WorkingHoursEditor';
-import type { OpeningHours } from '@/types/venue';
 
 async function press(getEl: () => Parameters<typeof fireEvent.press>[0]) {
   await act(async () => {

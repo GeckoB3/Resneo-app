@@ -14,6 +14,8 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-
 
 import { ApiError } from '@/lib/api/client';
 
+import { BookableCalendarsManager } from '@/components/availability/BookableCalendarsManager';
+
 // expo-symbols renders the IconButton glyphs — stub to a host element.
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
 
@@ -99,13 +101,12 @@ jest.mock('@/lib/queries/useToggleCalendarService', () => ({
 // The plan allowance and the column conflicts: unknown (null / none) unless a
 // test sets them, which is also what the app gets while the routes are cookie-only.
 let mockEntitlement: unknown = null;
+let mockEntitlementError = false;
 let mockConflicts: unknown[] = [];
 jest.mock('@/lib/queries/useCalendarEntitlement', () => ({
-  useCalendarEntitlement: () => ({ data: mockEntitlement }),
+  useCalendarEntitlement: () => ({ data: mockEntitlement, isError: mockEntitlementError }),
   useCalendarColumnConflicts: () => ({ data: mockConflicts }),
 }));
-
-import { BookableCalendarsManager } from '@/components/availability/BookableCalendarsManager';
 
 async function press(getEl: () => Parameters<typeof fireEvent.press>[0]) {
   await act(async () => {
@@ -126,8 +127,21 @@ beforeEach(() => {
   mockUpdateEvent.mockClear();
   mockSetServices.mockClear();
   mockEntitlement = null;
+  mockEntitlementError = false;
   mockConflicts = [];
 });
+
+/** An allowance with room, for tests that need Add calendar on screen. */
+const ROOM_ON_PLAN = {
+  pricing_tier: 'plus',
+  calendar_count: null,
+  active_practitioners: 2,
+  calendar_limit: 5,
+  unlimited: false,
+  at_calendar_limit: false,
+  can_add_practitioner: true,
+  unified_calendar_count: 2,
+};
 
 describe('BookableCalendarsManager', () => {
   it('lists every calendar with its assignments', async () => {
@@ -182,6 +196,8 @@ describe('BookableCalendarsManager', () => {
   });
 
   it('shows an upgrade notice when create hits the plan calendar limit (403)', async () => {
+    // The allowance said there was room; the route disagreed (a stale answer).
+    mockEntitlement = ROOM_ON_PLAN;
     mockCreateMutateAsync.mockRejectedValueOnce(
       new ApiError('Upgrade your plan to add more calendars.', 403, {
         upgrade_required: true,
@@ -218,10 +234,31 @@ describe('BookableCalendarsManager', () => {
     expect(screen.getByText(/Appointments Plus includes up to five bookable calendars/)).toBeTruthy();
   });
 
-  it('keeps Add calendar while the allowance is unknown or has room', async () => {
+  it('withholds Add calendar until the allowance is known (web parity)', async () => {
+    await render(<BookableCalendarsManager />);
+    expect(screen.queryByText('Add calendar')).toBeNull();
+    expect(screen.queryByText(/on plan/)).toBeNull();
+  });
+
+  it('shows Add calendar and the pill once the allowance loads with room', async () => {
+    mockEntitlement = ROOM_ON_PLAN;
+    await render(<BookableCalendarsManager />);
+    expect(screen.getByText('Add calendar')).toBeTruthy();
+    expect(screen.getByText('2 / 5 on plan')).toBeTruthy();
+  });
+
+  it('keeps Add calendar when the allowance cannot be loaded (the route enforces the limit)', async () => {
+    mockEntitlementError = true;
     await render(<BookableCalendarsManager />);
     expect(screen.getByText('Add calendar')).toBeTruthy();
     expect(screen.queryByText(/on plan/)).toBeNull();
+  });
+
+  it('hides the pill when the plan has no number to show', async () => {
+    mockEntitlement = { ...ROOM_ON_PLAN, calendar_limit: null, unlimited: false };
+    await render(<BookableCalendarsManager />);
+    expect(screen.queryByText(/on plan/)).toBeNull();
+    expect(screen.getByText('Add calendar')).toBeTruthy();
   });
 
   it('flags a resource overlap on its card', async () => {

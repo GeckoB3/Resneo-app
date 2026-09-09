@@ -1412,6 +1412,20 @@ export default function CalendarScreen() {
       });
       setPendingActionIds((prev) => new Set([...prev, input.bookingId]));
       void (async () => {
+        // Same optimistic row patch as `commitDrag` (see the note there): the
+        // named service takes its dropped start and length in the grid cache
+        // before the request, so the bar never falls back to the old shape
+        // while the reconcile refetch is on its way.
+        const span = input.durationMinutes ?? input.previousTarget.durationMinutes;
+        const optimistic: CalendarBookingPatch | null = input.practitionerId
+          ? null
+          : {
+              startTime: input.time.slice(0, 5),
+              ...(span != null ? { endTime: minutesToTime(timeToMinutes(input.time) + span) } : {}),
+            };
+        const snapshot = optimistic
+          ? await applyOptimisticGridPatch(queryClient, [input.bookingId], optimistic)
+          : null;
         try {
           await visitScheduleById.mutateAsync({
             groupBookingId: input.groupBookingId,
@@ -1483,6 +1497,7 @@ export default function CalendarScreen() {
             lengthChanged: input.durationMinutes != null,
           });
         } catch (error) {
+          if (snapshot) revertCalendarGridBookings(queryClient, snapshot);
           // A 409 names the service and the time it could not take, and says
           // the visit was not moved. Nothing here improves on that.
           toast.error(
@@ -1495,7 +1510,7 @@ export default function CalendarScreen() {
         }
       })();
     },
-    [anchor, visitScheduleById, removePending, toast, raiseChangeNotice],
+    [anchor, visitScheduleById, removePending, toast, raiseChangeNotice, queryClient],
   );
 
   const commitDrag = useCallback(
@@ -1533,6 +1548,32 @@ export default function CalendarScreen() {
       });
       setPendingActionIds((prev) => new Set([...prev, input.bookingId]));
       void (async () => {
+        /**
+         * Patch the grid row on the drop, as a status press does. The bar
+         * holds its dropped shape itself, but only until the mutation settles:
+         * 2.5 s after that, with no new layout from the grid, it snaps home
+         * (its error fallback) — and the reconcile refetch can take longer
+         * than that, so a resize was seen to revert and then come right. With
+         * the row already patched, the grid's layout equals the held shape the
+         * moment the drop lands, and the refetch only confirms it. A
+         * cross-column move is left to the refetch: the row changes column,
+         * which a time patch on the old column cannot express.
+         */
+        const start = timeToMinutes(input.time);
+        const span = input.previousTarget.durationMinutes;
+        const optimistic: CalendarBookingPatch | null = input.practitionerId
+          ? null
+          : {
+              startTime: input.time.slice(0, 5),
+              ...(input.endTime
+                ? { endTime: input.endTime.slice(0, 5) }
+                : span != null
+                  ? { endTime: minutesToTime(start + span) }
+                  : {}),
+            };
+        const snapshot = optimistic
+          ? await applyOptimisticGridPatch(queryClient, [input.bookingId], optimistic)
+          : null;
         try {
           await rescheduleById.mutateAsync({
             bookingId: input.bookingId,
@@ -1554,6 +1595,7 @@ export default function CalendarScreen() {
             lengthChanged: input.durationChanged,
           });
         } catch (error) {
+          if (snapshot) revertCalendarGridBookings(queryClient, snapshot);
           toast.error(
             error instanceof ApiError
               ? error.message
@@ -1566,7 +1608,7 @@ export default function CalendarScreen() {
         }
       })();
     },
-    [anchor, rescheduleById, removePending, toast, raiseChangeNotice],
+    [anchor, rescheduleById, removePending, toast, raiseChangeNotice, queryClient],
   );
 
   // Shared commit for a drag MOVE — vertical (same column) or cross-column (with

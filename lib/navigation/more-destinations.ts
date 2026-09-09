@@ -147,7 +147,7 @@ export function buildDestinations(ctx: DestinationsContext): Destination[] {
   //    fill the bento grid. Ordered by how often staff reach for them. ────────
   list.push({ id: 'today', label: 'Today', hint: 'KPIs, forecast & arrivals at a glance', icon: { ios: 'sun.max.fill', android: 'wb_sunny', web: 'wb_sunny' }, tile: TILE.amber, group: 'workspace', kind: 'route', target: '/today', featured: true, primary: true, keywords: ['home', 'dashboard', 'overview'] });
   if (isSchedulingExperience) {
-    list.push({ id: 'availability', label: 'Calendar availability', hint: 'Block time & book leave', icon: { ios: 'calendar', android: 'edit_calendar', web: 'edit_calendar' }, tile: TILE.sky, group: 'workspace', kind: 'route', target: '/availability', featured: true, keywords: ['time off', 'leave', 'blocks', 'closures'] });
+    list.push({ id: 'availability', label: 'Calendar availability', hint: 'Hours, breaks, closures & amended hours', icon: { ios: 'calendar', android: 'edit_calendar', web: 'edit_calendar' }, tile: TILE.sky, group: 'workspace', kind: 'route', target: '/availability', featured: true, keywords: ['time off', 'leave', 'closures', 'amended hours', 'breaks', 'calendars'] });
   }
   // Waitlist — web shows it to table venues always, appointment/hybrid when the
   // waitlist feature is enabled. (Screen degrades to an empty state otherwise.)

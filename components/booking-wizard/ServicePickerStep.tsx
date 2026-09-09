@@ -372,7 +372,7 @@ export function ServicePickerStep({
 
   return (
     <View style={styles.container}>
-      <Text variant="heading">Choose a service</Text>
+      <Text variant="subheading">Choose a service</Text>
       {overrideToggle}
 
       {rows.length >= SERVICE_SEARCH_MIN_SERVICES ? (
@@ -562,7 +562,7 @@ function Separator() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    gap: spacing.md,
+    gap: spacing.sm,
   },
   list: {
     paddingBottom: spacing.xl,

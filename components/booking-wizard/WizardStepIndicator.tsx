@@ -39,8 +39,8 @@ export function WizardStepIndicator({ currentStep, labels = DEFAULT_LABELS }: Wi
 
 const styles = StyleSheet.create({
   wrap: {
-    gap: spacing.sm,
-    marginBottom: spacing.lg,
+    gap: spacing.xs,
+    marginBottom: spacing.sm,
   },
   track: {
     flexDirection: 'row',

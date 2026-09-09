@@ -248,6 +248,7 @@ export const queryKeys = {
       accessToken?: string | null,
       ownerVenueId?: string | null,
       includeResources = false,
+      includeInactive = false,
     ) =>
       [
         ...queryKeys.practitioners.all(),
@@ -257,6 +258,8 @@ export const queryKeys = {
         // Resource columns are a different roster, not a filter over the same
         // one — they must not share a cache entry with the staff-assignable list.
         includeResources ? 'with-resources' : 'staff-assignable',
+        // Likewise the full roster with paused columns (the Calendars manager).
+        includeInactive ? 'with-inactive' : 'active',
       ] as const,
   },
 

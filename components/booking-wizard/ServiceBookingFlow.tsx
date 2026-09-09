@@ -1464,7 +1464,7 @@ const styles = StyleSheet.create({
    */
   container: {
     flex: 1,
-    gap: spacing.base,
+    gap: spacing.sm,
   },
   groupButton: {
     marginTop: spacing.sm,

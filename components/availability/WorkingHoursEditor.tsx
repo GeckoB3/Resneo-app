@@ -6,8 +6,12 @@
  * week). Saves the FULL set of ranges per open day via usePatchPractitioner
  * (PATCH /api/venue/practitioners), with the 409 "save anyway" flow.
  *
+ * Two homes: inline on the Availability tab of the Availability screen (the
+ * web's home for it, `inline`), or in a fill Sheet (its own scroll, a Cancel
+ * button and the standard sheet inset).
+ *
  * Web parity: `AppointmentAvailabilitySettings.tsx` "Availability" tab,
- * `WorkingHoursControl` + `saveWorkingHours`.
+ * `WorkingHoursEditor` + `saveWorkingHours`.
  */
 import { useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
@@ -30,6 +34,10 @@ import { useTheme } from '@/theme/useTheme';
 import type { WorkingHoursMap } from '@/types/availability-manage';
 import type { OpeningHours } from '@/types/venue';
 
+/** What a staff member reads on a colleague's calendar (web `readOnlyHint`). */
+export const WORKING_HOURS_READ_ONLY_HINT =
+  'View only - this calendar is not linked to your account. You can edit working hours on calendars you manage, or ask an admin.';
+
 type Props = {
   practitionerId: string;
   practitionerName: string;
@@ -40,7 +48,16 @@ type Props = {
    * renderable on its own; the caller already holds the bootstrap.
    */
   venueOpeningHours?: OpeningHours | null;
-  onClose: () => void;
+  /**
+   * Rendered inside a scrolling tab rather than a Sheet: no scroll of its own,
+   * no heading, no Cancel, no inset, and the web's button label.
+   */
+  inline?: boolean;
+  /** The viewer may look but not change (a colleague's calendar). */
+  readOnly?: boolean;
+  readOnlyHint?: string;
+  /** Called after a successful save; the Sheet host closes on it. */
+  onClose?: () => void;
 };
 
 export function WorkingHoursEditor({
@@ -48,6 +65,9 @@ export function WorkingHoursEditor({
   practitionerName,
   currentWorkingHours,
   venueOpeningHours,
+  inline = false,
+  readOnly = false,
+  readOnlyHint,
   onClose,
 }: Props) {
   const { colors } = useTheme();
@@ -64,6 +84,7 @@ export function WorkingHoursEditor({
   );
 
   async function handleSave() {
+    if (readOnly) return;
     const built = hoursFromWeekState(days, 'empty');
     if (!built.ok) {
       toast.error(built.error);
@@ -73,7 +94,7 @@ export function WorkingHoursEditor({
     try {
       await patchPractitioner.mutateAsync({ id: practitionerId, working_hours: workingHours });
       hapticSuccess();
-      onClose();
+      onClose?.();
       toast.success('Working hours saved.');
     } catch (e) {
       // 409 with requires_confirmation → ask, then re-save acknowledged.
@@ -103,7 +124,7 @@ export function WorkingHoursEditor({
       });
       setAckConfirm(null);
       hapticSuccess();
-      onClose();
+      onClose?.();
       toast.success('Working hours saved.');
     } catch (e) {
       setAckConfirm(null);
@@ -112,38 +133,54 @@ export function WorkingHoursEditor({
     }
   }
 
+  const fields = (
+    <WeeklyHoursFields
+      value={days}
+      onChange={setDays}
+      venueOpeningHours={venueOpeningHours}
+      disabled={readOnly || patchPractitioner.isPending || ackConfirm != null}
+    />
+  );
+
   return (
-    <View style={styles.root}>
-      <Text variant="overline" tone="muted">
-        Working hours — {practitionerName}
-      </Text>
+    <View style={inline ? styles.inlineRoot : styles.root}>
+      {!inline ? (
+        <>
+          <Text variant="overline" tone="muted">
+            Working hours — {practitionerName}
+          </Text>
 
-      <View
-        style={[
-          styles.infoNote,
-          { backgroundColor: colors.brandSubtle, borderColor: colors.brandBorder },
-        ]}>
-        <Text variant="caption" tone="secondary" style={styles.infoText}>
-          These hours are when this calendar can take bookings, but a time is only bookable where
-          it also falls within your venue&apos;s business hours. To open bookings earlier or later,
-          widen Settings → Business hours as well.
-        </Text>
-      </View>
+          <View
+            style={[
+              styles.infoNote,
+              { backgroundColor: colors.brandSubtle, borderColor: colors.brandBorder },
+            ]}>
+            <Text variant="caption" tone="secondary" style={styles.infoText}>
+              These hours are when this calendar can take bookings, but a time is only bookable
+              where it also falls within your venue&apos;s business hours. To open bookings earlier
+              or later, widen Settings → Business hours as well.
+            </Text>
+          </View>
+        </>
+      ) : null}
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.list}>
-        <WeeklyHoursFields
-          value={days}
-          onChange={setDays}
-          venueOpeningHours={venueOpeningHours}
-          disabled={patchPractitioner.isPending || ackConfirm != null}
-        />
-      </ScrollView>
+      {inline ? (
+        <View style={styles.list}>{fields}</View>
+      ) : (
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.list}>
+          {fields}
+        </ScrollView>
+      )}
 
       {/* "Save anyway?" — orphan-bookings confirmation (409 requires_confirmation).
-          A step of THIS sheet, in place of its actions: a second Sheet over the
+          A step of THIS editor, in place of its actions: a second Sheet over the
           hours Sheet never presents on iOS (`ios-no-stacked-modals`), which is
           how "changed several calendars' hours, nothing saved" happened. */}
-      {ackConfirm ? (
+      {readOnly ? (
+        <Text variant="bodySmall" tone="muted">
+          {readOnlyHint ?? "You can't edit working hours for this calendar."}
+        </Text>
+      ) : ackConfirm ? (
         <ConfirmPanel
           title="Save these hours anyway?"
           message={ackConfirm.message}
@@ -154,6 +191,14 @@ export function WorkingHoursEditor({
             if (!patchPractitioner.isPending) setAckConfirm(null);
           }}
         />
+      ) : inline ? (
+        <View style={styles.actions}>
+          <Button
+            label="Save Working Hours"
+            loading={patchPractitioner.isPending}
+            onPress={() => void handleSave()}
+          />
+        </View>
       ) : (
         <View style={styles.actions}>
           <Button label="Cancel" variant="secondary" style={styles.flex1} onPress={onClose} />
@@ -176,6 +221,9 @@ const styles = StyleSheet.create({
     // `fill` Sheets supply no horizontal padding (they delegate it to the
     // child), so pad the editor itself to match the standard sheet inset.
     paddingHorizontal: spacing.lg,
+  },
+  inlineRoot: {
+    gap: spacing.md,
   },
   infoNote: {
     borderWidth: 1,

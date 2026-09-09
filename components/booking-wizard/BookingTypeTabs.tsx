@@ -85,7 +85,7 @@ export function BookingTypeTabs({ tabs, active, onChange }: BookingTypeTabsProps
 }
 
 const styles = StyleSheet.create({
-  wrap: { marginBottom: spacing.base },
+  wrap: {},
   content: { gap: spacing.sm, paddingVertical: spacing.xxs },
   pill: {
     flexDirection: 'row',

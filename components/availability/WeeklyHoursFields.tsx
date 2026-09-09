@@ -278,7 +278,7 @@ export function WeeklyHoursFields({ value, onChange, venueOpeningHours, disabled
               </View>
             ) : (
               <Text variant="caption" tone="muted" style={styles.closedLabel}>
-                Day off
+                Closed
               </Text>
             )}
           </View>

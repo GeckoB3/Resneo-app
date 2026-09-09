@@ -1,4 +1,5 @@
 import { addDays, format, isSameMonth, parseISO, startOfMonth, startOfWeek } from 'date-fns';
+import { useRouter, type Href } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
@@ -18,7 +19,12 @@ import {
   formatMonthLabel,
 } from '@/lib/dates/venue-dates';
 import { hapticSelect, hapticWarning } from '@/lib/haptics';
-import { amendedHoursOnDate, type AmendedHoursEntry } from '@/lib/availability/calendar-amended-hours';
+import {
+  amendedClosedOnDate,
+  amendedHoursOnDate,
+  describeHoursPeriods,
+  type AmendedHoursEntry,
+} from '@/lib/availability/calendar-amended-hours';
 import { useAmendedHours } from '@/lib/queries/useCalendarAmendedHours';
 import { useTeamLeaveMonth } from '@/lib/queries/useTeamLeave';
 import { fonts, minTouchTarget, radius, spacing } from '@/theme/index';
@@ -26,24 +32,11 @@ import { useTheme } from '@/theme/useTheme';
 import type { LeavePeriod, LeaveType } from '@/types/availability-manage';
 
 // ---- Leave type display (consistent annual/sick/other keying, web parity) ---
-const LEAVE_TYPE_ORDER: LeaveType[] = ['annual', 'sick', 'other'];
-
 const LEAVE_TYPE_LABELS: Record<LeaveType, string> = {
   annual: 'Closed',
   sick: 'Unavailable',
   other: 'Other',
 };
-
-type LeaveTypeColors = { dot: string; surface: string };
-
-function useLeaveTypeColors(): Record<LeaveType, LeaveTypeColors> {
-  const { colors } = useTheme();
-  return {
-    annual: { dot: colors.danger, surface: colors.dangerSurface },
-    sick: { dot: colors.warning, surface: colors.warningSurface },
-    other: { dot: colors.info, surface: colors.infoSurface },
-  };
-}
 
 function normalizeLeaveType(t: string): LeaveType {
   return t === 'annual' || t === 'sick' || t === 'other' ? t : 'other';
@@ -61,6 +54,32 @@ function periodsOnDay(periods: LeavePeriod[], dateStr: string): LeavePeriod[] {
 const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 type ViewMode = 'calendar' | 'list';
+
+/**
+ * What a day cell encodes (web `ResourceExceptionsCalendar` in
+ * `calendar_unavailability` mode): a whole day out ("Off"), a window out
+ * ("Block"), or different hours ("Hrs"). A whole day out wins outright; amended
+ * hours can show over a part-day window.
+ */
+type DayMark = 'off' | 'block' | 'hours';
+
+type MarkStyle = { surface: string; ink: string; badge: string; legend: string };
+
+function useMarkStyles(): Record<DayMark, MarkStyle> {
+  const { colors } = useTheme();
+  return {
+    off: { surface: colors.dangerSurface, ink: colors.danger, badge: 'Off', legend: 'All day' },
+    block: { surface: colors.infoSurface, ink: colors.info, badge: 'Block', legend: 'Part day' },
+    hours: {
+      surface: colors.warningSurface,
+      ink: colors.warning,
+      badge: 'Hrs',
+      legend: 'Amended hours',
+    },
+  };
+}
+
+const MARK_ORDER: DayMark[] = ['off', 'block', 'hours'];
 
 type TeamLeaveCalendarProps = {
   /** Today in the venue timezone (YYYY-MM-DD). */
@@ -80,9 +99,9 @@ type TeamLeaveCalendarProps = {
 };
 
 /**
- * Team leave calendar — month grid of the whole team's time off, color-coded
- * by leave type (annual/sick/other), with a list view and per-day breakdown.
- * Mirrors the web dashboard's Availability → Closures calendar panel.
+ * Calendar closures and amended hours — month grid of the team's time off and
+ * amended hours, with a list view and per-day breakdown. Mirrors the web's
+ * Closures & amended hours tab (`StaffLeaveCalendarPanel` + the month grid).
  */
 export function TeamLeaveCalendar({
   today,
@@ -94,7 +113,8 @@ export function TeamLeaveCalendar({
   deletingLeaveIds,
 }: TeamLeaveCalendarProps) {
   const { colors } = useTheme();
-  const typeColors = useLeaveTypeColors();
+  const router = useRouter();
+  const marks = useMarkStyles();
 
   // First day of the displayed month.
   const [monthAnchor, setMonthAnchor] = useState(() => getMonthRangeFromDate(today).from);
@@ -108,22 +128,29 @@ export function TeamLeaveCalendar({
   const leaveQuery = useTeamLeaveMonth(monthRange.from, monthRange.to, filterPractitionerId);
   // Amended hours in the month (web #187): drawn amber, and edited on tap.
   const amendedQuery = useAmendedHours(monthRange.from, monthRange.to, filterPractitionerId);
-  const amended = amendedQuery.data ?? [];
+  const amended = useMemo(() => amendedQuery.data ?? [], [amendedQuery.data]);
   const periods = useMemo(() => leaveQuery.data?.periods ?? [], [leaveQuery.data?.periods]);
 
-  // date → distinct leave types present (for the day dots).
-  const typesByDay = useMemo(() => {
-    const map: Record<string, Set<LeaveType>> = {};
+  // date → the marks on it (full day out, a window out, amended hours).
+  const marksByDay = useMemo(() => {
+    const map: Record<string, Set<DayMark>> = {};
     for (const p of periods) {
       // Clamp to the visible month so multi-month periods don't loop far.
       const from = p.start_date > monthRange.from ? p.start_date : monthRange.from;
       const to = p.end_date < monthRange.to ? p.end_date : monthRange.to;
       for (let d = from; d <= to; d = addDaysToStr(d, 1)) {
-        (map[d] ??= new Set()).add(normalizeLeaveType(p.leave_type));
+        (map[d] ??= new Set()).add(isPartialDay(p) ? 'block' : 'off');
+      }
+    }
+    for (const a of amended) {
+      const from = a.date_start > monthRange.from ? a.date_start : monthRange.from;
+      const to = a.date_end < monthRange.to ? a.date_end : monthRange.to;
+      for (let d = from; d <= to; d = addDaysToStr(d, 1)) {
+        (map[d] ??= new Set()).add(a.kind === 'closed' ? 'off' : 'hours');
       }
     }
     return map;
-  }, [periods, monthRange.from, monthRange.to]);
+  }, [periods, amended, monthRange.from, monthRange.to]);
 
   const sortedPeriods = useMemo(
     () =>
@@ -136,6 +163,11 @@ export function TeamLeaveCalendar({
   );
 
   const selectedDayPeriods = selectedDate ? periodsOnDay(sortedPeriods, selectedDate) : [];
+  const selectedDayAmended = selectedDate
+    ? amended.filter(
+        (a) => a.kind === 'hours' && a.date_start <= selectedDate && selectedDate <= a.date_end,
+      )
+    : [];
 
   function goMonth(offset: number) {
     hapticSelect();
@@ -152,8 +184,9 @@ export function TeamLeaveCalendar({
   /**
    * Tap-to-act on a calendar day (mirrors web `handleDayClick`):
    * - a day with exactly ONE leave → edit that period;
+   * - a day with no leave but amended hours → edit that run;
    * - otherwise drive a date-range selection (1st tap = start=end, tap same
-   *   again = clear, 2nd distinct tap = [start,end]) for a new leave.
+   *   again = clear, 2nd distinct tap = [start,end]) for a new entry.
    * `selectedDate` still drives the "who is away" breakdown below.
    */
   function handleDayPress(dateStr: string) {
@@ -166,7 +199,6 @@ export function TeamLeaveCalendar({
       onEditLeave(onDay[0]!);
       return;
     }
-    // A day with no leave but amended hours opens that run (web parity).
     const amendedOnDay = onDay.length === 0 ? amendedHoursOnDate(amended, dateStr) : null;
     if (amendedOnDay && onEditAmended) {
       clearRange();
@@ -192,6 +224,16 @@ export function TeamLeaveCalendar({
     return Boolean(rangeStart && rangeEnd && dateStr >= rangeStart && dateStr <= rangeEnd);
   }
 
+  /** The one mark a cell draws: a whole day out wins, then a window, then hours. */
+  function markForDay(dateStr: string): DayMark | null {
+    const set = marksByDay[dateStr];
+    if (!set) return null;
+    if (set.has('off') || amendedClosedOnDate(amended, dateStr)) return 'off';
+    if (set.has('hours')) return 'hours';
+    if (set.has('block')) return 'block';
+    return null;
+  }
+
   // ---- Month grid cells ------------------------------------------------------
   const monthDate = parseISO(`${monthAnchor}T12:00:00.000Z`);
   const gridStart = startOfWeek(startOfMonth(monthDate), { weekStartsOn: 1 });
@@ -199,7 +241,7 @@ export function TeamLeaveCalendar({
 
   return (
     <Card>
-      <Text variant="label">Team leave</Text>
+      <Text variant="label">Calendar closures and amended hours</Text>
       <View style={styles.viewToggle}>
         <Segmented
           options={[
@@ -239,14 +281,14 @@ export function TeamLeaveCalendar({
       </View>
 
       {leaveQuery.isLoading ? (
-        <LoadingState message="Loading team leave…" />
+        <LoadingState message="Loading calendar…" />
       ) : leaveQuery.isError ? (
         <ErrorState
-          title="Could not load team leave"
+          title="Could not load calendar unavailability"
           message={
             leaveQuery.error instanceof ApiError
               ? leaveQuery.error.message
-              : 'An error occurred loading leave for this month.'
+              : 'An error occurred loading closures for this month.'
           }
           onRetry={() => void leaveQuery.refetch()}
         />
@@ -263,7 +305,7 @@ export function TeamLeaveCalendar({
             ))}
           </View>
 
-          {/* 6×7 month grid with leave-type dots */}
+          {/* 6×7 month grid: Off / Block / Hrs badges on a tinted cell */}
           {Array.from({ length: 6 }, (_, week) => (
             <View key={week} style={styles.weekRow}>
               {cells.slice(week * 7, week * 7 + 7).map((cell) => {
@@ -272,14 +314,8 @@ export function TeamLeaveCalendar({
                 const isToday = dateStr === today;
                 const isSelected = dateStr === selectedDate;
                 const isRange = inRange(dateStr);
-                const dayTypes = LEAVE_TYPE_ORDER.filter((t) => typesByDay[dateStr]?.has(t));
+                const mark = markForDay(dateStr);
                 const awayCount = periodsOnDay(periods, dateStr).length;
-                // Amended hours show unless full-day leave covers the day: leave wins.
-                const amendedDay =
-                  amendedHoursOnDate(amended, dateStr) != null &&
-                  !periodsOnDay(periods, dateStr).some(
-                    (p) => !p.unavailable_start_time || !p.unavailable_end_time,
-                  );
 
                 return (
                   <Pressable
@@ -287,11 +323,14 @@ export function TeamLeaveCalendar({
                     onPress={() => handleDayPress(dateStr)}
                     accessibilityRole="button"
                     accessibilityState={{ selected: isSelected || isRange }}
-                    accessibilityLabel={`${format(cell, 'd MMMM')}, ${awayCount} ${awayCount === 1 ? 'leave period' : 'leave periods'}${amendedDay ? ', amended hours' : ''}`}
+                    accessibilityLabel={`${format(cell, 'd MMMM')}, ${awayCount} ${awayCount === 1 ? 'leave period' : 'leave periods'}${
+                      mark === 'hours' ? ', amended hours' : mark === 'off' ? ', closed' : mark === 'block' ? ', unavailable for part of the day' : ''
+                    }`}
                     style={({ pressed }) => [
                       styles.dayCell,
                       { borderColor: colors.border },
                       isToday ? { backgroundColor: colors.brandSubtle } : null,
+                      mark && inMonth ? { backgroundColor: marks[mark].surface } : null,
                       isRange ? { backgroundColor: colors.brandSubtle } : null,
                       isSelected || isRange
                         ? { borderColor: colors.brand, borderWidth: 1.5, borderRadius: radius.sm }
@@ -303,16 +342,12 @@ export function TeamLeaveCalendar({
                       color={inMonth ? (isToday ? colors.brand : colors.text) : colors.textMuted}>
                       {format(cell, 'd')}
                     </Text>
-                    <View style={styles.dotRow}>
-                      {dayTypes.map((t) => (
-                        <View
-                          key={t}
-                          style={[styles.dot, { backgroundColor: typeColors[t].dot }]}
-                        />
-                      ))}
-                      {amendedDay ? (
-                        <Text style={[styles.amendedTag, { color: colors.warning }]} testID="amended-day">
-                          Hrs
+                    <View style={styles.badgeRow}>
+                      {mark ? (
+                        <Text
+                          style={[styles.badge, { color: marks[mark].ink }]}
+                          testID={mark === 'hours' ? 'amended-day' : `${mark}-day`}>
+                          {marks[mark].badge}
                         </Text>
                       ) : null}
                     </View>
@@ -324,28 +359,38 @@ export function TeamLeaveCalendar({
 
           {/* Legend */}
           <View style={styles.legendRow}>
-            {LEAVE_TYPE_ORDER.map((t) => (
-              <View key={t} style={styles.legendItem}>
-                <View style={[styles.dot, { backgroundColor: typeColors[t].dot }]} />
+            {MARK_ORDER.map((m) => (
+              <View key={m} style={styles.legendItem}>
+                <View style={[styles.legendSwatch, { backgroundColor: marks[m].surface }]}>
+                  <Text style={[styles.badge, { color: marks[m].ink }]}>{marks[m].badge}</Text>
+                </View>
                 <Text variant="caption" tone="secondary">
-                  {LEAVE_TYPE_LABELS[t]}
+                  {marks[m].legend}
                 </Text>
               </View>
             ))}
-            <View style={styles.legendItem}>
-              <Text style={[styles.amendedTag, { color: colors.warning }]}>Hrs</Text>
-              <Text variant="caption" tone="secondary">
-                Amended hours
-              </Text>
-            </View>
           </View>
 
-          {/* In-progress range selection → create leave prefilled (web parity) */}
+          {amendedQuery.isError ? (
+            <View style={styles.inlineError}>
+              <Text variant="caption" tone="danger" style={styles.flex1}>
+                Could not load amended hours.
+              </Text>
+              <Button
+                label="Retry"
+                variant="ghost"
+                size="sm"
+                onPress={() => void amendedQuery.refetch()}
+              />
+            </View>
+          ) : null}
+
+          {/* In-progress range selection → new entry prefilled (web parity) */}
           {rangeStart && rangeEnd ? (
             <View style={[styles.rangeBar, { borderTopColor: colors.border }]}>
               <View style={styles.rangeActions}>
                 <Button
-                  label={`Add leave · ${formatRangeLabel(rangeStart, rangeEnd)}`}
+                  label={`New entry · ${formatRangeLabel(rangeStart, rangeEnd)}`}
                   size="sm"
                   style={styles.rangeAddBtn}
                   onPress={() => {
@@ -356,7 +401,7 @@ export function TeamLeaveCalendar({
                     onCreateRange(start, end);
                   }}
                 />
-                <Button label="Clear" variant="ghost" size="sm" onPress={clearRange} />
+                <Button label="Clear selection" variant="ghost" size="sm" onPress={clearRange} />
               </View>
               <Text variant="caption" tone="muted">
                 Tap another day to extend the range, or tap the same day again to clear.
@@ -368,37 +413,72 @@ export function TeamLeaveCalendar({
           {selectedDate ? (
             <View style={[styles.dayDetail, { borderTopColor: colors.border }]}>
               <Text variant="bodyMedium">{formatDayHeading(selectedDate)}</Text>
-              {selectedDayPeriods.length === 0 ? (
+              {selectedDayPeriods.length === 0 && selectedDayAmended.length === 0 ? (
                 <Text variant="caption" tone="muted">
-                  No one is away on this day.
+                  No closures or amended hours on this day.
                 </Text>
               ) : (
-                selectedDayPeriods.map((period) => (
-                  <LeavePeriodRow
-                    key={period.id}
-                    period={period}
-                    typeColors={typeColors}
-                    onEdit={onEditLeave}
-                    onDelete={onDeleteLeave}
-                    deleting={deletingLeaveIds.has(period.id)}
-                  />
-                ))
+                <>
+                  {selectedDayPeriods.map((period) => (
+                    <LeavePeriodRow
+                      key={period.id}
+                      period={period}
+                      marks={marks}
+                      onEdit={onEditLeave}
+                      onDelete={onDeleteLeave}
+                      deleting={deletingLeaveIds.has(period.id)}
+                    />
+                  ))}
+                  {selectedDayAmended.map((row) => (
+                    <View
+                      key={`${row.calendar_id}-${row.date_start}`}
+                      style={[styles.periodRow, { borderBottomColor: colors.border }]}>
+                      <View style={styles.periodBody}>
+                        <View style={styles.periodTitleRow}>
+                          <View style={[styles.typePill, { backgroundColor: marks.hours.surface }]}>
+                            <Text variant="caption" color={marks.hours.ink}>
+                              Amended hours
+                            </Text>
+                          </View>
+                          <Text variant="bodyMedium" numberOfLines={1} style={styles.periodName}>
+                            {row.calendar_name}
+                          </Text>
+                        </View>
+                        <Text variant="caption" tone="muted" numberOfLines={2}>
+                          {describeHoursPeriods(row.periods)}
+                          {row.reason ? ` · ${row.reason}` : ''}
+                        </Text>
+                      </View>
+                      {onEditAmended ? (
+                        <View style={styles.periodActions}>
+                          <Button
+                            label="Edit"
+                            variant="ghost"
+                            size="sm"
+                            onPress={() => onEditAmended(row)}
+                          />
+                        </View>
+                      ) : null}
+                    </View>
+                  ))}
+                </>
               )}
             </View>
-          ) : periods.length === 0 ? (
+          ) : periods.length === 0 && amended.length === 0 ? (
             <Text variant="caption" tone="muted" style={styles.noLeaveHint}>
-              No leave booked this month.
+              Nothing this month. Tap dates on the calendar to select a range, then set the
+              details.
             </Text>
           ) : (
             <Text variant="caption" tone="muted" style={styles.noLeaveHint}>
-              Tap a day to see who is away.
+              Tap a day to see who is away, or tap dates to select a range for a new entry.
             </Text>
           )}
         </>
       ) : sortedPeriods.length === 0 ? (
         <EmptyState
-          title="No leave this month"
-          message="Leave periods overlapping this month will appear here."
+          title="No closures this month"
+          message="Closures overlapping this month will appear here."
         />
       ) : (
         <View style={styles.listWrap}>
@@ -406,7 +486,7 @@ export function TeamLeaveCalendar({
             <LeavePeriodRow
               key={period.id}
               period={period}
-              typeColors={typeColors}
+              marks={marks}
               onEdit={onEditLeave}
               onDelete={onDeleteLeave}
               deleting={deletingLeaveIds.has(period.id)}
@@ -415,10 +495,20 @@ export function TeamLeaveCalendar({
         </View>
       )}
 
-      <Text variant="caption" tone="muted" style={styles.webNote}>
-        Whole-venue closures and amended business hours are managed in Settings → Business
-        hours on the web dashboard.
-      </Text>
+      {/* Whole-venue closures live on the Business hours screen (in the app too). */}
+      <Pressable
+        accessibilityRole="link"
+        onPress={() => router.push('/manage/hours' as Href)}
+        style={styles.webNote}
+        hitSlop={4}>
+        <Text variant="caption" tone="muted">
+          Whole-venue closures and amended opening hours for every booking type are in{' '}
+          <Text variant="caption" color={colors.brand}>
+            Settings → Business hours
+          </Text>
+          .
+        </Text>
+      </Pressable>
     </Card>
   );
 }
@@ -426,13 +516,13 @@ export function TeamLeaveCalendar({
 // ---- Single leave period row -------------------------------------------------
 function LeavePeriodRow({
   period,
-  typeColors,
+  marks,
   onEdit,
   onDelete,
   deleting,
 }: {
   period: LeavePeriod;
-  typeColors: Record<LeaveType, LeaveTypeColors>;
+  marks: Record<DayMark, MarkStyle>;
   onEdit: (period: LeavePeriod) => void;
   onDelete: (leaveId: string) => void;
   deleting: boolean;
@@ -440,6 +530,7 @@ function LeavePeriodRow({
   const { colors } = useTheme();
   const type = normalizeLeaveType(period.leave_type);
   const partial = isPartialDay(period);
+  const mark = marks[partial ? 'block' : 'off'];
 
   // Two-step confirm — Alert.alert confirms are a no-op on web, so arm then confirm.
   const [armed, setArmed] = useState(false);
@@ -467,10 +558,11 @@ function LeavePeriodRow({
     <View style={[styles.periodRow, { borderBottomColor: colors.border }]}>
       <View style={styles.periodBody}>
         <View style={styles.periodTitleRow}>
-          <View style={[styles.typePill, { backgroundColor: typeColors[type].surface }]}>
-            <View style={[styles.dot, { backgroundColor: typeColors[type].dot }]} />
-            <Text variant="caption" color={typeColors[type].dot}>
-              {LEAVE_TYPE_LABELS[type]}
+          {/* All day / Part day is the fact the web leads with; the label the
+              team chose (Closed / Unavailable / Other) follows it. */}
+          <View style={[styles.typePill, { backgroundColor: mark.surface }]}>
+            <Text variant="caption" color={mark.ink}>
+              {mark.legend}
             </Text>
           </View>
           <Text variant="bodyMedium" numberOfLines={1} style={styles.periodName}>
@@ -483,6 +575,7 @@ function LeavePeriodRow({
           {partial
             ? ` · ${period.unavailable_start_time?.slice(0, 5)}–${period.unavailable_end_time?.slice(0, 5)} each day`
             : ''}
+          {` · ${LEAVE_TYPE_LABELS[type]}`}
           {period.notes ? ` · ${period.notes}` : ''}
         </Text>
       </View>
@@ -554,21 +647,16 @@ const styles = StyleSheet.create({
     gap: 3,
     borderTopWidth: StyleSheet.hairlineWidth,
   },
-  dotRow: {
-    flexDirection: 'row',
-    gap: 3,
-    height: 8,
+  badgeRow: {
+    height: 12,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  dot: {
-    width: 7,
-    height: 7,
-    borderRadius: radius.full,
-  },
-  amendedTag: {
-    fontSize: 8,
+  badge: {
+    fontSize: 9,
     fontFamily: fonts.bold,
-    lineHeight: 10,
+    lineHeight: 11,
+    letterSpacing: 0.2,
   },
   legendRow: {
     flexDirection: 'row',
@@ -580,6 +668,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
+  },
+  legendSwatch: {
+    minWidth: 28,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    borderRadius: radius.sm,
+    alignItems: 'center',
+  },
+  inlineError: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingTop: spacing.sm,
+  },
+  flex1: {
+    flex: 1,
   },
   rangeBar: {
     marginTop: spacing.md,
@@ -628,9 +732,6 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   typePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,
     borderRadius: radius.pill,

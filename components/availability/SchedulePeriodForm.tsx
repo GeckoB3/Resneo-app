@@ -10,7 +10,7 @@
  * hours ({@link WeeklyHoursFields}).
  */
 import { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import {
   WeeklyHoursFields,
@@ -42,7 +42,7 @@ import {
   type RotaWeeklyHours,
   type SchedulePeriod,
 } from '@/lib/calendar/working-hours-rota';
-import { minTouchTarget, radius, spacing } from '@/theme/index';
+import { fonts, minTouchTarget, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { WorkingHoursMap } from '@/types/availability-manage';
 import type { OpeningHours } from '@/types/venue';
@@ -396,6 +396,24 @@ function CountRow({
   const { colors } = useTheme();
   const canDecrease = !disabled && value > min;
   const canIncrease = !disabled && value < max;
+  // The number can be typed as well as stepped (web: a number input, 1–52).
+  // The draft is text so a half-typed value never snaps; it commits on blur.
+  const [draft, setDraft] = useState(String(value));
+  const [seenValue, setSeenValue] = useState(value);
+  if (seenValue !== value) {
+    setSeenValue(value);
+    setDraft(String(value));
+  }
+  function commitDraft() {
+    const n = Number.parseInt(draft, 10);
+    if (Number.isNaN(n)) {
+      setDraft(String(value));
+      return;
+    }
+    const clamped = Math.min(max, Math.max(min, n));
+    setDraft(String(clamped));
+    if (clamped !== value) onChange(clamped);
+  }
   return (
     <View style={styles.countRow}>
       <Pressable
@@ -410,9 +428,26 @@ function CountRow({
         ]}>
         <Text variant="bodyMedium">−</Text>
       </Pressable>
-      <Text variant="bodyMedium" style={styles.countValue}>
-        {display}
-      </Text>
+      <View style={styles.countValue}>
+        <TextInput
+          value={draft}
+          onChangeText={setDraft}
+          onBlur={commitDraft}
+          onSubmitEditing={commitDraft}
+          editable={!disabled}
+          keyboardType="number-pad"
+          returnKeyType="done"
+          selectTextOnFocus
+          accessibilityLabel={label}
+          style={[
+            styles.countInput,
+            { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface },
+          ]}
+        />
+        <Text variant="caption" tone="muted" numberOfLines={1}>
+          {display}
+        </Text>
+      </View>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`Increase ${label}`}
@@ -451,7 +486,19 @@ const styles = StyleSheet.create({
   },
   countValue: {
     flex: 1,
+    alignItems: 'center',
+    gap: 2,
+  },
+  countInput: {
+    minWidth: 64,
+    height: minTouchTarget - 8,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.sm,
     textAlign: 'center',
+    fontSize: 16,
+    fontFamily: fonts.bold,
+    fontVariant: ['tabular-nums'],
   },
   notice: {
     borderWidth: 1,

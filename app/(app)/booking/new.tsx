@@ -8,6 +8,7 @@ import { ResourceBookingFlow } from '@/components/booking-wizard/ResourceBooking
 import { ServiceBookingFlow } from '@/components/booking-wizard/ServiceBookingFlow';
 import { BookingTypeTabs, type BookingFlowType } from '@/components/booking-wizard/BookingTypeTabs';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { IconButton } from '@/components/ui/IconButton';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { Screen } from '@/components/ui/Screen';
@@ -267,9 +268,20 @@ function NewBookingForm() {
             {`Booking for ${form.venueName ?? 'the collective'}: every member venue's calendars and the combined services.`}
           </Text>
         ) : null}
-        {tabs.length > 1 ? (
-          <BookingTypeTabs tabs={tabs} active={tab} onChange={handleTabChange} />
-        ) : null}
+        {/* The route's own chrome, one line: what to book, and the way out. */}
+        <View style={styles.chrome}>
+          <View style={styles.chromeTabs}>
+            {tabs.length > 1 ? (
+              <BookingTypeTabs tabs={tabs} active={tab} onChange={handleTabChange} />
+            ) : null}
+          </View>
+          <IconButton
+            icon={{ ios: 'xmark', android: 'close', web: 'close' }}
+            accessibilityLabel="Close"
+            iconSize={22}
+            onPress={() => router.back()}
+          />
+        </View>
         {/* Key on the tab + reset token: switching tabs or re-entering the
             screen remounts the flow so each starts from a clean step 1.
 
@@ -297,6 +309,16 @@ const styles = StyleSheet.create({
   },
   collectiveNote: {
     paddingBottom: spacing.sm,
+  },
+  chrome: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  chromeTabs: {
+    flex: 1,
+    minWidth: 0,
   },
   flow: {
     flex: 1,

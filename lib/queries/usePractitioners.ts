@@ -24,6 +24,18 @@ type UsePractitionersOptions = {
    * route filters `calendar_type = 'resource'` on.
    */
   includeResources?: boolean;
+  /**
+   * Include INACTIVE calendar columns as well.
+   *
+   * Off by default: a paused column takes no bookings, so pickers must not
+   * offer it. The Calendars manager is the exception, because it is the one
+   * place a column is switched back on — with the default roster a column
+   * toggled to "not bookable" simply vanished, with no way to reactivate it.
+   * The web panel lists every column (`roster=1`, no filters), so this drops
+   * `active_only` and `staff_assignable` (which implies active) and leaves the
+   * resource filter to the client.
+   */
+  includeInactive?: boolean;
 };
 
 /**
@@ -34,26 +46,47 @@ export function usePractitioners(options: UsePractitionersOptions = {}) {
   const accessToken = useAccessToken();
   const ownerVenueId = options.ownerVenueId ?? null;
   const includeResources = options.includeResources ?? false;
+  const includeInactive = options.includeInactive ?? false;
   const queryEnabled =
     (options.enabled ?? true) && isBackendConfigured() && accessToken !== null;
 
   return useQuery({
-    queryKey: queryKeys.practitioners.list(accessToken, ownerVenueId, includeResources),
+    queryKey: queryKeys.practitioners.list(
+      accessToken,
+      ownerVenueId,
+      includeResources,
+      includeInactive,
+    ),
     enabled: queryEnabled,
     queryFn: async (): Promise<PractitionersResponse> => {
       if (!accessToken) {
         throw new Error('Missing access token');
       }
-      const params = new URLSearchParams({ roster: '1', active_only: '1' });
-      if (!includeResources) {
-        params.set('staff_assignable', '1');
+      const params = new URLSearchParams({ roster: '1' });
+      if (!includeInactive) {
+        params.set('active_only', '1');
+        if (!includeResources) {
+          params.set('staff_assignable', '1');
+        }
       }
       if (ownerVenueId) {
         params.set('owner_venue_id', ownerVenueId);
       }
-      return apiFetch<PractitionersResponse>(`/api/venue/practitioners?${params}`, {
-        accessToken,
-      });
+      const response = await apiFetch<PractitionersResponse>(
+        `/api/venue/practitioners?${params}`,
+        { accessToken },
+      );
+      // `staff_assignable` is what drops resources server-side, and it cannot
+      // be sent alongside an inactive roster, so filter them here instead.
+      if (includeInactive && !includeResources) {
+        return {
+          ...response,
+          practitioners: (response.practitioners ?? []).filter(
+            (p) => (p.calendar_type ?? 'practitioner') !== 'resource',
+          ),
+        };
+      }
+      return response;
     },
   });
 }

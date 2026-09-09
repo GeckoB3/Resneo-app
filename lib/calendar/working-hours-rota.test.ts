@@ -175,10 +175,10 @@ describe('resolution', () => {
 describe('describing', () => {
   it('words a period the way the web timeline does', () => {
     expect(describePeriod(period({ until: '2026-10-04' }))).toBe(
-      'From 7 Sep 2026, until 4 Oct 2026: 2-week rota',
+      'From Mon 7 Sep 2026, until Sun 4 Oct 2026: 2-week rota',
     );
     expect(describePeriod(period({ weeks: [WEEK_C] }))).toBe(
-      'From 7 Sep 2026, until further notice: same hours every week',
+      'From Mon 7 Sep 2026, until further notice: same hours every week',
     );
   });
 
@@ -186,7 +186,7 @@ describe('describing', () => {
     expect(describeScheduleSource({ kind: 'base' })).toBe('Standard weekly hours');
     expect(
       describeScheduleSource({ kind: 'period', period: period(), periodIndex: 0, weekIndex: 1 }),
-    ).toBe('Change from 7 Sep 2026, week 2 of 2');
+    ).toBe('Change from Mon 7 Sep 2026, week 2 of 2');
     expect(
       describeScheduleSource({
         kind: 'period',
@@ -194,7 +194,7 @@ describe('describing', () => {
         periodIndex: 0,
         weekIndex: 0,
       }),
-    ).toBe('Change from 7 Sep 2026');
+    ).toBe('Change from Mon 7 Sep 2026');
   });
 });
 
@@ -291,13 +291,13 @@ describe('insertSchedulePeriod', () => {
   it('words each trim as the web form previews it', () => {
     const byId = new Map([['before', period({ id: 'before', from: '2026-08-31' })]]);
     expect(describeScheduleTrim({ id: 'before', kind: 'removed' }, byId)).toBe(
-      'Replaces the change from 31 Aug 2026 entirely.',
+      'Replaces the change from Mon 31 Aug 2026 entirely.',
     );
     expect(describeScheduleTrim({ id: 'before', kind: 'shortened', until: '2026-09-13' }, byId)).toBe(
-      'Shortens the change from 31 Aug 2026 to end on 13 Sep 2026.',
+      'Shortens the change from Mon 31 Aug 2026 to end on Sun 13 Sep 2026.',
     );
     expect(describeScheduleTrim({ id: 'gone', kind: 'starts_later', from: '2026-10-05' }, byId)).toBe(
-      'Moves the start of an existing change to 5 Oct 2026.',
+      'Moves the start of an existing change to Mon 5 Oct 2026.',
     );
     expect(
       describeScheduleTrim(
@@ -305,7 +305,7 @@ describe('insertSchedulePeriod', () => {
         byId,
       ),
     ).toBe(
-      'Splits the change from 31 Aug 2026: it pauses on 20 Sep 2026 and resumes on 5 Oct 2026, keeping its rhythm.',
+      'Splits the change from Mon 31 Aug 2026: it pauses on Sun 20 Sep 2026 and resumes on Mon 5 Oct 2026, keeping its rhythm.',
     );
   });
 });

@@ -1,13 +1,13 @@
-import { Stack, useRouter } from 'expo-router';
-import { useEffect, useMemo, useRef } from 'react';
+import { Pressable, StyleSheet, View } from 'react-native';
 
-import { IconButton } from '@/components/ui/IconButton';
+import { Text } from '@/components/ui/Text';
+import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
 type BookingWizardHeaderProps = {
   /**
-   * Whether the user can step back a page within the form. When false the back
-   * arrow is hidden, so on the first page the ✕ is the only way out.
+   * Whether the user can step back a page within the form. When false nothing
+   * renders: on page one the ✕ in the route's own chrome is the only way out.
    */
   canGoBack: boolean;
   /** Step back one page within the form. */
@@ -15,53 +15,41 @@ type BookingWizardHeaderProps = {
 };
 
 /**
- * Modal-header controls shared by every booking flow:
- *  - the top-left arrow steps BACK one page within the form (hidden on page one), and
- *  - the top-right ✕ closes the whole form.
+ * The "back a page" control shared by every booking flow.
  *
- * Each flow renders this so the header always reflects the active flow's current
- * step. It renders nothing itself — it only sets navigation options. Replaces the
- * old per-step "Back" button at the bottom of each step and the native back
- * chevron (which used to leave the form).
+ * It used to set a native header (arrow left, ✕ right) on the booking route.
+ * That header cost the first step a full row of nothing but two icons, so the
+ * route now draws its own compact chrome (the booking-type tabs and the ✕ on
+ * one line) and this renders inline: a small "Back" row above the step strip,
+ * only on the pages that can go back. Nothing on page one.
  */
 export function BookingWizardHeader({ canGoBack, onBack }: BookingWizardHeaderProps) {
-  const router = useRouter();
   const { colors } = useTheme();
-
-  // Read the latest onBack at press time so the memoised header options don't
-  // re-apply on every wizard re-render (e.g. each keystroke on the guest step).
-  const onBackRef = useRef(onBack);
-  useEffect(() => {
-    onBackRef.current = onBack;
-  }, [onBack]);
-
-  const options = useMemo(
-    () => ({
-      // Swap the native back chevron for our own controls.
-      headerBackVisible: false,
-      headerLeft: canGoBack
-        ? () => (
-            <IconButton
-              icon={{ ios: 'chevron.left', android: 'arrow_back', web: 'arrow_back' }}
-              accessibilityLabel="Back"
-              tint={colors.text}
-              iconSize={24}
-              onPress={() => onBackRef.current()}
-            />
-          )
-        : () => null,
-      headerRight: () => (
-        <IconButton
-          icon={{ ios: 'xmark', android: 'close', web: 'close' }}
-          accessibilityLabel="Close"
-          tint={colors.text}
-          iconSize={22}
-          onPress={() => router.back()}
-        />
-      ),
-    }),
-    [canGoBack, colors.text, router],
+  if (!canGoBack) return null;
+  return (
+    <View style={styles.row}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Back"
+        onPress={onBack}
+        hitSlop={8}
+        style={({ pressed }) => [styles.back, { opacity: pressed ? 0.6 : 1 }]}>
+        <Text variant="label" color={colors.brand}>
+          ‹ Back
+        </Text>
+      </Pressable>
+    </View>
   );
-
-  return <Stack.Screen options={options} />;
 }
+
+const styles = StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+  },
+  back: {
+    minHeight: 32,
+    justifyContent: 'center',
+  },
+});

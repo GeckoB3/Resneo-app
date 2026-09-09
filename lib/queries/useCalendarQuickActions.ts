@@ -33,9 +33,14 @@ import type { LinkedBooking, LinkedCalendarResponse } from '@/types/linked-venue
 
 type QueryClient = ReturnType<typeof useQueryClient>;
 
-/** The fields a quick action can change on a grid row. */
+/**
+ * The fields a quick action can change on a grid row: a status press, or a
+ * hold-drag move / resize (`startTime` / `endTime`, "HH:mm"). The drag one is
+ * why the bar keeps its new length the moment it is dropped instead of a
+ * refetch later — see `commitDrag` on the calendar screen.
+ */
 export type CalendarBookingPatch = Partial<
-  Pick<CalendarGridBooking, 'status' | 'client_arrived_at'>
+  Pick<CalendarGridBooking, 'status' | 'client_arrived_at' | 'startTime' | 'endTime'>
 >;
 
 /** Previous values per booking id, for reverting a failed write. */
@@ -64,7 +69,28 @@ function linkedBookingPatch(patch: CalendarBookingPatch): Partial<LinkedBooking>
   const out: Partial<LinkedBooking> = {};
   if ('status' in patch && patch.status !== undefined) out.status = patch.status;
   if ('client_arrived_at' in patch) out.clientArrivedAt = patch.client_arrived_at ?? null;
+  if (patch.startTime !== undefined) out.bookingTime = patch.startTime;
+  if (patch.endTime !== undefined) out.bookingEndTime = patch.endTime;
   return out;
+}
+
+/** What a row held for every patchable field, for the rollback snapshot. */
+function snapshotOfGridRow(booking: CalendarGridBooking): CalendarBookingPatch {
+  return {
+    status: booking.status,
+    client_arrived_at: booking.client_arrived_at ?? null,
+    startTime: booking.startTime,
+    endTime: booking.endTime,
+  };
+}
+
+function snapshotOfLinkedRow(booking: LinkedBooking): CalendarBookingPatch {
+  return {
+    status: booking.status,
+    client_arrived_at: booking.clientArrivedAt ?? null,
+    startTime: booking.bookingTime,
+    endTime: booking.bookingEndTime ?? '',
+  };
 }
 
 /**
@@ -102,12 +128,7 @@ export function patchCalendarGridBookings(
         anyChanged = true;
         const bookings = venue.bookings.map((booking) => {
           if (!wanted.has(booking.id)) return booking;
-          if (!previous.has(booking.id)) {
-            previous.set(booking.id, {
-              status: booking.status,
-              client_arrived_at: booking.clientArrivedAt ?? null,
-            });
-          }
+          if (!previous.has(booking.id)) previous.set(booking.id, snapshotOfLinkedRow(booking));
           return { ...booking, ...fields };
         });
         return { ...venue, bookings };
@@ -131,12 +152,7 @@ export function patchCalendarGridBookings(
           anyChanged = true;
           const bookings = day.bookings.map((booking) => {
             if (!wanted.has(booking.id)) return booking;
-            if (!previous.has(booking.id)) {
-              previous.set(booking.id, {
-                status: booking.status,
-                client_arrived_at: booking.client_arrived_at ?? null,
-              });
-            }
+            if (!previous.has(booking.id)) previous.set(booking.id, snapshotOfGridRow(booking));
             return { ...booking, ...patch };
           });
           return { ...day, bookings };

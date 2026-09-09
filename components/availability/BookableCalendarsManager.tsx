@@ -13,8 +13,8 @@
  *  - delete a column (`useDeletePractitioner`)
  *  - see which services / classes / resources / events are assigned to each column
  *
- * Reachable from a header action on `app/(app)/availability.tsx` (opens this in a
- * fill Sheet) and as the dedicated `availability/calendars` Stack route.
+ * Rendered as the Calendars tab of `app/(app)/availability.tsx` (the web's
+ * home for it); the older `availability/calendars` route redirects there.
  */
 import * as Clipboard from 'expo-clipboard';
 import * as WebBrowser from 'expo-web-browser';
@@ -93,12 +93,31 @@ function isCalendarLimitError(e: unknown): boolean {
   return code.includes('upgrade') || code.includes('limit') || msg.includes('plan') || msg.includes('upgrade') || msg.includes('limit');
 }
 
+/** One event occurrence on a column: the web cell shows its date and whether it is paused. */
+type EventOnColumn = { id: string; name: string; date: string; active: boolean };
+
 type AssignmentMaps = {
   services: Map<string, string[]>;
   classes: Map<string, string[]>;
   resources: Map<string, string[]>;
-  events: Map<string, string[]>;
+  events: Map<string, EventOnColumn[]>;
 };
+
+/** "7 Sep 2026" for an event's date, or '' when it has none (web `formatEventDateShort`). */
+export function formatEventDateShort(iso: string | undefined): string {
+  if (!iso || !/^\d{4}-\d{2}-\d{2}/.test(iso)) return '';
+  const [y, m, d] = iso.slice(0, 10).split('-').map(Number);
+  if (!y || !m || !d) return '';
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${d} ${months[m - 1]} ${y}`;
+}
+
+/** What the Events cell says when nothing sits on the column (web parity). */
+function eventsEmptyText(venueHasActiveEvents: boolean, venueHasAnyEvents: boolean): string {
+  if (venueHasActiveEvents) return 'None here. Assign one from the Event manager.';
+  if (venueHasAnyEvents) return 'No active events';
+  return '—';
+}
 
 // ---------------------------------------------------------------------------
 // One calendar card
@@ -118,6 +137,9 @@ function CalendarCard({
   onDelete,
   conflicts,
   onEditAssignments,
+  venueHasServices,
+  venueHasActiveEvents,
+  venueHasAnyEvents,
 }: {
   calendar: Practitioner;
   index: number;
@@ -133,6 +155,10 @@ function CalendarCard({
   /** Resource-overlap messages for this column from `/api/venue/calendar-column-conflicts`. */
   conflicts: string[];
   onEditAssignments: () => void;
+  /** Whether the venue has any services / events at all, for the empty cells' wording. */
+  venueHasServices: boolean;
+  venueHasActiveEvents: boolean;
+  venueHasAnyEvents: boolean;
 }) {
   const { colors } = useTheme();
   const toast = useToast();
@@ -317,7 +343,7 @@ function CalendarCard({
       {/* Active toggle */}
       <View style={styles.switchRow}>
         <Text variant="bodySmall" tone="secondary">
-          Bookable (Active)
+          Active (bookable)
         </Text>
         <Switch
           value={calendar.is_active}
@@ -418,23 +444,59 @@ function CalendarCard({
         />
       </View>
       <View style={styles.assignBlock}>
-        <AssignmentLine label="Services" names={svc} />
+        {/* "None" when the venue has services but none sit here; "—" when
+            there is nothing to assign yet (web parity). */}
+        <AssignmentLine label="Services" names={svc} empty={venueHasServices ? 'None' : '—'} />
         <AssignmentLine label="Classes" names={cls} />
         <AssignmentLine label="Resources" names={res} />
-        <AssignmentLine label="Events" names={evt} />
+        <View style={styles.assignLine}>
+          <Text variant="caption" tone="muted" style={styles.assignLabel}>
+            Events
+          </Text>
+          <View style={styles.flex1}>
+            {evt.length === 0 ? (
+              <Text variant="caption" tone="secondary">
+                {eventsEmptyText(venueHasActiveEvents, venueHasAnyEvents)}
+              </Text>
+            ) : (
+              evt.map((e) => {
+                const date = formatEventDateShort(e.date);
+                return (
+                  <Text
+                    key={e.id}
+                    variant="caption"
+                    tone={e.active ? 'secondary' : 'muted'}
+                    numberOfLines={1}>
+                    {e.name}
+                    {date ? ` · ${date}` : ''}
+                    {e.active ? '' : ' · paused'}
+                  </Text>
+                );
+              })
+            )}
+          </View>
+        </View>
       </View>
     </Card>
   );
 }
 
-function AssignmentLine({ label, names }: { label: string; names: string[] }) {
+function AssignmentLine({
+  label,
+  names,
+  empty = '—',
+}: {
+  label: string;
+  names: string[];
+  empty?: string;
+}) {
   return (
     <View style={styles.assignLine}>
       <Text variant="caption" tone="muted" style={styles.assignLabel}>
         {label}
       </Text>
       <Text variant="caption" tone="secondary" style={styles.flex1} numberOfLines={2}>
-        {names.length > 0 ? names.join(', ') : '—'}
+        {names.length > 0 ? names.join(', ') : empty}
       </Text>
     </View>
   );
@@ -451,7 +513,10 @@ export function BookableCalendarsManager() {
   const isAdmin = venue?.current_user_role === 'admin';
   const venueSlug = venue?.slug ?? null;
 
-  const practitionersQuery = usePractitioners();
+  // The FULL roster, paused columns included: this is the one place a column
+  // is switched back on, and with the default active-only roster a column
+  // toggled to "not bookable" vanished with no way back (web lists every row).
+  const practitionersQuery = usePractitioners({ includeInactive: true });
   const servicesQuery = useManagedServices();
   const classesQuery = useManagedClasses();
   const resourcesQuery = useResourcesManageList();
@@ -465,7 +530,23 @@ export function BookableCalendarsManager() {
     () => new Map((conflictsQuery.data ?? []).map((c) => [c.calendar_id, c.messages] as const)),
     [conflictsQuery.data],
   );
-  const canAddCalendar = !calendarLimitReached(entitlement);
+  /**
+   * "Add calendar" waits for the allowance (web: `entitlement && (unlimited ||
+   * can_add_practitioner)`), so a venue at its limit never sees a button that
+   * only fails. If the allowance cannot be loaded at all, the button stays:
+   * the create route enforces the limit itself and the 403 reads as the
+   * upgrade notice below.
+   */
+  const canAddCalendar = entitlement
+    ? entitlement.unlimited || entitlement.can_add_practitioner
+    : entitlementQuery.isError === true;
+  /** The "3 / 5 on plan" pill only when the plan has a number to show (web). */
+  const showPlanPill =
+    entitlement != null && (entitlement.unlimited || entitlement.calendar_limit != null);
+  const venueHasServices = (servicesQuery.data?.services ?? []).length > 0;
+  const allEvents = eventsQuery.data ?? [];
+  const venueHasAnyEvents = allEvents.length > 0;
+  const venueHasActiveEvents = allEvents.some((e) => e.is_active !== false);
 
   const patch = usePatchPractitioner();
   const create = useCreateHostCalendar();
@@ -481,7 +562,7 @@ export function BookableCalendarsManager() {
     const services = new Map<string, string[]>();
     const classes = new Map<string, string[]>();
     const resources = new Map<string, string[]>();
-    const events = new Map<string, string[]>();
+    const events = new Map<string, EventOnColumn[]>();
 
     const push = (map: Map<string, string[]>, key: string | null | undefined, name: string) => {
       if (!key) return;
@@ -503,8 +584,18 @@ export function BookableCalendarsManager() {
     for (const r of resourcesQuery.data ?? []) {
       push(resources, r.display_on_calendar_id, r.name);
     }
-    for (const e of eventsQuery.data ?? []) {
-      push(events, e.calendar_id, e.name);
+    // Events sorted by date, active first (web: active chips, then paused ones).
+    const byDate = [...(eventsQuery.data ?? [])].sort((a, b) =>
+      a.event_date.localeCompare(b.event_date),
+    );
+    for (const e of byDate) {
+      if (!e.calendar_id) continue;
+      const list = events.get(e.calendar_id) ?? [];
+      list.push({ id: e.id, name: e.name, date: e.event_date, active: e.is_active !== false });
+      events.set(e.calendar_id, list);
+    }
+    for (const [key, list] of events) {
+      events.set(key, [...list.filter((e) => e.active), ...list.filter((e) => !e.active)]);
     }
     return { services, classes, resources, events };
   }, [
@@ -613,7 +704,7 @@ export function BookableCalendarsManager() {
     const trimmed = newName.trim();
     setCreateError(null);
     if (!trimmed) {
-      setCreateError('Enter a name for the calendar.');
+      setCreateError('Name is required');
       return;
     }
     try {
@@ -709,11 +800,11 @@ export function BookableCalendarsManager() {
       }>
       <Text variant="caption" tone="muted">
         Each column is a bookable schedule on your public page and in the app. Edit a calendar to
-        set its name, services, classes, resources and events; set its weekly hours under
-        Availability. Reorder to set the column order on the calendar.
+        set its name, services, classes, resources and events; set its weekly hours on the
+        Availability tab. Reorder to set the column order on the calendar.
       </Text>
 
-      {entitlement ? (
+      {showPlanPill && entitlement ? (
         <View style={styles.planRow}>
           <View
             style={[
@@ -768,6 +859,9 @@ export function BookableCalendarsManager() {
             onDelete={() => setDeleteTarget(c)}
             conflicts={conflictsById.get(c.id) ?? []}
             onEditAssignments={() => setAssignTarget(c)}
+            venueHasServices={venueHasServices}
+            venueHasActiveEvents={venueHasActiveEvents}
+            venueHasAnyEvents={venueHasAnyEvents}
           />
         ))
       )}

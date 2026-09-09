@@ -240,6 +240,25 @@ export function amendedHoursVenueNote(args: {
   return `${parts.join(' ')} Staff can still book. To open to guests as well, amend your business hours for these dates too (Settings → Business hours).`;
 }
 
+/**
+ * True when a stored `closed` override covers the date. The hours form never
+ * writes one (closures are leave), but older rows carry them and every engine
+ * honours them, so the month grid draws the day as closed (web parity).
+ */
+export function amendedClosedOnDate(
+  entries: readonly AmendedHoursEntry[],
+  date: string,
+  calendarId?: string | null,
+): boolean {
+  return entries.some(
+    (e) =>
+      e.kind === 'closed' &&
+      e.date_start <= date &&
+      date <= e.date_end &&
+      (!calendarId || e.calendar_id === calendarId),
+  );
+}
+
 /** The hours entry covering a date on a calendar, if any. */
 export function amendedHoursOnDate(
   entries: readonly AmendedHoursEntry[],

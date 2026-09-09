@@ -58,7 +58,18 @@ type Props = {
   copyTargets: { id: string; name: string }[];
   /** Today, `YYYY-MM-DD`, in the venue's timezone. */
   todayYmd: string;
-  onClose: () => void;
+  /**
+   * Rendered inside the scrolling Availability tab rather than a Sheet: no
+   * scroll of its own, no heading, no Done, no inset (the web's home for it).
+   */
+  inline?: boolean;
+  /**
+   * The picked day's "Amend hours for this date" action (web
+   * `amendedHoursHref`): the host jumps to Closures & amended hours with the
+   * date, or to the existing run when the day already has amended hours.
+   */
+  onAmendHours?: (date: string, existing: boolean) => void;
+  onClose?: () => void;
 };
 
 export function ScheduleTimelineSheet({
@@ -67,6 +78,8 @@ export function ScheduleTimelineSheet({
   readOnly,
   copyTargets,
   todayYmd,
+  inline = false,
+  onAmendHours,
   onClose,
 }: Props) {
   const { colors } = useTheme();
@@ -163,10 +176,12 @@ export function ScheduleTimelineSheet({
     setCopying(true);
     let copied = 0;
     try {
+      // A declined "copy anyway?" skips that calendar and carries on to the
+      // next (web `copyScheduleTo`); only a failure stops the loop.
       for (const targetId of targetIds) {
         const name = copyTargets.find((t) => t.id === targetId)?.name ?? 'this calendar';
         const saved = await patchSchedule(targetId, schedule, `Copy to ${name} anyway?`);
-        if (!saved) break;
+        if (!saved) continue;
         copied += 1;
       }
       if (copied === targetIds.length) {
@@ -240,12 +255,18 @@ export function ScheduleTimelineSheet({
   const selectedSummary = selected?.summary ?? null;
 
   return (
-    <View style={styles.root}>
-      <Text variant="overline" tone="muted">
-        Plan hours ahead — {calendar.name}
-      </Text>
+    <View style={inline ? styles.inlineRoot : styles.root}>
+      {inline ? (
+        <Text variant="label">Plan hours ahead</Text>
+      ) : (
+        <Text variant="overline" tone="muted">
+          Plan hours ahead — {calendar.name}
+        </Text>
+      )}
 
+      {/* Inline, the tab scrolls: this list only sizes to its content. */}
       <ScrollView
+        scrollEnabled={!inline}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.content}>
@@ -341,7 +362,7 @@ export function ScheduleTimelineSheet({
                       (selectedSummary.overrideReason != null && selectedSummary.reason === 'no-hours')
                         ? `Rule: amended hours for this date${
                             selectedSummary.overrideReason ? ` (${selectedSummary.overrideReason})` : ''
-                          }, set under Closures & amended hours on the Availability screen.`
+                          }.`
                         : selectedSummary.source.kind === 'period'
                           ? `Rule: change from ${describeYmdShort(selectedSummary.source.period.from)}${
                               selectedSummary.source.period.weeks.length > 1
@@ -360,6 +381,26 @@ export function ScheduleTimelineSheet({
                     </Text>
                     {!readOnly ? (
                       <View style={styles.detailActions}>
+                        {onAmendHours ? (
+                          <Button
+                            label={
+                              selectedSummary.reason === 'amended' ||
+                              selectedSummary.overrideReason != null
+                                ? 'Edit amended hours on the Closures & amended hours tab'
+                                : 'Amend hours for this date on the Closures & amended hours tab'
+                            }
+                            variant="ghost"
+                            size="sm"
+                            disabled={saving}
+                            onPress={() =>
+                              onAmendHours(
+                                selected.date,
+                                selectedSummary.reason === 'amended' ||
+                                  selectedSummary.overrideReason != null,
+                              )
+                            }
+                          />
+                        ) : null}
                         <Button
                           label="Change hours from this week"
                           variant="secondary"
@@ -471,7 +512,7 @@ export function ScheduleTimelineSheet({
             }}
           />
         </View>
-      ) : mode.kind === 'idle' ? (
+      ) : mode.kind === 'idle' && !inline ? (
         <View style={styles.footer}>
           <Button label="Done" variant="secondary" onPress={onClose} />
         </View>
@@ -487,6 +528,9 @@ const styles = StyleSheet.create({
     // `fill` Sheets supply no horizontal padding (they delegate it to the
     // child), so pad the sheet itself to match the standard sheet inset.
     paddingHorizontal: spacing.lg,
+  },
+  inlineRoot: {
+    gap: spacing.md,
   },
   content: {
     gap: spacing.md,

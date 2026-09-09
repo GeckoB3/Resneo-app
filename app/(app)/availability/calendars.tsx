@@ -1,18 +1,10 @@
-import { Stack } from 'expo-router';
-
-import { BookableCalendarsManager } from '@/components/availability/BookableCalendarsManager';
-import { Screen } from '@/components/ui/Screen';
+import { Redirect } from 'expo-router';
 
 /**
- * Bookable-calendar management screen (web parity with the "Calendars" tab /
- * `BookableCalendarsPanel`). Reached from the header action on the Availability
- * screen. Admin-gated inside the manager component.
+ * The bookable-calendar manager used to be its own route; it is now the
+ * Calendars tab of the Availability screen (web parity). Anything still
+ * linking here lands on that tab.
  */
 export default function CalendarsScreen() {
-  return (
-    <Screen scroll={false} padded={false}>
-      <Stack.Screen options={{ title: 'Calendars' }} />
-      <BookableCalendarsManager />
-    </Screen>
-  );
+  return <Redirect href="/availability?tab=team" />;
 }
