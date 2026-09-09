@@ -26,7 +26,7 @@ web summary was corrected where the code disagrees with it (§2).
 | R29-4 | Calendar: the app merges a visit into one bar; the web now draws one bar per service with a visit chip, shared palette and spine, and per-row drag/resize | Parity, a decision | **Built** 2026-09-09, option 2 (§6, §19) |
 | R29-5 | Linked venues: the siblings query never sends `owner_venue_id`, so a visit opened from a partner column shows one service; the linked-calendar feed's new `groupBookingId` / `personLabel` are ignored | Parity | **Built** 2026-09-09 (§7, §21) |
 | R29-6 | Hours: the app already meets the whole written-down contract (409 → confirm → acknowledge, ISO `days_off` never sent). The "crashed and did not save" report matches a pre-existing APP defect: the "Save anyway?" ConfirmSheet is a second modal opened over the hours Sheet, which iOS drops silently | **Breaks live flow (iOS), app-side** | **Built** 2026-09-09 (§8, §22) |
-| R29-7 | Per-calendar amended hours, read side: closure bands and the Working-today chip already honour `availability_exceptions`; the web deploy alone lights them up. The schedule-preview month grid ignores overrides | Wrong data (small) | Build (§9) |
+| R29-7 | Per-calendar amended hours, read side: closure bands and the Working-today chip already honour `availability_exceptions`; the web deploy alone lights them up. The schedule-preview month grid ignores overrides | Wrong data (small) | **Built** 2026-09-09 (§9, §23) |
 | R29-8 | Per-calendar amended hours, write side: no editor in the app (`PUT/DELETE /api/venue/calendar-amended-hours`) | Parity | §9 |
 | R29-9 | Staff "Override availability": additive; the app has no tick box. Walk-in keeps its own silent bypass | Parity, a feature | §10 |
 | R29-10 | Card holds: the server default flipped to no hold; the app always sends the toggle explicitly for a card-hold entity, so nothing changes on the wire. The app's toggle still DEFAULTS ON and its copy is the old one; seven comments state the wrong server default | Parity (UX drift) | Build (§11) |
@@ -586,3 +586,13 @@ existing 409 test on the hours editor passes unchanged (it asserts the question 
 acknowledged re-save, not the container). Device pass owed on iOS: change a calendar's hours so
 an upcoming booking falls outside them, see the panel, save anyway; then copy a schedule to two
 calendars with the same.
+
+## 23. Built: R29-7, amended hours in the schedule preview (2026-09-09)
+
+`summariseScheduleDay` takes the calendar's `availability_exceptions` (`overrides`) and applies
+them as `calendarHours` does: an amended day replaces the weekly shape and the schedule period
+(reason `'amended'`, with the saved note as `overrideReason`), a closed override closes the day,
+a day off does not reopen an amended day, and leave still wins. The month grid draws an amended
+day plain with an "Amended" chip and a warning-coloured border rather than a period tint, and
+the picked-day detail reads "Rule: amended hours for this date (note), set on the Closures tab."
+`ScheduleTimelineSheet` passes the calendar's overrides. Five unit tests on the summariser.

@@ -25,6 +25,7 @@ import {
   type MinuteRange,
   type VenueWideBlock,
 } from '@/lib/calendar/venue-closures';
+import { calendarDateOverride, type CalendarDateOverride } from '@/lib/calendar/calendar-hours';
 import {
   dayOfWeekYmd,
   resolveScheduleForDate,
@@ -49,6 +50,8 @@ export interface LeaveRowLike {
 export type DayReason =
   | 'base'
   | 'period'
+  /** An amended-hours override for this one date (web #187): replaces the weekly shape and the period. */
+  | 'amended'
   | 'no-hours'
   | 'day-off'
   | 'venue-closed'
@@ -63,6 +66,8 @@ export interface DaySummary {
   source: ScheduleSource;
   /** A part-day leave window, shown alongside the hours. */
   partialLeave: string | null;
+  /** The note saved with an amended-hours override, when the date carries one. */
+  overrideReason?: string | null;
 }
 
 const DAY_NAMES = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
@@ -138,6 +143,13 @@ export function summariseScheduleDay(input: {
   leave: readonly LeaveRowLike[];
   /** Venue-wide closures and amended hours; omit for the weekly hours alone. */
   venueWideBlocks?: readonly VenueWideBlock[];
+  /**
+   * The calendar's per-date overrides (`availability_exceptions`), which
+   * `calendarHours` applies FIRST: an amended day replaces the weekly shape and
+   * the schedule period, and a day off does not reopen it. Leave still wins,
+   * as it does everywhere (web #187, `ScheduleCalendarPreview.summariseDay`).
+   */
+  overrides?: Record<string, CalendarDateOverride> | null;
 }): DaySummary {
   const { date } = input;
   const resolution = resolveScheduleForDate(
@@ -152,7 +164,19 @@ export function summariseScheduleDay(input: {
     (l) => !l.unavailable_start_time || !l.unavailable_end_time,
   );
   if (fullDayLeave) return { ...base, text: 'Leave', reason: 'leave' };
-  if (input.daysOff.includes(date) || input.daysOff.includes(DAY_NAMES[dow] ?? '')) {
+  const override = calendarDateOverride({ availability_exceptions: input.overrides ?? null }, date);
+  const overrideReason =
+    override && typeof (override as { reason?: unknown }).reason === 'string'
+      ? ((override as { reason: string }).reason ?? null)
+      : null;
+  if (override && 'closed' in override && override.closed === true) {
+    return { ...base, text: 'Closed', reason: 'no-hours', overrideReason };
+  }
+  const amended =
+    override && 'periods' in override && Array.isArray(override.periods)
+      ? (override.periods as { start: string; end: string }[])
+      : null;
+  if (!amended && (input.daysOff.includes(date) || input.daysOff.includes(DAY_NAMES[dow] ?? ''))) {
     return { ...base, text: 'Day off', reason: 'day-off' };
   }
 
@@ -164,22 +188,26 @@ export function summariseScheduleDay(input: {
       ...base,
       text: 'Venue closed',
       reason: weekly.kind === 'closed' ? 'venue-closed' : 'venue-closure',
+      overrideReason,
     };
   }
 
   const ranges = intersectWithVenue(
-    rangesForDay(resolution.hours, dow),
+    amended ?? rangesForDay(resolution.hours, dow),
     venue.kind === 'open' ? venue.periods : null,
   );
   const partial = leaveToday.find((l) => l.unavailable_start_time && l.unavailable_end_time);
   const partialLeave = partial
     ? `${partial.unavailable_start_time!.slice(0, 5)}–${partial.unavailable_end_time!.slice(0, 5)}`
     : null;
-  if (ranges.length === 0) return { ...base, text: 'Closed', reason: 'no-hours', partialLeave };
+  if (ranges.length === 0) {
+    return { ...base, text: 'Closed', reason: 'no-hours', partialLeave, overrideReason };
+  }
   return {
     ...base,
+    overrideReason,
     text: ranges.map((r) => `${toHhMm(r.start)}–${toHhMm(r.end)}`).join(', '),
-    reason: resolution.source.kind === 'period' ? 'period' : 'base',
+    reason: amended ? 'amended' : resolution.source.kind === 'period' ? 'period' : 'base',
     partialLeave,
   };
 }
@@ -202,6 +230,8 @@ type Props = {
   baseHours: RotaWeeklyHours | null | undefined;
   schedule: CalendarSchedule | null;
   daysOff: readonly string[];
+  /** The calendar's per-date overrides (`availability_exceptions`); see `summariseScheduleDay`. */
+  overrides?: Record<string, CalendarDateOverride> | null;
   venueOpeningHours: OpeningHours | null | undefined;
   selectedDate: string | null;
   onPickDate: (date: string, summary: DaySummary) => void;
@@ -214,6 +244,7 @@ export function SchedulePreviewCalendar({
   baseHours,
   schedule,
   daysOff,
+  overrides = null,
   venueOpeningHours,
   selectedDate,
   onPickDate,
@@ -256,12 +287,13 @@ export function SchedulePreviewCalendar({
             venueOpeningHours,
             leave,
             venueWideBlocks,
+            overrides,
           }),
         );
       }
     }
     return map;
-  }, [cells, baseHours, schedule, daysOff, venueOpeningHours, leave, venueWideBlocks]);
+  }, [cells, baseHours, schedule, daysOff, venueOpeningHours, leave, venueWideBlocks, overrides]);
 
   const periodIndexById = useMemo(
     () => new Map((schedule?.periods ?? []).map((p, i) => [p.id, i] as const)),
@@ -325,10 +357,16 @@ export function SchedulePreviewCalendar({
         {cells.map((cell, i) => {
           if (!cell) return <View key={`blank-${i}`} style={styles.cell} />;
           const s = summaries.get(cell)!;
+          // An amended day is drawn plain with a chip, not tinted: the tints
+          // belong to the timeline's changes, and this date is an exception
+          // to whichever one covers it (web #187).
+          const amended = s.reason === 'amended';
           const periodIndex =
-            s.source.kind === 'period' ? (periodIndexById.get(s.source.period.id) ?? 0) : null;
+            s.source.kind === 'period' && !amended
+              ? (periodIndexById.get(s.source.period.id) ?? 0)
+              : null;
           const tint = periodIndex != null ? hexToRgba(periodTint(periodIndex), 0.45) : undefined;
-          const closed = s.reason !== 'base' && s.reason !== 'period';
+          const closed = s.reason !== 'base' && s.reason !== 'period' && !amended;
           const selected = selectedDate === cell;
           const isToday = cell === todayYmd;
           return (
@@ -336,14 +374,14 @@ export function SchedulePreviewCalendar({
               key={cell}
               accessibilityRole="button"
               accessibilityState={{ selected }}
-              accessibilityLabel={`${cell}: ${s.text}${s.partialLeave ? `, leave ${s.partialLeave}` : ''}`}
+              accessibilityLabel={`${cell}: ${s.text}${amended ? ' (amended hours)' : ''}${s.partialLeave ? `, leave ${s.partialLeave}` : ''}`}
               onPress={() => onPickDate(cell, s)}
               style={[
                 styles.cell,
                 styles.dayCell,
                 {
                   backgroundColor: tint ?? colors.surface,
-                  borderColor: selected ? colors.brand : colors.border,
+                  borderColor: selected ? colors.brand : amended ? colors.warning : colors.border,
                   borderWidth: selected ? 1.5 : StyleSheet.hairlineWidth,
                   opacity: cell < todayYmd ? 0.8 : 1,
                 },
@@ -355,7 +393,11 @@ export function SchedulePreviewCalendar({
                   color={isToday ? colors.brand : undefined}>
                   {Number(cell.slice(8, 10))}
                 </Text>
-                {s.source.kind === 'period' && s.source.period.weeks.length > 1 ? (
+                {amended ? (
+                  <Text variant="caption" color={colors.warning} style={styles.weekBadge}>
+                    Amended
+                  </Text>
+                ) : s.source.kind === 'period' && s.source.period.weeks.length > 1 ? (
                   <Text variant="caption" tone="muted" style={styles.weekBadge}>
                     W{s.source.weekIndex + 1}
                   </Text>

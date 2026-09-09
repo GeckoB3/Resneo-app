@@ -320,6 +320,7 @@ export function ScheduleTimelineSheet({
                 baseHours={calendar.working_hours}
                 schedule={schedule}
                 daysOff={calendar.days_off ?? []}
+                overrides={calendar.availability_exceptions ?? null}
                 venueOpeningHours={venueOpeningHours}
                 selectedDate={selected?.date ?? null}
                 onPickDate={(date, summary) => setSelected({ date, summary })}
@@ -336,13 +337,18 @@ export function ScheduleTimelineSheet({
                       {selectedSummary.partialLeave ? ` (leave ${selectedSummary.partialLeave})` : ''}
                     </Text>
                     <Text variant="caption" tone="muted">
-                      {selectedSummary.source.kind === 'period'
-                        ? `Rule: change from ${describeYmdShort(selectedSummary.source.period.from)}${
-                            selectedSummary.source.period.weeks.length > 1
-                              ? `, week ${selectedSummary.source.weekIndex + 1} of ${selectedSummary.source.period.weeks.length}`
-                              : ''
-                          }.`
-                        : 'Rule: standard weekly hours.'}
+                      {selectedSummary.reason === 'amended' ||
+                      (selectedSummary.overrideReason != null && selectedSummary.reason === 'no-hours')
+                        ? `Rule: amended hours for this date${
+                            selectedSummary.overrideReason ? ` (${selectedSummary.overrideReason})` : ''
+                          }, set on the Closures tab.`
+                        : selectedSummary.source.kind === 'period'
+                          ? `Rule: change from ${describeYmdShort(selectedSummary.source.period.from)}${
+                              selectedSummary.source.period.weeks.length > 1
+                                ? `, week ${selectedSummary.source.weekIndex + 1} of ${selectedSummary.source.period.weeks.length}`
+                                : ''
+                            }.`
+                          : 'Rule: standard weekly hours.'}
                       {selectedSummary.reason === 'day-off' ? ' This is a day off.' : ''}
                       {selectedSummary.reason === 'leave' ? ' This calendar is on leave.' : ''}
                       {selectedSummary.reason === 'venue-closed'
