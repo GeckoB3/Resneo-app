@@ -27,6 +27,12 @@ export interface BookingListRow {
    * (no label) from a group booking (each person labelled).
    */
   person_label?: string | null;
+  /**
+   * Set by `collapseMultiServiceVisits` on a line that stands for part of a
+   * visit whose other services are on another day (in view, or not).
+   */
+  visit_spans_days?: boolean;
+  visit_rest_hidden?: boolean;
   booking_model?: string | null;
   booking_item_name?: string | null;
   /** Appointment anchors — practitioner venues use practitioner_id, unified use calendar_id. */

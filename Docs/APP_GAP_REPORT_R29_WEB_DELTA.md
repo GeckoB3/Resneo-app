@@ -21,7 +21,7 @@ web summary was corrected where the code disagrees with it (§2).
 | # | Finding | Severity | Verdict |
 |---|---|---|---|
 | R29-1 | The visit schedule endpoint's body is now `shift` OR `services`; the app still sends the deleted flat fields, so every visit move, resize, reschedule, Modify open/check/save and undo answers 400. A multi-service visit cannot be moved or modified from the app | **Breaks live flow** | **Built** 2026-09-09 (§3, §16) |
-| R29-2 | Start and Complete are per service now; the app's bar quick actions fan Seated/Completed out to every row of a visit (re-imposing the old cascade), the bar takes its colour and actions from the lead row, and the detail panel has no per-row Start/Complete and no derived visit status | Wrong behaviour | Build (§4) |
+| R29-2 | Start and Complete are per service now; the app's bar quick actions fan Seated/Completed out to every row of a visit (re-imposing the old cascade), the bar takes its colour and actions from the lead row, and the detail panel has no per-row Start/Complete and no derived visit status | Wrong behaviour | **Built** 2026-09-09 (§4, §17) |
 | R29-3 | The app's visit model assumes one day and one calendar; the web now lets a visit's services sit on different days and calendars, so chain/gap maths and the Bookings-tab collapse are wrong for such a visit | Wrong data | Build with R29-1 (§5) |
 | R29-4 | Calendar: the app merges a visit into one bar; the web now draws one bar per service with a visit chip, shared palette and spine, and per-row drag/resize | Parity, a decision | §6 |
 | R29-5 | Linked venues: the siblings query never sends `owner_venue_id`, so a visit opened from a partner column shows one service; the linked-calendar feed's new `groupBookingId` / `personLabel` are ignored | Parity | §7 |
@@ -446,5 +446,28 @@ contract through one pure builder, `lib/booking/visit-schedule-request.ts`:
   `changed`-armed save are gone: services are independent, an empty shift changes nothing.
 - `VisitSchedulePlan` gains `end_date`, `outside_hours`, per-service `calendar_id` / `changed`.
 
-Not in this build: R29-2 (per-service Start/Complete and the derived visit status), R29-3
-(cross-day/cross-calendar rows) and R29-4 option 2 (per-row bars). Device pass owed.
+Not in this build: R29-3 (cross-day/cross-calendar rows) and R29-4 option 2 (per-row bars).
+Device pass owed.
+
+## 17. Built: R29-2 (2026-09-09)
+
+`lib/booking/visit-status.ts` ports `statusChangeCascadesAcrossVisit`, `isServiceLevelStatus`,
+`isTerminalVisitStatus` and `visitLifecycleStatus`. Then:
+
+- **Calendar bar.** `CalendarBookingCluster.status` is the visit's derived status (a standalone
+  booking's own), and every grid colours, gates the drag and picks the tray from it. On a visit
+  bar `statusChangeTargets` targets ONE service for the service-level presses: Start → the next
+  service not yet begun, Complete → the service(s) in progress (else the next not done), Undo
+  start → the service(s) in progress, Reopen → the last one finished. Confirm, Accept, Arrived,
+  Cancel and No-show still fan out (the server cascades them either way).
+- **Detail panel.** The header pill and its actions come from the derived status; on a visit the
+  header keeps only the visit-wide actions (Accept, No-show, Cancel). "Services in this visit"
+  carries per-row Start / Complete / Undo start / Undo complete (`GroupVisitCards`, each row its
+  own `useUpdateBookingStatus`), gated on the edit grant and never on a table reservation. Copy
+  under the heading says which actions are per service and which are visit-wide.
+- **Lists.** `collapseMultiServiceVisits` collapses per group AND day, carries the derived status
+  on the representative, and marks a lone day of a visit (`visit_spans_days` /
+  `visit_rest_hidden`); `BookingRow` reads "Part of a visit" on it.
+
+Not changed: the merged bar (still one bar per visit, §6), the per-row PATCH fan-out for the
+cascading statuses (redundant but harmless), and the linked-venue siblings (R29-5).

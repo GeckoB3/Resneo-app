@@ -533,7 +533,7 @@ function WeekDayCol({
             key={item.cluster.lead.id}
             onPress={() => onBlockPress(item.cluster.lead.id)}
             accessibilityRole="button"
-            accessibilityLabel={`${item.cluster.lead.startTime} ${item.cluster.lead.guestName}, ${item.cluster.lead.status}`}
+            accessibilityLabel={`${item.cluster.lead.startTime} ${item.cluster.lead.guestName}, ${item.cluster.status}`}
             hitSlop={item.height < 28 ? 4 : undefined}
             style={[
               styles.blockWrap,

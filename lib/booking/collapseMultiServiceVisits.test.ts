@@ -112,3 +112,34 @@ describe('collapseMultiServiceVisits', () => {
     expect(out[0]!.id).toBe('nullTime');
   });
 });
+
+describe('per day, with the derived status (web #187)', () => {
+  it('keeps one line per day of a visit split across days, and says so', () => {
+    const rows = [
+      row({ id: 'a', booking_date: '2026-09-10', booking_time: '10:00', group_booking_id: 'g1', status: 'Completed' }),
+      row({ id: 'b', booking_date: '2026-09-10', booking_time: '11:00', group_booking_id: 'g1', status: 'Seated' }),
+      row({ id: 'c', booking_date: '2026-09-11', booking_time: '09:00', group_booking_id: 'g1', status: 'Booked' }),
+    ];
+    const out = collapseMultiServiceVisits(rows);
+    expect(out.map((r) => r.id)).toEqual(['a', 'c']);
+    expect(out[0]).toEqual(expect.objectContaining({ status: 'Seated', visit_spans_days: true }));
+    expect(out[1]).toEqual(expect.objectContaining({ status: 'Booked', visit_spans_days: true }));
+  });
+
+  it('marks a lone service whose siblings are out of view', () => {
+    const rows = [row({ id: 'a', booking_date: '2026-09-10', group_booking_id: 'g1', status: 'Booked' })];
+    expect(collapseMultiServiceVisits(rows)[0]).toEqual(
+      expect.objectContaining({ visit_rest_hidden: true }),
+    );
+  });
+
+  it("carries the visit's derived status, not the earliest row's", () => {
+    const rows = [
+      row({ id: 'a', booking_time: '10:00', group_booking_id: 'g1', status: 'Completed' }),
+      row({ id: 'b', booking_time: '11:00', group_booking_id: 'g1', status: 'Booked' }),
+    ];
+    expect(collapseMultiServiceVisits(rows)[0]).toEqual(
+      expect.objectContaining({ id: 'a', status: 'Booked' }),
+    );
+  });
+});

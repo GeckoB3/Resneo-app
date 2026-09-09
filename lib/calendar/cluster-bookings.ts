@@ -36,6 +36,7 @@
 
 import { timeToMinutes } from '@/components/calendar/grid-layout';
 import { isServiceVisit, visitLengthFloorMinutes } from '@/lib/booking/appointment-visit';
+import { visitLifecycleStatus } from '@/lib/booking/visit-status';
 import type { CalendarGridBooking } from '@/types/calendar-grid';
 
 /** A booking with its resolved minute range, as every grid already computes. */
@@ -81,6 +82,14 @@ export interface CalendarBookingCluster {
    */
   isVisit: boolean;
   /**
+   * The status the bar shows and acts from. A standalone booking's own; a
+   * visit's DERIVED one (`visitLifecycleStatus`, web #187): Completed only when
+   * every live service is, Seated while any is in progress, else the earliest
+   * stage — so a colour finished with the cut still to come reads as Seated,
+   * not as the lead row's Completed.
+   */
+  status: string;
+  /**
    * Service names joined with an arrow, mirroring the web's
    * `calendarMultiServiceDisplayTitle`. Not de-duplicated, also web parity: a
    * group of three all booking a Cut reads "Cut → Cut → Cut".
@@ -111,6 +120,7 @@ function toCluster(segments: ClusterInput[]): CalendarBookingCluster {
   );
   const bookings = sorted.map((segment) => segment.booking);
   const isMultiSegment = bookings.length > 1;
+  const isVisit = isMultiSegment && isServiceVisit(bookings);
   return {
     lead: bookings[0]!,
     bookings,
@@ -119,7 +129,8 @@ function toCluster(segments: ClusterInput[]): CalendarBookingCluster {
     end: sorted.reduce((latest, segment) => Math.max(latest, segment.end), sorted[0]!.end),
     isMultiSegment,
     groupBookingId: groupKeyOf(bookings[0]!),
-    isVisit: isMultiSegment && isServiceVisit(bookings),
+    isVisit,
+    status: isVisit ? visitLifecycleStatus(bookings, bookings[0]!.status) : bookings[0]!.status,
     serviceLabel: serviceLabelFor(bookings),
     paid: bookings.every((booking) => booking.payment_state === 'paid'),
   };

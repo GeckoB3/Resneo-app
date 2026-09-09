@@ -1209,7 +1209,7 @@ function DayColumn({
                 guestName={item.cluster.lead.guestName}
                 serviceName={item.cluster.serviceLabel}
                 timeLabel={item.timeLabel}
-                status={item.cluster.lead.status}
+                status={item.cluster.status}
                 clientArrivedAt={item.cluster.lead.client_arrived_at}
                 staffAttendanceConfirmedAt={item.cluster.lead.staff_attendance_confirmed_at}
                 guestAttendanceConfirmedAt={item.cluster.lead.guest_attendance_confirmed_at}
@@ -1236,13 +1236,13 @@ function DayColumn({
             guestName={item.cluster.lead.guestName}
             serviceName={item.cluster.serviceLabel}
             timeLabel={item.timeLabel}
-            status={item.cluster.lead.status}
+            status={item.cluster.status}
             // A merged VISIT drags and resizes as one booking (the commit goes
             // through the visit endpoint); a merged PARTY does not. See the same
             // gate in CalendarDayGrid.
             draggable={
               (!item.cluster.isMultiSegment || item.cluster.isVisit) &&
-              MOVABLE_STATUSES.has(item.cluster.lead.status)
+              MOVABLE_STATUSES.has(item.cluster.status)
             }
             segmentIds={item.cluster.ids}
             minDurationMinutes={

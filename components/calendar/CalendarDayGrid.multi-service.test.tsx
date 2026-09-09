@@ -1,5 +1,9 @@
 import { fireEvent, render, screen } from '@testing-library/react-native';
 
+import { CalendarDayGrid } from '@/components/calendar/CalendarDayGrid';
+import { PX_PER_MINUTE } from '@/components/calendar/grid-layout';
+import type { CalendarGridBooking } from '@/types/calendar-grid';
+
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
 
 /**
@@ -18,10 +22,6 @@ jest.mock('react-native-gesture-handler', () => {
     Gesture: new Proxy({}, { get: () => () => chainable() }),
   };
 });
-
-import { CalendarDayGrid } from '@/components/calendar/CalendarDayGrid';
-import { PX_PER_MINUTE } from '@/components/calendar/grid-layout';
-import type { CalendarGridBooking } from '@/types/calendar-grid';
 
 /**
  * The device-reported bug: "bookings with multiple services are displaying as
@@ -204,37 +204,41 @@ describe('CalendarDayGrid — a multi-service visit is one bar', () => {
 
 describe('CalendarDayGrid — quick actions on a merged visit', () => {
   /**
-   * A merged bar carries ONE tray, so the action has to reach the whole visit —
-   * starting the first service and leaving the rest Booked would be worse than
-   * not offering it. "Start" is a Booked bar's tray action (`pickTrayActions`).
+   * Start and Complete are per service (web #187): a merged bar's tray acts on
+   * the service the press means, and reads its status from the visit's derived
+   * one. ONE call, not one per segment — the screen batches from this list.
    */
-  /**
-   * ONE call carrying every segment, not one call per segment. The screen batches
-   * from this list — a single optimistic patch, concurrent PATCHes, and ONE
-   * reconcile — because invalidating per segment cancelled and restarted the
-   * calendar's own refetch once per service, which is what made a multi-service
-   * bar take seconds to settle. If this ever fires twice, that is back.
-   */
-  it('advances EVERY service in one call, skipping any already there', async () => {
+  it('starts the next service not yet begun, from the visit’s derived status', async () => {
     const onStatusChange = jest.fn();
     await renderGrid(
       [
-        booking('b1', '10:00', '10:30', { group_booking_id: 'g1', status: 'Booked' }),
+        booking('b1', '10:00', '10:30', { group_booking_id: 'g1', status: 'Completed' }),
         booking('b2', '10:30', '11:00', { group_booking_id: 'g1', status: 'Booked' }),
-        booking('b3', '11:00', '11:30', { group_booking_id: 'g1', status: 'Seated' }),
+        booking('b3', '11:00', '11:30', { group_booking_id: 'g1', status: 'Booked' }),
       ],
       { onStatusChange },
     );
 
+    // Colour done, cut and finish to come: the bar reads Booked and offers Start.
     fireEvent.press(screen.getByLabelText('Start'));
 
     expect(onStatusChange).toHaveBeenCalledTimes(1);
-    const [ids, status] = onStatusChange.mock.calls[0];
-    expect(status).toBe('Seated');
-    expect(ids).toEqual(expect.arrayContaining(['b1', 'b2']));
-    // Already Seated — skipping it is the point, and it keeps a part-done visit
-    // from firing pointless mutations that each raise their own error toast.
-    expect(ids).not.toContain('b3');
+    expect(onStatusChange.mock.calls[0]).toEqual([['b2'], 'Seated']);
+  });
+
+  it('completes the service in progress, not the whole visit', async () => {
+    const onStatusChange = jest.fn();
+    await renderGrid(
+      [
+        booking('b1', '10:00', '10:30', { group_booking_id: 'g1', status: 'Seated' }),
+        booking('b2', '10:30', '11:00', { group_booking_id: 'g1', status: 'Booked' }),
+      ],
+      { onStatusChange },
+    );
+
+    fireEvent.press(screen.getByLabelText('Complete'));
+
+    expect(onStatusChange.mock.calls[0]).toEqual([['b1'], 'Completed']);
   });
 
   it('marks the whole visit arrived from one tap', async () => {

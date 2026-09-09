@@ -56,6 +56,7 @@ import {
 } from '@/lib/booking/appointment-visit';
 import { resolveBookingCoreDurationMinutes } from '@/lib/booking/booking-core-duration';
 import { bookingDetailActions } from '@/lib/booking/booking-status-actions';
+import { isServiceLevelStatus, visitLifecycleStatus } from '@/lib/booking/visit-status';
 import { bookingStatusVisualForKey } from '@/lib/booking/booking-status-visual';
 import {
   bookingTimelineEventsForDisplay,
@@ -622,7 +623,6 @@ export function BookingDetailContent({
       : null;
   const isTable = isTableReservationBooking(booking);
 
-  const actions = bookingDetailActions(booking.status, isTable);
   const depositLabel = formatDeposit(booking.deposit_amount_pence);
   const tableNames = (booking.table_assignments ?? []).map((t) => t.name).join(', ');
   const modelLabel = booking.inferred_booking_model
@@ -658,6 +658,21 @@ export function BookingDetailContent({
   const visit = useMemo(
     () => resolveAppointmentVisit(groupVisitQuery.data ?? []),
     [groupVisitQuery.data],
+  );
+
+  /**
+   * The status the header shows and acts from. A visit's is DERIVED from its
+   * rows (web #187): Completed only when every live service is, Seated while
+   * any is in progress, else the earliest stage. Start and Complete belong to
+   * each service (buttons on the "Services in this visit" card), so the header
+   * keeps only the visit-wide actions — Accept, No-show, Cancel — which the
+   * server cascades across the rows whichever one is patched.
+   */
+  const headerStatus = visit
+    ? visitLifecycleStatus(groupVisitQuery.data ?? [], booking.status)
+    : booking.status;
+  const actions = bookingDetailActions(headerStatus as BookingStatus, isTable).filter(
+    (a) => !visit || (!isServiceLevelStatus(a.target) && !isServiceLevelStatus(headerStatus)),
   );
 
   // Booked length as the screen should read it: the visit's wall-clock span when
@@ -1107,7 +1122,7 @@ export function BookingDetailContent({
                   : 'First visit'}
               </Text>
             </View>
-            <StatusPill status={booking.status} isTableReservation={isTable} />
+            <StatusPill status={headerStatus} isTableReservation={isTable} />
           </View>
 
           {/* When & what */}
@@ -1452,6 +1467,9 @@ export function BookingDetailContent({
           currentBookingId={booking.id}
           bookingDate={booking.booking_date}
           personLabel={booking.person_label}
+          // Start and Complete are per service (web #187): they live on the
+          // card's rows, under the same edit grant as the header's actions.
+          canChangeServiceStatus={policy.canEdit && !isTable}
         />
       ) : null}
 

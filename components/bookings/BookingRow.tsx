@@ -78,6 +78,8 @@ function BookingRowBase({
     booking.calendar_name,
     partyLabel(booking.party_size, isAppointment),
     addonCount > 0 ? `+${addonCount} add-on${addonCount === 1 ? '' : 's'}` : null,
+    // One day of a visit whose other services sit on another day (web #187).
+    booking.visit_spans_days || booking.visit_rest_hidden ? 'Part of a visit' : null,
   ]
     .filter(Boolean)
     .join(' · ');

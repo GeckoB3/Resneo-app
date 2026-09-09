@@ -919,7 +919,7 @@ export function CalendarDayGrid({
               guestName={item.cluster.lead.guestName}
               serviceName={item.cluster.serviceLabel}
               timeLabel={item.timeLabel}
-              status={item.cluster.lead.status}
+              status={item.cluster.status}
               // A merged VISIT drags and resizes as one booking: the commit goes
               // through the visit endpoint, which plans every service before
               // writing any. A merged PARTY does not — several people booked at
@@ -927,7 +927,7 @@ export function CalendarDayGrid({
               // gate is `isVisit` rather than `isMultiSegment`.
               draggable={
                 (!item.cluster.isMultiSegment || item.cluster.isVisit) &&
-                MOVABLE_STATUSES.has(item.cluster.lead.status)
+                MOVABLE_STATUSES.has(item.cluster.status)
               }
               // Every row this bar owns, so the drag's conflict check does not
               // see the visit's own services as occupying the space it is moving

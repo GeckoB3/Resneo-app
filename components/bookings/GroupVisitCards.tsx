@@ -2,12 +2,18 @@ import { StyleSheet, View } from 'react-native';
 
 import { timeToMinutes } from '@/components/calendar/grid-layout';
 import { Badge, StatusPill } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
 import { resolveAppointmentVisit } from '@/lib/booking/appointment-visit';
+import { isTerminalVisitStatus } from '@/lib/booking/visit-status';
+import { hapticSuccess, hapticWarning } from '@/lib/haptics';
+import { useUpdateBookingStatus } from '@/lib/queries/useBookingMutations';
 import { useGroupVisitBookings, type GroupVisitBookingRow } from '@/lib/queries/useGroupVisit';
 import { formatDayHeading } from '@/lib/dates/venue-dates';
+import { useToast } from '@/providers/ToastProvider';
 import { spacing } from '@/theme/index';
+import type { BookingStatus } from '@/types/booking-detail';
 
 type GroupVisitCardsProps = {
   groupBookingId: string;
@@ -15,6 +21,13 @@ type GroupVisitCardsProps = {
   bookingDate: string;
   /** Current booking's person label, shown in the group card header. */
   personLabel?: string | null;
+  /**
+   * Offer Start / Complete (and their undos) on each service. Start and
+   * Complete are per service since web #187, so this card is where they live;
+   * the header keeps only the visit-wide actions. Off for a partner's booking
+   * without an edit grant, and for table reservations.
+   */
+  canChangeServiceStatus?: boolean;
 };
 
 /** "Massage – Deep tissue + Hot stones" — web `expandedBookingOfferingLine`. */
@@ -50,15 +63,98 @@ function timeRange(row: GroupVisitBookingRow): string {
 }
 
 /**
+ * The service-level actions one row offers (web `ExpandedBookingContent`'s
+ * per-service Start / Complete / Undo start / Undo complete). Nothing on a
+ * cancelled or no-show row, and nothing before the visit is accepted.
+ */
+function serviceActions(status: string): { label: string; target: BookingStatus; primary: boolean }[] {
+  switch (status) {
+    case 'Booked':
+    case 'Confirmed':
+      return [{ label: 'Start', target: 'Seated', primary: true }];
+    case 'Seated':
+      return [
+        { label: 'Complete', target: 'Completed', primary: true },
+        { label: 'Undo start', target: 'Booked', primary: false },
+      ];
+    case 'Completed':
+      return [{ label: 'Undo complete', target: 'Seated', primary: false }];
+    default:
+      return [];
+  }
+}
+
+/** One service of the visit: its line, its status, and its own Start / Complete. */
+function VisitServiceRow({
+  row,
+  isCurrent,
+  canAct,
+}: {
+  row: GroupVisitBookingRow;
+  isCurrent: boolean;
+  canAct: boolean;
+}) {
+  const toast = useToast();
+  // PATCHes THIS row only: the server writes Seated and Completed to one
+  // service (web #187), and the cache helpers invalidate the visit query.
+  const update = useUpdateBookingStatus(row.id);
+  const actions = canAct && !isTerminalVisitStatus(row.status) ? serviceActions(row.status) : [];
+  const minutes = rowMinutes(row);
+  return (
+    <View style={[styles.row, isCurrent && styles.currentRow]}>
+      <View style={styles.rowMain}>
+        <View style={styles.rowText}>
+          <Text variant="bodySmall" numberOfLines={1}>
+            {offeringLine(row)}
+            {isCurrent ? ' (this booking)' : ''}
+          </Text>
+          <Text variant="caption" tone="muted">
+            {timeRange(row)}
+            {minutes != null ? ` · ${formatTotal(minutes)}` : ''}
+          </Text>
+        </View>
+        <StatusPill status={row.status} />
+      </View>
+      {actions.length > 0 ? (
+        <View style={styles.rowActions}>
+          {actions.map((action) => (
+            <Button
+              key={action.target}
+              label={action.label}
+              size="sm"
+              variant={action.primary ? 'secondary' : 'ghost'}
+              loading={update.isPending}
+              disabled={update.isPending}
+              accessibilityLabel={`${action.label} ${offeringLine(row)}`}
+              onPress={() =>
+                update.mutate(action.target, {
+                  onSuccess: () => hapticSuccess(),
+                  onError: () => {
+                    hapticWarning();
+                    toast.error(`Could not update ${offeringLine(row)}.`);
+                  },
+                })
+              }
+            />
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+/**
  * Multi-service visit ("Services in this visit") and group people booking
- * ("Group booking") cards — web ExpandedBookingContent parity. Read-only,
- * driven by the bookings sharing this booking's `group_booking_id`.
+ * ("Group booking") cards — web ExpandedBookingContent parity. Driven by the
+ * bookings sharing this booking's `group_booking_id`; the visit card carries
+ * each service's own Start / Complete.
  */
 export function GroupVisitCards({
   groupBookingId,
   currentBookingId,
   bookingDate,
   personLabel,
+  canChangeServiceStatus = false,
 }: GroupVisitCardsProps) {
   const query = useGroupVisitBookings(groupBookingId);
   const rows = query.data ?? [];
@@ -84,7 +180,7 @@ export function GroupVisitCards({
               Others in this group
             </Text>
             {others.map((row) => (
-              <View key={row.id} style={styles.row}>
+              <View key={row.id} style={styles.rowMain}>
                 <View style={styles.rowText}>
                   <Text variant="bodySmall" numberOfLines={1}>
                     {row.person_label?.trim() || row.guest_name || 'Guest'}
@@ -103,7 +199,7 @@ export function GroupVisitCards({
     );
   }
 
-  // Multi-service visit: consecutive services for one guest.
+  // Multi-service visit: several services for one guest.
   //
   // The total is the visit's wall-clock SPAN, the same number the header shows
   // and the same one the visit is edited by. Summing the services instead gives a
@@ -118,24 +214,23 @@ export function GroupVisitCards({
     <Card>
       <Text variant="label">Services in this visit</Text>
       <Text variant="caption" tone="muted">
-        {rows.length} consecutive services · {formatDayHeading(bookingDate)}
+        {rows.length} services · {formatDayHeading(bookingDate)}
         {totalMinutes > 0 ? ` · ${formatTotal(totalMinutes)} total` : ''}
       </Text>
+      {canChangeServiceStatus ? (
+        <Text variant="caption" tone="muted">
+          Start and complete each service here. Confirm, arrived, cancel and no-show
+          apply to the whole visit.
+        </Text>
+      ) : null}
       <View style={styles.list}>
         {rows.map((row) => (
-          <View key={row.id} style={[styles.row, row.id === currentBookingId && styles.currentRow]}>
-            <View style={styles.rowText}>
-              <Text variant="bodySmall" numberOfLines={1}>
-                {offeringLine(row)}
-                {row.id === currentBookingId ? ' (this booking)' : ''}
-              </Text>
-              <Text variant="caption" tone="muted">
-                {timeRange(row)}
-                {rowMinutes(row) != null ? ` · ${formatTotal(rowMinutes(row)!)}` : ''}
-              </Text>
-            </View>
-            <StatusPill status={row.status} />
-          </View>
+          <VisitServiceRow
+            key={row.id}
+            row={row}
+            isCurrent={row.id === currentBookingId}
+            canAct={canChangeServiceStatus}
+          />
         ))}
       </View>
     </Card>
@@ -153,8 +248,15 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   row: {
+    gap: spacing.xs,
+  },
+  rowMain: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: spacing.sm,
+  },
+  rowActions: {
+    flexDirection: 'row',
     gap: spacing.sm,
   },
   currentRow: {
