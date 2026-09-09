@@ -654,7 +654,9 @@ export function BookingDetailContent({
    * The same query already backs `GroupVisitCards` further down, so this is a
    * cache hit rather than a second request.
    */
-  const groupVisitQuery = useGroupVisitBookings(booking.group_booking_id);
+  // A partner's booking's siblings live in the partner's rows (web #187 takes
+  // `owner_venue_id` on the list under a full-details grant).
+  const groupVisitQuery = useGroupVisitBookings(booking.group_booking_id, linked?.venueId ?? null);
   const visit = useMemo(
     () => resolveAppointmentVisit(groupVisitQuery.data ?? []),
     [groupVisitQuery.data],
@@ -1476,9 +1478,12 @@ export function BookingDetailContent({
           currentBookingId={booking.id}
           bookingDate={booking.booking_date}
           personLabel={booking.person_label}
+          ownerVenueId={linked?.venueId ?? null}
           // Start and Complete are per service (web #187): they live on the
-          // card's rows, under the same edit grant as the header's actions.
-          canChangeServiceStatus={policy.canEdit && !isTable}
+          // card's rows, under the same edit grant as the header's actions. A
+          // partner's rows are read-only here: the row-level PATCH the card
+          // uses is own-venue only (the linked status path lives on the header).
+          canChangeServiceStatus={policy.canEdit && !isTable && !linked}
         />
       ) : null}
 

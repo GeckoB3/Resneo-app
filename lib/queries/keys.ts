@@ -187,12 +187,18 @@ export const queryKeys = {
         keyScope(accessToken),
         bookingId ?? null,
       ] as const,
-    groupVisit: (accessToken?: string | null, groupBookingId?: string | null) =>
+    groupVisit: (
+      accessToken?: string | null,
+      groupBookingId?: string | null,
+      /** A partner venue's visit is read across the link (web #187). */
+      ownerVenueId?: string | null,
+    ) =>
       [
         ...queryKeys.bookings.all(),
         'groupVisit',
         keyScope(accessToken),
         groupBookingId ?? null,
+        ownerVenueId ?? null,
       ] as const,
   },
 

@@ -138,6 +138,16 @@ describe('linkedGridBooking', () => {
     });
   });
 
+  it('carries the visit group and person label so a partner’s visit chips like our own (web #187)', () => {
+    expect(
+      linkedGridBooking(booking({ groupBookingId: 'grp-1', personLabel: null }), []),
+    ).toMatchObject({ group_booking_id: 'grp-1', person_label: null });
+    expect(linkedGridBooking(booking(), [])).toMatchObject({
+      group_booking_id: null,
+      person_label: null,
+    });
+  });
+
   it('falls back guestName → serviceName → "Booking"', () => {
     expect(
       linkedGridBooking(booking({ guestName: null, serviceName: 'Massage' }), []).guestName,

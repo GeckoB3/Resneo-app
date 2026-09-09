@@ -28,6 +28,8 @@ type GroupVisitCardsProps = {
    * without an edit grant, and for table reservations.
    */
   canChangeServiceStatus?: boolean;
+  /** The partner venue a linked booking belongs to; its siblings are read across the link. */
+  ownerVenueId?: string | null;
 };
 
 /** "Massage – Deep tissue + Hot stones" — web `expandedBookingOfferingLine`. */
@@ -162,8 +164,9 @@ export function GroupVisitCards({
   bookingDate,
   personLabel,
   canChangeServiceStatus = false,
+  ownerVenueId = null,
 }: GroupVisitCardsProps) {
-  const query = useGroupVisitBookings(groupBookingId);
+  const query = useGroupVisitBookings(groupBookingId, ownerVenueId);
   const rows = query.data ?? [];
   if (rows.length <= 1) return null;
 

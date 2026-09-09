@@ -84,6 +84,11 @@ export function linkedGridBooking(
     service_item_id: b.serviceItemId ?? null,
     service_variant_id: b.serviceVariantId ?? null,
     processing_time_blocks: null,
+    // A partner's visit draws one bar per service too (web #187): the group id
+    // is what chips them "Visit 1/2" and colours them alike; a party's rows
+    // carry a person label and are left as plain bars.
+    group_booking_id: b.groupBookingId ?? null,
+    person_label: b.personLabel ?? null,
   };
 }
 

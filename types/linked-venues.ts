@@ -322,6 +322,13 @@ export interface LinkedBooking {
   experienceEventId?: string | null;
   classInstanceId?: string | null;
   eventSessionId?: string | null;
+  /**
+   * A visit's services each draw their own bar (web #187); the group id is
+   * what lets the grid chip them "Visit 1/2" and colour them alike. A party's
+   * rows carry a person label and are not a visit. camelCase on this feed.
+   */
+  groupBookingId?: string | null;
+  personLabel?: string | null;
 }
 
 export interface LinkedVenueCalendar {

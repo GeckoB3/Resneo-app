@@ -30,25 +30,37 @@ export interface GroupVisitBookingRow {
 }
 
 /**
- * All bookings sharing a `group_booking_id` — sorted by start time. Powers the
- * "Services in this visit" and "Group booking" cards (web parity).
+ * All bookings sharing a `group_booking_id` — sorted by day, then start. Powers
+ * the "Services in this visit" and "Group booking" cards (web parity).
+ *
+ * A booking on a LINKED venue's calendar lives in that venue's rows, which our
+ * own list never contains: pass its `ownerVenueId` and the route answers the
+ * siblings across the link (web #187, `full_details` grant required; a lesser
+ * grant is a 403 the cards treat as "no siblings").
  */
-export function useGroupVisitBookings(groupBookingId: string | null | undefined) {
+export function useGroupVisitBookings(
+  groupBookingId: string | null | undefined,
+  ownerVenueId?: string | null,
+) {
   const accessToken = useAccessToken();
 
   return useQuery({
-    queryKey: queryKeys.bookings.groupVisit(accessToken, groupBookingId),
+    queryKey: queryKeys.bookings.groupVisit(accessToken, groupBookingId, ownerVenueId ?? null),
     enabled: isBackendConfigured() && accessToken !== null && !!groupBookingId,
     queryFn: async (): Promise<GroupVisitBookingRow[]> => {
       if (!accessToken || !groupBookingId) {
         throw new Error('Missing group visit parameters');
       }
+      const params = new URLSearchParams({ group_booking_id: groupBookingId });
+      if (ownerVenueId) params.set('owner_venue_id', ownerVenueId);
       const response = await apiFetch<{ bookings?: GroupVisitBookingRow[] }>(
-        `/api/venue/bookings/list?group_booking_id=${encodeURIComponent(groupBookingId)}`,
+        `/api/venue/bookings/list?${params.toString()}`,
         { accessToken },
       );
-      return [...(response.bookings ?? [])].sort((a, b) =>
-        (a.booking_time ?? '').localeCompare(b.booking_time ?? ''),
+      return [...(response.bookings ?? [])].sort(
+        (a, b) =>
+          (a.booking_date ?? '').localeCompare(b.booking_date ?? '') ||
+          (a.booking_time ?? '').localeCompare(b.booking_time ?? ''),
       );
     },
   });

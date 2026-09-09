@@ -24,7 +24,7 @@ web summary was corrected where the code disagrees with it (§2).
 | R29-2 | Start and Complete are per service now; the app's bar quick actions fan Seated/Completed out to every row of a visit (re-imposing the old cascade), the bar takes its colour and actions from the lead row, and the detail panel has no per-row Start/Complete and no derived visit status | Wrong behaviour | **Built** 2026-09-09 (§4, §17) |
 | R29-3 | The app's visit model assumes one day and one calendar; the web now lets a visit's services sit on different days and calendars, so chain/gap maths and the Bookings-tab collapse are wrong for such a visit | Wrong data | **Built** 2026-09-09 (§5, §18) |
 | R29-4 | Calendar: the app merges a visit into one bar; the web now draws one bar per service with a visit chip, shared palette and spine, and per-row drag/resize | Parity, a decision | **Built** 2026-09-09, option 2 (§6, §19) |
-| R29-5 | Linked venues: the siblings query never sends `owner_venue_id`, so a visit opened from a partner column shows one service; the linked-calendar feed's new `groupBookingId` / `personLabel` are ignored | Parity | §7 |
+| R29-5 | Linked venues: the siblings query never sends `owner_venue_id`, so a visit opened from a partner column shows one service; the linked-calendar feed's new `groupBookingId` / `personLabel` are ignored | Parity | **Built** 2026-09-09 (§7, §21) |
 | R29-6 | Hours: the app already meets the whole written-down contract (409 → confirm → acknowledge, ISO `days_off` never sent). The "crashed and did not save" report matches a pre-existing APP defect: the "Save anyway?" ConfirmSheet is a second modal opened over the hours Sheet, which iOS drops silently | **Breaks live flow (iOS), app-side** | Build (§8) |
 | R29-7 | Per-calendar amended hours, read side: closure bands and the Working-today chip already honour `availability_exceptions`; the web deploy alone lights them up. The schedule-preview month grid ignores overrides | Wrong data (small) | Build (§9) |
 | R29-8 | Per-calendar amended hours, write side: no editor in the app (`PUT/DELETE /api/venue/calendar-amended-hours`) | Parity | §9 |
@@ -553,3 +553,19 @@ date picker, a time picker, the calendar chips and a length stepper for that ser
 
 Tests: five new cases in `ModifyBookingSheet.test.tsx` (the named row only, a day + calendar +
 length change, the lock in both directions, undo), two for the builder.
+
+## 21. Built: R29-5, a partner's visit (2026-09-09)
+
+- `useGroupVisitBookings(groupBookingId, ownerVenueId)` sends `owner_venue_id` on the list
+  (`GET /api/venue/bookings/list?group_booking_id=…&owner_venue_id=…`, web #187: siblings
+  across a `full_details` link); the query key carries it. The detail panel and the visit card
+  pass the linked booking's venue, so a visit opened from a partner column shows every service.
+  Rows sort by day, then start.
+- `LinkedBooking` gains `groupBookingId` / `personLabel` (camelCase on that feed) and
+  `linkedGridBooking` puts them on the grid row as `group_booking_id` / `person_label`, so a
+  partner's visit chips "Visit 1/2", shares its colour and draws its spines like our own, and a
+  partner's party stays plain bars.
+- Left as is: per-row Start / Complete on a partner's visit card. The row-level PATCH the card
+  uses is own-venue only; a partner's status changes stay on the header's linked path. Drags of
+  a partner's visit service already take the single-booking linked path (the calendar's visit
+  lookup reads own rows only), which is the per-row behaviour wanted.
