@@ -89,10 +89,15 @@ function VisitServiceRow({
   row,
   isCurrent,
   canAct,
+  showDay,
+  showCalendar,
 }: {
   row: GroupVisitBookingRow;
   isCurrent: boolean;
   canAct: boolean;
+  /** The visit spans days / calendars, so each row says which one it is on. */
+  showDay: boolean;
+  showCalendar: boolean;
 }) {
   const toast = useToast();
   // PATCHes THIS row only: the server writes Seated and Completed to one
@@ -109,8 +114,10 @@ function VisitServiceRow({
             {isCurrent ? ' (this booking)' : ''}
           </Text>
           <Text variant="caption" tone="muted">
+            {showDay && row.booking_date ? `${formatDayHeading(row.booking_date)} · ` : ''}
             {timeRange(row)}
             {minutes != null ? ` · ${formatTotal(minutes)}` : ''}
+            {showCalendar && row.calendar_name ? ` · ${row.calendar_name}` : ''}
           </Text>
         </View>
         <StatusPill status={row.status} />
@@ -208,14 +215,21 @@ export function GroupVisitCards({
   // back to the sum only where the resolver declines to call these rows a visit
   // (a party, or cancellations leaving one service standing).
   const visit = resolveAppointmentVisit(rows);
-  const totalMinutes =
-    visit?.totalMinutes ?? rows.reduce((sum, row) => sum + (rowMinutes(row) ?? 0), 0);
+  const spansDays = visit?.spansDays ?? new Set(rows.map((r) => r.booking_date ?? '')).size > 1;
+  const spansCalendars =
+    visit?.spansCalendars ??
+    new Set(rows.map((r) => r.calendar_id ?? r.practitioner_id ?? '')).size > 1;
+  // Over several days the span is not a length anyone books; the services are.
+  const totalMinutes = spansDays
+    ? rows.reduce((sum, row) => sum + (rowMinutes(row) ?? 0), 0)
+    : (visit?.totalMinutes ?? rows.reduce((sum, row) => sum + (rowMinutes(row) ?? 0), 0));
   return (
     <Card>
       <Text variant="label">Services in this visit</Text>
       <Text variant="caption" tone="muted">
-        {rows.length} services · {formatDayHeading(bookingDate)}
-        {totalMinutes > 0 ? ` · ${formatTotal(totalMinutes)} total` : ''}
+        {rows.length} services ·{' '}
+        {spansDays ? `over ${new Set(rows.map((r) => r.booking_date)).size} days` : formatDayHeading(bookingDate)}
+        {totalMinutes > 0 ? ` · ${formatTotal(totalMinutes)}${spansDays ? ' of services' : ' total'}` : ''}
       </Text>
       {canChangeServiceStatus ? (
         <Text variant="caption" tone="muted">
@@ -230,6 +244,8 @@ export function GroupVisitCards({
             row={row}
             isCurrent={row.id === currentBookingId}
             canAct={canChangeServiceStatus}
+            showDay={spansDays}
+            showCalendar={spansCalendars}
           />
         ))}
       </View>

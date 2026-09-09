@@ -45,7 +45,7 @@ import {
   pendingCardState,
 } from '@/lib/payments/payment-display';
 import { usePendingCardClock } from '@/lib/payments/usePendingCardClock';
-import { calendarDateInTimeZone } from '@/lib/dates/venue-dates';
+import { calendarDateInTimeZone, formatDayHeading } from '@/lib/dates/venue-dates';
 import { canMarkNoShowForSlot, clampNoShowGraceMinutes } from '@/lib/booking/no-show-grace';
 import { ACTION_COLORS, primaryActionColors } from '@/lib/booking/booking-action-colors';
 import { useAcceptUnpaidGuard } from '@/components/bookings/AcceptUnpaidSheet';
@@ -686,9 +686,16 @@ export function BookingDetailContent({
   // the most important info is visible before any action is taken.
   const practitionerName =
     booking.practitioner_name?.trim() || fallbackPractitionerName?.trim() || null;
-  const dateLabel = formatBookingDateLabel(booking.booking_date, booking.booking_time);
+  // A visit spread over several days (web #187) reads as its first and last
+  // day; the card below lists each service on its own day.
+  const dateLabel =
+    visit?.spansDays && visit.startDate && visit.endDate
+      ? `${formatDayHeading(visit.startDate)} – ${formatDayHeading(visit.endDate)}`
+      : formatBookingDateLabel(booking.booking_date, booking.booking_time);
   const timeRangeLabel = visit
-    ? `${visit.startHm} – ${visit.endHm}`
+    ? visit.spansDays
+      ? `${visit.startHm} – ${visit.endHm} over ${visit.services.length} services`
+      : `${visit.startHm} – ${visit.endHm}`
     : formatBookingTimeRange(booking.booking_time, booking.booking_end_time, durationMinutes);
   // Prefer the detail's variant name, then the list row's service label, then the
   // service catalog by id (the detail GET omits the base name for plain services).
@@ -1240,7 +1247,9 @@ export function BookingDetailContent({
                         guestName,
                         date: booking.booking_date,
                         time: visit ? `${visit.startHm}:00` : booking.booking_time,
-                        durationMinutes,
+                        // A visit over several days has no one length to step;
+                        // null hides the control and the move stays a shift.
+                        durationMinutes: visit?.spansDays ? null : durationMinutes,
                         visit: visitEdit,
                       })
                     }

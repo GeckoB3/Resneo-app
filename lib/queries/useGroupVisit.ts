@@ -23,6 +23,10 @@ export interface GroupVisitBookingRow {
   addons_total_duration_minutes?: number | null;
   group_booking_id?: string | null;
   guest_name?: string;
+  /** Each service has its own calendar since web #187; the list route names it. */
+  calendar_id?: string | null;
+  practitioner_id?: string | null;
+  calendar_name?: string | null;
 }
 
 /**

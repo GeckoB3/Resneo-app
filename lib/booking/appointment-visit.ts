@@ -61,28 +61,72 @@ export interface VisitServiceRow {
   booking_item_name?: string | null;
   service_variant_name?: string | null;
   addons_total_duration_minutes?: number | null;
+  /**
+   * Each service of a visit has its own day and calendar since web #187 (the
+   * services are independent). Absent on a feed that only ever holds one day.
+   */
+  booking_date?: string | null;
+  calendar_id?: string | null;
+  practitioner_id?: string | null;
 }
 
 export interface VisitService {
   id: string;
   name: string | null;
+  /** YYYY-MM-DD, when the row carried one. */
+  date: string | null;
+  calendarId: string | null;
   startHm: string;
   endHm: string;
   /** Wall-clock minutes this service occupies, add-on minutes included. */
   durationMinutes: number;
-  /** Minutes observed between this service's end and the next one's start. Zero on the tail. */
+  /**
+   * Minutes observed between this service's end and the next one's start,
+   * across days when the next one is on another day. Zero on the tail.
+   */
   gapAfterMinutes: number;
 }
 
 export interface AppointmentVisit {
   groupBookingId: string | null;
+  /** In order of date, then start. */
   services: VisitService[];
   startHm: string;
   endHm: string;
+  /** The first service's day and the last one's, when the rows carried dates. */
+  startDate: string | null;
+  endDate: string | null;
+  /** The services sit on more than one day; `totalMinutes` then counts across them. */
+  spansDays: boolean;
+  /** The services sit on more than one calendar. */
+  spansCalendars: boolean;
   /** Wall-clock span from the first service's start to the last one's end. */
   totalMinutes: number;
   /** Sum of the services themselves, excluding the gaps between them. */
   serviceMinutes: number;
+}
+
+const DAY_MS = 86_400_000;
+
+/** Whole days from one YYYY-MM-DD to another; 0 when either is missing or malformed. */
+export function dayOffset(fromYmd: string | null | undefined, toYmd: string | null | undefined): number {
+  const a = ymdToUtcMs(fromYmd);
+  const b = ymdToUtcMs(toYmd);
+  if (a == null || b == null) return 0;
+  return Math.round((b - a) / DAY_MS);
+}
+
+/** YYYY-MM-DD moved by `days`; the input unchanged when it is not a date. */
+export function shiftYmd(ymd: string, days: number): string {
+  const ms = ymdToUtcMs(ymd);
+  if (ms == null || days === 0) return ymd;
+  return new Date(ms + days * DAY_MS).toISOString().slice(0, 10);
+}
+
+function ymdToUtcMs(ymd: string | null | undefined): number | null {
+  if (!ymd || !/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return null;
+  const [y, m, d] = ymd.split('-').map(Number);
+  return Date.UTC(y!, m! - 1, d!);
 }
 
 function toHm(raw: string | null | undefined): string {
@@ -171,9 +215,17 @@ export function resolveAppointmentVisit(
   if (groupIds.size !== 1) return null;
   const groupBookingId = [...groupIds][0] || null;
 
+  // Date first (a service on another day sorts after every service on this
+  // one, whatever its clock time), then start.
   const ordered = [...scheduled].sort(
-    (a, b) => timeToMinutes(toHm(a.booking_time)) - timeToMinutes(toHm(b.booking_time)),
+    (a, b) =>
+      (a.booking_date ?? '').localeCompare(b.booking_date ?? '') ||
+      timeToMinutes(toHm(a.booking_time)) - timeToMinutes(toHm(b.booking_time)),
   );
+  const firstDate = ordered[0]!.booking_date ?? null;
+  // Minutes from the first service's midnight, so spans and gaps count across days.
+  const absolute = (row: VisitServiceRow, hm: string) =>
+    dayOffset(firstDate, row.booking_date ?? firstDate) * 1440 + timeToMinutes(hm);
 
   const services: VisitService[] = ordered.map((row, i) => {
     const startHm = toHm(row.booking_time);
@@ -181,26 +233,42 @@ export function resolveAppointmentVisit(
     const endHm = hasUsableTime(row.booking_end_time)
       ? toHm(row.booking_end_time)
       : minutesToHm(timeToMinutes(startHm) + addonMinutes);
+    const durationMinutes = spanMinutes(startHm, endHm);
     const next = ordered[i + 1];
+    const gapAfterMinutes = next
+      ? Math.max(0, absolute(next, toHm(next.booking_time)) - (absolute(row, startHm) + durationMinutes))
+      : 0;
     return {
       id: row.id,
       name: row.booking_item_name ?? null,
+      date: row.booking_date ?? null,
+      calendarId: row.calendar_id ?? row.practitioner_id ?? null,
       startHm,
       endHm,
-      durationMinutes: spanMinutes(startHm, endHm),
-      gapAfterMinutes: next ? spanMinutes(endHm, toHm(next.booking_time)) : 0,
+      durationMinutes,
+      gapAfterMinutes,
     };
   });
 
-  const startHm = services[0]!.startHm;
-  const endHm = services[services.length - 1]!.endHm;
+  const first = services[0]!;
+  const last = services[services.length - 1]!;
+  const dates = new Set(services.map((s) => s.date ?? ''));
+  const calendars = new Set(services.map((s) => s.calendarId ?? ''));
+  const totalMinutes =
+    dates.size > 1
+      ? absolute(ordered[ordered.length - 1]!, last.startHm) + last.durationMinutes - timeToMinutes(first.startHm)
+      : spanMinutes(first.startHm, last.endHm);
 
   return {
     groupBookingId,
     services,
-    startHm,
-    endHm,
-    totalMinutes: spanMinutes(startHm, endHm),
+    startHm: first.startHm,
+    endHm: last.endHm,
+    startDate: first.date,
+    endDate: last.date,
+    spansDays: dates.size > 1,
+    spansCalendars: calendars.size > 1,
+    totalMinutes,
     serviceMinutes: services.reduce((sum, s) => sum + s.durationMinutes, 0),
   };
 }
@@ -237,11 +305,19 @@ export interface VisitEditTarget {
    * say where every service goes and which one the extra time lands on.
    */
   services: VisitEditService[];
+  /**
+   * The services sit on more than one day. A length control then has no one
+   * number to show, so the editors hide it; moves still shift every service.
+   */
+  spansDays: boolean;
 }
 
 /** One row of a visit as an editor holds it. */
 export interface VisitEditService {
   bookingId: string;
+  /** YYYY-MM-DD; absent when the rows came from a one-day feed. */
+  date?: string | null;
+  calendarId?: string | null;
   /** HH:mm */
   startHm: string;
   durationMinutes: number;
@@ -258,9 +334,12 @@ export function toVisitEditTarget(visit: AppointmentVisit, groupBookingId: strin
     leadBookingId: visit.services[0]!.id,
     services: visit.services.map((s) => ({
       bookingId: s.id,
+      date: s.date,
+      calendarId: s.calendarId,
       startHm: s.startHm,
       durationMinutes: s.durationMinutes,
     })),
+    spansDays: visit.spansDays,
   };
 }
 

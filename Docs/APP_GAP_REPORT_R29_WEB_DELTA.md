@@ -22,7 +22,7 @@ web summary was corrected where the code disagrees with it (§2).
 |---|---|---|---|
 | R29-1 | The visit schedule endpoint's body is now `shift` OR `services`; the app still sends the deleted flat fields, so every visit move, resize, reschedule, Modify open/check/save and undo answers 400. A multi-service visit cannot be moved or modified from the app | **Breaks live flow** | **Built** 2026-09-09 (§3, §16) |
 | R29-2 | Start and Complete are per service now; the app's bar quick actions fan Seated/Completed out to every row of a visit (re-imposing the old cascade), the bar takes its colour and actions from the lead row, and the detail panel has no per-row Start/Complete and no derived visit status | Wrong behaviour | **Built** 2026-09-09 (§4, §17) |
-| R29-3 | The app's visit model assumes one day and one calendar; the web now lets a visit's services sit on different days and calendars, so chain/gap maths and the Bookings-tab collapse are wrong for such a visit | Wrong data | Build with R29-1 (§5) |
+| R29-3 | The app's visit model assumes one day and one calendar; the web now lets a visit's services sit on different days and calendars, so chain/gap maths and the Bookings-tab collapse are wrong for such a visit | Wrong data | **Built** 2026-09-09 (§5, §18) |
 | R29-4 | Calendar: the app merges a visit into one bar; the web now draws one bar per service with a visit chip, shared palette and spine, and per-row drag/resize | Parity, a decision | §6 |
 | R29-5 | Linked venues: the siblings query never sends `owner_venue_id`, so a visit opened from a partner column shows one service; the linked-calendar feed's new `groupBookingId` / `personLabel` are ignored | Parity | §7 |
 | R29-6 | Hours: the app already meets the whole written-down contract (409 → confirm → acknowledge, ISO `days_off` never sent). The "crashed and did not save" report matches a pre-existing APP defect: the "Save anyway?" ConfirmSheet is a second modal opened over the hours Sheet, which iOS drops silently | **Breaks live flow (iOS), app-side** | Build (§8) |
@@ -471,3 +471,30 @@ Device pass owed.
 
 Not changed: the merged bar (still one bar per visit, §6), the per-row PATCH fan-out for the
 cascading statuses (redundant but harmless), and the linked-venue siblings (R29-5).
+
+## 18. Built: R29-3 (2026-09-09)
+
+The visit model carries each service's day and calendar:
+
+- `VisitServiceRow` reads `booking_date` / `calendar_id` / `practitioner_id`; `VisitService`
+  carries `date` and `calendarId`; `resolveAppointmentVisit` orders by day then start, counts
+  the span and the gaps across days (`dayOffset`), and reports `startDate`, `endDate`,
+  `spansDays`, `spansCalendars`. `VisitEditService` carries `date` / `calendarId` and
+  `VisitEditTarget` carries `spansDays`.
+- `visitScheduleRequest` takes `fromDate` and, in `services` mode, shifts each row's OWN day by
+  the day delta rather than putting every row on the target day; `visitRestoreRequest` puts each
+  row back on its own day. New `mode: 'services'` and `guardKnownRows: false` for a caller that
+  holds only part of the visit.
+- The calendar holds one day, so its drag now names the rows it can see (`services` mode, no
+  known-rows guard, which would otherwise 412 on a visit with a service on another day); a
+  service on another day stays put. Its undo restores exactly those rows.
+- Detail header: a visit over several days reads "Wed 10 Sep – Thu 11 Sep" and
+  "14:00 – 10:00 over 2 services"; the Reschedule sheet gets no length control for it. The
+  "Services in this visit" card says "over N days", prints each row's day and, when the calendars
+  differ, its calendar name, and totals the services rather than the span.
+- Modify sheet: the plan's rows carry `booking_date` / `calendar_id`; the visit-length stepper is
+  replaced by the read-only panel on a visit that spans days (the services keep their own
+  lengths); a move stays a shift, which keeps the cross-day offsets server-side.
+
+Not in this build: a per-service date/time editor in the Modify sheet (the web's `services`
+mode editors); the app changes a visit's services' lengths only through the last service.

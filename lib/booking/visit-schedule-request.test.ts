@@ -13,6 +13,7 @@ describe('visitScheduleRequest', () => {
     expect(
       visitScheduleRequest({
         services: ROWS,
+        fromDate: '2026-08-10',
         fromTime: '14:00',
         toDate: '2026-08-11',
         toTime: '09:30:00',
@@ -26,6 +27,7 @@ describe('visitScheduleRequest', () => {
     expect(
       visitScheduleRequest({
         services: ROWS,
+        fromDate: '2026-08-10',
         fromTime: '14:00',
         toDate: '2026-08-10',
         toTime: '14:00',
@@ -37,6 +39,7 @@ describe('visitScheduleRequest', () => {
   it('puts extra length on the last service and names every row', () => {
     const body = visitScheduleRequest({
       services: ROWS,
+      fromDate: '2026-08-10',
       fromTime: '14:00',
       toDate: '2026-08-10',
       toTime: '14:00',
@@ -55,6 +58,7 @@ describe('visitScheduleRequest', () => {
   it('takes a shrink off the last service, never below its floor', () => {
     const body = visitScheduleRequest({
       services: ROWS,
+      fromDate: '2026-08-10',
       fromTime: '14:00',
       toDate: '2026-08-10',
       toTime: '14:00',
@@ -69,6 +73,7 @@ describe('visitScheduleRequest', () => {
   it('shifts every row by the move when a length change rides with it', () => {
     const body = visitScheduleRequest({
       services: ROWS,
+      fromDate: '2026-08-10',
       fromTime: '14:00:00',
       toDate: '2026-08-11',
       toTime: '09:30',
@@ -86,6 +91,53 @@ describe('visitScheduleRequest', () => {
         practitioner_id: 'prac-2',
         duration_minutes: 25,
       },
+    ]);
+  });
+});
+
+describe('a visit over several days', () => {
+  const CROSS_DAY: VisitEditService[] = [
+    { bookingId: 'bk-lead', date: '2026-08-10', startHm: '14:00', durationMinutes: 45 },
+    { bookingId: 'bk-2', date: '2026-08-11', startHm: '09:00', durationMinutes: 60 },
+  ];
+
+  it('keeps each row on its own day when the visit moves a day later with a length change', () => {
+    const body = visitScheduleRequest({
+      services: CROSS_DAY,
+      fromDate: '2026-08-10',
+      fromTime: '14:00',
+      toDate: '2026-08-11',
+      toTime: '14:30',
+      fromTotalMinutes: 1200,
+      toTotalMinutes: 1215,
+    });
+    expect(body.services).toEqual([
+      { booking_id: 'bk-lead', booking_date: '2026-08-11', booking_time: '14:30:00' },
+      { booking_id: 'bk-2', booking_date: '2026-08-12', booking_time: '09:30:00', duration_minutes: 75 },
+    ]);
+  });
+
+  it('names only what a one-day caller can see, without the known-rows guard', () => {
+    const body = visitScheduleRequest({
+      services: [CROSS_DAY[0]!],
+      fromDate: '2026-08-10',
+      fromTime: '14:00',
+      toDate: '2026-08-10',
+      toTime: '15:00',
+      mode: 'services',
+      guardKnownRows: false,
+    });
+    expect(body.shift).toBeUndefined();
+    expect(body.known_booking_ids).toBeUndefined();
+    expect(body.services).toEqual([
+      { booking_id: 'bk-lead', booking_date: '2026-08-10', booking_time: '15:00:00' },
+    ]);
+  });
+
+  it('restores each row to its own day', () => {
+    expect(visitRestoreRequest({ services: CROSS_DAY, date: '2026-08-10' }).services!.map((s) => s.booking_date)).toEqual([
+      '2026-08-10',
+      '2026-08-11',
     ]);
   });
 });

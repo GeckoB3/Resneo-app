@@ -2,23 +2,25 @@
  * What `PATCH /api/venue/visits/[id]/schedule` is asked for.
  *
  * Since web #187 the endpoint takes exactly one of two things: a `shift` of the
- * whole visit (every service moves by the same amount, keeping its gaps), or a
- * `services` list naming the rows to change, each with the date, start,
- * calendar and length asked for. The old whole-visit fields are gone, and a
- * body with neither is refused. Every editor in the app — the calendar's drag
- * and its undo, the quick Reschedule sheet, the Modify sheet's check, save and
- * undo — builds its body here so they cannot disagree about which mode an edit
- * is.
+ * whole visit (every service moves by the same amount, keeping its gaps and any
+ * cross-day offset), or a `services` list naming the rows to change, each with
+ * the date, start, calendar and length asked for. The old whole-visit fields
+ * are gone, and a body with neither is refused. Every editor in the app — the
+ * calendar's drag and its undo, the quick Reschedule sheet, the Modify sheet's
+ * check, save and undo — builds its body here so they cannot disagree about
+ * which mode an edit is.
  *
  * The rule: a move alone is a shift. A length change is per-service, and the
  * minutes land on the LAST service (web's "extra time goes on the tail"; a
  * shrink comes off it, down to its floor). When a length change rides with a
- * move, every row is named with its shifted start so the write stays one
- * request, which is what makes it all-or-nothing.
+ * move, every row is named with its shifted day and start so the write stays
+ * one request, which is what makes it all-or-nothing. A caller that can only
+ * see part of the visit (the calendar holds one day) asks for `services` and
+ * names what it sees, so a service on another day is left where it is.
  */
 
 import { minutesToTime, timeToMinutes } from '@/components/calendar/grid-layout';
-import type { VisitEditService } from '@/lib/booking/appointment-visit';
+import { dayOffset, shiftYmd, type VisitEditService } from '@/lib/booking/appointment-visit';
 import { MIN_CORE_DURATION_MINUTES } from '@/lib/booking/booking-core-duration';
 import type {
   VisitScheduleServiceInput,
@@ -35,7 +37,8 @@ function toHms(time: string): string {
 export interface VisitScheduleRequestArgs {
   /** The visit's rows as the editor opened them. */
   services: readonly VisitEditService[];
-  /** The visit's start when the editor opened, HH:mm[:ss]. */
+  /** The visit's start when the editor opened: YYYY-MM-DD and HH:mm[:ss]. */
+  fromDate: string;
   fromTime: string;
   /** Where the visit is going. */
   toDate: string;
@@ -49,11 +52,21 @@ export interface VisitScheduleRequestArgs {
    */
   fromTotalMinutes?: number | null;
   toTotalMinutes?: number | null;
+  /**
+   * Always name the rows rather than shifting the visit. For a caller that
+   * holds only part of the visit: what it names moves, the rest stays.
+   */
+  mode?: 'auto' | 'services';
+  /**
+   * Send `known_booking_ids` with a `services` body. Off for a caller that
+   * cannot know every row of the visit (the endpoint would answer 412).
+   */
+  guardKnownRows?: boolean;
 }
 
 /**
  * The mode-specific part of the body: `{ shift }` or
- * `{ services, known_booking_ids }`. Flags are the caller's.
+ * `{ services, known_booking_ids? }`. Flags are the caller's.
  */
 export function visitScheduleRequest(
   args: VisitScheduleRequestArgs,
@@ -63,7 +76,7 @@ export function visitScheduleRequest(
     args.toTotalMinutes != null &&
     args.toTotalMinutes !== args.fromTotalMinutes;
 
-  if (!lengthChanged) {
+  if (!lengthChanged && args.mode !== 'services') {
     return {
       shift: {
         booking_date: args.toDate,
@@ -73,24 +86,29 @@ export function visitScheduleRequest(
     };
   }
 
-  const delta = timeToMinutes(args.toTime) - timeToMinutes(args.fromTime);
-  const grow = args.toTotalMinutes! - args.fromTotalMinutes!;
+  const dayDelta = dayOffset(args.fromDate, args.toDate);
+  const minuteDelta = timeToMinutes(args.toTime) - timeToMinutes(args.fromTime);
+  const grow = lengthChanged ? args.toTotalMinutes! - args.fromTotalMinutes! : 0;
   const tailIndex = args.services.length - 1;
   const services: VisitScheduleServiceInput[] = args.services.map((row, index) => {
-    const start = (((timeToMinutes(row.startHm) + delta) % DAY_MINUTES) + DAY_MINUTES) % DAY_MINUTES;
+    const start = (((timeToMinutes(row.startHm) + minuteDelta) % DAY_MINUTES) + DAY_MINUTES) % DAY_MINUTES;
+    // A row on its own day keeps its offset from the visit's first day.
+    const date = row.date ? shiftYmd(row.date, dayDelta) : args.toDate;
     return {
       booking_id: row.bookingId,
-      booking_date: args.toDate,
+      booking_date: date,
       booking_time: toHms(minutesToTime(start)),
       ...(args.practitionerId ? { practitioner_id: args.practitionerId } : {}),
-      ...(index === tailIndex
+      ...(lengthChanged && index === tailIndex
         ? { duration_minutes: Math.max(MIN_CORE_DURATION_MINUTES, row.durationMinutes + grow) }
         : {}),
     };
   });
   return {
     services,
-    known_booking_ids: args.services.map((row) => row.bookingId),
+    ...(args.guardKnownRows === false
+      ? {}
+      : { known_booking_ids: args.services.map((row) => row.bookingId) }),
   };
 }
 
@@ -101,17 +119,21 @@ export function visitScheduleRequest(
  */
 export function visitRestoreRequest(args: {
   services: readonly VisitEditService[];
+  /** The day for a row that carried none. */
   date: string;
   practitionerId?: string | null;
+  guardKnownRows?: boolean;
 }): Pick<VisitSchedulePatchInput, 'services' | 'known_booking_ids'> {
   return {
     services: args.services.map((row) => ({
       booking_id: row.bookingId,
-      booking_date: args.date,
+      booking_date: row.date ?? args.date,
       booking_time: toHms(row.startHm),
       ...(args.practitionerId ? { practitioner_id: args.practitionerId } : {}),
       duration_minutes: row.durationMinutes,
     })),
-    known_booking_ids: args.services.map((row) => row.bookingId),
+    ...(args.guardKnownRows === false
+      ? {}
+      : { known_booking_ids: args.services.map((row) => row.bookingId) }),
   };
 }

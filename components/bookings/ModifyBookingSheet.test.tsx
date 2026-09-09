@@ -258,6 +258,7 @@ const VISIT_TARGET: ModifyBookingTarget = {
       { bookingId: 'bk-1', startHm: '14:45', durationMinutes: 60 },
       { bookingId: 'bk-3', startHm: '16:00', durationMinutes: 15 },
     ],
+    spansDays: false,
   },
 };
 

@@ -147,3 +147,30 @@ describe('minimumVisitFloorMinutes', () => {
     expect(minimumVisitFloorMinutes(0)).toBe(5);
   });
 });
+
+describe('a visit over several days and calendars (web #187)', () => {
+  const rows = [
+    row({ id: 'b', booking_date: '2026-09-11', booking_time: '09:00', booking_end_time: '10:00', calendar_id: 'cal-2' }),
+    row({ id: 'a', booking_date: '2026-09-10', booking_time: '14:00', booking_end_time: '14:45', calendar_id: 'cal-1' }),
+  ];
+
+  it('orders by day before start, and counts the span and gap across days', () => {
+    const visit = resolveAppointmentVisit(rows)!;
+    expect(visit.services.map((s) => s.id)).toEqual(['a', 'b']);
+    expect(visit.spansDays).toBe(true);
+    expect(visit.spansCalendars).toBe(true);
+    expect(visit.startDate).toBe('2026-09-10');
+    expect(visit.endDate).toBe('2026-09-11');
+    // 14:00 on the 10th to 10:00 on the 11th.
+    expect(visit.totalMinutes).toBe(20 * 60);
+    expect(visit.services[0]!.gapAfterMinutes).toBe(18 * 60 + 15);
+    expect(visit.services[0]!.calendarId).toBe('cal-1');
+  });
+
+  it('is a one-day, one-calendar visit when the rows carry no dates', () => {
+    const visit = resolveAppointmentVisit(REFERENCE_VISIT)!;
+    expect(visit.spansDays).toBe(false);
+    expect(visit.spansCalendars).toBe(false);
+    expect(visit.startDate).toBeNull();
+  });
+});

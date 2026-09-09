@@ -505,19 +505,15 @@ export default function CalendarScreen() {
          */
         visitScheduleById.mutate({
           groupBookingId: previous.visit.groupBookingId,
-          ...(options.restoreLength
-            ? visitRestoreRequest({
-                services: previous.visit.services,
-                date: previous.date,
-                practitionerId: previous.practitionerId,
-              })
-            : {
-                shift: {
-                  booking_date: previous.date,
-                  booking_time: `${previous.time.slice(0, 5)}:00`,
-                  ...(previous.practitionerId ? { practitioner_id: previous.practitionerId } : {}),
-                },
-              }),
+          // The calendar only ever moved the rows it could see (one day of the
+          // visit), so it puts back exactly those, each at the slot and length
+          // it had. No known-rows guard: the grid cannot know the other days.
+          ...visitRestoreRequest({
+            services: previous.visit.services,
+            date: previous.date,
+            practitionerId: previous.practitionerId,
+            guardKnownRows: false,
+          }),
           allow_outside_hours: true,
           // A SEPARATE gate from the one above: the server's break check has
           // never been relaxed by `allow_outside_hours`, so without this a move
@@ -1369,6 +1365,9 @@ export default function CalendarScreen() {
             group_booking_id: b.group_booking_id,
             person_label: b.person_label,
             booking_item_name: b.serviceName,
+            // The grid holds one day of one calendar: every row here is on the
+            // anchor, so the visit the bar stands for is that day's part of it.
+            booking_date: anchor,
           }));
         const visit = resolveAppointmentVisit(rows);
         return visit ? { groupBookingId, visit } : null;
@@ -1414,16 +1413,20 @@ export default function CalendarScreen() {
         try {
           await visitScheduleById.mutateAsync({
             groupBookingId: input.groupBookingId,
-            // A move is a shift of the whole visit; a resize names every row and
-            // puts the change on the last service (web #187).
+            // The grid holds one day, so the bar names the rows it can see and
+            // moves those (a service of the visit on another day stays put); a
+            // resize puts the change on the last visible service (web #187).
             ...visitScheduleRequest({
               services: input.previousTarget.visit?.services ?? [],
+              fromDate: input.previousTarget.date,
               fromTime: input.previousTarget.time,
               toDate: anchor,
               toTime: input.time,
               practitionerId: input.practitionerId,
               fromTotalMinutes: input.previousTarget.durationMinutes,
               toTotalMinutes: input.totalDurationMinutes ?? input.previousTarget.durationMinutes,
+              mode: 'services',
+              guardKnownRows: false,
             }),
             allow_outside_hours: true,
             // Separate gate; see the restore path above (R17-3).

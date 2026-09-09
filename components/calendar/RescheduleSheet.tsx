@@ -136,6 +136,7 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
           // row and lands on the last service (web #187).
           ...visitScheduleRequest({
             services: visit.services,
+            fromDate: target.date,
             fromTime: target.time,
             toDate: date,
             toTime: minutesToTime(minutes),

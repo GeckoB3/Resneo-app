@@ -1095,6 +1095,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     () =>
       visitScheduleRequest({
         services: editRows,
+        fromDate: target?.date ?? date,
         fromTime: target?.time ?? '00:00',
         toDate: date,
         toTime: minutesToTime(minutes),
@@ -1104,6 +1105,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
       }),
     [
       editRows,
+      target?.date,
       target?.time,
       date,
       minutes,
@@ -1274,6 +1276,8 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
           .filter((s) => s.id && typeof s.booking_time === 'string')
           .map((s) => ({
             bookingId: s.id,
+            date: s.booking_date ?? null,
+            calendarId: s.calendar_id ?? null,
             startHm: s.booking_time.slice(0, 5),
             durationMinutes: s.duration_minutes,
           }));
@@ -2095,8 +2099,10 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
             {/* While the service list is in play the length is READ-ONLY: the
                 services set it, and two controls competing over one number would
                 let a staff member ask for a visit shorter than the services they
-                just chose. */}
-            {servicesChanged ? (
+                just chose. A visit spread over several days has no one length
+                to show either (web #187: its services are independent), so it
+                gets the same read-only panel. */}
+            {servicesChanged || visit?.spansDays ? (
               <View
                 style={[
                   styles.processingPanel,
@@ -2109,7 +2115,9 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
                   {visitPlannedMinutes != null ? formatDuration(visitPlannedMinutes) : '—'}
                 </Text>
                 <Text variant="caption" tone="muted">
-                  Set by the services you picked. Save, then reopen to adjust it by hand.
+                  {servicesChanged
+                    ? 'Set by the services you picked. Save, then reopen to adjust it by hand.'
+                    : 'This visit runs over more than one day, so its services keep their own lengths here.'}
                 </Text>
               </View>
             ) : (
