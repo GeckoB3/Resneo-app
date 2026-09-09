@@ -1,5 +1,86 @@
 # Go-live check — Resneo app
 
+## Run 2026-09-10: OTA to production, 1.1.0, "ResNeo R29 and R30 Web Parity"
+
+**Scope:** the fifteen commits since the last published group. The published tip was read from
+`eas update:list --branch production` + `update:view`: it is `3e57133` ("Calendar: rounded
+lozenges at every processing boundary"), published as "ResNeo R28 Web Parity Processing Periods"
+(group `1c28ec38`, 2026-09-09), one commit past the go-live record below. The batch is
+`61a9ba4` (the calendar resize follows the drag; a resize gets a toast), `c3fc922`..`2ea2f14`
+(R29-1..14: the visit schedule `shift` / `services` contract, per-service Start/Complete,
+cross-day and cross-calendar visits, one bar per service, per-service editors in the Modify
+sheet, partner visits, in-sheet "Save anyway?", amended hours in the schedule preview, the
+card-hold toggle off by default, the service form's processing re-fit, the outside-hours note,
+the amended-hours editor, override availability) and `bf41535` (R30: the Availability screen as
+the web's four tabs, the calendar drag/resize cache patch, the compact booking chrome).
+Reports: `Docs/APP_GAP_REPORT_R29_WEB_DELTA.md`, `Docs/APP_GAP_REPORT_R30_AVAILABILITY_SCREEN.md`.
+JavaScript and styling only.
+
+**Verdict: cleared to OTA**, with one caveat: no device pass on this batch yet (the web preview
+cannot reach the authed API, so the four availability tabs, the visit bars and the resize were
+verified by the suites and the type check). Type check and the full suite (265 suites, 2,682
+tests) pass; lint on every touched file is clean (the 15 project-wide lint errors are the
+pre-existing ones in build scripts, the jest setup and the auth provider's unconfigured path).
+
+### 1. Version and reach
+
+| Check | Result |
+|---|---|
+| iOS version | **1.1.0** (`app.json` `version`) |
+| Android version | **1.1.0** (`app.json` `android.version`) |
+| `runtimeVersion.policy` | `appVersion`, so runtime **1.1.0** on both |
+| `production` channel before | branch `production`, latest group `1c28ec38` at `3e57133`, runtime **1.1.0**, both platforms |
+
+Sixth update on the 1.1.0 runtime. The version is not bumped (it would move the runtime and
+strand every 1.1.0 install); `eas update` does not touch it.
+
+### 2. OTA eligibility
+
+`git diff 2e84693..HEAD -- app.json app.config.js eas.json package.json package-lock.json patches
+ios android` is **empty**, and so is the same diff back to the `ce1d85c` binaries. No new native
+surface: the batch's only native-backed imports (`@react-native-community/datetimepicker` behind
+the date and time pickers, `expo-symbols`) already ship in the releases. Working tree clean,
+`main` level with `origin/main` before this record.
+
+### 3. Production environment (EAS, not `eas.json`)
+
+`eas env:list --environment production --format long` (eas-cli 23.0.0; 23.2.0 is available and
+was not taken mid-check): the same five app variables as the R28 run, all **PUBLIC**:
+`EXPO_PUBLIC_API_URL` = `https://www.resneo.com`, `EXPO_PUBLIC_SUPABASE_URL` =
+`njualfobtudvlugqkqho.supabase.co` (live), `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (live),
+`EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` = `pk_live_…`, `EXPO_PUBLIC_SENTRY_DSN` (Sentry DE ingest).
+`GOOGLE_SERVICES_JSON` (secret) and `SENTRY_AUTH_TOKEN` (now marked sensitive) are build-time,
+n/a. Logged in as the `resneo` owner account. Local env files: `.env.development.local` and
+`.env.example` only; a production-mode export loads neither.
+
+### 4. The bundle, checked before publishing
+
+`eas env:exec production "npx expo export --clear --platform all --output-dir …"`, both Hermes
+bundles grepped (iOS 11 MB, Android 12 MB):
+
+| String | iOS | Android |
+|---|---|---|
+| live Supabase host `njualfobtudvlugqkqho` | present | present |
+| staging Supabase host `zkppmyyvkjvbsvemakbb` | absent | absent |
+| `www.resneo.com` | present | present |
+| `pk_live_` | present | present |
+| `pk_test_` | absent | absent |
+| Sentry DE ingest | present | present |
+| `Closures & amended hours`, `override_availability`, `Save to all calendars` (this batch's code) | present | present |
+
+`reserve-ni.vercel.app` is present in both, as in every run: the fallback in `webDashboardUrl()`
+(settings.tsx), unreachable while `EXPO_PUBLIC_API_URL` is set.
+
+### 5. The command
+
+`npx eas-cli update --channel production --environment production --clear-cache --message
+"ResNeo R29 and R30 Web Parity"` — the channel maps to the one `production` branch, the
+environment is the EAS one above, and `--clear-cache` is the rule (Metro's transform cache does
+not re-key on env). `eas.json` has `requireCommit: true`, so this record is committed and
+pushed before the publish. Record the group id here afterwards.
+
+---
+
 ## Run 2026-09-08: OTA to production, 1.1.0, "ResNeo R28 Web Parity Processing Periods"
 
 **Scope:** the three commits since the last published group. The published tip was read from
