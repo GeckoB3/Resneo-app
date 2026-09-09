@@ -45,6 +45,7 @@ import { ServiceLocationSection, isValidMeetingUrl, normalizeMeetingUrl } from '
 import {
   ProcessingTimeBlocksEditor,
   processingBlocksToDrafts,
+  refitProcessingDrafts,
   validateProcessingBlocks,
   type ProcessingBlockDraft,
 } from '@/components/services/ProcessingTimeBlocksEditor';
@@ -719,6 +720,25 @@ export default function ServicesScreen() {
   // Processing-time blocks (admin-only). Seeded from the service; only sent when changed.
   const [processingDrafts, setProcessingDrafts] = useState<ProcessingBlockDraft[]>([]);
   const [initialProcessingKey, setInitialProcessingKey] = useState('[]');
+  /**
+   * The length the drafts are fitted to, and the length the form opened with
+   * (R29-11). Editing the duration re-fits the drafts (a tail keeps its distance
+   * from the end) and the save sends the blocks whenever the length changed:
+   * the server validates the STORED blocks against the new length and, since web
+   * #187, canonicalises a block reaching the end into a shorter service plus a
+   * tail, which put a lengthened service straight back to its old length.
+   */
+  const [processingFitDuration, setProcessingFitDuration] = useState<number | null>(null);
+  const [initialDurationMinutes, setInitialDurationMinutes] = useState<number | null>(null);
+  const handleDurationChange = (text: string) => {
+    setDuration(text);
+    const next = Number(text);
+    if (!Number.isInteger(next) || next < 5) return;
+    if (processingFitDuration != null && next !== processingFitDuration) {
+      setProcessingDrafts((drafts) => refitProcessingDrafts(drafts, processingFitDuration, next));
+    }
+    setProcessingFitDuration(next);
+  };
   // Custom availability (stretch) — versioned schedule + enabled flag.
   const [customAvailEnabled, setCustomAvailEnabled] = useState(false);
   const [customSchedule, setCustomSchedule] = useState<ServiceCustomScheduleV2>({
@@ -957,6 +977,8 @@ export default function ServicesScreen() {
     const seededProcessing = processingBlocksToDrafts(service.processing_time_blocks);
     setProcessingDrafts(seededProcessing);
     setInitialProcessingKey(processingFingerprint(seededProcessing));
+    setProcessingFitDuration(service.duration_minutes);
+    setInitialDurationMinutes(service.duration_minutes);
     const seededSchedule = toScheduleV2(service.custom_working_hours);
     const seededEnabled = service.custom_availability_enabled === true;
     setCustomAvailEnabled(seededEnabled);
@@ -978,6 +1000,8 @@ export default function ServicesScreen() {
     setName('');
     setDescription('');
     setDuration('30');
+    setProcessingFitDuration(30);
+    setInitialDurationMinutes(null);
     setBuffer('0');
     setPrice('');
     setDeposit('');
@@ -1134,7 +1158,12 @@ export default function ServicesScreen() {
         if (!procResult.ok) {
           setError(procResult.error ?? 'Processing time is invalid.'); return;
         }
-        if (processingFingerprint(processingDrafts) !== initialProcessingKey) {
+        // Sent when the periods changed OR the length did: the re-fitted
+        // periods are what the new length means (R29-11).
+        if (
+          processingFingerprint(processingDrafts) !== initialProcessingKey ||
+          (initialDurationMinutes != null && durationMinutes !== initialDurationMinutes)
+        ) {
           processingToSend = procResult.blocks ?? [];
         }
       }
@@ -1690,7 +1719,7 @@ export default function ServicesScreen() {
                   <Input
                     label="Duration (mins)"
                     value={duration}
-                    onChangeText={setDuration}
+                    onChangeText={handleDurationChange}
                     keyboardType="number-pad"
                   />
                 </View>

@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, Switch, View } from 'react-native';
 import {
   ProcessingTimeBlocksEditor,
   processingBlocksToDrafts,
+  refitProcessingDrafts,
   validateProcessingBlocks,
   type ProcessingBlockDraft,
 } from '@/components/services/ProcessingTimeBlocksEditor';
@@ -317,7 +318,19 @@ export function VariantsEditor({
                     <Input
                       label="Duration (mins)"
                       value={draft.duration}
-                      onChangeText={(duration) => patchDraft(draft.key, { duration })}
+                      // The option's periods follow its length (R29-11): a tail
+                      // keeps its distance from the end rather than being sent
+                      // against the new length and canonicalised back.
+                      onChangeText={(duration) =>
+                        patchDraft(draft.key, {
+                          duration,
+                          processingDrafts: refitProcessingDrafts(
+                            draft.processingDrafts,
+                            Number(draft.duration),
+                            Number(duration),
+                          ),
+                        })
+                      }
                       keyboardType="number-pad"
                     />
                   </View>

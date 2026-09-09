@@ -108,3 +108,32 @@ describe('processingBlocksToDrafts', () => {
     ]);
   });
 });
+
+describe('refitProcessingDrafts (R29-11)', () => {
+  const { refitProcessingDrafts } = require('@/components/services/ProcessingTimeBlocksEditor');
+  const drafts = [
+    { key: 'mid', id: 'blk-mid', start: '20', duration: '10' },
+    { key: 'tail', id: 'blk-tail', start: '60', duration: '30' },
+  ];
+
+  it('moves a tail with the end and leaves a middle period where it is, keeping keys and ids', () => {
+    expect(refitProcessingDrafts(drafts, 60, 90)).toEqual([
+      { key: 'mid', id: 'blk-mid', start: '20', duration: '10' },
+      { key: 'tail', id: 'blk-tail', start: '90', duration: '30' },
+    ]);
+  });
+
+  it('pulls the tail back when the service shortens', () => {
+    expect(refitProcessingDrafts(drafts, 60, 45)).toEqual([
+      { key: 'mid', id: 'blk-mid', start: '20', duration: '10' },
+      { key: 'tail', id: 'blk-tail', start: '45', duration: '30' },
+    ]);
+  });
+
+  it('leaves every draft alone while one is still being typed, or the lengths are not usable', () => {
+    const typing = [{ key: 'a', start: '2', duration: '' }];
+    expect(refitProcessingDrafts(typing, 60, 90)).toBe(typing);
+    expect(refitProcessingDrafts(drafts, 60, 60)).toBe(drafts);
+    expect(refitProcessingDrafts(drafts, 60, 3)).toBe(drafts);
+  });
+});

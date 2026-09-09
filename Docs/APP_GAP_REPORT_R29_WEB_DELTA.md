@@ -30,7 +30,7 @@ web summary was corrected where the code disagrees with it (§2).
 | R29-8 | Per-calendar amended hours, write side: no editor in the app (`PUT/DELETE /api/venue/calendar-amended-hours`) | Parity | §9 |
 | R29-9 | Staff "Override availability": additive; the app has no tick box. Walk-in keeps its own silent bypass | Parity, a feature | §10 |
 | R29-10 | Card holds: the server default flipped to no hold; the app always sends the toggle explicitly for a card-hold entity, so nothing changes on the wire. The app's toggle still DEFAULTS ON and its copy is the old one; seven comments state the wrong server default | Parity (UX drift) | **Built** 2026-09-09 (§11, §24) |
-| R29-11 | Canonical processing shape: the calendar, wizard chain, Modify sheet and detail already agree with it. But lengthening a service in the app's form without touching its periods silently reverts the length on save (the server re-fits the stored blocks and canonicalises) | Wrong data, both sides; local fix | Build (§12) |
+| R29-11 | Canonical processing shape: the calendar, wizard chain, Modify sheet and detail already agree with it. But lengthening a service in the app's form without touching its periods silently reverts the length on save (the server re-fits the stored blocks and canonicalises) | Wrong data, both sides; local fix | **Built** 2026-09-09 (§12, §25) |
 | R29-12 | Collective service sync: additive; the app's catalogue builder keeps working but shows no sync state and lacks the three new actions. Booking-page settings: the combined page URL has no Copy in the app | Parity | §13 |
 | R29-13 | #186: the app already sends the outside-hours override on every calendar move, reschedule and Modify save. The dry runs now echo `outside_hours`; the app could show the web's amber note | Parity (minor) | §14 |
 | R29-14 | Modify sheet: the web edits each service of a visit on its own (date, time, calendar, length, `services` mode); the app moves the visit as one shift and changes only the last service's length | Parity, added 2026-09-09 after R29-3 | **Built** 2026-09-09 (§20) |
@@ -607,3 +607,15 @@ only if they do not show. The booking is cancelled if no card is added within 24
 The fee line under the toggle is gone; the fee still shows on the confirmation. The seven
 comments that stated the old server default are corrected. The wire is unchanged: the app
 already sent the toggle's value explicitly for every card-hold entity.
+
+## 25. Built: R29-11, the service form re-fits its periods (2026-09-09)
+
+`refitProcessingDrafts` (`components/services/ProcessingTimeBlocksEditor.tsx`) runs the
+two-ended fit (`fitProcessingBlocksToDuration`) over the editor's drafts: a period that reaches
+the end of the service keeps its distance from the end (a tail moves with it), a middle period
+stays put, keys and ids survive, and a draft still being typed leaves everything untouched. The
+service form re-fits on every valid duration edit (from the length the drafts were last fitted
+to) and now sends `processing_time_blocks` whenever the length changed, not only when a period
+was touched; the variants editor re-fits an option's periods on its own duration edit (its
+blocks were always sent). So a canonical 60 + [60..120] lengthened to 90 saves as 90 + [90..150]
+instead of coming back as 60. Three unit tests on the re-fit.

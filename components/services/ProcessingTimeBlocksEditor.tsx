@@ -6,6 +6,7 @@ import { Text } from '@/components/ui/Text';
 import {
   PROCESSING_BLOCK_MIN_MINUTES,
   PROCESSING_TAIL_MAX_MINUTES,
+  fitProcessingBlocksToDuration,
   placeNewProcessingBlock,
   processingTailMinutes,
   resizeProcessingBlock,
@@ -47,6 +48,60 @@ export function processingBlocksToDrafts(
       start: String(b.start_minute),
       duration: String(b.duration_minutes),
     }));
+}
+
+/**
+ * Re-fit the drafts when the service's length changes (R29-11, web #187's
+ * canonical shape). A period that reaches the end of the service keeps its
+ * distance from the end (a tail moves with it); a middle period stays put and
+ * is trimmed only when the service shortens past it. Without this the form
+ * re-sent the old blocks against the new length, and the server, which now
+ * canonicalises a block reaching the end into a shorter service plus a tail,
+ * silently put the length back.
+ *
+ * A draft the staff member is still typing (a non-integer) leaves every draft
+ * untouched: the fit would otherwise destroy an edit in progress. Keys survive
+ * the fit so React does not remount the rows.
+ */
+export function refitProcessingDrafts(
+  drafts: ProcessingBlockDraft[],
+  fromDurationMinutes: number,
+  toDurationMinutes: number,
+): ProcessingBlockDraft[] {
+  if (drafts.length === 0) return drafts;
+  if (
+    !Number.isInteger(fromDurationMinutes) ||
+    !Number.isInteger(toDurationMinutes) ||
+    fromDurationMinutes < PROCESSING_BLOCK_MIN_MINUTES ||
+    toDurationMinutes < PROCESSING_BLOCK_MIN_MINUTES ||
+    fromDurationMinutes === toDurationMinutes
+  ) {
+    return drafts;
+  }
+  const blocks: ProcessingTimeBlock[] = [];
+  for (const d of drafts) {
+    const start = Number(d.start);
+    const duration = Number(d.duration);
+    // An empty field parses as 0, so it is checked as text: it is a draft mid-edit.
+    if (d.start.trim() === '' || d.duration.trim() === '') return drafts;
+    if (!Number.isInteger(start) || !Number.isInteger(duration) || start < 0 || duration <= 0) {
+      return drafts;
+    }
+    // The draft key rides in `id` so the fitted block can find its draft again.
+    blocks.push({ id: d.key, start_minute: start, duration_minutes: duration });
+  }
+  const byKey = new Map(drafts.map((d) => [d.key, d] as const));
+  return fitProcessingBlocksToDuration(blocks, { fromDurationMinutes, toDurationMinutes }).blocks.map(
+    (b) => {
+      const draft = byKey.get(b.id ?? '');
+      return {
+        key: b.id ?? nextKey(),
+        ...(draft?.id ? { id: draft.id } : {}),
+        start: String(b.start_minute),
+        duration: String(b.duration_minutes),
+      };
+    },
+  );
 }
 
 export interface ProcessingBlocksValidation {
