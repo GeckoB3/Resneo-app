@@ -51,6 +51,7 @@ import { ACTION_COLORS, primaryActionColors } from '@/lib/booking/booking-action
 import { useAcceptUnpaidGuard } from '@/components/bookings/AcceptUnpaidSheet';
 import {
   resolveAppointmentVisit,
+  toVisitEditTarget,
   visitServiceNames,
 } from '@/lib/booking/appointment-visit';
 import { resolveBookingCoreDurationMinutes } from '@/lib/booking/booking-core-duration';
@@ -732,17 +733,7 @@ export function BookingDetailContent({
    * edit the whole visit through one endpoint instead.
    */
   const visitEdit =
-    visit?.groupBookingId != null
-      ? {
-          groupBookingId: visit.groupBookingId,
-          startHm: visit.startHm,
-          endHm: visit.endHm,
-          serviceCount: visit.services.length,
-          serviceNames: visitServiceNames(visit),
-          /** The visit's FIRST service: the row its notification is sent against. */
-          leadBookingId: visit.services[0]!.id,
-        }
-      : null;
+    visit?.groupBookingId != null ? toVisitEditTarget(visit, visit.groupBookingId) : null;
 
   const openModify = () =>
     setModifyTarget({

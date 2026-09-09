@@ -34,7 +34,8 @@
  * and correct for concurrent ones.
  */
 
-import { isServiceVisit } from '@/lib/booking/appointment-visit';
+import { timeToMinutes } from '@/components/calendar/grid-layout';
+import { isServiceVisit, visitLengthFloorMinutes } from '@/lib/booking/appointment-visit';
 import type { CalendarGridBooking } from '@/types/calendar-grid';
 
 /** A booking with its resolved minute range, as every grid already computes. */
@@ -158,4 +159,21 @@ export function clusterCalendarBookings(items: ClusterInput[]): CalendarBookingC
     clusters.push(toCluster(segments));
   }
   return clusters;
+}
+
+/**
+ * The shortest a visit bar may be dragged to. A length change is the LAST
+ * service's alone (web #187), so the floor is the bar less what that service
+ * can give up. Falls back to one floor when a segment has no end time.
+ */
+export function clusterLengthFloorMinutes(cluster: CalendarBookingCluster): number {
+  const rows = cluster.bookings
+    .filter((b) => b.startTime && b.endTime)
+    .map((b) => ({
+      bookingId: b.id,
+      startHm: b.startTime.slice(0, 5),
+      durationMinutes: timeToMinutes(b.endTime) - timeToMinutes(b.startTime),
+    }))
+    .sort((a, b) => timeToMinutes(a.startHm) - timeToMinutes(b.startHm));
+  return visitLengthFloorMinutes(cluster.end - cluster.start, rows);
 }

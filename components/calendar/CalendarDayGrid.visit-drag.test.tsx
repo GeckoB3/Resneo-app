@@ -96,13 +96,14 @@ describe('CalendarDayGrid — dragging a merged bar', () => {
     expect(bar('b1').segmentIds).toEqual(['b1', 'b2']);
   });
 
-  it('floors a visit resize at its services’ own floors', async () => {
+  it('floors a visit resize at what its last service can give up', async () => {
     await renderGrid([
       booking('b1', '10:00', '10:30', { group_booking_id: 'g1' }),
       booking('b2', '10:30', '11:00', { group_booking_id: 'g1' }),
       booking('b3', '11:00', '11:30', { group_booking_id: 'g1' }),
     ]);
-    expect(bar('b1').minDurationMinutes).toBe(15);
+    // 90 minutes less the 30-minute last service, plus its 5-minute floor (web #187).
+    expect(bar('b1').minDurationMinutes).toBe(65);
   });
 
   it('leaves an ordinary booking exactly as it was', async () => {

@@ -84,6 +84,11 @@ const VISIT_TARGET: RescheduleTarget = {
     serviceCount: 3,
     serviceNames: ['Cut & Blow Dry', 'Olaplex Treatment', 'Toner'],
     leadBookingId: 'bk-lead',
+    services: [
+      { bookingId: 'bk-lead', startHm: '14:00', durationMinutes: 45 },
+      { bookingId: 'bk-1', startHm: '14:45', durationMinutes: 60 },
+      { bookingId: 'bk-3', startHm: '16:00', durationMinutes: 15 },
+    ],
   },
 };
 
@@ -144,7 +149,9 @@ describe('RescheduleSheet', () => {
       // The PATCH that would have left services 2 and 3 behind.
       expect(mockReschedule).not.toHaveBeenCalled();
       expect(mockVisitSchedule).toHaveBeenCalledWith(
-        expect.objectContaining({ booking_date: '2026-08-10', booking_time: '09:30:00' }),
+        expect.objectContaining({
+          shift: { booking_date: '2026-08-10', booking_time: '09:30:00' },
+        }),
       );
       expect(onClose).toHaveBeenCalled();
     });
@@ -155,38 +162,39 @@ describe('RescheduleSheet', () => {
       await press('Move whole visit');
 
       expect(mockVisitSchedule).toHaveBeenCalledWith(
-        expect.objectContaining({ booking_date: '2026-08-11' }),
+        expect.objectContaining({ shift: expect.objectContaining({ booking_date: '2026-08-11' }) }),
       );
     });
 
-    it('sends the visit’s whole span as its length, not one service’s', async () => {
+    it('puts an edited length on the last service, naming every row', async () => {
       await render(<RescheduleSheet target={VISIT_TARGET} onClose={onClose} />);
       await step('Visit length', 'increment');
       await press('Move whole visit');
 
-      expect(mockVisitSchedule).toHaveBeenCalledWith(
-        expect.objectContaining({ total_duration_minutes: 136 }),
+      const body = mockVisitSchedule.mock.calls[0][0];
+      expect(body.shift).toBeUndefined();
+      expect(body.known_booking_ids).toEqual(['bk-lead', 'bk-1', 'bk-3']);
+      expect(body.services[2]).toEqual(
+        expect.objectContaining({ booking_id: 'bk-3', booking_time: '16:00:00', duration_minutes: 16 }),
       );
     });
 
     it('leaves the length out when it did not change', async () => {
-      // Re-asserting an untouched span would re-lay the visit for no reason.
+      // Naming the services would re-assert every row; a move stays a shift.
       await render(<RescheduleSheet target={VISIT_TARGET} onClose={onClose} />);
       await press('TIME_PICKER');
       await press('Move whole visit');
 
-      expect(mockVisitSchedule).toHaveBeenCalledWith(
-        expect.not.objectContaining({ total_duration_minutes: expect.anything() }),
-      );
+      expect(mockVisitSchedule.mock.calls[0][0].services).toBeUndefined();
+      expect(mockVisitSchedule.mock.calls[0][0].shift).toBeDefined();
     });
 
-    it('floors the length at the services’ own floors', async () => {
-      // Three services at 5 minutes each. Deliberately below the server's floor,
-      // which adds the configured gaps: a clamp above it would put a legitimate
-      // length out of reach, and the dry run names the real minimum anyway.
+    it('floors the length at what the last service can give up', async () => {
+      // A length change is the last service's alone (web #187): the 15-minute
+      // toner can go down to 5, so the 135-minute visit floors at 125.
       await render(<RescheduleSheet target={VISIT_TARGET} onClose={onClose} />);
       for (let i = 0; i < 130; i += 1) await step('Visit length', 'decrement');
-      expect(screen.getByLabelText('Visit length').props.accessibilityValue?.text).toBe('15 min');
+      expect(screen.getByLabelText('Visit length').props.accessibilityValue?.text).toBe('2h 5m');
     });
 
     it('surfaces the endpoint’s refusal verbatim, naming the service that blocked it', async () => {

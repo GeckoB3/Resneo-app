@@ -230,4 +230,49 @@ export interface VisitEditTarget {
    * row, so it is also the id the app's own Notify follow-up must post to.
    */
   leadBookingId: string;
+  /**
+   * Every scheduled service, in order, as it stands. The schedule endpoint
+   * takes a whole-visit `shift` or a per-service list (web #187); a length
+   * change is the latter, so an editor needs each row's start and length to
+   * say where every service goes and which one the extra time lands on.
+   */
+  services: VisitEditService[];
+}
+
+/** One row of a visit as an editor holds it. */
+export interface VisitEditService {
+  bookingId: string;
+  /** HH:mm */
+  startHm: string;
+  durationMinutes: number;
+}
+
+/** The editing view of a resolved visit. */
+export function toVisitEditTarget(visit: AppointmentVisit, groupBookingId: string): VisitEditTarget {
+  return {
+    groupBookingId,
+    startHm: visit.startHm,
+    endHm: visit.endHm,
+    serviceCount: visit.services.length,
+    serviceNames: visitServiceNames(visit),
+    leadBookingId: visit.services[0]!.id,
+    services: visit.services.map((s) => ({
+      bookingId: s.id,
+      startHm: s.startHm,
+      durationMinutes: s.durationMinutes,
+    })),
+  };
+}
+
+/**
+ * The shortest a visit can be made by its length control: the whole visit less
+ * whatever the LAST service can give up. Since web #187 a length change is that
+ * service's alone (shortening one service no longer pulls the next forward), so
+ * an earlier service is changed from its own booking, not by squeezing the
+ * visit.
+ */
+export function visitLengthFloorMinutes(totalMinutes: number, services: readonly VisitEditService[]): number {
+  const tail = services[services.length - 1];
+  if (!tail) return MIN_CORE_DURATION_MINUTES;
+  return Math.max(MIN_CORE_DURATION_MINUTES, totalMinutes - tail.durationMinutes + MIN_CORE_DURATION_MINUTES);
 }

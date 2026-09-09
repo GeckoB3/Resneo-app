@@ -15,10 +15,12 @@ import { Text } from '@/components/ui/Text';
 import { TimePickerField } from '@/components/ui/TimePickerField';
 import { ApiError } from '@/lib/api/client';
 import {
-  minimumVisitFloorMinutes,
+  visitLengthFloorMinutes,
+  type VisitEditService,
   type VisitEditTarget,
 } from '@/lib/booking/appointment-visit';
 import { MIN_CORE_DURATION_MINUTES } from '@/lib/booking/booking-core-duration';
+import { visitRestoreRequest, visitScheduleRequest } from '@/lib/booking/visit-schedule-request';
 import { filterToUsableCalendars } from '@/lib/calendar/managed-calendars';
 import {
   describeProcessingChange,
@@ -297,16 +299,15 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
    * something else would be worse than not offering it.
    */
   const [savedServiceChange, setSavedServiceChange] = useState(false);
-  /**
-   * The visit carries dead time an earlier per-service edit left behind, so
-   * saving will re-lay it even if the staff member changes nothing. Answered by
-   * the endpoint on open (`changed` on a dry run that asks for the visit's
-   * current shape) — the rows' own span is not the visit's span when a hole sits
-   * inside it.
-   */
-  const [visitRelayNeeded, setVisitRelayNeeded] = useState(false);
   /** The span the endpoint says this visit has, once its opening dry run answers. */
   const [visitPlannedMinutes, setVisitPlannedMinutes] = useState<number | null>(null);
+  /**
+   * The visit's rows as the endpoint laid them out on open. The schedule
+   * request names every row on a length change, so it is built from these
+   * rather than the target's own reading of the rows once the plan has answered.
+   */
+  const [plannedRows, setPlannedRows] = useState<VisitEditService[] | null>(null);
+  const editRows = useMemo(() => plannedRows ?? visit?.services ?? [], [plannedRows, visit]);
   /**
    * The visit's services as the staff member wants them, and as they stand.
    *
@@ -330,14 +331,12 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   const [pickerServiceId, setPickerServiceId] = useState<string | null>(null);
 
   /**
-   * The duration floor for whatever is being edited. A visit's is its services'
-   * floors added up, deliberately excluding the gaps the server adds on top: a
-   * client clamp below the server's floor can never put a legitimate length out
-   * of reach, and one that is genuinely too short comes back from the dry run
-   * naming the real minimum.
+   * The duration floor for whatever is being edited. A visit's length change
+   * is its LAST service's (web #187), so the floor is the visit less what that
+   * service can give up; an earlier service is changed from its own booking.
    */
   const minDuration = visit
-    ? minimumVisitFloorMinutes(visit.serviceCount)
+    ? visitLengthFloorMinutes(visitPlannedMinutes ?? target?.durationMinutes ?? 0, editRows)
     : MIN_DURATION_MINUTES;
 
   // Seed from the booking when the sheet opens or the target booking changes.
@@ -366,7 +365,6 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     setError(null);
     setUndoing(false);
     setSavedServiceChange(false);
-    setVisitRelayNeeded(false);
     setVisitPlannedMinutes(null);
     setServiceLines(null);
     setBaselineServiceLines(null);
@@ -954,12 +952,10 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   /**
    * The length was deliberately changed, as opposed to merely carried.
    *
-   * A visit's `total_duration_minutes` is an INSTRUCTION, not a description: the
-   * server lays the services out to fill it, so re-asserting the span the form
-   * happens to be holding lengthens the tail service by whatever dead time was in
-   * it. Sending it only on a real edit means a move stays a move — and it is also
-   * the safe answer when the opening plan never arrived, where the form is still
-   * showing the rows' raw span.
+   * On a visit an edited length lands on the LAST service, and the request then
+   * names every row (web #187). Sending that only on a real edit means a move
+   * stays a plain shift, which is also the safe answer when the opening plan
+   * never arrived and the form is still showing the rows' raw span.
    */
   const durationEdited =
     effectiveDuration != null && baselineDuration != null && effectiveDuration !== baselineDuration;
@@ -1089,6 +1085,35 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   const visitScheduleAsync = visitSchedule.mutateAsync;
   const visitServicesAsync = visitServices.mutateAsync;
 
+  /**
+   * What the schedule endpoint is asked for (web #187): a shift of the whole
+   * visit when only the slot changed, or every row named with its shifted start
+   * and the new length on the last service when the length was edited. The
+   * check, the save and the undo all build from here.
+   */
+  const visitScheduleRequestBody = useCallback(
+    () =>
+      visitScheduleRequest({
+        services: editRows,
+        fromTime: target?.time ?? '00:00',
+        toDate: date,
+        toTime: minutesToTime(minutes),
+        practitionerId: reassignedPractitionerId,
+        fromTotalMinutes: baselineDuration,
+        toTotalMinutes: durationEdited ? effectiveDuration : baselineDuration,
+      }),
+    [
+      editRows,
+      target?.time,
+      date,
+      minutes,
+      reassignedPractitionerId,
+      baselineDuration,
+      durationEdited,
+      effectiveDuration,
+    ],
+  );
+
   /** What the services endpoint is asked for: the list, plus the schedule. */
   const visitServicesRequestBody = useCallback(
     () => ({
@@ -1142,14 +1167,13 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
               }
               return;
             }
+            // Exactly what the save will send, or the check judges a request
+            // the save would not make.
             await visitScheduleAsync({
               dry_run: true,
-              booking_date: date,
-              booking_time: `${minutesToTime(minutes)}:00`,
-              ...(reassignedPractitionerId ? { practitioner_id: reassignedPractitionerId } : {}),
-              // Exactly what the save will send, or the check judges a request
-              // the save would not make.
-              ...(durationEdited ? { total_duration_minutes: effectiveDuration! } : {}),
+              ...visitScheduleRequestBody(),
+              allow_outside_hours: true,
+              allow_during_breaks: true,
             });
             if (checkSeq.current !== seq) return;
             setChecked({ sig: signature, result: { state: 'valid' } });
@@ -1225,16 +1249,15 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     visitScheduleAsync,
     visitServicesAsync,
     visitServicesRequestBody,
+    visitScheduleRequestBody,
     servicesChanged,
   ]);
 
   /**
-   * What the visit actually looks like to the server, asked once on open.
-   *
-   * The rows can carry dead time an earlier per-service edit left behind, so the
-   * span they occupy is not the span the visit HAS. Adopting the planned total as
-   * both the value and the baseline keeps that correction from reading as a staff
-   * edit, and `visitRelayNeeded` is what still lets them save it.
+   * What the visit actually looks like to the server, asked once on open with
+   * an empty shift (web #187). Its rows are what a length change names, and its
+   * total is adopted as both the value and the baseline so the correction never
+   * reads as a staff edit.
    */
   useEffect(() => {
     if (!isVisit || !target || seededId !== target.id) return;
@@ -1243,15 +1266,20 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     let cancelled = false;
     void (async () => {
       try {
-        const plan = await visitScheduleAsync({
-          dry_run: true,
-          booking_date: target.date,
-          booking_time: `${target.time.slice(0, 5)}:00`,
-          ...(target.practitionerId ? { practitioner_id: target.practitionerId } : {}),
-        });
+        // An empty shift describes the visit as it stands (web #187).
+        const plan = await visitScheduleAsync({ dry_run: true, shift: {} });
         if (cancelled || typeof plan.total_minutes !== 'number') return;
         setVisitPlannedMinutes(plan.total_minutes);
-        setVisitRelayNeeded(plan.changed === true);
+        const rows = (plan.services ?? [])
+          .filter((s) => s.id && typeof s.booking_time === 'string')
+          .map((s) => ({
+            bookingId: s.id,
+            startHm: s.booking_time.slice(0, 5),
+            durationMinutes: s.duration_minutes,
+          }));
+        if (rows.length > 0 && rows.every((r) => Number.isFinite(r.durationMinutes))) {
+          setPlannedRows(rows);
+        }
         /**
          * The service list, but only when EVERY row resolved to a service id.
          *
@@ -1298,21 +1326,6 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
    * the hole moves earlier. It is also the repair for visits an earlier
    * per-service edit already damaged.
    */
-  const visitRelayNotice = useMemo(() => {
-    if (!visitRelayNeeded || !target) return null;
-    // While the list is being rewritten the visit is re-laid regardless, and the
-    // planned total now describes the NEW services — subtracting it from the old
-    // span would report a "gap" that is really the edit in progress.
-    if (servicesChanged) return null;
-    const rawSpan = target.durationMinutes;
-    const gap =
-      rawSpan != null && visitPlannedMinutes != null ? rawSpan - visitPlannedMinutes : 0;
-    if (gap > 0) {
-      return `This visit has ${gap} minutes of dead time in it. Saving closes it, so the services run back to back.`;
-    }
-    return 'Saving will re-lay this visit so its services run back to back.';
-  }, [visitRelayNeeded, servicesChanged, target, visitPlannedMinutes]);
-
   const check: CheckState = !canCheck
     ? { state: 'idle' }
     : checked.sig === signature
@@ -1326,9 +1339,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     // A visit has no single service, variant or add-on set to satisfy — those
     // controls are not offered while it is being edited.
     (isVisit || (!!serviceId && (!requiresVariant || !!variantId) && addonGroupsValid)) &&
-    // Re-laying a visit that carries dead time is a real save even though no
-    // field has been touched: it is the edit that closes the hole.
-    (hasChanges || servicesChanged || (isVisit && visitRelayNeeded)) &&
+    (hasChanges || servicesChanged) &&
     check.state !== 'invalid' &&
     check.state !== 'checking';
 
@@ -1358,13 +1369,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
           return;
         }
         await visitSchedule.mutateAsync({
-          booking_date: date,
-          booking_time: `${minutesToTime(minutes)}:00`,
-          ...(reassignedPractitionerId ? { practitioner_id: reassignedPractitionerId } : {}),
-          // Only on a real edit — see `durationEdited`. Omitted, every service
-          // keeps its own length and the visit is simply re-laid, which is what
-          // closes any dead time in it.
-          ...(durationEdited ? { total_duration_minutes: effectiveDuration } : {}),
+          ...visitScheduleRequestBody(),
           // Staff editing a visit by hand have decided where it goes.
           allow_outside_hours: true,
           allow_during_breaks: true,
@@ -1463,22 +1468,29 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
        * and calendar, and its length only if the save changed it — otherwise the
        * services keep the lengths they still have, which restores them exactly.
        *
-       * Worth knowing where it is NOT exact: when the length WAS changed, the
-       * total is restored but the server redistributes it by its own rule (growth
-       * goes on the tail). A shrink that cascaded back into an earlier service
-       * therefore comes back with those minutes on the last one. That is inherent
-       * to editing a visit by one wall-clock number, not something the undo can
-       * recover; the slot and the total are exact.
+       * A plain move is undone by shifting the visit back. A length change was
+       * the last service's, and a shift cannot restore a length, so every row is
+       * named with the slot and length it had when the form opened (web #187's
+       * `services` mode). Overlap is allowed: the rows are going back to where
+       * they already were.
        */
       setUndoing(true);
       try {
         await visitSchedule.mutateAsync({
-          booking_date: target.date,
-          booking_time: `${target.time.slice(0, 5)}:00`,
-          ...(target.practitionerId ? { practitioner_id: target.practitionerId } : {}),
-          ...(durationEdited && baselineDuration != null
-            ? { total_duration_minutes: baselineDuration }
-            : {}),
+          ...(durationEdited
+            ? visitRestoreRequest({
+                services: editRows,
+                date: target.date,
+                practitionerId: target.practitionerId,
+              })
+            : {
+                shift: {
+                  booking_date: target.date,
+                  booking_time: `${target.time.slice(0, 5)}:00`,
+                  ...(target.practitionerId ? { practitioner_id: target.practitionerId } : {}),
+                },
+              }),
+          allow_manual_overlap: true,
           allow_outside_hours: true,
           // An undo must be able to put the booking back exactly where it was,
           // including onto a break it was already sitting over.
@@ -2134,13 +2146,8 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
             {isVisit ? (
               <Text variant="caption" tone="muted">
                 This is the whole visit, gaps included. Extra time goes on the last
-                service; time taken off comes off the last service first, then the ones
-                before it, and the services stay back to back.
-              </Text>
-            ) : null}
-            {visitRelayNotice ? (
-              <Text variant="caption" color={colors.warning}>
-                {visitRelayNotice}
+                service, and time taken off comes off it too. To change an earlier
+                service, open that service.
               </Text>
             ) : null}
             {addonTotals.durationMinutes > 0 || addonTotals.pricePence > 0 ? (
@@ -2180,7 +2187,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
 
           </ScrollView>
 
-          {!hasChanges && !servicesChanged && !(isVisit && visitRelayNeeded) ? (
+          {!hasChanges && !servicesChanged ? (
             <Text variant="caption" tone="muted">
               Adjust a field to check availability and enable save.
             </Text>

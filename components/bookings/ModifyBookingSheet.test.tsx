@@ -253,6 +253,11 @@ const VISIT_TARGET: ModifyBookingTarget = {
     serviceCount: 3,
     serviceNames: ['Cut & Blow Dry', 'Olaplex Treatment', 'Toner'],
     leadBookingId: 'bk-lead',
+    services: [
+      { bookingId: 'bk-lead', startHm: '14:00', durationMinutes: 45 },
+      { bookingId: 'bk-1', startHm: '14:45', durationMinutes: 60 },
+      { bookingId: 'bk-3', startHm: '16:00', durationMinutes: 15 },
+    ],
   },
 };
 
@@ -1021,7 +1026,10 @@ describe('ModifyBookingSheet', () => {
 
         expect(mockValidate).not.toHaveBeenCalled();
         expect(visitBodies()).toContainEqual(
-          expect.objectContaining({ dry_run: true, booking_time: '09:30:00' }),
+          expect.objectContaining({
+            dry_run: true,
+            shift: { booking_date: '2026-08-10', booking_time: '09:30:00' },
+          }),
         );
       } finally {
         jest.useRealTimers();
@@ -1038,31 +1046,28 @@ describe('ModifyBookingSheet', () => {
 
         // The one that would have torn the visit.
         expect(mockModify).not.toHaveBeenCalled();
+        // A move alone is a shift of the whole visit (web #187).
         expect(visitWrite()).toEqual(
           expect.objectContaining({
-            booking_date: '2026-08-10',
-            booking_time: '09:30:00',
+            shift: { booking_date: '2026-08-10', booking_time: '09:30:00' },
             defer_modification_guest_notification: true,
           }),
         );
         // R16-1 — the calendar is NOT re-asserted, because it did not change.
         // Its mere presence arms the server's managed-calendar gate, which would
         // 403 a non-admin moving the time of a colleague's visit. The endpoint
-        // resolves the calendar from the visit's own rows when it is omitted
-        // (`visits/[groupBookingId]/schedule/route.ts:191`), so this is the same
-        // write with one fewer way to be refused.
-        expect(visitWrite()).not.toHaveProperty('practitioner_id');
+        // resolves the calendar from the visit's own rows when it is omitted,
+        // so this is the same write with one fewer way to be refused.
+        expect(visitWrite()!.shift).not.toHaveProperty('practitioner_id');
         expect(screen.getByText('Visit moved')).toBeTruthy();
       } finally {
         jest.useRealTimers();
       }
     });
 
-    it('does not re-assert a length nobody edited', async () => {
-      // `total_duration_minutes` is an instruction, not a description: the server
-      // lays the services out to FILL it. Sending back the span the form happens
-      // to be holding would put any dead time in it onto the tail service, so a
-      // move would silently lengthen the last service.
+    it('does not name the services when nobody edited the length', async () => {
+      // A per-service list re-asserts every row's slot and length; a move must
+      // stay a shift so each service keeps what it has.
       jest.useFakeTimers();
       try {
         await renderVisit();
@@ -1070,27 +1075,35 @@ describe('ModifyBookingSheet', () => {
         await settleAvailability();
         await press('Save whole visit');
 
-        expect(visitWrite()).toEqual(
-          expect.not.objectContaining({ total_duration_minutes: expect.anything() }),
-        );
+        expect(visitWrite()!.services).toBeUndefined();
         // Nor on the check, or the two would be judging different requests.
-        expect(visitBodies().every((b) => b.total_duration_minutes === undefined)).toBe(true);
+        expect(visitBodies().every((b) => b.services === undefined)).toBe(true);
       } finally {
         jest.useRealTimers();
       }
     });
 
-    it('sends the length once it IS edited, as the whole visit’s span', async () => {
+    it('sends an edited length as the last service’s, naming every row', async () => {
       jest.useFakeTimers();
       try {
         await renderVisit();
-        await press('2h');
+        await step('Visit length', 'increment');
         await settleAvailability();
         await press('Save whole visit');
 
-        expect(visitWrite()).toEqual(
-          expect.objectContaining({ total_duration_minutes: 120 }),
-        );
+        const write = visitWrite()!;
+        expect(write.shift).toBeUndefined();
+        expect(write.known_booking_ids).toEqual(['bk-lead', 'bk-1', 'bk-3']);
+        expect(write.services).toEqual([
+          { booking_id: 'bk-lead', booking_date: '2026-08-10', booking_time: '14:00:00' },
+          { booking_id: 'bk-1', booking_date: '2026-08-10', booking_time: '14:45:00' },
+          {
+            booking_id: 'bk-3',
+            booking_date: '2026-08-10',
+            booking_time: '16:00:00',
+            duration_minutes: 20,
+          },
+        ]);
       } finally {
         jest.useRealTimers();
       }
@@ -1130,16 +1143,13 @@ describe('ModifyBookingSheet', () => {
         expect(mockModify).not.toHaveBeenCalled();
         expect(visitWrite()).toEqual(
           expect.objectContaining({
-            booking_date: '2026-08-10',
-            booking_time: '14:00:00',
+            shift: expect.objectContaining({ booking_date: '2026-08-10', booking_time: '14:00:00' }),
             skip_booking_modification_guest_notification: true,
           }),
         );
-        // The move never touched the lengths, so the services keep the ones they
-        // still have — which restores them exactly.
-        expect(visitWrite()).toEqual(
-          expect.not.objectContaining({ total_duration_minutes: expect.anything() }),
-        );
+        // The move never touched the lengths, so a shift back restores every
+        // service exactly.
+        expect(visitWrite()!.services).toBeUndefined();
       } finally {
         jest.useRealTimers();
       }
@@ -1150,40 +1160,39 @@ describe('ModifyBookingSheet', () => {
       try {
         await renderVisit();
         await press('TIME_PICKER');
-        await press('2h');
+        await step('Visit length', 'increment');
         await settleAvailability();
         await press('Save whole visit');
         mockVisitSchedule.mockClear();
         await press('Undo change');
 
-        expect(visitWrite()).toEqual(
-          expect.objectContaining({
-            booking_time: '14:00:00',
-            total_duration_minutes: 135,
-            skip_booking_modification_guest_notification: true,
-          }),
-        );
+        // A shift cannot restore a length, so every row is named with the slot
+        // and length it had when the form opened.
+        const write = visitWrite()!;
+        expect(write.skip_booking_modification_guest_notification).toBe(true);
+        expect(write.shift).toBeUndefined();
+        expect(write.services).toEqual([
+          { booking_id: 'bk-lead', booking_date: '2026-08-10', booking_time: '14:00:00', practitioner_id: 'prac-1', duration_minutes: 45 },
+          { booking_id: 'bk-1', booking_date: '2026-08-10', booking_time: '14:45:00', practitioner_id: 'prac-1', duration_minutes: 60 },
+          { booking_id: 'bk-3', booking_date: '2026-08-10', booking_time: '16:00:00', practitioner_id: 'prac-1', duration_minutes: 15 },
+        ]);
       } finally {
         jest.useRealTimers();
       }
     });
 
-    it('adopts the length the endpoint plans, and offers to close a hole', async () => {
-      // The rows span 135 minutes; the visit is really 120 with 15 minutes of
-      // dead time an earlier per-service edit left in it. Saving closes it, so
-      // Save is armed with nothing touched — and says why first.
+    it('opens with an empty shift dry run and adopts the length the endpoint plans', async () => {
+      // An empty shift describes the visit as it stands (web #187): the form
+      // learns the layout from it, and adopts the planned total without arming
+      // Save — nothing has been edited.
       jest.useFakeTimers();
       try {
-        mockVisitSchedule.mockResolvedValue(visitPlan({ total_minutes: 120, changed: true }));
+        mockVisitSchedule.mockResolvedValue(visitPlan({ total_minutes: 120 }));
         await renderVisit();
 
+        expect(visitBodies()[0]).toEqual(expect.objectContaining({ dry_run: true, shift: {} }));
         expect(stepperValue('Visit length')).toBe('2h');
-        expect(
-          screen.getByText(
-            'This visit has 15 minutes of dead time in it. Saving closes it, so the services run back to back.',
-          ),
-        ).toBeTruthy();
-        expect(screen.queryByText('Adjust a field to check availability and enable save.')).toBeNull();
+        expect(screen.getByText('Adjust a field to check availability and enable save.')).toBeTruthy();
       } finally {
         jest.useRealTimers();
       }
@@ -1203,15 +1212,14 @@ describe('ModifyBookingSheet', () => {
       }
     });
 
-    it('floors the length at the services’ own floors, not one service’s', async () => {
-      // Three services at 5 minutes each. Below the server's floor deliberately:
-      // it adds the configured gaps, and a client clamp above it would put a
-      // legitimate length out of reach.
+    it('floors the length at what the last service can give up', async () => {
+      // A length change is the last service's alone (web #187). The 15-minute
+      // toner can go down to 5, so the 135-minute visit floors at 125.
       jest.useFakeTimers();
       try {
         await renderVisit();
         for (let i = 0; i < 40; i += 1) await step('Visit length', 'decrement');
-        expect(stepperValue('Visit length')).toBe('15 min');
+        expect(stepperValue('Visit length')).toBe('2h 5m');
       } finally {
         jest.useRealTimers();
       }
@@ -1456,13 +1464,13 @@ describe('ModifyBookingSheet', () => {
         ];
         mockDetailAddons = [{ addon_id: 'addon-gloss' }];
         await renderVisit();
-        await press('2h');
+        await step('Visit length', 'increment');
         await settleAvailability();
         await press('Save whole visit');
 
-        // 120, not 140.
-        expect(visitWrite()).toEqual(
-          expect.objectContaining({ total_duration_minutes: 120 }),
+        // One step on the last service: 20, not 40.
+        expect(visitWrite()!.services).toContainEqual(
+          expect.objectContaining({ booking_id: 'bk-3', duration_minutes: 20 }),
         );
       } finally {
         jest.useRealTimers();

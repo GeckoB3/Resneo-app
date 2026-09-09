@@ -10,10 +10,11 @@ import { Text } from '@/components/ui/Text';
 import { TimePickerField } from '@/components/ui/TimePickerField';
 import { ApiError, complianceBlockMessage } from '@/lib/api/client';
 import {
-  minimumVisitFloorMinutes,
+  visitLengthFloorMinutes,
   type VisitEditTarget,
 } from '@/lib/booking/appointment-visit';
 import { MIN_CORE_DURATION_MINUTES } from '@/lib/booking/booking-core-duration';
+import { visitScheduleRequest } from '@/lib/booking/visit-schedule-request';
 import { formatDayHeading } from '@/lib/dates/venue-dates';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useRescheduleBooking } from '@/lib/queries/useBookingMutations';
@@ -68,13 +69,12 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
   const visit = target?.visit ?? null;
   const pending = visit ? visitMutation.isPending : mutation.isPending;
   /**
-   * A visit's floor is its services' floors added up. Deliberately ignores the
-   * gaps between them, which the server adds: staying below the server's floor
-   * means no reachable length is blocked here, and asking for one that is
-   * genuinely too short comes back naming the real minimum.
+   * A visit's length change is its LAST service's (web #187), so the floor is
+   * the visit less what that service can give up. An earlier service is changed
+   * from its own booking.
    */
   const minDuration = visit
-    ? minimumVisitFloorMinutes(visit.serviceCount)
+    ? visitLengthFloorMinutes(target?.durationMinutes ?? 0, visit.services)
     : MIN_DURATION_MINUTES;
 
   const [date, setDate] = useState('');
@@ -132,11 +132,16 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
          * be the helper's contract 409 and is shown as a plain refusal.
          */
         await visitMutation.mutateAsync({
-          booking_date: date,
-          booking_time: `${minutesToTime(minutes)}:00`,
-          ...(durationChanged && duration != null
-            ? { total_duration_minutes: duration }
-            : {}),
+          // A move alone shifts the whole visit; a length change names every
+          // row and lands on the last service (web #187).
+          ...visitScheduleRequest({
+            services: visit.services,
+            fromTime: target.time,
+            toDate: date,
+            toTime: minutesToTime(minutes),
+            fromTotalMinutes: target.durationMinutes,
+            toTotalMinutes: durationChanged ? duration : target.durationMinutes,
+          }),
           // Staff moving a visit by hand have decided where it goes; the same
           // posture as the single-booking path above.
           allow_outside_hours: true,

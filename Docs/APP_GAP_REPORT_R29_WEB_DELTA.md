@@ -20,7 +20,7 @@ web summary was corrected where the code disagrees with it (§2).
 
 | # | Finding | Severity | Verdict |
 |---|---|---|---|
-| R29-1 | The visit schedule endpoint's body is now `shift` OR `services`; the app still sends the deleted flat fields, so every visit move, resize, reschedule, Modify open/check/save and undo answers 400. A multi-service visit cannot be moved or modified from the app | **Breaks live flow** | Build first (§3) |
+| R29-1 | The visit schedule endpoint's body is now `shift` OR `services`; the app still sends the deleted flat fields, so every visit move, resize, reschedule, Modify open/check/save and undo answers 400. A multi-service visit cannot be moved or modified from the app | **Breaks live flow** | **Built** 2026-09-09 (§3, §16) |
 | R29-2 | Start and Complete are per service now; the app's bar quick actions fan Seated/Completed out to every row of a visit (re-imposing the old cascade), the bar takes its colour and actions from the lead row, and the detail panel has no per-row Start/Complete and no derived visit status | Wrong behaviour | Build (§4) |
 | R29-3 | The app's visit model assumes one day and one calendar; the web now lets a visit's services sit on different days and calendars, so chain/gap maths and the Bookings-tab collapse are wrong for such a visit | Wrong data | Build with R29-1 (§5) |
 | R29-4 | Calendar: the app merges a visit into one bar; the web now draws one bar per service with a visit chip, shared palette and spine, and per-row drag/resize | Parity, a decision | §6 |
@@ -425,3 +425,26 @@ sheet; the calendar's amber note can keep using the bands.
 Then a device pass on: a visit moved and resized from the calendar and the Modify sheet; Start on
 the second service of a visit; hours saved for two calendars when a booking is orphaned (iOS);
 a calendar amended on the web to work a Sunday, drawn in the app's grid and Working-today chip.
+
+## 16. Built: R29-1 (2026-09-09)
+
+The merged bar stays (R29-4 option 1 for now); every visit schedule write moved to the new
+contract through one pure builder, `lib/booking/visit-schedule-request.ts`:
+
+- `visitScheduleRequest` answers `{ shift }` for a move alone, and `{ services, known_booking_ids }`
+  when the length changed: every row named with its shifted start (and the chosen calendar), the
+  change on the LAST service, floored at 5. `visitRestoreRequest` names every row with the slot and
+  length it had, for Undo after a length change; a plain move is undone with a shift back.
+- `VisitEditTarget` carries `services[]` (id, start, length) via `toVisitEditTarget`, built in the
+  calendar screen and the detail panel; `visitLengthFloorMinutes` and `clusterLengthFloorMinutes`
+  replace the old per-service-count floor on the stepper and the drag (a 135-minute visit whose
+  last service is 15 minutes floors at 125, because an earlier service is changed from its own
+  booking now that shortening one no longer pulls the next forward).
+- Calendar drag/undo (`commitVisitDrag`, `undoReschedule`), `RescheduleSheet`, and the Modify
+  sheet's open (`{ dry_run: true, shift: {} }`, whose rows become the edit's rows), check, save
+  and undo all build from it. The Modify sheet's "re-lay the visit / dead time" notice and its
+  `changed`-armed save are gone: services are independent, an empty shift changes nothing.
+- `VisitSchedulePlan` gains `end_date`, `outside_hours`, per-service `calendar_id` / `changed`.
+
+Not in this build: R29-2 (per-service Start/Complete and the derived visit status), R29-3
+(cross-day/cross-calendar rows) and R29-4 option 2 (per-row bars). Device pass owed.

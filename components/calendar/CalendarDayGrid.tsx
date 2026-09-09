@@ -27,7 +27,7 @@ import {
   type LaneInput,
 } from '@/components/calendar/grid-layout';
 import { Text } from '@/components/ui/Text';
-import { minimumVisitFloorMinutes } from '@/lib/booking/appointment-visit';
+
 import { arrivalToggleTargets, statusChangeTargets } from '@/lib/calendar/bar-actions';
 import {
   hostRegionsAroundNested,
@@ -37,6 +37,7 @@ import {
 } from '@/lib/calendar/booking-cluster-layout';
 import {
   clusterCalendarBookings,
+  clusterLengthFloorMinutes,
   type CalendarBookingCluster,
 } from '@/lib/calendar/cluster-bookings';
 import { isNonWorkingBlock, isOccupyingBlock, narrowWorkingRanges } from '@/lib/calendar/occupying-blocks';
@@ -934,7 +935,7 @@ export function CalendarDayGrid({
               segmentIds={item.cluster.ids}
               minDurationMinutes={
                 item.cluster.isVisit
-                  ? minimumVisitFloorMinutes(item.cluster.bookings.length)
+                  ? clusterLengthFloorMinutes(item.cluster)
                   : undefined
               }
               clientArrivedAt={item.cluster.lead.client_arrived_at}

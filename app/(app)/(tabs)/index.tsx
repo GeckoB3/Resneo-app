@@ -55,9 +55,11 @@ import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import {
   resolveAppointmentVisit,
+  toVisitEditTarget,
   type VisitServiceRow,
 } from '@/lib/booking/appointment-visit';
 import { guestNotifyPlanForChange } from '@/lib/booking/modification-notify';
+import { visitRestoreRequest, visitScheduleRequest } from '@/lib/booking/visit-schedule-request';
 import { newBookingActionLabel } from '@/lib/booking/terminology';
 import { isAppointmentFromVenue } from '@/lib/venue/venue-experience';
 import { hapticSelect, hapticSuccess } from '@/lib/haptics';
@@ -497,20 +499,25 @@ export default function CalendarScreen() {
          * A visit goes back through the endpoint that moved it, so the undo is as
          * all-or-nothing as the move was.
          *
-         * The length is re-asserted only if the commit changed it (a resize).
-         * `total_duration_minutes` is an instruction — the server lays the
-         * services out to FILL it — so sending it after a plain move would put
-         * any dead time in the visit onto its last service, which is the opposite
-         * of putting things back.
+         * A plain move is undone by shifting the visit back. A resize changed
+         * one service's length, and a shift cannot restore that, so every row is
+         * named with the slot and length it had (web #187's `services` mode).
          */
         visitScheduleById.mutate({
           groupBookingId: previous.visit.groupBookingId,
-          booking_date: previous.date,
-          booking_time: `${previous.time.slice(0, 5)}:00`,
-          ...(previous.practitionerId ? { practitioner_id: previous.practitionerId } : {}),
-          ...(options.restoreLength && previous.durationMinutes != null
-            ? { total_duration_minutes: previous.durationMinutes }
-            : {}),
+          ...(options.restoreLength
+            ? visitRestoreRequest({
+                services: previous.visit.services,
+                date: previous.date,
+                practitionerId: previous.practitionerId,
+              })
+            : {
+                shift: {
+                  booking_date: previous.date,
+                  booking_time: `${previous.time.slice(0, 5)}:00`,
+                  ...(previous.practitionerId ? { practitioner_id: previous.practitionerId } : {}),
+                },
+              }),
           allow_outside_hours: true,
           // A SEPARATE gate from the one above: the server's break check has
           // never been relaxed by `allow_outside_hours`, so without this a move
@@ -1389,7 +1396,7 @@ export default function CalendarScreen() {
       guestName: string;
       /** "HH:mm:ss" */
       time: string;
-      /** Only on a resize — see the note in `undoReschedule`. */
+      /** Only on a resize: the bar's new height, the visit's new span. */
       totalDurationMinutes?: number;
       practitionerId?: string;
       previousTarget: RescheduleTarget;
@@ -1407,12 +1414,17 @@ export default function CalendarScreen() {
         try {
           await visitScheduleById.mutateAsync({
             groupBookingId: input.groupBookingId,
-            booking_date: anchor,
-            booking_time: input.time,
-            ...(input.totalDurationMinutes != null
-              ? { total_duration_minutes: input.totalDurationMinutes }
-              : {}),
-            ...(input.practitionerId ? { practitioner_id: input.practitionerId } : {}),
+            // A move is a shift of the whole visit; a resize names every row and
+            // puts the change on the last service (web #187).
+            ...visitScheduleRequest({
+              services: input.previousTarget.visit?.services ?? [],
+              fromTime: input.previousTarget.time,
+              toDate: anchor,
+              toTime: input.time,
+              practitionerId: input.practitionerId,
+              fromTotalMinutes: input.previousTarget.durationMinutes,
+              toTotalMinutes: input.totalDurationMinutes ?? input.previousTarget.durationMinutes,
+            }),
             allow_outside_hours: true,
             // Separate gate; see the restore path above (R17-3).
             allow_during_breaks: true,
@@ -1598,14 +1610,7 @@ export default function CalendarScreen() {
             time: visit.startHm,
             durationMinutes: visit.totalMinutes,
             ...(fromPractitionerId ? { practitionerId: fromPractitionerId } : {}),
-            visit: {
-              groupBookingId,
-              startHm: visit.startHm,
-              endHm: visit.endHm,
-              serviceCount: visit.services.length,
-              serviceNames: visit.services.map((s) => s.name?.trim() || 'Service'),
-              leadBookingId: visit.services[0]!.id,
-            },
+            visit: toVisitEditTarget(visit, groupBookingId),
           },
         });
         return;
@@ -1680,14 +1685,7 @@ export default function CalendarScreen() {
             date: anchor,
             time: visit.startHm,
             durationMinutes: visit.totalMinutes,
-            visit: {
-              groupBookingId,
-              startHm: visit.startHm,
-              endHm: visit.endHm,
-              serviceCount: visit.services.length,
-              serviceNames: visit.services.map((s) => s.name?.trim() || 'Service'),
-              leadBookingId: visit.services[0]!.id,
-            },
+            visit: toVisitEditTarget(visit, groupBookingId),
           },
         });
         return;

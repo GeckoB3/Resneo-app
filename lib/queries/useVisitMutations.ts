@@ -18,18 +18,31 @@ import { useAccessToken } from '@/lib/queries/useAccessToken';
  * @see Docs/APP_GAP_REPORT_R15_WEB_DELTA.md (R15-2)
  */
 export interface VisitSchedulePatchInput {
-  /** New date for the whole visit. */
-  booking_date?: string;
-  /** New start for the visit's FIRST service, HH:mm or HH:mm:ss; the rest follow. */
-  booking_time?: string;
-  /** Target calendar (unified `calendar_id`, legacy `practitioner_id`). */
-  practitioner_id?: string;
   /**
-   * New wall-clock span for the WHOLE visit, configured gaps included. The
-   * server distributes it: growth extends the tail, shrinkage comes off the tail
-   * and then cascades backwards, each service down to its own floor.
+   * Move the WHOLE visit (web #187): every scheduled service moves by the same
+   * amount as the earliest one, keeping the gaps between them. A calendar given
+   * here applies to every service. `{}` is allowed and describes the visit as it
+   * stands, which is how a dry run learns the layout before anything is edited.
+   *
+   * Exactly one of `shift` and `services` must be sent; the endpoint refuses a
+   * body with both or neither. Build the body with
+   * `lib/booking/visit-schedule-request.ts` rather than by hand.
    */
-  total_duration_minutes?: number;
+  shift?: VisitScheduleShiftInput;
+  /**
+   * Change named services only. Each takes exactly the date, start, calendar
+   * and length asked for; a service not named is left where it is, and
+   * shortening one no longer pulls the next forward.
+   */
+  services?: VisitScheduleServiceInput[];
+  /**
+   * Every scheduled row of the visit as the caller last saw it. Optional here
+   * (this route never removes a row) but sent with every `services` write: an
+   * edit planned against three services must not land on a visit that has since
+   * gained a fourth nobody on that screen has seen. Mismatched → 412
+   * `{ code: 'stale_visit' }`.
+   */
+  known_booking_ids?: string[];
   allow_manual_overlap?: boolean;
   allow_outside_hours?: boolean;
   /**
@@ -50,6 +63,25 @@ export interface VisitSchedulePatchInput {
   skip_booking_modification_guest_notification?: boolean;
 }
 
+export interface VisitScheduleShiftInput {
+  /** YYYY-MM-DD */
+  booking_date?: string;
+  /** HH:mm:ss */
+  booking_time?: string;
+  /** Target calendar (unified `calendar_id`, legacy `practitioner_id`). */
+  practitioner_id?: string;
+}
+
+export interface VisitScheduleServiceInput {
+  booking_id: string;
+  booking_date?: string;
+  /** HH:mm:ss */
+  booking_time?: string;
+  practitioner_id?: string;
+  /** 5..840 */
+  duration_minutes?: number;
+}
+
 /** One service of the visit, as the plan will lay it out. */
 export interface VisitPlannedService {
   id: string;
@@ -62,7 +94,10 @@ export interface VisitPlannedService {
   /** HH:mm:ss */
   booking_end_time: string;
   duration_minutes: number;
+  calendar_id?: string | null;
   moved: boolean;
+  /** Whether this request changes the row (false on a `shift: {}` dry run). */
+  changed?: boolean;
 }
 
 /** What the endpoint says the save will do (or, on a dry run, would do). */
@@ -74,13 +109,13 @@ export interface VisitSchedulePlan {
   start_time: string;
   /** HH:mm */
   end_time: string;
+  /** The day the visit's last service ends on; differs from `booking_date` when the services span days. */
+  end_date?: string;
   total_minutes: number;
   calendar_id: string;
-  /**
-   * False when the request asks for the shape the visit already has. True on a
-   * request that changes nothing but re-lays the visit, which is how dead time an
-   * earlier per-service edit left behind gets closed.
-   */
+  /** The hours override is what lets a changed service sit where it is going. */
+  outside_hours?: boolean;
+  /** False when the request asks for the shape the visit already has. */
   changed: boolean;
   dry_run: boolean;
   services: VisitPlannedService[];
