@@ -159,7 +159,13 @@ function nextVisitLineKey(): string {
 }
 
 type CheckState =
-  | { state: 'idle' | 'checking' | 'valid' | 'unknown' }
+  | { state: 'idle' | 'checking' | 'unknown' }
+  /**
+   * `outsideHours`: the dry run passed only because of the hours override the
+   * sheet always sends (web #186), so the time sits outside the calendar's
+   * working or opening hours. Allowed, and said so.
+   */
+  | { state: 'valid'; outsideHours: boolean }
   | { state: 'invalid'; reason: string };
 
 function formatDuration(total: number): string {
@@ -1224,7 +1230,10 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
                 ...visitServicesRequestBody(),
               });
               if (checkSeq.current !== seq) return;
-              setChecked({ sig: signature, result: { state: 'valid' } });
+              setChecked({
+                sig: signature,
+                result: { state: 'valid', outsideHours: plan.outside_hours === true },
+              });
               if (typeof plan.total_minutes === 'number') {
                 setVisitPlannedMinutes(plan.total_minutes);
               }
@@ -1232,14 +1241,17 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
             }
             // Exactly what the save will send, or the check judges a request
             // the save would not make.
-            await visitScheduleAsync({
+            const plan = await visitScheduleAsync({
               dry_run: true,
               ...visitScheduleRequestBody(),
               allow_outside_hours: true,
               allow_during_breaks: true,
             });
             if (checkSeq.current !== seq) return;
-            setChecked({ sig: signature, result: { state: 'valid' } });
+            setChecked({
+              sig: signature,
+              result: { state: 'valid', outsideHours: plan.outside_hours === true },
+            });
           } catch (e) {
             if (checkSeq.current !== seq) return;
             // A refusal (409), a rejected shape (400) or a stale visit (412) all
@@ -1262,6 +1274,10 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
         {
           booking_date: date,
           booking_time: minutesToTime(minutes),
+          // The save sends this override; the check must judge the same request
+          // (web #186), and the answer then says whether it was what let the
+          // time through.
+          allow_outside_hours: true,
           ...(reassignedPractitionerId ? { practitioner_id: reassignedPractitionerId } : {}),
           ...(target.usesServiceItem
             ? { service_item_id: serviceId! }
@@ -1278,7 +1294,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
             setChecked({
               sig: signature,
               result: res.ok
-                ? { state: 'valid' }
+                ? { state: 'valid', outsideHours: res.outside_hours === true }
                 : { state: 'invalid', reason: res.error ?? 'This time is not available.' },
             });
           },
@@ -2382,9 +2398,17 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
               Checking availability…
             </Text>
           ) : check.state === 'valid' ? (
-            <Text variant="caption" color={colors.success}>
-              Time available ✓
-            </Text>
+            <>
+              <Text variant="caption" color={colors.success}>
+                Time available ✓
+              </Text>
+              {check.outsideHours ? (
+                <Text variant="caption" color={colors.warning}>
+                  This time is outside the working hours for this calendar. You can still save
+                  it.
+                </Text>
+              ) : null}
+            </>
           ) : check.state === 'invalid' ? (
             <Text variant="caption" tone="danger">
               {check.reason}

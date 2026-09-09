@@ -1003,6 +1003,57 @@ describe('ModifyBookingSheet', () => {
    * they were (dead time opens up), and moving it took the visit's head away from
    * its tail. Every assertion here is a guard against that returning.
    */
+  /**
+   * R29-13 (web #186) — the dry run is asked with the hours override the save
+   * sends, and says when that override is what let the time through; the sheet
+   * shows the web's amber note rather than refusing.
+   */
+  describe('a time outside the calendar’s hours', () => {
+    it('checks with the override and shows the note on an ordinary booking', async () => {
+      jest.useFakeTimers();
+      try {
+        mockValidate.mockImplementation(
+          (_input: unknown, opts?: { onSuccess?: (r: { ok: boolean; outside_hours?: boolean }) => void }) =>
+            opts?.onSuccess?.({ ok: true, outside_hours: true }),
+        );
+        await render(<ModifyBookingSheet target={TARGET} onClose={onClose} />);
+        await press('Change');
+        await press('MONTH_CALENDAR');
+        await press('09:30');
+        await settleAvailability();
+
+        expect(mockValidate.mock.calls[0]![0]).toEqual(
+          expect.objectContaining({ allow_outside_hours: true }),
+        );
+        expect(screen.getByText('Time available ✓')).toBeTruthy();
+        expect(
+          screen.getByText(/This time is outside the working hours for this calendar/),
+        ).toBeTruthy();
+      } finally {
+        mockValidate.mockImplementation(
+          (_input: unknown, opts?: { onSuccess?: (r: { ok: boolean }) => void }) =>
+            opts?.onSuccess?.({ ok: true }),
+        );
+        jest.useRealTimers();
+      }
+    });
+
+    it('shows the note from a visit’s dry run too', async () => {
+      jest.useFakeTimers();
+      try {
+        mockVisitSchedule.mockResolvedValue(visitPlan({ outside_hours: true } as never));
+        await renderVisit();
+        await press('TIME_PICKER');
+        await settleAvailability();
+        expect(
+          screen.getByText(/This time is outside the working hours for this calendar/),
+        ).toBeTruthy();
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+  });
+
   describe('a multi-service visit', () => {
     it('says it is editing the visit, and lists what is in it', async () => {
       jest.useFakeTimers();

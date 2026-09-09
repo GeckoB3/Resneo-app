@@ -32,7 +32,7 @@ web summary was corrected where the code disagrees with it (§2).
 | R29-10 | Card holds: the server default flipped to no hold; the app always sends the toggle explicitly for a card-hold entity, so nothing changes on the wire. The app's toggle still DEFAULTS ON and its copy is the old one; seven comments state the wrong server default | Parity (UX drift) | **Built** 2026-09-09 (§11, §24) |
 | R29-11 | Canonical processing shape: the calendar, wizard chain, Modify sheet and detail already agree with it. But lengthening a service in the app's form without touching its periods silently reverts the length on save (the server re-fits the stored blocks and canonicalises) | Wrong data, both sides; local fix | **Built** 2026-09-09 (§12, §25) |
 | R29-12 | Collective service sync: additive; the app's catalogue builder keeps working but shows no sync state and lacks the three new actions. Booking-page settings: the combined page URL has no Copy in the app | Parity | §13 |
-| R29-13 | #186: the app already sends the outside-hours override on every calendar move, reschedule and Modify save. The dry runs now echo `outside_hours`; the app could show the web's amber note | Parity (minor) | §14 |
+| R29-13 | #186: the app already sends the outside-hours override on every calendar move, reschedule and Modify save. The dry runs now echo `outside_hours`; the app could show the web's amber note | Parity (minor) | **Built** 2026-09-09 (§14, §26) |
 | R29-14 | Modify sheet: the web edits each service of a visit on its own (date, time, calendar, length, `services` mode); the app moves the visit as one shift and changes only the last service's length | Parity, added 2026-09-09 after R29-3 | **Built** 2026-09-09 (§20) |
 
 Everything else in the delta is server-side or web-only and inherited: the post-visit thank-you
@@ -619,3 +619,13 @@ to) and now sends `processing_time_blocks` whenever the length changed, not only
 was touched; the variants editor re-fits an option's periods on its own duration edit (its
 blocks were always sent). So a canonical 60 + [60..120] lengthened to 90 saves as 90 + [90..150]
 instead of coming back as 60. Three unit tests on the re-fit.
+
+## 26. Built: R29-13, the outside-hours note (2026-09-09)
+
+The Modify sheet's single-booking dry run now sends `allow_outside_hours: true`, the override the
+save has always sent (web #186: the check must judge the request the save will make, or a time
+outside hours was refused by the check and accepted by the save). All three dry runs (the single
+booking's `validate-appointment-modification`, the visit's `schedule` and `services`) read
+`outside_hours` into the check state, and a valid check outside hours shows the web's amber note
+under "Time available": "This time is outside the working hours for this calendar. You can still
+save it." Two sheet tests. The calendar's own amber note keeps reading the closure bands.

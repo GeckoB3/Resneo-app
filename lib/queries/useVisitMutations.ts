@@ -222,6 +222,8 @@ export interface VisitServicesPlan {
   start_time: string;
   end_time: string;
   total_minutes: number;
+  /** The hours override is what lets a changed service sit where it is going (web #186). */
+  outside_hours?: boolean;
   changed: boolean;
   dry_run: boolean;
   /** Rows this edit will cancel. Cancelled, not deleted — they keep their history. */

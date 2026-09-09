@@ -461,10 +461,25 @@ export interface ValidateAppointmentModificationInput {
    * booking's stored snapshot.
    */
   processing_time_blocks?: ProcessingTimeBlock[];
+  /**
+   * Judge the time with the hours override the save will send, so the check
+   * and the save agree; the answer then says whether the override was needed
+   * (`outside_hours`, web #186).
+   */
+  allow_outside_hours?: boolean;
 }
 
 export type ValidateAppointmentModificationResult =
-  | { ok: true }
+  | {
+      ok: true;
+      /**
+       * The hours override is what let this through (web #186): the time sits
+       * outside the calendar's working or opening hours, a service's own
+       * availability window, or on a venue closure. Reported, not refused; the
+       * Modify sheet shows a note.
+       */
+      outside_hours?: boolean;
+    }
   | { ok: false; error?: string };
 
 /**
