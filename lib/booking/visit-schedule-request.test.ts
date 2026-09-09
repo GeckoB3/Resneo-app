@@ -154,3 +154,40 @@ describe('visitRestoreRequest', () => {
     });
   });
 });
+
+describe('visitServiceEditsRequest', () => {
+  const { visitServiceEditsRequest } = require('@/lib/booking/visit-schedule-request');
+  const baseline = {
+    'bk-lead': { date: '2026-08-10', time: '14:00', calendarId: 'prac-1', durationMinutes: 45 },
+    'bk-1': { date: '2026-08-10', time: '14:45', calendarId: 'prac-1', durationMinutes: 60 },
+  };
+
+  it('names only the services whose edit differs, with everything asked for', () => {
+    const body = visitServiceEditsRequest({
+      rowIds: ['bk-lead', 'bk-1'],
+      edits: {
+        ...baseline,
+        'bk-1': { date: '2026-08-11', time: '09:30', calendarId: 'prac-2', durationMinutes: 30 },
+      },
+      baseline,
+    });
+    expect(body).toEqual({
+      services: [
+        {
+          booking_id: 'bk-1',
+          booking_date: '2026-08-11',
+          booking_time: '09:30:00',
+          practitioner_id: 'prac-2',
+          duration_minutes: 30,
+        },
+      ],
+      known_booking_ids: ['bk-lead', 'bk-1'],
+    });
+  });
+
+  it('names nothing when nothing changed', () => {
+    expect(
+      visitServiceEditsRequest({ rowIds: ['bk-lead', 'bk-1'], edits: baseline, baseline }).services,
+    ).toEqual([]);
+  });
+});

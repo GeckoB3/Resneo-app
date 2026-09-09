@@ -33,6 +33,7 @@ web summary was corrected where the code disagrees with it (§2).
 | R29-11 | Canonical processing shape: the calendar, wizard chain, Modify sheet and detail already agree with it. But lengthening a service in the app's form without touching its periods silently reverts the length on save (the server re-fits the stored blocks and canonicalises) | Wrong data, both sides; local fix | Build (§12) |
 | R29-12 | Collective service sync: additive; the app's catalogue builder keeps working but shows no sync state and lacks the three new actions. Booking-page settings: the combined page URL has no Copy in the app | Parity | §13 |
 | R29-13 | #186: the app already sends the outside-hours override on every calendar move, reschedule and Modify save. The dry runs now echo `outside_hours`; the app could show the web's amber note | Parity (minor) | §14 |
+| R29-14 | Modify sheet: the web edits each service of a visit on its own (date, time, calendar, length, `services` mode); the app moves the visit as one shift and changes only the last service's length | Parity, added 2026-09-09 after R29-3 | **Built** 2026-09-09 (§20) |
 
 Everything else in the delta is server-side or web-only and inherited: the post-visit thank-you
 sending once after every live service is Completed (cron); `availability_override_warnings`,
@@ -527,3 +528,28 @@ One bar per service, as the web draws it since #187:
 
 Device pass owed: three services of a visit drawn as three bars with chips and spines; one
 dragged onto another (allowed, toasted); one resized; Start on the second bar only.
+
+## 20. Built: R29-14, per-service editors in the Modify sheet (2026-09-09)
+
+The Modify sheet now has the web form's second mode. Under "Services in this visit" each row
+shows its own day, start and length on one line with an "Edit time" toggle; opened, it offers a
+date picker, a time picker, the calendar chips and a length stepper for that service alone
+(`serviceEdits` / `baselineServiceEdits`, seeded from the opening `shift: {}` plan's rows).
+
+- **Request.** `visitServiceEditsRequest` (`lib/booking/visit-schedule-request.ts`) names only
+  the rows whose edit differs from the baseline, each with exactly the day, start, calendar and
+  length asked for, plus `known_booking_ids` for every row the sheet opened on. The live check
+  and the save build the same body; the check signature carries the edits.
+- **Exclusive modes**, as the web: while a service is being edited, the visit's date control,
+  start picker and calendar chips are inert and the length panel reads "Each service keeps its
+  own length while you edit services below"; while the visit is moved as one (or its service
+  list rewritten), the per-service toggles are disabled. Copy under the list: "Only the
+  services you changed move; the rest stay where they are."
+- **Notify and undo.** A per-service edit counts as a schedule change for the deferred guest
+  email and the Notify / Don't notify / Undo step; Undo names every row with the slot and length
+  the sheet opened with (`visitRestoreRequest`).
+- The "Visit length" stepper (the last-service rule from R29-1) stays for a visit that is moved
+  as one; the web has no such control, but it is the quick path for the common case.
+
+Tests: five new cases in `ModifyBookingSheet.test.tsx` (the named row only, a day + calendar +
+length change, the lock in both directions, undo), two for the builder.

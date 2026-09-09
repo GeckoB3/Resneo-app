@@ -78,6 +78,20 @@ jest.mock('@/components/ui/TimePickerField', () => {
   };
 });
 
+/** A per-service date editor (R29-14) stands in as a button that moves the date a day on. */
+jest.mock('@/components/ui/DatePickerField', () => {
+  const React = require('react');
+  const { Text, Pressable } = require('react-native');
+  return {
+    DatePickerField: ({ onChange }: { onChange: (date: string) => void }) =>
+      React.createElement(
+        Pressable,
+        { onPress: () => onChange('2026-08-11') },
+        React.createElement(Text, null, 'DATE_PICKER'),
+      ),
+  };
+});
+
 /** Swapped in per-test so the add-on paths can be exercised. Empty by default. */
 let mockAddonGroups: unknown[] = [];
 
@@ -278,10 +292,12 @@ function visitPlan(over: { total_minutes?: number; changed?: boolean; services?:
     calendar_id: 'prac-1',
     changed: false,
     dry_run: true,
+    // Each row's own day, start, calendar and length: what the per-service
+    // editors (R29-14) are seeded from.
     services: [
-      { id: 'bk-lead', service_id: 'svc-1', service_variant_id: null },
-      { id: 'bk-1', service_id: 'svc-2', service_variant_id: null },
-      { id: 'bk-3', service_id: 'svc-1', service_variant_id: null },
+      { id: 'bk-lead', service_id: 'svc-1', service_variant_id: null, booking_date: '2026-08-10', booking_time: '14:00:00', duration_minutes: 45, calendar_id: 'prac-1' },
+      { id: 'bk-1', service_id: 'svc-2', service_variant_id: null, booking_date: '2026-08-10', booking_time: '14:45:00', duration_minutes: 60, calendar_id: 'prac-1' },
+      { id: 'bk-3', service_id: 'svc-1', service_variant_id: null, booking_date: '2026-08-10', booking_time: '16:00:00', duration_minutes: 15, calendar_id: 'prac-1' },
     ],
     ...over,
   };
@@ -1231,6 +1247,127 @@ describe('ModifyBookingSheet', () => {
      * out is cancelled — so the assertions here are mostly about what the app
      * must never send.
      */
+    /**
+     * R29-14 — each service of a visit has its own day, start, calendar and
+     * length (web #187 `services` mode). Editing one names only that row; the
+     * visit's own start and length controls stand aside meanwhile.
+     */
+    describe('editing one service on its own', () => {
+      it('names only the changed service, with what it now asks for', async () => {
+        jest.useFakeTimers();
+        try {
+          await renderVisit();
+          await act(async () => {
+            fireEvent.press(screen.getByLabelText('Edit time for Blow Dry'));
+          });
+          // The row's own picker renders ahead of the visit's in the form.
+          expect(screen.getAllByText('TIME_PICKER')).toHaveLength(2);
+          await act(async () => {
+            fireEvent.press(screen.getAllByText('TIME_PICKER')[0]!);
+          });
+          await settleAvailability();
+          await press('Save whole visit');
+
+          const write = visitWrite()!;
+          expect(write.shift).toBeUndefined();
+          expect(write.known_booking_ids).toEqual(['bk-lead', 'bk-1', 'bk-3']);
+          expect(write.services).toEqual([
+            {
+              booking_id: 'bk-1',
+              booking_date: '2026-08-10',
+              booking_time: '09:30:00',
+              practitioner_id: 'prac-1',
+              duration_minutes: 60,
+            },
+          ]);
+          // The check judged the same request the save made.
+          expect(visitBodies().some((b) => b.dry_run === true && Array.isArray(b.services))).toBe(true);
+        } finally {
+          jest.useRealTimers();
+        }
+      });
+
+      it('moves a service to another day and calendar, and lengthens it', async () => {
+        jest.useFakeTimers();
+        try {
+          await renderVisit();
+          await act(async () => {
+            fireEvent.press(screen.getByLabelText('Edit time for Blow Dry'));
+          });
+          await press('DATE_PICKER');
+          await step('Length for Blow Dry', 'increment');
+          await settleAvailability();
+          await press('Save whole visit');
+
+          expect(visitWrite()!.services).toEqual([
+            expect.objectContaining({
+              booking_id: 'bk-1',
+              booking_date: '2026-08-11',
+              booking_time: '14:45:00',
+              duration_minutes: 65,
+            }),
+          ]);
+        } finally {
+          jest.useRealTimers();
+        }
+      });
+
+      it('says only the changed services move, and holds the visit start still', async () => {
+        jest.useFakeTimers();
+        try {
+          await renderVisit();
+          await act(async () => {
+            fireEvent.press(screen.getByLabelText('Edit time for Blow Dry'));
+          });
+          await act(async () => {
+            fireEvent.press(screen.getAllByText('TIME_PICKER')[0]!);
+          });
+          expect(screen.getByText(/Only the services you changed move/)).toBeTruthy();
+          expect(screen.getByText(/keeps its own length while you edit services/)).toBeTruthy();
+        } finally {
+          jest.useRealTimers();
+        }
+      });
+
+      it('stands the editors aside while the visit is moved as one', async () => {
+        jest.useFakeTimers();
+        try {
+          await renderVisit();
+          await press('TIME_PICKER');
+          expect(screen.getByLabelText('Edit time for Blow Dry')).toBeDisabled();
+        } finally {
+          jest.useRealTimers();
+        }
+      });
+
+      it('undo puts every service back where the sheet found it', async () => {
+        jest.useFakeTimers();
+        try {
+          await renderVisit();
+          await act(async () => {
+            fireEvent.press(screen.getByLabelText('Edit time for Blow Dry'));
+          });
+          await act(async () => {
+            fireEvent.press(screen.getAllByText('TIME_PICKER')[0]!);
+          });
+          await settleAvailability();
+          await press('Save whole visit');
+          mockVisitSchedule.mockClear();
+          await press('Undo change');
+
+          const write = visitWrite()!;
+          expect(write.skip_booking_modification_guest_notification).toBe(true);
+          expect(write.services).toEqual([
+            expect.objectContaining({ booking_id: 'bk-lead', booking_time: '14:00:00', duration_minutes: 45 }),
+            expect.objectContaining({ booking_id: 'bk-1', booking_time: '14:45:00', duration_minutes: 60 }),
+            expect.objectContaining({ booking_id: 'bk-3', booking_time: '16:00:00', duration_minutes: 15 }),
+          ]);
+        } finally {
+          jest.useRealTimers();
+        }
+      });
+    });
+
     describe('its service list', () => {
       it('lists the services with a way to change or add one', async () => {
         jest.useFakeTimers();

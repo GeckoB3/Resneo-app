@@ -137,3 +137,49 @@ export function visitRestoreRequest(args: {
       : { known_booking_ids: args.services.map((row) => row.bookingId) }),
   };
 }
+
+/** One service of a visit as the Modify sheet's per-service editors hold it. */
+export interface VisitServiceEdit {
+  /** YYYY-MM-DD */
+  date: string;
+  /** HH:mm */
+  time: string;
+  calendarId: string | null;
+  durationMinutes: number;
+}
+
+/**
+ * The body for per-service edits (web #187 `services` mode, the Modify sheet's
+ * second mode): only the rows whose edit differs from the baseline are named,
+ * each with exactly the day, start, calendar and length asked for; a service
+ * not named is left where it is. `known_booking_ids` lists every row the sheet
+ * opened on, so the write cannot land on a visit that has since gained one.
+ */
+export function visitServiceEditsRequest(args: {
+  rowIds: readonly string[];
+  edits: Readonly<Record<string, VisitServiceEdit>>;
+  baseline: Readonly<Record<string, VisitServiceEdit>>;
+}): Pick<VisitSchedulePatchInput, 'services' | 'known_booking_ids'> {
+  const services: VisitScheduleServiceInput[] = [];
+  for (const id of args.rowIds) {
+    const edit = args.edits[id];
+    const base = args.baseline[id];
+    if (!edit || !base) continue;
+    if (
+      edit.date === base.date &&
+      edit.time === base.time &&
+      edit.calendarId === base.calendarId &&
+      edit.durationMinutes === base.durationMinutes
+    ) {
+      continue;
+    }
+    services.push({
+      booking_id: id,
+      booking_date: edit.date,
+      booking_time: toHms(edit.time),
+      ...(edit.calendarId ? { practitioner_id: edit.calendarId } : {}),
+      duration_minutes: Math.max(MIN_CORE_DURATION_MINUTES, edit.durationMinutes),
+    });
+  }
+  return { services, known_booking_ids: [...args.rowIds] };
+}

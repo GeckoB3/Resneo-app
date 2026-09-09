@@ -12,6 +12,7 @@ import { Chip } from '@/components/ui/Chip';
 import { Sheet } from '@/components/ui/Sheet';
 import { Stepper } from '@/components/ui/Stepper';
 import { Text } from '@/components/ui/Text';
+import { DatePickerField } from '@/components/ui/DatePickerField';
 import { TimePickerField } from '@/components/ui/TimePickerField';
 import { ApiError } from '@/lib/api/client';
 import {
@@ -20,7 +21,12 @@ import {
   type VisitEditTarget,
 } from '@/lib/booking/appointment-visit';
 import { MIN_CORE_DURATION_MINUTES } from '@/lib/booking/booking-core-duration';
-import { visitRestoreRequest, visitScheduleRequest } from '@/lib/booking/visit-schedule-request';
+import {
+  visitRestoreRequest,
+  visitScheduleRequest,
+  visitServiceEditsRequest,
+  type VisitServiceEdit,
+} from '@/lib/booking/visit-schedule-request';
 import { filterToUsableCalendars } from '@/lib/calendar/managed-calendars';
 import {
   describeProcessingChange,
@@ -309,6 +315,25 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   const [plannedRows, setPlannedRows] = useState<VisitEditService[] | null>(null);
   const editRows = useMemo(() => plannedRows ?? visit?.services ?? [], [plannedRows, visit]);
   /**
+   * The per-service editors (web #187, R29-14): each service of the visit as
+   * the staff member wants it, and as it stood when the sheet opened. Editing
+   * one names only the changed rows (`services` mode); the visit's own start
+   * and length controls stand aside meanwhile, as the web's do.
+   */
+  const [serviceEdits, setServiceEdits] = useState<Record<string, VisitServiceEdit>>({});
+  const [baselineServiceEdits, setBaselineServiceEdits] = useState<
+    Record<string, VisitServiceEdit>
+  >({});
+  /** The one row whose editors are open; the rest show a summary line. */
+  const [expandedEditId, setExpandedEditId] = useState<string | null>(null);
+  const updateServiceEdit = useCallback((bookingId: string, patch: Partial<VisitServiceEdit>) => {
+    setServiceEdits((current) => {
+      const line = current[bookingId];
+      if (!line) return current;
+      return { ...current, [bookingId]: { ...line, ...patch } };
+    });
+  }, []);
+  /**
    * The visit's services as the staff member wants them, and as they stand.
    *
    * Both null until the opening plan answers: the rows the booking list hands
@@ -369,6 +394,10 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     setServiceLines(null);
     setBaselineServiceLines(null);
     setKnownBookingIds([]);
+    setPlannedRows(null);
+    setServiceEdits({});
+    setBaselineServiceEdits({});
+    setExpandedEditId(null);
     setPickerLineIndex(null);
     setPickerServiceId(null);
     setMode('form');
@@ -932,6 +961,11 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   const timeZone = venue?.timezone ?? 'Europe/London';
   const today = calendarDateInTimeZone(new Date(), timeZone);
 
+  const serviceEditsKey = JSON.stringify(serviceEdits);
+  const baselineServiceEditsKey = JSON.stringify(baselineServiceEdits);
+  /** True once staff have changed one service's own day, start, calendar or length. */
+  const serviceEditsChanged = isVisit && serviceEditsKey !== baselineServiceEditsKey;
+
   /**
    * Web parity: Save stays disabled until something actually changes ("Adjust a
    * field to check availability and enable save"). Without it the button invites
@@ -939,7 +973,8 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
    */
   const hasChanges =
     !!target &&
-    ((!isVisit &&
+    (serviceEditsChanged ||
+      (!isVisit &&
       (serviceId !== target.serviceId || variantId !== target.serviceVariantId)) ||
       practitionerId !== target.practitionerId ||
       date !== target.date ||
@@ -974,6 +1009,21 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
 
   const servicesChanged =
     canEditVisitServices && serviceLinesKey(serviceLines) !== serviceLinesKey(baselineServiceLines);
+  /** True once staff have moved the visit as a whole (its start, calendar or length). */
+  const visitStartChanged =
+    isVisit &&
+    !!target &&
+    (date !== target.date ||
+      minutes !== timeToMinutes(target.time) ||
+      practitionerId !== target.practitionerId ||
+      durationEdited);
+  /**
+   * The two ways of editing a visit's schedule are exclusive (web #187): while
+   * the visit is being moved as one, or its service list rewritten, the
+   * per-service editors stand aside; while a service is being edited on its
+   * own, the visit's start and length controls do.
+   */
+  const editorsLocked = servicesChanged || visitStartChanged;
 
   /**
    * Only what this calendar actually offers may join the visit, plus whatever is
@@ -1067,6 +1117,8 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
           // The list is part of what the check judges: the services set the
           // visit's length, so a stale "valid" must not survive one changing.
           serviceLinesKey(serviceLines),
+          // So are the per-service editors: a stale "valid" must not survive one.
+          serviceEditsKey,
         ].join('|')
       : [
           target!.id,
@@ -1093,7 +1145,13 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
    */
   const visitScheduleRequestBody = useCallback(
     () =>
-      visitScheduleRequest({
+      serviceEditsChanged
+        ? visitServiceEditsRequest({
+            rowIds: editRows.map((r) => r.bookingId),
+            edits: serviceEdits,
+            baseline: baselineServiceEdits,
+          })
+        : visitScheduleRequest({
         services: editRows,
         fromDate: target?.date ?? date,
         fromTime: target?.time ?? '00:00',
@@ -1104,6 +1162,9 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
         toTotalMinutes: durationEdited ? effectiveDuration : baselineDuration,
       }),
     [
+      serviceEditsChanged,
+      serviceEdits,
+      baselineServiceEdits,
       editRows,
       target?.date,
       target?.time,
@@ -1283,6 +1344,19 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
           }));
         if (rows.length > 0 && rows.every((r) => Number.isFinite(r.durationMinutes))) {
           setPlannedRows(rows);
+          const seeded = Object.fromEntries(
+            rows.map((r) => [
+              r.bookingId,
+              {
+                date: r.date ?? target.date,
+                time: r.startHm,
+                calendarId: r.calendarId ?? target.practitionerId ?? null,
+                durationMinutes: r.durationMinutes,
+              } satisfies VisitServiceEdit,
+            ]),
+          );
+          setServiceEdits(seeded);
+          setBaselineServiceEdits(seeded);
         }
         /**
          * The service list, but only when EVERY row resolved to a service id.
@@ -1350,6 +1424,8 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   async function handleSave() {
     if (!target || !practitionerId || effectiveDuration == null) return;
     setError(null);
+    // A per-service edit changes the visit's schedule as surely as a move does.
+    const visitScheduleTouched = scheduleChanged || serviceEditsChanged;
 
     if (isVisit) {
       /**
@@ -1361,10 +1437,10 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
         if (servicesChanged) {
           await visitServices.mutateAsync({
             ...visitServicesRequestBody(),
-            ...(scheduleChanged ? { defer_modification_guest_notification: true } : {}),
+            ...(visitScheduleTouched ? { defer_modification_guest_notification: true } : {}),
           });
           hapticSuccess();
-          if (scheduleChanged) {
+          if (visitScheduleTouched) {
             setSavedServiceChange(true);
             setMode('notify');
             return;
@@ -1380,10 +1456,10 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
           // The server emails the guest once, against the visit's first service,
           // and only when the START moved. Hold it back so the staff member gets
           // the same Notify / Don't notify / Undo choice a drag gives them.
-          ...(scheduleChanged ? { defer_modification_guest_notification: true } : {}),
+          ...(visitScheduleTouched ? { defer_modification_guest_notification: true } : {}),
         });
         hapticSuccess();
-        if (scheduleChanged) {
+        if (visitScheduleTouched) {
           setMode('notify');
           return;
         }
@@ -1481,7 +1557,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
       setUndoing(true);
       try {
         await visitSchedule.mutateAsync({
-          ...(durationEdited
+          ...(durationEdited || serviceEditsChanged
             ? visitRestoreRequest({
                 services: editRows,
                 date: target.date,
@@ -1842,9 +1918,15 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
                 <Text variant="label" tone="secondary">
                   Services in this visit
                 </Text>
-                {(serviceLines ?? []).map((line, index) => (
+                {(serviceLines ?? []).map((line, index) => {
+                  const edit = line.bookingId ? serviceEdits[line.bookingId] : undefined;
+                  const expanded = !!line.bookingId && expandedEditId === line.bookingId;
+                  const editEnd = edit
+                    ? minutesToTime(timeToMinutes(edit.time) + edit.durationMinutes)
+                    : null;
+                  return (
+                  <View key={line.key} style={styles.visitServiceBlock}>
                   <View
-                    key={line.key}
                     style={[
                       styles.visitServiceRow,
                       { backgroundColor: colors.surface, borderColor: colors.border },
@@ -1873,13 +1955,103 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
                       </Pressable>
                     ) : null}
                   </View>
-                ))}
+                  {/* This service's own day, start, calendar and length (web
+                      #187, R29-14). Collapsed to one line until asked for; stands
+                      aside while the visit is moved as one or its list rewritten. */}
+                  {edit && line.bookingId ? (
+                    <View style={styles.visitServiceEdit}>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`${expanded ? 'Done editing' : 'Edit time for'} ${visitLineLabel(line)}`}
+                        disabled={editorsLocked}
+                        onPress={() => setExpandedEditId(expanded ? null : line.bookingId)}
+                        style={styles.visitServiceEditToggle}>
+                        <Text variant="caption" tone={editorsLocked ? 'muted' : 'secondary'}>
+                          {edit.date !== date ? `${formatDayHeading(edit.date)} · ` : ''}
+                          {edit.time}–{editEnd} · {formatDuration(edit.durationMinutes)}
+                        </Text>
+                        {!editorsLocked ? (
+                          <Text variant="bodySmall" color={colors.brand}>
+                            {expanded ? 'Done' : 'Edit time'}
+                          </Text>
+                        ) : null}
+                      </Pressable>
+                      {expanded ? (
+                        <>
+                          <View style={styles.pickerRow}>
+                            <Text variant="label" tone="secondary">
+                              Date
+                            </Text>
+                            <DatePickerField
+                              value={edit.date}
+                              onChange={(next) => updateServiceEdit(line.bookingId!, { date: next })}
+                              accessibilityLabel={`Date for ${visitLineLabel(line)}`}
+                            />
+                          </View>
+                          <View style={styles.pickerRow}>
+                            <Text variant="label" tone="secondary">
+                              Start
+                            </Text>
+                            <TimePickerField
+                              value={timeToMinutes(edit.time)}
+                              onChange={(next) =>
+                                updateServiceEdit(line.bookingId!, { time: minutesToTime(next) })
+                              }
+                              accessibilityLabel={`Start for ${visitLineLabel(line)}`}
+                            />
+                          </View>
+                          {eligibleStaff.length > 0 ? (
+                            <View style={styles.chipWrap}>
+                              {eligibleStaff.map((p) => (
+                                <Chip
+                                  key={p.id}
+                                  label={p.name}
+                                  selected={p.id === edit.calendarId}
+                                  onPress={() =>
+                                    updateServiceEdit(line.bookingId!, { calendarId: p.id })
+                                  }
+                                />
+                              ))}
+                            </View>
+                          ) : null}
+                          <Stepper
+                            label={`Length for ${visitLineLabel(line)}`}
+                            value={formatDuration(edit.durationMinutes)}
+                            onDecrement={() =>
+                              updateServiceEdit(line.bookingId!, {
+                                durationMinutes: Math.max(
+                                  MIN_DURATION_MINUTES,
+                                  edit.durationMinutes - DURATION_STEP_MINUTES,
+                                ),
+                              })
+                            }
+                            onIncrement={() =>
+                              updateServiceEdit(line.bookingId!, {
+                                durationMinutes: Math.min(
+                                  MAX_DURATION_MINUTES,
+                                  edit.durationMinutes + DURATION_STEP_MINUTES,
+                                ),
+                              })
+                            }
+                          />
+                        </>
+                      ) : null}
+                    </View>
+                  ) : null}
+                  </View>
+                  );
+                })}
                 <Button
                   label="Add a service"
                   variant="secondary"
                   onPress={() => openServicePicker(null)}
                 />
-                {servicesChanged ? (
+                {serviceEditsChanged ? (
+                  <Text variant="caption" color={colors.warning}>
+                    Only the services you changed move; the rest stay where they are. The
+                    visit&rsquo;s own start and length stay put while you edit a service.
+                  </Text>
+                ) : servicesChanged ? (
                   <Text variant="caption" color={colors.warning}>
                     Saving rewrites this visit&rsquo;s services. A service taken off is
                     cancelled, keeping its own history; one that has been paid for cannot be
@@ -1945,7 +2117,9 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
                       key={p.id}
                       label={p.name}
                       selected={p.id === practitionerId}
-                      onPress={() => setPractitionerId(p.id)}
+                      onPress={() => {
+                        if (!serviceEditsChanged) setPractitionerId(p.id);
+                      }}
                     />
                   ))}
                 </View>
@@ -2036,6 +2210,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Change the date and time"
+                disabled={serviceEditsChanged}
                 onPress={() => {
                   hapticSelect();
                   setMonthAnchor(date);
@@ -2086,6 +2261,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
                   value={minutes}
                   onChange={setMinutes}
                   accessibilityLabel="New start time for the visit"
+                  disabled={serviceEditsChanged}
                 />
               </View>
             ) : (
@@ -2102,7 +2278,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
                 just chose. A visit spread over several days has no one length
                 to show either (web #187: its services are independent), so it
                 gets the same read-only panel. */}
-            {servicesChanged || visit?.spansDays ? (
+            {servicesChanged || serviceEditsChanged || visit?.spansDays ? (
               <View
                 style={[
                   styles.processingPanel,
@@ -2117,7 +2293,9 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
                 <Text variant="caption" tone="muted">
                   {servicesChanged
                     ? 'Set by the services you picked. Save, then reopen to adjust it by hand.'
-                    : 'This visit runs over more than one day, so its services keep their own lengths here.'}
+                    : serviceEditsChanged
+                      ? 'Each service keeps its own length while you edit services below.'
+                      : 'This visit runs over more than one day, so its services keep their own lengths here.'}
                 </Text>
               </View>
             ) : (
@@ -2293,6 +2471,20 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     gap: 1,
+  },
+  visitServiceBlock: {
+    gap: spacing.xs,
+  },
+  visitServiceEdit: {
+    gap: spacing.sm,
+    paddingHorizontal: spacing.xs,
+  },
+  visitServiceEditToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    minHeight: 32,
   },
   chipWrap: {
     flexDirection: 'row',
