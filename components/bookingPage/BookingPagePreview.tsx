@@ -1,9 +1,9 @@
 import { Image } from 'expo-image';
 import { Platform, StyleSheet, View, type TextStyle, type ViewStyle } from 'react-native';
 
+import { coverAspect, rememberNaturalAspect, useNaturalAspect } from '@/components/bookingPage/CoverThumb';
 import { Text } from '@/components/ui/Text';
 import {
-  BOOKING_COVER_DEFAULT_ASPECT,
   BOOKING_FONT_PRESET_LABELS,
   coverCropLayout,
   logoFramingTransform,
@@ -177,6 +177,10 @@ function Cover({
   // rounded corners + a hairline ring on the inner image block.
   const wrapperStyle: ViewStyle = coverFullWidth ? styles.coverFull : styles.coverContained;
   const containedSkin: ViewStyle | null = coverFullWidth ? null : styles.coverContainedSkin;
+  // No crop: the WHOLE photo at its own shape (web `BookingPageCoverPhoto`:
+  // "never cropped"). A fixed 16:9 box with cover-fit showed a portrait cover
+  // as a hugely zoomed band on the combined page (2026-09-10).
+  const natural = useNaturalAspect(coverUrl);
 
   if (coverCropBox) {
     const layout = coverCropLayout(coverCropBox);
@@ -212,10 +216,15 @@ function Cover({
         style={[
           styles.coverBlock,
           containedSkin,
-          { aspectRatio: BOOKING_COVER_DEFAULT_ASPECT, backgroundColor: mutedColor },
+          { aspectRatio: coverAspect(null, coverUrl ? natural : null), backgroundColor: mutedColor },
         ]}>
         {coverUrl ? (
-          <Image source={{ uri: coverUrl }} contentFit="cover" style={StyleSheet.absoluteFill} />
+          <Image
+            source={{ uri: coverUrl }}
+            contentFit={natural ? 'cover' : 'contain'}
+            onLoad={(e) => rememberNaturalAspect(coverUrl, e)}
+            style={StyleSheet.absoluteFill}
+          />
         ) : null}
       </View>
     </View>

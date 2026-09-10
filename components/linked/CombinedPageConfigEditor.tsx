@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, Switch, View } from 'react-native';
 
 import { BookingPagePreview } from '@/components/bookingPage/BookingPagePreview';
 import { CoverCropperSheet } from '@/components/bookingPage/CoverCropperSheet';
+import { CoverThumb } from '@/components/bookingPage/CoverThumb';
 import { LogoFramingSheet } from '@/components/bookingPage/LogoFramingSheet';
 import { CombinedPageGallery } from '@/components/linked/CombinedPageGallery';
 import { CombinedPageTeamProfiles } from '@/components/linked/CombinedPageTeamProfiles';
@@ -566,6 +567,8 @@ export function CombinedPageConfigEditor({
           onRemove={() => void handleRemove('cover')}
           adjustLabel="Crop"
           onAdjust={() => setOpenSheet('coverCrop')}
+          wide
+          cropBox={coverCropBox}
         />
         <Text variant="label" tone="secondary">
           Cover layout
@@ -812,6 +815,8 @@ function ImageRow({
   onRemove,
   adjustLabel,
   onAdjust,
+  wide = false,
+  cropBox = null,
 }: {
   label: string;
   imageUrl: string | null;
@@ -821,19 +826,30 @@ function ImageRow({
   onRemove: () => void;
   adjustLabel?: string;
   onAdjust?: () => void;
+  /** A cover: draw it at the page's shape rather than as a square. */
+  wide?: boolean;
+  cropBox?: BookingPageCoverCropBox | null;
 }) {
   const { colors } = useTheme();
   return (
     <View style={styles.imageRow}>
-      <View style={[styles.imageThumb, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-        {imageUrl ? (
-          <Image source={{ uri: imageUrl }} style={styles.imageThumbInner} contentFit="cover" />
-        ) : (
-          <Text variant="caption" tone="muted">
-            None
-          </Text>
-        )}
-      </View>
+      {wide && imageUrl ? (
+        // The cover as the page shows it: bounded width, height following the
+        // photo or its crop (web `BOOKING_PAGE_COVER_SETTINGS_FRAME_CLASS`).
+        <View style={[styles.coverThumb, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <CoverThumb coverUrl={imageUrl} cropBox={cropBox} />
+        </View>
+      ) : (
+        <View style={[styles.imageThumb, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          {imageUrl ? (
+            <Image source={{ uri: imageUrl }} style={styles.imageThumbInner} contentFit="cover" />
+          ) : (
+            <Text variant="caption" tone="muted">
+              None
+            </Text>
+          )}
+        </View>
+      )}
       <View style={styles.imageMeta}>
         <Text variant="bodyMedium">{label}</Text>
         <View style={styles.imageActions}>
@@ -976,6 +992,12 @@ const styles = StyleSheet.create({
   imageThumbInner: {
     width: '100%',
     height: '100%',
+  },
+  coverThumb: {
+    width: 144,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    overflow: 'hidden',
   },
   imageMeta: {
     flex: 1,
