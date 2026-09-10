@@ -662,6 +662,18 @@ export function BookingDetailContent({
     () => resolveAppointmentVisit(groupVisitQuery.data ?? []),
     [groupVisitQuery.data],
   );
+  /**
+   * A booking in a group whose siblings have not arrived yet. Until they do
+   * the panel cannot know whether this is a multi-service visit (per-row
+   * Start / Complete, no bar-level one) or a party (an ordinary booking), so
+   * it decides NOTHING that differs between the two: the service-level
+   * actions stay off the card and the summary shows its skeleton rows. The
+   * bar-level Start used to flash for a second before the rows landed and
+   * then vanish (owner, 2026-09-10). A failed read is not pending: it falls
+   * through to the single-booking layout rather than stranding the panel.
+   */
+  const visitPending =
+    !!booking.group_booking_id && !groupVisitQuery.data && !groupVisitQuery.isError;
 
   /**
    * The status the header shows and acts from. A visit's is DERIVED from its
@@ -675,7 +687,9 @@ export function BookingDetailContent({
     ? visitLifecycleStatus(groupVisitQuery.data ?? [], booking.status)
     : booking.status;
   const actions = bookingDetailActions(headerStatus as BookingStatus, isTable).filter(
-    (a) => !visit || (!isServiceLevelStatus(a.target) && !isServiceLevelStatus(headerStatus)),
+    (a) =>
+      (!visit && !visitPending) ||
+      (!isServiceLevelStatus(a.target) && !isServiceLevelStatus(headerStatus)),
   );
 
   // Booked length as the screen should read it: the visit's wall-clock span when
@@ -1138,7 +1152,7 @@ export function BookingDetailContent({
               booking={booking}
               visit={visit}
               visitRows={groupVisitQuery.data ?? []}
-              visitLoading={groupVisitQuery.isLoading}
+              visitLoading={visitPending}
               headerStatus={headerStatus}
               isTable={isTable}
               dateLabel={dateLabel}
