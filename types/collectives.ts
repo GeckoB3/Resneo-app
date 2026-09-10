@@ -91,6 +91,19 @@ export interface CollectiveView {
   bookingPageConfig: CombinedBookingPageConfig | null;
   isHost: boolean;
   hostVenueId: string;
+  /**
+   * The host venue's public contact details and opening hours, exactly what
+   * the combined page shows in its header and About tab (web #190). Read-only:
+   * they are set in the host's own Profile and Business hours settings.
+   * Optional: older payloads omit it.
+   */
+  hostContact?: {
+    phone: string | null;
+    websiteUrl: string | null;
+    address: string | null;
+    /** The host venue's `opening_hours` JSON, keyed "0" (Sun) to "6" (Sat). */
+    openingHours: Record<string, unknown> | null;
+  };
   /** The host venue's two flow flags, which the combined page follows (shown in the manager's note). */
   hostAnyAvailablePractitioner?: boolean;
   hostStaffFirstBookingFlow?: boolean;
@@ -124,6 +137,19 @@ export interface CatalogueProviderView {
   effectiveDurationMinutes: number | null;
   status: ProviderStatus;
   sourceLive: boolean;
+  /**
+   * Where this venue's copy stands against the offering's origin (web #187
+   * service sync, #190 drift on every copy). `none` for the origin's own
+   * service, an unrelated service, or a database without the sync columns.
+   * `inStep` compares duration, buffer, processing periods and options; for an
+   * `independent` copy it is drift information only. Optional: older payloads
+   * omit it, and the builder then shows no sync state.
+   */
+  sync?: {
+    state: 'none' | 'independent' | 'linked' | 'customised';
+    originVenueName: string | null;
+    inStep: boolean | null;
+  };
 }
 
 export interface CatalogueItemView {
@@ -139,6 +165,9 @@ export interface CatalogueItemView {
   allowAnyAvailable: boolean;
   status: ItemStatus;
   providers: CatalogueProviderView[];
+  /** The venue the tick copies from: the host's when it provides the offering, else the earliest provider's. */
+  originVenueId?: string | null;
+  originVenueName?: string | null;
 }
 
 export interface CatalogueMemberSource {
@@ -208,7 +237,17 @@ export type CatalogueAction =
   | 'add_provider'
   | 'remove_provider'
   /** Batch calendar assignment: apply every staged add/remove at once (web #106). */
-  | 'set_providers';
+  | 'set_providers'
+  /** Bring one linked/customised copy into step with its origin (`forceSync` for a customised one). Web #187. */
+  | 'sync_provider'
+  /** A linked copy stops following its origin; its settings stay. Web #187. */
+  | 'detach_provider'
+  /** Link an independent copy to the origin and update it, add-ons included. Web #187. */
+  | 'link_provider'
+  /** Link and update every copy of every offering (or of `itemId`) at a non-origin venue. Web #190. */
+  | 'sync_all_providers'
+  /** Unlink every linked copy of every offering (or of `itemId`); settings untouched. Web #190. */
+  | 'unlink_all_providers';
 
 /** One selected member service for the `create_items` bulk add. */
 export interface CatalogueBulkAddService {
@@ -227,6 +266,12 @@ export interface CatalogueProviderOp {
   venueId?: string;
   practitionerId?: string;
   providerId?: string;
+  /**
+   * `add` only: the calendar's venue already has a same-named service, and the
+   * host said yes to updating it to the origin's shape and keeping it in step
+   * (web #190, asked at tick time). A copy the tick creates is in step already.
+   */
+  sync?: boolean;
 }
 
 export interface CatalogueActionPayload {
@@ -250,6 +295,8 @@ export interface CatalogueActionPayload {
   venueId?: string;
   sourceServiceId?: string;
   practitionerId?: string | null;
+  /** `sync_provider`: re-sync a customised copy too (it would otherwise be left alone). */
+  forceSync?: boolean;
 }
 
 export type PageAssetKind = 'logo' | 'cover' | 'gallery' | 'offering' | 'team';

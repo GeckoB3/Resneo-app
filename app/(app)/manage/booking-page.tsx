@@ -524,6 +524,16 @@ export default function BookingPageScreen() {
       {collectiveNote ? (
         <CombinedPageNotice
           collective={collectiveNote}
+          publicUrl={`${webBase}${collectiveNote.publicPath}`}
+          onCopyUrl={() => {
+            void Clipboard.setStringAsync(`${webBase}${collectiveNote.publicPath}`).then(() => {
+              hapticSuccess();
+              toast.success('Combined page link copied.');
+            });
+          }}
+          onOpenUrl={() =>
+            void WebBrowser.openBrowserAsync(`${webBase}${collectiveNote.publicPath}`).catch(() => undefined)
+          }
           onManage={() => router.push(`/collectives/${collectiveNote.id}` as Href)}
           onOpenLinkedAccounts={() => router.push('/linked-venues' as Href)}
         />

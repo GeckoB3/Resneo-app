@@ -13,6 +13,15 @@ import { PressableScale } from '@/components/ui/PressableScale';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { useCatalogueAction, useCollectiveCatalogue } from '@/lib/queries/useCollectives';
+import {
+  askToSyncOnAdd,
+  copySyncStatus,
+  linkOfferingCopiesWords,
+  pageWideSyncWords,
+  unlinkOfferingCopiesWords,
+  type SyncBadgeTone,
+} from '@/lib/linked/service-sync-view';
+import { ConfirmSheet } from '@/components/ui/ConfirmSheet';
 import { useToast } from '@/providers/ToastProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -44,6 +53,13 @@ export function CollectiveCatalogueBuilder({ collectiveId }: { collectiveId: str
   const catalogueAction = useCatalogueAction();
 
   const [newItemName, setNewItemName] = useState('');
+  /**
+   * One confirm sheet for the whole builder (link / unlink / update, and the
+   * tick-time "link it?" question). Held here so it is never a second sheet
+   * over another one; the builder itself is a screen, not a sheet.
+   */
+  const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
+  const ask: AskConfirm = (request) => setConfirm(request);
 
   const runAction = (payload: CatalogueActionPayload, onDone?: () => void) => {
     catalogueAction.mutate(
@@ -79,9 +95,28 @@ export function CollectiveCatalogueBuilder({ collectiveId }: { collectiveId: str
   }
 
   const activeItems = catalogue.items.filter((i) => i.status === 'active');
+  const pageSync = pageWideSyncWords(activeItems);
 
   return (
     <View style={styles.root}>
+      <ConfirmSheet
+        visible={confirm !== null}
+        title={confirm?.title ?? ''}
+        message={confirm?.message}
+        confirmLabel={confirm?.confirmLabel ?? 'Confirm'}
+        destructive={false}
+        loading={busy}
+        onConfirm={() => {
+          const req = confirm;
+          setConfirm(null);
+          req?.onConfirm();
+        }}
+        onClose={() => {
+          const req = confirm;
+          setConfirm(null);
+          req?.onCancel?.();
+        }}
+      />
       <VenueServicesPicker
         memberSources={catalogue.memberSources}
         items={activeItems}
@@ -93,6 +128,49 @@ export function CollectiveCatalogueBuilder({ collectiveId }: { collectiveId: str
 
       <View style={styles.section}>
         <Text variant="label">Offerings on your combined page</Text>
+        <Text variant="caption" tone="muted">
+          Each offering lists the calendars that provide it. A calendar at another venue uses that
+          venue’s own copy of the service. A copy that is linked to the original follows the
+          original’s duration, buffer, processing periods and options whenever the original is
+          saved, and its add-ons are matched whenever it is linked or updated; price and
+          description are always the venue’s own.
+        </Text>
+        {pageSync.link || pageSync.unlink ? (
+          <View style={styles.syncRow}>
+            {pageSync.link ? (
+              <Button
+                label={pageSync.link.label}
+                size="sm"
+                variant="secondary"
+                disabled={busy}
+                onPress={() =>
+                  ask({
+                    title: 'Link and update',
+                    message: pageSync.link!.confirmText,
+                    confirmLabel: 'Link and update',
+                    onConfirm: () => runAction(pageSync.link!.payload),
+                  })
+                }
+              />
+            ) : null}
+            {pageSync.unlink ? (
+              <Button
+                label={pageSync.unlink.label}
+                size="sm"
+                variant="ghost"
+                disabled={busy}
+                onPress={() =>
+                  ask({
+                    title: 'Unlink',
+                    message: pageSync.unlink!.confirmText,
+                    confirmLabel: 'Unlink',
+                    onConfirm: () => runAction(pageSync.unlink!.payload),
+                  })
+                }
+              />
+            ) : null}
+          </View>
+        ) : null}
         {activeItems.length === 0 ? (
           <Text variant="bodySmall" tone="muted">
             Nothing on the page yet. Add services from your venues above, or create a custom
@@ -106,6 +184,7 @@ export function CollectiveCatalogueBuilder({ collectiveId }: { collectiveId: str
               memberSources={catalogue.memberSources}
               busy={busy}
               onAction={runAction}
+              ask={ask}
             />
           ))
         )}
@@ -348,18 +427,32 @@ function VenueServicesPicker({
 // Offering card — inline name edit, archive, calendar assignment matrix
 // ---------------------------------------------------------------------------
 
+/** A yes/no question asked with the builder's one ConfirmSheet. */
+type ConfirmRequest = {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  onConfirm: () => void;
+  onCancel?: () => void;
+};
+type AskConfirm = (request: ConfirmRequest) => void;
+
 function ItemCard({
   item,
   memberSources,
   busy,
   onAction,
+  ask,
 }: {
   item: CatalogueItemView;
   memberSources: CatalogueMemberSource[];
   busy: boolean;
   onAction: (payload: CatalogueActionPayload, onDone?: () => void) => void;
+  ask: AskConfirm;
 }) {
   const [name, setName] = useState(item.name);
+  const linkAll = linkOfferingCopiesWords(item);
+  const unlinkAll = unlinkOfferingCopiesWords(item);
 
   const commitName = () => {
     const v = name.trim();
@@ -396,18 +489,63 @@ function ItemCard({
       </View>
 
       <Text variant="caption" tone="muted">
-        Price, duration, description, photo, variants and add-ons all come from each venue&apos;s
-        own service settings (Services). Here you only choose which calendars offer it.
+        Price, description and photo come from each venue&apos;s own service settings (Services).
+        To offer it at more than one venue, open the calendars below and tick that venue&apos;s
+        calendars. If the venue does not have the service, an exact copy is created there and
+        linked to the original; if it already has one with the same name, you are asked whether
+        to link it.
       </Text>
+
+      {linkAll || unlinkAll ? (
+        <View style={styles.syncRow}>
+          {linkAll ? (
+            <Button
+              label={linkAll.label}
+              size="sm"
+              variant="secondary"
+              disabled={busy}
+              onPress={() =>
+                ask({
+                  title: 'Link and update',
+                  message: linkAll.confirmText,
+                  confirmLabel: 'Link and update',
+                  onConfirm: () => onAction(linkAll.payload),
+                })
+              }
+            />
+          ) : null}
+          {unlinkAll ? (
+            <Button
+              label={unlinkAll.label}
+              size="sm"
+              variant="ghost"
+              disabled={busy}
+              onPress={() =>
+                ask({
+                  title: 'Unlink',
+                  message: unlinkAll.confirmText,
+                  confirmLabel: 'Unlink',
+                  onConfirm: () => onAction(unlinkAll.payload),
+                })
+              }
+            />
+          ) : null}
+        </View>
+      ) : null}
 
       <CollapsibleCard
         title="Calendars offering this"
         summary={item.providers.length > 0 ? `${item.providers.length} assigned` : 'None yet'}>
+        <Text variant="caption" tone="muted">
+          Tick the calendars that offer it. Each row at another venue shows whether that venue&apos;s
+          copy is linked to the original and up to date, with a button for the next step.
+        </Text>
         <CalendarAssignment
           item={item}
           memberSources={memberSources}
           busy={busy}
           onAction={onAction}
+          ask={ask}
         />
       </CollapsibleCard>
     </Card>
@@ -426,14 +564,20 @@ function CalendarAssignment({
   memberSources,
   busy,
   onAction,
+  ask,
 }: {
   item: CatalogueItemView;
   memberSources: CatalogueMemberSource[];
   busy: boolean;
   onAction: (payload: CatalogueActionPayload, onDone?: () => void) => void;
+  ask: AskConfirm;
 }) {
-  /** Staged desired state per calendar id; absent = unchanged from the server. */
-  const [staged, setStaged] = useState<Record<string, boolean>>({});
+  /**
+   * Staged desired state per calendar id; absent = unchanged from the server.
+   * `sync` rides an add whose venue already has the service and whose host said
+   * yes to bringing it into step (web #190, `ops[].sync`).
+   */
+  const [staged, setStaged] = useState<Record<string, { desired: boolean; sync: boolean }>>({});
 
   const providerByCalendar = new Map<string, CatalogueProviderView>();
   for (const p of item.providers) {
@@ -453,8 +597,9 @@ function CalendarAssignment({
   const pendingOps: CatalogueProviderOp[] = [];
   for (const ms of memberSources) {
     for (const cal of ms.practitioners) {
-      const desired = staged[cal.id];
-      if (desired === undefined) continue;
+      const entry = staged[cal.id];
+      if (entry === undefined) continue;
+      const desired = entry.desired;
       const provider = providerByCalendar.get(cal.id) ?? null;
       const current = Boolean(provider);
       if (desired === current) continue;
@@ -464,6 +609,7 @@ function CalendarAssignment({
           itemId: item.id,
           venueId: ms.venueId,
           practitionerId: cal.id,
+          ...(entry.sync ? { sync: true } : {}),
         });
       } else if (provider) {
         pendingOps.push({ op: 'remove', providerId: provider.id });
@@ -490,7 +636,10 @@ function CalendarAssignment({
           ) : (
             ms.practitioners.map((cal) => {
               const provider = providerByCalendar.get(cal.id) ?? null;
-              const checked = staged[cal.id] ?? Boolean(provider);
+              const checked = staged[cal.id]?.desired ?? Boolean(provider);
+              const hasService = cal.services.some(
+                (s) => s.name.trim().toLowerCase() === item.name.trim().toLowerCase(),
+              );
               return (
                 <CalendarRow
                   key={cal.id}
@@ -498,11 +647,28 @@ function CalendarAssignment({
                   venueName={ms.venueName}
                   cal={cal}
                   provider={provider}
+                  hasService={hasService}
                   checked={checked}
                   busy={busy}
-                  onToggle={() =>
-                    setStaged((prev) => ({ ...prev, [cal.id]: !checked }))
-                  }
+                  onAction={onAction}
+                  ask={ask}
+                  onToggle={() => {
+                    const next = !checked;
+                    setStaged((prev) => ({ ...prev, [cal.id]: { desired: next, sync: false } }));
+                    // Ticking a calendar whose venue already has the service: the
+                    // tick reuses that service as it is, so ask whether to bring it
+                    // into step with the original now (web #190).
+                    const question = next && !provider ? askToSyncOnAdd(item, ms.venueId, ms.venueName, hasService) : null;
+                    if (question) {
+                      ask({
+                        title: 'Link it?',
+                        message: question.text,
+                        confirmLabel: question.confirmLabel,
+                        onConfirm: () =>
+                          setStaged((prev) => ({ ...prev, [cal.id]: { desired: true, sync: true } })),
+                      });
+                    }
+                  }}
                 />
               );
             })
@@ -527,26 +693,39 @@ function CalendarRow({
   venueName,
   cal,
   provider,
+  hasService,
   checked,
   busy,
   onToggle,
+  onAction,
+  ask,
 }: {
   item: CatalogueItemView;
   venueName: string;
   cal: { id: string; name: string; services: { id: string; name: string }[] };
   provider: CatalogueProviderView | null;
+  /** The venue already has a same-named service. */
+  hasService: boolean;
   /** Staged desired state (may differ from `provider` until saved). */
   checked: boolean;
   busy: boolean;
   onToggle: () => void;
+  onAction: (payload: CatalogueActionPayload, onDone?: () => void) => void;
+  ask: AskConfirm;
 }) {
   const { colors } = useTheme();
-  const hasService = cal.services.some(
-    (s) => s.name.trim().toLowerCase() === item.name.trim().toLowerCase(),
-  );
   const willDuplicate = checked && !provider && !hasService;
+  const willAsk = checked && !provider && hasService;
+  // The copy's standing against the origin, and its one next step (web #190).
+  const syncView = provider ? copySyncStatus(item, provider, venueName) : null;
+  const badgeTone: Record<SyncBadgeTone, 'success' | 'warning' | 'neutral'> = {
+    ok: 'success',
+    warn: 'warning',
+    muted: 'neutral',
+  };
 
   return (
+    <View>
     <PressableScale
       onPress={() => {
         if (!busy) onToggle();
@@ -574,9 +753,33 @@ function CalendarRow({
           <Text variant="caption" color={colors.brand} numberOfLines={1} style={styles.dupHint}>
             {`adds “${item.name}” to ${venueName}`}
           </Text>
+        ) : willAsk ? (
+          <Text variant="caption" color={colors.brand} numberOfLines={1} style={styles.dupHint}>
+            {`uses ${venueName}’s “${item.name}”`}
+          </Text>
         ) : null}
       </View>
     </PressableScale>
+    {checked && provider && syncView ? (
+      <View style={styles.syncStatus}>
+        <Badge label={syncView.badge.text} tone={badgeTone[syncView.badge.tone]} />
+        <Button
+          label={syncView.action.label}
+          size="sm"
+          variant={syncView.action.quiet ? 'ghost' : 'secondary'}
+          disabled={busy}
+          onPress={() =>
+            ask({
+              title: syncView.action.confirmTitle,
+              message: syncView.action.confirmText,
+              confirmLabel: syncView.action.confirmTitle,
+              onConfirm: () => onAction(syncView.action.payload),
+            })
+          }
+        />
+      </View>
+    ) : null}
+    </View>
   );
 }
 
@@ -669,6 +872,20 @@ const styles = StyleSheet.create({
   dupHint: {
     flexShrink: 1,
     textAlign: 'right',
+  },
+  syncRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  syncStatus: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.sm,
   },
   checkbox: {
     width: 20,

@@ -16,10 +16,17 @@ import { useTheme } from '@/theme/useTheme';
  */
 export function CombinedPageNotice({
   collective,
+  publicUrl,
+  onCopyUrl,
+  onOpenUrl,
   onManage,
   onOpenLinkedAccounts,
 }: {
   collective: SettingsCollectiveNote;
+  /** The combined page's full address, with Copy and View (R29-12: the web manager's page link). */
+  publicUrl?: string | null;
+  onCopyUrl?: () => void;
+  onOpenUrl?: () => void;
   onManage: () => void;
   onOpenLinkedAccounts: () => void;
 }) {
@@ -40,6 +47,20 @@ export function CombinedPageNotice({
           ? 'The combined page is served at this venue’s own booking address, so guests who use that address see the combined page. The settings below shape this venue’s own page only.'
           : 'The settings below shape this venue’s own booking page only. The combined page has its own address and its own settings.'}
       </Text>
+      {publicUrl ? (
+        <View style={styles.address}>
+          <Text variant="caption" tone="muted">
+            Combined page address
+          </Text>
+          <Text variant="bodySmall" numberOfLines={1} selectable>
+            {publicUrl}
+          </Text>
+          <View style={styles.actions}>
+            {onCopyUrl ? <Button label="Copy link" size="sm" variant="secondary" onPress={onCopyUrl} /> : null}
+            {onOpenUrl ? <Button label="View page" size="sm" variant="ghost" onPress={onOpenUrl} /> : null}
+          </View>
+        </View>
+      ) : null}
       <View style={styles.actions}>
         {collective.isHost ? (
           <Button label="Manage combined page" size="sm" onPress={onManage} />
@@ -59,6 +80,9 @@ const styles = StyleSheet.create({
   card: {
     gap: spacing.sm,
     borderWidth: StyleSheet.hairlineWidth,
+  },
+  address: {
+    gap: spacing.xs,
   },
   actions: {
     flexDirection: 'row',

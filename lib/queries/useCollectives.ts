@@ -193,8 +193,11 @@ export function useCollectiveMemberAction() {
 }
 
 /**
- * PATCH /api/venue/collectives/[id]/catalogue — create_item / update_item /
- * archive_item / add_provider / remove_provider. Rate-limited 60/60s server-side.
+ * PATCH /api/venue/collectives/[id]/catalogue — create_item(s) / update_item /
+ * archive_item / add_provider / remove_provider / set_providers, and the
+ * service-sync actions (sync_provider / detach_provider / link_provider /
+ * sync_all_providers / unlink_all_providers, web #187 + #190). Rate-limited
+ * 60/60s server-side.
  * Seeds the catalogue cache from the response and invalidates so the list refreshes.
  */
 export function useCatalogueAction() {

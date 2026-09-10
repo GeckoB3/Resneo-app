@@ -35,12 +35,15 @@ export interface SettingsCollectiveNote {
   hostVenueName: string;
   /** The combined page is served at this venue's own booking address. */
   adoptedThisVenue: boolean;
+  /** The combined page's public path (`/book/{slug}` when adopted, else `/book/c/{slug}`), for Copy and View. */
+  publicPath: string;
 }
 
 type CollectiveNoteView = Pick<
   CollectiveView,
   | 'id'
   | 'name'
+  | 'slug'
   | 'status'
   | 'pageMode'
   | 'myMembershipStatus'
@@ -49,7 +52,7 @@ type CollectiveNoteView = Pick<
   | 'hostVenueId'
   | 'slugStrategy'
   | 'adoptedVenueId'
-> & { members: Pick<CollectiveMemberView, 'venueId' | 'venueName'>[] };
+> & { members: Pick<CollectiveMemberView, 'venueId' | 'venueName' | 'venueSlug'>[] };
 
 /**
  * The collective whose combined page this venue is part of: active, in
@@ -78,5 +81,6 @@ export function settingsCollectiveNote(
     hostVenueName:
       live.members.find((m) => m.venueId === live.hostVenueId)?.venueName ?? 'The host venue',
     adoptedThisVenue: live.slugStrategy === 'adopt_member' && live.adoptedVenueId === myVenueId,
+    publicPath: collectivePublicPath(live),
   };
 }

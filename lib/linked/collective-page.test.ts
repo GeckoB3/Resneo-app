@@ -53,6 +53,7 @@ describe('settingsCollectiveNote', () => {
       isHost: true,
       hostVenueName: 'Host Salon',
       adoptedThisVenue: false,
+      publicPath: '/book/c/hair-collective',
     });
   });
 

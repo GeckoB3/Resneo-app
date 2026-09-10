@@ -4,6 +4,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { CollectiveCatalogueBuilder } from '@/components/linked/CollectiveCatalogueBuilder';
 import { CollectiveMembersPanel } from '@/components/linked/CollectiveMembersPanel';
+import { CombinedPageAboutSection } from '@/components/linked/CombinedPageAboutSection';
 import { CombinedPageConfigEditor } from '@/components/linked/CombinedPageConfigEditor';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -20,7 +21,7 @@ import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { spacing } from '@/theme/index';
 import type { CollectiveView } from '@/types/collectives';
 
-type TabKey = 'page' | 'services' | 'members';
+type TabKey = 'page' | 'services' | 'about' | 'members';
 
 export default function CollectiveDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -98,6 +99,7 @@ export default function CollectiveDetailScreen() {
             are offered. To stop taking part, leave the collective from the Venue collectives list.
           </Text>
         </Card>
+        <CombinedPageAboutSection collective={collective} />
       </Screen>
     );
   }
@@ -110,6 +112,7 @@ export default function CollectiveDetailScreen() {
         options={[
           { value: 'page', label: 'Page' },
           { value: 'services', label: 'Services' },
+          { value: 'about', label: 'About' },
           { value: 'members', label: 'Members' },
         ]}
         value={tab}
@@ -125,6 +128,8 @@ export default function CollectiveDetailScreen() {
         ) : null}
 
         {tab === 'services' ? <CollectiveCatalogueBuilder collectiveId={collective.id} /> : null}
+
+        {tab === 'about' ? <CombinedPageAboutSection collective={collective} /> : null}
 
         {tab === 'members' ? (
           <CollectiveMembersPanel
