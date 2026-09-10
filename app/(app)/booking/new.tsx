@@ -14,6 +14,7 @@ import { LoadingState } from '@/components/ui/LoadingState';
 import { Screen } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/Text';
 import { ANALYTICS_EVENTS, track } from '@/lib/analytics';
+import { markCrossVenueRebookCreated } from '@/lib/calendar/cross-venue-rebook';
 import { useBookingFormVenue } from '@/lib/queries/useBookingFormVenue';
 import { LinkedVenueContext, useLinkedVenueContext } from '@/providers/LinkedVenueProvider';
 import { spacing } from '@/theme/index';
@@ -200,6 +201,9 @@ function NewBookingForm() {
   );
 
   const handleCreated = (bookingId: string) => {
+    // A cross-account move that came through the calendar (web #190): the
+    // calendar tab offers to cancel the original when it is next in focus.
+    markCrossVenueRebookCreated();
     router.replace(`/booking/${bookingId}` as Href);
   };
 

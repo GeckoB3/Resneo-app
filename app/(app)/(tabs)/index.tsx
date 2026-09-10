@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Pressable,
@@ -41,6 +41,7 @@ import {
 import { useStaffCollective } from '@/lib/queries/useStaffCollective';
 import { Button } from '@/components/ui/Button';
 import { Chip } from '@/components/ui/Chip';
+import { ConfirmSheet } from '@/components/ui/ConfirmSheet';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { ErrorState } from '@/components/ui/ErrorState';
@@ -52,7 +53,7 @@ import { Screen } from '@/components/ui/Screen';
 import { Segmented } from '@/components/ui/Segmented';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
-import { ApiError } from '@/lib/api/client';
+import { ApiError, apiFetch } from '@/lib/api/client';
 import {
   resolveAppointmentVisit,
   visitEditTargetForService,
@@ -61,6 +62,17 @@ import {
 import { guestNotifyPlanForChange } from '@/lib/booking/modification-notify';
 import { visitRestoreRequest, visitScheduleRequest } from '@/lib/booking/visit-schedule-request';
 import { ownSiblingOverlapCount } from '@/lib/calendar/visit-siblings';
+import {
+  cancelOriginalCopy,
+  crossVenueMoveCopy,
+  crossVenueOriginalLabel,
+  roundTimeToFiveMinutes,
+  setPendingCrossVenueRebook,
+  takeCrossVenueRebookIfCreated,
+  type CrossVenueMoveWords,
+  type PendingCrossVenueRebook,
+} from '@/lib/calendar/cross-venue-rebook';
+import { writeRebookBootstrap } from '@/lib/rebook-bootstrap';
 import { newBookingActionLabel } from '@/lib/booking/terminology';
 import { isAppointmentFromVenue } from '@/lib/venue/venue-experience';
 import { hapticSelect, hapticSuccess } from '@/lib/haptics';
@@ -78,6 +90,7 @@ import {
 import {
   useNotifyBookingModification,
   useRescheduleBookingById,
+  useUpdateBookingStatus,
 } from '@/lib/queries/useBookingMutations';
 import { useVisitScheduleById } from '@/lib/queries/useVisitMutations';
 import {
@@ -143,13 +156,18 @@ import {
   type LinkedVenueColumn,
 } from '@/lib/linked/linked-calendar-view';
 import type { LinkedBookingContext } from '@/lib/linked/linked-detail-policy';
-import { pingLinkedBookingView, useLinkedCalendar } from '@/lib/queries/useLinkedCalendar';
+import {
+  pingLinkedBookingView,
+  useLinkedCalendar,
+  useUpdateLinkedBooking,
+} from '@/lib/queries/useLinkedCalendar';
 import { useLinkedVenueContext } from '@/providers/LinkedVenueProvider';
 import type { CalendarGridBooking, CalendarGridDay } from '@/types/calendar-grid';
 import type { Practitioner } from '@/types/practitioner';
 import type { CalendarTimeBlock } from '@/components/calendar/CalendarDayGrid';
 import type { CalendarScheduleBlock, ScheduleBlockDTO } from '@/types/schedule-blocks';
 import type { LinkedBooking, LinkedVenueCalendar } from '@/types/linked-venues';
+import type { BookingDetail } from '@/types/booking-detail';
 
 /** A row with no usable end reads as this long, as on the grids. */
 const DEFAULT_SERVICE_MINUTES = 30;
@@ -787,6 +805,38 @@ export default function CalendarScreen() {
   // `addSheetTarget`, which is the own-venue sheet and carries a practitioner
   // column plus Block time / resource actions that a linked venue must not get.
   const [linkedSlot, setLinkedSlot] = useState<LinkedSlotTarget | null>(null);
+
+  /**
+   * A booking dropped on a calendar of another ResNeo account (web #190's
+   * cross-account move dialog). It cannot be transferred, so the sheet says so
+   * and offers to book the client afresh on that calendar; the wizard then
+   * marks the pending record, and the tab offers to cancel the original when
+   * it regains focus. See `lib/calendar/cross-venue-rebook.ts`.
+   */
+  const [crossVenueMove, setCrossVenueMove] = useState<
+    | (CrossVenueMoveWords & {
+        booking: CalendarGridBooking;
+        /** The partner venue the dragged booking belongs to, or null for our own. */
+        sourceVenue: LinkedVenueCalendar | null;
+        sourceLinked: LinkedBooking | null;
+        targetColumnId: string;
+        /** The partner column dropped on, or null for one of our own. */
+        targetLinked: { venue: LinkedVenueCalendar; practitionerId: string | null } | null;
+        time: string;
+      })
+    | null
+  >(null);
+  const [cancelOriginalPrompt, setCancelOriginalPrompt] = useState<PendingCrossVenueRebook | null>(null);
+  const cancelOwnOriginal = useUpdateBookingStatus(cancelOriginalPrompt?.originalBookingId ?? '');
+  const cancelLinkedOriginal = useUpdateLinkedBooking();
+  useFocusEffect(
+    useCallback(() => {
+      // The wizard is a route: when it made the booking and popped, the record
+      // is marked; an abandoned wizard leaves it unmarked and it is dropped.
+      const done = takeCrossVenueRebookIfCreated();
+      if (done) setCancelOriginalPrompt(done);
+    }, []),
+  );
 
   // Tap routing for the combined grid: a linked column key (`linked:<venueId>`
   // or `linked:<venueId>:<calendarId>`) and any booking id belonging to a linked
@@ -1796,10 +1846,142 @@ export default function CalendarScreen() {
   }, [toast]);
 
   // Drag dropped on another venue's column — a booking never changes venue
-  // (web `handleDragEnd`); the grid refused it, this says why.
-  const handleDragColumnReject = useCallback(() => {
-    toast.error(LINKED_MOVE_SAME_VENUE_ERROR);
-  }, [toast]);
+  // (web `handleDragEnd`); the grid refused it. Since web #190 the answer is a
+  // sheet that explains and offers to book the client afresh on that calendar,
+  // then to cancel the original; the old toast stays as the fallback when the
+  // drop cannot be described (the booking or column vanished mid-drag).
+  const handleDragColumnReject = useCallback(
+    (bookingId: string, newTime: string, targetColumnId: string) => {
+      const booking = findBookingOnAnchor(bookingId);
+      const sourceHit = linkedBookingVenue.get(bookingId) ?? null;
+      const targetHit = linkedColumnVenue.get(targetColumnId) ?? null;
+      if (!booking) {
+        toast.error(LINKED_MOVE_SAME_VENUE_ERROR);
+        return;
+      }
+      const ownSourceCalendarId =
+        gridQuery.data?.calendars.find((cal) =>
+          cal.dates.some((d) => d.date === anchor && d.bookings.some((b) => b.id === bookingId)),
+        )?.calendarId ?? null;
+      const sourceCalendarName = sourceHit
+        ? (sourceHit.venue.practitioners.find((p) => p.id === sourceHit.booking.practitionerId)?.name ??
+          sourceHit.venue.venueName)
+        : (practitioners.find((p) => p.id === ownSourceCalendarId)?.name ?? 'its current calendar');
+      const targetCalendarName = targetHit
+        ? (targetHit.venue.practitioners.find((p) => p.id === targetHit.practitionerId)?.name ??
+          targetHit.venue.venueName)
+        : (practitioners.find((p) => p.id === targetColumnId)?.name ?? 'that calendar');
+      setCrossVenueMove({
+        guestName: booking.guestName || 'The client',
+        sourceCalendarName,
+        sourceVenueName: sourceHit?.venue.venueName ?? null,
+        targetCalendarName,
+        targetVenueName: targetHit?.venue.venueName ?? null,
+        booking,
+        sourceVenue: sourceHit?.venue ?? null,
+        sourceLinked: sourceHit?.booking ?? null,
+        targetColumnId,
+        targetLinked: targetHit,
+        time: roundTimeToFiveMinutes(newTime),
+      });
+    },
+    [findBookingOnAnchor, linkedBookingVenue, linkedColumnVenue, gridQuery.data, anchor, practitioners, toast],
+  );
+
+  /**
+   * Step one of a cross-account move: open the booking form on the target
+   * calendar at the dropped slot, with the client's details filled in from the
+   * booking that was dragged (through the rebook bootstrap, as Rebook does).
+   * The service is chosen afresh: the target venue has its own catalogue.
+   */
+  const startCrossVenueRebook = useCallback(async () => {
+    const move = crossVenueMove;
+    if (!move) return;
+    setCrossVenueMove(null);
+    // The client's contact details: the partner feed carries them when the
+    // link shares personal data; an own booking's come from its summary. A
+    // failed read still books, with the name alone.
+    const [first, ...rest] = (move.booking.guestName ?? '').trim().split(/\s+/);
+    let firstName = first ?? '';
+    let lastName = rest.join(' ');
+    let email: string | null = null;
+    let phone: string | null = null;
+    if (move.sourceLinked) {
+      email = move.sourceLinked.guestEmail ?? null;
+      phone = move.sourceLinked.guestPhone ?? null;
+    } else if (accessToken) {
+      try {
+        const summary = await apiFetch<BookingDetail>(
+          `/api/venue/bookings/${move.booking.id}/summary`,
+          { accessToken },
+        );
+        firstName = summary.guest?.first_name ?? firstName;
+        lastName = summary.guest?.last_name ?? lastName;
+        email = summary.guest?.email ?? null;
+        phone = summary.guest?.phone ?? null;
+      } catch {
+        // Name only.
+      }
+    }
+    await writeRebookBootstrap({
+      v: 1,
+      guest: { firstName, lastName, email, phone },
+      initialDate: anchor,
+    });
+    setPendingCrossVenueRebook({
+      originalBookingId: move.booking.id,
+      originalOwnerVenueId: move.sourceVenue?.venueId ?? null,
+      guestName: move.booking.guestName || 'The client',
+      originalLabel: crossVenueOriginalLabel(move.booking.startTime, anchor, move.sourceCalendarName),
+      targetLabel: `${move.targetCalendarName}'s calendar`,
+    });
+    if (move.targetLinked) {
+      // A partner's column: the form scoped to that venue (or the collective
+      // it books through), as the slot menu does.
+      const { venue, practitionerId } = move.targetLinked;
+      const collective = collectiveBookingTargetFor(staffCollective, venue.venueId, practitionerId);
+      router.push({
+        pathname: '/booking/new',
+        params: {
+          ownerVenueId: collective ? collective.id : venue.venueId,
+          ownerVenueName: collective ? collective.name : venue.venueName,
+          date: anchor,
+          time: move.time,
+          ...(practitionerId ? { practitionerId } : {}),
+        },
+      });
+      return;
+    }
+    router.push({
+      pathname: '/booking/new',
+      params: {
+        ...collectiveParamsFor(move.targetColumnId),
+        date: anchor,
+        practitionerId: move.targetColumnId,
+        time: move.time,
+      },
+    });
+  }, [crossVenueMove, accessToken, anchor, staffCollective, collectiveParamsFor, router]);
+
+  /** Step two: cancel the original through the ordinary cancel path (client told, deposit rules applied). */
+  const cancelOriginalAfterRebook = useCallback(() => {
+    const prompt = cancelOriginalPrompt;
+    if (!prompt) return;
+    const done = () => {
+      setCancelOriginalPrompt(null);
+      toast.success(`Cancelled the original booking with ${prompt.guestName}.`);
+    };
+    const failed = (e: unknown) =>
+      toast.error(e instanceof ApiError ? e.message : 'Could not cancel the original booking.');
+    if (prompt.originalOwnerVenueId) {
+      cancelLinkedOriginal.mutate(
+        { bookingId: prompt.originalBookingId, changes: { status: 'Cancelled' } },
+        { onSuccess: done, onError: failed },
+      );
+      return;
+    }
+    cancelOwnOriginal.mutate('Cancelled', { onSuccess: done, onError: failed });
+  }, [cancelOriginalPrompt, cancelLinkedOriginal, cancelOwnOriginal, toast]);
 
   // Cross-column drag (multi-calendar grid): drop a booking onto a DIFFERENT own
   // practitioner column → reschedule to the new time AND reassign to that calendar
@@ -3108,6 +3290,44 @@ export default function CalendarScreen() {
       {/* Linked-column slot menu — New booking / Walk-in, then the full form
           scoped to that venue. */}
       <LinkedSlotSheet target={linkedSlot} onClose={() => setLinkedSlot(null)} />
+
+      {/* A drop on another account's calendar (web #190): explain, then offer
+          to book the client afresh there and, once that is made, to cancel
+          the original. Two sheets, never open together. */}
+      {crossVenueMove
+        ? (() => {
+            const copy = crossVenueMoveCopy(crossVenueMove);
+            return (
+              <ConfirmSheet
+                visible
+                title={copy.title}
+                message={copy.message}
+                confirmLabel={copy.confirmLabel}
+                cancelLabel="Not now"
+                destructive={false}
+                onConfirm={() => void startCrossVenueRebook()}
+                onClose={() => setCrossVenueMove(null)}
+              />
+            );
+          })()
+        : null}
+      {cancelOriginalPrompt
+        ? (() => {
+            const copy = cancelOriginalCopy(cancelOriginalPrompt);
+            return (
+              <ConfirmSheet
+                visible
+                title={copy.title}
+                message={copy.message}
+                confirmLabel="Cancel the original"
+                cancelLabel="Keep both"
+                loading={cancelOwnOriginal.isPending || cancelLinkedOriginal.isPending}
+                onConfirm={cancelOriginalAfterRebook}
+                onClose={() => setCancelOriginalPrompt(null)}
+              />
+            );
+          })()
+        : null}
       </ErrorBoundary>
     </Screen>
   );

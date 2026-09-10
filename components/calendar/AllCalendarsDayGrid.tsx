@@ -251,7 +251,7 @@ type AllCalendarsDayGridProps = {
     fromCalendarId: string,
   ) => void;
   /** A move was dropped on another venue's column and refused (web: "…within the same venue"). */
-  onDragColumnReject?: () => void;
+  onDragColumnReject?: (bookingId: string, newTime: string, targetColumnId: string) => void;
   /** Bookings with an in-flight move/resize — drives each block's pending + snap-home. */
   pendingActionIds?: Set<string>;
   /**
@@ -904,7 +904,7 @@ function DayColumn({
     targetCalendarId: string,
     fromCalendarId: string,
   ) => void;
-  onDragColumnReject?: () => void;
+  onDragColumnReject?: (bookingId: string, newTime: string, targetColumnId: string) => void;
   pendingActionIds?: Set<string>;
   processingPatternFor?: ProcessingPatternLookup | null;
 }) {

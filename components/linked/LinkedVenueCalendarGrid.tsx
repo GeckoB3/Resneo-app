@@ -124,7 +124,7 @@ export function LinkedVenueCalendarGrid({
     targetCalendarId: string,
     fromCalendarId: string,
   ) => void;
-  onDragColumnReject?: () => void;
+  onDragColumnReject?: (bookingId: string, newTime: string, targetColumnId: string) => void;
   refreshing?: boolean;
   onRefresh?: () => void;
   /**

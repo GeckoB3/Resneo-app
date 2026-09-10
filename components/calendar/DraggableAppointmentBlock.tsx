@@ -249,8 +249,13 @@ type DraggableAppointmentBlockProps = {
    */
   crossColumnMinIndex?: number;
   crossColumnMaxIndex?: number;
-  /** A move was dropped on a column this booking may not move to (another venue's). */
-  onDragColumnReject?: () => void;
+  /**
+   * A move was dropped on a column this booking may not move to (another
+   * venue's). Reports the booking, the dropped time and the target column so
+   * the screen can offer to book the client afresh there (web #190's
+   * cross-account move dialog) instead of only saying no.
+   */
+  onDragColumnReject?: (bookingId: string, newTime: string, targetColumnId: string) => void;
   /** Set to the source index while dragging so the parent lifts this column's
    *  z-order above its siblings (else the block hides behind the next column). */
   liftedColumn?: SharedValue<number>;
@@ -536,7 +541,13 @@ export function DraggableAppointmentBlock({
     },
     [id, crossColumnIds, crossColumnSourceIndex, onDragMoveToColumn],
   );
-  const jsColumnReject = useCallback(() => onDragColumnReject?.(), [onDragColumnReject]);
+  const jsColumnReject = useCallback(
+    (newMinutes: number, targetIndex: number) => {
+      const targetId = crossColumnIds?.[targetIndex];
+      if (targetId) onDragColumnReject?.(id, minutesToTime(newMinutes), targetId);
+    },
+    [id, crossColumnIds, onDragColumnReject],
+  );
 
   const originalMinutes = timeToMinutes(startTime);
 
@@ -685,7 +696,7 @@ export function DraggableAppointmentBlock({
             conflict.value = 0;
             mode.value = 0;
             runOnJS(jsHapticCancel)();
-            runOnJS(jsColumnReject)();
+            runOnJS(jsColumnReject)(newMinutes, raw);
             return;
           }
         }
