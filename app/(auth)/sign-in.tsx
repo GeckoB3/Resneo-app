@@ -6,6 +6,7 @@ import { SignInModeTabs, type SignInMode } from '@/components/auth/SignInModeTab
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
+import { PasswordInput } from '@/components/ui/PasswordInput';
 import { Screen } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/Text';
 import { ANALYTICS_EVENTS, track } from '@/lib/analytics';
@@ -398,11 +399,10 @@ export default function SignInScreen() {
 
         {mode === 'password' ? (
           <>
-            <Input
+            <PasswordInput
               label="Password"
               value={password}
               onChangeText={setPassword}
-              secureTextEntry
               autoCapitalize="none"
               autoCorrect={false}
               autoComplete="password"

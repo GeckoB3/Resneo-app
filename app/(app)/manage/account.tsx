@@ -6,6 +6,7 @@ import { DeleteAccountSheet, formatScheduledDate } from '@/components/manage/Del
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
+import { PasswordInput } from '@/components/ui/PasswordInput';
 import { PhoneInput } from '@/components/ui/PhoneInput';
 import { Screen } from '@/components/ui/Screen';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
@@ -216,7 +217,7 @@ export default function AccountScreen() {
             {t('account.password.description')}
           </Text>
           <View style={styles.fields}>
-            <Input
+            <PasswordInput
               label={t('account.password.newLabel')}
               value={form.newPassword}
               onChangeText={(v) => {
@@ -224,12 +225,11 @@ export default function AccountScreen() {
                 form.setPasswordError(null);
               }}
               placeholder={t('account.password.newPlaceholder')}
-              secureTextEntry
               autoCapitalize="none"
               autoCorrect={false}
               returnKeyType="next"
             />
-            <Input
+            <PasswordInput
               label={t('account.password.confirmLabel')}
               value={form.confirmPassword}
               onChangeText={(v) => {
@@ -237,7 +237,6 @@ export default function AccountScreen() {
                 form.setPasswordError(null);
               }}
               placeholder={t('account.password.confirmPlaceholder')}
-              secureTextEntry
               autoCapitalize="none"
               autoCorrect={false}
               error={form.passwordError ?? undefined}

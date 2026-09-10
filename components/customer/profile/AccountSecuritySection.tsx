@@ -5,7 +5,7 @@ import { ApiError, isApiErrorBody } from '@/lib/api/client';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { ConfirmSheet } from '@/components/ui/ConfirmSheet';
-import { Input } from '@/components/ui/Input';
+import { PasswordInput } from '@/components/ui/PasswordInput';
 import { Text } from '@/components/ui/Text';
 import { useSetPassword, useSignOutEverywhere } from '@/lib/queries/useCustomerAccount';
 import { useAuth } from '@/providers/AuthProvider';
@@ -52,11 +52,10 @@ export function AccountSecuritySection() {
         you a second way in.
       </Text>
 
-      <Input
+      <PasswordInput
         label="New password"
         value={password}
         onChangeText={setPasswordValue}
-        secureTextEntry
         autoCapitalize="none"
         autoComplete="new-password"
         textContentType="newPassword"
@@ -72,11 +71,10 @@ export function AccountSecuritySection() {
         screen rather than here. That is the whole reason the pattern exists,
         and it matters more on a phone keyboard than on a desktop one.
       */}
-      <Input
+      <PasswordInput
         label="Confirm password"
         value={confirm}
         onChangeText={setConfirmValue}
-        secureTextEntry
         autoCapitalize="none"
         autoComplete="new-password"
         textContentType="newPassword"

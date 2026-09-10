@@ -3,6 +3,7 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { PasswordInput } from '@/components/ui/PasswordInput';
 import { PhoneInput } from '@/components/ui/PhoneInput';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
@@ -156,20 +157,18 @@ export function MyAccountSheet({ visible, staff, onClose }: MyAccountSheetProps)
         <View style={styles.section}>
           <Text variant="label">Change password</Text>
 
-          <Input
+          <PasswordInput
             label="New password"
             value={form.newPassword}
             onChangeText={form.setNewPassword}
-            secureTextEntry
             placeholder="Min 8 characters"
             editable={!form.changePassword.isPending}
           />
 
-          <Input
+          <PasswordInput
             label="Confirm password"
             value={form.confirmPassword}
             onChangeText={form.setConfirmPassword}
-            secureTextEntry
             placeholder="Re-enter password"
             error={form.passwordError ?? undefined}
             editable={!form.changePassword.isPending}

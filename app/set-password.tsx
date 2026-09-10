@@ -4,7 +4,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { Input } from '@/components/ui/Input';
+import { PasswordInput } from '@/components/ui/PasswordInput';
 import { Screen } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
@@ -101,7 +101,7 @@ export default function SetPasswordScreen() {
 
         <Card>
           <View style={styles.fields}>
-            <Input
+            <PasswordInput
               label={t('setPassword.newLabel')}
               value={newPassword}
               onChangeText={(v) => {
@@ -109,14 +109,13 @@ export default function SetPasswordScreen() {
                 setError(null);
               }}
               placeholder={t('setPassword.newPlaceholder')}
-              secureTextEntry
               autoCapitalize="none"
               autoCorrect={false}
               autoComplete="new-password"
               textContentType="newPassword"
               returnKeyType="next"
             />
-            <Input
+            <PasswordInput
               label={t('setPassword.confirmLabel')}
               value={confirmPassword}
               onChangeText={(v) => {
@@ -124,7 +123,6 @@ export default function SetPasswordScreen() {
                 setError(null);
               }}
               placeholder={t('setPassword.confirmPlaceholder')}
-              secureTextEntry
               autoCapitalize="none"
               autoCorrect={false}
               autoComplete="new-password"

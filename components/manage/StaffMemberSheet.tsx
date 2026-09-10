@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
+import { PasswordInput } from '@/components/ui/PasswordInput';
 import { Segmented } from '@/components/ui/Segmented';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
@@ -340,11 +340,10 @@ export function StaffMemberSheet({
             <Text variant="bodySmall" tone="secondary">
               Set a new password for {member.email ?? displayName}.
             </Text>
-            <Input
+            <PasswordInput
               label="New password"
               value={newPassword}
               onChangeText={setNewPassword}
-              secureTextEntry
               placeholder="Min 8 characters"
               error={passwordError}
               editable={!resetPassword.isPending}

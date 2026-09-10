@@ -30,6 +30,8 @@ type InputProps = TextInputProps & {
   optional?: boolean;
   /** Optional adornment rendered inside the field, before the input. */
   leftIcon?: ReactNode;
+  /** Optional control rendered inside the field, after the input (a show / hide toggle). */
+  rightSlot?: ReactNode;
   /**
    * Style for the outer wrapper — use for layout (e.g. top margin/spacing).
    * The `style` prop targets the inner TextInput (text styling) only.
@@ -55,6 +57,7 @@ export const Input = forwardRef<TextInput, InputProps>(function Input(
     required = false,
     optional = false,
     leftIcon,
+    rightSlot,
     style,
     containerStyle,
     onFocus,
@@ -111,6 +114,7 @@ export const Input = forwardRef<TextInput, InputProps>(function Input(
           onFocus={handleFocus}
           onBlur={handleBlur}
         />
+        {rightSlot ? <View style={styles.icon}>{rightSlot}</View> : null}
       </Animated.View>
       {error ? (
         <Text variant="caption" tone="danger">
