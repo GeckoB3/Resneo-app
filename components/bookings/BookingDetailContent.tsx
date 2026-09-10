@@ -48,6 +48,7 @@ import { usePendingCardClock } from '@/lib/payments/usePendingCardClock';
 import { calendarDateInTimeZone, formatDayHeading } from '@/lib/dates/venue-dates';
 import { canMarkNoShowForSlot, clampNoShowGraceMinutes } from '@/lib/booking/no-show-grace';
 import { ACTION_COLORS, primaryActionColors } from '@/lib/booking/booking-action-colors';
+import { bookingSourceLabel } from '@/lib/booking/booking-source-label';
 import { useAcceptUnpaidGuard } from '@/components/bookings/AcceptUnpaidSheet';
 import {
   resolveAppointmentVisit,
@@ -328,6 +329,7 @@ function GuestHistoryBody({
               <Text variant="caption" tone="muted">
                 {row.booking_date}
                 {row.booking_time ? ` · ${row.booking_time.slice(0, 5)}` : ''}
+                {bookingSourceLabel(row.source) ? ` · ${bookingSourceLabel(row.source)}` : ''}
               </Text>
             </View>
             <View style={styles.historyTrailing}>
@@ -1534,7 +1536,9 @@ export function BookingDetailContent({
             }
           />
           <DetailRow label="Visits" value={visitCount > 0 ? String(visitCount) : 'First visit'} />
-          {booking.source ? <DetailRow label="Source" value={booking.source} /> : null}
+          {bookingSourceLabel(booking.source) ? (
+            <DetailRow label="Source" value={bookingSourceLabel(booking.source)!} />
+          ) : null}
           {booking.checked_in_at ? (
             <DetailRow label="Checked in" value={formatTimelineEventTime(booking.checked_in_at)} />
           ) : null}

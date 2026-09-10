@@ -39,6 +39,7 @@ import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { formatPence } from '@/lib/format';
+import { bookingSourceLabel } from '@/lib/booking/booking-source-label';
 import { guestBookingsSummary, splitGuestHistory } from '@/lib/guests/guest-history-sections';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useGuestDetail } from '@/lib/queries/useGuestDetail';
@@ -117,6 +118,9 @@ function HistoryRow({
     typeof booking.party_size === 'number' && booking.party_size > 0
       ? ` · ${booking.party_size} guest${booking.party_size === 1 ? '' : 's'}`
       : '';
+  // How it was made ("Online", "Phone", "Walk-in"), so the history reads at a glance (web #190).
+  const sourceLabel = bookingSourceLabel(booking.source);
+  const source = sourceLabel ? ` · ${sourceLabel}` : '';
   return (
     <Pressable
       accessibilityRole="button"
@@ -150,6 +154,7 @@ function HistoryRow({
         <Text variant="caption" tone="muted" numberOfLines={1}>
           {booking.kind_label}
           {party}
+          {source}
         </Text>
       </View>
       <StatusPill
