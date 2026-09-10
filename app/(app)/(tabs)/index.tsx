@@ -27,6 +27,7 @@ import { resolveGridErrorState } from '@/lib/calendar/grid-error-state';
 import { nextVisibleCalendars } from '@/lib/calendar/calendar-selection';
 import { resolveVenueDay, venueDayHours } from '@/lib/calendar/venue-closures';
 import { buildCalendarClosureOverlays } from '@/lib/calendar/schedule-closures';
+import { resolveColumnDayHours } from '@/lib/calendar/column-day-hours';
 import { calendarHasAvailableHoursOnDate } from '@/lib/calendar/calendar-has-hours-on-date';
 import { MonthGrid, type MonthDayDatum } from '@/components/calendar/MonthGrid';
 import { MonthPickerSheet } from '@/components/calendar/MonthPickerSheet';
@@ -1081,9 +1082,12 @@ export default function CalendarScreen() {
       }));
 
       /**
-       * The bands that say why a column has no space: the venue's own closures
-       * and amended hours, this calendar's non-working time (weekly shape,
-       * `days_off`, or a per-date override), and staff leave.
+       * The bands that say why a column has no space: this calendar's
+       * non-working time (weekly shape, `days_off`, or a per-date override)
+       * and staff leave. The venue's own closed time is shaded by the grid
+       * from the column's venue window (`resolveColumnDayHours`: the venue's
+       * hours, widened to this calendar's amended hours on an amended day).
+       * No band marks amended hours; the grid simply follows them.
        *
        * Drawn FIRST so a manual block, a break or a booking sits on top of
        * them — a band is the backdrop, not the content. They also carry the
@@ -1091,24 +1095,16 @@ export default function CalendarScreen() {
        * advice (`lib/calendar/occupying-blocks`).
        */
       const venueDay = resolveVenueDay(openingHours, dateStr, venueWideBlocks);
-      const venueOpenRanges = venueDay.hours.kind === 'open' ? venueDay.hours.periods : [];
-      const venueAmended: CalendarTimeBlock[] = venueDay.amendedRanges.map((range) => ({
-        id: `venue_amended_hours:${calId}:${dateStr}:${range.start}-${range.end}`,
-        start: minutesToTime(range.start),
-        end: minutesToTime(range.end),
-        label: 'Amended hours',
-        isEditable: false,
-        blockType: 'venue_amended_hours',
-      }));
+      const column = resolveColumnDayHours(practitioner, dateStr, venueDay.hours);
       const closures = buildCalendarClosureOverlays({
         calendarId: calId,
         dateStr,
         calendar: practitioner,
         leavePeriods,
-        venueOpenRanges,
+        venueOpenRanges: column.venueOpenRanges,
       });
 
-      return [...closures, ...venueAmended, ...oneOff, ...breaks];
+      return [...closures, ...oneOff, ...breaks];
     },
     [practitioners, openingHours, venueWideBlocks, leavePeriods],
   );
@@ -2211,21 +2207,37 @@ export default function CalendarScreen() {
 
   const allCalendarsForDay = useMemo(() => {
     if (!showAllCalendars) return [];
+    const venueHoursForDay = venueDayHours(openingHours, anchor, venueWideBlocks);
     return ownColumnsShown.map((p) => {
       const calendar = gridQuery.data?.calendars.find((c) => c.calendarId === p.id);
       const calDay = calendar?.dates.find((d) => d.date === anchor) ?? null;
+      // The feed carries the WEEKLY hours only; the column takes the resolved
+      // ones (amended hours, days off, schedule periods) so the day's bounds,
+      // the closed shading and the drag follow them. An amended day widens
+      // this column's venue window; the other columns keep the venue's.
+      const column = resolveColumnDayHours(p, anchor, venueHoursForDay);
       return {
         calendarId: p.id,
         calendarName: p.name,
-        workingHours: calDay?.workingHours ?? [],
+        workingHours: column.workingHours ?? calDay?.workingHours ?? [],
         bookings: calDay?.bookings ?? [],
         sessions: calDay?.sessions ?? [],
         timeBlocks: getDayBlocks(p.id, anchor, calDay),
         // This practitioner's class/event/resource blocks for the anchor date.
         scheduleBlocks: scheduleByCalendarDate.get(scheduleKey(p.id, anchor)) ?? [],
+        ...(column.amended ? { venueHours: column.venueHours } : {}),
       };
     });
-  }, [showAllCalendars, ownColumnsShown, gridQuery.data, anchor, getDayBlocks, scheduleByCalendarDate]);
+  }, [
+    showAllCalendars,
+    ownColumnsShown,
+    gridQuery.data,
+    anchor,
+    getDayBlocks,
+    scheduleByCalendarDate,
+    openingHours,
+    venueWideBlocks,
+  ]);
 
   // Linked calendars as side-by-side columns in the SAME grid: one column per
   // calendar the partner shares, headed with the calendar's name and the venue
@@ -2334,21 +2346,27 @@ export default function CalendarScreen() {
       const data = byDate.get(date) ?? null;
       const d = parseISO(`${date}T12:00:00.000Z`);
       const weekday = d.getDay();
+      const column = resolveColumnDayHours(
+        practitioners.find((p) => p.id === effectiveId),
+        date,
+        venueDayHours(openingHours, date, venueWideBlocks),
+      );
       return {
         date,
         weekdayLabel: format(d, 'EEE'),
         dayNumber: format(d, 'd'),
         isToday: date === today,
         isWeekend: weekday === 0 || weekday === 6,
-        workingHours: data?.workingHours ?? [],
+        workingHours: column.workingHours ?? data?.workingHours ?? [],
         bookings: data?.bookings ?? [],
         sessions: data?.sessions ?? [],
         // The selected calendar's class/event/resource blocks for this day.
         scheduleBlocks: effectiveId
           ? scheduleByCalendarDate.get(scheduleKey(effectiveId, date)) ?? []
           : [],
-        // Venue open/closed state for this day → "Closed" shading.
-        venueHours: venueDayHours(openingHours, date, venueWideBlocks),
+        // Venue open/closed state for this day → "Closed" shading, widened to
+        // the calendar's amended hours on an amended day.
+        venueHours: column.venueHours,
         /**
          * Closure bands only — not breaks or manual blocks, which stay a Day-view
          * detail. "Who is off this week?" is the question the week view exists to
@@ -2361,10 +2379,7 @@ export default function CalendarScreen() {
               dateStr: date,
               calendar: practitioners.find((p) => p.id === effectiveId),
               leavePeriods,
-              venueOpenRanges: (() => {
-                const resolved = resolveVenueDay(openingHours, date, venueWideBlocks).hours;
-                return resolved.kind === 'open' ? resolved.periods : [];
-              })(),
+              venueOpenRanges: column.venueOpenRanges,
             })
           : [],
       };
@@ -2475,6 +2490,17 @@ export default function CalendarScreen() {
     () => venueDayHours(openingHours, anchor, venueWideBlocks),
     [openingHours, anchor, venueWideBlocks],
   );
+  // The viewed calendar's resolved hours for the day (amended hours, days off,
+  // schedule periods), and its venue window widened on an amended day.
+  const dayColumnHours = useMemo(
+    () =>
+      resolveColumnDayHours(
+        practitioners.find((p) => p.id === effectiveId),
+        anchor,
+        venueHoursForAnchor,
+      ),
+    [practitioners, effectiveId, anchor, venueHoursForAnchor],
+  );
 
   const dayGrid = (
     <CalendarDayGrid
@@ -2486,12 +2512,12 @@ export default function CalendarScreen() {
       // booking still blocks an overlapping drop. Sessions + scheduleBlocks are
       // folded in by the grid, so classes/events/resources block too.
       conflictBookings={day?.bookings ?? []}
-      workingHours={day?.workingHours ?? []}
+      workingHours={dayColumnHours.workingHours ?? day?.workingHours ?? []}
       timeBlocks={dayBlocks}
       sessions={daySessions}
       scheduleBlocks={daySchedule}
       processingPatternFor={processingPatternFor}
-      venueHours={venueHoursForAnchor}
+      venueHours={dayColumnHours.venueHours}
       windowOverride={windowOverride}
       nowMinutes={nowMinutes}
       onBlockPress={openDetail}

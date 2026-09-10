@@ -173,7 +173,9 @@ describe('buildCalendarClosureOverlays', () => {
     ]);
   });
 
-  it('lets a per-date override replace the weekly hours, and marks the day amended', () => {
+  it('lets a per-date override replace the weekly hours, with no band over the amended window', () => {
+    // Web retired its "Amended hours" band: the open part of an amended day
+    // looks like any other working day, and the grid follows the hours.
     const bands = build({
       calendar: {
         working_hours: NINE_TO_FIVE,
@@ -183,12 +185,6 @@ describe('buildCalendarClosureOverlays', () => {
     expect(bands).toEqual([
       expect.objectContaining({ start: '09:00', end: '11:00', blockType: 'practitioner_closed' }),
       expect.objectContaining({ start: '15:00', end: '17:00', blockType: 'practitioner_closed' }),
-      expect.objectContaining({
-        start: '11:00',
-        end: '15:00',
-        label: 'Amended hours',
-        blockType: 'calendar_amended_hours',
-      }),
     ]);
   });
 

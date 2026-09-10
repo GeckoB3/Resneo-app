@@ -100,16 +100,16 @@ describe('CalendarDayGrid — closure bands', () => {
      */
     await renderGrid([
       {
-        id: 'venue_amended_hours:cal-1:2026-09-16:600-840',
+        id: 'practitioner_closed:cal-1:2026-09-16:600-840',
         start: '10:00',
         end: '14:00',
-        label: 'Amended hours',
+        label: 'Closed',
         isEditable: false,
-        blockType: 'venue_amended_hours',
+        blockType: 'practitioner_closed',
       },
     ]);
 
-    const band = screen.getByText('Amended hours').parent!;
+    const band = screen.getByText('Closed').parent!;
     const style = Object.assign(
       {},
       ...[band.props.style].flat(3).filter((s: unknown) => s && typeof s === 'object'),

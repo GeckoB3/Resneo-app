@@ -9,11 +9,11 @@
  *    uses, so out-of-hours reads the same whether it came from the venue's
  *    weekly hours or a calendar's own;
  *  - **leave** — amber, because a person being absent is a different fact from
- *    a boundary the venue may work past, and it is the one the drag refuses;
- *  - **amended hours** — brand tint, marking the window that IS worked on a day
- *    whose hours were deliberately changed.
+ *    a boundary the venue may work past, and it is the one the drag refuses.
  *
- * Shared by both day grids so a band cannot come to mean two things.
+ * Amended hours get no band (web retired its own): the grid follows the
+ * resolved hours, so the open part of an amended day looks like any other
+ * working day. Shared by both day grids so a band cannot come to mean two things.
  */
 
 import type { ThemeColors } from '@/theme/index';
@@ -41,13 +41,6 @@ export function closureBandLook(
       backgroundColor: colors.warningSurface,
       borderColor: withAlpha(colors.warning, 0.6),
       labelColor: colors.warning,
-    };
-  }
-  if (blockType === 'calendar_amended_hours' || blockType === 'venue_amended_hours') {
-    return {
-      backgroundColor: withAlpha(colors.brand, 0.1),
-      borderColor: withAlpha(colors.brand, 0.5),
-      labelColor: colors.brand,
     };
   }
   if (

@@ -35,7 +35,6 @@
 
 import { minutesToTime, timeToMinutes } from '@/components/calendar/grid-layout';
 import {
-  calendarHasAmendedHours,
   calendarHasWeeklyTemplate,
   calendarHours,
   unionRanges,
@@ -43,11 +42,13 @@ import {
   type MinuteRange,
 } from '@/lib/calendar/calendar-hours';
 
-/** Block types this module emits. All are read-only overlays. */
-export type ScheduleClosureBlockType =
-  | 'practitioner_closed'
-  | 'practitioner_leave'
-  | 'calendar_amended_hours';
+/**
+ * Block types this module emits. All are read-only overlays. No band for
+ * amended hours (web retired its own): the grid follows the resolved hours,
+ * so the open part of an amended day looks like any other working day —
+ * see `column-day-hours.ts`.
+ */
+export type ScheduleClosureBlockType = 'practitioner_closed' | 'practitioner_leave';
 
 export interface ScheduleClosureOverlay {
   id: string;
@@ -153,13 +154,15 @@ function overlay(
 }
 
 /**
- * The closed / leave / amended bands for one calendar on one date.
+ * The closed / leave bands for one calendar on one date.
  *
- * `venueOpenRanges` is what the venue itself allows that day. Non-working time
- * is drawn only INSIDE it, because the hours a venue is shut are already shaded
- * venue-wide: without that clip every column would carry a second, darker band
- * over the same minutes. Pass an empty array when the venue imposes no hours,
- * and the whole day is used instead.
+ * `venueOpenRanges` is what the venue allows that day FOR THIS COLUMN (the
+ * venue's hours, widened to the calendar's amended hours on an amended day —
+ * `resolveColumnDayHours`). Non-working time is drawn only INSIDE it, because
+ * the hours a venue is shut are already shaded venue-wide: without that clip
+ * every column would carry a second, darker band over the same minutes. Pass
+ * an empty array when the venue imposes no hours, and the whole day is used
+ * instead.
  */
 export function buildCalendarClosureOverlays(params: {
   calendarId: string;
@@ -214,14 +217,6 @@ export function buildCalendarClosureOverlays(params: {
     }
   }
 
-  // An amended day is marked so staff can see the hours were deliberately
-  // changed for this date rather than assume the weekly template.
-  if (calendar && working.length > 0 && calendarHasAmendedHours(calendar, dateStr)) {
-    for (const range of intersect(working, window)) {
-      out.push(overlay('calendar_amended_hours', calendarId, dateStr, range, 'Amended hours'));
-    }
-  }
-
   return out;
 }
 
@@ -230,7 +225,9 @@ export function buildCalendarClosureOverlays(params: {
  *
  * Two callers, both in the grids: these must not widen the measured day (a
  * full-day band would drag the window out to 23:59), and they render as tinted
- * bands rather than as the bordered "Blocked" box a manual block gets.
+ * bands rather than as the bordered "Blocked" box a manual block gets. The two
+ * amended-hours names are no longer emitted but stay recognised, so a stale
+ * band in a cached feed still cannot widen the day.
  */
 export function isScheduleClosureBlockType(blockType: string | null | undefined): boolean {
   return (
