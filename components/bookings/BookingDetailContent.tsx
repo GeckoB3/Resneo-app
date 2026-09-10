@@ -15,6 +15,7 @@ import {
   type TakePaymentTarget,
 } from '@/components/bookings/TakePaymentSheet';
 import { GroupVisitCards } from '@/components/bookings/GroupVisitCards';
+import { VisitSummary, type VisitSummaryBadge } from '@/components/bookings/VisitSummary';
 import { MessageGuestSection } from '@/components/bookings/MessageGuestSection';
 import {
   ModifyBookingSheet,
@@ -38,7 +39,6 @@ import { resolveCardHoldUiState, type CardHoldPillVariant } from '@/lib/booking/
 import {
   bookingPaymentStateLabel,
   buildPaymentHistory,
-  buildMoneyAtAGlance,
   buildPriceSummary,
   depositBadge,
   canTakeInPersonPayment,
@@ -55,7 +55,6 @@ import { useAcceptUnpaidGuard } from '@/components/bookings/AcceptUnpaidSheet';
 import {
   resolveAppointmentVisit,
   toVisitEditTarget,
-  visitServiceNames,
 } from '@/lib/booking/appointment-visit';
 import { resolveBookingCoreDurationMinutes } from '@/lib/booking/booking-core-duration';
 import { bookingDetailActions } from '@/lib/booking/booking-status-actions';
@@ -498,13 +497,6 @@ function LinkedGuestHistoryBody({
   );
 }
 
-function formatDurationLabel(total: number): string {
-  const h = Math.floor(total / 60);
-  const m = total % 60;
-  if (h === 0) return `${m} min`;
-  return m === 0 ? `${h}h` : `${h}h ${m}m`;
-}
-
 function formatShortDate(value: string): string {
   try {
     return format(parseISO(value), 'd MMM yyyy');
@@ -714,15 +706,6 @@ export function BookingDetailContent({
     fallbackServiceName?.trim() ||
     catalogServiceName ||
     null;
-  // A visit says what it is made of, so the panel answers "how long is this and
-  // what is in it" without scrolling to the breakdown card below. The per-row
-  // name would otherwise be whichever service happened to be first.
-  const serviceLine = [
-    visit ? visitServiceNames(visit).join(', ') : serviceName,
-    practitionerName ? `with ${practitionerName}` : null,
-  ]
-    .filter(Boolean)
-    .join(' · ');
   // Where the team has to be. Null for business-venue and legacy bookings, which
   // render nothing. The address rides on the booking row so it paints with the
   // /summary placeholder; the joining details arrive with the full detail, which
@@ -928,13 +911,6 @@ export function BookingDetailContent({
   const showRefundBanner =
     !cardHoldState && isCancelled && (booking.deposit_amount_pence ?? 0) > 0;
 
-  // Add-on snapshots + price breakdown (variant/base price + add-ons).
-  const addons = booking.addons ?? [];
-  const addonsTotal =
-    booking.addons_total_price_pence ??
-    addons.reduce((sum, addon) => sum + addon.price_pence_at_booking, 0);
-  const basePrice = booking.service_variant_price_pence ?? null;
-  const totalPrice = basePrice != null ? basePrice + addonsTotal : addons.length ? addonsTotal : null;
 
   // Attendance — mirrors the web pills/actions.
   const guestConfirmed = !!booking.guest_attendance_confirmed_at;
@@ -1020,12 +996,19 @@ export function BookingDetailContent({
   // surface them; appointment bookings show requests/internal/profile notes.
   // Price breakdown for the Payments card: items, totals, deposit, outstanding.
   const priceRows = buildPriceSummary(booking);
-  // The same money at a glance in the hero (web #190's visit summary footer):
-  // the total and what is still owed, without opening the Payments card.
-  const money = buildMoneyAtAGlance(booking);
-  // A deposit badge only when money is owed, held, charged or refunded; a paid
-  // deposit is a line in the Payments card, not a badge (web #190).
+  // The badges beside the status in the visit summary (web #190): a card hold's
+  // own pill, else a deposit badge only when money is owed, charged or
+  // refunded (a paid deposit is a line in the summary's money footer), plus
+  // "Deposit failed", which staff must not miss even beside a card-hold pill.
   const depositBadgeView = cardHoldState ? null : depositBadge(booking);
+  const summaryBadges: VisitSummaryBadge[] = [
+    ...(cardHoldState?.pill
+      ? [{ label: cardHoldState.pill.label, tone: CARD_HOLD_BADGE_TONE[cardHoldState.pill.variant] as VisitSummaryBadge['tone'] }]
+      : depositBadgeView
+        ? [depositBadgeView]
+        : []),
+    ...(showDepositFailed ? [{ label: 'Deposit failed', tone: 'danger' as const }] : []),
+  ];
 
   const hasNotes =
     !!booking.special_requests?.trim() ||
@@ -1141,38 +1124,46 @@ export function BookingDetailContent({
                   : 'First visit'}
               </Text>
             </View>
-            <StatusPill status={headerStatus} isTableReservation={isTable} />
           </View>
 
-          {/* When & what */}
+          {/* The visit at a glance (web #190): when and how long, each service with
+              its time, length, status and price, the total, and what is owed. */}
           <View style={[styles.heroBlock, { borderTopColor: colors.border }]}>
-            <Text variant="overline" tone="muted">
-              {dateLabel}
-            </Text>
-            <Text variant="title" style={styles.heroTime}>
-              {timeRangeLabel}
-            </Text>
-            {serviceLine ? (
-              <Text variant="bodyMedium" tone="secondary">
-                {serviceLine}
-              </Text>
-            ) : null}
+            <VisitSummary
+              booking={booking}
+              visit={visit}
+              visitRows={groupVisitQuery.data ?? []}
+              visitLoading={groupVisitQuery.isLoading}
+              headerStatus={headerStatus}
+              isTable={isTable}
+              dateLabel={dateLabel}
+              timeLabel={timeRangeLabel}
+              durationMinutes={durationMinutes}
+              serviceName={serviceName}
+              practitionerName={practitionerName}
+              lastVisitDate={booking.guest?.last_visit_date ?? null}
+              badges={summaryBadges}
+              // Start and Complete are per service (web #187), under the same edit
+              // grant as the header's actions. A partner's rows are read-only here:
+              // the row-level PATCH is own-venue only.
+              canChangeServiceStatus={policy.canEdit && !isTable && !linked}
+              detailHydrating={detailPending}
+            />
 
-            <View style={styles.metaRow}>
-              {durationMinutes != null ? (
+            {/* Party and model chips only where they say something: a table,
+                class, event or resource. An appointment's length and services are
+                in the summary. */}
+            {!isAppointmentBooking || isTable ? (
+              <View style={styles.metaRow}>
                 <MetaChip
-                  icon={{ ios: 'clock', android: 'schedule', web: 'schedule' }}
-                  label={formatDurationLabel(durationMinutes)}
+                  icon={{ ios: 'person.2.fill', android: 'group', web: 'group' }}
+                  label={partyLabel}
                 />
-              ) : null}
-              <MetaChip
-                icon={{ ios: 'person.2.fill', android: 'group', web: 'group' }}
-                label={partyLabel}
-              />
-              {modelLabel ? (
-                <MetaChip icon={{ ios: 'tag', android: 'sell', web: 'sell' }} label={modelLabel} />
-              ) : null}
-            </View>
+                {modelLabel ? (
+                  <MetaChip icon={{ ios: 'tag', android: 'sell', web: 'sell' }} label={modelLabel} />
+                ) : null}
+              </View>
+            ) : null}
 
             {/* Above the badges on purpose: for an off-site or online booking, where
                 to be outranks the deposit state for whoever is about to travel. */}
@@ -1182,41 +1173,10 @@ export function BookingDetailContent({
               </View>
             ) : null}
 
-            {money ? (
-              <Text variant="bodySmall" tone="secondary" style={styles.moneyLine}>
-                {money.totalPence != null
-                  ? `${money.totalLabel} ${formatPence(money.totalPence)}`
-                  : `${money.totalLabel} not set`}
-                {money.outstandingPence != null && money.outstandingPence > 0 ? (
-                  <Text variant="bodySmall" color={colors.warning}>
-                    {` · ${formatPence(money.outstandingPence)} outstanding`}
-                  </Text>
-                ) : money.settled ? (
-                  <Text variant="bodySmall" color={colors.success}>
-                    {' · Paid'}
-                  </Text>
-                ) : null}
-              </Text>
-            ) : null}
-
-            {(cardHoldState?.pill ||
-              depositBadgeView ||
-              showDepositFailed ||
-              (isTable && booking.occasion?.trim()) ||
-              attendanceBadges) ? (
+            {/* Occasion and attendance: facts the summary does not carry. The
+                deposit / card-hold badges sit beside the status in the summary. */}
+            {(isTable && booking.occasion?.trim()) || attendanceBadges ? (
               <View style={styles.heroBadges}>
-                {cardHoldState?.pill ? (
-                  <Badge
-                    label={cardHoldState.pill.label}
-                    tone={CARD_HOLD_BADGE_TONE[cardHoldState.pill.variant]}
-                  />
-                ) : depositBadgeView ? (
-                  <Badge label={depositBadgeView.label} tone={depositBadgeView.tone} />
-                ) : null}
-                {/* Shown even alongside a card-hold pill: a `Failed` hold row is
-                    exactly the case staff must not miss, and it is the signal
-                    that the Accept guard is about to fire. */}
-                {showDepositFailed ? <Badge label="Deposit failed" tone="danger" /> : null}
                 {isTable && booking.occasion?.trim() ? (
                   <Badge label={booking.occasion} tone="accent" />
                 ) : null}
@@ -1498,24 +1458,14 @@ export function BookingDetailContent({
         </Card>
       ) : null}
 
-      {/* Multi-service visit / group booking (web parity, read-only) */}
+      {/* Group booking (several people): the others in the group. A one-client
+          multi-service visit is the summary at the top instead (web #190). */}
       {booking.group_booking_id ? (
         <GroupVisitCards
           groupBookingId={booking.group_booking_id}
           currentBookingId={booking.id}
-          bookingDate={booking.booking_date}
           personLabel={booking.person_label}
           ownerVenueId={linked?.venueId ?? null}
-          priceLines={
-            booking.visit_payment && booking.visit_payment.booking_count > 1
-              ? (booking.visit_payment.lines ?? null)
-              : null
-          }
-          // Start and Complete are per service (web #187): they live on the
-          // card's rows, under the same edit grant as the header's actions. A
-          // partner's rows are read-only here: the row-level PATCH the card
-          // uses is own-venue only (the linked status path lives on the header).
-          canChangeServiceStatus={policy.canEdit && !isTable && !linked}
         />
       ) : null}
 
@@ -1594,39 +1544,6 @@ export function BookingDetailContent({
           </Pressable>
         </View>
 
-        {addons.length > 0 ? (
-          <View style={[styles.details, styles.detailsDivided, { borderTopColor: colors.border }]}>
-            <Text variant="caption" tone="muted">
-              Add-ons
-            </Text>
-            {addons.map((addon, index) => (
-              <View key={addon.id ?? `${addon.addon_id}-${index}`} style={styles.detailRow}>
-                <Text variant="bodySmall" numberOfLines={1} style={styles.addonName}>
-                  {addon.addon_name_snapshot}
-                  {addon.duration_minutes_at_booking > 0
-                    ? ` (+${addon.duration_minutes_at_booking}m)`
-                    : ''}
-                </Text>
-                <Text variant="bodySmall" tone="secondary">
-                  {addon.price_pence_at_booking > 0
-                    ? `+${formatPence(addon.price_pence_at_booking)}`
-                    : 'Free'}
-                </Text>
-              </View>
-            ))}
-          </View>
-        ) : null}
-
-        {totalPrice != null && totalPrice > 0 ? (
-          <View style={[styles.details, styles.detailsDivided, { borderTopColor: colors.border }]}>
-            <View style={styles.detailRow}>
-              <Text variant="label">Total</Text>
-              <Text variant="label" tone="brand">
-                {formatPence(totalPrice)}
-              </Text>
-            </View>
-          </View>
-        ) : null}
       </CollapsibleCard>
 
       {/* Notes — inline-editable booking notes + persistent customer notes & tags.
@@ -2026,10 +1943,6 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: spacing.sm,
     marginTop: spacing.sm,
-  },
-  moneyLine: {
-    marginTop: spacing.sm,
-    fontVariant: ['tabular-nums'],
   },
   heroBadges: {
     flexDirection: 'row',

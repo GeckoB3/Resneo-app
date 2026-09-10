@@ -66,6 +66,12 @@ export function formatDayHeading(dateStr: string): string {
   return format(date, 'EEEE d MMMM');
 }
 
+/** "Mon 3 Aug" — the short form for captions where the full day heading would not fit. */
+export function formatShortDay(dateStr: string): string {
+  const date = parseCalendarDateStr(dateStr);
+  return format(date, 'EEE d MMM');
+}
+
 export type DateRange = {
   /** Inclusive range start (YYYY-MM-DD). */
   from: string;
