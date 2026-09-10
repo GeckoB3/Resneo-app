@@ -1,5 +1,96 @@
 # Go-live check — Resneo app
 
+## Run 2026-09-10 (evening): OTA to production, 1.1.0, the R31 batch
+
+**Scope:** the twenty-three commits since the last published group. The published tip was read
+from the channel manifest (`eas channel:view production --json`, `gitCommitHash`; the
+`update:list --json` rows carry no commit): it is `ff7bc42` ("Calendar: each service of a visit
+wears its own status colour"), published as "ResNeo R29 and R30 Web Parity" (group `5f4eb928`,
+2026-09-10 morning). The batch is `896b362`..`a9db35d`:
+
+- **R31** (`Docs/APP_GAP_REPORT_R31_WEB_DELTA.md`, web `d8a9f6a8..d2038097`, #189-#190): the
+  phone optional on every staff booking; the visit chip "1/2"; the booking's source on the guest
+  history; the panel's money at a glance, then the full visit summary at the top of the panel
+  (per-service rows with time, length, status, price and Start / Complete, the total and what
+  is owed); a drop on another account's calendar offers a rebook then a cancel of the original;
+  collective service sync in the combined-page manager plus an About section (R29-12 folded in).
+- **Owner asks the same day:** the month picker fits a tablet in landscape; a country-code
+  picker on the wizard's phone field (`libphonenumber-js`); calendar columns follow their
+  amended hours with no amended-hours band; own-password change through
+  `/api/account/password` (the staff route cannot serve a Bearer caller, `Docs/R32_WEB_HANDOVER.md`);
+  a show / hide toggle on every password field; an account chooser at sign-in for a person with
+  staff + customer and/or superuser accounts; a completed service stays in the visit and the
+  row actions work per service; the sheet's pinned Start bar is gone (the forward action lives
+  in the actions card, none for a visit); no Start flash while a visit's rows load; the Booking
+  page screen opens on the combined page for a venue in a collective with a scope switch; a
+  cover photo shows at its own shape.
+- **From the other session:** four test suites mock installed expo modules non-virtually
+  (`a9db35d`), the fix for the guest-document upload suite that failed under the full run.
+
+JavaScript and styling only, plus one pure-JS dependency.
+
+**Verdict: cleared to OTA**, with the standing caveat: no device pass on this batch (the web
+preview cannot reach the authed API). Type check and the full suite (275 suites, 2,740 tests)
+pass; lint on all 97 touched `.ts`/`.tsx` files is clean.
+
+### 1. Version and reach
+
+| Check | Result |
+|---|---|
+| iOS version | **1.1.0** (`app.json` `version`) |
+| Android version | **1.1.0** (`app.json` `android.version`) |
+| `runtimeVersion.policy` | `appVersion`, so runtime **1.1.0** on both |
+| `production` channel before | branch `production`, latest group `5f4eb928` at `ff7bc42`, runtime **1.1.0**, both platforms |
+
+Seventh update on the 1.1.0 runtime. The version is not bumped.
+
+### 2. OTA eligibility
+
+`git diff ff7bc42..HEAD -- app.json app.config.js eas.json patches ios android` is **empty**, and
+so is the same diff back to the `ce1d85c` binaries. `package.json` / `package-lock.json` gain one
+dependency, `libphonenumber-js@1.13.13` (`f5748c2`): pure JavaScript (`main: index.cjs`, no
+`expo-module.config.json`, no `android` / `ios` directory, no podspec), bundled by Metro like any
+other JS, so it needs no native rebuild. No other new native surface. Working tree clean after
+the commits above; `main` twenty-three ahead of `origin/main` before this record.
+
+### 3. Production environment (EAS, not `eas.json`)
+
+`eas env:list --environment production --format long` (eas-cli 23.0.0, signed in as `resneo`,
+owner): the same five app variables, all **PUBLIC**: `EXPO_PUBLIC_API_URL` =
+`https://www.resneo.com`, `EXPO_PUBLIC_SUPABASE_URL` = `njualfobtudvlugqkqho.supabase.co` (live),
+`EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (live), `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` = `pk_live_…`,
+`EXPO_PUBLIC_SENTRY_DSN` (Sentry DE ingest). `GOOGLE_SERVICES_JSON` (secret) and
+`SENTRY_AUTH_TOKEN` (sensitive) are build-time, n/a. Local env files: `.env.development.local`
+and `.env.example` only; a production-mode export loads neither.
+
+### 4. The bundle, checked before publishing
+
+`eas env:exec production "npx expo export --clear --platform all --output-dir …"`, both Hermes
+bundles grepped (iOS 12 MB, Android 12 MB):
+
+| Marker | iOS | Android |
+|---|---|---|
+| `njualfobtudvlugqkqho.supabase.co` (live) | present | present |
+| any other `*.supabase.co` host | none | none (`storage.supabase.co` is a library literal) |
+| `www.resneo.com` | present | present |
+| `pk_live_` / `pk_test_` | present / none | present / none |
+| `ingest.de.sentry.io` | present | present |
+| `libphonenumber`, the chooser's "Where would you like to go", the phone field's validity copy | present | present |
+| `reserve-ni.vercel.app` | the unreachable `webDashboardUrl()` fallback, as every run | same |
+| `staging` | one error-message string ("disable for staging") | same |
+| `localhost:3000` | one library default string | none |
+
+### 5. Owed after this OTA
+
+A device pass covering: a phone-less booking and the country picker on the guest step; the
+month picker on a tablet in landscape; a two-service visit (start and complete each from the
+panel, the row actions, the actions card with no Start); the cross-account drop → rebook →
+cancel round trip on an own and a partner column; the sync badges, Link all and the tick-time
+question in the combined-page manager; an amended day on the calendar (own and all-calendars
+views); the password change and the eye toggle; sign-in with a staff-and-customer account both
+ways and with a superuser; the Booking page screen as a host and as a member; a portrait cover
+photo on the combined page.
+
 ## Run 2026-09-10: OTA to production, 1.1.0, "ResNeo R29 and R30 Web Parity"
 
 **Scope:** the fifteen commits since the last published group. The published tip was read from
