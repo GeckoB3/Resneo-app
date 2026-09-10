@@ -433,10 +433,16 @@ const styles = StyleSheet.create({
     minWidth: 0,
     gap: 2,
   },
+  // The status pill and the price on one line, pill first (owner's ask); the
+  // price wraps under the pill only when the row is too narrow for both.
   rowTrailing: {
-    alignItems: 'flex-end',
-    gap: 4,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: spacing.sm,
     flexShrink: 0,
+    maxWidth: '55%',
   },
   rowActions: {
     flexDirection: 'row',
