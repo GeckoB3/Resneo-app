@@ -33,7 +33,7 @@ import { useTheme } from '@/theme/useTheme';
  * session refresh) with `MyAccountSheet` via `useStaffAccountForm`.
  *
  * PATCH /api/venue/staff/me — name, phone, email
- * POST /api/venue/staff/change-password — new_password
+ * POST /api/account/password — the signed-in user's own password (see useChangeOwnPassword)
  */
 export default function AccountScreen() {
   const toast = useToast();

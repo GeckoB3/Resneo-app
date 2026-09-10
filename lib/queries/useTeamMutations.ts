@@ -214,17 +214,32 @@ export function usePatchStaffCalendar() {
 }
 
 /** POST /api/venue/staff/change-password — any staff changes own password. */
+/**
+ * Change the signed-in user's own password.
+ *
+ * POST /api/account/password, NOT /api/venue/staff/change-password. The staff
+ * route updates the password through the server's cookie-backed Supabase
+ * client (`supabase.auth.updateUser`), which reads its session from cookie
+ * storage; a Bearer request from the app has no cookie session, so GoTrue
+ * answered "Auth session missing" and the password never changed (reported
+ * 2026-09-10 from the Team page). The account route updates the user AS THE
+ * CALLER from the Bearer (web `updateAuthUserAsCaller`, P0-12) and sets
+ * `has_set_password` the same way, so the app's set-password screen and the
+ * My account sheet both go through it. Callers keep the `{ new_password }`
+ * body; the wire name is `password`.
+ */
 export function useChangeOwnPassword() {
   const accessToken = useAccessToken();
 
   return useMutation({
     mutationFn: async (body: ChangePasswordBody): Promise<{ success: boolean }> => {
       if (!accessToken) throw new ApiError('Not signed in', 401);
-      return apiFetch<{ success: boolean }>('/api/venue/staff/change-password', {
+      const res = await apiFetch<{ ok?: boolean; success?: boolean }>('/api/account/password', {
         method: 'POST',
-        body: JSON.stringify(body),
+        body: JSON.stringify({ password: body.new_password }),
         accessToken,
       });
+      return { success: res.ok === true || res.success === true };
     },
   });
 }

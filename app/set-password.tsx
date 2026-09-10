@@ -33,8 +33,9 @@ const MIN_PASSWORD_LENGTH = 8;
  * unguarded (like the dev `design-system` route) so `callback.tsx` can route to
  * it after the exchange.
  *
- * POST /api/venue/staff/change-password ({ new_password }) — the app's existing
- * endpoint, NOT the web's `/api/account/password`. On success we route into the
+ * POST /api/account/password ({ password }) via useChangeOwnPassword, the route
+ * that updates the user as the Bearer caller (the staff change-password route
+ * reads a cookie session the app never has). On success we route into the
  * app (`/`); the root `Stack.Protected` already keeps the session in `(app)`.
  *
  * Fabric focus rule (project memory): never setState in onFocus/onBlur. Field
