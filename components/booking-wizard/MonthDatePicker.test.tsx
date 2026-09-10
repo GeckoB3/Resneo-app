@@ -1,6 +1,14 @@
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
 
-import { MonthDatePicker } from '@/components/booking-wizard/MonthDatePicker';
+// A phone by default; the wide-window tests below change it per test.
+const mockWindow = { width: 390, height: 844, scale: 2, fontScale: 1 };
+jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
+  __esModule: true,
+  default: () => mockWindow,
+}));
+
+import { MONTH_PICKER_MAX_WIDTH, MonthDatePicker } from '@/components/booking-wizard/MonthDatePicker';
 
 /**
  * Press a control and flush the resulting state update — the day cells and
@@ -149,5 +157,32 @@ describe('MonthDatePicker — failed lookup', () => {
     await render(<MonthDatePicker {...baseProps} isLoading />);
     expect(screen.queryByText("Couldn't check availability")).toBeNull();
     expect(screen.getByText('Continue')).toBeTruthy();
+  });
+});
+
+describe('MonthDatePicker on a wide window', () => {
+  afterEach(() => {
+    mockWindow.width = 390;
+    mockWindow.height = 844;
+  });
+
+  // A tablet in landscape: the picker column is capped so the six weeks, the
+  // shortcuts and Continue fit the screen instead of scrolling off it.
+  it('caps its column width on a tablet in landscape', async () => {
+    mockWindow.width = 1366;
+    mockWindow.height = 1024;
+    await render(<MonthDatePicker {...baseProps} weekShortcuts />);
+    const column = screen.getByTestId('month-picker-column');
+    expect(StyleSheet.flatten(column.props.style)).toMatchObject({
+      maxWidth: MONTH_PICKER_MAX_WIDTH,
+      alignSelf: 'center',
+      flex: 1,
+    });
+  });
+
+  it('leaves a phone uncapped', async () => {
+    await render(<MonthDatePicker {...baseProps} />);
+    const column = screen.getByTestId('month-picker-column');
+    expect(StyleSheet.flatten(column.props.style).maxWidth).toBeUndefined();
   });
 });

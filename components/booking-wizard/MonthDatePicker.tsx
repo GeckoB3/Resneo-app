@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
+import { ContentColumn } from '@/components/ui/ContentColumn';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Text } from '@/components/ui/Text';
 import { getDateTimeFormat } from '@/lib/dates/formatters';
@@ -14,6 +15,16 @@ const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
 /** Weeks-ahead quick-pick offsets for staff booking (web parity: +2 … +6). */
 const WEEK_OFFSETS = [2, 3, 4, 5, 6] as const;
+
+/**
+ * Widest the picker column gets (dp). The day cells are a seventh of the width
+ * with a fixed aspect, so on a tablet in landscape an uncapped grid grew to
+ * ~150dp rows and the six weeks, the week shortcuts and Continue ran off the
+ * bottom of the screen. At this cap a cell is ~68dp wide and ~55dp tall, so the
+ * whole month, the shortcuts and Continue fit a landscape iPad without
+ * scrolling; on a phone the cap is above the width and nothing changes.
+ */
+export const MONTH_PICKER_MAX_WIDTH = 480;
 
 type Cell = { iso: string; day: number; inMonth: boolean };
 
@@ -137,7 +148,7 @@ export function MonthDatePicker({
   const showStartNow = source === 'walk-in' && !!onStartNow;
 
   return (
-    <View style={styles.container}>
+    <ContentColumn fill max={MONTH_PICKER_MAX_WIDTH} style={styles.container} testID="month-picker-column">
       <Text variant="heading">{title}</Text>
 
       {showStartNow ? (
@@ -310,13 +321,12 @@ export function MonthDatePicker({
         onPress={onContinue}
         disabled={!selectedDate || !canContinue}
       />
-    </View>
+    </ContentColumn>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
     gap: spacing.sm,
   },
   // The calendar + shortcuts + hint scroll between the pinned heading/walk-in
