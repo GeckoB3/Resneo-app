@@ -8,6 +8,7 @@ import { Text } from '@/components/ui/Text';
 import type { AppointmentVisit } from '@/lib/booking/appointment-visit';
 import { isTerminalVisitStatus } from '@/lib/booking/visit-status';
 import { formatShortDay } from '@/lib/dates/venue-dates';
+import { ACTION_COLORS } from '@/lib/booking/booking-action-colors';
 import { formatPence } from '@/lib/format';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { buildPriceSummary, type DepositBadgeTone } from '@/lib/payments/payment-display';
@@ -95,19 +96,26 @@ function offeringLine(row: { booking_item_name?: string | null; service_variant_
   return line;
 }
 
-/** Start, Complete, Undo start, Undo complete: the service-level lifecycle of one row of a visit. */
-function serviceActions(status: string): { label: string; target: BookingStatus; primary: boolean }[] {
+/**
+ * Start, Complete, Undo start, Reopen: the service-level lifecycle of one row
+ * of a visit. The same words and colours as the panel's own action bar
+ * (`bookingDetailActions`, `ACTION_COLORS`), so a row's Start reads as the
+ * same act as a single booking's.
+ */
+function serviceActions(
+  status: string,
+): { label: string; target: BookingStatus; colors?: { background: string; text: string } }[] {
   switch (status) {
     case 'Booked':
     case 'Confirmed':
-      return [{ label: 'Start', target: 'Seated', primary: true }];
+      return [{ label: 'Start', target: 'Seated', colors: ACTION_COLORS.start }];
     case 'Seated':
       return [
-        { label: 'Complete', target: 'Completed', primary: true },
-        { label: 'Undo start', target: 'Booked', primary: false },
+        { label: 'Complete', target: 'Completed', colors: ACTION_COLORS.complete },
+        { label: 'Undo start', target: 'Booked' },
       ];
     case 'Completed':
-      return [{ label: 'Undo complete', target: 'Seated', primary: false }];
+      return [{ label: 'Reopen', target: 'Seated' }];
     default:
       return [];
   }
@@ -128,7 +136,8 @@ function ServiceRowActions({ row, disabledAll }: { row: GroupVisitBookingRow; di
           key={action.target}
           label={action.label}
           size="sm"
-          variant={action.primary ? 'secondary' : 'ghost'}
+          variant={action.colors ? 'primary' : 'ghost'}
+          customColors={action.colors}
           loading={update.isPending}
           disabled={disabledAll || update.isPending}
           accessibilityLabel={`${action.label} ${offeringLine(row)}`}

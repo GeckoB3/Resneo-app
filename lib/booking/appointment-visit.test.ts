@@ -3,6 +3,7 @@ import {
   minimumVisitFloorMinutes,
   resolveAppointmentVisit,
   scheduledVisitRows,
+  toVisitEditTarget,
   visitServiceNames,
   type VisitServiceRow,
 } from '@/lib/booking/appointment-visit';
@@ -121,6 +122,34 @@ describe('resolveAppointmentVisit', () => {
       row({ id: 'b', booking_time: '11:00', booking_item_name: null }),
     ])!;
     expect(visitServiceNames(visit)).toEqual(['Cut', 'Service']);
+  });
+});
+
+describe('a completed service stays in the visit (2026-09-10)', () => {
+  it('keeps a completed row in the panel view and out of the edit target', () => {
+    const rows = [
+      row({ id: 'done', booking_time: '10:00', booking_end_time: '10:45', group_booking_id: 'g', status: 'Completed' }),
+      row({ id: 'next', booking_time: '10:45', booking_end_time: '11:30', group_booking_id: 'g', status: 'Confirmed' }),
+    ];
+    const visit = resolveAppointmentVisit(rows);
+    expect(visit).not.toBeNull();
+    expect(visit!.services.map((s) => [s.id, s.scheduled])).toEqual([
+      ['done', false],
+      ['next', true],
+    ]);
+    expect(visit!.startHm).toBe('10:00');
+    const target = toVisitEditTarget(visit!, 'g');
+    expect(target.services.map((s) => s.bookingId)).toEqual(['next']);
+    expect(target.leadBookingId).toBe('next');
+    expect(target.serviceCount).toBe(1);
+  });
+
+  it('is still a visit when every service is completed', () => {
+    const rows = [
+      row({ id: 'a', booking_time: '10:00', booking_end_time: '10:45', group_booking_id: 'g', status: 'Completed' }),
+      row({ id: 'b', booking_time: '10:45', booking_end_time: '11:30', group_booking_id: 'g', status: 'Completed' }),
+    ];
+    expect(resolveAppointmentVisit(rows)?.services).toHaveLength(2);
   });
 });
 

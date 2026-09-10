@@ -57,6 +57,7 @@ import { Text } from '@/components/ui/Text';
 import { ApiError, apiFetch } from '@/lib/api/client';
 import {
   resolveAppointmentVisit,
+  scheduledVisitRows,
   visitEditTargetForService,
   type VisitServiceRow,
 } from '@/lib/booking/appointment-visit';
@@ -1419,7 +1420,9 @@ export default function CalendarScreen() {
             // anchor, so the visit the bar stands for is that day's part of it.
             booking_date: anchor,
           }));
-        const visit = resolveAppointmentVisit(rows);
+        // Only what the schedule endpoint re-lays: a completed service stays
+        // where it is when the visit bar is dragged.
+        const visit = resolveAppointmentVisit(scheduledVisitRows(rows));
         return visit ? { groupBookingId, visit } : null;
       }
       return null;

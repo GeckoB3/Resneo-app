@@ -37,6 +37,17 @@ import { MIN_CORE_DURATION_MINUTES } from '@/lib/booking/booking-core-duration';
 const SCHEDULED_STATUSES = new Set(['Pending', 'Booked', 'Confirmed', 'Seated']);
 
 /**
+ * The rows that are not happening at all. A completed service is NOT one of
+ * them: it is still part of the visit the panel shows (web
+ * `multiServiceVisitSegments` keeps it, and `VISIT_TERMINAL_STATUSES` there is
+ * Cancelled and No-Show only). Treating Completed as "off the visit" was why
+ * completing one of two services made the other vanish from the panel: the
+ * visit fell below two scheduled rows, resolved to null, and the panel fell
+ * back to the single-booking layout (reported 2026-09-10).
+ */
+const TERMINAL_STATUSES = new Set(['Cancelled', 'No-Show']);
+
+/**
  * One booking row of a visit. A superset of what
  * {@link GroupVisitBookingRow} carries, so the group-visit query feeds this
  * directly.
@@ -85,6 +96,14 @@ export interface VisitService {
    * across days when the next one is on another day. Zero on the tail.
    */
   gapAfterMinutes: number;
+  /** The row's own status. */
+  status: string | null;
+  /**
+   * Still on the calendar (Pending, Booked, Confirmed, Seated). A completed
+   * service is shown and acted on per row but is not re-laid by the visit
+   * endpoints, so the editors leave it out (`toVisitEditTarget`).
+   */
+  scheduled: boolean;
 }
 
 export interface AppointmentVisit {
@@ -168,9 +187,14 @@ export function isServiceVisit(rows: readonly VisitServiceRow[]): boolean {
   return !rows.some((r) => Boolean(r.person_label?.trim()));
 }
 
-/** The rows of a visit that are actually on the calendar. */
+/** The rows of a visit that are actually on the calendar (re-laid by the visit endpoints). */
 export function scheduledVisitRows<T extends VisitServiceRow>(rows: readonly T[]): T[] {
   return rows.filter((r) => SCHEDULED_STATUSES.has(String(r.status ?? '')));
+}
+
+/** The rows of a visit that are happening or have happened: everything but Cancelled and No-Show. */
+export function liveVisitRows<T extends VisitServiceRow>(rows: readonly T[]): T[] {
+  return rows.filter((r) => !TERMINAL_STATUSES.has(String(r.status ?? '')));
 }
 
 /**
@@ -197,27 +221,31 @@ export function minimumVisitFloorMinutes(serviceCount: number): number {
  * Two adaptations from web, both narrowing:
  * - Cancelled and no-show rows are dropped first (web resolves whatever its
  *   caller passes; its endpoints filter separately, so its header can span a
- *   service that is not happening).
- * - Fewer than TWO scheduled services returns null. A lone service in a group is
+ *   service that is not happening). Completed rows STAY: they are part of what
+ *   the panel shows and acts on per service.
+ * - Fewer than TWO live services returns null. A lone service in a group is
  *   an ordinary booking, and every caller here wants the single-row path for it —
  *   the same rule `collapseMultiServiceVisits` and `GroupVisitCards` already use.
+ *
+ * A caller that needs only what the endpoints re-lay (the calendar's visit
+ * drag) passes `scheduledVisitRows(rows)` in.
  */
 export function resolveAppointmentVisit(
   rows: readonly VisitServiceRow[],
 ): AppointmentVisit | null {
   if (rows.length === 0 || !isServiceVisit(rows)) return null;
 
-  const scheduled = scheduledVisitRows(rows);
-  if (scheduled.length < 2) return null;
-  if (scheduled.some((r) => !hasUsableTime(r.booking_time))) return null;
+  const live = liveVisitRows(rows);
+  if (live.length < 2) return null;
+  if (live.some((r) => !hasUsableTime(r.booking_time))) return null;
 
-  const groupIds = new Set(scheduled.map((r) => r.group_booking_id?.trim() || ''));
+  const groupIds = new Set(live.map((r) => r.group_booking_id?.trim() || ''));
   if (groupIds.size !== 1) return null;
   const groupBookingId = [...groupIds][0] || null;
 
   // Date first (a service on another day sorts after every service on this
   // one, whatever its clock time), then start.
-  const ordered = [...scheduled].sort(
+  const ordered = [...live].sort(
     (a, b) =>
       (a.booking_date ?? '').localeCompare(b.booking_date ?? '') ||
       timeToMinutes(toHm(a.booking_time)) - timeToMinutes(toHm(b.booking_time)),
@@ -247,6 +275,8 @@ export function resolveAppointmentVisit(
       endHm,
       durationMinutes,
       gapAfterMinutes,
+      status: row.status ?? null,
+      scheduled: SCHEDULED_STATUSES.has(String(row.status ?? '')),
     };
   });
 
@@ -323,16 +353,22 @@ export interface VisitEditService {
   durationMinutes: number;
 }
 
-/** The editing view of a resolved visit. */
+/**
+ * The editing view of a resolved visit: the SCHEDULED services only, since
+ * those are what the visit endpoints re-lay (their `SCHEDULED_STATUSES`); a
+ * completed service is shown in the panel but not moved.
+ */
 export function toVisitEditTarget(visit: AppointmentVisit, groupBookingId: string): VisitEditTarget {
+  const scheduled = visit.services.filter((s) => s.scheduled);
+  const editable = scheduled.length > 0 ? scheduled : visit.services;
   return {
     groupBookingId,
     startHm: visit.startHm,
     endHm: visit.endHm,
-    serviceCount: visit.services.length,
-    serviceNames: visitServiceNames(visit),
-    leadBookingId: visit.services[0]!.id,
-    services: visit.services.map((s) => ({
+    serviceCount: editable.length,
+    serviceNames: editable.map((s) => s.name?.trim() || 'Service'),
+    leadBookingId: editable[0]!.id,
+    services: editable.map((s) => ({
       bookingId: s.id,
       date: s.date,
       calendarId: s.calendarId,
