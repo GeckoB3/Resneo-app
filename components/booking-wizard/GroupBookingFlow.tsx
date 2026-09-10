@@ -6,6 +6,7 @@ import { BookingWizardHeader } from '@/components/booking-wizard/BookingWizardHe
 import type { GuestDetails } from '@/components/booking-wizard/GuestDetailsStep';
 import { GuestDetailsStep } from '@/components/booking-wizard/GuestDetailsStep';
 import { MonthDatePicker } from '@/components/booking-wizard/MonthDatePicker';
+import type { CountryCode } from '@/lib/phone/e164';
 import { PractitionerStep } from '@/components/booking-wizard/PractitionerStep';
 import { ServicePickerStep } from '@/components/booking-wizard/ServicePickerStep';
 import { TimeSlotStep } from '@/components/booking-wizard/TimeSlotStep';
@@ -99,6 +100,8 @@ type GroupBookingFlowProps = {
   ownerVenueId?: string | null;
   /** 'phone' | 'walk-in' — the group create posts this source. */
   source: 'phone' | 'walk-in';
+  /** The phone picker's starting country (from the venue's currency). */
+  phoneDefaultCountry?: CountryCode;
   onCreated: (bookingId: string) => void;
   /** Leave group mode (back to the single-booking flow's service picker). */
   onExitGroup: () => void;
@@ -121,6 +124,7 @@ export function GroupBookingFlow({
   servicesLayout = 'sections',
   ownerVenueId,
   source,
+  phoneDefaultCountry = 'GB',
   onCreated,
   onExitGroup,
 }: GroupBookingFlowProps) {
@@ -323,7 +327,7 @@ export function GroupBookingFlow({
         contact: {
           first_name: organiser.first_name,
           last_name: organiser.last_name,
-          phone: normalizePhone(organiser.phone, 'GB'),
+          phone: normalizePhone(organiser.phone, phoneDefaultCountry),
           email: organiser.email,
           dietary_notes: comment || undefined,
         },
@@ -360,6 +364,7 @@ export function GroupBookingFlow({
       };
     },
     [
+      phoneDefaultCountry,
       organiser,
       venueId,
       source,
@@ -785,6 +790,7 @@ export function GroupBookingFlow({
           onContinue={() => setStep('confirm')}
           onPickExistingContact={() => setReturningGuest(true)}
           onClearExistingContact={() => setReturningGuest(false)}
+          phoneDefaultCountry={phoneDefaultCountry}
           collectClientAddress={collectClientAddress}
         />
       </View>

@@ -28,6 +28,7 @@ import {
 } from '@/lib/booking/booking-format';
 import { formatDurationMinutes } from '@/lib/format';
 import { normalizePhone } from '@/lib/phone/normalize';
+import { defaultPhoneCountryForVenueCurrency } from '@/lib/phone/e164';
 import { useBookingFormVenue } from '@/lib/queries/useBookingFormVenue';
 import { useClassOfferings } from '@/lib/queries/useBookableOfferings';
 import { calendarDateInTimeZone } from '@/lib/queries/useBookingsList';
@@ -54,7 +55,9 @@ type ClassBookingFlowProps = { onCreated: (bookingId: string) => void };
 /** Book a guest onto a scheduled class session (web-parity class flow). */
 export function ClassBookingFlow({ onCreated }: ClassBookingFlowProps) {
   const router = useRouter();
-  const { venueId, timeZone } = useBookingFormVenue();
+  const { venueId, timeZone, currency } = useBookingFormVenue();
+  // The phone picker's starting country (web parity: EUR venues → IE, else GB).
+  const phoneDefaultCountry = defaultPhoneCountryForVenueCurrency(currency);
   const { ownerVenueId } = useLinkedVenueContext();
   const { guestId: guestIdParam } = useLocalSearchParams<{ guestId?: string }>();
   const prefilledGuestId =
@@ -283,6 +286,7 @@ export function ClassBookingFlow({ onCreated }: ClassBookingFlowProps) {
           isWalkIn={source === 'walk-in'}
           source={source}
           onSourceChange={setSource}
+          phoneDefaultCountry={phoneDefaultCountry}
           onPickExistingContact={() => setReturningGuest(true)}
           onClearExistingContact={() => setReturningGuest(false)}
         />
@@ -334,7 +338,7 @@ export function ClassBookingFlow({ onCreated }: ClassBookingFlowProps) {
             class_instance_id: inst.instance_id,
             first_name: first,
             last_name: last,
-            phone: normalizePhone(guest.phone, 'GB'),
+            phone: normalizePhone(guest.phone, phoneDefaultCountry),
             email: guest.email.trim() || undefined,
             ...(comment ? { dietary_notes: comment } : {}),
             source,

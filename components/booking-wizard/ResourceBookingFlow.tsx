@@ -40,6 +40,7 @@ import {
   useResourceOptions,
 } from '@/lib/queries/useBookableOfferings';
 import { useResourceMonthAvailability } from '@/lib/queries/useResourceMonthAvailability';
+import { defaultPhoneCountryForVenueCurrency } from '@/lib/phone/e164';
 import { useBookingFormVenue } from '@/lib/queries/useBookingFormVenue';
 import { calendarDateInTimeZone } from '@/lib/queries/useBookingsList';
 import { useGuestDetail } from '@/lib/queries/useGuestDetail';
@@ -64,7 +65,9 @@ type ResourceBookingFlowProps = { onCreated: (bookingId: string) => void };
 /** Book a time slot on a resource (web-parity resource flow). */
 export function ResourceBookingFlow({ onCreated }: ResourceBookingFlowProps) {
   const router = useRouter();
-  const { venueId, timeZone } = useBookingFormVenue();
+  const { venueId, timeZone, currency } = useBookingFormVenue();
+  // The phone picker's starting country (web parity: EUR venues → IE, else GB).
+  const phoneDefaultCountry = defaultPhoneCountryForVenueCurrency(currency);
   const { ownerVenueId } = useLinkedVenueContext();
   const { guestId: guestIdParam, resourceId: resourceIdParam } = useLocalSearchParams<{
     guestId?: string;
@@ -412,6 +415,7 @@ export function ResourceBookingFlow({ onCreated }: ResourceBookingFlowProps) {
           isWalkIn={source === 'walk-in'}
           source={source}
           onSourceChange={setSource}
+          phoneDefaultCountry={phoneDefaultCountry}
           onPickExistingContact={() => setReturningGuest(true)}
           onClearExistingContact={() => setReturningGuest(false)}
         />
@@ -458,7 +462,7 @@ export function ResourceBookingFlow({ onCreated }: ResourceBookingFlowProps) {
             resource_id: resource.id,
             first_name: first,
             last_name: last,
-            phone: normalizePhone(guest.phone, 'GB'),
+            phone: normalizePhone(guest.phone, phoneDefaultCountry),
             email: guest.email.trim() || undefined,
             ...(comment ? { dietary_notes: comment } : {}),
             source,

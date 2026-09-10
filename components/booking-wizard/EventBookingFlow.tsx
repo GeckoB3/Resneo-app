@@ -30,6 +30,7 @@ import {
 } from '@/lib/booking/booking-format';
 import { formatPence } from '@/lib/format';
 import { normalizePhone } from '@/lib/phone/normalize';
+import { defaultPhoneCountryForVenueCurrency } from '@/lib/phone/e164';
 import { useBookingFormVenue } from '@/lib/queries/useBookingFormVenue';
 import { useEventOfferings } from '@/lib/queries/useBookableOfferings';
 import { calendarDateInTimeZone } from '@/lib/queries/useBookingsList';
@@ -57,7 +58,9 @@ type EventBookingFlowProps = { onCreated: (bookingId: string) => void };
 export function EventBookingFlow({ onCreated }: EventBookingFlowProps) {
   const router = useRouter();
   const { colors } = useTheme();
-  const { venueId, timeZone } = useBookingFormVenue();
+  const { venueId, timeZone, currency } = useBookingFormVenue();
+  // The phone picker's starting country (web parity: EUR venues → IE, else GB).
+  const phoneDefaultCountry = defaultPhoneCountryForVenueCurrency(currency);
   const { ownerVenueId } = useLinkedVenueContext();
   const { guestId: guestIdParam } = useLocalSearchParams<{ guestId?: string }>();
   const prefilledGuestId =
@@ -324,6 +327,7 @@ export function EventBookingFlow({ onCreated }: EventBookingFlowProps) {
           isWalkIn={source === 'walk-in'}
           source={source}
           onSourceChange={setSource}
+          phoneDefaultCountry={phoneDefaultCountry}
           onPickExistingContact={() => setReturningGuest(true)}
           onClearExistingContact={() => setReturningGuest(false)}
         />
@@ -381,7 +385,7 @@ export function EventBookingFlow({ onCreated }: EventBookingFlowProps) {
             })),
             first_name: first,
             last_name: last,
-            phone: normalizePhone(guest.phone, 'GB'),
+            phone: normalizePhone(guest.phone, phoneDefaultCountry),
             email: guest.email.trim() || undefined,
             ...(comment ? { dietary_notes: comment } : {}),
             source,

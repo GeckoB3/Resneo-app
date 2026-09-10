@@ -28,7 +28,7 @@ describe('buildGuestSchema', () => {
 
   it('ignores unknown keys', () => {
     expect(
-      buildGuestSchema(false).safeParse({ phone: '07700 900000', special_requests: 'x' }).success,
+      buildGuestSchema(false).safeParse({ phone: '07725 123456', special_requests: 'x' }).success,
     ).toBe(true);
   });
 });

@@ -23,7 +23,7 @@ const safeAreaMetrics = {
 const filledGuest: GuestDetails = {
   first_name: 'Jo',
   last_name: 'Bloggs',
-  phone: '+447700900000',
+  phone: '+447725123456',
   email: '',
   special_requests: undefined,
 };

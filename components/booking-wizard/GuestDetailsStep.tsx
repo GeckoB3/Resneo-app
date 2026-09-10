@@ -5,12 +5,14 @@ import Animated from 'react-native-reanimated';
 import { useSheetKeyboardScroll } from '@/components/bookings/sheet-scroll-context';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { PhoneWithCountryField } from '@/components/ui/PhoneWithCountryField';
 import { Segmented } from '@/components/ui/Segmented';
 import { Text } from '@/components/ui/Text';
 import { useGuests } from '@/lib/queries/useGuests';
 import { buildGuestSchema, type GuestField } from '@/lib/validation/walk-in-guest';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
+import type { CountryCode } from '@/lib/phone/e164';
 import type { GuestListItem } from '@/types/guest-list';
 
 export type GuestDetails = {
@@ -55,6 +57,12 @@ type GuestDetailsStepProps = {
    */
   source?: 'phone' | 'walk-in';
   onSourceChange?: (source: 'phone' | 'walk-in') => void;
+  /**
+   * The country the phone picker starts on (web: from the venue's currency,
+   * `defaultPhoneCountryForVenueCurrency`). A picked contact's stored number
+   * moves the picker to that number's own country.
+   */
+  phoneDefaultCountry?: CountryCode;
 };
 
 const SEARCH_DEBOUNCE_MS = 280;
@@ -91,6 +99,7 @@ export function GuestDetailsStep({
   collectClientAddress = false,
   source,
   onSourceChange,
+  phoneDefaultCountry = 'GB',
 }: GuestDetailsStepProps) {
   const { colors } = useTheme();
   // Keyboard avoidance. The wizard lives on a plain `Screen` (no
@@ -312,17 +321,15 @@ export function GuestDetailsStep({
           textContentType="emailAddress"
           value={value.email}
         />
-        <Input
-          autoComplete="tel"
+        {/* Country code + national number, as the web's staff form (PhoneWithCountryField). */}
+        <PhoneWithCountryField
+          defaultCountry={phoneDefaultCountry}
           editable={!readOnlyContact}
           error={fieldErrors.phone}
-          keyboardType="phone-pad"
           helper="Without a phone number the client gets no text reminder."
           label="Phone"
           optional
-          onChangeText={(phone) => editContact({ phone })}
-          placeholder="Phone number"
-          textContentType="telephoneNumber"
+          onChange={(phone) => editContact({ phone })}
           value={value.phone}
         />
 

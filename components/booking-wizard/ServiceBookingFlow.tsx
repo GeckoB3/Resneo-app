@@ -40,6 +40,7 @@ import {
 } from '@/lib/booking/multi-service-chain';
 import { chainSpanMinutes, type ServiceChainSegmentParam } from '@/lib/booking/service-chain';
 import { useAppointmentCatalog } from '@/lib/queries/useAppointmentCatalog';
+import { defaultPhoneCountryForVenueCurrency } from '@/lib/phone/e164';
 import { useBookingFormVenue } from '@/lib/queries/useBookingFormVenue';
 import { calendarDateInTimeZone } from '@/lib/queries/useBookingsList';
 import { useGuestDetail } from '@/lib/queries/useGuestDetail';
@@ -146,12 +147,15 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
   const {
     venueId,
     timeZone,
+    currency,
     anyAvailableEnabled,
     staffFirstEnabled,
     isLinked,
     isCollective,
     servicesLayout,
   } = useBookingFormVenue();
+  // The phone picker's starting country (web parity: EUR venues → IE, else GB).
+  const phoneDefaultCountry = defaultPhoneCountryForVenueCurrency(currency);
   const { ownerVenueId } = useLinkedVenueContext();
   const {
     guestId: guestIdParam,
@@ -1099,6 +1103,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
         servicesLayout={servicesLayout}
         ownerVenueId={ownerVenueId}
         source={source}
+        phoneDefaultCountry={phoneDefaultCountry}
         onCreated={(bookingId) => onCreated(bookingId)}
         onExitGroup={() => setGroupMode(false)}
       />
@@ -1421,6 +1426,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           onClearExistingContact={() => setReturningGuest(false)}
           readOnlyContact={rebookContactReadOnly}
           collectClientAddress={selectedService?.locationType === 'client_address'}
+          phoneDefaultCountry={phoneDefaultCountry}
           value={guest}
         />
       ) : null}
@@ -1441,7 +1447,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
           requireDeposit={requireDeposit}
           onChangeRequireDeposit={setRequireDeposit}
           returningGuest={returningGuest}
-          phoneDefaultCountry="GB"
+          phoneDefaultCountry={phoneDefaultCountry}
           venueId={venueId}
           collectClientAddress={selectedService?.locationType === 'client_address'}
           multiServiceSegments={
