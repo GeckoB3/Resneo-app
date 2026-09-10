@@ -380,6 +380,15 @@ real multi-line visit. The hero gains a "Visit total £x · £y outstanding" (am
 keep `resolveCardHoldUiState`'s richer pill; "Deposit failed" stays). The Details card's Source,
 Reference, Visits and Previous-visit rows stay (§8 item 4).
 
+**Revised later the same day (owner's ask):** the app now carries the web's visit summary block
+itself, at the top of the hero (`components/bookings/VisitSummary.tsx`): time span; duration ·
+date · last visit; status pill + deposit/card-hold/failed badges; one row per service with time,
+length, status, price and per-service Start/Complete; add-ons under a single service; a money
+footer (total / visit total, deposit paid, paid so far, outstanding). The separate "Services in
+this visit" card, the Details card's add-on list + Total, and the hero money line were removed
+as duplicates; `GroupVisitCards` is the party card only. The contact row and the status action
+buttons were left exactly as they were, by request.
+
 ## 17. Built: R31-7 (2026-09-10, `c05550c`)
 
 - `DraggableAppointmentBlock` (and the two grids' prop types) report
