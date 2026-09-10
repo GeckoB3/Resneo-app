@@ -28,10 +28,23 @@ const mockState = {
   storedChoice: null as 'staff' | 'customer' | null,
   storeLoaded: true,
   storeNeverResolves: false,
+  isSuperuser: false,
+  isAlsoCustomer: false,
+  customerPending: false,
   listeners: new Set<() => void>(),
 };
 
 jest.mock('@/lib/queries/useRole', () => ({ useRole: () => mockState.role }));
+jest.mock('@/lib/auth/usePlatformSuperuser', () => ({
+  usePlatformSuperuser: () => mockState.isSuperuser ?? false,
+}));
+jest.mock('@/lib/queries/useCustomerVenues', () => ({
+  useCustomerVenueRelationships: () => ({
+    data: mockState.customerPending ? undefined : { venues: mockState.isAlsoCustomer ? [{ guest_id: 'g' }] : [] },
+    isSuccess: !mockState.customerPending,
+    isError: false,
+  }),
+}));
 jest.mock('@/lib/queries/useCustomerProfile', () => ({
   useCustomerProfile: () => ({
     data: mockState.profileError
@@ -79,7 +92,57 @@ beforeEach(() => {
   mockState.storedChoice = null;
   mockState.storeLoaded = true;
   mockState.storeNeverResolves = false;
+  mockState.isSuperuser = false;
+  mockState.isAlsoCustomer = false;
+  mockState.customerPending = false;
   mockState.listeners.clear();
+});
+
+describe('the chooser: more than one account, asked once per sign-in', () => {
+  it('asks staff who is also a customer, and waits for that answer first', async () => {
+    mockState.role = 'staff';
+    mockState.customerPending = true;
+    const seen = await observe([
+      () => {
+        mockState.customerPending = false;
+        mockState.isAlsoCustomer = true;
+      },
+    ]);
+    expect(seen).toEqual(['resolving', 'choose']);
+  });
+
+  it('asks a superuser, staff or customer, and offers the platform surface', async () => {
+    mockState.role = 'staff';
+    mockState.isSuperuser = true;
+    const { result } = await renderHook(() => useAppMode(), { wrapper });
+    await waitFor(() => expect(result.current.mode).toBe('choose'));
+    expect(result.current.surfaces).toEqual({ staff: true, customer: false, superuser: true });
+
+    mockState.role = 'customer';
+    const second = await renderHook(() => useAppMode(), { wrapper });
+    await waitFor(() => expect(second.result.current.mode).toBe('choose'));
+    expect(second.result.current.surfaces).toEqual({ staff: false, customer: true, superuser: true });
+  });
+
+  it('the choice moves the router and is not asked again', async () => {
+    mockState.role = 'staff';
+    mockState.isAlsoCustomer = true;
+    const { result } = await renderHook(() => useAppMode(), { wrapper });
+    await waitFor(() => expect(result.current.mode).toBe('choose'));
+    await act(async () => {
+      result.current.choose('customer');
+    });
+    await waitFor(() => expect(result.current.mode).toBe('customer'));
+    expect(decidedModes(['choose', result.current.mode])).toEqual(['choose', 'customer']);
+  });
+
+  it('a stated preference skips the chooser', async () => {
+    mockState.role = 'staff';
+    mockState.isAlsoCustomer = true;
+    mockState.destination = 'dashboard';
+    const { result } = await renderHook(() => useAppMode(), { wrapper });
+    await waitFor(() => expect(result.current.mode).toBe('staff'));
+  });
 });
 
 /** Every mode this hook reported, in order, across a scripted sequence. */

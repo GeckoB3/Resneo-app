@@ -99,7 +99,7 @@ function RootLayoutNav() {
   const { mode } = useAppMode();
 
   /*
-    Exactly one of (auth), (app), (customer) and `mode-loading` is active at any
+    Exactly one of (auth), (app), (customer), `choose-account` and `mode-loading` is active at any
     moment, and that invariant is doing real work. Expo Router sends the user to
     "the first available unprotected screen" when no protected one is active,
     and the first unprotected sibling here is `set-password`. Without the
@@ -135,6 +135,11 @@ function RootLayoutNav() {
             always has somewhere legitimate to be while the mode settles. */}
         <Stack.Protected guard={modeResolving}>
           <Stack.Screen name="mode-loading" />
+        </Stack.Protected>
+        {/* More than one account and no stated preference: ask, before any side
+            is mounted. A guarded sibling like mode-loading, for the same reason. */}
+        <Stack.Protected guard={signedIn && mode === 'choose'}>
+          <Stack.Screen name="choose-account" />
         </Stack.Protected>
         <Stack.Protected guard={!session}>
           <Stack.Screen name="(auth)" />

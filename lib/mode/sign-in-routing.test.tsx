@@ -45,6 +45,13 @@ jest.mock('@/lib/mode/app-mode-store', () => ({
   rememberAppMode: () => {},
   clearAppMode: () => {},
 }));
+jest.mock('@/lib/auth/usePlatformSuperuser', () => ({
+  usePlatformSuperuser: () => false,
+}));
+jest.mock('@/lib/queries/useCustomerVenues', () => ({
+  // Not a customer anywhere: the reproduction is about the staff/me answer alone.
+  useCustomerVenueRelationships: () => ({ data: { venues: [] }, isSuccess: true, isError: false }),
+}));
 jest.mock('@/lib/queries/useCustomerProfile', () => ({
   useCustomerProfile: () => ({ data: undefined, isLoading: false, isError: true }),
 }));

@@ -8,13 +8,13 @@ import {
   subscribeAppMode,
   type AppModeChoice,
 } from '@/lib/mode/app-mode-store';
+import { usePlatformSuperuser } from '@/lib/auth/usePlatformSuperuser';
+import { decideMode, type AccountSurfaces, type AppMode } from '@/lib/mode/account-surfaces';
 import { useCustomerProfile } from '@/lib/queries/useCustomerProfile';
+import { useCustomerVenueRelationships } from '@/lib/queries/useCustomerVenues';
 import { useRole } from '@/lib/queries/useRole';
 
-/**
- * `resolving` means "do not route yet". It is not a third destination.
- */
-export type AppMode = 'resolving' | AppModeChoice;
+export type { AppMode } from '@/lib/mode/account-surfaces';
 
 /**
  * Which face of the app to show, and whether we are ready to show either.
@@ -38,6 +38,9 @@ export type AppMode = 'resolving' | AppModeChoice;
  * 3. **Otherwise the web's own preference decides**, from
  *    `default_login_destination`. Reading the field the customer already set
  *    beats inventing an app-only twin that then disagrees with the web.
+ *    With no preference and more than one account (staff who is also a
+ *    customer, or a superuser), the answer is `choose` and the root router
+ *    shows the chooser screen, once per sign-in, whichever way they signed in.
  * 4. **Failing all that, staff.** That is what every existing user of this app
  *    is, and it keeps the shipped experience unchanged for them.
  *
@@ -46,9 +49,19 @@ export type AppMode = 'resolving' | AppModeChoice;
  * lets the router own the fail-soft, because the timeout belongs with the thing
  * that can show a spinner.
  */
-export function useAppMode(): { mode: AppMode; canSwitch: boolean; choose: (m: AppModeChoice) => void } {
+export function useAppMode(): {
+  mode: AppMode;
+  canSwitch: boolean;
+  /** The accounts this person has, for the chooser. */
+  surfaces: AccountSurfaces;
+  choose: (m: AppModeChoice) => void;
+} {
   const role = useRole();
   const profileQuery = useCustomerProfile();
+  // "Also a customer somewhere": asked for staff only, since a confirmed
+  // customer has nothing to choose and a superuser is read off the session.
+  const customerQuery = useCustomerVenueRelationships(role === 'staff');
+  const isSuperuser = usePlatformSuperuser();
 
   /*
     The stored choice is read once per run. It is mirrored in a module-level
@@ -78,41 +91,25 @@ export function useAppMode(): { mode: AppMode; canSwitch: boolean; choose: (m: A
     rememberAppMode(next);
   };
 
-  // 1. A confirmed customer. Nothing else is consulted, and notably we do NOT
-  //    wait on the profile read: there is no decision left to inform.
-  if (role === 'customer') {
-    return { mode: 'customer', canSwitch: false, choose };
-  }
-
-  if (role === 'loading' || !storeRead) {
-    return { mode: 'resolving', canSwitch: false, choose };
-  }
-
-  // 2. An explicit switch.
-  if (storedChoice) {
-    return { mode: storedChoice, canSwitch: true, choose };
-  }
-
   /*
-    3. The web's preference. Waiting for it is what stops a staff-and-customer
-       person landing on staff and then being moved, which would be the
-       navigator swap this whole design exists to avoid. The wait is bounded by
-       the same round trip the staff check already costs, and both run in
-       parallel.
-
-       A FAILED profile read does not block: it falls through to staff below.
-       Refusing to route because a preference could not be read would strand
-       someone over a question whose answer is a default.
+    The decision itself is pure (`account-surfaces.ts`). Two reads are waited
+    on before a side is named: the web's preference, and for staff whether they
+    are also somebody's customer. Waiting is what stops a person landing on one
+    side and then being moved, which would be the navigator swap this whole
+    design exists to avoid; the wait is bounded by the same round trips the
+    staff check already costs, and all run in parallel. A FAILED read never
+    blocks: it is treated as "no preference" / "not a customer" and the
+    decision falls through to staff.
   */
-  if (profileQuery.isLoading && !profileQuery.isError) {
-    return { mode: 'resolving', canSwitch: false, choose };
-  }
-
-  const destination = profileQuery.data?.profile?.default_login_destination ?? null;
-  if (destination === 'account') {
-    return { mode: 'customer', canSwitch: true, choose };
-  }
-
-  // 4. Staff, including 'dashboard', 'ask' and an unreadable profile.
-  return { mode: 'staff', canSwitch: true, choose };
+  const decided = decideMode({
+    role,
+    storeRead,
+    storedChoice,
+    profilePending: profileQuery.isLoading && !profileQuery.isError,
+    destination: profileQuery.data?.profile?.default_login_destination ?? null,
+    customerPending: role === 'staff' && !customerQuery.isSuccess && !customerQuery.isError,
+    isAlsoCustomer: (customerQuery.data?.venues?.length ?? 0) > 0,
+    isSuperuser,
+  });
+  return { ...decided, choose };
 }
