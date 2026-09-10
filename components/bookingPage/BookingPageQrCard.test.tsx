@@ -37,7 +37,6 @@ jest.mock(
     writeAsStringAsync: (...args: unknown[]) => mockWriteAsStringAsync(...args),
     EncodingType: { Base64: 'base64' },
   }),
-  { virtual: true },
 );
 jest.mock(
   'expo-sharing',
@@ -45,7 +44,6 @@ jest.mock(
     isAvailableAsync: () => mockIsAvailableAsync(),
     shareAsync: (...args: unknown[]) => mockShareAsync(...args),
   }),
-  { virtual: true },
 );
 
 const mockToast = { success: jest.fn(), error: jest.fn(), info: jest.fn() };

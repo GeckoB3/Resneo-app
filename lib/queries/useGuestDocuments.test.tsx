@@ -19,25 +19,31 @@ jest.mock('@/lib/api/client', () => {
 
 // The native uploader (expo-file-system's legacy API): an upload task whose
 // `uploadAsync` answers with the storage service's status and body.
+//
+// NOT a `virtual` mock. The package is installed, and jest-expo's own preset
+// mocks this same module non-virtually in every suite. A virtual mock registers
+// under a different module id ("expo-file-system/legacy") from the resolved one
+// (".../src/legacy/index.ts"), and jest's Resolver — shared by every suite a
+// worker runs, with a module-id cache keyed only by (importer, name) — keeps
+// whichever id the hook's import resolved to first. When a screen suite that
+// loads the hook unmocked (today, bookings) ran earlier in the same worker, the
+// hook got the preset's mock here instead of ours (no FileSystemUploadType, no
+// createUploadTask) and all six tests failed; alone, the suite passed.
 const mockGetInfoAsync = jest.fn();
 const mockUploadAsync = jest.fn();
 const mockCancelAsync = jest.fn();
 const mockCreateUploadTask = jest.fn();
-jest.mock(
-  'expo-file-system/legacy',
-  () => ({
-    FileSystemUploadType: { BINARY_CONTENT: 0, MULTIPART: 1 },
-    getInfoAsync: (...args: unknown[]) => mockGetInfoAsync(...args),
-    createUploadTask: (...args: unknown[]) => {
-      mockCreateUploadTask(...args);
-      return {
-        uploadAsync: () => mockUploadAsync(),
-        cancelAsync: () => mockCancelAsync(),
-      };
-    },
-  }),
-  { virtual: true },
-);
+jest.mock('expo-file-system/legacy', () => ({
+  FileSystemUploadType: { BINARY_CONTENT: 0, MULTIPART: 1 },
+  getInfoAsync: (...args: unknown[]) => mockGetInfoAsync(...args),
+  createUploadTask: (...args: unknown[]) => {
+    mockCreateUploadTask(...args);
+    return {
+      uploadAsync: () => mockUploadAsync(),
+      cancelAsync: () => mockCancelAsync(),
+    };
+  },
+}));
 
 import { useUploadGuestDocument } from '@/lib/queries/useGuestDocuments';
 

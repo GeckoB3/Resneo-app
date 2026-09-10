@@ -17,7 +17,7 @@ jest.mock('@/lib/api/client', () => ({
   apiFetch: (...args: unknown[]) => mockApiFetch(...args),
 }));
 jest.mock('expo-device', () => ({ osVersion: '17.0', modelName: 'iPhone', isDevice: true }));
-jest.mock('expo-notifications', () => ({}), { virtual: true });
+jest.mock('expo-notifications', () => ({}));
 jest.mock('expo-constants', () => ({
   expoConfig: { version: '1.0.8', extra: { eas: { projectId: 'proj-1' } } },
 }));

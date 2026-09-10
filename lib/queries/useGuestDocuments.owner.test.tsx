@@ -14,7 +14,10 @@ jest.mock('@/lib/api/client', () => {
   const actual = jest.requireActual<typeof import('@/lib/api/client')>('@/lib/api/client');
   return { ...actual, apiFetch: (...args: unknown[]) => mockApiFetch(...args) };
 });
-jest.mock('expo-file-system/legacy', () => ({}), { virtual: true });
+// Not virtual: the package is installed, and a virtual mock registers under a
+// different module id from the one jest-expo's preset (and any suite that loads
+// the hook unmocked) resolves — see useGuestDocuments.test.tsx.
+jest.mock('expo-file-system/legacy', () => ({}));
 
 import { fetchDocumentDownloadUrl, useGuestDocuments } from '@/lib/queries/useGuestDocuments';
 
