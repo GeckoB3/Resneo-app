@@ -1,18 +1,13 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { useMemo } from 'react';
+import { StyleSheet } from 'react-native';
 
-import { CollectiveCatalogueBuilder } from '@/components/linked/CollectiveCatalogueBuilder';
-import { CollectiveMembersPanel } from '@/components/linked/CollectiveMembersPanel';
-import { CombinedPageAboutSection } from '@/components/linked/CombinedPageAboutSection';
-import { CombinedPageConfigEditor } from '@/components/linked/CombinedPageConfigEditor';
-import { Card } from '@/components/ui/Card';
+import { CollectiveManagerPanel } from '@/components/linked/CollectiveManagerPanel';
+import { CombinedPageMemberSummary } from '@/components/linked/CombinedPageMemberSummary';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Screen } from '@/components/ui/Screen';
-import { Segmented } from '@/components/ui/Segmented';
-import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { fullMutualLinks } from '@/lib/linked/grants';
 import { useCollectives } from '@/lib/queries/useCollectives';
@@ -20,8 +15,6 @@ import { useLinkedVenues } from '@/lib/queries/useLinkedVenues';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { spacing } from '@/theme/index';
 import type { CollectiveView } from '@/types/collectives';
-
-type TabKey = 'page' | 'services' | 'about' | 'members';
 
 export default function CollectiveDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -32,8 +25,6 @@ export default function CollectiveDetailScreen() {
   const isAdmin = staffQuery.data?.staff?.role === 'admin';
   const query = useCollectives();
   const linksQuery = useLinkedVenues();
-
-  const [tab, setTab] = useState<TabKey>('page');
 
   const collective = useMemo<CollectiveView | null>(
     () => (query.data?.collectives ?? []).find((c) => c.id === collectiveId) ?? null,
@@ -85,60 +76,25 @@ export default function CollectiveDetailScreen() {
     );
   }
 
-  const isHost = collective.isHost;
-
-  // Member (non-host) view — read-only explainer (web parity).
-  if (!isHost) {
-    return (
-      <Screen scroll contentContainerStyle={styles.content}>
-        <Stack.Screen options={{ title: collective.name }} />
-        <Card>
-          <Text variant="bodySmall" tone="secondary">
-            Your services appear on this combined booking page using their own price, duration and
-            availability from your Services settings. The host venue chooses which of your calendars
-            are offered. To stop taking part, leave the collective from the Venue collectives list.
-          </Text>
-        </Card>
-        <CombinedPageAboutSection collective={collective} />
-      </Screen>
-    );
-  }
-
+  // The same panel and summary the Booking page screen shows in its combined
+  // scope (web: Linked accounts' modal and the Booking Page tab share one
+  // implementation).
   return (
     <Screen scroll contentContainerStyle={styles.content}>
       <Stack.Screen options={{ title: collective.name }} />
-
-      <Segmented<TabKey>
-        options={[
-          { value: 'page', label: 'Page' },
-          { value: 'services', label: 'Services' },
-          { value: 'about', label: 'About' },
-          { value: 'members', label: 'Members' },
-        ]}
-        value={tab}
-        onChange={setTab}
-      />
-
-      <View style={styles.tabBody}>
-        {tab === 'page' ? (
-          <CombinedPageConfigEditor
-            collective={collective}
-            onChanged={() => void query.refetch()}
-          />
-        ) : null}
-
-        {tab === 'services' ? <CollectiveCatalogueBuilder collectiveId={collective.id} /> : null}
-
-        {tab === 'about' ? <CombinedPageAboutSection collective={collective} /> : null}
-
-        {tab === 'members' ? (
-          <CollectiveMembersPanel
-            collective={collective}
-            eligibleLinks={eligibleLinks}
-            onDissolved={() => router.back()}
-          />
-        ) : null}
-      </View>
+      {collective.isHost ? (
+        <CollectiveManagerPanel
+          collective={collective}
+          eligibleLinks={eligibleLinks}
+          onChanged={() => void query.refetch()}
+          onDissolved={() => router.back()}
+        />
+      ) : (
+        <CombinedPageMemberSummary
+          collective={collective}
+          onOpenLinkedVenues={() => router.push('/linked-venues' as never)}
+        />
+      )}
     </Screen>
   );
 }
@@ -147,9 +103,6 @@ const styles = StyleSheet.create({
   content: {
     padding: spacing.base,
     paddingBottom: spacing['3xl'],
-    gap: spacing.md,
-  },
-  tabBody: {
     gap: spacing.md,
   },
 });

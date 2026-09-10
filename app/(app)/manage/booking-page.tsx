@@ -12,7 +12,8 @@ import { GalleryEditorSheet } from '@/components/bookingPage/GalleryEditorSheet'
 import { LogoFramingSheet } from '@/components/bookingPage/LogoFramingSheet';
 import { ServicePhotosSheet } from '@/components/bookingPage/ServicePhotosSheet';
 import { TeamProfilesSheet } from '@/components/bookingPage/TeamProfilesSheet';
-import { CombinedPageNotice } from '@/components/linked/CombinedPageNotice';
+import { CombinedPageScopeContent } from '@/components/linked/CombinedPageScopeContent';
+import { CombinedPageScopeSwitch, type BookingPageScope } from '@/components/linked/CombinedPageScopeSwitch';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -161,13 +162,17 @@ export default function BookingPageScreen() {
   const { venue, isLoading } = useVenueContext();
   const isAdmin = venue?.current_user_role === 'admin';
 
-  // A live venue collective this venue belongs to: the screen then opens with a
-  // pointer to Manage combined page (hosts) or to Linked venues (web 2026-09-05).
+  // A live venue collective this venue belongs to: the screen then opens on
+  // the COMBINED page, the one the venue's guests actually book on, with a
+  // switch to this venue's own page (web settings-booking-page-collective-scope
+  // plan, 2026-09-09). Not remembered: the Booking page screen means the page
+  // guests book on.
   const collectivesQuery = useCollectives({ enabled: isAdmin });
   const collectiveNote = useMemo(
     () => settingsCollectiveNote(collectivesQuery.data?.collectives ?? [], venue?.id),
     [collectivesQuery.data?.collectives, venue?.id],
   );
+  const [scope, setScope] = useState<BookingPageScope>('combined');
 
   const updateConfig = useUpdateBookingPageConfig();
   const uploadLogo = useUploadVenueLogo();
@@ -503,6 +508,21 @@ export default function BookingPageScreen() {
     );
   }
 
+  // The combined scope: the host's manager inline, or the member's summary.
+  if (collectiveNote && scope === 'combined') {
+    return (
+      <Screen scroll contentContainerStyle={styles.content}>
+        <Stack.Screen options={{ headerShown: true, title: 'Booking page' }} />
+        <CombinedPageScopeSwitch collective={collectiveNote} scope={scope} onScopeChange={setScope} />
+        <CombinedPageScopeContent
+          collectiveId={collectiveNote.id}
+          onOpenLinkedVenues={() => router.push('/linked-venues' as Href)}
+          onDissolved={() => setScope('own')}
+        />
+      </Screen>
+    );
+  }
+
   return (
     <Screen scroll contentContainerStyle={styles.content}>
       <Stack.Screen
@@ -522,21 +542,12 @@ export default function BookingPageScreen() {
       />
 
       {collectiveNote ? (
-        <CombinedPageNotice
-          collective={collectiveNote}
-          publicUrl={`${webBase}${collectiveNote.publicPath}`}
-          onCopyUrl={() => {
-            void Clipboard.setStringAsync(`${webBase}${collectiveNote.publicPath}`).then(() => {
-              hapticSuccess();
-              toast.success('Combined page link copied.');
-            });
-          }}
-          onOpenUrl={() =>
-            void WebBrowser.openBrowserAsync(`${webBase}${collectiveNote.publicPath}`).catch(() => undefined)
-          }
-          onManage={() => router.push(`/collectives/${collectiveNote.id}` as Href)}
-          onOpenLinkedAccounts={() => router.push('/linked-venues' as Href)}
-        />
+        <>
+          <CombinedPageScopeSwitch collective={collectiveNote} scope={scope} onScopeChange={setScope} />
+          <Text variant="bodySmall" tone="secondary">
+            {`These settings shape this venue’s own booking page at /book/${slug ?? ''}. Guests in the collective do not use this page unless they are sent its address.`}
+          </Text>
+        </>
       ) : null}
 
       {/* Live preview */}
