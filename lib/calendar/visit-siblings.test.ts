@@ -21,7 +21,7 @@ describe('visitSiblingIndex', () => {
     expect(index.get('a')).toEqual({ groupId: 'g1', index: 0, count: 2, anchorId: 'a' });
     expect(index.get('b')).toEqual({ groupId: 'g1', index: 1, count: 2, anchorId: 'a' });
     expect(index.has('c')).toBe(false);
-    expect(visitChipLabel(index.get('b')!)).toBe('Visit 2/2');
+    expect(visitChipLabel(index.get('b')!)).toBe('2/2');
   });
 
   it('ignores parties, lone members and ungrouped bookings', () => {

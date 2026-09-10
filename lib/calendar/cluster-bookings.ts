@@ -6,9 +6,8 @@
  * of a visit are independent now (each has its own day, calendar, length and
  * Start / Complete), so the web draws one bar per service, and so does the app.
  * What still says "these belong together" is identity rather than geometry:
- * a chip on every bar ("Visit 1/2"), the earliest service's colour shared by
- * all of them, and a spine across the seam where two meet — see
- * `visit-siblings.ts`.
+ * a chip on every bar ("1/2"), each bar in its own status colour, and a spine
+ * across the seam where two meet — see `visit-siblings.ts`.
  *
  * The cluster shape survives (one booking per cluster) so the grids, the tray
  * targets and the drag keep their plumbing: `lead` is the booking, `ids` is

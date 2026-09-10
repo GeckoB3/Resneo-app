@@ -186,10 +186,17 @@ export function pickBlockLayout(params: {
  * name must keep its reserve. The block's accessibility label carries the word
  * "paid" so the meaning is not colour- or icon-only.
  */
-/** "Visit 1/2" — one service of a multi-service visit (web #187 `VisitChip`). */
+/**
+ * "1/2" — one service of a multi-service visit (web #187 `VisitChip`, wording
+ * from web #189). The bare fraction is for the eye; a screen reader gets the
+ * sentence.
+ */
 function VisitChip({ label, color }: { label: string; color: string }) {
+  const [index, count] = label.split('/');
+  const accessibilityLabel =
+    index && count ? `Service ${index} of ${count} in this visit` : label;
   return (
-    <View style={styles.visitChip} testID="visit-chip" accessibilityLabel={label}>
+    <View style={styles.visitChip} testID="visit-chip" accessibilityLabel={accessibilityLabel}>
       <Text numberOfLines={1} style={[styles.visitChipText, { color }]}>
         {label}
       </Text>
@@ -314,9 +321,9 @@ type AppointmentBlockProps = {
    */
   nested?: boolean;
   /**
-   * "Visit 1/2": this bar is one service of a multi-service visit (web #187).
-   * The visit's services are independent bars; the chip, the shared colour
-   * and the seam spines are what say they belong together.
+   * "1/2": this bar is one service of a multi-service visit (web #187, #189).
+   * The visit's services are independent bars, each in its own status colour;
+   * the chip and the seam spines are what say they belong together.
    */
   visitChip?: string | null;
   /** A sibling of the visit meets this bar edge to edge at the top / bottom. */
@@ -888,7 +895,7 @@ const styles = StyleSheet.create({
   accentStripe: {
     width: 5,
   },
-  // "Visit 1/2" on one service of a visit (web #187, `VisitChip`): a small
+  // "1/2" on one service of a visit (web #187, `VisitChip`): a small
   // translucent pill ahead of the name, in the bar's own text colour.
   visitChip: {
     flexShrink: 0,

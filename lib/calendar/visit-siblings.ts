@@ -4,9 +4,10 @@
  *
  * Services of a visit are independent rows: each has its own bar, grip, tray
  * and drag. What still says "these belong together" is identity rather than
- * geometry: a chip on every bar ("Visit 1/2"), the earliest service's colour
- * shared by all of them, and a short spine across the seam where two of them
- * meet edge to edge in one column. This module is the pure part: which rows
+ * geometry: a chip on every bar ("1/2", web #189), and a short spine across the
+ * seam where two of them meet edge to edge in one column. Each bar wears its
+ * OWN status colour (app `ff7bc42`, web #190): a finished colour is green while
+ * the cut that has not begun stays booked. This module is the pure part: which rows
  * form a visit, their order, and whether a moved service lands on one of its
  * own siblings.
  *
@@ -69,7 +70,9 @@ export function visitSiblingIndex(rows: readonly VisitSiblingRow[]): Map<string,
 }
 
 export function visitChipLabel(position: VisitPosition): string {
-  return `Visit ${position.index + 1}/${position.count}`;
+  // "1/2", not "Visit 1/2" (web #189): the bar already shows the service name
+  // and the word said nothing the spine and the hover do not.
+  return `${position.index + 1}/${position.count}`;
 }
 
 /**

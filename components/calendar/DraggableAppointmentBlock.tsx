@@ -166,7 +166,7 @@ type DraggableAppointmentBlockProps = {
    */
   nested?: boolean;
   nestDepth?: number;
-  /** "Visit 1/2" on one service of a multi-service visit (web #187); see AppointmentBlock. */
+  /** "1/2" on one service of a multi-service visit (web #187, #189); see AppointmentBlock. */
   visitChip?: string | null;
   /** A seam with a sibling of the visit at the top / bottom edge. */
   spineTop?: boolean;

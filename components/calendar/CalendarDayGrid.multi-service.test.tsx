@@ -118,8 +118,8 @@ describe('CalendarDayGrid — a multi-service visit is one bar per service (web 
       booking('b2', '10:30', '11:00', { group_booking_id: 'g1' }),
       booking('b1', '10:00', '10:30', { group_booking_id: 'g1' }),
     ]);
-    expect(screen.getByLabelText('Visit 1/2')).toBeTruthy();
-    expect(screen.getByLabelText('Visit 2/2')).toBeTruthy();
+    expect(screen.getByLabelText('Service 1 of 2 in this visit')).toBeTruthy();
+    expect(screen.getByLabelText('Service 2 of 2 in this visit')).toBeTruthy();
   });
 
   it('draws a spine across the seam where two services of a visit touch', async () => {

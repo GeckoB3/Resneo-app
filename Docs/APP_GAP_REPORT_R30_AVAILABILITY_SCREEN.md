@@ -120,7 +120,9 @@ the full jest run green (see the commit). New or changed suites:
   of a visit wears the earliest service's status colour, so starting or completing the first
   service recoloured all of them and starting the second changed nothing visible. Each bar now
   wears its own status colour (`paletteStatus` is no longer set by either grid; the chip and the
-  spine still say the bars belong together). A deliberate divergence from the web's tint.
+  spine still say the bars belong together). Recorded as a deliberate divergence from the
+  web's tint at the time; web #190 adopted the same per-service colour later the same day
+  (`Docs/APP_GAP_REPORT_R31_WEB_DELTA.md` §4), so the two diaries agree again.
 - **"Refreshing" bar.** Not in the app: no screen renders such a banner (pull-to-refresh is a
   spinner, background refetches are invisible by design, the offline banner says Offline). It is
   Expo Go's own overlay while it reloads the JavaScript bundle in development.
