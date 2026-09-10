@@ -38,7 +38,9 @@ import { resolveCardHoldUiState, type CardHoldPillVariant } from '@/lib/booking/
 import {
   bookingPaymentStateLabel,
   buildPaymentHistory,
+  buildMoneyAtAGlance,
   buildPriceSummary,
+  depositBadge,
   canTakeInPersonPayment,
   canRefundInPerson,
   pendingCardPayments,
@@ -1018,6 +1020,12 @@ export function BookingDetailContent({
   // surface them; appointment bookings show requests/internal/profile notes.
   // Price breakdown for the Payments card: items, totals, deposit, outstanding.
   const priceRows = buildPriceSummary(booking);
+  // The same money at a glance in the hero (web #190's visit summary footer):
+  // the total and what is still owed, without opening the Payments card.
+  const money = buildMoneyAtAGlance(booking);
+  // A deposit badge only when money is owed, held, charged or refunded; a paid
+  // deposit is a line in the Payments card, not a badge (web #190).
+  const depositBadgeView = cardHoldState ? null : depositBadge(booking);
 
   const hasNotes =
     !!booking.special_requests?.trim() ||
@@ -1174,8 +1182,25 @@ export function BookingDetailContent({
               </View>
             ) : null}
 
+            {money ? (
+              <Text variant="bodySmall" tone="secondary" style={styles.moneyLine}>
+                {money.totalPence != null
+                  ? `${money.totalLabel} ${formatPence(money.totalPence)}`
+                  : `${money.totalLabel} not set`}
+                {money.outstandingPence != null && money.outstandingPence > 0 ? (
+                  <Text variant="bodySmall" color={colors.warning}>
+                    {` · ${formatPence(money.outstandingPence)} outstanding`}
+                  </Text>
+                ) : money.settled ? (
+                  <Text variant="bodySmall" color={colors.success}>
+                    {' · Paid'}
+                  </Text>
+                ) : null}
+              </Text>
+            ) : null}
+
             {(cardHoldState?.pill ||
-              (!cardHoldState && booking.deposit_status === 'Pending') ||
+              depositBadgeView ||
               showDepositFailed ||
               (isTable && booking.occasion?.trim()) ||
               attendanceBadges) ? (
@@ -1185,8 +1210,8 @@ export function BookingDetailContent({
                     label={cardHoldState.pill.label}
                     tone={CARD_HOLD_BADGE_TONE[cardHoldState.pill.variant]}
                   />
-                ) : !cardHoldState && booking.deposit_status === 'Pending' ? (
-                  <Badge label="Deposit pending" tone="warning" />
+                ) : depositBadgeView ? (
+                  <Badge label={depositBadgeView.label} tone={depositBadgeView.tone} />
                 ) : null}
                 {/* Shown even alongside a card-hold pill: a `Failed` hold row is
                     exactly the case staff must not miss, and it is the signal
@@ -1481,6 +1506,11 @@ export function BookingDetailContent({
           bookingDate={booking.booking_date}
           personLabel={booking.person_label}
           ownerVenueId={linked?.venueId ?? null}
+          priceLines={
+            booking.visit_payment && booking.visit_payment.booking_count > 1
+              ? (booking.visit_payment.lines ?? null)
+              : null
+          }
           // Start and Complete are per service (web #187): they live on the
           // card's rows, under the same edit grant as the header's actions. A
           // partner's rows are read-only here: the row-level PATCH the card
@@ -1996,6 +2026,10 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: spacing.sm,
     marginTop: spacing.sm,
+  },
+  moneyLine: {
+    marginTop: spacing.sm,
+    fontVariant: ['tabular-nums'],
   },
   heroBadges: {
     flexDirection: 'row',

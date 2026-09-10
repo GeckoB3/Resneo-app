@@ -1,4 +1,6 @@
 import {
+  buildMoneyAtAGlance,
+  depositBadge,
   MAX_IN_PERSON_PENCE,
   bookingPaymentStateLabel,
   buildPaymentHistory,
@@ -748,5 +750,64 @@ describe('canRefundInPerson', () => {
         balanceDuePence: 0,
       }),
     ).toBe(false);
+  });
+});
+
+describe('buildMoneyAtAGlance (web #190 visit summary)', () => {
+  const booking = (over: Partial<BookingDetail>): BookingDetail =>
+    ({ id: 'bk-1', status: 'Booked', booking_date: '2026-09-10', booking_time: '10:00', party_size: 1, guest_id: 'g-1', ...over }) as BookingDetail;
+
+  it('is null for a booking with no money at all', () => {
+    expect(buildMoneyAtAGlance(booking({}))).toBeNull();
+  });
+
+  it('uses the stored total, else variant + add-ons, and the balance', () => {
+    expect(
+      buildMoneyAtAGlance(booking({ service_variant_price_pence: 4000, addons_total_price_pence: 1000, balance_due_pence: 5000 })),
+    ).toEqual({ totalLabel: 'Total', totalPence: 5000, outstandingPence: 5000, settled: false });
+    expect(
+      buildMoneyAtAGlance(booking({ booking_total_price_pence: 8000, balance_due_pence: 0, amount_paid_pence: 8000 })),
+    ).toEqual({ totalLabel: 'Total', totalPence: 8000, outstandingPence: 0, settled: true });
+  });
+
+  it('reads the visit picture for a multi-service visit', () => {
+    const visit: VisitPayment = { booking_count: 2, booking_ids: ['a', 'b'], total_pence: 9000, amount_paid_pence: 2000, balance_due_pence: 7000 };
+    expect(buildMoneyAtAGlance(booking({ visit_payment: visit, booking_total_price_pence: 4000 }))).toEqual({
+      totalLabel: 'Visit total',
+      totalPence: 9000,
+      outstandingPence: 7000,
+      settled: false,
+    });
+  });
+
+  it('keeps an unpriced service with a paid deposit visible', () => {
+    expect(buildMoneyAtAGlance(booking({ deposit_status: 'Paid', deposit_amount_pence: 1000 }))).toEqual({
+      totalLabel: 'Total',
+      totalPence: null,
+      outstandingPence: null,
+      settled: false,
+    });
+  });
+});
+
+describe('depositBadge (web #190: only when money is owed, held or charged)', () => {
+  it('names what is due, with the amount', () => {
+    expect(depositBadge({ deposit_status: 'Pending', deposit_amount_pence: 1500, status: 'Booked' })).toEqual({ label: 'Deposit due £15.00', tone: 'warning' });
+    expect(
+      depositBadge({ deposit_status: 'Pending', deposit_amount_pence: 6000, service_payment_requirement: 'full_payment', status: 'Confirmed' }),
+    ).toEqual({ label: 'Payment due £60.00', tone: 'warning' });
+  });
+
+  it('says nothing for a paid deposit, and nothing due on a cancelled booking', () => {
+    expect(depositBadge({ deposit_status: 'Paid', deposit_amount_pence: 1500, status: 'Booked' })).toBeNull();
+    expect(depositBadge({ deposit_status: 'Not Required', status: 'Booked' })).toBeNull();
+    expect(depositBadge({ deposit_status: 'Pending', deposit_amount_pence: 1500, status: 'Cancelled' })).toBeNull();
+  });
+
+  it('covers charged, held, paid in full and refunded', () => {
+    expect(depositBadge({ deposit_status: 'Charged', status: 'No-Show' })).toEqual({ label: 'Fee charged', tone: 'warning' });
+    expect(depositBadge({ deposit_status: 'Card Held', status: 'Booked' })).toEqual({ label: 'Card held', tone: 'accent' });
+    expect(depositBadge({ deposit_status: 'Paid', service_payment_requirement: 'full_payment', status: 'Booked' })).toEqual({ label: 'Paid in full', tone: 'success' });
+    expect(depositBadge({ deposit_status: 'Refunded', status: 'Cancelled' })).toEqual({ label: 'Deposit refunded', tone: 'neutral' });
   });
 });

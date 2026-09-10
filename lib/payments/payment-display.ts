@@ -23,6 +23,77 @@ import type {
   VisitPayment,
 } from '@/types/booking-detail';
 
+/**
+ * The money facts the panel's hero shows at a glance (web #190's visit summary
+ * footer: "Visit total" / "Total", then what is outstanding). Null when the
+ * booking carries no money at all. `outstandingPence` is null when the price
+ * is unknown; `settled` is true when nothing is owed.
+ */
+export interface MoneyAtAGlance {
+  totalLabel: 'Visit total' | 'Total';
+  totalPence: number | null;
+  outstandingPence: number | null;
+  settled: boolean;
+}
+
+export function buildMoneyAtAGlance(booking: BookingDetail): MoneyAtAGlance | null {
+  const visit = booking.visit_payment ?? null;
+  const isVisit = !!visit && visit.booking_count > 1;
+  const computed =
+    (booking.service_variant_price_pence ?? 0) + (booking.addons_total_price_pence ?? 0);
+  const totalPence = isVisit
+    ? visit!.total_pence
+    : booking.booking_total_price_pence != null && booking.booking_total_price_pence > 0
+      ? booking.booking_total_price_pence
+      : computed > 0
+        ? computed
+        : null;
+  const amountPaid = (isVisit ? visit!.amount_paid_pence : booking.amount_paid_pence) ?? 0;
+  const outstanding = (isVisit ? visit!.balance_due_pence : booking.balance_due_pence) ?? null;
+  const depositPaid =
+    booking.deposit_status === 'Paid' && (booking.deposit_amount_pence ?? 0) > 0;
+  if (totalPence == null && amountPaid <= 0 && !depositPaid && outstanding == null) return null;
+  return {
+    totalLabel: isVisit ? 'Visit total' : 'Total',
+    totalPence,
+    outstandingPence: outstanding,
+    settled: outstanding === 0,
+  };
+}
+
+/** The tones the deposit badge uses; the same names as `Badge`'s. */
+export type DepositBadgeTone = 'warning' | 'success' | 'neutral' | 'accent';
+
+/**
+ * The deposit badge on the hero, shown ONLY when money is owed, held, charged
+ * or otherwise worth a glance (web #190: a paid deposit is a line in the money
+ * footer, not a badge). Card-hold entities are the caller's: `resolveCardHoldUiState`
+ * has the richer pill for them. Live statuses only: a cancelled booking does
+ * not owe a deposit.
+ */
+export function depositBadge(
+  booking: Pick<
+    BookingDetail,
+    'deposit_status' | 'deposit_amount_pence' | 'service_payment_requirement' | 'status'
+  >,
+): { label: string; tone: DepositBadgeTone } | null {
+  const isFull = booking.service_payment_requirement === 'full_payment';
+  const ds = booking.deposit_status ?? null;
+  const amount =
+    (booking.deposit_amount_pence ?? 0) > 0 ? ` ${formatPence(booking.deposit_amount_pence as number)}` : '';
+  if (ds === 'Pending') {
+    if (!['Pending', 'Booked', 'Confirmed'].includes(booking.status ?? '')) return null;
+    return { label: `${isFull ? 'Payment due' : 'Deposit due'}${amount}`, tone: 'warning' };
+  }
+  if (ds === 'Charged') return { label: 'Fee charged', tone: 'warning' };
+  if (ds === 'Card Held') return { label: 'Card held', tone: 'accent' };
+  if (ds === 'Paid' && isFull) return { label: 'Paid in full', tone: 'success' };
+  if (ds === 'Refunded') {
+    return { label: isFull ? 'Payment refunded' : 'Deposit refunded', tone: 'neutral' };
+  }
+  return null;
+}
+
 /** One line of the "Payments & confirmation" price summary. */
 export interface PriceSummaryRow {
   key: string;

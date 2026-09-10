@@ -11,9 +11,10 @@ import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useUpdateBookingStatus } from '@/lib/queries/useBookingMutations';
 import { useGroupVisitBookings, type GroupVisitBookingRow } from '@/lib/queries/useGroupVisit';
 import { formatDayHeading } from '@/lib/dates/venue-dates';
+import { formatPence } from '@/lib/format';
 import { useToast } from '@/providers/ToastProvider';
 import { spacing } from '@/theme/index';
-import type { BookingStatus } from '@/types/booking-detail';
+import type { BookingStatus, VisitPaymentLine } from '@/types/booking-detail';
 
 type GroupVisitCardsProps = {
   groupBookingId: string;
@@ -30,6 +31,12 @@ type GroupVisitCardsProps = {
   canChangeServiceStatus?: boolean;
   /** The partner venue a linked booking belongs to; its siblings are read across the link. */
   ownerVenueId?: string | null;
+  /**
+   * What each service costs (`visit_payment.lines` off the booking detail),
+   * so every row of the visit shows its own price beside its status (web #190's
+   * visit summary). Absent on the summary payload: the rows then show no price.
+   */
+  priceLines?: VisitPaymentLine[] | null;
 };
 
 /** "Massage – Deep tissue + Hot stones" — web `expandedBookingOfferingLine`. */
@@ -93,6 +100,7 @@ function VisitServiceRow({
   canAct,
   showDay,
   showCalendar,
+  price,
 }: {
   row: GroupVisitBookingRow;
   isCurrent: boolean;
@@ -100,6 +108,8 @@ function VisitServiceRow({
   /** The visit spans days / calendars, so each row says which one it is on. */
   showDay: boolean;
   showCalendar: boolean;
+  /** This service's price; `null` when the visit is priced but this line is not, `undefined` when no prices are known. */
+  price: number | null | undefined;
 }) {
   const toast = useToast();
   // PATCHes THIS row only: the server writes Seated and Completed to one
@@ -122,7 +132,20 @@ function VisitServiceRow({
             {showCalendar && row.calendar_name ? ` · ${row.calendar_name}` : ''}
           </Text>
         </View>
-        <StatusPill status={row.status} />
+        <View style={styles.rowTrailing}>
+          <StatusPill status={row.status} />
+          {price !== undefined ? (
+            price != null ? (
+              <Text variant="bodySmall" style={styles.price}>
+                {formatPence(price)}
+              </Text>
+            ) : (
+              <Text variant="caption" tone="muted">
+                Price not set
+              </Text>
+            )
+          ) : null}
+        </View>
       </View>
       {actions.length > 0 ? (
         <View style={styles.rowActions}>
@@ -165,6 +188,7 @@ export function GroupVisitCards({
   personLabel,
   canChangeServiceStatus = false,
   ownerVenueId = null,
+  priceLines = null,
 }: GroupVisitCardsProps) {
   const query = useGroupVisitBookings(groupBookingId, ownerVenueId);
   const rows = query.data ?? [];
@@ -226,6 +250,8 @@ export function GroupVisitCards({
   const totalMinutes = spansDays
     ? rows.reduce((sum, row) => sum + (rowMinutes(row) ?? 0), 0)
     : (visit?.totalMinutes ?? rows.reduce((sum, row) => sum + (rowMinutes(row) ?? 0), 0));
+  // Per-service prices, when the detail payload carries the visit's lines.
+  const priceByRow = priceLines && priceLines.length > 0 ? new Map(priceLines.map((l) => [l.booking_id, l.total_pence])) : null;
   return (
     <Card>
       <Text variant="label">Services in this visit</Text>
@@ -249,6 +275,7 @@ export function GroupVisitCards({
             canAct={canChangeServiceStatus}
             showDay={spansDays}
             showCalendar={spansCalendars}
+            price={priceByRow ? (priceByRow.get(row.id) ?? null) : undefined}
           />
         ))}
       </View>
@@ -277,6 +304,13 @@ const styles = StyleSheet.create({
   rowActions: {
     flexDirection: 'row',
     gap: spacing.sm,
+  },
+  rowTrailing: {
+    alignItems: 'flex-end',
+    gap: 2,
+  },
+  price: {
+    fontVariant: ['tabular-nums'],
   },
   currentRow: {
     opacity: 0.9,
