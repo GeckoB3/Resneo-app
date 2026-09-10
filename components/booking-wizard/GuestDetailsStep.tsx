@@ -72,9 +72,10 @@ function guestMeta(guest: GuestListItem): string {
 
 /**
  * Guest details — mirrors the web staff DetailsStep: separate First name +
- * Surname, optional email, phone (required for phone bookings, optional for
- * walk-ins), plus a comments box. Required fields carry a red asterisk; optional
- * ones say "(optional)". An existing-guest search fills all four contact fields.
+ * Surname, email and phone, ALL optional for every staff source since web #190
+ * (a caller in a hurry can still be booked in; without a phone there is no text
+ * reminder, without an email no confirmation), plus a comments box. Optional
+ * fields say "(optional)". An existing-guest search fills all four contact fields.
  */
 /** Address fields whose presence is gated when collecting a client address. */
 type AddressField = 'address_line1' | 'address_city' | 'address_postcode';
@@ -302,6 +303,7 @@ export function GuestDetailsStep({
           autoComplete="email"
           editable={!readOnlyContact}
           error={fieldErrors.email}
+          helper="Without an email the client gets no confirmation."
           keyboardType="email-address"
           label="Email"
           optional
@@ -315,9 +317,9 @@ export function GuestDetailsStep({
           editable={!readOnlyContact}
           error={fieldErrors.phone}
           keyboardType="phone-pad"
+          helper="Without a phone number the client gets no text reminder."
           label="Phone"
-          optional={isWalkIn}
-          required={!isWalkIn}
+          optional
           onChangeText={(phone) => editContact({ phone })}
           placeholder="Phone number"
           textContentType="telephoneNumber"

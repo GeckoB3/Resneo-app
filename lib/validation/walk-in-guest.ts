@@ -12,18 +12,22 @@ const optionalEmail = z
   });
 
 /**
- * Guest schema for the appointment booking wizard. Mirrors the web DetailsStep:
- * names + email are always optional; phone is required for phone bookings but
- * optional for walk-ins (walk-ins have NO mandatory fields). Unknown keys (e.g.
- * `special_requests`) are ignored by the object parse.
+ * Guest schema for the staff booking wizard. Mirrors the web DetailsStep since
+ * web #190 (2026-09-10): EVERY contact field is optional for every staff source,
+ * so a booking taken at the desk or over the phone is never held up by a detail
+ * the staff member does not have. A booking without a phone gets no text
+ * reminder and one without an email gets no confirmation; the server accepts
+ * both (`POST /api/venue/bookings` dropped its per-model "Phone number is
+ * required" checks). A phone that IS typed must still be a real number, which
+ * the server checks (400 "Invalid phone number"); the client keeps only a
+ * length guard. Unknown keys (e.g. `special_requests`) are ignored by the
+ * object parse. `isWalkIn` is kept for callers; it no longer changes the rule.
  */
-export function buildGuestSchema(isWalkIn: boolean) {
+export function buildGuestSchema(_isWalkIn = false) {
   return z.object({
     first_name: z.string().trim().max(100, 'First name is too long').optional(),
     last_name: z.string().trim().max(100, 'Surname is too long').optional(),
-    phone: isWalkIn
-      ? z.string().trim().max(24, 'Phone is too long').optional()
-      : z.string().trim().min(1, 'Phone is required').max(24, 'Phone is too long'),
+    phone: z.string().trim().max(24, 'Phone is too long').optional(),
     email: optionalEmail,
   });
 }
