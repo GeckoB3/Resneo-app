@@ -1,21 +1,16 @@
 import { useRouter, type Href } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
-import { Keyboard, Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import Animated, { FadeInDown, FadeOutDown } from 'react-native-reanimated';
-import { useReduceMotion, motionSafe } from '@/lib/motion';
+import { useRef } from 'react';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import Animated from 'react-native-reanimated';
 import { SymbolView } from 'expo-symbols';
 
 import { BookingDetailContent } from '@/components/bookings/BookingDetailContent';
 import { useSheetKeyboardScroll } from '@/components/bookings/sheet-scroll-context';
-import { Button } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Sheet } from '@/components/ui/Sheet';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
-import { primaryActionColors } from '@/lib/booking/booking-action-colors';
-import { bookingDetailActions } from '@/lib/booking/booking-status-actions';
-import { isTableReservationBooking } from '@/lib/booking/infer-booking-row-model';
 import { useToast } from '@/providers/ToastProvider';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useBookingDetail } from '@/lib/queries/useBookingDetail';
@@ -23,7 +18,7 @@ import { useDashboardHome } from '@/lib/queries/useDashboardHome';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { useAcceptUnpaidGuard } from '@/components/bookings/AcceptUnpaidSheet';
 import { useUpdateBookingStatus } from '@/lib/queries/useBookingMutations';
-import { linkedDetailPolicy, type LinkedBookingContext } from '@/lib/linked/linked-detail-policy';
+import type { LinkedBookingContext } from '@/lib/linked/linked-detail-policy';
 import { isAppointmentExperience } from '@/lib/venue/venue-experience';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { minTouchTarget, spacing } from '@/theme/index';
@@ -52,77 +47,6 @@ type BookingDetailSheetProps = {
   linked?: LinkedBookingContext | null;
 };
 
-/**
- * Tracks soft-keyboard visibility so the pinned action bar yields while typing.
- *
- * Deliberately consumed ONLY by {@link KeyboardAwareActionBar} below, never by
- * the sheet itself. This is the one place in the app that answers keyboard
- * events with React state rather than a Reanimated shared value, because the
- * bar mounts and unmounts (it has enter/exit animations) and a shared value
- * cannot drive that. Keeping the subscription down here bounds the cost to the
- * bar: iOS re-emits `keyboardDidShow` every time the keyboard reconfigures —
- * moving between fields with different `keyboardType` produced bursts of four
- * in 20ms in a 2026-08-09 trace — and each of those used to re-render the whole
- * booking detail tree.
- */
-function useKeyboardVisible() {
-  const [visible, setVisible] = useState(false);
-  useEffect(() => {
-    const show = Keyboard.addListener('keyboardDidShow', () => setVisible(true));
-    const hide = Keyboard.addListener('keyboardDidHide', () => setVisible(false));
-    return () => {
-      show.remove();
-      hide.remove();
-    };
-  }, []);
-  return visible;
-}
-
-/**
- * The pinned primary-action bar, which hides itself while the keyboard is up so
- * it never sits on top of the field being typed into.
- *
- * Its own component so the keyboard subscription re-renders this bar alone. The
- * scroll body reserves room for it unconditionally, so nothing above has to know
- * whether it is currently showing.
- */
-function KeyboardAwareActionBar({
-  label,
-  colors,
-  reduceMotion,
-  loading,
-  actionColors,
-  onPress,
-}: {
-  label: string;
-  colors: { border: string; surfaceRaised: string };
-  reduceMotion: boolean;
-  loading: boolean;
-  actionColors: ReturnType<typeof primaryActionColors>;
-  onPress: () => void;
-}) {
-  const keyboardVisible = useKeyboardVisible();
-  if (keyboardVisible) return null;
-  return (
-    <Animated.View
-      entering={motionSafe(FadeInDown.duration(180), reduceMotion)}
-      exiting={motionSafe(FadeOutDown.duration(120), reduceMotion)}
-      style={[
-        styles.actionBar,
-        { borderTopColor: colors.border, backgroundColor: colors.surfaceRaised },
-      ]}>
-      <Button
-        label={label}
-        variant="primary"
-        customColors={actionColors}
-        size="lg"
-        fullWidth
-        loading={loading}
-        onPress={onPress}
-      />
-    </Animated.View>
-  );
-}
 
 /**
  * The full booking command-centre — the same {@link BookingDetailContent} the
@@ -143,10 +67,8 @@ export function BookingDetailSheet({
 }: BookingDetailSheetProps) {
   const router = useRouter();
   const { colors } = useTheme();
-  const reduceMotion = useReduceMotion();
   const toast = useToast();
   const { venue } = useVenueContext();
-  const policy = linkedDetailPolicy(linked?.act);
   const detailQuery = useBookingDetail(bookingId ?? undefined);
   const dashboardQuery = useDashboardHome();
   const staffQuery = useStaffMe();
@@ -216,14 +138,6 @@ export function BookingDetailSheet({
   };
 
   const booking = detailQuery.data;
-  const isTable = booking ? isTableReservationBooking(booking) : false;
-  // The pinned bar surfaces only the forward transition (Confirm / Start /
-  // Complete); reverts and destructive actions stay in the scrollable body. A
-  // view-only link has no transitions to offer (web: the actions bar is hidden).
-  const primaryAction =
-    booking && policy.canEdit
-      ? bookingDetailActions(booking.status, isTable).find((a) => a.kind === 'primary')
-      : undefined;
 
   return (
     <Sheet visible={!!bookingId} onClose={onClose} fill maxHeight="94%" keyboardAvoidance="overlay">
@@ -284,14 +198,7 @@ export function BookingDetailSheet({
           <ScrollView
             ref={scrollRef}
             style={styles.scroll}
-            contentContainerStyle={[
-              styles.scrollContent,
-              // Room for the pinned bar is reserved whether or not it is showing.
-              // It only hides while the keyboard is up, and the keyboard covers
-              // that space anyway — so making this conditional bought nothing and
-              // cost a re-render of this whole tree per keyboard event.
-              primaryAction ? styles.scrollContentWithBar : null,
-            ]}
+            contentContainerStyle={styles.scrollContent}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="interactive"
             onScroll={onScroll}
@@ -310,24 +217,12 @@ export function BookingDetailSheet({
                 isAppointmentVenue={isAppointmentVenue}
                 onStatusChange={handleStatusChange}
                 onDeleted={onClose}
-                showPrimaryAction={false}
                 fallbackServiceName={fallbackServiceName}
                 fallbackPractitionerName={fallbackPractitionerName}
                 linked={linked}
               />
             </Animated.View>
           </ScrollView>
-
-          {primaryAction ? (
-            <KeyboardAwareActionBar
-              label={primaryAction.label}
-              colors={colors}
-              reduceMotion={reduceMotion}
-              loading={updateStatus.isPending}
-              actionColors={primaryActionColors(primaryAction.target)}
-              onPress={() => handleStatusChange(primaryAction.target)}
-            />
-          ) : null}
         </>
       )}
 
@@ -371,14 +266,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
     paddingBottom: spacing['2xl'],
-  },
-  scrollContentWithBar: {
-    // Clear the pinned action bar so the last card isn't hidden behind it.
-    paddingBottom: spacing['3xl'] + spacing.xl,
-  },
-  actionBar: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    borderTopWidth: StyleSheet.hairlineWidth,
   },
 });

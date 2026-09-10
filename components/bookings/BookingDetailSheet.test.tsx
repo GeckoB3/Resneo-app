@@ -1,17 +1,13 @@
 /**
- * The pinned action bar yields to the keyboard.
+ * The booking sheet has NO pinned action bar (2026-09-10). It used to pin the
+ * forward status action at the bottom, where it sat behind Android's
+ * navigation bar, started only one row of a multi-service visit, and was not
+ * visit-aware. The primary action now lives in the body's own actions card
+ * (`BookingDetailContent`, alongside Take payment / Arrived / Confirm), which
+ * hides it for a visit because every row of the visit carries its own.
  *
- * This is the one place in the app that answers keyboard events with React
- * state rather than a Reanimated shared value, because the bar mounts and
- * unmounts (it has enter/exit animations) and a shared value cannot drive that.
- * The subscription therefore lives in the BAR, not the sheet: iOS re-emits
- * `keyboardDidShow` whenever the keyboard reconfigures — moving between fields
- * of different `keyboardType` produced bursts of four inside 20ms in a
- * 2026-08-09 trace — and every one of those used to re-render the entire
- * booking detail tree.
- *
- * These tests pin the behaviour AND the containment: the body must not re-render
- * when the keyboard toggles.
+ * These tests pin that: no bar-level action, and the body not re-rendering
+ * when the keyboard toggles (there is no keyboard subscription left to do so).
  *
  * jest hoists mock factories above imports, so closed-over vars are `mock*`.
  */
@@ -37,8 +33,8 @@ jest.mock('@/components/bookings/BookingDetailContent', () => {
   const React = require('react');
   const { Text } = require('react-native');
   return {
-    BookingDetailContent: () => {
-      mockContentRender();
+    BookingDetailContent: (props: Record<string, unknown>) => {
+      mockContentRender(props);
       return React.createElement(Text, null, '__detail_body__');
     },
   };
@@ -129,8 +125,8 @@ function renderSheet() {
 }
 
 /**
- * A linked venue's booking opens the same sheet; the grant decides whether the
- * pinned status action exists at all (web: no actions bar on a view-only link).
+ * A linked venue's booking opens the same sheet and hands the grant to the
+ * body, which decides what to offer (web: no actions bar on a view-only link).
  */
 describe('BookingDetailSheet for a linked booking', () => {
   function renderLinked(act: 'none' | 'edit_existing' | 'create_edit_cancel') {
@@ -143,47 +139,28 @@ describe('BookingDetailSheet for a linked booking', () => {
     );
   }
 
-  it('names the venue and withholds the pinned action on a view-only link', async () => {
+  it('names the venue and hands the body the link, never a bar-level action', async () => {
     await act(async () => {
       renderLinked('none');
     });
     expect(screen.getByText('Linked · light2')).toBeTruthy();
     expect(screen.queryByText('Accept')).toBeNull();
-  });
-
-  it('keeps the pinned action on an edit grant', async () => {
-    await act(async () => {
-      renderLinked('edit_existing');
-    });
-    expect(screen.getByText('Linked · light2')).toBeTruthy();
-    expect(screen.getByText('Accept')).toBeTruthy();
+    const props = mockContentRender.mock.calls.at(-1)![0] as { linked?: { act: string }; showPrimaryAction?: boolean };
+    expect(props.linked?.act).toBe('none');
+    expect(props.showPrimaryAction).not.toBe(false);
   });
 });
 
-describe('BookingDetailSheet action bar', () => {
-  it('shows the primary action while the keyboard is down', async () => {
+describe('BookingDetailSheet has no pinned action bar', () => {
+  it('leaves the primary action to the body', async () => {
     await act(async () => {
       renderSheet();
     });
-    // "Pending" offers Accept as its primary action.
-    expect(screen.getByText('Accept')).toBeTruthy();
-  });
-
-  it('hides it while the keyboard is up, so it never covers the field', async () => {
-    await act(async () => {
-      renderSheet();
-    });
-    await emitKeyboard('keyboardDidShow');
+    // "Pending" would offer Accept as its primary action; the sheet itself draws none.
     expect(screen.queryByText('Accept')).toBeNull();
-  });
-
-  it('brings it back when the keyboard goes down', async () => {
-    await act(async () => {
-      renderSheet();
-    });
-    await emitKeyboard('keyboardDidShow');
-    await emitKeyboard('keyboardDidHide');
-    expect(screen.getByText('Accept')).toBeTruthy();
+    expect(screen.getByText('__detail_body__')).toBeTruthy();
+    const props = mockContentRender.mock.calls.at(-1)![0] as { showPrimaryAction?: boolean };
+    expect(props.showPrimaryAction).not.toBe(false);
   });
 
   it('does NOT re-render the detail body when the keyboard toggles', async () => {
@@ -192,7 +169,6 @@ describe('BookingDetailSheet action bar', () => {
     });
     mockContentRender.mockClear();
 
-    // The burst that used to cost a full tree render each time.
     await emitKeyboard('keyboardDidShow');
     await emitKeyboard('keyboardDidHide');
     await emitKeyboard('keyboardDidShow');

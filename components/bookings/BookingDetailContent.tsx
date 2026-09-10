@@ -113,7 +113,12 @@ type BookingDetailContentProps = {
   /** Called after a permanent delete so the host can dismiss/navigate away. */
   onDeleted?: () => void;
   /**
-   * The sheet host surfaces the primary status action in a pinned bottom bar,
+   * Kept for a host that surfaces the primary status action itself. Since
+   * 2026-09-10 no host does: the sheet used to pin it in a bottom bar, which
+   * sat behind Android's navigation bar, started only ONE row of a visit, and
+   * was not visit-aware (owner's ask: the forward action lives in this card
+   * with Take payment, Arrived and Confirm, and a multi-service visit has no
+   * bar-level Start at all because every row carries its own),
    * so it hides the inline copy. The full-screen route keeps it inline.
    */
   showPrimaryAction?: boolean;
