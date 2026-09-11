@@ -1544,9 +1544,7 @@ export function BookingDetailContent({
           {booking.created_at ? (
             <DetailRow
               label="Created"
-              value={`${formatTimelineEventTime(booking.created_at)}${
-                booking.created_by_name ? ` · ${booking.created_by_name}` : ''
-              }`}
+              value={formatTimelineEventTime(booking.created_at)}
             />
           ) : null}
           <Pressable

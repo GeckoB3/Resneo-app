@@ -2,6 +2,7 @@ import { useMutation, useQueryClient, type QueryKey } from '@tanstack/react-quer
 
 import { apiFetch } from '@/lib/api/client';
 import { invalidateAppointmentAvailability } from '@/lib/queries/invalidateAvailability';
+import type { BookingModificationNotifyResult } from '@/lib/booking/modification-notify-result';
 import { queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import type { BookingDetail, BookingStatus } from '@/types/booking-detail';
@@ -446,11 +447,15 @@ export interface ValidateAppointmentModificationInput {
   /** HH:mm */
   booking_time: string;
   /**
-   * Send only on a real reassign — see {@link ModifyAppointmentInput.practitioner_id}.
-   * The validate route has carried the same gate for longer than the PATCH route
-   * has, so a dry run that re-asserted an unchanged calendar 403'd first.
+   * The calendar the change would land on — the booking's own when nothing has
+   * moved. REQUIRED here, unlike on the PATCH: the route's schema types it
+   * `z.string().uuid()` and answers 400 "Invalid request" without it, so every
+   * dry run was rejected and the sheet's live availability check never ran. The
+   * PATCH still sends it only on a real reassign, because THERE its presence
+   * arms the managed-calendar gate (R16-1). A non-admin dry-running a
+   * colleague's booking gets a 403, which the sheet reads as "unknown".
    */
-  practitioner_id?: string;
+  practitioner_id: string;
   appointment_service_id?: string | null;
   service_item_id?: string | null;
   duration_minutes?: number | null;
@@ -573,11 +578,15 @@ export function useNotifyBookingModification() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (input: { bookingId: string }): Promise<{ ok: boolean }> => {
+    mutationFn: async (
+      input: { bookingId: string },
+    ): Promise<BookingModificationNotifyResult & { ok?: boolean }> => {
       if (!accessToken) {
         throw new Error('Missing access token');
       }
-      return apiFetch<{ ok: boolean }>(
+      // The 200 carries what actually went out (`emailSent` / `smsSent`) or why
+      // nothing did (`skipped`, `skippedReason`) — see the result helper.
+      return apiFetch<BookingModificationNotifyResult & { ok?: boolean }>(
         `/api/venue/bookings/${input.bookingId}/guest-modification-notify`,
         { accessToken, method: 'POST' },
       );

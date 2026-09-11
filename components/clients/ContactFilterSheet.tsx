@@ -82,10 +82,32 @@ function selectedHint(
 // The backend only accepts `subscribed | not_subscribed` and silently defaults
 // to `subscribed` for anything else — so the previous opted_in/opted_out/no_record
 // options returned WRONG contacts. These two values are the only valid ones.
+// Descriptions are the web's, from the same radio pair (ContactsDashboard.tsx
+// ~1398-1413); the selected one is shown under the control.
 const MARKETING_OPTIONS = [
-  { value: 'subscribed', label: 'Subscribed' },
-  { value: 'not_subscribed', label: 'Not subscribed' },
+  {
+    value: 'subscribed',
+    label: 'Subscribed',
+    hint: 'Happy to hear from you by email or SMS where the venue allows it.',
+  },
+  {
+    value: 'not_subscribed',
+    label: 'Not subscribed',
+    hint: 'Opted out or never gave marketing permission.',
+  },
 ] as const;
+
+/**
+ * The web titles each segment's date pair for what it actually bounds: consent
+ * dates on the marketing list, and the booking's own date on the last-staff and
+ * last-service lists (ContactsDashboard.tsx ~1448-1482, ~1503-1540) — which the
+ * guests route applies to those two segments as well (route ~336-360).
+ */
+function dateSectionTitle(segment: string): string {
+  if (segment === 'marketing') return 'When consent was saved (optional)';
+  if (segment === 'last_staff' || segment === 'last_service') return 'Booking date (optional)';
+  return 'Dates';
+}
 
 /** Migrate persisted/legacy marketing values onto the backend's two accepted ones. */
 function normaliseMarketing(value: string): string {
@@ -157,7 +179,14 @@ export function ContactFilterSheet({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
-  const segmentNeedsDateRange = ['new', 'upcoming', 'visit', 'marketing'].includes(draft.segment);
+  const segmentNeedsDateRange = [
+    'new',
+    'upcoming',
+    'visit',
+    'marketing',
+    'last_staff',
+    'last_service',
+  ].includes(draft.segment);
   const segmentNeedsMarketing = draft.segment === 'marketing';
   const segmentNeedsTag = draft.segment === 'tag';
   const segmentNeedsStaff = draft.segment === 'last_staff';
@@ -351,14 +380,40 @@ export function ContactFilterSheet({
             </View>
           ) : null}
 
-          {/* Date range */}
+          {/* Marketing consent sub-filter — above its dates, as on the web,
+              whose hint points at the date pair below it. */}
+          {segmentNeedsMarketing ? (
+            <View style={styles.section}>
+              <Text variant="label">Marketing consent</Text>
+              <Segmented
+                options={MARKETING_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+                value={normaliseMarketing(draft.marketing)}
+                onChange={(v) => {
+                  hapticSelect();
+                  setDraft((d) => ({ ...d, marketing: v }));
+                }}
+              />
+              {selectedHint(MARKETING_OPTIONS, normaliseMarketing(draft.marketing)) ? (
+                <Text variant="caption" tone="muted">
+                  {selectedHint(MARKETING_OPTIONS, normaliseMarketing(draft.marketing))}
+                </Text>
+              ) : null}
+              <Text variant="caption" tone="muted">
+                Choose whether they are currently subscribed. Dates below look at when consent was
+                recorded.
+              </Text>
+            </View>
+          ) : null}
+
+          {/* Date range — for the marketing, last-staff and last-service lists
+              too, each titled for what it bounds. */}
           {segmentNeedsDateRange ? (
             <View style={styles.section}>
-              <Text variant="label">Date range</Text>
+              <Text variant="label">{dateSectionTitle(draft.segment)}</Text>
               <View style={styles.dateRow}>
                 <View style={styles.dateField}>
                   <Text variant="caption" tone="muted">
-                    From
+                    Starting
                   </Text>
                   <DatePickerField
                     value={draft.date_from || todayIso}
@@ -368,7 +423,7 @@ export function ContactFilterSheet({
                 </View>
                 <View style={styles.dateField}>
                   <Text variant="caption" tone="muted">
-                    To
+                    Ending
                   </Text>
                   <DatePickerField
                     value={draft.date_to || todayIso}
@@ -382,21 +437,6 @@ export function ContactFilterSheet({
                   {rangeError}
                 </Text>
               ) : null}
-            </View>
-          ) : null}
-
-          {/* Marketing consent sub-filter */}
-          {segmentNeedsMarketing ? (
-            <View style={styles.section}>
-              <Text variant="label">Consent status</Text>
-              <Segmented
-                options={MARKETING_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
-                value={normaliseMarketing(draft.marketing)}
-                onChange={(v) => {
-                  hapticSelect();
-                  setDraft((d) => ({ ...d, marketing: v }));
-                }}
-              />
             </View>
           ) : null}
         </ScrollView>

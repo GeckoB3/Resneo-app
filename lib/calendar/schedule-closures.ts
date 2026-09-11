@@ -47,8 +47,23 @@ import {
  * amended hours (web retired its own): the grid follows the resolved hours,
  * so the open part of an amended day looks like any other working day —
  * see `column-day-hours.ts`.
+ *
+ * The builder emits the first two. The other three come out of
+ * {@link partitionClosureBands}, which the grids run over the venue's closed
+ * minutes and the calendar's, so no minute carries two explanations (web
+ * `partitionScheduleClosureBlocks`, 2026-09-10):
+ *
+ *  - `venue_closed` — the business is shut, the calendar would work;
+ *  - `practitioner_closed` — the business is open, the calendar is not working;
+ *  - `venue_and_calendar_closed` — both;
+ *  - `linked_venue_closed` — a partner venue's own closed hours, on its column.
  */
-export type ScheduleClosureBlockType = 'practitioner_closed' | 'practitioner_leave';
+export type ScheduleClosureBlockType =
+  | 'practitioner_closed'
+  | 'practitioner_leave'
+  | 'venue_closed'
+  | 'venue_and_calendar_closed'
+  | 'linked_venue_closed';
 
 export interface ScheduleClosureOverlay {
   id: string;
@@ -154,29 +169,25 @@ function overlay(
 }
 
 /**
- * The closed / leave bands for one calendar on one date.
+ * The closed / leave bands for one calendar on one date, over the WHOLE day.
  *
- * `venueOpenRanges` is what the venue allows that day FOR THIS COLUMN (the
- * venue's hours, widened to the calendar's amended hours on an amended day —
- * `resolveColumnDayHours`). Non-working time is drawn only INSIDE it, because
- * the hours a venue is shut are already shaded venue-wide: without that clip
- * every column would carry a second, darker band over the same minutes. Pass
- * an empty array when the venue imposes no hours, and the whole day is used
- * instead.
+ * They used to be clipped to the venue's open window, because the venue's shut
+ * hours were shaded separately and a second band over the same minutes said
+ * nothing new. Since the web's 2026-09-10 stripes each minute must say exactly
+ * why it is unavailable — venue shut, calendar not working, or both — so the
+ * calendar's bands now cover the day and the grid partitions them against the
+ * venue's closed minutes ({@link partitionClosureBands}). The grid clips the
+ * result to its visible window.
  */
 export function buildCalendarClosureOverlays(params: {
   calendarId: string;
   dateStr: string;
   calendar: CalendarScheduleRow | null | undefined;
   leavePeriods: readonly LeavePeriodInput[];
-  venueOpenRanges: readonly MinuteRange[];
 }): ScheduleClosureOverlay[] {
-  const { calendarId, dateStr, calendar, leavePeriods, venueOpenRanges } = params;
+  const { calendarId, dateStr, calendar, leavePeriods } = params;
 
-  const window: MinuteRange[] =
-    venueOpenRanges.length > 0
-      ? unionRanges([...venueOpenRanges])
-      : [{ start: DAY_START, end: DAY_END }];
+  const window: MinuteRange[] = [{ start: DAY_START, end: DAY_END }];
 
   const leave = leaveForCalendarOnDate(calendarId, dateStr, leavePeriods);
   const out: ScheduleClosureOverlay[] = [];
@@ -184,7 +195,10 @@ export function buildCalendarClosureOverlays(params: {
   // Leave first: it says WHY the column is empty, and a day off would only say
   // the same thing less usefully. Web makes the same call.
   if (leave.fullDay) {
-    const label = leave.note ? `On leave — ${leave.note}` : 'On leave';
+    // The stripe says only that the calendar is on leave; the grid relabels it
+    // with its own minutes (`scheduleClosureBlockLabel`). The note is left off,
+    // as on the web, whose leave blocks carry `reason: null`.
+    const label = 'On leave';
     for (const range of window) out.push(overlay('practitioner_leave', calendarId, dateStr, range, label));
     return out;
   }
@@ -211,7 +225,7 @@ export function buildCalendarClosureOverlays(params: {
   // sets rather than one merged band, so "on leave 2–4" stays distinguishable
   // from "does not work Wednesday afternoons".
   if (leave.partial.length > 0 && working.length > 0) {
-    const label = leave.note ? `On leave — ${leave.note}` : 'On leave';
+    const label = 'On leave';
     for (const range of intersect(leave.partial, intersect(working, window))) {
       out.push(overlay('practitioner_leave', calendarId, dateStr, range, label));
     }
@@ -235,8 +249,153 @@ export function isScheduleClosureBlockType(blockType: string | null | undefined)
     blockType === 'practitioner_leave' ||
     blockType === 'calendar_amended_hours' ||
     blockType === 'venue_closed' ||
-    blockType === 'venue_amended_hours'
+    blockType === 'venue_amended_hours' ||
+    blockType === 'venue_and_calendar_closed' ||
+    blockType === 'linked_venue_closed'
   );
+}
+
+function hm(t: string): string {
+  return t.slice(0, 5);
+}
+
+/**
+ * The words on a closure stripe (web `scheduleClosureBlockLabel`). Every
+ * stripe says why the minutes are unavailable and which minutes: "Venue closed
+ * 18:00 to 20:00" when the calendar would work but the business is shut,
+ * "Hannah unavailable 08:00 to 09:00" when the business is open but the
+ * calendar is not working, "Hannah closed 08:00 to 09:00" when both apply
+ * (the calendar's own closure is what keeps those minutes shut, so it is
+ * named rather than a bare "Closed").
+ */
+export function scheduleClosureBlockLabel(
+  blockType: string | null | undefined,
+  opts?: { columnName?: string | null; startTime?: string; endTime?: string },
+): string {
+  const range = opts?.startTime && opts?.endTime ? ` ${hm(opts.startTime)} to ${hm(opts.endTime)}` : '';
+  if (blockType === 'practitioner_leave') return `On leave${range}`;
+  if (blockType === 'venue_closed') return `Venue closed${range}`;
+  if (blockType === 'practitioner_closed') {
+    const who = opts?.columnName?.trim() || 'Calendar';
+    return `${who} unavailable${range}`;
+  }
+  if (blockType === 'linked_venue_closed') return `Linked venue closed${range}`;
+  if (blockType === 'venue_and_calendar_closed') {
+    const who = opts?.columnName?.trim() || 'Calendar';
+    return `${who} closed${range}`;
+  }
+  return `Closed${range}`;
+}
+
+/** Remove `cuts` from `ranges`; a cut through the middle splits a range in two. */
+function subtractRanges(ranges: MinuteRange[], cuts: MinuteRange[]): MinuteRange[] {
+  let out = unionRanges(ranges);
+  for (const cut of unionRanges(cuts)) {
+    const next: MinuteRange[] = [];
+    for (const r of out) {
+      if (cut.end <= r.start || cut.start >= r.end) {
+        next.push(r);
+        continue;
+      }
+      if (cut.start > r.start) next.push({ start: r.start, end: cut.start });
+      if (cut.end < r.end) next.push({ start: cut.end, end: r.end });
+    }
+    out = next;
+  }
+  return out;
+}
+
+/** A band the grids draw: the block, and its minutes already clipped to the window. */
+export interface ClosureBandEntry<T> {
+  block: T;
+  start: number;
+  end: number;
+}
+
+/**
+ * One explanation per minute (web `partitionScheduleClosureBlocks`).
+ *
+ * Takes the venue's closed minutes for the column (from `venueClosedRanges`,
+ * already clipped to the grid window) and the column's overlays (already
+ * clamped), and returns the bands to draw in their place:
+ *
+ *  - minutes only the venue is shut → `venue_closed` (`linked_venue_closed` on
+ *    a partner's column, where the "venue" is theirs);
+ *  - minutes only the calendar is off → `practitioner_closed`, kept from the
+ *    builder's band but relabelled with the column's name and the range;
+ *  - minutes both apply → `venue_and_calendar_closed`.
+ *
+ * Leave bands pass through whole (relabelled with their minutes), and so do
+ * breaks, manual blocks and a partner's busy time. Leave is deliberately NOT
+ * clipped to the venue's open hours: it is the one band the drag treats as a
+ * wall, so hiding it over the venue's shut minutes would make a drop there
+ * look allowed when the server refuses it.
+ */
+export function partitionClosureBands<T extends { id: string; blockType?: string | null; label?: string | null }>(
+  params: {
+    venueClosed: readonly MinuteRange[];
+    entries: readonly ClosureBandEntry<T>[];
+    columnName?: string | null;
+    /** The venue's closed minutes belong to a partner venue (its own column). */
+    linked?: boolean;
+    /** Namespaces the synthetic bands' ids (one column and date). */
+    keyPrefix: string;
+  },
+): ClosureBandEntry<T | ScheduleClosureOverlay>[] {
+  const { venueClosed, entries, columnName, linked = false, keyPrefix } = params;
+  const venue = unionRanges([...venueClosed]);
+  const calendar: MinuteRange[] = [];
+  const passthrough: ClosureBandEntry<T | ScheduleClosureOverlay>[] = [];
+  for (const entry of entries) {
+    if (entry.block.blockType === 'practitioner_closed') {
+      calendar.push({ start: entry.start, end: entry.end });
+    } else if (entry.block.blockType === 'practitioner_leave') {
+      // Leave passes through whole, as on the web: over the venue's shut hours
+      // too, where it keeps being the wall the drag refuses (a person on leave
+      // is not in the building, whatever the venue's hours say). It is drawn
+      // after the venue stripes, so it covers them. Relabelled with its own
+      // minutes, the web's "On leave 09:00 to 17:00".
+      const startTime = minutesToTime(entry.start);
+      const endTime = minutesToTime(entry.end);
+      passthrough.push({
+        block: {
+          ...entry.block,
+          label: scheduleClosureBlockLabel('practitioner_leave', { startTime, endTime }),
+        },
+        start: entry.start,
+        end: entry.end,
+      });
+    } else {
+      passthrough.push(entry);
+    }
+  }
+
+  const band = (
+    blockType: ScheduleClosureBlockType,
+    r: MinuteRange,
+  ): ClosureBandEntry<ScheduleClosureOverlay> => {
+    const start = minutesToTime(r.start);
+    const end = minutesToTime(r.end);
+    return {
+      block: {
+        id: `${blockType}:${keyPrefix}:${r.start}-${r.end}`,
+        start,
+        end,
+        label: scheduleClosureBlockLabel(blockType, { columnName, startTime: start, endTime: end }),
+        isEditable: false,
+        blockType,
+      },
+      start: r.start,
+      end: r.end,
+    };
+  };
+
+  const out: ClosureBandEntry<T | ScheduleClosureOverlay>[] = [];
+  const venueType: ScheduleClosureBlockType = linked ? 'linked_venue_closed' : 'venue_closed';
+  for (const r of subtractRanges(venue, calendar)) out.push(band(venueType, r));
+  for (const r of subtractRanges(calendar, venue)) out.push(band('practitioner_closed', r));
+  for (const r of intersect(venue, calendar)) out.push(band('venue_and_calendar_closed', r));
+  return [...out, ...passthrough];
 }
 
 /**

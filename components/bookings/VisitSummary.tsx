@@ -97,10 +97,15 @@ function offeringLine(row: { booking_item_name?: string | null; service_variant_
 }
 
 /**
- * Start, Complete, Undo start, Reopen: the service-level lifecycle of one row
- * of a visit. The same words and colours as the panel's own action bar
+ * Start, Complete, Undo start, Undo complete: the service-level lifecycle of
+ * one row of a visit, the web's `segmentLifecycleActions` word for word and
+ * target for target. The same colours as the panel's own action bar
  * (`bookingDetailActions`, `ACTION_COLORS`), so a row's Start reads as the
  * same act as a single booking's.
+ *
+ * Undo start returns the service to Confirmed, not Booked: Booked would throw
+ * away the confirmation the guest already has, and the visit's derived header
+ * status would fall back far enough to offer Accept again.
  */
 function serviceActions(
   status: string,
@@ -112,10 +117,10 @@ function serviceActions(
     case 'Seated':
       return [
         { label: 'Complete', target: 'Completed', colors: ACTION_COLORS.complete },
-        { label: 'Undo start', target: 'Booked' },
+        { label: 'Undo start', target: 'Confirmed' },
       ];
     case 'Completed':
-      return [{ label: 'Reopen', target: 'Seated' }];
+      return [{ label: 'Undo complete', target: 'Seated' }];
     default:
       return [];
   }

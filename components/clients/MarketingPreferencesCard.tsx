@@ -4,6 +4,7 @@ import { StyleSheet, Switch, View } from 'react-native';
 import { Card } from '@/components/ui/Card';
 import { CollapsibleCard } from '@/components/ui/CollapsibleCard';
 import { Text } from '@/components/ui/Text';
+import { hasMarketingPermission, marketingPermissionSummary } from '@/lib/guests/marketing-permission';
 import { spacing } from '@/theme/index';
 
 type MarketingPreferencesCardProps = {
@@ -46,54 +47,53 @@ export function MarketingPreferencesCard({
 }: MarketingPreferencesCardProps) {
   const consentDate = formatConsentDate(marketingConsentAt);
 
+  const permitted = hasMarketingPermission({
+    marketing_consent: marketingConsent,
+    marketing_opt_out: marketingOptOut,
+  });
+
+  // The two flags are one preference seen from two sides (web 2026-09-10):
+  // recording a fresh consent lifts a standing opt-out, and opting out
+  // withdraws the consent, so the pair can never say both at once.
   const body = (
     <>
-      <View style={styles.row}>
+      <Text variant="caption" tone="muted">
+        Booking messages (confirmations, reminders) and one-to-one messages you send from this
+        screen are always delivered. Messages sent to several contacts at once from the contacts
+        list only go to contacts with marketing consent who have not opted out.
+      </Text>
+
+      <View style={[styles.row, styles.rowSeparated]}>
         <View style={styles.labelBlock}>
-          <Text variant="bodySmall">Marketing consent</Text>
+          <Text variant="bodySmall">Opted out of marketing</Text>
+          <Text variant="caption" tone="muted">
+            Contact has asked not to receive marketing
+          </Text>
+        </View>
+        <Switch value={marketingOptOut} onValueChange={onOptOutChange} disabled={disabled} />
+      </View>
+
+      <View style={[styles.row, styles.rowSeparated]}>
+        <View style={styles.labelBlock}>
+          <Text variant="bodySmall">Marketing consent given</Text>
           <Text variant="caption" tone="muted">
             Contact has explicitly opted in to marketing
           </Text>
           {consentDate ? (
             <Text variant="caption" tone="secondary">
-              Recorded {consentDate}
+              Last consent recorded {consentDate}
             </Text>
           ) : null}
         </View>
-        <Switch
-          value={marketingConsent}
-          onValueChange={onConsentChange}
-          disabled={disabled}
-        />
+        <Switch value={marketingConsent} onValueChange={onConsentChange} disabled={disabled} />
       </View>
 
-      <View style={[styles.row, styles.rowSeparated]}>
-        <View style={styles.labelBlock}>
-          <Text variant="bodySmall">Opted out</Text>
-          <Text variant="caption" tone="muted">
-            Contact has explicitly asked not to be contacted
-          </Text>
-        </View>
-        <Switch
-          value={marketingOptOut}
-          onValueChange={onOptOutChange}
-          disabled={disabled}
-        />
-      </View>
-
-      {marketingOptOut ? (
-        <Text variant="caption" tone="danger" style={styles.warning}>
-          This contact has opted out — do not send marketing messages.
-        </Text>
-      ) : marketingConsent ? (
-        <Text variant="caption" tone="success" style={styles.warning}>
-          Consent recorded — this contact can receive marketing messages.
-        </Text>
-      ) : (
-        <Text variant="caption" tone="muted" style={styles.warning}>
-          No consent recorded. Contact may still receive transactional messages.
-        </Text>
-      )}
+      <Text variant="caption" tone={permitted ? 'success' : 'muted'} style={styles.warning}>
+        {marketingPermissionSummary({
+          marketing_consent: marketingConsent,
+          marketing_opt_out: marketingOptOut,
+        })}
+      </Text>
     </>
   );
 

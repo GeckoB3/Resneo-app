@@ -50,6 +50,23 @@ export function modelDepositDisplay(row: ReportByModelRow): string {
 }
 
 /**
+ * The web's rule for the "By booking type" card: show it once more than one
+ * booking type has activity in range, whatever the venue has enabled — a
+ * single-row table only restates the headline summary
+ * (_reference/Resneo/src/app/dashboard/reports/ReportsView.tsx:598).
+ */
+export function showBookingTypeBreakdown(
+  rows: ReportByModelRow[] | null | undefined,
+): boolean {
+  return visibleModelRows(rows).length > 1;
+}
+
+/** The filename the web downloads this breakdown as (ReportsView.tsx:514). */
+export function modelBreakdownCsvFilename(from: string, to: string): string {
+  return `report-by-booking-type-${from}-${to}.csv`;
+}
+
+/**
  * Build the CSV grid (header + one row per *visible* model) for the per-model
  * breakdown export. Pairs with `buildAndShareCsv`. Pure — returns string cells
  * only, so it is unit-testable without the share/file layer.
@@ -57,24 +74,24 @@ export function modelDepositDisplay(row: ReportByModelRow): string {
 export function buildModelBreakdownCsvRows(
   rows: ReportByModelRow[] | null | undefined,
 ): string[][] {
+  // The web's header, column for column (ReportsView.tsx:515): Cancelled before
+  // Checked in, and one money column in pounds.
   const header = [
-    'Model',
+    'Booking type',
     'Bookings',
-    'Covers',
+    'Covers / guests',
     'Completed',
-    'Checked in',
     'Cancelled',
-    'Deposits (pence)',
-    'Deposits (£)',
+    'Checked in',
+    'Deposits collected (£)',
   ];
   const body = visibleModelRows(rows).map((row) => [
     modelRowLabel(row),
     String(row.booking_count),
     String(row.covers),
     String(row.completed_count),
-    String(row.checked_in_count),
     String(row.cancelled_count),
-    String(row.deposit_pence_collected),
+    String(row.checked_in_count),
     poundsCell(row.deposit_pence_collected),
   ]);
   return [header, ...body];

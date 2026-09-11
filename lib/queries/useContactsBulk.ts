@@ -1,6 +1,12 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
+import {
+  runBulkGuestMessages,
+  type BulkGuestMessageOutcome,
+  type GuestMessageResponse,
+} from '@/lib/communications/bulk-guest-message';
+import type { GuestMessageChannel } from '@/lib/communications/guest-message-channel';
 import { queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import type { MergeGuestsInput } from '@/types/guest-merge';
@@ -50,35 +56,54 @@ export function useBulkRemoveTag() {
 }
 
 /**
- * Per-contact outcome from the bulk marketing-message action. The route returns
- * one entry per FOUND contact (`sent` true, or a `skipped_reason`/`error`), plus
- * `missing_ids` for any selected id that wasn't found — there is NO top-level
- * `sent`/`skipped` count, so callers must derive the totals from `results`.
+ * Message every selected contact, as the web's bulk "Message" does
+ * (`ContactsDashboard.tsx` `runBulkContactMessage`): one
+ * `POST /api/venue/guests/{id}/message` per contact carrying
+ * `respect_marketing_permission: true`, so the server leaves out anyone without
+ * marketing permission and answers 200 `{ skipped: true, reason }` for them.
+ *
+ * Resolves with one outcome per selected id, in selection order. It does not
+ * reject because a single contact could not be reached — that contact's problem
+ * is its own outcome (see `runBulkGuestMessages`).
  */
-export type BulkMarketingMessageResult = {
-  results: { guest_id: string; sent?: boolean; skipped_reason?: string; error?: string }[];
-  missing_ids: string[];
-};
-
-/** POST /api/venue/contacts/bulk {action:'marketing_message'} — bulk email/SMS (admin). */
-export function useBulkMarketingMessage() {
+export function useBulkGuestMessage() {
   const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async (input: {
       guest_ids: string[];
-      subject: string;
-      body: string;
-      channel: 'email' | 'sms' | 'both';
-    }): Promise<BulkMarketingMessageResult> => {
+      message: string;
+      channel: GuestMessageChannel;
+    }): Promise<BulkGuestMessageOutcome[]> => {
       if (!accessToken) {
         throw new Error('Missing access token');
       }
-      return apiFetch<BulkMarketingMessageResult>('/api/venue/contacts/bulk', {
-        accessToken,
-        method: 'POST',
-        body: JSON.stringify({ action: 'marketing_message', ...input }),
+      return runBulkGuestMessages({
+        guestIds: input.guest_ids,
+        send: (guestId) =>
+          apiFetch<GuestMessageResponse>(`/api/venue/guests/${guestId}/message`, {
+            accessToken,
+            method: 'POST',
+            body: JSON.stringify({
+              message: input.message,
+              channel: input.channel,
+              respect_marketing_permission: true,
+            }),
+          }),
       });
+    },
+    onSuccess: (_outcomes, input) => {
+      // A message shows on the contact's own detail (its communications log)
+      // and timeline; no directory row changes, so leave the paged list alone.
+      for (const guestId of input.guest_ids) {
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.guests.detail(accessToken, guestId).slice(0, -1),
+        });
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.guests.timeline(accessToken, guestId),
+        });
+      }
     },
   });
 }

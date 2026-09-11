@@ -185,16 +185,28 @@ function BookingConfirmationView({
             <Text variant="caption" tone="muted">
               {STAFF_CARD_HOLD_LINK_SENT_LINE} No payment is taken.
             </Text>
-          </View>
-        ) : confirmation.requires_deposit && confirmation.deposit_amount_pence != null && confirmation.deposit_amount_pence > 0 ? (
-          <View style={[styles.depositNotice, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Text variant="bodySmall" tone="brand">
-              Deposit required: {formatMoney(confirmation.deposit_amount_pence)}
-            </Text>
             {confirmation.payment_url ? (
               <Text variant="caption" tone="muted">
-                A payment link has been sent to the guest.
+                If card details are not added within 24 hours, the booking will be auto-cancelled.
               </Text>
+            ) : null}
+          </View>
+        ) : confirmation.requires_deposit || confirmation.payment_url ? (
+          <View style={[styles.depositNotice, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Text variant="bodySmall" tone="brand">
+              {confirmation.deposit_amount_pence != null && confirmation.deposit_amount_pence > 0
+                ? `Deposit required: ${formatMoney(confirmation.deposit_amount_pence)}`
+                : 'Deposit requested'}
+            </Text>
+            {confirmation.payment_url ? (
+              <>
+                <Text variant="caption" tone="muted">
+                  A deposit payment link has been sent to the guest.
+                </Text>
+                <Text variant="caption" tone="muted">
+                  If deposit is not paid within 24 hours, the booking will be auto-cancelled.
+                </Text>
+              </>
             ) : null}
           </View>
         ) : null}
@@ -503,11 +515,14 @@ export function ConfirmStep({
         setConfirmation({
           booking_id: response.booking_id,
           payment_url: response.payment_url,
-          requires_deposit: response.requires_deposit,
-          deposit_amount_pence: response.deposit_amount_pence,
+          // The 201 says only `payment_url` (plus `card_hold_requested`) about
+          // money, so a link IS the deposit request — the web's success card
+          // reads it the same way (`hasDeposit = Boolean(result.payment_url)`).
+          // Reading `requires_deposit` / `deposit_amount_pence` off the response
+          // meant this notice never appeared: the route returns neither.
+          requires_deposit: Boolean(response.payment_url) && !response.card_hold_requested,
           card_hold_requested: response.card_hold_requested,
           card_hold_fee_pence: staffCardHold?.feePence ?? null,
-          cancellation_notice_hours: response.cancellation_notice_hours,
           compliance_warnings: response.compliance_warnings,
           availability_override_warnings: response.availability_override_warnings,
           service_name: `${service.serviceName}${variant ? ` · ${variant.name}` : ''}`,

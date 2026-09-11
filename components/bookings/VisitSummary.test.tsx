@@ -131,6 +131,13 @@ describe('VisitSummary', () => {
     expect(mockMutate.mock.calls[0]![0]).toBe('Seated');
     // The second is in progress: Complete and Undo start.
     expect(screen.getByLabelText('Complete Colour')).toBeTruthy();
+
+    // Undo start returns that service to Confirmed, as the web does — not to
+    // Booked, which would drop the guest's confirmation.
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('Undo start Colour'));
+    });
+    expect(mockMutate.mock.calls.at(-1)![0]).toBe('Confirmed');
   });
 
   it('shows time, status and money only for a table', async () => {

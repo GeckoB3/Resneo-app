@@ -1,7 +1,9 @@
 import {
   buildModelBreakdownCsvRows,
+  modelBreakdownCsvFilename,
   modelDepositDisplay,
   modelRowLabel,
+  showBookingTypeBreakdown,
   visibleModelRows,
 } from '@/lib/reports/report-by-model';
 import type { ReportByModelRow } from '@/types/reports';
@@ -86,23 +88,49 @@ describe('modelDepositDisplay', () => {
   });
 });
 
+describe('showBookingTypeBreakdown', () => {
+  it('needs more than one booking type with activity, whatever is enabled', () => {
+    expect(showBookingTypeBreakdown(null)).toBe(false);
+    expect(showBookingTypeBreakdown([row({ booking_count: 3 })])).toBe(false);
+    expect(
+      showBookingTypeBreakdown([
+        row({ booking_model: 'class_session', booking_count: 3 }),
+        row({ booking_model: 'event', label: 'Events' }), // all-zero → not activity
+      ]),
+    ).toBe(false);
+    expect(
+      showBookingTypeBreakdown([
+        row({ booking_model: 'class_session', booking_count: 3 }),
+        row({ booking_model: 'event', label: 'Events', covers: 2 }),
+      ]),
+    ).toBe(true);
+  });
+});
+
+describe('modelBreakdownCsvFilename', () => {
+  it('is the web’s filename', () => {
+    expect(modelBreakdownCsvFilename('2026-09-01', '2026-09-30')).toBe(
+      'report-by-booking-type-2026-09-01-2026-09-30.csv',
+    );
+  });
+});
+
 describe('buildModelBreakdownCsvRows', () => {
-  it('emits a header row only when there are no visible rows', () => {
+  it('emits the web header row only when there are no visible rows', () => {
     const grid = buildModelBreakdownCsvRows([row()]); // all-zero → filtered out
     expect(grid).toHaveLength(1);
     expect(grid[0]).toEqual([
-      'Model',
+      'Booking type',
       'Bookings',
-      'Covers',
+      'Covers / guests',
       'Completed',
-      'Checked in',
       'Cancelled',
-      'Deposits (pence)',
-      'Deposits (£)',
+      'Checked in',
+      'Deposits collected (£)',
     ]);
   });
 
-  it('maps each visible row to string cells with pence and £ deposit columns', () => {
+  it('maps each visible row to string cells, cancelled before checked in', () => {
     const grid = buildModelBreakdownCsvRows([
       row({
         booking_model: 'class_session',
@@ -116,7 +144,7 @@ describe('buildModelBreakdownCsvRows', () => {
       }),
     ]);
     expect(grid).toHaveLength(2);
-    expect(grid[1]).toEqual(['Classes', '10', '24', '8', '9', '2', '4500', '45.00']);
+    expect(grid[1]).toEqual(['Classes', '10', '24', '8', '2', '9', '45.00']);
   });
 
   it('uses the booking_model key as the label cell when the label is blank', () => {

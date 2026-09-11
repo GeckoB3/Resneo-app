@@ -1038,6 +1038,10 @@ export default function ClientsScreen() {
         open={bulkSheet === 'message'}
         onClose={() => setBulkSheet(null)}
         onDone={clearSelection}
+        clientWord={terminology.client}
+        // The rows on screen, so a contact that could not be messaged is named
+        // in the summary (web `runBulkContactMessage` looks its row up too).
+        contacts={guests}
       />
 
       <ContactFilterSheet

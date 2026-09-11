@@ -33,7 +33,7 @@ function leaveBand(): CalendarTimeBlock {
     id: 'practitioner_leave:cal-1:2026-08-24:0-1439',
     start: '00:00',
     end: '23:59',
-    label: 'On leave — Annual leave',
+    label: 'On leave',
     isEditable: false,
     blockType: 'practitioner_leave',
   };
@@ -61,8 +61,10 @@ async function renderGrid(timeBlocks: CalendarTimeBlock[] = []): Promise<void> {
 describe('CalendarDayGrid — closure bands', () => {
   it('draws a leave band with its own label rather than a generic "Blocked" box', async () => {
     await renderGrid([leaveBand()]);
-    expect(screen.getByText('On leave — Annual leave')).toBeTruthy();
-    expect(screen.queryByText(/Blocked/)).toBeNull();
+    // Relabelled with the minutes it covers once clipped to the day (web
+    // `scheduleClosureBlockLabel`).
+    expect(screen.getByText('On leave 09:00 to 17:00')).toBeTruthy();
+    expect(screen.queryByText(/blocked/i)).toBeNull();
   });
 
   it('does not let a full-day band stretch the day', async () => {
@@ -109,7 +111,8 @@ describe('CalendarDayGrid — closure bands', () => {
       },
     ]);
 
-    const band = screen.getByText('Closed').parent!;
+    // The stripe is relabelled with its cause and minutes (web 2026-09-10).
+    const band = screen.getByText('Calendar unavailable 10:00 to 14:00').parent!;
     const style = Object.assign(
       {},
       ...[band.props.style].flat(3).filter((s: unknown) => s && typeof s === 'object'),
@@ -117,7 +120,7 @@ describe('CalendarDayGrid — closure bands', () => {
     expect(style.left).toBeGreaterThanOrEqual(TIME_GUTTER_WIDTH);
   });
 
-  it('still shows a hand-made block as an editable "Blocked" overlay', async () => {
+  it('still shows a hand-made block as an editable "Time blocked" overlay', async () => {
     // The closure look must not swallow the manual-block affordance.
     await renderGrid([
       {
@@ -129,7 +132,8 @@ describe('CalendarDayGrid — closure bands', () => {
         blockType: 'manual',
       },
     ]);
-    expect(screen.getByText(/Blocked/)).toBeTruthy();
+    // The web's heading for a hand-made block (2026-09-10).
+    expect(screen.getByText(/Time blocked/)).toBeTruthy();
     expect(screen.getByText('Tap to edit')).toBeTruthy();
   });
 });

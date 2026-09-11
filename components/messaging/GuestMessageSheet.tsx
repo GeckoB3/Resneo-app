@@ -1,17 +1,22 @@
 import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
+import { GuestMessageChannelPicker } from '@/components/messaging/GuestMessageChannelPicker';
+import { GuestMessageComposerHint } from '@/components/messaging/GuestMessageComposerHint';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { Segmented } from '@/components/ui/Segmented';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
-import { ApiError } from '@/lib/api/client';
+import {
+  DEFAULT_GUEST_MESSAGE_CHANNEL,
+  type GuestMessageChannel,
+} from '@/lib/communications/guest-message-channel';
+import { messageSendErrorText } from '@/lib/communications/message-send-error';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useToast } from '@/providers/ToastProvider';
 import { spacing } from '@/theme/index';
 
-export type MessageChannel = 'email' | 'sms' | 'both';
+export type MessageChannel = GuestMessageChannel;
 
 export type GuestMessageTarget = {
   /** Booking id or guest id — opaque to this sheet (used to reseed on change). */
@@ -29,25 +34,12 @@ type GuestMessageSheetProps = {
   onClose: () => void;
 };
 
-function channelOptions(
-  email?: string | null,
-  phone?: string | null,
-): { value: MessageChannel; label: string }[] {
-  const options: { value: MessageChannel; label: string }[] = [];
-  if (email?.trim()) options.push({ value: 'email', label: 'Email' });
-  if (phone?.trim()) options.push({ value: 'sms', label: 'SMS' });
-  if (email?.trim() && phone?.trim()) options.push({ value: 'both', label: 'Both' });
-  return options;
-}
-
 /** Send a custom email/SMS to a guest — shared by booking detail and contacts. */
 export function GuestMessageSheet({ target, onSend, sending = false, onClose }: GuestMessageSheetProps) {
   const [message, setMessage] = useState('');
-  const [channel, setChannel] = useState<MessageChannel>('both');
+  const [channel, setChannel] = useState<MessageChannel>(DEFAULT_GUEST_MESSAGE_CHANNEL);
   const [error, setError] = useState<string | null>(null);
   const toast = useToast();
-
-  const options = channelOptions(target?.email, target?.phone);
 
   // Reset form whenever the target changes (new guest or sheet closed).
   // useEffect avoids the setState-during-render anti-pattern that drops
@@ -57,8 +49,9 @@ export function GuestMessageSheet({ target, onSend, sending = false, onClose }: 
       // eslint-disable-next-line react-hooks/set-state-in-effect -- seed local form state when target changes
       setMessage('');
       setError(null);
-      const opts = channelOptions(target.email, target.phone);
-      setChannel(opts.some((o) => o.value === 'both') ? 'both' : opts[0]?.value ?? 'email');
+      // Web parity (`GuestMessageChannelSelect`): every composer opens on
+      // "Email & SMS (if available)", whatever the contact has on file.
+      setChannel(DEFAULT_GUEST_MESSAGE_CHANNEL);
     }
   }, [target?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -77,7 +70,8 @@ export function GuestMessageSheet({ target, onSend, sending = false, onClose }: 
       }
     } catch (e) {
       hapticWarning();
-      setError(e instanceof ApiError ? e.message : 'Could not send the message.');
+      // A 502 says why in `errors[]` and carries no `error` key — read both.
+      setError(messageSendErrorText(e));
     }
   }
 
@@ -92,9 +86,12 @@ export function GuestMessageSheet({ target, onSend, sending = false, onClose }: 
             <Text variant="title">{target.guestName}</Text>
           </View>
 
-          {options.length > 1 ? (
-            <Segmented options={options} value={channel} onChange={setChannel} />
-          ) : null}
+          <GuestMessageChannelPicker
+            label="Send via"
+            value={channel}
+            onChange={setChannel}
+            disabled={sending}
+          />
 
           <Input
             label="Message"
@@ -102,10 +99,11 @@ export function GuestMessageSheet({ target, onSend, sending = false, onClose }: 
             onChangeText={setMessage}
             placeholder="Write a short message to the guest…"
             multiline
-            numberOfLines={4}
+            numberOfLines={5}
             maxLength={2000}
             style={styles.messageInput}
           />
+          <GuestMessageComposerHint message={message} channel={channel} />
 
           {error ? (
             <Text variant="bodySmall" tone="danger">

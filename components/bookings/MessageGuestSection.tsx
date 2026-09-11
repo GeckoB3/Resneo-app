@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
+import { GuestMessageChannelPicker } from '@/components/messaging/GuestMessageChannelPicker';
+import { GuestMessageComposerHint } from '@/components/messaging/GuestMessageComposerHint';
 import { Badge, type BadgeTone } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
-import { Chip } from '@/components/ui/Chip';
 import { CollapsibleCard } from '@/components/ui/CollapsibleCard';
 import { Input } from '@/components/ui/Input';
 import { Text } from '@/components/ui/Text';
-import { ApiError } from '@/lib/api/client';
 import { formatTimelineEventTime } from '@/lib/booking/booking-timeline';
 import { formatCommunicationLogLabel } from '@/lib/communications/display-labels';
+import { DEFAULT_GUEST_MESSAGE_CHANNEL } from '@/lib/communications/guest-message-channel';
+import { messageSendErrorText } from '@/lib/communications/message-send-error';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import {
   useSendBookingMessage,
@@ -48,38 +50,15 @@ function successCaption(channel: GuestMessageChannel): string {
   }
 }
 
-/** Pull the most specific error text out of a failed send (400 → `error`, 502 → `errors[]`). */
-function sendErrorText(error: unknown): string {
-  if (error instanceof ApiError) {
-    const body = error.body as { errors?: unknown } | undefined;
-    if (body && Array.isArray(body.errors)) {
-      const list = body.errors.filter((e): e is string => typeof e === 'string');
-      if (list.length > 0) return list.join('; ');
-    }
-    return error.message;
-  }
-  return 'Could not send the message.';
-}
-
 /**
  * Inline SMS/email composer — mirrors the web's guest-communications composer:
- * channel selector (only the channels the guest can actually receive), a message
- * box, and Send with inline feedback that auto-dismisses after 8s.
+ * the channel select (all three options, "Email & SMS (if available)" first), a
+ * message box, and Send with inline feedback that auto-dismisses after 8s.
  */
-function MessageGuestCompose({
-  bookingId,
-  guestEmail,
-  guestPhone,
-}: {
-  bookingId: string;
-  guestEmail?: string | null;
-  guestPhone?: string | null;
-}) {
+function MessageGuestCompose({ bookingId }: { bookingId: string }) {
   const sendMessage = useSendBookingMessage(bookingId);
-  const hasEmail = !!guestEmail?.trim();
-  const hasPhone = !!guestPhone?.trim();
   const [message, setMessage] = useState('');
-  const [channel, setChannel] = useState<GuestMessageChannel>(hasEmail ? 'email' : 'sms');
+  const [channel, setChannel] = useState<GuestMessageChannel>(DEFAULT_GUEST_MESSAGE_CHANNEL);
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'danger'; text: string } | null>(
     null,
   );
@@ -96,12 +75,6 @@ function MessageGuestCompose({
   useEffect(() => () => {
     if (feedbackTimer.current) clearTimeout(feedbackTimer.current);
   }, []);
-
-  const channels: { value: GuestMessageChannel; label: string; enabled: boolean }[] = [
-    { value: 'email', label: 'Email', enabled: hasEmail },
-    { value: 'sms', label: 'SMS', enabled: hasPhone },
-    { value: 'both', label: 'Both', enabled: hasEmail && hasPhone },
-  ];
 
   const handleSend = () => {
     const text = message.trim();
@@ -123,7 +96,7 @@ function MessageGuestCompose({
         },
         onError: (error) => {
           hapticWarning();
-          showFeedback('danger', sendErrorText(error));
+          showFeedback('danger', messageSendErrorText(error));
         },
       },
     );
@@ -131,26 +104,22 @@ function MessageGuestCompose({
 
   return (
     <View style={styles.composeBlock}>
-      <View style={styles.composeChannels}>
-        {channels
-          .filter((c) => c.enabled)
-          .map((c) => (
-            <Chip
-              key={c.value}
-              label={c.label}
-              selected={channel === c.value}
-              onPress={() => setChannel(c.value)}
-            />
-          ))}
-      </View>
+      <GuestMessageChannelPicker
+        label="Send message via"
+        value={channel}
+        onChange={setChannel}
+        disabled={sendMessage.isPending}
+      />
       <Input
         placeholder="Write a message to the guest…"
         value={message}
         onChangeText={setMessage}
         multiline
-        numberOfLines={3}
+        numberOfLines={4}
+        maxLength={2000}
         textAlignVertical="top"
       />
+      <GuestMessageComposerHint message={message} channel={channel} />
       {feedback ? (
         <Text variant="bodySmall" tone={feedback.tone}>
           {feedback.text}
@@ -192,12 +161,15 @@ export function MessageGuestSection({
 }) {
   const { colors } = useTheme();
   const communications = booking.communications ?? [];
-  const guestEmail = booking.guest?.email?.trim() || null;
+  // A booking taken without a guest profile still has the address it was made
+  // with, and the web sends to it (`send-custom-booking-message.ts` ~159-162),
+  // so it counts as reachable here too.
+  const guestEmail = booking.guest?.email?.trim() || booking.guest_email?.trim() || null;
   const guestPhone = booking.guest?.phone?.trim() || null;
   const guestId = booking.guest?.id ?? booking.guest_id ?? null;
   const canMessage = (!!guestEmail || !!guestPhone) && !readOnly;
 
-  if (!guestId && communications.length === 0) return null;
+  if (!guestId && !guestEmail && communications.length === 0) return null;
 
   // Closed-accordion summary mirrors the web: sent count once anything's gone
   // out, otherwise which channels are reachable.
@@ -215,11 +187,7 @@ export function MessageGuestSection({
   return (
     <CollapsibleCard title="SMS / Email guest" summary={summary}>
       {canMessage ? (
-        <MessageGuestCompose
-          bookingId={booking.id}
-          guestEmail={guestEmail}
-          guestPhone={guestPhone}
-        />
+        <MessageGuestCompose bookingId={booking.id} />
       ) : readOnly ? (
         <Text variant="bodySmall" tone="muted" style={styles.noContact}>
           This link is view only, so the guest cannot be messaged from here.

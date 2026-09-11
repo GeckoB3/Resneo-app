@@ -3,13 +3,19 @@ import { useCallback, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
 import { BaselineMetricsCard } from '@/components/reports/BaselineMetricsCard';
+import { BookedRevenueSection } from '@/components/reports/BookedRevenueSection';
 import { BookingLogEmailCard } from '@/components/reports/BookingLogEmailCard';
 import { ClientsTab } from '@/components/reports/ClientsTab';
 import { DataExportCard } from '@/components/reports/DataExportCard';
+import { EventTicketTiersCard } from '@/components/reports/EventTicketTiersCard';
 import { HistorySection } from '@/components/reports/HistorySection';
+import { CardHeader, StatRow, useReportCsvExport } from '@/components/reports/ReportCardParts';
 import { SvgBarChart } from '@/components/reports/SvgBarChart';
-import { bookingStatusDisplayLabel } from '@/lib/booking/infer-booking-row-model';
 import { SvgLineChart } from '@/components/reports/SvgLineChart';
+import {
+  ResourceUtilisationCard,
+  TableUtilisationCard,
+} from '@/components/reports/UtilisationCards';
 import { Card } from '@/components/ui/Card';
 import { DatePickerField } from '@/components/ui/DatePickerField';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -17,29 +23,43 @@ import { ErrorState } from '@/components/ui/ErrorState';
 import { Screen } from '@/components/ui/Screen';
 import { Segmented } from '@/components/ui/Segmented';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
+import { StatTile } from '@/components/ui/StatTile';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import { bookingStatusDisplayLabel } from '@/lib/booking/infer-booking-row-model';
 import { addDaysToDateStr } from '@/lib/dates/venue-dates';
 import { formatPence } from '@/lib/format';
 import { hapticTap } from '@/lib/haptics';
 import { calendarDateInTimeZone } from '@/lib/queries/useBookingsList';
 import { useReports } from '@/lib/queries/useReports';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
-import { buildAndShareCsv, aggregateSourcesByLabel } from '@/lib/reports/csv-export';
+import { aggregateSourcesByLabel } from '@/lib/reports/csv-export';
+import {
+  buildReport1Csv,
+  buildReport2Csv,
+  buildReport3Csv,
+  buildReport4Csv,
+  buildReport7Csv,
+  noShowOverallRatePct,
+  showTableUtilisation,
+  type ReportCsvContext,
+} from '@/lib/reports/overview-report';
 import {
   buildModelBreakdownCsvRows,
+  modelBreakdownCsvFilename,
   modelDepositDisplay,
   modelRowLabel,
+  showBookingTypeBreakdown,
   visibleModelRows,
 } from '@/lib/reports/report-by-model';
-import { useToast } from '@/providers/ToastProvider';
+import { isAppointmentFromVenue } from '@/lib/venue/venue-experience';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { minTouchTarget, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type RangeKey = '7d' | '30d' | '90d' | 'custom';
-type MainTab = 'overview' | 'clients';
+type MainTab = 'overview' | 'revenue' | 'clients';
 
 const RANGE_DAYS: Record<Exclude<RangeKey, 'custom'>, number> = {
   '7d': 7,
@@ -56,89 +76,13 @@ function ymdToLocalNoon(ymd: string): Date {
   return new Date(y, m - 1, d, 12, 0, 0, 0);
 }
 
-// ─── StatRow ─────────────────────────────────────────────────────────────────
-function StatRow({
-  label,
-  value,
-  accent,
-}: {
-  label: string;
-  value: string;
-  accent?: 'emerald' | 'amber' | 'red' | 'brand' | 'teal';
-}) {
-  const { colors } = useTheme();
-  const valueColor =
-    accent === 'emerald'
-      ? colors.success
-      : accent === 'amber'
-        ? colors.warning
-        : accent === 'red'
-          ? colors.danger
-          : accent === 'brand'
-            ? colors.brand
-            : accent === 'teal'
-              ? colors.accent
-              : colors.text;
-
-  return (
-    <View style={styles.statRow}>
-      <Text variant="bodySmall" tone="muted" style={styles.statLabel}>
-        {label}
-      </Text>
-      <Text variant="bodyMedium" style={[styles.statValue, { color: valueColor }]}>
-        {value}
-      </Text>
-    </View>
-  );
-}
-
-// ─── CardHeader (with optional export button) ────────────────────────────────
-function CardHeader({
-  title,
-  onExport,
-  exportDisabled,
-}: {
-  title: string;
-  onExport?: () => void;
-  exportDisabled?: boolean;
-}) {
-  const { colors } = useTheme();
-  const toast = useToast();
-  return (
-    <View style={styles.cardHeader}>
-      <Text variant="label">{title}</Text>
-      {onExport ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`Export ${title} as CSV`}
-          onPress={() => {
-            if (exportDisabled) {
-              toast.info('No data in this range for this report.');
-              return;
-            }
-            hapticTap();
-            void onExport();
-          }}
-          hitSlop={12}
-          style={({ pressed }) => [styles.exportBtn, { opacity: pressed ? 0.7 : 1 }]}>
-          <Text variant="caption" style={{ color: exportDisabled ? colors.textMuted : colors.brand }}>
-            Export CSV
-          </Text>
-        </Pressable>
-      ) : null}
-    </View>
-  );
-}
-
-// HorizontalBar replaced by SvgBarChart — see components/reports/SvgBarChart.tsx
-
 // ─── Main screen ─────────────────────────────────────────────────────────────
 export default function ReportsScreen() {
   const { colors } = useTheme();
-  const toast = useToast();
-  const { venue } = useVenueContext();
+  const { venue, terminology, pricingTier, bookingModel } = useVenueContext();
   const staffQuery = useStaffMe();
   const isAdmin = staffQuery.data?.staff?.role === 'admin';
+  const exportCsv = useReportCsvExport();
 
   const timeZone = venue?.timezone ?? 'Europe/London';
   const today = calendarDateInTimeZone(new Date(), timeZone);
@@ -156,10 +100,11 @@ export default function ReportsScreen() {
 
   const query = useReports(appliedFrom, appliedTo, isAdmin);
 
-  // Native pickers take a Date for their bounds. Build them from the YYYY-MM-DD
-  // strings at local noon (avoids any tz day-boundary slip), memoised so the
-  // pickers don't see a new Date identity every render.
-  const todayDate = useMemo(() => ymdToLocalNoon(today), [today]);
+  // The To picker takes a Date for its lower bound. Build it from the
+  // YYYY-MM-DD string at local noon (avoids any tz day-boundary slip), memoised
+  // so the picker doesn't see a new Date identity every render. Neither end is
+  // capped at today: the web's inputs are unbounded, and a range that runs into
+  // the future is a legitimate thing to ask a report for.
   const customFromDate = useMemo(() => ymdToLocalNoon(customFrom), [customFrom]);
 
   // When a preset is tapped, immediately apply the range
@@ -205,157 +150,109 @@ export default function ReportsScreen() {
   const baselineSnapshot = data?.report8_baseline_snapshot;
   const bookingLogConfig = data?.booking_log_email_config;
   const defaultLogEmail = data?.default_booking_log_email;
-
-  // Per-booking-model breakdown — only meaningful for multi-model venues.
-  const enabledModels = data?.enabled_models ?? [];
-  const isMultiModel = enabledModels.length > 1;
-  const modelRows = useMemo(
-    () => (isMultiModel ? visibleModelRows(data?.report_by_booking_model) : []),
-    [isMultiModel, data?.report_by_booking_model],
+  const tableUtilisation = useMemo(
+    () => data?.report5_table_utilisation ?? [],
+    [data?.report5_table_utilisation],
+  );
+  const eventTiers = useMemo(
+    () => data?.report_event_ticket_tiers ?? [],
+    [data?.report_event_ticket_tiers],
+  );
+  const resourceUtilisation = useMemo(
+    () => data?.report_resource_utilisation ?? [],
+    [data?.report_resource_utilisation],
   );
 
-  // Determine if this is an appointment venue
+  /*
+    Per-booking-model breakdown. The web shows it as soon as more than one
+    booking type had activity in range, whatever the venue has enabled
+    (ReportsView.tsx:598) — a venue can take bookings of a type it has since
+    switched off, and a single row only restates the headline summary.
+  */
+  const modelRows = useMemo(
+    () => visibleModelRows(data?.report_by_booking_model),
+    [data?.report_by_booking_model],
+  );
+  const showModelBreakdown = showBookingTypeBreakdown(data?.report_by_booking_model);
+
+  /*
+    The web's `appointmentDashboardExperience` (ReportsView.tsx:320-328): the
+    Appointments plan, the venue's booking model, or unified scheduling enabled
+    as a secondary tab. The server computes the same thing when it decides
+    whether to send report 7, so that answer stands in when the venue bootstrap
+    has not loaded.
+  */
   const isAppointmentVenue =
-    data?.booking_model === 'practitioner_appointment' ||
-    data?.booking_model === 'unified_scheduling' ||
-    Boolean(insights);
+    isAppointmentFromVenue(
+      data?.pricing_tier ?? pricingTier,
+      data?.booking_model ?? bookingModel,
+      data?.enabled_models,
+    ) || Boolean(insights);
+
+  const clientWord = terminology.client;
+  const clientLower = clientWord.toLowerCase();
+  const bookingWord = terminology.booking;
+  const bookingLower = bookingWord.toLowerCase();
+  const staffWord = terminology.staff;
+  const staffLower = staffWord.toLowerCase();
 
   // ── No-show calculations ─────────────────────────────────────────────────
   const totalNoShows = noShowSeries.reduce((sum, row) => sum + row.no_show_count, 0);
   const totalConfirmed = noShowSeries.reduce((sum, row) => sum + row.confirmed_at_time_count, 0);
-  const noShowRatePct =
-    totalConfirmed > 0
-      ? ((totalNoShows / totalConfirmed) * 100).toFixed(1)
-      : null;
+  // The web prints this rate even when nothing was eligible: 0.0%, not a blank
+  // (ReportsView.tsx:614-616, 1076-1078).
+  const noShowRatePct = noShowOverallRatePct(noShowSeries);
+
+  const hasAppointmentInsights = Boolean(
+    insights &&
+      (insights.by_practitioner.length > 0 ||
+        insights.by_service.length > 0 ||
+        Object.keys(insights.by_booking_source).length > 0),
+  );
 
   // ── Export helpers — hoisted before early returns so hook order is stable ─
+  const csvContext = useMemo<ReportCsvContext>(
+    () => ({ appointment: isAppointmentVenue, terminology }),
+    [isAppointmentVenue, terminology],
+  );
+
   const exportReport1 = useCallback(async () => {
     if (!summary || !data) return;
-    const result = await buildAndShareCsv(`report1-booking-summary-${data.from}-${data.to}.csv`, [
-      ['Metric', 'Value'],
-      ['Bookings created', String(summary.total_bookings_created)],
-      [isAppointmentVenue ? 'Client places booked' : 'Covers booked', String(summary.covers_booked)],
-      [isAppointmentVenue ? 'Clients seen' : 'Covers seated', String(summary.covers_seated)],
-      ['By source', ''],
-      ...aggregateSourcesByLabel(summary.by_source).map(({ name, value }) => [name, String(value)]),
-      ['By status', ''],
-      ...Object.entries(summary.by_status).map(([k, v]) => [
-        bookingStatusDisplayLabel(k, !isAppointmentVenue),
-        String(v),
-      ]),
-    ]);
-    if (!result.ok) {
-      toast.error('Could not export the report.');
-      return;
-    }
-    toast.success('Export started.');
-  }, [summary, data, isAppointmentVenue, toast]);
+    const csv = buildReport1Csv(summary, data, csvContext);
+    await exportCsv(csv.filename, csv.rows);
+  }, [summary, data, csvContext, exportCsv]);
 
   const exportReport2 = useCallback(async () => {
     if (!noShowSeries.length || !data) return;
-    const result = await buildAndShareCsv(`report2-no-show-${data.from}-${data.to}.csv`, [
-      ['Date', 'No-shows', 'Eligible', 'Rate %'],
-      ...noShowSeries.map((row) => [
-        row.period_start,
-        String(row.no_show_count),
-        String(row.confirmed_at_time_count),
-        String(row.rate_pct),
-      ]),
-    ]);
-    if (!result.ok) {
-      toast.error('Could not export the report.');
-      return;
-    }
-    toast.success('Export started.');
-  }, [noShowSeries, data, toast]);
+    const csv = buildReport2Csv(noShowSeries, data, csvContext);
+    await exportCsv(csv.filename, csv.rows);
+  }, [noShowSeries, data, csvContext, exportCsv]);
 
   const exportReport3 = useCallback(async () => {
     if (!cancellation || !data) return;
-    const result = await buildAndShareCsv(`report3-cancellation-${data.from}-${data.to}.csv`, [
-      ['Metric', 'Value'],
-      ['Bookings created', String(cancellation.total_bookings_created)],
-      ['Client-initiated cancellations', String(cancellation.cancelled_guest_initiated)],
-      ['Auto-cancelled', String(cancellation.cancelled_auto)],
-      ['Cancellation rate %', String(cancellation.cancellation_rate_pct)],
-    ]);
-    if (!result.ok) {
-      toast.error('Could not export the report.');
-      return;
-    }
-    toast.success('Export started.');
-  }, [cancellation, data, toast]);
+    const csv = buildReport3Csv(cancellation, data, csvContext);
+    await exportCsv(csv.filename, csv.rows);
+  }, [cancellation, data, csvContext, exportCsv]);
 
   const exportReport4 = useCallback(async () => {
     if (!deposit || !data) return;
-    const result = await buildAndShareCsv(`report4-deposits-${data.from}-${data.to}.csv`, [
-      ['Metric', 'Pence', 'GBP'],
-      ['Collected', String(deposit.total_collected_pence), (deposit.total_collected_pence / 100).toFixed(2)],
-      ['Refunded', String(deposit.total_refunded_pence), (deposit.total_refunded_pence / 100).toFixed(2)],
-      ['Forfeited', String(deposit.total_forfeited_pence), (deposit.total_forfeited_pence / 100).toFixed(2)],
-      // Card holds (web parity): charged no-show fees are not deposit payments.
-      [
-        `No-show fees charged (${deposit.no_show_fees_charged_count ?? 0})`,
-        String(deposit.no_show_fees_charged_pence ?? 0),
-        ((deposit.no_show_fees_charged_pence ?? 0) / 100).toFixed(2),
-      ],
-      ['Active card holds', String(deposit.card_holds_active_count ?? 0), ''],
-    ]);
-    if (!result.ok) {
-      toast.error('Could not export the report.');
-      return;
-    }
-    toast.success('Export started.');
-  }, [deposit, data, toast]);
+    const csv = buildReport4Csv(deposit, data);
+    await exportCsv(csv.filename, csv.rows);
+  }, [deposit, data, exportCsv]);
 
   const exportReport7 = useCallback(async () => {
     if (!insights || !data) return;
-    const result = await buildAndShareCsv(`report7-team-services-${data.from}-${data.to}.csv`, [
-      ['Practitioner', 'Bookings', 'Arrived/Completed'],
-      ...insights.by_practitioner.map((row) => [
-        row.practitioner_name,
-        String(row.booking_count),
-        String(row.completed_count),
-      ]),
-      [],
-      ['Service', 'Bookings'],
-      ...insights.by_service.map((row) => [row.service_name, String(row.booking_count)]),
-      [],
-      ['Channel', 'Bookings'],
-      ...aggregateSourcesByLabel(insights.by_booking_source).map(({ name, value }) => [name, String(value)]),
-      ...(insights.addon_revenue && insights.addon_revenue.total_pence > 0
-        ? [
-            [],
-            ['Add-on', 'Group', 'Bookings', 'Revenue (pence)', 'Revenue (£)', 'Total minutes'],
-            ...insights.addon_revenue.top_addons.map((row) => [
-              row.addon_name_snapshot,
-              row.addon_group_name_snapshot ?? '',
-              String(row.bookings),
-              String(row.revenue_pence),
-              (row.revenue_pence / 100).toFixed(2),
-              String(row.total_duration_minutes),
-            ]),
-          ]
-        : []),
-    ]);
-    if (!result.ok) {
-      toast.error('Could not export the report.');
-      return;
-    }
-    toast.success('Export started.');
-  }, [insights, data, toast]);
+    const csv = buildReport7Csv(insights, data, csvContext);
+    await exportCsv(csv.filename, csv.rows);
+  }, [insights, data, csvContext, exportCsv]);
 
   const exportModelBreakdown = useCallback(async () => {
     if (!modelRows.length || !data) return;
-    const result = await buildAndShareCsv(
-      `report-by-model-${data.from}-${data.to}.csv`,
+    await exportCsv(
+      modelBreakdownCsvFilename(data.from, data.to),
       buildModelBreakdownCsvRows(modelRows),
     );
-    if (!result.ok) {
-      toast.error('Could not export the report.');
-      return;
-    }
-    toast.success('Export started.');
-  }, [modelRows, data, toast]);
+  }, [modelRows, data, exportCsv]);
 
   const header = <Stack.Screen options={{ headerShown: true, title: 'Reports' }} />;
 
@@ -395,13 +292,17 @@ export default function ReportsScreen() {
     ? Math.max(...Object.values(insights.by_booking_source), 1)
     : 1;
 
+  const rangeLabel = data ? `${data.from} → ${data.to}` : '';
+
   return (
     <Screen scroll={false} padded={false}>
       {header}
 
       {/* ── Toolbar: presets + sub-tabs ─────────────────────────── */}
       <View style={[styles.toolbar, { borderBottomColor: colors.border }]}>
-        {/* Preset chips */}
+        {/* Preset chips. The Revenue tab carries its own range (web parity:
+            the date-range card is hidden there). */}
+        {mainTab !== 'revenue' ? (
         <View style={styles.presetRow}>
           {(['7d', '30d', '90d'] as const).map((key) => (
             <Pressable
@@ -441,10 +342,11 @@ export default function ReportsScreen() {
             </Text>
           </Pressable>
         </View>
+        ) : null}
 
         {/* Custom date inputs (shown when custom is selected) — native OS pickers
             so the range works on iOS and Android alike. */}
-        {rangeKey === 'custom' ? (
+        {mainTab !== 'revenue' && rangeKey === 'custom' ? (
           <View style={styles.customRange}>
             <View style={styles.dateField}>
               <Text variant="caption" tone="muted">
@@ -454,7 +356,6 @@ export default function ReportsScreen() {
                 value={customFrom}
                 onChange={handleCustomFromChange}
                 accessibilityLabel="Report range start date"
-                maximumDate={todayDate}
               />
             </View>
             <View style={styles.dateField}>
@@ -466,7 +367,6 @@ export default function ReportsScreen() {
                 onChange={handleCustomToChange}
                 accessibilityLabel="Report range end date"
                 minimumDate={customFromDate}
-                maximumDate={todayDate}
               />
             </View>
             <Pressable
@@ -482,11 +382,12 @@ export default function ReportsScreen() {
           </View>
         ) : null}
 
-        {/* Overview / Clients sub-tabs */}
+        {/* Overview / Revenue / Clients sub-tabs (web #191 added Revenue) */}
         <Segmented
           options={[
             { value: 'overview', label: 'Overview' },
-            { value: 'clients', label: 'Clients' },
+            { value: 'revenue', label: 'Revenue' },
+            { value: 'clients', label: `${clientWord}s` },
           ]}
           value={mainTab}
           onChange={setMainTab}
@@ -494,7 +395,14 @@ export default function ReportsScreen() {
       </View>
 
       {/* ── Content ──────────────────────────────────────────────── */}
-      {query.isLoading ? (
+      {mainTab === 'revenue' ? (
+        // Booked revenue has its own query and range (web #191); it does not
+        // wait on the overview payload.
+        <ScrollView contentContainerStyle={styles.content}>
+          <BookedRevenueSection bookingWord={bookingWord} today={today} enabled={isAdmin} />
+          <View style={styles.spacer} />
+        </ScrollView>
+      ) : query.isLoading ? (
         <DetailSkeleton />
       ) : query.isError || !data ? (
         <View style={styles.stateWrap}>
@@ -518,41 +426,63 @@ export default function ReportsScreen() {
           }>
           {/* Range label */}
           <Text variant="caption" tone="muted" style={styles.rangeLabel}>
-            {data.from} → {data.to}
+            {rangeLabel}
           </Text>
 
           {/* ── CLIENTS TAB ─────────────────────────────────── */}
           {mainTab === 'clients' ? (
-            <>
+            <Card>
+              <CardHeader title={`${clientWord} directory`} />
+              <Text variant="caption" tone="muted" style={styles.rangeCaption}>
+                {rangeLabel}
+              </Text>
               {clients ? (
-                <Card>
-                  <CardHeader title="Client summary" />
-                  <View style={styles.stats}>
-                    <StatRow
-                      label="Identified clients"
+                <>
+                  {/* The web's tiles, labels and meaning cues (ClientsSection.tsx:294-317). */}
+                  <View style={styles.tiles}>
+                    <StatTile
+                      label={`Known ${clientLower}s (all-time)`}
                       value={String(clients.identified_clients_total)}
-                      accent="brand"
+                      style={styles.tile}
                     />
-                    <StatRow label="New in period" value={String(clients.new_clients_in_period)} />
-                    <StatRow
-                      label="Returning"
+                    <StatTile
+                      label="New this period"
+                      value={String(clients.new_clients_in_period)}
+                      caption={rangeLabel}
+                      style={styles.tile}
+                    />
+                    <StatTile
+                      label="Returning this period"
                       value={String(clients.returning_clients_in_period)}
-                      accent="emerald"
+                      caption={rangeLabel}
+                      style={styles.tile}
                     />
-                    <StatRow
-                      label="Anonymous visits"
+                    <StatTile
+                      label={
+                        isAppointmentVenue
+                          ? `Anonymous ${bookingLower}s (period)`
+                          : 'Anonymous visits (period)'
+                      }
                       value={String(clients.anonymous_visits_in_period)}
+                      caption={rangeLabel}
+                      style={styles.tile}
                     />
                   </View>
-                </Card>
+                  {clients.anonymous_visits_in_period > 0 ? (
+                    <Text variant="bodySmall" tone="muted" style={styles.cardIntro}>
+                      {`Walk-in visits without contact details are counted but not shown in the ${clientLower} list below.`}
+                    </Text>
+                  ) : null}
+                </>
               ) : null}
-              <Card>
-                <CardHeader title="Client directory" />
-                <View style={styles.clientsContent}>
-                  <ClientsTab />
-                </View>
-              </Card>
-            </>
+              <View style={styles.clientsContent}>
+                <ClientsTab
+                  clientWord={clientWord}
+                  bookingWord={bookingWord}
+                  isAppointment={isAppointmentVenue}
+                />
+              </View>
+            </Card>
           ) : (
             /* ── OVERVIEW TAB ─────────────────────────────────── */
             <>
@@ -563,20 +493,31 @@ export default function ReportsScreen() {
                     title={isAppointmentVenue ? 'Appointment activity' : 'Booking summary'}
                     onExport={exportReport1}
                     exportDisabled={!summary}
+                    exportBlockedMessage={
+                      isAppointmentVenue
+                        ? 'There is no appointment activity to export for this period.'
+                        : 'There is no booking summary to export for this period.'
+                    }
                   />
                   <View style={styles.stats}>
                     <StatRow
-                      label={isAppointmentVenue ? 'Appointments created' : 'Total bookings'}
+                      label={
+                        isAppointmentVenue ? `${bookingWord}s created` : `Total ${bookingLower}s`
+                      }
                       value={String(summary.total_bookings_created)}
                       accent="brand"
                     />
                     <StatRow
-                      label={isAppointmentVenue ? 'Client places booked' : 'Covers booked'}
+                      label={isAppointmentVenue ? `${clientWord} places booked` : 'Covers booked'}
                       value={String(summary.covers_booked)}
                       accent="brand"
                     />
                     <StatRow
-                      label={isAppointmentVenue ? 'Clients seen (arrived / completed)' : 'Covers seated'}
+                      label={
+                        isAppointmentVenue
+                          ? `${clientWord}s seen (arrived / completed)`
+                          : 'Covers seated'
+                      }
                       value={String(summary.covers_seated)}
                       accent="emerald"
                     />
@@ -586,13 +527,15 @@ export default function ReportsScreen() {
                   {Object.keys(summary.by_status).length > 0 ? (
                     <View style={styles.chartSection}>
                       <Text variant="overline" tone="muted">
-                        By status
+                        {isAppointmentVenue ? 'Appointment status (latest)' : 'By status (latest)'}
                       </Text>
                       <SvgBarChart
                         data={Object.entries(summary.by_status).map(([status, count]) => ({
                           key: status,
                           // Appointment venues say "Started", never "Seated".
-                          label: bookingStatusDisplayLabel(status, !isAppointmentVenue),
+                          label: isAppointmentVenue
+                            ? bookingStatusDisplayLabel(status, false)
+                            : status,
                           value: count,
                         }))}
                         color={colors.brand}
@@ -605,7 +548,9 @@ export default function ReportsScreen() {
                   {sourcePieData.length > 0 ? (
                     <View style={styles.chartSection}>
                       <Text variant="overline" tone="muted">
-                        How they booked
+                        {isAppointmentVenue
+                          ? 'How they booked (when created)'
+                          : 'By source (when created)'}
                       </Text>
                       <SvgBarChart
                         data={sourcePieData.map(({ name, value }) => ({
@@ -621,61 +566,80 @@ export default function ReportsScreen() {
                 </Card>
               ) : null}
 
-              {/* Per-booking-model breakdown (multi-model venues only) */}
-              {isMultiModel && modelRows.length > 0 ? (
+              {/* Per-booking-model breakdown (more than one type with activity) */}
+              {showModelBreakdown ? (
                 <Card>
                   <CardHeader
                     title="By booking type"
                     onExport={exportModelBreakdown}
                     exportDisabled={modelRows.length === 0}
+                    exportBlockedMessage="There is no booking-type breakdown to export for this period."
                   />
-                  <View style={[styles.modelTable, { borderColor: colors.border }]}>
-                    <View
-                      style={[
-                        styles.modelHeader,
-                        { borderBottomColor: colors.border, backgroundColor: colors.surface },
-                      ]}>
-                      <Text variant="caption" tone="muted" style={styles.modelNameCol}>
-                        Type
-                      </Text>
-                      <Text variant="caption" tone="muted" style={styles.modelNumCol}>
-                        Bookings
-                      </Text>
-                      <Text variant="caption" tone="muted" style={styles.modelNumCol}>
-                        Done
-                      </Text>
-                      <Text variant="caption" tone="muted" style={styles.modelMoneyCol}>
-                        Deposits
-                      </Text>
-                    </View>
-                    {modelRows.map((row) => (
+                  <Text variant="bodySmall" tone="secondary" style={styles.cardIntro}>
+                    {`How this period’s ${bookingLower}s split across your active booking types, inferred from each ${bookingLower}. Covers / guests is the total headcount; deposits is the amount marked collected.`}
+                  </Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                    <View style={[styles.modelTable, { borderColor: colors.border }]}>
                       <View
-                        key={row.booking_model}
-                        style={[styles.modelRow, { borderBottomColor: colors.border }]}>
-                        <Text
-                          variant="bodySmall"
-                          numberOfLines={1}
-                          style={styles.modelNameCol}>
-                          {modelRowLabel(row)}
+                        style={[
+                          styles.modelHeader,
+                          { borderBottomColor: colors.border, backgroundColor: colors.surface },
+                        ]}>
+                        <Text variant="caption" tone="muted" style={styles.modelNameCol}>
+                          Type
                         </Text>
-                        <Text
-                          variant="bodySmall"
-                          style={[styles.modelNumCol, styles.modelNum]}>
-                          {row.booking_count}
+                        <Text variant="caption" tone="muted" style={styles.modelNumCol}>
+                          {`${bookingWord}s`}
                         </Text>
-                        <Text
-                          variant="bodySmall"
-                          style={[styles.modelNumCol, styles.modelNum]}>
-                          {row.completed_count}
+                        <Text variant="caption" tone="muted" style={styles.modelWideCol}>
+                          Covers / guests
                         </Text>
-                        <Text
-                          variant="bodySmall"
-                          style={[styles.modelMoneyCol, styles.modelNum]}>
-                          {modelDepositDisplay(row)}
+                        <Text variant="caption" tone="muted" style={styles.modelNumCol}>
+                          Completed
+                        </Text>
+                        <Text variant="caption" tone="muted" style={styles.modelNumCol}>
+                          Cancelled
+                        </Text>
+                        <Text variant="caption" tone="muted" style={styles.modelNumCol}>
+                          Checked in
+                        </Text>
+                        <Text variant="caption" tone="muted" style={styles.modelMoneyCol}>
+                          Deposits
                         </Text>
                       </View>
-                    ))}
-                  </View>
+                      {modelRows.map((row) => (
+                        <View
+                          key={row.booking_model}
+                          style={[styles.modelRow, { borderBottomColor: colors.border }]}>
+                          <Text variant="bodySmall" numberOfLines={1} style={styles.modelNameCol}>
+                            {modelRowLabel(row)}
+                          </Text>
+                          <Text variant="bodySmall" style={[styles.modelNumCol, styles.modelNum]}>
+                            {row.booking_count}
+                          </Text>
+                          <Text variant="bodySmall" style={[styles.modelWideCol, styles.modelNum]}>
+                            {row.covers}
+                          </Text>
+                          <Text
+                            variant="bodySmall"
+                            style={[styles.modelNumCol, styles.modelNum, { color: colors.success }]}>
+                            {row.completed_count}
+                          </Text>
+                          <Text
+                            variant="bodySmall"
+                            style={[styles.modelNumCol, styles.modelNum, { color: colors.warning }]}>
+                            {row.cancelled_count}
+                          </Text>
+                          <Text variant="bodySmall" style={[styles.modelNumCol, styles.modelNum]}>
+                            {row.checked_in_count}
+                          </Text>
+                          <Text variant="bodyMedium" style={[styles.modelMoneyCol, styles.modelNum]}>
+                            {modelDepositDisplay(row)}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  </ScrollView>
                 </Card>
               ) : null}
 
@@ -699,15 +663,19 @@ export default function ReportsScreen() {
                   title="No-show rate"
                   onExport={exportReport2}
                   exportDisabled={noShowSeries.length === 0}
+                  exportBlockedMessage="There is no no-show rate data to export for this period."
                 />
+                {isAppointmentVenue ? (
+                  <Text variant="bodySmall" tone="secondary" style={styles.cardIntro}>
+                    {`${clientWord}s who confirmed an online ${bookingLower} but did not attend (walk-ins excluded from the denominator). Use this to track reliability and follow-up.`}
+                  </Text>
+                ) : null}
                 <View style={styles.stats}>
-                  {noShowRatePct != null ? (
-                    <StatRow
-                      label="Overall rate"
-                      value={`${noShowRatePct}%`}
-                      accent={Number(noShowRatePct) > 10 ? 'red' : 'emerald'}
-                    />
-                  ) : null}
+                  <StatRow
+                    label="Overall rate"
+                    value={`${noShowRatePct.toFixed(1)}%`}
+                    accent={noShowRatePct > 10 ? 'red' : 'emerald'}
+                  />
                   <StatRow label="Total no-shows" value={String(totalNoShows)} />
                   <StatRow label="Eligible appointments" value={String(totalConfirmed)} />
                 </View>
@@ -716,15 +684,14 @@ export default function ReportsScreen() {
                     <Text variant="overline" tone="muted">
                       Daily rate
                     </Text>
+                    {/* The whole series, days with no activity included, exactly
+                        as the web plots it (ReportsView.tsx:1084-1090). */}
                     <SvgLineChart
-                      data={noShowSeries
-                        .filter((row) => row.no_show_count > 0 || row.confirmed_at_time_count > 0)
-                        .slice(-14)
-                        .map((row) => ({
-                          key: row.period_start,
-                          label: row.period_start.slice(5),
-                          value: row.rate_pct,
-                        }))}
+                      data={noShowSeries.map((row) => ({
+                        key: row.period_start,
+                        label: row.period_start.slice(5),
+                        value: row.rate_pct,
+                      }))}
                       color={colors.brand}
                       thresholdValue={10}
                       thresholdColor={colors.danger}
@@ -732,7 +699,11 @@ export default function ReportsScreen() {
                       formatValue={(v) => `${v}%`}
                     />
                   </View>
-                ) : null}
+                ) : (
+                  <Text variant="bodySmall" tone="muted" style={styles.cardIntro}>
+                    No data for this period
+                  </Text>
+                )}
               </Card>
 
               {/* Report 3: Cancellations */}
@@ -742,7 +713,13 @@ export default function ReportsScreen() {
                     title="Cancellation rate"
                     onExport={exportReport3}
                     exportDisabled={!cancellation}
+                    exportBlockedMessage="There is no cancellation data to export for this period."
                   />
+                  {isAppointmentVenue ? (
+                    <Text variant="bodySmall" tone="secondary" style={styles.cardIntro}>
+                      {`Auto (unpaid) counts ${bookingLower}s that moved from Pending to Cancelled - for example when a required deposit was not completed in time.`}
+                    </Text>
+                  ) : null}
                   <View style={styles.stats}>
                     <StatRow
                       label="Cancellation rate"
@@ -750,12 +727,12 @@ export default function ReportsScreen() {
                       accent={cancellation.cancellation_rate_pct > 10 ? 'red' : 'emerald'}
                     />
                     <StatRow
-                      label="Client-initiated"
+                      label={isAppointmentVenue ? `${clientWord}-initiated` : 'Guest-initiated'}
                       value={String(cancellation.cancelled_guest_initiated)}
                     />
-                    <StatRow label="Auto-cancelled" value={String(cancellation.cancelled_auto)} />
+                    <StatRow label="Auto (unpaid)" value={String(cancellation.cancelled_auto)} />
                     <StatRow
-                      label="Total created"
+                      label={isAppointmentVenue ? `${bookingWord}s created` : 'Total created'}
                       value={String(cancellation.total_bookings_created)}
                     />
                   </View>
@@ -769,28 +746,33 @@ export default function ReportsScreen() {
                     title={isAppointmentVenue ? 'Payments & deposits' : 'Deposit summary'}
                     onExport={exportReport4}
                     exportDisabled={!deposit}
+                    exportBlockedMessage={
+                      isAppointmentVenue
+                        ? 'There is no payment summary to export for this period.'
+                        : 'There is no deposit summary to export for this period.'
+                    }
                   />
                   <View style={styles.stats}>
                     <StatRow
-                      label="Collected"
+                      label="Total collected"
                       value={money(deposit.total_collected_pence)}
                       accent="emerald"
                     />
                     <StatRow
-                      label="Refunded"
+                      label="Total refunded"
                       value={money(deposit.total_refunded_pence)}
                       accent="amber"
                     />
                     <StatRow
-                      label="Forfeited"
+                      label="Total forfeited"
                       value={money(deposit.total_forfeited_pence)}
                       accent="red"
                     />
                     {/* Card holds are shown separately from deposits collected:
                         a charged no-show fee is not a deposit payment (spec §13). */}
                     <StatRow
-                      label={`No-show fees charged (${deposit.no_show_fees_charged_count ?? 0})`}
-                      value={money(deposit.no_show_fees_charged_pence ?? 0)}
+                      label="No-show fees charged"
+                      value={`${money(deposit.no_show_fees_charged_pence ?? 0)} (${deposit.no_show_fees_charged_count ?? 0})`}
                       accent="teal"
                     />
                     <StatRow
@@ -801,151 +783,195 @@ export default function ReportsScreen() {
                 </Card>
               ) : null}
 
-              {/* Report 7: Team, Services & Channels */}
-              {insights &&
-              (insights.by_practitioner.length > 0 ||
-                insights.by_service.length > 0 ||
-                Object.keys(insights.by_booking_source).length > 0) ? (
+              {/* Table utilisation — table venues that are not on the appointment model */}
+              {showTableUtilisation(
+                data.booking_model ?? bookingModel,
+                data.table_management_enabled,
+              ) ? (
+                <TableUtilisationCard rows={tableUtilisation} range={data} />
+              ) : null}
+
+              {/* Event ticket-tier sales (D2a) */}
+              {eventTiers.length > 0 ? (
+                <EventTicketTiersCard rows={eventTiers} range={data} bookingWord={bookingWord} />
+              ) : null}
+
+              {/* Resource utilisation (D2b) */}
+              {resourceUtilisation.length > 0 ? (
+                <ResourceUtilisationCard rows={resourceUtilisation} range={data} />
+              ) : null}
+
+              {/* Report 7: Team, Services & Channels — the card is always there
+                  for an appointment venue, with an explanation when the range is
+                  empty (ReportsView.tsx:895-925). */}
+              {isAppointmentVenue ? (
                 <Card>
                   <CardHeader
                     title="Team, services & channels"
                     onExport={exportReport7}
-                    exportDisabled={false}
+                    exportDisabled={!hasAppointmentInsights}
+                    exportBlockedMessage="There is no appointment breakdown to export for this period."
                   />
+                  <Text variant="bodySmall" tone="secondary" style={styles.cardIntro}>
+                    {`Non-cancelled ${bookingLower}s in this date range. Volume is split by ${staffLower} (calendar), by service, and by how the ${clientLower} booked. The "Arrived or completed" bar counts marked arrival, started, or completed visits.`}
+                  </Text>
 
-                  {insights.by_practitioner.length > 0 ? (
-                    <View style={styles.chartSection}>
-                      <Text variant="overline" tone="muted">
-                        By team member
-                      </Text>
-                      <SvgBarChart
-                        data={insights.by_practitioner.map((row) => ({
-                          key: String(row.practitioner_id),
-                          label: row.practitioner_name,
-                          value: row.booking_count,
-                          subValue: `${row.completed_count} completed`,
-                        }))}
-                        color={colors.brand}
-                        maxValue={pracMax}
-                      />
-                    </View>
-                  ) : null}
-
-                  {insights.by_service.length > 0 ? (
-                    <View style={styles.chartSection}>
-                      <Text variant="overline" tone="muted">
-                        By service
-                      </Text>
-                      <SvgBarChart
-                        data={insights.by_service.map((row) => ({
-                          key: String(row.service_id),
-                          label: row.service_name,
-                          value: row.booking_count,
-                        }))}
-                        color={colors.accent}
-                        maxValue={svcMax}
-                      />
-                    </View>
-                  ) : null}
-
-                  {Object.keys(insights.by_booking_source).length > 0 ? (
-                    <View style={styles.chartSection}>
-                      <Text variant="overline" tone="muted">
-                        Channel mix
-                      </Text>
-                      <SvgBarChart
-                        data={aggregateSourcesByLabel(insights.by_booking_source).map(
-                          ({ name, value }) => ({
-                            key: name,
-                            label: name,
-                            value,
-                          }),
-                        )}
-                        color={colors.success}
-                        maxValue={channelMax}
-                      />
-                    </View>
-                  ) : null}
-
-                  {/* Add-on revenue */}
-                  {insights.addon_revenue && insights.addon_revenue.total_pence > 0 ? (
-                    <View style={styles.chartSection}>
-                      <Text variant="overline" tone="muted">
-                        Add-on revenue
-                      </Text>
-                      <View style={styles.stats}>
-                        <StatRow
-                          label="Total"
-                          value={money(insights.addon_revenue.total_pence)}
-                          accent="emerald"
-                        />
-                        <StatRow
-                          label="Bookings with add-ons"
-                          value={String(insights.addon_revenue.bookings_with_addons)}
-                        />
-                      </View>
-                      {insights.addon_revenue.top_addons.length > 0 ? (
-                        <View style={[styles.addonTable, { borderColor: colors.border }]}>
-                          <View style={[styles.addonHeader, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
-                            <Text variant="caption" tone="muted" style={styles.addonNameCol}>
-                              Add-on
-                            </Text>
-                            <Text variant="caption" tone="muted" style={styles.addonGroupCol}>
-                              Group
-                            </Text>
-                            <Text variant="caption" tone="muted" style={styles.addonRevCol}>
-                              Revenue
-                            </Text>
-                          </View>
-                          {insights.addon_revenue.top_addons.map((addon, i) => (
-                            <View
-                              key={`${addon.addon_group_name_snapshot ?? ''}|${addon.addon_name_snapshot}|${i}`}
-                              style={[styles.addonRow, { borderBottomColor: colors.border }]}>
-                              <Text
-                                variant="bodySmall"
-                                numberOfLines={1}
-                                style={styles.addonNameCol}>
-                                {addon.addon_name_snapshot}
-                              </Text>
-                              <Text
-                                variant="caption"
-                                tone="muted"
-                                numberOfLines={1}
-                                style={styles.addonGroupCol}>
-                                {addon.addon_group_name_snapshot ?? '—'}
-                              </Text>
-                              <Text
-                                variant="bodySmall"
-                                style={[styles.addonRevCol, { fontVariant: ['tabular-nums'] }]}>
-                                {money(addon.revenue_pence)}
-                              </Text>
-                            </View>
-                          ))}
+                  {!insights || !hasAppointmentInsights ? (
+                    <Text variant="bodySmall" tone="muted" style={styles.cardIntro}>
+                      {`No appointment data in this range yet. After ${bookingLower}s are created, you will see performance by ${staffLower} and service here.`}
+                    </Text>
+                  ) : (
+                    <>
+                      {insights.by_practitioner.length > 0 ? (
+                        <View style={styles.chartSection}>
+                          <Text variant="overline" tone="muted">
+                            {`By ${staffLower}`}
+                          </Text>
+                          <SvgBarChart
+                            data={insights.by_practitioner.map((row) => ({
+                              key: String(row.practitioner_id),
+                              label: row.practitioner_name,
+                              value: row.booking_count,
+                              subValue: `${row.completed_count} arrived or completed`,
+                            }))}
+                            color={colors.brand}
+                            maxValue={pracMax}
+                          />
                         </View>
                       ) : null}
-                    </View>
-                  ) : null}
+
+                      {insights.by_service.length > 0 ? (
+                        <View style={styles.chartSection}>
+                          <Text variant="overline" tone="muted">
+                            Top services by volume
+                          </Text>
+                          <SvgBarChart
+                            data={insights.by_service.map((row) => ({
+                              key: String(row.service_id),
+                              label: row.service_name,
+                              value: row.booking_count,
+                            }))}
+                            color={colors.accent}
+                            maxValue={svcMax}
+                          />
+                        </View>
+                      ) : null}
+
+                      {Object.keys(insights.by_booking_source).length > 0 ? (
+                        <View style={styles.chartSection}>
+                          <Text variant="overline" tone="muted">
+                            {`How ${clientLower}s booked (channel mix)`}
+                          </Text>
+                          <SvgBarChart
+                            data={aggregateSourcesByLabel(insights.by_booking_source).map(
+                              ({ name, value }) => ({
+                                key: name,
+                                label: name,
+                                value,
+                              }),
+                            )}
+                            color={colors.success}
+                            maxValue={channelMax}
+                          />
+                        </View>
+                      ) : null}
+
+                      {/* Add-on revenue */}
+                      {insights.addon_revenue && insights.addon_revenue.total_pence > 0 ? (
+                        <View style={styles.chartSection}>
+                          <Text variant="overline" tone="muted">
+                            Add-on revenue
+                          </Text>
+                          <View style={styles.stats}>
+                            <StatRow
+                              label="Total add-on revenue"
+                              value={money(insights.addon_revenue.total_pence)}
+                              accent="emerald"
+                            />
+                            <StatRow
+                              label={`${bookingWord}s with add-ons`}
+                              value={String(insights.addon_revenue.bookings_with_addons)}
+                            />
+                          </View>
+                          {insights.addon_revenue.top_addons.length > 0 ? (
+                            <View style={[styles.addonTable, { borderColor: colors.border }]}>
+                              <View style={[styles.addonHeader, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
+                                <Text variant="caption" tone="muted" style={styles.addonNameCol}>
+                                  Add-on
+                                </Text>
+                                <Text variant="caption" tone="muted" style={styles.addonGroupCol}>
+                                  Group
+                                </Text>
+                                <Text variant="caption" tone="muted" style={styles.addonCountCol}>
+                                  {`${bookingWord}s`}
+                                </Text>
+                                <Text variant="caption" tone="muted" style={styles.addonRevCol}>
+                                  Revenue
+                                </Text>
+                              </View>
+                              {insights.addon_revenue.top_addons.map((addon, i) => (
+                                <View
+                                  key={`${addon.addon_group_name_snapshot ?? ''}|${addon.addon_name_snapshot}|${i}`}
+                                  style={[styles.addonRow, { borderBottomColor: colors.border }]}>
+                                  <Text
+                                    variant="bodySmall"
+                                    numberOfLines={1}
+                                    style={styles.addonNameCol}>
+                                    {addon.addon_name_snapshot}
+                                  </Text>
+                                  <Text
+                                    variant="caption"
+                                    tone="muted"
+                                    numberOfLines={1}
+                                    style={styles.addonGroupCol}>
+                                    {addon.addon_group_name_snapshot ?? '—'}
+                                  </Text>
+                                  <Text
+                                    variant="bodySmall"
+                                    style={[styles.addonCountCol, { fontVariant: ['tabular-nums'] }]}>
+                                    {addon.bookings}
+                                  </Text>
+                                  <Text
+                                    variant="bodySmall"
+                                    style={[styles.addonRevCol, { fontVariant: ['tabular-nums'] }]}>
+                                    {money(addon.revenue_pence)}
+                                  </Text>
+                                </View>
+                              ))}
+                            </View>
+                          ) : null}
+                        </View>
+                      ) : null}
+                    </>
+                  )}
                 </Card>
               ) : null}
 
               {/* Clients summary card (overview tab) */}
               {clients ? (
                 <Card>
-                  <CardHeader title="Clients" />
+                  <CardHeader title={`${clientWord}s`} />
                   <View style={styles.stats}>
                     <StatRow
-                      label="Identified clients"
+                      label={`Known ${clientLower}s (all-time)`}
                       value={String(clients.identified_clients_total)}
                       accent="brand"
                     />
-                    <StatRow label="New in period" value={String(clients.new_clients_in_period)} />
                     <StatRow
-                      label="Returning"
+                      label="New this period"
+                      value={String(clients.new_clients_in_period)}
+                    />
+                    <StatRow
+                      label="Returning this period"
                       value={String(clients.returning_clients_in_period)}
                       accent="emerald"
                     />
                     <StatRow
-                      label="Anonymous visits"
+                      label={
+                        isAppointmentVenue
+                          ? `Anonymous ${bookingLower}s (period)`
+                          : 'Anonymous visits (period)'
+                      }
                       value={String(clients.anonymous_visits_in_period)}
                     />
                   </View>
@@ -961,8 +987,9 @@ export default function ReportsScreen() {
 
               {/* Data export */}
               <DataExportCard
-                bookingWord={isAppointmentVenue ? 'Appointment' : 'Booking'}
-                clientLabel="Client"
+                bookingWord={bookingWord}
+                clientLabel={clientWord}
+                isAppointment={isAppointmentVenue}
               />
 
               {/* Empty state for zero-activity ranges */}
@@ -1029,30 +1056,25 @@ const styles = StyleSheet.create({
   rangeLabel: {
     textAlign: 'center',
   },
+  rangeCaption: {
+    marginTop: spacing.xs,
+  },
   stats: {
     marginTop: spacing.sm,
     gap: spacing.sm,
   },
-  statRow: {
+  cardIntro: {
+    marginTop: spacing.sm,
+  },
+  tiles: {
     flexDirection: 'row',
-    alignItems: 'baseline',
-    justifyContent: 'space-between',
-    gap: spacing.base,
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginTop: spacing.md,
   },
-  statLabel: {
-    flex: 1,
-  },
-  statValue: {
-    fontVariant: ['tabular-nums'],
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  exportBtn: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
+  tile: {
+    flexGrow: 1,
+    flexBasis: '45%',
   },
   chartSection: {
     marginTop: spacing.base,
@@ -1082,6 +1104,10 @@ const styles = StyleSheet.create({
   addonGroupCol: {
     flex: 1,
   },
+  addonCountCol: {
+    width: 56,
+    textAlign: 'right',
+  },
   addonRevCol: {
     width: 72,
     textAlign: 'right',
@@ -1106,21 +1132,28 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   modelNameCol: {
-    flex: 2,
+    width: 132,
   },
   modelNumCol: {
-    width: 64,
+    width: 78,
     textAlign: 'right',
+    paddingLeft: spacing.xs,
+  },
+  modelWideCol: {
+    width: 104,
+    textAlign: 'right',
+    paddingLeft: spacing.xs,
   },
   modelMoneyCol: {
-    width: 80,
+    width: 90,
     textAlign: 'right',
+    paddingLeft: spacing.xs,
   },
   modelNum: {
     fontVariant: ['tabular-nums'],
   },
   clientsContent: {
-    marginTop: spacing.sm,
+    marginTop: spacing.base,
   },
   stateWrap: {
     flex: 1,

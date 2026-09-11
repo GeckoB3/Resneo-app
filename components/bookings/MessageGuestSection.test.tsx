@@ -3,7 +3,9 @@
  *
  * Pins the behaviours that diverged from the web before this change:
  *   - the section stays VISIBLE for a contactless guest (web always shows it);
- *   - the composer sends { message, channel } via the booking-message mutation;
+ *   - the composer sends { message, channel } via the booking-message mutation,
+ *     on the web's default channel ("Email & SMS (if available)");
+ *   - a booking with no guest row is still reachable on its own `guest_email`;
  *   - a partial send (200 + errors[]) surfaces as "Partially sent …";
  *   - the log row reads the web message-type label, "To <recipient>", and only
  *     shows an error line for a failed row.
@@ -18,6 +20,7 @@ jest.mock('@/lib/queries/useBookingMutations', () => ({
 }));
 
 import { MessageGuestSection } from '@/components/bookings/MessageGuestSection';
+import { ApiError } from '@/lib/api/client';
 import type { BookingDetail } from '@/types/booking-detail';
 
 async function press(node: Parameters<typeof fireEvent.press>[0]) {
@@ -81,15 +84,53 @@ describe('MessageGuestSection — web parity', () => {
     expect(screen.queryByText('Send message')).toBeNull();
   });
 
-  it('sends { message, channel } via the mutation', async () => {
+  it('messages the address on the booking when there is no guest row', async () => {
+    // The web falls back to `bookings.guest_email` (send-custom-booking-message
+    // ~159-162), so a booking taken without a profile is still reachable.
+    await render(
+      <MessageGuestSection
+        booking={makeBooking({ guest: null, guest_id: '', guest_email: 'walkup@example.com' })}
+      />,
+    );
+
+    expect(screen.getByText('SMS / Email guest')).toBeTruthy();
+    await expand();
+    expect(screen.getByPlaceholderText('Write a message to the guest…')).toBeTruthy();
+    expect(screen.getByText('Send message')).toBeTruthy();
+  });
+
+  it('sends { message, channel } via the mutation, on the web default channel', async () => {
     await render(<MessageGuestSection booking={makeBooking()} />);
     await expand();
+
+    // All three options are offered, whatever the guest has on file (web
+    // `GuestMessageChannelSelect`), and "both" is the one selected.
+    expect(screen.getByText('Email & SMS (if available)')).toBeTruthy();
+    expect(screen.getByText('SMS only')).toBeTruthy();
 
     await changeText(screen.getByPlaceholderText('Write a message to the guest…'), 'Running late?');
     await press(screen.getByText('Send message'));
 
     expect(mockMutate).toHaveBeenCalledTimes(1);
-    expect(mockMutate.mock.calls[0][0]).toEqual({ message: 'Running late?', channel: 'email' });
+    expect(mockMutate.mock.calls[0][0]).toEqual({ message: 'Running late?', channel: 'both' });
+  });
+
+  it('names the failed channel when the send is rejected with a 502', async () => {
+    mockMutate.mockImplementation((_input, opts) => {
+      opts?.onError?.(
+        new ApiError('Request failed (502)', 502, {
+          success: false,
+          errors: ['Email: Delivery failed (check provider configuration)'],
+        }),
+      );
+    });
+    await render(<MessageGuestSection booking={makeBooking()} />);
+    await expand();
+
+    await changeText(screen.getByPlaceholderText('Write a message to the guest…'), 'Hi');
+    await press(screen.getByText('Send message'));
+
+    expect(screen.getByText('Email: Delivery failed (check provider configuration)')).toBeTruthy();
   });
 
   it('surfaces a partial send (200 with errors[]) as "Partially sent …"', async () => {

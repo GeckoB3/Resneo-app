@@ -92,9 +92,12 @@ import {
 } from '@/lib/calendar/cluster-bookings';
 import { isNonWorkingBlock, isOccupyingBlock, narrowWorkingRanges } from '@/lib/calendar/occupying-blocks';
 import { closureBandLook } from '@/components/calendar/closure-band';
+import { IconButton } from '@/components/ui/IconButton';
+import { workingHoursLabel } from '@/lib/calendar/column-hours-label';
 import {
   clampClosureBlocksToWindow,
   isScheduleClosureBlockType,
+  partitionClosureBands,
 } from '@/lib/calendar/schedule-closures';
 import { venueClosedRanges, type VenueDayHours } from '@/lib/calendar/venue-closures';
 import type { ComplianceBookingFlag } from '@/lib/queries/useCompliance';
@@ -216,6 +219,18 @@ type AllCalendarsDayGridProps = {
   calendars: AllCalendarColumn[];
   /** Venue open/closed state for the date (same across columns) → "Closed" shading. */
   venueHours?: VenueDayHours;
+  /**
+   * The clock button in the top-left corner, where the column-header row meets
+   * the time column (web: the toolbar's "Amend hours"). Opens the amend-hours
+   * chooser; the host decides what it offers. Omitted on a partner's grid.
+   */
+  onAmendHours?: () => void;
+  /**
+   * Extra minute ranges the day must span whatever these columns work (web
+   * `calendarWorkingBoundsForDates` over the roster): the scale stays the same
+   * when the column filter hides a calendar that starts earlier.
+   */
+  boundsRanges?: { start: number; end: number }[];
   /**
    * User's visible-window override (web parity: From/Until). Widens the shared
    * time scale across all columns without clipping any booking outside it.
@@ -428,6 +443,8 @@ function positionColumn(
 export function AllCalendarsDayGrid({
   calendars,
   venueHours,
+  onAmendHours,
+  boundsRanges,
   windowOverride,
   nowMinutes,
   onBlockPress,
@@ -571,6 +588,15 @@ export function AllCalendarsDayGrid({
       for (const wh of cal.workingHours) {
         ranges.push({ start: timeToMinutes(wh.start), end: timeToMinutes(wh.end) });
       }
+      // The widest span anything is scheduled open: the venue's hours OR any
+      // column's own (web 2026-09-10), so a calendar working past closing is
+      // always drawn, with the stripes explaining the difference.
+      const columnVenueHours = cal.venueHours ?? venueHours;
+      if (columnVenueHours?.kind === 'open') {
+        for (const period of columnVenueHours.periods) {
+          ranges.push({ start: period.start, end: period.end });
+        }
+      }
       for (const b of cal.bookings) {
         const start = timeToMinutes(b.startTime);
         const end = b.endTime ? timeToMinutes(b.endTime) : start + DEFAULT_DURATION_MINUTES;
@@ -589,20 +615,23 @@ export function AllCalendarsDayGrid({
         ranges.push({ start: timeToMinutes(sb.startTime), end: timeToMinutes(sb.endTime) });
       }
     }
+    // The roster's hours for the date, so hiding a column never narrows the day.
+    for (const r of boundsRanges ?? []) ranges.push({ start: r.start, end: r.end });
     const bounds = computeGridBounds(ranges, windowOverride);
     return {
       startHour: bounds.startHour,
       endHour: bounds.endHour,
       gridStartMin: bounds.startHour * 60,
     };
-  }, [calendars, windowOverride]);
+  }, [calendars, windowOverride, venueHours, boundsRanges]);
 
   // Shared vertical scale: comfortable 2px/min, or compact fit-the-day-to-the-
   // viewport (web parity: measured slot height floored at 16px/15min). The fit
   // subtracts the chrome above the time canvas (scroll padding + the column-
   // header row) and a small bottom gutter.
-  // The header row grows a line when any column carries a caption (a linked
-  // calendar's venue), and the time gutter starts below it either way.
+  // The header row is the name with the day's hours under it; it grows a line
+  // when any column carries a caption (a linked calendar's venue). The time
+  // gutter starts below it either way, its corner holding the clock button.
   const headerHeight = !showColumnHeaders
     ? 0
     : calendars.some((c) => Boolean(c.caption))
@@ -633,18 +662,33 @@ export function AllCalendarsDayGrid({
   // scrolling practitioner columns, sharing one time scale (full day height).
   const body = (
       <View style={styles.row}>
-        {/* Sticky time gutter — hour labels shared by every column. */}
-        <View
-          style={[styles.gutter, { height: totalHeight + PADDING_TOP, marginTop: headerHeight }]}>
-          {hours.map((hour) => (
-            <Text
-              key={hour}
-              variant="caption"
-              tone="muted"
-              style={[styles.gutterLabel, { top: (hour - startHour) * 60 * pxPerMinute - 7 }]}>
-              {hourLabel(hour)}
-            </Text>
-          ))}
+        {/* Sticky time gutter — hour labels shared by every column. Its top
+            corner, where the header row meets the time column, holds the
+            clock button (web: "Amend hours"). */}
+        <View style={styles.gutter}>
+          <View style={[styles.gutterCorner, { height: headerHeight }]}>
+            {onAmendHours ? (
+              <IconButton
+                icon={{ ios: 'clock', android: 'schedule', web: 'schedule' }}
+                accessibilityLabel="Amend hours"
+                variant="bordered"
+                size={Math.max(28, Math.min(32, headerHeight - 4))}
+                iconSize={16}
+                onPress={onAmendHours}
+              />
+            ) : null}
+          </View>
+          <View style={{ height: totalHeight + PADDING_TOP }}>
+            {hours.map((hour) => (
+              <Text
+                key={hour}
+                variant="caption"
+                tone="muted"
+                style={[styles.gutterLabel, { top: (hour - startHour) * 60 * pxPerMinute - 7 }]}>
+                {hourLabel(hour)}
+              </Text>
+            ))}
+          </View>
         </View>
 
         {/* Columns scroll horizontally; the gutter stays put. */}
@@ -687,6 +731,15 @@ export function AllCalendarsDayGrid({
                         </Text>
                         {cal.badge ? <Badge label={cal.badge} tone="warning" /> : null}
                       </View>
+                      {/* The hours this column works today, under its name
+                          (the owner's ask, 2026-09-11). */}
+                      <Text
+                        variant="caption"
+                        tone={tint ? undefined : 'muted'}
+                        numberOfLines={1}
+                        style={[styles.headerHours, tint ? { color: tint } : null]}>
+                        {workingHoursLabel(cal.workingHours)}
+                      </Text>
                       {cal.caption ? (
                         <Text
                           variant="caption"
@@ -908,7 +961,7 @@ function DayColumn({
   pendingActionIds?: Set<string>;
   processingPatternFor?: ProcessingPatternLookup | null;
 }) {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   /**
    * Whether this column's bars take actions and gestures: every own column,
    * and a linked column the grant lets us edit (web
@@ -970,20 +1023,29 @@ function DayColumn({
     [clusterByLeadId, onArrivalToggle],
   );
 
+  // One explanation per minute (web 2026-09-10): this column's closed minutes
+  // (its venue's, or a partner's own on a linked column) and the calendar's
+  // own are partitioned into venue-only, calendar-only and both.
   const overlays = useMemo(
     () =>
-      clampClosureBlocksToWindow(
-        column.timeBlocks
-          .map((block) => {
-            const start = timeToMinutes(block.start);
-            const end = timeToMinutes(block.end);
-            return { block, start, end };
-          })
-          .filter(({ start, end }) => end > start),
-        startHour * 60,
-        endHour * 60,
-      ),
-    [column.timeBlocks, startHour, endHour],
+      partitionClosureBands<CalendarTimeBlock>({
+        venueClosed: closedRanges,
+        entries: clampClosureBlocksToWindow(
+          column.timeBlocks
+            .map((block) => {
+              const start = timeToMinutes(block.start);
+              const end = timeToMinutes(block.end);
+              return { block, start, end };
+            })
+            .filter(({ start, end }) => end > start),
+          startHour * 60,
+          endHour * 60,
+        ),
+        columnName: column.calendarName,
+        linked: column.linked === true,
+        keyPrefix: column.calendarId,
+      }),
+    [column.timeBlocks, column.calendarName, column.calendarId, column.linked, closedRanges, startHour, endHour],
   );
 
   const sessions = useMemo(
@@ -1109,26 +1171,6 @@ function DayColumn({
         accent ? { backgroundColor: hexToRgba(accent, 0.05) } : null,
         liftStyle,
       ]}>
-      {/* Per-column venue-closed shading (out-of-hours / closed day). Each column
-          shades its OWN hours so a linked venue's closures stay accurate even
-          when they differ from the host venue's. */}
-      {closedRanges.map((r) => {
-        const top = (r.start - startHour * 60) * pxPerMinute;
-        const height = (r.end - r.start) * pxPerMinute;
-        return (
-          <View
-            key={`closed-${r.start}-${r.end}`}
-            pointerEvents="none"
-            style={[styles.closedBand, { top, height, backgroundColor: hexToRgba(colors.text, 0.06) }]}>
-            {height >= 26 ? (
-              <Text variant="caption" tone="muted" style={styles.closedLabel}>
-                Closed
-              </Text>
-            ) : null}
-          </View>
-        );
-      })}
-
       {/* Empty-slot tap layer (blocks/overlays render above). */}
       <Pressable
         style={StyleSheet.absoluteFill}
@@ -1144,10 +1186,12 @@ function DayColumn({
         }}
       />
 
-      {/* Blocked-time overlays, and the closure bands that say why a column is
-          empty (closed / on leave / amended hours). */}
+      {/* Blocked-time overlays, and the closure stripes that say why a column
+          is empty — venue closed (rose), this calendar unavailable (sky),
+          both or a linked venue's hours (slate), on leave (violet) — each
+          labelled with its cause and minutes (web 2026-09-10). */}
       {overlays.map(({ block, start, end }) => {
-        const look = closureBandLook(block.blockType, colors);
+        const look = closureBandLook(block.blockType, isDark);
         const height = overlayHeights.get(block.id) ?? (end - start) * pxPerMinute;
         return (
           <View
@@ -1171,7 +1215,7 @@ function DayColumn({
                 tone={look ? undefined : 'muted'}
                 numberOfLines={1}
                 style={look ? { color: look.labelColor } : undefined}>
-                {block.label?.trim() || 'Blocked'}
+                {block.label?.trim() || 'Time blocked'}
               </Text>
             ) : null}
           </View>
@@ -1353,7 +1397,8 @@ function DayColumn({
   );
 }
 
-const HEADER_HEIGHT = 32;
+/** Name line plus the hours line under it. */
+const HEADER_HEIGHT = 40;
 /** The extra header line for a column caption (a linked calendar's venue). */
 const CAPTION_HEIGHT = 14;
 
@@ -1371,7 +1416,11 @@ const styles = StyleSheet.create({
   },
   gutter: {
     width: TIME_GUTTER_WIDTH,
-    // marginTop is set on the element: the header row's resolved height.
+  },
+  /** The corner above the hour labels; height is the header row's resolved height. */
+  gutterCorner: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   gutterLabel: {
     position: 'absolute',
@@ -1387,6 +1436,12 @@ const styles = StyleSheet.create({
     fontSize: 10,
     lineHeight: CAPTION_HEIGHT,
     opacity: 0.85,
+    maxWidth: '100%',
+  },
+  headerHours: {
+    fontSize: 11,
+    lineHeight: 14,
+    fontVariant: ['tabular-nums'],
     maxWidth: '100%',
   },
   headerCell: {
@@ -1431,16 +1486,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: StyleSheet.hairlineWidth,
-  },
-  closedBand: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-  },
-  closedLabel: {
-    marginTop: 4,
-    marginLeft: spacing.xs,
-    opacity: 0.7,
   },
   nowLine: {
     position: 'absolute',

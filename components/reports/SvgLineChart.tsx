@@ -133,6 +133,15 @@ export function SvgLineChart({
     };
   });
 
+  // Point spacing decides how the series is drawn. A long range (the whole
+  // no-show series can be a year of days) packs points closer than a dot is
+  // wide, so dots are dropped below ~8px apart — the line still carries the
+  // shape, and the selected point still shows its own dot and bubble. Tap zones
+  // tile rather than overlap, so a tap picks the point it landed on.
+  const pointGap = data.length > 1 ? drawWidth / (data.length - 1) : drawWidth;
+  const showDots = pointGap >= 8;
+  const touchWidth = Math.max(4, Math.min(TOUCH_AREA_WIDTH, pointGap));
+
   // X-axis label thinning
   const step = Math.max(1, Math.ceil(data.length / maxXLabels));
   const xLabelIndices = new Set<number>();
@@ -257,19 +266,21 @@ export function SvgLineChart({
               return (
                 <G key={pt.key}>
                   {/* Dot */}
-                  <Circle
-                    cx={pt.x}
-                    cy={pt.y}
-                    r={isSelected ? DOT_RADIUS_SELECTED : DOT_RADIUS}
-                    fill={isSelected ? colors.brand : colors.surfaceRaised}
-                    stroke={color}
-                    strokeWidth={2}
-                  />
-                  {/* Invisible wide tap target */}
+                  {showDots || isSelected ? (
+                    <Circle
+                      cx={pt.x}
+                      cy={pt.y}
+                      r={isSelected ? DOT_RADIUS_SELECTED : DOT_RADIUS}
+                      fill={isSelected ? colors.brand : colors.surfaceRaised}
+                      stroke={color}
+                      strokeWidth={2}
+                    />
+                  ) : null}
+                  {/* Invisible tap target */}
                   <Rect
-                    x={pt.x - TOUCH_AREA_WIDTH / 2}
+                    x={pt.x - touchWidth / 2}
                     y={PADDING_TOP}
-                    width={TOUCH_AREA_WIDTH}
+                    width={touchWidth}
                     height={drawHeight}
                     fill="transparent"
                     onPress={() => handlePointPress(pt.key)}

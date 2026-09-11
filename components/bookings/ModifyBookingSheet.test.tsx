@@ -485,8 +485,10 @@ describe('ModifyBookingSheet', () => {
      * R16-1 — the sheet used to send `practitioner_id` on every save, unchanged
      * or not, and its PRESENCE is what arms the server's managed-calendar gate
      * (web's C8 fix). So a non-admin editing the TIME of a colleague's booking —
-     * a thing the server allows — was refused with a permissions error. Both the
-     * dry run and the PATCH must stay quiet about a calendar that has not moved.
+     * a thing the server allows — was refused with a permissions error. The
+     * PATCH must stay quiet about a calendar that has not moved. The dry run is
+     * the opposite: the validate route REQUIRES a calendar id and 400s the
+     * whole request without one, so it always names the booking's own.
      */
     jest.useFakeTimers();
     try {
@@ -496,7 +498,9 @@ describe('ModifyBookingSheet', () => {
       await press('Save changes');
 
       expect(mockModify.mock.calls[0]?.[0]).not.toHaveProperty('practitioner_id');
-      expect(mockValidate.mock.calls[0]?.[0]).not.toHaveProperty('practitioner_id');
+      expect(mockValidate.mock.calls[0]?.[0]).toEqual(
+        expect.objectContaining({ practitioner_id: 'prac-1' }),
+      );
     } finally {
       jest.useRealTimers();
     }

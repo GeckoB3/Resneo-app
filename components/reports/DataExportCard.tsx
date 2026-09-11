@@ -19,11 +19,14 @@ interface DataExportCardProps {
   /** "Appointment" / "Client" copy overrides (default: Booking / Guest). */
   bookingWord?: string;
   clientLabel?: string;
+  /** Appointment venues get the appointment wording (web `DataExportSection`). */
+  isAppointment?: boolean;
 }
 
 export function DataExportCard({
   bookingWord = 'Booking',
   clientLabel = 'Guest',
+  isAppointment = false,
 }: DataExportCardProps) {
   const accessToken = useAccessToken();
   const toast = useToast();
@@ -121,10 +124,11 @@ export function DataExportCard({
   return (
     <Card>
       <Text variant="label">Export your data</Text>
+      {/* Web copy, word for word (`DataExportSection.tsx:70-83`). */}
       <Text variant="bodySmall" tone="secondary" style={styles.description}>
-        Download a full CSV of all {bookingWord.toLowerCase()}s or your{' '}
-        {clientLabel.toLowerCase()} records. Exports cover your whole venue (not limited to
-        the date range above).
+        {isAppointment
+          ? `Download a full CSV of all ${bookingWord.toLowerCase()}s or your ${clientLabel.toLowerCase()} records. Exports cover your whole venue (not limited to the date range above). You are entitled to your data at any time.`
+          : 'Download a full CSV export of your bookings or guest records. Exports include all records for your venue (not limited to the date range above). You are entitled to your data at any time.'}
       </Text>
 
       <View style={styles.buttons}>
@@ -145,7 +149,9 @@ export function DataExportCard({
           label={
             downloading === 'guests'
               ? 'Downloading...'
-              : `Export ${clientLabel.toLowerCase()} list`
+              : isAppointment
+                ? `Export ${clientLabel.toLowerCase()} list`
+                : 'Export guest list'
           }
           variant="secondary"
           size="sm"
@@ -156,9 +162,11 @@ export function DataExportCard({
         />
       </View>
 
+      {/* The web's footer, and only that: the note about installing
+          expo-file-system was a developer aside that reached users
+          (`DataExportSection.tsx:115`). */}
       <Text variant="caption" tone="muted" style={styles.footer}>
-        Files are generated from your venue&apos;s live data. Install expo-file-system for native
-        file sharing.
+        Files are generated in real time from your venue&apos;s data.
       </Text>
     </Card>
   );

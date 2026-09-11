@@ -53,8 +53,6 @@ export interface VenueDayResolution {
   amendedRanges: MinuteRange[];
 }
 
-type WeekdayKey = '0' | '1' | '2' | '3' | '4' | '5' | '6';
-
 function mergeAdjacentRanges(ranges: MinuteRange[]): MinuteRange[] {
   const sorted = [...ranges].filter((r) => r.end > r.start).sort((a, b) => a.start - b.start);
   const out: MinuteRange[] = [];
@@ -103,18 +101,35 @@ export function venueWeekDayHours(
   openingHours: OpeningHours | null | undefined,
   date: string,
 ): VenueDayHours {
-  if (!openingHours) return { kind: 'unknown' };
+  // Web `isOpeningHoursConfigured`: no map, or an empty one, is a venue that
+  // has never described its week and therefore imposes no constraint at all.
+  if (!openingHours || typeof openingHours !== 'object' || Object.keys(openingHours).length === 0) {
+    return { kind: 'unknown' };
+  }
   const [y, m, d] = date.split('-').map(Number);
   if (!y || !m || !d) return { kind: 'unknown' };
   const weekday = new Date(y, m - 1, d).getDay();
-  const day = openingHours[String(weekday) as WeekdayKey];
-  if (!day) return { kind: 'unknown' };
-  if (day.closed === true) return { kind: 'closed' };
-  const periods = (day.periods ?? [])
+  /**
+   * Web `getOpeningPeriodsForDay` + `resolveVenueWideAllowedMinuteRanges`:
+   * inside a CONFIGURED map, a weekday that is missing, marked closed, or left
+   * with no usable periods is `weekly-closed` — the booking engine refuses
+   * guests on it, so the diary must not draw it as bookable either. A legacy
+   * day-level `{ open, close }` counts as one open period.
+   */
+  const raw = (openingHours as Record<string, unknown>)[String(weekday)] as
+    | { closed?: boolean; periods?: { open: string; close: string }[]; open?: string; close?: string }
+    | undefined;
+  let source: { open: string; close: string }[] = [];
+  if (raw && raw.closed !== true) {
+    if (Array.isArray(raw.periods)) source = raw.periods;
+    else if (typeof raw.open === 'string' && typeof raw.close === 'string') {
+      source = [{ open: raw.open, close: raw.close }];
+    }
+  }
+  const periods = source
     .map((p) => ({ start: timeToMinutes(p.open), end: timeToMinutes(p.close) }))
-    .filter((r) => r.end > r.start);
-  // "Open" with no usable periods is ambiguous → treat as unknown (don't shade).
-  if (periods.length === 0) return { kind: 'unknown' };
+    .filter((r) => Number.isFinite(r.start) && Number.isFinite(r.end) && r.end > r.start);
+  if (periods.length === 0) return { kind: 'closed' };
   return { kind: 'open', periods };
 }
 

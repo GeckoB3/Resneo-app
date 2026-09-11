@@ -41,6 +41,11 @@ const NON_OCCUPYING_BLOCK_TYPES = new Set([
   'venue_closed',
   'venue_amended_hours',
   'practitioner_closed',
+  // The partitioned stripe (web 2026-09-10, `partitionScheduleClosureBlocks`):
+  // minutes both the venue and the calendar are shut — still a boundary, not a
+  // person being absent. A partner's `linked_venue_closed` stays a wall, as on
+  // the web: working past another venue's closing is not ours to decide.
+  'venue_and_calendar_closed',
   // A calendar's own per-date hours override. Advice, exactly like the venue's:
   // it marks the window that IS worked on an amended day.
   'calendar_amended_hours',

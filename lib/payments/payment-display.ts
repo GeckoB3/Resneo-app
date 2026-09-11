@@ -241,7 +241,9 @@ export function buildPriceSummary(booking: BookingDetail): PriceSummaryRow[] {
       key: 'balance',
       label: 'Outstanding',
       pence: null,
-      note: 'Enter an amount',
+      // Web `payment-display.ts`: the panel says the price is missing, not what
+      // to type — "Enter an amount" is the take-payment sheet's instruction.
+      note: 'Price not set',
       emphasis: true,
     });
   }

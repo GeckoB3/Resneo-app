@@ -518,7 +518,7 @@ describe('buildPriceSummary', () => {
         balance_due_pence: null,
       }),
     );
-    expect(rows.find((r) => r.label === 'Outstanding')?.note).toBe('Enter an amount');
+    expect(rows.find((r) => r.label === 'Outstanding')?.note).toBe('Price not set');
   });
 
   it('renders nothing for a booking with no prices, deposit or payments', () => {

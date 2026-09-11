@@ -42,9 +42,12 @@ import {
 } from '@/lib/calendar/cluster-bookings';
 import { isNonWorkingBlock, isOccupyingBlock, narrowWorkingRanges } from '@/lib/calendar/occupying-blocks';
 import { closureBandLook } from '@/components/calendar/closure-band';
+import { IconButton } from '@/components/ui/IconButton';
+import { workingHoursLabel } from '@/lib/calendar/column-hours-label';
 import {
   clampClosureBlocksToWindow,
   isScheduleClosureBlockType,
+  partitionClosureBands,
 } from '@/lib/calendar/schedule-closures';
 import {
   bookingProcessingBlocks,
@@ -194,6 +197,24 @@ type CalendarDayGridProps = {
   /** Venue open/closed state for this date → shades the closed (out-of-hours) time. */
   venueHours?: VenueDayHours;
   /**
+   * The calendar this column shows. Draws a header row over the canvas — the
+   * name with the day's working hours under it (web: the column header) —
+   * and names the calendar on its "unavailable" stripes.
+   */
+  calendarName?: string;
+  /**
+   * The clock button in the header's top-left corner, where the header row
+   * meets the time column (web: the toolbar's "Amend hours"). Opens the
+   * amend-hours chooser; the host decides what it offers.
+   */
+  onAmendHours?: () => void;
+  /**
+   * Extra minute ranges this day must span whatever the viewed calendar works
+   * (web `calendarWorkingBoundsForDates`: the diary widens to every active
+   * calendar's hours, so the scale does not change with the column filter).
+   */
+  boundsRanges?: { start: number; end: number }[];
+  /**
    * User's visible-window override (web parity: From/Until). Widens the grid to
    * the pinned window without ever clipping a booking outside it. Null/omitted →
    * auto-fit only.
@@ -251,6 +272,18 @@ type CalendarDayGridProps = {
 const DEFAULT_DURATION_MINUTES = 30;
 /** Bottom gutter reserved by the compact fit so the day ends just above the fold. */
 const COMPACT_BOTTOM_GUTTER = 16;
+/** The header row over the canvas: the calendar's name and hours, the clock corner. */
+const HEADER_HEIGHT = 40;
+
+/**
+ * What a screen reader says for a closure stripe. A partitioned stripe's words
+ * already end in its minutes ("Venue closed 18:00 to 20:00"), so appending the
+ * range again would read them twice.
+ */
+function closureStripeA11yLabel(label: string | null | undefined, timeLabel: string): string {
+  const text = label?.trim() || 'Closed';
+  return /\d{1,2}:\d{2} to \d{1,2}:\d{2}$/.test(text) ? text : `${text} ${timeLabel}`;
+}
 
 /** Scrollable single-day, single-practitioner time grid. */
 export function CalendarDayGrid({
@@ -261,6 +294,9 @@ export function CalendarDayGrid({
   sessions = [],
   scheduleBlocks = [],
   venueHours,
+  calendarName,
+  onAmendHours,
+  boundsRanges,
   windowOverride,
   nowMinutes,
   onBlockPress,
@@ -279,8 +315,12 @@ export function CalendarDayGrid({
   compact = false,
   processingPatternFor,
 }: CalendarDayGridProps) {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const scrollRef = useRef<ScrollViewType | null>(null);
+  // The header row (name + hours, the clock corner) sits above the canvas
+  // whenever the host names the column or offers the clock.
+  const showHeader = Boolean(calendarName) || Boolean(onAmendHours);
+  const headerHeight = showHeader ? HEADER_HEIGHT : 0;
 
   // Measured size of the grid's scroll viewport. Height: compact mode fits the
   // whole day into it (0 until the first layout → compact uses its floor
@@ -307,6 +347,17 @@ export function CalendarDayGrid({
         ranges.push(r);
         working.push(r);
       }
+      // The grid always shows the widest span anything is scheduled open: the
+      // venue's hours OR the calendar's own (web 2026-09-10). A calendar working
+      // 08:00–20:00 in a venue open 09:00–18:00 draws 08:00–20:00, and a venue
+      // open past the calendar's day draws to the venue's close, with the
+      // stripes saying which side is closed in each hour.
+      if (venueHours?.kind === 'open') {
+        for (const period of venueHours.periods) ranges.push({ start: period.start, end: period.end });
+      }
+      // Every active calendar's hours on the date, so one column's day spans
+      // the same window as the side-by-side view (web parity).
+      for (const r of boundsRanges ?? []) ranges.push({ start: r.start, end: r.end });
 
       // One bar per booking row (web #187: a visit's services are independent
       // bars, each knowing its place in the visit; see `clusterCalendarBookings`).
@@ -389,17 +440,17 @@ export function CalendarDayGrid({
         rawScheduleBlocks: schedBlocks,
         workingRanges: narrowWorkingRanges(working, nonWorking),
       };
-    }, [bookings, workingHours, timeBlocks, sessions, scheduleBlocks, windowOverride]);
+    }, [bookings, workingHours, timeBlocks, sessions, scheduleBlocks, windowOverride, venueHours, boundsRanges]);
 
   // Vertical scale: comfortable 2px/min, or compact fit-the-day-to-the-viewport
   // (web parity: measured slot height, floored at 16px/15min). The fit subtracts
-  // the scroll padding above the canvas and a small bottom gutter.
+  // the scroll padding above the canvas, the header row and a small bottom gutter.
   const pxPerMinute = compact
     ? computeCompactPxPerMinute(
         viewportHeight,
         bounds.startHour,
         bounds.endHour,
-        spacing.sm + COMPACT_BOTTOM_GUTTER,
+        spacing.sm + headerHeight + COMPACT_BOTTOM_GUTTER,
       )
     : PX_PER_MINUTE;
   const minBlockHeight = compact ? COMPACT_MIN_BLOCK_HEIGHT : MIN_BLOCK_HEIGHT;
@@ -556,13 +607,22 @@ export function CalendarDayGrid({
 
     // Each overlay layer stacks on its own, so its heights are gap-clamped
     // within that layer — same rule as bookings, same guarantee.
+    // One explanation per minute (web 2026-09-10): the venue's closed minutes
+    // and the calendar's own are partitioned into venue-only, calendar-only and
+    // both, each its own stripe with its own words and tint.
+    const bands = partitionClosureBands<CalendarTimeBlock>({
+      venueClosed: venueClosedRanges(venueHours, gridStartMin, bounds.endHour * 60),
+      entries: rawTimeBlocks,
+      columnName: calendarName,
+      keyPrefix: 'day',
+    });
     const overlayH = computeRangeHeights(
-      rawTimeBlocks.map(({ block, start, end }) => ({ id: block.id, start, end })),
+      bands.map(({ block, start, end }) => ({ id: block.id, start, end })),
       gridStartMin,
       pxPerMinute,
       minBlockHeight,
     );
-    const overlayBlocks: PositionedTimeBlock[] = rawTimeBlocks.map(({ block, start, end }) => ({
+    const overlayBlocks: PositionedTimeBlock[] = bands.map(({ block, start, end }) => ({
       block,
       top: (start - gridStartMin) * pxPerMinute,
       height: overlayH.get(block.id) ?? (end - start) * pxPerMinute,
@@ -606,7 +666,7 @@ export function CalendarDayGrid({
       positionedSessions: sessionItems,
       positionedScheduleBlocks: scheduleItems,
     };
-  }, [processingPatternFor, bounds, rawBlocks, rawTimeBlocks, rawSessions, rawScheduleBlocks, pxPerMinute, minBlockHeight]);
+  }, [processingPatternFor, bounds, rawBlocks, rawTimeBlocks, rawSessions, rawScheduleBlocks, pxPerMinute, minBlockHeight, venueHours, calendarName]);
 
   /**
    * A quick action on a bar writes that bar's booking (web #187: Start and
@@ -651,12 +711,6 @@ export function CalendarDayGrid({
   const hours = useMemo(
     () => Array.from({ length: endHour - startHour + 1 }, (_, i) => startHour + i),
     [startHour, endHour],
-  );
-
-  // Venue-closed minute-ranges within the visible window (out-of-hours / closed day).
-  const closedRanges = useMemo(
-    () => venueClosedRanges(venueHours, startHour * 60, endHour * 60),
-    [venueHours, startHour, endHour],
   );
 
   const nowTop =
@@ -745,6 +799,38 @@ export function CalendarDayGrid({
     return out;
   }, [conflictBookings, bookings, timeBlocks, sessions, scheduleBlocks, processingPatternFor]);
 
+  // The header row: the clock button in the corner where the header meets the
+  // time column (web: the toolbar's "Amend hours"), then the calendar's name
+  // with the hours it works today under it.
+  const header = showHeader ? (
+    <View
+      testID="day-grid-header"
+      style={[styles.headerRow, { height: HEADER_HEIGHT, borderBottomColor: colors.border }]}>
+      <View style={styles.headerCorner}>
+        {onAmendHours ? (
+          <IconButton
+            icon={{ ios: 'clock', android: 'schedule', web: 'schedule' }}
+            accessibilityLabel="Amend hours"
+            variant="bordered"
+            size={30}
+            iconSize={16}
+            onPress={onAmendHours}
+          />
+        ) : null}
+      </View>
+      {calendarName ? (
+        <View style={styles.headerCell}>
+          <Text variant="label" numberOfLines={1}>
+            {calendarName}
+          </Text>
+          <Text variant="caption" tone="muted" numberOfLines={1} style={styles.headerHours}>
+            {workingHoursLabel(workingHours)}
+          </Text>
+        </View>
+      ) : null}
+    </View>
+  ) : null;
+
   // The time grid itself: one full-day-height layer holding the hour lines,
   // closed-time shading, the now-line and the positioned appointment blocks.
   const grid = (
@@ -798,37 +884,19 @@ export function CalendarDayGrid({
           );
         })}
 
-        {/* Venue-closed shading — out-of-hours / closed-day time. A faint band
-            behind everything; pointerEvents none so a slot can still be tapped
-            to book anyway. */}
-        {closedRanges.map((r) => {
-          const top = (r.start - startHour * 60) * pxPerMinute;
-          const height = (r.end - r.start) * pxPerMinute;
-          return (
-            <View
-              key={`closed-${r.start}-${r.end}`}
-              pointerEvents="none"
-              accessibilityLabel={`Closed ${minutesToTime(r.start)}–${minutesToTime(r.end)}`}
-              style={[styles.closedBand, { top, height, backgroundColor: hexToRgba(colors.text, 0.06) }]}>
-              {height >= 26 ? (
-                <Text variant="caption" tone="muted" style={styles.closedLabel}>
-                  Closed
-                </Text>
-              ) : null}
-            </View>
-          );
-        })}
-
-        {/* Blocked-time overlays, and the closure bands that say why the day is
-            empty (closed / on leave / amended hours). */}
+        {/* Blocked-time overlays, and the closure stripes that say why the day
+            is empty — venue closed (rose), this calendar unavailable (sky),
+            both (slate), on leave (violet) — each labelled with its cause and
+            its minutes (web 2026-09-10). pointerEvents stay on so an empty
+            slot under a stripe can still be tapped to book anyway. */}
         {positionedBlocks.map((item) => {
-          const look = closureBandLook(item.block.blockType, colors);
+          const look = closureBandLook(item.block.blockType, isDark);
           return (
             <Pressable
               key={item.block.id}
               accessibilityLabel={
                 look
-                  ? `${item.block.label?.trim() || 'Closed'} ${item.timeLabel}`
+                  ? closureStripeA11yLabel(item.block.label, item.timeLabel)
                   : `Blocked ${item.timeLabel}`
               }
               onPress={() => {
@@ -855,7 +923,7 @@ export function CalendarDayGrid({
                   style={look ? { color: look.labelColor } : undefined}>
                   {look
                     ? item.block.label?.trim() || 'Closed'
-                    : `${item.block.label?.trim() || 'Blocked'} · ${item.timeLabel}`}
+                    : `${item.block.label?.trim() || 'Time blocked'} · ${item.timeLabel}`}
                 </Text>
               ) : null}
               {!look && item.block.isEditable && item.height >= 40 ? (
@@ -1029,6 +1097,7 @@ export function CalendarDayGrid({
         // Width still budgets the per-block quick actions; height is unused
         // (compact fit needs a scroll viewport, which the parent owns here).
         onLayout={(e) => setViewportWidth(e.nativeEvent.layout.width)}>
+        {header}
         {grid}
       </View>
     );
@@ -1055,6 +1124,7 @@ export function CalendarDayGrid({
           />
         ) : undefined
       }>
+      {header}
       {grid}
     </ScrollView>
   );
@@ -1068,6 +1138,26 @@ const styles = StyleSheet.create({
   embeddedContent: {
     paddingTop: spacing.sm,
     paddingBottom: spacing.md,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    marginBottom: spacing.xs,
+  },
+  headerCorner: {
+    width: TIME_GUTTER_WIDTH,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerCell: {
+    flex: 1,
+    minWidth: 0,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.xs,
+  },
+  headerHours: {
+    fontVariant: ['tabular-nums'],
   },
   hourRow: {
     position: 'absolute',
@@ -1102,16 +1192,6 @@ const styles = StyleSheet.create({
     left: TIME_GUTTER_WIDTH,
     right: 0,
     height: StyleSheet.hairlineWidth,
-  },
-  closedBand: {
-    position: 'absolute',
-    left: TIME_GUTTER_WIDTH,
-    right: 0,
-  },
-  closedLabel: {
-    marginTop: 4,
-    marginLeft: spacing.sm,
-    opacity: 0.7,
   },
   /**
    * A closure band fills its span exactly, so abutting bands (closed → on leave

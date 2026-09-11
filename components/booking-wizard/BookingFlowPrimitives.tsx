@@ -260,8 +260,8 @@ export function BookingFlowConfirm({
         setConfirmation({
           booking_id: response.booking_id,
           payment_url: response.payment_url,
-          requires_deposit: response.requires_deposit,
-          deposit_amount_pence: response.deposit_amount_pence,
+          // The 201 carries no deposit figure (web `POST /api/venue/bookings`):
+          // a `payment_url` is the deposit request, as the web's card reads it.
           card_hold_requested: response.card_hold_requested,
           card_hold_fee_pence: staffCardHold?.feePence ?? null,
           compliance_warnings: response.compliance_warnings,
@@ -325,6 +325,11 @@ export function BookingFlowConfirm({
               <Text variant="caption" tone="muted">
                 {STAFF_CARD_HOLD_LINK_SENT_LINE} No payment is taken.
               </Text>
+              {confirmation.payment_url ? (
+                <Text variant="caption" tone="muted">
+                  If card details are not added within 24 hours, the booking will be auto-cancelled.
+                </Text>
+              ) : null}
             </View>
           ) : confirmation.payment_url ||
             (confirmation.requires_deposit &&
@@ -334,12 +339,17 @@ export function BookingFlowConfirm({
               <Text variant="bodySmall" tone="brand">
                 {confirmation.deposit_amount_pence != null && confirmation.deposit_amount_pence > 0
                   ? `Deposit required: ${money(confirmation.deposit_amount_pence)}`
-                  : 'Payment required'}
+                  : 'Deposit requested'}
               </Text>
               {confirmation.payment_url ? (
-                <Text variant="caption" tone="muted">
-                  A payment link has been sent to the guest.
-                </Text>
+                <>
+                  <Text variant="caption" tone="muted">
+                    A deposit payment link has been sent to the guest.
+                  </Text>
+                  <Text variant="caption" tone="muted">
+                    If deposit is not paid within 24 hours, the booking will be auto-cancelled.
+                  </Text>
+                </>
               ) : null}
             </View>
           ) : null}

@@ -59,9 +59,13 @@ export function computeCompactPxPerMinute(
   const fit = (viewportHeight - chromePx) / totalMinutes;
   return Math.min(PX_PER_MINUTE, Math.max(COMPACT_MIN_PX_PER_MINUTE, fit));
 }
-/** Default opening when a day has no working hours. */
-export const DEFAULT_START_HOUR = 8;
-export const DEFAULT_END_HOUR = 20;
+/**
+ * Default opening when a day has no working hours — the web's fallback in
+ * `getCalendarGridBounds` (07:00–21:00), so an unconfigured venue's diary
+ * shows the same window on both.
+ */
+export const DEFAULT_START_HOUR = 7;
+export const DEFAULT_END_HOUR = 21;
 /** Snap empty-slot taps to this granularity (minutes). */
 export const TAP_SNAP_MINUTES = 15;
 /** Snap drag-to-move and resize to this granularity (web snaps to 1 min; 5 suits touch). */

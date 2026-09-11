@@ -259,6 +259,60 @@ export function amendedClosedOnDate(
   );
 }
 
+/** One stored per-date override, as `availability_exceptions` holds it. */
+type StoredOverride = {
+  closed?: boolean;
+  periods?: { start: string; end: string }[];
+  reason?: string | null;
+};
+
+/**
+ * The run of consecutive dates around `date` that carry the same stored hours
+ * override, read straight off the calendar row.
+ *
+ * The Closures list is scoped to a chip filter and a ±90-day window, so the
+ * planner's "Amend hours for this date" cannot rely on it. Falling back to the
+ * single stored date rebuilt the entry with `reason: null`, and saving it then
+ * overwrote the run's reason with nothing. Mirrors how the route rebuilds runs
+ * from the map.
+ */
+export function amendedRunFromExceptions(
+  exceptions: Record<string, unknown> | null | undefined,
+  date: string,
+): { date_start: string; date_end: string; periods: HoursPeriod[]; reason: string | null } | null {
+  const valueAt = (d: string): { periods: HoursPeriod[]; reason: string | null } | null => {
+    const raw = exceptions?.[d] as StoredOverride | undefined;
+    if (!raw || raw.closed === true || !Array.isArray(raw.periods) || raw.periods.length === 0) {
+      return null;
+    }
+    return {
+      periods: raw.periods.map((p) => ({ start: p.start.slice(0, 5), end: p.end.slice(0, 5) })),
+      reason: raw.reason ?? null,
+    };
+  };
+
+  const here = valueAt(date);
+  if (!here) return null;
+  const signature = JSON.stringify(here);
+
+  let dateStart = date;
+  for (let i = 0; i < AMENDED_HOURS_MAX_DATES; i += 1) {
+    const prev = addDaysToDateStr(dateStart, -1);
+    const value = valueAt(prev);
+    if (!value || JSON.stringify(value) !== signature) break;
+    dateStart = prev;
+  }
+  let dateEnd = date;
+  for (let i = 0; i < AMENDED_HOURS_MAX_DATES; i += 1) {
+    const next = addDaysToDateStr(dateEnd, 1);
+    const value = valueAt(next);
+    if (!value || JSON.stringify(value) !== signature) break;
+    dateEnd = next;
+  }
+
+  return { date_start: dateStart, date_end: dateEnd, periods: here.periods, reason: here.reason };
+}
+
 /** The hours entry covering a date on a calendar, if any. */
 export function amendedHoursOnDate(
   entries: readonly AmendedHoursEntry[],

@@ -96,15 +96,19 @@ export interface ComplianceBookingWarning {
   severity?: ComplianceWarningSeverity;
 }
 
+/**
+ * What the 201 carries. Deliberately short: the web route answers
+ * `booking_id`, `payment_url`, `card_hold_requested`, `message` and the two
+ * warning arrays, and nothing about the deposit's size or the cancellation
+ * notice (`POST /api/venue/bookings`, every model). A `payment_url` IS the
+ * deposit request, which is how the web's success card reads it.
+ */
 export interface CreateBookingResponse {
   booking_id: string;
   payment_url?: string;
   message?: string;
-  requires_deposit?: boolean;
-  deposit_amount_pence?: number;
   /** True when the booking was created with a card hold requested (link sent). */
   card_hold_requested?: boolean;
-  cancellation_notice_hours?: number;
   /** Unmet non-blocking compliance requirements, surfaced on the confirmation. */
   compliance_warnings?: ComplianceBookingWarning[];
   /** With `override_availability`: the engine's reasons in plain words (web #187). */

@@ -152,6 +152,9 @@ export const queryKeys = {
     all: () => [...queryKeys.all, 'reports'] as const,
     range: (accessToken?: string | null, from?: string | null, to?: string | null) =>
       [...queryKeys.reports.all(), keyScope(accessToken), from ?? null, to ?? null] as const,
+    /** Booked revenue (web #191): keyed on the resolved query string. */
+    bookedRevenue: (accessToken?: string | null, query?: string | null) =>
+      [...queryKeys.reports.all(), 'booked-revenue', keyScope(accessToken), query ?? null] as const,
   },
 
   referrals: {

@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/Input';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import { marketingPermissionSummary } from '@/lib/guests/marketing-permission';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useUpdateGuest, type UpdateGuestInput } from '@/lib/queries/useGuestMutations';
 import { spacing } from '@/theme/index';
@@ -233,25 +234,45 @@ export function GuestEditSheet({ target, onClose }: GuestEditSheetProps) {
               </View>
             </View>
 
-            {/* Marketing consent — two independent toggles */}
+            {/* Marketing permission — one preference seen from two sides (web
+                2026-09-10): a fresh consent lifts an opt-out, an opt-out
+                withdraws the consent, so the pair never says both at once. */}
             <View style={styles.switchRow}>
               <View style={styles.switchLabel}>
-                <Text variant="bodyMedium">Marketing consent</Text>
+                <Text variant="bodyMedium">Opted out of marketing</Text>
+                <Text variant="caption" tone="muted">
+                  Has asked not to receive marketing
+                </Text>
+              </View>
+              <Switch
+                value={marketingOptOut}
+                onValueChange={(value) => {
+                  setMarketingOptOut(value);
+                  if (value) setMarketingConsent(false);
+                }}
+              />
+            </View>
+            <View style={styles.switchRow}>
+              <View style={styles.switchLabel}>
+                <Text variant="bodyMedium">Marketing consent given</Text>
                 <Text variant="caption" tone="muted">
                   Explicitly opted in to marketing
                 </Text>
               </View>
-              <Switch value={marketingConsent} onValueChange={setMarketingConsent} />
+              <Switch
+                value={marketingConsent}
+                onValueChange={(value) => {
+                  setMarketingConsent(value);
+                  if (value) setMarketingOptOut(false);
+                }}
+              />
             </View>
-            <View style={styles.switchRow}>
-              <View style={styles.switchLabel}>
-                <Text variant="bodyMedium">Opted out</Text>
-                <Text variant="caption" tone="muted">
-                  Has asked not to be contacted
-                </Text>
-              </View>
-              <Switch value={marketingOptOut} onValueChange={setMarketingOptOut} />
-            </View>
+            <Text variant="caption" tone={marketingConsent && !marketingOptOut ? 'success' : 'muted'}>
+              {marketingPermissionSummary({
+                marketing_consent: marketingConsent,
+                marketing_opt_out: marketingOptOut,
+              })}
+            </Text>
 
             {error ? (
               <Text variant="bodySmall" tone="danger">

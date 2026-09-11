@@ -16,6 +16,7 @@
 import { useMemo } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
+import { IconButton } from '@/components/ui/IconButton';
 import { Text } from '@/components/ui/Text';
 import { hexToRgba } from '@/lib/color';
 import { fonts, radius, spacing } from '@/theme/index';
@@ -48,6 +49,11 @@ type WeekMatrixGridProps = {
   onDayPress: (date: string) => void;
   /** Tap a cell → open that day in the Day view (optionally scoped to the row). */
   onCellPress: (calendarId: string, date: string) => void;
+  /**
+   * The clock button in the header's empty corner, where the calendar-name
+   * column meets the day headers (web: the toolbar's "Amend hours").
+   */
+  onAmendHours?: () => void;
   refreshing?: boolean;
   onRefresh?: () => void;
 };
@@ -77,6 +83,7 @@ export function WeekMatrixGrid({
   grid,
   onDayPress,
   onCellPress,
+  onAmendHours,
   refreshing = false,
   onRefresh,
 }: WeekMatrixGridProps) {
@@ -106,9 +113,20 @@ export function WeekMatrixGrid({
           />
         ) : undefined
       }>
-      {/* Header row: empty corner + 7 day headers. */}
+      {/* Header row: the clock corner + 7 day headers. */}
       <View style={[styles.headerRow, { borderBottomColor: colors.border }]}>
-        <View style={styles.rowLabelCell} />
+        <View style={styles.rowLabelCell}>
+          {onAmendHours ? (
+            <IconButton
+              icon={{ ios: 'clock', android: 'schedule', web: 'schedule' }}
+              accessibilityLabel="Amend hours"
+              variant="bordered"
+              size={30}
+              iconSize={16}
+              onPress={onAmendHours}
+            />
+          ) : null}
+        </View>
         {days.map((d) => (
           <Pressable
             key={d.date}

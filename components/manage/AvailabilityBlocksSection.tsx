@@ -19,6 +19,7 @@ import {
 
 import { ApiError, isRequiresConfirmationBody } from '@/lib/api/client';
 import { minutesToTime } from '@/components/calendar/grid-layout';
+import { HoursMismatchAdvice } from '@/components/availability/HoursMismatchAdvice';
 import { ClosuresCalendar } from '@/components/manage/ClosuresCalendar';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -43,6 +44,9 @@ import type {
   PatchBlockInput,
   YieldOverrides,
 } from '@/lib/queries/useAvailabilityBlocks';
+import { datedCalendarHoursOutsideVenue, describeDatedMismatch } from '@/lib/calendar/hours-mismatch';
+import { calendarDateInTimeZone } from '@/lib/queries/useBookingsList';
+import { usePractitioners } from '@/lib/queries/usePractitioners';
 import { useManagedServices } from '@/lib/queries/useServicesManage';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
@@ -65,9 +69,21 @@ function isRestaurantTableProductTier(pricingTier: string | null | undefined): b
 
 const BLOCK_TYPE_LABELS: Record<BlockType, string> = {
   closed: 'Closure',
-  amended_hours: 'Amended Hours',
-  reduced_capacity: 'Reduced Capacity',
-  special_event: 'Special Event',
+  amended_hours: 'Amended hours',
+  reduced_capacity: 'Reduced capacity',
+  special_event: 'Special event',
+};
+
+/**
+ * One line under each type in the chooser (web `blockTypeOptions[].hint`,
+ * 2026-09-10: "the same chooser as the Closures & amended hours tab on
+ * Calendar availability: one button per kind, with a hint").
+ */
+const BLOCK_TYPE_HINTS: Record<BlockType, string> = {
+  closed: 'All day, or a window each day',
+  amended_hours: 'Open on these dates with these hours',
+  reduced_capacity: 'Fewer covers on these dates',
+  special_event: 'A one-off event on these dates',
 };
 
 /**
@@ -122,11 +138,10 @@ interface DraftState {
   yield_duration: string;
 }
 
-function emptyDraft(): DraftState {
+function emptyDraft(today = todayYmd()): DraftState {
   // Seed dates to today so the native pickers show a concrete, valid value the
   // moment the sheet opens (an OS picker can't represent "empty"). The user
   // adjusts from there; the rest stays blank/optional as before.
-  const today = todayYmd();
   return {
     block_type: 'closed',
     date_start: today,
@@ -250,8 +265,10 @@ function validateDraft(d: DraftState): string | null {
       if (!d.p2Open || !d.p2Close || !TIME_RE.test(d.p2Open) || !TIME_RE.test(d.p2Close)) {
         return 'Both period 2 open and close are required when using a second period.';
       }
+      // No ordering rule between the periods: neither the web form nor the
+      // route imposes one (`overridePeriodsSchema` sorts them), so refusing
+      // here blocked a save the server accepts.
       if (d.p2Open >= d.p2Close) return 'Period 2 close must be after open.';
-      if (d.p2Open < d.p1Close) return 'The second period must start after the first one ends.';
     }
   }
   return null;
@@ -266,10 +283,11 @@ function formatDateRange(b: AvailabilityBlock): string {
   return `${b.date_start} – ${b.date_end}`;
 }
 
-function todayYmd(): string {
-  // Device-local calendar date (YYYY-MM-DD). Slicing toISOString() gave the UTC
-  // date, which showed yesterday/tomorrow near midnight for non-UTC users; this
-  // is only the picker's default day and the user can still change it.
+function todayYmd(timeZone?: string | null): string {
+  // The VENUE's calendar date when its timezone is known: this seeds the
+  // pickers and splits Upcoming from Past, and abroad the device's date can be
+  // a day out. Falls back to the device's own date.
+  if (timeZone) return calendarDateInTimeZone(new Date(), timeZone);
   const d = new Date();
   const y = d.getFullYear();
   const mo = String(d.getMonth() + 1).padStart(2, '0');
@@ -417,31 +435,40 @@ function TypeSelector({
   onChange: (t: BlockType) => void;
 }) {
   const { colors } = useTheme();
+  // One button per kind with a hint under it (web 2026-09-10), in place of a
+  // dropdown: the two kinds are easy to confuse and the hint says which is which.
   return (
     <View style={styles.fieldWrapper}>
       <Text variant="label" tone="secondary">
         Type
       </Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.typeRow}>
-        {options.map((t) => (
-          <Pressable
-            key={t}
-            onPress={() => onChange(t)}
-            style={[
-              styles.typeOption,
-              {
-                backgroundColor: value === t ? colors.brand : colors.surface,
-                borderColor: value === t ? colors.brand : colors.border,
-              },
-            ]}>
-            <Text
-              variant="label"
-              color={value === t ? colors.onBrand : colors.text}>
-              {BLOCK_TYPE_LABELS[t]}
-            </Text>
-          </Pressable>
-        ))}
-      </ScrollView>
+      <View style={styles.typeChoiceRow} accessibilityRole="radiogroup">
+        {options.map((t) => {
+          const selected = value === t;
+          return (
+            <Pressable
+              key={t}
+              accessibilityRole="radio"
+              accessibilityState={{ selected }}
+              onPress={() => onChange(t)}
+              style={({ pressed }) => [
+                styles.typeChoice,
+                {
+                  backgroundColor: selected ? colors.brandSubtle : colors.surface,
+                  borderColor: selected ? colors.brand : colors.border,
+                  opacity: pressed ? 0.7 : 1,
+                },
+              ]}>
+              <Text variant="label" color={selected ? colors.brand : colors.text}>
+                {BLOCK_TYPE_LABELS[t]}
+              </Text>
+              <Text variant="caption" tone="muted">
+                {BLOCK_TYPE_HINTS[t]}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
     </View>
   );
 }
@@ -575,6 +602,7 @@ function BlockForm({
   isRestaurantTier,
   services,
   onClose,
+  onSaved,
 }: {
   visible: boolean;
   editingBlock: AvailabilityBlock | null;
@@ -585,8 +613,11 @@ function BlockForm({
   /** Services for the reduced-capacity "Service scope" picker (restaurant tier). */
   services: { id: string; name: string }[];
   onClose: () => void;
+  /** The block as the server returned it, after a create or edit went through. */
+  onSaved?: (block: AvailabilityBlock) => void;
 }) {
   const { colors } = useTheme();
+  const { venue } = useVenueContext();
   const createBlock = useCreateBlock();
   const patchBlock = usePatchBlock();
   const isSaving = createBlock.isPending || patchBlock.isPending;
@@ -601,11 +632,11 @@ function BlockForm({
     return base;
   }, [isRestaurantTier, editingBlock]);
 
-  const [draft, setDraft] = useState<DraftState>(emptyDraft);
+  const today = todayYmd(venue?.timezone);
+  const [draft, setDraft] = useState<DraftState>(() => emptyDraft(today));
   const [error, setError] = useState<string | null>(null);
   /** Set when the server refuses a closure that covers existing bookings (409). */
   const [affectedWarning, setAffectedWarning] = useState<string | null>(null);
-  const today = todayYmd();
 
   // Sync draft whenever the sheet opens (editingBlock / prefill may change).
   const handleSheetVisible = useCallback(() => {
@@ -613,11 +644,11 @@ function BlockForm({
       editingBlock
         ? draftFromBlock(editingBlock)
         : prefill
-          ? { ...emptyDraft(), date_start: prefill.date_start, date_end: prefill.date_end }
-          : emptyDraft(),
+          ? { ...emptyDraft(today), date_start: prefill.date_start, date_end: prefill.date_end }
+          : emptyDraft(today),
     );
     setError(null);
-  }, [editingBlock, prefill]);
+  }, [editingBlock, prefill, today]);
 
   const pd = draft;
   const set = useCallback(
@@ -626,14 +657,13 @@ function BlockForm({
   );
 
   async function save(acknowledge: boolean) {
-    if (editingBlock) {
-      await patchBlock.mutateAsync({ ...draftToPatchPayload(pd, editingBlock.id), acknowledge });
-    } else {
-      await createBlock.mutateAsync({ ...draftToCreatePayload(pd), acknowledge });
-    }
+    const saved = editingBlock
+      ? await patchBlock.mutateAsync({ ...draftToPatchPayload(pd, editingBlock.id), acknowledge })
+      : await createBlock.mutateAsync({ ...draftToCreatePayload(pd), acknowledge });
     hapticSuccess();
     setAffectedWarning(null);
     onClose();
+    onSaved?.(saved);
   }
 
   async function handleSave() {
@@ -961,15 +991,28 @@ function BlockForm({
 
 type AvailabilityBlocksSectionProps = {
   isAdmin: boolean;
+  /**
+   * yyyy-mm-dd to open on with that day picked (the diary's clock button, web
+   * `initialDate`): the month shows it and the Add button carries it.
+   */
+  initialDate?: string | null;
 };
 
-export function AvailabilityBlocksSection({ isAdmin }: AvailabilityBlocksSectionProps) {
+const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+export function AvailabilityBlocksSection({ isAdmin, initialDate = null }: AvailabilityBlocksSectionProps) {
   const { colors } = useTheme();
   const toast = useToast();
   const { venue } = useVenueContext();
   const isRestaurantTier = isRestaurantTableProductTier(venue?.pricing_tier);
   const { data: blocks = [], isLoading, refetch } = useAvailabilityBlocks();
   const deleteBlock = useDeleteBlock();
+  // The roster, for the advice after a save: which calendars are still
+  // scheduled to work outside the new closure or amended hours (web
+  // `venueDatedAdvice`, 2026-09-10).
+  const rosterQuery = usePractitioners({ enabled: isAdmin });
+  const [advice, setAdvice] = useState<string | null>(null);
+  const seededDate = initialDate && YMD_RE.test(initialDate) ? initialDate : null;
 
   // Services for the reduced-capacity scope picker — only fetched on the
   // restaurant tier (the only place the field is shown).
@@ -986,12 +1029,14 @@ export function AvailabilityBlocksSection({ isAdmin }: AvailabilityBlocksSection
   const [editingBlock, setEditingBlock] = useState<AvailabilityBlock | null>(null);
   const [showPast, setShowPast] = useState(false);
 
-  const today = todayYmd();
+  const today = todayYmd(venue?.timezone);
 
-  // Calendar month + tap-to-select range (web-parity closures picker).
-  const [monthAnchor, setMonthAnchor] = useState<string>(today);
-  const [selectedStart, setSelectedStart] = useState<string | null>(null);
-  const [selectedEnd, setSelectedEnd] = useState<string | null>(null);
+  // Calendar month + tap-to-select range (web-parity closures picker). Opened
+  // from the diary's clock button, it lands on the day being viewed with that
+  // day already picked, so one save covers the common case.
+  const [monthAnchor, setMonthAnchor] = useState<string>(seededDate ?? today);
+  const [selectedStart, setSelectedStart] = useState<string | null>(seededDate);
+  const [selectedEnd, setSelectedEnd] = useState<string | null>(seededDate);
   const [prefill, setPrefill] = useState<{ date_start: string; date_end: string } | null>(null);
 
   const clearSelection = useCallback(() => {
@@ -1068,7 +1113,7 @@ export function AvailabilityBlocksSection({ isAdmin }: AvailabilityBlocksSection
       {/* Card header */}
       <View style={styles.cardHeader}>
         <View style={styles.cardHeaderText}>
-          <Text variant="subheading">Closures &amp; Exceptions</Text>
+          <Text variant="subheading">Closures &amp; amended hours</Text>
           <Text variant="caption" tone="muted">
             One-off closures, amended hours, and capacity changes.
           </Text>
@@ -1107,12 +1152,12 @@ export function AvailabilityBlocksSection({ isAdmin }: AvailabilityBlocksSection
               <Button
                 label={
                   selectedStart
-                    ? `Add closure · ${formatShortDay(selectedStart)}${
+                    ? `Add closure or amended hours · ${formatShortDay(selectedStart)}${
                         selectedEnd && selectedEnd !== selectedStart
                           ? ` – ${formatShortDay(selectedEnd)}`
                           : ''
                       }`
-                    : 'Add closure'
+                    : 'Add closure or amended hours'
                 }
                 fullWidth
                 onPress={openCreate}
@@ -1121,10 +1166,19 @@ export function AvailabilityBlocksSection({ isAdmin }: AvailabilityBlocksSection
             ) : null}
           </View>
 
+          <View style={styles.advicePad}>
+            <HoursMismatchAdvice
+              message={advice}
+              actionLabel="Open calendar closures"
+              actionHref={{ pathname: '/availability', params: { tab: 'daysoff' } }}
+              onDismiss={() => setAdvice(null)}
+            />
+          </View>
+
           {upcoming.length === 0 ? (
             <View style={styles.emptyPad}>
               <Text variant="bodySmall" tone="muted" style={styles.emptyText}>
-                No upcoming closures or exceptions.
+                No upcoming closures or amended hours.
                 {isAdmin ? ' Tap a date on the calendar to add one.' : ''}
               </Text>
             </View>
@@ -1180,6 +1234,26 @@ export function AvailabilityBlocksSection({ isAdmin }: AvailabilityBlocksSection
           clearSelection();
           void refetch();
         }}
+        onSaved={(saved) => {
+          // A closure or amended hours may leave a calendar scheduled to work
+          // outside the venue's new hours on those dates; say so, and point at
+          // the calendar closures (web 2026-09-10).
+          if (saved.block_type !== 'closed' && saved.block_type !== 'amended_hours') return;
+          const nextBlocks = blocks.some((b) => b.id === saved.id)
+            ? blocks.map((b) => (b.id === saved.id ? saved : b))
+            : [...blocks, saved];
+          setAdvice(
+            describeDatedMismatch(
+              datedCalendarHoursOutsideVenue(
+                rosterQuery.data?.practitioners ?? [],
+                venue?.opening_hours ?? null,
+                nextBlocks.filter((b) => b.service_id == null),
+                saved.date_start,
+                saved.date_end,
+              ),
+            ),
+          );
+        }}
       />
     </Card>
   );
@@ -1222,8 +1296,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.base,
     paddingBottom: spacing.base,
   },
+  /** The advice card between the picker and the list; collapses when there is none. */
+  advicePad: {
+    paddingHorizontal: spacing.base,
+  },
   emptyText: {
     textAlign: 'center',
+  },
+  typeChoiceRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  typeChoice: {
+    flexGrow: 1,
+    flexBasis: '45%',
+    gap: 2,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
   },
   blockRow: {
     flexDirection: 'row',

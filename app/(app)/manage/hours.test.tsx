@@ -13,14 +13,24 @@ import { ApiError } from '@/lib/api/client';
 
 // Heavy children — replace with light stubs. The OpeningHoursEditor stub exposes
 // a button that fires onChange so the draft becomes dirty (Save enabled).
+const mockSeededDrafts: Record<string, unknown>[] = [];
 jest.mock('@/components/manage/OpeningHoursEditor', () => {
   const { Pressable, Text } = require('react-native');
   return {
-    OpeningHoursEditor: ({ onChange }: { onChange: (v: unknown) => void }) => (
-      <Pressable onPress={() => onChange({ '1': { closed: true } })}>
-        <Text>edit-hours</Text>
-      </Pressable>
-    ),
+    OpeningHoursEditor: ({
+      value,
+      onChange,
+    }: {
+      value: Record<string, unknown>;
+      onChange: (v: unknown) => void;
+    }) => {
+      mockSeededDrafts.push(value);
+      return (
+        <Pressable onPress={() => onChange({ '1': { closed: true } })}>
+          <Text>edit-hours</Text>
+        </Pressable>
+      );
+    },
   };
 });
 jest.mock('@/components/manage/AvailabilityBlocksSection', () => ({
@@ -28,8 +38,17 @@ jest.mock('@/components/manage/AvailabilityBlocksSection', () => ({
 }));
 
 // Stack.Screen reads a navigator route via useRoute — stub it to render nothing.
+// `useLocalSearchParams` feeds the clock button's `?date=`; `useRouter` the
+// hours-mismatch advice's button (R33).
 jest.mock('expo-router', () => ({
   Stack: { Screen: () => null },
+  useLocalSearchParams: () => ({}),
+  useRouter: () => ({ push: jest.fn() }),
+}));
+
+// The roster behind the after-save advice (R33-5); empty here.
+jest.mock('@/lib/queries/usePractitioners', () => ({
+  usePractitioners: () => ({ data: undefined }),
 }));
 
 // Render Sheet children inline (avoids gesture-handler/Modal) when visible.
@@ -77,6 +96,25 @@ async function press(getEl: () => Parameters<typeof fireEvent.press>[0]) {
 
 beforeEach(() => {
   mockUpdateMutateAsync.mockReset();
+  mockSeededDrafts.length = 0;
+});
+
+describe('Business hours — the week the editor is given', () => {
+  it('seeds all seven days, a stored partial map filled in as closed', async () => {
+    /**
+     * The venue row carries Monday only. A partial map is read two ways
+     * downstream — the booking engine treats a missing weekday as closed, the
+     * calendar-hours editor as "no business hours set" — so the screen seeds
+     * (and therefore saves) the full week, as the web's `getDayConfig` +
+     * `toOpeningHours` do.
+     */
+    await render(<BusinessHoursScreen />);
+
+    const seeded = mockSeededDrafts[0]!;
+    expect(Object.keys(seeded).sort()).toEqual(['0', '1', '2', '3', '4', '5', '6']);
+    expect(seeded['1']).toEqual({ periods: [{ open: '09:00', close: '17:00' }] });
+    expect(seeded['0']).toEqual({ closed: true });
+  });
 });
 
 describe('Business hours — Save anyway? (409)', () => {

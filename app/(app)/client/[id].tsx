@@ -40,7 +40,16 @@ import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { formatPence } from '@/lib/format';
 import { bookingSourceLabel } from '@/lib/booking/booking-source-label';
+import { calendarDateInTimeZone } from '@/lib/dates/venue-dates';
+import {
+  bookingsOnFileLabel,
+  formatCalendarDayShort,
+  formatNextBookingSummary,
+  formatRelativeVisitDate,
+  visitCountLabel,
+} from '@/lib/guests/contact-formatting';
 import { guestBookingsSummary, splitGuestHistory } from '@/lib/guests/guest-history-sections';
+import { marketingSummaryHint } from '@/lib/guests/marketing-permission';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useGuestDetail } from '@/lib/queries/useGuestDetail';
 import { useGuestTimeline, useSendGuestMessage, useUpdateGuest } from '@/lib/queries/useGuestMutations';
@@ -165,6 +174,13 @@ function HistoryRow({
   );
 }
 
+/**
+ * What counts as a next visit — the web's `UPCOMING_BOOKING_STATUSES`
+ * (`lib/guests/guest-contacts-list.ts`), the same set the directory row's
+ * "next booking" is built from.
+ */
+const NEXT_VISIT_STATUSES: string[] = ['Pending', 'Booked', 'Confirmed', 'Seated'];
+
 function statTiles(stats: GuestDetailStats): { label: string; value: string }[] {
   return [
     { label: 'Bookings', value: String(stats.total_bookings) },
@@ -187,7 +203,7 @@ export default function ClientDetailScreen() {
   const timelineQuery = useGuestTimeline(guestId);
   const staffQuery = useStaffMe();
   const isAdmin = staffQuery.data?.staff?.role === 'admin';
-  const { featureFlags, venue } = useVenueContext();
+  const { featureFlags, terminology, venue } = useVenueContext();
   const complianceEnabled = featureFlags?.resolved?.compliance_records_enabled === true;
 
   const updateGuest = useUpdateGuest(guestId ?? '');
@@ -235,6 +251,12 @@ export default function ClientDetailScreen() {
       { title: 'Previous', data: historySections.previous },
     ],
     [historySections],
+  );
+  // The venue's calendar day, so a visit reads "Today"/"Tomorrow" by the
+  // venue's clock rather than the phone's.
+  const todayCalendar = useMemo(
+    () => calendarDateInTimeZone(new Date(), venue?.timezone ?? 'Europe/London'),
+    [venue?.timezone],
   );
 
   const handleBookingPress = useCallback((bookingId: string) => {
@@ -295,13 +317,29 @@ export default function ClientDetailScreen() {
     .filter((line): line is string => Boolean(line));
   const timelineEvents = timelineQuery.data?.events ?? [];
 
-  // One-line hint for the collapsed "Marketing preferences" card — mirrors the
-  // web's recordSummaryHint (opt-out wins, else consent, else nothing recorded).
-  const marketingSummary = guest.marketing_opt_out
-    ? 'Opted out'
-    : guest.marketing_consent
-      ? 'Consented'
-      : 'No consent';
+  // One-line hint for the collapsed "Marketing preferences" card — the web's
+  // marketingHint: opt-out wins, a recorded consent reads "Subscribed".
+  const marketingSummary = marketingSummaryHint(guest);
+
+  // Profile header figures — web ContactDetailPanel (~250-270): the visit-count
+  // pill beside the name and the bookings-on-file line under it.
+  const visitPill = visitCountLabel(guest.visit_count);
+  const bookingsOnFile = bookingsOnFileLabel(stats.total_bookings, terminology.booking);
+
+  // Last / Next visit tiles (web ~505-535). The next visit is the soonest
+  // still-live booking in the history the route returned.
+  const lastVisitDate = guest.last_visit_date ?? stats.last_visit_date ?? null;
+  const lastVisitDay = formatCalendarDayShort(lastVisitDate, todayCalendar);
+  const lastVisitRelative =
+    lastVisitDate && lastVisitDay !== 'Today' && lastVisitDay !== 'Tomorrow'
+      ? formatRelativeVisitDate(lastVisitDate)
+      : null;
+  const nextVisit = historySections.upcoming.find((row) =>
+    NEXT_VISIT_STATUSES.includes(row.status),
+  );
+  const nextVisitLabel = nextVisit
+    ? formatNextBookingSummary(nextVisit.booking_date, nextVisit.booking_time, todayCalendar)
+    : null;
 
   const openEdit = () =>
     setEditTarget({
@@ -342,9 +380,14 @@ export default function ClientDetailScreen() {
     void openLink(`mailto:${email}`, 'Could not open mail.');
   };
 
+  // Recording a consent lifts a standing opt-out, and opting out withdraws
+  // the consent (web 2026-09-10): the server does the same, and sending both
+  // keeps the toggles right before the refetch lands.
   const handleMarketingConsentChange = async (value: boolean) => {
     try {
-      await updateGuest.mutateAsync({ marketing_consent: value });
+      await updateGuest.mutateAsync(
+        value ? { marketing_consent: true, marketing_opt_out: false } : { marketing_consent: false },
+      );
       hapticSuccess();
     } catch {
       hapticWarning();
@@ -354,7 +397,9 @@ export default function ClientDetailScreen() {
 
   const handleMarketingOptOutChange = async (value: boolean) => {
     try {
-      await updateGuest.mutateAsync({ marketing_opt_out: value });
+      await updateGuest.mutateAsync(
+        value ? { marketing_opt_out: true, marketing_consent: false } : { marketing_opt_out: false },
+      );
       hapticSuccess();
     } catch {
       hapticWarning();
@@ -404,19 +449,23 @@ export default function ClientDetailScreen() {
                 {[phone, email].filter(Boolean).join('  ·  ')}
               </Text>
             ) : null}
-            {guest.tags.length > 0 || guest.no_show_count > 0 ? (
-              <View style={styles.tagRow}>
-                {guest.no_show_count > 0 ? (
-                  <Badge
-                    label={`${guest.no_show_count} no-show${guest.no_show_count === 1 ? '' : 's'}`}
-                    tone="warning"
-                  />
-                ) : null}
-                {guest.tags.map((tag) => (
-                  <Badge key={tag} label={tag} tone="brand" />
-                ))}
-              </View>
-            ) : null}
+            {/* "4 appointments on file", in the venue's word for a booking. */}
+            <Text variant="caption" tone="muted" numberOfLines={1}>
+              {bookingsOnFile}
+            </Text>
+            <View style={styles.tagRow}>
+              {/* Visit count, or "New" for a contact who has not been in yet. */}
+              <Badge label={visitPill} tone="neutral" />
+              {guest.no_show_count > 0 ? (
+                <Badge
+                  label={`${guest.no_show_count} no-show${guest.no_show_count === 1 ? '' : 's'}`}
+                  tone="warning"
+                />
+              ) : null}
+              {guest.tags.map((tag) => (
+                <Badge key={tag} label={tag} tone="brand" />
+              ))}
+            </View>
             <View style={styles.quickRow}>
               {canCall ? (
                 <QuickAction
@@ -447,6 +496,29 @@ export default function ClientDetailScreen() {
             </View>
           </View>
         </Card>
+
+        {/* Last / Next visit — the web's two profile tiles. */}
+        <View style={styles.visitTiles}>
+          <Card style={styles.visitTile}>
+            <Text variant="overline" tone="muted">
+              Last visit
+            </Text>
+            <Text variant="bodyMedium">{lastVisitDay}</Text>
+            {lastVisitRelative ? (
+              <Text variant="caption" tone="muted">
+                {lastVisitRelative}
+              </Text>
+            ) : null}
+          </Card>
+          <Card style={styles.visitTile}>
+            <Text variant="overline" tone="muted">
+              Next visit
+            </Text>
+            <Text variant="bodyMedium" tone={nextVisitLabel ? 'brand' : 'muted'}>
+              {nextVisitLabel ?? 'None scheduled'}
+            </Text>
+          </Card>
+        </View>
 
         {/* Address — shown only when captured (client-address services). */}
         {addressLines.length > 0 ? (
@@ -710,6 +782,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: spacing.base,
     marginTop: spacing.xs,
+  },
+  visitTiles: {
+    flexDirection: 'row',
+    gap: spacing.base,
+  },
+  visitTile: {
+    flex: 1,
+    gap: 2,
   },
   statsCard: {
     flexDirection: 'row',

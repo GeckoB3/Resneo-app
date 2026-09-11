@@ -71,6 +71,48 @@ export interface ReportByModelRow {
   deposit_pence_collected: number;
 }
 
+/**
+ * Table utilisation (`report5_table_utilisation`), for table-management venues
+ * that are not on the appointment data model.
+ * @see _reference/Resneo/src/app/api/venue/reports/route.ts (`tableUtilisation`)
+ */
+export interface ReportTableUtilisationRow {
+  table_id: string;
+  table_name: string;
+  utilisation_pct: number;
+  occupied_hours: number;
+  available_hours: number;
+}
+
+/**
+ * Tickets sold and revenue per event ticket tier (`report_event_ticket_tiers`),
+ * from the immutable price snapshot on each ticket line. Events venues only.
+ * @see _reference/Resneo/src/app/api/venue/reports/route.ts (`EventTicketTierRow`)
+ */
+export interface ReportEventTicketTierRow {
+  /** Ticket type id, or a synthetic `label:<name>` key when the line predates a tier. */
+  ticket_type_key: string;
+  ticket_type_label: string;
+  tickets_sold: number;
+  revenue_pence: number;
+  /** Distinct bookings that included at least one ticket of this tier. */
+  booking_count: number;
+}
+
+/**
+ * Booked hours against each resource's open hours (`report_resource_utilisation`).
+ * Resource venues only.
+ * @see _reference/Resneo/src/app/api/venue/reports/route.ts (`ResourceUtilisationRow`)
+ */
+export interface ReportResourceUtilisationRow {
+  resource_id: string;
+  resource_name: string;
+  booking_count: number;
+  occupied_hours: number;
+  available_hours: number;
+  utilisation_pct: number;
+}
+
 export interface ReportClientSummary {
   identified_clients_total: number;
   new_clients_in_period: number;
@@ -161,7 +203,60 @@ export interface ReportsResponse {
   report8_baseline_metrics?: VenueBaselineMetrics | null;
   report8_baseline_snapshot?: BaselineMetricsSnapshot | null;
   report_by_booking_model?: ReportByModelRow[] | null;
+  report5_table_utilisation?: ReportTableUtilisationRow[] | null;
+  report_event_ticket_tiers?: ReportEventTicketTierRow[] | null;
+  report_resource_utilisation?: ReportResourceUtilisationRow[] | null;
   client_summary?: ReportClientSummary | null;
   booking_log_email_config?: BookingLogEmailConfig | null;
   default_booking_log_email?: string | null;
+}
+
+// ─── Booked revenue (web #191, `src/lib/reports/booked-revenue.ts`) ──────────
+// GET /api/venue/reports/booked-revenue?preset=|from=&to=&grain= (admin only).
+
+export type BookedRevenueGrain = 'day' | 'week' | 'month';
+
+export type BookedRevenuePreset = 'today' | 'this_week' | 'this_month' | 'last_30' | 'next_30';
+
+export interface BookedRevenueColumn {
+  /** Stable key for `by_calendar`: the calendar id, or `unassigned`. */
+  key: string;
+  calendar_id: string | null;
+  name: string;
+  venue_id: string;
+  venue_name: string;
+  /** True for a calendar belonging to a linked venue. */
+  linked: boolean;
+  colour: string | null;
+}
+
+export interface BookedRevenueCell {
+  /** Booked revenue in pence excluding no-shows. */
+  booked_pence: number;
+  /** Revenue of services marked No-Show in pence. */
+  no_show_pence: number;
+  /** Rows that contributed to `booked_pence`. */
+  booked_count: number;
+  no_show_count: number;
+  /** Rows (booked or no-show) that carry no price and so add nothing. */
+  unpriced_count: number;
+}
+
+export interface BookedRevenuePeriod extends BookedRevenueCell {
+  /** First date of the period, YYYY-MM-DD (clamped to the requested range). */
+  period_start: string;
+  /** Last date of the period, YYYY-MM-DD (clamped to the requested range). */
+  period_end: string;
+  by_calendar: Record<string, BookedRevenueCell>;
+}
+
+export interface BookedRevenueReport {
+  from: string;
+  to: string;
+  grain: BookedRevenueGrain;
+  /** Today in the venue's timezone, so presets agree with the diary. */
+  today: string;
+  columns: BookedRevenueColumn[];
+  periods: BookedRevenuePeriod[];
+  totals: BookedRevenueCell & { by_calendar: Record<string, BookedRevenueCell> };
 }

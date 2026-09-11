@@ -35,6 +35,10 @@ import {
   type CalendarSchedule,
   type SchedulePeriod,
 } from '@/lib/calendar/working-hours-rota';
+import {
+  describeCalendarWeeklyMismatch,
+  weeklyCalendarHoursOutsideVenue,
+} from '@/lib/calendar/hours-mismatch';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { usePatchPractitioner } from '@/lib/queries/useAvailabilityManage';
 import { useToast } from '@/providers/ToastProvider';
@@ -69,6 +73,11 @@ type Props = {
    * date, or to the existing run when the day already has amended hours.
    */
   onAmendHours?: (date: string, existing: boolean) => void;
+  /**
+   * Where the "these hours fall outside business hours" advice goes — the
+   * host's page-level card (web parity). Without it the advice is a toast.
+   */
+  onAdvice?: (message: string | null) => void;
   onClose?: () => void;
 };
 
@@ -80,6 +89,7 @@ export function ScheduleTimelineSheet({
   todayYmd,
   inline = false,
   onAmendHours,
+  onAdvice,
   onClose,
 }: Props) {
   const { colors } = useTheme();
@@ -152,6 +162,17 @@ export function ScheduleTimelineSheet({
       hapticSuccess();
       toast.success('Schedule saved.');
       setMode({ kind: 'idle' });
+      // Each period carries its own weekly template; any of them running past
+      // the venue's weekly hours earns the same advice as the base template
+      // (web 2026-09-10). The hours-editor banner above this timeline is the
+      // page's standing notice; here it goes by toast, as the schedule form
+      // folds away on save.
+      const outside = (next?.periods ?? []).flatMap((p) =>
+        p.weeks.flatMap((week) => weeklyCalendarHoursOutsideVenue(week, venueOpeningHours)),
+      );
+      const advice = describeCalendarWeeklyMismatch(calendar.name, outside);
+      if (onAdvice) onAdvice(advice);
+      else if (advice) toast.info(advice);
     } catch (e) {
       hapticWarning();
       toast.error(e instanceof ApiError ? e.message : 'Failed to save the schedule.');

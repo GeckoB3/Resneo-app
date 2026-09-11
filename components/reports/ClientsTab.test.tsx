@@ -1,17 +1,17 @@
 /**
- * ClientsTab — Reports → Clients sub-tab directory.
+ * ClientsTab — Reports → Clients directory.
  *
- * This suite covers the R7 tag-filter addition specifically: a chip row backed
- * by `useGuestTags`, which toggles `segment='tag'`/`segmentTag` into the
- * `useGuests` query (and clears it when the active chip is tapped again).
+ * Covers what the list asks the guests route for (identity scope, sort, tags)
+ * and what a row shows, against the web's own list
+ * (_reference/Resneo/src/app/dashboard/reports/ClientsSection.tsx).
  *
  * jest hoists mock factories above imports, so every closed-over variable is
- * prefixed `mock*`. The two query hooks are mocked so the render is
- * deterministic and we can inspect the params the chip presses produce.
+ * prefixed `mock*`. The query hooks are mocked so the render is deterministic
+ * and we can inspect the params each control produces.
  */
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 
-import type { GuestListParams } from '@/types/guest-list';
+import type { GuestListItem, GuestListParams } from '@/types/guest-list';
 
 // Chip + SearchBar render expo-symbols glyphs — stub to a host element.
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
@@ -25,35 +25,14 @@ jest.mock('@/lib/queries/useGuestTags', () => ({
   useGuestTags: () => ({ data: { tags: mockTags } }),
 }));
 
-// useGuests — capture every call's params so we can assert the chip wiring.
+// useGuests — capture every call's params so we can assert the control wiring.
 const mockUseGuestsCalls: GuestListParams[] = [];
+let mockGuest: GuestListItem;
 jest.mock('@/lib/queries/useGuests', () => ({
   useGuests: (params: GuestListParams) => {
     mockUseGuestsCalls.push(params);
     return {
-      data: {
-        guests: [
-          {
-            id: 'g1',
-            first_name: 'Ada',
-            last_name: 'Lovelace',
-            email: 'ada@example.com',
-            phone: null,
-            tags: ['vip'],
-            visit_count: 3,
-            no_show_count: 0,
-            last_visit_date: '2026-06-01',
-            next_booking_date: null,
-            next_booking_time: null,
-            total_bookings: 3,
-            upcoming_booking_count: 0,
-          },
-        ],
-        total: 1,
-        total_count: 1,
-        page: 0,
-        limit: 25,
-      },
+      data: { guests: [mockGuest], total: 1, total_count: 1, page: 0, limit: 25 },
       isLoading: false,
       isError: false,
       isFetching: false,
@@ -62,17 +41,24 @@ jest.mock('@/lib/queries/useGuests', () => ({
   },
 }));
 
-// Detail-only hooks — never invoked unless a row is expanded (this suite does
-// not expand), but the module must resolve.
-jest.mock('@/lib/queries/useGuestDetail', () => ({
-  useGuestDetail: () => ({ data: undefined, isLoading: false, isError: false }),
-}));
+// Detail hooks — only used once a row is expanded.
+const mockDetail: { data: unknown; isLoading: boolean; isError: boolean } = {
+  data: undefined,
+  isLoading: false,
+  isError: false,
+};
+jest.mock('@/lib/queries/useGuestDetail', () => ({ useGuestDetail: () => mockDetail }));
 jest.mock('@/lib/queries/useGuestMutations', () => ({
   useUpdateGuest: () => ({ mutateAsync: jest.fn(), isPending: false }),
   useEraseGuest: () => ({ mutateAsync: jest.fn(), isPending: false }),
 }));
+jest.mock('@/components/clients/GuestTagEditor', () => ({ GuestTagEditor: () => null }));
+jest.mock('@/lib/reports/csv-export', () => ({
+  buildAndShareCsv: jest.fn(async () => ({ ok: true })),
+}));
 
 import { ClientsTab } from '@/components/reports/ClientsTab';
+import { buildAndShareCsv } from '@/lib/reports/csv-export';
 
 async function press(getEl: () => Parameters<typeof fireEvent.press>[0]) {
   await act(async () => {
@@ -87,53 +73,143 @@ function lastGuestsParams(): GuestListParams {
 
 beforeEach(() => {
   mockUseGuestsCalls.length = 0;
+  mockDetail.data = undefined;
+  mockTags = ['vip', 'regular'];
+  mockGuest = {
+    id: 'g1',
+    first_name: 'Ada',
+    last_name: 'Lovelace',
+    email: 'ada@example.com',
+    phone: '07700 900123',
+    tags: ['vip'],
+    visit_count: 3,
+    no_show_count: 2,
+    last_visit_date: '2026-06-01',
+    next_booking_date: null,
+    next_booking_time: null,
+    total_bookings: 5,
+    upcoming_booking_count: 0,
+  };
   jest.clearAllMocks();
 });
 
-describe('ClientsTab tag filter', () => {
-  it('renders a chip for each venue tag', async () => {
-    mockTags = ['vip', 'regular'];
-    await render(<ClientsTab />);
-    expect(screen.getByText('vip')).toBeTruthy();
-    expect(screen.getByText('regular')).toBeTruthy();
+describe('ClientsTab list controls', () => {
+  it('asks for the web default scope and sort', async () => {
+    await render(<ClientsTab clientWord="Client" bookingWord="Appointment" isAppointment />);
+    const params = lastGuestsParams();
+    expect(params.filter).toBe('identified');
+    expect(params.sort).toBe('last_visit_desc');
+    expect(params.tags).toBeUndefined();
   });
 
-  it('does not render a tag row when the venue has no tags', async () => {
+  it('switches the identity scope from the Show chips', async () => {
+    await render(<ClientsTab />);
+    await press(() => screen.getByText('All except walk-ins'));
+    expect(lastGuestsParams().filter).toBe('all');
+    await press(() => screen.getByText('Walk-ins only'));
+    expect(lastGuestsParams().filter).toBe('anonymous');
+  });
+
+  it('offers the web’s six sorts and sends the one chosen', async () => {
+    await render(<ClientsTab />);
+    for (const label of [
+      'Last visit (newest)',
+      'Last visit (oldest)',
+      'Name (A–Z)',
+      'Name (Z–A)',
+      'Most visits',
+      'Recently added',
+    ]) {
+      expect(screen.getByText(label)).toBeTruthy();
+    }
+    await press(() => screen.getByText('Most visits'));
+    expect(lastGuestsParams().sort).toBe('visit_count_desc');
+  });
+
+  it('stacks tag filters and drops one when its chip is tapped again', async () => {
+    await render(<ClientsTab />);
+    await press(() => screen.getByText('vip'));
+    expect(lastGuestsParams().tags).toEqual(['vip']);
+    await press(() => screen.getByText('regular'));
+    expect(lastGuestsParams().tags).toEqual(['vip', 'regular']);
+    await press(() => screen.getByText('vip'));
+    expect(lastGuestsParams().tags).toEqual(['regular']);
+  });
+
+  it('renders no tag row, and sends no tags, when the venue has none', async () => {
     mockTags = [];
     await render(<ClientsTab />);
-    // No chips → the guests query carries no tag segment.
-    expect(lastGuestsParams().segment).toBeUndefined();
-    expect(lastGuestsParams().segmentTag).toBeUndefined();
+    expect(screen.queryByText('Filter by tags')).toBeNull();
+    expect(lastGuestsParams().tags).toBeUndefined();
+  });
+});
+
+describe('ClientsTab rows', () => {
+  it('shows phone, the lifecycle count and the no-show badge', async () => {
+    await render(<ClientsTab clientWord="Client" bookingWord="Appointment" isAppointment />);
+    expect(screen.getByText('Ada Lovelace')).toBeTruthy();
+    expect(screen.getByText('ada@example.com · 07700 900123')).toBeTruthy();
+    expect(screen.getByText('Total appointments: 5')).toBeTruthy();
+    expect(screen.getByText('Appointments (lifecycle): 3')).toBeTruthy();
+    expect(screen.getByText('2 NS')).toBeTruthy();
+    expect(screen.getByText('Last visit: 2026-06-01')).toBeTruthy();
   });
 
-  it('passes no tag segment to useGuests before any chip is pressed', async () => {
-    mockTags = ['vip'];
+  it('calls a row with no name on it Guest', async () => {
+    mockGuest = { ...mockGuest, first_name: null, last_name: null };
     await render(<ClientsTab />);
-    expect(lastGuestsParams().segment).toBeUndefined();
-    expect(lastGuestsParams().segmentTag).toBeUndefined();
+    expect(screen.getByText('Guest')).toBeTruthy();
   });
 
-  it('toggles segment=tag + segmentTag into useGuests when a chip is pressed', async () => {
-    mockTags = ['vip', 'regular'];
+  it('calls a walk-in row Anonymous', async () => {
+    mockGuest = { ...mockGuest, identifiability_tier: 'anonymous' };
     await render(<ClientsTab />);
-
-    await press(() => screen.getByText('vip'));
-
-    const params = lastGuestsParams();
-    expect(params.segment).toBe('tag');
-    expect(params.segmentTag).toBe('vip');
+    expect(screen.getByText('Anonymous')).toBeTruthy();
   });
+});
 
-  it('clears the filter when the active chip is pressed again (toggle off)', async () => {
-    mockTags = ['vip'];
-    await render(<ClientsTab />);
+describe('ClientsTab guest history export', () => {
+  it('uses the web’s columns, deposit status and filename', async () => {
+    mockDetail.data = {
+      guest: {
+        id: 'g1',
+        first_name: 'Ada',
+        last_name: 'Lovelace',
+        email: 'ada@example.com',
+        phone: '07700 900123',
+        tags: [],
+      },
+      stats: {
+        total_bookings: 5,
+        no_shows: 2,
+        cancellations: 1,
+        total_deposit_pence_paid: 0,
+      },
+      booking_history: [
+        {
+          id: 'b1',
+          booking_date: '2026-06-01',
+          booking_time: '10:30',
+          party_size: 2,
+          status: 'Completed',
+          deposit_status: 'Paid',
+          booking_model: 'unified_scheduling',
+          kind_label: 'Appointment',
+          detail_label: 'Cut & finish',
+          practitioner_name: 'Hannah',
+          service_name: 'Cut & finish',
+          area_name: null,
+        },
+      ],
+    };
 
-    await press(() => screen.getByText('vip')); // select
-    expect(lastGuestsParams().segmentTag).toBe('vip');
+    await render(<ClientsTab clientWord="Client" bookingWord="Appointment" isAppointment />);
+    await press(() => screen.getByText('Ada Lovelace'));
+    await press(() => screen.getByText('Export history (CSV)'));
 
-    await press(() => screen.getByText('vip')); // same chip → clear
-    const params = lastGuestsParams();
-    expect(params.segment).toBeUndefined();
-    expect(params.segmentTag).toBeUndefined();
+    expect(buildAndShareCsv).toHaveBeenCalledWith('guest-g1-bookings.csv', [
+      ['Date', 'Time', 'Service', 'Covers', 'Status', 'Deposit', 'Practitioner'],
+      ['2026-06-01', '10:30', 'Cut & finish', '2', 'Completed', 'Paid', 'Hannah'],
+    ]);
   });
 });

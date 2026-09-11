@@ -2,8 +2,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
+import { applyGuestMarketingPatch, touchesMarketing } from '@/lib/guests/marketing-patch';
 import { queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
+import type { GuestDetailResponse } from '@/types/guest-detail';
 import type { GuestTimelineResponse } from '@/types/guest-timeline';
 
 /** Editable fields on PATCH /api/venue/guests/[guestId]. */
@@ -32,6 +34,9 @@ export interface UpdateGuestInput {
 export function useUpdateGuest(guestId: string) {
   const accessToken = useAccessToken();
   const queryClient = useQueryClient();
+  // Every cached copy of this contact, whatever booking-history limit it was
+  // fetched at (the key's last segment).
+  const detailKeyPrefix = queryKeys.guests.detail(accessToken, guestId).slice(0, -1);
 
   return useMutation({
     mutationFn: async (input: UpdateGuestInput): Promise<unknown> => {
@@ -43,6 +48,30 @@ export function useUpdateGuest(guestId: string) {
         method: 'PATCH',
         body: JSON.stringify(input),
       });
+    },
+    /**
+     * The marketing Switches are driven straight from this cache, so a tap only
+     * moved them once the refetch landed — the control visibly snapped back
+     * first. Patch the cached contact before the request goes out, and undo it
+     * if the PATCH fails.
+     */
+    onMutate: async (input: UpdateGuestInput) => {
+      const previous: [readonly unknown[], GuestDetailResponse | undefined][] = [];
+      if (!touchesMarketing(input)) return { previous };
+      // Stop an in-flight refetch from landing on top of the patch.
+      await queryClient.cancelQueries({ queryKey: detailKeyPrefix });
+      for (const [key, data] of queryClient.getQueriesData<GuestDetailResponse>({
+        queryKey: detailKeyPrefix,
+      })) {
+        previous.push([key, data]);
+        if (data) queryClient.setQueryData(key, applyGuestMarketingPatch(data, input));
+      }
+      return { previous };
+    },
+    onError: (_error, _input, context) => {
+      for (const [key, data] of context?.previous ?? []) {
+        queryClient.setQueryData(key, data);
+      }
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.guests.all() });

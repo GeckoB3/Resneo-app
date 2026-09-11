@@ -29,6 +29,7 @@ import {
   type LaneInput,
 } from '@/components/calendar/grid-layout';
 import type { CalendarTimeBlock } from '@/components/calendar/CalendarDayGrid';
+import { IconButton } from '@/components/ui/IconButton';
 import { Text } from '@/components/ui/Text';
 import { bookingCalendarBlockPalette } from '@/lib/booking/booking-status-visual';
 import {
@@ -40,6 +41,7 @@ import { closureBandLook } from '@/components/calendar/closure-band';
 import {
   clampClosureBlocksToWindow,
   isScheduleClosureBlockType,
+  partitionClosureBands,
 } from '@/lib/calendar/schedule-closures';
 import { hexToRgba } from '@/lib/color';
 import { fonts, radius, spacing } from '@/theme/index';
@@ -101,6 +103,15 @@ type WeekGridProps = {
   onEmptyPress: (date: string, time: string) => void;
   /** Tap a day header to open that day in the Day view. */
   onDayPress: (date: string) => void;
+  /** The calendar whose week this is; names its "unavailable" stripes. */
+  calendarName?: string;
+  /**
+   * The clock button in the corner where the day headers meet the time column
+   * (web: the toolbar's "Amend hours", offered in every view mode).
+   */
+  onAmendHours?: () => void;
+  /** Extra minute ranges the week must span (the roster's hours, web parity). */
+  boundsRanges?: { start: number; end: number }[];
   refreshing?: boolean;
   onRefresh?: () => void;
 };
@@ -161,6 +172,9 @@ export function WeekGrid({
   onBlockPress,
   onEmptyPress,
   onDayPress,
+  calendarName,
+  onAmendHours,
+  boundsRanges,
   refreshing = false,
   onRefresh,
 }: WeekGridProps) {
@@ -173,6 +187,12 @@ export function WeekGrid({
     for (const day of days) {
       for (const wh of day.workingHours) {
         ranges.push({ start: timeToMinutes(wh.start), end: timeToMinutes(wh.end) });
+      }
+      // The widest of the venue's hours and the calendar's (web 2026-09-10).
+      if (day.venueHours.kind === 'open') {
+        for (const period of day.venueHours.periods) {
+          ranges.push({ start: period.start, end: period.end });
+        }
       }
       for (const b of day.bookings) {
         const start = timeToMinutes(b.startTime);
@@ -194,6 +214,9 @@ export function WeekGrid({
         if (end > start) ranges.push({ start, end });
       }
     }
+    // The roster's hours across the week (web parity), so the scale does not
+    // change with the calendar being viewed.
+    for (const r of boundsRanges ?? []) ranges.push({ start: r.start, end: r.end });
     const bounds = computeGridBounds(ranges, windowOverride);
     return {
       startHour: bounds.startHour,
@@ -201,7 +224,7 @@ export function WeekGrid({
       totalHeight: (bounds.endHour - bounds.startHour) * 60 * PX_PER_MINUTE,
       gridStartMin: bounds.startHour * 60,
     };
-  }, [days, windowOverride]);
+  }, [days, windowOverride, boundsRanges]);
 
   const hours = useMemo(
     () => Array.from({ length: endHour - startHour + 1 }, (_, i) => startHour + i),
@@ -216,7 +239,20 @@ export function WeekGrid({
           normal flex child of the column it spreads across the full width. */}
       <View
         style={[styles.headerRow, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
-        <View style={styles.headerGutter} />
+        {/* The corner where the day headers meet the time column: the clock
+            button, in the same place as on the day grid. */}
+        <View style={styles.headerGutter}>
+          {onAmendHours ? (
+            <IconButton
+              icon={{ ios: 'clock', android: 'schedule', web: 'schedule' }}
+              accessibilityLabel="Amend hours"
+              variant="bordered"
+              size={30}
+              iconSize={16}
+              onPress={onAmendHours}
+            />
+          ) : null}
+        </View>
         {days.map((d) => (
           <Pressable
             key={d.date}
@@ -301,6 +337,7 @@ export function WeekGrid({
                 startHour={startHour}
                 endHour={endHour}
                 nowMinutes={nowMinutes}
+                calendarName={calendarName}
                 onBlockPress={onBlockPress}
                 onEmptyPress={onEmptyPress}
               />
@@ -320,6 +357,7 @@ function WeekDayCol({
   startHour,
   endHour,
   nowMinutes,
+  calendarName,
   onBlockPress,
   onEmptyPress,
 }: {
@@ -328,10 +366,11 @@ function WeekDayCol({
   startHour: number;
   endHour: number;
   nowMinutes: number | null;
+  calendarName?: string;
   onBlockPress: (bookingId: string) => void;
   onEmptyPress: (date: string, time: string) => void;
 }) {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
 
   const positioned = useMemo(
     () => positionBookings(day.bookings, gridStartMin),
@@ -380,18 +419,26 @@ function WeekDayCol({
       .filter((s) => s.height > 0);
   }, [day.scheduleBlocks, gridStartMin]);
 
+  // One explanation per minute (web 2026-09-10): the venue's closed minutes
+  // and the calendar's own are partitioned into venue-only, calendar-only and
+  // both, so the week reads the same as the day.
   const busyBlocks = useMemo(() => {
-    const raw = clampClosureBlocksToWindow(
-      (day.timeBlocks ?? [])
-        .map((block) => ({
-          block,
-          start: timeToMinutes(block.start),
-          end: timeToMinutes(block.end),
-        }))
-        .filter(({ start, end }) => end > start),
-      startHour * 60,
-      endHour * 60,
-    );
+    const raw = partitionClosureBands<CalendarTimeBlock>({
+      venueClosed: venueClosedRanges(day.venueHours, startHour * 60, endHour * 60),
+      entries: clampClosureBlocksToWindow(
+        (day.timeBlocks ?? [])
+          .map((block) => ({
+            block,
+            start: timeToMinutes(block.start),
+            end: timeToMinutes(block.end),
+          }))
+          .filter(({ start, end }) => end > start),
+        startHour * 60,
+        endHour * 60,
+      ),
+      columnName: calendarName,
+      keyPrefix: day.date,
+    });
     const heights = computeRangeHeights(
       raw.map(({ block, start, end }) => ({ id: block.id, start, end })),
       gridStartMin,
@@ -403,12 +450,7 @@ function WeekDayCol({
       top: (start - gridStartMin) * PX_PER_MINUTE,
       height: heights.get(block.id) ?? (end - start) * PX_PER_MINUTE,
     }));
-  }, [day.timeBlocks, gridStartMin, startHour, endHour]);
-
-  const closedRanges = useMemo(
-    () => venueClosedRanges(day.venueHours, startHour * 60, endHour * 60),
-    [day.venueHours, startHour, endHour],
-  );
+  }, [day.timeBlocks, day.venueHours, day.date, calendarName, gridStartMin, startHour, endHour]);
 
   // Clamp to the visible window so an out-of-hours "now" doesn't draw a stray
   // dot/bar above or below the grid (the column has no overflow clip).
@@ -441,27 +483,11 @@ function WeekDayCol({
         }}
       />
 
-      {/* Venue-closed shading (out-of-hours / closed day) — faint band, behind
-          bookings; the column is too narrow for a label. */}
-      {closedRanges.map((r) => (
-        <View
-          key={`closed-${r.start}-${r.end}`}
-          pointerEvents="none"
-          style={[
-            styles.closedBand,
-            {
-              top: (r.start - startHour * 60) * PX_PER_MINUTE,
-              height: (r.end - r.start) * PX_PER_MINUTE,
-              backgroundColor: hexToRgba(colors.text, 0.06),
-            },
-          ]}
-        />
-      ))}
-
-      {/* Busy / blocked time (e.g. a time_only linked venue's redacted
-          bookings) — grey, non-interactive, behind the booking layer. */}
+      {/* Closure stripes (venue closed / calendar unavailable / both / leave,
+          in the web's tints) and busy time (e.g. a time_only linked venue's
+          redacted bookings) — non-interactive, behind the booking layer. */}
       {busyBlocks.map(({ block, top, height }) => {
-        const look = closureBandLook(block.blockType, colors);
+        const look = closureBandLook(block.blockType, isDark);
         return (
           <View
             key={block.id}
@@ -606,6 +632,8 @@ const styles = StyleSheet.create({
   },
   headerGutter: {
     width: GUTTER_WIDTH,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerCell: {
     flex: 1,
@@ -659,11 +687,6 @@ const styles = StyleSheet.create({
   column: {
     flex: 1,
     borderLeftWidth: StyleSheet.hairlineWidth,
-  },
-  closedBand: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
   },
   busy: {
     position: 'absolute',

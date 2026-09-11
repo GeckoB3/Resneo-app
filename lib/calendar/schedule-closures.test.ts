@@ -3,6 +3,8 @@ import {
   clampClosureBlocksToWindow,
   isScheduleClosureBlockType,
   leaveForCalendarOnDate,
+  partitionClosureBands,
+  scheduleClosureBlockLabel,
 } from '@/lib/calendar/schedule-closures';
 
 /**
@@ -10,11 +12,14 @@ import {
  * fortnight of annual leave — all three were enforced by the booking engine and
  * invisible on the screen staff use to find space. These are the bands that fix
  * that, and the rules that decide which one a given minute gets.
+ *
+ * Since the web's 2026-09-10 stripes the builder covers the WHOLE day and the
+ * grid partitions its bands against the venue's closed minutes, so every
+ * minute carries exactly one explanation (see `partitionClosureBands`).
  */
 
 const MONDAY = '2026-08-24'; // a Monday
 const NINE_TO_FIVE = { '1': [{ start: '09:00', end: '17:00' }] };
-const VENUE_OPEN = [{ start: 9 * 60, end: 17 * 60 }];
 
 describe('leaveForCalendarOnDate', () => {
   const leave = [
@@ -64,7 +69,6 @@ describe('buildCalendarClosureOverlays', () => {
       dateStr: MONDAY,
       calendar: { working_hours: NINE_TO_FIVE },
       leavePeriods: [],
-      venueOpenRanges: VENUE_OPEN,
       ...overrides,
     });
   }
@@ -80,33 +84,37 @@ describe('buildCalendarClosureOverlays', () => {
 
     it('greys the hours of the rota week that covers the date, not the base week', () => {
       const bands = build({ calendar: { working_hours: NINE_TO_FIVE, schedule_periods: timeline } });
-      expect(bands.map((b) => [b.start, b.end])).toEqual([['09:00', '13:00']]);
+      expect(bands.map((b) => [b.start, b.end])).toEqual([
+        ['00:00', '13:00'],
+        ['17:00', '23:59'],
+      ]);
     });
 
     it('returns to the base week on a date no period covers', () => {
       const ended = { ...timeline, periods: [{ ...timeline.periods[0]!, until: '2026-08-23' }] };
-      expect(build({ calendar: { working_hours: NINE_TO_FIVE, schedule_periods: ended } })).toEqual([]);
+      expect(
+        build({ calendar: { working_hours: NINE_TO_FIVE, schedule_periods: ended } }).map((b) => [b.start, b.end]),
+      ).toEqual([
+        ['00:00', '09:00'],
+        ['17:00', '23:59'],
+      ]);
     });
 
     it('treats a calendar with an empty base week but a schedule as set up', () => {
       const bands = build({ calendar: { working_hours: {}, schedule_periods: timeline } });
-      expect(bands.map((b) => [b.start, b.end])).toEqual([['09:00', '13:00']]);
+      expect(bands.map((b) => [b.start, b.end])).toEqual([
+        ['00:00', '13:00'],
+        ['17:00', '23:59'],
+      ]);
     });
   });
 
-  it('shades the venue hours a calendar does not work', () => {
+  it('shades the whole of the day a calendar does not work', () => {
     const bands = build({ calendar: { working_hours: { '1': [{ start: '12:00', end: '17:00' }] } } });
-    expect(bands).toHaveLength(1);
-    expect(bands[0]).toMatchObject({
-      start: '09:00',
-      end: '12:00',
-      label: 'Closed',
-      blockType: 'practitioner_closed',
-    });
-  });
-
-  it('draws nothing when the calendar works the venue’s whole day', () => {
-    expect(build()).toEqual([]);
+    expect(bands).toEqual([
+      expect.objectContaining({ start: '00:00', end: '12:00', blockType: 'practitioner_closed' }),
+      expect.objectContaining({ start: '17:00', end: '23:59', blockType: 'practitioner_closed' }),
+    ]);
   });
 
   it('closes the day for a `days_off` DATE and for a weekday name alike', () => {
@@ -115,7 +123,7 @@ describe('buildCalendarClosureOverlays', () => {
     for (const dayOff of [MONDAY, 'mon']) {
       const bands = build({ calendar: { working_hours: NINE_TO_FIVE, days_off: [dayOff] } });
       expect(bands).toEqual([
-        expect.objectContaining({ start: '09:00', end: '17:00', blockType: 'practitioner_closed' }),
+        expect.objectContaining({ start: '00:00', end: '23:59', blockType: 'practitioner_closed' }),
       ]);
     }
   });
@@ -143,9 +151,11 @@ describe('buildCalendarClosureOverlays', () => {
     });
     expect(bands).toEqual([
       expect.objectContaining({
-        start: '09:00',
-        end: '17:00',
-        label: 'On leave — Annual leave',
+        start: '00:00',
+        end: '23:59',
+        // The note is not shown, as on the web (leave blocks carry no reason);
+        // the grid relabels the stripe with its own minutes.
+        label: 'On leave',
         blockType: 'practitioner_leave',
       }),
     ]);
@@ -167,8 +177,8 @@ describe('buildCalendarClosureOverlays', () => {
       ],
     });
     expect(bands).toEqual([
-      expect.objectContaining({ start: '13:00', end: '17:00', blockType: 'practitioner_closed' }),
-      // Clipped at 13:00 — the venue-closed part is already shaded once.
+      expect.objectContaining({ start: '00:00', end: '09:00', blockType: 'practitioner_closed' }),
+      expect.objectContaining({ start: '13:00', end: '23:59', blockType: 'practitioner_closed' }),
       expect.objectContaining({ start: '12:00', end: '13:00', blockType: 'practitioner_leave' }),
     ]);
   });
@@ -183,8 +193,8 @@ describe('buildCalendarClosureOverlays', () => {
       },
     });
     expect(bands).toEqual([
-      expect.objectContaining({ start: '09:00', end: '11:00', blockType: 'practitioner_closed' }),
-      expect.objectContaining({ start: '15:00', end: '17:00', blockType: 'practitioner_closed' }),
+      expect.objectContaining({ start: '00:00', end: '11:00', blockType: 'practitioner_closed' }),
+      expect.objectContaining({ start: '15:00', end: '23:59', blockType: 'practitioner_closed' }),
     ]);
   });
 
@@ -196,18 +206,98 @@ describe('buildCalendarClosureOverlays', () => {
       },
     });
     expect(bands).toEqual([
-      expect.objectContaining({ start: '09:00', end: '17:00', blockType: 'practitioner_closed' }),
+      expect.objectContaining({ start: '00:00', end: '23:59', blockType: 'practitioner_closed' }),
+    ]);
+  });
+});
+
+describe('partitionClosureBands', () => {
+  // A grid window of 08:00–20:00; the venue opens 09:00–18:00, so it is shut
+  // 08:00–09:00 and 18:00–20:00 inside the window.
+  const VENUE_SHUT = [
+    { start: 8 * 60, end: 9 * 60 },
+    { start: 18 * 60, end: 20 * 60 },
+  ];
+  const closed = (id: string, start: number, end: number) => ({
+    block: { id, blockType: 'practitioner_closed', label: 'Closed' },
+    start,
+    end,
+  });
+
+  it('gives every minute one cause: venue only, calendar only, or both', () => {
+    // Hannah works 10:00–19:00: shut before 10 (both 8–9, hers 9–10) and after
+    // 19 (venue 18–19 while she works, both 19–20).
+    const out = partitionClosureBands({
+      venueClosed: VENUE_SHUT,
+      entries: [closed('a', 8 * 60, 10 * 60), closed('b', 19 * 60, 20 * 60)],
+      columnName: 'Hannah',
+      keyPrefix: 'cal-1',
+    });
+    expect(out.map((e) => [e.block.blockType, e.start, e.end, e.block.label])).toEqual([
+      ['venue_closed', 18 * 60, 19 * 60, 'Venue closed 18:00 to 19:00'],
+      ['practitioner_closed', 9 * 60, 10 * 60, 'Hannah unavailable 09:00 to 10:00'],
+      ['venue_and_calendar_closed', 8 * 60, 9 * 60, 'Hannah closed 08:00 to 09:00'],
+      ['venue_and_calendar_closed', 19 * 60, 20 * 60, 'Hannah closed 19:00 to 20:00'],
     ]);
   });
 
-  it('falls back to the whole day when the venue imposes no hours', () => {
-    // An appointments venue often has no opening_hours at all; the calendar's
-    // own shape is then the only boundary there is.
-    const bands = build({ venueOpenRanges: [] });
-    expect(bands).toEqual([
-      expect.objectContaining({ start: '00:00', end: '09:00' }),
-      expect.objectContaining({ start: '17:00', end: '23:59' }),
+  it('draws the venue stripes alone when the calendar works the whole window', () => {
+    const out = partitionClosureBands({ venueClosed: VENUE_SHUT, entries: [], keyPrefix: 'cal-1' });
+    expect(out.map((e) => e.block.blockType)).toEqual(['venue_closed', 'venue_closed']);
+  });
+
+  it("names a partner's shut hours as the linked venue's", () => {
+    const out = partitionClosureBands({
+      venueClosed: VENUE_SHUT,
+      entries: [],
+      linked: true,
+      keyPrefix: 'linked:v:c',
+    });
+    expect(out[0]!.block).toMatchObject({
+      blockType: 'linked_venue_closed',
+      label: 'Linked venue closed 08:00 to 09:00',
+    });
+  });
+
+  it('keeps leave whole — over the venue-closed minutes too — and passes breaks and manual blocks through', () => {
+    type Entry = { block: { id: string; blockType: string; label: string | null }; start: number; end: number };
+    const leave: Entry = { block: { id: 'l', blockType: 'practitioner_leave', label: 'On leave' }, start: 8 * 60, end: 20 * 60 };
+    const brk: Entry = { block: { id: 'k', blockType: 'break', label: 'Break' }, start: 12 * 60, end: 13 * 60 };
+    const manual: Entry = { block: { id: 'm', blockType: 'manual', label: null }, start: 14 * 60, end: 15 * 60 };
+    const out = partitionClosureBands({
+      venueClosed: VENUE_SHUT,
+      entries: [leave, brk, manual],
+      keyPrefix: 'cal-1',
+    });
+    // Leave is the one band the drag refuses, and the server refuses it
+    // outside the venue's hours too (full-day leave survives even
+    // `allowOutsideHours`), so clipping it there would show a drop as allowed
+    // that the server will refuse. Web passes leave through untouched.
+    expect(out.filter((e) => e.block.blockType === 'practitioner_leave')).toEqual([
+      {
+        block: { id: 'l', blockType: 'practitioner_leave', label: 'On leave 08:00 to 20:00' },
+        start: 8 * 60,
+        end: 20 * 60,
+      },
     ]);
+    expect(out.find((e) => e.block.id === 'k')).toEqual(brk);
+    expect(out.find((e) => e.block.id === 'm')).toEqual(manual);
+  });
+});
+
+describe('scheduleClosureBlockLabel', () => {
+  it('says why and which minutes, naming the calendar where it is the cause', () => {
+    const range = { startTime: '08:00:00', endTime: '09:00:00' };
+    expect(scheduleClosureBlockLabel('venue_closed', range)).toBe('Venue closed 08:00 to 09:00');
+    expect(scheduleClosureBlockLabel('practitioner_closed', { columnName: 'Hannah', ...range })).toBe(
+      'Hannah unavailable 08:00 to 09:00',
+    );
+    expect(scheduleClosureBlockLabel('practitioner_closed', range)).toBe('Calendar unavailable 08:00 to 09:00');
+    expect(scheduleClosureBlockLabel('venue_and_calendar_closed', { columnName: 'Hannah', ...range })).toBe(
+      'Hannah closed 08:00 to 09:00',
+    );
+    expect(scheduleClosureBlockLabel('practitioner_leave', range)).toBe('On leave 08:00 to 09:00');
+    expect(scheduleClosureBlockLabel('linked_venue_closed')).toBe('Linked venue closed');
   });
 });
 
@@ -253,6 +343,8 @@ describe('isScheduleClosureBlockType', () => {
       'calendar_amended_hours',
       'venue_closed',
       'venue_amended_hours',
+      'venue_and_calendar_closed',
+      'linked_venue_closed',
     ]) {
       expect(isScheduleClosureBlockType(t)).toBe(true);
     }

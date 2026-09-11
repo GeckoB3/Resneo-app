@@ -32,7 +32,11 @@ export interface Practitioner {
    */
   availability_exceptions?: Record<
     string,
-    { closed: true } | { periods: PractitionerTimeRange[] }
+    | { closed: true; reason?: string | null }
+    // `reason` is ours, not the resolver's (web `DateOverrideValue`): the
+    // amended-hours editor writes it and must read it back, or re-saving a run
+    // opened from the planner would wipe the reason it was given.
+    | { periods: PractitionerTimeRange[]; reason?: string | null }
   > | null;
   /** "practitioner" | "resource" | "class" | "event" (unified calendars only). */
   calendar_type?: string | null;

@@ -1,4 +1,4 @@
-import { addDays, format, isSameMonth, parseISO, startOfMonth, startOfWeek } from 'date-fns';
+import { addDays, format, isSameMonth, startOfMonth, startOfWeek } from 'date-fns';
 import { useMemo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
@@ -90,7 +90,10 @@ const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
  */
 export function MonthGrid({ anchor, today, dayData, counts, onSelectDay }: MonthGridProps) {
   const { colors } = useTheme();
-  const monthDate = parseISO(`${anchor}T12:00:00.000Z`);
+  // LOCAL noon, not UTC noon: at UTC+13 a UTC-noon instant on the 30th is
+  // already the 1st locally, which slid the whole grid into the next month.
+  const [anchorY, anchorM, anchorD] = anchor.split('-').map(Number);
+  const monthDate = new Date(anchorY ?? 1970, (anchorM ?? 1) - 1, anchorD ?? 1, 12, 0, 0, 0);
   const gridStart = startOfWeek(startOfMonth(monthDate), { weekStartsOn: 1 });
   // Plain build (cheap, 42 cells) — a manual useMemo on the unstable `gridStart`
   // Date dep can't be preserved by the React compiler and adds no value here.

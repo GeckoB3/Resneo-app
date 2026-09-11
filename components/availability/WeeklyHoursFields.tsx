@@ -227,6 +227,7 @@ export function WeeklyHoursFields({ value, onChange, venueOpeningHours, disabled
                     <TimePickerField
                       value={r.start}
                       onChange={(mins) => updateRange(wd.key, ri, { start: mins })}
+                      disabled={disabled}
                       accessibilityLabel={`${wd.label} start time, range ${ri + 1}`}
                     />
                     <Text variant="caption" tone="muted" style={styles.toLabel}>
@@ -235,6 +236,7 @@ export function WeeklyHoursFields({ value, onChange, venueOpeningHours, disabled
                     <TimePickerField
                       value={r.end}
                       onChange={(mins) => updateRange(wd.key, ri, { end: mins })}
+                      disabled={disabled}
                       accessibilityLabel={`${wd.label} end time, range ${ri + 1}`}
                     />
                     {d.ranges.length > 1 ? (

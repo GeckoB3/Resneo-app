@@ -1,16 +1,24 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
+import { GuestMessageChannelPicker } from '@/components/messaging/GuestMessageChannelPicker';
+import { GuestMessageComposerHint } from '@/components/messaging/GuestMessageComposerHint';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { Segmented } from '@/components/ui/Segmented';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import { summariseBulkGuestMessage } from '@/lib/communications/bulk-guest-message';
+import {
+  DEFAULT_GUEST_MESSAGE_CHANNEL,
+  type GuestMessageChannel,
+} from '@/lib/communications/guest-message-channel';
+import { messageSendErrorText } from '@/lib/communications/message-send-error';
+import { formatGuestDisplayName } from '@/lib/guests/name';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import {
   useBulkAddTag,
-  useBulkMarketingMessage,
+  useBulkGuestMessage,
   useBulkRemoveTag,
 } from '@/lib/queries/useContactsBulk';
 import { useToast } from '@/providers/ToastProvider';
@@ -133,123 +141,164 @@ export function BulkRemoveTagSheet({
   );
 }
 
+/** Enough of a directory row to name a contact in the result summary. */
+export type BulkMessageContact = {
+  id: string;
+  first_name?: string | null;
+  last_name?: string | null;
+  identifiability_tier?: string;
+};
+
 /**
- * Send a marketing email/SMS to all selected contacts (consent respected server-side).
+ * Message every selected contact — the web's bulk "Message"
+ * (`ContactsDashboard.tsx` `runBulkContactMessage` + `BulkGuestMessageModal`,
+ * mounted at ~1980-1992).
  *
- * INTENTIONAL DIVERGENCE FROM WEB (Domain 05, R7 audit — confirmed, documented):
- * the web directory's bulk "Message" fans out a per-guest transactional message
- * (`POST /api/venue/guests/[id]/message`) over `Promise.all`, reaching anyone with
- * an email/phone on file regardless of marketing consent. The app instead sends a
- * single consent-gated marketing broadcast (`POST /api/venue/contacts/bulk`
- * {action:'marketing_message'}). We keep the broadcast semantics on mobile because:
- *   1. it is consent-safe by construction (only subscribed contacts on a matching
- *      channel receive it) — a per-guest fan-out would silently message
- *      non-consented contacts, a marketing-compliance regression;
- *   2. it is one request, not N (no partial-failure fan-out to reconcile on a
- *      flaky mobile connection); and
- *   3. per-contact transactional messaging already lives on the contact detail
- *      screen via `GuestMessageSheet` for staff who need to reach one person.
- * The consent semantics are surfaced to the user via the in-sheet note below.
+ * One message of up to 2,000 characters (no subject: the email arrives on the
+ * venue's branded custom-message template, and the SMS carries the venue name),
+ * fanned out as one `POST /api/venue/guests/{id}/message` per contact with
+ * `respect_marketing_permission: true` — so the server sends only to contacts
+ * with a recorded consent and no opt-out, and says per contact when it did not.
+ * The reply is counted the way the web counts it: sent, deliberately skipped,
+ * or a problem worth naming.
  */
 export function BulkMessageSheet({
   guestIds,
   open,
   onClose,
   onDone,
+  clientWord = 'Client',
+  contacts = [],
 }: {
   guestIds: string[];
   open: boolean;
   onClose: () => void;
   onDone: DoneHandler;
+  /** The venue's word for a client ("Client", "Guest", "Member"…). */
+  clientWord?: string;
+  /** The rows on screen, so a failure can name the contact it belongs to. */
+  contacts?: BulkMessageContact[];
 }) {
-  const mutation = useBulkMarketingMessage();
+  const mutation = useBulkGuestMessage();
   const toast = useToast();
-  const [subject, setSubject] = useState('');
-  const [body, setBody] = useState('');
-  const [channel, setChannel] = useState<'email' | 'sms' | 'both'>('email');
-  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState('');
+  const [channel, setChannel] = useState<GuestMessageChannel>(DEFAULT_GUEST_MESSAGE_CHANNEL);
+  const [summary, setSummary] = useState<string | null>(null);
+  const sending = mutation.isPending;
+  const clientLower = clientWord.toLowerCase();
+
+  // The web mounts its modal only while open, so its form is always fresh. This
+  // sheet stays mounted, so clear the last send as it opens.
+  useEffect(() => {
+    if (open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- seed the form when the sheet opens
+      setMessage('');
+      setChannel(DEFAULT_GUEST_MESSAGE_CHANNEL);
+      setSummary(null);
+    }
+  }, [open]);
+
+  const nameForGuest = (guestId: string): string => {
+    const row = contacts.find((contact) => contact.id === guestId);
+    if (!row) return '';
+    if (row.identifiability_tier === 'anonymous') return 'Anonymous';
+    return formatGuestDisplayName(row.first_name, row.last_name);
+  };
 
   async function handleSend() {
-    if (!subject.trim() || !body.trim()) {
-      setError('Subject and message are both required.');
-      return;
-    }
-    setError(null);
+    const text = message.trim();
+    if (!text || sending || guestIds.length === 0) return;
+    setSummary(null);
     try {
-      const result = await mutation.mutateAsync({
+      const outcomes = await mutation.mutateAsync({
         guest_ids: guestIds,
-        subject: subject.trim(),
-        body: body.trim(),
+        message: text,
         channel,
       });
-      hapticSuccess();
-      // The route returns a per-contact `results` array (+ `missing_ids`), NOT a
-      // top-level count — derive the totals so opt-outs/no-consent/not-found are
-      // reported as skipped rather than silently counted as "messaged".
-      const sent = result.results?.filter((r) => r.sent).length ?? 0;
-      const skipped = Math.max(0, guestIds.length - sent);
-      // Result toast fires directly off the resolved mutation, then we close the
-      // selection — Alert.alert is a no-op on web so it gave zero feedback there.
-      toast.success(
-        `${sent} contact${sent === 1 ? '' : 's'} messaged${skipped ? ` · ${skipped} skipped (no consent/contact info)` : ''}.`,
-      );
-      onDone();
+      const result = summariseBulkGuestMessage({
+        outcomes,
+        total: guestIds.length,
+        clientWord,
+        nameForGuest,
+      });
+      if (result.ok) {
+        hapticSuccess();
+        toast.success(result.toast);
+        onDone();
+        return;
+      }
+      hapticWarning();
+      toast.error(result.toast);
+      // The selection is spent either way — sending again would message the
+      // contacts that already received it — so the sheet reports what happened
+      // (the web's error banner) and Done clears the selection.
+      setSummary(result.error);
     } catch (e) {
       hapticWarning();
-      setError(e instanceof ApiError ? e.message : 'Could not send the message.');
+      setSummary(messageSendErrorText(e));
     }
   }
 
   return (
-    <Sheet visible={open} onClose={onClose} maxHeight="88%">
+    <Sheet
+      visible={open}
+      onClose={() => {
+        if (!sending) onClose();
+      }}
+      maxHeight="88%">
       <View style={styles.body}>
-        <Text variant="overline" tone="muted">
-          Message {guestIds.length} contact{guestIds.length === 1 ? '' : 's'}
+        <Text variant="subheading">
+          {`Message ${guestIds.length} ${clientWord}${guestIds.length !== 1 ? 's' : ''}`}
         </Text>
-        <Segmented
-          options={[
-            { value: 'email', label: 'Email' },
-            { value: 'sms', label: 'SMS' },
-            { value: 'both', label: 'Both' },
-          ]}
-          value={channel}
-          onChange={setChannel}
-        />
-        <Input
-          testID="bulk-msg-subject"
-          label="Subject"
-          value={subject}
-          onChangeText={setSubject}
-          maxLength={200}
-        />
-        <Input
-          testID="bulk-msg-body"
-          label="Message"
-          value={body}
-          onChangeText={setBody}
-          multiline
-          maxLength={4000}
-          style={styles.multiline}
-        />
-        <Text variant="caption" tone="muted">
-          This sends a marketing broadcast: only contacts who have given marketing
-          consent and have a matching {channel === 'both' ? 'email or phone' : channel}{' '}
-          on file will receive it. To message one person directly, open their profile.
-        </Text>
-        {error ? (
-          <Text variant="bodySmall" tone="danger">
-            {error}
-          </Text>
-        ) : null}
-        <View style={styles.actions}>
-          <Button label="Cancel" variant="secondary" style={styles.flex1} onPress={onClose} />
-          <Button
-            label="Send"
-            style={styles.flex1}
-            loading={mutation.isPending}
-            onPress={() => void handleSend()}
-          />
-        </View>
+        {summary ? (
+          <>
+            <Text variant="bodySmall" tone="danger">
+              {summary}
+            </Text>
+            <Button label="Done" fullWidth onPress={onDone} />
+          </>
+        ) : (
+          <>
+            <Text variant="bodySmall" tone="secondary">
+              {`The same message goes to each selected ${clientLower} who has given marketing permission. Anyone opted out, or without a recorded consent, is skipped, as are contacts without email or SMS on file for the chosen channel.`}
+            </Text>
+            <GuestMessageChannelPicker
+              label="Channel"
+              value={channel}
+              onChange={setChannel}
+              disabled={sending}
+            />
+            <Input
+              testID="bulk-msg-body"
+              label="Message"
+              value={message}
+              onChangeText={setMessage}
+              placeholder="Type your message…"
+              multiline
+              numberOfLines={7}
+              maxLength={2000}
+              editable={!sending}
+              style={styles.multiline}
+            />
+            <GuestMessageComposerHint message={message} channel={channel} />
+            <View style={styles.actions}>
+              <Button
+                label="Cancel"
+                variant="secondary"
+                style={styles.flex1}
+                disabled={sending}
+                onPress={onClose}
+              />
+              <Button
+                label={sending ? 'Sending…' : 'Send'}
+                style={styles.flex1}
+                loading={sending}
+                disabled={sending || !message.trim()}
+                onPress={() => void handleSend()}
+              />
+            </View>
+          </>
+        )}
       </View>
     </Sheet>
   );

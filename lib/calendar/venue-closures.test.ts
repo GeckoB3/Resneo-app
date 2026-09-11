@@ -70,13 +70,32 @@ describe('venueDayHours', () => {
     });
   });
 
-  it('is unknown for an open day with no usable periods', () => {
-    expect(venueDayHours(everyDay({ periods: [] }), ANY_DATE)).toEqual({ kind: 'unknown' });
+  /**
+   * Web `resolveVenueWideAllowedMinuteRanges`: inside a CONFIGURED map, a
+   * weekday with no usable periods — absent, closed, or an empty list — is
+   * `weekly-closed`. The booking engine refuses guests on it, so the diary
+   * must not draw it bookable. Only an absent or empty MAP is unconstrained.
+   */
+  it('is closed for a configured day with no usable periods', () => {
+    expect(venueDayHours(everyDay({ periods: [] }), ANY_DATE)).toEqual({ kind: 'closed' });
   });
 
-  it('is unknown when the weekday has no entry', () => {
-    expect(venueDayHours({ '1': { closed: true } }, ANY_DATE === '2026-06-15' ? '2026-06-14' : ANY_DATE))
-      .toBeDefined(); // Sunday 2026-06-14 has no '0' entry → unknown
+  it('is closed for a weekday the configured map never mentions', () => {
+    // 2026-06-14 is a Sunday; this map carries Monday only.
+    expect(venueDayHours({ '1': { closed: true } }, '2026-06-14')).toEqual({ kind: 'closed' });
+  });
+
+  it('imposes nothing when the map itself is empty', () => {
+    expect(venueDayHours({}, ANY_DATE)).toEqual({ kind: 'unknown' });
+  });
+
+  it('reads a legacy day-level { open, close } as open', () => {
+    const legacy = { '1': { open: '09:00', close: '17:00' } } as unknown as OpeningHours;
+    // ANY_DATE (2026-06-15) is a Monday.
+    expect(venueDayHours(legacy, ANY_DATE)).toEqual({
+      kind: 'open',
+      periods: [{ start: 540, end: 1020 }],
+    });
   });
 });
 

@@ -1,8 +1,12 @@
 /**
- * ClientsTab — searchable, paginated guest directory with expandable detail,
- * inline edit, GDPR erase, and CSV history export.
+ * ClientsTab — the Reports → Clients directory: search, the web's Show / Sort /
+ * tag filters, expandable rows with inline edit, GDPR erase, and the guest
+ * history CSV.
  *
- * Lives inside the Reports screen under the "Clients" sub-tab.
+ * The controls and the figures on each row follow the web's list
+ * (_reference/Resneo/src/app/dashboard/reports/ClientsSection.tsx): the same
+ * identity scope (default "With contact"), the same six sorts, a tag filter you
+ * can stack, and phone / visit count / no-show count on every row.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -22,6 +26,7 @@ import { Input } from '@/components/ui/Input';
 import { SearchBar } from '@/components/ui/SearchBar';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import { formatGuestDisplayName } from '@/lib/guests/name';
 import { hapticTap, hapticWarning } from '@/lib/haptics';
 import { buildAndShareCsv } from '@/lib/reports/csv-export';
 import { useGuestDetail } from '@/lib/queries/useGuestDetail';
@@ -36,19 +41,55 @@ import type { GuestListItem } from '@/types/guest-list';
 
 const PAGE_SIZE = 25;
 
+/** Identity scope — the web's "Show" select (ClientsSection.tsx:345-357). */
+type IdentityFilter = 'identified' | 'all' | 'anonymous';
+
+const FILTER_OPTIONS: { value: IdentityFilter; label: string }[] = [
+  { value: 'identified', label: 'With contact (CRM)' },
+  { value: 'all', label: 'All except walk-ins' },
+  { value: 'anonymous', label: 'Walk-ins only' },
+];
+
+/** The web's sorts, in its order (ClientsSection.tsx:24-31). */
+const SORT_OPTIONS: { value: string; label: string }[] = [
+  { value: 'last_visit_desc', label: 'Last visit (newest)' },
+  { value: 'last_visit_asc', label: 'Last visit (oldest)' },
+  { value: 'name_asc', label: 'Name (A–Z)' },
+  { value: 'name_desc', label: 'Name (Z–A)' },
+  { value: 'visit_count_desc', label: 'Most visits' },
+  { value: 'created_desc', label: 'Recently added' },
+];
+
+/**
+ * The web's display name, with its anonymous rule. The name itself comes from
+ * the shared port of web `lib/guests/name.ts`, so this list and a bulk-message
+ * summary cannot drift apart on what a contact is called.
+ */
+function guestDisplayName(guest: GuestListItem, filter: IdentityFilter): string {
+  if (filter === 'anonymous' || guest.identifiability_tier === 'anonymous') return 'Anonymous';
+  return formatGuestDisplayName(guest.first_name, guest.last_name);
+}
+
 // ─── Guest row ───────────────────────────────────────────────────────────────
 
 function GuestRow({
   guest,
   onPress,
   isExpanded,
+  filter,
+  totalBookingsLabel,
+  visitsLabel,
 }: {
   guest: GuestListItem;
   onPress: () => void;
   isExpanded: boolean;
+  filter: IdentityFilter;
+  totalBookingsLabel: string;
+  visitsLabel: string;
 }) {
   const { colors } = useTheme();
-  const fullName = [guest.first_name, guest.last_name].filter(Boolean).join(' ') || 'Anonymous';
+  const isAnonymous = filter === 'anonymous' || guest.identifiability_tier === 'anonymous';
+  const fullName = guestDisplayName(guest, filter);
 
   return (
     <Pressable
@@ -62,35 +103,54 @@ function GuestRow({
         isExpanded && { backgroundColor: colors.brandSubtle },
       ]}>
       <View style={styles.guestMain}>
-        <Text variant="bodyMedium">{fullName}</Text>
-        {guest.email ? (
-          <Text variant="caption" tone="muted" numberOfLines={1}>
-            {guest.email}
+        <View style={styles.guestNameRow}>
+          <Text
+            variant="bodyMedium"
+            tone={isAnonymous ? 'muted' : 'default'}
+            numberOfLines={1}
+            style={[styles.guestName, isAnonymous ? styles.anonymousName : null]}>
+            {fullName}
           </Text>
-        ) : null}
-      </View>
-      <View style={styles.guestStats}>
-        <Text variant="caption" tone="secondary">
-          {guest.total_bookings} booking{guest.total_bookings === 1 ? '' : 's'}
+          <Text variant="caption" style={{ color: isExpanded ? colors.brand : colors.textMuted }}>
+            {isExpanded ? '▲' : '▼'}
+          </Text>
+        </View>
+        {/* Email and phone, both shown as the web's columns do. */}
+        <Text variant="caption" tone="muted" numberOfLines={1}>
+          {`${guest.email ?? '-'} · ${guest.phone ?? '-'}`}
         </Text>
-        {guest.last_visit_date ? (
-          <Text variant="caption" tone="muted">
-            Last: {guest.last_visit_date}
+        <View style={styles.guestMeta}>
+          <Text variant="caption" tone="secondary">
+            {`${totalBookingsLabel}: ${guest.total_bookings}`}
           </Text>
-        ) : null}
+          <Text variant="caption" tone="secondary">
+            {`${visitsLabel}: ${guest.visit_count}`}
+          </Text>
+          {guest.no_show_count > 0 ? (
+            <Text variant="caption" style={{ color: colors.danger }}>
+              {`${guest.no_show_count} NS`}
+            </Text>
+          ) : null}
+          <Text variant="caption" tone="muted">
+            {`Last visit: ${guest.last_visit_date ?? '-'}`}
+          </Text>
+        </View>
       </View>
-      <Text
-        variant="caption"
-        style={{ color: isExpanded ? colors.brand : colors.textMuted }}>
-        {isExpanded ? '▲' : '▼'}
-      </Text>
     </Pressable>
   );
 }
 
 // ─── Expanded guest detail ───────────────────────────────────────────────────
 
-function GuestDetail({ guestId, onErased }: { guestId: string; onErased: () => void }) {
+function GuestDetail({
+  guestId,
+  onErased,
+  bookingWord,
+}: {
+  guestId: string;
+  onErased: () => void;
+  bookingWord: string;
+}) {
   const { colors } = useTheme();
   const toast = useToast();
   const detailQuery = useGuestDetail(guestId, { bookingHistoryLimit: 20 });
@@ -173,19 +233,21 @@ function GuestDetail({ guestId, onErased }: { guestId: string; onErased: () => v
       toast.info('No booking history for this guest.');
       return;
     }
+    // The web's columns, in its order, and its filename
+    // (ClientsSection.tsx:205-218) — deposit is the deposit STATUS.
     const rows: string[][] = [
-      ['Date', 'Time', 'Service', 'Practitioner', 'Status', 'Deposit'],
+      ['Date', 'Time', 'Service', 'Covers', 'Status', 'Deposit', 'Practitioner'],
       ...history.map((row) => [
         row.booking_date,
         row.booking_time,
-        row.service_name ?? row.detail_label ?? '',
-        row.practitioner_name ?? '',
+        row.service_name ?? '-',
+        String(row.party_size ?? '-'),
         row.status,
-        row.deposit_amount_pence != null ? formatPence(row.deposit_amount_pence) ?? '' : '',
+        row.deposit_status ?? '-',
+        row.practitioner_name ?? '-',
       ]),
     ];
-    const name = [guest?.first_name, guest?.last_name].filter(Boolean).join('-') || guestId;
-    const result = await buildAndShareCsv(`guest-history-${name}.csv`, rows);
+    const result = await buildAndShareCsv(`guest-${guestId}-bookings.csv`, rows);
     if (!result.ok) {
       toast.error('Could not export the report.');
       return;
@@ -332,7 +394,7 @@ function GuestDetail({ guestId, onErased }: { guestId: string; onErased: () => v
       {history.length > 0 ? (
         <View style={styles.historySection}>
           <Text variant="label" tone="secondary">
-            Recent bookings
+            {`Recent ${bookingWord.toLowerCase()}s`}
           </Text>
           {history.slice(0, 5).map((row) => (
             <View
@@ -367,7 +429,7 @@ function GuestDetail({ guestId, onErased }: { guestId: string; onErased: () => v
       {/* Action buttons */}
       <View style={styles.actionRow}>
         <Button
-          label="Export history"
+          label="Export history (CSV)"
           variant="secondary"
           size="sm"
           onPress={() => void handleExportHistory()}
@@ -386,23 +448,43 @@ function GuestDetail({ guestId, onErased }: { guestId: string; onErased: () => v
 
 // ─── ClientsTab (public) ─────────────────────────────────────────────────────
 
-export function ClientsTab() {
+export function ClientsTab({
+  clientWord = 'Client',
+  bookingWord = 'Booking',
+  isAppointment = false,
+}: {
+  /** The venue's word for a client (terminology.client). */
+  clientWord?: string;
+  /** The venue's word for a booking (terminology.booking). */
+  bookingWord?: string;
+  /** Appointment venues label the lifecycle count with their booking word. */
+  isAppointment?: boolean;
+} = {}) {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [tagFilter, setTagFilter] = useState<string | null>(null);
+  const [filter, setFilter] = useState<IdentityFilter>('identified');
+  const [sort, setSort] = useState('last_visit_desc');
+  const [tagFilter, setTagFilter] = useState<string[]>([]);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [debouncedSearch, setDebouncedSearch] = useState('');
 
   const tagsQuery = useGuestTags();
   const venueTags = tagsQuery.data?.tags ?? [];
 
+  const clientLower = clientWord.toLowerCase();
+  const totalBookingsLabel = `Total ${bookingWord.toLowerCase()}s`;
+  const visitsLabel = isAppointment ? `${bookingWord}s (lifecycle)` : 'Visit count';
+
   const guestsQuery = useGuests({
     search: debouncedSearch,
     page,
     limit: PAGE_SIZE,
-    sort: 'last_visit_desc',
-    ...(tagFilter ? { segment: 'tag', segmentTag: tagFilter } : {}),
+    sort,
+    // The identity scope always goes on the wire, as the web sends it, so the
+    // list never depends on the route's default (ClientsSection.tsx:108-113).
+    filter,
+    ...(tagFilter.length > 0 ? { tags: tagFilter } : {}),
   });
 
   function handleSearchChange(text: string) {
@@ -415,16 +497,36 @@ export function ClientsTab() {
     }, 400);
   }
 
-  function handleTagPress(tag: string) {
-    hapticTap();
-    // Tapping the active tag clears the filter (toggle).
-    setTagFilter((current) => (current === tag ? null : tag));
+  /** Any control that changes the result set sends the list back to page one. */
+  function resetPage() {
     setPage(0);
     setExpandedId(null);
   }
 
+  function handleFilterPress(next: IdentityFilter) {
+    hapticTap();
+    setFilter(next);
+    resetPage();
+  }
+
+  function handleSortPress(next: string) {
+    hapticTap();
+    setSort(next);
+    resetPage();
+  }
+
+  function handleTagPress(tag: string) {
+    hapticTap();
+    // Tags stack: tapping one adds it, tapping it again drops it (web parity).
+    setTagFilter((current) =>
+      current.includes(tag) ? current.filter((t) => t !== tag) : [...current, tag],
+    );
+    resetPage();
+  }
+
   const guests = guestsQuery.data?.guests ?? [];
   const total = guestsQuery.data?.total_count ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const hasMore = guests.length + page * PAGE_SIZE < total;
 
   return (
@@ -434,25 +536,66 @@ export function ClientsTab() {
         value={search}
         onChangeText={handleSearchChange}
         onClear={() => handleSearchChange('')}
-        placeholder="Search by name, email or phone…"
+        placeholder="Name, email, or phone"
         containerStyle={styles.searchBar}
       />
 
-      {/* Tag filter chips (venue tags) */}
+      {/* Show — the identity scope (web's "Show" select) */}
+      <Text variant="overline" tone="muted">
+        Show
+      </Text>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.filterRow}>
+        {FILTER_OPTIONS.map((option) => (
+          <Chip
+            key={option.value}
+            label={option.label}
+            selected={filter === option.value}
+            onPress={() => handleFilterPress(option.value)}
+          />
+        ))}
+      </ScrollView>
+
+      {/* Sort */}
+      <Text variant="overline" tone="muted">
+        Sort
+      </Text>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.filterRow}>
+        {SORT_OPTIONS.map((option) => (
+          <Chip
+            key={option.value}
+            label={option.label}
+            selected={sort === option.value}
+            onPress={() => handleSortPress(option.value)}
+          />
+        ))}
+      </ScrollView>
+
+      {/* Tag filter chips (venue tags) — more than one can be on at once */}
       {venueTags.length > 0 ? (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.tagFilterRow}>
-          {venueTags.map((tag) => (
-            <Chip
-              key={tag}
-              label={tag}
-              selected={tagFilter === tag}
-              onPress={() => handleTagPress(tag)}
-            />
-          ))}
-        </ScrollView>
+        <>
+          <Text variant="overline" tone="muted">
+            Filter by tags
+          </Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filterRow}>
+            {venueTags.map((tag) => (
+              <Chip
+                key={tag}
+                label={tag}
+                selected={tagFilter.includes(tag)}
+                onPress={() => handleTagPress(tag)}
+              />
+            ))}
+          </ScrollView>
+        </>
       ) : null}
 
       {/* Loading state */}
@@ -471,33 +614,29 @@ export function ClientsTab() {
         />
       ) : guests.length === 0 ? (
         <EmptyState
-          title={
-            debouncedSearch || tagFilter ? 'No guests match' : 'No guests yet'
-          }
-          message={
-            tagFilter
-              ? `No clients tagged "${tagFilter}"${debouncedSearch ? ' match your search' : ''}.`
-              : debouncedSearch
-                ? 'Try a different name or email.'
-                : 'Guests appear here once they have a booking.'
-          }
+          title={`No matching ${clientLower}s`}
+          message={`No ${clientLower} match this list. Try another filter or search.`}
         />
       ) : (
         <>
           <Text variant="caption" tone="muted" style={styles.totalLabel}>
-            {total} guest{total === 1 ? '' : 's'} total
+            {`Page ${page + 1} of ${totalPages} (${total} total)`}
           </Text>
 
           {guests.map((guest) => (
             <View key={guest.id}>
               <GuestRow
                 guest={guest}
+                filter={filter}
+                totalBookingsLabel={totalBookingsLabel}
+                visitsLabel={visitsLabel}
                 isExpanded={expandedId === guest.id}
                 onPress={() => setExpandedId(expandedId === guest.id ? null : guest.id)}
               />
               {expandedId === guest.id ? (
                 <GuestDetail
                   guestId={guest.id}
+                  bookingWord={bookingWord}
                   onErased={() => {
                     setExpandedId(null);
                     void guestsQuery.refetch();
@@ -565,9 +704,24 @@ const styles = StyleSheet.create({
   },
   guestMain: {
     flex: 1,
+    gap: 2,
   },
-  guestStats: {
-    alignItems: 'flex-end',
+  guestNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  guestName: {
+    flex: 1,
+  },
+  anonymousName: {
+    fontStyle: 'italic',
+  },
+  guestMeta: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginTop: 2,
   },
   guestDetail: {
     padding: spacing.md,
@@ -612,7 +766,7 @@ const styles = StyleSheet.create({
   profileInfo: {
     gap: spacing.xs,
   },
-  tagFilterRow: {
+  filterRow: {
     flexDirection: 'row',
     gap: spacing.sm,
     paddingBottom: spacing.xs,

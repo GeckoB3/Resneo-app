@@ -10,7 +10,8 @@ import type {
   GuestListResponse,
 } from '@/types/guest-list';
 
-function buildGuestListPath(params: GuestListParams): string {
+/** Exported for tests: the exact query string a set of params becomes. */
+export function buildGuestListPath(params: GuestListParams): string {
   const searchParams = new URLSearchParams();
   const page = params.page ?? 0;
   const limit = params.limit ?? 30;
@@ -26,6 +27,13 @@ function buildGuestListPath(params: GuestListParams): string {
   // Identity scope filter (identified/all/anonymous)
   if (params.filter?.trim()) {
     searchParams.set('filter', params.filter.trim());
+  }
+
+  // Multi-tag filter, comma-joined — a contact must carry every tag (web
+  // `ClientsSection.tsx:115`). Independent of the single-tag `segment=tag` path.
+  const tagList = (params.tags ?? []).map((tag) => tag.trim()).filter(Boolean);
+  if (tagList.length > 0) {
+    searchParams.set('tags', tagList.join(','));
   }
 
   // Handle all segment options
@@ -84,6 +92,9 @@ function buildGuestListPath(params: GuestListParams): string {
 export function useGuests(params: GuestListParams) {
   const accessToken = useAccessToken();
   const search = params.search?.trim() ?? '';
+  // Only keyed when a tag filter is actually in use, so every existing caller's
+  // key keeps the shape (and the cache entries) it had.
+  const tagKey = (params.tags ?? []).map((tag) => tag.trim()).filter(Boolean).join(',');
   const enabled =
     isBackendConfigured() &&
     accessToken !== null &&
@@ -104,6 +115,7 @@ export function useGuests(params: GuestListParams) {
       last_staff_id: params.last_staff_id ?? null,
       last_service_id: params.last_service_id ?? null,
       last_service_kind: params.last_service_kind ?? null,
+      ...(tagKey ? { tags: tagKey } : {}),
     }),
     enabled,
     // Keep the previous results on screen while a new search term loads, so the

@@ -48,9 +48,9 @@ describe('layout constants', () => {
     expect(COMPACT_MIN_BLOCK_HEIGHT).toBeLessThan(TAP_SNAP_MINUTES * COMPACT_MIN_PX_PER_MINUTE);
   });
 
-  it('defaults the day window to 08:00–20:00', () => {
-    expect(DEFAULT_START_HOUR).toBe(8);
-    expect(DEFAULT_END_HOUR).toBe(20);
+  it('defaults the day window to 07:00–21:00, as the web does', () => {
+    expect(DEFAULT_START_HOUR).toBe(7);
+    expect(DEFAULT_END_HOUR).toBe(21);
   });
 
   it('floors the compact scale at the web legibility floor (16px per 15min)', () => {

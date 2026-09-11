@@ -32,6 +32,7 @@ import {
   BreaksEditor,
 } from '@/components/availability/BreaksEditor';
 import { ScheduleTimelineSheet } from '@/components/availability/ScheduleTimelineSheet';
+import { HoursMismatchAdvice } from '@/components/availability/HoursMismatchAdvice';
 import { TeamLeaveCalendar } from '@/components/availability/TeamLeaveCalendar';
 import {
   WORKING_HOURS_READ_ONLY_HINT,
@@ -58,6 +59,7 @@ import {
   amendedHoursLeaveNote,
   amendedHoursOnDate,
   amendedHoursVenueNote,
+  amendedRunFromExceptions,
   describeAmendedRange,
   describeHoursPeriods,
   minutesToHm,
@@ -195,7 +197,13 @@ export default function AvailabilityScreen() {
   const { colors } = useTheme();
   const toast = useToast();
   const router = useRouter();
-  const params = useLocalSearchParams<{ tab?: string | string[] }>();
+  const params = useLocalSearchParams<{
+    tab?: string | string[];
+    /** From the diary's clock button: open the closures sheet on this day. */
+    date?: string | string[];
+    /** ...for this calendar (the one the diary was showing), when known. */
+    calendar?: string | string[];
+  }>();
   const { venue } = useVenueContext();
   const timeZone = venue?.timezone ?? 'Europe/London';
   const today = calendarDateInTimeZone(new Date(), timeZone);
@@ -231,7 +239,10 @@ export default function AvailabilityScreen() {
    * Availability tab edits them here too. Breaks and closures work on
    * `appointmentCalendars` instead — see the note there.
    */
-  const practitionersQuery = usePractitioners({ includeResources: true });
+  // Inactive columns included, as the web's availability page lists every row
+  // (`roster=1`, no filters): a paused calendar still has hours, breaks and
+  // closures to look at, and leaving it out made its leave rows read "Calendar".
+  const practitionersQuery = usePractitioners({ includeResources: true, includeInactive: true });
   /** Every calendar whose weekly schedule is editable here, in column order. */
   const practitioners = useMemo(
     () =>
@@ -304,6 +315,13 @@ export default function AvailabilityScreen() {
 
   // ---- Closures: filter, lists, mutations -------------------------------------
   const [filterPractitionerId, setFilterPractitionerId] = useState<string | null>(null);
+  /**
+   * Standing advice after a save that leaves a calendar's hours outside the
+   * venue's (web: a page-level amber card). It lives HERE, not inside the
+   * editor: the refetch after a save changes the editor's key and remounts it,
+   * which wiped an editor-local banner the moment it appeared.
+   */
+  const [hoursAdvice, setHoursAdvice] = useState<string | null>(null);
   // Past entries are real (web lists the displayed month either way), so the
   // lists reach back as far as they reach forward.
   const listFrom = addDaysToDateStr(today, -RANGE_DAYS);
@@ -408,6 +426,32 @@ export default function AvailabilityScreen() {
     setSheetOpen(true);
   }
 
+  /**
+   * Opened from the diary's clock button (web `CalendarHoursQuickEdit`,
+   * 2026-09-10): land on Closures & amended hours with that day picked, as a
+   * new entry for the calendar the diary was showing. Consumed once per date
+   * so a later tab change does not reopen it.
+   */
+  const seededDateParam = Array.isArray(params.date) ? params.date[0] : params.date;
+  const seededCalendarParam = Array.isArray(params.calendar) ? params.calendar[0] : params.calendar;
+  const consumedSeedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!seededDateParam || !/^\d{4}-\d{2}-\d{2}$/.test(seededDateParam)) return;
+    if (consumedSeedRef.current === seededDateParam) return;
+    // Wait for the roster and the role, or the sheet would open with no calendar.
+    if (!staff || !canManageUnavailability) return;
+    consumedSeedRef.current = seededDateParam;
+    const calendarId =
+      seededCalendarParam && selectablePractitioners.some((p) => p.id === seededCalendarParam)
+        ? seededCalendarParam
+        : null;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- seeding the sheet from a route param, once
+    setTab('daysoff');
+    openNewEntry(seededDateParam, seededDateParam, 'closed', calendarId);
+    // openNewEntry is a plain function of this component's setters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seededDateParam, seededCalendarParam, staff, canManageUnavailability, selectablePractitioners]);
+
   function openEditLeave(period: LeavePeriod) {
     if (!ownsCalendar(period.practitioner_id)) {
       toast.error('You can only edit closures on your own calendar.');
@@ -476,14 +520,16 @@ export default function AvailabilityScreen() {
         openEditAmended(listed);
         return;
       }
-      const stored = calendar.availability_exceptions?.[dateYmd];
-      if (stored && 'periods' in stored) {
+      // The listed runs are scoped to this tab's chip filter and its ±90-day
+      // window, so fall back to the calendar's own stored overrides: the whole
+      // run around this date, with the reason it was saved with. Rebuilding a
+      // one-day run with `reason: null` here meant saving from the planner
+      // wiped the reason off every date of the run.
+      const run = amendedRunFromExceptions(calendar.availability_exceptions, dateYmd);
+      if (run) {
         openEditAmended({
           kind: 'hours',
-          date_start: dateYmd,
-          date_end: dateYmd,
-          periods: stored.periods.map((p) => ({ start: p.start.slice(0, 5), end: p.end.slice(0, 5) })),
-          reason: null,
+          ...run,
           calendar_id: calendar.id,
           calendar_name: calendar.name,
         });
@@ -824,6 +870,12 @@ export default function AvailabilityScreen() {
     }
     return (
       <>
+        <HoursMismatchAdvice
+          message={hoursAdvice}
+          actionLabel="Open business hours"
+          actionHref="/manage/hours"
+          onDismiss={() => setHoursAdvice(null)}
+        />
         {renderCalendarSelector()}
 
         {/* How calendar hours and business hours work together (web banner). */}
@@ -866,6 +918,7 @@ export default function AvailabilityScreen() {
               venueOpeningHours={venue?.opening_hours}
               readOnly={!canEditSelected}
               readOnlyHint={!isAdmin ? WORKING_HOURS_READ_ONLY_HINT : undefined}
+              onAdvice={setHoursAdvice}
             />
           </Card>
         ) : null}
@@ -888,6 +941,7 @@ export default function AvailabilityScreen() {
                   : []
               }
               todayYmd={today}
+              onAdvice={setHoursAdvice}
               onAmendHours={(dateYmd, existing) =>
                 amendHoursFromPlanner(selectedCalendar, dateYmd, existing)
               }

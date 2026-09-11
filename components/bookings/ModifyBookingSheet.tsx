@@ -21,6 +21,7 @@ import {
   type VisitEditTarget,
 } from '@/lib/booking/appointment-visit';
 import { MIN_CORE_DURATION_MINUTES } from '@/lib/booking/booking-core-duration';
+import { bookingModificationNotifyOutcome } from '@/lib/booking/modification-notify-result';
 import {
   visitRestoreRequest,
   visitScheduleRequest,
@@ -1278,7 +1279,11 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
           // (web #186), and the answer then says whether it was what let the
           // time through.
           allow_outside_hours: true,
-          ...(reassignedPractitionerId ? { practitioner_id: reassignedPractitionerId } : {}),
+          // The validate route REQUIRES a calendar (its schema 400s without
+          // one), so the dry run names the booking's own when nothing has
+          // moved. The PATCH below is the opposite: sending it there would arm
+          // the managed-calendar gate on an edit that changed no calendar.
+          practitioner_id: practitionerId,
           ...(target.usesServiceItem
             ? { service_item_id: serviceId! }
             : { appointment_service_id: serviceId! }),
@@ -1528,7 +1533,6 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   /** Send the held-back "your booking changed" email, then close. */
   function handleNotify() {
     if (!target) return;
-    const name = target.guestName;
     notifyModification.mutate(
       // A visit is notified ONCE, against its first service — the row the
       // endpoint would have emailed against had the send not been deferred. Any
@@ -1536,7 +1540,13 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
       // service of the several that moved.
       { bookingId: visit?.leadBookingId ?? target.id },
       {
-        onSuccess: () => toast.success(`${name} notified of the change.`),
+        // A 200 does not mean the guest heard: notifications may be off, no
+        // channel enabled, or no contact details on file (web parity).
+        onSuccess: (result) => {
+          const outcome = bookingModificationNotifyOutcome(result);
+          if (outcome.sent) toast.success(outcome.message);
+          else toast.info(outcome.message);
+        },
         onError: () => toast.error('Could not notify the guest.'),
       },
     );

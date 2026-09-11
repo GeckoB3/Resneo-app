@@ -14,7 +14,7 @@ import Animated, { FadeIn, FadeOut, runOnJS } from 'react-native-reanimated';
 import { getDateTimeFormat } from '@/lib/dates/formatters';
 import { useReduceMotion, motionSafe } from '@/lib/motion';
 import { SymbolView } from 'expo-symbols';
-import { format, parseISO } from 'date-fns';
+import { format } from 'date-fns';
 
 import { useAcceptUnpaidGuard } from '@/components/bookings/AcceptUnpaidSheet';
 import { BookingDetailSheet } from '@/components/bookings/BookingDetailSheet';
@@ -25,8 +25,11 @@ import { minutesToTime, timeToMinutes, type GridWindowOverride } from '@/compone
 import { resolveDayLoadState } from '@/lib/calendar/day-load-state';
 import { resolveGridErrorState } from '@/lib/calendar/grid-error-state';
 import { nextVisibleCalendars } from '@/lib/calendar/calendar-selection';
-import { resolveVenueDay, venueDayHours } from '@/lib/calendar/venue-closures';
+import { venueDayHours } from '@/lib/calendar/venue-closures';
 import { buildCalendarClosureOverlays } from '@/lib/calendar/schedule-closures';
+import { calendarHours } from '@/lib/calendar/calendar-hours';
+import { bookingModificationNotifyOutcome } from '@/lib/booking/modification-notify-result';
+import { AmendHoursSheet, type AmendHoursTarget } from '@/components/calendar/AmendHoursSheet';
 import { resolveColumnDayHours } from '@/lib/calendar/column-day-hours';
 import { calendarHasAvailableHoursOnDate } from '@/lib/calendar/calendar-has-hours-on-date';
 import { MonthGrid, type MonthDayDatum } from '@/components/calendar/MonthGrid';
@@ -295,6 +298,16 @@ function groupScheduleByCalendarDate(
   return map;
 }
 
+/**
+ * A YYYY-MM-DD calendar date as LOCAL noon. Parsing it as UTC noon and then
+ * reading local weekday / day-number fields shifts a day at UTC+13 and +14,
+ * which mislabelled the week header there.
+ */
+function localNoon(date: string): Date {
+  const [y, m, d] = date.split('-').map(Number);
+  return new Date(y ?? 1970, (m ?? 1) - 1, d ?? 1, 12, 0, 0, 0);
+}
+
 /** Current wall-clock time (minutes since midnight) in the venue timezone. */
 function nowMinutesInTz(timeZone: string): number {
   const parts = getDateTimeFormat('en-GB', {
@@ -436,6 +449,8 @@ export default function CalendarScreen() {
   const [addSheetTarget, setAddSheetTarget] = useState<AddSheetTarget | null>(null);
   // Month-picker sheet (date jump) — opened by tapping the header date label.
   const [monthPickerOpen, setMonthPickerOpen] = useState(false);
+  /** The clock button's chooser (amend calendar hours / business hours). */
+  const [amendHoursTarget, setAmendHoursTarget] = useState<AmendHoursTarget | null>(null);
   // Pending action tracking for inline status tray + drag commits.
   const [pendingActionIds, setPendingActionIds] = useState<Set<string>>(new Set());
 
@@ -592,11 +607,17 @@ export default function CalendarScreen() {
 
   const handleNotifyMove = useCallback(() => {
     if (!moveNotice) return;
-    const name = moveNotice.guestName;
     notifyModification.mutate(
       { bookingId: moveNotice.bookingId },
       {
-        onSuccess: () => toast.success(`${name} notified of the change.`),
+        // The route answers 200 even when it sends nothing (notifications off,
+        // no channel enabled, no contact details), so the toast reads the body
+        // rather than claiming the guest was told (web parity).
+        onSuccess: (result) => {
+          const outcome = bookingModificationNotifyOutcome(result);
+          if (outcome.sent) toast.success(outcome.message);
+          else toast.info(outcome.message);
+        },
         onError: () => toast.error('Could not notify the guest.'),
       },
     );
@@ -1095,19 +1116,16 @@ export default function CalendarScreen() {
        * block types the drag rule already knows: leave is a wall, a closure is
        * advice (`lib/calendar/occupying-blocks`).
        */
-      const venueDay = resolveVenueDay(openingHours, dateStr, venueWideBlocks);
-      const column = resolveColumnDayHours(practitioner, dateStr, venueDay.hours);
       const closures = buildCalendarClosureOverlays({
         calendarId: calId,
         dateStr,
         calendar: practitioner,
         leavePeriods,
-        venueOpenRanges: column.venueOpenRanges,
       });
 
       return [...closures, ...oneOff, ...breaks];
     },
-    [practitioners, openingHours, venueWideBlocks, leavePeriods],
+    [practitioners, leavePeriods],
   );
 
   /**
@@ -2347,7 +2365,7 @@ export default function CalendarScreen() {
     const byDate = new Map((calendar?.dates ?? []).map((d) => [d.date, d]));
     return week.days.map((date) => {
       const data = byDate.get(date) ?? null;
-      const d = parseISO(`${date}T12:00:00.000Z`);
+      const d = localNoon(date);
       const weekday = d.getDay();
       const column = resolveColumnDayHours(
         practitioners.find((p) => p.id === effectiveId),
@@ -2382,7 +2400,6 @@ export default function CalendarScreen() {
               dateStr: date,
               calendar: practitioners.find((p) => p.id === effectiveId),
               leavePeriods,
-              venueOpenRanges: column.venueOpenRanges,
             })
           : [],
       };
@@ -2399,7 +2416,7 @@ export default function CalendarScreen() {
   const weekMatrixDays = useMemo(() => {
     if (scope !== 'week') return [];
     return week.days.map((date) => {
-      const d = parseISO(`${date}T12:00:00.000Z`);
+      const d = localNoon(date);
       const weekday = d.getDay();
       return {
         date,
@@ -2493,6 +2510,30 @@ export default function CalendarScreen() {
     () => venueDayHours(openingHours, anchor, venueWideBlocks),
     [openingHours, anchor, venueWideBlocks],
   );
+
+  /**
+   * Every active calendar's resolved hours on the dates shown — the web's
+   * `calendarWorkingBoundsForDates`, which runs over the ROSTER rather than the
+   * visible columns. The grids widen to these, so the day spans the same hours
+   * whichever calendar is selected or filtered in, and a calendar that starts
+   * before the venue opens is never cut off.
+   */
+  const rosterBoundsFor = useCallback(
+    (dates: readonly string[]) => {
+      const out: { start: number; end: number }[] = [];
+      for (const p of practitioners) {
+        if (p.calendar_type === 'resource') continue;
+        for (const date of dates) out.push(...calendarHours(p, date));
+      }
+      return out;
+    },
+    [practitioners],
+  );
+  const dayRosterBounds = useMemo(() => rosterBoundsFor([anchor]), [rosterBoundsFor, anchor]);
+  const weekRosterBounds = useMemo(
+    () => (scope === 'week' ? rosterBoundsFor(week.days) : []),
+    [rosterBoundsFor, scope, week.days],
+  );
   // The viewed calendar's resolved hours for the day (amended hours, days off,
   // schedule periods), and its venue window widened on an amended day.
   const dayColumnHours = useMemo(
@@ -2521,6 +2562,9 @@ export default function CalendarScreen() {
       scheduleBlocks={daySchedule}
       processingPatternFor={processingPatternFor}
       venueHours={dayColumnHours.venueHours}
+      boundsRanges={dayRosterBounds}
+      calendarName={practitioners.find((p) => p.id === effectiveId)?.name}
+      onAmendHours={() => setAmendHoursTarget({ date: anchor, calendarId: effectiveId })}
       windowOverride={windowOverride}
       nowMinutes={nowMinutes}
       onBlockPress={openDetail}
@@ -2649,6 +2693,17 @@ export default function CalendarScreen() {
                   variant="bordered"
                   active={compactDay}
                   onPress={() => setCompactDay((c) => !c)}
+                />
+              ) : null}
+              {/* The month has no time column to hang the clock in, so it sits
+                  in the toolbar there — the web offers Amend hours in every
+                  view mode. Day and week carry it in the grid's own corner. */}
+              {scope === 'month' ? (
+                <IconButton
+                  icon={{ ios: 'clock', android: 'schedule', web: 'schedule' }}
+                  accessibilityLabel="Amend hours"
+                  variant="bordered"
+                  onPress={() => setAmendHoursTarget({ date: anchor })}
                 />
               ) : null}
               {/* Quick jump to the "Today" home (KPI / day-at-a-glance), distinct
@@ -3011,6 +3066,7 @@ export default function CalendarScreen() {
                   calendars={weekMatrixCalendars}
                   days={weekMatrixDays}
                   grid={gridQuery.data}
+                  onAmendHours={() => setAmendHoursTarget({ date: anchor })}
                   onDayPress={(date) => {
                     hapticSelect();
                     setAnchor(date);
@@ -3034,6 +3090,11 @@ export default function CalendarScreen() {
               <View style={styles.weekBody}>
                 <WeekGrid
                   days={weekColumns}
+                  calendarName={practitioners.find((p) => p.id === effectiveId)?.name}
+                  boundsRanges={weekRosterBounds}
+                  onAmendHours={() =>
+                    setAmendHoursTarget({ date: anchor, calendarId: effectiveId })
+                  }
                   windowOverride={windowOverride}
                   nowMinutes={nowMinutes}
                   onBlockPress={openDetail}
@@ -3060,6 +3121,8 @@ export default function CalendarScreen() {
                 calendars={allColumnsForDay}
                 processingPatternFor={processingPatternFor}
                 venueHours={venueHoursForAnchor}
+                boundsRanges={dayRosterBounds}
+                onAmendHours={() => setAmendHoursTarget({ date: anchor })}
                 windowOverride={windowOverride}
                 nowMinutes={nowMinutes}
                 onBlockPress={handleAllBlockPress}
@@ -3273,6 +3336,13 @@ export default function CalendarScreen() {
       {/* Date-jump month picker — tap the header date label to open. Reuses the
           month grid (with its own month stepper) so any date is a couple of taps
           away. Selecting a day anchors the day view to it and closes. */}
+      {/* The clock button's chooser: amend calendar hours (everyone) or business
+          hours (admins), pushed as the real settings screens on the diary's day. */}
+      <AmendHoursSheet
+        target={amendHoursTarget}
+        isAdmin={staffMe.data?.staff.role === 'admin'}
+        onClose={() => setAmendHoursTarget(null)}
+      />
       <MonthPickerSheet
         visible={monthPickerOpen}
         anchor={anchor}

@@ -3,6 +3,7 @@ import {
   amendedClosedOnDate,
   amendedHoursOnDate,
   amendedHoursVenueNote,
+  amendedRunFromExceptions,
   describeHoursPeriods,
   enumerateDatesInclusive,
   firstFullDayLeaveDate,
@@ -150,5 +151,59 @@ describe('amendedHoursOnDate and describeHoursPeriods', () => {
     expect(amendedClosedOnDate(entries, '2026-09-21', 'cal-1')).toBe(true);
     expect(amendedClosedOnDate(entries, '2026-09-21', 'cal-2')).toBe(false);
     expect(amendedClosedOnDate(entries, '2026-09-22')).toBe(false);
+  });
+});
+
+/**
+ * The planner's "Amend hours for this date" falls back to the calendar's own
+ * stored overrides when the listed runs (chip-filtered, ±90 days) do not carry
+ * the date. It has to rebuild the WHOLE run, with its reason: saving replaces
+ * the run it was given, so a one-day rebuild with `reason: null` wiped both.
+ */
+describe('amendedRunFromExceptions', () => {
+  const exceptions = {
+    '2026-09-10': { periods: [{ start: '10:00', end: '15:00' }], reason: 'Training' },
+    '2026-09-11': { periods: [{ start: '10:00', end: '15:00' }], reason: 'Training' },
+    '2026-09-12': { periods: [{ start: '10:00', end: '15:00' }], reason: 'Training' },
+    '2026-09-13': { periods: [{ start: '09:00', end: '17:00' }], reason: 'Training' },
+    '2026-09-15': { closed: true },
+  };
+
+  it('returns the whole run around the date, with the reason it was saved with', () => {
+    expect(amendedRunFromExceptions(exceptions, '2026-09-11')).toEqual({
+      date_start: '2026-09-10',
+      date_end: '2026-09-12',
+      periods: [{ start: '10:00', end: '15:00' }],
+      reason: 'Training',
+    });
+  });
+
+  it('stops at a date whose hours differ, and at a gap', () => {
+    expect(amendedRunFromExceptions(exceptions, '2026-09-13')).toEqual({
+      date_start: '2026-09-13',
+      date_end: '2026-09-13',
+      periods: [{ start: '09:00', end: '17:00' }],
+      reason: 'Training',
+    });
+  });
+
+  it('is null for a closed override, an unknown date, or no map at all', () => {
+    expect(amendedRunFromExceptions(exceptions, '2026-09-15')).toBeNull();
+    expect(amendedRunFromExceptions(exceptions, '2026-09-20')).toBeNull();
+    expect(amendedRunFromExceptions(null, '2026-09-11')).toBeNull();
+  });
+
+  it('reads stored HH:mm:ss times as HH:mm, and a missing reason as none', () => {
+    expect(
+      amendedRunFromExceptions(
+        { '2026-09-11': { periods: [{ start: '10:00:00', end: '15:00:00' }] } },
+        '2026-09-11',
+      ),
+    ).toEqual({
+      date_start: '2026-09-11',
+      date_end: '2026-09-11',
+      periods: [{ start: '10:00', end: '15:00' }],
+      reason: null,
+    });
   });
 });

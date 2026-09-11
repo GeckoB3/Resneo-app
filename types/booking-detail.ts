@@ -154,6 +154,14 @@ export interface BookingDetail {
   party_size: number;
   guest_id: string;
   guest: BookingDetailGuest | null;
+  /**
+   * The email captured on the BOOKING row (the full GET spreads it). Usually a
+   * copy of the guest's, but it is the only contact a booking taken without a
+   * guest profile has — and the web messages that address rather than refusing
+   * (`send-custom-booking-message.ts` ~159-162 falls back to it), so the
+   * composer treats it as reachable too.
+   */
+  guest_email?: string | null;
   special_requests?: string | null;
   internal_notes?: string | null;
   dietary_notes?: string | null;
@@ -177,8 +185,6 @@ export interface BookingDetail {
   /** Booking origin ("Online", "Phone", "Walk-in"…) — full GET spreads the row. */
   source?: string | null;
   created_at?: string;
-  /** Display name of who created the booking, when the API joins it (optional). */
-  created_by_name?: string | null;
   /** Guest self-service cancel cutoff (ISO timestamp). */
   cancellation_deadline?: string | null;
   /** Appointment anchors (model B / unified). */

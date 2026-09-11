@@ -22,10 +22,15 @@ import {
   weekStateFromHours,
   type WeekState,
 } from '@/components/availability/WeeklyHoursFields';
+import { HoursMismatchAdvice } from '@/components/availability/HoursMismatchAdvice';
 import { Button } from '@/components/ui/Button';
 import { ConfirmPanel } from '@/components/ui/ConfirmPanel';
 import { Text } from '@/components/ui/Text';
 import { ApiError, isRequiresConfirmationBody } from '@/lib/api/client';
+import {
+  describeCalendarWeeklyMismatch,
+  weeklyCalendarHoursOutsideVenue,
+} from '@/lib/calendar/hours-mismatch';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { usePatchPractitioner } from '@/lib/queries/useAvailabilityManage';
 import { useToast } from '@/providers/ToastProvider';
@@ -56,6 +61,13 @@ type Props = {
   /** The viewer may look but not change (a colleague's calendar). */
   readOnly?: boolean;
   readOnlyHint?: string;
+  /**
+   * Where the "these hours fall outside business hours" advice goes. The host
+   * keeps it (web: a page-level card), so the refetch after a save — which
+   * remounts this editor, since its key carries the hours — cannot wipe it.
+   * Without the prop the editor keeps its own inline card, or toasts in a Sheet.
+   */
+  onAdvice?: (message: string | null) => void;
   /** Called after a successful save; the Sheet host closes on it. */
   onClose?: () => void;
 };
@@ -68,6 +80,7 @@ export function WorkingHoursEditor({
   inline = false,
   readOnly = false,
   readOnlyHint,
+  onAdvice,
   onClose,
 }: Props) {
   const { colors } = useTheme();
@@ -82,6 +95,23 @@ export function WorkingHoursEditor({
   const [ackConfirm, setAckConfirm] = useState<{ message: string; payload: WorkingHoursMap } | null>(
     null,
   );
+  /**
+   * Standing advice after a save that leaves these hours outside business
+   * hours (web 2026-09-10): the save went through, but guests cannot book
+   * those hours until the business hours widen too. Inline it stays until
+   * dismissed or the next save; a Sheet closes on save, so it goes by toast.
+   */
+  const [advice, setAdvice] = useState<string | null>(null);
+
+  function adviseOn(saved: WorkingHoursMap) {
+    const text = describeCalendarWeeklyMismatch(
+      practitionerName,
+      weeklyCalendarHoursOutsideVenue(saved, venueOpeningHours),
+    );
+    if (onAdvice) onAdvice(text);
+    else if (inline) setAdvice(text);
+    else if (text) toast.info(text);
+  }
 
   async function handleSave() {
     if (readOnly) return;
@@ -96,6 +126,7 @@ export function WorkingHoursEditor({
       hapticSuccess();
       onClose?.();
       toast.success('Working hours saved.');
+      adviseOn(workingHours);
     } catch (e) {
       // 409 with requires_confirmation → ask, then re-save acknowledged.
       if (e instanceof ApiError && e.status === 409 && isRequiresConfirmationBody(e.body)) {
@@ -126,6 +157,7 @@ export function WorkingHoursEditor({
       hapticSuccess();
       onClose?.();
       toast.success('Working hours saved.');
+      adviseOn(ackConfirm.payload);
     } catch (e) {
       setAckConfirm(null);
       hapticWarning();
@@ -163,6 +195,13 @@ export function WorkingHoursEditor({
           </View>
         </>
       ) : null}
+
+      <HoursMismatchAdvice
+        message={advice}
+        actionLabel="Open business hours"
+        actionHref="/manage/hours"
+        onDismiss={() => setAdvice(null)}
+      />
 
       {inline ? (
         <View style={styles.list}>{fields}</View>

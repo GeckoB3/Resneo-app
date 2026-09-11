@@ -83,3 +83,40 @@ describe('ContactFilterSheet — per-option hints', () => {
     ).toBeTruthy();
   });
 });
+
+/**
+ * The web puts a "Booking date (optional)" pair under the last-staff and
+ * last-service pickers, and the guests route bounds those two segments by it
+ * (route ~336-360) — the app promised it in the segment hints but never showed
+ * the pickers.
+ */
+describe('ContactFilterSheet — segment date ranges', () => {
+  it('offers the booking date range on the last-staff list', async () => {
+    await renderSheet();
+    await press(() => screen.getByText('By last staff'));
+
+    expect(screen.getByText('Booking date (optional)')).toBeTruthy();
+    expect(screen.getByText('Starting')).toBeTruthy();
+    expect(screen.getByText('Ending')).toBeTruthy();
+  });
+
+  it('offers it on the last-service list too', async () => {
+    await renderSheet();
+    await press(() => screen.getByText('By last service'));
+
+    expect(screen.getByText('Booking date (optional)')).toBeTruthy();
+  });
+
+  it('titles the marketing dates for what they bound, and describes each option', async () => {
+    await renderSheet();
+    await press(() => screen.getByText('Marketing consent'));
+
+    expect(
+      screen.getByText('Happy to hear from you by email or SMS where the venue allows it.'),
+    ).toBeTruthy();
+    expect(screen.getByText('When consent was saved (optional)')).toBeTruthy();
+
+    await press(() => screen.getByText('Not subscribed'));
+    expect(screen.getByText('Opted out or never gave marketing permission.')).toBeTruthy();
+  });
+});

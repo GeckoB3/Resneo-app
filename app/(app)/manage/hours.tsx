@@ -1,8 +1,9 @@
-import { Stack } from 'expo-router';
+import { Stack, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { HoursMismatchAdvice } from '@/components/availability/HoursMismatchAdvice';
 import { AvailabilityBlocksSection } from '@/components/manage/AvailabilityBlocksSection';
 import { OpeningHoursEditor } from '@/components/manage/OpeningHoursEditor';
 import { Button } from '@/components/ui/Button';
@@ -12,7 +13,9 @@ import { Screen } from '@/components/ui/Screen';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError, isRequiresConfirmationBody } from '@/lib/api/client';
+import { describeVenueWeeklyMismatch } from '@/lib/calendar/hours-mismatch';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
+import { usePractitioners } from '@/lib/queries/usePractitioners';
 import { useUpdateOpeningHours } from '@/lib/queries/useVenueSettings';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { spacing } from '@/theme/index';
@@ -35,12 +38,20 @@ function canonicalDay(day: OpeningHoursDay | undefined): OpeningHoursDay | undef
   return day;
 }
 
+const WEEKDAY_KEYS = ['0', '1', '2', '3', '4', '5', '6'] as const;
+
+/**
+ * All seven days, every time — the web seeds each day through `getDayConfig`
+ * (a missing day reads as closed) and `toOpeningHours` writes all seven on
+ * save. A PARTIAL map is read two ways downstream: the booking engine treats a
+ * missing weekday as closed, while the calendar-hours editor reads it as "no
+ * business hours set" and shows no context or warning for that day. Writing the
+ * full week keeps the two in step.
+ */
 function canonicalizeOpeningHours(raw: OpeningHours | null | undefined): OpeningHours {
-  if (!raw) return {};
   const out: OpeningHours = {};
-  for (const [key, day] of Object.entries(raw)) {
-    const canonical = canonicalDay(day);
-    if (canonical) out[key as keyof OpeningHours] = canonical;
+  for (const key of WEEKDAY_KEYS) {
+    out[key] = canonicalDay(raw?.[key]) ?? { closed: true };
   }
   return out;
 }
@@ -79,6 +90,27 @@ export default function BusinessHoursScreen() {
   const insets = useSafeAreaInsets();
   const update = useUpdateOpeningHours();
   const isAdmin = venue?.current_user_role === 'admin';
+  /** `?date=` from the diary's clock button: the closures card opens with that day picked. */
+  const params = useLocalSearchParams<{ date?: string | string[] }>();
+  const seededDate = Array.isArray(params.date) ? params.date[0] : params.date;
+  // The roster, for the advice after a save: which calendars the new weekly
+  // hours leave outside (web `venueWeeklyAdvice`, 2026-09-10).
+  const rosterQuery = usePractitioners({ enabled: isAdmin });
+  /** After a save: which calendars the new hours leave outside (guests cannot book those hours). */
+  const [advice, setAdvice] = useState<string | null>(null);
+  /**
+   * Sent here by the diary's clock button: scroll to the closures card, since
+   * the web's dialog opens on its "Closures & amended hours" tab and landing on
+   * the weekly editor would hide what was asked for. Once per arrival.
+   */
+  const scrollRef = useRef<ScrollView>(null);
+  const [closuresY, setClosuresY] = useState<number | null>(null);
+  const scrolledToClosures = useRef(false);
+  useEffect(() => {
+    if (!seededDate || closuresY == null || scrolledToClosures.current) return;
+    scrolledToClosures.current = true;
+    scrollRef.current?.scrollTo({ y: Math.max(0, closuresY - spacing.base), animated: true });
+  }, [seededDate, closuresY]);
 
   // Seed draft via useEffect to avoid setState-during-render in React 18 strict mode.
   const [draft, setDraft] = useState<OpeningHours | null>(null);
@@ -107,6 +139,9 @@ export default function BusinessHoursScreen() {
   function markSaved() {
     hapticSuccess();
     setSaved(true);
+    if (draft) {
+      setAdvice(describeVenueWeeklyMismatch(rosterQuery.data?.practitioners ?? [], draft));
+    }
     // Auto-clear the success message after 2500 ms so it doesn't linger indefinitely.
     if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
     savedTimerRef.current = setTimeout(() => setSaved(false), 2500);
@@ -173,6 +208,7 @@ export default function BusinessHoursScreen() {
     <Screen scroll={false} padded={false} bottomInset={false}>
       {header}
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
         refreshControl={
@@ -222,9 +258,17 @@ export default function BusinessHoursScreen() {
             Hours saved.
           </Text>
         ) : null}
+        <HoursMismatchAdvice
+          message={advice}
+          actionLabel="Open calendar hours"
+          actionHref={{ pathname: '/availability', params: { tab: 'hours' } }}
+          onDismiss={() => setAdvice(null)}
+        />
 
-        {/* ---- Closures & Exceptions card ---- */}
-        <AvailabilityBlocksSection isAdmin={isAdmin} />
+        {/* ---- Closures & amended hours card ---- */}
+        <View onLayout={(e) => setClosuresY(e.nativeEvent.layout.y)}>
+          <AvailabilityBlocksSection isAdmin={isAdmin} initialDate={seededDate ?? null} />
+        </View>
 
         <View style={styles.spacer} />
       </ScrollView>

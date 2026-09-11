@@ -49,11 +49,11 @@ type GuestDetailsStepProps = {
   collectClientAddress?: boolean;
   /**
    * When provided, render a Phone/Walk-in "Booking type" selector at the top of
-   * this step so the source is chosen BEFORE contact details — a walk-in then
-   * relaxes the phone requirement immediately. Used by the class/event/resource
-   * flows, where the toggle otherwise only appears on the later confirm step
-   * (so a walk-in couldn't get past this step without a phone). Keep `isWalkIn`
-   * in sync (`source === 'walk-in'`) so the required-field logic follows.
+   * this step, so the source is chosen BEFORE contact details. Used by the
+   * class/event/resource flows, where the toggle otherwise only appears on the
+   * later confirm step. Contact details are optional for BOTH sources since
+   * web #190 (R31-1); keep `isWalkIn` in sync (`source === 'walk-in'`) anyway,
+   * since the step still words itself differently for a walk-in.
    */
   source?: 'phone' | 'walk-in';
   onSourceChange?: (source: 'phone' | 'walk-in') => void;
@@ -326,7 +326,6 @@ export function GuestDetailsStep({
           defaultCountry={phoneDefaultCountry}
           editable={!readOnlyContact}
           error={fieldErrors.phone}
-          helper="Without a phone number the client gets no text reminder."
           label="Phone"
           optional
           onChange={(phone) => editContact({ phone })}

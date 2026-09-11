@@ -45,6 +45,12 @@ export interface GuestListParams {
   sort?: string;
   /** Filter to contacts carrying this tag (segment=tag). */
   segmentTag?: string;
+  /**
+   * Multi-tag filter, sent comma-joined as `tags` — a contact must carry every
+   * one of them. This is what the web's Reports → Clients list sends
+   * (`_reference/Resneo/src/app/dashboard/reports/ClientsSection.tsx:115`).
+   */
+  tags?: string[];
   /** Segment filter: 'all' | 'new' | 'upcoming' | 'visit' | 'marketing' | 'last_staff' | 'last_service' | 'tag' */
   segment?: string;
   /** Date range for segment filters (ISO date strings). */
