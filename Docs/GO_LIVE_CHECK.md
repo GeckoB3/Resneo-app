@@ -1,5 +1,114 @@
 # Go-live check — Resneo app
 
+## Run 2026-09-12 (evening): OTA to production, 1.1.0, "ResNeo R35 and R36 Web Parity Plus"
+
+**Scope:** the six commits since the last published group. The published tip was read from the
+channel manifest (`eas channel:view production --json`, `gitCommitHash`): it is `dda70d4` ("Web
+parity: the R33 delta and the R34 full review"), published as "ResNeo R33 and R34 Web Parity"
+(group `f30956e6`, 2026-09-11 22:42 UTC, android + ios, runtime 1.1.0). No go-live record was
+written for that run; this one starts from what the channel says, not from the record below. The
+batch is `bbfacaa`..`1831212`:
+
+- **R35** (`bbfacaa`, `Docs/APP_GAP_REPORT_R35_WEB_DELTA.md`, web #193-#194): a calendar can stop
+  offering a service and keep its bookings — both service-link writers read the 409
+  `requires_confirmation` body, show the affected bookings grouped by service × calendar, offer the
+  per-group move and retry acknowledged; the reschedule-trap refusal explained in the Modify sheet.
+- **Expo Go** (`01da581`): the Terminal SDK is not required when its native module is absent. In
+  every real build the module is present and nothing changes (see §2).
+- **The 2026-09-12 device pass** (`3feed4d`, `bfc9242`, `43214f2`,
+  `Docs/DEVICE_TEST_REPORT_2026-09-12.md`): the money block never shows half a settled total;
+  linked bookings counted in the list, week and month; the contacts identity scope explains what it
+  hides; a booking no longer counts itself as a previous visit; closure bands carry their label;
+  the wizard counts three phases; "+" carries the day on screen; a partner's booking is named in the
+  panel; pickers off `DateTimePicker`'s deprecated `onChange`; "Plan hours ahead" defaults to the
+  coming Monday; one 8-second window for every two-tap confirm.
+- **Docs** (`1831212`): `Docs/R36_WEB_HANDOVER.md` and the device sweep record.
+
+JavaScript, styling and docs only.
+
+**Verdict: cleared to OTA.** Unlike the last several runs this batch HAS had a device pass —
+Android only (Expo Go on an S23 Ultra against staging, every fix re-checked on one cold start of
+the finished bundle). Type check clean; full suite 303 suites, 2,985 tests; lint on all 59 touched
+`.ts`/`.tsx` files has 0 errors (27 warnings: 14 `no-require-imports` and 9 `import/first` from
+`jest.mock` factories in tests, 4 `exhaustive-deps`, all patterns already in the tree).
+
+### 1. Version and reach
+
+| Check | Result |
+|---|---|
+| iOS version | **1.1.0** (`app.json` `version`; no `ios.version` or `ios.runtimeVersion` override) |
+| Android version | **1.1.0** (`app.json` `android.version`; no `android.runtimeVersion` override) |
+| `runtimeVersion.policy` | `appVersion`, so runtime **1.1.0** on both |
+| `production` channel before | branch `production`, latest group `f30956e6` at `dda70d4`, runtime **1.1.0**, android + ios |
+
+The version is not bumped (under `appVersion` a bump would move the runtime and strand every
+1.1.0 install).
+
+### 2. OTA eligibility
+
+`git diff dda70d4..HEAD -- app.json app.config.js eas.json patches ios android package.json
+package-lock.json` is **empty**. Back to the `ce1d85c` binaries the config and native paths are
+still empty, and `package.json` / `package-lock.json` differ only by `libphonenumber-js` — pure
+JavaScript, cleared and shipped in the R31 run. No new native surface.
+
+Two changes touch a native module from JavaScript, both checked against the installed packages
+(which are the binaries' versions, the lock being unchanged):
+
+- `getTerminalSdk()` now checks `Boolean(NativeModules.StripeTerminalReactNative)` before requiring
+  `@stripe/stripe-terminal-react-native@0.0.1-beta.31`. The SDK resolves itself the same way —
+  `const { StripeTerminalReactNative } = NativeModules` in both `src/StripeTerminalSdk.tsx:44` and
+  `lib/commonjs/StripeTerminalSdk.js` — so in a build where the SDK works the guard is true and
+  card payments are untouched.
+- `TimePickerField`, `DatePickerField` and the booking-log card use `onValueChange` / `onDismiss`
+  instead of `onChange`. In `@react-native-community/datetimepicker@9.1.0` these are JS wrappers
+  over the same native events (`datetimepicker.ios.js` maps the native change to `onValueChange`;
+  `DateTimePickerAndroid.android.js` dispatches set / dismiss), and the binaries carry 9.1.0.
+
+### 3. Production environment (EAS, not `eas.json`)
+
+`eas env:list --environment production --format long` (eas-cli 23.0.0, signed in as `resneo`,
+owner): the same five app variables, all **PUBLIC**: `EXPO_PUBLIC_API_URL` =
+`https://www.resneo.com`, `EXPO_PUBLIC_SUPABASE_URL` = `njualfobtudvlugqkqho.supabase.co` (live),
+`EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` = `sb_publishable_faW-RD…` (live),
+`EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` = `pk_live_…`, `EXPO_PUBLIC_SENTRY_DSN` (Sentry DE ingest).
+`GOOGLE_SERVICES_JSON` (secret) is build-time, n/a. The batch adds no new `process.env` read; the
+optional ones already in the tree (`EXPO_PUBLIC_WEB_URL`, `_TERMINAL_SIMULATED`, `_ANALYTICS_KEY`,
+`_ALLOW_SCREENSHOTS`) are unset in production as before — `getWebUrl()` falls back to the API URL
+and card readers default to real. Local env files: `.env.development.local` and `.env.example`
+only; a production-mode export loads neither.
+
+**`--clear-cache` is not optional tonight.** The device pass ran Metro all day on the development
+env; without the flag the transform cache could hand those inlined staging values to the update.
+
+### 4. The bundle, checked before publishing
+
+`eas env:exec production "npx expo export --clear --platform all --output-dir …"`, both Hermes
+bundles grepped (iOS 11.8 MB, Android 12.1 MB):
+
+| Marker | iOS | Android |
+|---|---|---|
+| `njualfobtudvlugqkqho.supabase.co` (live) | present | present |
+| `zkppmyyvkjvbsvemakbb` (dev) / any other `*.supabase.co` host | none / none | none / none |
+| `www.resneo.com` | present | present |
+| live / dev Supabase publishable key | present / none | present / none |
+| `pk_live_` / `pk_test_` | present / none | present / none |
+| `ingest.de.sentry.io` | present | present |
+| this batch: "filter is hiding them" (C), "previous visit" (D), "Save and leave" (R35) | present | present |
+| `reserve-ni.vercel.app` | once: the unreachable fallback in `webDashboardUrl()` and `assistantLinkUrl()`, both behind a non-empty `getWebUrl()` | same |
+| `localhost:3000` | one library default string | none |
+
+### 5. Owed after this OTA
+
+- **An iOS pass.** Everything on the device was Android. The iOS-only path in this batch is the
+  compact inline pickers now on `onValueChange` (business hours, breaks, amended hours, the
+  plan-ahead date, the booking-log email times) — expected identical per the library source, not
+  yet seen on an iPhone.
+- The surfaces the Android pass did not reach (report §3): payments and card readers, push,
+  compliance forms, classes / events / resources editors, waitlist offers, group bookings, and the
+  customer side.
+- The web's answers to `Docs/R35_WEB_HANDOVER.md` (validator fix awaiting its staging push) and
+  `Docs/R36_WEB_HANDOVER.md` (visit counting, the closure label, the `last_visit_date` stamp).
+
 ## Run 2026-09-10 (evening): OTA to production, 1.1.0, the R31 batch
 
 **Scope:** the twenty-three commits since the last published group. The published tip was read
