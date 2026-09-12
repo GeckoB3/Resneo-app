@@ -339,3 +339,47 @@ toggle never did: its switch reads the saved links). Fixed 2026-09-12:
 
 **Tests** — the two id helpers, and a case in `BookableCalendarsManager.test.tsx` that unticks a
 service, cancels the question and asserts the tick is back and nothing was saved.
+
+## 12. Device pass (2026-09-12, Samsung SM-S918B, Android 16, staging)
+
+Driven over adb against `reserve-ni.vercel.app` as **Plus 1 Staging (admin)**, on the working tree
+through Expo Go. Everything below was seen on the phone, not inferred.
+
+**Read-only checks**
+
+- The panel appears as a STEP of the service form, never a second sheet: the server's own sentence
+  ("5 upcoming bookings are already booked for Cut & Blow Dry on Andrew…"), the reassurance line,
+  the group header, five rows with day, time, guest and status, the chooser, and the two buttons.
+- Destinations were "Move to Staff 1" / "Move to David" — the calendars that offer the service —
+  with "Leave them on Andrew" selected by default.
+- Cancel returned to the form with the rest of the edit intact and **Andrew ticked again**; the
+  first save had written nothing.
+
+**Write checks (both reversed afterwards)**
+
+- *Acknowledged save.* "Save and leave these bookings here" on Cut & Blow Dry: the sheet closed, a
+  re-opened form read Andrew unticked from the server, and the five bookings were still in the diary
+  on Andrew — the promise the copy makes, kept.
+- *Move.* Beard Trim's five upcoming bookings moved to David: the primary button read "Move 5
+  bookings and save", and Tue 15 Sep showed the 10:00–10:15 booking on David's column, same date,
+  time and length. No failures, and no guest was emailed.
+- *Move, the other way.* Restoring exercised the same path in reverse: with Andrew re-ticked first,
+  unticking David offered "Move to Andrew" (the destination list follows the SAVED links, so it only
+  appeared once Andrew offered the service again), and the five went back. Andrew's chip on Tue 15
+  Sep is 2 again.
+
+**End state: identical to the start** — both services offered by Staff 1, Andrew and David, and all
+ten bookings on the calendars they began on. No JS errors in logcat throughout.
+
+**One observation, not a defect.** Five moves took roughly half a minute — each is a full
+availability validation, run one at a time on purpose so a clash cannot take the others down. The
+button holds its loading state and Cancel is disabled, so nothing is ambiguous, but at the 200-row
+cap that wait would be long and silent. If we ever see a group that large, the panel should count
+its way through ("Moving 3 of 5…").
+
+**Also fixed while on the device**: `@stripe/stripe-terminal-react-native` red-boxed the app on
+launch in Expo Go ("Cannot read property 'getConstants' of null", uncaught and fatal) because the
+lazy loader's try/catch cannot hold that throw. `getTerminalSdk()` now checks
+`NativeModules.StripeTerminalReactNative` — the very thing the SDK reads — before requiring the
+package at all. Verified by a cold start: no red box, nothing in logcat. Unaffected in a real build,
+where the module is present.

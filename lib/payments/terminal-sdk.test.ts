@@ -1,10 +1,52 @@
+import { NativeModules } from 'react-native';
+
 import {
   androidPermissionMessage,
   ensureTerminalInitialized,
+  getTerminalSdk,
+  hasTerminalNativeModule,
   isDefiniteCardFailure,
   __resetTerminalInitForTests,
+  __resetTerminalSdkForTests,
 } from '@/lib/payments/terminal-sdk';
 import { READER_INIT_TIMEOUT_MS } from '@/lib/payments/reader-timeouts';
+
+/**
+ * The Terminal SDK executes native-module work as it loads, and in a build
+ * without that native module (Expo Go, web, Jest) it throws where a try/catch
+ * around the require cannot help: on device it reached the global handler as an
+ * uncaught fatal, "Cannot read property 'getConstants' of null", and red-boxed
+ * the app on launch. So the loader asks whether the native module exists FIRST
+ * and never touches the package otherwise.
+ */
+describe('the native-module guard', () => {
+  const modules = NativeModules as Record<string, unknown>;
+
+  beforeEach(() => {
+    __resetTerminalSdkForTests();
+    delete modules.StripeTerminalReactNative;
+  });
+
+  afterEach(() => {
+    delete modules.StripeTerminalReactNative;
+    __resetTerminalSdkForTests();
+  });
+
+  it('says the module is absent under Jest, as in Expo Go', () => {
+    expect(hasTerminalNativeModule()).toBe(false);
+  });
+
+  it('never requires the SDK when the native module is absent', () => {
+    // The proof is that this does not throw and answers "unavailable": a bare
+    // require of the package under Jest does throw.
+    expect(getTerminalSdk()).toBeNull();
+  });
+
+  it('sees the module when the binary has it', () => {
+    modules.StripeTerminalReactNative = { getConstants: () => ({}) };
+    expect(hasTerminalNativeModule()).toBe(true);
+  });
+});
 
 /**
  * The Stripe SDK's Android permission helper ALWAYS resolves an object with an

@@ -11,10 +11,19 @@
  * never enable in-person payments, which directly violates the frictionless-off
  * requirement (Tap to Pay design doc §1.3/§3.2).
  *
- * So: every access goes through {@link getTerminalSdk}, which requires the
- * module on first use inside a try/catch and caches the result. Callers treat
- * `null` as "in-person payments are unavailable on this build" and render
- * nothing — exactly the same surface a non-enabled venue sees.
+ * So: every access goes through {@link getTerminalSdk}, which asks whether the
+ * NATIVE module is in this binary before requiring anything, then requires it on
+ * first use inside a try/catch and caches the result. Callers treat `null` as
+ * "in-person payments are unavailable on this build" and render nothing —
+ * exactly the same surface a non-enabled venue sees.
+ *
+ * The native check is the part that actually holds. A try/catch around the
+ * require is not enough: on a device in Expo Go the SDK still took the app to a
+ * red box on launch with "Cannot read property 'getConstants' of null",
+ * reported by the global handler as UNCAUGHT and fatal (2026-09-12). Not
+ * touching the module at all is the only way to be sure — and it is the same
+ * question the SDK asks itself, since `StripeTerminalSdk.js` is nothing but
+ * `NativeModules.StripeTerminalReactNative`.
  *
  * Type-only imports are erased at compile time, so importing TYPES from the SDK
  * elsewhere is safe; importing VALUES is not.
@@ -28,6 +37,7 @@ import type {
   StripeError,
 } from '@stripe/stripe-terminal-react-native';
 import type { ComponentType, ReactNode } from 'react';
+import { NativeModules } from 'react-native';
 
 import {
   READER_INIT_TIMEOUT_MESSAGE,
@@ -92,12 +102,35 @@ export interface TerminalHookApi {
 /** Cached module (or the sentinel that loading was tried and failed). */
 let cached: TerminalSdkModule | null | undefined;
 
+/** What the SDK's own `StripeTerminalSdk.js` reads out of `NativeModules`. */
+const TERMINAL_NATIVE_MODULE = 'StripeTerminalReactNative';
+
+/**
+ * Is the Terminal native module in this binary at all?
+ *
+ * False in Expo Go, on web, under Jest and in any native build predating the
+ * dependency. Answering it BEFORE the require is what keeps those builds from
+ * ever executing the SDK's module scope, which is where the crash lives.
+ */
+export function hasTerminalNativeModule(): boolean {
+  try {
+    const modules = NativeModules as Record<string, unknown> | undefined;
+    return Boolean(modules?.[TERMINAL_NATIVE_MODULE]);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * The Terminal SDK, or null when it cannot be loaded on this build (Expo Go,
  * web preview, Jest, or a native build predating the dependency). Never throws.
  */
 export function getTerminalSdk(): TerminalSdkModule | null {
   if (cached !== undefined) return cached;
+  if (!hasTerminalNativeModule()) {
+    cached = null;
+    return cached;
+  }
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports -- deliberate lazy require; see file header
     const mod = require('@stripe/stripe-terminal-react-native') as Partial<TerminalSdkModule>;
