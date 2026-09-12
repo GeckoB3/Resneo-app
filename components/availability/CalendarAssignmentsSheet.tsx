@@ -14,6 +14,7 @@
 import { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Switch, View } from 'react-native';
 
+import { ServiceRemovalBookingsPanel } from '@/components/services/ServiceRemovalBookingsPanel';
 import { Button } from '@/components/ui/Button';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
@@ -23,6 +24,8 @@ import { useUpdateClassType } from '@/lib/queries/useClassesManage';
 import { useUpdateEvent } from '@/lib/queries/useEventsManage';
 import { useUpdateResource } from '@/lib/queries/useResourcesManage';
 import { useToggleCalendarService } from '@/lib/queries/useToggleCalendarService';
+import { affectedServiceIds, type ServiceRemovalMove } from '@/lib/services/service-removal';
+import { useServiceRemovalFlow } from '@/lib/services/useServiceRemovalFlow';
 import {
   assignmentsMovingHere,
   planCalendarAssignments,
@@ -80,6 +83,12 @@ export function CalendarAssignmentsSheet({
   const [chosenEvents, setChosenEvents] = useState<Set<string>>(() => onThisCalendar(events));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * Unticking a service that still has upcoming bookings on this column does not
+   * refuse the save (web #194): the route lists them, and this sheet turns into
+   * that list until the operator has said what should happen to them.
+   */
+  const removal = useServiceRemovalFlow();
 
   const calendarName = useMemo(
     () => new Map(calendars.map((c) => [c.id, c.name] as const)),
@@ -99,9 +108,9 @@ export function CalendarAssignmentsSheet({
     });
   }
 
-  async function handleSave() {
-    setError(null);
-    const plan = planCalendarAssignments({
+  /** What the tick lists currently say, as the write plan. Pure, so it can be rebuilt. */
+  function buildPlan() {
+    return planCalendarAssignments({
       calendarId: calendar.id,
       fallbackCalendarId,
       draft: {
@@ -114,45 +123,79 @@ export function CalendarAssignmentsSheet({
       resources,
       events,
     });
+  }
+
+  /** The one-PATCH-each moves: a class type, a resource or an event changing column. */
+  async function applyColumnMoves(plan: ReturnType<typeof planCalendarAssignments>) {
+    for (const move of plan.classes) {
+      await step(
+        () => updateClassType.mutateAsync({ id: move.id, instructor_id: move.calendarId }),
+        move.calendarId
+          ? 'Could not update a class type for this calendar.'
+          : 'Could not remove this class from the calendar.',
+      );
+    }
+    for (const move of plan.resources) {
+      await step(
+        () => updateResource.mutateAsync({ id: move.id, display_on_calendar_id: move.calendarId }),
+        move.calendarId === calendar.id
+          ? 'Could not assign a resource to this calendar.'
+          : 'Could not move a resource to another calendar.',
+      );
+    }
+    for (const move of plan.events) {
+      await step(
+        () => updateEvent.mutateAsync({ id: move.id, calendar_id: move.calendarId }),
+        move.calendarId
+          ? 'Could not assign an event to this calendar.'
+          : 'Could not remove this event from the calendar.',
+      );
+    }
+  }
+
+  function finishSaved() {
+    hapticSuccess();
+    toast.success('Calendar updated.');
+    onClose();
+  }
+
+  async function handleSave() {
+    setError(null);
+    const plan = buildPlan();
     if (plan.error) {
       setError(plan.error);
       return;
     }
     setSaving(true);
     try {
-      for (const move of plan.classes) {
-        await step(
-          () => updateClassType.mutateAsync({ id: move.id, instructor_id: move.calendarId }),
-          move.calendarId
-            ? 'Could not update a class type for this calendar.'
-            : 'Could not remove this class from the calendar.',
+      /*
+        Services FIRST, because this is the only step that can stop and ask. Run
+        after the class, resource and event moves, a cancelled question would
+        leave those already written while the tick list still showed a draft the
+        operator had just backed out of. The moves follow once the service links
+        are settled — here, or in `handleRemovalConfirm` for the asked path.
+      */
+      let outcome: 'saved' | 'needs_confirmation';
+      try {
+        outcome = await removal.start((acknowledge) =>
+          setServices.mutateAsync({
+            practitioner_id: calendar.id,
+            service_ids: plan.serviceIds,
+            acknowledge,
+          }),
+        );
+      } catch (e) {
+        throw new Error(
+          e instanceof ApiError ? e.message : 'Failed to sync service links for this calendar.',
         );
       }
-      for (const move of plan.resources) {
-        await step(
-          () =>
-            updateResource.mutateAsync({ id: move.id, display_on_calendar_id: move.calendarId }),
-          move.calendarId === calendar.id
-            ? 'Could not assign a resource to this calendar.'
-            : 'Could not move a resource to another calendar.',
-        );
-      }
-      for (const move of plan.events) {
-        await step(
-          () => updateEvent.mutateAsync({ id: move.id, calendar_id: move.calendarId }),
-          move.calendarId
-            ? 'Could not assign an event to this calendar.'
-            : 'Could not remove this event from the calendar.',
-        );
-      }
-      await step(
-        () =>
-          setServices.mutateAsync({ practitioner_id: calendar.id, service_ids: plan.serviceIds }),
-        'Failed to sync service links for this calendar.',
-      );
-      hapticSuccess();
-      toast.success('Calendar updated.');
-      onClose();
+      // The panel takes over the sheet; the chosen sets stay as they are behind
+      // it, so Cancel returns to the tick list exactly as the operator left it —
+      // except for the services the question was about, which are re-ticked
+      // because nothing was written for them.
+      if (outcome === 'needs_confirmation') return;
+      await applyColumnMoves(plan);
+      finishSaved();
     } catch (e) {
       hapticWarning();
       setError(e instanceof Error ? e.message : 'Could not save. Please try again.');
@@ -201,6 +244,64 @@ export function CalendarAssignmentsSheet({
         </View>
       );
     });
+  }
+
+  /**
+   * Cancelling the question wrote nothing, so put the services it was about back
+   * on the tick list — leaving them unticked would say the removal happened
+   * (web's R35 reply, 2026-09-12). Anything else the operator changed stays.
+   */
+  function handleRemovalCancel() {
+    const confirmation = removal.confirmation;
+    if (confirmation) {
+      const restore = affectedServiceIds(confirmation);
+      setChosenServices((prev) => new Set([...prev, ...restore]));
+    }
+    removal.cancel();
+  }
+
+  async function handleRemovalConfirm(moves: ServiceRemovalMove[]) {
+    const outcome = await removal.confirm(moves);
+    if (outcome !== 'saved') {
+      hapticWarning();
+      return;
+    }
+    // The service links are saved; the rest of the sheet's changes are not yet.
+    setSaving(true);
+    try {
+      await applyColumnMoves(buildPlan());
+    } catch (e) {
+      // The panel has closed by now, so this lands on the tick list, where the
+      // class or resource that did not move is still shown as the operator left it.
+      hapticWarning();
+      setError(e instanceof Error ? e.message : 'Could not save. Please try again.');
+      return;
+    } finally {
+      setSaving(false);
+    }
+    finishSaved();
+  }
+
+  // A step of THIS sheet, not a sheet over it ([[ios-no-stacked-modals]]).
+  if (removal.confirmation) {
+    return (
+      <View style={styles.root}>
+        <ServiceRemovalBookingsPanel
+          confirmation={removal.confirmation}
+          calendars={calendars.filter((c) => c.is_active)}
+          offersService={(calendarId, serviceId) =>
+            practitionerServices.some(
+              (link) => link.practitioner_id === calendarId && link.service_id === serviceId,
+            )
+          }
+          saving={removal.saving}
+          failures={removal.failures}
+          error={removal.error}
+          onCancel={handleRemovalCancel}
+          onConfirm={(moves) => void handleRemovalConfirm(moves)}
+        />
+      </View>
+    );
   }
 
   return (

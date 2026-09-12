@@ -72,6 +72,15 @@ export function useManagedServices() {
 }
 
 /**
+ * Input to {@link useUpdateService}: the service patch plus an optional
+ * `acknowledge` flag. Dropping a calendar from `practitioner_ids` when it still
+ * has upcoming bookings for the service is allowed — those bookings stay put —
+ * but the route asks first, answering 409 with them listed unless the call
+ * carries `?acknowledge_affected_bookings=true` (web #194).
+ */
+export type UpdateServiceWithAck = UpdateServiceBody & { acknowledge?: boolean };
+
+/**
  * PATCH /api/venue/appointment-services — partial field update.
  * Never sends `variants`/`addon_group_links` (replace semantics on the API).
  */
@@ -80,11 +89,14 @@ export function useUpdateService() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (input: UpdateServiceBody): Promise<unknown> => {
+    mutationFn: async ({ acknowledge, ...input }: UpdateServiceWithAck): Promise<unknown> => {
       if (!accessToken) {
         throw new Error('Missing access token');
       }
-      return apiFetch<unknown>('/api/venue/appointment-services', {
+      const path = acknowledge
+        ? '/api/venue/appointment-services?acknowledge_affected_bookings=true'
+        : '/api/venue/appointment-services';
+      return apiFetch<unknown>(path, {
         accessToken,
         method: 'PATCH',
         body: JSON.stringify(input),

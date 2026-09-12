@@ -65,6 +65,7 @@ import {
   type VisitServiceRow,
 } from '@/lib/booking/appointment-visit';
 import { guestNotifyPlanForChange } from '@/lib/booking/modification-notify';
+import { explainModificationRefusal } from '@/lib/booking/modification-refusal';
 import { visitRestoreRequest, visitScheduleRequest } from '@/lib/booking/visit-schedule-request';
 import { ownSiblingOverlapCount } from '@/lib/calendar/visit-siblings';
 import {
@@ -1663,12 +1664,17 @@ export default function CalendarScreen() {
           });
         } catch (error) {
           if (snapshot) revertCalendarGridBookings(queryClient, snapshot);
+          const message = error instanceof ApiError ? error.message : null;
           toast.error(
-            error instanceof ApiError
-              ? error.message
-              : input.durationChanged
+            // R35-3: a booking left on a calendar that stopped offering its
+            // service refuses every drag with the engine's own words, which read
+            // as the staff member's mistake. `practitionerId` is set only by a
+            // cross-column drop, so its absence means the column is unchanged.
+            explainModificationRefusal(message, { sameCalendar: !input.practitionerId }) ??
+              message ??
+              (input.durationChanged
                 ? 'Could not change duration. Try again.'
-                : 'Could not reschedule. Try another time.',
+                : 'Could not reschedule. Try another time.'),
           );
         } finally {
           removePending(input.bookingId);

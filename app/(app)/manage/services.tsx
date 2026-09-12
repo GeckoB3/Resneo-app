@@ -42,6 +42,7 @@ import {
   type OverrideCalendarChoice,
 } from '@/components/manage/StaffServiceOverrideSheet';
 import { ServiceLocationSection, isValidMeetingUrl, normalizeMeetingUrl } from '@/components/services/ServiceLocationSection';
+import { ServiceRemovalBookingsPanel } from '@/components/services/ServiceRemovalBookingsPanel';
 import {
   ProcessingTimeBlocksEditor,
   processingBlocksToDrafts,
@@ -94,6 +95,8 @@ import {
   useToggleCalendarService,
 } from '@/lib/queries/useToggleCalendarService';
 import { staffMayCustomizeAny } from '@/lib/services/service-override';
+import { affectedCalendarIds, type ServiceRemovalMove } from '@/lib/services/service-removal';
+import { useServiceRemovalFlow } from '@/lib/services/useServiceRemovalFlow';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { radius, spacing } from '@/theme/index';
@@ -680,6 +683,15 @@ export default function ServicesScreen() {
   const [overrideCalendarId, setOverrideCalendarId] = useState<string | null>(null);
   // `${serviceId}:${calendarId}` currently saving an offer toggle, or null.
   const [togglingKey, setTogglingKey] = useState<string | null>(null);
+  /**
+   * Taking a service off a calendar that still has bookings for it is allowed —
+   * the bookings stay put and only new ones stop (web #194) — but the route asks
+   * first. Both writers here go through the same flow; `removalSource` says which
+   * one is waiting, since the form asks INSIDE its own sheet
+   * ([[ios-no-stacked-modals]]) and the row toggle asks in a sheet of its own.
+   */
+  const removal = useServiceRemovalFlow();
+  const [removalSource, setRemovalSource] = useState<'form' | 'toggle' | null>(null);
   // Inline "Add calendar" from the form (admin only): name draft + open flag.
   const [addCalendarOpen, setAddCalendarOpen] = useState(false);
   const [newCalendarName, setNewCalendarName] = useState('');
@@ -840,6 +852,20 @@ export default function ServicesScreen() {
       practitionerServices
         .filter((link) => link.service_id === serviceId)
         .map((link) => link.practitioner_id),
+    [practitionerServices],
+  );
+
+  /**
+   * Where a booking left behind by a removal may be moved to. The links are read
+   * as they stand BEFORE the save, which is what the confirmation is about, and
+   * `/api/venue/bookings/[id]` refuses a move onto a calendar that does not offer
+   * the service — so this filters the destinations rather than labelling them.
+   */
+  const calendarOffersService = useCallback(
+    (calendarId: string, serviceId: string): boolean =>
+      practitionerServices.some(
+        (link) => link.practitioner_id === calendarId && link.service_id === serviceId,
+      ),
     [practitionerServices],
   );
 
@@ -1042,6 +1068,13 @@ export default function ServicesScreen() {
   const closeSheet = () => {
     setEditTarget(null);
     setCreating(false);
+    // Swiping the sheet away while it is asking about the bookings left behind
+    // abandons that save; without this the next edit would open straight onto a
+    // stale list.
+    if (removalSource === 'form') {
+      removal.cancel();
+      setRemovalSource(null);
+    }
   };
 
   async function handleSave() {
@@ -1269,12 +1302,22 @@ export default function ServicesScreen() {
         const linksChanged =
           JSON.stringify([...practitionerIds].sort()) !==
           JSON.stringify([...editTarget.practitionerIds].sort());
-        await update.mutateAsync({
-          id: editTarget.id,
-          ...shared,
-          ...adminExtras,
-          ...(linksChanged ? { practitioner_ids: practitionerIds } : {}),
-        });
+        // Unticking a calendar that still has bookings for this service answers
+        // 409 with them listed; the flow holds the save until the operator has
+        // seen them, then sends this same patch acknowledged.
+        const outcome = await removal.start((acknowledge) =>
+          update.mutateAsync({
+            id: editTarget.id,
+            ...shared,
+            ...adminExtras,
+            ...(linksChanged ? { practitioner_ids: practitionerIds } : {}),
+            acknowledge,
+          }),
+        );
+        if (outcome === 'needs_confirmation') {
+          setRemovalSource('form');
+          return;
+        }
       } else {
         await create.mutateAsync({
           ...shared,
@@ -1305,8 +1348,10 @@ export default function ServicesScreen() {
   /**
    * Non-admin "Offer on your calendars" toggle. PUT replaces the full service
    * set for ONE calendar, so we send the calendar's existing set with the one
-   * service added/removed (web parity: toggleStaffServiceCalendar). A 409 means
-   * removing a service that still has upcoming bookings on that calendar.
+   * service added/removed (web parity: toggleStaffServiceCalendar). Switching one
+   * OFF while it still has upcoming bookings answers 409 with those bookings
+   * listed: the row stays busy while the panel asks, and the same set is sent
+   * again acknowledged once the operator has answered.
    */
   const handleToggleCalendar = useCallback(
     (serviceId: string, calendarId: string, nextEnabled: boolean) => {
@@ -1316,25 +1361,72 @@ export default function ServicesScreen() {
       const next = nextCalendarServiceIds(current, serviceId, nextEnabled);
       const key = `${serviceId}:${calendarId}`;
       setTogglingKey(key);
-      toggleCalendarService.mutate(
-        { practitioner_id: calendarId, service_ids: next },
-        {
-          onSuccess: () => {
-            hapticSuccess();
-            setTogglingKey(null);
-          },
-          onError: (e) => {
-            hapticWarning();
-            setTogglingKey(null);
-            toast.error(
-              e instanceof ApiError ? e.message : 'Could not update which calendars offer this.',
-            );
-          },
-        },
-      );
+      void (async () => {
+        try {
+          const outcome = await removal.start((acknowledge) =>
+            toggleCalendarService.mutateAsync({
+              practitioner_id: calendarId,
+              service_ids: next,
+              acknowledge,
+            }),
+          );
+          if (outcome === 'needs_confirmation') {
+            setRemovalSource('toggle');
+            return;
+          }
+          hapticSuccess();
+          setTogglingKey(null);
+        } catch (e) {
+          hapticWarning();
+          setTogglingKey(null);
+          toast.error(
+            e instanceof ApiError ? e.message : 'Could not update which calendars offer this.',
+          );
+        }
+      })();
     },
-    [practitionerServices, toggleCalendarService, toast],
+    [practitionerServices, removal, toggleCalendarService, toast],
   );
+
+  /** The operator answered the bookings-left-behind panel: move, then save. */
+  const handleRemovalConfirm = useCallback(
+    async (moves: ServiceRemovalMove[]) => {
+      const source = removalSource;
+      const outcome = await removal.confirm(moves);
+      if (outcome !== 'saved') {
+        hapticWarning();
+        return;
+      }
+      hapticSuccess();
+      setRemovalSource(null);
+      setTogglingKey(null);
+      if (source === 'form') closeSheet();
+      else toast.success('Calendar updated.');
+    },
+    // `closeSheet` is a plain arrow over two setters — nothing to track.
+    [removal, removalSource, toast],
+  );
+
+  const handleRemovalCancel = useCallback(() => {
+    /*
+      Put back the ticks the question was about. The 409 wrote nothing, so a form
+      left showing those calendars unticked tells the admin the removal happened
+      when it did not — the web hit exactly this and restores them on cancel too
+      (their R35 reply, 2026-09-12). Every OTHER edit in the form is left alone,
+      and a calendar unticked with no bookings on it was never in question.
+
+      The row toggle needs none of this: its switch reads the saved links, so a
+      cancelled save already shows the truth.
+    */
+    const confirmation = removal.confirmation;
+    if (removalSource === 'form' && confirmation) {
+      const restore = affectedCalendarIds(confirmation);
+      setPractitionerIds((current) => [...new Set([...current, ...restore])]);
+    }
+    removal.cancel();
+    setRemovalSource(null);
+    setTogglingKey(null);
+  }, [removal, removalSource]);
 
   const handleOpenOverride = useCallback(
     (service: ManagedService) => {
@@ -1695,6 +1787,23 @@ export default function ServicesScreen() {
 
       {/* Service edit / create sheet */}
       <Sheet visible={sheetOpen} onClose={closeSheet} maxHeight="92%" fill>
+        {/* The bookings-left-behind question is a STEP of this sheet, never a
+            second Sheet over it ([[ios-no-stacked-modals]]). The form's state is
+            untouched behind it, so Cancel returns to the edit as it stood. */}
+        {removalSource === 'form' && removal.confirmation ? (
+          <View style={styles.sheetBodyWrap}>
+            <ServiceRemovalBookingsPanel
+              confirmation={removal.confirmation}
+              calendars={practitioners}
+              offersService={calendarOffersService}
+              saving={removal.saving}
+              failures={removal.failures}
+              error={removal.error}
+              onCancel={handleRemovalCancel}
+              onConfirm={(moves) => void handleRemovalConfirm(moves)}
+            />
+          </View>
+        ) : (
         <View style={styles.sheetBodyWrap}>
           <Text variant="overline" tone="muted">
             {editTarget ? 'Edit service' : 'New service'}
@@ -2165,6 +2274,31 @@ export default function ServicesScreen() {
               onPress={() => void handleSave()}
             />
           </View>
+        </View>
+        )}
+      </Sheet>
+
+      {/* The same question asked by the row toggle, which is not inside a sheet. */}
+      <Sheet
+        visible={removalSource === 'toggle' && removal.confirmation !== null}
+        onClose={() => {
+          if (!removal.saving) handleRemovalCancel();
+        }}
+        maxHeight="85%"
+        fill>
+        <View style={styles.sheetBodyWrap}>
+          {removal.confirmation ? (
+            <ServiceRemovalBookingsPanel
+              confirmation={removal.confirmation}
+              calendars={practitioners}
+              offersService={calendarOffersService}
+              saving={removal.saving}
+              failures={removal.failures}
+              error={removal.error}
+              onCancel={handleRemovalCancel}
+              onConfirm={(moves) => void handleRemovalConfirm(moves)}
+            />
+          ) : null}
         </View>
       </Sheet>
 

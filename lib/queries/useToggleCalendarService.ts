@@ -10,8 +10,12 @@ import { useAccessToken } from '@/lib/queries/useAccessToken';
  * calendars" toggle: the API replaces all links for `practitioner_id` with
  * `service_ids`, so the caller must send the COMPLETE next set for that calendar
  * (add/remove one id from the existing set). Backend scopes non-admins to
- * calendars they manage and returns 409 when removing a service with upcoming
- * bookings.
+ * calendars they manage.
+ *
+ * Removing a service that still has upcoming bookings on that calendar is
+ * allowed — those bookings stay exactly where they are and only new ones stop —
+ * but the route asks first: 409 with the affected bookings listed, then the same
+ * save carried through by `acknowledge` (web #194).
  *
  * @see C:\Resneo\src\app\api\venue\practitioner-services\route.ts (PUT)
  */
@@ -20,6 +24,8 @@ export interface ToggleCalendarServiceInput {
   practitioner_id: string;
   /** The complete next set of service ids offered on that calendar. */
   service_ids: string[];
+  /** Threads `?acknowledge_affected_bookings=true`: save despite the bookings left behind. */
+  acknowledge?: boolean;
 }
 
 export function useToggleCalendarService() {
@@ -27,11 +33,17 @@ export function useToggleCalendarService() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (input: ToggleCalendarServiceInput): Promise<unknown> => {
+    mutationFn: async ({
+      acknowledge,
+      ...input
+    }: ToggleCalendarServiceInput): Promise<unknown> => {
       if (!accessToken) {
         throw new Error('Missing access token');
       }
-      return apiFetch<unknown>('/api/venue/practitioner-services', {
+      const path = acknowledge
+        ? '/api/venue/practitioner-services?acknowledge_affected_bookings=true'
+        : '/api/venue/practitioner-services';
+      return apiFetch<unknown>(path, {
         accessToken,
         method: 'PUT',
         body: JSON.stringify(input),

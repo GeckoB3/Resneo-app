@@ -22,6 +22,7 @@ import {
 } from '@/lib/booking/appointment-visit';
 import { MIN_CORE_DURATION_MINUTES } from '@/lib/booking/booking-core-duration';
 import { bookingModificationNotifyOutcome } from '@/lib/booking/modification-notify-result';
+import { explainModificationRefusal } from '@/lib/booking/modification-refusal';
 import {
   visitRestoreRequest,
   visitScheduleRequest,
@@ -483,18 +484,27 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
      * picker with nothing selected and make an unrelated edit look like a
      * reassign. Selecting it changes nothing, so it never arms the gate.
      */
+    /**
+     * R35-3: since web #194 a calendar can stop offering a service while the
+     * bookings already taken stay on it, so `offering` may not include the
+     * booking's OWN calendar. Keep it — it is the selected value, and without it
+     * the Staff row renders with no chip selected and every chip reads as a
+     * reassign. Whether the save is then allowed is the server's call.
+     */
+    const own = practitioners.find((p) => p.id === target?.practitionerId);
+    const withOwn = own && !offering.some((p) => p.id === own.id) ? [own, ...offering] : offering;
     // A linked venue's booking is not narrowed: our calendar assignments say
     // nothing about the partner's calendars, and the server applies the link
     // grant instead of its role check for a cross-venue edit.
-    if (target?.ownerVenueId) return offering;
+    if (target?.ownerVenueId) return withOwn;
     const usable = filterToUsableCalendars(
       {
         role: staffMe.data?.staff.role,
         managedCalendarIds: staffMe.data?.staff.linked_calendar_ids,
       },
-      offering,
+      withOwn,
     );
-    const current = offering.find((p) => p.id === target?.practitionerId);
+    const current = withOwn.find((p) => p.id === target?.practitionerId);
     return current && !usable.some((p) => p.id === current.id) ? [current, ...usable] : usable;
   }, [
     isVisit,
@@ -516,6 +526,22 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
    */
   const reassignedPractitionerId =
     practitionerId && practitionerId !== target?.practitionerId ? practitionerId : undefined;
+
+  /**
+   * R35-3: a calendar may stop offering a service while the bookings already
+   * taken stay on it (web #194), and every edit to one of those is then refused
+   * with "Service not available with this staff member" — true, and no use to
+   * anyone. Say which calendar stopped offering what, and what to do about it.
+   */
+  const explainRefusal = useCallback(
+    (reason: string | null | undefined): string | null =>
+      explainModificationRefusal(reason, {
+        sameCalendar: reassignedPractitionerId === undefined,
+        calendarName: practitioners.find((p) => p.id === practitionerId)?.name ?? null,
+        serviceName: services.find((s) => s.id === serviceId)?.name ?? null,
+      }),
+    [reassignedPractitionerId, practitioners, practitionerId, services, serviceId],
+  );
 
   /**
    * `service_variant_id` for a payload, or nothing at all.
@@ -1487,7 +1513,8 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
         onClose();
       } catch (e) {
         hapticWarning();
-        setError(e instanceof ApiError ? e.message : 'Could not save changes. Try again.');
+        const message = e instanceof ApiError ? e.message : null;
+        setError(explainRefusal(message) ?? message ?? 'Could not save changes. Try again.');
       }
       return;
     }
@@ -1526,7 +1553,8 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
       onClose();
     } catch (e) {
       hapticWarning();
-      setError(e instanceof ApiError ? e.message : 'Could not save changes. Try again.');
+      const message = e instanceof ApiError ? e.message : null;
+      setError(explainRefusal(message) ?? message ?? 'Could not save changes. Try again.');
     }
   }
 
@@ -2421,7 +2449,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
             </>
           ) : check.state === 'invalid' ? (
             <Text variant="caption" tone="danger">
-              {check.reason}
+              {explainRefusal(check.reason) ?? check.reason}
             </Text>
           ) : check.state === 'unknown' ? (
             <Text variant="caption" tone="muted">

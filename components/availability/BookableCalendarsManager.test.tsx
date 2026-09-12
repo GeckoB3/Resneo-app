@@ -97,6 +97,13 @@ const mockSetServices = jest.fn((_input?: unknown) => Promise.resolve({}));
 jest.mock('@/lib/queries/useToggleCalendarService', () => ({
   useToggleCalendarService: () => ({ mutateAsync: mockSetServices }),
 }));
+// The assignments sheet carries the service-removal flow, which moves a booking
+// through the reschedule mutation when the operator asks it to. Stubbed here so
+// this suite keeps rendering without a QueryClientProvider.
+const mockRescheduleById = jest.fn((_input?: unknown) => Promise.resolve({}));
+jest.mock('@/lib/queries/useBookingMutations', () => ({
+  useRescheduleBookingById: () => ({ mutateAsync: mockRescheduleById }),
+}));
 
 // The plan allowance and the column conflicts: unknown (null / none) unless a
 // test sets them, which is also what the app gets while the routes are cookie-only.
@@ -279,8 +286,112 @@ describe('BookableCalendarsManager', () => {
     });
     await press(() => screen.getByText('Save'));
     await waitFor(() =>
-      expect(mockSetServices).toHaveBeenCalledWith({ practitioner_id: 'c1', service_ids: [] }),
+      expect(mockSetServices).toHaveBeenCalledWith({
+        practitioner_id: 'c1',
+        service_ids: [],
+        acknowledge: false,
+      }),
     );
     expect(mockToast.success).toHaveBeenCalledWith('Calendar updated.');
+  });
+
+  /**
+   * R35-1: unticking a service that still has upcoming bookings is not a
+   * refusal. The route lists them; the sheet turns into that list (never a
+   * second Sheet over this one) and the same save goes again acknowledged.
+   */
+  it('shows the bookings left behind and re-saves acknowledged', async () => {
+    mockSetServices.mockRejectedValueOnce(
+      new ApiError('2 upcoming bookings are already booked for Cut on Alex.', 409, {
+        requires_confirmation: true,
+        message: '2 upcoming bookings are already booked for Cut on Alex.',
+        error: '2 upcoming bookings are already booked for Cut on Alex.',
+        affected_bookings: [
+          {
+            id: 'b1',
+            service_id: 's1',
+            service_name: 'Cut',
+            calendar_id: 'c1',
+            calendar_name: 'Alex',
+            booking_date: '2026-10-14',
+            booking_time: '10:00',
+            end_time: '11:00',
+            guest_name: 'Alex Smith',
+            party_size: 1,
+            status: 'Booked',
+          },
+        ],
+        affected_total: 1,
+        affected_truncated: false,
+      }),
+    );
+
+    await render(<BookableCalendarsManager />);
+    await press(() => screen.getAllByText('Edit assignments')[0]!);
+    await act(async () => {
+      fireEvent(screen.getByLabelText('Cut'), 'valueChange', false);
+    });
+    await press(() => screen.getByText('Save'));
+
+    // The list replaced the tick list in the SAME sheet.
+    await waitFor(() => expect(screen.getByText('Cut on Alex')).toBeTruthy());
+    expect(screen.getByText('Wed 14 Oct, 10:00 to 11:00')).toBeTruthy();
+    expect(mockToast.success).not.toHaveBeenCalled();
+
+    await press(() => screen.getByText('Save and leave these bookings here'));
+    await waitFor(() =>
+      expect(mockSetServices).toHaveBeenLastCalledWith({
+        practitioner_id: 'c1',
+        service_ids: [],
+        acknowledge: true,
+      }),
+    );
+    expect(mockRescheduleById).not.toHaveBeenCalled(); // nothing was moved
+    expect(mockToast.success).toHaveBeenCalledWith('Calendar updated.');
+  });
+
+  /**
+   * Web's R35 reply: cancelling the question wrote nothing, so a tick list still
+   * showing the service as unticked would say the removal happened.
+   */
+  it('re-ticks the service when the question is cancelled, and saves nothing', async () => {
+    mockSetServices.mockRejectedValueOnce(
+      new ApiError('1 upcoming booking is already booked for Cut on Alex.', 409, {
+        requires_confirmation: true,
+        message: '1 upcoming booking is already booked for Cut on Alex.',
+        affected_bookings: [
+          {
+            id: 'b1',
+            service_id: 's1',
+            service_name: 'Cut',
+            calendar_id: 'c1',
+            calendar_name: 'Alex',
+            booking_date: '2026-10-14',
+            booking_time: '10:00',
+            end_time: '11:00',
+            guest_name: 'Alex Smith',
+            party_size: 1,
+            status: 'Booked',
+          },
+        ],
+        affected_total: 1,
+        affected_truncated: false,
+      }),
+    );
+
+    await render(<BookableCalendarsManager />);
+    await press(() => screen.getAllByText('Edit assignments')[0]!);
+    await act(async () => {
+      fireEvent(screen.getByLabelText('Cut'), 'valueChange', false);
+    });
+    await press(() => screen.getByText('Save'));
+    await waitFor(() => expect(screen.getByText('Cut on Alex')).toBeTruthy());
+
+    await press(() => screen.getByText('Cancel'));
+
+    // Back on the tick list, with the service ticked again.
+    await waitFor(() => expect(screen.getByLabelText('Cut').props.value).toBe(true));
+    expect(mockSetServices).toHaveBeenCalledTimes(1); // only the refused attempt
+    expect(mockToast.success).not.toHaveBeenCalled();
   });
 });

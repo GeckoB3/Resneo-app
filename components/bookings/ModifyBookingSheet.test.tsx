@@ -136,6 +136,12 @@ let mockOtherServiceProcessingBlocks: unknown[] = [];
  * with different lengths, which is the shape web's F7 bug needed to show itself.
  */
 let mockServiceVariants: { id: string; name: string; duration_minutes: number }[] = [];
+/**
+ * Extra calendars in the roster. A calendar that offers NOTHING is a real shape
+ * since web #194: it may have stopped offering a service while the bookings
+ * already taken stayed on it (R35-3).
+ */
+let mockExtraPractitioners: { id: string; name: string; services: unknown[] }[] = [];
 
 jest.mock('@/lib/queries/useAppointmentCatalog', () => ({
   useAppointmentCatalog: () => ({
@@ -163,6 +169,7 @@ jest.mock('@/lib/queries/useAppointmentCatalog', () => ({
             },
           ],
         },
+        ...mockExtraPractitioners,
       ],
     },
     isLoading: false,
@@ -326,6 +333,7 @@ beforeEach(() => {
   mockServiceProcessingBlocks = [];
   mockOtherServiceProcessingBlocks = [];
   mockServiceVariants = [];
+  mockExtraPractitioners = [];
   mockSlots = [
     { practitioner_id: 'prac-1', service_id: 'svc-1', start_time: '09:30' },
     { practitioner_id: 'prac-1', service_id: 'svc-1', start_time: '14:00' },
@@ -419,6 +427,56 @@ describe('ModifyBookingSheet', () => {
     expect(
       screen.queryByText('Adjust a field to check availability and enable save.'),
     ).toBeNull();
+  });
+
+  /**
+   * R35-3 — a calendar may stop offering a service while the bookings already
+   * taken stay on it (web #194). Two things must not fall over for those
+   * bookings: the Staff row still shows the calendar the booking is on, and a
+   * refusal says what actually happened.
+   */
+  describe('a booking on a calendar that no longer offers its service', () => {
+    const LEFT_BEHIND: ModifyBookingTarget = { ...TARGET, practitionerId: 'prac-2' };
+
+    beforeEach(() => {
+      mockExtraPractitioners = [{ id: 'prac-2', name: 'Kim', services: [] }];
+    });
+
+    it('keeps that calendar in the Staff row, so the picker is not left with nothing selected', async () => {
+      await render(<ModifyBookingSheet target={LEFT_BEHIND} onClose={onClose} />);
+      expect(screen.getByText('Kim')).toBeTruthy();
+      // The calendars that DO offer it are still offered as somewhere to move to.
+      expect(screen.getByText('Sam')).toBeTruthy();
+    });
+
+    /**
+     * Driven on the booking's OWN calendar (the sheet's slot list only knows the
+     * calendar availability was fetched for, so a second column cannot be driven
+     * through a save here). What is pinned is the wiring: the server's words go
+     * in, the app's sentence comes out, naming the calendar and the service.
+     */
+    it('explains the refusal instead of repeating "not available with this staff member"', async () => {
+      const { ApiError } = require('@/lib/api/client');
+      mockModify.mockRejectedValueOnce(
+        new ApiError('Service not available with this staff member', 400, {}),
+      );
+      jest.useFakeTimers();
+      try {
+        await render(<ModifyBookingSheet target={TARGET} onClose={onClose} />);
+        await moveAndSave();
+
+        expect(mockModify).toHaveBeenCalled();
+        expect(
+          screen.getByText(
+            'Sam no longer offers Cut & Finish, so this booking cannot be moved while it stays there. ' +
+              'Add Cut & Finish back to Sam, or move the booking to a calendar that offers it.',
+          ),
+        ).toBeTruthy();
+        expect(screen.queryByText('Service not available with this staff member')).toBeNull();
+      } finally {
+        jest.useRealTimers();
+      }
+    });
   });
 
   it('opens the month calendar as a step, not a second sheet', async () => {
