@@ -1,4 +1,5 @@
 import {
+  canChangeVisitServiceStatus,
   LINKED_LIMITED_EDIT_BANNER,
   LINKED_VIEW_ONLY_BANNER,
   linkedDetailPolicy,
@@ -59,5 +60,30 @@ describe('linkedDetailPolicy', () => {
       showContactsLink: false,
       banner: null,
     });
+  });
+});
+
+/**
+ * The per-service Start / Undo start / Complete / Undo complete on a visit's
+ * rows. They were withheld from every partner booking while the diary's bars on
+ * the partner's column offered the same actions (owner, 2026-09-12).
+ */
+describe('canChangeVisitServiceStatus', () => {
+  it('offers them on our own visit', () => {
+    expect(canChangeVisitServiceStatus(linkedDetailPolicy(null), false)).toBe(true);
+  });
+
+  it("offers them on a partner's visit when the link lets us edit it", () => {
+    expect(canChangeVisitServiceStatus(linkedDetailPolicy('edit_existing'), false)).toBe(true);
+    expect(canChangeVisitServiceStatus(linkedDetailPolicy('create_edit_cancel'), false)).toBe(true);
+  });
+
+  it('withholds them on a view-only link', () => {
+    expect(canChangeVisitServiceStatus(linkedDetailPolicy('none'), false)).toBe(false);
+  });
+
+  it('withholds them on a table reservation, own or linked', () => {
+    expect(canChangeVisitServiceStatus(linkedDetailPolicy(null), true)).toBe(false);
+    expect(canChangeVisitServiceStatus(linkedDetailPolicy('create_edit_cancel'), true)).toBe(false);
   });
 });

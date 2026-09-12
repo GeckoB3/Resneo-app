@@ -95,3 +95,24 @@ export function linkedDetailPolicy(act: LinkActionLevel | null | undefined): Lin
     banner: viewOnly ? LINKED_VIEW_ONLY_BANNER : limitedEdit ? LINKED_LIMITED_EDIT_BANNER : null,
   };
 }
+
+/**
+ * Whether the panel offers Start / Undo start / Complete / Undo complete on
+ * each service of a multi-service visit.
+ *
+ * The edit grant decides, for a partner's visit exactly as for our own. These
+ * buttons used to be withheld from every linked booking on the belief that the
+ * per-service status PATCH was own-venue only — it is not: web's
+ * `PATCH /api/venue/bookings/[id]` takes a partner's row under
+ * `linkedGrantAllowsMutation`, the diary's own bars on a partner's column
+ * already Start and Complete those services through that same route, and web's
+ * panel shows the row buttons on every service visit (`segmentLifecycleActions`
+ * in `ExpandedBookingContent`). So a partner's visit read as a regression: the
+ * bars offered what the panel had lost (owner, 2026-09-12).
+ *
+ * A view-only link still gets none (`canEdit` is false), and neither does a
+ * table reservation, whose rows are not services.
+ */
+export function canChangeVisitServiceStatus(policy: LinkedDetailPolicy, isTable: boolean): boolean {
+  return policy.canEdit && !isTable;
+}

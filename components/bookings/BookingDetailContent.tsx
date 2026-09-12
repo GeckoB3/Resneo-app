@@ -85,7 +85,11 @@ import { useGuestDetail } from '@/lib/queries/useGuestDetail';
 import { useGroupVisitBookings } from '@/lib/queries/useGroupVisit';
 import { useLinkedGuestHistory } from '@/lib/queries/useLinkedGuestHistory';
 import { useManagedServices } from '@/lib/queries/useServicesManage';
-import { linkedDetailPolicy, type LinkedBookingContext } from '@/lib/linked/linked-detail-policy';
+import {
+  canChangeVisitServiceStatus,
+  linkedDetailPolicy,
+  type LinkedBookingContext,
+} from '@/lib/linked/linked-detail-policy';
 import { writeRebookBootstrap, type RebookBootstrapPayload } from '@/lib/rebook-bootstrap';
 import type { GuestBookingHistoryRow } from '@/types/guest-detail';
 import {
@@ -1181,9 +1185,9 @@ export function BookingDetailContent({
               guestHistory={guestHistory}
               badges={summaryBadges}
               // Start and Complete are per service (web #187), under the same edit
-              // grant as the header's actions. A partner's rows are read-only here:
-              // the row-level PATCH is own-venue only.
-              canChangeServiceStatus={policy.canEdit && !isTable && !linked}
+              // grant as the header's actions — for a partner's visit too, as its
+              // bars on the diary already allow (see `canChangeVisitServiceStatus`).
+              canChangeServiceStatus={canChangeVisitServiceStatus(policy, isTable)}
               detailHydrating={detailPending}
             />
 
