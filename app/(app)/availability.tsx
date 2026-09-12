@@ -96,6 +96,7 @@ import { fonts, minTouchTarget, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { LeavePeriod, LeaveType } from '@/types/availability-manage';
 import type { Practitioner } from '@/types/practitioner';
+import { CONFIRM_ARM_MS } from '@/lib/ui/confirm-arm';
 
 type Tab = AvailabilityTab;
 
@@ -348,7 +349,7 @@ export default function AvailabilityScreen() {
     setPendingConfirm(token);
     hapticWarning();
     if (confirmTimer.current) clearTimeout(confirmTimer.current);
-    confirmTimer.current = setTimeout(() => setPendingConfirm(null), 4000);
+    confirmTimer.current = setTimeout(() => setPendingConfirm(null), CONFIRM_ARM_MS);
   }, []);
   const clearConfirm = useCallback(() => {
     if (confirmTimer.current) clearTimeout(confirmTimer.current);

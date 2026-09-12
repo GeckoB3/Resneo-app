@@ -1,4 +1,4 @@
-import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { format } from 'date-fns';
 import { useState } from 'react';
 import { Platform, Pressable, StyleSheet } from 'react-native';
@@ -59,9 +59,7 @@ export function DatePickerField({
         minimumDate={minimumDate}
         maximumDate={maximumDate}
         accessibilityLabel={accessibilityLabel}
-        onChange={(_event: DateTimePickerEvent, date?: Date) => {
-          if (date) onChange(dateToIso(date));
-        }}
+        onValueChange={(_event, date: Date) => onChange(dateToIso(date))}
       />
     );
   }
@@ -92,10 +90,11 @@ export function DatePickerField({
           display="default"
           minimumDate={minimumDate}
           maximumDate={maximumDate}
-          onChange={(event: DateTimePickerEvent, date?: Date) => {
+          onValueChange={(_event, date: Date) => {
             setOpen(false);
-            if (event.type === 'set' && date) onChange(dateToIso(date));
+            onChange(dateToIso(date));
           }}
+          onDismiss={() => setOpen(false)}
         />
       ) : null}
     </>

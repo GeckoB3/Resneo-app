@@ -235,3 +235,72 @@ steps the whole question by labelling the raw number "N visits"; ours answers "h
 here before?", which is the more useful question and the one the app has always asked.
 
 Full suite green: 301 files, 2,969 tests.
+
+## 6. Fixes applied (2026-09-12, E to L)
+
+All verified on the same S23 over adb, on staging, with the staging data put back afterwards
+(one closure created and removed; nothing else written).
+
+**E — a closure says the word it was given.** The editor calls that field "Label" and offers
+Closed / Unavailable / Other; the diary said "On leave" whatever was picked. `leaveBandLabel` now
+carries the choice onto the stripe and `partitionClosureBands` re-adds the minutes to *that* word
+rather than a fixed one. "Other" keeps "On leave" — a stripe reading "Other 09:00 to 22:00" would
+explain less. On the device: an all-day entry labelled Closed drew "**Closed 08:00 to 22:00**".
+Note the divergence: web labels every leave band "On leave"
+(`src/lib/calendar/schedule-closure-blocks.ts`) while offering the same three-way Label field, so
+this wants raising with them rather than reverting here.
+
+**F — the wizard counts phases, not steps.** The step list is derived from what has been chosen, so
+the total could only grow: "Step 1 of 5", "2 of 6", "5 of 7". Web hit this first and answered it by
+folding its own flow into three phases (`appointmentProgressPhase`); the app now does the same —
+Choose → Schedule → Confirm, ported as `appointmentWizardPhase`. Each step already carries its own
+heading ("Choose a service", "Pick a time"), so nothing is lost. Walked end to end on the device:
+Choose (service) → Choose (practitioner) → Schedule (date) → Schedule (time) → Schedule (visit
+review) → Confirm (guest). The denominator never moved.
+
+**G — "+" books the day you are looking at.** The FAB sent no date at all, so pressing it on a
+Saturday three weeks out opened the form on today — while Walk-in, on the same sheet, carried the
+day correctly. Both now go through one builder (`newBookingParams`), tested. On the device, "+" on
+Sat 19 Sep opened the date step with the 19th selected.
+
+**H — a partner's booking is named.** The panel resolves a plain service's name out of OUR services
+catalogue, which cannot name a partner's service, and the diary — unlike the Appointments list —
+handed it no fallback: every linked booking's panel read "Service". The diary now passes the name
+from the row that opened it, its own columns and a partner's alike. Where the partner's server
+resolves no name (`serviceName: null` on the linked feed, which is also why the bar carried no
+service line) the panel still has nothing to show: that half is the web's, and is the more likely
+explanation for the original ZZLinked Beta observation.
+
+**I — off the deprecated picker callback.** `DateTimePicker`'s `onChange` is deprecated in
+@react-native-community/datetimepicker 9.1.0; all three pickers (`TimePickerField`,
+`DatePickerField`, the booking-log email card) now use `onValueChange` + `onDismiss`. On the device
+the native dialog opens with no LogBox toast, and Cancel closes it leaving the value alone.
+
+**J — "Plan hours ahead" starts ahead.** A new change seeded the Monday of the CURRENT week — five
+days in the past on a Saturday — under copy promising "a date in the future", and the picker allowed
+any past date. `scheduleChangeStart` snaps a pick to its own Monday and then holds it at the coming
+one; the picker takes today as its minimum. An existing period keeps its own start, which may
+legitimately be in the past. On the device the form opened on "14 Sep 2026" and the picker greys out
+everything before today.
+
+**L — the confirm window is long enough to use.** Eleven two-tap destructive buttons each had their
+own copy of 4000 ms, which closed while the reader was still reading it. One constant
+(`CONFIRM_ARM_MS`, 8 s) now governs all of them. On the device, "Tap to confirm" was still armed six
+seconds after the first tap.
+
+**Also here — D, tightened.** A visit is counted once, on whichever of its services is seated first,
+so the panel now reads the visit's siblings: seating the 09:00 service used to leave the 11:30 one
+still claiming that visit as the guest's past ("2 previous visits" against the other row's "1").
+Both rows now say "1 previous visit".
+
+### K is not fixed, deliberately
+
+The Today tile's count comes from the server (`/api/venue/dashboard-home`, which counts booking
+ROWS), and the Appointments list collapses a multi-service visit to one row before counting — the
+web does exactly the same on both sides (`AppointmentBookingsDashboard.tsx:876` collapses;
+`dashboard-home-payload.ts` does not). Making the app agree with itself would mean either undoing a
+deliberate, web-parity collapse or overriding a server count with a number derived from a capped
+"recent" list. It is one question for the web team — should a visit count once or once per service?
+— and the answer belongs on their side of the line.
+
+Full suite green: 303 files, 2,985 tests.

@@ -11,6 +11,7 @@ import { useCreateBlock, useDeleteBlock } from '@/lib/queries/useAvailabilityMan
 import { useUpdateBlock } from '@/lib/queries/useUpdateBlock';
 import { useToast } from '@/providers/ToastProvider';
 import { spacing } from '@/theme/index';
+import { CONFIRM_ARM_MS } from '@/lib/ui/confirm-arm';
 
 export type BlockTarget =
   | {
@@ -159,7 +160,7 @@ export function BlockEditSheet({ target, onClose }: BlockEditSheetProps) {
       setConfirmingDelete(true);
       hapticWarning();
       if (deleteConfirmTimer.current) clearTimeout(deleteConfirmTimer.current);
-      deleteConfirmTimer.current = setTimeout(() => setConfirmingDelete(false), 4000);
+      deleteConfirmTimer.current = setTimeout(() => setConfirmingDelete(false), CONFIRM_ARM_MS);
       return;
     }
     if (deleteConfirmTimer.current) clearTimeout(deleteConfirmTimer.current);

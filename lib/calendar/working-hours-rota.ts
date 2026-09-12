@@ -124,6 +124,29 @@ export function mondayOnOrBefore(ymd: string): string {
   return addDaysYmd(ymd, -(dow === 0 ? 6 : dow - 1));
 }
 
+/** The Monday on or after the date (the start of the next full week, or today). */
+export function mondayOnOrAfter(ymd: string): string {
+  const dow = dayOfWeekYmd(ymd);
+  if (dow === 1) return ymd;
+  return addDaysYmd(ymd, dow === 0 ? 1 : 8 - dow);
+}
+
+/**
+ * Where a planned hours change may start: the Monday of the week the reader
+ * picked, but never a week already under way.
+ *
+ * "Plan hours ahead" offers to change the hours "from a date in the future",
+ * and then seeded the form with the Monday of the CURRENT week — five days in
+ * the past on a Friday — and let any past date be chosen (device test,
+ * 2026-09-12). Changes still start on a Monday, so a pick is snapped back to
+ * its own Monday first; the clamp then holds it at the coming one.
+ */
+export function scheduleChangeStart(ymd: string, today: string): string {
+  const week = mondayOnOrBefore(ymd);
+  const earliest = mondayOnOrAfter(today);
+  return week < earliest ? earliest : week;
+}
+
 /** The Sunday on or after the date (the end of its Monday-to-Sunday week). */
 export function sundayOnOrAfter(ymd: string): string {
   const dow = dayOfWeekYmd(ymd);

@@ -30,6 +30,7 @@ import { useTeamLeaveMonth } from '@/lib/queries/useTeamLeave';
 import { fonts, minTouchTarget, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { LeavePeriod, LeaveType } from '@/types/availability-manage';
+import { CONFIRM_ARM_MS } from '@/lib/ui/confirm-arm';
 
 // ---- Leave type display (consistent annual/sick/other keying, web parity) ---
 const LEAVE_TYPE_LABELS: Record<LeaveType, string> = {
@@ -551,7 +552,7 @@ function LeavePeriodRow({
     setArmed(true);
     hapticWarning();
     if (armTimer.current) clearTimeout(armTimer.current);
-    armTimer.current = setTimeout(() => setArmed(false), 4000);
+    armTimer.current = setTimeout(() => setArmed(false), CONFIRM_ARM_MS);
   };
 
   return (

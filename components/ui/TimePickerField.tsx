@@ -1,4 +1,4 @@
-import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useState } from 'react';
 import { Platform, Pressable, StyleSheet } from 'react-native';
 
@@ -45,9 +45,7 @@ export function TimePickerField({ value, onChange, accessibilityLabel, disabled 
         display="compact"
         disabled={disabled}
         accessibilityLabel={accessibilityLabel}
-        onChange={(_event: DateTimePickerEvent, date?: Date) => {
-          if (date) onChange(dateToMinutes(date));
-        }}
+        onValueChange={(_event, date: Date) => onChange(dateToMinutes(date))}
       />
     );
   }
@@ -78,10 +76,11 @@ export function TimePickerField({ value, onChange, accessibilityLabel, disabled 
           mode="time"
           is24Hour
           display="default"
-          onChange={(event: DateTimePickerEvent, date?: Date) => {
+          onValueChange={(_event, date: Date) => {
             setOpen(false);
-            if (event.type === 'set' && date) onChange(dateToMinutes(date));
+            onChange(dateToMinutes(date));
           }}
+          onDismiss={() => setOpen(false)}
         />
       ) : null}
     </>

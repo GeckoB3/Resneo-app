@@ -73,6 +73,12 @@ export interface ScheduleClosureOverlay {
   label: string;
   isEditable: false;
   blockType: ScheduleClosureBlockType;
+  /**
+   * For `practitioner_leave` only: the word the team chose for this closure
+   * (see {@link leaveBandLabel}), carried separately from `label` so the grid
+   * can re-add the minutes without parsing the words back out.
+   */
+  leaveLabel?: string | null;
 }
 
 /** A row from `GET /api/venue/practitioner-leave`. */
@@ -84,6 +90,30 @@ export interface LeavePeriodInput {
   unavailable_start_time?: string | null;
   unavailable_end_time?: string | null;
   notes?: string | null;
+  /** `annual` | `sick` | `other` — the "Label (optional)" field on the editor. */
+  leave_type?: string | null;
+}
+
+/**
+ * The word a leave band shows, from the label the team picked when they made
+ * the closure: "Closed", "Unavailable", or "Other" on both the app's
+ * availability list and the web's editor, which calls the field "Label".
+ *
+ * Every band used to read "On leave" whatever was chosen — so a day entered as
+ * **Closed**, and listed as "Staff 1 · Closed", appeared on the diary as "On
+ * leave 09:00 to 22:00" (device test, 2026-09-12). A label the product asks for
+ * and then discards is worse than no label at all.
+ *
+ * "Other" is the one choice that says nothing on a band, so it keeps the old
+ * default: a stripe reading "Other 09:00 to 22:00" would explain less than "On
+ * leave". Web still labels every leave band "On leave"
+ * (`src/lib/calendar/schedule-closure-blocks.ts`) — a copy divergence, raised
+ * with them; don't undo it without fixing the promise at the other end.
+ */
+export function leaveBandLabel(leaveType: string | null | undefined): string {
+  if (leaveType === 'annual') return 'Closed';
+  if (leaveType === 'sick') return 'Unavailable';
+  return 'On leave';
 }
 
 const DAY_START = 0;
@@ -101,15 +131,20 @@ export function leaveForCalendarOnDate(
   calendarId: string,
   dateStr: string,
   leavePeriods: readonly LeavePeriodInput[],
-): { fullDay: boolean; partial: MinuteRange[]; note: string | null } {
+): { fullDay: boolean; partial: MinuteRange[]; note: string | null; leaveType: string | null } {
   let fullDay = false;
   let note: string | null = null;
+  // The first covering row's label speaks for the day. Two leave periods on one
+  // date is already unusual; two with different labels has no single answer,
+  // and picking the first keeps it the one the reader sees listed first.
+  let leaveType: string | null = null;
   const partial: MinuteRange[] = [];
 
   for (const row of leavePeriods) {
     if (row.practitioner_id !== calendarId) continue;
     if (dateStr < row.start_date || dateStr > row.end_date) continue;
     if (note == null && row.notes?.trim()) note = row.notes.trim();
+    if (leaveType == null && row.leave_type) leaveType = row.leave_type;
     if (isFullDayLeave(row)) {
       fullDay = true;
       continue;
@@ -121,7 +156,7 @@ export function leaveForCalendarOnDate(
     }
   }
 
-  return { fullDay, partial: unionRanges(partial), note };
+  return { fullDay, partial: unionRanges(partial), note, leaveType };
 }
 
 /** Complement of `open` within [boundsStart, boundsEnd] — the closed gaps. */
@@ -157,6 +192,7 @@ function overlay(
   dateStr: string,
   range: MinuteRange,
   label: string,
+  leaveLabel?: string,
 ): ScheduleClosureOverlay {
   return {
     id: `${blockType}:${calendarId}:${dateStr}:${range.start}-${range.end}`,
@@ -165,6 +201,7 @@ function overlay(
     label,
     isEditable: false,
     blockType,
+    ...(leaveLabel ? { leaveLabel } : {}),
   };
 }
 
@@ -195,11 +232,14 @@ export function buildCalendarClosureOverlays(params: {
   // Leave first: it says WHY the column is empty, and a day off would only say
   // the same thing less usefully. Web makes the same call.
   if (leave.fullDay) {
-    // The stripe says only that the calendar is on leave; the grid relabels it
-    // with its own minutes (`scheduleClosureBlockLabel`). The note is left off,
-    // as on the web, whose leave blocks carry `reason: null`.
-    const label = 'On leave';
-    for (const range of window) out.push(overlay('practitioner_leave', calendarId, dateStr, range, label));
+    // The stripe says only that the calendar is closed, in the words the team
+    // chose; the grid relabels it with its own minutes
+    // (`scheduleClosureBlockLabel`). The note is left off, as on the web, whose
+    // leave blocks carry `reason: null`.
+    const label = leaveBandLabel(leave.leaveType);
+    for (const range of window) {
+      out.push(overlay('practitioner_leave', calendarId, dateStr, range, label, label));
+    }
     return out;
   }
 
@@ -225,9 +265,9 @@ export function buildCalendarClosureOverlays(params: {
   // sets rather than one merged band, so "on leave 2–4" stays distinguishable
   // from "does not work Wednesday afternoons".
   if (leave.partial.length > 0 && working.length > 0) {
-    const label = 'On leave';
+    const label = leaveBandLabel(leave.leaveType);
     for (const range of intersect(leave.partial, intersect(working, window))) {
-      out.push(overlay('practitioner_leave', calendarId, dateStr, range, label));
+      out.push(overlay('practitioner_leave', calendarId, dateStr, range, label, label));
     }
   }
 
@@ -270,10 +310,18 @@ function hm(t: string): string {
  */
 export function scheduleClosureBlockLabel(
   blockType: string | null | undefined,
-  opts?: { columnName?: string | null; startTime?: string; endTime?: string },
+  opts?: {
+    columnName?: string | null;
+    startTime?: string;
+    endTime?: string;
+    /** The leave band's own word ({@link leaveBandLabel}); "On leave" if absent. */
+    leaveLabel?: string | null;
+  },
 ): string {
   const range = opts?.startTime && opts?.endTime ? ` ${hm(opts.startTime)} to ${hm(opts.endTime)}` : '';
-  if (blockType === 'practitioner_leave') return `On leave${range}`;
+  if (blockType === 'practitioner_leave') {
+    return `${opts?.leaveLabel?.trim() || 'On leave'}${range}`;
+  }
   if (blockType === 'venue_closed') return `Venue closed${range}`;
   if (blockType === 'practitioner_closed') {
     const who = opts?.columnName?.trim() || 'Calendar';
@@ -331,7 +379,9 @@ export interface ClosureBandEntry<T> {
  * wall, so hiding it over the venue's shut minutes would make a drop there
  * look allowed when the server refuses it.
  */
-export function partitionClosureBands<T extends { id: string; blockType?: string | null; label?: string | null }>(
+export function partitionClosureBands<
+  T extends { id: string; blockType?: string | null; label?: string | null; leaveLabel?: string | null },
+>(
   params: {
     venueClosed: readonly MinuteRange[];
     entries: readonly ClosureBandEntry<T>[];
@@ -360,7 +410,11 @@ export function partitionClosureBands<T extends { id: string; blockType?: string
       passthrough.push({
         block: {
           ...entry.block,
-          label: scheduleClosureBlockLabel('practitioner_leave', { startTime, endTime }),
+          label: scheduleClosureBlockLabel('practitioner_leave', {
+            startTime,
+            endTime,
+            leaveLabel: entry.block.leaveLabel,
+          }),
         },
         start: entry.start,
         end: entry.end,

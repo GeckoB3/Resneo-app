@@ -38,6 +38,7 @@ import { useToast } from '@/providers/ToastProvider';
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { GuestListItem } from '@/types/guest-list';
+import { CONFIRM_ARM_MS } from '@/lib/ui/confirm-arm';
 
 const PAGE_SIZE = 25;
 
@@ -225,7 +226,7 @@ function GuestDetail({
     setEraseArmed(true);
     hapticWarning();
     if (eraseTimer.current) clearTimeout(eraseTimer.current);
-    eraseTimer.current = setTimeout(() => setEraseArmed(false), 4000);
+    eraseTimer.current = setTimeout(() => setEraseArmed(false), CONFIRM_ARM_MS);
   }
 
   async function handleExportHistory() {

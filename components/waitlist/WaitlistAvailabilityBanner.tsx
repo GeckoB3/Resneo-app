@@ -15,6 +15,7 @@ import { useVenueContext } from '@/providers/VenueProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { WaitlistAlert } from '@/types/waitlist';
+import { CONFIRM_ARM_MS } from '@/lib/ui/confirm-arm';
 
 // ---------------------------------------------------------------------------
 // Pure helpers (exported for testing)
@@ -88,7 +89,7 @@ export function WaitlistAvailabilityBanner() {
     setDismissArmed(id);
     hapticWarning();
     if (armTimer.current) clearTimeout(armTimer.current);
-    armTimer.current = setTimeout(() => setDismissArmed(null), 4000);
+    armTimer.current = setTimeout(() => setDismissArmed(null), CONFIRM_ARM_MS);
   }, []);
 
   useEffect(

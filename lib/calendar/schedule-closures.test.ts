@@ -45,6 +45,7 @@ describe('leaveForCalendarOnDate', () => {
       fullDay: true,
       partial: [],
       note: 'Annual leave',
+      leaveType: null,
     });
   });
 
@@ -53,6 +54,7 @@ describe('leaveForCalendarOnDate', () => {
       fullDay: false,
       partial: [{ start: 14 * 60, end: 16 * 60 }],
       note: null,
+      leaveType: null,
     });
   });
 
@@ -159,6 +161,38 @@ describe('buildCalendarClosureOverlays', () => {
         blockType: 'practitioner_leave',
       }),
     ]);
+  });
+
+  /**
+   * Device test, 2026-09-12: a day entered as **Closed**, and listed as
+   * "Staff 1 · Closed", drew a band reading "On leave 09:00 to 22:00". The
+   * editor calls that field "Label"; it now reaches the diary.
+   */
+  it('says the word the team chose on the band', () => {
+    const withType = (leave_type: string | null) =>
+      build({
+        calendar: { working_hours: NINE_TO_FIVE },
+        leavePeriods: [
+          {
+            practitioner_id: 'cal-1',
+            start_date: MONDAY,
+            end_date: MONDAY,
+            unavailable_start_time: null,
+            unavailable_end_time: null,
+            leave_type,
+          },
+        ],
+      })[0];
+
+    expect(withType('annual')).toEqual(
+      expect.objectContaining({ label: 'Closed', leaveLabel: 'Closed' }),
+    );
+    expect(withType('sick')).toEqual(
+      expect.objectContaining({ label: 'Unavailable', leaveLabel: 'Unavailable' }),
+    );
+    // "Other" says nothing on a stripe, so it keeps the meaningful default.
+    expect(withType('other')?.label).toBe('On leave');
+    expect(withType(null)?.label).toBe('On leave');
   });
 
   it('clips partial leave to the hours worked, as its own band', () => {
@@ -283,6 +317,26 @@ describe('partitionClosureBands', () => {
     expect(out.find((e) => e.block.id === 'k')).toEqual(brk);
     expect(out.find((e) => e.block.id === 'm')).toEqual(manual);
   });
+
+  it("re-adds the minutes to the band's own word, not to a fixed one", () => {
+    const out = partitionClosureBands({
+      venueClosed: [],
+      entries: [
+        {
+          block: {
+            id: 'l',
+            blockType: 'practitioner_leave',
+            label: 'Closed',
+            leaveLabel: 'Closed',
+          },
+          start: 9 * 60,
+          end: 17 * 60,
+        },
+      ],
+      keyPrefix: 'cal-1',
+    });
+    expect(out[0]!.block.label).toBe('Closed 09:00 to 17:00');
+  });
 });
 
 describe('scheduleClosureBlockLabel', () => {
@@ -297,6 +351,12 @@ describe('scheduleClosureBlockLabel', () => {
       'Hannah closed 08:00 to 09:00',
     );
     expect(scheduleClosureBlockLabel('practitioner_leave', range)).toBe('On leave 08:00 to 09:00');
+    expect(scheduleClosureBlockLabel('practitioner_leave', { ...range, leaveLabel: 'Closed' })).toBe(
+      'Closed 08:00 to 09:00',
+    );
+    expect(scheduleClosureBlockLabel('practitioner_leave', { ...range, leaveLabel: '  ' })).toBe(
+      'On leave 08:00 to 09:00',
+    );
     expect(scheduleClosureBlockLabel('linked_venue_closed')).toBe('Linked venue closed');
   });
 });

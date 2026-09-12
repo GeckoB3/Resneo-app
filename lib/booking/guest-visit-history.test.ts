@@ -34,6 +34,19 @@ describe('guestVisitHistory', () => {
     },
   );
 
+  it('counts a visit once across all of its services', () => {
+    // Device case: seating the 09:00 service of a two-service visit left the
+    // 11:30 one reading "2 previous visits" while the 09:00 one read "1".
+    const args = { visitCount: 2, lastVisitDate: '2026-09-12' };
+    expect(
+      guestVisitHistory({ ...args, status: 'Booked', siblingStatuses: ['Seated', 'Booked'] }),
+    ).toEqual({ priorVisits: 1, lastVisitDate: null });
+    // No sibling seated yet: nothing has been counted.
+    expect(
+      guestVisitHistory({ ...args, status: 'Booked', siblingStatuses: ['Booked', 'Confirmed'] }),
+    ).toEqual({ priorVisits: 2, lastVisitDate: '2026-09-12' });
+  });
+
   it('never goes negative, and treats missing values as none', () => {
     expect(guestVisitHistory({ status: 'Seated', visitCount: 0, lastVisitDate: null })).toEqual({
       priorVisits: 0,

@@ -141,6 +141,7 @@ jest.mock('@/lib/payments/bluetoothReader', () => ({
 }));
 
 import { TakePaymentSheet, type TakePaymentTarget } from '@/components/bookings/TakePaymentSheet';
+import { CONFIRM_ARM_MS } from '@/lib/ui/confirm-arm';
 import {
   recordFailedCardAttempt,
   __resetFailedCardAttemptsForTests,
@@ -1145,7 +1146,7 @@ describe('refunds', () => {
       expect(screen.getByText('Tap again to refund £25.00')).toBeTruthy();
 
       await act(async () => {
-        jest.advanceTimersByTime(5000);
+        jest.advanceTimersByTime(CONFIRM_ARM_MS + 1000);
       });
       expect(screen.getByText('Refund £25.00 · Card')).toBeTruthy();
       expect(mockRefund).not.toHaveBeenCalled();

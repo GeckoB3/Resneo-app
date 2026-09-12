@@ -48,8 +48,18 @@ export function guestVisitHistory(args: {
   status: string | null | undefined;
   visitCount: number | null | undefined;
   lastVisitDate: string | null | undefined;
+  /**
+   * The statuses of the OTHER services in this visit, when the booking is one
+   * service of several. The server counts a visit once, on whichever service is
+   * seated first, so every row of that visit must report the same history:
+   * without this, seating the 09:00 service left the 11:30 one still claiming
+   * the visit it is part of as the guest's own past.
+   */
+  siblingStatuses?: readonly string[];
 }): GuestVisitHistory {
-  const counted = VISIT_COUNTED_STATUSES.has(args.status ?? '');
+  const counted =
+    VISIT_COUNTED_STATUSES.has(args.status ?? '') ||
+    (args.siblingStatuses?.some((s) => VISIT_COUNTED_STATUSES.has(s)) ?? false);
   const total = Math.max(0, args.visitCount ?? 0);
   const priorVisits = Math.max(0, total - (counted ? 1 : 0));
 

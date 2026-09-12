@@ -25,6 +25,14 @@ export interface LinkedBookingContext {
    * the fallback the diary already hands the panel for its own columns.
    */
   practitionerName?: string | null;
+  /**
+   * The service's name from the linked feed. Our own services catalogue cannot
+   * name a partner's service, so without this the panel fell back to the bare
+   * word "Service" for every partner booking (device test, 2026-09-12). The
+   * feed only carries it on a `full_details` link — and only where the partner's
+   * own server could resolve it — so it stays optional.
+   */
+  serviceName?: string | null;
 }
 
 export interface LinkedDetailPolicy {

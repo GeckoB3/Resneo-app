@@ -29,7 +29,10 @@ import {
   type CalendarSchedule,
   type SchedulePeriod,
   schedulePeriodHasEnded,
+  mondayOnOrAfter,
+  scheduleChangeStart,
 } from '@/lib/calendar/working-hours-rota';
+
 
 /** Monday 7 September 2026. */
 const START = '2026-09-07';
@@ -356,5 +359,32 @@ describe('ids and long dates', () => {
     expect(newSchedulePeriodId()).toMatch(/^sp-/);
     expect(newSchedulePeriodId()).not.toBe(newSchedulePeriodId());
     expect(describeYmdLong('2026-09-07')).toBe('Monday 7 September 2026');
+  });
+});
+
+describe('mondayOnOrAfter / scheduleChangeStart', () => {
+  // 2026-09-07 is a Monday; 2026-09-12 the Saturday of that week.
+  it('holds still on a Monday and jumps to the next one otherwise', () => {
+    expect(mondayOnOrAfter('2026-09-07')).toBe('2026-09-07');
+    expect(mondayOnOrAfter('2026-09-08')).toBe('2026-09-14');
+    expect(mondayOnOrAfter('2026-09-12')).toBe('2026-09-14');
+    // Sunday belongs to the week that is ending, so the next Monday is the day after.
+    expect(mondayOnOrAfter('2026-09-13')).toBe('2026-09-14');
+  });
+
+  it('never starts a change in a week already under way', () => {
+    // The device case: opening "Plan hours ahead" on Sat 12 Sep offered
+    // "New hours from 7 Sep" — the Monday five days behind.
+    expect(scheduleChangeStart('2026-09-12', '2026-09-12')).toBe('2026-09-14');
+    expect(scheduleChangeStart('2026-09-08', '2026-09-12')).toBe('2026-09-14');
+  });
+
+  it('keeps a future pick in its own week', () => {
+    expect(scheduleChangeStart('2026-10-07', '2026-09-12')).toBe('2026-10-05');
+    expect(scheduleChangeStart('2026-10-05', '2026-09-12')).toBe('2026-10-05');
+  });
+
+  it('lets a change start today when today is a Monday', () => {
+    expect(scheduleChangeStart('2026-09-07', '2026-09-07')).toBe('2026-09-07');
   });
 });

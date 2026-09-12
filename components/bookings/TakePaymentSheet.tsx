@@ -37,6 +37,7 @@ import {
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { BookingPaymentRow, VisitPayment } from '@/types/booking-detail';
+import { CONFIRM_ARM_MS } from '@/lib/ui/confirm-arm';
 
 /**
  * Take payment sheet (Tap to Pay design doc §7.8 + §7A.6).
@@ -91,7 +92,6 @@ type SheetMode =
   | 'success';
 
 /** How long an armed refund stays armed — the app's standard confirm window. */
-const REFUND_ARM_MS = 4000;
 
 /** What was just collected, for the success screen (§7.8). */
 type SuccessInfo = {
@@ -275,7 +275,7 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
     if (refundTimer.current) clearTimeout(refundTimer.current);
     // Disarm on its own so a walked-away-from sheet can't be finished off by
     // whoever picks the phone up next.
-    refundTimer.current = setTimeout(() => setRefundArmedId(null), REFUND_ARM_MS);
+    refundTimer.current = setTimeout(() => setRefundArmedId(null), CONFIRM_ARM_MS);
   }
 
   async function recordCash(method: 'cash' | 'external') {

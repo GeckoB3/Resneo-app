@@ -32,6 +32,7 @@ import {
   describeYmdShort,
   insertSchedulePeriod,
   mondayOnOrBefore,
+  scheduleChangeStart,
   newSchedulePeriodId,
   periodCyclesForEnd,
   periodEndForCycles,
@@ -74,7 +75,9 @@ function initialDraft(
     };
   }
   return {
-    from: mondayOnOrBefore(initialFrom || today),
+    // Never a week already under way: the card offers a change "from a date in
+    // the future" (see `scheduleChangeStart`).
+    from: scheduleChangeStart(initialFrom || today, today),
     weeks: [weekStateFromHours((weeklyHours ?? {}) as WorkingHoursMap)],
     repeatMode: 'forever',
     cycles: 4,
@@ -226,7 +229,15 @@ export function SchedulePeriodForm({
         </Text>
         <DatePickerField
           value={draft.from}
-          onChange={(iso) => setDraft((d) => ({ ...d, from: mondayOnOrBefore(iso) }))}
+          onChange={(iso) =>
+            setDraft((d) => ({
+              ...d,
+              // An existing period may already have started: leave its own date
+              // alone rather than dragging it forward under the reader.
+              from: editing ? mondayOnOrBefore(iso) : scheduleChangeStart(iso, todayYmd),
+            }))
+          }
+          minimumDate={editing ? undefined : ymdToDate(todayYmd)}
           accessibilityLabel="New hours from"
         />
         <Text variant="caption" tone="muted">

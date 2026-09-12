@@ -46,12 +46,12 @@ import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { Practitioner } from '@/types/practitioner';
 import type { OpeningHours } from '@/types/venue';
+import { CONFIRM_ARM_MS } from '@/lib/ui/confirm-arm';
 
 type Mode = { kind: 'idle' } | { kind: 'add'; from: string | null } | { kind: 'edit'; id: string };
 
 type Ask = { title: string; message: string; resolve: (ok: boolean) => void };
 
-const CONFIRM_MS = 4000;
 
 type Props = {
   calendar: Practitioner;
@@ -189,7 +189,7 @@ export function ScheduleTimelineSheet({
     hapticWarning();
     setArmedRemoveId(period.id);
     if (armTimer.current) clearTimeout(armTimer.current);
-    armTimer.current = setTimeout(() => setArmedRemoveId(null), CONFIRM_MS);
+    armTimer.current = setTimeout(() => setArmedRemoveId(null), CONFIRM_ARM_MS);
   }
 
   async function copyTo(targetIds: string[]) {

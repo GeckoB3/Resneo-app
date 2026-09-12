@@ -39,6 +39,10 @@ import {
   segmentProcessing,
 } from '@/lib/booking/multi-service-chain';
 import { chainSpanMinutes, type ServiceChainSegmentParam } from '@/lib/booking/service-chain';
+import {
+  APPOINTMENT_WIZARD_PHASES,
+  appointmentWizardPhase,
+} from '@/lib/booking/appointment-wizard-phase';
 import { useAppointmentCatalog } from '@/lib/queries/useAppointmentCatalog';
 import { defaultPhoneCountryForVenueCurrency } from '@/lib/phone/e164';
 import { useBookingFormVenue } from '@/lib/queries/useBookingFormVenue';
@@ -72,20 +76,6 @@ type StepKey =
   | 'multi_service'
   | 'guest'
   | 'confirm';
-
-const STEP_LABELS: Record<StepKey, string> = {
-  staff_pick: 'Practitioner',
-  service: 'Service',
-  practitioner: 'Practitioner',
-  variant: 'Option',
-  addons: 'Add-ons',
-  chain_options: 'Options',
-  date: 'Date',
-  time: 'Time',
-  multi_service: 'Services',
-  guest: 'Guest',
-  confirm: 'Confirm',
-};
 
 /** Staff-first: who the booking is with, chosen before any service. */
 type StaffPick =
@@ -1025,8 +1015,12 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
     activeKey = 'date';
   }
 
-  const stepLabels = steps.map((key) => STEP_LABELS[key]);
   const stepNumber = Math.max(0, steps.indexOf(activeKey));
+  // The indicator counts PHASES, not steps: the step list grows as choices are
+  // made, and a denominator that grows under the reader is worse than none
+  // (see `appointmentWizardPhase`). `stepNumber` still drives the back arrow,
+  // which walks real steps.
+  const phaseIndex = appointmentWizardPhase(activeKey);
   // Past the first step the header arrow steps back a page; on step one it's
   // hidden so only the ✕ leaves the form.
   const canGoBack = stepNumber > 0;
@@ -1113,7 +1107,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
   return (
     <View style={styles.container}>
       <BookingWizardHeader canGoBack={canGoBack} onBack={handleBack} />
-      <WizardStepIndicator currentStep={stepNumber} labels={stepLabels} />
+      <WizardStepIndicator currentStep={phaseIndex} labels={[...APPOINTMENT_WIZARD_PHASES]} />
 
       {activeKey === 'staff_pick' ? (
         <StaffPickerStep

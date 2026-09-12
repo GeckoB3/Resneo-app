@@ -58,6 +58,7 @@ import { Segmented } from '@/components/ui/Segmented';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError, apiFetch } from '@/lib/api/client';
+import { newBookingParams } from '@/lib/booking/new-booking-params';
 import {
   resolveAppointmentVisit,
   scheduledVisitRows,
@@ -1353,6 +1354,7 @@ export default function CalendarScreen() {
         pii: venue.pii,
         practitionerName:
           venue.practitioners.find((p) => p.id === booking.practitionerId)?.name ?? null,
+        serviceName: booking.serviceName ?? null,
       });
       setDetailBookingId(booking.id);
     },
@@ -1372,6 +1374,27 @@ export default function CalendarScreen() {
     }
     return null;
   }, [detailBookingId, gridQuery.data, practitioners]);
+
+  /**
+   * Service name for the open booking, from the grid row that opened it.
+   *
+   * The detail GET returns only `service_variant_name`, so the panel resolves a
+   * plain service's name out of OUR services catalogue — which cannot name a
+   * partner's service, and left every linked booking's panel reading "Service"
+   * (device test, 2026-09-12). The bookings list has always handed its row's
+   * name down; the diary now does the same, for its own columns and a
+   * partner's alike.
+   */
+  const detailServiceName = useMemo(() => {
+    if (!detailBookingId) return null;
+    for (const cal of gridQuery.data?.calendars ?? []) {
+      for (const d of cal.dates) {
+        const hit = d.bookings.find((b) => b.id === detailBookingId);
+        if (hit) return hit.serviceName?.trim() || null;
+      }
+    }
+    return null;
+  }, [detailBookingId, gridQuery.data]);
 
   const createAt = useCallback(
     (time: string) => {
@@ -3267,9 +3290,7 @@ export default function CalendarScreen() {
                   // and Walk-in open the form over the whole collective, a slot
                   // on one of its calendars with that calendar preselected.
                   ...collectiveParamsFor(slot?.practitionerId || null),
-                  ...(slot
-                    ? { date: anchor, practitionerId: slot.practitionerId, time: slot.time }
-                    : {}),
+                  ...newBookingParams({ date: anchor, slot }),
                 },
               });
             }}
@@ -3288,14 +3309,12 @@ export default function CalendarScreen() {
                 pathname: '/booking/new',
                 params: {
                   ...collectiveParamsFor(slot?.practitionerId || null),
-                  ...(slot
-                    ? {
-                        date: anchor,
-                        practitionerId: slot.practitionerId,
-                        time: slot.time,
-                        intent: 'walk-in',
-                      }
-                    : { date: anchor, time: nowTime, intent: 'walk-in' }),
+                  ...newBookingParams({
+                    date: anchor,
+                    slot,
+                    fallbackTime: nowTime,
+                    intent: 'walk-in',
+                  }),
                 },
               });
             }}
@@ -3424,6 +3443,7 @@ export default function CalendarScreen() {
           setDetailLinked(null);
         }}
         fallbackPractitionerName={detailLinked?.practitionerName ?? detailPractitionerName}
+        fallbackServiceName={detailLinked?.serviceName ?? detailServiceName}
         linked={detailLinked}
       />
       <BlockEditSheet

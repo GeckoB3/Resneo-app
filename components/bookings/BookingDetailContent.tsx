@@ -105,6 +105,7 @@ import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { BookingDetail, BookingStatus } from '@/types/booking-detail';
 import type { BookingListRow } from '@/types/booking-list';
+import { CONFIRM_ARM_MS } from '@/lib/ui/confirm-arm';
 
 type SymbolName = SymbolViewProps['name'];
 
@@ -607,7 +608,7 @@ export function BookingDetailContent({
     setPendingConfirm(target);
     hapticWarning();
     if (confirmTimer.current) clearTimeout(confirmTimer.current);
-    confirmTimer.current = setTimeout(() => setPendingConfirm(null), 4000);
+    confirmTimer.current = setTimeout(() => setPendingConfirm(null), CONFIRM_ARM_MS);
   };
 
   const copyReference = async () => {
@@ -634,14 +635,6 @@ export function BookingDetailContent({
   const modelLabel = booking.inferred_booking_model
     ? bookingModelShortLabel(booking.inferred_booking_model)
     : null;
-  // The guest's history BEHIND this booking: from Arrived onwards the server's
-  // totals already include it, so the raw numbers would have the panel cite
-  // itself as a previous visit (see `guestVisitHistory`).
-  const guestHistory = guestVisitHistory({
-    status: booking.status,
-    visitCount: booking.guest?.visit_count,
-    lastVisitDate: booking.guest?.last_visit_date,
-  });
   const partyLabel = partySizeLabel(booking.party_size, {
     isAppointment: isAppointmentVenue,
     isTableReservation: isTable,
@@ -698,6 +691,18 @@ export function BookingDetailContent({
   const headerStatus = visit
     ? visitLifecycleStatus(groupVisitQuery.data ?? [], booking.status)
     : booking.status;
+  // The guest's history BEHIND this booking: from Arrived onwards the server's
+  // totals already include it, so the raw numbers would have the panel cite
+  // itself as a previous visit (see `guestVisitHistory`).
+  const guestHistory = guestVisitHistory({
+    status: booking.status,
+    // One visit is counted once, on whichever of its services is seated first,
+    // so every row of it must report the same history.
+    siblingStatuses: visit ? (groupVisitQuery.data ?? []).map((r) => r.status) : undefined,
+    visitCount: booking.guest?.visit_count,
+    lastVisitDate: booking.guest?.last_visit_date,
+  });
+
   const actions = bookingDetailActions(headerStatus as BookingStatus, isTable).filter(
     (a) =>
       (!visit && !visitPending) ||
@@ -989,7 +994,7 @@ export function BookingDetailContent({
       setResendArmed(true);
       hapticWarning();
       if (resendTimer.current) clearTimeout(resendTimer.current);
-      resendTimer.current = setTimeout(() => setResendArmed(false), 4000);
+      resendTimer.current = setTimeout(() => setResendArmed(false), CONFIRM_ARM_MS);
       return;
     }
     setResendArmed(false);
@@ -1007,7 +1012,7 @@ export function BookingDetailContent({
       setDeleteArmed(true);
       hapticWarning();
       if (deleteTimer.current) clearTimeout(deleteTimer.current);
-      deleteTimer.current = setTimeout(() => setDeleteArmed(false), 4000);
+      deleteTimer.current = setTimeout(() => setDeleteArmed(false), CONFIRM_ARM_MS);
       return;
     }
     setDeleteArmed(false);

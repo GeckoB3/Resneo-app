@@ -2,7 +2,7 @@
  * BookingLogEmailCard — enable/disable + configure the daily booking digest email.
  * Mirrors the web's BookingLogEmailSettingsPanel from ReportsView.tsx.
  */
-import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useEffect, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 
@@ -68,9 +68,7 @@ function TimePickerField({
         mode="time"
         display="compact"
         accessibilityLabel={accessibilityLabel}
-        onChange={(_event: DateTimePickerEvent, date?: Date) => {
-          if (date) onChange(dateToTime(date));
-        }}
+        onValueChange={(_event, date: Date) => onChange(dateToTime(date))}
       />
     );
   }
@@ -94,10 +92,11 @@ function TimePickerField({
           value={timeToDate(value)}
           mode="time"
           display="default"
-          onChange={(event: DateTimePickerEvent, date?: Date) => {
+          onValueChange={(_event, date: Date) => {
             setOpen(false);
-            if (event.type === 'set' && date) onChange(dateToTime(date));
+            onChange(dateToTime(date));
           }}
+          onDismiss={() => setOpen(false)}
         />
       ) : null}
     </>

@@ -46,6 +46,7 @@ import { useVenueContext } from '@/providers/VenueProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { WaitlistEntry, WaitlistStatus } from '@/types/waitlist';
+import { CONFIRM_ARM_MS } from '@/lib/ui/confirm-arm';
 
 // ---------------------------------------------------------------------------
 // Status colours
@@ -448,7 +449,7 @@ export default function WaitlistScreen() {
     setPendingConfirm(token);
     hapticWarning();
     if (confirmTimer.current) clearTimeout(confirmTimer.current);
-    confirmTimer.current = setTimeout(() => setPendingConfirm(null), 4000);
+    confirmTimer.current = setTimeout(() => setPendingConfirm(null), CONFIRM_ARM_MS);
   }, []);
 
   const clearConfirm = useCallback(() => {
