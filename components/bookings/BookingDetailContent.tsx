@@ -40,6 +40,7 @@ import {
   bookingPaymentStateLabel,
   buildPaymentHistory,
   buildPriceSummary,
+  resolveBookingTotalPence,
   depositBadge,
   canTakeInPersonPayment,
   canRefundInPerson,
@@ -1014,7 +1015,10 @@ export function BookingDetailContent({
   // Dietary + occasion are restaurant concepts — only table reservations
   // surface them; appointment bookings show requests/internal/profile notes.
   // Price breakdown for the Payments card: items, totals, deposit, outstanding.
-  const priceRows = buildPriceSummary(booking);
+  // Same rule as the hero summary: until the total is known again, the rest of
+  // the money is not worth printing either (see VisitSummary's settling guard).
+  const priceRows =
+    detailPending && resolveBookingTotalPence(booking) == null ? [] : buildPriceSummary(booking);
   // The badges beside the status in the visit summary (web #190): a card hold's
   // own pill, else a deposit badge only when money is owed, charged or
   // refunded (a paid deposit is a line in the summary's money footer), plus

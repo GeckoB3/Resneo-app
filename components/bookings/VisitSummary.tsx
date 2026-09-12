@@ -234,9 +234,24 @@ export function VisitSummary({
     const computed = (booking.service_variant_price_pence ?? 0) + (booking.addons_total_price_pence ?? 0);
     return computed > 0 ? computed : null;
   })();
-  const moneyRows = buildPriceSummary(booking).filter(
-    (row) => row.key === 'deposit' || row.key === 'paid' || row.key === 'balance',
-  );
+  /**
+   * The deposit, paid and outstanding lines come out of the SAME server snapshot
+   * as the total, so they may only be shown together.
+   *
+   * A modify save seeds this panel from the PATCH response, which carries the new
+   * service but not yet its money; until the refetch lands the total reads as
+   * unknown while `balance_due_pence` still holds the PREVIOUS service's figure.
+   * Printing both put two contradictory facts about one booking side by side —
+   * "Total: Not set" beside "Outstanding £55.00" for a £25 service (device test,
+   * 2026-09-12). While the numbers are settling the block shows its skeleton and
+   * says nothing it would have to take back.
+   */
+  const moneySettling = detailHydrating && totalPence == null;
+  const moneyRows = moneySettling
+    ? []
+    : buildPriceSummary(booking).filter(
+        (row) => row.key === 'deposit' || row.key === 'paid' || row.key === 'balance',
+      );
   const showMoney = totalPence != null || moneyRows.length > 0 || (detailHydrating && rows.length > 0);
 
   const spansDays = !!visit?.spansDays;

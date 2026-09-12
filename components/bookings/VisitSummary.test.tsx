@@ -45,6 +45,53 @@ const common = {
 describe('VisitSummary', () => {
   beforeEach(() => mockMutate.mockClear());
 
+  /**
+   * Found on a device (2026-09-12): after a modify save the panel is seeded from
+   * the PATCH response, which carries the new service but not its money yet. The
+   * total read "Not set" while `balance_due_pence` still held the PREVIOUS
+   * service's figure — £55 owed on a £25 booking, in the same card.
+   */
+  describe('while the money is settling', () => {
+    const shape = {
+      headerStatus: 'Booked' as const,
+      timeLabel: '10:00 – 10:45',
+      durationMinutes: 45,
+      serviceName: 'Blow Dry',
+    };
+    const changedService = base({
+      service_variant_name: 'Blow Dry',
+      // The new service's price has not arrived yet...
+      booking_total_price_pence: null,
+      service_variant_price_pence: null,
+      // ...but the balance from the service it replaced is still in the payload.
+      balance_due_pence: 5500,
+    });
+
+    it('says nothing it would have to take back', async () => {
+      await render(
+        <VisitSummary
+          {...common}
+          {...shape}
+          detailHydrating
+          booking={changedService}
+          visit={null}
+          visitRows={[]}
+        />,
+      );
+      expect(screen.queryByText('Outstanding')).toBeNull();
+      expect(screen.queryByText('£55.00')).toBeNull();
+      expect(screen.queryByText('Not set')).toBeNull();
+    });
+
+    it('still names the total as unknown once the refetch has landed', async () => {
+      await render(
+        <VisitSummary {...common} {...shape} booking={changedService} visit={null} visitRows={[]} />,
+      );
+      expect(screen.getByText('Not set')).toBeTruthy();
+      expect(screen.getByText('Outstanding')).toBeTruthy();
+    });
+  });
+
   it('lists a single service with its add-ons, the total and what is owed', async () => {
     await render(
       <VisitSummary

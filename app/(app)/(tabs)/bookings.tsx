@@ -166,6 +166,27 @@ export function computeBookingSummary(rows: BookingListRow[]): BookingSummary {
 /** Which sources contribute rows to the list: own venue + any linked venues. */
 type VenueSelection = { own: boolean; linked: Set<string> };
 
+/**
+ * What the list shows before anyone touches the filter: the active linked venue
+ * alone when one is in context, otherwise EVERYTHING the diary shows — this
+ * venue and every linked one.
+ *
+ * Linked venues used to start unticked, so a booking made in the app on a
+ * partner's calendar could not be found again in this list: a search for the
+ * guest answered "No appointments" with nothing on screen to say a whole venue
+ * had been left out (device test, 2026-09-12). The diary shows those columns by
+ * default; the list now agrees with it, and the filter sheet still narrows.
+ */
+export function defaultVenueSelection(
+  ownerVenueId: string | null | undefined,
+  linkedVenueIds: readonly string[],
+): VenueSelection {
+  if (ownerVenueId && linkedVenueIds.includes(ownerVenueId)) {
+    return { own: false, linked: new Set([ownerVenueId]) };
+  }
+  return { own: true, linked: new Set(linkedVenueIds) };
+}
+
 /** Linked rows are id-namespaced so the list tells them apart from own rows. */
 const LINKED_ROW_PREFIX = 'linked:';
 
@@ -461,12 +482,10 @@ export default function BookingsScreen() {
     [linkedQuery.data?.venues],
   );
 
-  const defaultVenueSel = useMemo<VenueSelection>(() => {
-    if (ownerVenueId && linkedVenues.some((v) => v.venueId === ownerVenueId)) {
-      return { own: false, linked: new Set([ownerVenueId]) };
-    }
-    return { own: true, linked: new Set<string>() };
-  }, [ownerVenueId, linkedVenues]);
+  const defaultVenueSel = useMemo<VenueSelection>(
+    () => defaultVenueSelection(ownerVenueId, linkedVenues.map((v) => v.venueId)),
+    [ownerVenueId, linkedVenues],
+  );
   const [venueSelOverride, setVenueSelOverride] = useState<VenueSelection | null>(null);
   const venueSel = venueSelOverride ?? defaultVenueSel;
 

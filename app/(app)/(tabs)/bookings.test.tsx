@@ -6,7 +6,7 @@
  * status OR either attendance timestamp. Imported as a pure function (no render),
  * matching the `buildDestinations` pattern in settings.test.tsx.
  */
-import { computeBookingSummary } from '@/app/(app)/(tabs)/bookings';
+import { computeBookingSummary, defaultVenueSelection } from '@/app/(app)/(tabs)/bookings';
 import type { BookingListRow } from '@/types/booking-list';
 
 function bk(overrides: Partial<BookingListRow> & { id: string }): BookingListRow {
@@ -66,5 +66,37 @@ describe('computeBookingSummary', () => {
       completed: 0,
       noShows: 0,
     });
+  });
+});
+
+/**
+ * Which venues the list starts on. A partner booking made in the app has to be
+ * findable in the list afterwards — with linked venues unticked by default, a
+ * search for its guest answered "No appointments" and said nothing about the
+ * venue it had left out (device test, 2026-09-12).
+ */
+describe('defaultVenueSelection', () => {
+  it('shows this venue and every linked one when nothing is in context', () => {
+    const sel = defaultVenueSelection(null, ['v1', 'v2']);
+    expect(sel.own).toBe(true);
+    expect([...sel.linked]).toEqual(['v1', 'v2']);
+  });
+
+  it('shows only the linked venue being acted as, when one is in context', () => {
+    const sel = defaultVenueSelection('v2', ['v1', 'v2']);
+    expect(sel.own).toBe(false);
+    expect([...sel.linked]).toEqual(['v2']);
+  });
+
+  it('falls back to this venue when the context venue is no longer linked', () => {
+    const sel = defaultVenueSelection('gone', ['v1']);
+    expect(sel.own).toBe(true);
+    expect([...sel.linked]).toEqual(['v1']);
+  });
+
+  it('is just this venue when there are no linked venues at all', () => {
+    const sel = defaultVenueSelection(null, []);
+    expect(sel.own).toBe(true);
+    expect(sel.linked.size).toBe(0);
   });
 });

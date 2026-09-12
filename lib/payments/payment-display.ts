@@ -129,6 +129,23 @@ export interface PriceSummaryRow {
  *    both as deductions would double-count. The deposit is informational, and
  *    "Paid so far" only appears when it differs from the deposit alone.
  */
+/**
+ * What the booking costs, as the summary resolves it: the stored column wins,
+ * else variant + add-ons, else the price is genuinely unknown. Mirrors the
+ * backend resolver.
+ *
+ * Exported because "is the total known yet?" decides whether the money block may
+ * be trusted at all — see the settling guard in `VisitSummary`.
+ */
+export function resolveBookingTotalPence(booking: BookingDetail): number | null {
+  const addonsTotal = booking.addons_total_price_pence ?? 0;
+  const computed = (booking.service_variant_price_pence ?? 0) + addonsTotal;
+  if (booking.booking_total_price_pence != null && booking.booking_total_price_pence > 0) {
+    return booking.booking_total_price_pence;
+  }
+  return computed > 0 ? computed : null;
+}
+
 export function buildPriceSummary(booking: BookingDetail): PriceSummaryRow[] {
   const rows: PriceSummaryRow[] = [];
 
@@ -183,16 +200,7 @@ export function buildPriceSummary(booking: BookingDetail): PriceSummaryRow[] {
     });
   }
 
-  // Mirrors the backend resolver: the stored column wins, else variant + add-ons,
-  // else the price is genuinely unknown.
-  const addonsTotal = booking.addons_total_price_pence ?? 0;
-  const computed = (variantPence ?? 0) + addonsTotal;
-  const totalPence =
-    booking.booking_total_price_pence != null && booking.booking_total_price_pence > 0
-      ? booking.booking_total_price_pence
-      : computed > 0
-        ? computed
-        : null;
+  const totalPence = resolveBookingTotalPence(booking);
 
   // Worth a total row unless it would just repeat the only item line. Note this
   // still shows when add-ons contribute to the total but their individual rows

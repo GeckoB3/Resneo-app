@@ -24,7 +24,18 @@ import { useTheme } from '@/theme/useTheme';
 import type { CalendarGridResponse } from '@/types/calendar-grid';
 
 /** One row's display label + id. */
-export type WeekMatrixCalendar = { id: string; name: string };
+export type WeekMatrixCalendar = {
+  id: string;
+  name: string;
+  /**
+   * A linked venue's calendar. Its counts come from `extraCounts` (the linked
+   * feed, not our calendar-grid), and a cell opens the DAY rather than scoping
+   * the day view to a calendar this venue does not own.
+   */
+  linked?: boolean;
+  /** Owner venue, shown under the name so two "Alex" rows are told apart. */
+  venueName?: string | null;
+};
 
 /** A day column header. */
 export type WeekMatrixDay = {
@@ -45,6 +56,11 @@ type WeekMatrixGridProps = {
   days: WeekMatrixDay[];
   /** Raw calendar-grid payload — bookings are counted per calendar+date here. */
   grid: CalendarGridResponse | undefined;
+  /**
+   * Counts this grid cannot derive, keyed `${calendarId}|${date}` — the linked
+   * venues' bookings, which never appear in our own calendar-grid payload.
+   */
+  extraCounts?: Map<string, number>;
   /** Tap a day-column header → open that day in the Day view. */
   onDayPress: (date: string) => void;
   /** Tap a cell → open that day in the Day view (optionally scoped to the row). */
@@ -81,6 +97,7 @@ export function WeekMatrixGrid({
   calendars,
   days,
   grid,
+  extraCounts,
   onDayPress,
   onCellPress,
   onAmendHours,
@@ -89,7 +106,11 @@ export function WeekMatrixGrid({
 }: WeekMatrixGridProps) {
   const { colors } = useTheme();
 
-  const counts = useMemo(() => buildCountMap(grid), [grid]);
+  const counts = useMemo(() => {
+    const map = buildCountMap(grid);
+    if (extraCounts) for (const [key, n] of extraCounts) map.set(key, (map.get(key) ?? 0) + n);
+    return map;
+  }, [grid, extraCounts]);
   // Busiest single cell → intensity denominator so the heat tint is comparable
   // across the visible week.
   const maxCount = useMemo(() => {
@@ -152,9 +173,14 @@ export function WeekMatrixGrid({
       {calendars.map((cal) => (
         <View key={cal.id} style={[styles.bodyRow, { borderBottomColor: colors.border }]}>
           <View style={styles.rowLabelCell}>
-            <Text variant="bodySmall" numberOfLines={2} style={styles.rowLabel}>
+            <Text variant="bodySmall" numberOfLines={cal.venueName ? 1 : 2} style={styles.rowLabel}>
               {cal.name}
             </Text>
+            {cal.venueName ? (
+              <Text variant="caption" tone="muted" numberOfLines={1} style={styles.rowLabel}>
+                {cal.venueName}
+              </Text>
+            ) : null}
           </View>
           {days.map((d) => {
             const n = counts.get(`${cal.id}|${d.date}`) ?? 0;
@@ -164,7 +190,7 @@ export function WeekMatrixGrid({
             return (
               <Pressable
                 key={d.date}
-                onPress={() => onCellPress(cal.id, d.date)}
+                onPress={() => (cal.linked ? onDayPress(d.date) : onCellPress(cal.id, d.date))}
                 accessibilityRole="button"
                 accessibilityLabel={`${cal.name}, ${d.weekdayLabel} ${d.dayNumber}, ${n} ${n === 1 ? 'booking' : 'bookings'}`}
                 style={({ pressed }) => [

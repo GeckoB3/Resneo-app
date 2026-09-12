@@ -720,12 +720,17 @@ export default function CalendarScreen() {
   // LinkedVenueCalendarGrid (grant-gated). ownerVenueId persists across launches.
   const { ownerVenueId, ownerPractitionerId, setOwnerVenueId, clearOwnerVenue, reconcileOwnerVenue } =
     useLinkedVenueContext();
-  // Linked calendars render in day + week scope (month is own-venue only), so
-  // fetch the whole week in week scope and just the anchor day otherwise —
-  // enough for the day grid and the per-venue day counts on the chips, without a
-  // wide month fetch. Mirrors the own grid's range so a linked week has every day.
+  // Linked calendars need the range the visible scope actually draws: the week in
+  // week scope, the whole month in month scope — the month grid's "+N linked"
+  // chip counts from this feed, and fetching only the anchor day left it reading
+  // zero on every other date (device test, 2026-09-12) — else the anchor day.
   const linkedRange = useMemo<DateRange>(
-    () => (scope === 'week' ? { from: week.from, to: week.to } : { from: anchor, to: anchor }),
+    () =>
+      scope === 'week'
+        ? { from: week.from, to: week.to }
+        : scope === 'month'
+          ? getMonthRangeFromDate(anchor)
+          : { from: anchor, to: anchor },
     [scope, anchor, week],
   );
   const linkedQuery = useLinkedCalendar(linkedRange);
@@ -1225,10 +1230,25 @@ export default function CalendarScreen() {
     return map;
   }, [gridQuery.data, anchor]);
 
-  /** All-calendars total for the anchor date (badge on the "All" chip). */
+  /** Linked-venue bookings on the anchor date, across every linked venue. */
+  const linkedDayCount = useMemo(() => {
+    let n = 0;
+    for (const v of linkedVenues) {
+      for (const b of v.bookings) if (b.bookingDate === anchor) n += 1;
+    }
+    return n;
+  }, [linkedVenues, anchor]);
+
+  /**
+   * All-calendars total for the anchor date (badge on the "All" chip).
+   *
+   * The "All" VIEW draws linked columns beside our own, so its badge counts them
+   * too: a day with one partner booking and seven of ours read "7" while eight
+   * bars were on screen (device test, 2026-09-12).
+   */
   const totalDayCount = useMemo(
-    () => Object.values(perPractitionerCounts).reduce((sum, n) => sum + n, 0),
-    [perPractitionerCounts],
+    () => Object.values(perPractitionerCounts).reduce((sum, n) => sum + n, 0) + linkedDayCount,
+    [perPractitionerCounts, linkedDayCount],
   );
 
   const isToday = anchor === today;
@@ -2416,9 +2436,40 @@ export default function CalendarScreen() {
   // Practitioner rows + 7 day-column headers. The cell counts are derived inside
   // WeekMatrixGrid straight from gridQuery.data, so this only supplies labels.
   const weekMatrixCalendars = useMemo(
-    () => practitioners.map((p) => ({ id: p.id, name: p.name })),
-    [practitioners],
+    () => [
+      ...practitioners.map((p) => ({ id: p.id, name: p.name })),
+      /**
+       * Then every linked venue's calendars. The week matrix used to show our
+       * rows only, so a partner booking counted nowhere in week scope even though
+       * the day view draws that column (device test, 2026-09-12).
+       */
+      ...linkedVenues.flatMap((v) =>
+        v.practitioners.map((p) => ({
+          id: `${v.venueId}:${p.id}`,
+          name: p.name,
+          linked: true,
+          venueName: v.venueName,
+        })),
+      ),
+    ],
+    [practitioners, linkedVenues],
   );
+
+  /** Linked bookings per `${venueId}:${calendarId}|${date}`, for the matrix cells. */
+  const weekMatrixLinkedCounts = useMemo(() => {
+    const map = new Map<string, number>();
+    if (scope !== 'week') return map;
+    for (const v of linkedVenues) {
+      for (const b of v.bookings) {
+        if (!b.bookingDate || b.status === 'No-Show') continue;
+        const calendarId = b.practitionerId ?? b.calendarId;
+        if (!calendarId) continue;
+        const key = `${v.venueId}:${calendarId}|${b.bookingDate}`;
+        map.set(key, (map.get(key) ?? 0) + 1);
+      }
+    }
+    return map;
+  }, [scope, linkedVenues]);
   const weekMatrixDays = useMemo(() => {
     if (scope !== 'week') return [];
     return week.days.map((date) => {
@@ -3070,6 +3121,7 @@ export default function CalendarScreen() {
               <View style={styles.weekBody}>
                 <WeekMatrixGrid
                   calendars={weekMatrixCalendars}
+              extraCounts={weekMatrixLinkedCounts}
                   days={weekMatrixDays}
                   grid={gridQuery.data}
                   onAmendHours={() => setAmendHoursTarget({ date: anchor })}

@@ -147,7 +147,7 @@ export default function BookingDetailScreen() {
         <BookingDetailContent
           actionLoading={actionLoading}
           booking={detailQuery.data}
-          detailPending={detailQuery.isPlaceholderData}
+          detailPending={detailQuery.isPlaceholderData || detailQuery.isFetching}
           isAdmin={isAdmin}
           isAppointmentVenue={isAppointmentVenue}
           onStatusChange={handleStatusChange}

@@ -124,6 +124,59 @@ describe('WeekMatrixGrid', () => {
     expect(onCellPress).toHaveBeenCalledWith('p1', '2026-06-15');
   });
 
+  /**
+   * A linked venue's calendars belong in the week the same way they belong in
+   * the day: the matrix used to show our rows only, so a partner booking counted
+   * nowhere in week scope while its column was on screen in the day view (device
+   * test, 2026-09-12). Their counts arrive separately — the linked feed is not
+   * part of our calendar-grid payload.
+   */
+  describe('linked venues', () => {
+    const WITH_LINKED = [
+      ...CALENDARS,
+      { id: 'v9:p9', name: 'Jo', linked: true, venueName: 'Light 3' },
+    ];
+    const EXTRA = new Map([['v9:p9|2026-06-16', 2]]);
+
+    it('gives a linked calendar its own row, named by venue, with its count', async () => {
+      await render(
+        <WeekMatrixGrid
+          calendars={WITH_LINKED}
+          days={DAYS}
+          grid={GRID}
+          extraCounts={EXTRA}
+          onDayPress={jest.fn()}
+          onCellPress={jest.fn()}
+        />,
+      );
+      expect(screen.getByText('Jo')).toBeTruthy();
+      expect(screen.getByText('Light 3')).toBeTruthy();
+      expect(
+        screen.getByLabelText('Jo, Tue 16, 2 bookings'),
+      ).toBeTruthy();
+    });
+
+    it('opens the day rather than scoping to a calendar this venue does not own', async () => {
+      const onDayPress = jest.fn();
+      const onCellPress = jest.fn();
+      await render(
+        <WeekMatrixGrid
+          calendars={WITH_LINKED}
+          days={DAYS}
+          grid={GRID}
+          extraCounts={EXTRA}
+          onDayPress={onDayPress}
+          onCellPress={onCellPress}
+        />,
+      );
+      await act(async () => {
+        fireEvent.press(screen.getByLabelText('Jo, Tue 16, 2 bookings'));
+      });
+      expect(onDayPress).toHaveBeenCalledWith('2026-06-16');
+      expect(onCellPress).not.toHaveBeenCalled();
+    });
+  });
+
   it('handles an undefined grid (all cells empty)', async () => {
     await render(
       <WeekMatrixGrid
