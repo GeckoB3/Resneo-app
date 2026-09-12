@@ -132,6 +132,10 @@ day has to be picked again.
 The partner booking's panel reads "Service · 15 min · with John Light 3 · £15.00". Our own bookings
 name the service ("Blow Dry"). The bar on the grid carries no service line either.
 
+*(Corrected 2026-09-12 while fixing it: the bar is not part of this. A 15-minute bar is too short
+for a second line whoever owns it — the layout is chosen by height — and a 90-minute partner bar
+prints its service fine. The panel was the whole defect, and it was ours.)*
+
 ### I. DateTimePicker deprecation warning (minor, dev builds only)
 
 Every time a time picker opens, a LogBox toast appears: "DateTimePicker: `onChange` is deprecated."
@@ -304,3 +308,30 @@ deliberate, web-parity collapse or overriding a server count with a number deriv
 — and the answer belongs on their side of the line.
 
 Full suite green: 303 files, 2,985 tests.
+
+## 7. Final device sweep (2026-09-12, 20:08–20:18)
+
+Everything in §4–§6 re-checked together on one cold start of the finished bundle — Expo Go force
+stopped and relaunched, so nothing rested on a chain of Fast Refreshes. Staging was returned to its
+starting state: one closure created and removed, no bookings made.
+
+| Fix | What the phone showed |
+|---|---|
+| A, B | Verified earlier in the session and shipped (`3feed4d`) |
+| C | "Alpha" → "1 client matches "Alpha" but has no saved email or phone. The 'With contact details' filter is hiding them." + **Show them**, which reveals ZZTest Alpha |
+| D | Seated booking: "1 previous visit" in the header AND the summary line, and Details reading "Previous visit: None yet · Visits: 1". A Booked sibling of the same visit agrees |
+| E | A closure labelled **Unavailable** drew "Unavailable 08:00 to 22:00" (and **Closed** drew "Closed 08:00 to 22:00" on the earlier run) — both branches of the label reach the diary |
+| F | Choose → Choose → Schedule → Schedule → Schedule → Confirm, "Step N of 3" throughout; the denominator never moved |
+| G | "+" on Sat 26 Sep opened the date step with the 26th selected, today only outlined |
+| H | **Decisive**: a single-service partner booking (Fri 18 Sep, 09:00) now reads "**Beard Trim** · 15 min · with John Light 3 · £15.00" where the report recorded "Service · 15 min · …". Its Details card names it too |
+| I | The native time dialog opened with no LogBox toast; Cancel closed it and left 09:00 alone |
+| J | "New hours from **14 Sep 2026** · Monday 14 September 2026"; the picker greys out every date before today |
+| L | "Tap to confirm" still armed seven seconds after the first tap |
+
+H is worth one line of its own: the linked feed was carrying the service name correctly all along
+(`serviceName` on `/api/venue/linked-calendar`, resolved for any `full_details` link). The app was
+dropping it on the diary path — the Appointments list passed it down, the diary did not — so the
+whole finding was ours, and there is nothing to ask the web for.
+
+The three findings that ARE the web's (K, the closure label, and the `last_visit_date` stamp) are
+written up for them in `Docs/R36_WEB_HANDOVER.md`.
