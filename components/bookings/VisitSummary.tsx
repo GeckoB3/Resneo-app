@@ -6,6 +6,10 @@ import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Text } from '@/components/ui/Text';
 import type { AppointmentVisit } from '@/lib/booking/appointment-visit';
+import {
+  visitHistoryCaption,
+  type GuestVisitHistory,
+} from '@/lib/booking/guest-visit-history';
 import { isTerminalVisitStatus } from '@/lib/booking/visit-status';
 import { formatShortDay } from '@/lib/dates/venue-dates';
 import { ACTION_COLORS } from '@/lib/booking/booking-action-colors';
@@ -55,7 +59,13 @@ type VisitSummaryProps = {
   /** The single service's name, when the booking is not a multi-service visit. */
   serviceName: string | null;
   practitionerName: string | null;
-  lastVisitDate: string | null;
+  /**
+   * The guest's history BEHIND this booking — see `guestVisitHistory`. Not the
+   * raw `visit_count` / `last_visit_date`: from Arrived onwards those include
+   * this very booking, and the line would date the guest's "last visit" to the
+   * day you ticked them in.
+   */
+  guestHistory: GuestVisitHistory;
   /** The deposit / card-hold badges beside the status (only when money is owed, held, charged or failed). */
   badges: VisitSummaryBadge[];
   /** Offer Start / Complete on each row of a multi-service visit. */
@@ -173,7 +183,7 @@ export function VisitSummary({
   durationMinutes,
   serviceName,
   practitionerName,
-  lastVisitDate,
+  guestHistory,
   badges,
   canChangeServiceStatus,
   detailHydrating,
@@ -259,7 +269,7 @@ export function VisitSummary({
   const context = [
     durationMinutes != null && durationMinutes > 0 ? fmtDuration(durationMinutes) : null,
     dateLabel,
-    lastVisitDate ? `Last visit ${formatShortDay(lastVisitDate)}` : 'First visit',
+    visitHistoryCaption(guestHistory, formatShortDay),
   ]
     .filter(Boolean)
     .join(' · ');

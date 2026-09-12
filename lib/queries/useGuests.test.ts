@@ -16,6 +16,17 @@ describe('buildGuestListPath', () => {
     expect(buildGuestListPath({})).not.toContain('filter=');
   });
 
+  /**
+   * The contacts screen's second question when the scoped list comes back
+   * empty: the same params at scope `all`, one row, for the count alone.
+   */
+  it('carries the wider identity scope the empty state probes with', () => {
+    const path = buildGuestListPath({ search: 'ZZ', filter: 'all', page: 0, limit: 1 });
+    expect(path).toContain('filter=all');
+    expect(path).toContain('limit=1');
+    expect(path).toContain('search=ZZ');
+  });
+
   it('sends a multi-tag filter comma-joined, and nothing when no tag is on', () => {
     expect(buildGuestListPath({ tags: ['vip', 'regular'] })).toContain('tags=vip%2Cregular');
     expect(buildGuestListPath({ tags: [] })).not.toContain('tags=');

@@ -47,6 +47,7 @@ import { Text } from '@/components/ui/Text';
 import { ApiError, apiFetch } from '@/lib/api/client';
 import { getWebUrl } from '@/lib/env';
 import { clientsScreenTitle } from '@/lib/booking/terminology';
+import { hiddenByIdentityScopeCopy } from '@/lib/guests/identity-scope';
 import { buildAndShareCsv } from '@/lib/reports/csv-export';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { useGuestCustomFields, useGuests } from '@/lib/queries/useGuests';
@@ -363,6 +364,35 @@ export default function ClientsScreen() {
   const guests = loadedGuests;
   const hasMore = guests.length < totalCount;
   const isFetchingNextPage = page > 0 && guestsQuery.isFetching;
+
+  // The default identity scope only returns contacts with an email or phone, so
+  // anyone booked in by name alone is missing with nothing to say why (see
+  // `hiddenByIdentityScopeCopy`). When that could be what the reader is looking
+  // at — the list came back empty, or they are searching — ask the same
+  // question again at scope `all` and compare the totals. One row is enough:
+  // it is the count we want, not the people.
+  const isSearching = debouncedSearch.length >= MIN_SEARCH_LENGTH;
+  const listSettled = !guestsQuery.isLoading && !guestsQuery.isError;
+  const probeWiderScope =
+    filterState.filter === 'identified' && listSettled && (guests.length === 0 || isSearching);
+  const widerScopeQuery = useGuests(
+    { ...guestQueryParams, filter: 'all', page: 0, limit: 1 },
+    { enabled: probeWiderScope },
+  );
+  // `keepPreviousData` hands back the last term's count while a new one loads;
+  // a stale number here would name people who don't match what was typed.
+  const hiddenByScope =
+    probeWiderScope && !widerScopeQuery.isPlaceholderData
+      ? Math.max(0, (widerScopeQuery.data?.total_count ?? 0) - totalCount)
+      : 0;
+  const hiddenScopeCopy = hiddenByIdentityScopeCopy({
+    hiddenCount: hiddenByScope,
+    search: isSearching ? debouncedSearch : null,
+    label: clientLabel,
+  });
+  const showAllIdentities = useCallback(() => {
+    setFilterState((prev) => ({ ...prev, filter: 'all' }));
+  }, []);
 
   const loadNextPage = useCallback(() => {
     if (guestsQuery.isFetching || !hasMore) return;
@@ -807,6 +837,21 @@ export default function ClientsScreen() {
 
   const listFooter = useMemo(() => {
     if (guests.length === 0) return null;
+    // Rows on screen, but the scope is still holding some back: say so under
+    // the last one, where a reader who hasn't found who they want is looking.
+    const hiddenNote = hiddenScopeCopy ? (
+      <View style={styles.footer}>
+        <Text variant="caption" tone="muted" style={styles.hiddenNote}>
+          {hiddenScopeCopy.message}
+        </Text>
+        <Button
+          label={hiddenScopeCopy.actionLabel}
+          size="sm"
+          variant="ghost"
+          onPress={showAllIdentities}
+        />
+      </View>
+    ) : null;
     if (isFetchingNextPage) {
       return (
         <View style={styles.footer}>
@@ -816,15 +861,27 @@ export default function ClientsScreen() {
     }
     if (!hasMore) {
       return (
-        <View style={styles.footer}>
-          <Text variant="caption" tone="muted">
-            All {totalCount} {clientLabel}{totalCount === 1 ? '' : 's'} loaded
-          </Text>
+        <View>
+          <View style={styles.footer}>
+            <Text variant="caption" tone="muted">
+              All {totalCount} {clientLabel}{totalCount === 1 ? '' : 's'} loaded
+            </Text>
+          </View>
+          {hiddenNote}
         </View>
       );
     }
-    return null;
-  }, [guests.length, isFetchingNextPage, hasMore, totalCount, clientLabel, colors.brand]);
+    return hiddenNote;
+  }, [
+    guests.length,
+    isFetchingNextPage,
+    hasMore,
+    totalCount,
+    clientLabel,
+    colors.brand,
+    hiddenScopeCopy,
+    showAllIdentities,
+  ]);
 
   return (
     <Screen padded={false} bottomInset={false}>
@@ -950,23 +1007,32 @@ export default function ClientsScreen() {
                     : 'clients'
                 }
                 title={`No ${screenTitle.toLowerCase()} found`}
+                // When the identity scope is the reason the screen is empty,
+                // that outranks both other messages: it is the one the reader
+                // can act on, and it names how many are behind it.
                 message={
-                  debouncedSearch.length >= MIN_SEARCH_LENGTH
-                    ? `No ${screenTitle.toLowerCase()} match "${debouncedSearch}".`
-                    : `Your ${clientLabel} directory will appear here once you have ${clientLabel}s. You can import them from a CSV export of your previous system.`
+                  hiddenScopeCopy
+                    ? hiddenScopeCopy.message
+                    : debouncedSearch.length >= MIN_SEARCH_LENGTH
+                      ? `No ${screenTitle.toLowerCase()} match "${debouncedSearch}".`
+                      : `Your ${clientLabel} directory will appear here once you have ${clientLabel}s. You can import them from a CSV export of your previous system.`
                 }
                 // Surface the import link-out where admins discover an empty
                 // directory — but only when nothing is being searched/filtered
                 // (an empty *search* result shouldn't suggest importing).
                 actionLabel={
-                  isAdmin && debouncedSearch.length < MIN_SEARCH_LENGTH && !hasActiveFilter
-                    ? 'Import contacts'
-                    : undefined
+                  hiddenScopeCopy
+                    ? hiddenScopeCopy.actionLabel
+                    : isAdmin && debouncedSearch.length < MIN_SEARCH_LENGTH && !hasActiveFilter
+                      ? 'Import contacts'
+                      : undefined
                 }
                 onAction={
-                  isAdmin && debouncedSearch.length < MIN_SEARCH_LENGTH && !hasActiveFilter
-                    ? openImport
-                    : undefined
+                  hiddenScopeCopy
+                    ? showAllIdentities
+                    : isAdmin && debouncedSearch.length < MIN_SEARCH_LENGTH && !hasActiveFilter
+                      ? openImport
+                      : undefined
                 }
               />
             }
@@ -1126,6 +1192,11 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.base,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  hiddenNote: {
+    textAlign: 'center',
+    paddingHorizontal: spacing.base,
+    marginBottom: spacing.xs,
   },
   countRow: {
     flexDirection: 'row',

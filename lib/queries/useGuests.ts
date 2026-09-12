@@ -88,14 +88,19 @@ export function buildGuestListPath(params: GuestListParams): string {
 /**
  * Paginated guest directory. Pass debounced search from the screen component.
  * Supports all segment types, identity scope filters, and date ranges.
+ *
+ * `options.enabled` only ever narrows: a caller can hold a query back (the
+ * contacts screen asks a second, wider question only once the first has come
+ * back empty) but cannot make one run without a token or a long enough search.
  */
-export function useGuests(params: GuestListParams) {
+export function useGuests(params: GuestListParams, options?: { enabled?: boolean }) {
   const accessToken = useAccessToken();
   const search = params.search?.trim() ?? '';
   // Only keyed when a tag filter is actually in use, so every existing caller's
   // key keeps the shape (and the cache entries) it had.
   const tagKey = (params.tags ?? []).map((tag) => tag.trim()).filter(Boolean).join(',');
   const enabled =
+    (options?.enabled ?? true) &&
     isBackendConfigured() &&
     accessToken !== null &&
     (search.length === 0 || search.length >= 2);

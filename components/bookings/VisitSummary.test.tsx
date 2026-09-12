@@ -36,7 +36,7 @@ const common = {
   isTable: false,
   dateLabel: 'Wed 10 Sep',
   practitionerName: 'Kate',
-  lastVisitDate: null,
+  guestHistory: { priorVisits: 0, lastVisitDate: null },
   badges: [],
   canChangeServiceStatus: true,
   detailHydrating: false,
@@ -158,7 +158,7 @@ describe('VisitSummary', () => {
         timeLabel="10:00 – 11:30"
         durationMinutes={90}
         serviceName={null}
-        lastVisitDate="2026-08-03"
+        guestHistory={{ priorVisits: 2, lastVisitDate: '2026-08-03' }}
       />,
     );
     expect(screen.getByText('1 hr 30 min · Wed 10 Sep · Last visit Mon 3 Aug')).toBeTruthy();
@@ -185,6 +185,28 @@ describe('VisitSummary', () => {
       fireEvent.press(screen.getByLabelText('Undo start Colour'));
     });
     expect(mockMutate.mock.calls.at(-1)![0]).toBe('Confirmed');
+  });
+
+  /**
+   * Seating a booking makes the server count it (web lifecycle.ts), so the
+   * panel must not name the guest's "last visit" — it would be this one, dated
+   * the day they were ticked in. The count behind this booking still shows.
+   */
+  it('names no date when the stored last visit is this booking', async () => {
+    await render(
+      <VisitSummary
+        {...common}
+        booking={base({})}
+        visit={null}
+        visitRows={[]}
+        headerStatus="Seated"
+        timeLabel="10:00 - 10:45"
+        durationMinutes={45}
+        serviceName="Blow Dry"
+        guestHistory={{ priorVisits: 2, lastVisitDate: null }}
+      />,
+    );
+    expect(screen.getByText('45 min · Wed 10 Sep · 2 previous visits')).toBeTruthy();
   });
 
   it('shows time, status and money only for a table', async () => {

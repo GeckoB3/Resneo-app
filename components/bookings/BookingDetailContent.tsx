@@ -62,6 +62,10 @@ import { bookingDetailActions } from '@/lib/booking/booking-status-actions';
 import { isServiceLevelStatus, visitLifecycleStatus } from '@/lib/booking/visit-status';
 import { bookingStatusVisualForKey } from '@/lib/booking/booking-status-visual';
 import {
+  guestVisitHistory,
+  visitHistoryCountLabel,
+} from '@/lib/booking/guest-visit-history';
+import {
   bookingTimelineEventsForDisplay,
   formatTimelineEventTime,
 } from '@/lib/booking/booking-timeline';
@@ -630,7 +634,14 @@ export function BookingDetailContent({
   const modelLabel = booking.inferred_booking_model
     ? bookingModelShortLabel(booking.inferred_booking_model)
     : null;
-  const visitCount = booking.guest?.visit_count ?? 0;
+  // The guest's history BEHIND this booking: from Arrived onwards the server's
+  // totals already include it, so the raw numbers would have the panel cite
+  // itself as a previous visit (see `guestVisitHistory`).
+  const guestHistory = guestVisitHistory({
+    status: booking.status,
+    visitCount: booking.guest?.visit_count,
+    lastVisitDate: booking.guest?.last_visit_date,
+  });
   const partyLabel = partySizeLabel(booking.party_size, {
     isAppointment: isAppointmentVenue,
     isTableReservation: isTable,
@@ -1142,9 +1153,7 @@ export function BookingDetailContent({
                 ) : null}
               </View>
               <Text variant="caption" tone="muted">
-                {visitCount > 0
-                  ? `${visitCount} previous visit${visitCount === 1 ? '' : 's'}`
-                  : 'First visit'}
+                {visitHistoryCountLabel(guestHistory)}
               </Text>
             </View>
           </View>
@@ -1164,7 +1173,7 @@ export function BookingDetailContent({
               durationMinutes={durationMinutes}
               serviceName={serviceName}
               practitionerName={practitionerName}
-              lastVisitDate={booking.guest?.last_visit_date ?? null}
+              guestHistory={guestHistory}
               badges={summaryBadges}
               // Start and Complete are per service (web #187), under the same edit
               // grant as the header's actions. A partner's rows are read-only here:
@@ -1530,15 +1539,21 @@ export function BookingDetailContent({
               }
             />
           ) : null}
+          {/* Both read the history BEHIND this booking, like the header — a
+              seated booking is inside the server's totals and would otherwise
+              date the guest's previous visit to the day you ticked them in. */}
           <DetailRow
             label="Previous visit"
             value={
-              booking.guest?.last_visit_date
-                ? formatShortDate(booking.guest.last_visit_date)
+              guestHistory.lastVisitDate
+                ? formatShortDate(guestHistory.lastVisitDate)
                 : 'None yet'
             }
           />
-          <DetailRow label="Visits" value={visitCount > 0 ? String(visitCount) : 'First visit'} />
+          <DetailRow
+            label="Visits"
+            value={guestHistory.priorVisits > 0 ? String(guestHistory.priorVisits) : 'First visit'}
+          />
           {bookingSourceLabel(booking.source) ? (
             <DetailRow label="Source" value={bookingSourceLabel(booking.source)!} />
           ) : null}

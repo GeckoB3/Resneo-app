@@ -186,3 +186,52 @@ contradictory while settling, and "Not set" still shown once the refetch has lan
 
 Both fixes are unit-tested (full suite: 299 files, 2,951 tests) but **not yet re-verified on the
 device** — the phone was unplugged before the confirmation run.
+
+## 5. Fixes applied (2026-09-12, C and D)
+
+**C — the directory says what it is hiding.** Not a defect in the machinery: `GET /api/venue/guests`
+defaults its `filter` to **`identified`**, which it reads as `identifiability_tier = 'identified'`
+("has an email or phone"), and the app's own default scope ("With contact details") matches it. The
+web dashboard defaults the same way ("Saved contact details"), so hiding a name-only contact is the
+product's intent — what it lacked was any way to find that out. Both test guests were in Contacts
+all along; switching the scope to "All" showed them (2001 → 2004 clients).
+
+So the screen now answers the question it was failing to answer. When the scope is the default and
+the list either comes back empty or is being searched, the app asks the same question again at scope
+`all`, one row, for the count alone (`useGuests` gained an `enabled` option that can only narrow),
+and compares the totals. Anything held back is said plainly, in the empty state or under the last
+row, with one tap to lift it:
+
+> 1 client matches "Alpha" but has no saved email or phone. The 'With contact details' filter is
+> hiding them. **[Show them]**
+
+Copy is a pure function (`lib/guests/identity-scope.ts`) with the venue's own terminology and its own
+tests. Verified on the device both ways: a search that finds nobody (empty state, "Show them" reveals
+ZZTest Alpha) and a search that finds somebody but not everybody — "ZZ" listing Ian Gazzard with
+"2 clients match "ZZ" but have no saved email or phone" under it.
+
+**D — a booking no longer counts itself.** The server increments `guests.visit_count` and stamps
+`last_visit_date` with **the day of the transition** the moment a booking is seated (web
+`src/lib/table-management/lifecycle.ts`), so from Arrived onwards the guest's totals include the
+booking you are looking at — which is how a booking three weeks away came to report "1 previous
+visit · Last visit Sat 12 Sep" for a guest with no other bookings.
+
+`lib/booking/guest-visit-history.ts` takes this booking back out of the totals for the three places
+the panel speaks about history: the line under the guest's name, the summary's context line, and the
+Details rows ("Previous visit", "Visits"). Once seated, the stored date IS this booking's attendance
+and the date it overwrote is not sent to us, so the panel names no date at all and falls back to the
+count behind it. Nothing else changes before Arrived.
+
+Verified on the device against a booking that was already Started: the partner's Andrew Courtney has
+two visits on the server, and the panel reads "**1 previous visit**" with the context line
+"2 hr 45 min · Saturday 12 September · **1 previous visit**" — where it would have said "2 previous
+visits · Last visit Sat 12 Sep". A Cancelled booking is untouched, as it should be: the visit it
+produced is still the guest's.
+
+One limit, recorded rather than worked around: a booking cancelled *after* being seated keeps its
+visit on the server (no decrement, and `checked_in_at` is a separate flag the status change does not
+set), so the app cannot tell that this booking is the one behind the count. The web's own panel side-
+steps the whole question by labelling the raw number "N visits"; ours answers "has this person been
+here before?", which is the more useful question and the one the app has always asked.
+
+Full suite green: 301 files, 2,969 tests.
