@@ -1,5 +1,157 @@
 # Go-live check — Resneo app
 
+## Run 2026-09-15: 1.1.1, both platforms, on `main` @ `d90dece`
+
+**Scope:** a re-baselining store build. The 94 commits since the 1.1.0 builds (`ce1d85c`,
+2026-08-31) are all live already: twelve OTA groups on the 1.1.0 runtime. The last is "ResNeo Linked
+venue action buttons" (group `347b2217`, 2026-09-12 22:09 UTC, android + ios) at `d90dece`, one
+commit past the record below, and `d90dece` is `HEAD` before this release commit. The channel
+manifest was re-read on the day (`eas channel:view production --json`): nothing published since.
+JavaScript only, plus the one pure-JS dependency the R31 run cleared. Changelog and store copy:
+the 1.1.1 entry in `CHANGELOG.md`.
+
+**Verdict: clear to build.** No blockers. The owner kept the `appVersion` policy, so the runtime
+moves to 1.1.1 with the version (§2), and one release-process difference is recorded in §3.
+
+### 1. Why a build at all, when the code is already live
+
+The 1.0.7 reason, with a sharper edge. The OTAs moved the running JavaScript but not the EMBEDDED
+bundle, which is still `ce1d85c`'s. A new install runs it for its whole first session
+(`expo-updates` fetches in the background and applies on the NEXT launch), an update that fails to
+launch falls back to it, and `eas update:roll-back-to-embedded` would put every user on it. This
+time that bundle is not just behind, it is broken against the production server:
+
+- it still sends the visit schedule fields web #186–#187 deleted (R29-1), so every move or modify
+  of a multi-service visit 400s;
+- it cannot answer the service-link confirmation web #194 introduced (R35-1), so unticking a
+  calendar from a service is a dead end;
+- it still reads `card_hold_deposits`, which is why the web's compatibility shim cannot be deleted
+  (`Docs/CARD_HOLD_FLAG_RETIREMENT_WEB_HANDOVER.md`).
+
+### 2. Version and reach
+
+| Check | Result |
+|---|---|
+| iOS version | 1.1.0 → **1.1.1** (`app.json` `version`) |
+| Android version | 1.1.0 → **1.1.1** (`app.json` `android.version`); kept in step with iOS |
+| `runtimeVersion.policy` | `appVersion`, kept (pinning the runtime string at 1.1.0 was offered and declined), so the runtime moves to **1.1.1** on both |
+| Build numbers | EAS-remote, `autoIncrement`: `eas build:version:get` gives iOS **22** and Android **16** (the 1.1.0 builds), so these builds take 23 and 17 |
+| Live production builds | iOS `0173cf91` and Android `3b8e5207`, both 1.1.0 at `ce1d85c`, 2026-08-31; no production build since (`eas build:list`) |
+| `production` channel | latest group `347b2217` at `d90dece`, runtime 1.1.0 |
+
+**Publish nothing to `production` between this commit and both stores releasing 1.1.1.** An update
+published from here resolves to runtime 1.1.1 and reaches no one until the new binaries are on
+devices. Group `347b2217` stays served to every 1.1.0 install, including the ones that never take
+the store update. If a fix has to reach 1.1.0 installs in the meantime, publish it from a commit
+whose `app.json` still says 1.1.0 (a branch off `d90dece` carrying the fix): the runtime is read
+from the config at publish time, so that update lands on 1.1.0 only.
+
+### 3. Build eligibility: nothing native moved
+
+`git diff ce1d85c..HEAD -- app.json app.config.js eas.json patches ios android` is the two version
+strings and nothing else. `package.json` / `package-lock.json` add only `libphonenumber-js@1.13.13`
+(pure JavaScript: no `expo-module.config.json`, no `android` / `ios` directory, no podspec). Same
+`expo@56.0.16`, same `react-native@0.85.3`: the native layer is the one already in both stores.
+
+**Where this build and the OTAs differ.** EAS installs from `package-lock.json`, but the local
+`node_modules` has been ahead of the lock for eleven Expo packages since 2026-07-21 (file dates
+match the SDK patch install that day): `expo-updates` 56.0.22 against the lock's 56.0.20,
+`expo-router` 56.2.15 against 56.2.12, and a patch or two on `expo-notifications`,
+`expo-linking`, `expo-sharing`, `expo-splash-screen`, `expo-dev-client`, `expo-dev-launcher`,
+`expo-dev-menu`, `@expo/ui` and `@expo/metro-runtime`. `eas update` bundles locally, so every OTA
+since then shipped those packages' newer JavaScript over the lock's native code, twelve groups on
+1.1.0 with no sign of trouble. This build bundles on EAS from the lock, so its library JavaScript
+matches its own native code; the app's own code is exactly the live update's. Two consequences:
+smoke-test the store build itself before releasing it (§7), and run `npm ci` before the first OTA
+on 1.1.1 so that update's library JavaScript matches the binaries it lands on.
+
+### 4. Production environment: `eas.json` and EAS, reconciled
+
+A build reads the profile's `env` block AND the EAS `production` environment, and the profile wins a
+conflict (`eas build:version:get` prints the merge). Compared value by value on the day
+(`eas env:list --environment production --format long`, eas-cli 23.0.0):
+
+| Variable | Source | Value |
+|---|---|---|
+| `EXPO_PUBLIC_API_URL` | both, identical | `https://www.resneo.com` |
+| `EXPO_PUBLIC_SUPABASE_URL` | both, identical | `njualfobtudvlugqkqho.supabase.co` (live) |
+| `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | both, identical | `sb_publishable_faW-…` (live) |
+| `EXPO_PUBLIC_SENTRY_DSN` | both, identical | Sentry DE ingest |
+| `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` | EAS only, PUBLIC | `pk_live_…` |
+| `GOOGLE_SERVICES_JSON` | EAS only, SECRET (file) | required by `app.config.js` |
+| `SENTRY_AUTH_TOKEN` | EAS only, SENSITIVE | sourcemap upload |
+
+Absent by design, each with its safe default as in every run: `EXPO_PUBLIC_TERMINAL_SIMULATED`
+(real readers), `EXPO_PUBLIC_ALLOW_SCREENSHOTS` (FLAG_SECURE stays on), `EXPO_PUBLIC_WEB_URL`
+(falls back to the API URL), `EXPO_PUBLIC_ANALYTICS_KEY` (off). `.gitignore` excludes every
+`.env*` but `.env.example`, so `.env.development.local` never reaches the EAS archive.
+
+### 5. The bundle, checked before building
+
+`eas env:exec production "npx expo export --clear --platform all --output-dir …"`, both Hermes
+bundles grepped (12 MB each):
+
+| Marker | iOS | Android |
+|---|---|---|
+| `njualfobtudvlugqkqho.supabase.co` (live) | present | present |
+| `zkppmyyvkjvbsvemakbb` (dev) | none | none |
+| `www.resneo.com` | present | present |
+| live / dev Supabase publishable key | present / none | present / none |
+| `pk_live_` / `pk_test_` | present / none | present / none |
+| `ingest.de.sentry.io` | present | present |
+| code from across the range: `/api/venue/assistant`, "Override availability", "Where would you like to go", "Show them" | present | present |
+| `reserve-ni.vercel.app` | once: the unreachable fallback behind `getWebUrl()`, as in every run | same |
+| `localhost:3000` | one library default string | none |
+
+### 6. Verified healthy
+
+- `tsc --noEmit`: clean.
+- `expo lint`: **0 errors**, 267 warnings (test-file `require` imports and `import/first` from
+  `jest.mock` factories, the patterns already in the tree).
+- `jest`: **303 suites / 2,989 tests pass** at `d90dece`.
+- `expo-doctor`: **20/22**, the two failures the 1.0.7 run recorded, for the same reasons. The
+  Hermes V1 memory regression is fixed only in Expo SDK 57 (`expo@57.0.9` or later), and 19
+  packages sit behind their SDK 56 patch targets (`expo` 56.0.16 vs 56.0.21,
+  `react-native-screens` 4.25.2 vs 4.26.0, and 17 more). Neither is taken here: both change native
+  code, and the point of this build is that its native layer is the one already in the stores. The
+  SDK 57 upgrade is its own release, with its own device pass on both platforms.
+- The type check, suite and export ran against the local `node_modules` of §3, not the lock's
+  versions; the smoke test in §7 is what covers the build's own library versions.
+- `eas.json` `requireCommit: true`: the version bump, the changelog and this record are one commit
+  on a clean tree, pushed to `origin/main`.
+
+### 7. Building, submitting, and after
+
+```
+npx eas-cli build --platform all --profile production
+npx eas-cli submit --platform ios --profile production --latest
+npx eas-cli submit --platform android --profile production --latest
+```
+
+(or upload the finished builds the way 1.1.0 went). Then:
+
+1. **Smoke-test the store binaries before releasing them**, on TestFlight and the Play internal
+   track (or a `production-apk` build for a sideload): cold start, sign-in, the calendar, a
+   multi-service visit's panel, Ask ResNeo, and a second cold start to confirm no update replaces
+   the embedded bundle. These talk to the live backend, so read, don't write.
+2. **Release on both stores**, then watch Sentry for the 1.1.1 release.
+3. **Before the first OTA on 1.1.1**: `npm ci` (§3), and read the published tip from the channel as
+   always. The first update on the new runtime has no earlier group to fall back to except the
+   embedded bundle, which is now current.
+
+### 8. Not covered
+
+- **The iOS pass** owed since the R35 run: the compact inline pickers on `onValueChange` (business
+  hours, breaks, amended hours, the plan-ahead date, the booking-log email times). A defect it finds
+  can still reach 1.1.0 installs only through the branch route in §2.
+- The surfaces the 2026-09-12 Android pass did not reach: payments and card readers, push,
+  compliance forms, classes / events / resources editors, waitlist offers, group bookings, the
+  customer side.
+- **The card-hold shim is not yet deletable.** 1.1.1 is the first binary whose embedded bundle does
+  not read `card_hold_deposits`, but 1.1.0 installs still on a bundle from before the 5 September
+  update, and any 1.0.6 / 1.0.7 binaries, still do.
+- Store review outcome.
+
 ## Run 2026-09-12 (evening): OTA to production, 1.1.0, "ResNeo R35 and R36 Web Parity Plus"
 
 **Scope:** the six commits since the last published group. The published tip was read from the

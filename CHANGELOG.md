@@ -15,7 +15,190 @@ on the other, and iOS 1.0.4 is the worked example.
 
 ---
 
-## iOS 1.1.0 / Android 1.1.0 — unreleased
+## iOS 1.1.1 / Android 1.1.1 — 2026-09-15
+
+A re-baselining release, and this time a repair as much as housekeeping. Covers
+2026-09-03 → 2026-09-12 (`f6bddf1` … `d90dece`), the same commits on both
+platforms. The store copy differs by one fix only iPhone and iPad needed.
+
+**All of it is already live.** Twelve OTA updates went out on the 1.1.0 runtime
+between 3 and 12 September, so every 1.1.0 install that has relaunched since runs
+this code. What the build moves is the EMBEDDED bundle, and the 1.1.0 one had
+stopped working against the server: it predates the visit schedule contract (web
+#186–#187, R29-1) and the service-link confirmation (web #194, R35-1), so a new
+install's first session could not move or modify a multi-service visit or untick
+a calendar from a service, and `eas update:roll-back-to-embedded` would have put
+every user back on that bundle. It also still reads the retired
+`card_hold_deposits` flag, which is why the web keeps its compatibility shim.
+
+**Nothing native changed.** Against the `ce1d85c` binaries, `app.json` differs by
+its two version strings; `app.config.js`, `eas.json` and `patches/` are
+unchanged; and `package.json` / `package-lock.json` add one pure-JavaScript
+dependency, `libphonenumber-js`. Same `expo@56.0.16`, same `react-native@0.85.3`.
+
+**The runtime moves to 1.1.1.** `appVersion` stays the policy (pinning the runtime
+string at 1.1.0 was considered and declined). An update published from this
+commit on reaches nobody until 1.1.1 is installed from a store, and the last
+1.1.0 update ("ResNeo Linked venue action buttons", group `347b2217`, at
+`d90dece`) stays served to 1.1.0 installs. See the 2026-09-15 run in
+`Docs/GO_LIVE_CHECK.md`.
+
+Requires no backend change.
+
+### Play Store — "What's new" (473/500)
+
+```
+New: Ask ResNeo, a help assistant at the top of More.
+
+Visits with several services: choose every service first, then a time the whole visit fits. Each service has its own calendar bar with its own Start and Complete, and a booking opens with a summary of each service, the total and what is still owed.
+
+Plan a calendar's hours ahead, and change one day's hours from the calendar.
+
+Also: a Revenue report, optional phone numbers with a country code picker, and many fixes.
+```
+
+### App Store — "What's new" (3,176/4,000)
+
+Paragraphs are unwrapped so the block pastes straight into App Store Connect. The
+first item under **Fixed** is iOS-only: iOS drops a second sheet opened over an
+open one (R29-6 in `Docs/APP_GAP_REPORT_R29_WEB_DELTA.md`), which is why the Play
+copy leaves it out.
+
+```
+Ask ResNeo
+
+A help assistant at the top of More. Ask how to do something and it answers with the steps for the app, using your venue's plan and settings, and tells you when a job can only be done on the web. It can't change anything, and a question it can't answer can go to Support with the conversation attached.
+
+Visits with several services
+
+Choose every service first, then pick from the times when the whole visit fits. On the calendar each service now has its own bar, marked 1/2, 2/2 and so on, in its own status colour, and you start, complete, move and resize each one separately. A visit's services can be on different days or calendars. A booking opens with a summary of every service, with its time, status and price, then the total and what is still owed. The Modify form edits each service on its own.
+
+Hours
+
+The availability screen is organised into tabs: Calendars, Availability, Breaks, and Closures & amended hours. Plan a calendar's hours ahead from a date you choose, give a calendar different hours on particular days, and look back at past changes. The clock button on the calendar takes you straight to changing a day's hours. The calendar follows each calendar's planned and amended hours, and closures and leave are drawn in their own colours with the label you chose.
+
+Bookings and services
+
+A phone number is optional on staff bookings, and the phone field has a country code picker. Tick Override availability to book outside a calendar's availability on purpose. Processing time can carry on after a service ends, and services are grouped under your categories. When a booking is missing a compliance requirement, the app says which items are required and which are only advised. A calendar can stop offering a service and keep its bookings, or move them to another calendar. Card hold is an option for every venue.
+
+Contacts and reports
+
+A contact's Documents are now Records, with photo thumbnails, a viewer and several files uploaded at once. When the contacts list is hiding guests who have no contact details, it says so and lets you show them. Reports gain a Revenue tab and a client list.
+
+Venues that work together
+
+In a collective you can book for the whole collective wherever you take a booking, and linked partners' calendars sit beside your own as columns. Drop a booking on another account's calendar and the app offers to rebook it there.
+
+Signing in
+
+If you have more than one account, such as staff and customer, the app asks where you would like to go. Password fields have a show and hide button.
+
+iPad
+
+Sheets open as a card in the middle of the screen instead of stretching edge to edge, the tiles on More and Today sit three or four across, and the month picker fits in landscape.
+
+Fixed
+
+Saving hours could fail without a word when the change needed a "Save anyway?" confirmation. The Modify form's availability check now works while you edit. Changing your password from the app no longer fails. Bulk messages to contacts count only what was really sent, and respect each guest's marketing permission. A booking no longer counts itself as a previous visit, and the + button starts a booking on the day you are looking at.
+```
+
+**Ask ResNeo.** The help assistant the web dashboard gained is in the app, at the
+top of **More** where the settings search field used to be. It answers how-to
+questions from the ResNeo help centre, made specific with this venue's plan and
+settings and the person's role, and it knows it is answering somebody on the app,
+so the steps it gives are the app's steps and it says when a job can only be done
+on the web. It cannot change anything, and a question it cannot answer can be
+handed to Support with the conversation attached. The settings search went to
+make room for it. The assistant is switched on server-side, so until it is turned
+on for a venue the row says so and points at the Support form.
+
+**Tablets.** Ask ResNeo answered in a phone-width column on a tablet, with the
+"Was this helpful?" row and "Send this to support" hidden behind the answer. An
+answer bubble was sized by its own content, and a numbered step contributes
+nothing to that, so with room to spare the bubble collapsed to the longest plain
+line it happened to hold — and having been measured at one width and drawn at
+another, the text ran over the row underneath. The answer now fills a column of
+its own, capped so a line stays readable rather than running the full width of
+the window, and Support does the same. Sheets stop at a card in the middle of a
+tablet instead of stretching edge to edge, and the tile grids on More and Today
+lay out three or four across where there is room for them rather than two.
+
+### Added
+
+- **Visits across services, days and calendars.** One calendar bar per service,
+  chipped "1/2", each in its own status colour and started, completed, dragged
+  and resized on its own; a visit's services may sit on different days and
+  calendars; the Modify sheet edits each service separately; a partner's visit
+  shows every service with the same per-service actions.
+- **Every service first.** The staff wizard takes all the services before a time,
+  and offers only times where the whole visit fits.
+- **The visit at the top of the booking panel.** Each service's time, length,
+  status and price, the total, and what is owed.
+- **Hours.** The availability screen as the web's four tabs; a calendar's hours
+  planned ahead (schedule periods); amended hours for particular days, edited
+  beside closures; past schedule changes behind a toggle; the clock button on
+  every calendar view; calendars that follow their rotas and their planned and
+  amended hours; closure and leave stripes in the web's colours, carrying their
+  label; advice after a save when calendar and business hours disagree.
+- **Bookings.** A phone is optional on every staff booking, with a country-code
+  picker; "Override availability" on the staff wizard; processing time that runs
+  past the end of a service; bookings nested inside a processing gap.
+- **Services.** Grouped under the venue's categories in booking-page order, with a
+  Categories manager; a calendar can stop offering a service and keep its
+  bookings, with a per-group move to another calendar.
+- **Contacts and reports.** Documents became Records (thumbnails, a viewer,
+  several files at once); the contacts list says when its filter hides guests and
+  offers to show them; how each booking was made, on the guest history; Revenue
+  and Clients tabs in Reports, with ticket tiers, resource and table utilisation
+  and the web's CSVs.
+- **Collectives and linked venues.** Staff booking for a collective from every
+  entry point; a partner's columns named after its calendars, and working like
+  your own under a full-details-and-edit grant; a linked booking's compliance,
+  guest history and Records; a drop on another account's calendar offers a rebook
+  and then a cancel of the original; collective service sync and an About section
+  in the combined-page manager; the Booking page screen opens on the combined
+  page.
+- **Sign-in.** An account chooser for a person with staff and customer (or
+  superuser) accounts; a show / hide toggle on every password field.
+- **Messaging.** The composer's length hint and the guest's marketing permission.
+
+### Changed
+
+- One bar per service replaces 1.0.7's one bar per visit, as on the web.
+- Compliance never blocks staff: each unmet requirement shows as required or
+  advisory, and the "Book anyway" override is gone because nothing refuses.
+- Card hold is a standard payment option for every venue (the
+  `card_hold_deposits` flag is retired), and the staff card-hold toggle starts
+  off.
+- Bulk messages from contacts go out guest by guest, respect marketing
+  permission, and are branded again (email) and venue-prefixed (SMS).
+- The booking wizard counts three phases instead of a growing step total; "Plan
+  hours ahead" starts at the coming Monday; every two-tap confirm stays armed for
+  eight seconds.
+
+### Fixed
+
+- iOS: saving hours that needed "Save anyway?" did nothing, because the question
+  opened as a second sheet over the hours sheet and iOS dropped it.
+- The Modify form's live availability check 400'd on every ordinary edit, so it
+  had never worked.
+- Changing your own password failed at the last step, because the staff route
+  cannot serve the app's Bearer token; it now goes through `/api/account/password`.
+- The contacts bulk message counted guests with no contact details, and failed
+  deliveries, as sent.
+- The booking confirmation never showed its deposit notice.
+- A booking counted itself as a previous visit; linked bookings were missing from
+  the list, week and month counts; the money block could show half a total
+  mid-refresh; a partner's booking had no service name in the panel.
+- "+" started a booking on today instead of the day on screen.
+- Lengthening a service without touching its processing periods reverted the
+  length on save.
+- The guest-details fields sat under the keyboard, and the month picker overflowed
+  a tablet in landscape.
+
+---
+
+## iOS 1.1.0 / Android 1.1.0 — 2026-08-31
 
 The customer side of the app. Until now this was the venue app only: anybody who
 signed in without a staff profile hit a dead end, and the customer portal lived
@@ -39,28 +222,10 @@ signed in without a staff profile was still registered as a STAFF device and
 received a venue's booking alerts, which carry a client's name and service. That
 is fixed here regardless of the customer work.
 
-**Ask ResNeo.** The help assistant the web dashboard gained is in the app, at the
-top of **More** where the settings search field used to be. It answers how-to
-questions from the ResNeo help centre, made specific with this venue's plan and
-settings and the person's role, and it knows it is answering somebody on the app,
-so the steps it gives are the app's steps and it says when a job can only be done
-on the web. It cannot change anything, and a question it cannot answer can be
-handed to Support with the conversation attached. The settings search went to
-make room for it. The assistant is switched on server-side, so until it is turned
-on for a venue the row says so and points at the Support form.
-
-**Tablets.** Ask ResNeo answered in a phone-width column on a tablet, with the
-"Was this helpful?" row and "Send this to support" hidden behind the answer. An
-answer bubble was sized by its own content, and a numbered step contributes
-nothing to that, so with room to spare the bubble collapsed to the longest plain
-line it happened to hold — and having been measured at one width and drawn at
-another, the text ran over the row underneath. The answer now fills a column of
-its own, capped so a line stays readable rather than running the full width of
-the window, and Support does the same. Sheets stop at a card in the middle of a
-tablet instead of stretching edge to edge, and the tile grids on More and Today
-lay out three or four across where there is room for them rather than two.
-
-**Store copy: not yet written.** This entry exists for the preview build.
+Built 2026-08-31 at `ce1d85c` (iOS build 22, Android build 16); its store copy
+was not recorded here. Ask ResNeo and the tablet layout work were once listed
+under this entry, but they reached users by OTA after these builds, so they now
+sit under 1.1.1.
 
 ---
 
