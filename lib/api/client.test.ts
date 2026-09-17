@@ -123,3 +123,22 @@ describe('apiFetch — 401 refresh-and-retry-once', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('isStaleResource / apiErrorCode', () => {
+  const { ApiError, isStaleResource, apiErrorCode } = jest.requireActual<typeof import('@/lib/api/client')>(
+    '@/lib/api/client',
+  );
+  it('recognises only a 412 carrying STALE_RESOURCE', () => {
+    expect(isStaleResource(new ApiError('x', 412, { error: 'x', code: 'STALE_RESOURCE' }))).toBe(true);
+    expect(isStaleResource(new ApiError('x', 409, { error: 'x', code: 'STALE_RESOURCE' }))).toBe(false);
+    expect(isStaleResource(new ApiError('x', 412, { error: 'x' }))).toBe(false);
+    expect(isStaleResource(new Error('x'))).toBe(false);
+  });
+  it('reads the code of a refusal', () => {
+    expect(apiErrorCode(new ApiError('x', 409, { error: 'x', code: 'COLLECTIVE_SERVICE_PARKED' }))).toBe(
+      'COLLECTIVE_SERVICE_PARKED',
+    );
+    expect(apiErrorCode(new ApiError('x', 409, { requires_confirmation: true }))).toBeNull();
+    expect(apiErrorCode('nope')).toBeNull();
+  });
+});

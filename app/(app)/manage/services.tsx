@@ -61,7 +61,14 @@ import { Screen } from '@/components/ui/Screen';
 import { Sheet } from '@/components/ui/Sheet';
 import { ListSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
-import { ApiError } from '@/lib/api/client';
+import { ApiError, isStaleResource } from '@/lib/api/client';
+import { appointmentCalendarsOf } from '@/lib/calendar/schedule-calendars';
+import {
+  collectiveBadge,
+  collectiveServiceLines,
+  collectiveStatusBadge,
+  isManagedByHost,
+} from '@/lib/services/collective-service';
 import {
   compareByCategoryThenServiceOrder,
   serviceCategoryLookup,
@@ -241,6 +248,9 @@ function ServiceRowBase({
   const addonGroups = service.addon_groups ?? [];
   // D5: for card-hold services the deposit column holds the no-show fee.
   const isCardHold = service.payment_requirement === 'card_hold';
+  const roleBadge = collectiveBadge(service);
+  const statusBadge = collectiveStatusBadge(service);
+  const collectiveLines = collectiveServiceLines(service);
 
   return (
     <Card padded={false} style={styles.serviceCard}>
@@ -275,6 +285,8 @@ function ServiceRowBase({
           </View>
         </View>
         {service.is_active === false ? <Badge label="Inactive" tone="neutral" /> : null}
+        {roleBadge ? <Badge label={roleBadge.label} tone={roleBadge.tone} /> : null}
+        {statusBadge ? <Badge label={statusBadge.label} tone={statusBadge.tone} /> : null}
         <Text variant="title" tone="muted">
           {expanded ? '▾' : '›'}
         </Text>
@@ -282,6 +294,11 @@ function ServiceRowBase({
 
       {expanded ? (
         <View style={[styles.serviceBody, { borderTopColor: colors.border }]}>
+          {collectiveLines.map((line) => (
+            <Text key={line} variant="caption" tone="secondary">
+              {line}
+            </Text>
+          ))}
           {service.description?.trim() ? (
             <Text variant="bodySmall" tone="secondary">
               {service.description}
@@ -346,7 +363,7 @@ function ServiceRowBase({
               calendar via PUT /api/venue/practitioner-services, scoped to
               calendars the staff member manages — so the old re-link privilege
               hole stays closed (admins still edit every link in the form). */}
-          {!isAdmin && offerCalendars.length > 0 ? (
+          {offerCalendars.length > 0 ? (
             <View style={styles.offerBox}>
               <Text variant="overline" tone="muted">
                 Offer on your calendars
@@ -922,9 +939,12 @@ export default function ServicesScreen() {
 
   /** Managed-calendar offer toggles for the row (non-admins only). */
   const offerCalendarsForService = useCallback(
-    (serviceId: string): OfferCalendar[] => {
-      if (isAdmin) return [];
-      return managedCalendarIds
+    (serviceId: string, managedByHost = false): OfferCalendar[] => {
+      if (isAdmin && !managedByHost) return [];
+      const calendarIds = isAdmin
+        ? appointmentCalendarsOf(practitioners).map((p) => p.id)
+        : managedCalendarIds;
+      return calendarIds
         .map((calId) => {
           const cal = practitioners.find((p) => p.id === calId);
           if (!cal) return null;
@@ -1380,7 +1400,11 @@ export default function ServicesScreen() {
           hapticWarning();
           setTogglingKey(null);
           toast.error(
-            e instanceof ApiError ? e.message : 'Could not update which calendars offer this.',
+            isStaleResource(e)
+              ? 'The services on this calendar changed since this list loaded. It has been refreshed, so check it and try again.'
+              : e instanceof ApiError
+                ? e.message
+                : 'Could not update which calendars offer this.',
           );
         }
       })();
@@ -1519,7 +1543,11 @@ export default function ServicesScreen() {
       const isExpanded = expandedId === item.id;
       // Per-row self-service data is only needed for the expanded, non-admin row;
       // computing it lazily keeps collapsed rows cheap.
-      const offerCalendars = !isAdmin && isExpanded ? offerCalendarsForService(item.id) : [];
+      // A host's service at a member: the venue's own calendar ticks are all it may change, so an
+      // admin gets the same toggles a staff member does (the edit form is the host's).
+      const managedByHost = isManagedByHost(item);
+      const offerCalendars =
+        isExpanded && (!isAdmin || managedByHost) ? offerCalendarsForService(item.id, managedByHost) : [];
       const canOverride =
         !isAdmin && isExpanded && staffMayCustomizeAny(item) && staffOffersService(item.id);
       const orderIndex = isAdmin && isExpanded ? services.findIndex((s) => s.id === item.id) : -1;
@@ -1545,7 +1573,7 @@ export default function ServicesScreen() {
           service={item}
           expanded={isExpanded}
           isAdmin={isAdmin}
-          canManage={canManageService(item)}
+          canManage={!managedByHost && canManageService(item)}
           offerCalendars={offerCalendars}
           canOverride={canOverride}
           togglingKey={togglingKey}

@@ -113,6 +113,29 @@ export interface ManagedService {
   online_meeting_info?: string | null;
   variants?: AppointmentCatalogVariant[];
   addon_groups?: AppointmentCatalogAddonGroup[];
+  /**
+   * Present only at a venue in a shared-services collective (web W5/W12).
+   * @see lib/services/collective-service.ts
+   */
+  collective?: ServiceCollectiveBlock | null;
+}
+
+/** Why guests cannot book a collective service at one venue (web `ProviderExclusion`). */
+export type CollectiveHiddenReasonKind = 'suspended' | 'behind' | 'payments' | 'forms' | 'staff_only';
+
+/** Web `CollectiveServiceBlock` (`src/lib/linked-accounts/replicas/service-blocks.ts`). */
+export interface ServiceCollectiveBlock {
+  role: 'master' | 'replica' | 'retired' | 'parked';
+  collective_id: string;
+  collective_name: string;
+  host_venue_name: string;
+  item_id: string | null;
+  locked_fields: string[];
+  delegated_fields: string[];
+  status: 'up_to_date' | 'updating' | 'setting_up' | 'failed' | 'hidden' | 'paused';
+  status_reason: string | null;
+  last_applied_at: string | null;
+  hidden_reasons: { venue_id: string; venue_name: string; reason: CollectiveHiddenReasonKind }[];
 }
 
 /**

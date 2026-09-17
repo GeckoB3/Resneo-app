@@ -165,6 +165,27 @@ export function isSlotTakenError(error: unknown): boolean {
   );
 }
 
+/**
+ * A write refused because what it was based on changed underneath it (412 `STALE_RESOURCE`).
+ * Since web W2/W12, `PUT /api/venue/practitioner-services` without `expected_service_ids` answers
+ * this when the whole set would drop a service another venue gave the calendar in the last day.
+ * The caller refetches and asks the person to look again.
+ */
+export function isStaleResource(error: unknown): boolean {
+  return (
+    error instanceof ApiError &&
+    error.status === 412 &&
+    isApiErrorBody(error.body) &&
+    error.body.code === 'STALE_RESOURCE'
+  );
+}
+
+/** The `code` of an API refusal, when it carries one. */
+export function apiErrorCode(error: unknown): string | null {
+  if (!(error instanceof ApiError) || !isApiErrorBody(error.body)) return null;
+  return typeof error.body.code === 'string' ? error.body.code : null;
+}
+
 type ApiFetchOptions = RequestInit & {
   accessToken?: string | null;
   /**

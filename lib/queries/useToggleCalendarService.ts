@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
-import { apiFetch } from '@/lib/api/client';
+import { apiFetch, isStaleResource } from '@/lib/api/client';
 import { queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 
@@ -48,6 +48,13 @@ export function useToggleCalendarService() {
         method: 'PUT',
         body: JSON.stringify(input),
       });
+    },
+    onError: (error) => {
+      // 412: the calendar's set changed underneath this whole-set write (web W12). Refetch so the
+      // switches show what is really there before anyone tries again.
+      if (isStaleResource(error)) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.services.all() });
+      }
     },
     onSuccess: () => {
       // The service list carries the practitioner_services links the toggle edits.

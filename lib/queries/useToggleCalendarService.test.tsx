@@ -22,10 +22,11 @@ import {
   useToggleCalendarService,
 } from '@/lib/queries/useToggleCalendarService';
 
-function makeWrapper() {
+function makeWrapper(onClient?: (client: QueryClient) => void) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
+  onClient?.(client);
   return function Wrapper({ children }: { children: ReactNode }) {
     return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
   };
@@ -63,5 +64,22 @@ describe('useToggleCalendarService', () => {
       service_ids: ['svc-1', 'svc-2'],
     });
     expect((opts as { accessToken: string }).accessToken).toBe(mockToken);
+  });
+
+  it('refetches the services when the set changed underneath the write (412 STALE_RESOURCE)', async () => {
+    const { ApiError } = jest.requireActual<typeof import('@/lib/api/client')>('@/lib/api/client');
+    mockApiFetch.mockRejectedValueOnce(
+      new ApiError('That list changed.', 412, { error: 'That list changed.', code: 'STALE_RESOURCE' }),
+    );
+    let spy: jest.SpyInstance | null = null;
+    const { result } = await renderHook(() => useToggleCalendarService(), {
+      wrapper: makeWrapper((client) => {
+        spy = jest.spyOn(client, 'invalidateQueries');
+      }),
+    });
+    await expect(result.current.mutateAsync({ practitioner_id: 'cal-1', service_ids: [] })).rejects.toThrow(
+      'That list changed.',
+    );
+    expect(spy).toHaveBeenCalledTimes(1);
   });
 });
