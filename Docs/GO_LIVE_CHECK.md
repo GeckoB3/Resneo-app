@@ -1,5 +1,152 @@
 # Go-live check — Resneo app
 
+## Run 2026-09-17: OTA to production, 1.1.1, "ResNeo R37 Collectives on Shared Services"
+
+**Scope:** the twelve commits since the 1.1.1 build, `efccd1e`..`934029c` — the R37 batch (venue
+collectives on shared services, the web's staff-move rule of 2026-09-17, and that day's device-pass
+fixes). Notes: `Docs/R37_COLLECTIVES_SHARED_SERVICES.md`; the user-facing lines are the "Unreleased"
+entry in `CHANGELOG.md`. 67 files, +4,412/−399. JavaScript, styling and docs only.
+
+**This is the FIRST update on runtime 1.1.1.** The channel's latest group is still `347b2217` at
+`d90dece` on runtime **1.1.0** (2026-09-12 22:09 UTC), read from the manifest
+(`eas channel:view production --json`), so nothing has been published since the store release. The
+1.1.1 binaries (iOS build 23, Android build 17, both at `cbc0975`, built 2026-09-15) went live in
+both stores on 2026-09-16, which is what this update lands on.
+
+**Verdict: cleared to OTA.** Nothing native moved, the version is correctly left at 1.1.1, the EAS
+`production` environment is live on every variable an update can read, and a cleared-cache export
+bakes only live values in. The batch had a staging device pass on Android the day it was built.
+
+### 1. Version and reach
+
+| Check | Result |
+|---|---|
+| iOS version | **1.1.1** (`app.json` `version`) |
+| Android version | **1.1.1** (`app.json` `android.version`) |
+| `runtimeVersion.policy` | `appVersion`, so runtime **1.1.1** on both |
+| Store binaries | iOS build 23 / Android build 17, appVersion 1.1.1 at `cbc0975` (`eas build:list`) |
+| `production` channel before | branch `production`, latest group `347b2217` at `d90dece`, runtime **1.1.0** |
+
+The version is **not** bumped: under `appVersion` that would move the runtime to 1.1.2 and strand
+every 1.1.1 install. 1.1.0 installs that never took the store update keep group `347b2217` and do
+not see this update.
+
+### 2. OTA eligibility: nothing native moved
+
+`git diff cbc0975..HEAD -- app.json app.config.js eas.json package.json package-lock.json patches
+ios android` is **empty**. The only module imports the range adds are `react-native` core
+(`Share`, `Switch`, `RefreshControl`) and `expo-router`, both in the binaries. No new API route
+either: the batch reads new fields and error codes (`collective`, `serviceModel`, 412
+`STALE_RESOURCE`, 409 `COLLECTIVE_SERVICE_UPDATING` / `_PARKED`) on routes the app already called,
+plus `move-venue` (§6).
+
+### 3. The local install now matches the binaries
+
+`npm ci` was run before the export, and a lock-versus-installed comparison across `expo*`,
+`@expo/*`, `react-native*`, `@stripe/*` and `@sentry/*` reports **0 drift**. This closes §3 of the
+2026-09-15 record: the eleven packages that had been ahead of the lock since 2026-07-21 are back on
+the lock's versions, so this update's library JavaScript is the same code the 1.1.1 binaries carry.
+`patch-package` ran in `postinstall` and applied `@supabase/supabase-js@2.106.1 ✔`.
+
+npm 11.19 withheld three **dependency** install scripts (its `allowScripts` gate). None affects the
+bundle:
+
+- `@sentry/cli` — its binary is now absent. It is only used to upload source maps during a NATIVE
+  build, not by `expo export` (`metro.config.js` wraps no Sentry plugin). **Approve or rebuild it
+  before the 1.2.0 build** or that build's source maps will not upload.
+- `@stripe/stripe-terminal-react-native` — its script only deletes `@types/minimatch`, which npm did
+  not install; `tsc` is clean.
+- `unrs-resolver` — its `win32-x64-msvc` binding is present and `expo lint` runs.
+
+### 4. Production environment (EAS, not `eas.json`), all live
+
+`eas env:list --environment production --format long`, compared value by value. All five app
+variables carry **PUBLIC** visibility, which an update needs — a SECRET or SENSITIVE one is
+build-only and would silently drop out.
+
+| Variable | Visibility | Value |
+|---|---|---|
+| `EXPO_PUBLIC_API_URL` | PUBLIC | `https://www.resneo.com` (live) |
+| `EXPO_PUBLIC_SUPABASE_URL` | PUBLIC | `https://njualfobtudvlugqkqho.supabase.co` (live) |
+| `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | PUBLIC | `sb_publishable_faW-RD…` (live project) |
+| `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` | PUBLIC | `pk_live_…` |
+| `EXPO_PUBLIC_SENTRY_DSN` | PUBLIC | Sentry DE ingest |
+| `GOOGLE_SERVICES_JSON` / `SENTRY_AUTH_TOKEN` | SECRET / SENSITIVE | build-time only, n/a to an update |
+
+Absent by design, each with its safe default: `EXPO_PUBLIC_TERMINAL_SIMULATED` (real readers),
+`EXPO_PUBLIC_ALLOW_SCREENSHOTS` (FLAG_SECURE stays on), `EXPO_PUBLIC_WEB_URL` (falls back to the API
+URL), `EXPO_PUBLIC_ANALYTICS_KEY` (off). Local env files are `.env.development.local` and
+`.env.example` only, and a production-mode export loads neither.
+
+### 5. The bundle, checked before publishing
+
+`eas env:exec production "npx expo export --clear --platform all --output-dir …"` — `--clear-cache`
+matters as always, and the run started from an empty cache after `npm ci`. Both Hermes bundles
+grepped (iOS 12.2 MB, Android 11.9 MB):
+
+| Marker | iOS | Android |
+|---|---|---|
+| `njualfobtudvlugqkqho.supabase.co` (live) | present | present |
+| every `*.supabase.co` host in the bundle | only the live one | only the live one |
+| `zkppmyyvkjvbsvemakbb` (dev project) | none | none |
+| `www.resneo.com` | present | present |
+| live / staging Supabase publishable key | present / none | present / none |
+| `pk_live_` / `pk_test_` | present / none | present / none |
+| `ingest.de.sentry.io` | present | present |
+| this batch: `move-venue`, "Manage Collective", "Open Stripe dashboard", `COLLECTIVE_SERVICE_PARKED` | present | present |
+| `reserve-ni.vercel.app` | once: the unreachable fallback behind `getWebUrl()` | same |
+| `localhost` | 4 library defaults (Metro 8081, Sentry Spotlight 8969, two others) | 3, same shape |
+
+No app source contains `localhost` (`grep` over `app`, `components`, `lib`, `providers`, `theme`),
+so every hit is a library default that production never reaches.
+
+### 6. The web side this batch needs is deployed
+
+Unauthenticated probes of `www.resneo.com`: `POST /api/venue/bookings/{id}/move-venue` answers
+**401** (and GET 405), so the one-step cross-venue move route exists in production; a missing route
+answers 404. `GET /api/venue/staff-collective` answers 401. Everything else in the batch conditions
+on the server's own answers, so the same bundle also works against the **older** collective model
+that production collectives are still on (R37 note, opening paragraph) — the shared-services
+surfaces stay dormant until a collective is migrated.
+
+### 7. Verified healthy
+
+- `tsc --noEmit`: clean.
+- `expo lint`: **0 errors**, 269 warnings (the test-file `require` / `import/first` patterns already
+  in the tree).
+- `jest`: **309 suites / 3,024 tests pass** at `934029c`.
+- `expo export`: both platforms complete from a cleared cache.
+- Device pass: the batch was tested on staging on Android on 2026-09-17 (R37 note §10, §11),
+  including the cross-venue move Light 3 → Plus 1 Staging and back.
+- `eas.json` `requireCommit: true`: this record is committed on a clean tree and pushed before the
+  publish.
+
+### 8. Publishing
+
+```
+npx eas-cli update --channel production --environment production --clear-cache --message "ResNeo R37 Collectives on Shared Services"
+```
+
+The channel maps to the one `production` branch; `--environment production` supplies §4 (an update
+ignores the `env` block in `eas.json`); `--clear-cache` is the rule. Record the group id here
+afterwards.
+
+### 9. Not covered
+
+- **The iOS pass**, owed since the R35 run and still owed: the compact inline pickers on
+  `onValueChange`, and now the R37 surfaces (Manage Collective, service badges, the move sheet).
+- **The R36 follow-ups are still not built**: the month cell still counts rows
+  (`monthDayData` in `app/(app)/(tabs)/index.tsx`), the closure band still takes the first row's
+  label rather than the strongest, and the `last_visit_date` narrowing still waits on the web change
+  reaching production.
+- **1.1.0 stragglers.** They are frozen on `347b2217` for good. The store-update prompt proposed for
+  1.2.0 (JS-only, comparing `Updates.runtimeVersion` against a server minimum) is what would move
+  them.
+- Production collectives have not been migrated to shared services yet, so this batch's main
+  surfaces cannot be exercised against production data until they are.
+
+---
+
 ## Run 2026-09-15: 1.1.1, both platforms, on `main` @ `d90dece`
 
 **Scope:** a re-baselining store build. The 94 commits since the 1.1.0 builds (`ce1d85c`,
