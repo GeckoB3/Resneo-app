@@ -119,28 +119,25 @@ export function BookingPagePreview({
           mutedColor={colors.surfaceSunken}
         />
 
-        {/* Header block: logo overlaps the cover's bottom edge, then the name. */}
-        <View
-          style={[
-            styles.header,
-            // Pull the header up so the logo straddles the cover edge.
-            hasLogo ? { marginTop: -(LOGO_SIZE / 2) } : { marginTop: spacing.base },
-          ]}>
-          {hasLogo ? (
-            <LogoBadge logoUrl={logoUrl as string} logoCrop={logoCrop} />
-          ) : null}
+        {/* Header block, as the web's public page (BookPublicVenueIdentity): the logo sits
+            beside the name, below the cover, never over it. */}
+        <View style={styles.header}>
+          <View style={styles.identityRow}>
+            {hasLogo ? <LogoBadge logoUrl={logoUrl as string} logoCrop={logoCrop} /> : null}
+            <View style={styles.identityText}>
+              <Text variant="heading" numberOfLines={2} style={headingStyle}>
+                {displayName}
+              </Text>
 
-          <Text variant="heading" numberOfLines={2} style={headingStyle}>
-            {displayName}
-          </Text>
-
-          {/* Tiny hint so the user knows which font preset is active. */}
-          <Text variant="caption" tone="muted" numberOfLines={1} style={styles.fontHint}>
-            <Text variant="caption" tone="muted" style={isSerif ? { fontFamily: SYSTEM_SERIF } : undefined}>
-              Aa
-            </Text>
-            {`  ·  ${presetLabel}`}
-          </Text>
+              {/* Tiny hint so the user knows which font preset is active. */}
+              <Text variant="caption" tone="muted" numberOfLines={1} style={styles.fontHint}>
+                <Text variant="caption" tone="muted" style={isSerif ? { fontFamily: SYSTEM_SERIF } : undefined}>
+                  Aa
+                </Text>
+                {`  ·  ${presetLabel}`}
+              </Text>
+            </View>
+          </View>
 
           {/* Brand "Book now" CTA — decorative, with an accent underline + dot. */}
           <View style={styles.ctaRow}>
@@ -302,8 +299,19 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: spacing.base,
+    paddingTop: spacing.base,
     paddingBottom: spacing.base,
     alignItems: 'flex-start',
+  },
+  identityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    alignSelf: 'stretch',
+  },
+  identityText: {
+    flex: 1,
+    minWidth: 0,
   },
   logoBadge: {
     width: LOGO_SIZE,
@@ -311,11 +319,10 @@ const styles = StyleSheet.create({
     borderRadius: LOGO_SIZE / 2,
     overflow: 'hidden',
     backgroundColor: '#FFFFFF',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-    marginBottom: spacing.sm,
-    // Soft lift so the badge reads as floating over the cover.
-    boxShadow: '0 2px 8px rgba(15, 23, 42, 0.18)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: RING,
+    // The web badge's hairline ring and soft shadow.
+    boxShadow: '0 2px 10px rgba(15, 23, 42, 0.08)',
     elevation: 3,
   },
   fontHint: {

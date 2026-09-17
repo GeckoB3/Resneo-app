@@ -27,6 +27,7 @@ import {
   type Destination,
 } from '@/lib/navigation/more-destinations';
 import { useBillingStatus } from '@/lib/queries/useBillingStatus';
+import { useCollectives } from '@/lib/queries/useCollectives';
 import { useNotifications } from '@/lib/queries/useNotifications';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { useUpdateVenue } from '@/lib/queries/useVenueSettings';
@@ -192,6 +193,18 @@ export default function MoreScreen() {
   // Build the full, role- and eligibility-aware index once. The grid, the
   // grouped list and search all derive from this single array. Gating lives in
   // the pure `buildDestinations` builder (unit-tested separately).
+  // The Collective area is offered while this venue is in a live shared-services collective.
+  const collectivesQuery = useCollectives({ enabled: isAdmin });
+  const liveCollectiveName = useMemo(() => {
+    const live = (collectivesQuery.data?.collectives ?? []).find(
+      (c) =>
+        c.status === 'active' &&
+        c.serviceModel === 'replicas' &&
+        (c.isHost || c.myMembershipStatus === 'active'),
+    );
+    return live?.name ?? null;
+  }, [collectivesQuery.data]);
+
   const destinations = useMemo<Destination[]>(() => {
     const enabledModels = new Set<BookingModel>([
       ...(venue?.active_booking_models ?? []),
@@ -204,8 +217,9 @@ export default function MoreScreen() {
       pricingTier: venue?.pricing_tier,
       complianceEnabled: venue?.feature_flags?.resolved?.compliance_records_enabled === true,
       waitlistEnabled: venue?.feature_flags?.resolved?.waitlist_v2 === true,
+      collectiveArea: liveCollectiveName ? { name: liveCollectiveName } : null,
     });
-  }, [isAdmin, venue]);
+  }, [isAdmin, venue, liveCollectiveName]);
 
   const handlePress = useCallback(
     (dest: Destination) => {

@@ -27,10 +27,14 @@ app". This note records what the app did about it.
 
 | 10 | **Device pass on staging (2026-09-17, plus1, Android)** fixed: a partner with one calendar could not be dragged sideways (`ccMax > ccMin` switched the drag off, so Light 3's bookings could never reach the collective move); the host's collectives row links to the web Collective area; the manager's Services tab links to Services and the web; service badges wrap under the name; parked services listed apart on calendar cards; the calendar intro names only switched-on models; em-dashes out of collective and linked-venue copy. | `components/calendar/DraggableAppointmentBlock.tsx`, `app/(app)/collectives/index.tsx`, `components/linked/CollectiveManagerPanel.tsx`, `app/(app)/manage/services.tsx`, `components/availability/BookableCalendarsManager.tsx` |
 
+| 11 | **Cross-venue move confirmed on Android (2026-09-17)**: Light 3 to Plus 1 Staging and back, both through the one-step move. | diary |
+| 12 | **The Collective area** (web `/dashboard/collective`): More → the collective's name, for admins while the venue is in a live shared-services collective. Services tab (venue health, What needs you, the services across the venues as cards with a per-service sheet of calendar switches, Select mode and the bulk bar, save with confirm and preview), Venues tab (invite via the manager's Members tab, ask to host, cancel a move, remove, end the collective), History tab (filters, opt-in dates, CSV via the share sheet), hosting banners. Members get their own lists. Words copied from the web table. Device-tested as the host, including a real save and its undo. | `app/(app)/collective-area.tsx`, `components/collective-area/`, `lib/collective-area/`, `lib/queries/useCollectiveArea.ts` |
+| 13 | **Booking page preview**: the logo sits beside the name below the cover (web `BookPublicVenueIdentity`), not over the cover's edge. | `components/bookingPage/BookingPagePreview.tsx` |
+
 ## Still open
 
-1. **Device test on iOS**, and a confirmed cross-venue move on a device (Android reached the
-   "Move this booking to…" sheet; the move itself was not confirmed, to avoid messaging the client).
+1. **Device test on iOS**, and the Collective area as a member venue (Light 3); only the host was
+   tried on a device.
 2. **A member's online meeting link and "Before the appointment" note** for a host's service are
    edited on the web only. The app shows the service read-only.
 3. **The member's "What needs you" strip** (connect Stripe, turn on forms) is web-only; the app

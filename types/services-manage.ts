@@ -163,6 +163,12 @@ export interface ManagedServicesResponse {
   practitioner_services?: PractitionerServiceLink[];
   /** The venue's category headings in booking-page order (web 2026-09-02; absent on the legacy path). */
   categories?: ServiceCategoryRef[];
+  /**
+   * A host of a live shared-services collective: every venue and which of the collective's services
+   * each calendar offers (web W5). Absent for anyone else.
+   * @see lib/collective-area/model.ts
+   */
+  collective_calendars?: import('@/lib/collective-area/model').CollectiveCalendarGroup[];
 }
 
 /**

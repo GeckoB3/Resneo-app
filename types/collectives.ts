@@ -74,6 +74,8 @@ export interface CollectiveMemberView {
   status: CollectiveMemberStatus;
   displayOrder: number;
   soloPageBehavior: SoloPageBehavior;
+  /** Classes, events or rooms the venue also runs, which stay on its own page (web W20). */
+  alsoRuns?: string | null;
 }
 
 export interface CollectiveView {
@@ -123,6 +125,10 @@ export interface CollectiveView {
   } | null;
   members: CollectiveMemberView[];
   activeMemberCount: number;
+  /** When the collective lost its host and is waiting for one (web W7). */
+  pausedAt?: string | null;
+  /** A move of hosting in progress (web W7). */
+  pendingHost?: { venueId: string; venueName: string; transferAt: string | null } | null;
 }
 
 // ---------------------------------------------------------------------------

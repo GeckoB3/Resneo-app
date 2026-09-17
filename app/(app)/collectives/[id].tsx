@@ -17,7 +17,8 @@ import { spacing } from '@/theme/index';
 import type { CollectiveView } from '@/types/collectives';
 
 export default function CollectiveDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, tab } = useLocalSearchParams<{ id: string; tab?: string }>();
+  const initialTab = tab === 'members' || tab === 'services' || tab === 'about' ? tab : 'page';
   const router = useRouter();
   const collectiveId = typeof id === 'string' ? id : undefined;
 
@@ -88,6 +89,7 @@ export default function CollectiveDetailScreen() {
           eligibleLinks={eligibleLinks}
           onChanged={() => void query.refetch()}
           onDissolved={() => router.back()}
+          initialTab={initialTab}
         />
       ) : (
         <CombinedPageMemberSummary

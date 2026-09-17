@@ -145,6 +145,13 @@ export default function AppLayout() {
         }}
       />
       <Stack.Screen
+        name="collective-area"
+        options={{
+          headerShown: true,
+          title: 'Collective',
+        }}
+      />
+      <Stack.Screen
         name="collectives/[id]"
         options={{
           headerShown: true,

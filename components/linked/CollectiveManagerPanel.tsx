@@ -22,7 +22,8 @@ import { spacing } from '@/theme/index';
 import type { CollectiveView } from '@/types/collectives';
 import type { AccountLinkView } from '@/types/linked-venues';
 
-type TabKey = 'page' | 'services' | 'about' | 'members';
+export type CollectiveManagerTab = 'page' | 'services' | 'about' | 'members';
+type TabKey = CollectiveManagerTab;
 
 /**
  * The host's combined-page manager: Page (address, headings, photos,
@@ -37,13 +38,16 @@ export function CollectiveManagerPanel({
   eligibleLinks,
   onChanged,
   onDissolved,
+  initialTab = 'page',
 }: {
   collective: CollectiveView;
   eligibleLinks: AccountLinkView[];
   onChanged: () => void;
   onDissolved: () => void;
+  /** The tab to open on, e.g. Members from the Collective area's "Invite a venue". */
+  initialTab?: CollectiveManagerTab;
 }) {
-  const [tab, setTab] = useState<TabKey>('page');
+  const [tab, setTab] = useState<TabKey>(initialTab);
   return (
     <View style={styles.root}>
       <Segmented<TabKey>

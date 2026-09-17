@@ -29,6 +29,13 @@ Venue collectives on shared services, and the web's staff booking rule (web 2026
 - Calendar settings only show classes, resources and events when the venue has them switched on,
   and list a collective's parked services apart from the bookable ones.
 - A booking on a partner venue with a single calendar can now be dragged onto your calendars.
+- The Collective area, as on the web: under More, named after the collective. Hosts see each
+  venue's health, what needs attention, and every service across the venues, and can choose
+  calendars in bulk, preview what guests will see, and save; plus the Venues tab (invite, ask to
+  host, remove, end the collective) and the History tab with filters and a CSV download. Members
+  see what is on the page for them and what is parked.
+- The booking page preview shows the logo beside the page name, below the cover, as the real page
+  does, instead of over the cover.
 - Plan & payments has an "Open Stripe dashboard" button for admins, for payouts, balance and
   transactions, as on the web.
 - Venue collectives: "Open the Collective area" for hosts on shared services, and the Services tab

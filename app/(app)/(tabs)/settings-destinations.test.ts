@@ -229,3 +229,17 @@ describe('buildDestinations — bento hierarchy & group coverage', () => {
     expect(groups.has('network')).toBe(true);
   });
 });
+
+describe('buildDestinations — the Collective area (web parity, 2026-09-17)', () => {
+  it('offers the area under the collective name to an admin in a live shared-services collective', () => {
+    const dest = buildDestinations(ctx({ isAdmin: true, collectiveArea: { name: 'Plus 1 Staging' } })).find(
+      (d) => d.id === 'collective-area',
+    );
+    expect(dest).toMatchObject({ label: 'Plus 1 Staging', target: '/collective-area', group: 'network' });
+  });
+
+  it('is not offered without a live collective, nor to staff', () => {
+    expect(ids(ctx({ isAdmin: true }))).not.toContain('collective-area');
+    expect(ids(ctx({ isAdmin: false, collectiveArea: { name: 'Plus 1 Staging' } }))).not.toContain('collective-area');
+  });
+});

@@ -35,6 +35,10 @@ jest.mock('@/providers/AuthProvider', () => ({ useAuth: () => ({ signOut: jest.f
 jest.mock('@/providers/AppLockProvider', () => ({
   useAppLock: () => ({ appLockEnabled: false, setAppLockEnabled: jest.fn(), supported: false }),
 }));
+let mockCollectives: unknown[] = [];
+jest.mock('@/lib/queries/useCollectives', () => ({
+  useCollectives: () => ({ data: { collectives: mockCollectives } }),
+}));
 jest.mock('@/lib/queries/useNotifications', () => ({
   useNotifications: () => ({ data: { unreadCount: 0 } }),
 }));
