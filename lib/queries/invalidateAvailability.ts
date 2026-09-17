@@ -1,6 +1,6 @@
 import type { QueryClient } from '@tanstack/react-query';
 
-import { isSlotTakenError } from '@/lib/api/client';
+import { apiErrorCode, isSlotTakenError } from '@/lib/api/client';
 import { queryKeys } from '@/lib/queries/keys';
 
 /**
@@ -48,5 +48,26 @@ export function invalidateAvailabilityIfSlotTaken(
 ): void {
   if (isSlotTakenError(error)) {
     invalidateAppointmentAvailability(queryClient);
+    return;
   }
+  invalidateCatalogueIfCollectiveRefusal(queryClient, error);
+}
+
+/**
+ * Refusals that say the collective catalogue the form was built from is out of date (web W6/D33,
+ * 2026-09-17), so the services and times are refetched along with the message:
+ *
+ * - `COLLECTIVE_SERVICE_UPDATING` (409): that venue's copy is still catching up with the host.
+ *   Staff read "This service is being updated at {venue}. Please try again in a moment."
+ * - `COLLECTIVE_SERVICE_PARKED` (409): the venue's own service is parked while it is in a
+ *   collective, so it cannot take new bookings.
+ */
+export const COLLECTIVE_CATALOGUE_REFUSALS = ['COLLECTIVE_SERVICE_UPDATING', 'COLLECTIVE_SERVICE_PARKED'] as const;
+
+export function invalidateCatalogueIfCollectiveRefusal(queryClient: QueryClient, error: unknown): boolean {
+  const code = apiErrorCode(error);
+  if (!code || !(COLLECTIVE_CATALOGUE_REFUSALS as readonly string[]).includes(code)) return false;
+  // `appointments.all()` covers the catalogue as well as both availability caches.
+  void queryClient.invalidateQueries({ queryKey: queryKeys.appointments.all() });
+  return true;
 }

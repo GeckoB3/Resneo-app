@@ -18,6 +18,7 @@ import { ApiError } from '@/lib/api/client';
 import {
   invalidateAppointmentAvailability,
   invalidateAvailabilityIfSlotTaken,
+  invalidateCatalogueIfCollectiveRefusal,
 } from '@/lib/queries/invalidateAvailability';
 import { queryKeys } from '@/lib/queries/keys';
 
@@ -169,5 +170,35 @@ describe('availability key prefixes', () => {
     expect(MONTH.slice(0, availability.length)).not.toEqual([...availability]);
     expect(AVAILABILITY.slice(0, month.length)).not.toEqual([...month]);
     expect(CATALOG.slice(0, availability.length)).not.toEqual([...availability]);
+  });
+});
+
+describe('collective catalogue refusals (web D33, parking)', () => {
+  const refusal = (code: string) =>
+    new ApiError('This service is being updated at Light 3. Please try again in a moment.', 409, {
+      error: 'This service is being updated at Light 3. Please try again in a moment.',
+      code,
+    });
+
+  it.each(['COLLECTIVE_SERVICE_UPDATING', 'COLLECTIVE_SERVICE_PARKED'])(
+    'refetches the catalogue and the times on %s',
+    (code) => {
+      const client = new QueryClient({ defaultOptions: { queries: { staleTime: 30_000 } } });
+      seed(client);
+
+      invalidateAvailabilityIfSlotTaken(client, refusal(code));
+
+      expect(isStale(client, CATALOG)).toBe(true);
+      expect(isStale(client, AVAILABILITY)).toBe(true);
+      expect(isStale(client, BOOKINGS)).toBe(false);
+    },
+  );
+
+  it('leaves everything alone for another collective refusal', () => {
+    const client = new QueryClient({ defaultOptions: { queries: { staleTime: 30_000 } } });
+    seed(client);
+
+    expect(invalidateCatalogueIfCollectiveRefusal(client, refusal('COLLECTIVE_MOVE_ATTACHED'))).toBe(false);
+    expect(isStale(client, CATALOG)).toBe(false);
   });
 });

@@ -1,8 +1,9 @@
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
 import type { OverrideDryRunBody } from '@/lib/booking/availability-override';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
+import { invalidateCatalogueIfCollectiveRefusal } from '@/lib/queries/invalidateAvailability';
 
 /**
  * What the dry run answers. Engine refusals come back as `200 { ok: false,
@@ -22,6 +23,7 @@ export type ValidateAppointmentSlotResult =
  */
 export function useValidateAppointmentSlot() {
   const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async (body: OverrideDryRunBody): Promise<ValidateAppointmentSlotResult> => {
@@ -31,6 +33,11 @@ export function useValidateAppointmentSlot() {
         method: 'POST',
         body: JSON.stringify(body),
       });
+    },
+    // A collective copy still catching up (409 COLLECTIVE_SERVICE_UPDATING) means the form's
+    // services and times are out of date: refetch them with the message (web D33).
+    onError: (error) => {
+      invalidateCatalogueIfCollectiveRefusal(queryClient, error);
     },
   });
 }
