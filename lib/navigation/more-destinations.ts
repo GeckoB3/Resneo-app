@@ -209,7 +209,7 @@ export function buildDestinations(ctx: DestinationsContext): Destination[] {
   if (isAdmin) {
     list.push({ id: 'linked-venues', label: 'Linked venues', hint: 'Share calendars & cross-venue bookings', icon: { ios: 'link', android: 'link', web: 'link' }, tile: TILE.teal, group: 'network', kind: 'route', target: '/linked-venues', keywords: ['settings', 'linked accounts', 'partners'] });
     if (ctx.collectiveArea) {
-      list.push({ id: 'collective-area', label: ctx.collectiveArea.name, hint: 'Services, venues and history of your collective', icon: { ios: 'square.grid.3x3.fill', android: 'grid_view', web: 'grid_view' }, tile: TILE.indigo, group: 'network', kind: 'route', target: '/collective-area', keywords: ['collective', 'shared services', 'combined'] });
+      list.push({ id: 'collective-area', label: 'Manage Collective', hint: `Services, venues and history of ${ctx.collectiveArea.name}`, icon: { ios: 'square.grid.3x3.fill', android: 'grid_view', web: 'grid_view' }, tile: TILE.indigo, group: 'network', kind: 'route', target: '/collective-area', keywords: ['collective', 'shared services', 'combined'] });
     }
     list.push({ id: 'collectives', label: 'Venue collectives', hint: 'A combined booking page across linked venues', icon: { ios: 'person.2.wave.2.fill', android: 'groups', web: 'groups' }, tile: TILE.sky, group: 'network', kind: 'route', target: '/collectives', keywords: ['combined', 'linked venues'] });
   }

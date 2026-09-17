@@ -67,7 +67,7 @@ export default function CollectiveAreaScreen() {
     [collectivesQuery.data, collective],
   );
 
-  const title = collective?.name ?? 'Collective';
+  const title = 'Manage Collective';
   const header = <Stack.Screen options={{ headerShown: true, title }} />;
 
   if (!staffQuery.isLoading && !isAdmin) {
@@ -200,9 +200,6 @@ function AreaBody({
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.brand} />}
         >
           <View style={styles.intro}>
-            <Text variant="overline" tone="muted">
-              Collective
-            </Text>
             <Text variant="heading">{collective.name}</Text>
             <Text variant="bodySmall" tone="secondary">
               {areaCopy('ov.subtitle')}

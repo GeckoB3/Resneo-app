@@ -30,7 +30,6 @@ import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { CollectiveView } from '@/types/collectives';
 import {
-  COLLECTIVE_AREA_WEB_PATH,
   COLLECTIVE_JOIN_WEB_PATH,
   collectiveMembersLine,
   isConsentRequired,
@@ -189,7 +188,7 @@ export default function CollectivesScreen() {
             busy={busy}
             onManage={() => router.push(`/collectives/${c.id}` as Href)}
             onViewPage={() => openWeb(collectivePublicPath(c))}
-            onOpenArea={() => openWeb(COLLECTIVE_AREA_WEB_PATH)}
+            onOpenArea={() => router.push('/collective-area' as Href)}
             onAccept={() =>
               memberAction.mutate(
                 { collectiveId: c.id, payload: { action: 'accept' } },
@@ -287,7 +286,7 @@ function CollectiveCard({
   busy: boolean;
   onManage: () => void;
   onViewPage: () => void;
-  /** Shared services: the web's Collective area, where the services grid lives. */
+  /** Shared services: Manage Collective, where the services across the venues are chosen. */
   onOpenArea: () => void;
   onAccept: () => void;
   onDecline: () => void;
@@ -349,7 +348,7 @@ function CollectiveCard({
             <>
               {isSharedServices(collective) ? (
                 <Button
-                  label="Open the Collective area"
+                  label="Manage Collective"
                   variant="primary"
                   size="sm"
                   disabled={busy}

@@ -16,9 +16,6 @@ export function isConsentRequired(error: unknown): boolean {
 /** The web page where an invitation is accepted with its consent. */
 export const COLLECTIVE_JOIN_WEB_PATH = '/dashboard/settings?tab=linked-accounts';
 
-/** The web's Collective area: the services grid, venues and history (shared services). */
-export const COLLECTIVE_AREA_WEB_PATH = '/dashboard/collective';
-
 /** "2 active members · Light 3, Plus 1 Staging", with no trailing dot when nobody is left. */
 export function collectiveMembersLine(collective: {
   activeMemberCount: number;
@@ -60,7 +57,7 @@ export function memberSummaryIntro(collective: { name: string; serviceModel?: st
 
 /** Shared services: where the page's services and calendars are managed now. */
 export const SHARED_SERVICES_POINTER =
-  'On shared services, the services on the page are the ones marked Collective on your Services screen, and the calendars at every venue that offer them are chosen on ResNeo on the web, in the Collective area. Each venue chooses its own calendars on its Services screen.';
+  'On shared services, the services on the page are the ones marked Collective on your Services screen, and the calendars at every venue that offer them are chosen in Manage Collective. Each venue chooses its own calendars on its Services screen.';
 
 export function leaveCollectiveMessage(collective: { name: string; serviceModel?: string | null }): string {
   if (collective.serviceModel === 'replicas') {

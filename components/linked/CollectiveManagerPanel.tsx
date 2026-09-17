@@ -1,7 +1,6 @@
 import { useRouter, type Href } from 'expo-router';
-import * as WebBrowser from 'expo-web-browser';
 import { useState } from 'react';
-import { Linking, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { CollectiveCatalogueBuilder } from '@/components/linked/CollectiveCatalogueBuilder';
 import { CollectiveMembersPanel } from '@/components/linked/CollectiveMembersPanel';
@@ -12,9 +11,7 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Segmented } from '@/components/ui/Segmented';
 import { Text } from '@/components/ui/Text';
-import { getWebUrl } from '@/lib/env';
 import {
-  COLLECTIVE_AREA_WEB_PATH,
   SHARED_SERVICES_POINTER,
   isSharedServices,
 } from '@/lib/linked/collective-membership-copy';
@@ -113,17 +110,13 @@ const styles = StyleSheet.create({
 /** Shared services: where the page's services and calendars are managed, with a way to each. */
 function SharedServicesPointerCard() {
   const router = useRouter();
-  const openArea = () => {
-    const url = `${getWebUrl() || 'https://app.resneo.com'}${COLLECTIVE_AREA_WEB_PATH}`;
-    void WebBrowser.openBrowserAsync(url).catch(() => Linking.openURL(url).catch(() => undefined));
-  };
   return (
     <Card style={styles.pointer}>
       <Text variant="bodySmall" tone="secondary">
         {SHARED_SERVICES_POINTER}
       </Text>
       <Button label="Open Services" variant="primary" fullWidth onPress={() => router.push('/manage/services' as Href)} />
-      <Button label="Open the Collective area on the web" variant="secondary" fullWidth onPress={openArea} />
+      <Button label="Manage Collective" variant="secondary" fullWidth onPress={() => router.push('/collective-area' as Href)} />
     </Card>
   );
 }
