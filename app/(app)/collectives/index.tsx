@@ -29,6 +29,12 @@ import { useToast } from '@/providers/ToastProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { CollectiveView } from '@/types/collectives';
+import {
+  COLLECTIVE_JOIN_WEB_PATH,
+  isConsentRequired,
+  joinOnWebCopy,
+  leaveCollectiveMessage,
+} from '@/lib/linked/collective-membership-copy';
 
 export default function CollectivesScreen() {
   const router = useRouter();
@@ -45,6 +51,8 @@ export default function CollectivesScreen() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [leaveTarget, setLeaveTarget] = useState<CollectiveView | null>(null);
+  /** An invitation the one-tap accept could not take: joining needs the web's consent step. */
+  const [joinOnWeb, setJoinOnWeb] = useState<CollectiveView | null>(null);
 
   const collectives = useMemo<CollectiveView[]>(
     () => query.data?.collectives ?? [],
@@ -179,7 +187,19 @@ export default function CollectivesScreen() {
             onManage={() => router.push(`/collectives/${c.id}` as Href)}
             onViewPage={() => openWeb(collectivePublicPath(c))}
             onAccept={() =>
-              runMember(c.id, { action: 'accept' }, `Joined ${c.name}.`)
+              memberAction.mutate(
+                { collectiveId: c.id, payload: { action: 'accept' } },
+                {
+                  onSuccess: () => toast.success(`Joined ${c.name}.`),
+                  onError: (err) => {
+                    if (isConsentRequired(err)) {
+                      setJoinOnWeb(c);
+                      return;
+                    }
+                    toast.error(err instanceof ApiError ? err.message : 'Action failed.');
+                  },
+                },
+              )
             }
             onDecline={() =>
               runMember(c.id, { action: 'decline' }, `Declined the invitation to ${c.name}.`)
@@ -205,7 +225,7 @@ export default function CollectivesScreen() {
         title="Leave this collective?"
         message={
           leaveTarget
-            ? `Your venue will be removed from "${leaveTarget.name}". Your own booking page is unaffected.`
+            ? leaveCollectiveMessage(leaveTarget)
             : undefined
         }
         confirmLabel="Leave collective"
@@ -220,6 +240,27 @@ export default function CollectivesScreen() {
         }}
         onClose={() => setLeaveTarget(null)}
       />
+
+      {joinOnWeb
+        ? (() => {
+            const copy = joinOnWebCopy(joinOnWeb.name);
+            return (
+              <ConfirmSheet
+                visible
+                title={copy.title}
+                message={copy.message}
+                confirmLabel={copy.confirmLabel}
+                cancelLabel="Not now"
+                destructive={false}
+                onConfirm={() => {
+                  setJoinOnWeb(null);
+                  openWeb(COLLECTIVE_JOIN_WEB_PATH);
+                }}
+                onClose={() => setJoinOnWeb(null)}
+              />
+            );
+          })()
+        : null}
     </Screen>
   );
 }

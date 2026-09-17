@@ -92,6 +92,11 @@ export interface CollectiveView {
   isHost: boolean;
   hostVenueId: string;
   /**
+   * `legacy_copies` (service copies), `migrating` or `replicas` (shared services, web W3+). Optional:
+   * older payloads omit it, which reads as the older model.
+   */
+  serviceModel?: 'legacy_copies' | 'migrating' | 'replicas' | string;
+  /**
    * The host venue's public contact details and opening hours, exactly what
    * the combined page shows in its header and About tab (web #190). Read-only:
    * they are set in the host's own Profile and Business hours settings.
