@@ -61,6 +61,7 @@ import {
 } from '@/lib/venue/calendar-entitlement';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
+import { calendarSetupSections, type CalendarSetupSections } from '@/lib/booking/venue-models';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { Practitioner } from '@/types/practitioner';
@@ -138,6 +139,7 @@ function CalendarCard({
   conflicts,
   onEditAssignments,
   venueHasServices,
+  sections,
   venueHasActiveEvents,
   venueHasAnyEvents,
 }: {
@@ -157,6 +159,8 @@ function CalendarCard({
   onEditAssignments: () => void;
   /** Whether the venue has any services / events at all, for the empty cells' wording. */
   venueHasServices: boolean;
+  /** Which of classes, resources and events the venue has switched on. */
+  sections: CalendarSetupSections;
   venueHasActiveEvents: boolean;
   venueHasAnyEvents: boolean;
 }) {
@@ -447,8 +451,9 @@ function CalendarCard({
         {/* "None" when the venue has services but none sit here; "—" when
             there is nothing to assign yet (web parity). */}
         <AssignmentLine label="Services" names={svc} empty={venueHasServices ? 'None' : '—'} />
-        <AssignmentLine label="Classes" names={cls} />
-        <AssignmentLine label="Resources" names={res} />
+        {sections.classes ? <AssignmentLine label="Classes" names={cls} /> : null}
+        {sections.resources ? <AssignmentLine label="Resources" names={res} /> : null}
+        {sections.events ? (
         <View style={styles.assignLine}>
           <Text variant="caption" tone="muted" style={styles.assignLabel}>
             Events
@@ -476,6 +481,7 @@ function CalendarCard({
             )}
           </View>
         </View>
+        ) : null}
       </View>
     </Card>
   );
@@ -512,6 +518,7 @@ export function BookableCalendarsManager() {
   const { venue } = useVenueContext();
   const isAdmin = venue?.current_user_role === 'admin';
   const venueSlug = venue?.slug ?? null;
+  const sections = calendarSetupSections(venue);
 
   // The FULL roster, paused columns included: this is the one place a column
   // is switched back on, and with the default active-only roster a column
@@ -860,6 +867,7 @@ export function BookableCalendarsManager() {
             conflicts={conflictsById.get(c.id) ?? []}
             onEditAssignments={() => setAssignTarget(c)}
             venueHasServices={venueHasServices}
+            sections={sections}
             venueHasActiveEvents={venueHasActiveEvents}
             venueHasAnyEvents={venueHasAnyEvents}
           />
@@ -943,17 +951,17 @@ export function BookableCalendarsManager() {
             calendars={calendars}
             services={(servicesQuery.data?.services ?? []).map((s) => ({ id: s.id, name: s.name }))}
             practitionerServices={servicesQuery.data?.practitioner_services ?? []}
-            classes={(classesQuery.data?.class_types ?? []).map((ct) => ({
+            classes={(sections.classes ? classesQuery.data?.class_types ?? [] : []).map((ct) => ({
               id: ct.id,
               name: ct.name,
               calendarId: ct.instructor_calendar_id ?? ct.instructor_id ?? null,
             }))}
-            resources={(resourcesQuery.data ?? []).map((r) => ({
+            resources={(sections.resources ? resourcesQuery.data ?? [] : []).map((r) => ({
               id: r.id,
               name: r.name,
               calendarId: r.display_on_calendar_id,
             }))}
-            events={(eventsQuery.data ?? [])
+            events={(sections.events ? eventsQuery.data ?? [] : [])
               .filter((e) => e.is_active !== false)
               .map((e) => ({ id: e.id, name: e.name, calendarId: e.calendar_id }))}
             onClose={() => setAssignTarget(null)}

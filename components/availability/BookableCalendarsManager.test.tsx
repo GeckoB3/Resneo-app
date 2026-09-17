@@ -10,7 +10,7 @@
  * jest hoists mock factories above imports, so every variable a factory closes
  * over is prefixed `mock*` (the only out-of-scope names jest permits).
  */
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 
 import { ApiError } from '@/lib/api/client';
 
@@ -38,8 +38,15 @@ jest.mock('@/lib/env', () => ({
 }));
 
 // Venue context — admin with a slug so booking links + reorder are enabled.
+let mockVenue: Record<string, unknown> = {
+  current_user_role: 'admin',
+  slug: 'glow-bar',
+  pricing_tier: 'plus',
+  booking_model: 'unified_scheduling',
+  active_booking_models: ['unified_scheduling', 'class_session', 'resource_booking', 'event_ticket'],
+};
 jest.mock('@/providers/VenueProvider', () => ({
-  useVenueContext: () => ({ venue: { current_user_role: 'admin', slug: 'glow-bar', pricing_tier: 'plus' } }),
+  useVenueContext: () => ({ venue: mockVenue }),
 }));
 
 const mockToast = { success: jest.fn(), error: jest.fn() };
@@ -151,6 +158,22 @@ const ROOM_ON_PLAN = {
 };
 
 describe('BookableCalendarsManager', () => {
+  it('shows classes, resources and events only while the venue has them switched on', async () => {
+    await render(<BookableCalendarsManager />);
+    expect(screen.getAllByText('Resources').length).toBeGreaterThan(0);
+    await cleanup();
+    const previous = mockVenue;
+    mockVenue = { ...previous, active_booking_models: ['unified_scheduling'] };
+    try {
+      await render(<BookableCalendarsManager />);
+      expect(screen.queryByText('Resources')).toBeNull();
+      expect(screen.queryByText('Classes')).toBeNull();
+      expect(screen.queryByText('Events')).toBeNull();
+    } finally {
+      mockVenue = previous;
+    }
+  });
+
   it('lists every calendar with its assignments', async () => {
     await render(<BookableCalendarsManager />);
     expect(screen.getByText('Alex')).toBeTruthy();

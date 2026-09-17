@@ -92,6 +92,7 @@ import { usePractitioners } from '@/lib/queries/usePractitioners';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
+import { calendarSetupSections } from '@/lib/booking/venue-models';
 import { fonts, minTouchTarget, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { LeavePeriod, LeaveType } from '@/types/availability-manage';
@@ -245,12 +246,15 @@ export default function AvailabilityScreen() {
   // closures to look at, and leaving it out made its leave rows read "Calendar".
   const practitionersQuery = usePractitioners({ includeResources: true, includeInactive: true });
   /** Every calendar whose weekly schedule is editable here, in column order. */
+  // A room left over from when resources were on is not a calendar: it shows only while the
+  // venue has resources switched on (web, 2026-09-17).
+  const resourcesOn = calendarSetupSections(venue).resources;
   const practitioners = useMemo(
     () =>
-      [...(practitionersQuery.data?.practitioners ?? [])].sort(
-        (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0),
-      ),
-    [practitionersQuery.data?.practitioners],
+      [...(practitionersQuery.data?.practitioners ?? [])]
+        .filter((p) => resourcesOn || !isResourceCalendar(p))
+        .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)),
+    [practitionersQuery.data?.practitioners, resourcesOn],
   );
 
   /**
