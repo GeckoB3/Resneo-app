@@ -1741,9 +1741,6 @@ export default function CalendarScreen() {
     ) => {
       const booking = findBookingOnAnchor(bookingId);
       if (!booking || !isMovableBooking(booking)) return;
-      // A partner's booking: the server applies the link grant in place of its
-      // role check for a cross-venue write, so the gate below is ours alone.
-      const linkedHit = linkedBookingVenue.get(bookingId);
       // Staff move bookings between any of their venue's calendars, as an admin does (web's rule
       // of 2026-09-17, replacing R16-1): no role gate here, and a partner's booking follows its link.
       // The calendar ids the PATCH names: a partner's column arrives as its
@@ -1811,12 +1808,9 @@ export default function CalendarScreen() {
     [
       findBookingOnAnchor,
       findVisitOnAnchor,
-      linkedBookingVenue,
       anchor,
       commitDrag,
       commitVisitDrag,
-      staffMe,
-      toast,
     ],
   );
 
