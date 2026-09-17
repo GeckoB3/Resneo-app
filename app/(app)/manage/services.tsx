@@ -283,10 +283,15 @@ function ServiceRowBase({
               {addonGroups.length ? ` · ${addonGroups.length} add-on group${addonGroups.length === 1 ? '' : 's'}` : ''}
             </Text>
           </View>
+          {/* Badges sit on their own line so two of them never squeeze the name. */}
+          {service.is_active === false || roleBadge || statusBadge ? (
+            <View style={styles.serviceBadges}>
+              {service.is_active === false ? <Badge label="Inactive" tone="neutral" /> : null}
+              {roleBadge ? <Badge label={roleBadge.label} tone={roleBadge.tone} /> : null}
+              {statusBadge ? <Badge label={statusBadge.label} tone={statusBadge.tone} /> : null}
+            </View>
+          ) : null}
         </View>
-        {service.is_active === false ? <Badge label="Inactive" tone="neutral" /> : null}
-        {roleBadge ? <Badge label={roleBadge.label} tone={roleBadge.tone} /> : null}
-        {statusBadge ? <Badge label={statusBadge.label} tone={statusBadge.tone} /> : null}
         <Text variant="title" tone="muted">
           {expanded ? '▾' : '›'}
         </Text>
@@ -2466,6 +2471,12 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     gap: 1,
+  },
+  serviceBadges: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    marginTop: spacing.xs,
   },
   serviceFacts: {
     flexDirection: 'row',

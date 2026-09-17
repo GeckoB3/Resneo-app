@@ -99,10 +99,24 @@ type EventOnColumn = { id: string; name: string; date: string; active: boolean }
 
 type AssignmentMaps = {
   services: Map<string, string[]>;
+  /** Services parked in a live collective: still assigned, but nobody can book them. */
+  parkedServices: Map<string, string[]>;
   classes: Map<string, string[]>;
   resources: Map<string, string[]>;
   events: Map<string, EventOnColumn[]>;
 };
+
+/** "name and services", or with the switched-on models: "name, services, classes and events". */
+export function calendarSetupList(sections: CalendarSetupSections): string {
+  const parts = [
+    'name',
+    'services',
+    ...(sections.classes ? ['classes'] : []),
+    ...(sections.resources ? ['resources'] : []),
+    ...(sections.events ? ['events'] : []),
+  ];
+  return parts.length === 1 ? parts[0]! : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
+}
 
 /** "7 Sep 2026" for an event's date, or '' when it has none (web `formatEventDateShort`). */
 export function formatEventDateShort(iso: string | undefined): string {
@@ -205,6 +219,7 @@ function CalendarCard({
   const canCopy = Boolean(venueSlug && savedSlug && draftNorm === savedSlug && !slugLiveErr);
 
   const svc = assignments.services.get(calendar.id) ?? [];
+  const parkedSvc = assignments.parkedServices.get(calendar.id) ?? [];
   const cls = assignments.classes.get(calendar.id) ?? [];
   const res = assignments.resources.get(calendar.id) ?? [];
   const evt = assignments.events.get(calendar.id) ?? [];
@@ -388,7 +403,7 @@ function CalendarCard({
             </Text>
             <Input
               label="URL segment (optional)"
-              helper="e.g. staff name — gives this calendar a direct booking URL."
+              helper="For example a staff name. It gives this calendar a direct booking URL."
               value={slugDraft}
               onChangeText={setSlugDraft}
               autoCapitalize="none"
@@ -451,6 +466,9 @@ function CalendarCard({
         {/* "None" when the venue has services but none sit here; "—" when
             there is nothing to assign yet (web parity). */}
         <AssignmentLine label="Services" names={svc} empty={venueHasServices ? 'None' : '—'} />
+        {parkedSvc.length > 0 ? (
+          <AssignmentLine label="Parked" names={parkedSvc} hint="Nobody can book these while the collective is live." />
+        ) : null}
         {sections.classes ? <AssignmentLine label="Classes" names={cls} /> : null}
         {sections.resources ? <AssignmentLine label="Resources" names={res} /> : null}
         {sections.events ? (
@@ -491,19 +509,29 @@ function AssignmentLine({
   label,
   names,
   empty = '—',
+  hint,
 }: {
   label: string;
   names: string[];
   empty?: string;
+  /** A short note under the names, e.g. why parked services are listed apart. */
+  hint?: string;
 }) {
   return (
     <View style={styles.assignLine}>
       <Text variant="caption" tone="muted" style={styles.assignLabel}>
         {label}
       </Text>
-      <Text variant="caption" tone="secondary" style={styles.flex1} numberOfLines={2}>
-        {names.length > 0 ? names.join(', ') : empty}
-      </Text>
+      <View style={styles.flex1}>
+        <Text variant="caption" tone={hint ? 'muted' : 'secondary'} numberOfLines={2}>
+          {names.length > 0 ? names.join(', ') : empty}
+        </Text>
+        {hint ? (
+          <Text variant="caption" tone="muted">
+            {hint}
+          </Text>
+        ) : null}
+      </View>
     </View>
   );
 }
@@ -567,6 +595,7 @@ export function BookableCalendarsManager() {
   // Build calendar-id → assigned-name[] maps for each offering type.
   const assignments = useMemo<AssignmentMaps>(() => {
     const services = new Map<string, string[]>();
+    const parkedServices = new Map<string, string[]>();
     const classes = new Map<string, string[]>();
     const resources = new Map<string, string[]>();
     const events = new Map<string, EventOnColumn[]>();
@@ -578,12 +607,16 @@ export function BookableCalendarsManager() {
       map.set(key, list);
     };
 
-    const svcById = new Map(
-      (servicesQuery.data?.services ?? []).map((s) => [s.id, s.name] as const),
-    );
+    const allServices = servicesQuery.data?.services ?? [];
+    const svcById = new Map(allServices.map((s) => [s.id, s] as const));
+    // In a live collective a service with no collective block is not on the page, so it is
+    // parked too (web BookableCalendarsPanel, 2026-09-17).
+    const inCollective = allServices.some((s) => Boolean(s.collective));
     for (const link of servicesQuery.data?.practitioner_services ?? []) {
-      const name = svcById.get(link.service_id);
-      if (name) push(services, link.practitioner_id, name);
+      const svc = svcById.get(link.service_id);
+      if (!svc) continue;
+      const parked = svc.collective?.role === 'parked' || (inCollective && !svc.collective);
+      push(parked ? parkedServices : services, link.practitioner_id, svc.name);
     }
     for (const ct of classesQuery.data?.class_types ?? []) {
       push(classes, ct.instructor_calendar_id ?? ct.instructor_id, ct.name);
@@ -604,7 +637,7 @@ export function BookableCalendarsManager() {
     for (const [key, list] of events) {
       events.set(key, [...list.filter((e) => e.active), ...list.filter((e) => !e.active)]);
     }
-    return { services, classes, resources, events };
+    return { services, parkedServices, classes, resources, events };
   }, [
     servicesQuery.data,
     classesQuery.data?.class_types,
@@ -806,9 +839,7 @@ export function BookableCalendarsManager() {
         />
       }>
       <Text variant="caption" tone="muted">
-        Each column is a bookable schedule on your public page and in the app. Edit a calendar to
-        set its name, services, classes, resources and events; set its weekly hours on the
-        Availability tab. Reorder to set the column order on the calendar.
+        {`Each column is a bookable schedule on your public page and in the app. Edit a calendar to set its ${calendarSetupList(sections)}; set its weekly hours on the Availability tab. Reorder to set the column order on the calendar.`}
       </Text>
 
       {showPlanPill && entitlement ? (

@@ -208,6 +208,29 @@ export function useStripeConnectLink() {
 }
 
 // ---------------------------------------------------------------------------
+// POST /api/venue/stripe-connect/login-link
+// ---------------------------------------------------------------------------
+
+/**
+ * A single-use link into the venue's Stripe Express dashboard (payouts, balance,
+ * transactions), as the web's "Open Stripe dashboard" button uses. Links expire and
+ * cannot be kept, so one is minted on each press. Admin only.
+ */
+export function useStripeDashboardLink() {
+  const accessToken = useAccessToken();
+
+  return useMutation({
+    mutationFn: async (): Promise<StripeConnectLinkResponse> => {
+      if (!accessToken) throw new Error('Missing access token');
+      return apiFetch<StripeConnectLinkResponse>('/api/venue/stripe-connect/login-link', {
+        accessToken,
+        method: 'POST',
+      });
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
 // POST /api/venue/change-plan  { action: 'resume_subscription' | 'resubscribe' }
 // ---------------------------------------------------------------------------
 

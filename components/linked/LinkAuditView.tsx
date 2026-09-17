@@ -203,7 +203,7 @@ export function LinkAuditView({
         { headers: { Accept: 'text/csv', Authorization: `Bearer ${accessToken}` } },
       );
       if (!res.ok) {
-        throw new Error(res.status === 429 ? 'Too many exports — try again in a few minutes.' : `Export failed (${res.status}).`);
+        throw new Error(res.status === 429 ? 'Too many exports. Try again in a few minutes.' : `Export failed (${res.status}).`);
       }
       const csv = await res.text();
       const result = await buildAndShareCsv(`linked-account-audit-${linkId}.csv`, [], csv);
@@ -291,7 +291,7 @@ export function LinkAuditView({
       ) : null}
       {customInverted ? (
         <Text variant="caption" color={colors.danger}>
-          The start date is after the end date — showing no results until you fix the range.
+          The start date is after the end date, so no results show until you fix the range.
         </Text>
       ) : null}
 

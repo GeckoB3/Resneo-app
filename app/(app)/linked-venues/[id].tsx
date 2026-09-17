@@ -226,7 +226,7 @@ export default function LinkedVenueDetailScreen() {
       {link.status === 'suspended' ? (
         <View style={[styles.banner, { backgroundColor: colors.warningSurface, borderColor: colors.warning }]}>
           <Text variant="bodySmall" color={colors.warning}>
-            {`Suspended — ${name}’s subscription is inactive. The link resumes automatically if their subscription is restored within 30 days.`}
+            {`Suspended: ${name}’s subscription is inactive. The link resumes automatically if their subscription is restored within 30 days.`}
           </Text>
         </View>
       ) : null}
@@ -235,7 +235,7 @@ export default function LinkedVenueDetailScreen() {
         <View style={[styles.banner, { backgroundColor: colors.infoSurface, borderColor: colors.info }]}>
           <Text variant="label" color={colors.info}>
             {link.pendingChange.proposedByMe
-              ? 'You proposed a permission change — awaiting their response.'
+              ? 'You proposed a permission change. Waiting for their response.'
               : `${name} proposed a permission change.`}
           </Text>
           <View style={styles.pendingGrants}>

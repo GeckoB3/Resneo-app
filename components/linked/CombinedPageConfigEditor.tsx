@@ -394,7 +394,7 @@ export function CombinedPageConfigEditor({
               : nameSave === 'saved'
                 ? 'Saved'
                 : nameSave === 'error'
-                  ? 'Couldn’t save — try again'
+                  ? 'Couldn’t save. Try again.'
                   : undefined
           }
         />
@@ -404,11 +404,11 @@ export function CombinedPageConfigEditor({
       <SectionHeader title="Booking page address" />
       <Card style={styles.card}>
         <Text variant="caption" tone="muted">
-          Your combined page works like a single venue — one services menu and one team across all
+          Your combined page works like a single venue: one services menu and one team across all
           members. Choose where customers reach it.
         </Text>
         <RadioRow
-          label={`Dedicated address — /book/c/${collective.slug}`}
+          label={`Dedicated address: /book/c/${collective.slug}`}
           selected={!adopt}
           disabled={update.isPending}
           onPress={setAddressDedicated}
@@ -486,7 +486,7 @@ export function CombinedPageConfigEditor({
         />
         {lowContrast ? (
           <Text variant="caption" color={colors.warning}>
-            This colour is light — white button text may be hard to read on the booking page.
+            This colour is light, so white button text may be hard to read on the booking page.
           </Text>
         ) : null}
         <View style={styles.swatchRow}>
@@ -626,7 +626,7 @@ export function CombinedPageConfigEditor({
 
       {colourError ? (
         <Text variant="bodySmall" tone="danger">
-          Colours must be a 6-digit hex like #003b6f — fix to keep saving.
+          Colours must be a 6-digit hex like #003b6f. Fix it to keep saving.
         </Text>
       ) : null}
 

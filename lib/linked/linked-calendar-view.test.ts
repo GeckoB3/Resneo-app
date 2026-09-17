@@ -177,14 +177,14 @@ describe('linkedGridBooking', () => {
 });
 
 describe('linkedBusyBlock', () => {
-  it('renders a non-interactive "{venue} — busy" block', () => {
+  it('renders a non-interactive "{venue}: busy" block', () => {
     expect(
       linkedBusyBlock(booking({ bookingTime: '14:00:00', bookingEndTime: '15:00:00' }), 'Mirror & Co'),
     ).toEqual({
       id: 'b1',
       start: '14:00',
       end: '15:00',
-      label: 'Mirror & Co — busy',
+      label: 'Mirror & Co: busy',
       isEditable: false,
     });
   });

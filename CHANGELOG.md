@@ -26,7 +26,14 @@ Venue collectives on shared services, and the web's staff booking rule (web 2026
 - Dropping a booking on another venue of the collective moves it there in one step.
 - Booking forms refresh their services and times when a collective service is updating or parked.
 - Joining a collective on shared services sends you to the web; the leave message is accurate.
-- Calendar settings only show classes, resources and events when the venue has them switched on.
+- Calendar settings only show classes, resources and events when the venue has them switched on,
+  and list a collective's parked services apart from the bookable ones.
+- A booking on a partner venue with a single calendar can now be dragged onto your calendars.
+- Plan & payments has an "Open Stripe dashboard" button for admins, for payouts, balance and
+  transactions, as on the web.
+- Venue collectives: "Open the Collective area" for hosts on shared services, and the Services tab
+  links to Services and the web.
+- Services: badges sit on their own line, so long names are no longer cut short.
 
 **Play / App Store (draft):** Working in a venue collective is smoother: move a booking to another
 venue's calendar in one step, see which services the host manages, and get clearer messages when a

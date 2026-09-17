@@ -14,7 +14,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 
 import { ApiError } from '@/lib/api/client';
 
-import { BookableCalendarsManager } from '@/components/availability/BookableCalendarsManager';
+import { BookableCalendarsManager, calendarSetupList } from '@/components/availability/BookableCalendarsManager';
 
 // expo-symbols renders the IconButton glyphs — stub to a host element.
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
@@ -416,5 +416,14 @@ describe('BookableCalendarsManager', () => {
     await waitFor(() => expect(screen.getByLabelText('Cut').props.value).toBe(true));
     expect(mockSetServices).toHaveBeenCalledTimes(1); // only the refused attempt
     expect(mockToast.success).not.toHaveBeenCalled();
+  });
+});
+
+describe('calendarSetupList', () => {
+  it('names only what the venue has switched on', () => {
+    expect(calendarSetupList({ classes: false, resources: false, events: false })).toBe('name and services');
+    expect(calendarSetupList({ classes: true, resources: false, events: true })).toBe(
+      'name, services, classes and events',
+    );
   });
 });

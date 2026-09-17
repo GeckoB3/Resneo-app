@@ -30,8 +30,11 @@ import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { CollectiveView } from '@/types/collectives';
 import {
+  COLLECTIVE_AREA_WEB_PATH,
   COLLECTIVE_JOIN_WEB_PATH,
+  collectiveMembersLine,
   isConsentRequired,
+  isSharedServices,
   joinOnWebCopy,
   leaveCollectiveMessage,
 } from '@/lib/linked/collective-membership-copy';
@@ -186,6 +189,7 @@ export default function CollectivesScreen() {
             busy={busy}
             onManage={() => router.push(`/collectives/${c.id}` as Href)}
             onViewPage={() => openWeb(collectivePublicPath(c))}
+            onOpenArea={() => openWeb(COLLECTIVE_AREA_WEB_PATH)}
             onAccept={() =>
               memberAction.mutate(
                 { collectiveId: c.id, payload: { action: 'accept' } },
@@ -274,6 +278,7 @@ function CollectiveCard({
   busy,
   onManage,
   onViewPage,
+  onOpenArea,
   onAccept,
   onDecline,
   onLeave,
@@ -282,6 +287,8 @@ function CollectiveCard({
   busy: boolean;
   onManage: () => void;
   onViewPage: () => void;
+  /** Shared services: the web's Collective area, where the services grid lives. */
+  onOpenArea: () => void;
   onAccept: () => void;
   onDecline: () => void;
   onLeave: () => void;
@@ -314,9 +321,7 @@ function CollectiveCard({
       </View>
 
       <Text variant="caption" tone="muted">
-        {`${collective.activeMemberCount} active ${collective.activeMemberCount === 1 ? 'member' : 'members'} · ${collective.members
-          .map((m) => m.venueName)
-          .join(', ')}`}
+        {collectiveMembersLine(collective)}
       </Text>
 
       {showLink ? (
@@ -341,7 +346,24 @@ function CollectiveCard({
               <Button label="Decline" variant="secondary" size="sm" disabled={busy} onPress={onDecline} />
             </>
           ) : collective.isHost ? (
-            <Button label="Manage combined page" variant="primary" size="sm" disabled={busy} onPress={onManage} />
+            <>
+              {isSharedServices(collective) ? (
+                <Button
+                  label="Open the Collective area"
+                  variant="primary"
+                  size="sm"
+                  disabled={busy}
+                  onPress={onOpenArea}
+                />
+              ) : null}
+              <Button
+                label="Manage combined page"
+                variant={isSharedServices(collective) ? 'secondary' : 'primary'}
+                size="sm"
+                disabled={busy}
+                onPress={onManage}
+              />
+            </>
           ) : null}
           {isActiveMember && !collective.isHost ? (
             <Button label="Leave" variant="ghost" size="sm" disabled={busy} onPress={onLeave} />

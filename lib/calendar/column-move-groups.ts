@@ -5,8 +5,9 @@
  * A booking never changes venue (web `handleDragEnd`: "A booking can only be
  * moved within the same venue"), so the columns fall into groups: every own
  * column is one group, and a partner's calendars are a group of their own. A
- * drag may land on any column of the bar's group and on no other; the block
- * clamps its horizontal travel to that range, and a drop past it is refused.
+ * drag may land on any column of the bar's group and on no other; a drop on
+ * another group's column is refused and handed to the grid's reject handler,
+ * which offers the move to that venue (a live collective) or a fresh booking.
  *
  * The range is by index, since the block converts finger travel into a column
  * delta. Callers order the columns so a group is contiguous (own columns first,

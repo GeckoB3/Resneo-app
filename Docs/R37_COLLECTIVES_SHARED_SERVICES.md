@@ -25,9 +25,12 @@ app". This note records what the app did about it.
 | 8 | **Collective manager on shared services**: the Services tab points to the Services screen and the web's Collective area instead of the older offering builder; the host note and the member summary say the host sets services, prices and forms, and that sign-in follows the host (D32, D54). | `components/linked/CollectiveManagerPanel.tsx`, `CombinedPageConfigEditor.tsx`, `CombinedPageMemberSummary.tsx` |
 | 9 | **Calendar settings follow the venue's booking models.** Classes, resources and events show only while switched on; a leftover room is not a calendar (resolved as web `resolveActiveBookingModels`). | `lib/booking/venue-models.ts`, `components/availability/BookableCalendarsManager.tsx`, `app/(app)/availability.tsx` |
 
+| 10 | **Device pass on staging (2026-09-17, plus1, Android)** fixed: a partner with one calendar could not be dragged sideways (`ccMax > ccMin` switched the drag off, so Light 3's bookings could never reach the collective move); the host's collectives row links to the web Collective area; the manager's Services tab links to Services and the web; service badges wrap under the name; parked services listed apart on calendar cards; the calendar intro names only switched-on models; em-dashes out of collective and linked-venue copy. | `components/calendar/DraggableAppointmentBlock.tsx`, `app/(app)/collectives/index.tsx`, `components/linked/CollectiveManagerPanel.tsx`, `app/(app)/manage/services.tsx`, `components/availability/BookableCalendarsManager.tsx` |
+
 ## Still open
 
-1. **Device test** of all of the above against staging (plus1 and light3 are on shared services).
+1. **Device test on iOS**, and a confirmed cross-venue move on a device (Android reached the
+   "Move this booking to…" sheet; the move itself was not confirmed, to avoid messaging the client).
 2. **A member's online meeting link and "Before the appointment" note** for a host's service are
    edited on the web only. The app shows the service read-only.
 3. **The member's "What needs you" strip** (connect Stripe, turn on forms) is web-only; the app

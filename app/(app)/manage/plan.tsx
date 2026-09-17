@@ -42,6 +42,7 @@ import {
   useChangePlan,
   useStripeConnect,
   useStripeConnectLink,
+  useStripeDashboardLink,
   type BillingQuotePayload,
   type PlanStatus,
 } from '@/lib/queries/useBillingStatus';
@@ -228,6 +229,8 @@ export default function PlanScreen() {
   const portalMutation = useBillingPortalSession();
   const changePlanMutation = useChangePlan();
   const stripeConnectLinkMutation = useStripeConnectLink();
+  const stripeDashboardMutation = useStripeDashboardLink();
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
 
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -365,6 +368,17 @@ export default function PlanScreen() {
       onError: (err: Error) => {
         hapticError();
         setConnectError(err.message);
+      },
+    });
+  }
+
+  function handleOpenStripeDashboard() {
+    setDashboardError(null);
+    stripeDashboardMutation.mutate(undefined, {
+      onSuccess: ({ url }) => openExternal(url),
+      onError: (err: Error) => {
+        hapticError();
+        setDashboardError(err.message || 'Could not open the Stripe dashboard.');
       },
     });
   }
@@ -717,6 +731,9 @@ export default function PlanScreen() {
           connecting={stripeConnectLinkMutation.isPending}
           errorText={connectError}
           onConnect={handleStripeConnect}
+          onOpenDashboard={handleOpenStripeDashboard}
+          openingDashboard={stripeDashboardMutation.isPending}
+          dashboardErrorText={dashboardError}
         />
 
         {/* Non-admin fallback link for Stripe */}

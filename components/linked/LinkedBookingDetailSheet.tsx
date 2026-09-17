@@ -444,7 +444,7 @@ export function LinkedBookingDetailSheet({
                     { backgroundColor: colors.infoSurface, borderColor: colors.info, borderWidth: 1 },
                   ]}>
                   <Text variant="caption" color={colors.info}>
-                    {`Linked read-only access — contact ${venueName} or ask them to adjust link permissions if you need to make changes.`}
+                    {`Linked read-only access. Contact ${venueName} or ask them to adjust link permissions if you need to make changes.`}
                   </Text>
                 </View>
               )}

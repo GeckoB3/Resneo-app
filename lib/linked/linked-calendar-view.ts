@@ -98,7 +98,7 @@ export function linkedBusyBlock(b: LinkedBooking, venueName: string): CalendarTi
     id: b.id,
     start: fmtTime(b.bookingTime),
     end: fmtTime(b.bookingEndTime) || fmtTime(b.bookingTime),
-    label: `${venueName} — busy`,
+    label: `${venueName}: busy`,
     isEditable: false,
   };
 }

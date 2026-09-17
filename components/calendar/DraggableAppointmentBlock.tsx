@@ -406,15 +406,18 @@ export function DraggableAppointmentBlock({
     () => (segmentIds && segmentIds.length > 0 ? segmentIds : [id]),
     [segmentIds, id],
   );
-  // A range of one column (a partner's venue-level column, a lone own column)
-  // has nowhere to go, so the gesture stays vertical there.
+  // A range of one column (a partner's venue-level column, a lone own column, a
+  // partner with a single calendar) has nowhere to go inside its group. It still
+  // travels sideways when the grid listens for refused drops, because that is
+  // how a booking reaches another venue (the collective move, or web #190's
+  // rebook sheet); without that listener the gesture stays vertical.
   const crossColumnEnabled =
     onDragMoveToColumn != null &&
     liftedColumn != null &&
     ccPitch > 0 &&
     ccCount > 1 &&
     ccSource >= 0 &&
-    ccMax > ccMin;
+    (ccMax > ccMin || onDragColumnReject != null);
 
   // ---- Shared animated values (UI thread) ----
   const mode = useSharedValue<DragMode>(0);

@@ -42,7 +42,7 @@ export function LinkedBookingListRow({
       onPress={onPress}
       haptic
       accessibilityRole="button"
-      accessibilityLabel={`${venueName} booking${timeOnly ? '' : ` — ${title}`}`}
+      accessibilityLabel={`${venueName} booking${timeOnly ? '' : `, ${title}`}`}
       style={styles.row}>
       <Text variant="label" tone="muted" style={styles.time}>
         {time}

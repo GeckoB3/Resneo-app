@@ -16,6 +16,19 @@ export function isConsentRequired(error: unknown): boolean {
 /** The web page where an invitation is accepted with its consent. */
 export const COLLECTIVE_JOIN_WEB_PATH = '/dashboard/settings?tab=linked-accounts';
 
+/** The web's Collective area: the services grid, venues and history (shared services). */
+export const COLLECTIVE_AREA_WEB_PATH = '/dashboard/collective';
+
+/** "2 active members · Light 3, Plus 1 Staging", with no trailing dot when nobody is left. */
+export function collectiveMembersLine(collective: {
+  activeMemberCount: number;
+  members: readonly { venueName: string }[];
+}): string {
+  const count = `${collective.activeMemberCount} active ${collective.activeMemberCount === 1 ? 'member' : 'members'}`;
+  const names = collective.members.map((m) => m.venueName).filter(Boolean).join(', ');
+  return names ? `${count} · ${names}` : count;
+}
+
 export function joinOnWebCopy(collectiveName: string): { title: string; message: string; confirmLabel: string } {
   return {
     title: 'Open ResNeo on the web to join',

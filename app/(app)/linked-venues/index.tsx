@@ -103,8 +103,8 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function OnboardingExplainer() {
   const { colors } = useTheme();
   const bullets = [
-    'You stay the sole owner of your bookings and clients — linking shares access, never data.',
-    'You choose, per direction, what each venue can see and do — down to specific calendars.',
+    'You stay the sole owner of your bookings and clients: linking shares access, never data.',
+    'You choose, per direction, what each venue can see and do, down to specific calendars.',
     'Either venue can reduce access or unlink at any time; nothing is shared after that.',
   ];
   return (
@@ -123,7 +123,7 @@ function OnboardingExplainer() {
       </View>
       <Text variant="bodySmall" tone="secondary">
         Linking lets two venues see each other’s calendars and (if you choose) manage each other’s
-        bookings — ideal for chair-rental, co-located practitioners or a shared brand.
+        bookings. Ideal for chair-rental, co-located practitioners or a shared brand.
       </Text>
       <View style={styles.bullets}>
         {bullets.map((b) => (

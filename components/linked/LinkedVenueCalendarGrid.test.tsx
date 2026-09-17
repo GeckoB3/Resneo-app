@@ -168,7 +168,7 @@ describe('LinkedVenueCalendarGrid', () => {
   it('keeps the per-calendar columns on a time-only link, as busy blocks', async () => {
     await renderGrid(venue({ visibility: 'time_only', action: 'none' }));
     expect(screen.getByText('Jenny')).toBeTruthy();
-    expect(screen.getByText('light2 — busy')).toBeTruthy();
+    expect(screen.getByText('light2: busy')).toBeTruthy();
     expect(screen.queryByText('Ada Lovelace')).toBeNull();
   });
 });

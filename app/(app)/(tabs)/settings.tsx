@@ -432,14 +432,16 @@ export default function MoreScreen() {
         tab require a QueryClient it had never needed.
       */}
       <Group title="Your own bookings">
-        <Button
-          label="Switch to my account"
-          variant="secondary"
-          onPress={() => switchAppMode('customer')}
-        />
-        <Text variant="caption" tone="muted" style={styles.switchNote}>
-          See the bookings you have made as a customer. You can switch back at any time.
-        </Text>
+        <View style={styles.switchBody}>
+          <Button
+            label="Switch to my account"
+            variant="secondary"
+            onPress={() => switchAppMode('customer')}
+          />
+          <Text variant="caption" tone="muted" style={styles.switchNote}>
+            See the bookings you have made as a customer. You can switch back at any time.
+          </Text>
+        </View>
       </Group>
 
       {/* Sign out */}
@@ -546,6 +548,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.base,
     paddingBottom: spacing.base,
   },
+  switchBody: { padding: spacing.base },
   switchNote: { marginTop: 8 },
   signOutRow: {
     flexDirection: 'row',

@@ -157,7 +157,7 @@ export function CreateCollectiveSheet({
 
         <View style={[styles.notice, { backgroundColor: colors.surface }]}>
           <Text variant="caption" tone="muted">
-            Your combined page works like a single venue — one services menu and one team across all
+            Your combined page works like a single venue: one services menu and one team across all
             members. After creating it, use{' '}
             <Text variant="caption" tone="muted" style={styles.emphasis}>
               Manage combined page

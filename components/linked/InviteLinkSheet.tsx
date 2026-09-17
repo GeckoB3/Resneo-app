@@ -45,7 +45,7 @@ export function InviteLinkSheet({ visible, onClose }: { visible: boolean; onClos
       await Clipboard.setStringAsync(data.url);
       toast.success('Invite link copied.');
     } catch {
-      toast.error('Couldn’t copy automatically — select the link and copy it.');
+      toast.error('Couldn’t copy automatically. Select the link and copy it.');
     }
   };
 
@@ -68,7 +68,7 @@ export function InviteLinkSheet({ visible, onClose }: { visible: boolean; onClos
           <Text variant="subheading">Invite a venue to link</Text>
           <Text variant="bodySmall" tone="secondary">
             Share this link with a venue you know. When an admin there opens it, it pre-fills a
-            request back to you — it grants nothing until you both confirm, and expires in 30 days.
+            request back to you. It grants nothing until you both confirm, and expires in 30 days.
           </Text>
         </View>
 
@@ -118,7 +118,7 @@ export function InviteLinkSheet({ visible, onClose }: { visible: boolean; onClos
             </View>
 
             <Text variant="caption" tone="muted">
-              {`Expires ${formatExpiry(data.expiresAt)}. Anyone with this link who signs in as a venue admin can start a request back to you — you still approve every link.`}
+              {`Expires ${formatExpiry(data.expiresAt)}. Anyone with this link who signs in as a venue admin can start a request back to you, and you still approve every link.`}
             </Text>
 
             <Button label="Done" variant="ghost" onPress={onClose} />

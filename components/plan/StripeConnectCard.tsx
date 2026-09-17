@@ -16,6 +16,10 @@ type StripeConnectCardProps = {
   /** Inline failure message from the connect-link mutation (no Alert on web). */
   errorText?: string | null;
   onConnect: () => void;
+  /** Opens the Stripe Express dashboard; offered to admins once payments are active. */
+  onOpenDashboard?: () => void;
+  openingDashboard?: boolean;
+  dashboardErrorText?: string | null;
 };
 
 type ConnectState = 'not_connected' | 'step1_pending' | 'step2_pending' | 'active';
@@ -33,6 +37,9 @@ export function StripeConnectCard({
   connecting,
   errorText,
   onConnect,
+  onOpenDashboard,
+  openingDashboard = false,
+  dashboardErrorText = null,
 }: StripeConnectCardProps) {
   const { colors } = useTheme();
 
@@ -112,6 +119,26 @@ export function StripeConnectCard({
         </Text>
       ) : null}
 
+      {isAdmin && hasAccountId && state === 'active' && onOpenDashboard ? (
+        <View style={styles.dashboard}>
+          <Button
+            label={openingDashboard ? 'Opening Stripe…' : 'Open Stripe dashboard'}
+            variant="secondary"
+            fullWidth
+            loading={openingDashboard}
+            onPress={onOpenDashboard}
+          />
+          <Text variant="caption" tone="muted" style={styles.dashboardHelp}>
+            View payouts, balance and transactions in your Stripe dashboard.
+          </Text>
+          {dashboardErrorText ? (
+            <Text variant="caption" tone="danger" style={styles.errorText}>
+              {dashboardErrorText}
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
+
       {!isAdmin && state !== 'active' && (
         <Text variant="caption" tone="muted">
           Ask an admin to complete Stripe setup.
@@ -159,6 +186,12 @@ const styles = StyleSheet.create({
   },
   errorText: {
     marginTop: spacing.sm,
+  },
+  dashboard: {
+    marginTop: spacing.md,
+  },
+  dashboardHelp: {
+    marginTop: spacing.xs,
   },
   stepIndicator: {
     flexDirection: 'row',
