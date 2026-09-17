@@ -27,6 +27,28 @@ export function joinOnWebCopy(collectiveName: string): { title: string; message:
   };
 }
 
+export function isSharedServices(collective: { serviceModel?: string | null }): boolean {
+  return collective.serviceModel === 'replicas';
+}
+
+/** The host's note under "Settings that follow the host venue". */
+export function hostSettingsNote(collective: { serviceModel?: string | null }, hostName: string): string {
+  return isSharedServices(collective)
+    ? `The services on the page, with their prices, lengths, deposits, options, add-ons and forms, are ${hostName}'s, and apply at every venue. Guests are asked to sign in only when ${hostName} asks for it. Each booking, its payment and the client record belong to the venue the guest books with.`
+    : 'Prices, durations, deposits and cancellation notice come from each member venue\u2019s own service, because every booking is made with that venue. If any member requires customers to sign in to book, the combined page asks them to sign in too.';
+}
+
+/** What a member reads at the top of its combined-page summary. */
+export function memberSummaryIntro(collective: { name: string; serviceModel?: string | null }, hostName: string): string {
+  return isSharedServices(collective)
+    ? `${hostName} hosts ${collective.name} and manages its booking page and the services on it, with their prices, lengths, deposits, options and forms, for every venue. You choose which of your calendars offer each one on your Services screen, and your own hours and closures decide when they are free.`
+    : `${hostName} hosts ${collective.name} and manages its combined booking page: the services on it, which calendars are offered, its headings, photos and branding. Your services appear there with the price, length and availability set under your own Services settings.`;
+}
+
+/** Shared services: where the page's services and calendars are managed now. */
+export const SHARED_SERVICES_POINTER =
+  'On shared services, the services on the page are the ones marked Collective on your Services screen, and the calendars at every venue that offer them are chosen on ResNeo on the web, in the Collective area. Each venue chooses its own calendars on its Services screen.';
+
 export function leaveCollectiveMessage(collective: { name: string; serviceModel?: string | null }): string {
   if (collective.serviceModel === 'replicas') {
     return (

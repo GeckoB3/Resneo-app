@@ -8,6 +8,8 @@ import { CombinedPageAddressRow } from '@/components/linked/CombinedPageAddressR
 import { CombinedPageConfigEditor } from '@/components/linked/CombinedPageConfigEditor';
 import { Card } from '@/components/ui/Card';
 import { Segmented } from '@/components/ui/Segmented';
+import { Text } from '@/components/ui/Text';
+import { SHARED_SERVICES_POINTER, isSharedServices } from '@/lib/linked/collective-membership-copy';
 import { spacing } from '@/theme/index';
 import type { CollectiveView } from '@/types/collectives';
 import type { AccountLinkView } from '@/types/linked-venues';
@@ -59,7 +61,17 @@ export function CollectiveManagerPanel({
           </>
         ) : null}
 
-        {tab === 'services' ? <CollectiveCatalogueBuilder collectiveId={collective.id} /> : null}
+        {tab === 'services' ? (
+          isSharedServices(collective) ? (
+            <Card>
+              <Text variant="bodySmall" tone="secondary">
+                {SHARED_SERVICES_POINTER}
+              </Text>
+            </Card>
+          ) : (
+            <CollectiveCatalogueBuilder collectiveId={collective.id} />
+          )
+        ) : null}
 
         {tab === 'about' ? <CombinedPageAboutSection collective={collective} /> : null}
 

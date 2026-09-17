@@ -1,6 +1,8 @@
 import { ApiError } from '@/lib/api/client';
 import {
+  hostSettingsNote,
   isConsentRequired,
+  memberSummaryIntro,
   joinOnWebCopy,
   leaveCollectiveMessage,
 } from '@/lib/linked/collective-membership-copy';
@@ -31,5 +33,14 @@ describe('collective membership words', () => {
     expect(leaveCollectiveMessage({ name: 'Northside' })).toBe(
       'Your venue will be removed from "Northside". Your own booking page is unaffected.',
     );
+  });
+
+  it('says the host sets services and sign-in on shared services, and keeps the older notes otherwise', () => {
+    expect(hostSettingsNote({ serviceModel: 'replicas' }, 'Bright Cuts')).toMatch(/are Bright Cuts's, and apply at every venue/);
+    expect(hostSettingsNote({ serviceModel: 'legacy_copies' }, 'Bright Cuts')).toMatch(/each member venue/);
+    expect(memberSummaryIntro({ name: 'Northside', serviceModel: 'replicas' }, 'Bright Cuts')).toMatch(
+      /on your Services screen/,
+    );
+    expect(memberSummaryIntro({ name: 'Northside' }, 'Bright Cuts')).toMatch(/under your own Services settings/);
   });
 });

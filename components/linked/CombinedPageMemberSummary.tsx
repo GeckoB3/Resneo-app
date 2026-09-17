@@ -1,3 +1,4 @@
+import { memberSummaryIntro } from '@/lib/linked/collective-membership-copy';
 import { useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 
@@ -52,7 +53,7 @@ export function CombinedPageMemberSummary({
     <View style={styles.root}>
       <Card style={styles.card}>
         <Text variant="bodySmall" tone="secondary">
-          {`${host} hosts ${collective.name} and manages its combined booking page: the services on it, which calendars are offered, its headings, photos and branding. Your services appear there with the price, length and availability set under your own Services settings.`}
+          {memberSummaryIntro(collective, host)}
         </Text>
         <CombinedPageAddressRow collective={collective} />
       </Card>

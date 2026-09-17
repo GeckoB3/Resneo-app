@@ -15,6 +15,7 @@ import { Input } from '@/components/ui/Input';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { Segmented } from '@/components/ui/Segmented';
 import { Text } from '@/components/ui/Text';
+import { hostSettingsNote } from '@/lib/linked/collective-membership-copy';
 import { ApiError } from '@/lib/api/client';
 import {
   BOOKING_ABOUT_MAX,
@@ -688,9 +689,7 @@ function HostInheritedSettingsNote({ collective }: { collective: CollectiveView 
           Currency and wording (for example &ldquo;appointment&rdquo;): Settings, Profile.
         </Text>
         <Text variant="caption" tone="muted">
-          Prices, durations, deposits and cancellation notice come from each member venue&rsquo;s own
-          service, because every booking is made with that venue. If any member requires customers
-          to sign in to book, the combined page asks them to sign in too.
+          {hostSettingsNote(collective, host)}
         </Text>
       </Card>
     </>
