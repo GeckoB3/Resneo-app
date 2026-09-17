@@ -45,6 +45,36 @@ export function crossVenueMoveCopy(w: CrossVenueMoveWords): {
   };
 }
 
+/**
+ * The same drop inside a live collective (web D46, revised 2026-09-16): the booking moves in one step,
+ * so the sheet asks rather than explains. Web's `move.otherVenue.*` words.
+ */
+export function collectiveMoveCopy(w: {
+  targetCalendarName: string;
+  targetVenueName: string;
+  ownVenueName: string;
+  time: string;
+}): { title: string; message: string; confirmLabel: string } {
+  return {
+    title: `Move this booking to ${w.targetVenueName}?`,
+    message:
+      `${w.targetCalendarName} at ${w.targetVenueName} will have this booking at ${w.time}, at the same price. ` +
+      `It comes off ${w.ownVenueName}'s diary, and the client gets one message with the new details.`,
+    confirmLabel: `Move to ${w.targetVenueName}`,
+  };
+}
+
+/** What the diary says once the move is done. */
+export function collectiveMoveDoneMessage(r: {
+  targetCalendarName: string;
+  venueName: string;
+  guestNotified: boolean;
+}): string {
+  return r.guestNotified
+    ? `Moved to ${r.targetCalendarName} at ${r.venueName}.`
+    : `Moved to ${r.targetCalendarName} at ${r.venueName}. The client was not sent a message, because ${r.venueName} has booking change messages turned off.`;
+}
+
 /** The booking form offers whole slots, so a dropped minute rounds to five. */
 export function roundTimeToFiveMinutes(hhmm: string): string {
   const [h, m] = hhmm.split(':').map((part) => Number.parseInt(part, 10));

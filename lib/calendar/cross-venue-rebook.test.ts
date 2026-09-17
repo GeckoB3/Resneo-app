@@ -1,4 +1,6 @@
 import {
+  collectiveMoveCopy,
+  collectiveMoveDoneMessage,
   cancelOriginalCopy,
   clearPendingCrossVenueRebook,
   crossVenueMoveCopy,
@@ -67,5 +69,27 @@ describe('the pending record', () => {
   it('ignores a created mark with nothing pending', () => {
     markCrossVenueRebookCreated();
     expect(peekPendingCrossVenueRebook()).toBeNull();
+  });
+});
+
+describe('collective moves (web D46)', () => {
+  it('asks to move the booking in the web’s words', () => {
+    expect(
+      collectiveMoveCopy({ targetCalendarName: 'Ada', targetVenueName: 'Zen Studio', ownVenueName: 'Bright Cuts', time: '14:00' }),
+    ).toEqual({
+      title: 'Move this booking to Zen Studio?',
+      message:
+        "Ada at Zen Studio will have this booking at 14:00, at the same price. It comes off Bright Cuts's diary, and the client gets one message with the new details.",
+      confirmLabel: 'Move to Zen Studio',
+    });
+  });
+
+  it('says whether the client was told', () => {
+    expect(collectiveMoveDoneMessage({ targetCalendarName: 'Ada', venueName: 'Zen Studio', guestNotified: true })).toBe(
+      'Moved to Ada at Zen Studio.',
+    );
+    expect(collectiveMoveDoneMessage({ targetCalendarName: 'Ada', venueName: 'Zen Studio', guestNotified: false })).toMatch(
+      /not sent a message, because Zen Studio has booking change messages turned off/,
+    );
   });
 });

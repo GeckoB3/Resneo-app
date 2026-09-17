@@ -71,6 +71,8 @@ import { visitRestoreRequest, visitScheduleRequest } from '@/lib/booking/visit-s
 import { ownSiblingOverlapCount } from '@/lib/calendar/visit-siblings';
 import {
   cancelOriginalCopy,
+  collectiveMoveCopy,
+  collectiveMoveDoneMessage,
   crossVenueMoveCopy,
   crossVenueOriginalLabel,
   roundTimeToFiveMinutes,
@@ -138,6 +140,7 @@ import { LinkedVenueCalendarGrid } from '@/components/linked/LinkedVenueCalendar
 import { LinkedVenueWeekGrid } from '@/components/linked/LinkedVenueWeekGrid';
 import { dedupeScheduleDTOs, toCalendarScheduleBlock } from '@/lib/calendar/schedule-block-view';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
+import { useMoveBookingToVenue } from '@/lib/queries/useMoveBookingToVenue';
 import {
   LINKED_MOVE_SAME_VENUE_ERROR,
   linkedBookingUsesExpandedDetail,
@@ -845,9 +848,15 @@ export default function CalendarScreen() {
         /** The partner column dropped on, or null for one of our own. */
         targetLinked: { venue: LinkedVenueCalendar; practitionerId: string | null } | null;
         time: string;
+        /**
+         * Both venues are in our live collective and the drop names a calendar: the booking moves in
+         * one step (web D46, revised 2026-09-16) instead of being booked afresh.
+         */
+        collectiveMove: { targetCalendarId: string; targetVenueName: string } | null;
       })
     | null
   >(null);
+  const moveToVenue = useMoveBookingToVenue();
   const [cancelOriginalPrompt, setCancelOriginalPrompt] = useState<PendingCrossVenueRebook | null>(null);
   const cancelOwnOriginal = useUpdateBookingStatus(cancelOriginalPrompt?.originalBookingId ?? '');
   const cancelLinkedOriginal = useUpdateLinkedBooking();
@@ -1901,7 +1910,24 @@ export default function CalendarScreen() {
         ? (targetHit.venue.practitioners.find((p) => p.id === targetHit.practitionerId)?.name ??
           targetHit.venue.venueName)
         : (practitioners.find((p) => p.id === targetColumnId)?.name ?? 'that calendar');
+      // Inside a live collective the move is one step: both venues must be members, and the drop
+      // must land on a calendar rather than a venue's summary column.
+      const sourceVenueId = sourceHit?.venue.venueId ?? venue?.id ?? null;
+      const targetVenueId = targetHit?.venue.venueId ?? venue?.id ?? null;
+      const targetCalendarId = targetHit
+        ? targetHit.practitionerId
+        : linkedColumnPractitionerIdForPatch(targetColumnId);
+      const inCollective = (id: string | null) =>
+        Boolean(id && staffCollective?.member_venue_ids.includes(id));
+      const collectiveMove =
+        sourceVenueId !== targetVenueId && inCollective(sourceVenueId) && inCollective(targetVenueId) && targetCalendarId
+          ? {
+              targetCalendarId,
+              targetVenueName: targetHit?.venue.venueName ?? venue?.name ?? 'your venue',
+            }
+          : null;
       setCrossVenueMove({
+        collectiveMove,
         guestName: booking.guestName || 'The client',
         sourceCalendarName,
         sourceVenueName: sourceHit?.venue.venueName ?? null,
@@ -1915,8 +1941,51 @@ export default function CalendarScreen() {
         time: roundTimeToFiveMinutes(newTime),
       });
     },
-    [findBookingOnAnchor, linkedBookingVenue, linkedColumnVenue, gridQuery.data, anchor, practitioners, toast],
+    [
+      findBookingOnAnchor,
+      linkedBookingVenue,
+      linkedColumnVenue,
+      gridQuery.data,
+      anchor,
+      practitioners,
+      toast,
+      staffCollective,
+      venue?.id,
+      venue?.name,
+    ],
   );
+
+  /** The collective move: one request, the server's sentence when it says no. */
+  const confirmCollectiveMove = useCallback(() => {
+    const move = crossVenueMove;
+    const target = move?.collectiveMove;
+    if (!move || !target) return;
+    moveToVenue.mutate(
+      {
+        bookingId: move.booking.id,
+        calendarId: target.targetCalendarId,
+        bookingDate: anchor,
+        bookingTime: move.time,
+      },
+      {
+        onSuccess: (result) => {
+          setCrossVenueMove(null);
+          hapticSuccess();
+          toast.success(
+            collectiveMoveDoneMessage({
+              targetCalendarName: move.targetCalendarName,
+              venueName: result.venue_name,
+              guestNotified: result.guest_notified,
+            }),
+          );
+        },
+        onError: (e) => {
+          setCrossVenueMove(null);
+          toast.error(e instanceof ApiError ? e.message : 'The booking could not be moved. Please try again.');
+        },
+      },
+    );
+  }, [crossVenueMove, moveToVenue, anchor, toast]);
 
   /**
    * Step one of a cross-account move: open the booking form on the target
@@ -3437,6 +3506,28 @@ export default function CalendarScreen() {
           the original. Two sheets, never open together. */}
       {crossVenueMove
         ? (() => {
+            const target = crossVenueMove.collectiveMove;
+            if (target) {
+              const copy = collectiveMoveCopy({
+                targetCalendarName: crossVenueMove.targetCalendarName,
+                targetVenueName: target.targetVenueName,
+                ownVenueName: crossVenueMove.sourceVenueName ?? venue?.name ?? 'your venue',
+                time: crossVenueMove.time,
+              });
+              return (
+                <ConfirmSheet
+                  visible
+                  title={copy.title}
+                  message={copy.message}
+                  confirmLabel={copy.confirmLabel}
+                  cancelLabel="Not now"
+                  destructive={false}
+                  loading={moveToVenue.isPending}
+                  onConfirm={confirmCollectiveMove}
+                  onClose={() => setCrossVenueMove(null)}
+                />
+              );
+            }
             const copy = crossVenueMoveCopy(crossVenueMove);
             return (
               <ConfirmSheet
