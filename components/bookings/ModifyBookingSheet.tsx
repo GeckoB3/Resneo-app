@@ -29,7 +29,6 @@ import {
   visitServiceEditsRequest,
   type VisitServiceEdit,
 } from '@/lib/booking/visit-schedule-request';
-import { filterToUsableCalendars } from '@/lib/calendar/managed-calendars';
 import {
   describeProcessingChange,
   describeProcessingGaps,
@@ -44,7 +43,6 @@ import { useAppointmentAvailability } from '@/lib/queries/useAppointmentAvailabi
 import { useAppointmentCatalog } from '@/lib/queries/useAppointmentCatalog';
 import { useBookingDetail } from '@/lib/queries/useBookingDetail';
 import { useMonthAvailability } from '@/lib/queries/useMonthAvailability';
-import { useStaffMe } from '@/lib/queries/useStaffMe';
 import {
   useModifyAppointment,
   useNotifyBookingModification,
@@ -238,7 +236,6 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   const currentAddons = detailQuery.data?.addons ?? null;
 
   /** Role + assigned calendars, for the reassign gate on the picker (R16-1). */
-  const staffMe = useStaffMe();
 
   const [serviceId, setServiceId] = useState<string | null>(null);
   const [variantId, setVariantId] = useState<string | null>(null);
@@ -493,25 +490,13 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
      */
     const own = practitioners.find((p) => p.id === target?.practitionerId);
     const withOwn = own && !offering.some((p) => p.id === own.id) ? [own, ...offering] : offering;
-    // A linked venue's booking is not narrowed: our calendar assignments say
-    // nothing about the partner's calendars, and the server applies the link
-    // grant instead of its role check for a cross-venue edit.
-    if (target?.ownerVenueId) return withOwn;
-    const usable = filterToUsableCalendars(
-      {
-        role: staffMe.data?.staff.role,
-        managedCalendarIds: staffMe.data?.staff.linked_calendar_ids,
-      },
-      withOwn,
-    );
-    const current = withOwn.find((p) => p.id === target?.practitionerId);
-    return current && !usable.some((p) => p.id === current.id) ? [current, ...usable] : usable;
+    // Staff move a booking to any calendar at their own venue, as an admin does (web, 2026-09-17).
+    return withOwn;
   }, [
     isVisit,
     serviceId,
     offeredBy,
     practitioners,
-    staffMe.data,
     target?.practitionerId,
     target?.ownerVenueId,
   ]);

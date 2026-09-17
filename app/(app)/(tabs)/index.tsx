@@ -137,10 +137,6 @@ import { LinkedBookingDetailSheet } from '@/components/linked/LinkedBookingDetai
 import { LinkedVenueCalendarGrid } from '@/components/linked/LinkedVenueCalendarGrid';
 import { LinkedVenueWeekGrid } from '@/components/linked/LinkedVenueWeekGrid';
 import { dedupeScheduleDTOs, toCalendarScheduleBlock } from '@/lib/calendar/schedule-block-view';
-import {
-  CANNOT_MOVE_TO_CALENDAR_ERROR,
-  canStaffUseCalendar,
-} from '@/lib/calendar/managed-calendars';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import {
   LINKED_MOVE_SAME_VENUE_ERROR,
@@ -487,11 +483,7 @@ export default function CalendarScreen() {
   // every other key it touches is token-scoped already.
   const accessToken = useAccessToken();
 
-  /**
-   * Role + assigned calendars, for the cross-column move gate in
-   * `commitTimeMove` (R16-1). Cheap to add here: the profile is already cached
-   * app-wide with a 5 minute `staleTime`, so this observer costs no request.
-   */
+  /** The signed-in staff profile (role), already cached app-wide, so this costs no request. */
   const staffMe = useStaffMe();
 
   // One mutation for drag commits AND undo — the booking id travels in the input.
@@ -1743,36 +1735,8 @@ export default function CalendarScreen() {
       // A partner's booking: the server applies the link grant in place of its
       // role check for a cross-venue write, so the gate below is ours alone.
       const linkedHit = linkedBookingVenue.get(bookingId);
-      /**
-       * R16-1 — refuse a cross-column move a non-admin is not allowed to make,
-       * BEFORE the mutation rather than after it.
-       *
-       * The server gained this gate in web's C8 fix, and the app hands it every
-       * column: `usePractitioners` sends `roster=1`, which is exactly the flag
-       * that disables the server's managed-calendar narrowing. Without this the
-       * gesture completes, the bar animates into the new column, the PATCH 403s,
-       * and the grid snaps back with a permissions error staff will read as a bug.
-       *
-       * Only the reassign branch is gated: a plain time move sends no
-       * `practitioner_id`, so the server never runs the check — and gating it
-       * here would stop a non-admin dragging a booking around their OWN column.
-       *
-       * The target of an own booking is always an own-venue calendar:
-       * `AllCalendarsDayGrid` keeps a bar's cross-column drops to its own
-       * venue's columns, which matches the server's `isOwnVenue` condition. A
-       * partner's bar lands on that partner's calendars, where the grant rules.
-       */
-      if (
-        reassign &&
-        !linkedHit &&
-        !canStaffUseCalendar(
-          { role: staffMe.data?.staff.role, managedCalendarIds: staffMe.data?.staff.linked_calendar_ids },
-          reassign.toPractitionerId,
-        )
-      ) {
-        toast.error(CANNOT_MOVE_TO_CALENDAR_ERROR);
-        return;
-      }
+      // Staff move bookings between any of their venue's calendars, as an admin does (web's rule
+      // of 2026-09-17, replacing R16-1): no role gate here, and a partner's booking follows its link.
       // The calendar ids the PATCH names: a partner's column arrives as its
       // column key, and the server wants the raw calendar id behind it (web
       // `resolveLinkedGridPractitionerIdForPatch`); an own column's id is one.

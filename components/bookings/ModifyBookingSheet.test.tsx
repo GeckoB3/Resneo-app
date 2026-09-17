@@ -188,19 +188,6 @@ jest.mock('@/lib/queries/useMonthAvailability', () => ({
   useMonthAvailability: () => ({ data: { available_dates: ['2026-08-10'] }, isLoading: false }),
 }));
 
-/**
- * Role + assigned calendars, which gate the reassign picker (R16-1). Admin by
- * default so every pre-existing case keeps the full calendar list; the tests
- * that care about the gate set this themselves.
- */
-let mockStaffMe: { role: string; linked_calendar_ids: string[] } = {
-  role: 'admin',
-  linked_calendar_ids: [],
-};
-jest.mock('@/lib/queries/useStaffMe', () => ({
-  useStaffMe: () => ({ data: { staff: mockStaffMe } }),
-}));
-
 /** The add-ons the booking already has — what Undo has to put back. */
 let mockDetailAddons: { addon_id: string }[] = [];
 /**
@@ -435,6 +422,20 @@ describe('ModifyBookingSheet', () => {
    * bookings: the Staff row still shows the calendar the booking is on, and a
    * refusal says what actually happened.
    */
+  /**
+   * Web's rule of 2026-09-17: staff move bookings between any calendars at their own venue, as an
+   * admin does. The picker is never narrowed to the calendars assigned to the signed-in person.
+   */
+  it('offers every calendar that offers the service, whoever is signed in', async () => {
+    mockExtraPractitioners = [
+      { id: 'prac-2', name: 'Kim', services: [{ id: 'svc-1', name: 'Cut & Finish', duration_minutes: 45 }] },
+    ];
+    await render(<ModifyBookingSheet target={TARGET} onClose={onClose} />);
+    expect(screen.getByText('Sam')).toBeTruthy();
+    expect(screen.getByText('Kim')).toBeTruthy();
+    mockExtraPractitioners = [];
+  });
+
   describe('a booking on a calendar that no longer offers its service', () => {
     const LEFT_BEHIND: ModifyBookingTarget = { ...TARGET, practitionerId: 'prac-2' };
 
