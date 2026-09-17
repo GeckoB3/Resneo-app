@@ -15,6 +15,25 @@ on the other, and iOS 1.0.4 is the worked example.
 
 ---
 
+## Unreleased
+
+Venue collectives on shared services, and the web's staff booking rule (web 2026-09-17). Details in
+`Docs/R37_COLLECTIVES_SHARED_SERVICES.md`.
+
+- Staff can move bookings between any calendars at their venue, as admins can.
+- Services show what the collective owns: services from the host are read-only apart from the
+  calendar switches, and services that are not on the collective page show as parked.
+- Dropping a booking on another venue of the collective moves it there in one step.
+- Booking forms refresh their services and times when a collective service is updating or parked.
+- Joining a collective on shared services sends you to the web; the leave message is accurate.
+- Calendar settings only show classes, resources and events when the venue has them switched on.
+
+**Play / App Store (draft):** Working in a venue collective is smoother: move a booking to another
+venue's calendar in one step, see which services the host manages, and get clearer messages when a
+service is updating. Team members can now move bookings between any calendars at their venue.
+
+---
+
 ## iOS 1.1.1 / Android 1.1.1 — 2026-09-15
 
 A re-baselining release, and this time a repair as much as housekeeping. Covers
