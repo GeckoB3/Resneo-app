@@ -42,7 +42,10 @@ export async function sendBrandedMagicLink(email: string): Promise<MagicLinkOutc
   try {
     const body = await apiFetch<{ ok?: boolean; fallback?: boolean }>(
       '/api/auth/send-magic-link',
-      { method: 'POST', body: JSON.stringify({ email }) },
+      // `client: 'app'` makes the emailed button open the app (the link carries
+      // resneo://callback) instead of signing the customer into the website and
+      // spending the one token the code in the same email needs.
+      { method: 'POST', body: JSON.stringify({ email, client: 'app' }) },
     );
     // `{ fallback: true }` is a 200. Treating it as success would show "check
     // your email" for a message that was never sent.

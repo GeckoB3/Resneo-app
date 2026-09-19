@@ -35,8 +35,8 @@ export function StaffRequired({ onRetry, retrying = false }: StaffRequiredProps)
 
       <Card style={styles.card}>
         <Text variant="bodySmall" tone="secondary">
-          Ask your venue admin to invite you as staff, or sign in with a different email. Customer
-          accounts use the Resneo website instead.
+          Ask your venue admin to invite you as staff, or sign in with a different email. If you are a
+          customer, sign out and back in to see your bookings.
         </Text>
       </Card>
 

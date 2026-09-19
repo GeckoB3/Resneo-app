@@ -45,7 +45,7 @@ describe('asking ResNeo to send the email', () => {
     const [url, init] = mockFetch.mock.calls[0];
     expect(String(url)).toContain('/api/auth/send-magic-link');
     expect(init.method).toBe('POST');
-    expect(JSON.parse(init.body)).toEqual({ email: 'A@B.com' });
+    expect(JSON.parse(init.body)).toEqual({ email: 'A@B.com', client: 'app' });
   });
 
   it('sends NO Authorization header, because nobody is signed in yet', async () => {
