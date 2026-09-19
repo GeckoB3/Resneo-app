@@ -10,6 +10,9 @@ import type {
   AuditResponse,
   CreateLinkPayload,
   IncomingLinksResponse,
+  AcceptCollectiveWithLink,
+  LinkSetupPayload,
+  LinkSetupResponse,
   InviteCreateResponse,
   InviteVerifyResponse,
   LinkGrant,
@@ -78,12 +81,14 @@ export function useRespondLink() {
       action: RespondLinkAction;
       /** Required for `accept_with_changes` / `propose_change`. */
       grants?: LinkGrantPair;
+      /** On accept: also join the collective proposed with the request (web plan L4, L5). */
+      collective?: AcceptCollectiveWithLink;
     }): Promise<LinkResponse> => {
       if (!accessToken) throw new Error('Missing access token');
       return apiFetch<LinkResponse>(`/api/venue/account-links/${input.linkId}`, {
         accessToken,
         method: 'PATCH',
-        body: JSON.stringify({ action: input.action, grants: input.grants }),
+        body: JSON.stringify({ action: input.action, grants: input.grants, collective: input.collective }),
       });
     },
     onSettled: () => {
@@ -124,20 +129,48 @@ export function useVenueSearch(q: string) {
 }
 
 /** GET /api/venue/account-links/lookup?slug= — resolve a pasted booking-page slug. */
-export function useVenueLookup(slug: string | null | undefined) {
+export function useVenueLookup(slug: string | null | undefined, options?: { collective?: boolean }) {
   const accessToken = useAccessToken();
   const trimmed = slug?.trim().toLowerCase() ?? '';
   const enabled = isBackendConfigured() && accessToken !== null && trimmed.length > 0;
+  const withCollective = options?.collective === true;
 
   return useQuery({
-    queryKey: queryKeys.linkedVenues.lookup(accessToken, trimmed),
+    queryKey: queryKeys.linkedVenues.lookup(accessToken, trimmed, withCollective),
     enabled,
     queryFn: async (): Promise<VenueLookupResponse> => {
       if (!accessToken) throw new Error('Missing access token');
+      // `&collective=1` adds the venue's standing for a collective the caller would host, so the
+      // setup wizard can withhold its collective step with the reason before anything is sent.
       return apiFetch<VenueLookupResponse>(
-        `/api/venue/account-links/lookup?slug=${encodeURIComponent(trimmed)}`,
+        `/api/venue/account-links/lookup?slug=${encodeURIComponent(trimmed)}${withCollective ? '&collective=1' : ''}`,
         { accessToken },
       );
+    },
+  });
+}
+
+/**
+ * POST /api/venue/account-links/setup: one call for a link request and, at full access both
+ * ways, the collective started with it (web plan L3). A refusal's `field` says which wizard step
+ * it belongs to; `ApiError.body` carries it.
+ */
+export function useLinkSetup() {
+  const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (payload: LinkSetupPayload): Promise<LinkSetupResponse> => {
+      if (!accessToken) throw new Error('Missing access token');
+      return apiFetch<LinkSetupResponse>('/api/venue/account-links/setup', {
+        accessToken,
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.linkedVenues.all() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.collectives.all() });
     },
   });
 }

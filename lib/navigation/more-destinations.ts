@@ -204,8 +204,9 @@ export function buildDestinations(ctx: DestinationsContext): Destination[] {
     list.push({ id: 'refer-earn', label: 'Refer & Earn', hint: 'Share your link & track rewards', icon: { ios: 'gift.fill', android: 'card_giftcard', web: 'card_giftcard' }, tile: TILE.rose, group: 'growth', kind: 'route', target: '/manage/refer-earn', keywords: ['referral', 'rewards', 'credit', 'invite'] });
   }
 
-  // ── Linked venues — cross-venue calendars & combined booking pages. ────────
-  list.push({ id: 'linked-calendar', label: 'Linked calendar', hint: 'View bookings at venues linked to yours', icon: { ios: 'calendar', android: 'calendar_month', web: 'calendar_month' }, tile: TILE.teal, group: 'network', kind: 'route', target: '/linked-venues/calendar', keywords: ['linked accounts', 'cross-venue'] });
+  // ── Linked venues — cross-venue calendars & combined booking pages. Linked venues' bookings are
+  // on the Calendar tab as their own columns, so there is no separate linked-calendar page (web
+  // parity, 2026-09-19).
   if (isAdmin) {
     list.push({ id: 'linked-venues', label: 'Linked venues', hint: 'Share calendars & cross-venue bookings', icon: { ios: 'link', android: 'link', web: 'link' }, tile: TILE.teal, group: 'network', kind: 'route', target: '/linked-venues', keywords: ['settings', 'linked accounts', 'partners'] });
     if (ctx.collectiveArea) {

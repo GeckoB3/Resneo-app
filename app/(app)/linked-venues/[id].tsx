@@ -1,10 +1,10 @@
-import { Stack, useLocalSearchParams, useRouter, type Href } from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { EditPermissionsSheet } from '@/components/linked/EditPermissionsSheet';
 import { GrantBullets } from '@/components/linked/GrantBullets';
-import { IncomingRequestSheet } from '@/components/linked/IncomingRequestSheet';
+import { ReviewLinkRequestSheet } from '@/components/linked/setup/ReviewLinkRequestSheet';
 import { LinkAuditView } from '@/components/linked/LinkAuditView';
 import { LinkStatusBadge } from '@/components/linked/LinkStatusBadge';
 import { ReduceAccessSheet } from '@/components/linked/ReduceAccessSheet';
@@ -138,35 +138,6 @@ export default function LinkedVenueDetailScreen() {
     );
   };
 
-  const handleAccept = () => {
-    respond.mutate(
-      { linkId: link.id, action: 'accept' },
-      {
-        onSuccess: () => {
-          toast.success(`You’re now linked with ${name}.`);
-          setReviewOpen(false);
-        },
-        onError: (err) =>
-          toast.error(err instanceof ApiError ? err.message : 'Could not accept the request.'),
-      },
-    );
-  };
-
-  const handleReject = () => {
-    respond.mutate(
-      { linkId: link.id, action: 'reject' },
-      {
-        onSuccess: () => {
-          toast.success(`Declined ${name}’s request.`);
-          setReviewOpen(false);
-          router.back();
-        },
-        onError: (err) =>
-          toast.error(err instanceof ApiError ? err.message : 'Could not reject the request.'),
-      },
-    );
-  };
-
   const handleAcceptChange = () => {
     respond.mutate(
       { linkId: link.id, action: 'accept_change' },
@@ -202,14 +173,6 @@ export default function LinkedVenueDetailScreen() {
       },
     );
   };
-
-  const reviewPending: 'accept' | 'reject' | null = respond.isPending
-    ? respond.variables?.action === 'accept'
-      ? 'accept'
-      : respond.variables?.action === 'reject'
-        ? 'reject'
-        : null
-    : null;
 
   const linkedDate = formatDate(link.respondedAt);
   const endedDate = formatDate(link.terminatedAt);
@@ -306,13 +269,9 @@ export default function LinkedVenueDetailScreen() {
       {isActive ? (
         <View style={styles.actions}>
           {link.iCan.calendar !== 'none' ? (
-            <Button
-              label="View linked calendar"
-              variant="primary"
-              fullWidth
-              disabled={busy}
-              onPress={() => router.push('/linked-venues/calendar' as Href)}
-            />
+            <Text variant="caption" tone="muted">
+              {`${link.otherVenue.name}'s calendars appear on your Calendar tab as their own columns.`}
+            </Text>
           ) : null}
 
           <Button
@@ -384,13 +343,16 @@ export default function LinkedVenueDetailScreen() {
         ) : null}
       </View>
 
-      <IncomingRequestSheet
+      <ReviewLinkRequestSheet
         link={reviewOpen ? link : null}
         visible={reviewOpen}
-        pending={reviewPending}
+        venueName={query.data?.venue.name ?? 'Your venue'}
+        myCalendars={myCalendars}
+        collective={query.data?.proposedCollectives?.[link.id] ?? null}
         onClose={() => setReviewOpen(false)}
-        onAccept={handleAccept}
-        onReject={handleReject}
+        onDone={(outcome) => {
+          if (outcome.declined) router.back();
+        }}
       />
 
       <ConfirmSheet

@@ -28,6 +28,10 @@ jest.mock('@/lib/queries/useServicesManage', () => ({
 jest.mock('@/lib/queries/useCollectives', () => ({
   useCollectives: () => ({ data: { collectives: [] }, isRefetching: false, refetch: jest.fn() }),
   useDissolveCollective: () => ({ mutate: jest.fn(), isPending: false }),
+  // A member's AdoptionRequestsCard asks for pending same-name questions (web R38).
+  useAdoptions: () => ({ data: { adoptions: [] }, isLoading: false }),
+  useAdoptionReview: () => ({ data: undefined, isLoading: false }),
+  useAnswerAdoption: () => ({ mutateAsync: jest.fn(), isPending: false }),
 }));
 jest.mock('@/lib/queries/useCollectiveArea', () => ({
   useCollectiveRetry: () => ({ mutate: jest.fn(), isPending: false }),

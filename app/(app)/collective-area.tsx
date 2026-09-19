@@ -22,6 +22,7 @@ import {
 } from '@/components/collective-area/AreaPieces';
 import { HistoryPanel, MemberServicesList, VenuesPanel, type VenueRow } from '@/components/collective-area/AreaTabs';
 import { ServicesGridBar, ServicesGridList, useServicesGrid } from '@/components/collective-area/ServicesGrid';
+import { AdoptionRequestsCard } from '@/components/linked/setup/AdoptionSheets';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Screen } from '@/components/ui/Screen';
@@ -220,6 +221,8 @@ function AreaBody({
               formerHostName={collective.hostVenueName}
             />
           ) : null}
+          {/* The host asked whether to use this venue's same-named service (web plan L13). */}
+          {!collective.isHost ? <AdoptionRequestsCard collectiveId={collective.id} /> : null}
 
           <Segmented<AreaTab>
             options={tabs}

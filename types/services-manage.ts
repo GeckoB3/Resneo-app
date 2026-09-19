@@ -70,6 +70,8 @@ export interface ManagedService {
   buffer_minutes?: number | null;
   price_pence?: number | null;
   deposit_pence?: number | null;
+  /** False for a service staff book but guests cannot (web `is_bookable_online`). Absent on older servers. */
+  is_bookable_online?: boolean | null;
   payment_requirement?: ServicePaymentRequirement | null;
   colour?: string | null;
   is_active?: boolean;
@@ -126,6 +128,8 @@ export type CollectiveHiddenReasonKind = 'suspended' | 'behind' | 'payments' | '
 /** Web `CollectiveServiceBlock` (`src/lib/linked-accounts/replicas/service-blocks.ts`). */
 export interface ServiceCollectiveBlock {
   role: 'master' | 'replica' | 'retired' | 'parked';
+  /** Whether this venue hosts the collective or is a member of it (web 2026-09-19). Absent on older servers. */
+  venue_role?: 'host' | 'member';
   collective_id: string;
   collective_name: string;
   host_venue_name: string;

@@ -2,9 +2,13 @@
  * GET /api/venue/reports?from=&to= (admin only).
  * Shapes mirror _reference/Resneo/src/app/dashboard/reports/ReportsView.tsx.
  */
+import type { NewBookingChannel, NewBookingCounts } from '@/types/dashboard';
+
 export interface ReportBookingSummary {
   total_bookings_created: number;
   by_source: Record<string, number>;
+  /** How the bookings came in (web 2026-09-18). Absent on older servers. */
+  by_channel?: Record<NewBookingChannel, number>;
   by_status: Record<string, number>;
   covers_booked: number;
   covers_seated: number;
@@ -20,6 +24,8 @@ export interface ReportNoShowRow {
 export interface ReportCancellation {
   total_bookings_created: number;
   cancelled_guest_initiated: number;
+  /** Cancelled by the venue's team (web 2026-09-18). Absent on older servers. */
+  cancelled_team_initiated?: number;
   cancelled_auto: number;
   cancellation_rate_pct: number;
 }
@@ -260,3 +266,28 @@ export interface BookedRevenueReport {
   periods: BookedRevenuePeriod[];
   totals: BookedRevenueCell & { by_calendar: Record<string, BookedRevenueCell> };
 }
+
+// ---------------------------------------------------------------------------
+// New bookings (web `src/lib/reports/new-bookings.ts`, 2026-09-18)
+// ---------------------------------------------------------------------------
+
+export type NewBookingsPreset = 'today' | 'yesterday' | 'this_week' | 'last_week' | 'this_month' | 'last_month';
+export type NewBookingsGrain = 'day' | 'week' | 'month';
+
+export interface NewBookingsPeriod extends NewBookingCounts {
+  /** First and last date of the period, YYYY-MM-DD, clamped to the requested range. */
+  period_start: string;
+  period_end: string;
+}
+
+/** GET /api/venue/reports/new-bookings?preset=|from=&to=&grain= (admin only). */
+export interface NewBookingsReport {
+  from: string;
+  to: string;
+  grain: NewBookingsGrain;
+  /** Today in the venue's timezone. */
+  today: string;
+  periods: NewBookingsPeriod[];
+  totals: NewBookingCounts;
+}
+

@@ -1,9 +1,11 @@
-import { Stack, useRouter, type Href } from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Linking, RefreshControl, StyleSheet, View } from 'react-native';
 
 import { CreateCollectiveSheet } from '@/components/linked/CreateCollectiveSheet';
+import { CollectiveSetupSheet } from '@/components/linked/setup/CollectiveSetupSheet';
+import { JoinCollectiveSheet } from '@/components/linked/setup/JoinCollectiveSheet';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -22,7 +24,8 @@ import {
   useCollectiveMemberAction,
   useCollectives,
 } from '@/lib/queries/useCollectives';
-import { useLinkedVenues } from '@/lib/queries/useLinkedVenues';
+import { formatVenueList, setupCopy } from '@/lib/linked/setup-copy';
+import { useIncomingLinks, useLinkedVenues } from '@/lib/queries/useLinkedVenues';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { useToast } from '@/providers/ToastProvider';
@@ -55,6 +58,13 @@ export default function CollectivesScreen() {
   const [leaveTarget, setLeaveTarget] = useState<CollectiveView | null>(null);
   /** An invitation the one-tap accept could not take: joining needs the web's consent step. */
   const [joinOnWeb, setJoinOnWeb] = useState<CollectiveView | null>(null);
+  /** Joining on shared services, natively (web `JoinCollectiveDialog`); the sheet reads the preview itself. */
+  const [joinTarget, setJoinTarget] = useState<CollectiveView | null>(null);
+  /** The host's finish-setup wizard (web plan L8), opened from a row or from the banner's `?setup=`. */
+  const [setupTarget, setSetupTarget] = useState<string | null>(null);
+  const params = useLocalSearchParams<{ setup?: string }>();
+  const setupParam = typeof params.setup === 'string' ? params.setup : null;
+  const setupHandledRef = useRef(false);
 
   const collectives = useMemo<CollectiveView[]>(
     () => query.data?.collectives ?? [],
@@ -65,6 +75,29 @@ export default function CollectivesScreen() {
     [linksQuery.data?.links],
   );
   const hasLiveCollective = collectives.some((c) => c.status !== 'dissolved');
+
+  // What each venue is waiting for (web plan §4): the hosts still setting a page up, and the
+  // members whose host is. The same feed drives the banner above the tabs.
+  const feed = useIncomingLinks({ enabled: isAdmin });
+  const setupNeeded = useMemo(() => new Set((feed.data?.collectiveSetup ?? []).map((c) => c.collectiveId)), [feed.data]);
+  const memberWaiting = useMemo(() => new Set((feed.data?.memberWaiting ?? []).map((c) => c.collectiveId)), [feed.data]);
+  // An invitation that rides on a link request from the host (web plan L11): it is answered
+  // with the link, on the Linked venues screen.
+  const pendingLinkByHost = useMemo(() => {
+    const out = new Map<string, string>();
+    for (const l of linksQuery.data?.links ?? []) {
+      if (l.status === 'pending' && !l.initiatedByMe) out.set(l.otherVenue.id, l.id);
+    }
+    return out;
+  }, [linksQuery.data?.links]);
+
+  useEffect(() => {
+    if (!setupParam || setupHandledRef.current) return;
+    if (!collectives.some((c) => c.id === setupParam && c.isHost)) return;
+    setupHandledRef.current = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSetupTarget(setupParam);
+  }, [setupParam, collectives]);
 
   // The address customers actually use: a member venue's own page when the
   // collective adopted it, else the dedicated combined address (web 2026-09-05).
@@ -189,21 +222,31 @@ export default function CollectivesScreen() {
             onManage={() => router.push(`/collectives/${c.id}` as Href)}
             onViewPage={() => openWeb(collectivePublicPath(c))}
             onOpenArea={() => router.push('/collective-area' as Href)}
-            onAccept={() =>
+            setupNeeded={setupNeeded.has(c.id)}
+            memberWaiting={memberWaiting.has(c.id)}
+            pendingLinkId={pendingLinkByHost.get(c.hostVenueId) ?? null}
+            onContinueSetup={() => setSetupTarget(c.id)}
+            onReviewLink={(linkId) => router.push(`/linked-venues?review=${encodeURIComponent(linkId)}` as Href)}
+            onAccept={() => {
+              // Shared services: the join needs the venue's answers (web contract 6), asked here.
+              if (isSharedServices(c)) {
+                setJoinTarget(c);
+                return;
+              }
               memberAction.mutate(
                 { collectiveId: c.id, payload: { action: 'accept' } },
                 {
                   onSuccess: () => toast.success(`Joined ${c.name}.`),
                   onError: (err) => {
                     if (isConsentRequired(err)) {
-                      setJoinOnWeb(c);
+                      setJoinTarget(c);
                       return;
                     }
                     toast.error(err instanceof ApiError ? err.message : 'Action failed.');
                   },
                 },
-              )
-            }
+              );
+            }}
             onDecline={() =>
               runMember(c.id, { action: 'decline' }, `Declined the invitation to ${c.name}.`)
             }
@@ -244,6 +287,26 @@ export default function CollectivesScreen() {
         onClose={() => setLeaveTarget(null)}
       />
 
+      <JoinCollectiveSheet
+        visible={joinTarget !== null}
+        collectiveId={joinTarget?.id ?? null}
+        collectiveName={joinTarget?.name ?? 'the collective'}
+        venueName={venueName ?? 'your venue'}
+        onClose={() => setJoinTarget(null)}
+        onJoined={() => void query.refetch()}
+      />
+
+      <CollectiveSetupSheet
+        visible={setupTarget !== null}
+        collectiveId={setupTarget}
+        venueName={venueName ?? 'your venue'}
+        onClose={() => setSetupTarget(null)}
+        onChanged={() => {
+          void query.refetch();
+          void feed.refetch();
+        }}
+      />
+
       {joinOnWeb
         ? (() => {
             const copy = joinOnWebCopy(joinOnWeb.name);
@@ -275,19 +338,32 @@ export default function CollectivesScreen() {
 function CollectiveCard({
   collective,
   busy,
+  setupNeeded = false,
+  memberWaiting = false,
+  pendingLinkId = null,
   onManage,
   onViewPage,
   onOpenArea,
+  onContinueSetup,
+  onReviewLink,
   onAccept,
   onDecline,
   onLeave,
 }: {
   collective: CollectiveView;
   busy: boolean;
+  /** Host: two venues in and nothing bookable on the page yet (web plan L8). */
+  setupNeeded?: boolean;
+  /** Member: the host is still setting the page up. */
+  memberWaiting?: boolean;
+  /** Invited: the invitation rides on this pending link request from the host (web plan L11). */
+  pendingLinkId?: string | null;
   onManage: () => void;
   onViewPage: () => void;
   /** Shared services: Manage Collective, where the services across the venues are chosen. */
   onOpenArea: () => void;
+  onContinueSetup?: () => void;
+  onReviewLink?: (linkId: string) => void;
   onAccept: () => void;
   onDecline: () => void;
   onLeave: () => void;
@@ -296,6 +372,9 @@ function CollectiveCard({
   const dissolved = collective.status === 'dissolved';
   const invited = collective.myMembershipStatus === 'invited';
   const isActiveMember = collective.myMembershipStatus === 'active';
+  // A host whose other venues have not accepted yet (web `la.row.host.waiting`; plan L12: one venue is not live).
+  const invitedNames = collective.members.filter((m) => m.status === 'invited' && m.venueId !== collective.hostVenueId).map((m) => m.venueName);
+  const hostWaiting = !dissolved && collective.isHost && collective.activeMemberCount < 2 && invitedNames.length > 0;
   const accent =
     collective.bookingPageConfig?.brand_primary ?? collective.branding?.primary_colour ?? null;
   const showLink = !dissolved && collective.activeMemberCount >= 2;
@@ -322,6 +401,26 @@ function CollectiveCard({
       <Text variant="caption" tone="muted">
         {collectiveMembersLine(collective)}
       </Text>
+      {hostWaiting ? (
+        <Text variant="caption" color={colors.warning}>
+          {setupCopy('la.row.host.waiting', { venueList: formatVenueList(invitedNames, 2) })}
+        </Text>
+      ) : null}
+      {!dissolved && collective.isHost && setupNeeded ? (
+        <Text variant="caption" color={colors.warning}>
+          {setupCopy('finish.row.notLive')}
+        </Text>
+      ) : null}
+      {!dissolved && !collective.isHost && isActiveMember && memberWaiting ? (
+        <Text variant="caption" tone="secondary">
+          {setupCopy('la.row.member.waiting', { host: collective.members.find((m) => m.venueId === collective.hostVenueId)?.venueName ?? 'The host' })}
+        </Text>
+      ) : null}
+      {invited && pendingLinkId ? (
+        <Text variant="caption" tone="secondary">
+          {setupCopy('la.row.invitation.pendingLink', { host: collective.members.find((m) => m.venueId === collective.hostVenueId)?.venueName ?? 'The host' })}
+        </Text>
+      ) : null}
 
       {showLink ? (
         <PressableScale onPress={onViewPage} accessibilityLabel="View combined booking page">
@@ -333,7 +432,15 @@ function CollectiveCard({
 
       {!dissolved ? (
         <View style={styles.cardActions}>
-          {invited ? (
+          {invited && pendingLinkId ? (
+            <Button
+              label="Review the link request"
+              variant="primary"
+              size="sm"
+              disabled={busy}
+              onPress={() => onReviewLink?.(pendingLinkId)}
+            />
+          ) : invited ? (
             <>
               <Button
                 label="Accept invitation"
@@ -346,10 +453,13 @@ function CollectiveCard({
             </>
           ) : collective.isHost ? (
             <>
+              {setupNeeded ? (
+                <Button label={setupCopy('finish.row.cta')} variant="primary" size="sm" disabled={busy} onPress={onContinueSetup} />
+              ) : null}
               {isSharedServices(collective) ? (
                 <Button
                   label="Manage Collective"
-                  variant="primary"
+                  variant={setupNeeded ? 'secondary' : 'primary'}
                   size="sm"
                   disabled={busy}
                   onPress={onOpenArea}

@@ -155,6 +155,12 @@ export const queryKeys = {
     /** Booked revenue (web #191): keyed on the resolved query string. */
     bookedRevenue: (accessToken?: string | null, query?: string | null) =>
       [...queryKeys.reports.all(), 'booked-revenue', keyScope(accessToken), query ?? null] as const,
+    /** New bookings (web 2026-09-18): keyed on the resolved query string. */
+    newBookings: (accessToken?: string | null, query?: string | null) =>
+      [...queryKeys.reports.all(), 'new-bookings', keyScope(accessToken), query ?? null] as const,
+    /** How many rows a data export covers, before it is downloaded. */
+    exportCount: (accessToken?: string | null, query?: string | null) =>
+      [...queryKeys.reports.all(), 'export-count', keyScope(accessToken), query ?? null] as const,
   },
 
   referrals: {
@@ -362,8 +368,8 @@ export const queryKeys = {
       [...queryKeys.linkedVenues.all(), 'incoming', keyScope(accessToken)] as const,
     search: (accessToken?: string | null, q?: string | null) =>
       [...queryKeys.linkedVenues.all(), 'search', keyScope(accessToken), q ?? null] as const,
-    lookup: (accessToken?: string | null, slug?: string | null) =>
-      [...queryKeys.linkedVenues.all(), 'lookup', keyScope(accessToken), slug ?? null] as const,
+    lookup: (accessToken?: string | null, slug?: string | null, collective?: boolean) =>
+      [...queryKeys.linkedVenues.all(), 'lookup', keyScope(accessToken), slug ?? null, Boolean(collective)] as const,
     invite: (accessToken?: string | null, token?: string | null) =>
       [...queryKeys.linkedVenues.all(), 'invite', keyScope(accessToken), token ?? null] as const,
     myCalendars: (accessToken?: string | null) =>
@@ -413,5 +419,13 @@ export const queryKeys = {
       [...queryKeys.collectives.all(), 'catalogue', keyScope(accessToken), collectiveId ?? null] as const,
     slug: (accessToken?: string | null, slug?: string | null) =>
       [...queryKeys.collectives.all(), 'slug', keyScope(accessToken), slug ?? null] as const,
+    joinPreview: (accessToken?: string | null, collectiveId?: string | null, withPendingLink?: boolean) =>
+      [...queryKeys.collectives.all(), 'joinPreview', keyScope(accessToken), collectiveId ?? null, Boolean(withPendingLink)] as const,
+    sameNames: (accessToken?: string | null, collectiveId?: string | null) =>
+      [...queryKeys.collectives.all(), 'sameNames', keyScope(accessToken), collectiveId ?? null] as const,
+    adoptions: (accessToken?: string | null, collectiveId?: string | null) =>
+      [...queryKeys.collectives.all(), 'adoptions', keyScope(accessToken), collectiveId ?? null] as const,
+    adoptionReview: (accessToken?: string | null, collectiveId?: string | null, itemId?: string | null) =>
+      [...queryKeys.collectives.all(), 'adoptionReview', keyScope(accessToken), collectiveId ?? null, itemId ?? null] as const,
   },
 } as const;

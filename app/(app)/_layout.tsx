@@ -131,13 +131,6 @@ export default function AppLayout() {
         }}
       />
       <Stack.Screen
-        name="linked-venues/calendar"
-        options={{
-          headerShown: true,
-          title: 'Linked calendar',
-        }}
-      />
-      <Stack.Screen
         name="collectives/index"
         options={{
           headerShown: true,

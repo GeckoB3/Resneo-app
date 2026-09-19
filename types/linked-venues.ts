@@ -131,9 +131,61 @@ export type RespondLinkAction =
   | 'reject_change'
   | 'cancel_change';
 
+/**
+ * Joining the collective proposed with a link request, on `accept` / `accept_with_changes`
+ * (web plan L4, L5). The choices are the join preview's, as `JoinChoices` turns them into.
+ */
+export interface AcceptCollectiveWithLink {
+  collective_id: string;
+  consent_version: string;
+  same_name_choices?: {
+    item_id: string;
+    choice: 'use_mine' | 'add_new';
+    my_service_id?: string;
+    option_map?: { my_variant_id: string; host_variant_id: string | null }[];
+  }[];
+  own_service_choices?: { service_id: string; choice: 'ask' | 'park' }[];
+  form_choices?: { host_type_id: string; choice: 'use_existing' | 'use_theirs'; my_type_id?: string }[];
+}
+
 export interface RespondLinkPayload {
   action: RespondLinkAction;
   grants?: LinkGrantPair;
+  collective?: AcceptCollectiveWithLink;
+}
+
+/**
+ * POST /api/venue/account-links/setup: a link request and, at full access both ways, a collective
+ * with it, in one call (web plan L3). Refusals carry `field` so the wizard shows them on their step.
+ */
+export interface LinkSetupPayload {
+  targetSlug: string;
+  requestMessage?: string;
+  grants: LinkGrantPair;
+  collective?: { name: string; slug: string };
+}
+
+export type LinkSetupErrorField = 'venue' | 'level' | 'collective' | 'venues' | 'name' | 'slug' | 'plan';
+
+export interface LinkSetupResponse {
+  link: AccountLinkView | null;
+  collective: { id: string; name: string; slug: string } | null;
+}
+
+/** The collective invitation that rides on a pending link request (web plan L11). */
+export interface ProposedCollectiveSummary {
+  id: string;
+  name: string;
+  slug: string;
+  serviceModel: string;
+}
+
+/** One venue's standing for a collective the caller would host (web `collective-standing.ts`). */
+export interface CollectiveStandingResult {
+  standing: 'ok' | 'no_payments' | 'blocked';
+  /** The reason line for `blocked`; the warning for `no_payments`; null when `ok`. */
+  reason: string | null;
+  detail: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -146,11 +198,37 @@ export interface AccountLinksListResponse {
   links: AccountLinkView[];
   outgoingPendingCount: number;
   maxOutgoingPending: number;
+  /** The collective invitation riding on a pending request, by link id (web plan L11). Absent on older servers. */
+  proposedCollectives?: Record<string, ProposedCollectiveSummary>;
 }
 
+/** A pending request in the banner feed, naming the collective proposed with it, if any. */
+export interface IncomingFeedRequest {
+  id: string;
+  otherVenueName: string;
+  createdAt: string;
+  collective?: { id: string; name: string } | null;
+}
+
+/**
+ * GET /api/venue/account-links/incoming (web plan §4): what each venue is waiting for. Every
+ * array but the first two may be absent on an older server.
+ */
 export interface IncomingLinksResponse {
-  incomingRequests: { id: string; otherVenueName: string; createdAt: string }[];
+  incomingRequests: IncomingFeedRequest[];
+  /** Requests this venue sent that are still unanswered. */
+  outgoingRequests?: IncomingFeedRequest[];
   pendingChanges: { id: string; otherVenueName: string }[];
+  /** For a host: collectives with two venues in and nothing bookable on the page yet. */
+  collectiveSetup?: {
+    collectiveId: string;
+    name: string;
+    slug: string;
+    memberNames: string[];
+    reason: 'no_services' | 'no_calendars';
+  }[];
+  /** For a member: collectives whose host is still setting the page up. */
+  memberWaiting?: { collectiveId: string; name: string; hostName: string }[];
 }
 
 export interface VenueSearchResult {
@@ -166,7 +244,17 @@ export interface VenueSearchResponse {
 
 export type VenueLookupResponse =
   | { found: false }
-  | { found: true; eligible: boolean; name: string; slug: string; reason: string | null };
+  | {
+      found: true;
+      eligible: boolean;
+      name: string;
+      slug: string;
+      reason: string | null;
+      /** An accepted or suspended link already exists between the two venues. */
+      alreadyLinked?: boolean;
+      /** Present when asked with `&collective=1`: the venue's standing for a collective the caller would host. */
+      collective?: CollectiveStandingResult;
+    };
 
 export interface InviteCreateResponse {
   url: string;
@@ -192,6 +280,8 @@ export interface MyCalendarsResponse {
 
 export interface LinkResponse {
   link: AccountLinkView | null;
+  /** After an accept that also joined (or tried to join) the proposed collective (web plan L5). */
+  collective?: { id: string; name: string; joined: boolean; error?: string } | null;
 }
 
 // ---------------------------------------------------------------------------

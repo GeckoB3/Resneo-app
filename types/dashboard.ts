@@ -67,8 +67,33 @@ export interface DashboardSecondaryActivity {
   forecast: DashboardForecastDay[];
 }
 
+/** How a booking came in (web `NewBookingChannel`). */
+export type NewBookingChannel = 'online' | 'team' | 'walk_in' | 'linked_venue';
+
+/** Bookings MADE in a period, whatever date each is for (web `NewBookingCounts`, 2026-09-18). */
+export interface NewBookingCounts {
+  /** Bookings made in the period, including any since cancelled. */
+  total: number;
+  by_channel: Record<NewBookingChannel, number>;
+  /** Of `total`, the bookings since cancelled by the client or the team. */
+  cancelled: number;
+  /** Made in the period and still waiting for a deposit or a card. Not in `total`. */
+  awaiting_payment: number;
+}
+
+/** GET /api/venue/dashboard-home `new_bookings`: today, this week (from Monday) and this month. */
+export interface NewBookingsSummary {
+  today: NewBookingCounts;
+  this_week: NewBookingCounts;
+  this_month: NewBookingCounts;
+  week_start: string;
+  month_start: string;
+}
+
 export interface DashboardHomePayload {
   booking_model?: string;
+  /** `null` when it could not be counted; absent on a server that predates it (web 2026-09-18). */
+  new_bookings?: NewBookingsSummary | null;
   pricing_tier?: string | null;
   active_booking_models?: string[];
   enabled_models?: string[];

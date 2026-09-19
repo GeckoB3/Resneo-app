@@ -4,6 +4,7 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-n
 
 import { BaselineMetricsCard } from '@/components/reports/BaselineMetricsCard';
 import { BookedRevenueSection } from '@/components/reports/BookedRevenueSection';
+import { NewBookingsSection } from '@/components/reports/NewBookingsSection';
 import { BookingLogEmailCard } from '@/components/reports/BookingLogEmailCard';
 import { ClientsTab } from '@/components/reports/ClientsTab';
 import { DataExportCard } from '@/components/reports/DataExportCard';
@@ -59,7 +60,7 @@ import { useTheme } from '@/theme/useTheme';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type RangeKey = '7d' | '30d' | '90d' | 'custom';
-type MainTab = 'overview' | 'revenue' | 'clients';
+type MainTab = 'overview' | 'new-bookings' | 'revenue' | 'clients';
 
 const RANGE_DAYS: Record<Exclude<RangeKey, 'custom'>, number> = {
   '7d': 7,
@@ -386,6 +387,7 @@ export default function ReportsScreen() {
         <Segmented
           options={[
             { value: 'overview', label: 'Overview' },
+            { value: 'new-bookings', label: 'New bookings' },
             { value: 'revenue', label: 'Revenue' },
             { value: 'clients', label: `${clientWord}s` },
           ]}
@@ -395,7 +397,13 @@ export default function ReportsScreen() {
       </View>
 
       {/* ── Content ──────────────────────────────────────────────── */}
-      {mainTab === 'revenue' ? (
+      {mainTab === 'new-bookings' ? (
+        // New bookings has its own query and range (web 2026-09-18), like Revenue.
+        <ScrollView contentContainerStyle={styles.content}>
+          <NewBookingsSection bookingWord={bookingWord} today={today} enabled={isAdmin} />
+          <View style={styles.spacer} />
+        </ScrollView>
+      ) : mainTab === 'revenue' ? (
         // Booked revenue has its own query and range (web #191); it does not
         // wait on the overview payload.
         <ScrollView contentContainerStyle={styles.content}>
@@ -730,6 +738,9 @@ export default function ReportsScreen() {
                       label={isAppointmentVenue ? `${clientWord}-initiated` : 'Guest-initiated'}
                       value={String(cancellation.cancelled_guest_initiated)}
                     />
+                    {typeof cancellation.cancelled_team_initiated === 'number' ? (
+                      <StatRow label="By your team" value={String(cancellation.cancelled_team_initiated)} />
+                    ) : null}
                     <StatRow label="Auto (unpaid)" value={String(cancellation.cancelled_auto)} />
                     <StatRow
                       label={isAppointmentVenue ? `${bookingWord}s created` : 'Total created'}
@@ -986,11 +997,7 @@ export default function ReportsScreen() {
               />
 
               {/* Data export */}
-              <DataExportCard
-                bookingWord={bookingWord}
-                clientLabel={clientWord}
-                isAppointment={isAppointmentVenue}
-              />
+              <DataExportCard bookingWord={bookingWord} clientLabel={clientWord} today={today} />
 
               {/* Empty state for zero-activity ranges */}
               {!summary &&

@@ -207,18 +207,24 @@ export function SvgStackedBarChart({
                 );
               })}
 
-              {gridXPositions.map((x, i) => (
-                <SvgText
-                  key={`axis-${i}`}
-                  x={x}
-                  y={svgHeight - 2}
-                  fill={colors.textMuted}
-                  fontSize={9}
-                  fontFamily={fonts.regular}
-                  textAnchor={i === 0 ? 'start' : i === GRID_LINES ? 'end' : 'middle'}>
-                  {formatValue(Math.round((i / GRID_LINES) * max))}
-                </SvgText>
-              ))}
+              {gridXPositions.map((x, i) => {
+                // Small whole-number maxima round several grid lines to the same figure; label each once.
+                const label = formatValue(Math.round((i / GRID_LINES) * max));
+                const previous = i === 0 ? null : formatValue(Math.round(((i - 1) / GRID_LINES) * max));
+                if (previous === label) return null;
+                return (
+                  <SvgText
+                    key={`axis-${i}`}
+                    x={x}
+                    y={svgHeight - 2}
+                    fill={colors.textMuted}
+                    fontSize={9}
+                    fontFamily={fonts.regular}
+                    textAnchor={i === 0 ? 'start' : i === GRID_LINES ? 'end' : 'middle'}>
+                    {label}
+                  </SvgText>
+                );
+              })}
             </Svg>
           </>
         ) : null}

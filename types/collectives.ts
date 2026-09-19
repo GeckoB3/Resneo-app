@@ -229,9 +229,11 @@ export type CollectiveMemberAction =
   | 'configure'
   | 'transfer_host';
 
-export interface CollectiveMemberActionPayload {
+export interface CollectiveMemberActionPayload extends Partial<JoinChoices> {
   action: CollectiveMemberAction;
   venueId?: string;
+  /** `accept` on shared services: the join preview's version, with the choices below (web contract 6). */
+  consent_version?: string;
   visiblePractitionerIds?: string[];
   visibleServiceIds?: string[];
   allowAnyPractitionerSubstitution?: boolean;
@@ -316,6 +318,86 @@ export type PageAssetKind = 'logo' | 'cover' | 'gallery' | 'offering' | 'team';
 // API response wrappers
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Joining a shared-services collective (web `replicas/join.ts`, plan contract 6)
+// ---------------------------------------------------------------------------
+
+export interface JoinOption {
+  id: string;
+  name: string;
+}
+
+export interface JoinSameName {
+  item_id: string;
+  host_service_id: string;
+  name: string;
+  my_service_id: string;
+  my_options: JoinOption[];
+  host_options: JoinOption[];
+}
+
+/** GET /api/venue/collectives/[id]/join: what an invited venue decides before it joins. */
+export interface JoinPreview {
+  consent_version: string;
+  collective_name: string;
+  host_name: string;
+  /** Why the venue cannot join, in words, or null. */
+  blocked: string | null;
+  services_to_set_up: number;
+  same_name: JoinSameName[];
+  own_services: JoinOption[];
+  forms: { host_type_id: string; name: string; my_type_id: string }[];
+  warnings: { no_stripe_paid_services: number; form_services: number; forms_off: boolean };
+  /** The venue's classes, events or rooms in words, which stay on its own page, or null. */
+  other_models: string | null;
+  /** A pending full-access link from the host stands in for the mesh (web plan L4). */
+  pending_link?: boolean;
+}
+
+/** The venue's answers, as the join and the accept-with-collective bodies carry them. */
+export interface JoinChoices {
+  same_name_choices: {
+    item_id: string;
+    choice: 'use_mine' | 'add_new';
+    my_service_id?: string;
+    option_map?: { my_variant_id: string; host_variant_id: string | null }[];
+  }[];
+  own_service_choices: { service_id: string; choice: 'ask' | 'park' }[];
+  form_choices: { host_type_id: string; choice: 'use_existing' | 'use_theirs'; my_type_id?: string }[];
+}
+
+/** GET /api/venue/collectives/[id]/same-names (host): members holding a same-named service, by host service id. */
+export interface SameNameMatch {
+  venue_id: string;
+  venue_name: string;
+  service_id: string;
+}
+
+/** GET /api/venue/collectives/[id]/adoptions (member): questions the host asked and this venue has not answered. */
+export interface PendingAdoption {
+  item_id: string;
+  service_id: string;
+  service_name: string;
+  requested_at: string;
+}
+
+export interface AdoptionsResponse {
+  host_name: string;
+  collective_name: string;
+  adoptions: PendingAdoption[];
+}
+
+/** GET /api/venue/collectives/[id]/adoptions/[itemId]: one question, with both sides' options. */
+export interface AdoptionReview {
+  item_id: string;
+  collective_name: string;
+  host_name: string;
+  service: { id: string; name: string; options: JoinOption[] };
+  host_options: JoinOption[];
+  /** Each of the member's options, matched to the host's by name where one fits. */
+  suggested_map: { my_variant_id: string; host_variant_id: string | null }[];
+}
+
 export interface CollectivesListResponse {
   collectives: CollectiveView[];
 }
@@ -329,6 +411,8 @@ export interface CatalogueResponse {
 export interface SlugAvailableResponse {
   available: boolean;
   reason: string | null;
+  /** True when the address uses characters outside a-z, 0-9 and hyphens (web `slug-available`). */
+  format?: boolean;
 }
 export interface PageAssetResponse {
   url: string;

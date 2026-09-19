@@ -17,14 +17,18 @@ import { isBackendConfigured } from '@/lib/env';
 import { queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import type {
+  AdoptionReview,
+  AdoptionsResponse,
   CatalogueActionPayload,
   CatalogueResponse,
   CollectiveMemberActionPayload,
   CollectiveResponse,
   CollectivesListResponse,
   CreateCollectivePayload,
+  JoinPreview,
   PageAssetKind,
   PageAssetResponse,
+  SameNameMatch,
   SlugAvailableResponse,
   UpdateCollectivePayload,
 } from '@/types/collectives';
@@ -308,3 +312,116 @@ export function useDeletePageAsset() {
 // Re-export the picker so collective screens can mirror the booking-page editor's
 // image-picker mechanism without importing from the venue-image module directly.
 export { pickVenueImage } from '@/lib/queries/useVenueImageUpload';
+
+// ---------------------------------------------------------------------------
+// Joining on shared services, same names and adoptions (web plan L4, L13)
+// ---------------------------------------------------------------------------
+
+/**
+ * GET /api/venue/collectives/[id]/join: what an invited venue has to decide before it joins.
+ * `withPendingLink` reviews the invitation together with the link request it rides on (web
+ * plan L4), when the mesh is not there yet.
+ */
+export function useJoinPreview(
+  collectiveId: string | null | undefined,
+  options?: { withPendingLink?: boolean; enabled?: boolean },
+) {
+  const accessToken = useAccessToken();
+  const withPendingLink = options?.withPendingLink === true;
+  const enabled =
+    isBackendConfigured() && accessToken !== null && Boolean(collectiveId) && (options?.enabled ?? true);
+
+  return useQuery({
+    queryKey: queryKeys.collectives.joinPreview(accessToken, collectiveId, withPendingLink),
+    enabled,
+    staleTime: 0,
+    queryFn: async (): Promise<JoinPreview> => {
+      if (!accessToken || !collectiveId) throw new Error('Missing access token');
+      return apiFetch<JoinPreview>(
+        `/api/venue/collectives/${collectiveId}/join${withPendingLink ? '?with_pending_link=1' : ''}`,
+        { accessToken },
+      );
+    },
+  });
+}
+
+/** GET /api/venue/collectives/[id]/same-names (host): who holds a same-named service, by host service id. */
+export function useSameNames(collectiveId: string | null | undefined, options?: { enabled?: boolean }) {
+  const accessToken = useAccessToken();
+  const enabled =
+    isBackendConfigured() && accessToken !== null && Boolean(collectiveId) && (options?.enabled ?? true);
+
+  return useQuery({
+    queryKey: queryKeys.collectives.sameNames(accessToken, collectiveId),
+    enabled,
+    staleTime: 30_000,
+    queryFn: async (): Promise<Record<string, SameNameMatch[]>> => {
+      if (!accessToken || !collectiveId) throw new Error('Missing access token');
+      const res = await apiFetch<{ matches?: Record<string, SameNameMatch[]> }>(
+        `/api/venue/collectives/${collectiveId}/same-names`,
+        { accessToken },
+      );
+      return res.matches ?? {};
+    },
+  });
+}
+
+/** GET /api/venue/collectives/[id]/adoptions (member): the host's open questions about same-named services. */
+export function useAdoptions(collectiveId: string | null | undefined, options?: { enabled?: boolean }) {
+  const accessToken = useAccessToken();
+  const enabled =
+    isBackendConfigured() && accessToken !== null && Boolean(collectiveId) && (options?.enabled ?? true);
+
+  return useQuery({
+    queryKey: queryKeys.collectives.adoptions(accessToken, collectiveId),
+    enabled,
+    staleTime: 30_000,
+    queryFn: async (): Promise<AdoptionsResponse> => {
+      if (!accessToken || !collectiveId) throw new Error('Missing access token');
+      return apiFetch<AdoptionsResponse>(`/api/venue/collectives/${collectiveId}/adoptions`, { accessToken });
+    },
+  });
+}
+
+/** GET /api/venue/collectives/[id]/adoptions/[itemId]: one question with both sides' options. */
+export function useAdoptionReview(collectiveId: string | null | undefined, itemId: string | null | undefined) {
+  const accessToken = useAccessToken();
+  const enabled = isBackendConfigured() && accessToken !== null && Boolean(collectiveId) && Boolean(itemId);
+
+  return useQuery({
+    queryKey: queryKeys.collectives.adoptionReview(accessToken, collectiveId, itemId),
+    enabled,
+    staleTime: 0,
+    queryFn: async (): Promise<AdoptionReview> => {
+      if (!accessToken || !collectiveId || !itemId) throw new Error('Missing access token');
+      return apiFetch<AdoptionReview>(`/api/venue/collectives/${collectiveId}/adoptions/${itemId}`, { accessToken });
+    },
+  });
+}
+
+/** POST /api/venue/collectives/[id]/adoptions/[itemId]: use my service, or keep it separate (web contract 10). */
+export function useAnswerAdoption() {
+  const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: {
+      collectiveId: string;
+      itemId: string;
+      choice: 'use_mine' | 'keep_separate';
+      optionMap?: { my_variant_id: string; host_variant_id: string | null }[];
+    }): Promise<{ ok: boolean }> => {
+      if (!accessToken) throw new Error('Missing access token');
+      return apiFetch<{ ok: boolean }>(`/api/venue/collectives/${input.collectiveId}/adoptions/${input.itemId}`, {
+        accessToken,
+        method: 'POST',
+        body: JSON.stringify({ choice: input.choice, option_map: input.optionMap ?? [] }),
+      });
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.collectives.all() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.services.all() });
+    },
+  });
+}
+

@@ -42,6 +42,23 @@ Venue collectives on shared services, and the web's staff booking rule (web 2026
   links to Services and Manage Collective.
 - Services: badges sit on their own line, so long names are no longer cut short.
 
+Linked accounts and collectives, and the reports the web added (web 2026-09-19). Details in
+`Docs/APP_GAP_REPORT_R38_WEB_DELTA.md`.
+
+- Link with a venue in one guided flow: pick the venue, choose the level, start a collective on a
+  full link, name it, say which changes you will accept, check and send.
+- Review a link request and join the collective in one go, with the same-name, own-service and
+  form choices the web asks; joining a collective no longer sends you to the web.
+- Hosts finish setting up a new collective in the app: services, calendars, then the address.
+- Members answer a host's question about a same-named service; hosts see who still has to answer.
+- The banner on the Calendar tab shows every waiting item (requests in, requests out, pending
+  changes, setup to finish, a member to wait for) with a button each, and can be dismissed for a day.
+- New bookings: a card on Today, and a Reports tab by day, week or month with how each came in.
+- Export your data: bookings, clients or services for any dates as CSV, Excel or PDF, with a count
+  before the download.
+- More: the Linked venues group has three pages. The "Linked calendar" page is gone; linked
+  calendars are on the Calendar tab.
+
 **Play / App Store (draft):** Working in a venue collective is smoother: move a booking to another
 venue's calendar in one step, see which services the host manages, and get clearer messages when a
 service is updating. Team members can now move bookings between any calendars at their venue.

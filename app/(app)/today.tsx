@@ -11,6 +11,7 @@ import { ForecastChart } from '@/components/today/ForecastChart';
 import { GreetingHeader } from '@/components/today/GreetingHeader';
 import { HeatmapWeek } from '@/components/today/HeatmapWeek';
 import { KpiGrid } from '@/components/today/KpiGrid';
+import { NewBookingsCard } from '@/components/reports/NewBookingsCard';
 import {
   deriveSetupProgress,
   isOptionalSetupStepKey,
@@ -305,6 +306,9 @@ function SecondaryActivitySection({
 export default function TodayScreen() {
   const query = useDashboardHome();
   const { venue } = useVenueContext();
+  const staffQuery = useStaffMe();
+  const isAdmin = staffQuery.data?.staff?.role === 'admin';
+  const router = useRouter();
 
   const payload = query.data;
   const isAppointment = isAppointmentExperience(
@@ -360,6 +364,9 @@ export default function TodayScreen() {
 
         {/* KPI tiles (primary tile carries the inline forecast sparkline) */}
         <KpiGrid today={today} isAppointment={isAppointment} forecast={forecast} />
+
+        {/* Bookings MADE today, this week and this month, whatever date each is for (web 2026-09-18) */}
+        <NewBookingsCard summary={payload.new_bookings} onOpenReport={isAdmin ? () => router.push('/reports' as Href) : undefined} />
 
         {/* Today by booking type chips (multi-model venues) */}
         {payload.today_by_booking_model &&

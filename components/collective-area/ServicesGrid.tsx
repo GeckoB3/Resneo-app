@@ -428,7 +428,7 @@ function ServiceSheet({ grid, currencySymbol }: { grid: ServicesGridState; curre
             <Text variant="label">{areaCopy('svc.cal.heading')}</Text>
             {grid.groups.map((group) => {
               const active = group.calendars.filter((c) => c.is_active);
-              const warnings = venueWarnings(group, service.collective?.hidden_reasons ?? [], grid.collectiveName);
+              const warnings = venueWarnings(group, service.collective?.hidden_reasons ?? [], grid.collectiveName, service.collective?.item_id ?? null);
               return (
                 <View key={group.venue_id} style={[styles.venueBlock, { borderColor: colors.border }]}>
                   <Text variant="label">

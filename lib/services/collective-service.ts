@@ -103,8 +103,12 @@ export function collectiveServiceLines(service: Pick<ManagedService, 'collective
       );
       break;
     case 'parked':
+      // The host's own parked service is a service it has not put on the page yet; a member's is
+      // parked until it leaves (web `svc.card.parked`, read from `venue_role`, 2026-09-19).
       lines.push(
-        `Parked while your venue is part of ${collective}: nobody can book it, your team included. Bookings already made are not changed. It is bookable again if you leave.`,
+        block.venue_role === 'host'
+          ? `Parked while ${collective} is live. Put it on the page to take bookings for it.`
+          : `Parked while your venue is part of ${collective}: nobody can book it, your team included. Bookings already made are not changed. It is bookable again if you leave.`,
       );
       break;
   }

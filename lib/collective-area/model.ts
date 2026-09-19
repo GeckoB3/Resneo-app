@@ -53,6 +53,12 @@ export interface CollectiveCalendarGroup {
   is_host: boolean;
   sync: CollectiveSync;
   calendars: CollectiveCalendarEntry[];
+  /**
+   * Offerings this venue has been asked about and not answered (web plan L13): it holds a
+   * same-named service, and its copy exists only once it says whether to use it. Its calendars
+   * cannot offer these yet. Absent on older servers.
+   */
+  awaiting_answer?: string[];
 }
 
 export type BulkOpKind = 'offer' | 'withdraw' | 'assign' | 'unassign' | 'retry';
@@ -330,8 +336,13 @@ export function venueWarnings(
   group: CollectiveCalendarGroup,
   reasons: readonly { venue_id: string; venue_name: string; reason: CollectiveHiddenReasonKind }[],
   collectiveName: string,
+  /** The offering shown, so a venue still deciding about its same-named service says so (web plan L13). */
+  itemId?: string | null,
 ): string[] {
   const out: string[] = [];
+  if (itemId && (group.awaiting_answer ?? []).includes(itemId)) {
+    out.push(areaCopy('svc.cal.warn.awaiting', { venue: group.venue_name }));
+  }
   for (const venue of group.sync.pending) out.push(areaCopy('svc.cal.warn.settingUp', { venue: venue.venue_name }));
   for (const venue of group.sync.failed) {
     out.push(
@@ -419,6 +430,19 @@ export function buildCollectiveTodos(input: {
           id: `new-venue-${group.venue_id}`,
           text: counted('ov.todo.newVenue', onPage.length, { venue: group.venue_name }),
           action: { kind: 'venue_calendars', venueId: group.venue_id, label: areaCopy('svc.offer.chooseCalendars') },
+        });
+      }
+    }
+    // A member asked whether to use its own same-named service (web plan L13): its calendars can be
+    // chosen once it answers, so the host is told what it is waiting on.
+    for (const group of groups) {
+      if (group.is_host) continue;
+      for (const itemId of group.awaiting_answer ?? []) {
+        const service = onPage.find((s) => s.collective?.item_id === itemId);
+        if (!service) continue;
+        todos.push({
+          id: `awaiting-${group.venue_id}-${service.id}`,
+          text: areaCopy('ov.todo.awaiting', { venue: group.venue_name, service: service.name }),
         });
       }
     }

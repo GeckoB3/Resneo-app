@@ -4,10 +4,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 
 import { AcceptInviteSheet } from '@/components/linked/AcceptInviteSheet';
-import { IncomingRequestSheet } from '@/components/linked/IncomingRequestSheet';
 import { LinkedNotificationPrefsCard } from '@/components/linked/LinkedNotificationPrefsCard';
 import { InviteLinkSheet } from '@/components/linked/InviteLinkSheet';
-import { LinkRequestSheet } from '@/components/linked/LinkRequestSheet';
+import { LinkSetupSheet } from '@/components/linked/setup/LinkSetupSheet';
+import { ReviewLinkRequestSheet } from '@/components/linked/setup/ReviewLinkRequestSheet';
 import { LinkStatusBadge } from '@/components/linked/LinkStatusBadge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -21,6 +21,7 @@ import { Screen } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { summariseGrant } from '@/lib/linked/grants';
+import { setupCopy } from '@/lib/linked/setup-copy';
 import { terminationReasonLabel } from '@/lib/linked/linkStatus';
 import { useLinkedVenues, useMyCalendars, useRespondLink } from '@/lib/queries/useLinkedVenues';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
@@ -168,7 +169,7 @@ export default function LinkedVenuesScreen() {
 
   // Receiving end of an invite: a deep link (`/linked-venues?invite=<token>`)
   // opens the verify sheet once; manual paste opens it from the entry prompt.
-  const params = useLocalSearchParams<{ invite?: string }>();
+  const params = useLocalSearchParams<{ invite?: string; review?: string }>();
   const inviteParam = typeof params.invite === 'string' ? params.invite : null;
   const inviteHandledRef = useRef(false);
   useEffect(() => {
@@ -179,6 +180,11 @@ export default function LinkedVenuesScreen() {
       setAcceptOpen(true);
     }
   }, [inviteParam]);
+  // The banner's "Review request" (`/linked-venues?review=<linkId>`, web plan §4) opens the
+  // review sheet once the list has that request. Captured once, so a later refresh of the
+  // list does not reopen a request that has been answered.
+  const reviewParam = typeof params.review === 'string' ? params.review : null;
+  const reviewHandledRef = useRef(false);
 
   // A verified invite resolves to a venue → open the request editor pre-filled.
   const handleInviteVerified = (venue: { slug: string; name: string }) => {
@@ -189,6 +195,18 @@ export default function LinkedVenuesScreen() {
 
   const links = useMemo<AccountLinkView[]>(() => query.data?.links ?? [], [query.data?.links]);
   const maxOutgoing = query.data?.maxOutgoingPending ?? 10;
+  /** The collective invitation riding on a pending request, by link id (web plan L11). */
+  const proposedCollectives = query.data?.proposedCollectives ?? {};
+  const myVenue = query.data?.venue ?? null;
+
+  useEffect(() => {
+    if (!reviewParam || reviewHandledRef.current) return;
+    const match = links.find((l) => l.id === reviewParam && l.status === 'pending' && !l.initiatedByMe);
+    if (!match) return;
+    reviewHandledRef.current = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setReviewLink(match);
+  }, [reviewParam, links]);
 
   const { incoming, sent, active, past } = useMemo(() => {
     return {
@@ -201,54 +219,6 @@ export default function LinkedVenuesScreen() {
 
   const liveCount = incoming.length + sent.length + active.length;
   const respondingTo = respond.isPending ? respond.variables?.linkId : undefined;
-
-  const handleAccept = () => {
-    if (!reviewLink) return;
-    const name = reviewLink.otherVenue.name;
-    respond.mutate(
-      { linkId: reviewLink.id, action: 'accept' },
-      {
-        onSuccess: () => {
-          toast.success(`You’re now linked with ${name}.`);
-          setReviewLink(null);
-        },
-        onError: (err) =>
-          toast.error(err instanceof ApiError ? err.message : 'Could not accept the request.'),
-      },
-    );
-  };
-
-  const handleAcceptWithChanges = (grants: { mine: LinkGrant; theirs: LinkGrant }) => {
-    if (!reviewLink) return;
-    const name = reviewLink.otherVenue.name;
-    respond.mutate(
-      { linkId: reviewLink.id, action: 'accept_with_changes', grants },
-      {
-        onSuccess: () => {
-          toast.success(`Linked with ${name} with your adjustments.`);
-          setReviewLink(null);
-        },
-        onError: (err) =>
-          toast.error(err instanceof ApiError ? err.message : 'Could not accept the request.'),
-      },
-    );
-  };
-
-  const handleReject = () => {
-    if (!reviewLink) return;
-    const name = reviewLink.otherVenue.name;
-    respond.mutate(
-      { linkId: reviewLink.id, action: 'reject' },
-      {
-        onSuccess: () => {
-          toast.success(`Declined ${name}’s request.`);
-          setReviewLink(null);
-        },
-        onError: (err) =>
-          toast.error(err instanceof ApiError ? err.message : 'Could not reject the request.'),
-      },
-    );
-  };
 
   const handleCancel = () => {
     if (!cancelLink) return;
@@ -264,16 +234,6 @@ export default function LinkedVenuesScreen() {
       },
     );
   };
-
-  const reviewPending: 'accept' | 'reject' | null =
-    respondingTo === reviewLink?.id && respond.variables
-      ? respond.variables.action === 'accept' ||
-        respond.variables.action === 'accept_with_changes'
-        ? 'accept'
-        : respond.variables.action === 'reject'
-          ? 'reject'
-          : null
-      : null;
 
   // --- gates -----------------------------------------------------------------
 
@@ -348,9 +308,11 @@ export default function LinkedVenuesScreen() {
   ) : null;
 
   const sendSheet = (
-    <LinkRequestSheet
+    <LinkSetupSheet
       visible={sendOpen}
       prefill={invitePrefill}
+      venueName={myVenue?.name ?? 'Your venue'}
+      venueSlug={myVenue?.slug ?? null}
       onClose={() => {
         setSendOpen(false);
         setInvitePrefill(null);
@@ -384,7 +346,7 @@ export default function LinkedVenuesScreen() {
             </View>
           ) : null}
           <Button
-            label="Send link request"
+            label={setupCopy('setup.title')}
             fullWidth
             disabled={!canCreate}
             onPress={() => setSendOpen(true)}
@@ -422,7 +384,7 @@ export default function LinkedVenuesScreen() {
 
       <View style={styles.entryActions}>
         <Button
-          label="Send link request"
+          label={setupCopy('setup.title')}
           style={styles.flex1}
           disabled={!canCreate}
           onPress={() => setSendOpen(true)}
@@ -461,7 +423,11 @@ export default function LinkedVenuesScreen() {
               key={link.id}
               isFirst={i === 0}
               title={link.otherVenue.name}
-              subtitle="Wants to link with your venue"
+              subtitle={
+                proposedCollectives[link.id]
+                  ? `Wants to link with your venue and start ${proposedCollectives[link.id]!.name}, a shared booking page`
+                  : 'Wants to link with your venue'
+              }
               status={link.status}
               onPress={() => setReviewLink(link)}
             />
@@ -491,7 +457,11 @@ export default function LinkedVenuesScreen() {
               key={link.id}
               isFirst={i === 0}
               title={link.otherVenue.name}
-              subtitle="Sent · awaiting response · tap to cancel"
+              subtitle={
+                proposedCollectives[link.id]
+                  ? `${setupCopy('la.sent.collective', { venue: link.otherVenue.name, collective: proposedCollectives[link.id]!.name })} Tap to cancel.`
+                  : 'Sent, awaiting their response. Tap to cancel.'
+              }
               status={link.status}
               onPress={() => setCancelLink(link)}
             />
@@ -516,15 +486,13 @@ export default function LinkedVenuesScreen() {
 
       <LinkedNotificationPrefsCard />
 
-      <IncomingRequestSheet
+      <ReviewLinkRequestSheet
         link={reviewLink}
         visible={reviewLink !== null}
-        pending={reviewPending}
+        venueName={myVenue?.name ?? 'Your venue'}
         myCalendars={myCalendars}
+        collective={reviewLink ? (proposedCollectives[reviewLink.id] ?? null) : null}
         onClose={() => setReviewLink(null)}
-        onAccept={handleAccept}
-        onAcceptWithChanges={handleAcceptWithChanges}
-        onReject={handleReject}
       />
 
       <ConfirmSheet

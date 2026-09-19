@@ -1,21 +1,31 @@
 import { useRouter, type Href } from 'expo-router';
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { useEffect, useMemo, useSyncExternalStore } from 'react';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Text } from '@/components/ui/Text';
+import {
+  dismissBannerItem,
+  getBannerDismissals,
+  loadBannerDismissals,
+  subscribeBannerDismissals,
+} from '@/lib/linked/banner-dismissals';
+import { bannerItemsFromFeed, filterVisibleBannerItems } from '@/lib/linked/banner-items';
+import { setupCopy } from '@/lib/linked/setup-copy';
 import { useIncomingLinks } from '@/lib/queries/useLinkedVenues';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { spacing, typography } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
 /**
- * A thin global banner above the tabs: an admin nudge when other venues have
- * sent link requests waiting on a response — tapping opens the linked-venues
- * hub. Renders nothing otherwise (incl. for non-admin staff).
+ * The persistent banner above the tabs for admins (web `LinkedAccountBanner.tsx`; plan §4): a
+ * link request to review, naming the collective proposed with it; a request of ours still with
+ * the other venue; a permission change to answer; a collective the host still has to set up; and
+ * a collective whose host is setting the page up. Each row opens the right screen, and a row can
+ * be dismissed for 24 hours on this device. Renders nothing for non-admin staff.
  *
- * There is intentionally no "acting as linked venue" context bar: the active
- * linked venue is already conveyed by the calendar's amber venue chip and the
- * "Linked" badge on each linked grid, and you switch venues from those chips
- * (or the Bookings filter sheet) — so a global context bar is redundant.
+ * There is intentionally no "acting as linked venue" context bar: the active linked venue is
+ * already conveyed by the calendar's venue chip and the "Linked" badge on each linked grid.
  */
 export function LinkedVenueBanner() {
   const { colors } = useTheme();
@@ -24,51 +34,71 @@ export function LinkedVenueBanner() {
 
   const staffQuery = useStaffMe();
   const isAdmin = staffQuery.data?.staff?.role === 'admin';
-  // Admin-only route — gate the fetch so non-admin staff don't 403 every session.
+  // Admin-only route: gate the fetch so non-admin staff do not 403 every session.
   const incomingQuery = useIncomingLinks({ enabled: isAdmin });
-  const incomingCount = incomingQuery.data?.incomingRequests.length ?? 0;
+  const dismissed = useSyncExternalStore(subscribeBannerDismissals, getBannerDismissals, getBannerDismissals);
 
-  if (isAdmin && incomingCount > 0) {
-    const label =
-      incomingCount === 1
-        ? '1 venue wants to link with you'
-        : `${incomingCount} venues want to link with you`;
-    return (
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`${label} — review`}
-        onPress={() => router.push('/linked-venues' as Href)}
-        style={({ pressed }) => [
-          styles.banner,
-          styles.incoming,
-          // Clear the status bar — this banner renders above the screen's
-          // SafeAreaView (which collapses its now-redundant top inset).
-          { paddingTop: insets.top + spacing.sm, backgroundColor: colors.surface, borderColor: colors.brand },
-          pressed ? styles.pressed : null,
-        ]}>
-        <Text style={[styles.label, { color: colors.text }]} numberOfLines={1}>
-          {label}
-        </Text>
-        <Text style={[styles.linkText, { color: colors.brand }]}>Review</Text>
-      </Pressable>
-    );
-  }
+  useEffect(() => {
+    void loadBannerDismissals();
+  }, []);
 
-  return null;
+  const visible = useMemo(
+    () => filterVisibleBannerItems(bannerItemsFromFeed(incomingQuery.data), dismissed),
+    [incomingQuery.data, dismissed],
+  );
+
+  if (!isAdmin || visible.length === 0) return null;
+
+  return (
+    <View
+      style={[
+        styles.banner,
+        // Clear the status bar: this renders above the screen's SafeAreaView.
+        { paddingTop: insets.top + spacing.sm, backgroundColor: colors.surface, borderColor: colors.brand },
+      ]}>
+      {visible.map((item) => (
+        <View key={item.id} style={styles.row}>
+          <Text style={[styles.label, { color: colors.text }]} numberOfLines={3}>
+            {item.text}
+          </Text>
+          <View style={styles.actions}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={item.cta}
+              onPress={() => router.push(item.href as Href)}
+              hitSlop={8}
+              style={({ pressed }) => [pressed ? styles.pressed : null]}>
+              <Text style={[styles.linkText, { color: colors.brand }]}>{item.cta}</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={setupCopy('banner.dismiss')}
+              onPress={() => void dismissBannerItem(item.id)}
+              hitSlop={8}
+              style={({ pressed }) => [pressed ? styles.pressed : null]}>
+              <Text style={[styles.dismissText, { color: colors.textMuted }]}>{setupCopy('banner.dismiss')}</Text>
+            </Pressable>
+          </View>
+        </View>
+      ))}
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
   banner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: spacing.base,
-    paddingVertical: spacing.sm,
+    paddingBottom: spacing.sm,
     borderBottomWidth: StyleSheet.hairlineWidth,
     gap: spacing.sm,
   },
-  incoming: {
-    minHeight: 48,
+  row: {
+    gap: spacing.xs,
+  },
+  actions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.base,
   },
   pressed: {
     opacity: 0.7,
@@ -79,5 +109,8 @@ const styles = StyleSheet.create({
   linkText: {
     ...typography.bodySmall,
     fontWeight: '600',
+  },
+  dismissText: {
+    ...typography.caption,
   },
 });
