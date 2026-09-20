@@ -32,6 +32,8 @@ export interface ResolvedRequirementData {
   };
   state: ComplianceRequirementState;
   lock_blocked: boolean;
+  /** A client-submitted pass/fail form still needs a staff result (web, 2026-09-20). */
+  awaiting_result?: boolean;
   matching_record: ComplianceRecordRef | null;
   latest_record: ComplianceRecordRef | null;
 }

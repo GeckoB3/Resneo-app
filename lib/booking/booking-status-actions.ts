@@ -20,6 +20,9 @@ const REVERT: Partial<Record<BookingStatus, { label: string; target: BookingStat
   Seated: { label: 'Unseat', target: 'Booked' },
   Completed: { label: 'Reopen', target: 'Seated' },
   'No-Show': { label: 'Undo No-Show', target: 'Booked' },
+  // An accidental cancel goes back to Booked; the server re-checks the time first
+  // and answers 409 when it has since been taken (web, 2026-09-20).
+  Cancelled: { label: 'Reinstate', target: 'Booked' },
 };
 
 export type BookingActionKind = 'primary' | 'revert' | 'destructive';

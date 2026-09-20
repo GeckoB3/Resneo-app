@@ -326,6 +326,29 @@ describe('buildPriceSummary', () => {
     return rows.map((r) => [r.label, r.pence, r.note ?? null]);
   }
 
+  it('reads the price agreed at booking time before the live option price (web 20270212120000)', () => {
+    // The catalogue went from 25.00 to 30.00 after the booking was made: the row keeps 25.00.
+    const rows = buildPriceSummary(
+      booking({
+        service_variant_name: 'Gents cut',
+        service_variant_price_pence: 3000,
+        service_price_snapshot_pence: 2500,
+        booking_total_price_pence: 2500,
+        balance_due_pence: 2500,
+      }),
+    );
+    expect(labels(rows)).toEqual([
+      ['Gents cut', 2500, null],
+      ['Outstanding', 2500, null],
+    ]);
+    // A legacy row with no snapshot still reads the live price.
+    expect(labels(buildPriceSummary(booking({ service_variant_name: 'Gents cut', service_variant_price_pence: 3000 })))[0]).toEqual([
+      'Gents cut',
+      3000,
+      null,
+    ]);
+  });
+
   it('lists the service, each add-on, and the booking total', () => {
     const rows = buildPriceSummary(
       booking({

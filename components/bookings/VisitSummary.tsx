@@ -221,11 +221,11 @@ export function VisitSummary({
   const visitPayment = booking.visit_payment ?? null;
   const visitLines = visitPayment && visitPayment.booking_count > 1 ? (visitPayment.lines ?? []) : [];
   const useVisitLinePrices = isServiceVisit && visitLines.length > 1;
-  // The single service's own price: the variant price, else the stored total
+  // The single service's own price: the agreed price (else the live variant price), else the stored total
   // minus its add-ons. Both are snapshots on the booking, so the row and the
   // total below it always agree.
   const singleServicePence = (() => {
-    const variant = booking.service_variant_price_pence ?? null;
+    const variant = booking.service_price_snapshot_pence ?? booking.service_variant_price_pence ?? null;
     if (variant != null) return variant;
     const total = booking.booking_total_price_pence ?? null;
     if (total == null) return null;
@@ -241,7 +241,9 @@ export function VisitSummary({
     if (visitPayment && visitPayment.booking_count > 1) return visitPayment.total_pence;
     const stored = booking.booking_total_price_pence;
     if (stored != null && stored > 0) return stored;
-    const computed = (booking.service_variant_price_pence ?? 0) + (booking.addons_total_price_pence ?? 0);
+    const computed =
+      (booking.service_price_snapshot_pence ?? booking.service_variant_price_pence ?? 0) +
+      (booking.addons_total_price_pence ?? 0);
     return computed > 0 ? computed : null;
   })();
   /**

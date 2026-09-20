@@ -161,8 +161,8 @@ describe('bookingDetailActions — table reservation (isTableReservation = true)
     ]);
   });
 
-  it('Cancelled → no actions (terminal, no reopen path)', () => {
-    expect(tuples('Cancelled', true)).toEqual([]);
+  it('Cancelled → Reinstate only (web 2026-09-20: back to Booked, the time re-checked)', () => {
+    expect(tuples('Cancelled', true)).toEqual([{ label: 'Reinstate', target: 'Booked', variant: 'ghost', kind: 'revert', destructive: false }]);
   });
 });
 
@@ -266,8 +266,8 @@ describe('bookingDetailActions — appointment (isTableReservation = false)', ()
     ]);
   });
 
-  it('Cancelled → no actions', () => {
-    expect(tuples('Cancelled', false)).toEqual([]);
+  it('Cancelled → Reinstate only', () => {
+    expect(tuples('Cancelled', false)).toEqual([{ label: 'Reinstate', target: 'Booked', variant: 'ghost', kind: 'revert', destructive: false }]);
   });
 });
 
@@ -322,8 +322,8 @@ describe('revert / reopen transitions', () => {
     expect(revertTarget('No-Show')).toBe('Booked'); // Undo No-Show
   });
 
-  it('offers no revert from Pending, Booked, or Cancelled', () => {
-    for (const status of ['Pending', 'Booked', 'Cancelled'] as const) {
+  it('offers no revert from Pending or Booked', () => {
+    for (const status of ['Pending', 'Booked'] as const) {
       for (const isTable of [true, false]) {
         expect(bookingDetailActions(status, isTable).some((a) => a.kind === 'revert')).toBe(false);
       }
@@ -423,9 +423,12 @@ describe('Cancel action availability', () => {
 // ---------------------------------------------------------------------------
 
 describe('terminal-state handling', () => {
-  it('Cancelled is a hard terminal — no actions at all', () => {
-    expect(bookingDetailActions('Cancelled', true)).toEqual([]);
-    expect(bookingDetailActions('Cancelled', false)).toEqual([]);
+  it('Cancelled offers Reinstate and nothing else (the server re-checks the time)', () => {
+    for (const isTable of [true, false]) {
+      const actions = bookingDetailActions('Cancelled', isTable);
+      expect(actions).toHaveLength(1);
+      expect(actions[0]).toMatchObject({ label: 'Reinstate', target: 'Booked', kind: 'revert' });
+    }
   });
 
   it('Completed and No-Show offer exactly one (undo) action and nothing else', () => {

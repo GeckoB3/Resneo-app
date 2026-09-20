@@ -28,6 +28,8 @@ export interface MultiServiceCollapseRow {
   group_booking_id?: string | null;
   person_label?: string | null;
   status?: string;
+  /** The list row's resolved service label, so a visit line can name every service. */
+  booking_item_name?: string | null;
 }
 
 /** Marks on a list line that stands for part of a visit. */
@@ -42,6 +44,11 @@ export interface VisitListLineMarks {
    * any day (cancelled, filtered out, or on a hidden calendar).
    */
   visit_rest_hidden?: boolean;
+  /**
+   * On a multi-service visit's representative line: every service of that day of the
+   * visit, in start order, so the line reads "Cut & Finish + Gents Cut" (web, 2026-09-20).
+   */
+  visit_service_names?: string[];
 }
 
 /**
@@ -124,11 +131,17 @@ export function collapseMultiServiceVisits<T extends MultiServiceCollapseRow>(
     const group = byGroupDay.get(key) ?? [row];
     const status =
       typeof row.status === 'string' ? visitLifecycleStatus(group, row.status) : row.status;
+    const names = [...group]
+      .filter((r) => r.status !== 'Cancelled')
+      .sort(compareStart)
+      .map((r) => r.booking_item_name?.trim() ?? '')
+      .filter(Boolean);
     return [
       {
         ...row,
         ...(typeof status === 'string' ? { status } : {}),
         ...(spansDays ? { visit_spans_days: true } : {}),
+        ...(names.length > 1 ? { visit_service_names: names } : {}),
       },
     ];
   });

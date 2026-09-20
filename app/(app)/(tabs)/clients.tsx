@@ -343,9 +343,14 @@ export default function ClientsScreen() {
 
   const guestsQuery = useGuests({ ...guestQueryParams, page, limit: PAGE_SIZE });
 
-  const totalCount = guestsQuery.data?.total_count ?? 0;
   const responsePage = guestsQuery.data?.page;
   const responseGuests = guestsQuery.data?.guests;
+  // The total the last successful page reported. A later page that fails (the route
+  // answers 500 for a page past the end) must not drop it to 0 while the loaded rows
+  // stay on screen, which read "All 0 clients loaded" under two contacts (2026-09-20).
+  const lastTotalRef = useRef(0);
+  if (guestsQuery.data && responsePage === page) lastTotalRef.current = guestsQuery.data.total_count;
+  const totalCount = guestsQuery.data?.total_count ?? lastTotalRef.current;
 
   // Append each freshly-loaded page into the accumulator, de-duplicating by id.
   // We only merge when the response's echoed page matches the page we asked for,
@@ -362,7 +367,11 @@ export default function ClientsScreen() {
   }, [responseGuests, responsePage, page]);
 
   const guests = loadedGuests;
-  const hasMore = guests.length < totalCount;
+  // Another page exists only when the last one came back full: a short page is the
+  // end whatever the total says, and an empty list (first paint, before the page has
+  // been merged) must not ask for page 1.
+  const hasMore =
+    guests.length < totalCount && (responseGuests?.length ?? 0) >= PAGE_SIZE;
   const isFetchingNextPage = page > 0 && guestsQuery.isFetching;
 
   // The default identity scope only returns contacts with an email or phone, so

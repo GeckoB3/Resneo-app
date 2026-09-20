@@ -471,7 +471,12 @@ export function AddonGroupEditorSheet({
                   key={opt.value}
                   accessibilityRole="radio"
                   accessibilityState={{ selected }}
-                  onPress={() => setSelectionType(opt.value)}
+                  onPress={() => {
+                    // "Pick one" pins the maximum at 1; carrying that into multi mode would let
+                    // the client pick just one anyway (web, 2026-09-20).
+                    if (opt.value === 'multi' && maxSelect.trim() === '1') setMaxSelect('');
+                    setSelectionType(opt.value);
+                  }}
                   style={({ pressed }) => [
                     styles.radioRow,
                     {

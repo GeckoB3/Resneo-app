@@ -36,11 +36,19 @@ export interface MoneyAtAGlance {
   settled: boolean;
 }
 
+/**
+ * The service line's price as the web reads it: the snapshot taken when the booking was made,
+ * else the option's live price for rows made before the snapshot existed, else 0.
+ */
+export function agreedServicePricePence(booking: BookingDetail): number {
+  return booking.service_price_snapshot_pence ?? booking.service_variant_price_pence ?? 0;
+}
+
 export function buildMoneyAtAGlance(booking: BookingDetail): MoneyAtAGlance | null {
   const visit = booking.visit_payment ?? null;
   const isVisit = !!visit && visit.booking_count > 1;
   const computed =
-    (booking.service_variant_price_pence ?? 0) + (booking.addons_total_price_pence ?? 0);
+    agreedServicePricePence(booking) + (booking.addons_total_price_pence ?? 0);
   const totalPence = isVisit
     ? visit!.total_pence
     : booking.booking_total_price_pence != null && booking.booking_total_price_pence > 0
@@ -139,7 +147,7 @@ export interface PriceSummaryRow {
  */
 export function resolveBookingTotalPence(booking: BookingDetail): number | null {
   const addonsTotal = booking.addons_total_price_pence ?? 0;
-  const computed = (booking.service_variant_price_pence ?? 0) + addonsTotal;
+  const computed = agreedServicePricePence(booking) + addonsTotal;
   if (booking.booking_total_price_pence != null && booking.booking_total_price_pence > 0) {
     return booking.booking_total_price_pence;
   }
@@ -149,7 +157,8 @@ export function resolveBookingTotalPence(booking: BookingDetail): number | null 
 export function buildPriceSummary(booking: BookingDetail): PriceSummaryRow[] {
   const rows: PriceSummaryRow[] = [];
 
-  const variantPence = booking.service_variant_price_pence ?? null;
+  // The price agreed at booking time, else the option's live price (older bookings), as on the web.
+  const variantPence = booking.service_price_snapshot_pence ?? booking.service_variant_price_pence ?? null;
   const serviceLabel = booking.service_variant_name?.trim() || null;
   const addons = booking.addons ?? [];
 
@@ -240,7 +249,12 @@ export function buildPriceSummary(booking: BookingDetail): PriceSummaryRow[] {
 
   const balance = booking.balance_due_pence ?? null;
   const hasMoneyContext = totalPence != null || depositPaid != null || amountPaid > 0;
-  if (balance != null && balance > 0) {
+  // Nothing is due on a booking that will not happen (web, 2026-09-20); what was
+  // paid still shows above.
+  const nothingOwed = booking.status === 'Cancelled' || booking.status === 'No-Show';
+  if (nothingOwed) {
+    // no balance row
+  } else if (balance != null && balance > 0) {
     rows.push({ key: 'balance', label: 'Outstanding', pence: balance, emphasis: true });
   } else if (balance === 0 && hasMoneyContext) {
     rows.push({ key: 'balance', label: 'Outstanding', pence: 0, emphasis: true });

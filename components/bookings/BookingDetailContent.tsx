@@ -741,8 +741,13 @@ export function BookingDetailContent({
     managedServices.data?.services.find(
       (s) => s.id === (booking.service_item_id ?? booking.appointment_service_id),
     )?.name?.trim() || null;
+  // The row's own name snapshot (refetched with the detail) comes before the name
+  // borrowed from the list row, which goes stale the moment a Modify changes the
+  // service, and before the catalogue, which does not hold a partner venue's services
+  // (a partner booking opened on its own read "Service" until 2026-09-20).
   const serviceName =
     booking.service_variant_name?.trim() ||
+    booking.service_name_snapshot?.trim() ||
     fallbackServiceName?.trim() ||
     catalogServiceName ||
     null;
@@ -814,6 +819,8 @@ export function BookingDetailContent({
   // destructive actions (No-Show, Cancel) still arm→confirm.
   const revertIsInstant =
     !!revertAction &&
+    // Reinstate (Cancelled -> Booked) confirms first, as on the web.
+    booking.status !== 'Cancelled' &&
     (booking.status !== 'Seated' || revertAction.target !== 'Booked' || !isTable);
   // Cancelling a partner's booking needs the full grant (web `canCancel`);
   // no-show is an ordinary status change and stays with an edit grant.

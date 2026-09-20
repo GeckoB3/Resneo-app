@@ -33,6 +33,8 @@ export interface BookingListRow {
    */
   visit_spans_days?: boolean;
   visit_rest_hidden?: boolean;
+  /** Every service of a multi-service visit's day, on its representative line. */
+  visit_service_names?: string[];
   booking_model?: string | null;
   booking_item_name?: string | null;
   /** Appointment anchors — practitioner venues use practitioner_id, unified use calendar_id. */

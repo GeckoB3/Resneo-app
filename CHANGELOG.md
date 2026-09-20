@@ -59,6 +59,28 @@ Linked accounts and collectives, and the reports the web added (web 2026-09-19).
 - More: the Linked venues group has three pages. The "Linked calendar" page is gone; linked
   calendars are on the Calendar tab.
 
+The web's owner-flow sweep (web 2026-09-20). Details in `Docs/APP_GAP_REPORT_R39_WEB_DELTA.md`.
+
+- A cancelled booking can be reinstated; the server checks the time is still free first. Cancelled
+  and no-show bookings no longer show an outstanding balance.
+- Compliance on a booking: "Too recent" and "Awaiting result" say why a record does not count yet;
+  a form link already sent shows when it went and offers "Resend link".
+- Add-on groups switched to "Pick multiple" drop the single-choice maximum of 1.
+- Deleting a service that is on the collective page takes it off the page first, and says what
+  happens at the other venues; hiding or showing a service confirms what it did.
+- A multi-service visit's row in Appointments names every service.
+- Booking prices show what the client was quoted when they booked, not the service's current
+  price.
+- A booking at a partner venue opened on its own names its service (it read "Service"), and the
+  name updates when Modify changes the service.
+- Contacts no longer reads "All 0 clients loaded" under the list, and a client's "Last visit" is
+  never a date in the future.
+- Android: tactile feedback now follows the phone's vibration settings. Taps, toggles and
+  confirmations used a raw vibration (classed as media vibration), so they buzzed even with touch
+  feedback switched off; they now go through the system's touch-feedback channel, which the
+  "Touch interactions" setting and the vibration master switch control. iOS already followed
+  System Haptics.
+
 **Play / App Store (draft):** Working in a venue collective is smoother: move a booking to another
 venue's calendar in one step, see which services the host manages, and get clearer messages when a
 service is updating. Team members can now move bookings between any calendars at their venue.

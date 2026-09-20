@@ -172,6 +172,29 @@ export function useDeleteService() {
   });
 }
 
+/**
+ * DELETE /api/venue/collectives/[id]/offerings/[itemId] — a host takes its master off the
+ * collective page (the copies at member venues retire). The web does this before deleting
+ * a service that is on the page, and so does the app's delete flow.
+ */
+export function useTakeServiceOffPage() {
+  const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: { collectiveId: string; itemId: string }): Promise<unknown> => {
+      if (!accessToken) {
+        throw new Error('Missing access token');
+      }
+      return apiFetch<unknown>(
+        `/api/venue/collectives/${input.collectiveId}/offerings/${input.itemId}`,
+        { accessToken, method: 'DELETE' },
+      );
+    },
+    onSuccess: () => invalidateServices(queryClient),
+  });
+}
+
 /** POST /api/venue/appointment-services — create a service with the basics. */
 export function useCreateService() {
   const accessToken = useAccessToken();

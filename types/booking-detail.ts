@@ -171,6 +171,14 @@ export interface BookingDetail {
   area_name?: string | null;
   service_variant_name?: string | null;
   service_variant_price_pence?: number | null;
+  /** The service's name when the booking was made (trigger-written on the row). */
+  service_name_snapshot?: string | null;
+  /**
+   * The service line's price when the booking was made (web migration 20270212120000):
+   * every price row reads this first, so a later catalogue edit does not rewrite what the
+   * client was quoted. Null on legacy rows, where the live option price is the fallback.
+   */
+  service_price_snapshot_pence?: number | null;
   inferred_booking_model?: BookingModel | null;
   table_assignments?: BookingTableAssignment[];
   /** Add-on snapshots + totals (full GET). */

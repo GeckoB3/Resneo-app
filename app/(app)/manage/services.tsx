@@ -92,6 +92,7 @@ import {
   useManagedServices,
   useReorderServices,
   useUpdateService,
+  useTakeServiceOffPage,
   type VariantWriteInput,
 } from '@/lib/queries/useServicesManage';
 import { useCreateHostCalendar, usePractitioners } from '@/lib/queries/usePractitioners';
@@ -673,6 +674,7 @@ export default function ServicesScreen() {
   const update = useUpdateService();
   const create = useCreateService();
   const deleteService = useDeleteService();
+  const takeOffPage = useTakeServiceOffPage();
   const reorderServices = useReorderServices();
   const toggleCalendarService = useToggleCalendarService();
   const createCalendar = useCreateHostCalendar();
@@ -1343,6 +1345,13 @@ export default function ServicesScreen() {
           setRemovalSource('form');
           return;
         }
+        // A quiet change says what it did (web N18, 2026-09-20).
+        const wasActive = services.find((svc) => svc.id === editTarget.id)?.is_active !== false;
+        if (wasActive && !isActive) {
+          toast.success(`"${shared.name}" is now hidden from guests. Bookings already made are not changed.`);
+        } else if (!wasActive && isActive) {
+          toast.success(`"${shared.name}" is visible to guests again.`);
+        }
       } else {
         await create.mutateAsync({
           ...shared,
@@ -1494,9 +1503,28 @@ export default function ServicesScreen() {
     }
   }
 
-  function runDeleteService() {
+  /** A host's master on the collective page comes off the page first (web F2, 2026-09-20). */
+  function deleteTakesOffPage(service: ManagedService | null): boolean {
+    const block = service?.collective ?? null;
+    return !!block && block.role === 'master' && block.venue_role === 'host' && !!block.item_id;
+  }
+
+  async function runDeleteService() {
     const service = deleteTarget;
     if (!service) return;
+    if (deleteTakesOffPage(service) && service.collective?.item_id) {
+      try {
+        await takeOffPage.mutateAsync({
+          collectiveId: service.collective.collective_id,
+          itemId: service.collective.item_id,
+        });
+      } catch (e) {
+        hapticWarning();
+        setDeleteTarget(null);
+        toast.error(e instanceof ApiError ? e.message : 'Could not take the service off the page.');
+        return;
+      }
+    }
     deleteService.mutate(service.id, {
       onSuccess: () => {
         hapticSuccess();
@@ -2340,8 +2368,9 @@ export default function ServicesScreen() {
         <View style={styles.deleteSheet}>
           <Text variant="subheading">Delete service</Text>
           <Text variant="bodySmall" tone="secondary">
-            Delete &quot;{deleteTarget?.name}&quot;? This cannot be undone. The service will not be
-            deleted if upcoming bookings exist.
+            {deleteTakesOffPage(deleteTarget) && deleteTarget?.collective
+              ? `"${deleteTarget.name}" comes off the ${deleteTarget.collective.collective_name} page first: at the other venues it becomes a retired service and their calendars stop offering it. Bookings already made are not changed. It is then deleted here. This cannot be undone.`
+              : `Delete "${deleteTarget?.name}"? This cannot be undone. The service will not be deleted if upcoming bookings exist.`}
           </Text>
           <View style={styles.actions}>
             <Button
@@ -2351,11 +2380,11 @@ export default function ServicesScreen() {
               onPress={() => setDeleteTarget(null)}
             />
             <Button
-              label="Delete"
+              label={deleteTakesOffPage(deleteTarget) ? 'Take off the page and delete' : 'Delete'}
               variant="danger"
               style={styles.flex1}
-              loading={deleteService.isPending}
-              onPress={runDeleteService}
+              loading={deleteService.isPending || takeOffPage.isPending}
+              onPress={() => void runDeleteService()}
             />
           </View>
         </View>

@@ -73,8 +73,16 @@ function BookingRowBase({
   const { colors } = useTheme();
 
   const addonCount = booking.addons_count ?? 0;
+  // A multi-service visit names every service of the day; more than two are counted.
+  const visitNames = booking.visit_service_names ?? [];
+  const serviceLabel =
+    visitNames.length > 2
+      ? `${visitNames[0]} + ${visitNames.length - 1} more`
+      : visitNames.length === 2
+        ? `${visitNames[0]} + ${visitNames[1]}`
+        : (booking.service_variant_name ?? booking.booking_item_name);
   const subtitle = [
-    booking.service_variant_name ?? booking.booking_item_name,
+    serviceLabel,
     booking.calendar_name,
     partyLabel(booking.party_size, isAppointment),
     addonCount > 0 ? `+${addonCount} add-on${addonCount === 1 ? '' : 's'}` : null,

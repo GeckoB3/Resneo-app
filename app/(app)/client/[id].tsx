@@ -327,8 +327,11 @@ export default function ClientDetailScreen() {
   const bookingsOnFile = bookingsOnFileLabel(stats.total_bookings, terminology.booking);
 
   // Last / Next visit tiles (web ~505-535). The next visit is the soonest
-  // still-live booking in the history the route returned.
-  const lastVisitDate = guest.last_visit_date ?? stats.last_visit_date ?? null;
+  // still-live booking in the history the route returned. The last visit is the
+  // guest row's own `last_visit_date` only, as on the web: `stats.last_visit_date`
+  // is the latest booking DATE, which is tomorrow for a guest whose first visit
+  // has not happened yet (2026-09-20).
+  const lastVisitDate = guest.last_visit_date ?? null;
   const lastVisitDay = formatCalendarDayShort(lastVisitDate, todayCalendar);
   const lastVisitRelative =
     lastVisitDate && lastVisitDay !== 'Today' && lastVisitDay !== 'Tomorrow'

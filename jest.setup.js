@@ -15,8 +15,16 @@ jest.mock('expo-haptics', () => ({
   impactAsync: jest.fn(() => Promise.resolve()),
   notificationAsync: jest.fn(() => Promise.resolve()),
   selectionAsync: jest.fn(() => Promise.resolve()),
+  performAndroidHapticsAsync: jest.fn(() => Promise.resolve()),
   ImpactFeedbackStyle: { Light: 'light', Medium: 'medium', Heavy: 'heavy' },
   NotificationFeedbackType: { Success: 'success', Warning: 'warning', Error: 'error' },
+  AndroidHaptics: {
+    Confirm: 'confirm',
+    Reject: 'reject',
+    Clock_Tick: 'clock-tick',
+    Long_Press: 'long-press',
+    Virtual_Key: 'virtual-key',
+  },
 }));
 
 // There is no native provider under jest, so the real `useSafeAreaInsets`

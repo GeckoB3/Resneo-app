@@ -18,7 +18,7 @@ import {
   useSendComplianceFormLink,
   type ComplianceSendVia,
 } from '@/lib/queries/useBookingCompliance';
-import { useGuestCompliance } from '@/lib/queries/useCompliance';
+import { useGuestCompliance, useResendFormLink } from '@/lib/queries/useCompliance';
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import {
@@ -41,7 +41,19 @@ type CaptureTarget = {
 };
 
 /** Web `requirementStatePill` mapping. */
-export function requirementPill(state: ComplianceRequirementState): { label: string; tone: BadgeTone } {
+export function requirementPill(
+  state: ComplianceRequirementState,
+  /** An otherwise valid record sits inside the lead time, so it does not count yet. */
+  lockBlocked = false,
+  /** A client sent the form in; a staff member still has to record pass or fail. */
+  awaitingResult = false,
+): { label: string; tone: BadgeTone } {
+  if (awaitingResult && (state === 'expired' || state === 'missing')) {
+    return { label: 'Awaiting result', tone: 'warning' };
+  }
+  if (lockBlocked && (state === 'expired' || state === 'missing')) {
+    return { label: 'Too recent', tone: 'warning' };
+  }
   switch (state) {
     case 'satisfied':
       return { label: 'Current', tone: 'success' };
@@ -147,6 +159,9 @@ export function ComplianceCard({ bookingId, guestId, guestEmail, guestPhone }: C
   // All records + audit trail come from the guest-level endpoint (richer)
   const guestQuery = useGuestCompliance(guestId);
   const sendLink = useSendComplianceFormLink();
+  const resendLink = useResendFormLink();
+  // Links still awaiting the client, by type: the row says one was sent and offers a resend.
+  const pendingLinks = (guestQuery.data?.form_links ?? []).filter((l) => l.status === 'pending');
   const [captureTarget, setCaptureTarget] = useState<CaptureTarget | null>(null);
   const [viewRecordId, setViewRecordId] = useState<string | null>(null);
   // Channel chooser for the "Send link" action — a Sheet (Alert.alert is a web no-op).
@@ -252,7 +267,7 @@ export function ComplianceCard({ bookingId, guestId, guestEmail, guestPhone }: C
         summary={headerSummary}
         marker={
           needsActionCount > 0 ? (
-            <Badge label={`${needsActionCount} to action`} tone="danger" />
+            <Badge label={`${needsActionCount} outstanding`} tone="danger" />
           ) : null
         }>
         {bookingQuery.isLoading ? (
@@ -267,8 +282,11 @@ export function ComplianceCard({ bookingId, guestId, guestEmail, guestPhone }: C
                   Requirements for this booking
                 </Text>
                 {requirements.map((r, idx) => {
-                  const pill = requirementPill(r.state);
+                  const pill = requirementPill(r.state, r.lock_blocked, r.awaiting_result);
                   const needsAction = requirementNeedsAction(r.state);
+                  const pendingLink =
+                    pendingLinks.find((l) => l.compliance_type_id === r.requirement.compliance_type_id) ?? null;
+                  const isResendingThis = resendLink.isPending && resendLink.variables?.id === pendingLink?.id;
                   const isSendingThis = sendingTypeId === r.requirement.compliance_type_id;
                   const matchingRecordId = r.matching_record?.id ?? null;
                   return (
@@ -297,6 +315,14 @@ export function ComplianceCard({ bookingId, guestId, guestEmail, guestPhone }: C
                           A record exists but was captured too close to the booking to count.
                         </Text>
                       ) : null}
+                      {pendingLink && needsAction ? (
+                        <Text variant="caption" tone="secondary">
+                          Link sent
+                          {pendingLink.sent_via ? ` by ${pendingLink.sent_via === 'sms' ? 'SMS' : 'email'}` : ''}
+                          {pendingLink.sent_at ? ` on ${formatComplianceDate(pendingLink.sent_at)}` : ''}, awaiting the
+                          client.
+                        </Text>
+                      ) : null}
                       {/* View record button when a matching (satisfying) record exists */}
                       {matchingRecordId && !needsAction ? (
                         <Button
@@ -321,20 +347,41 @@ export function ComplianceCard({ bookingId, guestId, guestEmail, guestPhone }: C
                             }
                             style={styles.actionBtn}
                           />
-                          <Button
-                            label="Send link"
-                            variant="secondary"
-                            size="sm"
-                            loading={isSendingThis}
-                            disabled={sendLink.isPending && !isSendingThis}
-                            onPress={() =>
-                              promptSend(
-                                r.requirement.compliance_type_id,
-                                r.requirement.compliance_type_name,
-                              )
-                            }
-                            style={styles.actionBtn}
-                          />
+                          {pendingLink ? (
+                            <Button
+                              label="Resend link"
+                              variant="secondary"
+                              size="sm"
+                              loading={isResendingThis}
+                              disabled={resendLink.isPending && !isResendingThis}
+                              onPress={() =>
+                                resendLink.mutate(
+                                  { id: pendingLink.id, send_via: pendingLink.sent_via === 'sms' ? 'sms' : 'email' },
+                                  {
+                                    onSuccess: () => toast.success('Form link sent again.'),
+                                    onError: (e) =>
+                                      toast.error(e instanceof ApiError ? e.message : 'Could not resend the link.'),
+                                  },
+                                )
+                              }
+                              style={styles.actionBtn}
+                            />
+                          ) : (
+                            <Button
+                              label="Send link"
+                              variant="secondary"
+                              size="sm"
+                              loading={isSendingThis}
+                              disabled={sendLink.isPending && !isSendingThis}
+                              onPress={() =>
+                                promptSend(
+                                  r.requirement.compliance_type_id,
+                                  r.requirement.compliance_type_name,
+                                )
+                              }
+                              style={styles.actionBtn}
+                            />
+                          )}
                         </View>
                       ) : null}
                     </View>
