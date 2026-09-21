@@ -162,14 +162,16 @@ export default function ClassesScreen() {
   // the in-view (filtered) feed + the class-type list.
   const stats = useMemo(() => {
     const next7 = addDaysToDateStr(today, 7);
-    const upcoming = filteredSessions.filter((s) => s.date >= today);
+    // A session earlier today that has already started is not upcoming (web CER-7).
+    const nowHm = new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date());
+    const upcoming = filteredSessions.filter((s) => s.date > today || (s.date === today && s.startTime > nowHm));
     return {
       activeTypes: filterName ? 1 : classTypes.length,
       next7: upcoming.filter((s) => s.date < next7).length,
       upcoming: upcoming.length,
       bookedSpots: filteredSessions.reduce((sum, s) => sum + (s.bookedSpots ?? 0), 0),
     };
-  }, [filteredSessions, classTypes.length, filterName, today]);
+  }, [filteredSessions, classTypes.length, filterName, today, timeZone]);
 
   // Agenda sections — one per calendar date, in feed order (soonest first).
   const sections = useMemo(

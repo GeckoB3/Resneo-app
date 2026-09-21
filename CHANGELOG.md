@@ -17,6 +17,22 @@ on the other, and iOS 1.0.4 is the worked example.
 
 ## Unreleased
 
+Classes, events and resources on the combined booking page, and the web's review fixes for the
+three (web 2026-09-21). Details in `Docs/APP_GAP_REPORT_R40_WEB_DELTA.md`.
+
+- New Booking for a collective: the Classes, Events and Resources tabs list the items each member
+  venue has put on the combined page, each marked with the venue that runs it; the booking lands
+  on that venue.
+- Manage Collective has a Classes, events & resources tab: hosts switch a member's class type,
+  event or room on to the combined page; members can take their own off. Prices and payment rules
+  stay with the venue that runs the item.
+- Classes, Events and Resources show a "Listed on" badge for anything on the combined page.
+- Booking types: a refused switch-off puts the switch back and shows the server's reason.
+- The Classes screen no longer counts a session earlier today that has already started as upcoming.
+- Class pack and course editors name sessions by day, not by a raw date.
+
+## OTA on iOS 1.1.1 / Android 1.1.1 — 2026-09-20 (R37, R38, R39)
+
 Venue collectives on shared services, and the web's staff booking rule (web 2026-09-17). Details in
 `Docs/R37_COLLECTIVES_SHARED_SERVICES.md`.
 

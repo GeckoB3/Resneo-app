@@ -23,6 +23,8 @@ export interface EventTicketType {
 
 /** Full event record returned by GET /api/venue/experience-events. */
 export interface ManagedEvent {
+  /** Series parent; a combined-page listing points at the parent (web 2026-09-21). */
+  parent_event_id?: string | null;
   id: string;
   name: string;
   description: string | null;

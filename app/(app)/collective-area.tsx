@@ -21,6 +21,7 @@ import {
   VenueHealthCards,
 } from '@/components/collective-area/AreaPieces';
 import { HistoryPanel, MemberServicesList, VenuesPanel, type VenueRow } from '@/components/collective-area/AreaTabs';
+import { ListingsPanel } from '@/components/collective-area/ListingsPanel';
 import { ServicesGridBar, ServicesGridList, useServicesGrid } from '@/components/collective-area/ServicesGrid';
 import { AdoptionRequestsCard } from '@/components/linked/setup/AdoptionSheets';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -47,7 +48,7 @@ import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { CollectiveView } from '@/types/collectives';
 
-type AreaTab = 'services' | 'venues' | 'history';
+type AreaTab = 'services' | 'listings' | 'venues' | 'history';
 
 const CURRENCY_SYMBOL: Record<string, string> = { GBP: '£', EUR: '€', USD: '$' };
 
@@ -184,6 +185,8 @@ function AreaBody({
 
   const tabs: { value: AreaTab; label: string }[] = [
     { value: 'services', label: areaCopy('ov.tab.overview') },
+    // Classes, events and resources listed on the combined page (web 2026-09-21, plan §4.3).
+    { value: 'listings', label: 'Classes, events & resources' },
     ...(collective.isHost ? [{ value: 'venues' as const, label: areaCopy('ov.tab.venues') }] : []),
     { value: 'history', label: areaCopy('ov.tab.history') },
   ];
@@ -263,6 +266,10 @@ function AreaBody({
               }}
               onEnded={() => router.replace('/collectives' as Href)}
             />
+          ) : null}
+
+          {tab === 'listings' ? (
+            <ListingsPanel collectiveId={collective.id} collectiveName={collective.name} />
           ) : null}
 
           {tab === 'history' ? (

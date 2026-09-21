@@ -170,7 +170,9 @@ export function ClassBookingFlow({ onCreated }: ClassBookingFlowProps) {
                 title={c.class_name}
                 accentColour={c.colour}
                 subtitle={c.instructor_name ? `with ${c.instructor_name}` : c.description}
-                meta={`${c.session_count} session${c.session_count === 1 ? '' : 's'} available`}
+                meta={`${c.session_count} session${c.session_count === 1 ? '' : 's'} available${
+                  c.venue_name ? ` · at ${c.venue_name}` : ''
+                }`}
                 trailing={offeringPriceLabel(c.price_pence, c.payment_requirement, c.deposit_amount_pence, {
                   fromPrefix: true,
                 })}
@@ -311,7 +313,7 @@ export function ClassBookingFlow({ onCreated }: ClassBookingFlowProps) {
         <BookingFlowConfirm
           source={source}
           onSourceChange={setSource}
-          headerTitle={selectedClass.class_name}
+          headerTitle={inst.venue_name ? `${selectedClass.class_name} at ${inst.venue_name}` : selectedClass.class_name}
           headerSubtitle={`${formatDurationMinutes(inst.duration_minutes)}${inst.instructor_name ? ` · with ${inst.instructor_name}` : ''}`}
           rows={[
             { label: 'Date', value: formatBookingDate(inst.instance_date) },

@@ -11,6 +11,7 @@
  * @see _reference/Resneo/src/lib/availability/class-session-engine.ts
  * @see _reference/Resneo/src/lib/availability/event-ticket-engine.ts
  * @see _reference/Resneo/src/lib/availability/resource-booking-engine.ts
+ * @see _reference/Resneo/src/lib/linked-accounts/collective-listing-offerings.ts (collective tags)
  */
 
 /**
@@ -22,6 +23,12 @@
  * `deposit_amount_pence` field as deposits (spec D5).
  */
 export type BookingPaymentRequirement = 'none' | 'deposit' | 'full_payment' | 'card_hold';
+
+/** A venue that owns something on a collective's combined page (web 2026-09-21). */
+export interface ListedVenueSummary {
+  venue_id: string;
+  venue_name: string;
+}
 
 // ---------------------------------------------------------------------------
 // Classes
@@ -49,6 +56,14 @@ export interface ClassAvailabilitySlot {
   cancellation_notice_hours: number;
   requires_stripe_checkout: boolean;
   colour: string;
+  /**
+   * Combined page (web 2026-09-21, plan §4.3): when `venue_id` on the request is a live venue
+   * collective, each item carries the venue that runs it and the listing behind it. Absent on a
+   * single venue's own page.
+   */
+  venue_id?: string;
+  venue_name?: string;
+  collective_listing_id?: string;
 }
 
 /** A class type summarised across its bookable sessions in the window. */
@@ -64,6 +79,14 @@ export interface ClassOfferingSummary {
   /** Distinct dates (YYYY-MM-DD) with >=1 bookable session, sorted. */
   dates: string[];
   session_count: number;
+  /**
+   * Combined page (web 2026-09-21, plan §4.3): when `venue_id` on the request is a live venue
+   * collective, each item carries the venue that runs it and the listing behind it. Absent on a
+   * single venue's own page.
+   */
+  venue_id?: string;
+  venue_name?: string;
+  collective_listing_id?: string;
 }
 
 export interface ClassOfferingsResponse {
@@ -72,6 +95,8 @@ export interface ClassOfferingsResponse {
   to: string;
   classes: ClassOfferingSummary[];
   instances: ClassAvailabilitySlot[];
+  /** Combined page only: the venues that own something on this list. */
+  venues?: ListedVenueSummary[];
 }
 
 // ---------------------------------------------------------------------------
@@ -107,6 +132,14 @@ export interface EventAvailabilitySlot {
   deposit_amount_pence: number | null;
   cancellation_notice_hours: number;
   ticket_types: EventTicketTypeSlot[];
+  /**
+   * Combined page (web 2026-09-21, plan §4.3): when `venue_id` on the request is a live venue
+   * collective, each item carries the venue that runs it and the listing behind it. Absent on a
+   * single venue's own page.
+   */
+  venue_id?: string;
+  venue_name?: string;
+  collective_listing_id?: string;
 }
 
 /** An event series summarised across its occurrences in the window. */
@@ -121,6 +154,14 @@ export interface EventOfferingSummary {
   from_price_pence: number | null;
   payment_requirement: BookingPaymentRequirement;
   deposit_amount_pence: number | null;
+  /**
+   * Combined page (web 2026-09-21, plan §4.3): when `venue_id` on the request is a live venue
+   * collective, each item carries the venue that runs it and the listing behind it. Absent on a
+   * single venue's own page.
+   */
+  venue_id?: string;
+  venue_name?: string;
+  collective_listing_id?: string;
 }
 
 export interface EventOfferingsResponse {
@@ -129,6 +170,8 @@ export interface EventOfferingsResponse {
   to: string;
   events: EventOfferingSummary[];
   instances: EventAvailabilitySlot[];
+  /** Combined page only: the venues that own something on this list. */
+  venues?: ListedVenueSummary[];
 }
 
 // ---------------------------------------------------------------------------
@@ -147,11 +190,21 @@ export interface ResourceOption {
   payment_requirement: BookingPaymentRequirement | string;
   deposit_amount_pence: number | null;
   cancellation_notice_hours: number;
+  /**
+   * Combined page (web 2026-09-21, plan §4.3): when `venue_id` on the request is a live venue
+   * collective, each item carries the venue that runs it and the listing behind it. Absent on a
+   * single venue's own page.
+   */
+  venue_id?: string;
+  venue_name?: string;
+  collective_listing_id?: string;
 }
 
 export interface ResourceOptionsResponse {
   venue_id: string;
   resources: ResourceOption[];
+  /** Combined page only: the venues that own something on this list. */
+  venues?: ListedVenueSummary[];
 }
 
 /** One bookable resource start time (end derived from the chosen duration). */

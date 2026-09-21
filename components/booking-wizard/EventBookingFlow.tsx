@@ -179,7 +179,9 @@ export function EventBookingFlow({ onCreated }: EventBookingFlowProps) {
                 key={e.series_key}
                 title={e.event_name}
                 subtitle={e.description}
-                meta={`${e.occurrence_count} date${e.occurrence_count === 1 ? '' : 's'} available`}
+                meta={`${e.occurrence_count} date${e.occurrence_count === 1 ? '' : 's'} available${
+                  e.venue_name ? ` · at ${e.venue_name}` : ''
+                }`}
                 trailing={offeringPriceLabel(e.from_price_pence, e.payment_requirement, e.deposit_amount_pence, {
                   fromPrefix: true,
                 })}
@@ -355,7 +357,7 @@ export function EventBookingFlow({ onCreated }: EventBookingFlowProps) {
         <BookingFlowConfirm
           source={source}
           onSourceChange={setSource}
-          headerTitle={selectedEvent.event_name}
+          headerTitle={occ.venue_name ? `${selectedEvent.event_name} at ${occ.venue_name}` : selectedEvent.event_name}
           headerSubtitle={formatTimeRange(occ.start_time, occ.end_time)}
           rows={[
             { label: 'Date', value: formatBookingDate(occ.event_date) },

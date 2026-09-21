@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { listedOn, useOwnCollectiveListings } from '@/lib/queries/useCollectiveListings';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
 import {
@@ -213,6 +214,8 @@ export function ResourceManagerSheet({
   onBookResource,
 }: ResourceManagerSheetProps) {
   const { colors } = useTheme();
+  /** "Listed on {collective}" badges (web 2026-09-21, plan §4.3 Phase 6). */
+  const ownListings = useOwnCollectiveListings();
   const toast = useToast();
 
   const query = useResourcesManageList();
@@ -369,6 +372,10 @@ export function ResourceManagerSheet({
                         <Text variant="bodyMedium" numberOfLines={1}>
                           {resource.name}
                         </Text>
+                        {(() => {
+                        const on = listedOn(ownListings.data, 'resource', resource.id);
+                        return on ? <Badge label={`Listed on ${on.collective_name}`} tone="accent" /> : null;
+                      })()}
                         <Text variant="caption" tone="muted" numberOfLines={1}>
                           {resource.resource_type ? `${resource.resource_type} · ` : ''}
                           {resource.slot_interval_minutes} min slots

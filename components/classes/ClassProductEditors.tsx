@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { formatDayHeading } from '@/lib/dates/venue-dates';
 import { Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
@@ -312,13 +313,13 @@ function courseToState(p: ClassCourseProduct): CourseFormState {
   };
 }
 
-/** "ClassName · YYYY-MM-DD HH:mm" for a session option. */
+/** "ClassName · Mon 12 Oct HH:mm" for a session option (web CER-5: never a raw ISO date). */
 function sessionLabel(
   inst: ClassInstanceOption,
   classTypeName: string | undefined,
 ): string {
   const time = String(inst.start_time).slice(0, 5);
-  return `${classTypeName ?? 'Class'} · ${inst.instance_date} ${time}`;
+  return `${classTypeName ?? 'Class'} · ${formatDayHeading(inst.instance_date)} ${time}`;
 }
 
 export function CourseEditorSheet({

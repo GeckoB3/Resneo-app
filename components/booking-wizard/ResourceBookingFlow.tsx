@@ -263,7 +263,7 @@ export function ResourceBookingFlow({ onCreated }: ResourceBookingFlowProps) {
               <SelectableRow
                 key={r.id}
                 title={r.name}
-                subtitle={r.resource_type}
+                subtitle={[r.resource_type, r.venue_name ? `at ${r.venue_name}` : null].filter(Boolean).join(' · ') || null}
                 trailing={resourcePricePerSlotLabel(r.price_per_slot_pence, r.slot_interval_minutes)}
                 selected={selectedResource?.id === r.id}
                 onPress={() => {
@@ -440,7 +440,7 @@ export function ResourceBookingFlow({ onCreated }: ResourceBookingFlowProps) {
         <BookingFlowConfirm
           source={source}
           onSourceChange={setSource}
-          headerTitle={resource.name}
+          headerTitle={resource.venue_name ? `${resource.name} at ${resource.venue_name}` : resource.name}
           headerSubtitle={resource.resource_type ?? undefined}
           rows={[
             { label: 'Date', value: formatBookingDate(selectedDate) },

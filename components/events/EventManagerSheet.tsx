@@ -1,4 +1,5 @@
 import * as Clipboard from 'expo-clipboard';
+import { listedOn, useOwnCollectiveListings } from '@/lib/queries/useCollectiveListings';
 import * as WebBrowser from 'expo-web-browser';
 import { useCallback, useMemo, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
@@ -57,6 +58,8 @@ function paymentSummary(event: ManagedEvent): string {
  */
 export function EventManagerSheet({ visible, onClose }: EventManagerSheetProps) {
   const { colors } = useTheme();
+  /** "Listed on {collective}" badges (web 2026-09-21); a series is listed by its parent id. */
+  const ownListings = useOwnCollectiveListings(visible);
   const toast = useToast();
   const { venue } = useVenueContext();
   const isAdmin = venue?.current_user_role === 'admin';
@@ -244,6 +247,10 @@ export function EventManagerSheet({ visible, onClose }: EventManagerSheetProps) 
                         </Text>
                       </View>
                       {event.is_active === false ? <Badge label="Inactive" tone="neutral" /> : null}
+                      {(() => {
+                        const on = listedOn(ownListings.data, 'event', event.parent_event_id ?? event.id);
+                        return on ? <Badge label={`Listed on ${on.collective_name}`} tone="accent" /> : null;
+                      })()}
                     </View>
 
                     <View style={styles.metaGrid}>

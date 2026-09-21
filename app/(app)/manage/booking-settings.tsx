@@ -863,6 +863,9 @@ export default function BookingSettingsScreen() {
       // bookings of that type, the next on Thu 13 Aug 2026 at 9:30am."). Do not
       // re-add a special case here — any local copy is vaguer than what arrives.
       setModelsError(e instanceof ApiError ? e.message : 'Could not save booking types.');
+      // The server kept the previous models, so the switches show that state again rather
+      // than the change that was not saved (web CER-8, 2026-09-21).
+      setModels([...originalModels]);
     }
   }
 

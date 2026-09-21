@@ -269,7 +269,9 @@ function NewBookingForm() {
           // that every member's calendars and the combined services are on
           // offer. The booking lands in the owning venue.
           <Text variant="caption" tone="muted" style={styles.collectiveNote}>
-            {`Booking for ${form.venueName ?? 'the collective'}: every member venue's calendars and the combined services.`}
+            {tab === 'service'
+              ? `Booking for ${form.venueName ?? 'the collective'}: every member venue's calendars and the combined services.`
+              : `Booking for ${form.venueName ?? 'the collective'}: the classes, events and rooms listed on the combined page, each booked with the venue that runs it.`}
           </Text>
         ) : null}
         {/* The route's own chrome, one line: what to book, and the way out. */}

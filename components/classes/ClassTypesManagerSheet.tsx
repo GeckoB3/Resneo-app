@@ -19,6 +19,7 @@ import { ListSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { formatDayHeading } from '@/lib/dates/venue-dates';
+import { listedOn, useOwnCollectiveListings } from '@/lib/queries/useCollectiveListings';
 import { formatPence } from '@/lib/format';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useClassCommerceEnabled } from '@/lib/queries/useClassProducts';
@@ -72,6 +73,8 @@ function shortTime(time: string): string {
  */
 export function ClassTypesManagerSheet({ visible, onClose }: ClassTypesManagerSheetProps) {
   const { colors } = useTheme();
+  /** "Listed on {collective}" badges (web 2026-09-21, plan §4.3 Phase 6). */
+  const ownListings = useOwnCollectiveListings(visible);
   const toast = useToast();
   const router = useRouter();
   const { venue } = useVenueContext();
@@ -320,6 +323,10 @@ export function ClassTypesManagerSheet({ visible, onClose }: ClassTypesManagerSh
                         </Text>
                       </View>
                       {ct.is_active === false ? <Badge label="Inactive" tone="neutral" /> : null}
+                      {(() => {
+                        const on = listedOn(ownListings.data, 'class', ct.id);
+                        return on ? <Badge label={`Listed on ${on.collective_name}`} tone="accent" /> : null;
+                      })()}
                     </View>
 
                     <View style={styles.metaGrid}>
