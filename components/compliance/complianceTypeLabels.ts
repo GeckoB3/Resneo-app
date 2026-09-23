@@ -58,7 +58,7 @@ export function auditEventLabel(eventType: string): string {
 export const RESULT_TYPE_DESCRIPTIONS: Record<string, string> = {
   pass_fail: 'Staff decide a pass or fail result',
   signed: 'Requires a signature',
-  completed: 'Completed — no result recorded',
+  completed: 'Completed (no result recorded)',
   file_uploaded: 'Requires a file upload',
 };
 

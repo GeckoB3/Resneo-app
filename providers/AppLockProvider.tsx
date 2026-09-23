@@ -174,7 +174,7 @@ export function AppLockProvider({ children }: AppLockProviderProps) {
     if (authInFlight) return;
     setAuthInFlight(true);
     try {
-      const ok = await guardedAuthPrompt('Unlock Resneo');
+      const ok = await guardedAuthPrompt('Unlock ResNeo');
       if (ok) {
         hapticSuccess();
         setIsLocked(false);
@@ -350,7 +350,7 @@ function LockOverlay({ onUnlock, busy }: { onUnlock: () => void; busy: boolean }
       // Cover the whole window; opaque background hides everything behind it.
       style={[StyleSheet.absoluteFill, styles.overlay, { backgroundColor: colors.background }]}
       accessibilityViewIsModal
-      accessibilityLabel="Resneo is locked">
+      accessibilityLabel="ResNeo is locked">
       <View style={[styles.card, { paddingBottom: insets.bottom + spacing.xl }]}>
         <SymbolView
           name={{ ios: 'lock.fill', android: 'lock', web: 'lock' }}

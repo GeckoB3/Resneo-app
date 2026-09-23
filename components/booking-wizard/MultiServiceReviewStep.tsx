@@ -86,10 +86,24 @@ export function MultiServiceReviewStep({
                 ]}>
                 <View style={styles.segmentMain}>
                   <Text variant="bodyMedium">{seg.serviceName}</Text>
+                  {/* The line's price includes its add-ons, as its minutes already
+                      do, so it adds up to the total; the add-ons are named below.
+                      It read "55 min · £35.00" against a £45.00 total. */}
                   <Text variant="caption" tone="muted">
                     {fmtTime(seg.startTime)}–{fmtTime(endTime)} · {seg.durationMinutes} min
-                    {seg.pricePence != null ? ` · ${formatPence(seg.pricePence)}` : ''}
+                    {seg.pricePence != null
+                      ? ` · ${formatPence(seg.pricePence + (seg.addonTotalPence ?? 0))}`
+                      : ''}
                   </Text>
+                  {(seg.addonNames?.length ?? 0) > 0 ||
+                  (seg.addonTotalPence ?? 0) > 0 ||
+                  (seg.addonTotalMinutes ?? 0) > 0 ? (
+                    <Text variant="caption" tone="muted">
+                      {`Includes ${seg.addonNames?.length ? seg.addonNames.join(', ') : 'add-ons'}`}
+                      {(seg.addonTotalMinutes ?? 0) > 0 ? ` · +${seg.addonTotalMinutes} min` : ''}
+                      {(seg.addonTotalPence ?? 0) > 0 ? ` · +${formatPence(seg.addonTotalPence ?? 0)}` : ''}
+                    </Text>
+                  ) : null}
                 </View>
                 {segments.length > 1 ? (
                   <Pressable

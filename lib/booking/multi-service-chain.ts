@@ -65,6 +65,8 @@ export interface MultiServiceSegment {
   addonTotalPence?: number;
   /** Sum of add-on minutes folded into `durationMinutes`. */
   addonTotalMinutes?: number;
+  /** The chosen add-ons' names, for the review card (the price and minutes are totalled above). */
+  addonNames?: string[];
   /**
    * What this segment asks for online, resolved from the catalogue at the time
    * it was added. Mirrors the web segment's `depositPence` / `onlineChargeLabel`.

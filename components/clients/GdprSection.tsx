@@ -43,7 +43,7 @@ export function GdprSection({ guestId, guestName, onErased, bare = false }: Gdpr
       const data = await fetchGuestGdprExport(accessToken, guestId);
       const json = JSON.stringify(data, null, 2);
       await Share.share({
-        title: `Data export — ${guestName}`,
+        title: `Data export for ${guestName}`,
         message: json,
       });
       hapticSuccess();

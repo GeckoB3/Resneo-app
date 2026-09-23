@@ -22,6 +22,8 @@ import {
   type ModifyBookingTarget,
 } from '@/components/bookings/ModifyBookingSheet';
 import { RescheduleSheet, type RescheduleTarget } from '@/components/calendar/RescheduleSheet';
+import { ClassSessionMoveSheet, type ClassMoveTarget } from '@/components/bookings/ClassSessionMoveSheet';
+import { ResourceMoveSheet, type ResourceMoveTarget } from '@/components/bookings/ResourceMoveSheet';
 import { minutesToTime, timeToMinutes } from '@/components/calendar/grid-layout';
 import { DocumentsSection } from '@/components/clients/DocumentsSection';
 import { LinkedComplianceSection } from '@/components/linked/LinkedComplianceSection';
@@ -548,6 +550,10 @@ export function BookingDetailContent({
   // list — calendar, contacts, the full-screen route). Cached + staff-readable.
   const managedServices = useManagedServices();
   const [rescheduleTarget, setRescheduleTarget] = useState<RescheduleTarget | null>(null);
+  const [classMoveTarget, setClassMoveTarget] = useState<ClassMoveTarget | null>(null);
+  /** When the panel opened: "can still self-cancel" is judged against it (no clock read in render). */
+  const [openedAt] = useState(() => Date.now());
+  const [resourceMoveTarget, setResourceMoveTarget] = useState<ResourceMoveTarget | null>(null);
   const [modifyTarget, setModifyTarget] = useState<ModifyBookingTarget | null>(null);
   const [depositTarget, setDepositTarget] = useState<DepositTarget | null>(null);
   const [takePaymentTarget, setTakePaymentTarget] = useState<TakePaymentTarget | null>(null);
@@ -635,6 +641,16 @@ export function BookingDetailContent({
   const isTable = isTableReservationBooking(booking);
 
   const depositLabel = formatDeposit(booking.deposit_amount_pence);
+  /**
+   * The deposit status as staff should read it. "Not Required" is the column's
+   * value for a booking that never had a deposit, and printing it raw put
+   * "1 guest · Not Required" on every such booking; it means there is nothing to
+   * say, so it says nothing (the web popover shows no deposit row either).
+   */
+  const shownDepositStatus =
+    booking.deposit_status && booking.deposit_status !== 'Not Required' ? booking.deposit_status : null;
+  /** A cancelled or no-show booking owes nothing, whatever the balance column still says. */
+  const bookingClosedForMoney = booking.status === 'Cancelled' || booking.status === 'No-Show';
   const tableNames = (booking.table_assignments ?? []).map((t) => t.name).join(', ');
   const modelLabel = booking.inferred_booking_model
     ? bookingModelShortLabel(booking.inferred_booking_model)
@@ -764,12 +780,25 @@ export function BookingDetailContent({
 
   // Full modify (service/staff/slot) — appointment bookings in live statuses,
   // mirroring web `canStaffModifyBooking` + the appointment modify branch.
-  const isAppointmentBooking = !!(
-    booking.appointment_service_id ||
-    booking.service_item_id ||
-    booking.practitioner_id ||
-    booking.calendar_id
-  );
+  // The booking's model decides how it moves (web
+  // `StaffExpandedBookingModifyModal`): a class moves to another session, a
+  // resource to another free slot, an event not at all (cancel and rebook).
+  // A resource booking also carries its resource as `calendar_id`, so the
+  // anchor columns alone mistook one for an appointment and offered Modify.
+  const bookingModel = booking.inferred_booking_model ?? null;
+  const isClassBooking = bookingModel === 'class_session' || !!booking.class_instance_id;
+  const isEventBooking = bookingModel === 'event_ticket' || !!booking.experience_event_id;
+  const isResourceBooking = bookingModel === 'resource_booking' || !!booking.resource_id;
+  const isAppointmentBooking =
+    !isClassBooking &&
+    !isEventBooking &&
+    !isResourceBooking &&
+    !!(
+      booking.appointment_service_id ||
+      booking.service_item_id ||
+      booking.practitioner_id ||
+      booking.calendar_id
+    );
   const canModify =
     !isTable &&
     isAppointmentBooking &&
@@ -832,7 +861,7 @@ export function BookingDetailContent({
   const guestEmail = booking.guest?.email?.trim();
   const guestPhone = booking.guest?.phone?.trim();
   const canResend = !!guestEmail && policy.canEdit;
-  const hasDeposit = booking.deposit_amount_pence != null || !!booking.deposit_status;
+  const hasDeposit = booking.deposit_amount_pence != null || !!shownDepositStatus;
   // Card-hold state (§9.1): when non-null the legacy deposit UI is replaced by
   // the card-aware pill/lines/actions everywhere in this component.
   const cardHoldState = resolveCardHoldUiState(
@@ -1064,7 +1093,9 @@ export function BookingDetailContent({
     !!booking.special_requests?.trim() ||
     !!booking.internal_notes?.trim() ||
     !!booking.guest?.customer_profile_notes?.trim() ||
-    (isTable && (!!booking.dietary_notes?.trim() || !!booking.occasion?.trim()));
+    // The comment from booking time lives in `dietary_notes` for every model.
+    !!booking.dietary_notes?.trim() ||
+    (isTable && !!booking.occasion?.trim());
 
   const handleActionPress = (target: BookingStatus, _label: string, destructive?: boolean) => {
     // Web parity: no-show is rejected before the grace window lapses. Mirror the
@@ -1274,7 +1305,41 @@ export function BookingDetailContent({
                     onPress={() => void Linking.openURL(`mailto:${guestEmail}`)}
                   />
                 ) : null}
-                {canReschedule ? (
+                {canReschedule && isClassBooking && booking.class_instance_id ? (
+                  <QuickAction
+                    icon={{ ios: 'calendar', android: 'event', web: 'event' }}
+                    label="Move"
+                    onPress={() =>
+                      setClassMoveTarget({
+                        bookingId: booking.id,
+                        guestName,
+                        classInstanceId: booking.class_instance_id ?? '',
+                        partySize: booking.party_size ?? 1,
+                        ownerVenueId: linked?.venueId ?? null,
+                      })
+                    }
+                  />
+                ) : null}
+                {/* The staff resource routes read our own venue only, so a
+                    partner's resource booking is moved from their dashboard. */}
+                {canReschedule && isResourceBooking && !linked && (booking.resource_id || booking.calendar_id) ? (
+                  <QuickAction
+                    icon={{ ios: 'calendar', android: 'event', web: 'event' }}
+                    label="Move"
+                    onPress={() =>
+                      setResourceMoveTarget({
+                        bookingId: booking.id,
+                        guestName,
+                        resourceId: booking.resource_id ?? booking.calendar_id ?? '',
+                        resourceName: booking.practitioner_name ?? null,
+                        date: booking.booking_date,
+                        time: booking.booking_time,
+                        durationMinutes: rowDurationMinutes,
+                      })
+                    }
+                  />
+                ) : null}
+                {canReschedule && !isClassBooking && !isEventBooking && !isResourceBooking ? (
                   <QuickAction
                     icon={{ ios: 'calendar', android: 'event', web: 'event' }}
                     label="Reschedule"
@@ -1287,6 +1352,7 @@ export function BookingDetailContent({
                         // A visit over several days has no one length to step;
                         // null hides the control and the move stays a shift.
                         durationMinutes: visit?.spansDays ? null : durationMinutes,
+                        keepLength: isAppointmentBooking && !isTable,
                         visit: visitEdit,
                       })
                     }
@@ -1524,7 +1590,7 @@ export function BookingDetailContent({
           partyLabel,
           cardHoldState
             ? cardHoldState.pill?.label ?? 'Card hold'
-            : booking.deposit_status ?? (depositLabel ? 'Deposit' : null),
+            : shownDepositStatus ?? (depositLabel ? 'Deposit' : null),
         ]
           .filter(Boolean)
           .join(' · ')}>
@@ -1545,13 +1611,13 @@ export function BookingDetailContent({
               label="Card hold"
               value={cardHoldState.pill?.label ?? cardHoldState.lines[0] ?? 'Card hold'}
             />
-          ) : depositLabel || booking.deposit_status ? (
+          ) : depositLabel || shownDepositStatus ? (
             <DetailRow
               label="Deposit"
               value={
                 depositLabel
-                  ? `${depositLabel}${booking.deposit_status ? ` · ${booking.deposit_status}` : ''}`
-                  : booking.deposit_status ?? ''
+                  ? `${depositLabel}${shownDepositStatus ? ` · ${shownDepositStatus}` : ''}`
+                  : shownDepositStatus ?? ''
               }
             />
           ) : null}
@@ -1668,9 +1734,9 @@ export function BookingDetailContent({
                 ? cardHoldState.pill?.label ?? 'Card hold'
                 : // The outstanding balance is the most actionable money fact, so it
                   // shows on the collapsed header rather than only inside.
-                  booking.balance_due_pence != null && booking.balance_due_pence > 0
+                  booking.balance_due_pence != null && booking.balance_due_pence > 0 && !bookingClosedForMoney
                   ? `${formatPence(booking.balance_due_pence)} due`
-                  : booking.deposit_status ?? null
+                  : shownDepositStatus
           }
           defaultExpanded={
             hasPendingCard ||
@@ -1721,8 +1787,8 @@ export function BookingDetailContent({
                 </Text>
                 <Text variant="bodyMedium" style={styles.detailValue}>
                   {depositLabel
-                    ? `${depositLabel}${booking.deposit_status ? ` · ${booking.deposit_status}` : ''}`
-                    : booking.deposit_status ?? '—'}
+                    ? `${depositLabel}${shownDepositStatus ? ` · ${shownDepositStatus}` : ''}`
+                    : shownDepositStatus ?? '—'}
                 </Text>
               </View>
             ) : null}
@@ -1791,9 +1857,14 @@ export function BookingDetailContent({
                 onPress={handleResend}
               />
             ) : null}
-            {booking.cancellation_deadline ? (
+            {/* Only while the booking is live: a cancelled, completed or no-show
+                booking is past the question. A passed deadline says so rather
+                than promising something the guest can no longer do. */}
+            {booking.cancellation_deadline && !TERMINAL_STATUSES.has(booking.status) ? (
               <Text variant="caption" tone="muted">
-                Guest can self-cancel until{' '}
+                {Date.parse(booking.cancellation_deadline) > openedAt
+                  ? 'Guest can self-cancel until '
+                  : 'Guest self-cancellation closed '}
                 {formatTimelineEventTime(booking.cancellation_deadline)}
               </Text>
             ) : null}
@@ -1828,7 +1899,7 @@ export function BookingDetailContent({
             </Text>
             <Text variant="bodyMedium">
               {depositLabel ?? formatDeposit(booking.deposit_amount_pence)}
-              {booking.deposit_status ? ` · ${booking.deposit_status}` : ''}
+              {shownDepositStatus ? ` · ${shownDepositStatus}` : ''}
             </Text>
             {booking.cancellation_deadline ? (
               <Text variant="caption" tone="muted">
@@ -1883,7 +1954,9 @@ export function BookingDetailContent({
 
       {/* Activity timeline */}
       {timelineEvents.length > 0 ? (
-        <CollapsibleCard title="Activity" summary={`${timelineEvents.length} events`}>
+        <CollapsibleCard
+          title="Activity"
+          summary={`${timelineEvents.length} ${timelineEvents.length === 1 ? 'event' : 'events'}`}>
           <View style={styles.timeline}>
             {timelineEvents.map((event) => (
               <View key={event.id} style={styles.timelineRow}>
@@ -1911,6 +1984,8 @@ export function BookingDetailContent({
           trip the server's unpaid guard exactly like Accept does. */}
       {acceptUnpaidGuard.sheet}
       <RescheduleSheet target={rescheduleTarget} onClose={() => setRescheduleTarget(null)} />
+      <ClassSessionMoveSheet target={classMoveTarget} onClose={() => setClassMoveTarget(null)} />
+      <ResourceMoveSheet target={resourceMoveTarget} onClose={() => setResourceMoveTarget(null)} />
       <ModifyBookingSheet target={modifyTarget} onClose={() => setModifyTarget(null)} />
       <DepositSheet target={depositTarget} onClose={() => setDepositTarget(null)} />
       {/* The target only carries WHICH booking is open; the balance and ledger

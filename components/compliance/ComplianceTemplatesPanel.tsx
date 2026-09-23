@@ -116,7 +116,7 @@ export function ComplianceTemplatesPanel() {
     <>
       <View style={styles.panel}>
         <Text variant="caption" tone="muted">
-          The kinds of records this venue collects — patch tests, consent forms, intake
+          The kinds of records this venue collects: patch tests, consent forms, intake
           questionnaires.{!isAdmin ? ' Only admins can edit templates.' : ''}
         </Text>
 

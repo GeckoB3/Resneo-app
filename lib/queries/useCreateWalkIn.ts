@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
+import { CREATE_BOOKING_TIMEOUT_MS } from '@/lib/booking/find-just-created-booking';
 import { invalidateAppointmentAvailability } from '@/lib/queries/invalidateAvailability';
 import { queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
@@ -45,6 +46,8 @@ export function useCreateWalkIn() {
       return apiFetch<CreateWalkInResponse>('/api/venue/bookings/walk-in', {
         accessToken,
         method: 'POST',
+        // Creates can take longer than the default 15 s; see CREATE_BOOKING_TIMEOUT_MS.
+        timeoutMs: CREATE_BOOKING_TIMEOUT_MS,
         body: JSON.stringify(payload),
       });
     },

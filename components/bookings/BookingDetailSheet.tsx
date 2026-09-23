@@ -143,7 +143,7 @@ export function BookingDetailSheet({
     <Sheet visible={!!bookingId} onClose={onClose} fill maxHeight="94%" keyboardAvoidance="overlay">
       <View style={styles.header}>
         <View style={styles.headerTitle}>
-          <Text variant="subheading">{isAppointmentVenue ? 'Appointment' : 'Booking'}</Text>
+          <Text variant="subheading">{bookingSheetTitle(booking?.inferred_booking_model, isAppointmentVenue)}</Text>
           {linked ? (
             <Text variant="caption" tone="muted" numberOfLines={1}>
               {`Linked · ${linked.venueName}`}
@@ -268,3 +268,22 @@ const styles = StyleSheet.create({
     paddingBottom: spacing['2xl'],
   },
 });
+
+/**
+ * The sheet's heading. A class, event or resource booking at an appointments
+ * venue read "Appointment", which it is not.
+ */
+export function bookingSheetTitle(model: string | null | undefined, isAppointmentVenue: boolean): string {
+  switch (model) {
+    case 'class_session':
+      return 'Class booking';
+    case 'event_ticket':
+      return 'Event booking';
+    case 'resource_booking':
+      return 'Resource booking';
+    case 'table_reservation':
+      return 'Booking';
+    default:
+      return isAppointmentVenue ? 'Appointment' : 'Booking';
+  }
+}

@@ -246,7 +246,7 @@ function SignatureFieldInput({
       ) : (
         <>
           <TextInput
-            accessibilityLabel={`${field.label} — typed signature`}
+            accessibilityLabel={`${field.label}: typed signature`}
             value={current?.method === 'typed' ? current.data ?? '' : ''}
             onChangeText={(t) =>
               onChange(

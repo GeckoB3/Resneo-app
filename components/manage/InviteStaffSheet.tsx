@@ -253,7 +253,7 @@ export function InviteStaffSheet({
               </View>
             )}
             <Text variant="caption" tone="muted">
-              Optional — you can update calendar assignments anytime.
+              Optional. You can update calendar assignments anytime.
             </Text>
           </View>
         )}

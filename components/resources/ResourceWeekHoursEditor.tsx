@@ -219,7 +219,7 @@ export function ResourceWeekHoursEditor({
                   <Text variant="caption" tone="muted">
                     {`+${day.extraRanges.length} more time range${
                       day.extraRanges.length > 1 ? 's' : ''
-                    } — edit on web. Kept as set.`}
+                    }. Edit them on the web; they're kept as set.`}
                   </Text>
                 ) : null}
               </>

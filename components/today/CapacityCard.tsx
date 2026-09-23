@@ -29,8 +29,8 @@ export function CapacityCard({ today }: CapacityCardProps) {
   const busyText = hasCap
     ? `Busiest time: ${peakCovers} of ${cap} covers at once`
     : today.bookings > 0
-    ? `Busiest time: ${peakCovers} covers expected at once`
-    : 'No bookings yet — capacity will appear as bookings come in.';
+    ? `Busiest time: ${peakCovers} cover${peakCovers === 1 ? '' : 's'} expected at once`
+    : 'No bookings yet. Capacity will appear as bookings come in.';
 
   const fillBarColor = getFillColor(fillPct, colors);
 

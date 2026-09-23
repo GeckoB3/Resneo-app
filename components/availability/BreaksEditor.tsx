@@ -401,7 +401,7 @@ export function BreaksEditor({
   return (
     <View style={styles.root}>
       <Text variant="overline" tone="muted">
-        Breaks — {practitionerName}
+        Breaks for {practitionerName}
       </Text>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.sheetBody}>
         {body}

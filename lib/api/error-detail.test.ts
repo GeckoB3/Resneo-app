@@ -47,7 +47,7 @@ describe('getApiErrorMessage', () => {
         },
         400,
       ),
-    ).toBe('Invalid request — duration minutes: Number must be less than or equal to 480');
+    ).toBe('Invalid request (duration minutes: Number must be less than or equal to 480)');
   });
 
   it('leaves a 400 without details exactly as the server phrased it', () => {

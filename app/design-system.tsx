@@ -254,7 +254,7 @@ function DesignSystemGallery() {
         </View>
       </Section>
 
-      <Section title="Toasts (replaces Alert.alert — works on web)">
+      <Section title="Toasts (replaces Alert.alert, works on web)">
         <View style={styles.wrapRow}>
           <Button label="Success" size="sm" variant="secondary" onPress={() => toast.success('Booking confirmed')} />
           <Button label="Error" size="sm" variant="secondary" onPress={() => toast.error('That time isn’t available')} />

@@ -70,6 +70,8 @@ export type CommunicationMessageKey =
   | 'deposit_payment_request'
   | 'deposit_confirmation'
   | 'deposit_payment_reminder'
+  | 'card_hold_request'
+  | 'card_hold_payment_reminder'
   | 'booking_modification'
   | 'cancellation_confirmation'
   | 'auto_cancel_notification'

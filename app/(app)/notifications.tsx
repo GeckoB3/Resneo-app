@@ -280,7 +280,11 @@ export default function NotificationsScreen() {
         onPress={handleMarkAllRead}
         disabled={markRead.isPending}
         accessibilityRole="button"
-        accessibilityLabel={`Mark all ${unreadCount} notifications as read`}
+        accessibilityLabel={
+          unreadCount === 1
+            ? 'Mark 1 notification as read'
+            : `Mark all ${unreadCount} notifications as read`
+        }
         style={({ pressed }) => [styles.markAllButton, { opacity: pressed ? 0.6 : 1 }]}>
         <Text
           variant="label"

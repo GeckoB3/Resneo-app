@@ -19,7 +19,7 @@ const LOCATION_OPTIONS: {
   {
     value: 'client_address',
     label: "At the client's address",
-    hint: 'You travel to them — the booking form collects their address.',
+    hint: 'You travel to them. The booking form collects their address.',
   },
   {
     value: 'online',

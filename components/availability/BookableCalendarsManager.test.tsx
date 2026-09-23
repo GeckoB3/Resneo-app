@@ -302,7 +302,7 @@ describe('BookableCalendarsManager', () => {
   it('edits the services on a calendar from the calendar and PUTs the full set', async () => {
     await render(<BookableCalendarsManager />);
     await press(() => screen.getAllByText('Edit assignments')[0]!);
-    expect(screen.getByText('Assignments — Alex')).toBeTruthy();
+    expect(screen.getByText('Assignments for Alex')).toBeTruthy();
     // "Cut" is on Alex; untick it and save.
     await act(async () => {
       fireEvent(screen.getByLabelText('Cut'), 'valueChange', false);

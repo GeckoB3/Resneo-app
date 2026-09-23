@@ -10,7 +10,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react-native';
 
 import type { ReportsResponse } from '@/types/reports';
 
-jest.mock('expo-router', () => ({ Stack: { Screen: () => null } }));
+jest.mock('expo-router', () => ({ Stack: { Screen: () => null }, useLocalSearchParams: () => ({}) }));
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
 
 const mockToast = { success: jest.fn(), error: jest.fn(), info: jest.fn() };
@@ -349,7 +349,7 @@ describe('Reports clients tab', () => {
     expect(screen.getByText('New this period')).toBeTruthy();
     expect(screen.getByText('Returning this period')).toBeTruthy();
     expect(screen.getByText('Anonymous appointments (period)')).toBeTruthy();
-    expect(screen.getAllByText('2026-08-13 → 2026-09-11').length).toBeGreaterThan(1);
+    expect(screen.getAllByText('13 Aug to 11 Sep 2026').length).toBeGreaterThan(1);
     expect(
       screen.getByText(
         'Walk-in visits without contact details are counted but not shown in the client list below.',

@@ -94,7 +94,7 @@ export function GuestTagEditor({ tags, onTagsChange, disabled = false }: GuestTa
         </View>
       ) : (
         <Text variant="caption" tone="muted">
-          No tags yet — add one below.
+          No tags yet. Add one below.
         </Text>
       )}
 

@@ -82,7 +82,8 @@ const DATA: ReferralsDashboardData = {
       statusLabel: 'Void',
       rewardDisplay: null,
       occurredAt: '2026-05-20T10:00:00.000Z',
-      voidReason: 'Referee already had an account',
+      // The route sends the raw `void_reason` code (web `load-dashboard.ts`).
+      voidReason: 'self_referral_same_email_domain',
     },
   ],
 };
@@ -137,7 +138,9 @@ describe('Refer & Earn — data state', () => {
     expect(screen.getByText('Acme Clinic')).toBeTruthy();
     expect(screen.getByText('Credited')).toBeTruthy();
     expect(screen.getByText('Bright Spa')).toBeTruthy();
-    expect(screen.getByText('Referee already had an account')).toBeTruthy();
+    // Explained in a sentence, as on the web, never the code itself.
+    expect(screen.getByText(/same business email domain as your venue/)).toBeTruthy();
+    expect(screen.queryByText('self_referral_same_email_domain')).toBeNull();
   });
 
   it('copies the shareable link via expo-clipboard', async () => {

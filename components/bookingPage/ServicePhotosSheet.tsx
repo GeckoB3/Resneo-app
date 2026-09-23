@@ -168,7 +168,7 @@ export function ServicePhotosSheet({ visible, onClose }: ServicePhotosSheetProps
             imageUrl={framingUrl}
             value={crops[framingId] ?? null}
             frameShape="square"
-            title={framingService ? `Reposition — ${framingService.name}` : 'Reposition photo'}
+            title={framingService ? `Reposition: ${framingService.name}` : 'Reposition photo'}
             emptyLabel="Upload a photo to reposition it"
             accessibilityLabel="Service photo position and zoom"
             onCancel={() => setFramingId(null)}

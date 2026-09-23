@@ -101,7 +101,7 @@ export const POST_ONBOARDING_SETUP_STEPS: SetupStep[] = [
     key: 'import_bookings_customers',
     label: 'Import your bookings and customers',
     description:
-      'Bring your existing bookings and customer list into Resneo so nothing is left behind.',
+      'Bring your existing bookings and customer list into ResNeo so nothing is left behind.',
     // The import tool is web-only; open the web hub (same target as the More
     // tab's "Import contacts").
     webPath: '/dashboard/import',

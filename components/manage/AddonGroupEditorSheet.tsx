@@ -730,7 +730,7 @@ export function AddonGroupEditorSheet({
                       </View>
                       <Input
                         label="Cost to business (£)"
-                        helper="Optional — used in reports, never shown to clients."
+                        helper="Optional. Used in reports, never shown to clients."
                         value={addon.cost}
                         onChangeText={(v) => patchAddon(addon.key, { cost: v })}
                         keyboardType="decimal-pad"

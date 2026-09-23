@@ -372,7 +372,7 @@ export default function SignInScreen() {
       {!isBackendConfigured() ? (
         <Card>
           <Text variant="bodySmall" tone="secondary">
-            Backend env vars are missing — add .env.local before calling venue APIs.
+            Backend env vars are missing. Add .env.local before calling venue APIs.
           </Text>
         </Card>
       ) : null}

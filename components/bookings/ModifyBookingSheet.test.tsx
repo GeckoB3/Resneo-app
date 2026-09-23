@@ -539,6 +539,60 @@ describe('ModifyBookingSheet', () => {
     }
   });
 
+  describe('a booking whose span already includes an add-on', () => {
+    // 45-minute service + a 10-minute add-on, booked 14:00-14:55. The sheet used
+    // to take the 55-minute span as the base and add the add-on again, so saving
+    // unchanged (or just moving it) made the booking 65 minutes long.
+    const WITH_ADDON: ModifyBookingTarget = { ...TARGET, durationMinutes: 55 };
+    beforeEach(() => {
+      mockAddonGroups = [
+        { ...ADDON_GROUP, addons: [{ ...ADDON_GROUP.addons[0], additional_duration_minutes: 10 }, ADDON_GROUP.addons[1]] },
+      ];
+      mockDetailAddons = [{ addon_id: 'addon-gloss' }];
+    });
+
+    it('opens as unchanged, with the span it has', async () => {
+      await render(<ModifyBookingSheet target={WITH_ADDON} onClose={onClose} />);
+      expect(screen.getByText('Adjust a field to check availability and enable save.')).toBeTruthy();
+      expect(screen.getAllByText(/Ends at 14:55/).length).toBeGreaterThan(0);
+      expect(screen.queryByText(/Ends at 15:05/)).toBeNull();
+      await press('Save changes');
+      expect(mockModify).not.toHaveBeenCalled();
+    });
+
+    it('keeps the length when the booking is only moved', async () => {
+      jest.useFakeTimers();
+      try {
+        await render(<ModifyBookingSheet target={WITH_ADDON} onClose={onClose} />);
+        await moveAndSave();
+        expect(mockModify).toHaveBeenCalledWith(
+          expect.objectContaining({
+            booking_time: '09:30:00',
+            duration_minutes: 55,
+            addons: [{ addon_id: 'addon-gloss' }],
+          }),
+        );
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('drops the add-on minutes when the add-on is taken off', async () => {
+      jest.useFakeTimers();
+      try {
+        await render(<ModifyBookingSheet target={WITH_ADDON} onClose={onClose} />);
+        await press('Gloss');
+        await settleAvailability();
+        await press('Save changes');
+        expect(mockModify).toHaveBeenCalledWith(
+          expect.objectContaining({ duration_minutes: 45, addons: [] }),
+        );
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+  });
+
   it('does not re-assert a calendar nobody changed', async () => {
     /**
      * R16-1 — the sheet used to send `practitioner_id` on every save, unchanged
@@ -1860,7 +1914,7 @@ describe('ModifyBookingSheet — archived service keeps its variant (R21-3)', ()
     await render(<ModifyBookingSheet target={ARCHIVED} onClose={onClose} />);
     expect(
       screen.getByText(
-        "The booked service is no longer in the catalogue — pick a service below to change it, or just adjust the time and duration.",
+        "The booked service is no longer in the catalogue. Pick a service below to change it, or just adjust the time and duration.",
       ),
     ).toBeTruthy();
   });

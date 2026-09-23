@@ -45,10 +45,10 @@ export type ResumeSubscriptionOutcome =
 const RESUMED_FALLBACK = 'Your subscription will continue.';
 
 const CHECKOUT_MESSAGE =
-  'Complete checkout in the browser — your plan updates here when you return.';
+  'Complete checkout in the browser. Your plan updates here when you return.';
 
 const PURCHASE_ON_WEB_MESSAGE =
-  'This subscription has already ended, so keeping your plan means starting a new one. Finish that on the ResNeo website — your plan reactivates here automatically.';
+  'This subscription has already ended, so keeping your plan means starting a new one. Finish that on the ResNeo website. Your plan reactivates here automatically.';
 
 /**
  * Decide what a resume response means.

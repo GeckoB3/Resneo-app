@@ -88,7 +88,7 @@ function MessageGuestCompose({ bookingId }: { bookingId: string }) {
           // not all requested channels went out — surface that as a partial send.
           if (data?.errors && data.errors.length > 0) {
             hapticWarning();
-            showFeedback('danger', `Partially sent — ${data.errors.join('; ')}`);
+            showFeedback('danger', `Partially sent. ${data.errors.join('; ')}`);
           } else {
             hapticSuccess();
             showFeedback('success', successCaption(channel));
@@ -194,7 +194,7 @@ export function MessageGuestSection({
         </Text>
       ) : (
         <Text variant="bodySmall" tone="muted" style={styles.noContact}>
-          No email or phone on file — add contact details to message this guest.
+          No email or phone on file. Add contact details to message this guest.
         </Text>
       )}
 

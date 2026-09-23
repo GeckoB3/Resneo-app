@@ -137,7 +137,7 @@ const CALENDAR_RESTRICTION_WARNING =
  * so the longer explanation is available without crowding the inline helper text.
  */
 const RESOURCE_SLOT_INTERVAL_HELP =
-  'How often a guest may start a booking: start times move forward in steps of this many minutes from the beginning of each open period (e.g. 60 = on the hour only; 30 = on the hour and :30). This is not extra buffer after a booking ends—if a session ends between grid times, that gap can stay empty until the next allowed start. Online pricing uses the same step: total price = (price per step) × (booking length ÷ this many minutes).';
+  'How often a guest may start a booking: start times move forward in steps of this many minutes from the beginning of each open period (e.g. 60 = on the hour only; 30 = on the hour and :30). This is not extra buffer after a booking ends. If a session ends between grid times, that gap can stay empty until the next allowed start. Online pricing uses the same step: total price = (price per step) × (booking length ÷ this many minutes).';
 
 const RESOURCE_MIN_BOOKING_HELP =
   'Shortest session length you allow for availability checks. By default it matches the start-time step; use “Advanced” only when you want a finer grid but a longer minimum (e.g. start every 15 minutes, book at least 60). Guest duration choices increase from this value in steps of the start-time step.';
@@ -572,7 +572,7 @@ export function ResourceEditorSheet({
           <Text variant="overline" tone="muted">Show on calendar</Text>
           <Text variant="caption" tone="muted">
             Each resource appears on a team calendar column. Give it its own column to avoid
-            clashing with staff bookings — two resources can share a column only when their
+            clashing with staff bookings. Two resources can share a column only when their
             weekly hours don&apos;t overlap.
           </Text>
           {hostOptions.length === 0 && !isAdmin ? (
@@ -812,7 +812,7 @@ export function ResourceEditorSheet({
           ) : null}
           {paymentReq !== 'none' && !stripeConnected ? (
             <Text variant="caption" color={colors.warning}>
-              Connect Stripe (Plan &amp; payments) to take online payments — bookings will fall
+              Connect Stripe (Plan &amp; payments) to take online payments. Bookings will fall
               back to pay-at-venue until then.
             </Text>
           ) : null}

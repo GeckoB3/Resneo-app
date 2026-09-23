@@ -67,7 +67,7 @@ export const READER_INIT_TIMEOUT_MESSAGE =
   'The card reader could not be started. Close the payment sheet and open it again.';
 
 export const READER_TOKEN_TIMEOUT_MESSAGE =
-  'Could not reach Resneo to set up the payment. Check your connection and try again.';
+  'Could not reach ResNeo to set up the payment. Check your connection and try again.';
 
 export const READER_DISCOVERY_TIMEOUT_MESSAGE =
   'No card readers found. Check the reader is switched on and nearby, then try again.';

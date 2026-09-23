@@ -34,7 +34,7 @@ export function OfflineBanner() {
         },
       ]}>
       <Text variant="caption" color={colors.warning} style={styles.text}>
-        You&apos;re offline — changes won&apos;t save until you reconnect.
+        You&apos;re offline. Changes won&apos;t save until you reconnect.
       </Text>
     </View>
   );

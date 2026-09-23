@@ -307,7 +307,7 @@ export function CalendarAssignmentsSheet({
   return (
     <View style={styles.root}>
       <Text variant="overline" tone="muted">
-        Assignments — {calendar.name}
+        Assignments for {calendar.name}
       </Text>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>

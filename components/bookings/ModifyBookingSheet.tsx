@@ -260,6 +260,8 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
   const [addonIds, setAddonIds] = useState<string[]>([]);
   /** True once we've seeded add-ons from the loaded booking detail. */
   const [addonsSeeded, setAddonsSeeded] = useState(false);
+  /** The seeded add-ons' minutes, inside `baselineDuration` but not the base `duration`. */
+  const [openedAddonMinutes, setOpenedAddonMinutes] = useState(0);
   // Last validation result, keyed by the field signature it was checked for —
   // "checking" is derived (signature mismatch) so the effect never sets state
   // synchronously.
@@ -641,6 +643,25 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
       .filter((id): id is string => !!id && addonById.has(id));
     setAddonIds(seeded);
     originalAddonIds.current = seeded;
+    // `duration` is the BASE the add-ons are added to (see `effectiveDuration`),
+    // while `baselineDuration` is the whole length the booking opened with. The
+    // booking's span already includes these add-ons' minutes, so a base seeded
+    // from the span counted them twice: opening Modify and saving unchanged made
+    // an 11:00-11:55 booking with a 10-minute add-on end at 12:05. Take them back
+    // out of the base, at the catalogue's minutes (which are what
+    // `effectiveDuration` adds back), so an untouched form sends exactly the span
+    // it opened with and does not read as edited.
+    const seededMinutes = seeded.reduce((sum, id) => sum + (addonById.get(id)?.duration_minutes ?? 0), 0);
+    setOpenedAddonMinutes(seededMinutes);
+    if (seededMinutes > 0 && duration != null && duration === baselineDuration) {
+      if (target.durationMinutes != null && duration === target.durationMinutes) {
+        setDuration(Math.max(MIN_DURATION_MINUTES, duration - seededMinutes));
+      } else if (target.durationMinutes == null) {
+        // Adopted from the catalogue (the row had no end time): that is a base
+        // already, so the length the booking opened with is it plus the add-ons.
+        setBaselineDuration(duration + seededMinutes);
+      }
+    }
     setAddonsSeeded(true);
   }, [
     target,
@@ -652,6 +673,8 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
     hasAddonGroups,
     addonById,
     catalogQuery.isLoading,
+    duration,
+    baselineDuration,
   ]);
 
   // Toggle an add-on, enforcing the group's selection rule (single vs multi,
@@ -905,7 +928,8 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
         // A visit's length comes from the services in it, so the single-service
         // catalogue length is not a preset for it.
         isVisit ? undefined : selectedService?.duration_minutes,
-        baselineDuration ?? undefined,
+        // The presets set the base, so the opened length is offered as a base too.
+        baselineDuration != null ? baselineDuration - (isVisit ? 0 : openedAddonMinutes) : undefined,
         5,
         10,
         15,
@@ -1942,7 +1966,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
 
             {!isVisit && !serviceInCatalog ? (
               <Text variant="caption" tone="muted">
-                The booked service is no longer in the catalogue — pick a service below to
+                The booked service is no longer in the catalogue. Pick a service below to
                 change it, or just adjust the time and duration.
               </Text>
             ) : null}
@@ -2438,7 +2462,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
             </Text>
           ) : check.state === 'unknown' ? (
             <Text variant="caption" tone="muted">
-              Could not pre-check availability — Save will validate.
+              Could not pre-check availability. It will be checked when you save.
             </Text>
           ) : null}
 

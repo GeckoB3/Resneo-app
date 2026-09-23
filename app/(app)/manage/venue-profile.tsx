@@ -105,11 +105,29 @@ const IANA_TIMEZONES: string[] = (() => {
     Intl as unknown as { supportedValuesOf?: (key: string) => string[] }
   ).supportedValuesOf?.('timeZone');
   const list = supported && supported.length > 0 ? supported : [...CURATED_TIMEZONES];
-  return [...list].sort((a, b) => a.localeCompare(b));
+  // The engine's list leaves out UTC, which is a valid stored value (web
+  // `iana-time-zone.ts` adds it the same way); without it a UTC venue could not
+  // save its profile at all.
+  return [...new Set([...list, 'UTC'])].sort((a, b) => a.localeCompare(b));
 })();
 
 /** Fast membership check used to validate the saved value. */
 const IANA_TIMEZONE_SET = new Set(IANA_TIMEZONES);
+
+/**
+ * A zone the device can actually use. The list above is only the picker's; when
+ * the engine gives no list (the 28-zone fallback), a valid saved zone outside it
+ * must still save, so the zone is tried directly (web does the same).
+ */
+function isUsableTimeZone(tz: string): boolean {
+  if (IANA_TIMEZONE_SET.has(tz)) return true;
+  try {
+    new Intl.DateTimeFormat('en-GB', { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /** Price band options — matches the web Profile tab select (£/££/£££, empty = not set). */
 const PRICE_BANDS = [
@@ -416,7 +434,7 @@ export default function VenueProfileScreen() {
       ok = false;
     }
     const tz = timezone.trim();
-    if (!tz || !IANA_TIMEZONE_SET.has(tz)) {
+    if (!tz || !isUsableTimeZone(tz)) {
       setTimezoneError('Choose a timezone from the list.');
       ok = false;
     }
@@ -575,7 +593,7 @@ export default function VenueProfileScreen() {
       case 'available':
         return { text: 'This address is available.', tone: 'success' };
       case 'taken':
-        return { text: 'Already taken — choose a different address.', tone: 'danger' };
+        return { text: 'Already taken. Choose a different address.', tone: 'danger' };
       case 'invalid':
         return { text: 'Use lowercase letters, numbers and hyphens only.', tone: 'danger' };
       default:
@@ -782,7 +800,7 @@ export default function VenueProfileScreen() {
           <SectionHeader title="Operational settings" />
 
           <Input
-            label={`No-show grace period (minutes) — ${isAppointments ? 'appointments' : 'reservations'}`}
+            label={`No-show grace period for ${isAppointments ? 'appointments' : 'reservations'} (minutes)`}
             value={noShowGrace}
             onChangeText={(v) => { setNoShowGrace(v.replace(/[^0-9]/g, '')); setNoShowError(null); }}
             keyboardType="number-pad"

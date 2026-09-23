@@ -238,6 +238,21 @@ export function BookingNotesSection({
         />
       ) : null}
 
+      {/* The comment typed when the booking was made. Every appointment flow,
+          the web's staff and guest forms and this app's, stores it in
+          `dietary_notes` (web `DetailsStep`), which this section showed for
+          tables only, so the comment was invisible here (the web shows it). */}
+      {!isTable && booking.dietary_notes?.trim() ? (
+        <InlineEditableNote
+          label="Comments when booked"
+          value={booking.dietary_notes}
+          placeholder="Comments or requests entered when booking"
+          multiline
+          disabled={readOnly}
+          onSave={saveBookingField('dietary_notes')}
+        />
+      ) : null}
+
       <InlineEditableNote
         label={isTable ? 'Guest requests' : 'Booking notes'}
         value={booking.special_requests}

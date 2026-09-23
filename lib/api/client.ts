@@ -104,7 +104,7 @@ export function getApiErrorMessage(body: unknown, status: number): string {
     // A 400 from a schema parse: name the offending field rather than making
     // the user guess from "Invalid request".
     const detail = status === 400 ? zodDetailMessage(body.details) : null;
-    return detail ? `${body.error} — ${detail}` : body.error;
+    return detail ? `${body.error} (${detail})` : body.error;
   }
   if (status === 403) {
     return 'You do not have permission for this action.';

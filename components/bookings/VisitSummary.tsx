@@ -271,7 +271,11 @@ export function VisitSummary({
   const context = [
     durationMinutes != null && durationMinutes > 0 ? fmtDuration(durationMinutes) : null,
     dateLabel,
-    visitHistoryCaption(guestHistory, formatShortDay),
+    // "First visit" is already the line under the guest's name; say it once.
+    // A last-visit date adds something the count there does not, so it stays.
+    guestHistory.priorVisits === 0 && !guestHistory.lastVisitDate
+      ? null
+      : visitHistoryCaption(guestHistory, formatShortDay),
   ]
     .filter(Boolean)
     .join(' · ');

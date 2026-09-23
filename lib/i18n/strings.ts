@@ -97,7 +97,7 @@ export const en = {
       dangerZone: 'Danger zone',
       title: 'Delete account',
       description:
-        'Permanently delete your Resneo account. This ends your access and anonymises your personal data at venues per GDPR retention rules.',
+        'Permanently delete your ResNeo account. This ends your access and anonymises your personal data at venues per GDPR retention rules.',
       cta: 'Delete account',
 
       // Type-to-confirm sheet.
@@ -151,7 +151,7 @@ export const en = {
     confirmLabel: 'Confirm password',
     confirmPlaceholder: 'Re-enter password',
     submit: 'Save password and continue',
-    success: 'Password set. Welcome to Resneo.',
+    success: 'Password set. Welcome to ResNeo.',
     error: 'Could not set your password. Please try again.',
     // `{min}` is interpolated at the call site (see `t(key, params)`).
     tooShort: 'Password must be at least {min} characters.',

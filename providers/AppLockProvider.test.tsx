@@ -122,7 +122,7 @@ const renderProvider = async () => {
   await flush();
 };
 
-const lockVisible = () => screen.queryByLabelText('Resneo is locked') != null;
+const lockVisible = () => screen.queryByLabelText('ResNeo is locked') != null;
 
 beforeEach(() => {
   jest.clearAllMocks();

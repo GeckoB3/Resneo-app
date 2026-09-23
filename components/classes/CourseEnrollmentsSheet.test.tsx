@@ -77,9 +77,9 @@ describe('cancelToastMessage', () => {
   });
 
   it('reports no refund when the amount is zero/absent', () => {
-    expect(cancelToastMessage(0)).toBe('Enrollment cancelled — no refund was issued.');
-    expect(cancelToastMessage(null)).toBe('Enrollment cancelled — no refund was issued.');
-    expect(cancelToastMessage(undefined)).toBe('Enrollment cancelled — no refund was issued.');
+    expect(cancelToastMessage(0)).toBe('Enrollment cancelled. No refund was issued.');
+    expect(cancelToastMessage(null)).toBe('Enrollment cancelled. No refund was issued.');
+    expect(cancelToastMessage(undefined)).toBe('Enrollment cancelled. No refund was issued.');
   });
 });
 
@@ -136,6 +136,6 @@ describe('CourseEnrollmentsSheet — cancel → refund toast', () => {
       enrollmentId: 'enr-1',
       bypass_window: true,
     });
-    expect(mockToast.success).toHaveBeenCalledWith('Enrollment cancelled — no refund was issued.');
+    expect(mockToast.success).toHaveBeenCalledWith('Enrollment cancelled. No refund was issued.');
   });
 });

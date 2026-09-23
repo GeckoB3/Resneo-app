@@ -860,7 +860,7 @@ export function EventEditorSheet({ target, onClose, onSaved }: EventEditorSheetP
           ) : null}
           {paymentReq !== 'none' && !stripeConnected ? (
             <Text variant="caption" color={colors.warning}>
-              Connect Stripe (Plan &amp; payments) to take online payments — bookings will fall
+              Connect Stripe (Plan &amp; payments) to take online payments. Bookings will fall
               back to pay-at-venue until then.
             </Text>
           ) : null}

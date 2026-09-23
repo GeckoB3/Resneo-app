@@ -602,7 +602,7 @@ export function ClassTypeEditorSheet({
           {/* Stripe-not-connected warning when an online payment is required (web parity). */}
           {paymentReq !== 'none' && !stripeConnected ? (
             <Text variant="caption" color={colors.warning}>
-              Connect Stripe (Plan &amp; payments) to take online payments — bookings will fall back
+              Connect Stripe (Plan &amp; payments) to take online payments. Bookings will fall back
               to pay-at-venue until then.
             </Text>
           ) : null}

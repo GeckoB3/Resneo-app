@@ -719,7 +719,7 @@ export function MergeContactDetailSheet({
         {step === 2 && sourceGuest ? (
           <View style={styles.stepBody}>
             <Text variant="bodySmall" tone="secondary">
-              Choose which record to keep. The other contact is permanently deleted — its bookings, history and loyalty move to the keeper.
+              Choose which record to keep. The other contact is permanently deleted. Its bookings, history and loyalty move to the keeper.
             </Text>
 
             <ContactCard
@@ -741,7 +741,7 @@ export function MergeContactDetailSheet({
                 { backgroundColor: colors.warningSurface, borderColor: colors.warning },
               ]}>
               <Text variant="caption" tone="secondary">
-                Booking guest snapshots (names on past confirmations) are not rewritten — only the linked guest record changes.
+                Booking guest snapshots (names on past confirmations) are not rewritten. Only the linked guest record changes.
               </Text>
             </View>
           </View>

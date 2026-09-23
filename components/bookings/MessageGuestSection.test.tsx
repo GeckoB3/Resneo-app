@@ -79,7 +79,7 @@ describe('MessageGuestSection — web parity', () => {
     expect(screen.getByText('SMS / Email guest')).toBeTruthy();
     await expand();
     expect(
-      screen.getByText('No email or phone on file — add contact details to message this guest.'),
+      screen.getByText('No email or phone on file. Add contact details to message this guest.'),
     ).toBeTruthy();
     expect(screen.queryByText('Send message')).toBeNull();
   });
@@ -144,7 +144,7 @@ describe('MessageGuestSection — web parity', () => {
     await press(screen.getByText('Send message'));
 
     expect(
-      screen.getByText('Partially sent — SMS: Guest has no phone on file'),
+      screen.getByText('Partially sent. SMS: Guest has no phone on file'),
     ).toBeTruthy();
   });
 

@@ -116,7 +116,8 @@ describe('VisitSummary', () => {
       />,
     );
     expect(screen.getByText('10:00 – 11:00')).toBeTruthy();
-    expect(screen.getByText('1 hr · Wed 10 Sep · First visit')).toBeTruthy();
+    // "First visit" is the line under the guest's name; it is not repeated here.
+    expect(screen.getByText('1 hr · Wed 10 Sep')).toBeTruthy();
     expect(screen.getByText('Deposit due £10.00')).toBeTruthy();
     expect(screen.getByText('Massage')).toBeTruthy();
     expect(screen.getByText('1 hr · with Kate')).toBeTruthy();

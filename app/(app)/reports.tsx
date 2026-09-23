@@ -1,4 +1,4 @@
-import { Stack } from 'expo-router';
+import { Stack, useLocalSearchParams } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
@@ -28,7 +28,7 @@ import { StatTile } from '@/components/ui/StatTile';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { bookingStatusDisplayLabel } from '@/lib/booking/infer-booking-row-model';
-import { addDaysToDateStr } from '@/lib/dates/venue-dates';
+import { addDaysToDateStr, formatReportRangeLabel } from '@/lib/dates/venue-dates';
 import { formatPence } from '@/lib/format';
 import { hapticTap } from '@/lib/haptics';
 import { calendarDateInTimeZone } from '@/lib/queries/useBookingsList';
@@ -97,7 +97,12 @@ export default function ReportsScreen() {
   const [appliedTo, setAppliedTo] = useState(today);
 
   // Sub-tabs
-  const [mainTab, setMainTab] = useState<MainTab>('overview');
+  // `?tab=new-bookings` opens that tab (Today's New bookings card links here,
+  // as the web's does), anything else the Overview.
+  const { tab: tabParam } = useLocalSearchParams<{ tab?: string }>();
+  const [mainTab, setMainTab] = useState<MainTab>(() =>
+    tabParam === 'new-bookings' || tabParam === 'revenue' || tabParam === 'clients' ? tabParam : 'overview',
+  );
 
   const query = useReports(appliedFrom, appliedTo, isAdmin);
 
@@ -293,7 +298,7 @@ export default function ReportsScreen() {
     ? Math.max(...Object.values(insights.by_booking_source), 1)
     : 1;
 
-  const rangeLabel = data ? `${data.from} → ${data.to}` : '';
+  const rangeLabel = data ? formatReportRangeLabel(data.from, data.to) : '';
 
   return (
     <Screen scroll={false} padded={false}>
@@ -301,9 +306,9 @@ export default function ReportsScreen() {
 
       {/* ── Toolbar: presets + sub-tabs ─────────────────────────── */}
       <View style={[styles.toolbar, { borderBottomColor: colors.border }]}>
-        {/* Preset chips. The Revenue tab carries its own range (web parity:
-            the date-range card is hidden there). */}
-        {mainTab !== 'revenue' ? (
+        {/* Preset chips. The Revenue and New bookings tabs carry their own
+            ranges (web parity: the date-range card is hidden on both). */}
+        {mainTab !== 'revenue' && mainTab !== 'new-bookings' ? (
         <View style={styles.presetRow}>
           {(['7d', '30d', '90d'] as const).map((key) => (
             <Pressable
@@ -347,7 +352,7 @@ export default function ReportsScreen() {
 
         {/* Custom date inputs (shown when custom is selected) — native OS pickers
             so the range works on iOS and Android alike. */}
-        {mainTab !== 'revenue' && rangeKey === 'custom' ? (
+        {mainTab !== 'revenue' && mainTab !== 'new-bookings' && rangeKey === 'custom' ? (
           <View style={styles.customRange}>
             <View style={styles.dateField}>
               <Text variant="caption" tone="muted">

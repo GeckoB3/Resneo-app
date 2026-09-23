@@ -281,7 +281,7 @@ export function ScheduleTimelineSheet({
         <Text variant="label">Plan hours ahead</Text>
       ) : (
         <Text variant="overline" tone="muted">
-          Plan hours ahead — {calendar.name}
+          Plan hours ahead for {calendar.name}
         </Text>
       )}
 

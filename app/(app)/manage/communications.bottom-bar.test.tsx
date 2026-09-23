@@ -16,6 +16,8 @@
  */
 import { render, screen } from '@testing-library/react-native';
 
+// The Light-tier SMS banner reads the billing status (the subscription, not Connect).
+jest.mock('@/lib/queries/useBillingStatus', () => ({ useBillingStatus: () => ({ data: undefined }) }));
 jest.mock('expo-router', () => ({ Stack: { Screen: () => null } }));
 
 jest.mock('@/components/manage/CommunicationPreviewSheet', () => ({

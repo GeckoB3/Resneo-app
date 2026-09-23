@@ -41,6 +41,7 @@ import {
   GOOGLE_REVIEW_LINK_HELP,
   normaliseGoogleReviewUrl,
 } from '@/lib/reviews/google-review-link';
+import { useBillingStatus } from '@/lib/queries/useBillingStatus';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { fonts, minTouchTarget, radius, spacing } from '@/theme/index';
@@ -319,7 +320,7 @@ function MessageCard({
                   multiline
                   style={styles.multiline}
                   maxLength={320}
-                  helper={`${(policy.smsCustomMessage ?? '').length}/320 — counts toward SMS length`}
+                  helper={`${(policy.smsCustomMessage ?? '').length}/320 (counts toward SMS length)`}
                 />
               ) : (
                 <Text variant="bodySmall" tone="muted">
@@ -361,7 +362,7 @@ function OwnerAlertCard({
   const trimmedVenueEmail = venueEmail?.trim() || '';
   const helper = trimmedVenueEmail
     ? `Leave blank to use your venue email (${trimmedVenueEmail}).`
-    : 'No venue email is set in Profile — enter an address here to receive alerts.';
+    : 'No venue email is set in Profile. Enter an address here to receive alerts.';
 
   return (
     <Card>
@@ -532,8 +533,9 @@ function SmsLightBanner() {
         SMS on Appointments Light
       </Text>
       <Text variant="bodySmall" style={{ color: colors.brand, marginTop: spacing.xs }}>
-        100 SMS segments are included each month, then a small per-segment fee beyond that. Add a
-        payment card under Settings → Plan to enable SMS sending.
+        {`${SMS_INCLUDED_LIGHT} SMS segments are included each month, then ${Math.round(
+          SMS_OVERAGE_GBP_PER_MESSAGE * 100,
+        )}p per segment beyond that. Add a payment card under More, Plan & payments to enable SMS sending.`}
       </Text>
     </View>
   );
@@ -565,6 +567,10 @@ const PREVIEW_CLOSED: PreviewSheetState = {
  * Communications — per-message guest policies (web "Guest communications"
  * parity: enable, channels, timing, optional template lines) + staff alerts.
  */
+/** Web `SMS_INCLUDED_LIGHT` and `SMS_OVERAGE_GBP_PER_MESSAGE` (billing constants). */
+const SMS_INCLUDED_LIGHT = 100;
+const SMS_OVERAGE_GBP_PER_MESSAGE = 0.06;
+
 export default function CommunicationsScreen() {
   const { venue, featureFlags, refetch: refetchVenue } = useVenueContext();
   const { colors } = useTheme();
@@ -580,11 +586,14 @@ export default function CommunicationsScreen() {
   const isAdmin = venue?.current_user_role === 'admin';
   const waitlistEnabled = featureFlags?.resolved?.waitlist_v2 === true;
 
-  // SMS upsell banner: show when pricing_tier === 'light' and no Stripe subscription.
-  // VenueBootstrap doesn't yet surface stripe_subscription_id, so we derive a safe
-  // fallback: if stripe_connected_account_id is absent, assume no subscription.
+  // SMS upsell banner: Appointments Light with no Stripe SUBSCRIPTION (web
+  // `CommunicationTemplatesSection`). It used to test the Connect account, which
+  // takes guests' payments and says nothing about the plan, so a venue paying
+  // for its plan without Connect saw it and one with Connect but no card did not.
+  const isLightTier = venue?.pricing_tier === 'light';
+  const billingStatus = useBillingStatus(isAdmin && isLightTier);
   const showSmsLightBanner =
-    venue?.pricing_tier === 'light' && !venue?.stripe_connected_account_id;
+    isLightTier && billingStatus.data != null && !billingStatus.data.stripe_subscription_id?.trim();
 
   const toast = useToast();
   const policiesQuery = useCommunicationPolicies();

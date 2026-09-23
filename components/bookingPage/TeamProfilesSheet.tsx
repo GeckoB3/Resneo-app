@@ -79,7 +79,7 @@ export function TeamProfilesSheet({ visible, onClose }: TeamProfilesSheetProps) 
       const url = await uploadPhoto.mutateAsync(picked);
       // A new photo starts centred: framing chosen for the old one means nothing.
       setProfile(id, { photo: url, photo_crop: null });
-      toast.info('Photo ready — tap Save to publish.');
+      toast.info('Photo ready. Tap Save to publish.');
     } catch (e) {
       hapticWarning();
       toast.error(e instanceof ApiError ? e.message : 'Could not upload the photo.');
@@ -109,14 +109,14 @@ export function TeamProfilesSheet({ visible, onClose }: TeamProfilesSheetProps) 
             imageUrl={framingProfile.photo ?? null}
             value={framingProfile.photo_crop ?? null}
             frameShape="circle"
-            title={framingMember ? `Reposition — ${framingMember.name}` : 'Reposition photo'}
+            title={framingMember ? `Reposition: ${framingMember.name}` : 'Reposition photo'}
             emptyLabel="Add a photo to reposition it"
             accessibilityLabel="Team photo position and zoom"
             onCancel={() => setFramingId(null)}
             onSave={(next) => {
               setProfile(framingId, { photo_crop: next });
               setFramingId(null);
-              toast.info('Framing ready — tap Save to publish.');
+              toast.info('Framing ready. Tap Save to publish.');
             }}
           />
         </View>

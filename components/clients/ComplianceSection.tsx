@@ -197,7 +197,7 @@ export function ComplianceSection({ guestId }: ComplianceSectionProps) {
                         {complianceJoinedTypeName(link.compliance_types)}
                       </Text>
                       <Text variant="caption" tone="muted">
-                        {link.sent_via ? `Sent by ${link.sent_via}` : 'Not yet sent'}
+                        {link.sent_via ? `Sent by ${link.sent_via === 'sms' ? 'SMS' : 'email'}` : 'Not yet sent'}
                         {link.expires_at ? ` · Expires ${formatComplianceDate(link.expires_at)}` : ''}
                         {link.reminder_count
                           ? ` · Reminded ${link.reminder_count} time${link.reminder_count === 1 ? '' : 's'}`

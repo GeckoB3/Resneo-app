@@ -225,7 +225,7 @@ export default function NotificationPreferencesScreen() {
       if (result.registered) {
         toast.success('Push notifications enabled on this device.');
       } else if (result.reason === 'denied') {
-        toast.info('Permission denied — enable notifications for Resneo in Settings.');
+        toast.info('Permission denied. Enable notifications for Resneo in Settings.');
       } else if (result.reason !== 'web' && result.reason !== 'expo-go' && result.reason !== 'simulator') {
         toast.error('Could not enable push on this device.');
       }

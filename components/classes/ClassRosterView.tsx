@@ -426,7 +426,7 @@ export function ClassRosterView({
             ]}>
             <Text variant="caption" tone="secondary">
               {commerceLocked
-                ? 'Class check-in is not included in this plan — manage attendance on the web dashboard. Tap an attendee to update their booking (confirm, start or cancel).'
+                ? 'Class check-in is not included in this plan. Manage attendance on the web dashboard. Tap an attendee to update their booking (confirm, start or cancel).'
                 : isAdmin
                   ? 'Tap an attendee to update their booking (confirm, start or cancel). Use the ✕ in the header to cancel the whole session and notify guests.'
                   : 'Tap an attendee to update their booking (confirm, start or cancel).'}

@@ -30,6 +30,13 @@ export type RescheduleTarget = {
   time: string;
   /** Current length in minutes; null/undefined hides the duration stepper. */
   durationMinutes?: number | null;
+  /**
+   * An appointment: a move sends the booking's end so it keeps its length. The
+   * server otherwise re-derives the end from the service's catalogue length,
+   * which dropped add-on and custom minutes (13:00-14:05 was saved as 13:45).
+   * Table bookings leave it off: the server sizes those itself, with a lower cap.
+   */
+  keepLength?: boolean;
   /** Original practitioner/calendar id — set only by a cross-column drag so its
    *  Undo restores the booking to its SOURCE column, not just its time. */
   practitionerId?: string | null;
@@ -152,9 +159,15 @@ export function RescheduleSheet({ target, onClose, onMoved }: RescheduleSheetPro
         await mutation.mutateAsync({
           date,
           time: `${minutesToTime(minutes)}:00`,
-          // Only send the duration when it changed — table bookings have a lower
+          // Only send the duration when it changed: table bookings have a lower
           // server-side cap, so an untouched duration must not be re-asserted.
-          ...(durationChanged ? { durationMinutes: duration } : {}),
+          // An appointment sends its end instead, or the server would give it
+          // the catalogue length and drop its add-on or custom minutes.
+          ...(durationChanged
+            ? { durationMinutes: duration }
+            : target.keepLength && duration != null && !crossesMidnight
+              ? { endTime: `${minutesToTime(minutes + duration)}:00` }
+              : {}),
         });
       }
       hapticSuccess();

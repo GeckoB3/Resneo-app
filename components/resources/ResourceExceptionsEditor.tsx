@@ -318,7 +318,7 @@ export function ResourceExceptionsEditor({ value, onChange }: ResourceExceptions
             <Text variant="caption" tone="muted">
               {`This date has +${editingExtraCount} more time range${
                 editingExtraCount > 1 ? 's' : ''
-              } set on web — they're kept; this edits the first range.`}
+              } set on web. They're kept; this edits the first range.`}
             </Text>
           ) : null}
           {error ? (

@@ -23,6 +23,7 @@ import { getWebUrl } from '@/lib/env';
 import { formatPence } from '@/lib/format';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useCancelEvent, useDeleteEvent, useManagedEvents } from '@/lib/queries/useEventsManage';
+import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { spacing } from '@/theme/index';
@@ -63,6 +64,17 @@ export function EventManagerSheet({ visible, onClose }: EventManagerSheetProps) 
   const toast = useToast();
   const { venue } = useVenueContext();
   const isAdmin = venue?.current_user_role === 'admin';
+  // Web parity (`EventManagerView`): admins manage every event; other staff
+  // only events on the calendars assigned to them. The app offered Edit and
+  // Delete on every event to everyone, and the save was refused.
+  const staffMe = useStaffMe();
+  const linkedCalendarIds = useMemo(
+    () => (isAdmin ? [] : staffMe.data?.staff?.linked_calendar_ids ?? []),
+    [isAdmin, staffMe.data?.staff?.linked_calendar_ids],
+  );
+  const canCreateEvents = isAdmin || linkedCalendarIds.length > 0;
+  const canEditEvent = (calendarId: string | null | undefined) =>
+    isAdmin || (calendarId != null && linkedCalendarIds.includes(calendarId));
 
   const query = useManagedEvents();
   const deleteEvent = useDeleteEvent();
@@ -134,7 +146,7 @@ export function EventManagerSheet({ visible, onClose }: EventManagerSheetProps) 
       onSuccess: () => {
         hapticSuccess();
         setCancelTarget(null);
-        toast.success(`"${event.name}" cancelled — guests will be notified.`);
+        toast.success(`"${event.name}" cancelled. Guests will be notified.`);
       },
       onError: (e) => {
         hapticWarning();
@@ -201,11 +213,20 @@ export function EventManagerSheet({ visible, onClose }: EventManagerSheetProps) 
                 tintColor={colors.brand}
               />
             }>
-            <Button
-              label="New event"
-              fullWidth
-              onPress={() => setEditorTarget({ mode: 'create' })}
-            />
+            {!isAdmin ? (
+              <Text variant="bodySmall" tone="secondary">
+                {linkedCalendarIds.length === 0
+                  ? 'Your account is not linked to a calendar yet. Ask an admin to assign at least one calendar before you can create, edit, or delete events.'
+                  : 'You can create, edit, or delete events on the calendars assigned to you. Only admins can cancel an event with guest notifications.'}
+              </Text>
+            ) : null}
+            {canCreateEvents ? (
+              <Button
+                label="New event"
+                fullWidth
+                onPress={() => setEditorTarget({ mode: 'create' })}
+              />
+            ) : null}
 
             {allEvents.length > 0 ? (
               <SearchBar
@@ -219,7 +240,7 @@ export function EventManagerSheet({ visible, onClose }: EventManagerSheetProps) 
             {allEvents.length === 0 ? (
               <EmptyState
                 title="No events yet"
-                message="Create your first ticketed event — workshops, socials, experiences — to start selling tickets."
+                message="Create your first ticketed event (workshops, socials, experiences) to start selling tickets."
               />
             ) : events.length === 0 ? (
               <EmptyState
@@ -272,22 +293,24 @@ export function EventManagerSheet({ visible, onClose }: EventManagerSheetProps) 
                       onPress={() => setRosterTarget(event)}
                     />
 
-                    <View style={styles.actionsRow}>
-                      <Button
-                        label="Edit"
-                        variant="secondary"
-                        size="sm"
-                        style={styles.flex1}
-                        onPress={() => setEditorTarget({ mode: 'edit', event })}
-                      />
-                      <Button
-                        label="Delete"
-                        variant="ghost"
-                        size="sm"
-                        style={styles.flex1}
-                        onPress={() => setDeleteTarget(event)}
-                      />
-                    </View>
+                    {canEditEvent(event.calendar_id) ? (
+                      <View style={styles.actionsRow}>
+                        <Button
+                          label="Edit"
+                          variant="secondary"
+                          size="sm"
+                          style={styles.flex1}
+                          onPress={() => setEditorTarget({ mode: 'edit', event })}
+                        />
+                        <Button
+                          label="Delete"
+                          variant="ghost"
+                          size="sm"
+                          style={styles.flex1}
+                          onPress={() => setDeleteTarget(event)}
+                        />
+                      </View>
+                    ) : null}
                     {isAdmin ? (
                       <Button
                         label="Cancel event & notify guests"

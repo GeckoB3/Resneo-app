@@ -3,7 +3,7 @@ import { SymbolView } from 'expo-symbols';
 import * as WebBrowser from 'expo-web-browser';
 import { useRouter, type Href } from 'expo-router';
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
-import { Linking, StyleSheet, Switch, View } from 'react-native';
+import { Linking, Platform, StyleSheet, Switch, View } from 'react-native';
 
 import { ReaderSettingsSheet } from '@/components/bookings/ReaderSettingsSheet';
 import { AskResneoRow } from '@/components/more/AskResneoRow';
@@ -261,7 +261,7 @@ export default function MoreScreen() {
       {showPlanWarning ? (
         <PressableScale
           onPress={() => router.push('/manage/plan' as Href)}
-          accessibilityLabel="Plan issue — tap to view billing"
+          accessibilityLabel="Plan issue: tap to view billing"
           style={[
             styles.planWarning,
             { backgroundColor: colors.warningSurface, borderColor: colors.warning },
@@ -371,7 +371,7 @@ export default function MoreScreen() {
           {isAdmin && inPersonEnabled && !stripeConnected ? (
             <View style={styles.noticeRow}>
               <Text variant="caption" color={colors.warning}>
-                Connect Stripe first — card payments are paid into your own Stripe account, so
+                Connect Stripe first. Card payments are paid into your own Stripe account, so
                 this has no effect until that is set up. Open Plan &amp; payments on the web
                 dashboard to finish.
               </Text>
@@ -410,7 +410,9 @@ export default function MoreScreen() {
         <Group title="Privacy & security">
           <View style={styles.toggleRow}>
             <View style={styles.toggleLabel}>
-              <Text variant="bodyMedium">Require Face ID / biometric unlock</Text>
+              <Text variant="bodyMedium">
+                {Platform.OS === 'ios' ? 'Require Face ID / biometric unlock' : 'Require fingerprint or face unlock'}
+              </Text>
               <Text variant="caption" tone="muted">
                 Lock the app when it returns from the background so client records stay private.
               </Text>
@@ -481,7 +483,7 @@ export default function MoreScreen() {
       </Card>
 
       <Text variant="caption" tone="muted" style={styles.version}>
-        Resneo v{appVersion}
+        ResNeo v{appVersion}
       </Text>
 
       {/* Card reader pairing / status (in-person payments). */}

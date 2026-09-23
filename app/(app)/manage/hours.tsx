@@ -228,7 +228,7 @@ export default function BusinessHoursScreen() {
           <Text variant="heading">Weekly opening hours</Text>
           <Text variant="bodySmall" tone="secondary">
             Set the hours you are normally open each day. This is used for availability and guest
-            messaging — review carefully before publishing.
+            messaging, so review carefully before publishing.
           </Text>
         </View>
 

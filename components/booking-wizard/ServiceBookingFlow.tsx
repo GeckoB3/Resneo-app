@@ -513,6 +513,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
       addonIds: selectedAddonIds.length ? selectedAddonIds : undefined,
       addonTotalPence: addonPence,
       addonTotalMinutes: addonMinutes,
+      addonNames: chosenAddons.map((a) => a.name),
       // Resolved per segment so the confirm step can total the visit. Variant
       // overrides win for the deposit, as they do for duration and price.
       // Add-on price is excluded from a deposit and rolled into a full payment,
@@ -558,6 +559,7 @@ export function ServiceBookingFlow({ onCreated }: ServiceBookingFlowProps) {
         addonIds: extra.addonIds.length ? extra.addonIds : undefined,
         addonTotalPence: extraAddonPence,
         addonTotalMinutes: extraAddonMinutes,
+        addonNames: chosen.map((a) => a.name),
         ...multiServiceSegmentCharge(
           {
             price_pence: price,

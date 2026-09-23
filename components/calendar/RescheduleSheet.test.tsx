@@ -130,6 +130,29 @@ describe('RescheduleSheet', () => {
       );
       expect(onClose).toHaveBeenCalled();
     });
+
+    it('sends an appointment’s end, so a move keeps its length', async () => {
+      // Without an end or a duration the server gives an appointment its
+      // catalogue length: a 13:00-14:05 move with a 10-minute add-on and a
+      // custom length was saved as 13:00-13:45 (app device test, 2026-09-23).
+      await render(<RescheduleSheet target={{ ...TARGET, keepLength: true }} onClose={onClose} />);
+      await press('TIME_PICKER');
+      await press('Confirm move');
+
+      const call = mockReschedule.mock.calls[0]![0] as Record<string, unknown>;
+      expect(call).toEqual(expect.objectContaining({ time: '09:30:00', endTime: '10:30:00' }));
+      expect(call.durationMinutes).toBeUndefined();
+    });
+
+    it('sends neither for a table booking, which the server sizes itself', async () => {
+      await render(<RescheduleSheet target={TARGET} onClose={onClose} />);
+      await press('TIME_PICKER');
+      await press('Confirm move');
+
+      const call = mockReschedule.mock.calls[0]![0] as Record<string, unknown>;
+      expect(call.endTime).toBeUndefined();
+      expect(call.durationMinutes).toBeUndefined();
+    });
   });
 
   describe('a multi-service visit', () => {

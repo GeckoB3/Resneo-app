@@ -232,7 +232,7 @@ export function VariantsEditor({
     <View style={styles.root}>
       {drafts.length === 0 ? (
         <Text variant="bodySmall" tone="muted">
-          No options — this service uses one fixed duration and price. Add options to let clients pick a
+          No options. This service uses one fixed duration and price. Add options to let clients pick a
           version (e.g. 30 vs 60 minutes) with its own duration and price.
         </Text>
       ) : null}

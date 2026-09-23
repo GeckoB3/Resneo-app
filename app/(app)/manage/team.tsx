@@ -224,11 +224,11 @@ export default function TeamScreen() {
                   <Text variant="caption" style={{ fontFamily: fonts.semibold }}>
                     Admin
                   </Text>
-                  {' — full access to all settings, staff management, reports and bookings.\n'}
+                  {': full access to all settings, staff management, reports and bookings.\n'}
                   <Text variant="caption" style={{ fontFamily: fonts.semibold }}>
                     Staff
                   </Text>
-                  {' — day-to-day access to assigned calendars, bookings and guest details.\n'}
+                  {': day-to-day access to assigned calendars, bookings and guest details.\n'}
                   Tap a member to manage their role, calendars, password or invitation.
                 </Text>
               </View>

@@ -353,7 +353,12 @@ function FeatureFlagsCard({ resolvedFlags, rawFlags, disabled }: FeatureFlagsCar
       .filter((c): c is FeatureFlagsCalendar => Boolean(c));
   })();
 
-  async function persist(patch: VenueFeatureFlagsRaw, successMsg?: string): Promise<boolean> {
+  async function persist(
+    patch: VenueFeatureFlagsRaw,
+    successMsg?: string,
+    /** The flag this save switches off: the server answers 200 with it still on when ResNeo has forced it. */
+    expectedOff?: AppointmentsFeatureFlagKey,
+  ): Promise<boolean> {
     setError(null);
     setSavedMsg(null);
     // Optimistic local update
@@ -375,6 +380,14 @@ function FeatureFlagsCard({ resolvedFlags, rawFlags, disabled }: FeatureFlagsCar
         setLocalRaw(res.raw);
         setWaitlistMode(waitlistModeFromRaw(res.raw));
       }
+      // A flag ResNeo has forced on comes back ON from a successful save (web
+      // `FeatureFlagsSection` compares the same way): the switch flips back,
+      // so saying "Setting saved." was wrong.
+      if (expectedOff && (res.resolved as Record<string, boolean> | undefined)?.[expectedOff]) {
+        hapticWarning();
+        setError(FORCED_ON_MESSAGE);
+        return false;
+      }
       hapticSuccess();
       setSavedMsg(successMsg ?? 'Setting saved.');
       return true;
@@ -384,9 +397,7 @@ function FeatureFlagsCard({ resolvedFlags, rawFlags, disabled }: FeatureFlagsCar
       setLocalResolved(resolvedFlags);
       setLocalRaw(rawFlags);
       if (e instanceof ApiError && e.message.includes('cannot be switched off')) {
-        setError(
-          'This feature is turned on for your account by Resneo and cannot be switched off. Contact support if you need it changed.',
-        );
+        setError(FORCED_ON_MESSAGE);
       } else {
         setError(e instanceof Error ? e.message : 'Could not save feature flag.');
       }
@@ -417,7 +428,7 @@ function FeatureFlagsCard({ resolvedFlags, rawFlags, disabled }: FeatureFlagsCar
       if (key === 'waitlist_v2') {
         delete (patch as Record<string, unknown>).waitlist_config;
       }
-      void persist(patch);
+      void persist(patch, undefined, key);
     }
   }
 
@@ -744,6 +755,10 @@ function RadioRow({
 // ---------------------------------------------------------------------------
 // Main screen
 // ---------------------------------------------------------------------------
+
+/** A feature ResNeo has switched on for the venue: a save cannot turn it off. */
+const FORCED_ON_MESSAGE =
+  'This feature is turned on for your account by ResNeo and cannot be switched off. Contact support if you need it changed.';
 
 export default function BookingSettingsScreen() {
   const { venue, isLoading, refetch } = useVenueContext();

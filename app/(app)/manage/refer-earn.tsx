@@ -1,3 +1,4 @@
+import { explainReferralOutcome } from '@/lib/referrals/explain-outcome';
 import { Stack } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import * as Sharing from 'expo-sharing';
@@ -83,7 +84,7 @@ function HowItWorksCard() {
         <HowItWorksStep
           index={1}
           title="Share your link"
-          body="Send your referral code or link to another venue that isn’t on Resneo yet."
+          body="Send your referral code or link to another venue that isn’t on ResNeo yet."
         />
         <HowItWorksStep
           index={2}
@@ -93,7 +94,7 @@ function HowItWorksCard() {
         <HowItWorksStep
           index={3}
           title="You both earn"
-          body="You and the venue you referred each get one month of subscription credit — applied once they’re an active, paying venue."
+          body="You and the venue you referred each get one month of subscription credit, applied once they’re an active, paying venue."
         />
       </View>
       <Text variant="caption" tone="muted" style={styles.howFootnote}>
@@ -108,6 +109,7 @@ function HowItWorksCard() {
 
 function ReferralRow({ row, isFirst }: { row: ReferralRowForUi; isFirst: boolean }) {
   const { colors } = useTheme();
+  const explanation = explainReferralOutcome(row.status, row.voidReason);
   return (
     <View
       style={[
@@ -131,9 +133,10 @@ function ReferralRow({ row, isFirst }: { row: ReferralRowForUi; isFirst: boolean
             </Text>
           ) : null}
         </View>
-        {row.voidReason ? (
+        {/* A sentence, as the web shows, never the raw `void_reason` code. */}
+        {explanation ? (
           <Text variant="caption" color={colors.danger} style={styles.voidReason}>
-            {row.voidReason}
+            {explanation}
           </Text>
         ) : null}
       </View>
@@ -181,7 +184,7 @@ export default function ReferEarnScreen() {
         return;
       }
       await Sharing.shareAsync(shareableLink, {
-        dialogTitle: 'Share your Resneo referral link',
+        dialogTitle: 'Share your ResNeo referral link',
       });
     } catch {
       toast.error('Could not open the share sheet.');
@@ -226,7 +229,7 @@ export default function ReferEarnScreen() {
         {header}
         <EmptyState
           title="Refer & Earn isn’t available"
-          message="The referral programme isn’t enabled for your venue yet. Contact the Resneo team to take part."
+          message="The referral programme isn’t enabled for your venue yet. Contact the ResNeo team to take part."
         />
       </Screen>
     );

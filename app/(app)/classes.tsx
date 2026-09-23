@@ -344,7 +344,7 @@ export default function ClassesScreen() {
                     message={
                       view === 'month'
                         ? 'No sessions in this month. Add a class, schedule sessions, or set up a weekly rule.'
-                        : "There are no sessions in this week. Add a class, schedule sessions, or set up a weekly rule — they'll appear here."
+                        : "There are no sessions in this week. Add a class, schedule sessions, or set up a weekly rule. They'll appear here."
                     }
                     actionLabel="Manage classes"
                     onAction={() => setManagerOpen(true)}

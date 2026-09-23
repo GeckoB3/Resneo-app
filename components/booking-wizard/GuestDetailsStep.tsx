@@ -265,7 +265,7 @@ export function GuestDetailsStep({
               </View>
             ) : debouncedSearch.length >= MIN_SEARCH_LENGTH ? (
               <Text variant="caption" tone="muted">
-                No matching guests — enter details below.
+                No matching guests. Enter their details below.
               </Text>
             ) : null}
 

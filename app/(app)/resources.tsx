@@ -175,7 +175,7 @@ export default function ResourcesScreen() {
         <View style={styles.stateWrap}>
           <EmptyState
             title="No resources yet"
-            message="Create courts, rooms, or equipment to start taking resource bookings — they'll appear here."
+            message="Create courts, rooms, or equipment to start taking resource bookings. They'll appear here."
           />
           <Button
             label="New resource"

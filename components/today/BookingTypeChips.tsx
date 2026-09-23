@@ -4,11 +4,16 @@ import { Text } from '@/components/ui/Text';
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
+// The server's keys (web `infer-booking-row-model.ts`) are `event_ticket` and
+// `class_session`; this list had `experience_event` / `class_instance`, so those
+// chips read the raw key and sorted last. The old names stay for older payloads.
 const BOOKING_MODEL_ORDER = [
   'table_reservation',
   'practitioner_appointment',
   'unified_scheduling',
+  'event_ticket',
   'experience_event',
+  'class_session',
   'class_instance',
   'resource_booking',
 ] as const;
@@ -17,7 +22,9 @@ const BOOKING_MODEL_SHORT_LABELS: Record<string, string> = {
   table_reservation: 'Tables',
   practitioner_appointment: 'Appointments',
   unified_scheduling: 'Appointments',
+  event_ticket: 'Events',
   experience_event: 'Events',
+  class_session: 'Classes',
   class_instance: 'Classes',
   resource_booking: 'Resources',
 };

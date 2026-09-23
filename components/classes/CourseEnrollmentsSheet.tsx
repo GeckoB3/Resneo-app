@@ -51,7 +51,7 @@ export function cancelToastMessage(refundPence: number | null | undefined): stri
   if (refundPence != null && refundPence > 0) {
     return `Enrollment cancelled. ${formatPence(refundPence)} refunded.`;
   }
-  return 'Enrollment cancelled — no refund was issued.';
+  return 'Enrollment cancelled. No refund was issued.';
 }
 
 /**
@@ -279,7 +279,7 @@ export function CourseEnrollmentsSheet({ course, onClose }: CourseEnrollmentsShe
                 </Text>
                 {cancelled.map((e) => (
                   <Text key={e.id} variant="caption" tone="muted" numberOfLines={1}>
-                    {guestDisplayName(e.guest)} — cancelled {e.updated_at.slice(0, 10)}
+                    {guestDisplayName(e.guest)} (cancelled {e.updated_at.slice(0, 10)})
                   </Text>
                 ))}
               </View>
@@ -344,7 +344,7 @@ export function CourseEnrollmentsSheet({ course, onClose }: CourseEnrollmentsShe
           {forceTarget ? (
             <Text variant="bodySmall" tone="secondary">
               Force-cancel {guestDisplayName(forceTarget.guest)}&apos;s enrollment past the refund
-              window. No refund is issued automatically — arrange any refund manually.
+              window. No refund is issued automatically, so arrange any refund manually.
             </Text>
           ) : null}
           <Input

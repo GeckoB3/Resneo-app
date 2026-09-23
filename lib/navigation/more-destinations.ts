@@ -216,7 +216,7 @@ export function buildDestinations(ctx: DestinationsContext): Destination[] {
   }
 
   // ── App & support. ─────────────────────────────────────────────────────────
-  list.push({ id: 'support', label: 'Support', hint: 'Contact the Resneo team', icon: { ios: 'questionmark.circle.fill', android: 'help', web: 'help' }, tile: TILE.teal, group: 'app', kind: 'route', target: '/support', keywords: ['help', 'contact'] });
+  list.push({ id: 'support', label: 'Support', hint: 'Contact the ResNeo team', icon: { ios: 'questionmark.circle.fill', android: 'help', web: 'help' }, tile: TILE.teal, group: 'app', kind: 'route', target: '/support', keywords: ['help', 'contact'] });
   list.push({ id: 'push', label: 'Push notifications', hint: 'Alerts this device shows & what for', icon: { ios: 'bell.badge.fill', android: 'notifications_active', web: 'notifications_active' }, tile: TILE.rose, group: 'app', kind: 'route', target: '/manage/notification-preferences', keywords: ['alerts', 'reminders'] });
   list.push({ id: 'web-dashboard', label: 'Web dashboard', hint: 'Open the full dashboard in your browser', icon: { ios: 'desktopcomputer', android: 'computer', web: 'computer' }, tile: TILE.slate, group: 'app', kind: 'web', target: '/dashboard', external: true });
 

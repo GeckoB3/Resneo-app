@@ -17,6 +17,20 @@ on the other, and iOS 1.0.4 is the worked example.
 
 ## Unreleased
 
+**Fixes from the 2026-09-23 device test.** Details in `Docs/APP_QA_FIXES_2026-09-23.md`.
+
+- Modify no longer lengthens a booking that has an add-on each time it is saved, and Reschedule
+  keeps a booking's add-on and custom minutes.
+- A slow create is waited for longer and, if it still times out, the app checks whether the
+  booking was made before suggesting another try, so it is not booked twice.
+- Class bookings move to another session of the same class, and resource bookings to another
+  free slot and length. Event bookings are no longer offered a move the server refuses.
+- The comment typed when booking shows on the booking. A swipe No-show asks first.
+- The New booking review names add-ons and prices each line with them.
+- Smaller fixes: deposit wording, "1 event", Contacts with filters, Today's link to Reports,
+  report dates, card-hold messages in Communications, referral explanations, event and resource
+  permissions for team members, and no em-dashes in the app's wording.
+
 **The combined booking page's own embed code and QR code** (web 2026-09-23). Details in
 `Docs/APP_GAP_REPORT_R42_WEB_DELTA.md`.
 

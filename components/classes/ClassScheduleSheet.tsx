@@ -456,7 +456,7 @@ export function ClassScheduleSheet({ target, onClose, onSaved }: ClassScheduleSh
             <View style={styles.section}>
               <Text variant="caption" tone="muted">
                 {weeklyEnd === 'until'
-                  ? `Repeats on ${weekday}s — the weekday comes from the start date above; the range below sets when sessions run.`
+                  ? `Repeats on ${weekday}s. The weekday comes from the start date above; the range below sets when sessions run.`
                   : `Repeats on ${weekday}s, taken from the start date.`}
               </Text>
               <Text variant="label" tone="secondary">

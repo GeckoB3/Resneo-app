@@ -1,6 +1,7 @@
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useState } from 'react';
 
 import { BookingRow } from '@/components/bookings/BookingRow';
+import { ConfirmSheet } from '@/components/ui/ConfirmSheet';
 import { SwipeRow, type SwipeAction } from '@/components/ui/SwipeRow';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
@@ -49,6 +50,13 @@ function BookingSwipeRowBase({
   const toast = useToast();
   const { venue } = useVenueContext();
   const updateStatus = useUpdateBookingStatus(booking.id);
+  /**
+   * A swipe No-show asks first, as the detail screen and every web path do:
+   * it is a quick gesture to make by accident and it can charge the guest or
+   * send them a message. Mounted only while asking, so a list of rows is not a
+   * list of Modals.
+   */
+  const [confirmingNoShow, setConfirmingNoShow] = useState(false);
 
   const transition = useCallback(
     (target: BookingStatus, successMsg: string) => {
@@ -108,7 +116,7 @@ function BookingSwipeRowBase({
         label: 'No-show',
         icon: { ios: 'person.fill.xmark', android: 'person_off', web: 'person_off' },
         color: noShowTint,
-        onPress: () => transition('No-Show', 'Marked as no-show.'),
+        onPress: () => setConfirmingNoShow(true),
       });
     }
   }
@@ -129,7 +137,24 @@ function BookingSwipeRowBase({
     return row;
   }
 
-  return <SwipeRow rightActions={rightActions}>{row}</SwipeRow>;
+  return (
+    <>
+      <SwipeRow rightActions={rightActions}>{row}</SwipeRow>
+      {confirmingNoShow ? (
+        <ConfirmSheet
+          visible
+          title="Mark as no-show?"
+          message={`${booking.guest_name?.trim() || 'This guest'} did not arrive for this booking.`}
+          confirmLabel="Mark no-show"
+          onConfirm={() => {
+            setConfirmingNoShow(false);
+            transition('No-Show', 'Marked as no-show.');
+          }}
+          onClose={() => setConfirmingNoShow(false)}
+        />
+      ) : null}
+    </>
+  );
 }
 
 /** Memoized so the bookings list skips re-rendering unchanged rows on scroll. */

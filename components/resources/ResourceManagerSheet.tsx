@@ -24,6 +24,8 @@ import {
   useResourcesManageList,
   useUpdateResource,
 } from '@/lib/queries/useResourcesManage';
+import { useStaffMe } from '@/lib/queries/useStaffMe';
+import { useVenueContext } from '@/providers/VenueProvider';
 import { useToast } from '@/providers/ToastProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -217,6 +219,19 @@ export function ResourceManagerSheet({
   /** "Listed on {collective}" badges (web 2026-09-21, plan §4.3 Phase 6). */
   const ownListings = useOwnCollectiveListings();
   const toast = useToast();
+  // Web parity (`ResourceTimelineView`): admins manage every resource; other
+  // staff only resources shown on a calendar assigned to them. The app offered
+  // New, Edit, Delete and reordering to everyone, and the save was refused.
+  const { venue } = useVenueContext();
+  const isAdmin = venue?.current_user_role === 'admin';
+  const staffMe = useStaffMe();
+  const linkedCalendarIds = useMemo(
+    () => (isAdmin ? [] : staffMe.data?.staff?.linked_calendar_ids ?? []),
+    [isAdmin, staffMe.data?.staff?.linked_calendar_ids],
+  );
+  const canManageResources = isAdmin || linkedCalendarIds.length > 0;
+  const canEditResource = (calendarId: string | null | undefined) =>
+    isAdmin || (calendarId != null && linkedCalendarIds.includes(calendarId));
 
   const query = useResourcesManageList();
   const hostCalendarsQuery = useHostCalendars();
@@ -337,11 +352,20 @@ export function ResourceManagerSheet({
                 tintColor={colors.brand}
               />
             }>
-            <Button
-              label="New resource"
-              fullWidth
-              onPress={() => setEditorTarget({ mode: 'create' })}
-            />
+            {!isAdmin ? (
+              <Text variant="bodySmall" tone="secondary">
+                {linkedCalendarIds.length === 0
+                  ? 'Your account is not linked to a calendar yet. Ask an admin to assign at least one calendar before you can create, edit, or delete resources.'
+                  : 'You can create, edit, or delete resources shown on a calendar assigned to you (choose under Show on calendar).'}
+              </Text>
+            ) : null}
+            {canManageResources ? (
+              <Button
+                label="New resource"
+                fullWidth
+                onPress={() => setEditorTarget({ mode: 'create' })}
+              />
+            ) : null}
 
             {resources.length === 0 ? (
               <EmptyState
@@ -356,7 +380,8 @@ export function ResourceManagerSheet({
                 const price = formatPence(resource.price_per_slot_pence ?? null);
                 const isFirst = index === 0;
                 const isLast = index === resources.length - 1;
-                const canReorder = resources.length > 1;
+                // The order is every resource's, so it is an admin's to change.
+                const canReorder = isAdmin && resources.length > 1;
                 const rowBusy = busyId === resource.id;
                 const expanded = expandedId === resource.id;
                 return (
@@ -462,22 +487,24 @@ export function ResourceManagerSheet({
                       />
                     ) : null}
 
-                    <View style={styles.actionsRow}>
-                      <Button
-                        label="Edit"
-                        variant="secondary"
-                        size="sm"
-                        style={styles.flex1}
-                        onPress={() => setEditorTarget({ mode: 'edit', resource })}
-                      />
-                      <Button
-                        label="Delete"
-                        variant="ghost"
-                        size="sm"
-                        style={styles.flex1}
-                        onPress={() => setDeleteTarget(resource)}
-                      />
-                    </View>
+                    {canEditResource(resource.display_on_calendar_id) ? (
+                      <View style={styles.actionsRow}>
+                        <Button
+                          label="Edit"
+                          variant="secondary"
+                          size="sm"
+                          style={styles.flex1}
+                          onPress={() => setEditorTarget({ mode: 'edit', resource })}
+                        />
+                        <Button
+                          label="Delete"
+                          variant="ghost"
+                          size="sm"
+                          style={styles.flex1}
+                          onPress={() => setDeleteTarget(resource)}
+                        />
+                      </View>
+                    ) : null}
                   </Card>
                 );
               })

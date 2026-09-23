@@ -118,7 +118,7 @@ export function DiarySection({
                     </Text>
                     <Text variant="caption" tone="muted" numberOfLines={1}>
                       {[
-                        booking.party_size > 0 ? String(booking.party_size) : null,
+                        diaryPartyLine(booking, isAppointment, tableFocusSecondariesEnabled),
                         showTypeColumn ? (booking.kind_label ?? null) : null,
                       ]
                         .filter(Boolean)
@@ -130,7 +130,10 @@ export function DiarySection({
                       status={booking.status as BookingStatus}
                       isTableReservation={booking.booking_model === 'table_reservation'}
                     />
-                    {booking.deposit_status && booking.deposit_status !== 'N/A' ? (
+                    {/* "Not Required" is the no-deposit value, not something to show. */}
+                    {booking.deposit_status &&
+                    booking.deposit_status !== 'N/A' &&
+                    booking.deposit_status !== 'Not Required' ? (
                       <Badge label={booking.deposit_status} tone="neutral" />
                     ) : null}
                   </View>
@@ -150,7 +153,8 @@ export function DiarySection({
             accessibilityRole="link"
           >
             <Text variant="caption" color={colors.brand}>
-              {totalCount - recentBookings.length} more {unit}, view all →
+              {totalCount - recentBookings.length} more{' '}
+              {totalCount - recentBookings.length === 1 ? unit.replace(/s$/, '') : unit}, view all →
             </Text>
           </Pressable>
         ) : null}
@@ -218,3 +222,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 });
+
+/**
+ * The line under a diary row's name (web `diaryPartyLine`): nothing for an
+ * appointment, where "1" meant nothing; covers for a table; guests otherwise.
+ */
+function diaryPartyLine(
+  booking: { party_size: number; booking_model?: string | null },
+  isAppointment: boolean,
+  tableFocus: boolean,
+): string | null {
+  if (booking.party_size <= 0) return null;
+  if (isAppointment && !tableFocus) return null;
+  if ((booking.booking_model ?? 'table_reservation') === 'table_reservation') return `${booking.party_size} covers`;
+  if (tableFocus) return `${booking.party_size} guest${booking.party_size === 1 ? '' : 's'}`;
+  return `${booking.party_size} covers`;
+}

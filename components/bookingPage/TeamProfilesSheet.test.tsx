@@ -97,7 +97,7 @@ describe('TeamProfilesSheet framing', () => {
     await render(<TeamProfilesSheet visible onClose={jest.fn()} />);
 
     await press(screen.getByText('Adjust'));
-    expect(screen.getByText('Reposition — Sam')).toBeTruthy();
+    expect(screen.getByText('Reposition: Sam')).toBeTruthy();
 
     // One stepper tick: zoom 1.5 → 1.55, stored rounded to 1.6 (server round1).
     await act(async () => {
@@ -109,7 +109,7 @@ describe('TeamProfilesSheet framing', () => {
 
     // Draft only — nothing PATCHed yet, back on the list with a publish nudge.
     expect(mockUpdate).not.toHaveBeenCalled();
-    expect(screen.queryByText('Reposition — Sam')).toBeNull();
+    expect(screen.queryByText('Reposition: Sam')).toBeNull();
     expect(mockToast.info).toHaveBeenCalled();
 
     await press(screen.getByText('Save team profiles'));

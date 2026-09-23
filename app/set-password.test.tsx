@@ -95,7 +95,7 @@ describe('SetPasswordScreen', () => {
 
     expect(mockChangePasswordAsync).toHaveBeenCalledTimes(1);
     expect(mockChangePasswordAsync).toHaveBeenCalledWith({ new_password: 'longenough1' });
-    expect(mockToast.success).toHaveBeenCalledWith('Password set. Welcome to Resneo.');
+    expect(mockToast.success).toHaveBeenCalledWith('Password set. Welcome to ResNeo.');
     expect(mockReplace).toHaveBeenCalledWith('/');
   });
 });

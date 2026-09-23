@@ -346,7 +346,7 @@ export default function PlanScreen() {
       onSuccess: (data) => {
         if (data.redirect_url) {
           setSuccessMsg(
-            'Complete checkout in the browser — your plan updates here when you return.',
+            'Complete checkout in the browser. Your plan updates here when you return.',
           );
           openExternal(data.redirect_url);
         } else {
@@ -459,7 +459,7 @@ export default function PlanScreen() {
           <StatusBanner
             tone="brand"
             title="Complimentary ResNeo access"
-            message="Your venue has complimentary access to ResNeo — there are no subscription charges while this is active. Billing actions are disabled."
+            message="Your venue has complimentary access to ResNeo, so there are no subscription charges while this is active. Billing actions are disabled."
           />
         )}
 
@@ -468,7 +468,7 @@ export default function PlanScreen() {
           <StatusBanner
             tone="brand"
             message={
-              `Free trial — ${trialDaysLeft} day${trialDaysLeft !== 1 ? 's' : ''} remaining ` +
+              `Free trial: ${trialDaysLeft} day${trialDaysLeft !== 1 ? 's' : ''} remaining ` +
               `(first charge on ${formatDate(periodEnd)}).`
             }
           />
@@ -514,7 +514,7 @@ export default function PlanScreen() {
             title="Your subscription has ended"
             message={
               manageOnWeb
-                ? 'Venue changes and public online booking are paused until you start a new subscription. Resubscribe on the ResNeo website — your plan reactivates here automatically.'
+                ? 'Venue changes and public online booking are paused until you start a new subscription. Resubscribe on the ResNeo website. Your plan reactivates here automatically.'
                 : 'Venue changes and public online booking are paused until you start a new subscription. Use Resubscribe to pay again with Stripe Checkout.'
             }
             buttonLabel={
@@ -622,7 +622,7 @@ export default function PlanScreen() {
                   <View style={[styles.overageBox, { backgroundColor: colors.warningSurface }]}>
                     <Text variant="caption" color={colors.warning} style={styles.overageText}>
                       {smsUsage.overage_count} segment{smsUsage.overage_count !== 1 ? 's' : ''} beyond
-                      your allowance — about £{(smsUsage.overage_amount_pence / 100).toFixed(2)},
+                      your allowance (about £{(smsUsage.overage_amount_pence / 100).toFixed(2)}),
                       metered against the current billing period.
                     </Text>
                   </View>
@@ -640,7 +640,7 @@ export default function PlanScreen() {
                 </View>
                 <Text variant="caption" tone="muted">
                   Overage is £{SMS_OVERAGE_GBP_PER_MESSAGE.toFixed(2)} per SMS segment. Live SMS
-                  usage isn’t available in the app yet — check the web dashboard (Settings → Plan).
+                  usage isn’t available in the app yet. Check the web dashboard (Settings → Plan).
                 </Text>
               </View>
             )}

@@ -226,6 +226,12 @@ export function useRescheduleBooking(bookingId: string) {
       date: string;
       time: string;
       durationMinutes?: number;
+      /**
+       * New end "HH:mm:ss". Without an end or a duration the server gives an
+       * appointment its service's catalogue length, dropping add-on and custom
+       * minutes (the calendar drag sends one for the same reason).
+       */
+      endTime?: string;
     }): Promise<BookingDetail> => {
       if (!accessToken) {
         throw new Error('Missing access token');
@@ -247,13 +253,76 @@ export function useRescheduleBooking(bookingId: string) {
           allow_during_breaks: true,
           ...(input.durationMinutes !== undefined
             ? { duration_minutes: input.durationMinutes }
-            : {}),
+            : input.endTime
+              ? { booking_end_time: input.endTime }
+              : {}),
         }),
       });
     },
     onSuccess: (data) => {
       seedDetailFromRow(queryClient, accessToken, bookingId, data);
       invalidateBookingCaches(queryClient, accessToken, bookingId);
+    },
+  });
+}
+
+/**
+ * PATCH /api/venue/bookings/[id] with `{ target_class_instance_id }`: move a
+ * class booking to another session of the same class (web
+ * `StaffClassModifyInstancePicker`). A date/time PATCH is refused for a class
+ * ("Pick another session of this class…"), which is what the app's Reschedule
+ * used to send.
+ */
+export function useMoveClassBooking(bookingId: string) {
+  const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (targetClassInstanceId: string): Promise<BookingDetail> => {
+      if (!accessToken) throw new Error('Missing access token');
+      return apiFetch<BookingDetail>(`/api/venue/bookings/${bookingId}`, {
+        accessToken,
+        method: 'PATCH',
+        body: JSON.stringify({ target_class_instance_id: targetClassInstanceId }),
+      });
+    },
+    onSuccess: (data) => {
+      seedDetailFromRow(queryClient, accessToken, bookingId, data);
+      invalidateBookingCaches(queryClient, accessToken, bookingId);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.appointments.all() });
+    },
+  });
+}
+
+/**
+ * PATCH /api/venue/bookings/[id] with `{ booking_date, booking_time,
+ * duration_minutes }`: move or resize a resource booking (web
+ * `StaffResourceBookingModifyForm`). The server re-checks the slot and answers
+ * 409 "This resource slot is no longer available" when it has gone.
+ */
+export function useMoveResourceBooking(bookingId: string) {
+  const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      date: string;
+      time: string;
+      durationMinutes: number;
+    }): Promise<BookingDetail> => {
+      if (!accessToken) throw new Error('Missing access token');
+      return apiFetch<BookingDetail>(`/api/venue/bookings/${bookingId}`, {
+        accessToken,
+        method: 'PATCH',
+        body: JSON.stringify({
+          booking_date: input.date,
+          booking_time: `${input.time.slice(0, 5)}:00`,
+          duration_minutes: input.durationMinutes,
+        }),
+      });
+    },
+    onSuccess: (data) => {
+      seedDetailFromRow(queryClient, accessToken, bookingId, data);
+      invalidateBookingCaches(queryClient, accessToken, bookingId);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.appointments.all() });
     },
   });
 }

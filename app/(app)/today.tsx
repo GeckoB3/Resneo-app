@@ -366,7 +366,7 @@ export default function TodayScreen() {
         <KpiGrid today={today} isAppointment={isAppointment} forecast={forecast} />
 
         {/* Bookings MADE today, this week and this month, whatever date each is for (web 2026-09-18) */}
-        <NewBookingsCard summary={payload.new_bookings} onOpenReport={isAdmin ? () => router.push('/reports' as Href) : undefined} />
+        <NewBookingsCard summary={payload.new_bookings} onOpenReport={isAdmin ? () => router.push('/reports?tab=new-bookings' as Href) : undefined} />
 
         {/* Today by booking type chips (multi-model venues) */}
         {payload.today_by_booking_model &&

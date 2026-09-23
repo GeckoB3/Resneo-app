@@ -1,4 +1,7 @@
 import { useState } from 'react';
+
+import { findJustCreatedBooking } from '@/lib/booking/find-just-created-booking';
+import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { AvailabilityOverrideWarnings } from '@/components/booking-wizard/AvailabilityOverrideControls';
@@ -270,6 +273,9 @@ export function ConfirmStep({
   const [confirmation, setConfirmation] = useState<BookingConfirmation | null>(null);
   const [complianceError, setComplianceError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const accessToken = useAccessToken();
+  /** A create timed out and the app is checking whether it landed anyway. */
+  const [checkingCreate, setCheckingCreate] = useState(false);
 
   // For "Any available" rows the booking targets the slot's real practitioner.
   const practitionerId =
@@ -431,8 +437,55 @@ export function ConfirmStep({
         : null,
     });
 
-  const handleCreateError = (error: unknown) => {
+  /**
+   * A create that timed out may still have been made: the server does not stop
+   * because the app stopped waiting (staging, 2026-09-23: "Request timed out…
+   * try again" over a booking that existed). Give it a moment, then look for the
+   * booking on its day. Found, it is confirmed as made; not found, staff are told
+   * to check the calendar first rather than invited to make it twice.
+   */
+  const reconcileTimedOutCreate = async (time: string, onFound: (bookingId: string) => void) => {
+    setCheckingCreate(true);
+    setSubmitError('This is taking longer than usual. Checking whether the booking was made…');
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 4000));
+      const found = accessToken
+        ? await findJustCreatedBooking({
+            accessToken,
+            date,
+            time,
+            practitionerId,
+            email: guest.email,
+            phone: normalizePhone(guest.phone, phoneDefaultCountry),
+            fullName,
+          })
+        : null;
+      if (found) {
+        hapticSuccess();
+        setSubmitError(null);
+        onFound(found);
+        return;
+      }
+      hapticWarning();
+      setSubmitError(
+        'We could not confirm this booking in time, and it is not on the calendar yet. Check the calendar before trying again, so it is not booked twice.',
+      );
+    } catch {
+      hapticWarning();
+      setSubmitError(
+        'We could not confirm this booking in time. Check the calendar before trying again, so it is not booked twice.',
+      );
+    } finally {
+      setCheckingCreate(false);
+    }
+  };
+
+  const handleCreateError = (error: unknown, onTimeout?: () => void) => {
     const apiError = error instanceof ApiError ? error : null;
+    if (apiError?.status === 408 && onTimeout) {
+      onTimeout();
+      return;
+    }
     const body = apiError?.body as { error?: string; message?: string } | null | undefined;
     const errorCode = body?.error;
     // Staff are never blocked by compliance (web 2026-09-01): unmet rules come
@@ -496,7 +549,19 @@ export function ConfirmStep({
             practitioner_name: multiServiceSegments![0]!.practitionerName ?? '',
           });
         },
-        onError: handleCreateError,
+        onError: (error) =>
+          handleCreateError(error, () =>
+            void reconcileTimedOutCreate(multiServiceSegments![0]!.startTime, (bookingId) =>
+              setConfirmation({
+                booking_id: bookingId,
+                service_name: `${multiServiceSegments!.length} services`,
+                guest_name: fullName,
+                date_label: formatSummaryDate(date),
+                time_label: formatSummaryTime(multiServiceSegments![0]!.startTime),
+                practitioner_name: multiServiceSegments![0]!.practitionerName ?? '',
+              }),
+            ),
+          ),
       });
       return;
     }
@@ -532,7 +597,19 @@ export function ConfirmStep({
           practitioner_name: practitionerName ?? '',
         });
       },
-      onError: handleCreateError,
+      onError: (error) =>
+        handleCreateError(error, () =>
+          void reconcileTimedOutCreate(slot.start_time.slice(0, 5), (bookingId) =>
+            setConfirmation({
+              booking_id: bookingId,
+              service_name: `${service.serviceName}${variant ? ` · ${variant.name}` : ''}`,
+              guest_name: fullName,
+              date_label: formatSummaryDate(date),
+              time_label: formatSummaryTime(slot.start_time),
+              practitioner_name: practitionerName ?? '',
+            }),
+          ),
+        ),
     });
   };
 
@@ -673,7 +750,7 @@ export function ConfirmStep({
       <Button
         label={isMultiService ? 'Create visit' : 'Create booking'}
         fullWidth
-        loading={createBooking.isPending || createMultiService.isPending}
+        loading={createBooking.isPending || createMultiService.isPending || checkingCreate}
         onPress={() => handleConfirm()}
       />
     </ScrollView>

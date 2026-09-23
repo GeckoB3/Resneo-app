@@ -180,6 +180,12 @@ export interface BookingDetail {
    */
   service_price_snapshot_pence?: number | null;
   inferred_booking_model?: BookingModel | null;
+  /** Class booking: its session (the full GET spreads the row). */
+  class_instance_id?: string | null;
+  /** Event booking: its occurrence. */
+  experience_event_id?: string | null;
+  /** Resource booking: the resource (such rows also carry it as `calendar_id`). */
+  resource_id?: string | null;
   table_assignments?: BookingTableAssignment[];
   /** Add-on snapshots + totals (full GET). */
   addons?: BookingDetailAddon[];

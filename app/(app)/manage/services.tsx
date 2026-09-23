@@ -358,7 +358,7 @@ function ServiceRowBase({
                 const staffVariant = variant as typeof variant & { is_active?: boolean };
                 return (
                   <Text key={variant.id} variant="bodySmall" tone="secondary">
-                    • {variant.name} — {variant.duration_minutes} min
+                    • {variant.name} ({variant.duration_minutes} min)
                     {variant.price_pence != null ? ` · ${formatPence(variant.price_pence)}` : ''}
                     {staffVariant.is_active === false ? ' (inactive)' : ''}
                   </Text>
@@ -2129,7 +2129,7 @@ export default function ServicesScreen() {
                   defaultExpanded={variantDrafts.length > 0}>
                   <View style={styles.sectionStack}>
                     <Text variant="caption" tone="muted">
-                      Add options when guests must pick a version first (e.g. 30 vs 60 minutes) — each
+                      Add options when guests must pick a version first (e.g. 30 vs 60 minutes). Each
                       has its own duration, price and deposit. Leave empty for one fixed offering.
                     </Text>
                     <VariantsEditor
@@ -2248,7 +2248,7 @@ export default function ServicesScreen() {
             ) : null}
             {usesVariants && paymentReq === 'full_payment' ? (
               <Text variant="caption" tone="muted">
-                Each option offered to clients needs its own price — that&apos;s what they pay online.
+                Each option offered to clients needs its own price. That&apos;s what they pay online.
               </Text>
             ) : null}
 

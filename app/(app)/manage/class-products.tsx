@@ -431,7 +431,7 @@ export default function ClassProductsScreen() {
           <Text variant="subheading">Delete product</Text>
           <Text variant="bodySmall" tone="secondary">
             Delete &quot;{deleteTarget?.name}&quot;? Archive it instead if guests have used it
-            before — deletion is blocked while balances, enrollments or subscriptions reference it.
+            before. Deletion is blocked while balances, enrollments or subscriptions reference it.
           </Text>
           <View style={styles.actionsRow}>
             <Button

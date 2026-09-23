@@ -408,7 +408,7 @@ export function CoverCropperSheet({
                 <GestureDetector gesture={moveGesture}>
                   <Animated.View
                     style={[styles.rect, { borderColor: colors.onColor }, rectStyle]}
-                    accessibilityLabel="Crop area — drag to move">
+                    accessibilityLabel="Crop area: drag to move">
                     {/* Rule-of-thirds guides for nicer framing. */}
                     <View style={[styles.thirdV, { left: '33.33%', borderColor: colors.onColor }]} />
                     <View style={[styles.thirdV, { left: '66.66%', borderColor: colors.onColor }]} />

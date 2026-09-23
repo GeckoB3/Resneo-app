@@ -499,7 +499,7 @@ export function ClassTypesManagerSheet({ visible, onClose }: ClassTypesManagerSh
               Remove &quot;{removeSessionTarget.classType.name}&quot; on{' '}
               {formatDayHeading(removeSessionTarget.instance.instance_date)} at{' '}
               {shortTime(removeSessionTarget.instance.start_time)} from the calendar? This deletes the
-              session without notifying guests, and is blocked if it has active bookings — cancel the
+              session without notifying guests, and is blocked if it has active bookings. Cancel the
               session instead to refund and notify them.
             </Text>
           ) : null}

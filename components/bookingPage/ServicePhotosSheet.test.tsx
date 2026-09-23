@@ -106,7 +106,7 @@ describe('ServicePhotosSheet framing', () => {
     await render(<ServicePhotosSheet visible onClose={jest.fn()} />);
 
     await press(screen.getAllByText('Adjust')[0]!);
-    expect(screen.getByText('Reposition — Hair Cut')).toBeTruthy();
+    expect(screen.getByText('Reposition: Hair Cut')).toBeTruthy();
 
     // One stepper tick: zoom 1.5 → 1.55, stored rounded to 1.6 (server round1).
     await act(async () => {
@@ -120,7 +120,7 @@ describe('ServicePhotosSheet framing', () => {
       service_photo_crops: { s1: { x: 60, y: 40, zoom: 1.6 }, s2: CROP_B },
     });
     // Back on the list after a successful save.
-    expect(screen.queryByText('Reposition — Hair Cut')).toBeNull();
+    expect(screen.queryByText('Reposition: Hair Cut')).toBeNull();
     expect(mockToast.success).toHaveBeenCalled();
   });
 

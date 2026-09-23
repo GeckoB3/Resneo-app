@@ -455,7 +455,7 @@ export function HistorySection({
           </View>
         ) : (
           <Text variant="bodySmall" tone="muted" style={styles.emptyNote}>
-            No deposits collected yet — lifetime value appears once clients pay deposits.
+            No deposits collected yet. Lifetime value appears once clients pay deposits.
           </Text>
         )}
       </Card>

@@ -1024,7 +1024,11 @@ export default function ClientsScreen() {
                     ? hiddenScopeCopy.message
                     : debouncedSearch.length >= MIN_SEARCH_LENGTH
                       ? `No ${screenTitle.toLowerCase()} match "${debouncedSearch}".`
-                      : `Your ${clientLabel} directory will appear here once you have ${clientLabel}s. You can import them from a CSV export of your previous system.`
+                      : hasActiveFilter
+                        ? // A filter is the reason, not an empty directory (web: "No
+                          // clients match your search. Try another filter or search.").
+                          `No ${clientLabel}s match these filters. Try another filter, or clear them.`
+                        : `Your ${clientLabel} directory will appear here once you have ${clientLabel}s. You can import them from a CSV export of your previous system.`
                 }
                 // Surface the import link-out where admins discover an empty
                 // directory — but only when nothing is being searched/filtered

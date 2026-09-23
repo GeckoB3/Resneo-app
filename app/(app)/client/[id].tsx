@@ -553,7 +553,7 @@ export default function ClientDetailScreen() {
             </Text>
           ) : (
             <Text variant="bodySmall" tone="muted" style={styles.notesText}>
-              No notes — tap Edit to add
+              No notes. Tap Edit to add some.
             </Text>
           )}
         </Card>

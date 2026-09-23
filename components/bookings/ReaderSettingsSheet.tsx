@@ -55,7 +55,7 @@ export function ReaderSettingsSheet({
             <Text variant="caption" tone="muted">
               {sdkPresent
                 ? 'Dev: the native Terminal module is present but this build has no EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY, so the Terminal provider never mounts.'
-                : 'Dev: the native Terminal module is missing — Expo Go cannot load it. Use the dev-client or a preview build.'}
+                : 'Dev: the native Terminal module is missing. Expo Go cannot load it. Use the dev-client or a preview build.'}
             </Text>
           ) : null}
           <Button label="Close" variant="secondary" onPress={onClose} fullWidth />

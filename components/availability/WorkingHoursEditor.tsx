@@ -179,7 +179,7 @@ export function WorkingHoursEditor({
       {!inline ? (
         <>
           <Text variant="overline" tone="muted">
-            Working hours — {practitionerName}
+            Working hours for {practitionerName}
           </Text>
 
           <View

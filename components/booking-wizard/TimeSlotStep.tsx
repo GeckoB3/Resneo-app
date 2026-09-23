@@ -376,8 +376,8 @@ export function TimeSlotStep({
         <View style={[styles.partialNotice, { borderColor: colors.warning }]}>
           <Text variant="caption" color={colors.warning} style={styles.partialText}>
             {unavailableCount === 1
-              ? "Couldn't check one team member — some times may be missing."
-              : `Couldn't check ${unavailableCount} team members — some times may be missing.`}
+              ? "Couldn't check one team member, so some times may be missing."
+              : `Couldn't check ${unavailableCount} team members, so some times may be missing.`}
           </Text>
           <Button label="Try again" variant="ghost" size="sm" onPress={retry} />
         </View>
@@ -387,7 +387,7 @@ export function TimeSlotStep({
         <View style={styles.emptyWrap}>
           <EmptyState
             title="No times available"
-            message="There are no open slots on this date. Pick another day — or add the guest to the waitlist."
+            message="There are no open slots on this date. Pick another day, or add the guest to the waitlist."
           />
           <Button
             label="Join waitlist for this date"

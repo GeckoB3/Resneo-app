@@ -26,6 +26,11 @@ export type MessageDef = {
   timing?: { field: 'hoursBefore' | 'hoursAfter'; label: string; default: number };
   defaultEnabled: boolean;
   defaultChannels: MessageChannel[];
+  /**
+   * A lead time the web stores for this message but does not offer to edit
+   * (`card_hold_payment_reminder`, 2 hours): part of the default, never a control.
+   */
+  hiddenHoursBefore?: number;
 };
 
 export const MESSAGE_DEFS: MessageDef[] = [
@@ -87,6 +92,27 @@ export const MESSAGE_DEFS: MessageDef[] = [
     // booking was released. Web fixed its own default in 18dac985; this is the
     // app's copy of the same table (R22-1).
     defaultChannels: ['email', 'sms'],
+  },
+  // Card-hold bookings (web spec 10.3, `CommunicationTemplatesSection`): only
+  // ever sent for a booking that carries a card hold, so harmless for venues
+  // that never use one. The app could set up card-hold services but not the
+  // messages they send.
+  {
+    key: 'card_hold_request',
+    label: 'Card details request',
+    description: 'Asks the guest to add card details to secure a booking with a no-show fee',
+    allowedChannels: ['email', 'sms'],
+    defaultEnabled: true,
+    defaultChannels: ['email', 'sms'],
+  },
+  {
+    key: 'card_hold_payment_reminder',
+    label: 'Card details reminder',
+    description: 'Reminder for bookings that still need card details added',
+    allowedChannels: ['email', 'sms'],
+    defaultEnabled: true,
+    defaultChannels: ['email', 'sms'],
+    hiddenHoursBefore: 2,
   },
   {
     key: 'booking_modification',
@@ -154,6 +180,10 @@ export function defaultPolicy(def: MessageDef): LaneMessagePolicy {
     channels: def.defaultChannels,
     emailCustomMessage: null,
     smsCustomMessage: null,
-    ...(def.timing ? { [def.timing.field]: def.timing.default } : {}),
+    ...(def.timing
+      ? { [def.timing.field]: def.timing.default }
+      : def.hiddenHoursBefore != null
+        ? { hoursBefore: def.hiddenHoursBefore }
+        : {}),
   };
 }

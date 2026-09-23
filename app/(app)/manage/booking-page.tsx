@@ -702,7 +702,7 @@ export default function BookingPageScreen() {
         />
         {lowContrast ? (
           <Text variant="caption" color={colors.warning}>
-            This colour is light — white button text may be hard to read on the booking page.
+            This colour is light, so white button text may be hard to read on the booking page.
           </Text>
         ) : null}
         <SwatchRow onPick={(hex) => setPrimary(hex)} />
@@ -881,7 +881,7 @@ export default function BookingPageScreen() {
 
       {colourError ? (
         <Text variant="bodySmall" tone="danger">
-          Colours must be a 6-digit hex like #003b6f — fix to keep saving.
+          Colours must be a 6-digit hex like #003b6f. Fix this to keep saving.
         </Text>
       ) : null}
 
@@ -948,7 +948,7 @@ function SlugHint({
   if (available === false) {
     return (
       <Text variant="caption" color={colors.danger}>
-        Already taken — choose a different address.
+        Already taken. Choose a different address.
       </Text>
     );
   }

@@ -98,6 +98,14 @@ export function formatMonthLabel(dateStr: string): string {
   return format(parseCalendarDateStr(dateStr), 'MMMM yyyy');
 }
 
+/** A report range with its year, e.g. "25 Aug to 23 Sep 2026" or "3 Dec 2025 to 2 Jan 2026". */
+export function formatReportRangeLabel(from: string, to: string): string {
+  const a = parseCalendarDateStr(from);
+  const b = parseCalendarDateStr(to);
+  const sameYear = a.getFullYear() === b.getFullYear();
+  return `${format(a, sameYear ? 'd MMM' : 'd MMM yyyy')} to ${format(b, 'd MMM yyyy')}`;
+}
+
 /** Compact range label, e.g. "23 May – 29 May". */
 export function formatRangeLabel(from: string, to: string): string {
   return `${format(parseCalendarDateStr(from), 'd MMM')} – ${format(parseCalendarDateStr(to), 'd MMM')}`;

@@ -544,7 +544,7 @@ export function ComplianceTypeEditorSheet({
                 <Text variant="caption" tone="muted">
                   {validityMode === 'lifetime'
                     ? 'Records never expire.'
-                    : 'Single-use — a new record is needed for every visit.'}
+                    : 'Single-use: a new record is needed for every visit.'}
                 </Text>
               )}
             </View>

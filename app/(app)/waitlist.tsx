@@ -96,7 +96,7 @@ function detailLabel(entry: WaitlistEntry): string | null {
   if (entry.service_name) {
     return [entry.service_name, entry.practitioner_name].filter(Boolean).join(' · ');
   }
-  if (entry.party_size) return `${entry.party_size} guests`;
+  if (entry.party_size) return `${entry.party_size} ${entry.party_size === 1 ? 'guest' : 'guests'}`;
   return null;
 }
 
@@ -277,7 +277,7 @@ const WaitlistEntryRow = memo(function WaitlistEntryRow({
             {entryGuestName(entry)}
           </Text>
           <Badge
-            label={status === 'confirmed' ? 'Complete' : status}
+            label={status === 'confirmed' ? 'Complete' : status.charAt(0).toUpperCase() + status.slice(1)}
             tone={STATUS_TONE[status] ?? 'neutral'}
           />
         </View>
@@ -323,7 +323,7 @@ const WaitlistEntryRow = memo(function WaitlistEntryRow({
             copy in `offer_unavailable_reason`. */}
         {offerState === 'unchecked' ? (
           <Text variant="caption" tone="muted">
-            Couldn&apos;t check availability — offering will re-check.
+            Couldn&apos;t check availability. It will be checked again when you offer.
           </Text>
         ) : null}
         {/* Expiry countdown (notify_in_order only) */}
@@ -488,7 +488,12 @@ export default function WaitlistScreen() {
           if (status === 'cancelled') {
             toast.info('Entry cancelled.');
           } else if (status === 'offered') {
-            toast.success('Spot offered to the guest.');
+            // The offer stands even when the message did not go (web parity).
+            if (data.notify_failed) {
+              toast.error('Spot offered, but we could not send email or SMS to the guest. Contact them directly.');
+            } else {
+              toast.success('Spot offered to the guest.');
+            }
           } else {
             toast.success('Booking confirmed.');
           }

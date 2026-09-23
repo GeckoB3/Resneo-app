@@ -29,8 +29,8 @@ export function StaffRequired({ onRetry, retrying = false }: StaffRequiredProps)
       </Text>
       <Text variant="body" tone="secondary" style={styles.subtitle}>
         {user?.email
-          ? `${user.email} is signed in, but this app is only for Resneo venue staff.`
-          : 'This app is only for Resneo venue staff.'}
+          ? `${user.email} is signed in, but this app is only for ResNeo venue staff.`
+          : 'This app is only for ResNeo venue staff.'}
       </Text>
 
       <Card style={styles.card}>

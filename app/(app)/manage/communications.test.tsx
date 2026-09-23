@@ -16,6 +16,8 @@
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 
 // Stack.Screen reads a navigator route via useRoute — stub it to render nothing.
+// The Light-tier SMS banner reads the billing status (the subscription, not Connect).
+jest.mock('@/lib/queries/useBillingStatus', () => ({ useBillingStatus: () => ({ data: undefined }) }));
 jest.mock('expo-router', () => ({
   Stack: { Screen: () => null },
 }));

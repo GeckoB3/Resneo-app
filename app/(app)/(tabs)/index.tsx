@@ -2796,7 +2796,7 @@ export default function CalendarScreen() {
                     android: 'compress',
                     web: 'compress',
                   }}
-                  accessibilityLabel="Compact day rows — fit the whole day on one screen"
+                  accessibilityLabel="Compact day rows: fit the whole day on one screen"
                   variant="bordered"
                   active={compactDay}
                   onPress={() => setCompactDay((c) => !c)}
@@ -3017,7 +3017,7 @@ export default function CalendarScreen() {
                 { backgroundColor: colors.warningSurface, borderBottomColor: colors.warning },
               ]}>
               <Text variant="caption" color={colors.warning} style={styles.staleBannerText}>
-                Couldn&apos;t refresh — showing the last update, which may be out of date.
+                Couldn&apos;t refresh. Showing the last update, which may be out of date.
               </Text>
               <Pressable
                 onPress={() => void gridQuery.refetch()}
@@ -3568,7 +3568,7 @@ function ClosedDayBanner() {
   return (
     <View style={[styles.closedBanner, { backgroundColor: colors.surface, borderColor: colors.border }]}>
       <Text variant="caption" tone="muted">
-        Not scheduled to work this day — tap a slot to book anyway or block time.
+        Not scheduled to work this day. Tap a slot to book anyway or block time.
       </Text>
     </View>
   );

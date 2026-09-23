@@ -17,7 +17,7 @@ export function AuthNoticeBridge() {
 
   useEffect(() => {
     if (!sessionExpired) return;
-    toast.error('Your session expired — please sign in again.');
+    toast.error('Your session expired. Please sign in again.');
     track(ANALYTICS_EVENTS.sessionExpired);
     acknowledgeSessionExpiry();
   }, [sessionExpired, acknowledgeSessionExpiry, toast]);

@@ -280,7 +280,7 @@ export default function ComplianceSettingsScreen() {
                   <View style={styles.switchText}>
                     <Text variant="bodyMedium">When a client arrives incomplete</Text>
                     <Text variant="caption" tone="muted">
-                      Warn staff (v1 — blocking check-in is coming).
+                      Warn staff. Blocking check-in is coming soon.
                     </Text>
                   </View>
                   <Text variant="bodySmall" tone="secondary">
