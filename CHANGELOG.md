@@ -17,6 +17,18 @@ on the other, and iOS 1.0.4 is the worked example.
 
 ## Unreleased
 
+**Set up with AI** on the Services screen (web 2026-09-22), and uploads that work again. Details in
+`Docs/APP_GAP_REPORT_R41_WEB_DELTA.md`.
+
+- Admins can set up their services from what they already have: a link to their old booking page,
+  photos or screenshots of a price list, a PDF, Word, Excel or CSV file, or a typed list. The AI reads
+  them, and nothing is added until each service is checked: edit, add one by one or all at once, skip,
+  undo, turn an extra into an add-on, update a service they already have, or open the full form.
+  Progress is kept on the phone, so the setup can be finished later.
+- A venue with no services is offered the setup straight away.
+- Photo, logo, cover, gallery, page and compliance uploads are sent in a form the app's network layer
+  accepts; before this they could fail as if there were no connection.
+
 Classes, events and resources on the combined booking page, and the web's review fixes for the
 three (web 2026-09-21). Details in `Docs/APP_GAP_REPORT_R40_WEB_DELTA.md`.
 

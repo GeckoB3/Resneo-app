@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import * as ImagePicker from 'expo-image-picker';
 
 import { apiFetch, ApiError } from '@/lib/api/client';
+import { formDataFile } from '@/lib/api/form-data-file';
 import { getApiUrl } from '@/lib/env';
 import { queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
@@ -24,12 +25,11 @@ async function uploadImageToRoute(
   accessToken: string,
 ): Promise<string> {
   const formData = new FormData();
-  // React Native accepts a { uri, name, type } object for FormData
-  formData.append('file', {
-    uri: fileUri,
-    name: `upload.${mimeType === 'image/png' ? 'png' : mimeType === 'image/webp' ? 'webp' : 'jpg'}`,
-    type: mimeType,
-  } as unknown as Blob);
+  // Not React Native's { uri, name, type } part: SDK 56's fetch refuses it (see formDataFile).
+  formData.append(
+    'file',
+    formDataFile(fileUri, `upload.${mimeType === 'image/png' ? 'png' : mimeType === 'image/webp' ? 'webp' : 'jpg'}`, mimeType),
+  );
 
   const url = `${getApiUrl()}${route}`;
   // Uploads go out through raw fetch (apiFetch cannot carry FormData), so they

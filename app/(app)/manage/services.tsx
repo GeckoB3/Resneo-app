@@ -1,5 +1,7 @@
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { useQueryClient } from '@tanstack/react-query';
+import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
+import * as WebBrowser from 'expo-web-browser';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
@@ -25,9 +27,15 @@ import {
 import {
   VariantsEditor,
   buildVariantsPayload,
+  makeVariantDraft,
   variantDraftsFromService,
   type DraftVariant,
 } from '@/components/manage/VariantsEditor';
+import {
+  ServicesSetupSheet,
+  type ExistingServiceForSetup,
+  type ServicesSetupHandle,
+} from '@/components/services-setup/ServicesSetupSheet';
 import {
   ServiceCustomAvailabilityEditor,
   isScheduleEmpty,
@@ -82,9 +90,13 @@ import {
   normalizeBookingStartForStorage,
   sanitizeBookingStartTimes,
 } from '@/lib/appointments/booking-interval';
+import { getWebUrl } from '@/lib/env';
 import { formatPence, formatPositivePence, parsePoundsToPence, penceToPoundsInput } from '@/lib/format';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
+import { queryKeys } from '@/lib/queries/keys';
 import { useAddonGroups } from '@/lib/queries/useAddonGroups';
+import { useServicesSetupAvailability } from '@/lib/queries/useServicesSetup';
+import { currencySymbolFor, type SetupServiceForm } from '@/lib/services-setup/drafts';
 import { useVenueWideRequirementNames } from '@/lib/queries/useComplianceRequirements';
 import {
   useCreateService,
@@ -122,6 +134,9 @@ type EditTarget = {
 };
 
 type ActiveTab = 'services' | 'categories' | 'addons';
+
+/** Time for one sheet to leave before the next is shown (iOS drops a sheet opened over a closing one). */
+const SHEET_HANDOFF_MS = 350;
 
 /** Web service colour presets (`APPOINTMENT_SERVICE_COLOUR_OPTIONS`). */
 const COLOUR_OPTIONS = [
@@ -681,7 +696,8 @@ export default function ServicesScreen() {
 
   // Deep link: `?tab=services&service=<id>` opens straight to a pre-expanded
   // service (web parity with the add-ons "Used by" link). Read once on mount.
-  const params = useLocalSearchParams<{ tab?: string; service?: string }>();
+  // `?setup=ai` opens "Set up with AI" on arrival (web parity: other screens can link to it).
+  const params = useLocalSearchParams<{ tab?: string; service?: string; setup?: string }>();
   const initialTab: ActiveTab = params.tab === 'addons' ? 'addons' : 'services';
   const [activeTab, setActiveTab] = useState<ActiveTab>(initialTab);
   const [includeInactiveAddons, setIncludeInactiveAddons] = useState(false);
@@ -983,6 +999,74 @@ export default function ServicesScreen() {
   /** Non-admins may create when they manage at least one calendar (web parity). */
   const canCreate = isAdmin || (managedCalendarIds.length > 0 && calendarsForServiceForm.length > 0);
 
+  // --- Set up with AI (web 2026-09-22, `ServicesSetupWizard`) ----------------
+
+  const queryClient = useQueryClient();
+  const aiSetup = useServicesSetupAvailability(isAdmin);
+  /** Admins only, and only where the AI is configured (the web works this out in `page.tsx`). */
+  const canUseAiSetup = isAdmin && aiSetup.offered === true;
+  const [aiSetupOpen, setAiSetupOpen] = useState(false);
+  const setupRef = useRef<ServicesSetupHandle>(null);
+  /**
+   * "More settings" hands a draft to this screen's own Add service form. The setup's sheet steps
+   * aside first and comes back after, because iOS will not show a sheet over a sheet
+   * ([[ios-no-stacked-modals]]); `moreSettingsKey` is the draft the form is adding.
+   */
+  const [setupHidden, setSetupHidden] = useState(false);
+  const moreSettingsKey = useRef<string | null>(null);
+
+  const setupDeepLinkHandled = useRef(false);
+  useEffect(() => {
+    if (setupDeepLinkHandled.current || params.setup !== 'ai' || !canUseAiSetup || !query.isSuccess) return;
+    setupDeepLinkHandled.current = true;
+    setActiveTab('services');
+    setAiSetupOpen(true);
+  }, [params.setup, canUseAiSetup, query.isSuccess]);
+
+  function closeAiSetup() {
+    setAiSetupOpen(false);
+    setSetupHidden(false);
+    moreSettingsKey.current = null;
+    if (params.setup) router.setParams({ setup: undefined });
+  }
+
+  /** The services the setup checks for duplicates and offers add-ons with. */
+  const existingForSetup = useMemo<ExistingServiceForSetup[]>(
+    () =>
+      services.map((s) => ({
+        id: s.id,
+        name: s.name,
+        durationMinutes: s.duration_minutes,
+        pricePence: s.price_pence ?? null,
+        hasVariants: (s.variants ?? []).length > 0,
+        categoryName: categoryFor(s.category_id)?.name ?? '',
+      })),
+    [services, categoryFor],
+  );
+
+  /**
+   * The collective this venue hosts, as the services themselves report it (web
+   * `AppointmentServicesView`'s `collective`): new services can go on its combined page.
+   */
+  const setupCollectiveHost = useMemo(() => {
+    const all = query.data?.services ?? [];
+    const block = all.find((s) => s.collective)?.collective ?? null;
+    if (!block) return null;
+    const roles = new Set(all.map((s) => s.collective?.role).filter(Boolean));
+    const isHost = block.venue_role ? block.venue_role === 'host' : roles.has('master') || !roles.has('replica');
+    return isHost ? { id: block.collective_id, name: block.collective_name } : null;
+  }, [query.data?.services]);
+
+  const setupCalendars = useMemo(
+    () => calendarsForServiceForm.map((p) => ({ id: p.id, name: p.name })),
+    [calendarsForServiceForm],
+  );
+
+  const refreshAfterSetup = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.services.all() });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.addonGroups.all() });
+  }, [queryClient]);
+
   const openEdit = useCallback((service: ManagedService) => {
     const linked = linkedCalendarIds(service.id);
     setName(service.name);
@@ -1092,7 +1176,59 @@ export default function ServicesScreen() {
     setCreating(true);
   };
 
+  /**
+   * "More settings" from Set up with AI (web: the wizard opens `AppointmentServiceModal` with
+   * `initialForm`): this screen's Add service form, filled in from the draft, for deposits,
+   * processing time and everything else. Saving adds the service and the setup marks the draft
+   * added; closing without saving just goes back to the setup.
+   */
+  function openCreateFromSetup(draftKey: string, form: SetupServiceForm) {
+    moreSettingsKey.current = draftKey;
+    setSetupHidden(true);
+    // A new heading the setup just made has to be in the form's category list.
+    void queryClient.invalidateQueries({ queryKey: queryKeys.services.all() });
+    // The setup's sheet leaves first; iOS drops a sheet presented while another is closing.
+    setTimeout(() => {
+      openCreate();
+      setName(form.name);
+      setDescription(form.description);
+      setDuration(String(form.duration_minutes));
+      setProcessingFitDuration(form.duration_minutes);
+      setBuffer(String(form.buffer_minutes));
+      setPrice(form.price);
+      setDeposit(form.deposit);
+      setPaymentReq(form.payment_requirement);
+      setColour(form.colour);
+      setCategoryId(form.category_id);
+      setPractitionerIds([...form.practitioner_ids]);
+      setVariantDrafts(
+        form.variants.map((v, i) => ({
+          ...makeVariantDraft(`setup-${draftKey}-${i}`, {
+            duration: String(v.duration_minutes),
+            buffer: String(v.buffer_minutes),
+            price: v.price,
+            deposit: v.deposit,
+          }),
+          name: v.name,
+          description: v.description,
+        })),
+      );
+    }, SHEET_HANDOFF_MS);
+  }
+
+  /** The form opened by More settings has closed: hand the result back and bring the setup back. */
+  function returnToSetup(serviceId: string | null) {
+    const draftKey = moreSettingsKey.current;
+    if (!draftKey) return;
+    moreSettingsKey.current = null;
+    setTimeout(() => {
+      setSetupHidden(false);
+      setupRef.current?.moreSettingsDone(draftKey, serviceId);
+    }, SHEET_HANDOFF_MS);
+  }
+
   const closeSheet = () => {
+    if (moreSettingsKey.current) returnToSetup(null);
     setEditTarget(null);
     setCreating(false);
     // Swiping the sheet away while it is asking about the bookings left behind
@@ -1353,13 +1489,15 @@ export default function ServicesScreen() {
           toast.success(`"${shared.name}" is visible to guests again.`);
         }
       } else {
-        await create.mutateAsync({
+        const created = (await create.mutateAsync({
           ...shared,
           ...adminExtras,
           description: shared.description ?? undefined,
           deposit_pence: depositToSend,
           practitioner_ids: practitionerIds,
-        });
+        })) as { id?: string; service?: { id?: string } } | null;
+        // Opened by Set up with AI's More settings: the setup marks its draft added.
+        if (moreSettingsKey.current) returnToSetup(created?.id ?? created?.service?.id ?? null);
       }
       hapticSuccess();
       closeSheet();
@@ -1744,17 +1882,58 @@ export default function ServicesScreen() {
               }, 80);
             }}
             ListHeaderComponent={
-              canCreate ? <Button label="New service" onPress={openCreate} fullWidth /> : null
+              canCreate ? (
+                canUseAiSetup ? (
+                  <View style={styles.headerActions}>
+                    <Button label="New service" onPress={openCreate} style={styles.headerAction} />
+                    <Button
+                      label="Set up with AI"
+                      variant="secondary"
+                      onPress={() => setAiSetupOpen(true)}
+                      style={styles.headerAction}
+                      leftIcon={
+                        <SymbolView
+                          name={{ ios: 'sparkles', android: 'auto_awesome', web: 'auto_awesome' }}
+                          tintColor={colors.brand}
+                          size={18}
+                        />
+                      }
+                    />
+                  </View>
+                ) : (
+                  <Button label="New service" onPress={openCreate} fullWidth />
+                )
+              ) : null
             }
             ListEmptyComponent={
-              <EmptyState
-                title="No services yet"
-                message={
-                  canCreate
-                    ? 'Create your first service to start taking appointments.'
-                    : 'No services have been created yet.'
-                }
-              />
+              canUseAiSetup ? (
+                // Web: "Add your services in minutes" replaces "No services yet" where the AI is on.
+                <View style={styles.aiEmpty}>
+                  <EmptyState
+                    title="Add your services in minutes"
+                    message="Give us a link to your old booking page, a photo of your price list, or a document, and we will set up your services for you. You check each one before it is added."
+                    icon={
+                      <SymbolView
+                        name={{ ios: 'sparkles', android: 'auto_awesome', web: 'auto_awesome' }}
+                        tintColor={colors.brand}
+                        size={40}
+                      />
+                    }
+                    actionLabel="Set up my services with AI"
+                    onAction={() => setAiSetupOpen(true)}
+                  />
+                  <Button label="Add a service myself" variant="secondary" onPress={openCreate} />
+                </View>
+              ) : (
+                <EmptyState
+                  title="No services yet"
+                  message={
+                    canCreate
+                      ? 'Create your first service to start taking appointments.'
+                      : 'No services have been created yet.'
+                  }
+                />
+              )
             }
             ListFooterComponent={<View style={styles.spacer} />}
             refreshControl={
@@ -1845,6 +2024,38 @@ export default function ServicesScreen() {
           });
         }}
       />
+
+      {/* Set up with AI: mounted while open, so More settings can hide it and come back to it. */}
+      {aiSetupOpen ? (
+        <ServicesSetupSheet
+          ref={setupRef}
+          visible={!setupHidden}
+          onClose={closeAiSetup}
+          onServicesChanged={refreshAfterSetup}
+          onMoreSettings={openCreateFromSetup}
+          onOpenBookingPage={
+            venue?.slug
+              ? () =>
+                  void WebBrowser.openBrowserAsync(
+                    `${getWebUrl() || 'https://app.resneo.com'}/book/${venue.slug}`,
+                  ).catch(() => undefined)
+              : null
+          }
+          onOpenCalendars={() => {
+            closeAiSetup();
+            router.push('/availability');
+          }}
+          venueId={venue?.id ?? null}
+          websiteUrl={venue?.website_url ?? null}
+          currencyCode={venue?.currency ?? 'GBP'}
+          currencySymbol={currencySymbolFor(venue?.currency)}
+          categories={categories}
+          existingServices={existingForSetup}
+          calendars={setupCalendars}
+          stripeConnected={stripeConnected}
+          collectiveHost={setupCollectiveHost}
+        />
+      ) : null}
 
       {/* Service edit / create sheet */}
       <Sheet visible={sheetOpen} onClose={closeSheet} maxHeight="92%" fill>
@@ -2452,6 +2663,16 @@ export default function ServicesScreen() {
 // ---------------------------------------------------------------------------
 
 const styles = StyleSheet.create({
+  headerActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  headerAction: {
+    flex: 1,
+  },
+  aiEmpty: {
+    gap: spacing.md,
+  },
   tabBar: {
     flexDirection: 'row',
     borderBottomWidth: StyleSheet.hairlineWidth,

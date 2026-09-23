@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
+import { formDataFile } from '@/lib/api/form-data-file';
 import type { FileResponse } from '@/lib/compliance/form-schema';
 import { isBackendConfigured } from '@/lib/env';
 import { keyScope, queryKeys } from '@/lib/queries/keys';
@@ -251,12 +252,7 @@ export function useUploadComplianceRecordFile() {
         throw new Error('Missing access token');
       }
       const form = new FormData();
-      // React Native FormData file part ({ uri, name, type }).
-      form.append('file', {
-        uri: file.uri,
-        name: file.name,
-        type: file.mimeType,
-      } as unknown as Blob);
+      form.append('file', formDataFile(file.uri, file.name, file.mimeType));
       return apiFetch<FileResponse>('/api/venue/compliance/records/upload', {
         accessToken,
         method: 'POST',

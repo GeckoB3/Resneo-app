@@ -121,7 +121,7 @@ export function buildVariantsPayload(
     if (paymentRequirement === 'full_payment' && draft.isActive && !(price != null && price > 0)) {
       return {
         ok: false,
-        error: `Option "${name}": set a price — full online payment applies to each option.`,
+        error: `Option "${name}": set a price, full online payment applies to each option.`,
         key: draft.key,
       };
     }

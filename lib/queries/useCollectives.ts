@@ -13,6 +13,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 
 import { apiFetch } from '@/lib/api/client';
+import { formDataFile } from '@/lib/api/form-data-file';
 import { isBackendConfigured } from '@/lib/env';
 import { queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
@@ -264,11 +265,7 @@ export function useUploadPageAsset() {
       const form = new FormData();
       const ext =
         input.mimeType === 'image/png' ? 'png' : input.mimeType === 'image/webp' ? 'webp' : 'jpg';
-      form.append('file', {
-        uri: input.uri,
-        name: `upload.${ext}`,
-        type: input.mimeType,
-      } as unknown as Blob);
+      form.append('file', formDataFile(input.uri, `upload.${ext}`, input.mimeType));
 
       // apiFetch supports FormData (no forced JSON Content-Type), but the
       // page-asset route's `kind` lives in the query string.

@@ -21,6 +21,7 @@ import { getAuthCallbackRedirectUrl } from '@/lib/auth/redirect';
 import { setObservabilityUser } from '@/lib/observability';
 import { setQueryAuthScope } from '@/lib/queries/keys';
 import { queryClient } from '@/lib/queries/queryClient';
+import { clearAllServicesSetups } from '@/lib/services-setup/setup-storage';
 import { getSupabase } from '@/lib/supabase';
 import {
   signInEmailSchema,
@@ -434,6 +435,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
     */
     clearAppMode();
     clearLatchedRole();
+    // A services setup left half-checked belongs to the person leaving (web: sign-out's
+    // Clear-Site-Data takes the browser's copy with it).
+    void clearAllServicesSetups();
     // Drop all cached venue data so a subsequent user can never transiently see
     // the previous user's bookings/clients before their own queries load.
     queryClient.clear();

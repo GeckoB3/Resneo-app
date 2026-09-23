@@ -116,6 +116,12 @@ export const queryKeys = {
       [...queryKeys.services.all(), keyScope(accessToken)] as const,
   },
 
+  /** GET /api/venue/services-setup: is "Set up with AI" offered (web 2026-09-23)? */
+  servicesSetup: {
+    availability: (accessToken?: string | null) =>
+      [...queryKeys.all, 'servicesSetup', 'availability', keyScope(accessToken)] as const,
+  },
+
   team: {
     all: () => [...queryKeys.all, 'team'] as const,
     list: (accessToken?: string | null) =>
