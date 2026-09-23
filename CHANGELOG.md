@@ -17,6 +17,17 @@ on the other, and iOS 1.0.4 is the worked example.
 
 ## Unreleased
 
+**The combined booking page's own embed code and QR code** (web 2026-09-23). Details in
+`Docs/APP_GAP_REPORT_R42_WEB_DELTA.md`.
+
+- In a live collective, the Booking page screen's combined view now has **Embed on your website**
+  and a **QR code** for the combined page, for the host and for members. The QR code opens the
+  address guests use and is named after the collective.
+- The venue's own page has the web's **What to embed** choice: your own page or the combined page.
+  The QR code follows the choice.
+- Manage Collective links to **Combined booking page settings**.
+- "Accent colour saved." fades after a moment, as on the web.
+
 **Set up with AI** on the Services screen (web 2026-09-22), and uploads that work again. Details in
 `Docs/APP_GAP_REPORT_R41_WEB_DELTA.md`.
 

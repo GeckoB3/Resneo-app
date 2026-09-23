@@ -6,6 +6,7 @@
  */
 import {
   EMBED_IFRAME_DEFAULT_HEIGHT_PX,
+  buildCollectiveEmbedSnippet,
   buildVenueEmbedSnippet,
   embedAccentSearchParam,
   normalizeEmbedAccentHex,
@@ -83,5 +84,38 @@ describe('buildVenueEmbedSnippet', () => {
       accentHex: 'not-a-colour',
     });
     expect(embedUrl).toBe('https://app.example.com/embed/plus-1');
+  });
+});
+
+describe('buildCollectiveEmbedSnippet', () => {
+  it('points at the collective embed, not the unframeable /book/c page', () => {
+    const { embedUrl, snippet } = buildCollectiveEmbedSnippet({
+      baseUrl: 'https://app.example.com/',
+      collectiveSlug: 'aura-hair-studio',
+      accentHex: '#D0C0B0',
+    });
+    expect(embedUrl).toBe('https://app.example.com/embed/c/aura-hair-studio?accent=d0c0b0');
+    expect(snippet).not.toContain('/book/c/');
+    expect(snippet).toContain('id="reserveni-widget"');
+    expect(snippet).toContain('https://app.example.com/embed/resize.js');
+  });
+
+  it('leaves a half-typed accent out, so the page falls back to its own colour', () => {
+    const { embedUrl } = buildCollectiveEmbedSnippet({
+      baseUrl: 'https://app.example.com',
+      collectiveSlug: 'aura-hair-studio',
+      accentHex: '#d0c',
+    });
+    expect(embedUrl).toBe('https://app.example.com/embed/c/aura-hair-studio');
+  });
+
+  it('matches the venue snippet apart from the embed path', () => {
+    const venue = buildVenueEmbedSnippet({ baseUrl: 'https://app.example.com', venueSlug: 'x', accentHex: '#123456' });
+    const collective = buildCollectiveEmbedSnippet({
+      baseUrl: 'https://app.example.com',
+      collectiveSlug: 'x',
+      accentHex: '#123456',
+    });
+    expect(collective.snippet).toBe(venue.snippet.replace('/embed/x', '/embed/c/x'));
   });
 });

@@ -3,12 +3,13 @@ import { Image } from 'expo-image';
 import { Stack, useRouter, type Href } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, Pressable, StyleSheet, Switch, View } from 'react-native';
+import { Pressable, StyleSheet, Switch, View } from 'react-native';
 
 import { BookingPagePreview } from '@/components/bookingPage/BookingPagePreview';
+import { ColourField } from '@/components/bookingPage/ColourField';
 import { CoverThumb } from '@/components/bookingPage/CoverThumb';
-import { BookingPageQrCard } from '@/components/bookingPage/BookingPageQrCard';
 import { CoverCropperSheet } from '@/components/bookingPage/CoverCropperSheet';
+import { EmbedAndQrSection, type EmbedAccentField } from '@/components/bookingPage/EmbedAndQrSection';
 import { GalleryEditorSheet } from '@/components/bookingPage/GalleryEditorSheet';
 import { LogoFramingSheet } from '@/components/bookingPage/LogoFramingSheet';
 import { ServicePhotosSheet } from '@/components/bookingPage/ServicePhotosSheet';
@@ -18,15 +19,17 @@ import { CombinedPageScopeSwitch, type BookingPageScope } from '@/components/lin
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
-import { IconButton } from '@/components/ui/IconButton';
 import { Input } from '@/components/ui/Input';
 import { Screen } from '@/components/ui/Screen';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { Segmented } from '@/components/ui/Segmented';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
-import { settingsCollectiveNote } from '@/lib/linked/collective-page';
+import {
+  collectiveEmbedOptions,
+  combinedScopeEmbedTarget,
+  settingsCollectiveNote,
+} from '@/lib/linked/collective-page';
 import { resolveServicesLayout, type ServicesLayout } from '@/lib/booking/service-categories';
 import {
   BOOKING_ABOUT_MAX,
@@ -37,17 +40,13 @@ import {
   isBookingFontPreset,
   normalizeHexColor,
   primaryNeedsDarkText,
-  readableTextColor,
   type BookingFontPreset,
   type BookingPageConfig,
   type BookingPageCoverCropBox,
   type BookingPageImageFraming,
   type BookingTeamProfile,
 } from '@/lib/booking/bookingPageConfig';
-import {
-  buildVenueEmbedSnippet,
-  normalizeEmbedAccentHex,
-} from '@/lib/embed/embedSnippet';
+import { normalizeEmbedAccentHex } from '@/lib/embed/embedSnippet';
 import { getWebUrl } from '@/lib/env';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useUpdateBookingPageConfig } from '@/lib/queries/useBookingPage';
@@ -217,6 +216,15 @@ export default function BookingPageScreen() {
   const [embedAccent, setEmbedAccent] = useState('');
   const [embedAccentStatus, setEmbedAccentStatus] = useState<SaveStatus>('idle');
   const lastSavedEmbedAccentRef = useRef<string | null>(null);
+  // "Accent colour saved." fades after 2.5 s, as on the web, so it never reads as
+  // stale when the other scope shows the same field.
+  const embedAccentIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (embedAccentIdleTimerRef.current) clearTimeout(embedAccentIdleTimerRef.current);
+    },
+    [],
+  );
 
   // Inline booking-page slug (co-located with the embed/URL — web parity). Edited
   // here AND on venue-profile; both PATCH `slug` via the same endpoint.
@@ -329,6 +337,8 @@ export default function BookingPageScreen() {
         .then(() => {
           lastSavedEmbedAccentRef.current = next;
           setEmbedAccentStatus('saved');
+          if (embedAccentIdleTimerRef.current) clearTimeout(embedAccentIdleTimerRef.current);
+          embedAccentIdleTimerRef.current = setTimeout(() => setEmbedAccentStatus('idle'), 2500);
         })
         .catch(() => setEmbedAccentStatus('error'));
     }, 700);
@@ -458,24 +468,38 @@ export default function BookingPageScreen() {
     }
   }, [slugCanSave, slugNorm, toast, updateVenue]);
 
-  // ── Embed snippet (built from the web origin + stored slug + accent) ──────
-  const embedSnippet = useMemo(
-    () =>
-      slug
-        ? buildVenueEmbedSnippet({
-            baseUrl: webBase,
-            venueSlug: slug,
-            accentHex: embedAccentNormalized,
-          }).snippet
-        : null,
-    [slug, webBase, embedAccentNormalized],
+  // ── Website embed + QR code (EmbedAndQrSection) ──────────────────────────
+  // The accent is one venue setting whichever page the embed shows, so it lives
+  // here and autosaves above; the section renders it in both scopes.
+  const embedAccentField = useMemo<EmbedAccentField>(
+    () => ({
+      value: embedAccent,
+      normalized: embedAccentNormalized,
+      invalid: embedAccentInvalid,
+      status: embedAccentStatus,
+      onChange: (v: string) => {
+        setEmbedAccent(v.replace(/[^a-fA-F0-9#]/g, '').slice(0, 7));
+        setEmbedAccentStatus('idle');
+      },
+      onReset: () => setEmbedAccent(''),
+    }),
+    [embedAccent, embedAccentNormalized, embedAccentInvalid, embedAccentStatus],
   );
-  const handleCopySnippet = useCallback(async () => {
-    if (!embedSnippet) return;
-    await Clipboard.setStringAsync(embedSnippet);
-    hapticSuccess();
-    toast.success('Embed code copied.');
-  }, [embedSnippet, toast]);
+  // The own page's "What to embed" choice, and the combined scope's locked
+  // target (web 4a05756e: host and members, once the page is live).
+  const embedOptions = useMemo(
+    () => collectiveEmbedOptions(collectivesQuery.data?.collectives ?? []),
+    [collectivesQuery.data?.collectives],
+  );
+  const combinedEmbed = useMemo(
+    () =>
+      collectiveNote
+        ? combinedScopeEmbedTarget(
+            (collectivesQuery.data?.collectives ?? []).find((c) => c.id === collectiveNote.id) ?? null,
+          )
+        : null,
+    [collectiveNote, collectivesQuery.data?.collectives],
+  );
 
   const cfg = venue?.booking_page_config;
   const galleryCount = cfg?.gallery?.length ?? 0;
@@ -520,6 +544,15 @@ export default function BookingPageScreen() {
           onOpenLinkedVenues={() => router.push('/linked-venues' as Href)}
           onDissolved={() => setScope('own')}
         />
+        {combinedEmbed ? (
+          <EmbedAndQrSection
+            webBase={webBase}
+            venueSlug={slug}
+            venueName={venueName}
+            accent={embedAccentField}
+            lockedCollective={combinedEmbed}
+          />
+        ) : null}
       </Screen>
     );
   }
@@ -623,69 +656,14 @@ export default function BookingPageScreen() {
         </Pressable>
       </Card>
 
-      {/* Website embed (iframe snippet + accent colour) */}
-      <SectionHeader title="Embed on your website" />
-      <Card style={styles.card}>
-        <Text variant="bodySmall" tone="secondary">
-          Paste this into your website to show your booking form in a frame that resizes to fit.
-        </Text>
-
-        <ColourField
-          label="Accent colour (optional)"
-          value={embedAccent}
-          preview={embedAccentNormalized ? `#${embedAccentNormalized}` : null}
-          onChange={(v) => {
-            setEmbedAccent(v.replace(/[^a-fA-F0-9#]/g, '').slice(0, 7));
-            setEmbedAccentStatus('idle');
-          }}
-          onReset={() => setEmbedAccent('')}
-        />
-        <Text variant="caption" tone="muted">
-          Buttons and highlights in the embedded widget. Enter a 6-digit hex — saved automatically.
-        </Text>
-        {embedAccentInvalid ? (
-          <Text variant="caption" color={colors.danger}>
-            Use a 6-digit hex like #4f46e5.
-          </Text>
-        ) : embedAccentStatus === 'saving' ? (
-          <Text variant="caption" tone="muted">Saving accent…</Text>
-        ) : embedAccentStatus === 'saved' ? (
-          <Text variant="caption" color={colors.success}>Accent colour saved.</Text>
-        ) : embedAccentStatus === 'error' ? (
-          <Text variant="caption" color={colors.danger}>Couldn’t save the accent colour.</Text>
-        ) : null}
-
-        {embedSnippet ? (
-          <>
-            <View style={[styles.codeBlock, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <Text variant="caption" color={colors.textSecondary} style={styles.codeText} selectable>
-                {embedSnippet}
-              </Text>
-            </View>
-            <Button
-              label="Copy code"
-              variant="secondary"
-              size="sm"
-              onPress={() => void handleCopySnippet()}
-            />
-          </>
-        ) : (
-          <Text variant="bodySmall" tone="muted">
-            Set a web address above to generate your embed code.
-          </Text>
-        )}
-      </Card>
-
-      {/* QR code — isolated in an error boundary so a QR/SVG render failure
-          degrades to a recoverable card instead of white-screening the editor. */}
-      {publicUrl ? (
-        <>
-          <SectionHeader title="QR code" />
-          <ErrorBoundary label="the QR code">
-            <BookingPageQrCard url={publicUrl} venueName={venueName} slug={slug ?? ''} />
-          </ErrorBoundary>
-        </>
-      ) : null}
+      {/* Website embed (iframe snippet + accent colour) and the QR code. */}
+      <EmbedAndQrSection
+        webBase={webBase}
+        venueSlug={slug}
+        venueName={venueName}
+        accent={embedAccentField}
+        collectiveOptions={embedOptions}
+      />
 
       {/* Branding */}
       <SectionHeader title="Branding" />
@@ -977,57 +955,6 @@ function SlugHint({
   return null;
 }
 
-/** A hex colour input with a live preview swatch + reset. */
-function ColourField({
-  label,
-  value,
-  preview,
-  onChange,
-  onReset,
-}: {
-  label: string;
-  value: string;
-  preview: string | null;
-  onChange: (next: string) => void;
-  onReset: () => void;
-}) {
-  const { colors } = useTheme();
-  return (
-    <View style={styles.colourField}>
-      <View
-        style={[
-          styles.colourPreview,
-          { backgroundColor: preview ?? colors.surface, borderColor: colors.border },
-        ]}>
-        {preview ? (
-          <Text variant="caption" color={readableTextColor(preview)}>Aa</Text>
-        ) : (
-          <Text variant="caption" tone="muted">—</Text>
-        )}
-      </View>
-      <View style={styles.flex1}>
-        <Input
-          label={label}
-          value={value}
-          onChangeText={onChange}
-          autoCapitalize="none"
-          autoCorrect={false}
-          placeholder="#003b6f"
-          maxLength={7}
-        />
-      </View>
-      {value.trim() ? (
-        <IconButton
-          icon={{ ios: 'arrow.counterclockwise', android: 'restart_alt', web: 'restart_alt' }}
-          accessibilityLabel={`Reset ${label}`}
-          tint={colors.textSecondary}
-          onPress={onReset}
-        />
-      ) : null}
-    </View>
-  );
-}
-
 /** A row of quick colour swatches that set the brand colour. */
 function SwatchRow({ onPick }: { onPick: (hex: string) => void }) {
   return (
@@ -1171,16 +1098,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.sm,
   },
-  codeBlock: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radius.md,
-    padding: spacing.md,
-  },
-  codeText: {
-    fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' }),
-    fontSize: 11,
-    lineHeight: 16,
-  },
   paletteRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1194,20 +1111,6 @@ const styles = StyleSheet.create({
   paletteSwatch: {
     width: 26,
     height: 32,
-  },
-  colourField: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: spacing.sm,
-  },
-  colourPreview: {
-    width: 48,
-    height: 48,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 2,
   },
   swatchRow: {
     flexDirection: 'row',

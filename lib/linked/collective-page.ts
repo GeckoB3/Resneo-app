@@ -84,3 +84,43 @@ export function settingsCollectiveNote(
     publicPath: collectivePublicPath(live),
   };
 }
+
+/** A combined page this venue can embed on its website or print a QR code for (web `CollectiveEmbedOption`). */
+export interface CollectiveEmbedOption {
+  slug: string;
+  name: string;
+  /** Where guests reach the page, an adopted venue's address included. */
+  path: string;
+}
+
+type CollectiveEmbedView = Pick<
+  CollectiveView,
+  'slug' | 'name' | 'status' | 'activeMemberCount' | 'slugStrategy' | 'adoptedVenueId'
+> & { members: Pick<CollectiveMemberView, 'venueId' | 'venueSlug'>[] };
+
+function toEmbedOption(c: CollectiveEmbedView): CollectiveEmbedOption {
+  return { slug: c.slug, name: c.name, path: collectivePublicPath(c) };
+}
+
+/**
+ * The combined page the Booking page's combined scope embeds (web
+ * `CombinedPageScopeContent`, 4a05756e): the collective while it is active with
+ * two or more active members, else null. Host and members alike.
+ */
+export function combinedScopeEmbedTarget(collective: CollectiveEmbedView | null): CollectiveEmbedOption | null {
+  if (!collective || collective.status !== 'active' || collective.activeMemberCount < 2) return null;
+  return toEmbedOption(collective);
+}
+
+/**
+ * The combined pages the own page's "What to embed" choice offers (web
+ * `WidgetSection`): active collectives this venue is an active member of, with
+ * two or more active members. The web does not check the page mode here.
+ */
+export function collectiveEmbedOptions(
+  collectives: readonly (CollectiveEmbedView & Pick<CollectiveView, 'myMembershipStatus'>)[],
+): CollectiveEmbedOption[] {
+  return collectives
+    .filter((c) => c.status === 'active' && c.myMembershipStatus === 'active' && c.activeMemberCount >= 2)
+    .map(toEmbedOption);
+}

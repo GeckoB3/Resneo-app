@@ -1,6 +1,8 @@
 import {
   collectiveAdoptedSlug,
+  collectiveEmbedOptions,
   collectivePublicPath,
+  combinedScopeEmbedTarget,
   settingsCollectiveNote,
 } from '@/lib/linked/collective-page';
 
@@ -78,5 +80,35 @@ describe('settingsCollectiveNote', () => {
     expect(settingsCollectiveNote([{ ...base, pageMode: 'directory' }], 'venue-host')).toBeNull();
     expect(settingsCollectiveNote([], 'venue-host')).toBeNull();
     expect(settingsCollectiveNote([base], null)).toBeNull();
+  });
+});
+
+describe('combinedScopeEmbedTarget', () => {
+  it('embeds a live collective at the address guests use', () => {
+    expect(combinedScopeEmbedTarget(base)).toEqual({
+      slug: 'hair-collective',
+      name: 'The Hair Collective',
+      path: '/book/c/hair-collective',
+    });
+    const adopted = { ...base, slugStrategy: 'adopt_member' as const, adoptedVenueId: 'venue-member' };
+    expect(combinedScopeEmbedTarget(adopted)?.path).toBe('/book/member-barbers');
+    // The embed itself is always the collective's /embed/c/{slug}: only the QR follows the address.
+    expect(combinedScopeEmbedTarget(adopted)?.slug).toBe('hair-collective');
+  });
+
+  it('offers nothing for a page that is not live', () => {
+    expect(combinedScopeEmbedTarget(null)).toBeNull();
+    expect(combinedScopeEmbedTarget({ ...base, activeMemberCount: 1 })).toBeNull();
+    expect(combinedScopeEmbedTarget({ ...base, status: 'dissolved' })).toBeNull();
+  });
+});
+
+describe('collectiveEmbedOptions', () => {
+  it('lists the live collectives this venue is an active member of, as the web choice does', () => {
+    const second = { ...base, id: 'col-2', name: 'Directory', slug: 'directory', pageMode: 'directory' as const };
+    expect(collectiveEmbedOptions([base, second]).map((o) => o.slug)).toEqual(['hair-collective', 'directory']);
+    expect(collectiveEmbedOptions([{ ...base, myMembershipStatus: 'invited' }])).toEqual([]);
+    expect(collectiveEmbedOptions([{ ...base, activeMemberCount: 1 }])).toEqual([]);
+    expect(collectiveEmbedOptions([{ ...base, status: 'dissolved' }])).toEqual([]);
   });
 });

@@ -7,9 +7,9 @@
  * snippet for a venue's public booking page, optionally tinted with the venue's
  * stored `embed_accent_colour`.
  *
- * Output is byte-for-byte identical to the web `buildVenueEmbedSnippet` so a
- * snippet copied from the app embeds the same widget as one copied from the web
- * dashboard.
+ * Output is byte-for-byte identical to the web `buildVenueEmbedSnippet` and
+ * `buildCollectiveEmbedSnippet`, so a snippet copied from the app embeds the
+ * same widget as one copied from the web dashboard.
  */
 
 /**
@@ -57,9 +57,35 @@ export function buildVenueEmbedSnippet({
   venueSlug: string;
   accentHex?: string | null;
 }): { embedUrl: string; snippet: string; accentHex: string | null } {
+  return buildEmbedSnippet(baseUrl, `/embed/${venueSlug}`, accentHex);
+}
+
+/**
+ * A venue collective's combined page. `/book/c/{slug}` refuses to be framed, so
+ * the embed is `/embed/c/{slug}`, which resizes the same way. With no accent it
+ * uses the combined page's own brand colour. Mirrors the web
+ * `buildCollectiveEmbedSnippet` (web 4a05756e).
+ */
+export function buildCollectiveEmbedSnippet({
+  baseUrl,
+  collectiveSlug,
+  accentHex,
+}: {
+  baseUrl: string;
+  collectiveSlug: string;
+  accentHex?: string | null;
+}): { embedUrl: string; snippet: string; accentHex: string | null } {
+  return buildEmbedSnippet(baseUrl, `/embed/c/${collectiveSlug}`, accentHex);
+}
+
+function buildEmbedSnippet(
+  baseUrl: string,
+  embedPath: string,
+  accentHex: string | null | undefined,
+): { embedUrl: string; snippet: string; accentHex: string | null } {
   const root = baseUrl.replace(/\/$/, '');
   const accent = normalizeEmbedAccentHex(accentHex);
-  const embedUrl = `${root}/embed/${venueSlug}${embedAccentSearchParam(accent)}`;
+  const embedUrl = `${root}${embedPath}${embedAccentSearchParam(accent)}`;
   const snippet = `<iframe src="${embedUrl}" width="100%" height="${EMBED_IFRAME_DEFAULT_HEIGHT_PX}" style="border:none;overflow:hidden;" scrolling="no" id="reserveni-widget"></iframe>
 <script src="${root}/embed/resize.js"></script>`;
   return { embedUrl, snippet, accentHex: accent };

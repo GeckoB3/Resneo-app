@@ -24,6 +24,7 @@ import { HistoryPanel, MemberServicesList, VenuesPanel, type VenueRow } from '@/
 import { ListingsPanel } from '@/components/collective-area/ListingsPanel';
 import { ServicesGridBar, ServicesGridList, useServicesGrid } from '@/components/collective-area/ServicesGrid';
 import { AdoptionRequestsCard } from '@/components/linked/setup/AdoptionSheets';
+import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Screen } from '@/components/ui/Screen';
@@ -208,6 +209,16 @@ function AreaBody({
             <Text variant="bodySmall" tone="secondary">
               {areaCopy('ov.subtitle')}
             </Text>
+            {/* The combined page's look, address, embed code and QR code live on the Booking
+                page screen, which opens on the combined page while the collective is live
+                (web 4a05756e). */}
+            <Button
+              label={areaCopy('ov.bookingPageSettings')}
+              variant="secondary"
+              size="sm"
+              style={styles.bookingPageLink}
+              onPress={() => router.push('/manage/booking-page' as Href)}
+            />
           </View>
 
           {pendingHost && entry && pendingHost.venueId === entry.myVenueId && !pendingHost.transferAt ? (
@@ -297,4 +308,5 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   intro: { gap: spacing.xxs },
+  bookingPageLink: { alignSelf: 'flex-start', marginTop: spacing.sm },
 });

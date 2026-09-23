@@ -19,6 +19,9 @@ const QR_SIZE = 220;
  * PNG and hands it to the OS share sheet (`expo-sharing`), mirroring the web
  * "Download QR code". Suitable for table cards, menus or window stickers.
  *
+ * The code is named after the page it opens (web 4a05756e): the venue on its own
+ * page, the collective when it opens the combined page.
+ *
  * Sharing uses dynamic `require()` of `expo-file-system/legacy` + `expo-sharing`
  * (same guarded pattern as `lib/reports/csv-export.ts`) so the component still
  * renders if those modules are unavailable in a given runtime (e.g. web/tests).
@@ -29,12 +32,17 @@ const QR_SIZE = 220;
  */
 export function BookingPageQrCard({
   url,
-  venueName,
+  label,
   slug,
+  combined = false,
 }: {
   url: string;
-  venueName: string;
+  /** The name under the code and in the share sheet: the page's own name. */
+  label: string;
+  /** Names the shared file. */
   slug: string;
+  /** The code opens a collective's combined booking page. */
+  combined?: boolean;
 }) {
   const toast = useToast();
   // The QR component hands us a ref to its underlying SVG via getRef(); that ref
@@ -46,7 +54,7 @@ export function BookingPageQrCard({
   const handleShare = useCallback(() => {
     const node = svgRef.current;
     if (!node || typeof node.toDataURL !== 'function') {
-      toast.error('QR code is still rendering — try again in a moment.');
+      toast.error('The QR code is still loading. Try again in a moment.');
       return;
     }
     setSharing(true);
@@ -89,7 +97,7 @@ export function BookingPageQrCard({
         });
         await Sharing.shareAsync(uri, {
           mimeType: 'image/png',
-          dialogTitle: `${venueName} — booking QR code`,
+          dialogTitle: `Booking QR code for ${label}`,
           UTI: 'public.png',
         });
         hapticSuccess();
@@ -100,12 +108,14 @@ export function BookingPageQrCard({
         setSharing(false);
       }
     });
-  }, [slug, venueName, toast]);
+  }, [slug, label, toast]);
 
   return (
     <Card style={styles.card}>
       <Text variant="bodySmall" tone="secondary">
-        Link straight to your booking page. Great for table cards, menus or window stickers.
+        {combined
+          ? 'Link straight to the combined booking page. Great for table cards, menus or window stickers.'
+          : 'Link straight to your booking page. Great for table cards, menus or window stickers.'}
       </Text>
       <View style={styles.qrWrap}>
         <View style={styles.qrFrame}>
@@ -120,7 +130,7 @@ export function BookingPageQrCard({
             }}
           />
         </View>
-        <Text variant="caption" tone="muted">{venueName}</Text>
+        <Text variant="caption" tone="muted">{label}</Text>
       </View>
       <Button
         label="Share QR code"

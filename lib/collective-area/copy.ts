@@ -38,6 +38,7 @@ export const AREA_COPY = {
   "history.more": "Load more",
   "history.title": "{collective} history",
   "notify.hostRequest.body": "If you accept, you manage the services on the {collective} page for every venue, including their prices and forms.",
+  "ov.bookingPageSettings": "Combined booking page settings",
   "ov.bulk.addCalendars": "Choose calendars",
   "ov.bulk.confirm.confirm": "Save changes",
   "ov.bulk.confirm.message": "This changes {count} services at {venueList}.",

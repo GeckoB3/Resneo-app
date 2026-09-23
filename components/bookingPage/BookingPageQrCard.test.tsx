@@ -72,7 +72,7 @@ describe('BookingPageQrCard', () => {
     await render(
       <BookingPageQrCard
         url="https://app.example.com/book/plus-1"
-        venueName="Plus One Salon"
+        label="Plus One Salon"
         slug="plus-1"
       />,
     );
@@ -87,7 +87,7 @@ describe('BookingPageQrCard', () => {
     await render(
       <BookingPageQrCard
         url="https://app.example.com/book/plus-1"
-        venueName="Plus One Salon"
+        label="Plus One Salon"
         slug="plus-1"
       />,
     );
@@ -111,5 +111,24 @@ describe('BookingPageQrCard', () => {
     const [shareUri, shareOpts] = mockShareAsync.mock.calls[0] as [string, Record<string, unknown>];
     expect(shareUri).toBe('file:///cache/booking-qr-plus-1.png');
     expect(shareOpts.mimeType).toBe('image/png');
+    expect(shareOpts.dialogTitle).toBe('Booking QR code for Plus One Salon');
+  });
+
+  it('names a combined page’s code after the collective, and says where it opens', async () => {
+    await render(
+      <BookingPageQrCard
+        url="https://app.example.com/book/c/hair-collective"
+        label="The Hair Collective"
+        slug="hair-collective"
+        combined
+      />,
+    );
+
+    expect(screen.getByTestId('qr-mock').props.children).toBe('https://app.example.com/book/c/hair-collective');
+    expect(screen.getByText('The Hair Collective')).toBeTruthy();
+    expect(screen.getByText(/the combined booking page/)).toBeTruthy();
+
+    await press(() => screen.getByText('Share QR code'));
+    expect(mockWriteAsStringAsync.mock.calls[0]?.[0]).toBe('file:///cache/booking-qr-hair-collective.png');
   });
 });
