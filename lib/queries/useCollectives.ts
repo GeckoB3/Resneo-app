@@ -233,6 +233,8 @@ export function useCatalogueAction() {
           (prev: CatalogueResponse | undefined) => ({
             catalogue: data.catalogue,
             importSources: data.importSources ?? prev?.importSources,
+            // Only the GET carries the live team (F-2); keep it until the refetch.
+            team: data.team ?? prev?.team,
           }),
         );
       }

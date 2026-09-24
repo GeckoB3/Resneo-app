@@ -46,7 +46,8 @@ const PAYMENT_OPTIONS: { value: EventPaymentRequirement; label: string; hint: st
 ];
 
 /** One editable ticket-tier row. `key` is a stable local id for the list. */
-type TicketDraft = { key: string; name: string; price: string; capacity: string };
+/** `id` is the saved tier's, so an edit updates it in place (web finding C3). */
+type TicketDraft = { key: string; id?: string; name: string; price: string; capacity: string };
 
 let ticketKeySeq = 0;
 function nextTicketKey(): string {
@@ -266,6 +267,7 @@ export function EventEditorSheet({ target, onClose, onSaved }: EventEditorSheetP
               .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
               .map((tt) => ({
                 key: nextTicketKey(),
+                id: tt.id,
                 name: tt.name,
                 price: penceToPoundsInput(tt.price_pence),
                 capacity: tt.capacity != null ? String(tt.capacity) : '',
@@ -370,9 +372,15 @@ export function EventEditorSheet({ target, onClose, onSaved }: EventEditorSheetP
         cap = parsed;
       }
       ticketRows.push({
+        // The saved tier's id, so a renamed tier keeps its sales (the web
+        // round-trips it too; without it the server matches by name only).
+        ...(editing && t.id ? { id: t.id } : {}),
         name: t.name.trim(),
         price_pence: pricePence ?? 0,
-        capacity: cap,
+        // A blank capacity is left out, as the web does: the create route
+        // refuses null ("expected number, received null"), and leaving it out
+        // clears a tier's cap on an edit just as null did.
+        ...(cap != null ? { capacity: cap } : {}),
         sort_order: i,
       });
     }
@@ -532,6 +540,12 @@ export function EventEditorSheet({ target, onClose, onSaved }: EventEditorSheetP
               accessibilityLabel="Event end time"
             />
           </View>
+          {editing ? (
+            // E-1 (web 2026-09-23): a date or time change moves the bookings and tells the guests.
+            <Text variant="caption" tone="muted">
+              {"Changing the date or times moves this event's bookings, and those guests are sent the new details."}
+            </Text>
+          ) : null}
           <Input
             label="Total capacity"
             value={capacity}
@@ -865,9 +879,20 @@ export function EventEditorSheet({ target, onClose, onSaved }: EventEditorSheetP
             </Text>
           ) : null}
 
+          {/* E-10 (web 2026-09-23): hiding an event is not cancelling it. */}
           <View style={styles.switchRow}>
-            <Text variant="bodyMedium">Active (bookable by guests)</Text>
-            <Switch value={isActive} onValueChange={setIsActive} />
+            <View style={styles.switchText}>
+              <Text variant="bodyMedium">Show on booking page</Text>
+              <Text variant="caption" tone="muted">
+                Turn this off to hide this event from guests. Bookings it already has stay as they
+                are, and nobody is contacted.
+              </Text>
+            </View>
+            <Switch
+              value={isActive}
+              onValueChange={setIsActive}
+              accessibilityLabel="Show on booking page"
+            />
           </View>
 
           {error ? (
@@ -934,7 +959,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: spacing.md,
     paddingVertical: spacing.xs,
+  },
+  switchText: {
+    flex: 1,
+    minWidth: 0,
+    gap: 1,
   },
   ticketCard: {
     padding: spacing.md,

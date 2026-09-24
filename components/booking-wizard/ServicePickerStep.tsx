@@ -93,13 +93,34 @@ export function pickerBarSummary(
   return { count, totalMinutes, fromPence, names: picks.map((p) => p.row.option.serviceName).join(' + ') };
 }
 
+/**
+ * The cheapest option's price when a service's options are priced differently,
+ * else null. Before an option is chosen the service's own price is not the whole
+ * story (Short £18, Long £25 read as £18), so the steps say "from" the cheapest
+ * option instead, as the web does (QA G-4). Options that all cost the same, or
+ * carry no price, leave the service's price standing.
+ */
+export function optionFromPricePence(
+  variants: readonly { price_pence: number | null }[] | null | undefined,
+): number | null {
+  const prices = (variants ?? [])
+    .map((variant) => variant.price_pence)
+    .filter((pence): pence is number => pence != null);
+  return prices.length > 0 && new Set(prices).size > 1 ? Math.min(...prices) : null;
+}
+
 /** One UNIQUE service per row, carrying its cheapest price across practitioners. */
 export interface ServiceRow {
   option: AppointmentServiceOption;
-  /** Cheapest price across all practitioners offering this service (pence). */
+  /**
+   * Cheapest price across all practitioners offering this service (pence): the
+   * cheapest option's where the options are priced differently.
+   */
   fromPricePence: number | null;
   /** True when 2+ practitioners offer the service (so a price is a "from" price). */
   multiplePractitioners: boolean;
+  /** True when the service's options are priced differently (so a price is a "from" price). */
+  optionPricesVary?: boolean;
   /** How many practitioners offer this service. */
   practitionerCount: number;
 }
@@ -146,7 +167,8 @@ export function dedupeCatalogServices(
     }
     for (const service of practitioner.services) {
       const existing = byService.get(service.id);
-      const price = service.price_pence;
+      const optionFrom = optionFromPricePence(service.variants);
+      const price = optionFrom ?? service.price_pence;
       if (!existing) {
         byService.set(service.id, {
           option: {
@@ -174,12 +196,14 @@ export function dedupeCatalogServices(
           },
           fromPricePence: price,
           multiplePractitioners: false,
+          optionPricesVary: optionFrom != null,
           practitionerCount: 1,
         });
         continue;
       }
       existing.practitionerCount += 1;
       existing.multiplePractitioners = true;
+      if (optionFrom != null) existing.optionPricesVary = true;
       if (price != null && (existing.fromPricePence == null || price < existing.fromPricePence)) {
         existing.fromPricePence = price;
       }
@@ -248,7 +272,7 @@ function formatFromPrice(row: ServiceRow): string | null {
     return null;
   }
   const amount = `£${(row.fromPricePence / 100).toFixed(2)}`;
-  return row.multiplePractitioners ? `from ${amount}` : amount;
+  return row.multiplePractitioners || row.optionPricesVary ? `from ${amount}` : amount;
 }
 
 function practitionerSummary(row: ServiceRow): string {

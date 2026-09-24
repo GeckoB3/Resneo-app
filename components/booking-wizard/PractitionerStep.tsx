@@ -1,5 +1,6 @@
 import { FlatList, StyleSheet, View } from 'react-native';
 
+import { optionFromPricePence } from '@/components/booking-wizard/ServicePickerStep';
 import { Avatar } from '@/components/ui/Avatar';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
@@ -34,6 +35,8 @@ type PractitionerRow = {
   isAnyAvailable: boolean;
   /** Practitioner-scoped price (pence) for the row caption. */
   pricePence: number | null;
+  /** The price is the cheapest of options priced differently, so it reads "from". */
+  priceIsFrom?: boolean;
   /** Practitioner-scoped duration (minutes) for the row caption. */
   durationMinutes: number | null;
   /** Override catalogue only: false when this person is not assigned the service. */
@@ -41,9 +44,11 @@ type PractitionerRow = {
   option: AppointmentServiceOption;
 };
 
-function formatPrice(pricePence: number | null): string | null {
-  if (pricePence == null) return null;
-  return `£${(pricePence / 100).toFixed(2)}`;
+function formatPrice(row: Pick<PractitionerRow, 'pricePence' | 'priceIsFrom'>): string | null {
+  if (row.pricePence == null) return null;
+  const amount = `£${(row.pricePence / 100).toFixed(2)}`;
+  // Lower case, as the service step writes its "from" prices.
+  return row.priceIsFrom ? `from ${amount}` : amount;
 }
 
 function rowCaption(
@@ -59,7 +64,7 @@ function rowCaption(
   // practitioner, so it wins over each one's service-default duration.
   const duration = durationOverride ?? row.durationMinutes;
   if (duration != null) parts.push(`${duration} min`);
-  const price = formatPrice(row.pricePence);
+  const price = formatPrice(row);
   if (price) parts.push(price);
   // The override lists every person; one not assigned the service says so.
   if (overrideAvailability && row.assigned === false) parts.push(DOES_NOT_USUALLY_OFFER);
@@ -105,11 +110,15 @@ export function PractitionerStep({
   for (const practitioner of practitioners) {
     const service = practitioner.services.find((s) => s.id === serviceOption.serviceId);
     if (!service) continue;
+    // The option is chosen after the person, so where this person's options
+    // are priced differently the row says "from" the cheapest (web QA G-4).
+    const optionFrom = optionFromPricePence(service.variants);
     rows.push({
       id: practitioner.id,
       name: practitioner.name,
       isAnyAvailable: false,
-      pricePence: service.price_pence,
+      pricePence: optionFrom ?? service.price_pence,
+      priceIsFrom: optionFrom != null,
       durationMinutes: service.duration_minutes,
       assigned: service.assigned,
       option: {
@@ -147,7 +156,7 @@ export function PractitionerStep({
         ItemSeparatorComponent={Separator}
         renderItem={({ item }) => {
           const caption = rowCaption(item, durationOverride, overrideAvailability);
-          const price = item.isAnyAvailable ? null : formatPrice(item.pricePence);
+          const price = item.isAnyAvailable ? null : formatPrice(item);
           return (
             <Card
               padded

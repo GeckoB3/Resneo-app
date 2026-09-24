@@ -160,8 +160,9 @@ export function AddonGroupEditorSheet({
 
       setSelectionType('single');
 
-      // Web parity: new single-select groups default to "required".
-      setMinSelect('1');
+      // Web parity (QA FC-5, 2026-09-23): a new group starts optional; the
+      // owner ticks Required when guests must choose one.
+      setMinSelect('0');
 
       setMaxSelect('');
 

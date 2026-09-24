@@ -110,15 +110,19 @@ export function SelectableRow({
             {trailing}
           </Text>
         ) : null}
-        <SymbolView
-          name={
-            selected
-              ? { ios: 'checkmark.circle.fill', android: 'check_circle', web: 'check_circle' }
-              : { ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }
-          }
-          tintColor={selected ? colors.brand : colors.textMuted}
-          size={20}
-        />
+        {/* A row that cannot be picked (a full session, a sold-out event) has no
+            chevron: nothing opens from it. */}
+        {selected || !disabled ? (
+          <SymbolView
+            name={
+              selected
+                ? { ios: 'checkmark.circle.fill', android: 'check_circle', web: 'check_circle' }
+                : { ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }
+            }
+            tintColor={selected ? colors.brand : colors.textMuted}
+            size={20}
+          />
+        ) : null}
       </View>
     </PressableScale>
   );

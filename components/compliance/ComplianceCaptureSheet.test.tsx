@@ -4,8 +4,9 @@
  *
  *  1. `file` fields let staff upload a document via the staff records/upload
  *     endpoint; when none is picked the field contributes NO value to `responses`,
- *     and a REQUIRED file field with no upload blocks submit ("This field is
- *     required.") rather than POSTing an invalid payload.
+ *     and a REQUIRED file field with no upload blocks submit ("Please upload:
+ *     ID document", the web's wording since QA FD-5) rather than POSTing an
+ *     invalid payload.
  *
  *  2. Drawn signatures are wrapped as `{ method:'drawn', data:<png url>, signed_at }`
  *     — the PNG comes from SignaturePad (covered in SignaturePad.test.tsx); here
@@ -62,7 +63,11 @@ jest.mock('@/lib/queries/useCompliance', () => ({
   useUploadComplianceRecordFile: () => ({ mutate: jest.fn(), isPending: false }),
 }));
 
-import { ComplianceCaptureSheet } from '@/components/compliance/ComplianceCaptureSheet';
+import {
+  ComplianceCaptureSheet,
+  requiredFieldMessage,
+} from '@/components/compliance/ComplianceCaptureSheet';
+import { ApiError } from '@/lib/api/client';
 
 function renderSheet() {
   return render(
@@ -128,7 +133,7 @@ describe('ComplianceCaptureSheet — file fields', () => {
     await press(() => screen.getByText('Save record'));
 
     expect(mockMutate).not.toHaveBeenCalled();
-    expect(screen.getByText('This field is required.')).toBeTruthy();
+    expect(screen.getByText('Please upload: ID document')).toBeTruthy();
   });
 });
 
@@ -151,5 +156,117 @@ describe('ComplianceCaptureSheet — drawn signature', () => {
     expect(sig.data).toBe(FAKE_PNG_URL);
     expect(typeof sig.signed_at).toBe('string');
     expect(sig.data).toMatch(/^data:image\/png;base64,/);
+  });
+});
+
+/**
+ * Web QA FD-5 (2026-09-23): a required question with no answer reads "Please answer
+ * / sign / upload: {question}", locally and from the server, whose 400 carries
+ * `field_errors` keyed by field id. Those land under their fields, not only a toast.
+ */
+describe('ComplianceCaptureSheet: required answers', () => {
+  it('words the local check as the web does', async () => {
+    mockSchema = {
+      schema_version: '1.0',
+      title: 'T',
+      fields: [
+        { id: 'allergies', type: 'text', label: 'Allergies:', required: true },
+        { id: 'sig', type: 'signature', label: 'Client signature', required: true },
+      ],
+    };
+    await renderSheet();
+
+    await press(() => screen.getByText('Save record'));
+
+    expect(mockMutate).not.toHaveBeenCalled();
+    expect(screen.getByText('Please answer: Allergies')).toBeTruthy();
+    expect(screen.getByText('Please sign: Client signature')).toBeTruthy();
+  });
+
+  it('treats a blank answer as no answer', async () => {
+    mockSchema = {
+      schema_version: '1.0',
+      title: 'T',
+      fields: [{ id: 'name', type: 'text', label: 'Name', required: true }],
+    };
+    await renderSheet();
+
+    await act(async () => {
+      fireEvent.changeText(screen.getByLabelText('Name'), '   ');
+    });
+    await press(() => screen.getByText('Save record'));
+
+    expect(mockMutate).not.toHaveBeenCalled();
+    expect(screen.getByText('Please answer: Name')).toBeTruthy();
+  });
+
+  it("shows the server's field_errors under their fields and clears one on an answer", async () => {
+    mockSchema = {
+      schema_version: '1.0',
+      title: 'T',
+      fields: [
+        { id: 'name', type: 'text', label: 'Name', required: false },
+        { id: 'notes', type: 'text', label: 'Notes', required: false },
+      ],
+    };
+    mockMutate.mockImplementationOnce((_input, options) => {
+      options.onError(
+        new ApiError('Some answers need attention.', 400, {
+          error: 'Some answers need attention.',
+          field_errors: {
+            name: 'Please answer: Name',
+            notes: 'Notes: please keep this to 10 characters or fewer.',
+          },
+        }),
+      );
+    });
+    await renderSheet();
+
+    await press(() => screen.getByText('Save record'));
+
+    expect(screen.getByText('Please answer: Name')).toBeTruthy();
+    expect(screen.getByText('Notes: please keep this to 10 characters or fewer.')).toBeTruthy();
+    expect(mockToast.error).toHaveBeenCalledWith('Some answers need attention.');
+
+    await act(async () => {
+      fireEvent.changeText(screen.getByLabelText('Name'), 'Jane');
+    });
+    expect(screen.queryByText('Please answer: Name')).toBeNull();
+    expect(screen.getByText('Notes: please keep this to 10 characters or fewer.')).toBeTruthy();
+  });
+
+  it('toasts a server message for a field that is not on screen', async () => {
+    mockSchema = {
+      schema_version: '1.0',
+      title: 'T',
+      fields: [{ id: 'name', type: 'text', label: 'Name', required: false }],
+    };
+    mockMutate.mockImplementationOnce((_input, options) => {
+      options.onError(
+        new ApiError('Some answers need attention.', 400, {
+          error: 'Some answers need attention.',
+          field_errors: { result: 'Please answer: Result' },
+        }),
+      );
+    });
+    await renderSheet();
+
+    await press(() => screen.getByText('Save record'));
+
+    expect(mockToast.error).toHaveBeenCalledWith('Please answer: Result');
+  });
+});
+
+describe('requiredFieldMessage', () => {
+  it('names the question for each kind of field', () => {
+    expect(requiredFieldMessage({ label: 'Date of birth', type: 'date' })).toBe(
+      'Please answer: Date of birth',
+    );
+    expect(requiredFieldMessage({ label: 'Sign here:', type: 'signature' })).toBe(
+      'Please sign: Sign here',
+    );
+    expect(requiredFieldMessage({ label: 'Certificate', type: 'file' })).toBe(
+      'Please upload: Certificate',
+    );
   });
 });

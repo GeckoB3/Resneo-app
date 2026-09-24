@@ -40,4 +40,19 @@ describe('chainAvailabilityPath', () => {
     expect(url.searchParams.get('any_available')).toBe('1');
     expect(url.searchParams.get('practitioner_id')).toBeNull();
   });
+
+  /**
+   * Web QA B-10: the public route gives times for a "Staff bookings only"
+   * service only when the request says it is the staff form (and the session
+   * agrees). Without the flag a visit holding one had no times on any day.
+   */
+  it('says it is the staff form, for one practitioner and for the pool', () => {
+    for (const practitionerId of ['prac-1', ANY_AVAILABLE_PRACTITIONER_ID]) {
+      const url = new URL(
+        chainAvailabilityPath({ venueId: 'venue-1', date: '2026-09-07', practitionerId, chain }),
+        'https://x',
+      );
+      expect(url.searchParams.get('staff')).toBe('1');
+    }
+  });
 });

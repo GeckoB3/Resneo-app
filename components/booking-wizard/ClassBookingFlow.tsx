@@ -26,6 +26,12 @@ import {
   offeringPriceLabel,
   remainingLabel,
 } from '@/lib/booking/booking-format';
+import {
+  datesWithNoPlacesLeft,
+  groupsWithNoPlacesLeft,
+  sessionForDirectPick,
+  staffCreateOwnerVenueId,
+} from '@/lib/booking/offering-availability';
 import { formatDurationMinutes } from '@/lib/format';
 import { normalizePhone } from '@/lib/phone/normalize';
 import { defaultPhoneCountryForVenueCurrency } from '@/lib/phone/e164';
@@ -55,7 +61,8 @@ type ClassBookingFlowProps = { onCreated: (bookingId: string) => void };
 /** Book a guest onto a scheduled class session (web-parity class flow). */
 export function ClassBookingFlow({ onCreated }: ClassBookingFlowProps) {
   const router = useRouter();
-  const { venueId, timeZone, currency } = useBookingFormVenue();
+  const { venueId, timeZone, currency, isCollective, ownerVenueId: formOwnerVenueId } =
+    useBookingFormVenue();
   // The phone picker's starting country (web parity: EUR venues → IE, else GB).
   const phoneDefaultCountry = defaultPhoneCountryForVenueCurrency(currency);
   const { ownerVenueId } = useLinkedVenueContext();
@@ -65,7 +72,12 @@ export function ClassBookingFlow({ onCreated }: ClassBookingFlowProps) {
 
   const today = calendarDateInTimeZone(new Date(), timeZone);
 
-  const offeringsQuery = useClassOfferings(venueId, { from: today });
+  // Booking for a live collective reads the staff route, which adds this venue's own
+  // classes that are not on the combined page (E-5, web parity).
+  const offeringsQuery = useClassOfferings(venueId, {
+    from: today,
+    staffCollectiveId: isCollective ? formOwnerVenueId : null,
+  });
   const prefillGuestQuery = useGuestDetail(prefilledGuestId);
 
   const [step, setStep] = useState<StepKey>('class');
@@ -99,25 +111,41 @@ export function ClassBookingFlow({ onCreated }: ClassBookingFlowProps) {
   const classes = offeringsQuery.data?.classes ?? [];
   const instances = useMemo(() => offeringsQuery.data?.instances ?? [], [offeringsQuery.data]);
 
+  /** Classes whose every upcoming session is full: listed, marked "Full", not bookable (E-9). */
+  const fullClasses = useMemo(
+    () =>
+      groupsWithNoPlacesLeft(instances, (i) => i.class_type_id, (i) => i.remaining).map(
+        (g) => g.items[0]!,
+      ),
+    [instances],
+  );
+
   const selectedClassDates = useMemo(
     () => (selectedClass ? new Set(selectedClass.dates) : null),
     [selectedClass],
   );
+  /** Every session of the chosen class in range, full ones included (E-9). */
+  const allSessionsForClass = useMemo(
+    () => (selectedClass ? instances.filter((i) => i.class_type_id === selectedClass.class_type_id) : []),
+    [instances, selectedClass],
+  );
+  /** Dates whose every session is full: marked "Full" on the calendar, not bookable. */
+  const fullDates = useMemo(
+    () =>
+      new Set(datesWithNoPlacesLeft(allSessionsForClass, (i) => i.instance_date, (i) => i.remaining)),
+    [allSessionsForClass],
+  );
+  /** The chosen date's sessions, full ones included so they can be marked "Full". */
   const sessionsForDate = useMemo(() => {
-    if (!selectedClass || !selectedDate) return [];
-    return instances
-      .filter(
-        (i) =>
-          i.class_type_id === selectedClass.class_type_id &&
-          i.instance_date === selectedDate &&
-          i.remaining > 0,
-      )
+    if (!selectedDate) return [];
+    return allSessionsForClass
+      .filter((i) => i.instance_date === selectedDate)
       .sort((a, b) => a.start_time.localeCompare(b.start_time));
-  }, [instances, selectedClass, selectedDate]);
+  }, [allSessionsForClass, selectedDate]);
 
-  // When a date has exactly one session, treat it as chosen automatically.
+  // A date whose only session has places is treated as chosen automatically.
   const effectiveInstance =
-    selectedInstance ?? (sessionsForDate.length === 1 ? sessionsForDate[0] ?? null : null);
+    selectedInstance ?? sessionForDirectPick(sessionsForDate, (i) => i.remaining);
   const remaining = effectiveInstance?.remaining ?? 0;
   const maxSpots = Math.max(1, Math.min(remaining, MAX_SPOTS));
   const safeSpots = Math.min(Math.max(1, spots), maxSpots);
@@ -156,7 +184,7 @@ export function ClassBookingFlow({ onCreated }: ClassBookingFlowProps) {
             }
             onRetry={() => void offeringsQuery.refetch()}
           />
-        ) : classes.length === 0 ? (
+        ) : classes.length === 0 && fullClasses.length === 0 ? (
           <EmptyState
             title="No classes available"
             message="There are no bookable classes scheduled in the next 90 days."
@@ -188,6 +216,18 @@ export function ClassBookingFlow({ onCreated }: ClassBookingFlowProps) {
                 }}
               />
             ))}
+            {fullClasses.map((c) => (
+              <SelectableRow
+                key={`full-${c.class_type_id}`}
+                title={c.class_name}
+                accentColour={c.colour}
+                subtitle={c.instructor_name ? `with ${c.instructor_name}` : c.description}
+                meta={`Every upcoming session is full${c.venue_name ? ` · at ${c.venue_name}` : ''}`}
+                trailing="Full"
+                disabled
+                accessibilityLabel={`${c.class_name}, full`}
+              />
+            ))}
           </ScrollView>
         )}
       </View>
@@ -213,6 +253,9 @@ export function ClassBookingFlow({ onCreated }: ClassBookingFlowProps) {
             setSpots(1);
           }}
           availableDates={selectedClassDates}
+          unavailableDates={fullDates}
+          unavailableLabel="Full"
+          unavailableLegend="Full: every place on that date is taken."
           canContinue={!!selectedDate}
           onContinue={() => setStep('session')}
           timeZone={timeZone}
@@ -239,6 +282,11 @@ export function ClassBookingFlow({ onCreated }: ClassBookingFlowProps) {
               title={formatBookingTime(s.start_time)}
               subtitle={s.instructor_name ? `with ${s.instructor_name}` : null}
               meta={`${formatDurationMinutes(s.duration_minutes)} · ${remainingLabel(s.remaining)}`}
+              // A full session is listed so staff can see it, but cannot be picked (E-9).
+              disabled={s.remaining <= 0}
+              accessibilityLabel={
+                s.remaining <= 0 ? `${formatBookingTime(s.start_time)}, full` : undefined
+              }
               selected={effectiveInstance?.instance_id === s.instance_id}
               onPress={() => {
                 setSelectedInstance(s);
@@ -305,6 +353,9 @@ export function ClassBookingFlow({ onCreated }: ClassBookingFlowProps) {
     const first = guest.first_name.trim();
     const last = guest.last_name.trim();
     const comment = (guest.special_requests ?? '').trim();
+    // A collective's listed class books for the collective; this venue's own
+    // unlisted class books as its own (E-5, web `staffCreateOwnerVenueId`).
+    const createOwnerVenueId = staffCreateOwnerVenueId(ownerVenueId, inst);
 
     return (
       <View style={styles.container}>
@@ -346,7 +397,7 @@ export function ClassBookingFlow({ onCreated }: ClassBookingFlowProps) {
             source,
             ...(hasDeposit && requireDeposit && source !== 'walk-in' ? { require_deposit: true } : {}),
             ...(returningGuest ? { returning_guest: true } : {}),
-            ...(ownerVenueId ? { owner_venue_id: ownerVenueId } : {}),
+            ...(createOwnerVenueId ? { owner_venue_id: createOwnerVenueId } : {}),
           })}
           onCreated={(bookingId) => {
             track(ANALYTICS_EVENTS.createBookingCompleted, { mode: 'class' });

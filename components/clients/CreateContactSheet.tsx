@@ -5,10 +5,17 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
-import { ApiError } from '@/lib/api/client';
+import {
+  GUEST_CONTACT_MAX_LENGTH,
+  readGuestSaveErrors,
+  type GuestFieldErrors,
+} from '@/components/clients/GuestEditSheet';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useCreateGuest } from '@/lib/queries/useCreateGuest';
 import { spacing } from '@/theme/index';
+
+/** The fields this sheet has an input for, by their API key. */
+const CREATE_SHEET_FIELDS = ['first_name', 'last_name', 'email', 'phone'] as const;
 
 type CreateContactSheetProps = {
   visible: boolean;
@@ -35,6 +42,20 @@ export function CreateContactSheet({
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<GuestFieldErrors>({});
+
+  /** An edit clears that field's message from the last rejected save. */
+  function edited(key: string, setter: (value: string) => void) {
+    return (value: string) => {
+      setter(value);
+      setFieldErrors((prev) => {
+        if (!prev[key]) return prev;
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    };
+  }
 
   const hasIdentity =
     firstName.trim() !== '' ||
@@ -50,6 +71,7 @@ export function CreateContactSheet({
     setEmail('');
     setPhone('');
     setError(null);
+    setFieldErrors({});
   }
 
   function handleClose() {
@@ -60,6 +82,7 @@ export function CreateContactSheet({
   async function handleSave() {
     if (!hasIdentity || mutation.isPending) return;
     setError(null);
+    setFieldErrors({});
     try {
       const result = await mutation.mutateAsync({
         first_name: firstName.trim() || undefined,
@@ -72,7 +95,11 @@ export function CreateContactSheet({
       onCreated(result.guest.id);
     } catch (e) {
       hapticWarning();
-      setError(e instanceof ApiError ? e.message : `Could not create ${clientNoun}.`);
+      // Each field's message sits under its input (web QA FD-10); the foot of the
+      // form keeps only errors no field can show.
+      const saveErrors = readGuestSaveErrors(e, `Could not create ${clientNoun}.`, CREATE_SHEET_FIELDS);
+      setFieldErrors(saveErrors.fields);
+      setError(saveErrors.form);
     }
   }
 
@@ -90,18 +117,20 @@ export function CreateContactSheet({
             <Input
               label="First name"
               value={firstName}
-              onChangeText={setFirstName}
+              onChangeText={edited('first_name', setFirstName)}
               autoCapitalize="words"
-              maxLength={100}
+              maxLength={GUEST_CONTACT_MAX_LENGTH.first_name}
+              error={fieldErrors.first_name}
             />
           </View>
           <View style={styles.nameField}>
             <Input
               label="Last name"
               value={lastName}
-              onChangeText={setLastName}
+              onChangeText={edited('last_name', setLastName)}
               autoCapitalize="words"
-              maxLength={100}
+              maxLength={GUEST_CONTACT_MAX_LENGTH.last_name}
+              error={fieldErrors.last_name}
             />
           </View>
         </View>
@@ -109,20 +138,22 @@ export function CreateContactSheet({
         <Input
           label="Email"
           value={email}
-          onChangeText={setEmail}
+          onChangeText={edited('email', setEmail)}
           keyboardType="email-address"
           autoCapitalize="none"
           autoCorrect={false}
-          maxLength={255}
+          maxLength={GUEST_CONTACT_MAX_LENGTH.email}
           placeholder="name@example.com"
+          error={fieldErrors.email}
         />
         <Input
           label="Phone"
           value={phone}
-          onChangeText={setPhone}
+          onChangeText={edited('phone', setPhone)}
           keyboardType="phone-pad"
-          maxLength={24}
+          maxLength={GUEST_CONTACT_MAX_LENGTH.phone}
           placeholder="07911 123456"
+          error={fieldErrors.phone}
         />
 
         {hasIdentity && !hasReachableDetail ? (

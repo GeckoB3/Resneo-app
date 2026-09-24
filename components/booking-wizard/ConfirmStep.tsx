@@ -103,6 +103,8 @@ interface BookingConfirmation {
   availability_override_warnings?: string[];
   service_name: string;
   guest_name: string;
+  /** The guest's email, else phone: where the confirmation goes once they pay. */
+  guest_contact?: string;
   date_label: string;
   time_label: string;
   practitioner_name: string;
@@ -153,6 +155,10 @@ function BookingConfirmationView({
   onBookAnother?: () => void;
 }) {
   const { colors } = useTheme();
+  // A deposit or card link went to the guest, so the booking stays Pending
+  // until they use it. Saying "confirmed" here was not true (web QA B-9).
+  const awaitingPayment = Boolean(confirmation.payment_url);
+  const cardHold = Boolean(confirmation.card_hold_requested);
 
   return (
     <ScrollView
@@ -160,9 +166,21 @@ function BookingConfirmationView({
       contentContainerStyle={styles.confirmationContainer}
       showsVerticalScrollIndicator={false}>
       <View style={styles.confirmationHeader}>
-        <Text variant="heading">Booking confirmed</Text>
+        <Text variant="heading">
+          {awaitingPayment
+            ? cardHold
+              ? 'Waiting for card details'
+              : 'Waiting for the deposit'
+            : 'Booking confirmed'}
+        </Text>
         <Text variant="bodyMedium" tone="muted">
-          The appointment has been created successfully.
+          {awaitingPayment
+            ? `The booking stays pending until ${cardHold ? 'the card is added' : 'the deposit is paid'}.${
+                confirmation.guest_contact
+                  ? ` Then a confirmation will be sent to ${confirmation.guest_contact}.`
+                  : ''
+              }`
+            : 'The appointment has been created successfully.'}
         </Text>
       </View>
 
@@ -592,6 +610,7 @@ export function ConfirmStep({
           availability_override_warnings: response.availability_override_warnings,
           service_name: `${service.serviceName}${variant ? ` · ${variant.name}` : ''}`,
           guest_name: fullName,
+          guest_contact: guest.email.trim() || guest.phone.trim() || undefined,
           date_label: formatSummaryDate(date),
           time_label: formatSummaryTime(slot.start_time),
           practitioner_name: practitionerName ?? '',

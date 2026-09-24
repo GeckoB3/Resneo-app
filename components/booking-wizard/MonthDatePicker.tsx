@@ -8,7 +8,7 @@ import { Text } from '@/components/ui/Text';
 import { getDateTimeFormat } from '@/lib/dates/formatters';
 import { addDaysToDateStr, addMonthsToDateStr, formatMonthLabel } from '@/lib/dates/venue-dates';
 import { hapticSelect } from '@/lib/haptics';
-import { radius, spacing } from '@/theme/index';
+import { fonts, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
 const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
@@ -66,6 +66,17 @@ type MonthDatePickerProps = {
    * confident-looking answer the app has no basis for.
    */
   availableDates: Set<string> | null;
+  /**
+   * Dates that have sessions but no places left on any of them (E-9, web
+   * `ClassOfferingsCalendar`). Each shows {@link unavailableLabel} under the day
+   * and cannot be chosen, rather than looking like a day with nothing on. A date
+   * in `availableDates` always wins. Omit it and the grid is unchanged.
+   */
+  unavailableDates?: ReadonlySet<string> | null;
+  /** Short word shown on those dates (default "Full"; events use "Sold out"). */
+  unavailableLabel?: string;
+  /** Legend line explaining the label, shown when such a date is in the displayed month. */
+  unavailableLegend?: string;
   isLoading?: boolean;
   /**
    * The month lookup failed. Renders a retry in place of the grid rather than a
@@ -115,6 +126,9 @@ export function MonthDatePicker({
   selectedDate,
   onSelectDate,
   availableDates,
+  unavailableDates = null,
+  unavailableLabel = 'Full',
+  unavailableLegend,
   isLoading = false,
   isError = false,
   errorMessage,
@@ -146,6 +160,14 @@ export function MonthDatePicker({
       (cell) => cell.inMonth && cell.iso >= today && availableDates.has(cell.iso),
     );
   const showStartNow = source === 'walk-in' && !!onStartNow;
+  // A date shown as full/sold out: has sessions, none with places, and still to come.
+  const isUnavailable = (cell: Cell) =>
+    !!unavailableDates &&
+    unavailableDates.has(cell.iso) &&
+    cell.inMonth &&
+    cell.iso >= today &&
+    !availableDates?.has(cell.iso);
+  const monthHasUnavailable = !!unavailableDates && cells.some(isUnavailable);
 
   return (
     <ContentColumn fill max={MONTH_PICKER_MAX_WIDTH} style={styles.container} testID="month-picker-column">
@@ -219,14 +241,21 @@ export function MonthDatePicker({
           const isPast = cell.iso < today;
           const available =
             !!availableDates && availableDates.has(cell.iso) && cell.inMonth && !isPast;
-          const disabled = !cell.inMonth || isPast || (availableDates !== null && !available);
+          const unavailable = isUnavailable(cell);
+          const disabled =
+            !cell.inMonth || isPast || unavailable || (availableDates !== null && !available);
           const isSelected = cell.iso === selectedDate;
           const isToday = cell.iso === today;
+          const stateLabel = available
+            ? ', available'
+            : unavailable
+              ? `, ${unavailableLabel.toLowerCase()}`
+              : '';
           return (
             <Pressable
               key={cell.iso}
               accessibilityRole="button"
-              accessibilityLabel={`${cell.iso}${available ? ', available' : ''}`}
+              accessibilityLabel={`${cell.iso}${stateLabel}`}
               accessibilityState={{ disabled, selected: isSelected }}
               disabled={disabled}
               onPress={() => {
@@ -241,6 +270,9 @@ export function MonthDatePicker({
                   styles.cell,
                   available && !isSelected
                     ? { backgroundColor: colors.successSurface }
+                    : null,
+                  unavailable && !isSelected
+                    ? { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 }
                     : null,
                   isSelected ? { backgroundColor: colors.brand } : null,
                   isToday && !isSelected
@@ -264,6 +296,19 @@ export function MonthDatePicker({
                   ]}>
                   {cell.day}
                 </Text>
+                {unavailable ? (
+                  <Text
+                    variant="caption"
+                    color={isSelected ? colors.onBrand : colors.textMuted}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    // The cell is a seventh of the width; the label must not wrap or
+                    // clip, and the state is in the cell's accessibility label too.
+                    maxFontSizeMultiplier={1}
+                    style={styles.unavailableLabel}>
+                    {unavailableLabel}
+                  </Text>
+                ) : null}
               </View>
             </Pressable>
           );
@@ -312,6 +357,11 @@ export function MonthDatePicker({
             {availabilityHint}
           </Text>
         )}
+        {unavailableLegend && monthHasUnavailable ? (
+          <Text variant="caption" tone="muted" style={styles.hint}>
+            {unavailableLegend}
+          </Text>
+        ) : null}
       </ScrollView>
       )}
 
@@ -399,6 +449,12 @@ const styles = StyleSheet.create({
   },
   availableDay: {
     fontWeight: '600',
+  },
+  unavailableLabel: {
+    fontFamily: fonts.semibold,
+    fontSize: 9,
+    lineHeight: 11,
+    paddingHorizontal: 1,
   },
   hint: {
     textAlign: 'center',

@@ -1,6 +1,8 @@
+import * as Clipboard from 'expo-clipboard';
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
+import { expiredLinkHint } from '@/components/bookings/ComplianceCard';
 import { ComplianceRecordSheet } from '@/components/compliance/ComplianceRecordSheet';
 import { auditEventLabel, RESULT_LABELS } from '@/components/compliance/complianceTypeLabels';
 import { Badge, type BadgeTone } from '@/components/ui/Badge';
@@ -8,6 +10,7 @@ import { Button } from '@/components/ui/Button';
 import { CollapsibleCard } from '@/components/ui/CollapsibleCard';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import { formLinkResendOutcome } from '@/lib/compliance/resend-outcome';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { minTouchTarget, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -123,16 +126,27 @@ export function ComplianceSection({ guestId }: ComplianceSectionProps) {
   const auditEvents = guestQuery.data?.audit_events ?? [];
   // Pending (not-yet-completed) form links the guest still needs to fill.
   const pendingLinks = (guestQuery.data?.form_links ?? []).filter((l) => l.status === 'pending');
+  // A link that ran out of time is listed as 'expired' (web QA FD-8): say so, and
+  // resending it sends the client a fresh one.
+  const expiredLinks = (guestQuery.data?.form_links ?? []).filter((l) => l.status === 'expired');
 
   function resend(id: string, sendVia: 'email' | 'sms') {
     setBusyLinkId(id);
     resendLink.mutate(
       { id, send_via: sendVia },
       {
-        onSuccess: () => {
+        onSuccess: (result) => {
           setBusyLinkId(null);
-          hapticSuccess();
-          toast.success('Form link resent.');
+          // 200 even when nothing went out (no email on file): say so, and copy the link.
+          const outcome = formLinkResendOutcome(result, sendVia);
+          if (outcome.copyUrl) void Clipboard.setStringAsync(outcome.copyUrl);
+          if (outcome.sent) {
+            hapticSuccess();
+            toast.success(outcome.message);
+          } else {
+            hapticWarning();
+            toast.error(outcome.message);
+          }
           void guestQuery.refetch();
         },
         onError: (e) => {
@@ -228,6 +242,48 @@ export function ComplianceSection({ guestId }: ComplianceSectionProps) {
                         disabled={busyLinkId !== null}
                         customColors={{ background: 'transparent', text: colors.danger }}
                         onPress={() => revoke(link.id)}
+                      />
+                    </View>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+
+            {expiredLinks.length > 0 ? (
+              <View style={styles.linksBlock}>
+                <Text variant="caption" tone="muted">
+                  Expired links
+                </Text>
+                {expiredLinks.map((link) => (
+                  <View
+                    key={link.id}
+                    style={[
+                      styles.linkRow,
+                      { borderColor: colors.border, backgroundColor: colors.surface },
+                    ]}>
+                    <View style={styles.linkText}>
+                      <Text variant="bodySmall" numberOfLines={1}>
+                        {complianceJoinedTypeName(link.compliance_types)}
+                      </Text>
+                      <Text variant="caption" tone="muted">
+                        {expiredLinkHint(link.sent_at, 'Email or SMS')}
+                      </Text>
+                    </View>
+                    <View style={styles.linkActions}>
+                      <Button
+                        label="Email"
+                        variant="ghost"
+                        size="sm"
+                        disabled={busyLinkId !== null}
+                        loading={busyLinkId === link.id && resendLink.isPending}
+                        onPress={() => resend(link.id, 'email')}
+                      />
+                      <Button
+                        label="SMS"
+                        variant="ghost"
+                        size="sm"
+                        disabled={busyLinkId !== null}
+                        onPress={() => resend(link.id, 'sms')}
                       />
                     </View>
                   </View>

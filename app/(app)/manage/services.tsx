@@ -69,6 +69,7 @@ import { Screen } from '@/components/ui/Screen';
 import { Sheet } from '@/components/ui/Sheet';
 import { ListSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
+import { visibleAddonLibrary } from '@/lib/addons/visible-addon-library';
 import { ApiError, isStaleResource } from '@/lib/api/client';
 import { appointmentCalendarsOf } from '@/lib/calendar/schedule-calendars';
 import {
@@ -491,8 +492,15 @@ function AddonsTab({
   onCreate: () => void;
 }) {
   const { colors } = useTheme();
-  const groups = addonGroupsQuery.data?.groups ?? [];
-  const addonsByGroup = addonGroupsQuery.data?.addons_by_group ?? {};
+  // The query always holds every group and option (see `useAddonGroups` below):
+  // the editor saves a group's options as the full set, so one it was never
+  // shown would be removed. The switch only filters what this list shows.
+  const allAddonsByGroup = addonGroupsQuery.data?.addons_by_group ?? {};
+  const { groups, addonsByGroup } = visibleAddonLibrary(
+    addonGroupsQuery.data?.groups ?? [],
+    allAddonsByGroup,
+    includeInactive,
+  );
   const serviceLinks = addonGroupsQuery.data?.service_links ?? [];
 
   /** Services linked to a group, named and sorted (web parity: usedByForGroup). */
@@ -589,7 +597,8 @@ function AddonsTab({
                       onEdit({
                         mode: 'edit',
                         group,
-                        addons: addonsByGroup[group.id] ?? [],
+                        // Every option, inactive ones included, whatever the list shows.
+                        addons: allAddonsByGroup[group.id] ?? [],
                       })
                     }
                   />
@@ -704,8 +713,12 @@ export default function ServicesScreen() {
   // FlatList ref so a "Used by" jump (or the deep link) can scroll to the row.
   const listRef = useRef<FlatList<ManagedService>>(null);
 
-  // Always load addon groups (needed for both the link sheet and the add-ons tab).
-  const addonGroupsQuery = useAddonGroups(true, includeInactiveAddons);
+  // Always load addon groups (needed for both the link sheet and the add-ons tab),
+  // and always with the inactive ones: the group editor saves a group's options as
+  // the full set, and since web QA FC-6 an option left out of a save is deleted
+  // (or archived when bookings used it). Loading only the active ones meant any
+  // save quietly removed the inactive options. The tab's switch filters its list.
+  const addonGroupsQuery = useAddonGroups(true, true);
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
@@ -1390,15 +1403,17 @@ export default function ServicesScreen() {
       duration_minutes: durationMinutes,
       buffer_minutes: bufferMinutes,
       /**
-       * OMITTED when there is no price, never null. `price_pence` is the one
-       * field in this payload the API does not accept as null
-       * (`z.number().int().min(0).optional()` — unlike `deposit_pence`, which is
-       * `.nullable()`), so sending null failed the schema and came back as a
-       * bare "Invalid request" for EVERY save of a service with a blank price,
-       * whatever the user had actually edited. Web parity: the dashboard's
-       * form-to-payload sends `?? undefined` here for the same reason.
+       * A blank price box means no price. Since web QA FC-3 (2026-09-23) the
+       * PATCH takes null to clear one, and before that a blank box silently kept
+       * the old price. Null is sent only when an edit empties a price the service
+       * had: an older server refuses null ("Invalid request"), so a service that
+       * was already unpriced keeps omitting it and its saves keep working.
        */
-      price_pence: pricePence ?? undefined,
+      price_pence:
+        pricePence ??
+        (editTarget && services.find((svc) => svc.id === editTarget.id)?.price_pence != null
+          ? null
+          : undefined),
       deposit_pence: depositToSend,
       payment_requirement: paymentReq,
       colour,
@@ -1492,6 +1507,8 @@ export default function ServicesScreen() {
         const created = (await create.mutateAsync({
           ...shared,
           ...adminExtras,
+          // Null only ever clears an existing price, which a new service has not got.
+          price_pence: shared.price_pence ?? undefined,
           description: shared.description ?? undefined,
           deposit_pence: depositToSend,
           practitioner_ids: practitionerIds,
@@ -2155,7 +2172,11 @@ export default function ServicesScreen() {
                   <AddonLinksEditor
                     links={addonLinks}
                     onChange={setAddonLinks}
-                    groups={addonGroupsQuery.data?.groups ?? []}
+                    // Archived groups are not offered for linking; ones already
+                    // linked stay listed so they can be seen and unlinked.
+                    groups={(addonGroupsQuery.data?.groups ?? []).filter(
+                      (g) => g.is_active || addonLinks.some((link) => link.id === g.id),
+                    )}
                     addonsByGroup={addonGroupsQuery.data?.addons_by_group ?? {}}
                     isLoading={addonGroupsQuery.isLoading}
                     error={

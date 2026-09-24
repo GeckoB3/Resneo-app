@@ -5,14 +5,21 @@ import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { CollapsibleCard } from '@/components/ui/CollapsibleCard';
+import { ConfirmSheet } from '@/components/ui/ConfirmSheet';
 import { SearchBar } from '@/components/ui/SearchBar';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
-import { useAddToHousehold, useGuestHousehold } from '@/lib/queries/useGuestHousehold';
+import {
+  useAddToHousehold,
+  useGuestHousehold,
+  useUnlinkFromHousehold,
+  type HouseholdMember,
+} from '@/lib/queries/useGuestHousehold';
 import { useGuests } from '@/lib/queries/useGuests';
 import { useToast } from '@/providers/ToastProvider';
+import { useVenueContext } from '@/providers/VenueProvider';
 import { minTouchTarget, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { GuestListItem } from '@/types/guest-list';
@@ -31,10 +38,37 @@ function memberName(g: GuestListItem): string {
 }
 
 /**
+ * The confirm copy for unlinking a member, as the web words it (QA FD-9). Taking
+ * this contact itself out reads as leaving the household.
+ */
+export function unlinkConfirmCopy(
+  member: HouseholdMember,
+  guestId: string,
+  clientLower: string,
+): { title: string; message: string } {
+  if (member.guest_id === guestId) {
+    return {
+      title: 'Leave the household?',
+      message: `This ${clientLower} will no longer be linked to anyone in the household. Their bookings and details stay as they are.`,
+    };
+  }
+  const name = member.name?.trim() || `this ${clientLower}`;
+  return {
+    title: `Unlink ${name}?`,
+    message: `${name} will no longer be linked to this household. Their bookings and details stay as they are.`,
+  };
+}
+
+/**
  * Card showing all households the guest belongs to, with a button to link
  * another guest into a shared household. Members are picked by NAME via the same
  * contact-search pattern the merge wizard uses — the old flow asked the user to
  * paste a raw UUID, which nobody has to hand.
+ *
+ * Web QA FD-9 (2026-09-23): every member row has Unlink, after a confirm worded as
+ * the web's; this contact's own row is marked "(this client)" and its Unlink takes
+ * the contact out of the household. People already in the household are left out
+ * of the search.
  */
 export function HouseholdSection({
   guestId,
@@ -46,12 +80,16 @@ export function HouseholdSection({
   const toast = useToast();
   const householdQuery = useGuestHousehold(guestId);
   const linkMutation = useAddToHousehold(guestId);
+  const unlinkMutation = useUnlinkFromHousehold(guestId);
+  const { terminology } = useVenueContext();
+  const clientLower = terminology.client.toLowerCase();
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [unlinkTarget, setUnlinkTarget] = useState<HouseholdMember | null>(null);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selected, setSelected] = useState<GuestListItem | null>(null);
 
-  const households = householdQuery.data?.households ?? [];
+  const households = useMemo(() => householdQuery.data?.households ?? [], [householdQuery.data]);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search.trim()), 320);
@@ -66,9 +104,18 @@ export function HouseholdSection({
     limit: 25,
   });
 
-  const results: GuestListItem[] = useMemo(
+  // People already in one of this contact's households are not offered again (QA FD-9).
+  const linkedIds = useMemo(
+    () => new Set(households.flatMap((h) => h.members.map((m) => m.guest_id))),
+    [households],
+  );
+  const matches: GuestListItem[] = useMemo(
     () => (searchQuery.data?.guests ?? []).filter((g) => g.id !== guestId),
     [searchQuery.data, guestId],
+  );
+  const results: GuestListItem[] = useMemo(
+    () => matches.filter((g) => !linkedIds.has(g.id)),
+    [matches, linkedIds],
   );
 
   function resetPicker() {
@@ -95,6 +142,24 @@ export function HouseholdSection({
     }
   }
 
+  async function handleUnlink() {
+    const member = unlinkTarget;
+    if (!member) return;
+    const isSelf = member.guest_id === guestId;
+    const name = member.name?.trim() || `this ${clientLower}`;
+    try {
+      await unlinkMutation.mutateAsync(member.guest_id);
+      hapticSuccess();
+      toast.success(isSelf ? 'Removed from the household.' : `${name} is no longer in the household.`);
+      setUnlinkTarget(null);
+    } catch (e) {
+      hapticWarning();
+      toast.error(e instanceof ApiError ? e.message : 'Could not unlink them. Please try again.');
+    }
+  }
+
+  const unlinkCopy = unlinkTarget ? unlinkConfirmCopy(unlinkTarget, guestId, clientLower) : null;
+
   const memberCount = households.reduce((sum, h) => sum + h.members.length, 0);
   const summary = householdQuery.isLoading
     ? null
@@ -119,23 +184,49 @@ export function HouseholdSection({
               {h.name}
             </Text>
           ) : null}
-          {h.members.map((m) => (
-            <Pressable
-              key={m.guest_id}
-              style={styles.memberRow}
-              onPress={() => onNavigateToGuest?.(m.guest_id)}
-              accessibilityRole="button">
-              <Avatar name={m.name ?? 'Guest'} size={32} />
-              <View style={styles.memberText}>
-                <Text variant="bodySmall">{m.name ?? 'Unnamed'}</Text>
-                {m.is_primary ? (
-                  <Text variant="caption" tone="brand">
-                    Primary
-                  </Text>
-                ) : null}
+          {h.members.map((m) => {
+            const isSelf = m.guest_id === guestId;
+            return (
+              <View key={m.guest_id} style={styles.memberRow}>
+                <Pressable
+                  style={styles.memberMain}
+                  // This contact's own row has nowhere else to go.
+                  disabled={isSelf}
+                  onPress={() => onNavigateToGuest?.(m.guest_id)}
+                  accessibilityRole="button">
+                  <Avatar name={m.name ?? 'Guest'} size={32} />
+                  <View style={styles.memberText}>
+                    <Text variant="bodySmall" numberOfLines={1}>
+                      {m.name ?? 'Unnamed'}
+                      {isSelf ? (
+                        <Text variant="bodySmall" tone="muted">
+                          {` (this ${clientLower})`}
+                        </Text>
+                      ) : null}
+                    </Text>
+                    {m.is_primary ? (
+                      <Text variant="caption" tone="brand">
+                        Primary
+                      </Text>
+                    ) : null}
+                  </View>
+                </Pressable>
+                <Button
+                  label="Unlink"
+                  variant="ghost"
+                  size="sm"
+                  disabled={unlinkMutation.isPending}
+                  customColors={{ background: 'transparent', text: colors.danger }}
+                  accessibilityLabel={
+                    isSelf
+                      ? `Take this ${clientLower} out of the household`
+                      : `Unlink ${m.name?.trim() || `this ${clientLower}`}`
+                  }
+                  onPress={() => setUnlinkTarget(m)}
+                />
               </View>
-            </Pressable>
-          ))}
+            );
+          })}
         </View>
       ))
     );
@@ -199,9 +290,13 @@ export function HouseholdSection({
               <Text variant="bodySmall" tone="muted" style={styles.emptyHint}>
                 Type at least 2 characters.
               </Text>
-            ) : results.length === 0 ? (
+            ) : matches.length === 0 ? (
               <Text variant="bodySmall" tone="muted" style={styles.emptyHint}>
                 No matches found.
+              </Text>
+            ) : results.length === 0 ? (
+              <Text variant="bodySmall" tone="muted" style={styles.emptyHint}>
+                Everyone who matches is already in this household.
               </Text>
             ) : (
               results.map((item) => {
@@ -256,6 +351,19 @@ export function HouseholdSection({
           </View>
         </View>
       </Sheet>
+
+      <ConfirmSheet
+        visible={unlinkTarget !== null}
+        title={unlinkCopy?.title ?? ''}
+        message={unlinkCopy?.message}
+        confirmLabel="Unlink"
+        destructive
+        loading={unlinkMutation.isPending}
+        onConfirm={() => void handleUnlink()}
+        onClose={() => {
+          if (!unlinkMutation.isPending) setUnlinkTarget(null);
+        }}
+      />
     </>
   );
 }
@@ -288,10 +396,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
+  },
+  memberMain: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
     paddingVertical: spacing.xs,
   },
   memberText: {
     flex: 1,
+    minWidth: 0,
     gap: 1,
   },
   sheetBody: {

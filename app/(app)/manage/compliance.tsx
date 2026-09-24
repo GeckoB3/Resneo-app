@@ -15,6 +15,7 @@ import { Sheet } from '@/components/ui/Sheet';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import { formLinkResendOutcome } from '@/lib/compliance/resend-outcome';
 import { calendarDateInTimeZone } from '@/lib/dates/venue-dates';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useScreenCaptureProtection } from '@/lib/security/useScreenCaptureProtection';
@@ -304,10 +305,19 @@ export default function ComplianceScreen() {
     resend.mutate(
       { id, send_via },
       {
-        onSuccess: () => {
-          hapticSuccess();
+        onSuccess: (result) => {
           setPendingResendId(null);
-          toast.success(send_via === 'email' ? 'Form re-emailed.' : 'Form link re-sent by SMS.');
+          // An expired link is replaced by a fresh one (web QA FD-8), so say so. A
+          // 200 with nothing sent (no email on file) says so and copies the link.
+          const outcome = formLinkResendOutcome(result, send_via);
+          if (outcome.copyUrl) void Clipboard.setStringAsync(outcome.copyUrl);
+          if (outcome.sent) {
+            hapticSuccess();
+            toast.success(outcome.message);
+          } else {
+            hapticWarning();
+            toast.error(outcome.message);
+          }
         },
         onError: (err) => {
           hapticWarning();

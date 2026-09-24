@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Card } from '@/components/ui/Card';
 import { CollapsibleCard } from '@/components/ui/CollapsibleCard';
 import { Text } from '@/components/ui/Text';
+import { formatCommunicationLogLabel } from '@/lib/communications/display-labels';
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { CommunicationRow } from '@/types/guest-detail';
@@ -21,6 +22,21 @@ function formatCommDate(iso: string): string {
   } catch {
     return iso;
   }
+}
+
+/** "SMS" / "Email", as the web message log names the channel. */
+function channelLabel(channel: string): string {
+  if (channel === 'sms') return 'SMS';
+  if (channel === 'email') return 'Email';
+  return channel.toUpperCase();
+}
+
+/**
+ * A row's key. Rows merge two tables (web QA FD-4), whose ids are unique only
+ * within their own table, so the source is part of the key when it is sent.
+ */
+function commKey(comm: CommunicationRow): string {
+  return comm.source ? `${comm.source}-${comm.id}` : comm.id;
 }
 
 function statusTone(status: string): 'success' | 'neutral' | 'danger' | 'warning' {
@@ -60,7 +76,7 @@ export function CommunicationsSection({
     ) : (
       communications.map((comm, index) => (
         <View
-          key={comm.id}
+          key={commKey(comm)}
           style={[
             collapsible ? styles.rowFlush : styles.row,
             index < communications.length - 1
@@ -69,11 +85,21 @@ export function CommunicationsSection({
           ]}>
           <View style={styles.rowMain}>
             <Text variant="bodySmall" numberOfLines={1}>
-              {comm.message_type.replace(/_/g, ' ')}
+              {formatCommunicationLogLabel(comm.message_type)}
             </Text>
             <Text variant="caption" tone="muted">
-              {comm.channel.toUpperCase()} · {formatCommDate(comm.created_at)}
+              {channelLabel(comm.channel)} · {formatCommDate(comm.created_at)}
             </Text>
+            {comm.recipient ? (
+              <Text variant="caption" tone="muted" numberOfLines={1}>
+                To {comm.recipient}
+              </Text>
+            ) : null}
+            {comm.error_message && comm.status.toLowerCase() === 'failed' ? (
+              <Text variant="caption" tone="danger">
+                {comm.error_message}
+              </Text>
+            ) : null}
           </View>
           <Badge label={comm.status} tone={statusTone(comm.status)} />
         </View>

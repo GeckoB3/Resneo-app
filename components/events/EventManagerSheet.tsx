@@ -267,7 +267,7 @@ export function EventManagerSheet({ visible, onClose }: EventManagerSheetProps) 
                           {shortTime(event.end_time)}
                         </Text>
                       </View>
-                      {event.is_active === false ? <Badge label="Inactive" tone="neutral" /> : null}
+                      {event.is_active === false ? <Badge label="Hidden" tone="neutral" /> : null}
                       {(() => {
                         const on = listedOn(ownListings.data, 'event', event.parent_event_id ?? event.id);
                         return on ? <Badge label={`Listed on ${on.collective_name}`} tone="accent" /> : null;

@@ -52,6 +52,10 @@ jest.mock('@/lib/queries/useBookingFormVenue', () => ({
   useBookingFormVenue: () => mockForm,
 }));
 
+jest.mock('@/providers/VenueProvider', () => ({
+  useVenueContext: () => ({ venue: { name: 'Own venue', booking_model: 'practitioner_appointment' } }),
+}));
+
 jest.mock('@/providers/LinkedVenueProvider', () => {
   const React = require('react');
   return {

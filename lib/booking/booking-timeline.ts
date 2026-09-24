@@ -81,7 +81,11 @@ export function shouldShowBookingTimelineEvent(event: BookingTimelineEventRow): 
   const payload = payloadRecord(event.payload);
   switch (event.event_type) {
     case 'booking_status_changed':
-      return payload?.new_status === 'Confirmed';
+      // Every change, not only confirmations (web QA B-5). The database trigger records each one as
+      // { old_status, new_status }; the staff route then writes its own audit copy as { from, to },
+      // which is skipped so a change shows once.
+      return typeof payload?.new_status === 'string';
+    case 'client_arrived_changed':
     case 'booking_created':
     case 'booking_modified':
     case 'auto_cancelled':
@@ -111,6 +115,29 @@ const CARD_HOLD_RELEASE_REASON_LABELS: Record<string, string> = {
   admin: 'waived by staff',
 };
 
+/** A status change other than a confirmation, in the words staff use for the buttons. */
+function statusChangeTitle(oldStatus: string | null, newStatus: string): { title: string; detail?: string } {
+  const from = oldStatus ? `From ${oldStatus.replace(/_/g, ' ')}` : undefined;
+  switch (newStatus) {
+    case 'Cancelled':
+      return { title: 'Booking cancelled', detail: from };
+    case 'No-Show':
+      return { title: 'Marked as a no-show' };
+    case 'Seated':
+      return oldStatus === 'Completed' ? { title: 'Completion undone' } : { title: 'Started' };
+    case 'Completed':
+      return { title: 'Completed' };
+    case 'Booked':
+      if (oldStatus === 'Cancelled') return { title: 'Booking reinstated' };
+      if (oldStatus === 'No-Show') return { title: 'No-show undone' };
+      if (oldStatus === 'Confirmed') return { title: 'Confirmation undone' };
+      if (oldStatus === 'Seated') return { title: 'Start undone' };
+      return { title: 'Status changed to Booked', detail: from };
+    default:
+      return { title: `Status changed to ${newStatus.replace(/_/g, ' ')}`, detail: from };
+  }
+}
+
 export function formatBookingTimelineEvent(event: BookingTimelineEventRow): {
   title: string;
   detail?: string;
@@ -127,9 +154,16 @@ export function formatBookingTimelineEvent(event: BookingTimelineEventRow): {
       if (confirmedBy === 'staff') return { title: 'Confirmed by staff' };
       if (confirmedBy === 'both') return { title: 'Confirmed by guest and staff' };
       const oldStatus = typeof payload?.old_status === 'string' ? payload.old_status : null;
+      const newStatus = typeof payload?.new_status === 'string' ? payload.new_status : null;
+      if (newStatus && newStatus !== 'Confirmed') {
+        return statusChangeTitle(oldStatus, newStatus);
+      }
       const detail = oldStatus && oldStatus !== 'Confirmed' ? `From ${oldStatus.replace(/_/g, ' ')}` : undefined;
       return { title: 'Booking confirmed', detail };
     }
+
+    case 'client_arrived_changed':
+      return { title: payload?.arrived === false ? 'Arrival undone' : 'Client arrived' };
 
     case 'booking_modified': {
       const actor =

@@ -186,3 +186,72 @@ describe('MonthDatePicker on a wide window', () => {
     expect(StyleSheet.flatten(column.props.style).maxWidth).toBeUndefined();
   });
 });
+
+/**
+ * E-9 (web 2026-09-23): a date with sessions but no places left shows a short
+ * label ("Full", "Sold out") and cannot be chosen, rather than looking like a
+ * day with nothing on. Callers that pass nothing see no change.
+ */
+describe('MonthDatePicker: dates with no places left', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  const props = {
+    ...baseProps,
+    selectedDate: null,
+    availableDates: new Set(['2026-06-20']),
+  };
+
+  it('labels a full date and refuses a tap on it', async () => {
+    await render(
+      <MonthDatePicker
+        {...props}
+        unavailableDates={new Set(['2026-06-22'])}
+        unavailableLegend="Full: every place on that date is taken."
+      />,
+    );
+
+    const full = screen.getByLabelText('2026-06-22, full');
+    expect(full.props.accessibilityState).toMatchObject({ disabled: true });
+    expect(screen.getByText('Full')).toBeTruthy();
+    expect(screen.getByText('Full: every place on that date is taken.')).toBeTruthy();
+
+    await press(() => screen.getByLabelText('2026-06-22, full'));
+    expect(baseProps.onSelectDate).not.toHaveBeenCalled();
+
+    await press(() => screen.getByLabelText('2026-06-20, available'));
+    expect(baseProps.onSelectDate).toHaveBeenCalledWith('2026-06-20');
+  });
+
+  it('uses the given label, and leaves past dates and open dates alone', async () => {
+    await render(
+      <MonthDatePicker
+        {...props}
+        unavailableDates={new Set(['2026-06-10', '2026-06-20', '2026-06-25'])}
+        unavailableLabel="Sold out"
+      />,
+    );
+
+    expect(screen.getByLabelText('2026-06-25, sold out')).toBeTruthy();
+    // An open date always wins; a past date is just past.
+    expect(screen.getByLabelText('2026-06-20, available')).toBeTruthy();
+    expect(screen.getByLabelText('2026-06-10')).toBeTruthy();
+    expect(screen.getAllByText('Sold out')).toHaveLength(1);
+  });
+
+  it('shows no legend when the month has no such date, and nothing new when none are passed', async () => {
+    await render(
+      <MonthDatePicker
+        {...props}
+        unavailableDates={new Set(['2026-07-02'])}
+        unavailableLegend="Full: every place on that date is taken."
+      />,
+    );
+    expect(screen.queryByText('Full: every place on that date is taken.')).toBeNull();
+
+    await render(<MonthDatePicker {...props} />);
+    expect(screen.queryByText('Full')).toBeNull();
+    expect(screen.getByLabelText('2026-06-22').props.accessibilityState).toMatchObject({ disabled: true });
+  });
+});

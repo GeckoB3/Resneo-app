@@ -17,6 +17,7 @@ import { ANALYTICS_EVENTS, track } from '@/lib/analytics';
 import { markCrossVenueRebookCreated } from '@/lib/calendar/cross-venue-rebook';
 import { useBookingFormVenue } from '@/lib/queries/useBookingFormVenue';
 import { LinkedVenueContext, useLinkedVenueContext } from '@/providers/LinkedVenueProvider';
+import { useVenueContext } from '@/providers/VenueProvider';
 import { spacing } from '@/theme/index';
 
 const APPOINTMENT_PLAN_TIERS = new Set(['appointments', 'light', 'plus']);
@@ -101,6 +102,8 @@ export default function NewBookingScreen() {
 function NewBookingForm() {
   const router = useRouter();
   const form = useBookingFormVenue();
+  const linked = useLinkedVenueContext();
+  const { venue: ownVenue } = useVenueContext();
   const {
     type: typeParam,
     tab: tabParam,
@@ -138,15 +141,30 @@ function NewBookingForm() {
 
   // The tabs to show, derived from the effective venue's enabled booking models
   // (own venue, or the linked venue's resolved mode).
+  //
+  // A live collective books appointments for the collective, but its profile
+  // carries no other models: classes, events and resources keep this venue's
+  // own tabs, as on the web (`StaffSurfaceBookingStack` falls back to the
+  // venue's own models when the linked profile is a collective).
+  const ownVenueModels = useMemo(
+    () => [
+      ...(ownVenue?.active_booking_models ?? []),
+      ...(ownVenue?.enabled_models ?? []),
+      ...(ownVenue?.booking_model ? [ownVenue.booking_model] : []),
+    ],
+    [ownVenue],
+  );
   const tabs = useMemo<BookingFlowType[]>(() => {
     if (!form.venueId) return [];
-    const enabled = new Set<string>([
-      ...form.enabledModels,
-      ...(form.bookingModel ? [form.bookingModel] : []),
-    ]);
+    const enabled = new Set<string>(
+      form.isCollective
+        ? ownVenueModels
+        : [...form.enabledModels, ...(form.bookingModel ? [form.bookingModel] : [])],
+    );
     // Order mirrors the web staff booking surface (Appointments → Class → Event → Resource).
     const out: BookingFlowType[] = [];
     if (
+      form.isCollective ||
       isAppointmentVenue(form.pricingTier, form.bookingModel) ||
       enabled.has('unified_scheduling') ||
       enabled.has('practitioner_appointment')
@@ -157,7 +175,14 @@ function NewBookingForm() {
     if (enabled.has('event_ticket')) out.push('event');
     if (enabled.has('resource_booking')) out.push('resource');
     return out;
-  }, [form.venueId, form.enabledModels, form.bookingModel, form.pricingTier]);
+  }, [form.venueId, form.isCollective, ownVenueModels, form.enabledModels, form.bookingModel, form.pricingTier]);
+
+  // Resources stay the venue's own inside a collective (web: "Tables and
+  // resources stay the venue's own"), so that flow runs with no linked venue.
+  const ownVenueScope = useMemo(
+    () => ({ ...linked, ownerVenueId: null, ownerVenueName: null, ownerPractitionerId: null }),
+    [linked],
+  );
 
   // The user's explicit tab choice (null until they tap a tab).
   const [activeTab, setActiveTab] = useState<BookingFlowType | null>(null);
@@ -271,7 +296,9 @@ function NewBookingForm() {
           <Text variant="caption" tone="muted" style={styles.collectiveNote}>
             {tab === 'service'
               ? `Booking for ${form.venueName ?? 'the collective'}: every member venue's calendars and the combined services.`
-              : `Booking for ${form.venueName ?? 'the collective'}: the classes, events and rooms listed on the combined page, each booked with the venue that runs it.`}
+              : tab === 'resource'
+                ? `Resources are booked with ${ownVenue?.name ?? 'your own venue'}, not the collective.`
+                : `Booking for ${form.venueName ?? 'the collective'}: your own ${tab === 'class' ? 'classes' : 'events'}, and the ones other members list on the combined page, each booked with the venue that runs it.`}
           </Text>
         ) : null}
         {/* The route's own chrome, one line: what to book, and the way out. */}
@@ -302,7 +329,15 @@ function NewBookingForm() {
           {tab === 'service' ? <ServiceBookingFlow onCreated={handleCreated} /> : null}
           {tab === 'class' ? <ClassBookingFlow onCreated={handleCreated} /> : null}
           {tab === 'event' ? <EventBookingFlow onCreated={handleCreated} /> : null}
-          {tab === 'resource' ? <ResourceBookingFlow onCreated={handleCreated} /> : null}
+          {tab === 'resource' ? (
+            form.isCollective ? (
+              <LinkedVenueContext.Provider value={ownVenueScope}>
+                <ResourceBookingFlow onCreated={handleCreated} />
+              </LinkedVenueContext.Provider>
+            ) : (
+              <ResourceBookingFlow onCreated={handleCreated} />
+            )
+          ) : null}
         </View>
       </View>
     </Screen>

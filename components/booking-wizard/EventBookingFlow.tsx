@@ -28,6 +28,12 @@ import {
   offeringPriceLabel,
   remainingLabel,
 } from '@/lib/booking/booking-format';
+import {
+  datesWithNoPlacesLeft,
+  groupsWithNoPlacesLeft,
+  sessionForDirectPick,
+  staffCreateOwnerVenueId,
+} from '@/lib/booking/offering-availability';
 import { formatPence } from '@/lib/format';
 import { normalizePhone } from '@/lib/phone/normalize';
 import { defaultPhoneCountryForVenueCurrency } from '@/lib/phone/e164';
@@ -58,7 +64,8 @@ type EventBookingFlowProps = { onCreated: (bookingId: string) => void };
 export function EventBookingFlow({ onCreated }: EventBookingFlowProps) {
   const router = useRouter();
   const { colors } = useTheme();
-  const { venueId, timeZone, currency } = useBookingFormVenue();
+  const { venueId, timeZone, currency, isCollective, ownerVenueId: formOwnerVenueId } =
+    useBookingFormVenue();
   // The phone picker's starting country (web parity: EUR venues → IE, else GB).
   const phoneDefaultCountry = defaultPhoneCountryForVenueCurrency(currency);
   const { ownerVenueId } = useLinkedVenueContext();
@@ -68,7 +75,12 @@ export function EventBookingFlow({ onCreated }: EventBookingFlowProps) {
 
   const today = calendarDateInTimeZone(new Date(), timeZone);
 
-  const offeringsQuery = useEventOfferings(venueId, { from: today });
+  // Booking for a live collective reads the staff route, which adds this venue's own
+  // events that are not on the combined page (E-5, web parity).
+  const offeringsQuery = useEventOfferings(venueId, {
+    from: today,
+    staffCollectiveId: isCollective ? formOwnerVenueId : null,
+  });
   const prefillGuestQuery = useGuestDetail(prefilledGuestId);
 
   const [step, setStep] = useState<StepKey>('event');
@@ -101,24 +113,43 @@ export function EventBookingFlow({ onCreated }: EventBookingFlowProps) {
   const events = offeringsQuery.data?.events ?? [];
   const instances = useMemo(() => offeringsQuery.data?.instances ?? [], [offeringsQuery.data]);
 
+  /** Events with every upcoming date sold out: listed, marked "Sold out", not bookable (E-9). */
+  const soldOutEvents = useMemo(
+    () =>
+      groupsWithNoPlacesLeft(instances, (o) => o.series_key, (o) => o.remaining_capacity).map(
+        (g) => g.items[0]!,
+      ),
+    [instances],
+  );
+
   const selectedEventDates = useMemo(
     () => (selectedEvent ? new Set(selectedEvent.dates) : null),
     [selectedEvent],
   );
+  /** Every occurrence of the chosen event in range, sold-out ones included (E-9). */
+  const allOccurrencesForEvent = useMemo(
+    () => (selectedEvent ? instances.filter((o) => o.series_key === selectedEvent.series_key) : []),
+    [instances, selectedEvent],
+  );
+  /** Dates whose every occurrence is sold out: marked "Sold out" on the calendar, not bookable. */
+  const soldOutDates = useMemo(
+    () =>
+      new Set(
+        datesWithNoPlacesLeft(allOccurrencesForEvent, (o) => o.event_date, (o) => o.remaining_capacity),
+      ),
+    [allOccurrencesForEvent],
+  );
+  /** The chosen date's occurrences, sold-out ones included so they can be marked. */
   const occurrencesForDate = useMemo(() => {
-    if (!selectedEvent || !selectedDate) return [];
-    return instances
-      .filter(
-        (o) =>
-          o.series_key === selectedEvent.series_key &&
-          o.event_date === selectedDate &&
-          o.remaining_capacity > 0,
-      )
+    if (!selectedDate) return [];
+    return allOccurrencesForEvent
+      .filter((o) => o.event_date === selectedDate)
       .sort((a, b) => a.start_time.localeCompare(b.start_time));
-  }, [instances, selectedEvent, selectedDate]);
+  }, [allOccurrencesForEvent, selectedDate]);
 
+  // A date whose only occurrence has tickets is treated as chosen automatically.
   const effectiveOccurrence =
-    selectedOccurrence ?? (occurrencesForDate.length === 1 ? occurrencesForDate[0] ?? null : null);
+    selectedOccurrence ?? sessionForDirectPick(occurrencesForDate, (o) => o.remaining_capacity);
   const ticketTypes = useMemo(
     () => [...(effectiveOccurrence?.ticket_types ?? [])].sort((a, b) => a.sort_order - b.sort_order),
     [effectiveOccurrence],
@@ -166,7 +197,7 @@ export function EventBookingFlow({ onCreated }: EventBookingFlowProps) {
             }
             onRetry={() => void offeringsQuery.refetch()}
           />
-        ) : events.length === 0 ? (
+        ) : events.length === 0 && soldOutEvents.length === 0 ? (
           <EmptyState
             title="No events available"
             message="There are no bookable events scheduled in the next 90 days."
@@ -197,6 +228,17 @@ export function EventBookingFlow({ onCreated }: EventBookingFlowProps) {
                 }}
               />
             ))}
+            {soldOutEvents.map((e) => (
+              <SelectableRow
+                key={`sold-out-${e.series_key}`}
+                title={e.event_name}
+                subtitle={e.description}
+                meta={`Every upcoming date is sold out${e.venue_name ? ` · at ${e.venue_name}` : ''}`}
+                trailing="Sold out"
+                disabled
+                accessibilityLabel={`${e.event_name}, sold out`}
+              />
+            ))}
           </ScrollView>
         )}
       </View>
@@ -222,6 +264,9 @@ export function EventBookingFlow({ onCreated }: EventBookingFlowProps) {
             setQuantities({});
           }}
           availableDates={selectedEventDates}
+          unavailableDates={soldOutDates}
+          unavailableLabel="Sold out"
+          unavailableLegend="Sold out: no tickets left on that date."
           canContinue={!!selectedDate}
           onContinue={() => setStep('tickets')}
           timeZone={timeZone}
@@ -253,6 +298,13 @@ export function EventBookingFlow({ onCreated }: EventBookingFlowProps) {
                   key={o.event_id}
                   title={formatTimeRange(o.start_time, o.end_time)}
                   meta={remainingLabel(o.remaining_capacity, 'ticket')}
+                  // A sold-out time is listed so staff can see it, but cannot be picked (E-9).
+                  disabled={o.remaining_capacity <= 0}
+                  accessibilityLabel={
+                    o.remaining_capacity <= 0
+                      ? `${formatTimeRange(o.start_time, o.end_time)}, sold out`
+                      : undefined
+                  }
                   selected={effectiveOccurrence?.event_id === o.event_id}
                   onPress={() => {
                     setSelectedOccurrence(o);
@@ -349,6 +401,9 @@ export function EventBookingFlow({ onCreated }: EventBookingFlowProps) {
     const first = guest.first_name.trim();
     const last = guest.last_name.trim();
     const comment = (guest.special_requests ?? '').trim();
+    // A collective's listed event books for the collective; this venue's own
+    // unlisted event books as its own (E-5, web `staffCreateOwnerVenueId`).
+    const createOwnerVenueId = staffCreateOwnerVenueId(ownerVenueId, occ);
 
     return (
       <View style={styles.container}>
@@ -393,7 +448,7 @@ export function EventBookingFlow({ onCreated }: EventBookingFlowProps) {
             source,
             ...(hasDeposit && requireDeposit && source !== 'walk-in' ? { require_deposit: true } : {}),
             ...(returningGuest ? { returning_guest: true } : {}),
-            ...(ownerVenueId ? { owner_venue_id: ownerVenueId } : {}),
+            ...(createOwnerVenueId ? { owner_venue_id: createOwnerVenueId } : {}),
           })}
           onCreated={(bookingId) => {
             track(ANALYTICS_EVENTS.createBookingCompleted, { mode: 'event' });

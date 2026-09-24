@@ -27,6 +27,13 @@ export interface GroupVisitBookingRow {
   calendar_id?: string | null;
   practitioner_id?: string | null;
   calendar_name?: string | null;
+  /**
+   * When staff pressed Confirm, or the guest confirmed from a reminder. Either
+   * one set means the service was confirmed before it started, so its Undo
+   * start goes back to Confirmed rather than Booked (web QA B-4).
+   */
+  staff_attendance_confirmed_at?: string | null;
+  guest_attendance_confirmed_at?: string | null;
 }
 
 /**

@@ -8,6 +8,13 @@
  *   · GET /api/booking/resource-options  → ResourceOptionsResponse
  *   · GET /api/booking/availability      → ResourceAvailabilityResponse (resource branch)
  *
+ * Booking for a live collective, the form reads the staff twins instead (E-5, web 2026-09-23):
+ *   · GET /api/venue/class-offerings?owner_venue_id=<collective> → ClassOfferingsResponse
+ *   · GET /api/venue/event-offerings?owner_venue_id=<collective> → EventOfferingsResponse
+ * Same shapes. Every item carries `venue_id`; `collective_listing_id` only when the item is
+ * listed on the combined page, so this venue's own unlisted items have a `venue_id` and no
+ * listing, and book as the venue's own (`staffCreateOwnerVenueId`).
+ *
  * @see _reference/Resneo/src/lib/availability/class-session-engine.ts
  * @see _reference/Resneo/src/lib/availability/event-ticket-engine.ts
  * @see _reference/Resneo/src/lib/availability/resource-booking-engine.ts

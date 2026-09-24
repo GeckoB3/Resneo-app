@@ -236,6 +236,13 @@ export interface BookedRevenueColumn {
   colour: string | null;
 }
 
+/**
+ * What kind of booking a revenue row is (web `booked-revenue-cde.ts`). Since web
+ * QA A-3 (2026-09-23) the report prices classes, events and rooms too, not only
+ * appointments.
+ */
+export type BookedRevenueKind = 'appointment' | 'class' | 'event' | 'resource';
+
 export interface BookedRevenueCell {
   /** Booked revenue in pence excluding no-shows. */
   booked_pence: number;
@@ -264,7 +271,14 @@ export interface BookedRevenueReport {
   today: string;
   columns: BookedRevenueColumn[];
   periods: BookedRevenuePeriod[];
-  totals: BookedRevenueCell & { by_calendar: Record<string, BookedRevenueCell> };
+  totals: BookedRevenueCell & {
+    by_calendar: Record<string, BookedRevenueCell>;
+    /**
+     * The same totals split by kind of booking, for the kinds present. Says which
+     * bookings are unpriced. Absent from servers before 2026-09-23.
+     */
+    by_kind?: Partial<Record<BookedRevenueKind, BookedRevenueCell>>;
+  };
 }
 
 // ---------------------------------------------------------------------------

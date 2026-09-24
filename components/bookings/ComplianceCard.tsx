@@ -11,6 +11,7 @@ import { CollapsibleCard } from '@/components/ui/CollapsibleCard';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import { formLinkResendOutcome } from '@/lib/compliance/resend-outcome';
 import { useToast } from '@/providers/ToastProvider';
 import { hapticSuccess } from '@/lib/haptics';
 import {
@@ -93,6 +94,20 @@ export function formatComplianceDate(iso: string | null | undefined): string {
   return d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
+/**
+ * The line under a requirement whose last form link ran out of time (web QA FD-8,
+ * ComplianceSection): "The last form link (sent 04/09/2026) has expired. Send link
+ * sends a fresh one." `action` names the button beside it: the client page
+ * resends from its Email and SMS buttons, not a "Send link" button.
+ */
+export function expiredLinkHint(
+  sentAt: string | null | undefined,
+  action = 'Send link',
+): string {
+  const sent = sentAt ? ` (sent ${formatComplianceDate(sentAt)})` : '';
+  return `The last form link${sent} has expired. ${action} sends a fresh one.`;
+}
+
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
@@ -162,6 +177,9 @@ export function ComplianceCard({ bookingId, guestId, guestEmail, guestPhone }: C
   const resendLink = useResendFormLink();
   // Links still awaiting the client, by type: the row says one was sent and offers a resend.
   const pendingLinks = (guestQuery.data?.form_links ?? []).filter((l) => l.status === 'pending');
+  // A link that ran out of time is listed as 'expired' (web QA FD-8): the row says so,
+  // and Send link sends a fresh one.
+  const expiredLinks = (guestQuery.data?.form_links ?? []).filter((l) => l.status === 'expired');
   const [captureTarget, setCaptureTarget] = useState<CaptureTarget | null>(null);
   const [viewRecordId, setViewRecordId] = useState<string | null>(null);
   // Channel chooser for the "Send link" action — a Sheet (Alert.alert is a web no-op).
@@ -286,6 +304,10 @@ export function ComplianceCard({ bookingId, guestId, guestEmail, guestPhone }: C
                   const needsAction = requirementNeedsAction(r.state);
                   const pendingLink =
                     pendingLinks.find((l) => l.compliance_type_id === r.requirement.compliance_type_id) ?? null;
+                  const expiredLink = pendingLink
+                    ? null
+                    : (expiredLinks.find((l) => l.compliance_type_id === r.requirement.compliance_type_id) ??
+                      null);
                   const isResendingThis = resendLink.isPending && resendLink.variables?.id === pendingLink?.id;
                   const isSendingThis = sendingTypeId === r.requirement.compliance_type_id;
                   const matchingRecordId = r.matching_record?.id ?? null;
@@ -323,6 +345,11 @@ export function ComplianceCard({ bookingId, guestId, guestEmail, guestPhone }: C
                           client.
                         </Text>
                       ) : null}
+                      {expiredLink && needsAction ? (
+                        <Text variant="caption" tone="secondary">
+                          {expiredLinkHint(expiredLink.sent_at)}
+                        </Text>
+                      ) : null}
                       {/* View record button when a matching (satisfying) record exists */}
                       {matchingRecordId && !needsAction ? (
                         <Button
@@ -358,7 +385,18 @@ export function ComplianceCard({ bookingId, guestId, guestEmail, guestPhone }: C
                                 resendLink.mutate(
                                   { id: pendingLink.id, send_via: pendingLink.sent_via === 'sms' ? 'sms' : 'email' },
                                   {
-                                    onSuccess: () => toast.success('Form link sent again.'),
+                                    // An expired link is not sent again: the server sends a
+                                    // fresh one instead (web QA FD-8). A 200 with nothing sent
+                                    // (no email on file) says so and copies the link.
+                                    onSuccess: (result) => {
+                                      const outcome = formLinkResendOutcome(
+                                        result,
+                                        pendingLink.sent_via === 'sms' ? 'sms' : 'email',
+                                      );
+                                      if (outcome.copyUrl) void Clipboard.setStringAsync(outcome.copyUrl);
+                                      if (outcome.sent) toast.success(outcome.message);
+                                      else toast.error(outcome.message);
+                                    },
                                     onError: (e) =>
                                       toast.error(e instanceof ApiError ? e.message : 'Could not resend the link.'),
                                   },

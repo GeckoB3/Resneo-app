@@ -1,6 +1,7 @@
 import { type ReactNode } from 'react';
 import {
   Pressable,
+  StyleSheet,
   type AccessibilityState,
   type StyleProp,
   type ViewStyle,
@@ -48,11 +49,19 @@ export function PressableScale({
 }: PressableScaleProps) {
   const reduceMotion = useReduceMotion();
   const pressed = useSharedValue(0);
+  // The animated opacity wins over a static one whatever the order, so a
+  // caller's own opacity (a disabled row's 0.5) is folded in here; without
+  // this it never showed.
+  const flatOpacity = StyleSheet.flatten(style)?.opacity;
+  const restingOpacity = typeof flatOpacity === 'number' ? flatOpacity : 1;
 
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: 1 - pressed.get() * 0.02 }],
-    opacity: 1 - pressed.get() * 0.06,
-  }));
+  const animatedStyle = useAnimatedStyle(
+    () => ({
+      transform: [{ scale: 1 - pressed.get() * 0.02 }],
+      opacity: restingOpacity * (1 - pressed.get() * 0.06),
+    }),
+    [restingOpacity],
+  );
 
   return (
     <AnimatedPressable

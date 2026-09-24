@@ -67,3 +67,44 @@ export function useAddToHousehold(guestId: string) {
     },
   });
 }
+
+export interface UnlinkFromHouseholdResponse {
+  success: boolean;
+  /** The households the two shared (or, leaving, this contact's own). */
+  household_ids: string[];
+  /** True when a household was left with one member and so removed. */
+  dissolved: boolean;
+  /** Set when they were not linked any more: repeating an unlink is harmless. */
+  already_unlinked?: boolean;
+}
+
+/**
+ * DELETE /api/venue/guests/[guestId]/household?other_guest_id= (web QA FD-9,
+ * 2026-09-23): take that contact out of the household it shares with this one.
+ * Passing this contact's own id takes it out of its household instead. A
+ * household left with one member is removed by the server.
+ */
+export function useUnlinkFromHousehold(guestId: string) {
+  const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (otherGuestId: string): Promise<UnlinkFromHouseholdResponse> => {
+      if (!accessToken) {
+        throw new Error('Missing access token');
+      }
+      return apiFetch<UnlinkFromHouseholdResponse>(
+        `/api/venue/guests/${guestId}/household?other_guest_id=${encodeURIComponent(otherGuestId)}`,
+        { accessToken, method: 'DELETE' },
+      );
+    },
+    onSuccess: (_data, otherGuestId) => {
+      // Both contacts lose the link (and gain a "household unlinked" timeline
+      // entry), so refresh both of their household blocks and timelines.
+      for (const id of new Set([guestId, otherGuestId])) {
+        void queryClient.invalidateQueries({ queryKey: householdKey(accessToken, id) });
+        void queryClient.invalidateQueries({ queryKey: queryKeys.guests.timeline(accessToken, id) });
+      }
+    },
+  });
+}

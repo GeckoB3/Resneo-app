@@ -1,7 +1,8 @@
 /**
  * Reports → Revenue (web #191, `BookedRevenueSection.tsx`).
  *
- * The value of every appointment on the diary that has not been cancelled,
+ * The value of every appointment on the diary that has not been cancelled
+ * (and, since web QA A-3 on 2026-09-23, every class, event and room booking),
  * by day / week / month and by calendar, with linked venues' calendars when
  * their grant is full detail with create/edit/cancel rights. The default view
  * deducts no-shows; "Include no-shows" adds them back. Prices are the server's
@@ -26,6 +27,7 @@ import { ApiError } from '@/lib/api/client';
 import { formatPence } from '@/lib/format';
 import { hapticTap } from '@/lib/haptics';
 import { useBookedRevenue } from '@/lib/queries/useBookedRevenue';
+import { countsOtherKinds, unpricedNote } from '@/lib/reports/booked-revenue-copy';
 import { buildAndShareCsv } from '@/lib/reports/csv-export';
 import {
   BOOKED_REVENUE_GRAINS,
@@ -114,10 +116,16 @@ export function BookedRevenueSection({
   const totalNet = data ? bookedRevenueNetPence(data.totals, includeNoShows) : 0;
   const totalCount = data ? data.totals.booked_count + (includeNoShows ? data.totals.no_show_count : 0) : 0;
   const unpriced = data?.totals.unpriced_count ?? 0;
+  const unpricedMessage = data ? unpricedNote(data.totals.by_kind, unpriced) : null;
+  // Once classes, events or resources are counted too, "Appointments counted"
+  // would call them appointments (web QA A-3).
+  const otherKinds = data ? countsOtherKinds(data.totals.by_kind) : false;
+  const countWord = otherKinds ? 'Booking' : bookingWord;
   const rangeLabel = data ? bookedRevenuePeriodLabel(data.from, data.to, 'week') : '';
   const hasFuture = data ? data.to > data.today : false;
   const hasPast = data ? data.from < data.today : false;
   const lowerWord = bookingWord.toLowerCase();
+  const lowerCountWord = countWord.toLowerCase();
   const errorMessage =
     query.error instanceof ApiError ? query.error.message : 'Could not load booked revenue.';
 
@@ -184,9 +192,13 @@ export function BookedRevenueSection({
           <Text variant="label">Booked revenue</Text>
         </View>
         <Text variant="bodySmall" tone="muted">
-          The value of every {lowerWord} on the diary that has not been cancelled, by day and by
-          calendar. Future dates show everything booked. Past dates leave out services marked as a
-          no-show unless you turn on Include no-shows.
+          The value of every {lowerCountWord} on the diary that has not been cancelled, by day and by
+          calendar.
+          {otherKinds
+            ? ' Classes, events and resource bookings count on the calendar they appear on in your diary.'
+            : ''}{' '}
+          Future dates show everything booked. Past dates leave out {otherKinds ? 'bookings' : 'services'}{' '}
+          marked as a no-show unless you turn on Include no-shows.
         </Text>
 
         <Text variant="overline" tone="muted" style={styles.groupLabel}>
@@ -329,23 +341,30 @@ export function BookedRevenueSection({
               <StatTile
                 label={includeNoShows ? 'No-shows included' : 'No-shows deducted'}
                 value={money(data.totals.no_show_pence)}
-                caption={`${data.totals.no_show_count} ${data.totals.no_show_count === 1 ? 'service' : 'services'}`}
+                caption={`${data.totals.no_show_count} ${
+                  otherKinds
+                    ? data.totals.no_show_count === 1
+                      ? 'booking'
+                      : 'bookings'
+                    : data.totals.no_show_count === 1
+                      ? 'service'
+                      : 'services'
+                }`}
                 trend={data.totals.no_show_pence > 0 ? 'down' : 'neutral'}
                 style={styles.tile}
               />
               <StatTile
-                label={`${bookingWord}s counted`}
+                label={`${countWord}s counted`}
                 value={String(totalCount)}
                 caption={unpriced > 0 ? `${unpriced} without a price` : undefined}
                 style={styles.tile}
               />
             </View>
 
-            {unpriced > 0 ? (
+            {unpricedMessage ? (
               <View style={[styles.note, { backgroundColor: colors.warningSurface, borderColor: colors.warning }]}>
                 <Text variant="bodySmall" color={colors.text}>
-                  {unpriced} {unpriced === 1 ? 'service has' : 'services have'} no price on the booking or in
-                  your service list, so {unpriced === 1 ? 'it adds' : 'they add'} nothing to these totals.
+                  {unpricedMessage}
                 </Text>
               </View>
             ) : null}

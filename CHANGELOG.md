@@ -17,6 +17,26 @@ on the other, and iOS 1.0.4 is the worked example.
 
 ## Unreleased
 
+**The web's 2026-09-23 QA round, and what the phone test found.** Details in
+`Docs/APP_GAP_REPORT_R43_WEB_DELTA.md`.
+
+- New booking inside a collective offers your own classes, events and resources again, beside the
+  combined appointments; your own unlisted classes and events can be booked there.
+- Full class sessions and sold-out events are shown, greyed out, instead of disappearing.
+- Services with differently priced options say "from" the cheapest.
+- A booking that sent a deposit or card link says it is waiting for the guest, not confirmed.
+- The booking's Activity names every status change and shows arrivals.
+- Undo start on a visit goes back to Booked unless the visit had been confirmed.
+- Events: creating one with an open ticket works again. The switch is Show on booking page, and
+  an event can be hidden while it has bookings.
+- Contacts: a clearer message log, household Unlink, and field-by-field errors on contact forms.
+- Compliance: expired form links are listed and resent as fresh links. The app no longer says a
+  link was sent when there was no email or phone to send it to.
+- Services: saving an add-on group keeps its archived options, new groups start optional, and a
+  price can be cleared.
+- Today can bring back a dismissed setup checklist.
+- CSV exports are safe to open in a spreadsheet.
+
 **Fixes from the 2026-09-23 device test.** Details in `Docs/APP_QA_FIXES_2026-09-23.md`.
 
 - Modify no longer lengthens a booking that has an add-on each time it is saved, and Reschedule

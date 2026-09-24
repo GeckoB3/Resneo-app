@@ -36,11 +36,13 @@ const mockStaff = { data: { staff: { role: 'admin' } } } as {
 jest.mock('@/lib/queries/useStaffMe', () => ({ useStaffMe: () => mockStaff }));
 
 const mockDismiss = { mutate: jest.fn(), isPending: false };
+const mockRestore = { mutate: jest.fn(), isPending: false, isError: false };
 const mockSnooze = { mutate: jest.fn(), isPending: false };
 const mockSetup = { data: undefined as SetupStatus | undefined };
 jest.mock('@/lib/queries/useSetupStatus', () => ({
   useSetupStatus: () => mockSetup,
   useDismissSetupChecklist: () => mockDismiss,
+  useRestoreSetupChecklist: () => mockRestore,
   useSnoozeSetupStep: () => mockSnooze,
 }));
 
@@ -52,8 +54,9 @@ jest.mock('@/providers/VenueProvider', () => ({
 // Tap-through prompt completion is device-local (expo-secure-store); keep the
 // render tests deterministic by starting from an empty set.
 const mockMarkStepClicked = jest.fn();
+let mockClickedSteps = new Set<string>();
 jest.mock('@/lib/queries/useClickedSetupSteps', () => ({
-  useClickedSetupSteps: () => new Set<string>(),
+  useClickedSetupSteps: () => mockClickedSteps,
   markSetupStepClicked: (...args: unknown[]) => mockMarkStepClicked(...args),
 }));
 
@@ -81,9 +84,12 @@ function status(partial: Partial<SetupStatus> = {}): SetupStatus {
 beforeEach(() => {
   mockPush.mockClear();
   mockDismiss.mutate.mockClear();
+  mockRestore.mutate.mockClear();
+  mockRestore.isError = false;
   mockSnooze.mutate.mockClear();
   mockStaff.data = { staff: { role: 'admin' } };
   mockSetup.data = undefined;
+  mockClickedSteps = new Set<string>();
 });
 
 describe('SetupChecklistCard — onboarding incomplete (pinned first-run)', () => {
@@ -139,14 +145,50 @@ describe('SetupChecklistCard — onboarding complete (dismissible)', () => {
     expect(mockDismiss.mutate).not.toHaveBeenCalled();
     expect(screen.getByText('Dismiss the setup steps?')).toBeTruthy();
 
+    // Web A-5: the confirm says how to bring the checklist back.
+    expect(screen.getByText(/To see the checklist again, tap .Show setup checklist. on Today\./)).toBeTruthy();
+
     await act(async () => {
       fireEvent.press(screen.getByText('Dismiss setup steps'));
     });
     expect(mockDismiss.mutate).toHaveBeenCalledTimes(1);
   });
 
-  it('hides once the checklist is dismissed (post-onboarding)', async () => {
+  it('hides the card once dismissed, offering to bring it back while steps remain', async () => {
     mockSetup.data = status({ onboarding_completed: true, setup_checklist_dismissed: true });
+    await render(<SetupChecklistCard />);
+    expect(screen.queryByText(/What's next/)).toBeNull();
+    expect(screen.getByText('Show setup checklist')).toBeTruthy();
+  });
+
+  it('brings a dismissed checklist back (web QA A-5)', async () => {
+    mockSetup.data = status({ onboarding_completed: true, setup_checklist_dismissed: true });
+    await render(<SetupChecklistCard />);
+    await act(async () => {
+      fireEvent.press(screen.getByText('Show setup checklist'));
+    });
+    expect(mockRestore.mutate).toHaveBeenCalledTimes(1);
+  });
+
+  it('says so when the checklist could not be brought back', async () => {
+    mockRestore.isError = true;
+    mockSetup.data = status({ onboarding_completed: true, setup_checklist_dismissed: true });
+    await render(<SetupChecklistCard />);
+    expect(screen.getByText('We could not bring the checklist back. Please try again.')).toBeTruthy();
+  });
+
+  it('shows nothing when a dismissed checklist has nothing left to do', async () => {
+    mockSetup.data = status({
+      onboarding_completed: true,
+      setup_checklist_dismissed: true,
+      profile_complete: true,
+      availability_set: true,
+      guest_booking_ready: true,
+      stripe_connected: true,
+      first_booking_made: true,
+    });
+    // The three post-onboarding prompts are tap-through; mark them all clicked.
+    mockClickedSteps = new Set(['customise_booking_page', 'review_comms', 'import_bookings_customers']);
     await render(<SetupChecklistCard />);
     expect(screen.toJSON()).toBeNull();
   });

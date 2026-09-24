@@ -402,7 +402,8 @@ export function GuestDetailsStep({
             onChange({ ...value, special_requests: special_requests || undefined })
           }
           autoCapitalize="sentences"
-          maxLength={500}
+          // 1,000 like every create route and the web form (QA B-3, 2026-09-23).
+          maxLength={1000}
           multiline
           numberOfLines={2}
         />

@@ -81,7 +81,10 @@ describe('offeringPriceLabel', () => {
 
 describe('remainingLabel', () => {
   it('pluralises and handles the sold-out case', () => {
-    expect(remainingLabel(0)).toBe('Fully booked');
+    // E-9: the web's words, "Full" for a class and "Sold out" for tickets.
+    expect(remainingLabel(0)).toBe('Full');
+    expect(remainingLabel(0, 'ticket')).toBe('Sold out');
+    expect(remainingLabel(-1, 'ticket')).toBe('Sold out');
     expect(remainingLabel(1)).toBe('1 spot left');
     expect(remainingLabel(3)).toBe('3 spots left');
     expect(remainingLabel(2, 'ticket')).toBe('2 tickets left');

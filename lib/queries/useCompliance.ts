@@ -8,6 +8,7 @@ import { keyScope, queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import type {
   ComplianceDashboardData,
+  ComplianceFormLink,
   ComplianceFormLinksResponse,
   ComplianceRecordDetailResponse,
   ComplianceTypeWithVersion,
@@ -52,7 +53,25 @@ export function useComplianceFormLinks() {
   });
 }
 
-/** POST /api/venue/compliance/form-links/[id]/resend — re-send a pending form. */
+/** The resend route's answer. */
+export interface ResendFormLinkResponse {
+  public_url?: string;
+  dispatched: boolean;
+  sent_via?: 'email' | 'sms' | null;
+  /**
+   * True when the link had run out of time, so the server issued a fresh one for
+   * the same client, form and booking, sent that and retired the old (web QA FD-8,
+   * 2026-09-23).
+   */
+  reissued?: boolean;
+  /** The fresh link, when `reissued`. */
+  link?: ComplianceFormLink;
+}
+
+/**
+ * POST /api/venue/compliance/form-links/[id]/resend — re-send a pending form. An
+ * expired link is not sent again: the server sends a fresh one (`reissued`).
+ */
 export function useResendFormLink() {
   const accessToken = useAccessToken();
   const queryClient = useQueryClient();
@@ -61,11 +80,11 @@ export function useResendFormLink() {
     mutationFn: async (input: {
       id: string;
       send_via: 'email' | 'sms';
-    }): Promise<{ dispatched: boolean }> => {
+    }): Promise<ResendFormLinkResponse> => {
       if (!accessToken) {
         throw new Error('Missing access token');
       }
-      return apiFetch<{ dispatched: boolean }>(
+      return apiFetch<ResendFormLinkResponse>(
         `/api/venue/compliance/form-links/${input.id}/resend`,
         { accessToken, method: 'POST', body: JSON.stringify({ send_via: input.send_via }) },
       );

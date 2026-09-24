@@ -407,6 +407,13 @@ export interface CollectiveResponse {
 export interface CatalogueResponse {
   catalogue: CatalogueManagementView | null;
   importSources?: unknown[];
+  /**
+   * GET only (F-2, web 2026-09-23): the people the live combined page shows under
+   * "Meet the team", so the page editor lists the same ones. Null when the server
+   * could not load it; the PATCH responses leave it out. Either way the editor
+   * falls back to building the list from the member calendars.
+   */
+  team?: { id: string; name: string }[] | null;
 }
 export interface SlugAvailableResponse {
   available: boolean;

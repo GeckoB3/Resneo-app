@@ -35,7 +35,9 @@ describe('shouldShowBookingTimelineEvent', () => {
     expect(shouldShowBookingTimelineEvent(event({ event_type: 'waitlist_converted' }))).toBe(true);
   });
 
-  it('shows a status change only when the new status is Confirmed', () => {
+  // Web QA B-5 (2026-09-23): only confirmations used to show, so cancel, reinstate, start and
+  // complete were missing from the audit trail.
+  it('shows every status change once: the trigger shape, not the staff route audit copy', () => {
     expect(
       shouldShowBookingTimelineEvent(
         event({ event_type: 'booking_status_changed', payload: { new_status: 'Confirmed' } }),
@@ -43,12 +45,31 @@ describe('shouldShowBookingTimelineEvent', () => {
     ).toBe(true);
     expect(
       shouldShowBookingTimelineEvent(
+        event({ event_type: 'booking_status_changed', payload: { old_status: 'Pending', new_status: 'Booked' } }),
+      ),
+    ).toBe(true);
+    expect(
+      shouldShowBookingTimelineEvent(
         event({ event_type: 'booking_status_changed', payload: { new_status: 'Seated' } }),
+      ),
+    ).toBe(true);
+    expect(
+      shouldShowBookingTimelineEvent(
+        event({
+          event_type: 'booking_status_changed',
+          payload: { from: 'Pending', to: 'Booked', staff_id: 'staff-1' },
+        }),
       ),
     ).toBe(false);
     expect(
       shouldShowBookingTimelineEvent(event({ event_type: 'booking_status_changed', payload: null })),
     ).toBe(false);
+  });
+
+  it('shows arrivals', () => {
+    expect(
+      shouldShowBookingTimelineEvent(event({ event_type: 'client_arrived_changed', payload: { arrived: true } })),
+    ).toBe(true);
   });
 
   it('hides unknown event types', () => {
@@ -104,6 +125,51 @@ describe('formatBookingTimelineEvent', () => {
         event({ event_type: 'booking_status_changed', payload: { old_status: 'No_Show' } }),
       ),
     ).toEqual({ title: 'Booking confirmed', detail: 'From No Show' });
+  });
+
+  describe('status changes and arrivals (web QA B-5)', () => {
+    const status = (old_status: string, new_status: string) =>
+      formatBookingTimelineEvent(
+        event({ event_type: 'booking_status_changed', payload: { old_status, new_status } }),
+      ).title;
+
+    it('names each change the way the buttons do', () => {
+      expect(status('Booked', 'Cancelled')).toBe('Booking cancelled');
+      expect(status('Cancelled', 'Booked')).toBe('Booking reinstated');
+      expect(status('Booked', 'Seated')).toBe('Started');
+      expect(status('Seated', 'Booked')).toBe('Start undone');
+      expect(status('Seated', 'Completed')).toBe('Completed');
+      expect(status('Completed', 'Seated')).toBe('Completion undone');
+      expect(status('Booked', 'No-Show')).toBe('Marked as a no-show');
+      expect(status('No-Show', 'Booked')).toBe('No-show undone');
+      expect(status('Confirmed', 'Booked')).toBe('Confirmation undone');
+    });
+
+    it('keeps the from-status detail on a cancellation and an unnamed change', () => {
+      expect(
+        formatBookingTimelineEvent(
+          event({ event_type: 'booking_status_changed', payload: { old_status: 'Booked', new_status: 'Cancelled' } }),
+        ),
+      ).toEqual({ title: 'Booking cancelled', detail: 'From Booked' });
+      expect(
+        formatBookingTimelineEvent(
+          event({ event_type: 'booking_status_changed', payload: { old_status: 'Pending', new_status: 'Booked' } }),
+        ),
+      ).toEqual({ title: 'Status changed to Booked', detail: 'From Pending' });
+    });
+
+    it('still titles a change to Confirmed as a confirmation', () => {
+      expect(status('Booked', 'Confirmed')).toBe('Booking confirmed');
+    });
+
+    it('titles an arrival and its undo', () => {
+      expect(
+        formatBookingTimelineEvent(event({ event_type: 'client_arrived_changed', payload: { arrived: true } })),
+      ).toEqual({ title: 'Client arrived' });
+      expect(
+        formatBookingTimelineEvent(event({ event_type: 'client_arrived_changed', payload: { arrived: false } })),
+      ).toEqual({ title: 'Arrival undone' });
+    });
   });
 
   it('labels a modification by actor and summarises a time change', () => {
@@ -189,7 +255,11 @@ describe('bookingTimelineEventsForDisplay', () => {
     const events: BookingTimelineEventRow[] = [
       event({ id: 'a', event_type: 'booking_created' }),
       event({ id: 'b', event_type: 'reminder_sent' }), // dropped
-      event({ id: 'c', event_type: 'booking_status_changed', payload: { new_status: 'Seated' } }), // dropped
+      event({
+        id: 'c',
+        event_type: 'booking_status_changed',
+        payload: { from: 'Booked', to: 'Seated', staff_id: 'staff-1' },
+      }), // dropped: the staff route's audit copy of a change the trigger already logged
       event({
         id: 'd',
         event_type: 'booking_status_changed',

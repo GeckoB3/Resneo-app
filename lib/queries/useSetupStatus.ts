@@ -93,3 +93,30 @@ export function useDismissSetupChecklist() {
     },
   });
 }
+
+/**
+ * DELETE /api/venue/setup-checklist-dismiss — bring a dismissed checklist back
+ * (admin; web QA A-5, 2026-09-23). Clears this staff member's dismissal, so the
+ * checklist shows again on every device they sign in on. Steps snoozed with
+ * "Not now" stay snoozed.
+ */
+export function useRestoreSetupChecklist() {
+  const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (): Promise<unknown> => {
+      if (!accessToken) {
+        throw new Error('Missing access token');
+      }
+      return apiFetch<unknown>('/api/venue/setup-checklist-dismiss', {
+        accessToken,
+        method: 'DELETE',
+      });
+    },
+    onSuccess: () => {
+      // The setup status and the dashboard home both sit under dashboard.all().
+      void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all() });
+    },
+  });
+}

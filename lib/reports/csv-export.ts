@@ -14,6 +14,7 @@
  * correct CSV mime/UTI — is the default on device (a native build is required
  * for the module to load; in Expo Go / an old binary it falls through to (3)).
  */
+import { csvCellQuoted, withCsvBom } from '@/lib/csv/csv-cell';
 import { shareTextFile } from '@/lib/share/share-text-file';
 
 /**
@@ -31,9 +32,13 @@ export type CsvShareResult =
 /** How many CSV rows to join per synchronous chunk before yielding to the UI. */
 const CSV_CHUNK_ROWS = 500;
 
-/** Escape + comma-join a single row of cells into one CSV line. */
+/**
+ * Escape + comma-join a single row of cells into one CSV line. Every cell goes
+ * through `csvCellQuoted`, which also stops a guest-supplied `=…` from running
+ * as a spreadsheet formula (web QA A-6).
+ */
 function joinCsvRow(row: string[]): string {
-  return row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',');
+  return row.map((cell) => csvCellQuoted(cell)).join(',');
 }
 
 /**
@@ -93,7 +98,9 @@ export async function buildAndShareCsv(
   */
   return shareTextFile({
     filename,
-    body,
+    // The byte-order mark makes Excel read the file as UTF-8, so £ and accents
+    // survive (web parity; a server-built file that already has one keeps it).
+    body: withCsvBom(body),
     mimeType: 'text/csv',
     uti: 'public.comma-separated-values-text',
   });

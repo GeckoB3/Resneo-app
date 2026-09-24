@@ -257,7 +257,9 @@ export default function ComplianceSettingsScreen() {
                   value={expiryDays}
                   onChangeText={setExpiryDays}
                   keyboardType="number-pad"
-                  helper="Venue default; a per-type override still wins. 1–90."
+                  // Web QA FD-7 (2026-09-23): booking links last until the end of the
+                  // appointment day, whatever this is set to.
+                  helper="How long a form link stays valid after you send it, from 1 to 90 days. A link sent for a booking lasts at least until the end of the appointment day. A per-type setting still wins."
                 />
               </SectionCard.Body>
             </SectionCard>

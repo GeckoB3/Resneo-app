@@ -53,6 +53,11 @@ type SlugHint = 'idle' | 'checking' | 'current' | 'available' | 'taken' | 'inval
 // ------------------------------------------------------------------
 const SLUG_RE = /^[a-z0-9-]+$/;
 
+/** The website field's message, from the local check or the server's refusal. */
+const WEBSITE_ERROR_MESSAGE = 'Enter a valid web address (e.g. example.com or https://example.com).';
+/** PATCH /api/venue's 400 for a website it cannot use (web `src/app/api/venue/route.ts`). */
+const SERVER_INVALID_WEBSITE = 'Invalid website URL';
+
 /** Web Profile-tab hand-offs (tools that still live on the web dashboard). */
 const WEB_TABLE_MGMT_PATH = '/dashboard/availability?tab=table';
 const WEB_IMPORT_PATH = '/dashboard/import';
@@ -412,7 +417,7 @@ export default function VenueProfileScreen() {
       ok = false;
     }
     if (website.trim() && !isValidWebsiteUrlInput(website.trim())) {
-      setWebsiteError('Enter a valid web address (e.g. example.com or https://example.com).');
+      setWebsiteError(WEBSITE_ERROR_MESSAGE);
       ok = false;
     }
     const grace = parseInt(noShowGrace, 10);
@@ -514,6 +519,17 @@ export default function VenueProfileScreen() {
       setSavedAt(Date.now());
     } catch (e) {
       hapticWarning();
+      // A refusal that belongs to one field marks that field rather than the
+      // foot of the form (web QA F-5, 2026-09-23: VenueProfileSection's
+      // SERVER_ERROR_FIELDS).
+      const serverError =
+        e instanceof ApiError
+          ? ((e.body as { error?: unknown } | undefined)?.error ?? e.message)
+          : null;
+      if (serverError === SERVER_INVALID_WEBSITE) {
+        setWebsiteError(WEBSITE_ERROR_MESSAGE);
+        return;
+      }
       setError(e instanceof ApiError ? e.message : 'Could not save venue details. Please try again.');
     }
   }

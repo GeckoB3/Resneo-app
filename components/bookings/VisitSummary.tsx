@@ -5,6 +5,7 @@ import { Badge, StatusPill } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Text } from '@/components/ui/Text';
+import { ApiError } from '@/lib/api/client';
 import type { AppointmentVisit } from '@/lib/booking/appointment-visit';
 import {
   visitHistoryCaption,
@@ -113,12 +114,14 @@ function offeringLine(row: { booking_item_name?: string | null; service_variant_
  * (`bookingDetailActions`, `ACTION_COLORS`), so a row's Start reads as the
  * same act as a single booking's.
  *
- * Undo start returns the service to Confirmed, not Booked: Booked would throw
- * away the confirmation the guest already has, and the visit's derived header
- * status would fall back far enough to offer Accept again.
+ * Undo start returns the service to where it was before Start: Confirmed when
+ * its attendance had been confirmed (by staff or by the guest), else Booked.
+ * It used to be Confirmed every time, which confirmed a visit nobody had
+ * confirmed and wrote a false "Confirmed by staff" (web QA B-4).
  */
 function serviceActions(
   status: string,
+  wasConfirmed: boolean,
 ): { label: string; target: BookingStatus; colors?: { background: string; text: string } }[] {
   switch (status) {
     case 'Booked':
@@ -127,7 +130,7 @@ function serviceActions(
     case 'Seated':
       return [
         { label: 'Complete', target: 'Completed', colors: ACTION_COLORS.complete },
-        { label: 'Undo start', target: 'Confirmed' },
+        { label: 'Undo start', target: wasConfirmed ? 'Confirmed' : 'Booked' },
       ];
     case 'Completed':
       return [{ label: 'Undo complete', target: 'Seated' }];
@@ -142,7 +145,8 @@ function ServiceRowActions({ row, disabledAll }: { row: GroupVisitBookingRow; di
   // PATCHes THIS row only: the server writes Seated and Completed to one
   // service (web #187), and the cache helpers invalidate the visit query.
   const update = useUpdateBookingStatus(row.id);
-  const actions = isTerminalVisitStatus(row.status) ? [] : serviceActions(row.status);
+  const wasConfirmed = Boolean(row.staff_attendance_confirmed_at || row.guest_attendance_confirmed_at);
+  const actions = isTerminalVisitStatus(row.status) ? [] : serviceActions(row.status, wasConfirmed);
   if (actions.length === 0) return null;
   return (
     <View style={styles.rowActions}>
@@ -159,9 +163,11 @@ function ServiceRowActions({ row, disabledAll }: { row: GroupVisitBookingRow; di
           onPress={() =>
             update.mutate(action.target, {
               onSuccess: () => hapticSuccess(),
-              onError: () => {
+              onError: (error) => {
                 hapticWarning();
-                toast.error(`Could not update ${offeringLine(row)}.`);
+                // The server's own words when it refused (a no-show on a future
+                // visit says why), else a plain fallback (web QA B-4).
+                toast.error(error instanceof ApiError ? error.message : `Could not update ${offeringLine(row)}.`);
               },
             })
           }

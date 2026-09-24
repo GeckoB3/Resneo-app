@@ -21,6 +21,12 @@ import type {
  * only the people who offer every service, so unlike the single-service path
  * there is no client-side fan-out to merge. Slots come back labelled with the
  * FIRST service and carrying the visit's span as `duration_minutes`.
+ *
+ * `staff=1` says this is the staff form, as web's staff modal says it on every
+ * slot fetch. Without it the route answers as it would a guest, and a visit
+ * holding a "Staff bookings only" service showed no times on any day (web QA
+ * B-10). The route checks the session before it believes the flag. Only the
+ * staff booking wizard builds this path; the guest reschedule has its own.
  */
 export function chainAvailabilityPath(params: {
   venueId: string;
@@ -35,6 +41,7 @@ export function chainAvailabilityPath(params: {
     search.set('practitioner_id', params.practitionerId);
   }
   search.set('services', serialiseServiceChainParam(params.chain));
+  search.set('staff', '1');
   return `/api/booking/availability?${search.toString()}`;
 }
 

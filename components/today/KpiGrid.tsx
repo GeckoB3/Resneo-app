@@ -9,11 +9,18 @@ import type { DashboardForecastDay, DashboardTodayStats } from '@/types/dashboar
 type KpiGridProps = {
   today: DashboardTodayStats;
   isAppointment: boolean;
+  /**
+   * The counts are appointments. On an appointments venue the server counts
+   * appointments only (web QA A-2, 2026-09-23), so the captions say
+   * "appointments". The "Other booking types" grid leaves this off: those are
+   * classes, events and resources, so it keeps "bookings".
+   */
+  countsAppointments?: boolean;
   /** 7-day forecast — feeds the inline sparkline on the primary "Today" tile. */
   forecast?: DashboardForecastDay[];
 };
 
-export function KpiGrid({ today, isAppointment, forecast }: KpiGridProps) {
+export function KpiGrid({ today, isAppointment, countsAppointments = false, forecast }: KpiGridProps) {
   // Two across on a phone, four on a tablet: the same four numbers, rather
   // than two half-window tiles each holding one short line.
   const flexBasis = useTileBasis();
@@ -41,9 +48,10 @@ export function KpiGrid({ today, isAppointment, forecast }: KpiGridProps) {
     : undefined;
 
   // "Confirmed" tile
+  const countNoun = countsAppointments ? 'appointments' : 'bookings';
   const confirmedValue = bookings > 0 ? `${confirmed}/${bookings}` : '—';
   const confirmedCaption =
-    bookings > 0 && attendancePct != null ? `${attendancePct}% of bookings` : 'No bookings today';
+    bookings > 0 && attendancePct != null ? `${attendancePct}% of ${countNoun}` : `No ${countNoun} today`;
   const confirmedExtra =
     pending > 0 || seated > 0
       ? [seated > 0 ? `${seated} seated` : '', pending > 0 ? `${pending} pending` : '']
@@ -53,9 +61,11 @@ export function KpiGrid({ today, isAppointment, forecast }: KpiGridProps) {
 
   const nextValue = today.next_booking ? today.next_booking.time : '—';
   const nextCaption = today.next_booking
-    ? isAppointment
+    ? countsAppointments
       ? 'next appointment'
-      : `party of ${today.next_booking.party_size}`
+      : isAppointment
+        ? 'next booking'
+        : `party of ${today.next_booking.party_size}`
     : 'no upcoming';
 
   return (

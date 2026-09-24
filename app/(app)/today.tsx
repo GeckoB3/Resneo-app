@@ -34,14 +34,20 @@ import {
 } from '@/lib/queries/useClickedSetupSteps';
 import {
   useDismissSetupChecklist,
+  useRestoreSetupChecklist,
   useSetupStatus,
   useSnoozeSetupStep,
 } from '@/lib/queries/useSetupStatus';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
+import { venueActiveModels } from '@/lib/booking/venue-models';
 import { isAppointmentExperience } from '@/lib/venue/venue-experience';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { minTouchTarget, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
+import type { BookingModel } from '@/types/venue';
+
+/** Class, event and resource bookings: not appointments, and not counted as them. */
+const OTHER_BOOKING_MODELS: readonly BookingModel[] = ['class_session', 'event_ticket', 'resource_booking'];
 
 // ─── Setup checklist (admin only) ──────────────────────────────────────────
 
@@ -61,6 +67,7 @@ export function SetupChecklistCard() {
   // re-keys (see staff-gate-stack-remount); enabled only for admins.
   const setupQuery = useSetupStatus(isAdmin);
   const dismiss = useDismissSetupChecklist();
+  const restore = useRestoreSetupChecklist();
   const snooze = useSnoozeSetupStep();
   const { venue } = useVenueContext();
   const venueId = venue?.id ?? null;
@@ -78,12 +85,36 @@ export function SetupChecklistCard() {
   if (!isAdmin || !status) return null;
 
   const onboardingComplete = status.onboarding_completed;
-  // Once onboarding is done, honour the user's dismissal. Pre-onboarding the
-  // checklist is the first-run surface and stays pinned regardless.
-  if (onboardingComplete && status.setup_checklist_dismissed) return null;
-
   const snoozedSteps = new Set([...readSnoozedStepKeys(status), ...pendingSnoozes]);
   const progress = deriveSetupProgress(status, clickedSteps, snoozedSteps);
+
+  // Once onboarding is done, honour the user's dismissal. Pre-onboarding the
+  // checklist is the first-run surface and stays pinned regardless.
+  if (onboardingComplete && status.setup_checklist_dismissed) {
+    // A dismissed checklist with steps still outstanding can be brought back
+    // (web QA A-5, 2026-09-23: DELETE /api/venue/setup-checklist-dismiss).
+    if (progress.allComplete || progress.incompleteSteps.length === 0) return null;
+    return (
+      <View style={styles.restoreRow}>
+        {restore.isError ? (
+          <Text variant="caption" tone="danger" style={styles.restoreError}>
+            We could not bring the checklist back. Please try again.
+          </Text>
+        ) : null}
+        <Button
+          label="Show setup checklist"
+          variant="ghost"
+          size="sm"
+          loading={restore.isPending}
+          onPress={() => {
+            hapticTap();
+            restore.mutate();
+          }}
+        />
+      </View>
+    );
+  }
+
   if (progress.allComplete) return null;
 
   const { incompleteSteps, completedCount, totalCount, progressPct } = progress;
@@ -230,7 +261,7 @@ export function SetupChecklistCard() {
             </Text>
             <Text variant="bodySmall" tone="muted">
               Anything you have not set up yet is still available from the More tab whenever you
-              are ready.
+              are ready. To see the checklist again, tap &ldquo;Show setup checklist&rdquo; on Today.
             </Text>
           </View>
           <Button
@@ -343,6 +374,19 @@ export default function TodayScreen() {
 
   const { today, forecast = [], alerts = [], recent_bookings, heatmap = [] } = payload;
 
+  // The tiles count appointments only on an appointments venue (web QA A-2,
+  // 2026-09-23), but the diary lists every booking today, classes, events and
+  // resources included. With any of those on, the diary is "Today's bookings".
+  const activeModels = venueActiveModels({
+    booking_model: (payload.booking_model ?? venue?.booking_model) as BookingModel | undefined,
+    active_booking_models: (payload.active_booking_models ?? venue?.active_booking_models) as
+      | BookingModel[]
+      | undefined,
+    enabled_models: (payload.enabled_models ?? venue?.enabled_models) as BookingModel[] | undefined,
+  });
+  const diaryListsOtherTypes =
+    isAppointment && OTHER_BOOKING_MODELS.some((model) => activeModels.has(model));
+
   // Compute total bookings across all models for "N more" link
   const bookingsCountAllModes = payload.today_by_booking_model
     ? Object.values(payload.today_by_booking_model).reduce((sum, c) => sum + c, 0)
@@ -363,7 +407,12 @@ export default function TodayScreen() {
         <SetupChecklistCard />
 
         {/* KPI tiles (primary tile carries the inline forecast sparkline) */}
-        <KpiGrid today={today} isAppointment={isAppointment} forecast={forecast} />
+        <KpiGrid
+          today={today}
+          isAppointment={isAppointment}
+          countsAppointments={isAppointment}
+          forecast={forecast}
+        />
 
         {/* Bookings MADE today, this week and this month, whatever date each is for (web 2026-09-18) */}
         <NewBookingsCard summary={payload.new_bookings} onOpenReport={isAdmin ? () => router.push('/reports?tab=new-bookings' as Href) : undefined} />
@@ -399,6 +448,7 @@ export default function TodayScreen() {
           recentBookings={recent_bookings}
           isAppointment={isAppointment}
           tableFocusSecondariesEnabled={tableFocusSecondariesEnabled}
+          listsOtherTypes={diaryListsOtherTypes}
           totalCount={bookingsCountAllModes}
         />
 
@@ -454,6 +504,17 @@ const styles = StyleSheet.create({
   },
   dismissConfirmText: {
     gap: spacing.xs,
+  },
+  // A dismissed checklist's "Show setup checklist" link, right-aligned as on the web.
+  restoreRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: spacing.sm,
+  },
+  restoreError: {
+    flexShrink: 1,
   },
   progressTrack: {
     height: 6,

@@ -54,6 +54,68 @@ function parseTags(value: string): string[] {
     .filter(Boolean);
 }
 
+/** Longest value each contact field accepts (web GUEST_CONTACT_MAX_LENGTH, the API schema). */
+export const GUEST_CONTACT_MAX_LENGTH = {
+  first_name: 100,
+  last_name: 100,
+  email: 255,
+  phone: 24,
+} as const;
+
+export type GuestFieldErrors = Partial<Record<string, string>>;
+
+export type GuestSaveErrors = {
+  /** Shown at the foot of the form: only for problems no field on the form can show. */
+  form: string | null;
+  /** Field key to message, shown under the matching input. */
+  fields: GuestFieldErrors;
+};
+
+/**
+ * Read a rejected contact create/edit into per-field messages (web QA FD-2, FD-10,
+ * 2026-09-23). The API answers a 400 or a duplicate-email 409 with `error` (a
+ * sentence) and `field_errors` (field key to message). Each field's message goes
+ * under its input; `form` carries only what no input on this form can show: the
+ * server's sentence when there are no field messages, or the messages for fields
+ * the form does not have.
+ */
+export function readGuestSaveErrors(
+  e: unknown,
+  fallback: string,
+  shownFields: readonly string[],
+): GuestSaveErrors {
+  if (!(e instanceof ApiError)) return { form: fallback, fields: {} };
+  const body = (e.body && typeof e.body === 'object' ? e.body : {}) as { field_errors?: unknown };
+  const raw = body.field_errors;
+  const fields: GuestFieldErrors = {};
+  const unshown: string[] = [];
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+      if (typeof value !== 'string' || value.trim() === '') continue;
+      if (shownFields.includes(key)) fields[key] = value;
+      else if (!unshown.includes(value)) unshown.push(value);
+    }
+  }
+  if (Object.keys(fields).length === 0 && unshown.length === 0) {
+    return { form: e.message || fallback, fields };
+  }
+  return { form: unshown.length > 0 ? unshown.join(' ') : null, fields };
+}
+
+/** The fields this sheet has an input for, by their API key. */
+const EDIT_SHEET_FIELDS = [
+  'first_name',
+  'last_name',
+  'phone',
+  'email',
+  'tags',
+  'customer_profile_notes',
+  'address_line1',
+  'address_line2',
+  'address_city',
+  'address_postcode',
+] as const;
+
 /** Bottom-sheet to edit a guest's profile, tags, notes and marketing consent. */
 export function GuestEditSheet({ target, onClose }: GuestEditSheetProps) {
   const mutation = useUpdateGuest(target?.id ?? '');
@@ -71,6 +133,20 @@ export function GuestEditSheet({ target, onClose }: GuestEditSheetProps) {
   const [addressCity, setAddressCity] = useState('');
   const [addressPostcode, setAddressPostcode] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<GuestFieldErrors>({});
+
+  /** An edit clears that field's message from the last rejected save. */
+  function edited(key: string, setter: (value: string) => void) {
+    return (value: string) => {
+      setter(value);
+      setFieldErrors((prev) => {
+        if (!prev[key]) return prev;
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    };
+  }
 
   // Seed form values when a new target is opened. Using useEffect avoids
   // the render-time setState anti-pattern that caused double-renders.
@@ -90,6 +166,7 @@ export function GuestEditSheet({ target, onClose }: GuestEditSheetProps) {
       setAddressCity(target.addressCity);
       setAddressPostcode(target.addressPostcode);
       setError(null);
+      setFieldErrors({});
     }
   }, [target?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -143,13 +220,18 @@ export function GuestEditSheet({ target, onClose }: GuestEditSheetProps) {
   async function handleSave() {
     if (!target || !hasChanges) return;
     setError(null);
+    setFieldErrors({});
     try {
       await mutation.mutateAsync(payload);
       hapticSuccess();
       onClose();
     } catch (e) {
       hapticWarning();
-      setError(e instanceof ApiError ? e.message : 'Could not save changes.');
+      // A duplicate email (409) or a field the server rejects (400) is shown under
+      // its input; the foot of the form keeps only errors no field can show.
+      const saveErrors = readGuestSaveErrors(e, 'Could not save changes.', EDIT_SHEET_FIELDS);
+      setFieldErrors(saveErrors.fields);
+      setError(saveErrors.form);
     }
   }
 
@@ -167,69 +249,93 @@ export function GuestEditSheet({ target, onClose }: GuestEditSheetProps) {
             keyboardShouldPersistTaps="handled">
             <View style={styles.nameRow}>
               <View style={styles.nameField}>
-                <Input label="First name" value={firstName} onChangeText={setFirstName} autoCapitalize="words" />
+                <Input
+                  label="First name"
+                  value={firstName}
+                  onChangeText={edited('first_name', setFirstName)}
+                  autoCapitalize="words"
+                  maxLength={GUEST_CONTACT_MAX_LENGTH.first_name}
+                  error={fieldErrors.first_name}
+                />
               </View>
               <View style={styles.nameField}>
-                <Input label="Last name" value={lastName} onChangeText={setLastName} autoCapitalize="words" />
+                <Input
+                  label="Last name"
+                  value={lastName}
+                  onChangeText={edited('last_name', setLastName)}
+                  autoCapitalize="words"
+                  maxLength={GUEST_CONTACT_MAX_LENGTH.last_name}
+                  error={fieldErrors.last_name}
+                />
               </View>
             </View>
             <Input
               label="Phone"
               value={phone}
-              onChangeText={setPhone}
+              onChangeText={edited('phone', setPhone)}
               keyboardType="phone-pad"
               autoCapitalize="none"
+              maxLength={GUEST_CONTACT_MAX_LENGTH.phone}
+              error={fieldErrors.phone}
             />
             <Input
               label="Email"
               value={email}
-              onChangeText={setEmail}
+              onChangeText={edited('email', setEmail)}
               keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
+              maxLength={GUEST_CONTACT_MAX_LENGTH.email}
+              error={fieldErrors.email}
             />
             <Input
               label="Tags (comma separated)"
               value={tags}
-              onChangeText={setTags}
+              onChangeText={edited('tags', setTags)}
               autoCapitalize="none"
+              error={fieldErrors.tags}
             />
             <Input
               label="Notes"
               value={notes}
-              onChangeText={setNotes}
+              onChangeText={edited('customer_profile_notes', setNotes)}
               multiline
               style={styles.multiline}
+              error={fieldErrors.customer_profile_notes}
             />
 
             {/* Address (optional — for client-address services) */}
             <Input
               label="Address line 1"
               value={addressLine1}
-              onChangeText={setAddressLine1}
+              onChangeText={edited('address_line1', setAddressLine1)}
               autoCapitalize="words"
+              error={fieldErrors.address_line1}
             />
             <Input
               label="Address line 2"
               value={addressLine2}
-              onChangeText={setAddressLine2}
+              onChangeText={edited('address_line2', setAddressLine2)}
               autoCapitalize="words"
+              error={fieldErrors.address_line2}
             />
             <View style={styles.nameRow}>
               <View style={styles.nameField}>
                 <Input
                   label="City / town"
                   value={addressCity}
-                  onChangeText={setAddressCity}
+                  onChangeText={edited('address_city', setAddressCity)}
                   autoCapitalize="words"
+                  error={fieldErrors.address_city}
                 />
               </View>
               <View style={styles.nameField}>
                 <Input
                   label="Postcode"
                   value={addressPostcode}
-                  onChangeText={setAddressPostcode}
+                  onChangeText={edited('address_postcode', setAddressPostcode)}
                   autoCapitalize="characters"
+                  error={fieldErrors.address_postcode}
                 />
               </View>
             </View>

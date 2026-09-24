@@ -55,6 +55,22 @@ function buildTeamList(
 }
 
 /**
+ * The people "Meet the team" lists (F-2, web `CombinedPageManager`): the live
+ * page's own team from the catalogue GET when it has anyone, so the editor
+ * offers the same people guests see. On a shared-services collective the
+ * member calendars can be empty while the live page shows a team, and the
+ * editor used to say there was nobody to set up. Otherwise, or when the server
+ * could not load the team, it falls back to {@link buildTeamList}.
+ */
+export function resolveEditorTeam(
+  liveTeam: { id: string; name: string }[] | null | undefined,
+  memberSources: { venueName: string; practitioners: { id: string; name: string }[] }[] | undefined,
+): TeamMember[] {
+  if (liveTeam && liveTeam.length > 0) return liveTeam.map((m) => ({ id: m.id, name: m.name }));
+  return buildTeamList(memberSources ?? []);
+}
+
+/**
  * Per-calendar team-profile editor for the combined booking page (parity with
  * the web BookingPageEditor "Meet the team" section). Lists every member
  * practitioner/calendar; each expands into an editor for its
@@ -78,8 +94,9 @@ export function CombinedPageTeamProfiles({
 }) {
   const catalogueQuery = useCollectiveCatalogue(collectiveId);
   const memberSources = catalogueQuery.data?.catalogue?.memberSources;
+  const liveTeam = catalogueQuery.data?.team;
 
-  const team = useMemo(() => buildTeamList(memberSources ?? []), [memberSources]);
+  const team = useMemo(() => resolveEditorTeam(liveTeam, memberSources), [liveTeam, memberSources]);
   const profiles = config.team_profiles ?? {};
 
   return (

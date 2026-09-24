@@ -89,7 +89,12 @@ export interface CustomClientFieldDefinition {
   created_at: string;
 }
 
-/** Row from guest communications history. */
+/**
+ * Row from guest communications history. Since web QA FD-4 (2026-09-23) the rows
+ * come from `communication_logs` (confirmations, reminders, panel messages) merged
+ * with the legacy `communications` table, so `message_type` is the raw log type
+ * (`booking_confirmation_email`); label it with `formatCommunicationLogLabel`.
+ */
 export interface CommunicationRow {
   id: string;
   message_type: string;
@@ -98,6 +103,12 @@ export interface CommunicationRow {
   created_at: string;
   booking_id: string | null;
   guest_id: string | null;
+  /** The email address or phone number it went to. */
+  recipient?: string | null;
+  /** Why the send failed, when `status` is `failed`. */
+  error_message?: string | null;
+  /** Which table the row came from; ids are only unique within one. */
+  source?: 'communication_logs' | 'communications' | null;
 }
 
 export interface GuestDetailResponse {

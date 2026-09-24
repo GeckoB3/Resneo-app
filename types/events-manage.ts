@@ -52,8 +52,13 @@ export interface ManagedEventsResponse {
   events: ManagedEvent[];
 }
 
-/** One ticket row sent on write — `capacity`/`sort_order` optional. */
+/**
+ * One ticket row sent on write — `capacity`/`sort_order` optional. `id` names a
+ * saved tier on an edit; `capacity` is left out when there is no cap, because
+ * the create route refuses null.
+ */
 export interface EventTicketWriteInput {
+  id?: string;
   name: string;
   price_pence: number;
   capacity?: number | null;

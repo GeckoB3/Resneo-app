@@ -4,12 +4,14 @@ const mockMutate = jest.fn();
 jest.mock('@/lib/queries/useBookingMutations', () => ({
   useUpdateBookingStatus: () => ({ mutate: mockMutate, isPending: false }),
 }));
+const mockToastError = jest.fn();
 jest.mock('@/providers/ToastProvider', () => ({
-  useToast: () => ({ error: jest.fn(), success: jest.fn(), info: jest.fn() }),
+  useToast: () => ({ error: mockToastError, success: jest.fn(), info: jest.fn() }),
 }));
 jest.mock('@/lib/haptics', () => ({ hapticSuccess: jest.fn(), hapticWarning: jest.fn(), hapticTap: jest.fn(), hapticSelect: jest.fn() }));
 
 import { VisitSummary } from '@/components/bookings/VisitSummary';
+import { ApiError } from '@/lib/api/client';
 import type { GroupVisitBookingRow } from '@/lib/queries/useGroupVisit';
 import type { BookingDetail } from '@/types/booking-detail';
 
@@ -43,7 +45,10 @@ const common = {
 };
 
 describe('VisitSummary', () => {
-  beforeEach(() => mockMutate.mockClear());
+  beforeEach(() => {
+    mockMutate.mockReset();
+    mockToastError.mockClear();
+  });
 
   /**
    * Found on a device (2026-09-12): after a modify save the panel is seeded from
@@ -180,12 +185,71 @@ describe('VisitSummary', () => {
     // The second is in progress: Complete and Undo start.
     expect(screen.getByLabelText('Complete Colour')).toBeTruthy();
 
-    // Undo start returns that service to Confirmed, as the web does — not to
-    // Booked, which would drop the guest's confirmation.
+    // Nobody confirmed the visit, so Undo start returns that service to Booked
+    // (web QA B-4): Confirmed would stamp a staff confirmation nobody gave.
     await act(async () => {
       fireEvent.press(screen.getByLabelText('Undo start Colour'));
     });
-    expect(mockMutate.mock.calls.at(-1)![0]).toBe('Confirmed');
+    expect(mockMutate.mock.calls.at(-1)![0]).toBe('Booked');
+  });
+
+  describe('Undo start on one service of a visit (web QA B-4)', () => {
+    const visitBooking = base({ group_booking_id: 'g' });
+    const visit = { services: [], totalMinutes: 90, spansDays: false, spansCalendars: false } as never;
+    const renderVisit = (started: Partial<GroupVisitBookingRow>) =>
+      render(
+        <VisitSummary
+          {...common}
+          booking={visitBooking}
+          visit={visit}
+          visitRows={[
+            { id: 'b1', booking_date: '2026-09-10', booking_time: '10:00', booking_end_time: '10:45', status: 'Confirmed', booking_item_name: 'Cut' },
+            { id: 'b2', booking_date: '2026-09-10', booking_time: '10:45', booking_end_time: '11:30', status: 'Seated', booking_item_name: 'Colour', ...started },
+          ]}
+          headerStatus="Seated"
+          timeLabel="10:00 – 11:30"
+          durationMinutes={90}
+          serviceName={null}
+        />,
+      );
+
+    it('goes back to Confirmed when staff had confirmed the service', async () => {
+      await renderVisit({ staff_attendance_confirmed_at: '2026-09-09T18:00:00Z' });
+      await act(async () => {
+        fireEvent.press(screen.getByLabelText('Undo start Colour'));
+      });
+      expect(mockMutate.mock.calls.at(-1)![0]).toBe('Confirmed');
+    });
+
+    it('goes back to Confirmed when the guest had confirmed from a reminder', async () => {
+      await renderVisit({ guest_attendance_confirmed_at: '2026-09-09T18:00:00Z' });
+      await act(async () => {
+        fireEvent.press(screen.getByLabelText('Undo start Colour'));
+      });
+      expect(mockMutate.mock.calls.at(-1)![0]).toBe('Confirmed');
+    });
+
+    it('shows the reason the server gives when the change is refused', async () => {
+      mockMutate.mockImplementation((_status: string, options: { onError: (error: unknown) => void }) =>
+        options.onError(new ApiError('You cannot undo this service yet.', 409)),
+      );
+      await renderVisit({});
+      await act(async () => {
+        fireEvent.press(screen.getByLabelText('Undo start Colour'));
+      });
+      expect(mockToastError).toHaveBeenCalledWith('You cannot undo this service yet.');
+    });
+
+    it('falls back to a plain message when there is no reason to show', async () => {
+      mockMutate.mockImplementation((_status: string, options: { onError: (error: unknown) => void }) =>
+        options.onError(new Error('Network request failed')),
+      );
+      await renderVisit({});
+      await act(async () => {
+        fireEvent.press(screen.getByLabelText('Undo start Colour'));
+      });
+      expect(mockToastError).toHaveBeenCalledWith('Could not update Colour.');
+    });
   });
 
   /**

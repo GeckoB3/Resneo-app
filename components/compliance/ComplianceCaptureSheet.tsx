@@ -61,6 +61,39 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+/** The question as written, without a trailing colon: "Allergies:" reads "Allergies". */
+function questionText(label: string): string {
+  return label.trim().replace(/\s*:\s*$/, '');
+}
+
+/**
+ * What a required field says when it has no answer. The web's wording (QA FD-5,
+ * 2026-09-23, `requiredFieldMessage` in its form-schema), so the local check and
+ * the server's `field_errors` read the same.
+ */
+export function requiredFieldMessage(field: Pick<ComplianceFormField, 'label' | 'type'>): string {
+  const question = questionText(field.label);
+  if (field.type === 'signature') return `Please sign: ${question}`;
+  if (field.type === 'file') return `Please upload: ${question}`;
+  return `Please answer: ${question}`;
+}
+
+/** The capture route's `field_errors` (field id to message) from a rejected save. */
+function serverFieldErrors(error: unknown): Record<string, string> {
+  if (!(error instanceof ApiError)) return {};
+  const body = (error.body && typeof error.body === 'object' ? error.body : {}) as {
+    field_errors?: unknown;
+  };
+  const raw = body.field_errors;
+  const out: Record<string, string> = {};
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+      if (typeof value === 'string' && value.trim() !== '') out[key] = value;
+    }
+  }
+  return out;
+}
+
 /** Field label + optional required marker + per-field help text. */
 function FieldHeader({ field }: { field: ComplianceFormField }) {
   return (
@@ -412,10 +445,10 @@ export function ComplianceCaptureSheet({
       const val = responses[field.id];
       const isEmpty =
         val == null ||
-        val === '' ||
+        (typeof val === 'string' && val.trim() === '') ||
         (Array.isArray(val) && (val as unknown[]).length === 0);
       if (isEmpty) {
-        errors[field.id] = 'This field is required.';
+        errors[field.id] = requiredFieldMessage(field);
       }
     }
     setFieldErrors(errors);
@@ -454,7 +487,23 @@ export function ComplianceCaptureSheet({
         },
         onError: (error) => {
           hapticWarning();
-          toast.error(error instanceof ApiError ? error.message : 'Could not capture the record.');
+          // The server names each unanswered question by field id ("Please answer:
+          // Allergies"); show those under their fields, as the web does. Anything
+          // for a field not on screen goes in the toast.
+          const shown: Record<string, string> = {};
+          const unshown: string[] = [];
+          for (const [key, message] of Object.entries(serverFieldErrors(error))) {
+            if (visibleFields.some((f) => f.id === key)) shown[key] = message;
+            else unshown.push(message);
+          }
+          setFieldErrors(shown);
+          toast.error(
+            unshown.length > 0
+              ? unshown.join(' ')
+              : error instanceof ApiError
+                ? error.message
+                : 'Could not capture the record.',
+          );
         },
       },
     );
@@ -543,7 +592,16 @@ export function ComplianceCaptureSheet({
                 <FieldInput
                   field={field}
                   value={responses[field.id]}
-                  onChange={(val) => setResponses((prev) => ({ ...prev, [field.id]: val }))}
+                  onChange={(val) => {
+                    setResponses((prev) => ({ ...prev, [field.id]: val }));
+                    // An answer clears that field's message.
+                    setFieldErrors((prev) => {
+                      if (!prev[field.id]) return prev;
+                      const next = { ...prev };
+                      delete next[field.id];
+                      return next;
+                    });
+                  }}
                   mode={mode}
                 />
                 {fieldErrors[field.id] ? (

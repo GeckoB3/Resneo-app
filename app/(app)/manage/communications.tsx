@@ -320,7 +320,9 @@ function MessageCard({
                   multiline
                   style={styles.multiline}
                   maxLength={320}
-                  helper={`${(policy.smsCustomMessage ?? '').length}/320 (counts toward SMS length)`}
+                  // Web QA F-1 (2026-09-23): the booking details come first and the
+                  // venue's line is shortened to fit, rather than cutting the date and time.
+                  helper={`${(policy.smsCustomMessage ?? '').length}/320 characters. A text is one message long, so the booking details come first. If your line does not fit alongside them, it is shortened. Preview shows exactly what is sent.`}
                 />
               ) : (
                 <Text variant="bodySmall" tone="muted">

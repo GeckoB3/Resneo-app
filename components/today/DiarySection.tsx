@@ -17,6 +17,13 @@ type DiarySectionProps = {
   recentBookings: DashboardRecentBooking[];
   isAppointment: boolean;
   tableFocusSecondariesEnabled: boolean;
+  /**
+   * The venue also runs classes, events or resources. The diary lists every
+   * booking today, those included, while the tiles above count appointments only
+   * (web QA A-2, 2026-09-23), so it is "Today's bookings" rather than
+   * "Today's appointments".
+   */
+  listsOtherTypes?: boolean;
   totalCount?: number;
 };
 
@@ -24,23 +31,24 @@ export function DiarySection({
   recentBookings,
   isAppointment,
   tableFocusSecondariesEnabled,
+  listsOtherTypes = false,
   totalCount,
 }: DiarySectionProps) {
   const { colors } = useTheme();
   const router = useRouter();
   const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null);
 
-  const unit = isAppointment && !tableFocusSecondariesEnabled ? 'appointments' : 'bookings';
+  // Appointments wording only when every row listed is one.
+  const appointmentWording = isAppointment && !tableFocusSecondariesEnabled && !listsOtherTypes;
+  const unit = appointmentWording ? 'appointments' : 'bookings';
 
   const diaryTitle = tableFocusSecondariesEnabled
     ? "Today's diary · all types"
-    : isAppointment
+    : appointmentWording
     ? "Today's appointments"
     : "Today's bookings";
 
-  const allBookingsLabel = isAppointment && !tableFocusSecondariesEnabled
-    ? 'All appointments'
-    : 'All bookings';
+  const allBookingsLabel = appointmentWording ? 'All appointments' : 'All bookings';
 
   function openBooking(id: string) {
     hapticSelect();
@@ -85,9 +93,9 @@ export function DiarySection({
         {recentBookings.length === 0 ? (
           <View style={styles.empty}>
             <EmptyState
-              title={isAppointment ? 'No appointments today' : 'No bookings today'}
+              title={appointmentWording ? 'No appointments today' : 'No bookings today'}
               message={
-                isAppointment
+                appointmentWording
                   ? 'Appointments will appear here as they come in.'
                   : 'Bookings will appear here as they come in.'
               }

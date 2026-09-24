@@ -48,6 +48,7 @@ import { ApiError, apiFetch } from '@/lib/api/client';
 import { getWebUrl } from '@/lib/env';
 import { clientsScreenTitle } from '@/lib/booking/terminology';
 import { hiddenByIdentityScopeCopy } from '@/lib/guests/identity-scope';
+import { csvCellQuoted } from '@/lib/csv/csv-cell';
 import { buildAndShareCsv } from '@/lib/reports/csv-export';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { useGuestCustomFields, useGuests } from '@/lib/queries/useGuests';
@@ -694,7 +695,8 @@ export default function ClientsScreen() {
         exportPage += 1;
       }
 
-      const esc = (value: string | null | undefined) => `"${(value ?? '').replace(/"/g, '""')}"`;
+      // Quoted and formula-safe: a guest named `=HYPERLINK(…)` must stay text (web QA A-6).
+      const esc = (value: string | null | undefined) => csvCellQuoted(value ?? '');
       const header = [
         'First name',
         'Surname',

@@ -124,8 +124,11 @@ export function offeringPriceLabel(
   return options.fromPrefix ? `From ${price}` : (price ?? 'Pay at venue');
 }
 
-/** "3 spots left" / "1 spot left" / "Fully booked". */
+/**
+ * "3 spots left" / "1 ticket left". With none left a class place reads "Full" and a ticket
+ * "Sold out", the words the web's booking flows use (E-9).
+ */
 export function remainingLabel(remaining: number, noun = 'spot'): string {
-  if (remaining <= 0) return 'Fully booked';
+  if (remaining <= 0) return noun === 'ticket' ? 'Sold out' : 'Full';
   return `${remaining} ${noun}${remaining === 1 ? '' : 's'} left`;
 }
