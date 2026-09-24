@@ -1,5 +1,197 @@
 # Go-live check — Resneo app
 
+## Run 2026-09-24: OTA to production, 1.1.1, "ResNeo R40 to R43 Web Parity"
+
+**Scope:** the five commits since the last update, `ad6b117`..`d492ce4`:
+- R40, classes, events and resources on the combined page;
+- R41, Set up with AI, and multipart uploads that `expo/fetch` accepts;
+- R42, the combined page's embed code and QR code;
+- the 2026-09-23 device-test fixes;
+- R43, the web's 2026-09-23 QA round.
+
+Notes: `Docs/APP_GAP_REPORT_R40_WEB_DELTA.md` to `_R43_`, and `Docs/APP_QA_FIXES_2026-09-23.md`. The
+user-facing lines are the "Unreleased" entry in `CHANGELOG.md`. 230 files, +14,486/−668, of which 224
+are outside `Docs` and the changelog (58 test files). JavaScript, styling and docs only.
+
+**The channel before this run:** the manifest (`eas channel:view production --json`) puts the
+latest group at `8fba12b5` "ResNeo R38 and R39 Web Parity", commit `e5440c4`, runtime **1.1.1**, both
+platforms, 2026-09-20 17:04 UTC. That group was published with no record here. The group before it,
+`42ecf752` (R37), is the 2026-09-17 run below.
+
+**Verdict: cleared to OTA.**
+- Nothing native moved since the 1.1.1 binaries, and the version stays 1.1.1.
+- The EAS `production` environment is live on every variable an update reads, and a cleared-cache
+  export bakes only live values in.
+- The web release this batch needs, web `main` #203, is deployed to production. Its new table and
+  column are in the production database (§6). Until that merge landed during this run, the batch was
+  **not** safe to publish.
+
+### 1. Version and reach
+
+| Check | Result |
+|---|---|
+| iOS version | **1.1.1** (`app.json` `version`) |
+| Android version | **1.1.1** (`app.json` `android.version`) |
+| `runtimeVersion.policy` | `appVersion`, so runtime **1.1.1** on both |
+| Store binaries | iOS build 23 / Android build 17, appVersion 1.1.1 at `cbc0975`, channel `production`, runtime 1.1.1 (`eas build:list`) |
+| `production` channel before | branch `production`, latest group `8fba12b5` at `e5440c4`, runtime **1.1.1** |
+
+The version is **not** bumped: under `appVersion` that would move the runtime to 1.1.2 and strand
+every 1.1.1 install. 1.1.0 installs keep group `347b2217`.
+
+### 2. OTA eligibility: nothing native moved
+
+`git diff cbc0975..HEAD -- app.json app.config.js eas.json package.json package-lock.json patches
+metro.config.js` is **empty**, and the repo has no `ios` or `android` folder. The batch adds only two
+module imports, both since the last update and since the build:
+- `expo-file-system`, whose `File` class builds the multipart part in `lib/api/form-data-file.ts`;
+- `react-native-webview`, the hidden canvas in `components/services-setup/ImagePainter.tsx` that
+  resizes photos.
+
+Both packages were dependencies before the 1.1.1 build. `expo-modules-autolinking` lists them, so
+their native code is in the binaries:
+- `react-native-webview` as a React Native library on both platforms;
+- `expo-file-system@56.0.8` as an Expo module.
+
+The setup's other sources are linked the same way: `expo-clipboard`, `expo-document-picker` and
+`expo-image-picker`. The one new env read, `EXPO_PUBLIC_USE_RN_FETCH`, mirrors Expo's own switch and is
+unset (§4).
+
+### 3. The install matches the binaries
+
+A lock-versus-installed comparison across all 1,230 packages reports **0 drift** in both places:
+- the main checkout, installed by the 2026-09-17 `npm ci`, with the lock unchanged since;
+- the worktree that made this run's export, from a fresh `npm ci`, where `patch-package` applied
+  `@supabase/supabase-js@2.106.1 ✔`.
+
+npm 11.19 again withheld the three dependency install scripts listed in the 2026-09-17 record, and
+none affects the bundle. **`@sentry/cli` still needs approving or rebuilding before the 1.2.0 native
+build.**
+
+### 4. Production environment (EAS, not `eas.json`), all live
+
+`eas env:list --environment production --format long`. All five app variables are **PUBLIC** and
+unchanged since 2026-08-05.
+
+| Variable | Visibility | Value |
+|---|---|---|
+| `EXPO_PUBLIC_API_URL` | PUBLIC | `https://www.resneo.com` (live) |
+| `EXPO_PUBLIC_SUPABASE_URL` | PUBLIC | `https://njualfobtudvlugqkqho.supabase.co` (live) |
+| `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | PUBLIC | `sb_publishable_faW-RD…` (live project) |
+| `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` | PUBLIC | `pk_live_…` |
+| `EXPO_PUBLIC_SENTRY_DSN` | PUBLIC | Sentry DE ingest |
+| `GOOGLE_SERVICES_JSON` / `SENTRY_AUTH_TOKEN` | SECRET / SENSITIVE | build-time only, n/a to an update |
+
+Absent by design, each with its safe default:
+- `EXPO_PUBLIC_TERMINAL_SIMULATED`: real readers.
+- `EXPO_PUBLIC_ALLOW_SCREENSHOTS`: FLAG_SECURE stays on.
+- `EXPO_PUBLIC_WEB_URL`: falls back to the API URL, which keeps both `reserve-ni.vercel.app` fallbacks
+  unreachable.
+- `EXPO_PUBLIC_USE_RN_FETCH`: `expo/fetch` stays the global fetch, which is what the upload fix is
+  written for.
+
+**Local env files.** The main checkout holds `.env.development.local` (six dev keys, including
+`TERMINAL_SIMULATED` and `ALLOW_SCREENSHOTS`) and `.env.example`. `@expo/env` 2.4.2 loads
+`.env.<NODE_ENV>.local`, `.env.local`, `.env.<NODE_ENV>` and `.env`. The export sets `NODE_ENV` to
+`production` only when it is unset, and none of the production files exist.
+
+`NODE_ENV` is unset at user and machine level on this PC. If a shell had `NODE_ENV=development`, the
+dev file would load, and its two keys that EAS does not set would reach the bundle. The five EAS values
+would still win, because a `.env` file never overrides a variable that is already set.
+
+### 5. The bundle, checked before publishing
+
+Command: `eas env:exec production "npx expo export --clear --platform all --output-dir …"`, from an
+empty Metro cache after `npm ci`. Both Hermes bundles were grepped (iOS 11.8 MB, Android 12.0 MB):
+
+| Marker | iOS | Android |
+|---|---|---|
+| `njualfobtudvlugqkqho.supabase.co` (live) | present | present |
+| every `*.supabase.co` host in the bundle | only the live one | only the live one |
+| `zkppmyyvkjvbsvemakbb` (dev project) | none | none |
+| `www.resneo.com` | present | present |
+| live / staging Supabase publishable key | present / none | present / none |
+| `pk_live_` / `pk_test_` | present / none | present / none |
+| Sentry DSN (`ingest.de.sentry.io`) | present | present |
+| this batch: `/api/venue/services-setup`, "Set up with AI", `/api/venue/collective-listings`, `/embed/c/`, "Combined booking page settings", "Show setup checklist", "Waiting for the deposit", "Comments when booked" | present | present |
+| `reserve-ni.vercel.app` | once: the unreachable fallbacks behind `getWebUrl()` | same |
+| `localhost` | 4 library defaults | 3, same shape |
+| `192.168.` / `10.0.2.2` (a LAN or emulator API) | none | none |
+
+No app source contains `localhost`.
+
+### 6. The web side this batch needs is deployed
+
+When this run started, web `staging` was 18 commits ahead of production. Every web commit R40 to R43
+audited was staging-only:
+- `1e9eaa94`: collective listings;
+- `600e36c7` and `fa9c120f`: Set up with AI;
+- `4a05756e`: the combined embed;
+- `d3e760fa`: the QA round;
+- `1c58fc73`: `event-offerings` over Bearer, unplaced events, option names.
+
+Production answered **404** on the new routes the app now calls. The owner merged staging during the
+run as web `main` `966adfe6` "Staging (#203)" (2026-09-24 10:43 UTC). It is a squash whose tree is
+identical to staging `9e808789` (`50a999a0`). Vercel's Production deployment succeeded at 10:46 UTC,
+and CI passed on `main`.
+
+- **Routes.** Unauthenticated probes of `www.resneo.com` all answer **401**, so each route exists:
+  `GET /api/venue/services-setup`, `/api/venue/collective-listings`,
+  `/api/venue/collectives/{id}/listings` and `/api/venue/event-offerings`. A made-up route answers 404.
+- **Migrations.** The merge carries three, and web CI applies none to production (it only builds a
+  local database for the RLS suite).
+  - `20270221120000_collective_listings.sql` is applied. PostgREST with the publishable key and
+    `limit=0` (no rows returned) answers 200 for `collective_listings` and for
+    `bookings.collective_listing_id`. A missing table answers `PGRST205` and a missing column `42703`.
+  - `20270221130000_collective_audit_listing_events.sql` (the audit event-type check) and
+    `20270222120000_collective_deleted_master_releases_links.sql` (the release trigger and replica
+    functions) cannot be seen from outside. **Confirm they went in with the first.**
+
+### 7. Verified healthy
+
+- `tsc --noEmit`: clean.
+- `expo lint`: **0 errors**, 314 warnings (the test-file `require` / `import/first` patterns already in
+  the tree).
+- `jest`: **343 suites / 3,267 tests pass** at `d492ce4`. The run was in the worktree, with `/.claude/`
+  dropped from `testPathIgnorePatterns` on the command line. That pattern exists to skip worktrees,
+  so inside one it hides every suite.
+- `expo export`: both platforms complete from a cleared cache.
+- Device passes: every part except R40 records an Android pass on the owner's Galaxy S23 Ultra, in
+  Expo Go against the dev database. R41 and R42 used the staging API; the fixes and R43 used the owner's
+  local web server. R40's own device list is not recorded as run, though R43's pass booked through the
+  collective's Classes and Events tabs.
+- `eas.json` `requireCommit: true`: this record is committed on a clean tree and pushed before the
+  publish.
+
+### 8. Publishing
+
+From `C:\Resneo-app`, after pulling this record:
+
+```
+eas update --channel production --environment production --clear-cache --message "ResNeo R40 to R43 Web Parity"
+```
+
+- The channel maps to the one `production` branch.
+- `--environment production` supplies §4. An update ignores the `env` block in `eas.json`.
+- `--clear-cache` is the rule.
+
+Afterwards, record the group id here and retitle the changelog's "Unreleased" entry.
+
+### 9. Not covered
+
+- **The iOS pass**, still owed since the R35 run. It now also needs Set up with AI: photo library
+  (HEIC should arrive as JPEG), a copied screenshot, a PDF from Files and the sheet's keyboard. Plus the
+  R42 share sheet's title.
+- **A store-build upload of each kind**: venue image, page asset, compliance file and setup document.
+  The `bytes()` part is proven only in Expo Go (R41, "To test on a device" 2). The 1.1.1 store build's
+  uploads have probably failed since `expo/fetch` became the global fetch, so this update should fix
+  them. Try one upload on a store install after publishing.
+- **Taking a photo** in Set up with AI. The 1.1.1 build has no camera permission; that needs a store
+  build.
+- **1.1.0 stragglers** stay frozen on `347b2217`.
+
+---
+
 ## Run 2026-09-17: OTA to production, 1.1.1, "ResNeo R37 Collectives on Shared Services"
 
 **Scope:** the twelve commits since the 1.1.1 build, `efccd1e`..`934029c` — the R37 batch (venue
