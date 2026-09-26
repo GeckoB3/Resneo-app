@@ -8,7 +8,7 @@ steps can ship over the air: the camera, the order alert sound and the Android `
 link. The user-facing lines and store copy are the "Unreleased: iOS 1.1.2 / Android 1.1.2" entry in
 `CHANGELOG.md`.
 
-**Verdict: the code is ready to build. It has not been built.** Everything that can run on this
+**Verdict: the code is ready to build** (updated the same day: cleared for production, §8). Everything that can run on this
 machine passes (§4). The machine cannot compile a React Native 0.86 app (its Android Studio has JDK
 11 and Android 33 only, and there is no Xcode), so **the first native compile is the EAS build**, and
 §5 and §6 are owed before either store sees it.
@@ -80,7 +80,7 @@ choice for a later build.
 ### 5. Owed on build day
 
 1. Commit the release (version bump, changelog, this record) on a clean tree; `eas.json` has
-   `requireCommit: true`. Done: the "Release 1.1.2" commit on 2026-09-26, not pushed.
+   `requireCommit: true`. Done: `c824b86`. Steps 2 to 4 are done too, see §8.
 2. `npm ci`, then re-check the EAS `production` environment as in the 2026-09-15 run (§4 there).
 3. A cleared-cache export under `eas env:exec production`, with both Hermes bundles grepped for live
    hosts and keys only.
@@ -115,6 +115,47 @@ npx eas-cli build --platform all --profile production
 npx eas-cli submit --platform ios --profile production --latest
 npx eas-cli submit --platform android --profile production --latest
 ```
+
+### 8. Preview builds, device pass and production readiness (2026-09-26)
+
+**Preview builds** from `c824b86`, both **FINISHED**: Android `631d292f` (versionCode 17, 28 min)
+and iOS `bf078540` (buildNumber 23, ad hoc for the registered iPhone XR, 9 min), app version 1.1.2,
+SDK 57. These were the first native compiles of React Native 0.86, Terminal beta.33 and the camera
+modules. **Device pass:** the owner reports everything working on both preview builds.
+
+**Production readiness, checked the same day:**
+
+| Check | Result |
+|---|---|
+| `npm ci` | clean install from the lock; `supabase-js` patch applied; tree clean |
+| Versions | `app.json` `version` 1.1.2 and `android.version` 1.1.2; runtime `appVersion` |
+| Build numbers | `eas build:version:get`: Android versionCode 17, iOS buildNumber 23; `autoIncrement` makes the production builds **Android 18** and **iOS 24** |
+| Production profile (`eas config`) | `distribution: store`, `environment: production`, `channel: production`, `autoIncrement: true`; iOS `image` `macos-tahoe-26.5-xcode-26.6` |
+| EAS `production` environment | `EXPO_PUBLIC_API_URL` www.resneo.com; `EXPO_PUBLIC_SUPABASE_URL` njualfobtudvlugqkqho (live); `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` the live key; `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` `pk_live_`; `EXPO_PUBLIC_SENTRY_DSN` DE ingest; `GOOGLE_SERVICES_JSON` (file); `SENTRY_AUTH_TOKEN` |
+| Profile `env` vs EAS | the four shared keys are identical, so the profile winning a conflict changes nothing |
+| Absent by design | `EXPO_PUBLIC_TERMINAL_SIMULATED` (real readers), `EXPO_PUBLIC_ALLOW_SCREENSHOTS` (FLAG_SECURE on), `EXPO_PUBLIC_WEB_URL` (falls back to the API URL), `EXPO_PUBLIC_ANALYTICS_KEY` (off) |
+| iOS entitlements | associated domains and push only, as in 1.1.1, so the App Store profile needs no change |
+
+**Cleared-cache export under `eas env:exec production`**, both Hermes bundles searched:
+
+| Marker | iOS | Android |
+|---|---|---|
+| `njualfobtudvlugqkqho.supabase.co` (live) | present | present |
+| `zkppmyyvkjvbsvemakbb` (dev) | none | none |
+| `www.resneo.com` | present | present |
+| live / dev Supabase publishable key | present / none | present / none |
+| `pk_live_` / `pk_test_` | present / none | present / none |
+| `ingest.de.sentry.io` | present | present |
+| `192.168.1.99` (the local test server) | none | none |
+| `reserve-ni.vercel.app` | once: the unreachable fallback behind `getWebUrl()` (`lib/assistant/links.ts`), as in every run | same |
+| `localhost:3000` | one library default string | none |
+| New code: "Take a photo", the camera refusal message | present | present |
+
+**Not exercised by the preview builds:** the Sentry sourcemap upload (`preview` sets
+`SENTRY_DISABLE_AUTO_UPLOAD`). A production build runs it with `SENTRY_AUTH_TOKEN`; if that step
+fails, the build log says so and the build can be retried.
+
+**Verdict: cleared to build for production.**
 
 ---
 
