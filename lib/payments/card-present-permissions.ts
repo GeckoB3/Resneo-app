@@ -24,6 +24,17 @@ import { Platform } from 'react-native';
  * `locationWhenInUsePermission` prop. Adding both would leave two plugins
  * fighting over one Info.plist key for no gain — the native module autolinks
  * either way. Don't "fix" the missing plugin entry.
+ *
+ * Note (checked 2026-09-26, SDK 56 and 57): prebuild applies `expo-location`'s
+ * plugin anyway, with no options, because `@expo/prebuild-config` auto-applies
+ * it for any project that has the package installed. It leaves the Stripe
+ * string above in place (it only fills keys that are empty) and adds generic
+ * "Always" location and motion strings. On Android it declares precise and
+ * approximate location in the app's own manifest, where precise location has
+ * no Android 11 limit; the Stripe SDK's manifest (from beta.33) declares it with
+ * one, and the build's manifest merge settles which applies. Either way works,
+ * because the app asks for approximate location on Android 12+. Every build so
+ * far has shipped with these strings; nothing here asks for "Always" or motion.
  */
 
 type LocationModule = {

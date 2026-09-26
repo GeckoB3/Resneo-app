@@ -133,6 +133,19 @@ describe('paths Android claims but the app cannot serve', () => {
     expect(webUrlToAppRoute(url)).toBe('/');
   });
 
+  /*
+    1.1.2 claims `/account/orders` on Android ahead of the online shop, because
+    an intent filter can only change in a store build. Until the app has an
+    Orders screen (an over-the-air step with POS Pass 6), an order link opens
+    the customer's hub rather than a not-found.
+  */
+  it.each([
+    'https://www.resneo.com/account/orders',
+    'https://www.resneo.com/account/orders/3f2a9c1e-5b7d-4e0a-9c8b-1a2b3c4d5e6f',
+  ])('%s, claimed before the Orders screen exists, lands on the hub', async (url) => {
+    expect(webUrlToAppRoute(url)).toBe('/');
+  });
+
   it('still does not claim a path merely starting with the same letters', async () => {
     // `/accounts` is a different path, and swallowing it would be the app
     // taking over a page it was never given.

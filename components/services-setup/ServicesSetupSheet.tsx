@@ -89,9 +89,9 @@ import { SourcePicker, type SetupSource } from './SourcePicker';
  *
  * Differences from the web, all for a phone: one sheet (iOS cannot stack them), so the add-on
  * editor and the confirmations are pages and panels inside it, and More settings hands over to
- * the Services screen's own form and comes back; photos come from the library or the clipboard,
- * not the camera (the app's build has no camera permission); pictures are resized and long
- * screenshots cut in a hidden WebView canvas, as the browser does with its own.
+ * the Services screen's own form and comes back; photos come from the library, the camera (from
+ * 1.1.2, the first build that sets the camera permission's wording) or the clipboard; pictures are
+ * resized and long screenshots cut in a hidden WebView canvas, as the browser does with its own.
  */
 
 type Step = 'loading' | 'sources' | 'reading' | 'review' | 'done';
@@ -600,26 +600,56 @@ export const ServicesSetupSheet = forwardRef<ServicesSetupHandle, ServicesSetupS
       return;
     }
     if (result.canceled || !result.assets?.length) return;
-    // Android's photo picker hands out media numbers ("1000039265.png"), not the photo's name, so
-    // those become "Photo 1", "Photo 2", numbered on from any photo already in this setup.
+    await addPrepared(asPickedImages(result.assets, true));
+  }
+
+  /** A photo taken there and then, for a price list on the wall or a menu board. */
+  async function takePhoto() {
+    if (roomLeft() <= 0) {
+      setPickerNotice(`You can add up to ${MAX_SOURCES} things at a time. Read these first, then add more.`);
+      return;
+    }
+    let result: ImagePicker.ImagePickerResult;
+    try {
+      // Asked first on both platforms: iOS needs it, and Android refuses the camera to an app
+      // that declares the CAMERA permission without holding it.
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) {
+        setPickerNotice('Resneo cannot use your camera. Turn on camera access for Resneo in your phone settings, or choose a photo instead.');
+        return;
+      }
+      result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 1 });
+    } catch {
+      setPickerNotice('Your camera could not be opened. Please try again, or choose a photo instead.');
+      return;
+    }
+    if (result.canceled || !result.assets?.length) return;
+    // A camera file is named by a random id, so it is always "Photo N".
+    await addPrepared(asPickedImages(result.assets, false));
+  }
+
+  /**
+   * Picker assets as the images `addPrepared` takes. Android's photo picker hands out media
+   * numbers ("1000039265.png"), not the photo's name, so those (and every camera photo) become
+   * "Photo 1", "Photo 2", numbered on from any photo already in this setup.
+   */
+  function asPickedImages(assets: ImagePicker.ImagePickerAsset[], keepNames: boolean): { image: PickedImage }[] {
     let photoNumber = highestPhotoNumber();
-    await addPrepared(
-      result.assets.map((a) => {
-        const picked = a.fileName?.trim() ?? '';
-        // The reader knows a picture by its bytes, so the label needs no extension.
-        const name = picked && !/^\d+\.[a-z0-9]+$/i.test(picked) ? picked : `Photo ${(photoNumber += 1)}`;
-        return {
-          image: {
-            uri: a.uri,
-            name,
-            mimeType: a.mimeType ?? mimeFromName(name),
-            width: a.width,
-            height: a.height,
-            size: typeof a.fileSize === 'number' ? a.fileSize : null,
-          },
-        };
-      }),
-    );
+    return assets.map((a) => {
+      const picked = keepNames ? (a.fileName?.trim() ?? '') : '';
+      // The reader knows a picture by its bytes, so the label needs no extension.
+      const name = picked && !/^\d+\.[a-z0-9]+$/i.test(picked) ? picked : `Photo ${(photoNumber += 1)}`;
+      return {
+        image: {
+          uri: a.uri,
+          name,
+          mimeType: a.mimeType ?? mimeFromName(name),
+          width: a.width,
+          height: a.height,
+          size: typeof a.fileSize === 'number' ? a.fileSize : null,
+        },
+      };
+    });
   }
 
   async function pastePhoto() {
@@ -1460,6 +1490,7 @@ export const ServicesSetupSheet = forwardRef<ServicesSetupHandle, ServicesSetupS
           onAddUrl={addUrl}
           onAddText={addText}
           onPickPhotos={() => void pickPhotos()}
+          onTakePhoto={() => void takePhoto()}
           onPastePhoto={() => void pastePhoto()}
           onPickFiles={() => void pickFiles()}
           onRemove={removeSource}

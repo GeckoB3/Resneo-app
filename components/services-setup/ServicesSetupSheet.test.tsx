@@ -4,7 +4,8 @@
  * The routes are mocked at `lib/services-setup/api`, so the bodies the setup sends are what is
  * asserted: a typed list is read, reviewed and added through the ordinary create route, a new
  * heading is made first, a collective host puts the service on its page, a failed read shows the
- * server's advice, a saved review is picked up again, and closing with unread sources asks first.
+ * server's advice, a saved review is picked up again, closing with unread sources asks first, and
+ * a photo taken with the camera joins the list (or a refused camera says how to turn it on).
  */
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 
@@ -12,9 +13,23 @@ jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
 jest.mock('react-native-webview', () => ({ WebView: 'WebView' }));
 jest.mock('expo-clipboard', () => ({ hasImageAsync: jest.fn(async () => false), getImageAsync: jest.fn() }));
 jest.mock('expo-document-picker', () => ({ getDocumentAsync: jest.fn() }));
+const mockCamera = {
+  requestCameraPermissionsAsync: jest.fn(),
+  launchCameraAsync: jest.fn(),
+};
 jest.mock('expo-image-picker', () => ({
   launchImageLibraryAsync: jest.fn(),
+  requestCameraPermissionsAsync: (...a: unknown[]) => mockCamera.requestCameraPermissionsAsync(...a),
+  launchCameraAsync: (...a: unknown[]) => mockCamera.launchCameraAsync(...a),
   UIImagePickerPreferredAssetRepresentationMode: { Compatible: 'compatible' },
+}));
+// The resize and slice step runs in a WebView canvas; here a picture is sent as it came.
+jest.mock('@/lib/services-setup/prepare-images', () => ({
+  ...jest.requireActual('@/lib/services-setup/prepare-images'),
+  prepareImageForUpload: jest.fn(async (img: { name: string; uri: string | null }) => ({
+    parts: [{ label: img.name, files: [{ uri: img.uri ?? '', name: `${img.name}.jpg`, type: 'image/jpeg', size: 1000 }] }],
+    truncated: false,
+  })),
 }));
 jest.mock('@/components/ui/Sheet', () => {
   const React = require('react');
@@ -224,6 +239,35 @@ describe('ServicesSetupSheet', () => {
     await renderSheet();
     expect(screen.getByText('Carrying on from where you left off.')).toBeTruthy();
     expect(screen.getByText('Cut and finish')).toBeTruthy();
+  });
+
+  it('adds a photo taken with the camera as "Photo 1"', async () => {
+    mockCamera.requestCameraPermissionsAsync.mockResolvedValue({ granted: true });
+    mockCamera.launchCameraAsync.mockResolvedValue({
+      canceled: false,
+      assets: [{ uri: 'file:///cam/4F1C-9A.jpg', fileName: '4F1C-9A.jpg', mimeType: 'image/jpeg', width: 3024, height: 4032, fileSize: 2_100_000 }],
+    });
+    await renderSheet();
+    await press(() => screen.getByLabelText('A photo or screenshot'));
+    await press(() => screen.getByText('Take a photo'));
+    await flush();
+
+    expect(mockCamera.launchCameraAsync).toHaveBeenCalledWith({ mediaTypes: ['images'], quality: 1 });
+    expect(screen.getByText('What we will read (1)')).toBeTruthy();
+    expect(screen.getByText('Photo 1')).toBeTruthy();
+  });
+
+  it('says how to turn the camera on when access is refused', async () => {
+    mockCamera.requestCameraPermissionsAsync.mockResolvedValue({ granted: false });
+    await renderSheet();
+    await press(() => screen.getByLabelText('A photo or screenshot'));
+    await press(() => screen.getByText('Take a photo'));
+    await flush();
+
+    expect(mockCamera.launchCameraAsync).not.toHaveBeenCalled();
+    expect(
+      screen.getByText('Resneo cannot use your camera. Turn on camera access for Resneo in your phone settings, or choose a photo instead.'),
+    ).toBeTruthy();
   });
 
   it('asks before closing with something added but not read', async () => {

@@ -2,7 +2,7 @@
 
 Staff mobile app for [Resneo](https://github.com/GeckoB3/reserve-ni) — appointments calendar, bookings, and client lookup for Northern Ireland salons and clinics. (The web backend repo is still named `reserve-ni`.)
 
-Built with **Expo SDK 56**, **Expo Router**, **Supabase**, and **TanStack Query**.
+Built with **Expo SDK 57**, **Expo Router**, **Supabase**, and **TanStack Query**.
 
 ## Prerequisites
 

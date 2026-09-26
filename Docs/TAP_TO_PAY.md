@@ -8,7 +8,7 @@
 ## Status (2026-07-24)
 
 **Backend: implemented** (ledger, three endpoints, webhook branches, receipt, GET/bootstrap extensions, **visit-scoped settlement**, and a **venue toggle in the web dashboard**). On the web repo's `staging` branch, not yet on `main`.
-**Mobile: implemented** — see "What shipped" below. Both hardware paths (Tap to Pay + Bluetooth reader), on `main` through `cad0bcc`. SDK pinned at **`@stripe/stripe-terminal-react-native@0.0.1-beta.31`**.
+**Mobile: implemented** — see "What shipped" below. Both hardware paths (Tap to Pay + Bluetooth reader), on `main` through `cad0bcc`. SDK pinned at **`@stripe/stripe-terminal-react-native@0.0.1-beta.33`** from 1.1.2 (beta.31 in 1.1.1 and earlier; see "The beta.33 move" below).
 
 **Not yet runnable end to end.** Still required: an EAS dev build carrying the native Terminal module, and a pilot venue with `in_person_payments_enabled = true` plus the Stripe card-present capability. Until then the surface is inert by design (the native module is absent, so the app renders exactly as before).
 
@@ -177,7 +177,7 @@ A multi-service visit or group booking writes **one `bookings` row per service/p
 
 ## Mobile build & native config — as built
 
-**Dependency:** `@stripe/stripe-terminal-react-native`, **pinned at `0.0.1-beta.31`**. It's a public-preview beta and the discover/connect API has moved across betas, so per `AGENTS.md` re-read that exact version's reference before touching this code. (`@stripe/stripe-react-native` does **not** do Tap to Pay.) Two non-obvious constraints this version forces:
+**Dependency:** `@stripe/stripe-terminal-react-native`, **pinned at `0.0.1-beta.33`** (from 1.1.2; beta.31 before). It's a public-preview beta and the discover/connect API has moved across betas, so per `AGENTS.md` re-read that exact version's reference before touching this code. (`@stripe/stripe-react-native` does **not** do Tap to Pay.) Two non-obvious constraints this version forces:
 - **Never import the SDK directly** — it executes native work at import time and throws wherever the native module is absent (Expo Go, web, any build without it). All access goes through `lib/payments/terminal-sdk.ts`. This is what keeps the surface inert.
 - **`cancelCollectPaymentMethod` is not re-exported from the package root** — it must come off the `useStripeTerminal` hook.
 
@@ -200,6 +200,14 @@ A multi-service visit or group booking writes **one `bookings` row per service/p
 - The canonical doc's §7A.4 originally said `bluetoothPeripheralUsagePermission`; the pinned plugin accepts **`bluetoothPeripheralPermission`** and silently ignores the longer spelling. Always validate prop names against the pinned plugin's types.
 - ~~**`bluetoothBackgroundMode` is deliberately unset.**~~ **Now SET (2026-08-05).** It was judged optional for a Tap-to-Pay-first v1 and adds App Store review surface, with a note to reconsider "if the WisePad becomes the primary path". That condition arrived: iOS is Bluetooth-only pending Apple's entitlement, so `UIBackgroundModes: bluetooth-central` is now on. It also stops the reader dropping when the app backgrounds or the phone locks, which the original note predicted. **It carries an App Store cost** — background modes must be justified at review, so revisit before submitting if the WisePad path is dropped again.
 - iOS entitlement `com.apple.developer.proximity-reader.payment.acceptance` lives in the `ios.entitlements` block (the plugin does not add it). Verify it survives into the built `.entitlements` — an EAS prebuild can overwrite. **Tap to Pay only** — see the entitlement note in Status.
+
+**The beta.33 move (1.1.2, with Expo SDK 57, 2026-09-26).** Native SDKs 5.6.0 to 5.8.0. What it changed for this app:
+- **Android location.** `requestNeededAndroidPermissions` asks for **approximate** location (`ACCESS_COARSE_LOCATION`) on Android 12+ and precise location only on Android 11 and earlier; the native SDK declares precise location with `maxSdkVersion="30"` and Bluetooth scanning as `neverForLocation`. Staff on Android 12+ now see the approximate-location prompt on first use. The option is still called `accessFineLocation`, and `androidPermissionMessage` reads either refusal as a location refusal.
+- **Reader settings:** accessibility failures moved to `accessibility.error`. Not used here (`getReaderSettings` / `setReaderSettings` are never called).
+- **iOS:** a reader model this SDK does not recognise now arrives with `deviceType: 'unknown'` instead of being left out, so it can appear in the Bluetooth list.
+- **Unchanged, rechecked in the source:** a Bluetooth `discoverReaders` promise still resolves only when discovery ends (`reader-timeouts.ts`), and `cancelCollectPaymentMethod` is still only on the hook.
+- **Fixes this picks up:** Android Tap to Pay PIN collection on some models, Android start-up on unsupported keystores, slow reader updates, accurate iOS disconnect reasons, and a Tap to Pay on iPhone crash.
+- The generated `MainApplication.onCreate` keeps the same order as 1.1.1's: `TerminalApplicationDelegate.onCreate(this)`, then the `TapToPay.isInTapToPayProcess()` guard. Stripe describes beta.33 as built and tested against React Native 0.85; 1.1.2 runs 0.86, so the device pass must cover both reader paths.
 
 **Env:** `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` (the **platform** publishable key) in `lib/env.ts` + `.env.example`; the SDK needs it at init.
 

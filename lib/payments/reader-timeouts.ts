@@ -8,7 +8,8 @@
  * goes to either the Terminal SDK's native bridge or the network, and some of
  * them are documented NOT to settle on their own. The worst is
  * `discoverReaders({ discoveryMethod: 'bluetoothScan' })`: in the pinned
- * `0.0.1-beta.31` the JS promise is resolved from the *discovery completion*
+ * `0.0.1-beta.31`, and still in `0.0.1-beta.33` (1.1.2, rechecked in the iOS
+ * source), the JS promise is resolved from the *discovery completion*
  * handler on both platforms — iOS resolves inside
  * `Terminal.shared.discoverReaders(config, delegate:) { … }` and Android from
  * `RNDiscoveryListener`, and the configuration's `timeout` defaults to `0`,

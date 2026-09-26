@@ -14,8 +14,8 @@ import { Panel, TextLink, hostOf } from './bits';
 /**
  * Step 1 of the services setup, "Add what you have" (web `SourcePicker.tsx`): four ways to show
  * us the services, the list of what will be read, an optional note for the AI, and the line
- * saying who reads it. On a phone the photo panel offers the photo library and, when there is
- * one, a screenshot copied to the clipboard (the web's paste); there is no drag and drop.
+ * saying who reads it. On a phone the photo panel offers the photo library, the camera and, when
+ * there is one, a screenshot copied to the clipboard (the web's paste); there is no drag and drop.
  */
 
 export type SourceKind = 'url' | 'text' | 'file';
@@ -106,6 +106,8 @@ export interface SourcePickerProps {
   onAddUrl: (url: string) => void;
   onAddText: (text: string) => void;
   onPickPhotos: () => void;
+  /** Take a photo with the camera. Left out, the panel says to take it first and choose it. */
+  onTakePhoto?: () => void;
   onPastePhoto: () => void;
   onPickFiles: () => void;
   onRemove: (key: string) => void;
@@ -124,6 +126,7 @@ export function SourcePicker({
   onAddUrl,
   onAddText,
   onPickPhotos,
+  onTakePhoto,
   onPastePhoto,
   onPickFiles,
   onRemove,
@@ -220,10 +223,12 @@ export function SourcePicker({
       {choice === 'photo' ? (
         <Panel>
           <Button label="Choose photos" onPress={onPickPhotos} disabled={preparing} />
+          {onTakePhoto ? <Button label="Take a photo" variant="secondary" onPress={onTakePhoto} disabled={preparing} /> : null}
           {canPaste ? <Button label="Paste a copied screenshot" variant="secondary" onPress={onPastePhoto} disabled={preparing} /> : null}
           <Text variant="caption" tone="muted">
-            Make sure the prices are sharp and nothing is cut off. Long screenshots are fine. To photograph a price list, take
-            the photo with your camera first, then choose it here.
+            {onTakePhoto
+              ? 'Make sure the prices are sharp and nothing is cut off. Long screenshots are fine.'
+              : 'Make sure the prices are sharp and nothing is cut off. Long screenshots are fine. To photograph a price list, take the photo with your camera first, then choose it here.'}
           </Text>
         </Panel>
       ) : null}

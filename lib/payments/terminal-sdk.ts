@@ -62,6 +62,14 @@ export interface TerminalSdkModule {
    *
    * On Android 12+ it also requests BLUETOOTH_CONNECT and BLUETOOTH_SCAN, for
    * the Tap to Pay path as well as the reader path.
+   *
+   * From `0.0.1-beta.33` (1.1.2) the location it asks for depends on the
+   * Android version: approximate (ACCESS_COARSE_LOCATION) on Android 12+, where
+   * the native SDK now declares precise location only up to Android 11, and
+   * precise (ACCESS_FINE_LOCATION) on 11 and earlier, where a Bluetooth scan
+   * still needs it. The option keeps its `accessFineLocation` name for both,
+   * and a refusal names whichever was asked, which `androidPermissionMessage`
+   * reads as a location refusal either way.
    */
   requestNeededAndroidPermissions?: (opts?: {
     accessFineLocation?: { title: string; message: string; buttonPositive: string };

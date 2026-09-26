@@ -1,5 +1,123 @@
 # Go-live check — Resneo app
 
+## Run 2026-09-26: 1.1.2 readiness, both platforms, on `main` above `fc2a2dd`
+
+**Scope:** a native release. Expo SDK 56 to 57, Stripe Terminal beta.31 to beta.33, and the native
+pieces the point of sale plan (web `Docs/pos-retail-plan.md`) needs in the binary so that its app
+steps can ship over the air: the camera, the order alert sound and the Android `/account/orders`
+link. The user-facing lines and store copy are the "Unreleased: iOS 1.1.2 / Android 1.1.2" entry in
+`CHANGELOG.md`.
+
+**Verdict: the code is ready to build. It has not been built.** Everything that can run on this
+machine passes (§4). The machine cannot compile a React Native 0.86 app (its Android Studio has JDK
+11 and Android 33 only, and there is no Xcode), so **the first native compile is the EAS build**, and
+§5 and §6 are owed before either store sees it.
+
+### 1. Where production stood
+
+`eas channel:view production` on the day: the latest group is `1f4a0bed` "ResNeo R40 to R43 Web
+Parity", from `fc2a2dd` (clean tree), runtime **1.1.1**, both platforms, 2026-09-24 11:09 UTC. That
+is `HEAD`, so nothing on `main` was waiting to go out to 1.1.1 when the upgrade began. The changelog
+entry for that batch is retitled as an OTA accordingly.
+
+### 2. Version and reach
+
+| Check | Result |
+|---|---|
+| iOS / Android version | 1.1.1 to **1.1.2** on both (`app.json` `version`, `android.version`); bumped before anything else so no SDK 57 code could be published to runtime 1.1.1 |
+| `runtimeVersion.policy` | `appVersion`, unchanged, so the runtime moves to **1.1.2** |
+| 1.1.1 installs | keep group `1f4a0bed`. A fix for them before the stores release 1.1.2 must be published from a branch off `fc2a2dd` |
+| Build numbers | EAS-remote with `autoIncrement`, as before |
+
+### 3. What moved natively
+
+- **Packages:** `expo` 56.0.16 to 57.0.25; `react-native` 0.85.3 to 0.86.3; Reanimated 4.3.1 to 4.5.1;
+  Worklets 0.8.3 to 0.10.1; Gesture Handler 2.31 to 2.32; Screens 4.25.2 to 4.26; every `expo-*`
+  package to its SDK 57 version (`npx expo install --check`: up to date). Unchanged: React 19.2.3,
+  `@stripe/stripe-react-native` 0.64.0, Sentry 7.11, SVG, WebView, NetInfo, the date picker, and the
+  `supabase-js` patch (re-applied cleanly). Dev: `jest-expo` and `eslint-config-expo` 57, and
+  `@react-native/jest-preset` 0.86.3 declared, because `jest-expo` 57 takes it as a peer and npm
+  refused the install while the lock held 0.85.3.
+- **Package changelogs:** the only 57.0.0 breaking change among the Expo packages this app uses is
+  web-only (`expo-font`'s `Server.resetServerContext()`).
+- **Stripe Terminal** `0.0.1-beta.33`: see "The beta.33 move" in `Docs/TAP_TO_PAY.md`. Stripe says
+  it is built and tested against React Native 0.85; this build runs 0.86 (billed as non-breaking),
+  so §6 covers both reader paths.
+- **`app.json`:** the `expo-image-picker` and `expo-camera` plugins, `expo-notifications` `sounds`,
+  and the `/account/orders` intent filter path.
+- **`eas.json`:** `ios.image` `macos-tahoe-26.5-xcode-26.6` on `development`, `preview` and
+  `production` (`eas config` shows `development-device` and `production-apk` inherit it).
+
+### 4. Verified on this machine
+
+- `tsc --noEmit`: clean, after one fix (`AmendHoursSheet`, TS2590 from SDK 57's typed routes).
+- `expo lint`: **0 errors**, 314 warnings, the same count as the 2026-09-24 run.
+- `jest`: **343 suites / 3,271 tests pass** (four new: the camera in Set up with AI, and two
+  `/account/orders` links landing on the hub).
+- `expo-doctor`: **21/21**. The Hermes V1 memory regression and the 19 packages behind their patch
+  targets, both carried since 1.0.7, are gone.
+- `expo export --clear --platform ios --platform android`: both Hermes bundles compile (Android
+  13 MB, iOS 12 MB). Run with the local development env, so it proves the compile, not the
+  production values (§5).
+- `expo config --type introspect`, iOS Info.plist: `NSCameraUsageDescription` is the new string; no
+  `NSMicrophoneUsageDescription`; `NSLocationWhenInUseUsageDescription` is still Stripe's;
+  `UIBackgroundModes` is `bluetooth-central`.
+- `expo prebuild --platform android` in a scratch copy: `res/raw/order_alert.wav` is present; the
+  manifest declares `CAMERA`, removes `RECORD_AUDIO`, `READ_MEDIA_IMAGES` and
+  `READ_EXTERNAL_STORAGE`, declares `BLUETOOTH_SCAN` as `neverForLocation`, and the verified
+  `https` filter carries `/account/orders`. `MainApplication.onCreate` keeps 1.1.1's order
+  (`TerminalApplicationDelegate.onCreate`, then the Tap to Pay process guard). The iOS prebuild does
+  not run on Windows, so the sound's place in the iOS bundle is first checked by the EAS build.
+
+**Found on the way, not changed:** `@expo/prebuild-config` applies some plugins automatically when
+their package is installed, with no options. That is why 1.1.1 already had a generic camera and
+microphone string on iOS and `RECORD_AUDIO` on Android (from `expo-image-picker`; R41's note that
+the build had no camera permission was wrong), and why every build carries generic "Always"
+location and motion strings from `expo-location`. 1.1.2 replaces the image picker's defaults with
+real settings. The location and motion strings are as they have always been; tidying them is a
+choice for a later build.
+
+### 5. Owed on build day
+
+1. Commit the release (version bump, changelog, this record) on a clean tree; `eas.json` has
+   `requireCommit: true`. Done: the "Release 1.1.2" commit on 2026-09-26, not pushed.
+2. `npm ci`, then re-check the EAS `production` environment as in the 2026-09-15 run (§4 there).
+3. A cleared-cache export under `eas env:exec production`, with both Hermes bundles grepped for live
+   hosts and keys only.
+4. `preview` builds for the device pass (§6) before any `production` build.
+
+### 6. Device pass (both platforms, on the `preview` build)
+
+- **Start:** a fresh install and an update over 1.1.1; sign in with a password and with a magic link;
+  Face ID or fingerprint lock; the screen-capture guard.
+- **Everyday screens:** the calendar (drag, resize, sheets, the date picker), a booking's detail,
+  New booking, the keyboard in long forms (SDK 57 changes Android edge-to-edge), and Reanimated
+  presses and sheets.
+- **Set up with AI:** Take a photo (the permission prompt shows the new wording; refusing shows the
+  settings message; iPad), Choose photos with HEIC, a pasted screenshot, a PDF from Files.
+- **Uploads from this build**, not Expo Go: a venue logo, a page asset, a compliance file.
+- **Push:** a new-booking push arrives and opens the booking.
+- **Links:** `https://www.resneo.com/account/bookings` opens the app; on Android,
+  `/account/orders` opens the customer hub.
+- **Card payments:** Tap to Pay on Android (the approximate-location prompt on Android 12+, a
+  PIN-required amount), a WisePad 3 on iPhone and on Android (connect, pay, lock the phone mid-way),
+  cash, other, an admin refund, cancelling a collection, a declined card.
+- **Memory:** leave the calendar open for an hour and check it stays responsive.
+
+Expo Go: `npx expo start` now needs Expo Go for SDK 57. On Android the CLI installs it; on iOS use
+`eas go` until the App Store has it. Card payments and the camera still need a development build.
+
+### 7. Build and submit
+
+```
+npx eas-cli build --platform all --profile preview
+npx eas-cli build --platform all --profile production
+npx eas-cli submit --platform ios --profile production --latest
+npx eas-cli submit --platform android --profile production --latest
+```
+
+---
+
 ## Run 2026-09-24: OTA to production, 1.1.1, "ResNeo R40 to R43 Web Parity"
 
 **Scope:** the five commits since the last update, `ad6b117`..`d492ce4`:

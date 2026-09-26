@@ -15,7 +15,79 @@ on the other, and iOS 1.0.4 is the worked example.
 
 ---
 
-## Unreleased
+## Unreleased: iOS 1.1.2 / Android 1.1.2
+
+A native release, prepared 2026-09-26 and not yet built: Expo SDK 57, and the native pieces the
+point of sale work will need, so that its app steps can ship over the air instead of waiting for a
+store build. The build-day checks are in the 2026-09-26 run in `Docs/GO_LIVE_CHECK.md`.
+
+**Why it has to be a store build.** Every item below changes native code or native config:
+
+- **Expo SDK 56 to 57.** `expo@57.0.25`, `react-native@0.86.3` (React stays 19.2.3), Reanimated
+  4.5.1, Worklets 0.10.1, Gesture Handler 2.32, Screens 4.26, and every `expo-*` package on its SDK
+  57 version; `jest-expo` and `eslint-config-expo` 57, with `@react-native/jest-preset` 0.86.3 now
+  declared because `jest-expo` 57 takes it as a peer. This fixes the Hermes V1 memory regression
+  `expo-doctor` has flagged since 1.0.7 (fixed from `expo@57.0.9`); `expo-doctor` passes 21/21.
+- **Stripe Terminal `0.0.1-beta.31` to `0.0.1-beta.33`** (native 5.8.0). On Android 12 and later a
+  card payment asks for approximate location rather than precise. Details in `Docs/TAP_TO_PAY.md`.
+- **Camera.** `expo-image-picker`'s plugin with a camera purpose string and no microphone, and
+  `expo-camera` with barcode scanning on and the microphone off (unused until POS scanning).
+  Android no longer declares `RECORD_AUDIO`: 1.1.1 did, because prebuild applies the image picker's
+  plugin automatically with its defaults, which also gave 1.1.1 a generic camera string on iOS.
+- **The online order sound**, `assets/sounds/order_alert.wav`, bundled through `expo-notifications`
+  for the shop's order alert (POS Pass 6). Unused until then. It has to be in the binary, and an
+  Android channel's sound cannot change once the channel exists.
+- **Android App Link for `/account/orders`.** An order link opens the customer hub until the app
+  has an Orders screen. iOS needs no build for this: its paths come from the website.
+- **`eas.json` pins the iOS build image** to SDK 57's `macos-tahoe-26.5-xcode-26.6` on every
+  profile, so a build cannot drift to Xcode 27, where an SDK 57 app without scene support does not
+  launch.
+
+**The runtime moves to 1.1.2.** `appVersion` stays the policy. Nothing published from this commit
+on reaches a 1.1.1 install; those keep group `1f4a0bed` ("ResNeo R40 to R43 Web Parity", at
+`fc2a2dd`). A fix that must reach 1.1.1 before the stores release 1.1.2 has to be published from a
+branch off `fc2a2dd`.
+
+**App changes:**
+
+- Set up with AI: **Take a photo** in the photo panel, beside Choose photos. A refused camera says
+  how to turn it on.
+- `AmendHoursSheet`: the direct link is built with an `if`, because SDK 57's typed routes make the
+  union from a ternary too large for `tsc` (TS2590).
+
+Requires no backend change.
+
+### Play Store: "What's new" (453/500)
+
+```
+Set up with AI can now take a photo of your price list with your camera.
+
+Steadier over a long day: the app moves to the newest version of the framework it is built on, which fixes a memory problem that could slow it down the longer it stayed open.
+
+Card payments: updated card reader software, with fixes for Tap to Pay and Bluetooth readers. On Android 12 and later, taking a card payment now asks for approximate location instead of precise location.
+```
+
+### App Store: "What's new" (588/4,000)
+
+```
+Take a photo in Set up with AI
+
+Setting up your services with AI can now use your camera: photograph a price list or a menu board and we read it for you, then you check each service before anything is added.
+
+Steadier over a long day
+
+The app moves to the newest version of the framework it is built on. This fixes a memory problem that could make the app slower the longer it stayed open, which matters most on a phone or iPad left at the front desk.
+
+Card payments
+
+Updated card reader software, with fixes for Bluetooth readers such as more accurate messages when a reader disconnects.
+```
+
+---
+
+## OTA on iOS 1.1.1 / Android 1.1.1 — 2026-09-24 (R40 to R43)
+
+Published as group `1f4a0bed` ("ResNeo R40 to R43 Web Parity"), from `fc2a2dd`, on both platforms.
 
 **The web's 2026-09-23 QA round, and what the phone test found.** Details in
 `Docs/APP_GAP_REPORT_R43_WEB_DELTA.md`.

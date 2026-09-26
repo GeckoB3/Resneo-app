@@ -60,7 +60,10 @@ export function AmendHoursSheet({ target, isAdmin, onClose }: Props) {
   const { colors } = useTheme();
 
   // Staff have one destination, so the chooser never shows: go straight there.
-  const direct = target && !isAdmin ? amendCalendarHoursHref(target) : null;
+  // Not a ternary: with SDK 57's typed routes, tsc cannot represent the union a
+  // ternary between an Href and null produces (TS2590).
+  let direct: Href | null = null;
+  if (target && !isAdmin) direct = amendCalendarHoursHref(target);
   useEffect(() => {
     if (!direct) return;
     onClose();

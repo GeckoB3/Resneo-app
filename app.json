@@ -2,7 +2,7 @@
   "expo": {
     "name": "Resneo",
     "slug": "resneo-app",
-    "version": "1.1.1",
+    "version": "1.1.2",
     "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "resneo",
@@ -30,7 +30,7 @@
       }
     },
     "android": {
-      "version": "1.1.1",
+      "version": "1.1.2",
       "package": "com.resneo.app",
       "googleServicesFile": "./google-services.json",
       "softwareKeyboardLayoutMode": "resize",
@@ -49,6 +49,7 @@
           "data": [
             { "scheme": "https", "host": "www.resneo.com", "pathPrefix": "/account/bookings" },
             { "scheme": "https", "host": "www.resneo.com", "pathPrefix": "/account/passes" },
+            { "scheme": "https", "host": "www.resneo.com", "pathPrefix": "/account/orders" },
             { "scheme": "https", "host": "www.resneo.com", "path": "/account/profile" },
             { "scheme": "https", "host": "www.resneo.com", "path": "/account" }
           ]
@@ -98,10 +99,27 @@
       ],
       "expo-image",
       [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Resneo uses your camera when you choose to take a photo, such as your price list, or to scan a code.",
+          "microphonePermission": false
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Resneo uses your camera when you choose to take a photo, such as your price list, or to scan a code.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false,
+          "barcodeScannerEnabled": true
+        }
+      ],
+      [
         "expo-notifications",
         {
           "icon": "./assets/images/notification-icon.png",
-          "color": "#003B6F"
+          "color": "#003B6F",
+          "sounds": ["./assets/sounds/order_alert.wav"]
         }
       ],
       "expo-sharing",
