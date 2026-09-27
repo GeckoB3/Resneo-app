@@ -1,7 +1,13 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import type { StripeError } from '@stripe/stripe-terminal-react-native';
+import type { PaymentIntent, StripeError } from '@stripe/stripe-terminal-react-native';
 
 import { apiFetch } from '@/lib/api/client';
+import {
+  cardOutcomeOf,
+  cardPaymentError,
+  cardSummaryOf,
+  type CardSummary,
+} from '@/lib/payments/card-outcome';
 import { recordFailedCardAttempt } from '@/lib/payments/failed-attempts';
 import {
   getTerminalSdk,
@@ -98,7 +104,12 @@ export function useTakePayment(bookingId: string) {
       /** Omit to charge the full outstanding balance (when the server knows it). */
       amountPence?: number;
       readerType?: InPersonReaderType;
-    }): Promise<{ amountPence: number }> => {
+      /**
+       * Called once the card has been read, before the payment is confirmed, so
+       * the sheet can move from "hold the card" to "processing" (Apple 5.8).
+       */
+      onCardRead?: () => void;
+    }): Promise<{ amountPence: number; paymentIntentId: string; card: CardSummary | null }> => {
       // Staff-facing: this surfaces raw in the payment sheet, so it must read as
       // something a salon can act on rather than as an internal token error.
       if (!accessToken) {
@@ -146,7 +157,11 @@ export function useTakePayment(bookingId: string) {
        * purpose: staff are waiting on the sheet, and if the call fails the row
        * simply stays pending, exactly as it did before.
        */
-      const reportFailure = (error: StripeError | undefined, message: string): never => {
+      const reportFailure = (
+        error: StripeError | undefined,
+        message: string,
+        paymentIntent?: PaymentIntent.Type,
+      ): never => {
         if (isDefiniteCardFailure(error)) {
           recordFailedCardAttempt({
             bookingId,
@@ -161,7 +176,14 @@ export function useTakePayment(bookingId: string) {
             paymentIntentId: charge.payment_intent_id,
           });
         }
-        throw new Error(message);
+        // Carries how it ended (declined / timed out / not completed) and what
+        // the receipt needs, for the sheet (Apple 5.9, 5.10).
+        throw cardPaymentError(message, {
+          outcome: cardOutcomeOf(error),
+          amountPence: charge.amount_pence,
+          paymentIntentId: charge.payment_intent_id,
+          card: cardSummaryOf(error?.paymentIntent ?? paymentIntent),
+        });
       };
 
       // 2. Hand the intent to the reader.
@@ -183,6 +205,7 @@ export function useTakePayment(bookingId: string) {
           terminalErrorMessage(collected?.error, 'The card was not read.'),
         );
       }
+      input.onCardRead?.();
 
       // 4. Confirm. The webhook then writes the paid state.
       const confirmed = await terminal.confirmPaymentIntent({
@@ -192,10 +215,15 @@ export function useTakePayment(bookingId: string) {
         return reportFailure(
           confirmed.error,
           terminalErrorMessage(confirmed.error, 'The payment was not completed.'),
+          collected.paymentIntent,
         );
       }
 
-      return { amountPence: charge.amount_pence };
+      return {
+        amountPence: charge.amount_pence,
+        paymentIntentId: charge.payment_intent_id,
+        card: cardSummaryOf(confirmed?.paymentIntent ?? collected.paymentIntent),
+      };
     },
     onSuccess: () => invalidateAfterPayment(queryClient, accessToken, bookingId),
     /**

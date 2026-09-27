@@ -92,3 +92,26 @@ export async function ensureIosLocationPermission(
     return null;
   }
 }
+
+/**
+ * Is foreground location already granted on iOS? Never prompts.
+ *
+ * For the Tap to Pay warm-up at launch and on return to the foreground: a system
+ * dialog appearing out of nowhere when the app opens is exactly what the lazy
+ * design avoided, so the warm-up only runs once staff have granted it through a
+ * payment or Settings. Anything other than iOS answers true (nothing to check
+ * here), and a probe that fails answers false, which just skips the warm-up.
+ */
+export async function hasIosLocationPermission(platform: string = Platform.OS): Promise<boolean> {
+  if (platform !== 'ios') return true;
+
+  const location = getLocationModule();
+  if (!location) return false;
+
+  try {
+    const current = await location.getForegroundPermissionsAsync();
+    return current.status === 'granted';
+  } catch {
+    return false;
+  }
+}

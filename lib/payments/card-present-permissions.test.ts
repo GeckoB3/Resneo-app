@@ -1,6 +1,7 @@
 import {
   LOCATION_REFUSED_MESSAGE,
   ensureIosLocationPermission,
+  hasIosLocationPermission,
 } from '@/lib/payments/card-present-permissions';
 
 /**
@@ -57,5 +58,27 @@ describe('ensureIosLocationPermission', () => {
   it('never lets the probe itself be what stops a payment', async () => {
     mockGet.mockRejectedValue(new Error('module exploded'));
     await expect(ensureIosLocationPermission('ios')).resolves.toBeNull();
+  });
+});
+
+describe('hasIosLocationPermission (the silent Tap to Pay warm-up)', () => {
+  it('answers from the current status and never prompts', async () => {
+    mockGet.mockResolvedValue({ status: 'granted' });
+    await expect(hasIosLocationPermission('ios')).resolves.toBe(true);
+
+    mockGet.mockResolvedValue({ status: 'undetermined' });
+    await expect(hasIosLocationPermission('ios')).resolves.toBe(false);
+
+    expect(mockRequest).not.toHaveBeenCalled();
+  });
+
+  it('has nothing to check off iOS', async () => {
+    await expect(hasIosLocationPermission('android')).resolves.toBe(true);
+    expect(mockGet).not.toHaveBeenCalled();
+  });
+
+  it('treats a failing probe as not granted, which only skips the warm-up', async () => {
+    mockGet.mockRejectedValue(new Error('boom'));
+    await expect(hasIosLocationPermission('ios')).resolves.toBe(false);
   });
 });

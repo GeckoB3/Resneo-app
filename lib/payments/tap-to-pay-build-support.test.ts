@@ -22,7 +22,9 @@ describe('buildSupportsTapToPay', () => {
 
   it('is currently OFF for iOS (Apple Case-ID 21181959)', () => {
     // Pins the shipped state deliberately: this test is expected to be updated
-    // in the SAME commit that restores `ios.entitlements` to app.json.
+    // in the SAME commit that restores `ios.entitlements` to app.json. Only the
+    // local Xcode build opts in, via EXPO_PUBLIC_TAP_TO_PAY_IOS on its command
+    // line; the test environment never sets it.
     expect(buildSupportsTapToPay('ios')).toBe(false);
   });
 

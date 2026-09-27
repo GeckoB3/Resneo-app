@@ -225,6 +225,16 @@ export async function ensureTerminalInitialized(
   return pending;
 }
 
+/**
+ * Has the SDK been initialised in this app run? Anything that talks to the SDK
+ * outside a payment (the linked-venue disconnect, say) checks this first: on an
+ * uninitialised SDK every call logs "First initialize the Stripe Terminal SDK",
+ * which development builds put on screen as an error.
+ */
+export function isTerminalInitialized(): boolean {
+  return initialized;
+}
+
 /** Test seam: forget the initialised flag (and any call in flight). */
 export function __resetTerminalInitForTests(): void {
   initialized = false;

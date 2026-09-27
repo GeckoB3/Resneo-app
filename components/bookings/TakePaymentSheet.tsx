@@ -1,6 +1,9 @@
+import { SymbolView } from 'expo-symbols';
 import { useEffect, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Platform, Share, StyleSheet, View } from 'react-native';
 
+import { TapToPayEducationContent } from '@/components/payments/TapToPayEducation';
+import { TapToPayProgress } from '@/components/payments/TapToPayProgress';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Sheet } from '@/components/ui/Sheet';
@@ -10,6 +13,14 @@ import { formatPence, formatPositivePence, penceToPoundsInput } from '@/lib/form
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { newPaymentAttemptId } from '@/lib/payments/attempt-id';
 import { useBluetoothReader } from '@/lib/payments/bluetoothReader';
+import {
+  cardOutcomeHeading,
+  cardReceiptText,
+  isCardPaymentFailure,
+  type CardReceipt,
+  type CardSummary,
+} from '@/lib/payments/card-outcome';
+import { notifyCardPaymentNotApproved } from '@/lib/payments/card-outcome-notification';
 import { loadLastMethod, rememberLastMethod } from '@/lib/payments/last-method';
 import {
   checkChargeAmount,
@@ -24,6 +35,11 @@ import {
 } from '@/lib/payments/payment-display';
 import { getStripePublishableKey } from '@/lib/env';
 import { buildSupportsTapToPay } from '@/lib/payments/tap-to-pay-build-support';
+import {
+  TAP_TO_PAY_ON_IPHONE,
+  TAP_TO_PAY_SYMBOL,
+  tapToPayButtonLabel,
+} from '@/lib/payments/tap-to-pay-copy';
 import { isTerminalSdkAvailable } from '@/lib/payments/terminal-sdk';
 import { useTapToPayReader } from '@/lib/payments/terminal';
 import { usePendingCardClock } from '@/lib/payments/usePendingCardClock';
@@ -38,6 +54,8 @@ import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { BookingPaymentRow, VisitPayment } from '@/types/booking-detail';
 import { CONFIRM_ARM_MS } from '@/lib/ui/confirm-arm';
+import { useTapToPay } from '@/providers/TapToPayProvider';
+import { useVenueContext } from '@/providers/VenueProvider';
 
 /**
  * Take payment sheet (Tap to Pay design doc §7.8 + §7A.6).
@@ -101,7 +119,19 @@ type SuccessInfo = {
   heading: string;
   /** Left to pay after a partial collection; null when it can't be worked out. */
   remainingPence: number | null;
+  /** Card payments only: what "Share receipt" sends (Apple 5.10). */
+  receipt?: CardReceipt;
 };
+
+/** What a card collection reports back on success, for the receipt. */
+type CardCollected = { paymentIntentId: string | null; card: CardSummary | null };
+
+/** Open the share sheet with a card receipt. Never throws: sharing is optional. */
+function shareCardReceipt(receipt: CardReceipt) {
+  void Share.share({ message: cardReceiptText(receipt) }).catch(() => {
+    // Dismissed, or no share targets. Nothing to recover.
+  });
+}
 
 type TakePaymentSheetProps = {
   target: TakePaymentTarget | null;
@@ -139,6 +169,8 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
 
   const recordExternal = useRecordExternalPayment(target?.id ?? '');
   const refund = useRefundPayment(target?.id ?? '');
+  const tapToPay = useTapToPay();
+  const { name: venueName } = useVenueContext();
 
   /**
    * Clock for the pending-row age check, ticking only while there is a row whose
@@ -241,6 +273,14 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
    */
   const cardAvailable =
     target.cardPresentReady && isTerminalSdkAvailable() && Boolean(getStripePublishableKey());
+  /**
+   * iOS with Tap to Pay on iPhone available: its button goes straight into the
+   * payment options, first in the list, rather than behind "Card payment"
+   * (Apple 5.1, 5.2). Unknown device support reads as supported, as it does in
+   * the card step. Android keeps the menu it ships with.
+   */
+  const tapToPayFirst =
+    cardAvailable && Platform.OS === 'ios' && tapToPay.applies && tapToPay.supported !== false;
   const refundable = refundablePayments(target.payments);
   /**
    * Recomputed every render from the LIVE ledger the host feeds in, not just at
@@ -423,6 +463,14 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
             </View>
             <View style={styles.buttons}>
               <Button label="Done" onPress={handleClose} fullWidth />
+              {success.receipt ? (
+                <Button
+                  label="Share receipt"
+                  variant="secondary"
+                  onPress={() => shareCardReceipt(success.receipt!)}
+                  fullWidth
+                />
+              ) : null}
             </View>
           </>
         ) : null}
@@ -480,7 +528,36 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
             />
 
             <View style={styles.buttons}>
-              {cardAvailable ? (
+              {tapToPayFirst ? (
+                <>
+                  <Button
+                    label={TAP_TO_PAY_ON_IPHONE}
+                    leftIcon={<TapToPayIcon />}
+                    disabled={!amountValid || busy}
+                    onPress={() => {
+                      setError(null);
+                      setSuccess(null);
+                      setReaderType('tap_to_pay');
+                      setAutoCollect('tap_to_pay');
+                      setMode('card');
+                    }}
+                    fullWidth
+                  />
+                  <Button
+                    label="Card reader"
+                    variant="secondary"
+                    disabled={!amountValid || busy}
+                    onPress={() => {
+                      setError(null);
+                      setSuccess(null);
+                      setReaderType('bluetooth');
+                      setAutoCollect('bluetooth');
+                      setMode('card');
+                    }}
+                    fullWidth
+                  />
+                </>
+              ) : cardAvailable ? (
                 <Button
                   label="Card payment"
                   disabled={!amountValid || busy}
@@ -537,16 +614,28 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
             onReaderTypeChange={setReaderType}
             autoCollect={autoCollect}
             onAutoCollectHandled={() => setAutoCollect(null)}
+            isAdmin={target.isAdmin}
+            guestName={target.guestName}
+            venueName={venueName}
             onPair={() => setMode('pair')}
-            onDone={(collected) => {
+            onDone={(collected, details) => {
               // Card payments settle through Stripe, and the webhook emails the
               // receipt on success (§6.5) — so this is the only path that can
-              // promise one.
+              // promise one. The share sheet is the second route to it, which
+              // Apple asks for whatever the outcome (5.10).
               setSuccess({
                 amountPence: collected,
                 receiptEmailed: true,
                 heading: 'Payment collected',
                 remainingPence: remainingAfterPayment(balancePence, collected),
+                receipt: {
+                  venueName,
+                  amountPence: collected,
+                  outcome: null,
+                  at: new Date(),
+                  paymentIntentId: details?.paymentIntentId ?? null,
+                  card: details?.card ?? null,
+                },
               });
               setMode('success');
             }}
@@ -760,7 +849,19 @@ function PendingCardNotice({
 // Card capture — only mounted when the Terminal SDK is available (§7.6/§7.7)
 // ---------------------------------------------------------------------------
 
-type CardStage = 'idle' | 'preparing' | 'collecting' | 'success' | 'error';
+/**
+ * `processing` is the gap between the card being read and Stripe confirming the
+ * payment, shown as its own step (Apple 5.8) rather than leaving "hold the card"
+ * on screen after the card has gone.
+ */
+type CardStage = 'idle' | 'preparing' | 'collecting' | 'processing' | 'success' | 'error';
+
+/** Apple's Tap to Pay symbol on the button (5.5). iOS only; SF Symbols. */
+function TapToPayIcon() {
+  const { colors } = useTheme();
+  if (Platform.OS !== 'ios') return null;
+  return <SymbolView name={TAP_TO_PAY_SYMBOL.ios} size={20} tintColor={colors.onColor} />;
+}
 
 function CardCollectSection({
   bookingId,
@@ -769,6 +870,9 @@ function CardCollectSection({
   onReaderTypeChange,
   autoCollect,
   onAutoCollectHandled,
+  isAdmin,
+  guestName,
+  venueName,
   onPair,
   onDone,
   onBack,
@@ -780,18 +884,33 @@ function CardCollectSection({
   /** Start collecting on this channel as soon as the section mounts. */
   autoCollect: InPersonReaderType | null;
   onAutoCollectHandled: () => void;
+  /** Only an admin may accept Apple's Tap to Pay on iPhone terms (Apple 3.8). */
+  isAdmin: boolean;
+  guestName: string;
+  venueName: string | null;
   onPair: () => void;
-  onDone: (collectedPence: number | null) => void;
+  onDone: (collectedPence: number | null, details?: CardCollected) => void;
   onBack: () => void;
 }) {
   const { colors } = useTheme();
   const tapToPay = useTapToPayReader();
+  const tapToPayStatus = useTapToPay();
   const bluetooth = useBluetoothReader();
   const takePayment = useTakePayment(bookingId);
   const cancelCollection = useCancelCardCollection();
 
   const [stage, setStage] = useState<CardStage>('idle');
   const [message, setMessage] = useState<string | null>(null);
+  /** How the last card attempt ended, for its heading and receipt (Apple 5.9, 5.10). */
+  const [failed, setFailed] = useState<CardReceipt | null>(null);
+  /**
+   * Apple's terms were just accepted at checkout. The education runs, then staff
+   * tap the button again — the client is waiting, so no second terms or
+   * education step can appear once they start.
+   */
+  const [justTurnedOn, setJustTurnedOn] = useState(false);
+  /** The app's own education, when Apple's cannot be shown (iOS 16.4–17). */
+  const [showEducation, setShowEducation] = useState(false);
   /** The channel of the last failed attempt, so Retry repeats the same one. */
   const [lastTried, setLastTried] = useState<InPersonReaderType | null>(null);
   /** Ref (not state) so the unmount cleanup below reads the CURRENT value. */
@@ -828,6 +947,10 @@ function CardCollectSection({
     // to use it — on iOS without the entitlement the question is meaningless and
     // the native call is a needless place to throw.
     if (buildSupportsTapToPay()) void tapToPay.checkSupport();
+    // Not when arriving to collect on a channel already chosen (the Tap to Pay /
+    // Card reader buttons, or a fresh pairing): the remembered method resolves a
+    // moment later and would relabel the attempt in progress.
+    if (autoCollect) return;
     void loadLastMethod().then((remembered) => {
       if (remembered) onReaderTypeChange(remembered);
     });
@@ -905,6 +1028,9 @@ function CardCollectSection({
     const superseded = () => attemptRef.current !== attempt;
     try {
       setMessage(null);
+      setFailed(null);
+      setJustTurnedOn(false);
+      setShowEducation(false);
       setStage('preparing');
       setLastTried(kind);
       onReaderTypeChange(kind);
@@ -919,11 +1045,30 @@ function CardCollectSection({
       if (kind === 'tap_to_pay') {
         // The reason comes back from the call, not from hook state: reading
         // `tapToPay.error` here would see the pre-await render's value.
-        const { ok, error: reason } = await tapToPay.connect();
+        //
+        // iOS: only an admin may accept Apple's terms if they have not been yet
+        // (3.8). Anyone else gets `terms_not_accepted`, whose message tells them
+        // to ask an admin (3.8.1). If this is the first use and an admin is
+        // here, pressing the button is what brings Apple's terms up (3.7, 5.3).
+        const result = await tapToPay.connect(
+          Platform.OS === 'ios' ? { tosAcceptancePermitted: isAdmin } : undefined,
+        );
         if (superseded()) return;
-        if (!ok) {
+        tapToPayStatus.recordConnect(result);
+        if (!result.ok) {
           setStage('error');
-          setMessage(reason ?? 'The card reader could not be started.');
+          setMessage(result.error ?? 'The card reader could not be started.');
+          return;
+        }
+        if (result.acceptedTerms) {
+          // Apple's education straight after the terms (4.2), then back to the
+          // button: taking the payment is one more tap, with nothing left to
+          // interrupt it.
+          const shown = await tapToPayStatus.showEducation();
+          if (superseded()) return;
+          if (!shown) setShowEducation(true);
+          setJustTurnedOn(true);
+          setStage('idle');
           return;
         }
       } else if (!readerConnected) {
@@ -948,6 +1093,11 @@ function CardCollectSection({
           attemptId,
           ...(amountPence != null ? { amountPence } : {}),
           readerType: kind,
+          // The card is read; now Stripe confirms. "Hold the card" would be
+          // wrong from here on (5.8).
+          onCardRead: () => {
+            if (!superseded()) setStage('processing');
+          },
         });
         // Reported even when this attempt was superseded. Cancel races the card:
         // if the money moved, staff must be told, whatever they pressed a moment
@@ -956,7 +1106,10 @@ function CardCollectSection({
         hapticSuccess();
         setStage('success');
         rememberLastMethod(kind);
-        onDone(res.amountPence ?? null);
+        onDone(res.amountPence ?? null, {
+          paymentIntentId: res.paymentIntentId ?? null,
+          card: res.card ?? null,
+        });
       } catch (e) {
         // The other side of that race, and the opposite rule: cancelling makes
         // `collectPaymentMethod` throw, so without this the staff member who
@@ -973,6 +1126,22 @@ function CardCollectSection({
               ? e.message
               : 'The payment was not completed.',
         );
+        if (isCardPaymentFailure(e)) {
+          setFailed({
+            venueName,
+            amountPence: e.amountPence,
+            outcome: e.outcome,
+            at: new Date(),
+            paymentIntentId: e.paymentIntentId,
+            card: e.card,
+          });
+          // If staff have already left the app, the screen cannot tell them (5.12).
+          void notifyCardPaymentNotApproved({
+            outcome: e.outcome,
+            amountPence: e.amountPence,
+            guestName,
+          });
+        }
       }
     } finally {
       // Released on every route out, including the connect-failed and
@@ -988,6 +1157,7 @@ function CardCollectSection({
   const busy =
     stage === 'preparing' ||
     stage === 'collecting' ||
+    stage === 'processing' ||
     bluetooth.status === 'connecting' ||
     bluetooth.status === 'updating';
   /**
@@ -1025,9 +1195,36 @@ function CardCollectSection({
         </Text>
       ) : null}
 
+      {stage === 'processing' ? (
+        <View style={styles.inlineRow}>
+          <ActivityIndicator size="small" color={colors.brand} />
+          <Text variant="bodyMedium">Processing payment…</Text>
+        </View>
+      ) : null}
+
+      {/* Tap to Pay on iPhone shows Apple's configuration progress while it gets
+          ready (5.7, 3.9.1); a card reader keeps its plain line. */}
       {stage === 'preparing' ? (
-        <Text variant="bodySmall" tone="muted">
-          Getting the card reader ready.
+        Platform.OS === 'ios' && readerType === 'tap_to_pay' ? (
+          <TapToPayProgress progress={tapToPay.progress} />
+        ) : (
+          <Text variant="bodySmall" tone="muted">
+            Getting the card reader ready.
+          </Text>
+        )
+      ) : null}
+
+      {justTurnedOn ? (
+        <Text variant="bodyMedium" color={colors.success}>
+          {`${TAP_TO_PAY_ON_IPHONE} is on. Tap it to take the payment.`}
+        </Text>
+      ) : null}
+
+      {showEducation ? <TapToPayEducationContent /> : null}
+
+      {stage === 'error' && failed?.outcome ? (
+        <Text variant="bodyMedium" tone="danger">
+          {cardOutcomeHeading(failed.outcome)}
         </Text>
       ) : null}
 
@@ -1040,7 +1237,8 @@ function CardCollectSection({
       <View style={styles.buttons}>
         {supportsTapToPay ? (
           <Button
-            label="Tap to Pay on this phone"
+            label={tapToPayButtonLabel()}
+            leftIcon={<TapToPayIcon />}
             disabled={busy}
             loading={busy && readerType === 'tap_to_pay'}
             onPress={() => void collect('tap_to_pay')}
@@ -1071,6 +1269,16 @@ function CardCollectSection({
               onPress={() => void collect(lastTried)}
               fullWidth
             />
+            {/* A declined card is still a transaction the client may want a
+                record of (5.10). The webhook only emails approved ones. */}
+            {failed?.outcome === 'declined' ? (
+              <Button
+                label="Share receipt"
+                variant="secondary"
+                onPress={() => shareCardReceipt(failed)}
+                fullWidth
+              />
+            ) : null}
             <Text variant="caption" tone="muted">
               If the card keeps failing, go back and record a cash or other payment instead.
             </Text>
@@ -1215,5 +1423,10 @@ const styles = StyleSheet.create({
   },
   refundRow: {
     gap: spacing.xs,
+  },
+  inlineRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
 });

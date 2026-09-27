@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { StaffRequired } from '@/components/auth/StaffRequired';
+import { TapToPayIntroduction } from '@/components/payments/TapToPayIntroduction';
 import { PendingPushRouteHandler } from '@/components/push/PendingPushRouteHandler';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { WaitlistAvailabilityBanner } from '@/components/waitlist/WaitlistAvailabilityBanner';
@@ -155,6 +156,9 @@ export default function AppLayout() {
       {/* Routes a parked notification tap. Lives inside this layout so it can
           only ever push while the (app) navigator is mounted. */}
       <PendingPushRouteHandler />
+      {/* Tap to Pay on iPhone, introduced once to each eligible user (Apple 3.2 /
+          6.2). Renders nothing unless it applies; waits out the staff check. */}
+      {!checkingStaffAccess ? <TapToPayIntroduction /> : null}
       {checkingStaffAccess ? (
         <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.background }]}>
           <LoadingState message="Checking staff access…" />
