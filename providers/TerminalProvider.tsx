@@ -9,22 +9,29 @@ import {
 import { getTerminalSdk } from '@/lib/payments/terminal-sdk';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { useLinkedVenueContext } from '@/providers/LinkedVenueProvider';
-import { useVenueContext } from '@/providers/VenueProvider';
+import { TapToPayProvider } from '@/providers/TapToPayProvider';
 
 /**
  * Stripe Terminal provider for in-person payments (Tap to Pay design doc §7.5).
  *
- * FRICTIONLESS OFF (hard requirement §1.3/§3.2): when the venue has not enabled
- * in-person payments — or the Terminal SDK is unavailable on this build, or no
- * Stripe publishable key is configured — this renders `children` UNTOUCHED. No
- * Terminal initialisation, no listeners, no network calls. A venue that never
- * opts in gets byte-for-byte the app they had before the feature existed.
+ * FRICTIONLESS OFF (hard requirement §1.3/§3.2): a venue that has not enabled
+ * in-person payments gets no Terminal initialisation and no network calls.
+ * Nothing here initialises the SDK or asks for a connection token: that only
+ * happens when a card surface (all gated on the venue flag) connects a reader.
+ *
+ * The SDK provider itself mounts on the BUILD, not the venue flag: whenever the
+ * native module and a publishable key are present, neither of which can change
+ * while the app runs. Mounting it registers JS event listeners and nothing else.
+ * It used to mount only while `in_person_payments_enabled` was on, which meant
+ * turning the setting on or off changed the shape of the tree above the whole
+ * app — React rebuilt every screen beneath it, so Settings jumped back to the top
+ * and any state anywhere was lost. On a build without the SDK or key, children
+ * are rendered untouched, as before.
  *
  * Mounted just inside `ToastProvider` so the token provider has the access
  * token, the venue, and the linked-venue scope available.
  */
 export function TerminalProvider({ children }: { children: ReactNode }) {
-  const { venue } = useVenueContext();
   const accessToken = useAccessToken();
   const { ownerVenueId } = useLinkedVenueContext();
 
@@ -54,11 +61,12 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     }
   }, [ownerVenueId]);
 
+  // Fixed for the life of the process: see the note above on why the venue flag
+  // must not decide whether this provider is in the tree.
   const sdk = getTerminalSdk();
-  const enabled =
-    Boolean(venue?.in_person_payments_enabled) && sdk !== null && Boolean(getStripePublishableKey());
+  const available = sdk !== null && Boolean(getStripePublishableKey());
 
-  if (!enabled || !sdk) {
+  if (!available || !sdk) {
     return <>{children}</>;
   }
 
@@ -74,7 +82,9 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     <StripeTerminalProvider
       logLevel={isDiagnosticBuild() ? 'verbose' : 'error'}
       tokenProvider={tokenProvider}>
-      {children}
+      {/* Tap to Pay on iPhone warm-up and status (iOS; inert elsewhere). Inside
+          the SDK provider because it drives the reader. */}
+      <TapToPayProvider>{children}</TapToPayProvider>
     </StripeTerminalProvider>
   );
 }

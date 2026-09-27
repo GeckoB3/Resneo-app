@@ -364,3 +364,68 @@ describe('cache invalidation', () => {
     await waitFor(() => expect(spy).toHaveBeenCalled());
   });
 });
+
+describe('what the sheet needs for Apple’s checkout requirements', () => {
+  const CARD = { brand: 'visa', last4: '4242' };
+
+  it('says when the card has been read, before the payment is confirmed (5.8)', async () => {
+    mockApiFetch.mockResolvedValue(CHARGE);
+    const order: string[] = [];
+    mockRetrieve.mockResolvedValue({ paymentIntent: { id: 'pi_1' } });
+    mockCollect.mockImplementation(async () => {
+      order.push('collect');
+      return { paymentIntent: { id: 'pi_1' } };
+    });
+    mockConfirm.mockImplementation(async () => {
+      order.push('confirm');
+      return { paymentIntent: { id: 'pi_1', paymentMethod: { cardPresentDetails: CARD } } };
+    });
+
+    const { result } = await renderHook(() => useTakePayment('bk-1'), { wrapper: wrapper() });
+    const res = await result.current.mutateAsync({
+      attemptId: ATTEMPT,
+      onCardRead: () => order.push('card read'),
+    });
+
+    expect(order).toEqual(['collect', 'card read', 'confirm']);
+    // And hands back what the receipt needs (5.10).
+    expect(res.paymentIntentId).toBe(CHARGE.payment_intent_id);
+    expect(res.card).toEqual(CARD);
+  });
+
+  it('never says the card was read when it was not', async () => {
+    mockApiFetch.mockResolvedValue(CHARGE);
+    mockRetrieve.mockResolvedValue({ paymentIntent: { id: 'pi_1' } });
+    mockCollect.mockResolvedValue({ error: { code: 'CANCELED', message: 'Canceled' } });
+    const onCardRead = jest.fn();
+
+    const { result } = await renderHook(() => useTakePayment('bk-1'), { wrapper: wrapper() });
+    await expect(result.current.mutateAsync({ attemptId: ATTEMPT, onCardRead })).rejects.toThrow();
+
+    expect(onCardRead).not.toHaveBeenCalled();
+  });
+
+  it('says a declined payment was declined, with what its receipt needs (5.9, 5.10)', async () => {
+    mockApiFetch.mockResolvedValue(CHARGE);
+    mockRetrieve.mockResolvedValue({ paymentIntent: { id: 'pi_1' } });
+    mockCollect.mockResolvedValue({
+      paymentIntent: { id: 'pi_1', paymentMethod: { cardPresentDetails: CARD } },
+    });
+    mockConfirm.mockResolvedValue({
+      error: { message: 'The card was declined.', apiError: { declineCode: 'insufficient_funds' } },
+    });
+
+    const { result } = await renderHook(() => useTakePayment('bk-1'), { wrapper: wrapper() });
+    const failure = await result.current
+      .mutateAsync({ attemptId: ATTEMPT })
+      .catch((e: unknown) => e as Record<string, unknown>);
+
+    expect(failure).toMatchObject({
+      message: 'The card was declined.',
+      outcome: 'declined',
+      amountPence: CHARGE.amount_pence,
+      paymentIntentId: CHARGE.payment_intent_id,
+      card: CARD,
+    });
+  });
+});

@@ -25,6 +25,7 @@ import {
   terminalErrorMessage,
   type TerminalHookApi,
 } from '@/lib/payments/terminal-sdk';
+import { isTapToPayConnectInFlight } from '@/lib/payments/terminal';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { useLinkedVenueContext } from '@/providers/LinkedVenueProvider';
 
@@ -244,6 +245,11 @@ export function useBluetoothReader(): UseBluetoothReader {
   const reconnectInFlightRef = useRef<Promise<boolean> | null>(null);
   /** Stable handle to the SDK for cleanup that must not re-run on every render. */
   const terminalRef = useRef<TerminalHookApi | null>(null);
+  /**
+   * The Bluetooth reader this hook sees as connected, for the global disconnect
+   * event below (which fires for the phone's own Tap to Pay reader too).
+   */
+  const bluetoothConnectedRef = useRef<Reader.Type | null>(null);
 
   // Firmware updates block collection for tens of seconds to minutes, so they
   // are surfaced as their own state with determinate progress (§7A.5).
@@ -260,7 +266,11 @@ export function useBluetoothReader(): UseBluetoothReader {
       // it has succeeded.
       if (external.length > 0) readersFoundRef.current?.();
     },
+    // Reader-update events are global, and setting up Tap to Pay on iPhone reports
+    // its progress through them too. While the phone's reader is connecting they
+    // are not this reader's firmware, and must not flip it to `updating`.
     onDidStartInstallingUpdate: () => {
+      if (isTapToPayConnectInFlight()) return;
       // A mandatory install runs INSIDE `connectReader`, so the connect's time
       // budget has to know about it (see `awaitReaderConnect`).
       installActivityRef.current = Date.now();
@@ -268,6 +278,7 @@ export function useBluetoothReader(): UseBluetoothReader {
       setStatus('updating');
     },
     onDidReportReaderSoftwareUpdateProgress: (progress: string | number) => {
+      if (isTapToPayConnectInFlight()) return;
       const value = typeof progress === 'number' ? progress : Number(progress);
       // Every progress report is proof the reader is alive and still flashing,
       // which is what re-arms the connect budget rather than expiring it.
@@ -275,6 +286,7 @@ export function useBluetoothReader(): UseBluetoothReader {
       if (Number.isFinite(value)) setUpdateProgress(value);
     },
     onDidFinishInstallingUpdate: () => {
+      if (isTapToPayConnectInFlight()) return;
       installActivityRef.current = null;
       setUpdateProgress(null);
       setStatus((prev) => (prev === 'updating' ? 'ready' : prev));
@@ -283,6 +295,10 @@ export function useBluetoothReader(): UseBluetoothReader {
       if (typeof level === 'number' && Number.isFinite(level)) setBatteryLevel(level);
     },
     onDidDisconnect: () => {
+      // Global as well: the phone's own Tap to Pay reader dropping (it is now
+      // prepared at launch on iOS) is not this reader going away, and must not
+      // start a Bluetooth reconnect with nothing to reconnect to.
+      if (!bluetoothConnectedRef.current) return;
       setConnected(null);
       setStatus('disconnected');
       setError('Reader disconnected. Trying to reconnect.');
@@ -574,6 +590,10 @@ export function useBluetoothReader(): UseBluetoothReader {
     providerReader && providerReader.deviceType !== 'tapToPay'
       ? providerReader
       : (localConnected ?? null);
+
+  useEffect(() => {
+    bluetoothConnectedRef.current = connected;
+  }, [connected]);
 
   const reconnectRemembered = useCallback(async (): Promise<boolean> => {
     return shareInFlight(reconnectInFlightRef, async () => {

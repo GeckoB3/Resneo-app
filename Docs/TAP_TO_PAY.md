@@ -29,6 +29,34 @@ and could not be included in profile.
 
 EAS cannot produce a Development-signed iOS build (profile type follows `distribution`), so with a development-only grant and no local Xcode there is no working configuration. Awaiting Apple's distribution review.
 
+**Local Development-signed build (for Apple's distribution-review videos).** The development grant *does* cover a build signed with a Development profile, which only Xcode can produce. `EXPO_PUBLIC_TAP_TO_PAY_IOS=true` on the command line of a local `npx expo run:ios --device` switches on both halves at once — the entitlement (in `app.config.js`) and `TAP_TO_PAY_IOS_ENABLED` — and turns updates off for that build. It must never go into a `.env*` file or an EAS environment. `APPLE_TEAM_ID` sets the signing team. Every EAS build and OTA update is unchanged.
+
+### Apple's Tap to Pay on iPhone checklist (2026-09-27)
+
+Built against Apple's *App Review Requirements Checklist* v1.7 (August 2026), sections 1, 3, 4 and 5. iOS only: Android behaves exactly as before.
+
+| Checklist | Where |
+|---|---|
+| 1.5 warm-up at launch / foreground, 5.6 UI within 1s | `providers/TapToPayProvider.tsx` connects the phone reader at launch and on every return to the foreground (throttled to 60s), with `tosAcceptancePermitted: false` and `promptForPermissions: false`, so it can never show Apple's terms or a permission dialog. Skips when any reader is already connected. |
+| 1.6 terms status from Apple | No stored flag: the warm-up's `terms_not_accepted` result (SCPError 3930 via `nativeErrorCode`, see `lib/payments/tap-to-pay-errors.ts`) or a connected phone reader decides it. |
+| 3.5, 3.6, 3.8, 3.8.1, 3.9, 3.9.1, 4.3 | Settings → Tap to Pay on iPhone (`components/payments/TapToPaySettings.tsx`): set-up button for admins, "ask an admin" for everyone else, configuration progress, "try it" after turning on, and "How to use". |
+| 3.7, 3.8 at checkout | The Tap to Pay button connects with `tosAcceptancePermitted: isAdmin`, so an admin's first tap brings up Apple's terms and anyone else is told to ask an admin. |
+| 4.1, 4.2 education | `modules/tap-to-pay-education` (local Expo module) presents Apple's `ProximityReaderDiscovery` content on iOS 18+, straight after the terms are accepted (`onDidAcceptTermsOfService`); `components/payments/TapToPayEducation.tsx` is the fallback for iOS 16.4–17. |
+| 5.1, 5.2, 5.4, 5.5 button | "Tap to Pay on iPhone" (Apple's wording, `lib/payments/tap-to-pay-copy.ts`) with SF Symbol `wave.3.right.circle`, first in the payment options rather than behind "Card payment". |
+| 5.7, 5.8, 5.9 | Configuration progress while preparing (`TapToPayProgress`), a "Processing payment…" step once the card is read (`onCardRead`), and a declined / timed out / not completed heading (`lib/payments/card-outcome.ts`). |
+| 5.10 receipts | "Share receipt" (iOS share sheet) on approved AND declined card payments; confidential, so no client details. The webhook's emailed receipt still covers approved ones. |
+| 3.2, 6.2 introduction | `components/payments/TapToPayIntroduction.tsx`: a full-screen introduction shown once per user per phone (flag in the documents folder, so reinstalling shows it again for re-recording), never over the Face ID lock. Admins can accept the terms from it, others are told to ask an admin, and "Learn more" opens the education. It leads with Apple's artwork from the Marketing Toolkit: the In-App Tile *Accept iPhone Payments* 9×16 template (chosen over the In-App Splash Modal, whose copy needs a merchant offer Resneo does not run), with only the template's "[Your CTA]" placeholder filled in as "Get started" (system font, the placeholder's size, colour and baseline). A real button sits over it (position from the PSD's `AV_Size_G` layer): admins go into set-up, everyone else to the education. Config in `lib/payments/tap-to-pay-marketing.ts`; Apple forbids substituting home-made artwork. |
+| 1.4 iOS too old | `isOsVersionNotSupported` (`lib/payments/tap-to-pay-errors.ts`) recognises Apple's `osVersionNotSupported` (Stripe `TapToPayReaderErrorCode` 7) wrapped as `underlyingError`, unwrapped as `domain:7`, or by Stripe's wording, from the support probe, discovery or connect. Below iOS 17.6 a plain "not supported" from the probe is read the same way, so the option stays visible with "update iOS in Settings → General → Software Update" instead of disappearing. |
+| 5.12 not approved after leaving | Local notification when a card payment fails while the app is not active (`lib/payments/card-outcome-notification.ts`). |
+
+Also fixed: `TerminalProvider` used to mount the SDK provider only while `in_person_payments_enabled` was on, so flipping the Settings toggle changed the tree above the whole app and React rebuilt every screen (Settings jumped back to the top; any state was lost). It now mounts on the build (SDK + publishable key, fixed for the process), which only registers JS listeners; initialisation and connection tokens still happen only when a venue-gated card surface connects a reader.
+
+Also fixed on the way: reader-update and disconnect events are global, so the Bluetooth hook now ignores them while the phone's own reader is setting up or when no Bluetooth reader is connected (it would otherwise have shown "Updating your reader" and started a Bluetooth reconnect).
+
+**Not done here** (outside the app, or not yet built): onboarding in the app (2.1–2.3, 3.4 — new venues sign up and connect Stripe on the web); the launch email and push campaign (3.1, 3.3, 6.1, 6.3); a server push for a card payment the webhook later marks failed (the local notification covers the device that took it).
+
+**Re-recording the terms for Apple's videos.** Accepting the terms links the iPhone's Apple Account to the merchant. To show acceptance again, unlink it: without an Apple Business account, sign in at https://businessconnect.apple.com/taptopay/removeall with that Apple Account and choose "Remove all merchant IDs"; with one, sign in to Apple Business → Tap to Pay on iPhone → the merchant ID → Remove (Apple's Tap to Pay on iPhone FAQs). Then force-quit and reopen the app so the reader connects afresh.
+
 **To restore iOS Tap to Pay, both together:** put the `ios.entitlements` block back in `app.json` AND set `TAP_TO_PAY_IOS_ENABLED = true`. The entitlement alone offers a button that cannot work; the flag alone archives a build Apple rejects. Delete the cached provisioning profile (`eas credentials`) first, or EAS hands back the pre-approval one.
 
 Device eligibility splits the same way: **Tap to Pay** needs iPhone XS+/iOS 16.4+ or a certified NFC Android 11+ device; the **Bluetooth path works on any Bluetooth-capable device**, which is much wider.

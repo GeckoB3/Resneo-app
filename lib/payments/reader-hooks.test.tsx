@@ -20,6 +20,7 @@ type SdkCallbacks = {
   onDidFinishInstallingUpdate?: () => void;
   onDidReportBatteryLevel?: (l: number) => void;
   onDidDisconnect?: () => void;
+  onDidAcceptTermsOfService?: () => void;
 };
 
 const mockCallbacks: SdkCallbacks[] = [];
@@ -79,6 +80,14 @@ jest.mock('@/lib/payments/connection-token', () => ({
   clearTerminalLocationCache: jest.fn(),
 }));
 
+/** iOS location, as the silent warm-up sees it (it may check but never ask). */
+let mockLocationGranted = true;
+jest.mock('@/lib/payments/card-present-permissions', () => ({
+  LOCATION_REFUSED_MESSAGE: 'Location permission is needed to take card payments.',
+  ensureIosLocationPermission: jest.fn(async () => null),
+  hasIosLocationPermission: jest.fn(async () => mockLocationGranted),
+}));
+
 const mockStore = new Map<string, string>();
 jest.mock('expo-secure-store', () => ({
   getItemAsync: jest.fn(async (k: string) => mockStore.get(k) ?? null),
@@ -100,7 +109,7 @@ import {
   READER_CONNECT_TIMEOUT_MS,
   READER_DISCOVERY_TIMEOUT_MS,
 } from '@/lib/payments/reader-timeouts';
-import { useTapToPayReader } from '@/lib/payments/terminal';
+import { __resetTapToPayConnectForTests, useTapToPayReader } from '@/lib/payments/terminal';
 import { __resetTerminalInitForTests } from '@/lib/payments/terminal-sdk';
 
 /** Build a reader row of the given device type. */
@@ -132,6 +141,8 @@ beforeEach(() => {
   mockStore.clear();
   mockOwnerVenueId = null;
   __resetTerminalInitForTests();
+  __resetTapToPayConnectForTests();
+  mockLocationGranted = true;
   // Discovery ownership is module-level (one global SDK command), so it has to be
   // reset between cases or an abandoned scan leaks into the next one.
   __resetDiscoverySessionForTests();
@@ -841,6 +852,20 @@ describe('adversarial sequences', () => {
     expect(result.current.status).toBe('idle');
   });
 
+  it('does not touch an SDK that was never initialised when the linked venue changes', async () => {
+    // The Terminal provider is now mounted on every build that can take cards,
+    // venue flag or not. Asking an uninitialised SDK to disconnect only logs an
+    // error (an on-screen one in development builds).
+    const { rerender } = await renderHook(() => useTapToPayReader());
+
+    mockOwnerVenueId = 'venue-2';
+    await act(async () => {
+      rerender({});
+    });
+
+    expect(mockApi.disconnectReader).not.toHaveBeenCalled();
+  });
+
   it('makes exactly ONE silent reconnect attempt on an unexpected disconnect', async () => {
     const { result } = await renderHook(() => useBluetoothReader());
     await act(async () => {
@@ -1029,5 +1054,274 @@ describe('useBluetoothReader', () => {
     // A second initialize() can come back as an error envelope and would abort
     // the scan, so the shared guard must suppress it.
     expect(mockApi.initialize).not.toHaveBeenCalled();
+  });
+});
+
+describe('Tap to Pay on iPhone: terms, warm-up and set-up progress', () => {
+  /** SDK error for "the terms have not been accepted" (SCPError 3930). */
+  const TERMS_NOT_ACCEPTED = {
+    code: 'READER_SOFTWARE_UPDATE_FAILED',
+    nativeErrorCode: '3930',
+    message: 'Reader-specific terms of service have not yet been accepted.',
+  };
+
+  it('passes tosAcceptancePermitted to the SDK on iOS', async () => {
+    discoverable = [PHONE];
+    const { result } = await renderHook(() => useTapToPayReader());
+
+    await act(async () => {
+      await result.current.connect({ tosAcceptancePermitted: false });
+    });
+
+    expect(mockApi.connectReader).toHaveBeenCalledWith(
+      expect.objectContaining({ tosAcceptancePermitted: false }),
+    );
+  });
+
+  it('never passes the iOS-only terms option on Android', async () => {
+    const originalOS = Platform.OS;
+    Object.defineProperty(Platform, 'OS', { value: 'android', configurable: true });
+    try {
+      discoverable = [PHONE];
+      const { result } = await renderHook(() => useTapToPayReader());
+      await act(async () => {
+        await result.current.connect({ tosAcceptancePermitted: false });
+      });
+
+      const params = (mockApi.connectReader.mock.calls[0] as unknown[])[0] as object;
+      expect(params).not.toHaveProperty('tosAcceptancePermitted');
+    } finally {
+      Object.defineProperty(Platform, 'OS', { value: originalOS, configurable: true });
+    }
+  });
+
+  it('tells a non-admin to ask an admin when the terms are not accepted', async () => {
+    discoverable = [PHONE];
+    mockApi.connectReader.mockResolvedValue({ error: TERMS_NOT_ACCEPTED });
+    const { result } = await renderHook(() => useTapToPayReader());
+
+    const res = await act(async () => result.current.connect({ tosAcceptancePermitted: false }));
+
+    expect(res.ok).toBe(false);
+    expect(res.reason).toBe('terms_not_accepted');
+    expect(res.error).toMatch(/Ask an admin/);
+  });
+
+  it('warm-up without location permission neither prompts nor discovers', async () => {
+    const permissions = jest.requireMock('@/lib/payments/card-present-permissions') as {
+      ensureIosLocationPermission: jest.Mock;
+    };
+    permissions.ensureIosLocationPermission.mockClear();
+    mockLocationGranted = false;
+    discoverable = [PHONE];
+    const { result } = await renderHook(() => useTapToPayReader());
+
+    const res = await act(async () =>
+      result.current.connect({ tosAcceptancePermitted: false, promptForPermissions: false }),
+    );
+
+    expect(res.reason).toBe('permission_needed');
+    expect(mockApi.discoverReaders).not.toHaveBeenCalled();
+    expect(permissions.ensureIosLocationPermission).not.toHaveBeenCalled();
+  });
+
+  it('a tap during the warm-up joins it instead of starting a second connect', async () => {
+    discoverable = [PHONE];
+    let finishWarmUp!: (v: object) => void;
+    mockApi.connectReader.mockImplementationOnce(
+      () => new Promise((resolve) => (finishWarmUp = resolve)),
+    );
+    const warm = await renderHook(() => useTapToPayReader());
+    const sheet = await renderHook(() => useTapToPayReader());
+
+    let warmUp!: Promise<{ ok: boolean }>;
+    let tap!: Promise<{ ok: boolean }>;
+    await act(async () => {
+      warmUp = warm.result.current.connect({ tosAcceptancePermitted: false });
+    });
+    await waitFor(() => expect(mockApi.connectReader).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      tap = sheet.result.current.connect({ tosAcceptancePermitted: true });
+    });
+    await act(async () => {
+      finishWarmUp({});
+    });
+
+    expect((await warmUp).ok).toBe(true);
+    expect((await tap).ok).toBe(true);
+    // One discovery and one connect: the tap rode on the warm-up.
+    expect(mockApi.discoverReaders).toHaveBeenCalledTimes(1);
+    expect(mockApi.connectReader).toHaveBeenCalledTimes(1);
+  });
+
+  it('an admin tap after a warm-up blocked on the terms connects again, allowed to show them', async () => {
+    discoverable = [PHONE];
+    let finishWarmUp!: (v: object) => void;
+    mockApi.connectReader
+      .mockImplementationOnce(() => new Promise((resolve) => (finishWarmUp = resolve)))
+      .mockResolvedValueOnce({});
+    const warm = await renderHook(() => useTapToPayReader());
+    const sheet = await renderHook(() => useTapToPayReader());
+
+    let warmUp!: Promise<{ ok: boolean; reason?: string }>;
+    let tap!: Promise<{ ok: boolean }>;
+    await act(async () => {
+      warmUp = warm.result.current.connect({ tosAcceptancePermitted: false });
+    });
+    await waitFor(() => expect(mockApi.connectReader).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      tap = sheet.result.current.connect({ tosAcceptancePermitted: true });
+    });
+    await act(async () => {
+      finishWarmUp({ error: TERMS_NOT_ACCEPTED });
+    });
+
+    expect((await warmUp).reason).toBe('terms_not_accepted');
+    expect((await tap).ok).toBe(true);
+    expect(mockApi.connectReader).toHaveBeenLastCalledWith(
+      expect.objectContaining({ tosAcceptancePermitted: true }),
+    );
+  });
+
+  it('reports set-up progress only while it is connecting, then clears it', async () => {
+    discoverable = [PHONE];
+    let finishConnect!: (v: object) => void;
+    mockApi.connectReader.mockImplementationOnce(
+      () => new Promise((resolve) => (finishConnect = resolve)),
+    );
+    const { result } = await renderHook(() => useTapToPayReader());
+
+    let pending!: Promise<unknown>;
+    await act(async () => {
+      pending = result.current.connect();
+    });
+    await waitFor(() => expect(mockApi.connectReader).toHaveBeenCalled());
+    await act(async () => {
+      mockCallbacks.forEach((c) => c.onDidStartInstallingUpdate?.());
+      mockCallbacks.forEach((c) => c.onDidReportReaderSoftwareUpdateProgress?.(0.4));
+    });
+    expect(result.current.progress).toBe(0.4);
+
+    await act(async () => {
+      finishConnect({});
+      await pending;
+    });
+    expect(result.current.progress).toBeNull();
+  });
+
+  it('says when Apple’s terms were accepted during the connect', async () => {
+    discoverable = [PHONE];
+    mockApi.connectReader.mockImplementationOnce(async () => {
+      mockCallbacks.forEach((c) => c.onDidAcceptTermsOfService?.());
+      return {};
+    });
+    const { result } = await renderHook(() => useTapToPayReader());
+
+    const res = await act(async () => result.current.connect({ tosAcceptancePermitted: true }));
+
+    expect(res).toEqual({ ok: true, error: null, acceptedTerms: true });
+  });
+
+  it('keeps the Bluetooth reader out of the phone’s set-up events and disconnects', async () => {
+    discoverable = [PHONE];
+    let finishConnect!: (v: object) => void;
+    mockApi.connectReader.mockImplementationOnce(
+      () => new Promise((resolve) => (finishConnect = resolve)),
+    );
+    const phone = await renderHook(() => useTapToPayReader());
+    const bluetooth = await renderHook(() => useBluetoothReader());
+
+    let pending!: Promise<unknown>;
+    await act(async () => {
+      pending = phone.result.current.connect();
+    });
+    await waitFor(() => expect(mockApi.connectReader).toHaveBeenCalled());
+    await act(async () => {
+      mockCallbacks.forEach((c) => c.onDidStartInstallingUpdate?.());
+    });
+    // The phone is setting up Tap to Pay; no reader firmware is being installed.
+    expect(bluetooth.result.current.status).not.toBe('updating');
+
+    await act(async () => {
+      finishConnect({});
+      await pending;
+    });
+    mockApi.discoverReaders.mockClear();
+    await act(async () => {
+      mockCallbacks.forEach((c) => c.onDidDisconnect?.());
+    });
+    // No Bluetooth reader was connected, so there is nothing to reconnect.
+    expect(bluetooth.result.current.status).not.toBe('disconnected');
+    expect(mockApi.discoverReaders).not.toHaveBeenCalled();
+  });
+});
+
+describe('Apple 1.4: an iOS too old for Tap to Pay on iPhone', () => {
+  const OS_VERSION_NOT_SUPPORTED = {
+    code: 'UNEXPECTED_SDK_ERROR',
+    nativeErrorCode: '3910',
+    message: 'Preparing the Tap To Pay reader failed.',
+    underlyingError: { code: '7', iosDomain: 'SCPTapToPayReaderErrorDomain' },
+  };
+
+  function withIosVersion(version: string, run: () => Promise<void>) {
+    const original = Platform.Version;
+    Object.defineProperty(Platform, 'Version', { value: version, configurable: true });
+    return run().finally(() => {
+      Object.defineProperty(Platform, 'Version', { value: original, configurable: true });
+    });
+  }
+
+  it('keeps the option visible below iOS 17.6, and explains instead of hiding it', () =>
+    withIosVersion('17.5', async () => {
+      mockApi.supportsReadersOfType.mockResolvedValue({ readerSupportResult: false });
+      const { result } = await renderHook(() => useTapToPayReader());
+
+      await act(async () => {
+        await result.current.checkSupport();
+      });
+
+      expect(result.current.supported).toBeNull();
+      expect(result.current.updateRequired).toBe(true);
+
+      // And a tap says why at once, without putting the SDK through a doomed connect.
+      const res = await act(async () => result.current.connect());
+      expect(res.reason).toBe('os_update_required');
+      expect(res.error).toMatch(/Software Update/);
+      expect(mockApi.discoverReaders).not.toHaveBeenCalled();
+    }));
+
+  it('still hides the option for an iPhone that cannot do it on a current iOS', () =>
+    withIosVersion('18.7', async () => {
+      mockApi.supportsReadersOfType.mockResolvedValue({ readerSupportResult: false });
+      const { result } = await renderHook(() => useTapToPayReader());
+
+      await act(async () => {
+        await result.current.checkSupport();
+      });
+
+      expect(result.current.supported).toBe(false);
+      expect(result.current.updateRequired).toBe(false);
+    }));
+
+  it('tells the merchant to update iOS when the connect reports it', async () => {
+    discoverable = [PHONE];
+    mockApi.connectReader.mockResolvedValue({ error: OS_VERSION_NOT_SUPPORTED });
+    const { result } = await renderHook(() => useTapToPayReader());
+
+    const res = await act(async () => result.current.connect());
+
+    expect(res.reason).toBe('os_update_required');
+    expect(res.error).toMatch(/needs a newer version of iOS/);
+    await waitFor(() => expect(result.current.updateRequired).toBe(true));
+  });
+
+  it('and when discovery reports it', async () => {
+    mockApi.discoverReaders.mockResolvedValue({ error: OS_VERSION_NOT_SUPPORTED });
+    const { result } = await renderHook(() => useTapToPayReader());
+
+    const res = await act(async () => result.current.connect());
+
+    expect(res.reason).toBe('os_update_required');
   });
 });

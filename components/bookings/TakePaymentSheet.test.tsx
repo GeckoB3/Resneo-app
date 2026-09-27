@@ -45,7 +45,12 @@ const takePaymentDefault = async (_input: {
   attemptId: string;
   amountPence?: number;
   readerType?: string;
-}) => ({ amountPence: 2500 });
+  onCardRead?: () => void;
+}): Promise<{
+  amountPence: number;
+  paymentIntentId?: string;
+  card?: { brand: string | null; last4: string | null } | null;
+}> => ({ amountPence: 2500 });
 const mockTakePayment = jest.fn(takePaymentDefault);
 const mockCancelCollection = jest.fn(async () => undefined);
 jest.mock('@/lib/queries/useTakePayment', () => ({
@@ -91,6 +96,7 @@ jest.mock('@/lib/payments/terminal', () => ({
     status: 'idle',
     error: null,
     supported: true,
+    progress: null,
     connect: mockTapConnect,
     checkSupport: mockCheckSupport,
     abort: mockTapAbort,
@@ -138,6 +144,37 @@ jest.mock('@/lib/payments/bluetoothReader', () => ({
     abort: mockBtAbort,
     reset: jest.fn(),
   }),
+}));
+
+// The venue name only feeds the card receipt.
+jest.mock('@/providers/VenueProvider', () => ({
+  useVenueContext: () => ({ name: 'Test Salon' }),
+}));
+
+/**
+ * Tap to Pay on iPhone (app-wide status). Not applicable by default, which keeps
+ * the menu this suite was written for ("Card payment"); the iOS cases below
+ * switch it on.
+ */
+const mockTapToPayCtx = {
+  applies: false,
+  isAdmin: false,
+  supported: true as boolean | null,
+  termsAccepted: null as boolean | null,
+  preparing: false,
+  progress: null as number | null,
+  error: null as string | null,
+  enable: jest.fn(async () => ({ ok: true, error: null })),
+  showEducation: jest.fn(async () => true),
+  recordConnect: jest.fn(),
+};
+jest.mock('@/providers/TapToPayProvider', () => ({
+  useTapToPay: () => mockTapToPayCtx,
+}));
+
+const mockNotifyNotApproved = jest.fn(async () => false);
+jest.mock('@/lib/payments/card-outcome-notification', () => ({
+  notifyCardPaymentNotApproved: (...args: unknown[]) => mockNotifyNotApproved(...(args as [])),
 }));
 
 import { TakePaymentSheet, type TakePaymentTarget } from '@/components/bookings/TakePaymentSheet';
@@ -215,6 +252,12 @@ beforeEach(() => {
   mockBtState.discovered = [];
   // The known-failure store is module-level and survives renders by design.
   __resetFailedCardAttemptsForTests();
+  mockTapToPayCtx.applies = false;
+  mockTapToPayCtx.supported = true;
+  mockTapToPayCtx.recordConnect.mockClear();
+  mockTapToPayCtx.showEducation.mockReset();
+  mockTapToPayCtx.showEducation.mockResolvedValue(true);
+  mockNotifyNotApproved.mockClear();
 });
 
 describe('known balance', () => {
@@ -316,7 +359,7 @@ describe('over-entry (the route silently clamps to the balance)', () => {
     await render(<TakePaymentSheet target={target()} onClose={jest.fn()} />);
     await retypeAmount('25.00', '100');
     await press('Card payment');
-    expect(screen.queryByText('Tap to Pay on this phone')).toBeNull();
+    expect(screen.queryByText('Tap to Pay on iPhone')).toBeNull();
     expect(mockTakePayment).not.toHaveBeenCalled();
   });
 
@@ -470,7 +513,7 @@ describe('a build with no Tap to Pay entitlement (iOS, pending Apple)', () => {
     await render(<TakePaymentSheet target={target()} onClose={jest.fn()} />);
     await press('Card payment');
 
-    expect(screen.queryByText('Tap to Pay on this phone')).toBeNull();
+    expect(screen.queryByText('Tap to Pay on iPhone')).toBeNull();
     expect(screen.getByText('Connect a card reader')).toBeTruthy();
   });
 
@@ -507,7 +550,7 @@ describe('card collection', () => {
   it('collects via Tap to Pay and shows the amount collected', async () => {
     await render(<TakePaymentSheet target={target()} onClose={jest.fn()} />);
     await press('Card payment');
-    await press('Tap to Pay on this phone');
+    await press('Tap to Pay on iPhone');
 
     expect(mockTakePayment).toHaveBeenCalledWith(
       expect.objectContaining({ amountPence: 2500, readerType: 'tap_to_pay' }),
@@ -571,7 +614,7 @@ describe('card collection', () => {
     // orphan pending row behind the "SDK is busy" failure.
     await render(<TakePaymentSheet target={target()} onClose={jest.fn()} />);
     await press('Card payment');
-    await doublePress('Tap to Pay on this phone');
+    await doublePress('Tap to Pay on iPhone');
 
     expect(mockTakePayment).toHaveBeenCalledTimes(1);
   });
@@ -581,7 +624,7 @@ describe('card collection', () => {
     mockTapConnect.mockResolvedValueOnce({ ok: false, error: 'The reader is unavailable.' });
     await render(<TakePaymentSheet target={target()} onClose={jest.fn()} />);
     await press('Card payment');
-    await press('Tap to Pay on this phone');
+    await press('Tap to Pay on iPhone');
     await press('Retry');
 
     expect(mockTakePayment).toHaveBeenCalledTimes(1);
@@ -667,7 +710,7 @@ describe('a card payment still settling', () => {
       <TakePaymentSheet target={target()} onClose={jest.fn()} />,
     );
     await press('Card payment');
-    await press('Tap to Pay on this phone');
+    await press('Tap to Pay on iPhone');
     expect(screen.getByText('Retry')).toBeTruthy();
 
     await rerender(
@@ -795,10 +838,11 @@ describe('a reader that never gets ready (the "spins for ever" bug)', () => {
 
     await render(<TakePaymentSheet target={target()} onClose={jest.fn()} />);
     await press('Card payment');
-    await press('Tap to Pay on this phone');
+    await press('Tap to Pay on iPhone');
 
-    // Stuck in prepare, with a live way out rather than a dead Back.
-    expect(screen.getByText('Getting the card reader ready.')).toBeTruthy();
+    // Stuck in prepare, with a live way out rather than a dead Back. (iOS shows
+    // Tap to Pay on iPhone's own set-up progress while it gets ready.)
+    expect(screen.getByText('Getting Tap to Pay on iPhone ready…')).toBeTruthy();
     expect(screen.getByText('Cancel')).toBeTruthy();
 
     await press('Cancel');
@@ -806,7 +850,7 @@ describe('a reader that never gets ready (the "spins for ever" bug)', () => {
     // Cancelling reaches the SDK: an abandoned discovery is refused as busy on
     // the next attempt, so it has to be stopped, not just ignored.
     expect(mockTapAbort).toHaveBeenCalled();
-    expect(screen.queryByText('Getting the card reader ready.')).toBeNull();
+    expect(screen.queryByText('Getting Tap to Pay on iPhone ready…')).toBeNull();
     expect(screen.getByText('Back')).toBeTruthy();
     expect(mockTakePayment).not.toHaveBeenCalled();
 
@@ -898,7 +942,7 @@ describe('a reader that never gets ready (the "spins for ever" bug)', () => {
 
     await render(<TakePaymentSheet target={target()} onClose={jest.fn()} />);
     await press('Card payment');
-    await press('Tap to Pay on this phone');
+    await press('Tap to Pay on iPhone');
     await press('Cancel');
     await press('Use card reader');
 
@@ -951,7 +995,7 @@ describe('card errors', () => {
     });
     await render(<TakePaymentSheet target={target()} onClose={jest.fn()} />);
     await press('Card payment');
-    await press('Tap to Pay on this phone');
+    await press('Tap to Pay on iPhone');
 
     expect(
       screen.getByText('Location permission is needed to take card payments.'),
@@ -963,7 +1007,7 @@ describe('card errors', () => {
     mockTapConnect.mockResolvedValue({ ok: false, error: 'The reader is unavailable.' });
     await render(<TakePaymentSheet target={target()} onClose={jest.fn()} />);
     await press('Card payment');
-    await press('Tap to Pay on this phone');
+    await press('Tap to Pay on iPhone');
     expect(screen.getByText('Retry')).toBeTruthy();
   });
 });
@@ -1194,5 +1238,135 @@ describe('refunds', () => {
       />,
     );
     expect(screen.queryByText('Refund a payment')).toBeNull();
+  });
+});
+
+describe('Tap to Pay on iPhone at checkout (Apple checklist, iOS)', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { Share } = require('react-native') as typeof import('react-native');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { cardPaymentError } = require('@/lib/payments/card-outcome') as typeof import('@/lib/payments/card-outcome');
+
+  beforeEach(() => {
+    mockTapToPayCtx.applies = true;
+    jest.spyOn(Share, 'share').mockResolvedValue({ action: 'sharedAction' } as never);
+  });
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('puts Tap to Pay on iPhone first in the payment options, not behind "Card payment"', async () => {
+    await render(<TakePaymentSheet target={target()} onClose={jest.fn()} />);
+
+    expect(screen.queryByText('Card payment')).toBeNull();
+    // First among the options, in render order.
+    const options = screen
+      .getAllByText(/^(Tap to Pay on iPhone|Card reader|Record cash)$/)
+      .map((t) => t.props.children);
+    expect(options).toEqual(['Tap to Pay on iPhone', 'Card reader', 'Record cash']);
+  });
+
+  it('goes straight into collecting when it is pressed', async () => {
+    await render(<TakePaymentSheet target={target()} onClose={jest.fn()} />);
+    await press('Tap to Pay on iPhone');
+
+    expect(mockTapConnect).toHaveBeenCalledWith({ tosAcceptancePermitted: false });
+    expect(mockTakePayment).toHaveBeenCalled();
+  });
+
+  it('lets an admin accept Apple’s terms from the button', async () => {
+    await render(<TakePaymentSheet target={target({ isAdmin: true })} onClose={jest.fn()} />);
+    await press('Tap to Pay on iPhone');
+
+    expect(mockTapConnect).toHaveBeenCalledWith({ tosAcceptancePermitted: true });
+  });
+
+  it('tells a non-admin to ask an admin, and takes nothing', async () => {
+    mockTapConnect.mockResolvedValue({
+      ok: false,
+      error: 'Tap to Pay on iPhone is not turned on for your venue yet. Ask an admin to turn it on in Settings.',
+      reason: 'terms_not_accepted',
+    } as never);
+    await render(<TakePaymentSheet target={target()} onClose={jest.fn()} />);
+    await press('Tap to Pay on iPhone');
+
+    expect(screen.getByText(/Ask an admin to turn it on/)).toBeTruthy();
+    expect(mockTakePayment).not.toHaveBeenCalled();
+    expect(mockTapToPayCtx.recordConnect).toHaveBeenCalled();
+  });
+
+  it('shows Apple’s education right after the terms are accepted, then waits for a tap', async () => {
+    mockTapConnect.mockResolvedValue({ ok: true, error: null, acceptedTerms: true } as never);
+    await render(<TakePaymentSheet target={target({ isAdmin: true })} onClose={jest.fn()} />);
+    await press('Tap to Pay on iPhone');
+
+    expect(mockTapToPayCtx.showEducation).toHaveBeenCalled();
+    expect(screen.getByText('Tap to Pay on iPhone is on. Tap it to take the payment.')).toBeTruthy();
+    // The payment waits for the next tap, with nothing left to interrupt it.
+    expect(mockTakePayment).not.toHaveBeenCalled();
+  });
+
+  it('shows the app’s own education when Apple’s is not available', async () => {
+    mockTapConnect.mockResolvedValue({ ok: true, error: null, acceptedTerms: true } as never);
+    mockTapToPayCtx.showEducation.mockResolvedValue(false);
+    await render(<TakePaymentSheet target={target({ isAdmin: true })} onClose={jest.fn()} />);
+    await press('Tap to Pay on iPhone');
+
+    expect(screen.getByText('Apple Pay and other digital wallets')).toBeTruthy();
+    expect(screen.getByText('When the card asks for a PIN')).toBeTruthy();
+  });
+
+  it('moves to "Processing payment" once the card has been read', async () => {
+    mockTakePayment.mockImplementation(async (input) => {
+      input.onCardRead?.();
+      return new Promise(() => {});
+    });
+    await render(<TakePaymentSheet target={target()} onClose={jest.fn()} />);
+    await press('Tap to Pay on iPhone');
+
+    expect(screen.getByText('Processing payment…')).toBeTruthy();
+    expect(screen.queryByText("Hold the client's card near the top of your phone.")).toBeNull();
+  });
+
+  it('says a declined card was declined, offers a receipt, and notifies if the app was left', async () => {
+    mockTakePayment.mockRejectedValue(
+      cardPaymentError('The card was declined.', {
+        outcome: 'declined',
+        amountPence: 2500,
+        paymentIntentId: 'pi_123',
+        card: { brand: 'visa', last4: '4242' },
+      }),
+    );
+    await render(<TakePaymentSheet target={target()} onClose={jest.fn()} />);
+    await press('Tap to Pay on iPhone');
+
+    expect(screen.getByText('Payment declined')).toBeTruthy();
+    expect(mockNotifyNotApproved).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'declined', amountPence: 2500, guestName: 'Ada Lovelace' }),
+    );
+
+    await press('Share receipt');
+    const message = (Share.share as jest.Mock).mock.calls[0][0].message as string;
+    expect(message).toContain('Receipt from Test Salon');
+    expect(message).toContain('Declined');
+    expect(message).toContain('•••• 4242');
+    expect(message).toContain('pi_123');
+    // Confidential: nothing about the client.
+    expect(message).not.toContain('Ada');
+  });
+
+  it('offers a receipt for an approved payment too', async () => {
+    mockTakePayment.mockResolvedValue({
+      amountPence: 2500,
+      paymentIntentId: 'pi_ok',
+      card: { brand: 'mastercard', last4: '5555' },
+    });
+    await render(<TakePaymentSheet target={target()} onClose={jest.fn()} />);
+    await press('Tap to Pay on iPhone');
+    await press('Share receipt');
+
+    const message = (Share.share as jest.Mock).mock.calls[0][0].message as string;
+    expect(message).toContain('Card payment: Approved');
+    expect(message).toContain('pi_ok');
   });
 });

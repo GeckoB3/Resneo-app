@@ -1,0 +1,6 @@
+{
+  "name": "tap-to-pay-education",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.ts"
+}

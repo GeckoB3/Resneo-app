@@ -11,6 +11,7 @@ import { FeatureTile } from '@/components/more/FeatureTile';
 import { MoreHero } from '@/components/more/MoreHero';
 import { MoreRow } from '@/components/more/MoreRow';
 import { PrimaryTile } from '@/components/more/PrimaryTile';
+import { TapToPaySettings } from '@/components/payments/TapToPaySettings';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { LoadingState } from '@/components/ui/LoadingState';
@@ -34,6 +35,7 @@ import { useUpdateVenue } from '@/lib/queries/useVenueSettings';
 import { useAppLock } from '@/providers/AppLockProvider';
 import { switchAppMode } from '@/lib/mode/app-mode-store';
 import { useAuth } from '@/providers/AuthProvider';
+import { useTapToPay } from '@/providers/TapToPayProvider';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { radius, spacing } from '@/theme/index';
@@ -102,6 +104,7 @@ export default function MoreScreen() {
   const { venue, name: venueName, isLoading: venueLoading } = useVenueContext();
   const notificationsQuery = useNotifications();
   const { appLockEnabled, setAppLockEnabled, supported: appLockSupported } = useAppLock();
+  const tapToPay = useTapToPay();
   const [appLockBusy, setAppLockBusy] = useState(false);
   const [inPersonBusy, setInPersonBusy] = useState(false);
   /** Optimistic switch position; null = follow the venue bootstrap. */
@@ -401,6 +404,15 @@ export default function MoreScreen() {
               onPress={() => setReaderSheetOpen(true)}
             />
           ) : null}
+        </Group>
+      ) : null}
+
+      {/* Tap to Pay on iPhone: turn it on, its status, and how to use it. Apple
+          requires all three to be reachable outside a payment. iOS only, and
+          only once the venue can take card payments at all. */}
+      {tapToPay.applies ? (
+        <Group title="Tap to Pay on iPhone">
+          <TapToPaySettings />
         </Group>
       ) : null}
 
