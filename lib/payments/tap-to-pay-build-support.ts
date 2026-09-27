@@ -24,13 +24,20 @@ import { Platform } from 'react-native';
  * entitlement is an iOS-only key, and the Android half of the feature rides on
  * the Stripe plugin's `tapToPayCheck` prop, which stays set.
  *
+ * The one exception is a LOCAL Development-signed build made in Xcode, which the
+ * development grant does cover — used to record the videos Apple's
+ * distribution review asks for. `EXPO_PUBLIC_TAP_TO_PAY_IOS=true` on that
+ * build's command line turns this on AND adds the entitlement (`app.config.js`
+ * reads the same variable), so the two cannot drift apart. Unset everywhere
+ * else, including every EAS build and OTA update.
+ *
  * TO RE-ENABLE once Apple approves distribution: restore the `ios.entitlements`
- * block in `app.json` AND flip this to `true`. Both, together — the entitlement
+ * block in `app.json` AND make this `true`. Both, together — the entitlement
  * alone would offer a button that cannot work, and this flag alone would archive
  * a build that Apple rejects.
  * ---------------------------------------------------------------------------
  */
-export const TAP_TO_PAY_IOS_ENABLED = false;
+export const TAP_TO_PAY_IOS_ENABLED = process.env.EXPO_PUBLIC_TAP_TO_PAY_IOS === 'true';
 
 /**
  * `platform` is injectable so this is testable without mocking `Platform`.
