@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
+import { formatComplianceAnswer, formatComplianceDate } from '@/lib/compliance/record-format';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import {
   useComplianceRecord,
@@ -17,23 +18,12 @@ import {
 import { useToast } from '@/providers/ToastProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
-import type { ComplianceFormField } from '@/types/compliance';
 
 import { RESULT_LABELS } from './complianceTypeLabels';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/** DD/MM/YYYY — handles both full ISO timestamps and bare YYYY-MM-DD dates. */
-function formatDate(iso: string | null | undefined): string {
-  if (!iso) return '—';
-  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso.trim());
-  if (dateOnly) return `${dateOnly[3]}/${dateOnly[2]}/${dateOnly[1]}`;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
-}
 
 function recordStatusPill(record: {
   status: string;
@@ -46,31 +36,6 @@ function recordStatusPill(record: {
     return { label: 'Expired', tone: 'expired' };
   }
   return { label: 'Current', tone: 'current' };
-}
-
-/** Render a field response value to a human-readable string. */
-function renderAnswer(field: ComplianceFormField, value: unknown): string {
-  if (value == null || value === '') return '—';
-  switch (field.type) {
-    case 'signature': {
-      const v = value as { method?: string };
-      return v && typeof v === 'object' ? (v.method === 'typed' ? 'Signed (typed)' : 'Signature on file') : String(value);
-    }
-    case 'file': {
-      const v = value as { file_name?: string };
-      return (v && typeof v === 'object' && v.file_name) ? v.file_name : 'File uploaded';
-    }
-    case 'multiselect':
-      return Array.isArray(value) ? (value as string[]).join(', ') : String(value);
-    case 'select': {
-      const opt = field.options?.find((o) => o.value === value);
-      return opt?.label ?? String(value);
-    }
-    case 'date':
-      return formatDate(String(value));
-    default:
-      return String(value);
-  }
 }
 
 function joinedTypeName(
@@ -335,14 +300,14 @@ export function ComplianceRecordSheet({ visible, onClose, recordId, onChanged }:
                 <Text variant="caption" tone="muted">
                   Captured
                 </Text>
-                <Text variant="bodySmall">{formatDate(record.captured_at)}</Text>
+                <Text variant="bodySmall">{formatComplianceDate(record.captured_at)}</Text>
               </View>
               <View style={styles.metaItem}>
                 <Text variant="caption" tone="muted">
                   Expires
                 </Text>
                 <Text variant="bodySmall">
-                  {record.expires_at ? formatDate(record.expires_at) : 'No expiry'}
+                  {record.expires_at ? formatComplianceDate(record.expires_at) : 'No expiry'}
                 </Text>
               </View>
               <View style={styles.metaItem}>
@@ -408,7 +373,7 @@ export function ComplianceRecordSheet({ visible, onClose, recordId, onChanged }:
                           label={`Download ${fileName ?? 'file'}`}
                         />
                       ) : (
-                        <Text variant="bodySmall">{renderAnswer(field, value)}</Text>
+                        <Text variant="bodySmall">{formatComplianceAnswer(field, value)}</Text>
                       )}
                     </View>
                   );
