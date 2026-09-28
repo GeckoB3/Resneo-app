@@ -28,29 +28,38 @@ jest.mock('react-native-svg', () => {
 });
 
 // Mock gesture-handler: capture the Pan callbacks so the test can fire a stroke,
-// and render GestureDetector's child (the pad surface) inline.
-const mockGesture: { onBegin?: (e: any) => void; onEnd?: () => void } = {};
+// and render GestureDetector's child (the pad surface) inline. State mirrors the
+// library's own values.
+const mockGesture: {
+  onBegin?: (e: any) => void;
+  onUpdate?: (e: any) => void;
+  onFinalize?: (e: any) => void;
+} = {};
 jest.mock('react-native-gesture-handler', () => {
-  const React = require('react');
   const chainable: any = {};
-  for (const m of ['enabled', 'minDistance', 'onBegin', 'onUpdate', 'onEnd']) {
+  for (const m of ['enabled', 'minDistance', 'onBegin', 'onUpdate', 'onFinalize']) {
     chainable[m] = (fn: any) => {
-      if (m === 'onBegin') mockGesture.onBegin = fn;
-      if (m === 'onEnd') mockGesture.onEnd = fn;
+      if (m === 'onBegin' || m === 'onUpdate' || m === 'onFinalize') mockGesture[m] = fn;
       return chainable;
     };
   }
   return {
     Gesture: { Pan: () => chainable },
     GestureDetector: ({ children }: { children: React.ReactNode }) => children,
+    State: { UNDETERMINED: 0, FAILED: 1, BEGAN: 2, CANCELLED: 3, ACTIVE: 4, END: 5 },
   };
 });
 
-import { SignaturePad } from '@/components/compliance/SignaturePad';
+const END = 5;
+const FAILED = 1;
+const CANCELLED = 3;
+
+import { SignaturePad, strokeToPath } from '@/components/compliance/SignaturePad';
 
 beforeEach(() => {
   mockGesture.onBegin = undefined;
-  mockGesture.onEnd = undefined;
+  mockGesture.onUpdate = undefined;
+  mockGesture.onFinalize = undefined;
   jest.useRealTimers();
   // rAF runs on the macrotask queue under jsdom; make it synchronous so the
   // capture's deferred toDataURL resolves within an awaited act().
@@ -64,23 +73,38 @@ afterEach(() => {
   (globalThis.requestAnimationFrame as jest.Mock).mockRestore?.();
 });
 
+/** Render the pad and lay it out so the <Svg> (and its toDataURL ref) mounts. */
+async function renderPad(onChange: jest.Mock) {
+  await render(<SignaturePad onChange={onChange} accessibilityLabel="Sign" />);
+  const pad = screen.getByLabelText('Sign');
+  await act(async () => {
+    pad.props.onLayout({ nativeEvent: { layout: { width: 300, height: 180 } } });
+  });
+}
+
+/** Fire one touch on the pad: its points, then the gesture's final state. */
+async function touch(points: { x: number; y: number }[], finalState: number) {
+  await act(async () => {
+    const [first, ...rest] = points;
+    mockGesture.onBegin?.(first);
+    for (const p of rest) mockGesture.onUpdate?.(p);
+    mockGesture.onFinalize?.({ state: finalState });
+    await Promise.resolve();
+  });
+}
+
 describe('SignaturePad', () => {
   it('emits a base64 PNG data URL on stroke commit (matches the server format)', async () => {
     const onChange = jest.fn();
-    await render(<SignaturePad onChange={onChange} accessibilityLabel="Sign" />);
+    await renderPad(onChange);
 
-    // Lay the pad out so the <Svg> (and its toDataURL ref) mounts.
-    const pad = screen.getByLabelText('Sign');
-    await act(async () => {
-      pad.props.onLayout({ nativeEvent: { layout: { width: 300, height: 180 } } });
-    });
-
-    // Draw a one-point stroke (begin → end) and let the capture resolve.
-    await act(async () => {
-      mockGesture.onBegin?.({ x: 10, y: 10 });
-      mockGesture.onEnd?.();
-      await Promise.resolve();
-    });
+    await touch(
+      [
+        { x: 10, y: 10 },
+        { x: 40, y: 30 },
+      ],
+      END,
+    );
 
     expect(onChange).toHaveBeenCalled();
     const emitted = onChange.mock.calls.at(-1)?.[0] as string;
@@ -89,5 +113,63 @@ describe('SignaturePad', () => {
     expect(emitted).toMatch(/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/);
     // Never the old (rejected) SVG data URL.
     expect(emitted.startsWith('data:image/svg+xml')).toBe(false);
+    expect(screen.queryByText('Sign here')).toBeNull();
+  });
+
+  // The pan never activates on a touch that does not move, so it ends FAILED and
+  // `onEnd` never runs. Committing only from `onEnd` left the dot on screen but
+  // never emitted it, and the next stroke wiped it.
+  it('keeps and emits a tap as a dot', async () => {
+    const onChange = jest.fn();
+    await renderPad(onChange);
+
+    await touch([{ x: 10, y: 10 }], FAILED);
+
+    expect(onChange).toHaveBeenLastCalledWith(`data:image/png;base64,${FAKE_B64}`);
+    expect(screen.queryByText('Sign here')).toBeNull();
+  });
+
+  it('gives a tap a dot with some length, however many points it arrived as', () => {
+    expect(strokeToPath([{ x: 10, y: 20 }])).toBe('M 10.0 20.0 L 10.5 20.0');
+    // A move event that did not move: a zero-length line may not paint at all.
+    expect(
+      strokeToPath([
+        { x: 10, y: 20 },
+        { x: 10, y: 20 },
+      ]),
+    ).toBe('M 10.0 20.0 L 10.0 20.0 L 10.5 20.0');
+    // A real stroke is drawn as it went, with no nudge.
+    expect(
+      strokeToPath([
+        { x: 10, y: 20 },
+        { x: 30, y: 25 },
+      ]),
+    ).toBe('M 10.0 20.0 L 30.0 25.0');
+  });
+
+  it('leaves no stray dot when something else takes the touch before it moves', async () => {
+    const onChange = jest.fn();
+    await renderPad(onChange);
+
+    await touch([{ x: 10, y: 10 }], CANCELLED);
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByText('Sign here')).toBeTruthy();
+  });
+
+  it('keeps the ink of a stroke that was cancelled part way', async () => {
+    const onChange = jest.fn();
+    await renderPad(onChange);
+
+    await touch(
+      [
+        { x: 10, y: 10 },
+        { x: 40, y: 30 },
+        { x: 80, y: 20 },
+      ],
+      CANCELLED,
+    );
+
+    expect(onChange).toHaveBeenLastCalledWith(`data:image/png;base64,${FAKE_B64}`);
   });
 });

@@ -1,7 +1,7 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import { runOnJS } from 'react-native-reanimated';
+import { Gesture, GestureDetector, State } from 'react-native-gesture-handler';
+import { runOnJS, useSharedValue } from 'react-native-reanimated';
 import Svg, { Path } from 'react-native-svg';
 
 import { Button } from '@/components/ui/Button';
@@ -13,14 +13,22 @@ const PAD_HEIGHT = 180;
 
 type Point = { x: number; y: number };
 
+/** Committed strokes + the one currently being drawn. */
+type PadInk = { strokes: Point[][]; current: Point[] };
+
+const NO_INK: PadInk = { strokes: [], current: [] };
+
 /** Build an SVG path `d` string from a stroke's points (move + lines). */
-function strokeToPath(points: Point[]): string {
+export function strokeToPath(points: Point[]): string {
   if (points.length === 0) return '';
   const [first, ...rest] = points;
   let d = `M ${first!.x.toFixed(1)} ${first!.y.toFixed(1)}`;
   for (const p of rest) d += ` L ${p.x.toFixed(1)} ${p.y.toFixed(1)}`;
-  // A single tap → draw a dot so a quick sign still produces marks.
-  if (rest.length === 0) d += ` L ${(first!.x + 0.5).toFixed(1)} ${first!.y.toFixed(1)}`;
+  // A tap → draw a dot so a quick sign still produces marks. A tap can arrive as
+  // several identical points (a move event that did not move), and a
+  // zero-length line may not paint its round cap on every renderer.
+  const stayedPut = rest.every((p) => p.x === first!.x && p.y === first!.y);
+  if (stayedPut) d += ` L ${(first!.x + 0.5).toFixed(1)} ${first!.y.toFixed(1)}`;
   return d;
 }
 
@@ -44,9 +52,10 @@ type Props = {
 export function SignaturePad({ onChange, disabled, accessibilityLabel }: Props) {
   const { colors } = useTheme();
   const [width, setWidth] = useState(0);
-  // Committed strokes + the one currently being drawn.
-  const [strokes, setStrokes] = useState<Point[][]>([]);
-  const [current, setCurrent] = useState<Point[]>([]);
+  const [ink, setInk] = useState<PadInk>(NO_INK);
+  // Points in the touch in progress, counted on the UI thread so the gesture
+  // can tell a tap from a touch it lost before it moved (see onFinalize).
+  const touchPoints = useSharedValue(0);
   const svgRef = useRef<Svg>(null);
 
   /**
@@ -73,47 +82,76 @@ export function SignaturePad({ onChange, disabled, accessibilityLabel }: Props) 
   }, []);
 
   const begin = useCallback((x: number, y: number) => {
-    setCurrent([{ x, y }]);
+    setInk((prev) => ({ ...prev, current: [{ x, y }] }));
   }, []);
 
   const extend = useCallback((x: number, y: number) => {
-    setCurrent((prev) => [...prev, { x, y }]);
+    setInk((prev) => ({ ...prev, current: [...prev.current, { x, y }] }));
+  }, []);
+
+  const discard = useCallback(() => {
+    setInk((prev) => ({ ...prev, current: [] }));
   }, []);
 
   const commit = useCallback(() => {
-    setCurrent((pending) => {
-      if (pending.length === 0) return [];
-      setStrokes((prevStrokes) => [...prevStrokes, pending]);
-      // Capture after the new stroke has painted; emit the PNG data URL.
-      void captureToPng().then((dataUrl) => {
-        if (dataUrl) onChange(dataUrl);
-      });
-      return [];
+    setInk((prev) =>
+      prev.current.length > 0 ? { strokes: [...prev.strokes, prev.current], current: [] } : prev,
+    );
+  }, []);
+
+  // Emit the PNG data URL once each committed stroke has rendered. An effect,
+  // not the gesture's callback: the capture reads the Svg ref, which the gesture
+  // builder (render-time code) must not reach. `onChange` is an effect event so
+  // a parent passing a fresh callback each render never re-emits, and a capture
+  // overtaken by the next stroke, or by a switch to "Type name", is dropped.
+  const emitDrawing = useEffectEvent((dataUrl: string) => onChange(dataUrl));
+  useEffect(() => {
+    if (ink.strokes.length === 0) return;
+    let live = true;
+    void captureToPng().then((dataUrl) => {
+      if (live && dataUrl) emitDrawing(dataUrl);
     });
-  }, [captureToPng, onChange]);
+    return () => {
+      live = false;
+    };
+  }, [ink.strokes, captureToPng]);
 
   const clear = useCallback(() => {
-    setStrokes([]);
-    setCurrent([]);
+    setInk(NO_INK);
     onChange(null);
   }, [onChange]);
 
-  // Pan gesture is the natural fit for free drawing. minDistance 0 so a tap
-  // registers; the worklet hops to JS to mutate React state.
+  // Pan gesture is the natural fit for free drawing. minDistance 0 so it
+  // activates on the first move, ahead of the sheet's ScrollView (which waits
+  // for its touch slop), and holds the touch for the whole stroke: a vertical
+  // stroke draws instead of scrolling the sheet. The worklet hops to JS to
+  // mutate React state.
   const pan = Gesture.Pan()
     .enabled(!disabled)
     .minDistance(0)
     .onBegin((e) => {
+      touchPoints.set(1);
       runOnJS(begin)(e.x, e.y);
     })
     .onUpdate((e) => {
+      touchPoints.set(touchPoints.get() + 1);
       runOnJS(extend)(e.x, e.y);
     })
-    .onEnd(() => {
-      runOnJS(commit)();
+    // Not onEnd: that runs only for a pan that activated, so a tap (which ends
+    // FAILED, never having moved) showed its dot but was never emitted, and the
+    // next stroke wiped it. A touch CANCELLED before it moved (something else
+    // took it) leaves no stray dot; a stroke cancelled part way keeps its ink.
+    .onFinalize((e) => {
+      const lostBeforeMoving = e.state === State.CANCELLED && touchPoints.get() <= 1;
+      touchPoints.set(0);
+      if (lostBeforeMoving) {
+        runOnJS(discard)();
+      } else {
+        runOnJS(commit)();
+      }
     });
 
-  const allStrokes = current.length > 0 ? [...strokes, current] : strokes;
+  const allStrokes = ink.current.length > 0 ? [...ink.strokes, ink.current] : ink.strokes;
   const hasInk = allStrokes.some((s) => s.length > 0);
 
   return (
