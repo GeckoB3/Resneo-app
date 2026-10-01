@@ -33,6 +33,19 @@ export interface MoveGroupedColumn {
   moveGroup?: string;
 }
 
+/**
+ * The indexes of the columns that take no dropped bar, whatever group it comes
+ * from: a paused calendar, drawn only so the bookings already on it are not
+ * missed (R44-3). A paused column sits among the own columns in column order,
+ * so the index range of its group cannot leave it out; the block checks these
+ * as well. Bars ON such a column still move away to the rest of their group.
+ */
+export function columnsRefusingDrops(
+  columns: readonly { acceptsDrops?: boolean }[],
+): number[] {
+  return columns.flatMap((column, index) => (column.acceptsDrops === false ? [index] : []));
+}
+
 /** The group key a column belongs to; `null` for a column that is alone. */
 export function columnMoveGroup(column: MoveGroupedColumn): string | null {
   if (!column.linked) return 'own';

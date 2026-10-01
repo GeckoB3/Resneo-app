@@ -6,11 +6,14 @@
  *  - see every bookable calendar column (from `usePractitioners`), in display order
  *  - create a new column (`useCreateHostCalendar`) — plan calendar-limit 403
  *    (`upgrade_required`) surfaces as an inline upgrade notice, not a raw toast
- *  - rename + activate/deactivate (`usePatchPractitioner` name / is_active)
+ *  - rename + activate/deactivate (`usePatchPractitioner` name / is_active);
+ *    pausing a calendar that still has upcoming bookings warns first with the
+ *    list and what happens to them (web QA C-11, R44-4)
  *  - reorder with up/down buttons (PATCH `sort_order` per column — the web uses
  *    drag, but @dnd-kit is web-only; up/down matches the panel's mobile fallback)
  *  - edit a per-calendar booking-link slug + copy the public URL
- *  - delete a column (`useDeletePractitioner`)
+ *  - delete a column (`useDeletePractitioner`); the server refuses while it has
+ *    upcoming bookings, and the sheet then lists them instead (R44-2)
  *  - see which services / classes / resources / events are assigned to each column
  *
  * Rendered as the Calendars tab of `app/(app)/availability.tsx` (the web's
@@ -28,9 +31,12 @@ import {
 } from 'react-native';
 
 import { CalendarAssignmentsSheet } from '@/components/availability/CalendarAssignmentsSheet';
+import {
+  CalendarPauseSheet,
+  CalendarRemoveSheet,
+} from '@/components/availability/CalendarUpcomingSheets';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { ConfirmSheet } from '@/components/ui/ConfirmSheet';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { IconButton } from '@/components/ui/IconButton';
@@ -42,6 +48,7 @@ import { ApiError } from '@/lib/api/client';
 import { getWebUrl } from '@/lib/env';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import {
+  useCalendarUpcomingBookingsCheck,
   useDeletePractitioner,
   usePatchPractitioner,
 } from '@/lib/queries/useAvailabilityManage';
@@ -59,6 +66,13 @@ import {
   calendarLimitMessage,
   calendarLimitReached,
 } from '@/lib/venue/calendar-entitlement';
+import {
+  calendarRemovalRefusal,
+  isUpcomingCheckUnsupported,
+  type CalendarDialogTerms,
+  type CalendarRemoveCheck,
+  type CalendarUpcomingBookings,
+} from '@/lib/venue/calendar-upcoming-bookings';
 import { useToast } from '@/providers/ToastProvider';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { calendarSetupSections, type CalendarSetupSections } from '@/lib/booking/venue-models';
@@ -586,6 +600,13 @@ export function BookableCalendarsManager() {
   const patch = usePatchPractitioner();
   const create = useCreateHostCalendar();
   const remove = useDeletePractitioner();
+  const upcomingCheck = useCalendarUpcomingBookingsCheck();
+  // The venue's own words for the pause and remove sheets (already merged over
+  // the booking model's defaults by `VenueProvider`).
+  const terms: CalendarDialogTerms = {
+    client: venue?.terminology?.client,
+    booking: venue?.terminology?.booking,
+  };
 
   const calendars = useMemo(
     () => sortByOrder(practitionersQuery.data?.practitioners ?? []),
@@ -651,8 +672,17 @@ export function BookableCalendarsManager() {
   const [createError, setCreateError] = useState<string | null>(null);
   const [limitReached, setLimitReached] = useState(false);
 
-  // Delete confirm
+  // Delete confirm, and who is still booked on the calendar (asked as it opens).
   const [deleteTarget, setDeleteTarget] = useState<Practitioner | null>(null);
+  const [removeCheck, setRemoveCheck] = useState<CalendarRemoveCheck>({ state: 'checking' });
+  // The calendar the running pre-check is for, so a slow answer for a sheet
+  // that has since closed (or reopened on another calendar) is dropped.
+  const removeCheckForRef = useRef<string | null>(null);
+  // The pause warning: a calendar being switched off with bookings still on it.
+  const [pauseTarget, setPauseTarget] = useState<{
+    calendar: Practitioner;
+    upcoming: CalendarUpcomingBookings;
+  } | null>(null);
   // The assignments sheet (services, classes, resources, events on one column).
   const [assignTarget, setAssignTarget] = useState<Practitioner | null>(null);
 
@@ -706,21 +736,88 @@ export function BookableCalendarsManager() {
     [patch, toast],
   );
 
-  const toggleActive = useCallback(
-    async (id: string, active: boolean) => {
-      setBusyId(id);
-      try {
-        await patch.mutateAsync({ id, is_active: active });
-        hapticSuccess();
-      } catch (e) {
-        hapticWarning();
-        toast.error(e instanceof ApiError ? e.message : 'Could not update calendar.');
-      } finally {
-        setBusyId(null);
+  /**
+   * Switching a calendar off used to save straight away, and its appointments
+   * left the diary with its column (web QA C-11). So pausing asks who is still
+   * booked first: nobody, and it saves as before; somebody, and the pause sheet
+   * says who and what pausing does. Switching one back on never asks.
+   *
+   * The question failing is not an answer, so nothing is changed and the admin
+   * is told. The one exception is a server with no such question (404, a web
+   * release before 2026-10-01): there the plain save is all there ever was.
+   */
+  async function toggleActive(id: string, active: boolean) {
+    setBusyId(id);
+    try {
+      if (!active) {
+        const calendar = calendars.find((c) => c.id === id);
+        let upcoming: CalendarUpcomingBookings | null = null;
+        try {
+          upcoming = await upcomingCheck.mutateAsync(id);
+        } catch (e) {
+          if (!isUpcomingCheckUnsupported(e)) {
+            hapticWarning();
+            toast.error(
+              `We could not check the bookings on ${calendar?.name ?? 'this calendar'}, so nothing was changed. Please try again.`,
+            );
+            return;
+          }
+        }
+        if (calendar && upcoming && upcoming.total > 0) {
+          setPauseTarget({ calendar, upcoming });
+          return;
+        }
       }
+      await patch.mutateAsync({ id, is_active: active });
+      hapticSuccess();
+    } catch (e) {
+      hapticWarning();
+      toast.error(e instanceof ApiError ? e.message : 'Could not update calendar.');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  /** "Pause calendar" on the warning: the same save the switch always made. */
+  async function handleConfirmPause() {
+    if (!pauseTarget) return;
+    const id = pauseTarget.calendar.id;
+    setBusyId(id);
+    try {
+      await patch.mutateAsync({ id, is_active: false });
+      hapticSuccess();
+      setPauseTarget(null);
+    } catch (e) {
+      hapticWarning();
+      toast.error(e instanceof ApiError ? e.message : 'Could not update calendar.');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  /** Opens the remove sheet and asks who is still booked on the calendar (R44-2). */
+  const openRemoveCalendar = useCallback(
+    async (calendar: Practitioner) => {
+      setDeleteTarget(calendar);
+      setRemoveCheck({ state: 'checking' });
+      removeCheckForRef.current = calendar.id;
+      let next: CalendarRemoveCheck;
+      try {
+        const upcoming = await upcomingCheck.mutateAsync(calendar.id);
+        next = upcoming.total > 0 ? { state: 'blocked', upcoming } : { state: 'clear' };
+      } catch (e) {
+        // Not a refusal: the delete itself is checked again by the server.
+        next = { state: isUpcomingCheckUnsupported(e) ? 'unchecked' : 'unknown' };
+      }
+      if (removeCheckForRef.current === calendar.id) setRemoveCheck(next);
     },
-    [patch, toast],
+    [upcomingCheck],
   );
+
+  const closeRemoveCalendar = useCallback(() => {
+    removeCheckForRef.current = null;
+    setDeleteTarget(null);
+  }, []);
 
   const saveSlug = useCallback(
     async (id: string, slug: string | null) => {
@@ -780,9 +877,17 @@ export function BookableCalendarsManager() {
       await remove.mutateAsync(id);
       hapticSuccess();
       toast.success('Calendar removed.');
-      setDeleteTarget(null);
+      closeRemoveCalendar();
     } catch (e) {
       hapticWarning();
+      // Somebody booked while the sheet was open, or the first question failed:
+      // the refusal carries the same list, so show it rather than a bare toast.
+      const refusal = calendarRemovalRefusal(e);
+      if (refusal) {
+        removeCheckForRef.current = null;
+        setRemoveCheck({ state: 'blocked', upcoming: refusal });
+        return;
+      }
       toast.error(e instanceof ApiError ? e.message : 'Could not remove calendar.');
     } finally {
       setBusyId(null);
@@ -894,7 +999,7 @@ export function BookableCalendarsManager() {
             onRename={(name) => renameCalendar(c.id, name)}
             onToggleActive={(active) => void toggleActive(c.id, active)}
             onSaveSlug={(slug) => saveSlug(c.id, slug)}
-            onDelete={() => setDeleteTarget(c)}
+            onDelete={() => void openRemoveCalendar(c)}
             conflicts={conflictsById.get(c.id) ?? []}
             onEditAssignments={() => setAssignTarget(c)}
             venueHasServices={venueHasServices}
@@ -1000,20 +1105,36 @@ export function BookableCalendarsManager() {
         ) : null}
       </Sheet>
 
-      <ConfirmSheet
-        visible={deleteTarget != null}
-        title="Remove calendar?"
-        message={
+      {/* Remove: the confirm says what removal really does; once the calendar
+          is known to have upcoming bookings (the pre-check, or the server's
+          409 on the delete itself) the list takes its place in the same sheet. */}
+      <CalendarRemoveSheet
+        target={
           deleteTarget
-            ? `${deleteTarget.name} will be removed. Staff linked to this column are unassigned, and the practitioner on existing bookings may be cleared. Existing bookings stay on the diary.`
-            : undefined
+            ? { calendarName: deleteTarget.name, isActive: deleteTarget.is_active }
+            : null
         }
-        confirmLabel="Remove calendar"
+        check={removeCheck}
+        terms={terms}
         loading={remove.isPending}
         onConfirm={() => void handleConfirmDelete()}
         onClose={() => {
-          if (!remove.isPending) setDeleteTarget(null);
+          if (!remove.isPending) closeRemoveCalendar();
         }}
+      />
+
+      <CalendarPauseSheet
+        target={
+          pauseTarget
+            ? { calendarName: pauseTarget.calendar.name, upcoming: pauseTarget.upcoming }
+            : null
+        }
+        terms={terms}
+        loading={patch.isPending}
+        onGoBack={() => {
+          if (!patch.isPending) setPauseTarget(null);
+        }}
+        onConfirm={() => void handleConfirmPause()}
       />
     </ScrollView>
   );

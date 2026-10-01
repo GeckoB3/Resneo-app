@@ -25,6 +25,16 @@ import { minutesToTime, timeToMinutes, type GridWindowOverride } from '@/compone
 import { resolveDayLoadState } from '@/lib/calendar/day-load-state';
 import { resolveGridErrorState } from '@/lib/calendar/grid-error-state';
 import { nextVisibleCalendars } from '@/lib/calendar/calendar-selection';
+import {
+  diaryCalendarsForIdsKey,
+  diaryColumnCalendarIdsKey,
+  diaryColumnLabel,
+  diaryColumnTakesNewBookings,
+  PAUSED_COLUMN_TOAST_MS,
+  pausedColumnChangeRefusal,
+  pausedColumnCreateMessage,
+  pausedColumnDropMessage,
+} from '@/lib/calendar/diary-columns';
 import { venueDayHours } from '@/lib/calendar/venue-closures';
 import { buildCalendarClosureOverlays } from '@/lib/calendar/schedule-closures';
 import { calendarHours } from '@/lib/calendar/calendar-hours';
@@ -634,13 +644,22 @@ export default function CalendarScreen() {
     return { from: anchor, to: anchor };
   }, [scope, anchor, week]);
 
-  const practitionersQuery = usePractitioners();
-  const practitioners = useMemo<Practitioner[]>(() => {
+  /**
+   * The WHOLE roster, paused calendars included (R44-3, web QA C-11).
+   *
+   * The diary used to keep active calendars only and ask the grid for those
+   * alone, so pausing a calendar took its column away and every appointment on
+   * it with it: still Booked, drawn nowhere. The grid is now asked for every
+   * calendar, and the columns drawn (`practitioners`, further down, once the
+   * grid is known) are the active ones plus any paused one with something live
+   * on the dates in view. See `lib/calendar/diary-columns`.
+   */
+  const practitionersQuery = usePractitioners({ includeInactive: true });
+  const rosterCalendars = useMemo<Practitioner[]>(() => {
     const list = practitionersQuery.data?.practitioners ?? [];
-    return [...list].filter((p) => p.is_active).sort((a, b) => a.sort_order - b.sort_order);
+    return [...list].sort((a, b) => a.sort_order - b.sort_order);
   }, [practitionersQuery.data]);
-
-  const calendarIds = useMemo(() => practitioners.map((p) => p.id), [practitioners]);
+  const rosterCalendarIds = useMemo(() => rosterCalendars.map((p) => p.id), [rosterCalendars]);
 
   // Hydrate the persisted prefs into local state ONCE, after both the prefs read
   // resolves AND the live calendars are known (so the stale-id guard can run).
@@ -661,11 +680,13 @@ export default function CalendarScreen() {
     // user's selected calendar and column filter for good, because
     // `prefsHydratedRef` is already set when the roster finally arrives. Gate on a
     // genuinely known roster instead.
-    if (calendarIds.length === 0 && !practitionersQuery.isSuccess) return;
+    if (rosterCalendarIds.length === 0 && !practitionersQuery.isSuccess) return;
     prefsHydratedRef.current = true;
 
-    const pruned = pruneStaleSelectedId(storedPrefs, calendarIds, ALL_CALENDARS);
-    const prunedVisible = pruneVisibleCalendarIds(storedPrefs.visibleIds, calendarIds);
+    // Pruned against the roster, not the columns drawn today: a paused calendar
+    // still exists, and whether it is drawn depends on a grid not loaded yet.
+    const pruned = pruneStaleSelectedId(storedPrefs, rosterCalendarIds, ALL_CALENDARS);
+    const prunedVisible = pruneVisibleCalendarIds(storedPrefs.visibleIds, rosterCalendarIds);
     // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot hydration of persisted prefs
     if (!hasDateDeepLink) setScope(pruned.scope);
     setSelectedId(pruned.selectedId);
@@ -687,7 +708,7 @@ export default function CalendarScreen() {
     prefsHydrated,
     storedPrefs,
     persistPrefs,
-    calendarIds,
+    rosterCalendarIds,
     practitionersQuery.isLoading,
     hasDateDeepLink,
     ALL_CALENDARS,
@@ -893,10 +914,12 @@ export default function CalendarScreen() {
   }, [linkedVenues]);
 
   const gridQuery = useCalendarGrid({
-    calendarIds,
+    // Every calendar of the roster, paused ones too: the grid serves any
+    // calendar of the venue, and a paused one may still have bookings (R44-3).
+    calendarIds: rosterCalendarIds,
     from: range.from,
     to: range.to,
-    enabled: calendarIds.length > 0,
+    enabled: rosterCalendarIds.length > 0,
     // Near-realtime: a second device's changes surface within ~60s (web has
     // live sync; the app polls). Pull-to-refresh forces an immediate refetch.
     //
@@ -916,9 +939,58 @@ export default function CalendarScreen() {
   const scheduleQuery = useSchedule({
     from: range.from,
     to: range.to,
-    enabled: calendarIds.length > 0,
+    enabled: rosterCalendarIds.length > 0,
     refetchInterval: 60_000,
   });
+
+  /**
+   * The team calendars drawn for the dates in view: every active one, plus a
+   * paused one on days it still has live bookings, so pausing never hides an
+   * appointment (R44-3). Everything below that says `practitioners` means
+   * these: the columns, the week rows and the chips. A paused one among them
+   * takes nothing new; see `pausedColumnNameById`.
+   *
+   * Held as a key of ids first: the grid changes on every poll, move and
+   * realtime event, and the list (with every column built from it) should only
+   * change when the columns do.
+   */
+  const diaryCalendarIdsKey = useMemo(
+    () =>
+      diaryColumnCalendarIdsKey({
+        calendars: rosterCalendars,
+        grid: gridQuery.data,
+        scheduleBlocks: scheduleQuery.data ?? [],
+        from: range.from,
+        to: range.to,
+      }),
+    [rosterCalendars, gridQuery.data, scheduleQuery.data, range.from, range.to],
+  );
+  const practitioners = useMemo<Practitioner[]>(
+    () => diaryCalendarsForIdsKey(rosterCalendars, diaryCalendarIdsKey),
+    [rosterCalendars, diaryCalendarIdsKey],
+  );
+  const calendarIds = useMemo(() => practitioners.map((p) => p.id), [practitioners]);
+
+  /** Paused calendars that are drawn: their columns show what is booked and take nothing new. */
+  const pausedColumnNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const p of practitioners) {
+      if (!diaryColumnTakesNewBookings(p)) m.set(p.id, p.name);
+    }
+    return m;
+  }, [practitioners]);
+
+  /** The paused calendar a booking on the anchor date sits on, or null when its calendar is active. */
+  const pausedHomeNameOf = useCallback(
+    (bookingId: string): string | null => {
+      if (pausedColumnNameById.size === 0) return null;
+      const home = gridQuery.data?.calendars.find((cal) =>
+        cal.dates.some((d) => d.date === anchor && d.bookings.some((b) => b.id === bookingId)),
+      );
+      return home ? pausedColumnNameById.get(home.calendarId) ?? null : null;
+    },
+    [pausedColumnNameById, gridQuery.data, anchor],
+  );
 
   /**
    * Venue-wide closures and amended hours, and staff leave.
@@ -974,7 +1046,7 @@ export default function CalendarScreen() {
           { table: 'practitioner_calendar_blocks', filter: `venue_id=eq.${venueId}` },
         ]
       : [],
-    enabled: !!venueId && calendarIds.length > 0,
+    enabled: !!venueId && rosterCalendarIds.length > 0,
   });
 
   // Wide viewport (tablet / landscape) → the DAY view shows every practitioner
@@ -1225,12 +1297,16 @@ export default function CalendarScreen() {
   /** practitionerId → bookings on the anchor date (badges on the switcher chips). */
   const perPractitionerCounts = useMemo(() => {
     const map: Record<string, number> = {};
+    // Drawn calendars only: the grid also holds paused calendars with nothing
+    // live on the day, which have no chip and no column to count for.
+    const drawn = new Set(calendarIds);
     for (const calendar of gridQuery.data?.calendars ?? []) {
+      if (!drawn.has(calendar.calendarId)) continue;
       const dateData = calendar.dates.find((d) => d.date === anchor);
       map[calendar.calendarId] = dateData?.bookings.length ?? 0;
     }
     return map;
-  }, [gridQuery.data, anchor]);
+  }, [gridQuery.data, anchor, calendarIds]);
 
   /** Linked-venue bookings on the anchor date, across every linked venue. */
   const linkedDayCount = useMemo(() => {
@@ -1397,26 +1473,48 @@ export default function CalendarScreen() {
     return null;
   }, [detailBookingId, gridQuery.data]);
 
+  /**
+   * A paused calendar's column is drawn so what is already booked on it is not
+   * missed. It takes nothing new, so an empty slot there opens no menu and says
+   * why instead (R44-3; the server would refuse the booking anyway). Returns
+   * true when the tap was on a paused column and has been answered.
+   */
+  const refusedOnPausedColumn = useCallback(
+    (calendarId: string | null | undefined): boolean => {
+      const pausedName = calendarId ? pausedColumnNameById.get(calendarId) : undefined;
+      if (!pausedName) return false;
+      toast.info(pausedColumnCreateMessage(pausedName), { duration: PAUSED_COLUMN_TOAST_MS });
+      return true;
+    },
+    [pausedColumnNameById, toast],
+  );
+
   const createAt = useCallback(
     (time: string) => {
+      if (refusedOnPausedColumn(effectiveId)) return;
       setAddSheetTarget({ kind: 'slot', time, practitionerId: effectiveId ?? '' });
     },
-    [effectiveId],
+    [effectiveId, refusedOnPausedColumn],
   );
 
   /** Empty-slot tap in the multi-calendar view — carries the target column. */
-  const createAtFor = useCallback((practitionerId: string, time: string) => {
-    setAddSheetTarget({ kind: 'slot', time, practitionerId });
-  }, []);
+  const createAtFor = useCallback(
+    (practitionerId: string, time: string) => {
+      if (refusedOnPausedColumn(practitionerId)) return;
+      setAddSheetTarget({ kind: 'slot', time, practitionerId });
+    },
+    [refusedOnPausedColumn],
+  );
 
   /** Empty-slot tap in the week grid — re-anchor to that day (keeps the same
    *  week), then open the add sheet (the booking flow reads the anchor date). */
   const createAtForDate = useCallback(
     (date: string, time: string) => {
+      if (refusedOnPausedColumn(effectiveId)) return;
       setAnchor(date);
       setAddSheetTarget({ kind: 'slot', time, practitionerId: effectiveId ?? '' });
     },
-    [effectiveId],
+    [effectiveId, refusedOnPausedColumn],
   );
 
   /**
@@ -1611,18 +1709,23 @@ export default function CalendarScreen() {
         } catch (error) {
           if (snapshot) revertCalendarGridBookings(queryClient, snapshot);
           // A 409 names the service and the time it could not take, and says
-          // the visit was not moved. Nothing here improves on that.
+          // the visit was not moved. Nothing here improves on that, except on
+          // a paused calendar, where "Staff not available" hides the cause.
+          const message = error instanceof ApiError ? error.message : null;
           toast.error(
-            error instanceof ApiError
-              ? error.message
-              : 'Could not move this visit. Try another time.',
+            pausedColumnChangeRefusal(
+              message,
+              input.practitionerId ? null : pausedHomeNameOf(input.bookingId),
+            ) ??
+              message ??
+              'Could not move this visit. Try another time.',
           );
         } finally {
           removePending(input.bookingId);
         }
       })();
     },
-    [anchor, visitScheduleById, removePending, toast, raiseChangeNotice, queryClient],
+    [anchor, visitScheduleById, removePending, toast, raiseChangeNotice, queryClient, pausedHomeNameOf],
   );
 
   const commitDrag = useCallback(
@@ -1710,6 +1813,13 @@ export default function CalendarScreen() {
           if (snapshot) revertCalendarGridBookings(queryClient, snapshot);
           const message = error instanceof ApiError ? error.message : null;
           toast.error(
+            // R44-3: a booking on a paused calendar cannot change time or
+            // length while it stays there, and the engine's "Staff not
+            // available" does not say so.
+            pausedColumnChangeRefusal(
+              message,
+              input.practitionerId ? null : pausedHomeNameOf(input.bookingId),
+            ) ??
             // R35-3: a booking left on a calendar that stopped offering its
             // service refuses every drag with the engine's own words, which read
             // as the staff member's mistake. `practitionerId` is set only by a
@@ -1725,7 +1835,7 @@ export default function CalendarScreen() {
         }
       })();
     },
-    [anchor, rescheduleById, removePending, toast, raiseChangeNotice, queryClient],
+    [anchor, rescheduleById, removePending, toast, raiseChangeNotice, queryClient, pausedHomeNameOf],
   );
 
   // Shared commit for a drag MOVE — vertical (same column) or cross-column (with
@@ -1885,6 +1995,16 @@ export default function CalendarScreen() {
   // drop cannot be described (the booking or column vanished mid-drag).
   const handleDragColumnReject = useCallback(
     (bookingId: string, newTime: string, targetColumnId: string) => {
+      // R44-3: a drop on a paused calendar's column. The grid refused it and
+      // the bar has gone home; nothing can be moved there, so say why and stop
+      // (there is no cross-venue move or rebook to offer).
+      const pausedTargetName = pausedColumnNameById.get(targetColumnId);
+      if (pausedTargetName) {
+        toast.error(pausedColumnDropMessage(pausedTargetName), {
+          duration: PAUSED_COLUMN_TOAST_MS,
+        });
+        return;
+      }
       const booking = findBookingOnAnchor(bookingId);
       const sourceHit = linkedBookingVenue.get(bookingId) ?? null;
       const targetHit = linkedColumnVenue.get(targetColumnId) ?? null;
@@ -1942,6 +2062,7 @@ export default function CalendarScreen() {
       gridQuery.data,
       anchor,
       practitioners,
+      pausedColumnNameById,
       toast,
       staffCollective,
       venue?.id,
@@ -2308,6 +2429,9 @@ export default function CalendarScreen() {
     return ownColumnsShown.map((p) => {
       const calendar = gridQuery.data?.calendars.find((c) => c.calendarId === p.id);
       const calDay = calendar?.dates.find((d) => d.date === anchor) ?? null;
+      // A paused calendar, drawn for the bookings still on it (R44-3): marked,
+      // and no bar may be dropped on it. Its own bars still open and move away.
+      const paused = !diaryColumnTakesNewBookings(p);
       // The feed carries the WEEKLY hours only; the column takes the resolved
       // ones (amended hours, days off, schedule periods) so the day's bounds,
       // the closed shading and the drag follow them. An amended day widens
@@ -2323,6 +2447,7 @@ export default function CalendarScreen() {
         // This practitioner's class/event/resource blocks for the anchor date.
         scheduleBlocks: scheduleByCalendarDate.get(scheduleKey(p.id, anchor)) ?? [],
         ...(column.amended ? { venueHours: column.venueHours } : {}),
+        ...(paused ? { badge: 'Paused', acceptsDrops: false } : {}),
       };
     });
   }, [
@@ -2487,7 +2612,8 @@ export default function CalendarScreen() {
   // WeekMatrixGrid straight from gridQuery.data, so this only supplies labels.
   const weekMatrixCalendars = useMemo(
     () => [
-      ...practitioners.map((p) => ({ id: p.id, name: p.name })),
+      // A paused calendar with bookings this week keeps its row: "Marcus (paused)".
+      ...practitioners.map((p) => ({ id: p.id, name: diaryColumnLabel(p) })),
       /**
        * Then every linked venue's calendars. The week matrix used to show our
        * rows only, so a partner booking counted nowhere in week scope even though
@@ -2671,6 +2797,8 @@ export default function CalendarScreen() {
       venueHours={dayColumnHours.venueHours}
       boundsRanges={dayRosterBounds}
       calendarName={practitioners.find((p) => p.id === effectiveId)?.name}
+      // R44-3: a paused calendar shown for the bookings still on it.
+      calendarBadge={effectiveId && pausedColumnNameById.has(effectiveId) ? 'Paused' : undefined}
       onAmendHours={() => setAmendHoursTarget({ date: anchor, calendarId: effectiveId })}
       windowOverride={windowOverride}
       nowMinutes={nowMinutes}
@@ -2909,7 +3037,7 @@ export default function CalendarScreen() {
                     {practitioners.map((p) => (
                       <Chip
                         key={p.id}
-                        label={p.name}
+                        label={diaryColumnLabel(p)}
                         count={perPractitionerCounts[p.id]}
                         selected={visibleIds == null || visibleIds.includes(p.id)}
                         onPress={() => toggleVisibleCalendar(p.id)}
@@ -2948,7 +3076,7 @@ export default function CalendarScreen() {
                     {practitioners.map((p) => (
                       <Chip
                         key={p.id}
-                        label={p.name}
+                        label={diaryColumnLabel(p)}
                         count={scope === 'day' ? perPractitionerCounts[p.id] : undefined}
                         selected={
                           !isLinkedActive && !isAllView && !isWeekAllView && p.id === effectiveId

@@ -55,7 +55,19 @@ branch off `fc2a2dd`.
 - `AmendHoursSheet`: the direct link is built with an `if`, because SDK 57's typed routes make the
   union from a ternary too large for `tsc` (TS2590).
 
-Requires no backend change.
+**R44, the web's 2026-10-01 QA fix round** (added 2026-10-01, JavaScript only; details in
+`Docs/APP_GAP_REPORT_R44_WEB_DELTA.md`):
+
+- Pausing a calendar that still has upcoming bookings warns first, with the list and what happens
+  to them. Its column stays on the diary, marked Paused, on any day it has bookings, and takes
+  nothing new.
+- Removing a calendar says what really happens. While it has upcoming bookings it cannot be
+  removed, and the sheet lists them.
+- A collective host deleting a service that has upcoming bookings no longer takes it off the
+  combined page first: a refused delete changes nothing.
+
+Requires no backend change. The R44 items work with or without the web's 2026-10-01 fixes
+(`8c28f5eb`); the pause warning and the list on a refused removal appear once the web has them.
 
 ### Play Store: "What's new" (453/500)
 

@@ -100,6 +100,7 @@ import { useServicesSetupAvailability } from '@/lib/queries/useServicesSetup';
 import { currencySymbolFor, type SetupServiceForm } from '@/lib/services-setup/drafts';
 import { useVenueWideRequirementNames } from '@/lib/queries/useComplianceRequirements';
 import {
+  useCheckServiceDelete,
   useCreateService,
   useDeleteService,
   useManagedServices,
@@ -115,6 +116,10 @@ import {
   nextCalendarServiceIds,
   useToggleCalendarService,
 } from '@/lib/queries/useToggleCalendarService';
+import {
+  deletedHalfwayMessage,
+  deleteServiceOnCollectivePage,
+} from '@/lib/services/collective-service-delete';
 import { staffMayCustomizeAny } from '@/lib/services/service-override';
 import { affectedCalendarIds, type ServiceRemovalMove } from '@/lib/services/service-removal';
 import { useServiceRemovalFlow } from '@/lib/services/useServiceRemovalFlow';
@@ -698,6 +703,7 @@ export default function ServicesScreen() {
   const update = useUpdateService();
   const create = useCreateService();
   const deleteService = useDeleteService();
+  const checkServiceDelete = useCheckServiceDelete();
   const takeOffPage = useTakeServiceOffPage();
   const reorderServices = useReorderServices();
   const toggleCalendarService = useToggleCalendarService();
@@ -731,6 +737,11 @@ export default function ServicesScreen() {
   const [error, setError] = useState<string | null>(null);
   // Service pending deletion — drives a Sheet confirm (Alert.alert is a no-op on web).
   const [deleteTarget, setDeleteTarget] = useState<ManagedService | null>(null);
+  // A collective host's delete in flight: check, take off the page, delete (R44-1).
+  const [deletingOnPage, setDeletingOnPage] = useState(false);
+  // Set when that delete failed AFTER the service came off the page; the delete
+  // sheet shows it in place of its confirm.
+  const [deleteHalfway, setDeleteHalfway] = useState<string | null>(null);
   // Non-admin per-calendar field overrides (StaffServiceOverrideSheet).
   const [overrideService, setOverrideService] = useState<ManagedService | null>(null);
   const [overrideCalendarId, setOverrideCalendarId] = useState<string | null>(null);
@@ -1664,21 +1675,62 @@ export default function ServicesScreen() {
     return !!block && block.role === 'master' && block.venue_role === 'host' && !!block.item_id;
   }
 
+  /**
+   * A host's master on the collective page: ask the server whether the delete
+   * would be refused BEFORE taking it off the page, so a refused delete changes
+   * nothing (web QA D-9, R44-1). It used to come off the page first, and a
+   * service with upcoming bookings was then left parked at every venue by a
+   * delete that never happened. See `lib/services/collective-service-delete`.
+   */
+  async function runDeleteOnCollectivePage(service: ManagedService, itemId: string) {
+    const block = service.collective;
+    if (!block) return;
+    setDeletingOnPage(true);
+    try {
+      const outcome = await deleteServiceOnCollectivePage({
+        checkDelete: () => checkServiceDelete.mutateAsync(service.id),
+        takeOffPage: () =>
+          takeOffPage.mutateAsync({ collectiveId: block.collective_id, itemId }),
+        deleteService: () => deleteService.mutateAsync(service.id),
+      });
+      if (outcome.status === 'deleted') {
+        hapticSuccess();
+        setDeleteTarget(null);
+        setExpandedId(null);
+        toast.success(`"${service.name}" deleted.`);
+        return;
+      }
+      hapticWarning();
+      if (outcome.status === 'refused') {
+        // Nothing changed: the service is still on the page and still bookable.
+        setDeleteTarget(null);
+        toast.error(outcome.message);
+        return;
+      }
+      // Off the page and not deleted. Said in full, in this same sheet, and left
+      // on screen until it is read: the card now shows the service as parked,
+      // and this is why.
+      setDeleteHalfway(
+        deletedHalfwayMessage(service.name, block.collective_name, outcome.reason),
+      );
+    } finally {
+      setDeletingOnPage(false);
+    }
+  }
+
+  /** Closes the delete sheet, unless a collective delete is part-way through its steps. */
+  function closeDeleteSheet() {
+    if (deletingOnPage) return;
+    setDeleteTarget(null);
+    setDeleteHalfway(null);
+  }
+
   async function runDeleteService() {
     const service = deleteTarget;
     if (!service) return;
     if (deleteTakesOffPage(service) && service.collective?.item_id) {
-      try {
-        await takeOffPage.mutateAsync({
-          collectiveId: service.collective.collective_id,
-          itemId: service.collective.item_id,
-        });
-      } catch (e) {
-        hapticWarning();
-        setDeleteTarget(null);
-        toast.error(e instanceof ApiError ? e.message : 'Could not take the service off the page.');
-        return;
-      }
+      await runDeleteOnCollectivePage(service, service.collective.item_id);
+      return;
     }
     deleteService.mutate(service.id, {
       onSuccess: () => {
@@ -2596,30 +2648,45 @@ export default function ServicesScreen() {
       </Sheet>
 
       {/* Delete-service confirm — a Sheet, since Alert.alert's confirm is a no-op on web. */}
-      <Sheet visible={deleteTarget !== null} onClose={() => setDeleteTarget(null)}>
-        <View style={styles.deleteSheet}>
-          <Text variant="subheading">Delete service</Text>
-          <Text variant="bodySmall" tone="secondary">
-            {deleteTakesOffPage(deleteTarget) && deleteTarget?.collective
-              ? `"${deleteTarget.name}" comes off the ${deleteTarget.collective.collective_name} page first: at the other venues it becomes a retired service and their calendars stop offering it. Bookings already made are not changed. It is then deleted here. This cannot be undone.`
-              : `Delete "${deleteTarget?.name}"? This cannot be undone. The service will not be deleted if upcoming bookings exist.`}
-          </Text>
-          <View style={styles.actions}>
-            <Button
-              label="Cancel"
-              variant="secondary"
-              style={styles.flex1}
-              onPress={() => setDeleteTarget(null)}
-            />
-            <Button
-              label={deleteTakesOffPage(deleteTarget) ? 'Take off the page and delete' : 'Delete'}
-              variant="danger"
-              style={styles.flex1}
-              loading={deleteService.isPending || takeOffPage.isPending}
-              onPress={() => void runDeleteService()}
-            />
+      <Sheet visible={deleteTarget !== null} onClose={closeDeleteSheet}>
+        {deleteHalfway ? (
+          // The service came off the collective page and the delete then failed
+          // (R44-1). Shown here, not in a second sheet or a three-line toast.
+          <View style={styles.deleteSheet}>
+            <Text variant="subheading">Taken off the page, not deleted</Text>
+            <Text variant="bodySmall" tone="secondary">
+              {deleteHalfway}
+            </Text>
+            <View style={styles.actions}>
+              <Button label="Close" variant="secondary" style={styles.flex1} onPress={closeDeleteSheet} />
+            </View>
           </View>
-        </View>
+        ) : (
+          <View style={styles.deleteSheet}>
+            <Text variant="subheading">Delete service</Text>
+            <Text variant="bodySmall" tone="secondary">
+              {deleteTakesOffPage(deleteTarget) && deleteTarget?.collective
+                ? `"${deleteTarget.name}" comes off the ${deleteTarget.collective.collective_name} page first: at the other venues it becomes a retired service and their calendars stop offering it. Bookings already made are not changed. It is then deleted here. This cannot be undone. If it has upcoming bookings it will not be deleted, and it stays on the page.`
+                : `Delete "${deleteTarget?.name}"? This cannot be undone. The service will not be deleted if upcoming bookings exist.`}
+            </Text>
+            <View style={styles.actions}>
+              <Button
+                label="Cancel"
+                variant="secondary"
+                style={styles.flex1}
+                disabled={deletingOnPage}
+                onPress={closeDeleteSheet}
+              />
+              <Button
+                label={deleteTakesOffPage(deleteTarget) ? 'Take off the page and delete' : 'Delete'}
+                variant="danger"
+                style={styles.flex1}
+                loading={deleteService.isPending || deletingOnPage}
+                onPress={() => void runDeleteService()}
+              />
+            </View>
+          </View>
+        )}
       </Sheet>
 
       {/* Non-admin per-calendar field overrides (web parity:

@@ -4,7 +4,9 @@
  * Renders the manager with mocked query + mutation hooks and exercises:
  *  - up/down reorder → PATCH `sort_order` (dense 0..n-1)
  *  - booking-link slug Save + Copy → PATCH `slug` + clipboard write of the public URL
- *  - delete → ConfirmSheet → `useDeletePractitioner`
+ *  - delete → remove sheet → `useDeletePractitioner`; a calendar with upcoming
+ *    bookings shows the list instead, from the pre-check or the server's 409
+ *  - pausing asks who is still booked first and warns before it saves (R44-4)
  *  - the plan calendar-limit 403 surfaces as an upgrade notice (not a raw toast)
  *
  * jest hoists mock factories above imports, so every variable a factory closes
@@ -55,7 +57,49 @@ jest.mock('@/providers/ToastProvider', () => ({ useToast: () => mockToast }));
 // --- Mutation + query hook mocks (all mock-prefixed for jest hoisting) -------
 const mockPatchMutateAsync = jest.fn((_input?: unknown) => Promise.resolve({}));
 const mockCreateMutateAsync = jest.fn(() => Promise.resolve({ id: 'new', name: 'New' }));
-const mockDeleteMutateAsync = jest.fn(() => Promise.resolve({}));
+const mockDeleteMutateAsync = jest.fn((_id?: unknown) => Promise.resolve({}));
+// "Who is still booked on this calendar?": nobody, unless a test says otherwise.
+const NOBODY_BOOKED = { total: 0, bookings: [], truncated: false };
+const mockUpcomingCheck = jest.fn(
+  (_id?: unknown): Promise<unknown> => Promise.resolve(NOBODY_BOOKED),
+);
+
+/** Two people still booked with Alex, as the pre-check and the 409 both list them. */
+const TWO_BOOKED = {
+  total: 2,
+  truncated: false,
+  bookings: [
+    {
+      key: 'b1',
+      kind: 'appointment',
+      booking_ids: ['b1'],
+      booking_date: '2026-11-30',
+      booking_time: '10:00',
+      end_time: '10:45',
+      who: 'Priya Shah',
+      what: 'Cut',
+      status: 'Booked',
+    },
+    {
+      key: 'b2',
+      kind: 'appointment',
+      booking_ids: ['b2'],
+      booking_date: '2026-12-01',
+      booking_time: '14:00',
+      end_time: null,
+      who: 'Tom Reid',
+      what: 'Colour',
+      status: 'Confirmed',
+    },
+  ],
+};
+
+/** Flip the first card's "Active (bookable)" switch (Alex). */
+async function setAlexActive(active: boolean) {
+  await act(async () => {
+    fireEvent(screen.getAllByRole('switch')[0]!, 'valueChange', active);
+  });
+}
 
 const mockPractitioners = [
   { id: 'c1', name: 'Alex', slug: 'alex', is_active: true, sort_order: 0 },
@@ -76,6 +120,7 @@ jest.mock('@/lib/queries/usePractitioners', () => ({
 jest.mock('@/lib/queries/useAvailabilityManage', () => ({
   usePatchPractitioner: () => ({ mutateAsync: mockPatchMutateAsync, isPending: false }),
   useDeletePractitioner: () => ({ mutateAsync: mockDeleteMutateAsync, isPending: false }),
+  useCalendarUpcomingBookingsCheck: () => ({ mutateAsync: mockUpcomingCheck, isPending: false }),
 }));
 jest.mock('@/lib/queries/useServicesManage', () => ({
   useManagedServices: () => ({
@@ -132,6 +177,8 @@ beforeEach(() => {
   mockPatchMutateAsync.mockClear();
   mockCreateMutateAsync.mockClear();
   mockDeleteMutateAsync.mockClear();
+  mockUpcomingCheck.mockReset();
+  mockUpcomingCheck.mockImplementation(() => Promise.resolve(NOBODY_BOOKED));
   mockClipboard.mockClear();
   mockToast.success.mockClear();
   mockToast.error.mockClear();
@@ -223,6 +270,145 @@ describe('BookableCalendarsManager', () => {
 
     await press(() => screen.getByText('Remove calendar'));
     expect(mockDeleteMutateAsync).toHaveBeenCalledWith('c1');
+  });
+
+  it('says what removal really does, not that bookings stay on the diary (R44-2)', async () => {
+    await render(<BookableCalendarsManager />);
+    await press(() => screen.getByLabelText('Delete Alex'));
+
+    expect(mockUpcomingCheck).toHaveBeenCalledWith('c1');
+    expect(screen.getByText(/Alex will be removed for good/)).toBeTruthy();
+    expect(screen.getByText(/It has no upcoming bookings/)).toBeTruthy();
+    expect(screen.getByText(/they no longer appear on your diary/)).toBeTruthy();
+    expect(screen.queryByText(/Existing bookings stay on the diary/)).toBeNull();
+  });
+
+  it('lists the upcoming bookings instead of offering to remove (R44-2)', async () => {
+    mockUpcomingCheck.mockImplementation(() => Promise.resolve(TWO_BOOKED));
+    await render(<BookableCalendarsManager />);
+    await press(() => screen.getByLabelText('Delete Alex'));
+
+    expect(screen.getByText('Alex cannot be removed yet')).toBeTruthy();
+    expect(screen.getByText('Alex still has 2 upcoming bookings:')).toBeTruthy();
+    expect(screen.getByText('Mon 30 Nov, 10:00 to 10:45')).toBeTruthy();
+    expect(screen.getByText('Priya Shah, Cut')).toBeTruthy();
+    expect(screen.getByText('Tue 1 Dec, 14:00')).toBeTruthy();
+    expect(screen.getByText('Move or cancel them first, then remove the calendar.')).toBeTruthy();
+    expect(screen.getByText(/pause Alex instead/)).toBeTruthy();
+    // Nothing to confirm: the only way out is Close, and nothing is deleted.
+    expect(screen.queryByText('Remove calendar')).toBeNull();
+    await press(() => screen.getByText('Close'));
+    expect(mockDeleteMutateAsync).not.toHaveBeenCalled();
+    expect(screen.queryByText('Alex cannot be removed yet')).toBeNull();
+  });
+
+  it('shows the list from the 409 when someone booked after the sheet opened (R44-2)', async () => {
+    mockDeleteMutateAsync.mockRejectedValueOnce(
+      new ApiError('Alex still has 2 upcoming appointments.', 409, {
+        error: 'Alex still has 2 upcoming appointments.',
+        code: 'CALENDAR_HAS_UPCOMING_BOOKINGS',
+        upcoming_total: 2,
+        upcoming_bookings: TWO_BOOKED.bookings,
+        upcoming_truncated: false,
+      }),
+    );
+    await render(<BookableCalendarsManager />);
+    await press(() => screen.getByLabelText('Delete Alex'));
+    await press(() => screen.getByText('Remove calendar'));
+
+    await waitFor(() => expect(screen.getByText('Alex cannot be removed yet')).toBeTruthy());
+    expect(screen.getByText('Tom Reid, Colour')).toBeTruthy();
+    expect(mockToast.error).not.toHaveBeenCalled();
+  });
+
+  it('still toasts a removal refused for another reason', async () => {
+    mockDeleteMutateAsync.mockRejectedValueOnce(
+      new ApiError('You need at least one calendar.', 409, {
+        error: 'You need at least one calendar.',
+      }),
+    );
+    await render(<BookableCalendarsManager />);
+    await press(() => screen.getByLabelText('Delete Alex'));
+    await press(() => screen.getByText('Remove calendar'));
+
+    await waitFor(() =>
+      expect(mockToast.error).toHaveBeenCalledWith('You need at least one calendar.'),
+    );
+    expect(screen.getByText('Remove calendar?')).toBeTruthy();
+  });
+
+  it('lets a removal through when the check cannot be made, and says the server decides', async () => {
+    mockUpcomingCheck.mockImplementation(() => Promise.reject(new ApiError('Server error', 500)));
+    await render(<BookableCalendarsManager />);
+    await press(() => screen.getByLabelText('Delete Alex'));
+    expect(screen.getByText(/We could not check for upcoming bookings just now/)).toBeTruthy();
+
+    await press(() => screen.getByText('Remove calendar'));
+    expect(mockDeleteMutateAsync).toHaveBeenCalledWith('c1');
+  });
+
+  it('pauses straight away when nobody is booked (R44-4)', async () => {
+    await render(<BookableCalendarsManager />);
+    await setAlexActive(false);
+
+    expect(mockUpcomingCheck).toHaveBeenCalledWith('c1');
+    expect(mockPatchMutateAsync).toHaveBeenCalledWith({ id: 'c1', is_active: false });
+    expect(screen.queryByText('Pause Alex?')).toBeNull();
+  });
+
+  it('warns before pausing a calendar with bookings, and saves only on Pause calendar (R44-4)', async () => {
+    mockUpcomingCheck.mockImplementation(() => Promise.resolve(TWO_BOOKED));
+    await render(<BookableCalendarsManager />);
+    await setAlexActive(false);
+
+    expect(screen.getByText('Pause Alex?')).toBeTruthy();
+    expect(screen.getByText('Alex still has 2 upcoming bookings:')).toBeTruthy();
+    expect(screen.getByText('Priya Shah, Cut')).toBeTruthy();
+    expect(screen.getByText('If you pause Alex:')).toBeTruthy();
+    expect(screen.getByText(/They all stay booked\. Your clients are not told anything\./)).toBeTruthy();
+    expect(screen.getByText(/marked Paused, so nobody is missed/)).toBeTruthy();
+    expect(mockPatchMutateAsync).not.toHaveBeenCalled();
+
+    await press(() => screen.getByText('Pause calendar'));
+    expect(mockPatchMutateAsync).toHaveBeenCalledWith({ id: 'c1', is_active: false });
+    await waitFor(() => expect(screen.queryByText('Pause Alex?')).toBeNull());
+  });
+
+  it('Go back leaves the calendar switched on (R44-4)', async () => {
+    mockUpcomingCheck.mockImplementation(() => Promise.resolve(TWO_BOOKED));
+    await render(<BookableCalendarsManager />);
+    await setAlexActive(false);
+    await press(() => screen.getByText('Go back'));
+
+    expect(screen.queryByText('Pause Alex?')).toBeNull();
+    expect(mockPatchMutateAsync).not.toHaveBeenCalled();
+  });
+
+  it('does not pause when the check fails, and says so (R44-4)', async () => {
+    mockUpcomingCheck.mockImplementation(() => Promise.reject(new ApiError('Server error', 500)));
+    await render(<BookableCalendarsManager />);
+    await setAlexActive(false);
+
+    expect(mockPatchMutateAsync).not.toHaveBeenCalled();
+    expect(mockToast.error).toHaveBeenCalledWith(
+      'We could not check the bookings on Alex, so nothing was changed. Please try again.',
+    );
+  });
+
+  it('pauses as before on a server that has no such check (404)', async () => {
+    mockUpcomingCheck.mockImplementation(() => Promise.reject(new ApiError('Not found', 404)));
+    await render(<BookableCalendarsManager />);
+    await setAlexActive(false);
+
+    expect(mockPatchMutateAsync).toHaveBeenCalledWith({ id: 'c1', is_active: false });
+  });
+
+  it('never asks when a calendar is switched back on', async () => {
+    await render(<BookableCalendarsManager />);
+    await setAlexActive(true);
+
+    expect(mockUpcomingCheck).not.toHaveBeenCalled();
+    expect(mockPatchMutateAsync).toHaveBeenCalledWith({ id: 'c1', is_active: true });
   });
 
   it('shows an upgrade notice when create hits the plan calendar limit (403)', async () => {

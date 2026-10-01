@@ -158,6 +158,20 @@ export function deleteAppointmentService(id: string, accessToken: string | null)
   });
 }
 
+/**
+ * Would a delete be refused? Runs the real delete's checks and removes nothing
+ * (`{ dry_run: true, can_delete: true }`), or rejects with the refusal. Asked
+ * before a service comes off the collective page on the way to deleting it
+ * (web QA D-9, R44-1).
+ */
+export function checkAppointmentServiceDelete(id: string, accessToken: string | null) {
+  return apiFetch<unknown>('/api/venue/appointment-services?dry_run=true', {
+    method: 'DELETE',
+    accessToken,
+    body: JSON.stringify({ id }),
+  });
+}
+
 /** A fresh services list: Undo reads the page item from it, as the web does. */
 export function fetchAppointmentServices(accessToken: string | null) {
   return apiFetch<{

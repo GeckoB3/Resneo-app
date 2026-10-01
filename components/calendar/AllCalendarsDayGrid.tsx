@@ -42,6 +42,7 @@ import {
 import { DraggableAppointmentBlock } from '@/components/calendar/DraggableAppointmentBlock';
 import {
   columnMoveRanges,
+  columnsRefusingDrops,
   type ColumnMoveRange,
 } from '@/lib/calendar/column-move-groups';
 import {
@@ -164,8 +165,17 @@ export type AllCalendarColumn = {
    */
   moveGroup?: string;
   /**
+   * False for a column that takes nothing new: a paused calendar, drawn only
+   * so the bookings already on it are not missed (R44-3). A bar dropped on it
+   * glides home and is reported through `onDragColumnReject`; its own bars
+   * still open, and still move to another column. An empty-slot tap is still
+   * reported, so the screen can say why nothing opens. Defaults to true.
+   */
+  acceptsDrops?: boolean;
+  /**
    * A small pill next to the header name: the combined grid marks a linked
-   * calendar "Linked" (a partner's own view leaves that to its card header).
+   * calendar "Linked" (a partner's own view leaves that to its card header)
+   * and a paused own calendar "Paused".
    */
   badge?: string;
   /** An explicit header / column tint. Nothing implies one; linked columns stay neutral. */
@@ -501,6 +511,8 @@ export function AllCalendarsDayGrid({
   const liftedColumn = useSharedValue(-1);
   const columnIds = useMemo(() => calendars.map((c) => c.calendarId), [calendars]);
   const moveRanges = useMemo(() => columnMoveRanges(calendars), [calendars]);
+  // Columns that refuse a dropped bar wherever it came from (a paused calendar).
+  const blockedDropIndexes = useMemo(() => columnsRefusingDrops(calendars), [calendars]);
   // A visit's services may sit on different columns (web #187): the chip
   // counts every service on the day. Each bar wears its own status colour.
   const allBookings = useMemo(() => calendars.flatMap((c) => c.bookings), [calendars]);
@@ -820,6 +832,7 @@ export function AllCalendarsDayGrid({
                     columnPitch={columnPitch}
                     columnIds={columnIds}
                     moveRange={moveRanges[index]!}
+                    blockedDropIndexes={blockedDropIndexes}
                     liftedColumn={liftedColumn}
                     dragAbsX={dragAbsX}
                     autoScrollDelta={autoScrollDelta}
@@ -894,6 +907,7 @@ function DayColumn({
   columnPitch,
   columnIds,
   moveRange,
+  blockedDropIndexes,
   liftedColumn,
   dragAbsX,
   autoScrollDelta,
@@ -930,6 +944,8 @@ function DayColumn({
   columnIds: string[];
   /** The index range a bar of this column may be dropped on (its venue's columns). */
   moveRange: ColumnMoveRange;
+  /** Column indexes that take no dropped bar (see `AllCalendarColumn.acceptsDrops`). */
+  blockedDropIndexes: number[];
   /** Shared "which column is dragging" value (this column lifts when it matches). */
   liftedColumn: SharedValue<number>;
   dragAbsX: SharedValue<number>;
@@ -1385,6 +1401,7 @@ function DayColumn({
             crossColumnIds={columnIds}
             crossColumnMinIndex={moveRange.min}
             crossColumnMaxIndex={moveRange.max}
+            crossColumnBlockedIndexes={blockedDropIndexes}
             liftedColumn={liftedColumn}
             dragAbsX={dragAbsX}
             autoScrollDelta={autoScrollDelta}

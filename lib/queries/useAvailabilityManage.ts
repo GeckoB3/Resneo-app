@@ -4,6 +4,10 @@ import { apiFetch } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
 import { queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
+import {
+  parseCalendarUpcomingBookings,
+  type CalendarUpcomingBookings,
+} from '@/lib/venue/calendar-upcoming-bookings';
 import type {
   LeaveType,
   PatchPractitionerInput,
@@ -252,12 +256,44 @@ export function usePatchPractitioner() {
 }
 
 /**
+ * GET /api/venue/practitioners/upcoming-bookings?id= — who is still booked on
+ * this calendar from today on (admin only, Bearer; web QA C-11, R44-2/R44-4).
+ *
+ * A mutation rather than a query on purpose: it is asked at the moment of a
+ * press (pausing, or opening the remove sheet) and the answer must be the
+ * server's at that moment, never a cached one. A body that is not the expected
+ * shape throws, so the caller treats it as "could not check".
+ */
+export function useCalendarUpcomingBookingsCheck() {
+  const accessToken = useAccessToken();
+
+  return useMutation({
+    mutationFn: async (calendarId: string): Promise<CalendarUpcomingBookings> => {
+      if (!accessToken) {
+        throw new Error('Missing access token');
+      }
+      const body = await apiFetch<unknown>(
+        `/api/venue/practitioners/upcoming-bookings?id=${encodeURIComponent(calendarId)}`,
+        { accessToken },
+      );
+      const upcoming = parseCalendarUpcomingBookings(body);
+      if (!upcoming) {
+        throw new Error('Unexpected response');
+      }
+      return upcoming;
+    },
+  });
+}
+
+/**
  * DELETE /api/venue/practitioners — remove a bookable-calendar column (admin
- * only, Bearer). Additive sibling to {@link usePatchPractitioner}; the route
- * DELETE already exists in `C:\Resneo` (it unassigns linked staff and may clear
- * the practitioner on existing bookings). Sends the id in the body, matching the
- * web `BookableCalendarsPanel` delete call. Other errors (e.g. last-calendar
- * guard) surface as a structured `ApiError`.
+ * only, Bearer). Sends the id in the body, matching the web
+ * `BookableCalendarsPanel` delete call. Linked staff are unassigned.
+ *
+ * Refused with 409 `code: "CALENDAR_HAS_UPCOMING_BOOKINGS"` while the calendar
+ * has upcoming live bookings (web 2026-10-01); the body lists them, see
+ * `calendarRemovalRefusal`. Other errors (e.g. the last-calendar guard)
+ * surface as a structured `ApiError`.
  */
 export function useDeletePractitioner() {
   const accessToken = useAccessToken();

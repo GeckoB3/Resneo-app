@@ -26,6 +26,7 @@ import {
   type GridWindowOverride,
   type LaneInput,
 } from '@/components/calendar/grid-layout';
+import { Badge } from '@/components/ui/Badge';
 import { Text } from '@/components/ui/Text';
 
 import { arrivalToggleTargets, statusChangeTargets } from '@/lib/calendar/bar-actions';
@@ -203,6 +204,11 @@ type CalendarDayGridProps = {
    */
   calendarName?: string;
   /**
+   * A small pill next to the header name, as the multi-calendar grid has: the
+   * diary marks a paused calendar "Paused" (R44-3). Needs `calendarName`.
+   */
+  calendarBadge?: string;
+  /**
    * The clock button in the header's top-left corner, where the header row
    * meets the time column (web: the toolbar's "Amend hours"). Opens the
    * amend-hours chooser; the host decides what it offers.
@@ -295,6 +301,7 @@ export function CalendarDayGrid({
   scheduleBlocks = [],
   venueHours,
   calendarName,
+  calendarBadge,
   onAmendHours,
   boundsRanges,
   windowOverride,
@@ -820,9 +827,12 @@ export function CalendarDayGrid({
       </View>
       {calendarName ? (
         <View style={styles.headerCell}>
-          <Text variant="label" numberOfLines={1}>
-            {calendarName}
-          </Text>
+          <View style={styles.headerName}>
+            <Text variant="label" numberOfLines={1} style={styles.headerNameText}>
+              {calendarName}
+            </Text>
+            {calendarBadge ? <Badge label={calendarBadge} tone="warning" /> : null}
+          </View>
           <Text variant="caption" tone="muted" numberOfLines={1} style={styles.headerHours}>
             {workingHoursLabel(workingHours)}
           </Text>
@@ -1155,6 +1165,15 @@ const styles = StyleSheet.create({
     minWidth: 0,
     justifyContent: 'center',
     paddingHorizontal: spacing.xs,
+  },
+  headerName: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    maxWidth: '100%',
+  },
+  headerNameText: {
+    flexShrink: 1,
   },
   headerHours: {
     fontVariant: ['tabular-nums'],

@@ -173,9 +173,46 @@ export function useDeleteService() {
 }
 
 /**
+ * DELETE /api/venue/appointment-services?dry_run=true — would a delete be refused?
+ *
+ * The route runs the real delete's own checks (found, upcoming bookings, who may
+ * delete) and stops before the delete: 200 `{ dry_run: true, can_delete: true }`,
+ * or the refusal a real delete would give. A collective host asks this before
+ * taking a service off the page on the way to deleting it, so a delete that will
+ * be refused changes nothing (web QA D-9, R44-1); see
+ * `lib/services/collective-service-delete`.
+ *
+ * A web release before 2026-10-01 ignores `dry_run` and deletes for real, which
+ * a 200 without `dry_run: true` gives away: the list is refetched then.
+ */
+export function useCheckServiceDelete() {
+  const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id: string): Promise<unknown> => {
+      if (!accessToken) {
+        throw new Error('Missing access token');
+      }
+      return apiFetch<unknown>('/api/venue/appointment-services?dry_run=true', {
+        accessToken,
+        method: 'DELETE',
+        body: JSON.stringify({ id }),
+      });
+    },
+    onSuccess: (body) => {
+      const dryRun =
+        typeof body === 'object' && body !== null && (body as { dry_run?: unknown }).dry_run === true;
+      if (!dryRun) invalidateServices(queryClient);
+    },
+  });
+}
+
+/**
  * DELETE /api/venue/collectives/[id]/offerings/[itemId] — a host takes its master off the
  * collective page (the copies at member venues retire). The web does this before deleting
- * a service that is on the page, and so does the app's delete flow.
+ * a service that is on the page, and so does the app's delete flow, once the delete is
+ * known to be clear to go ({@link useCheckServiceDelete}).
  */
 export function useTakeServiceOffPage() {
   const accessToken = useAccessToken();

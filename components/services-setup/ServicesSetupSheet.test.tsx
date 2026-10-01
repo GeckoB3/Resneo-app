@@ -48,6 +48,7 @@ const mockApi = {
   createAppointmentService: jest.fn(),
   patchAppointmentService: jest.fn(),
   deleteAppointmentService: jest.fn(),
+  checkAppointmentServiceDelete: jest.fn(),
   fetchAppointmentServices: jest.fn(),
   offerOnCollectivePage: jest.fn(),
   takeOffCollectivePage: jest.fn(),
@@ -63,6 +64,7 @@ jest.mock('@/lib/services-setup/api', () => ({
   createAppointmentService: (...a: unknown[]) => mockApi.createAppointmentService(...a),
   patchAppointmentService: (...a: unknown[]) => mockApi.patchAppointmentService(...a),
   deleteAppointmentService: (...a: unknown[]) => mockApi.deleteAppointmentService(...a),
+  checkAppointmentServiceDelete: (...a: unknown[]) => mockApi.checkAppointmentServiceDelete(...a),
   fetchAppointmentServices: (...a: unknown[]) => mockApi.fetchAppointmentServices(...a),
   offerOnCollectivePage: (...a: unknown[]) => mockApi.offerOnCollectivePage(...a),
   takeOffCollectivePage: (...a: unknown[]) => mockApi.takeOffCollectivePage(...a),
@@ -83,6 +85,7 @@ jest.mock('@/lib/services-setup/files', () => ({
 }));
 
 import { ServicesSetupSheet } from '@/components/services-setup/ServicesSetupSheet';
+import { ApiError } from '@/lib/api/client';
 import { draftFromExtracted } from '@/lib/services-setup/drafts';
 import type { ExtractedService } from '@/lib/services-setup/types';
 
@@ -193,6 +196,60 @@ describe('ServicesSetupSheet', () => {
     expect(mockApi.offerOnCollectivePage).toHaveBeenCalledWith('col-1', 'svc-1', 'tok');
     expect(screen.getByText(/^Added · 45 min · £35/)).toBeTruthy();
     expect(screen.getByText('Undo')).toBeTruthy();
+  });
+
+  describe('Undo at a collective host (R44-1)', () => {
+    /** Adds "Cut and finish" (svc-1), which the setup put on the Glow Collective page. */
+    async function addServiceOnThePage() {
+      mockApi.createAppointmentService.mockResolvedValue({ id: 'svc-1' });
+      mockApi.offerOnCollectivePage.mockResolvedValue({});
+      mockApi.fetchAppointmentServices.mockResolvedValue({
+        services: [
+          { id: 'svc-1', collective: { role: 'master', collective_id: 'col-1', item_id: 'item-1' } },
+        ],
+      });
+      await renderSheet();
+      await readTypedList([extracted()]);
+      await press(() => screen.getByText('Add service'));
+      await flush();
+    }
+
+    it('asks whether the delete would be refused, then takes it off the page, then deletes', async () => {
+      const order: string[] = [];
+      mockApi.checkAppointmentServiceDelete.mockImplementation(async () => {
+        order.push('check');
+        return { dry_run: true, can_delete: true };
+      });
+      mockApi.takeOffCollectivePage.mockImplementation(async () => {
+        order.push('takeOff');
+        return {};
+      });
+      mockApi.deleteAppointmentService.mockImplementation(async () => {
+        order.push('delete');
+        return { success: true };
+      });
+      await addServiceOnThePage();
+      await press(() => screen.getByText('Undo'));
+      await flush();
+
+      expect(order).toEqual(['check', 'takeOff', 'delete']);
+      expect(mockApi.checkAppointmentServiceDelete).toHaveBeenCalledWith('svc-1', 'tok');
+      expect(mockApi.takeOffCollectivePage).toHaveBeenCalledWith('col-1', 'item-1', 'tok');
+    });
+
+    it('leaves the service on the page when the delete would be refused', async () => {
+      const refusal = 'Cut and finish has 1 upcoming booking. Move or cancel it first.';
+      mockApi.checkAppointmentServiceDelete.mockRejectedValue(
+        new ApiError(refusal, 409, { error: refusal }),
+      );
+      await addServiceOnThePage();
+      await press(() => screen.getByText('Undo'));
+      await flush();
+
+      expect(mockApi.takeOffCollectivePage).not.toHaveBeenCalled();
+      expect(mockApi.deleteAppointmentService).not.toHaveBeenCalled();
+      expect(screen.getByText(`"Cut and finish" could not be removed. ${refusal}`)).toBeTruthy();
+    });
   });
 
   it('makes a heading the venue does not have before adding its service', async () => {

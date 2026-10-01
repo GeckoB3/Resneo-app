@@ -99,6 +99,7 @@ const MAX_DURATION_MINUTES = 14 * 60;
 /** Stable empty-array defaults so the props don't churn identity each render. */
 const EMPTY_BUSY: { id: string; start: number; end: number }[] = [];
 const EMPTY_WORKING: { start: number; end: number }[] = [];
+const EMPTY_BLOCKED: number[] = [];
 
 // ---- Worklet helpers ---------------------------------------------------------
 
@@ -250,8 +251,14 @@ type DraggableAppointmentBlockProps = {
   crossColumnMinIndex?: number;
   crossColumnMaxIndex?: number;
   /**
+   * Columns inside that range that take nothing new all the same: a paused
+   * calendar, drawn only so the bookings already on it are not missed (R44-3).
+   * A drop on one glides home and is reported through `onDragColumnReject`.
+   */
+  crossColumnBlockedIndexes?: number[];
+  /**
    * A move was dropped on a column this booking may not move to (another
-   * venue's). Reports the booking, the dropped time and the target column so
+   * venue's, or one that takes nothing new). Reports the booking, the dropped time and the target column so
    * the screen can offer to book the client afresh there (web #190's
    * cross-account move dialog) instead of only saying no.
    */
@@ -358,6 +365,7 @@ export function DraggableAppointmentBlock({
   crossColumnIds,
   crossColumnMinIndex,
   crossColumnMaxIndex,
+  crossColumnBlockedIndexes = EMPTY_BLOCKED,
   onDragColumnReject,
   liftedColumn,
   onDragMoveToColumn,
@@ -671,6 +679,17 @@ export function DraggableAppointmentBlock({
           const raw =
             ccSource +
             Math.round((translateX.value + (autoScrollDelta ? autoScrollDelta.value : 0)) / ccPitch);
+          // Dropped on a column that takes nothing new (a paused calendar) —
+          // refuse, glide home and let the screen say why.
+          if (raw !== ccSource && crossColumnBlockedIndexes.indexOf(raw) !== -1) {
+            translateX.value = withSpring(0, SNAP_SPRING);
+            translateY.value = withSpring(0, SNAP_SPRING);
+            conflict.value = 0;
+            mode.value = 0;
+            runOnJS(jsHapticCancel)();
+            runOnJS(jsColumnReject)(newMinutes, raw);
+            return;
+          }
           // Dropped onto a DIFFERENT column of this booking's own group (an own
           // column, or another calendar of the same partner) → reassign (new
           // time + practitioner).

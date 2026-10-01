@@ -13,8 +13,10 @@ import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
+import { deleteServiceOnCollectivePage } from '@/lib/services/collective-service-delete';
 import {
   COULD_NOT_REACH,
+  checkAppointmentServiceDelete,
   createAddonGroup,
   createAppointmentService,
   createServiceCategory,
@@ -937,12 +939,20 @@ export const ServicesSetupSheet = forwardRef<ServicesSetupHandle, ServicesSetupS
     if (collectiveHost) {
       const data = await fetchAppointmentServices(tokenRef.current).catch(() => null);
       const svc = data?.services?.find((s) => s.id === serviceId) ?? null;
-      if (svc?.collective?.role === 'master' && svc.collective.item_id) {
-        try {
-          await takeOffCollectivePage(collectiveHost.id, svc.collective.item_id, tokenRef.current);
-        } catch (e) {
-          return describeError(e, 'That did not go through. Please try again.');
+      const itemId = svc?.collective?.role === 'master' ? svc.collective.item_id : null;
+      if (itemId) {
+        // Someone may have booked it since it was added: nothing comes off the page for a
+        // delete that will be refused (web QA D-9, R44-1).
+        const outcome = await deleteServiceOnCollectivePage({
+          checkDelete: () => checkAppointmentServiceDelete(serviceId, tokenRef.current),
+          takeOffPage: () => takeOffCollectivePage(collectiveHost.id, itemId, tokenRef.current),
+          deleteService: () => deleteAppointmentService(serviceId, tokenRef.current),
+        });
+        if (outcome.status === 'deleted') return null;
+        if (outcome.status === 'refused') {
+          return describeError(outcome.error, 'That did not go through. Please try again.');
         }
+        return `It has been taken off the ${collectiveHost.name} page and is still in your list as a parked service. ${describeError(outcome.error, 'Please try again.')}`;
       }
     }
     try {

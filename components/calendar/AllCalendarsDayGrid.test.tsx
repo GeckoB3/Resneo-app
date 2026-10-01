@@ -3,7 +3,7 @@
  * (no amber, 2026-09-06) and is told apart by the small pill the column
  * carries next to its name, plus the venue caption under it.
  */
-import { render, screen } from '@testing-library/react-native';
+import { fireEvent, render, screen } from '@testing-library/react-native';
 
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
 
@@ -60,6 +60,27 @@ describe('AllCalendarsDayGrid — linked columns', () => {
     expect(screen.getByText('Jenny')).toBeTruthy();
     expect(screen.getByText('light2')).toBeTruthy();
     expect(screen.getAllByText('Linked')).toHaveLength(1);
+  });
+
+  it('marks a paused own column, and still reports a tap on it so the screen can say why', async () => {
+    const onEmptyPress = jest.fn();
+    await render(
+      <AllCalendarsDayGrid
+        embedded
+        calendars={[
+          column({ calendarId: 'own-1', calendarName: 'Sam' }),
+          column({ calendarId: 'own-2', calendarName: 'Marcus', badge: 'Paused', acceptsDrops: false }),
+        ]}
+        nowMinutes={null}
+        onBlockPress={jest.fn()}
+        onEmptyPress={onEmptyPress}
+      />,
+    );
+    expect(screen.getAllByText('Paused')).toHaveLength(1);
+    fireEvent.press(screen.getByLabelText('Tap an empty slot to add a booking for Marcus'), {
+      nativeEvent: { locationY: 120 },
+    });
+    expect(onEmptyPress).toHaveBeenCalledWith('own-2', expect.any(String));
   });
 
   it('bands every other hour, as the single-calendar grid does', async () => {
