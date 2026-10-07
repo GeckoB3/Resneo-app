@@ -17,6 +17,7 @@ import { StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
 
+import { AppUpdatePrompt } from '@/components/app-update/AppUpdatePrompt';
 import { AuthNoticeBridge } from '@/components/AuthNoticeBridge';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { initAnalytics } from '@/lib/analytics';
@@ -171,6 +172,10 @@ function RootLayoutNav() {
           <LoadingState message="Loading session…" />
         </View>
       ) : null}
+      {/* "A new version is available" / "Update required", from the website's
+          app-version.json. Beside the Stack, like the overlay above, so it
+          covers every side and never replaces the navigator. */}
+      <AppUpdatePrompt />
     </>
   );
 }
