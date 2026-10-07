@@ -35,8 +35,8 @@ install without the entitlement.
 **App changes:**
 
 - **Tap to Pay on iPhone**, built to Apple's checklist v1.7 (PR #5, details in
-  `Docs/TAP_TO_PAY.md`): a full-screen introduction with Apple's artwork, Settings → Tap to Pay on
-  iPhone (set-up by an admin, "ask an admin" for everyone else, progress, how to use), Apple's
+  `Docs/TAP_TO_PAY.md`): a full-screen introduction with Apple's artwork, More → Tap to Pay on iPhone
+  (set-up by an admin, "ask an admin" for everyone else, progress, how to use), Apple's
   terms at first use, Apple's education after the terms, the reader prepared at launch and on
   return to the app, the payment button with Apple's name and symbol, processing and outcome
   screens, receipts to share, and a notification when a payment fails while the app is in the
@@ -54,7 +54,7 @@ iOS 1.1.2 users are prompted to update.
 ```
 Tap to Pay on iPhone
 
-Take contactless payments right on your iPhone, with no extra hardware. Clients can tap a contactless card, Apple Pay or another digital wallet on your iPhone to pay for their appointment. An admin turns it on in Settings > Tap to Pay on iPhone and accepts the terms once, then anyone at your venue can take a payment from an appointment with Take payment > Tap to Pay on iPhone. Needs iPhone XS or later.
+Take contactless payments right on your iPhone, with no extra hardware. Clients can tap a contactless card, Apple Pay or another digital wallet on your iPhone to pay for their appointment. An admin turns it on in More > Tap to Pay on iPhone and accepts the terms once, then anyone at your venue can take a payment from an appointment with Take payment > Tap to Pay on iPhone. Needs iPhone XS or later.
 
 Card readers still work as before, for cards that need to be inserted.
 ```
