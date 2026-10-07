@@ -1,5 +1,86 @@
 # Go-live check — Resneo app
 
+## Run 2026-10-07: first OTA on 1.1.2, both platforms, from `3610a3c`
+
+**Scope:** everything after the 1.1.2 store build (`287a871`): PR #5 (Tap to Pay on iPhone
+groundwork, off), `7606988` (compliance Checkboxes labels), `0924803` (Android sheets), `200e417`
+(R44) and `3610a3c` (store-update prompt). The user-facing lines are the first entry in
+`CHANGELOG.md`.
+
+**Verdict: cleared to OTA once web `staging` is merged to `main`.** The app does not need that
+merge to work (a missing `app-version.json` means no prompt), but it is the planned order.
+
+### 1. Version and reach
+
+| Check | Result |
+|---|---|
+| Version | `app.json` `version` 1.1.2 and `android.version` 1.1.2, runtime `appVersion` = **1.1.2** on both |
+| Production channel | latest group still `1f4a0bed` on runtime **1.1.1** (`eas update:list`): nothing has ever been published on 1.1.2, so this is the first update for every 1.1.2 install |
+| Store binaries | iOS build 24 / Android build 18 from `287a871` |
+| After this | the planned iOS 1.2.0 bump can start; from that commit, iOS updates from `main` target 1.2.0 only |
+
+### 2. Nothing native moved
+
+`git diff 287a871..HEAD -- package.json package-lock.json app.json eas.json metro.config.js
+babel.config.js` is empty. The changed `app.config.js` branch runs only with
+`EXPO_PUBLIC_TAP_TO_PAY_IOS=true`, which no environment sets. `modules/tap-to-pay-education` and the
+two `patches/expo-modules-*` are native-only and not in the 1.1.2 binaries; the JS reaches the
+module only through `requireOptionalNativeModule` behind the iOS Tap to Pay flag, which is false.
+The update prompt uses `expo-updates`, `expo-secure-store` and `Linking`, all in the binaries.
+Installed packages match the lock: 1,314 checked, **0 drift**.
+
+### 3. Verified on this machine
+
+- `tsc --noEmit`: clean. `jest`: **359 suites / 3,471 tests pass**. `expo lint`: 0 errors, 323
+  warnings.
+- EAS `production` environment: `EXPO_PUBLIC_API_URL` www.resneo.com, `EXPO_PUBLIC_SUPABASE_URL`
+  njualfobtudvlugqkqho (live), the live Supabase publishable key, `pk_live_` Stripe key, Sentry DSN
+  (DE ingest), all PUBLIC. No `EXPO_PUBLIC_TAP_TO_PAY_IOS`, `TERMINAL_SIMULATED` or
+  `ALLOW_SCREENSHOTS`.
+- Cleared-cache export under `eas env:exec production`, both Hermes bundles (iOS 12 MB, Android
+  13 MB):
+
+| Marker | iOS | Android |
+|---|---|---|
+| `njualfobtudvlugqkqho.supabase.co` (live) | present | present |
+| `zkppmyyvkjvbsvemakbb` (dev) | none | none |
+| `www.resneo.com` | present | present |
+| live / dev Supabase publishable key | present / none | present / none |
+| `pk_live_` / `pk_test_` | present / none | present / none |
+| `ingest.de.sentry.io` | present | present |
+| `192.168.` (local test server) | none | none |
+| `reserve-ni.vercel.app` | once: the unreachable `webDashboardUrl()` fallback, as in every run | same |
+| `EXPO_PUBLIC_TAP_TO_PAY_IOS` / `TERMINAL_SIMULATED` / `ALLOW_SCREENSHOTS` | inlined away | inlined away |
+| New code: `app-version.json`, the App Store and Play links | present | present |
+
+### 4. Web
+
+- Web `main` already carries R44's routes: `GET /api/venue/practitioners/upcoming-bookings`
+  answers 401 in production (exists), and `main` has the `dry_run` delete and
+  `CALENDAR_HAS_UPCOMING_BOOKINGS` (checked 2026-10-01).
+- `staging` is three commits ahead of `main`, all `app-version.json` (`0ac5aaa7`, then a 1.2.0 test
+  and its revert). No migrations. Staging serves the file with `latest` 1.1.2 on both platforms;
+  production answers 404 until the merge.
+
+### 5. Device testing
+
+- **iOS preview build** (`bf078540`, channel `preview`): update group `cda275ae` published
+  2026-10-07, iOS only. The owner tested the update prompt against staging's file (prompt, Not now,
+  Update to the App Store, then reverted).
+- **Not rehearsed on a device:** Android (sheets, Android Tap to Pay after PR #5), and, unless the
+  owner ran them on the preview build, R44's diary and a WisePad payment.
+
+### 6. Publish
+
+```
+npx eas-cli update --channel production --environment production --clear-cache --message "ResNeo 1.1.2 first update: R44 calendars, Android sheets, update prompt"
+```
+
+If anything goes wrong, rolling back returns every 1.1.2 install to the store bundle:
+`npx eas-cli update:roll-back-to-embedded --channel production --runtime-version 1.1.2`.
+
+---
+
 ## Run 2026-09-26: 1.1.2 readiness, both platforms, on `main` above `fc2a2dd`
 
 **Scope:** a native release. Expo SDK 56 to 57, Stripe Terminal beta.31 to beta.33, and the native

@@ -15,9 +15,36 @@ on the other, and iOS 1.0.4 is the worked example.
 
 ---
 
-## Unreleased: iOS 1.1.2 / Android 1.1.2
+## OTA on iOS 1.1.2 / Android 1.1.2: first update (prepared 2026-10-07)
 
-A native release, prepared 2026-09-26 and not yet built: Expo SDK 57, and the native pieces the
+The first update on runtime 1.1.2, from `3610a3c`: the four commits after the store build
+(`287a871`) plus the update prompt. JavaScript only: no package, lockfile or `app.json` change
+since the build. The checks are the 2026-10-07 run in `Docs/GO_LIVE_CHECK.md`.
+
+- **R44, the web's 2026-10-01 QA fix round** (details in `Docs/APP_GAP_REPORT_R44_WEB_DELTA.md`):
+  - Pausing a calendar that still has upcoming bookings warns first, with the list and what
+    happens to them. Its column stays on the diary, marked Paused, on any day it has bookings, and
+    takes nothing new.
+  - Removing a calendar says what really happens. While it has upcoming bookings it cannot be
+    removed, and the sheet lists them.
+  - A collective host deleting a service that has upcoming bookings no longer takes it off the
+    combined page first: a refused delete changes nothing.
+- **Sheets on Android:** swipes and drags work inside sheets again, and footers clear the
+  navigation bar.
+- **Compliance records:** a Checkboxes answer shows its option labels.
+- **Store-update prompt:** reads `app-version.json` from the website and shows "A new version is
+  available" (can be put off) or "Update required". Dormant: the file says 1.1.2 on both platforms.
+- **Tap to Pay on iPhone groundwork** (Apple's checklist v1.7): built but switched off on every iOS
+  1.1.2 install, which has no entitlement. Shared reader code changed for Android Tap to Pay and
+  the Bluetooth reader: global reader events are filtered, and the Terminal provider mounts on the
+  build rather than on the venue setting, so turning in-person payments on or off no longer
+  rebuilds every screen.
+
+---
+
+## iOS 1.1.2 / Android 1.1.2 — 2026-09-26
+
+A native release, built from `287a871` (iOS build 24, Android build 18): Expo SDK 57, and the native pieces the
 point of sale work will need, so that its app steps can ship over the air instead of waiting for a
 store build. The build-day checks are in the 2026-09-26 run in `Docs/GO_LIVE_CHECK.md`.
 
@@ -54,20 +81,6 @@ branch off `fc2a2dd`.
   how to turn it on.
 - `AmendHoursSheet`: the direct link is built with an `if`, because SDK 57's typed routes make the
   union from a ternary too large for `tsc` (TS2590).
-
-**R44, the web's 2026-10-01 QA fix round** (added 2026-10-01, JavaScript only; details in
-`Docs/APP_GAP_REPORT_R44_WEB_DELTA.md`):
-
-- Pausing a calendar that still has upcoming bookings warns first, with the list and what happens
-  to them. Its column stays on the diary, marked Paused, on any day it has bookings, and takes
-  nothing new.
-- Removing a calendar says what really happens. While it has upcoming bookings it cannot be
-  removed, and the sheet lists them.
-- A collective host deleting a service that has upcoming bookings no longer takes it off the
-  combined page first: a refused delete changes nothing.
-
-Requires no backend change. The R44 items work with or without the web's 2026-10-01 fixes
-(`8c28f5eb`); the pause warning and the list on a refused removal appear once the web has them.
 
 ### Play Store: "What's new" (453/500)
 
