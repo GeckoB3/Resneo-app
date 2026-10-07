@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Local, Development-signed iOS build with Tap to Pay on iPhone switched on.
+# Local, Development-signed iOS build, made in Xcode on the Mac.
 #
-# Apple granted the Tap to Pay entitlement for development only, and only a
-# build signed in Xcode on a Mac can carry it (EAS signs Ad Hoc, which drops it).
-# See Docs/TAP_TO_PAY.md. This is the build for recording the videos Apple's
-# distribution review asks for.
+# Before 1.2.0 this was the only build that could carry the Tap to Pay on iPhone
+# entitlement (Apple's grant was development-only; EAS signs Ad Hoc). The
+# distribution grant came on 2026-10-01 and the entitlement is now in app.json
+# for every build, so this is a quick local Release build for re-recording
+# Apple's videos or debugging on a device. See Docs/TAP_TO_PAY.md.
 #
 #   scripts/ios-tap-to-pay-local.sh [device name or UDID]
 #
@@ -21,9 +22,7 @@ if [ -f .env.development.local ]; then
   set +a
 fi
 
-# Entitlement + Tap to Pay option together (app.config.js). Command line only.
-export EXPO_PUBLIC_TAP_TO_PAY_IOS=true
-# Jar 26 Ltd.
+# Signing team for the local build (app.config.js). Jar 26 Ltd.
 export APPLE_TEAM_ID="${APPLE_TEAM_ID:-4V8S56N4XX}"
 # Expo's precompiled modules are built with Swift 6.3 (Xcode 26.4+), which an
 # Intel Mac capped at macOS 15 cannot run. Build them from source instead.

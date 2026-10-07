@@ -2,7 +2,7 @@
   "expo": {
     "name": "Resneo",
     "slug": "resneo-app",
-    "version": "1.1.2",
+    "version": "1.2.0",
     "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "resneo",
@@ -17,6 +17,9 @@
       "supportsTablet": true,
       "associatedDomains": ["applinks:www.resneo.com"],
       "bundleIdentifier": "com.resneo.app",
+      "entitlements": {
+        "com.apple.developer.proximity-reader.payment.acceptance": true
+      },
       "icon": {
         "light": "./assets/images/icon.png",
         "dark": "./assets/images/icon-dark.png",

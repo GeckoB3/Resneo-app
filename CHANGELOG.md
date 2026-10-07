@@ -15,7 +15,53 @@ on the other, and iOS 1.0.4 is the worked example.
 
 ---
 
-## OTA on iOS 1.1.2 / Android 1.1.2: first update (prepared 2026-10-07)
+## Unreleased: iOS 1.2.0 (Android stays on 1.1.2)
+
+A native iOS release for **Tap to Pay on iPhone**, now that Apple has granted the distribution
+entitlement (2026-10-01). Android is not rebuilt: it keeps runtime 1.1.2 and its updates.
+
+**Why it has to be a store build.** The entitlement
+(`com.apple.developer.proximity-reader.payment.acceptance`) is in `ios.entitlements` in
+`app.json`, so the App Store profile has to carry it. The build also compiles the
+`modules/tap-to-pay-education` module (Apple's merchant education, iOS 18+) and the two
+`patches/expo-modules-*` for the first time on EAS.
+
+**The iOS runtime moves to 1.2.0.** `app.json` root `version` is 1.2.0 and `android.version`
+1.1.2. From this commit on, iOS updates from `main` reach 1.2.0 installs only; iOS 1.1.2 installs
+keep the 2026-10-07 update, and a fix for them is published from a branch cut before the bump.
+`TAP_TO_PAY_IOS_ENABLED` is `true` in the source, in the same commit, so it can never reach an iOS
+install without the entitlement.
+
+**App changes:**
+
+- **Tap to Pay on iPhone**, built to Apple's checklist v1.7 (PR #5, details in
+  `Docs/TAP_TO_PAY.md`): a full-screen introduction with Apple's artwork, Settings → Tap to Pay on
+  iPhone (set-up by an admin, "ask an admin" for everyone else, progress, how to use), Apple's
+  terms at first use, Apple's education after the terms, the reader prepared at launch and on
+  return to the app, the payment button with Apple's name and symbol, processing and outcome
+  screens, receipts to share, and a notification when a payment fails while the app is in the
+  background.
+- Offered only on an iPhone XS or later, never on an iPad.
+- Clear messages when the iPhone has no passcode, a phone call is active, or the phone or
+  business has been blocked.
+- Settings shows each platform's own version.
+
+**After Apple releases it:** set `ios.latest` to `1.2.0` in the website's `app-version.json`, so
+iOS 1.1.2 users are prompted to update.
+
+### App Store: "What's new"
+
+```
+Tap to Pay on iPhone
+
+Take contactless payments right on your iPhone, with no extra hardware. Clients can tap a contactless card, Apple Pay or another digital wallet on your iPhone to pay for their appointment. An admin turns it on in Settings > Tap to Pay on iPhone and accepts the terms once, then anyone at your venue can take a payment from an appointment with Take payment > Tap to Pay on iPhone. Needs iPhone XS or later.
+
+Card readers still work as before, for cards that need to be inserted.
+```
+
+---
+
+## OTA on iOS 1.1.2 / Android 1.1.2: first update, published 2026-10-07
 
 The first update on runtime 1.1.2, from `3610a3c`: the four commits after the store build
 (`287a871`) plus the update prompt. JavaScript only: no package, lockfile or `app.json` change

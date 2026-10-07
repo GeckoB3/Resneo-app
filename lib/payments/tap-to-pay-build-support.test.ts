@@ -16,16 +16,23 @@ describe('buildSupportsTapToPay', () => {
     expect(buildSupportsTapToPay('android')).toBe(true);
   });
 
-  it('follows the iOS flag on iOS', () => {
-    expect(buildSupportsTapToPay('ios')).toBe(TAP_TO_PAY_IOS_ENABLED);
+  it('is ON for iOS from 1.2.0, in step with ios.entitlements in app.json', () => {
+    // Pins the shipped state: the flag and the entitlement move together, and
+    // only with a version bump (see the note on TAP_TO_PAY_IOS_ENABLED).
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const appJson = require('../../app.json') as {
+      expo: { ios: { entitlements?: Record<string, unknown> } };
+    };
+    expect(TAP_TO_PAY_IOS_ENABLED).toBe(true);
+    expect(
+      appJson.expo.ios.entitlements?.['com.apple.developer.proximity-reader.payment.acceptance'],
+    ).toBe(true);
   });
 
-  it('is currently OFF for iOS (Apple Case-ID 21181959)', () => {
-    // Pins the shipped state deliberately: this test is expected to be updated
-    // in the SAME commit that restores `ios.entitlements` to app.json. Only the
-    // local Xcode build opts in, via EXPO_PUBLIC_TAP_TO_PAY_IOS on its command
-    // line; the test environment never sets it.
-    expect(buildSupportsTapToPay('ios')).toBe(false);
+  it('lets an iPhone XS or later through on iOS', () => {
+    expect(
+      buildSupportsTapToPay('ios', { platform: 'ios', isPad: false, modelId: 'iPhone11,8' }),
+    ).toBe(true);
   });
 
   it('never lets an iPad or an older iPhone through, whatever the flag', () => {

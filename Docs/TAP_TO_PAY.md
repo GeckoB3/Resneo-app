@@ -16,7 +16,30 @@
 
 > **Correction (2026-08-05):** this section used to say Bluetooth-only means dropping the `ios.entitlements` block **and `tapToPayCheck`**. Dropping `tapToPayCheck` is wrong and would break **Android** Tap to Pay. Verified against the pinned plugin's source: `tapToPayCheck` drives `withTapToPayAndroid`, which patches `MainApplication` with `TapToPay.isInTapToPayProcess()`. It is Android-only and has no iOS effect whatsoever — the plugin's iOS half writes Info.plist strings only and never touches entitlements. **Only `ios.entitlements` comes out.**
 
-### iOS is Bluetooth-only right now (2026-08-05)
+### iOS Tap to Pay on iPhone is ON from 1.2.0 (2026-10-07)
+
+Apple granted the **distribution** entitlement on 2026-10-01. From iOS **1.2.0** (Android stays
+on 1.1.2):
+
+- `app.json` carries `ios.entitlements` with `com.apple.developer.proximity-reader.payment.acceptance`
+  for every build, and `TAP_TO_PAY_IOS_ENABLED` is `true` in the source. They moved in the same
+  commit as the version bump, so no bundle with the flag on can reach an iOS 1.1.2 install (the
+  `appVersion` runtime keeps them apart). An iOS fix for 1.1.2 installs is published from a
+  branch cut before the bump.
+- `EXPO_PUBLIC_TAP_TO_PAY_IOS` is gone. `app.config.js` now only takes `APPLE_TEAM_ID` for a local
+  Xcode build, and `scripts/ios-tap-to-pay-local.sh` is a plain local Release build.
+- Only an iPhone XS or later is offered it, never an iPad (`lib/payments/tap-to-pay-device.ts`):
+  on iOS the Stripe probe never answers a plain "no", so the model is checked first.
+- Staff are told what to do for a missing passcode (SCPError 2920), a phone call (2930), an
+  unsupported device (2910) and a blocked phone or business (3920, 3950).
+- Signing: the capability is enabled on the App ID and the old provisioning profiles deleted in
+  `eas credentials`, so the next builds make profiles that carry the entitlement. Check the build
+  log lists it.
+- Still to do on devices: a preview build pass (admin set-up, non-admin, a physical test card, PIN
+  at .03, no passcode, an iPad showing nothing) and a live TestFlight payment and refund, which
+  Tap to Pay on iPhone has never had.
+
+### History: iOS was Bluetooth-only (2026-08-05 to 1.2.0)
 
 `ios.entitlements` has been removed from `app.json`, and `lib/payments/tap-to-pay-build-support.ts` hides the Tap to Pay option on iOS. **Android is untouched and keeps full Tap to Pay in production.**
 
@@ -57,7 +80,7 @@ Also fixed on the way: reader-update and disconnect events are global, so the Bl
 
 **Re-recording the terms for Apple's videos.** Accepting the terms links the iPhone's Apple Account to the merchant. To show acceptance again, unlink it: without an Apple Business account, sign in at https://businessconnect.apple.com/taptopay/removeall with that Apple Account and choose "Remove all merchant IDs"; with one, sign in to Apple Business → Tap to Pay on iPhone → the merchant ID → Remove (Apple's Tap to Pay on iPhone FAQs). Then force-quit and reopen the app so the reader connects afresh.
 
-**To restore iOS Tap to Pay, both together:** put the `ios.entitlements` block back in `app.json` AND set `TAP_TO_PAY_IOS_ENABLED = true`. The entitlement alone offers a button that cannot work; the flag alone archives a build Apple rejects. Delete the cached provisioning profile (`eas credentials`) first, or EAS hands back the pre-approval one.
+**Done in 1.2.0 (2026-10-07). To restore iOS Tap to Pay, both together:** put the `ios.entitlements` block back in `app.json` AND set `TAP_TO_PAY_IOS_ENABLED = true`. The entitlement alone offers a button that cannot work; the flag alone archives a build Apple rejects. Delete the cached provisioning profile (`eas credentials`) first, or EAS hands back the pre-approval one.
 
 Device eligibility splits the same way: **Tap to Pay** needs iPhone XS+/iOS 16.4+ or a certified NFC Android 11+ device; the **Bluetooth path works on any Bluetooth-capable device**, which is much wider.
 

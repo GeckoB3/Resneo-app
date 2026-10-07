@@ -15,35 +15,27 @@ import {
  * signed entitlements rather than in the hardware.
  *
  * ---------------------------------------------------------------------------
- * iOS is currently OFF. Apple granted the Tap to Pay entitlement
- * (`com.apple.developer.proximity-reader.payment.acceptance`) with a
- * **development distribution restriction** (Case-ID 21181959, 2026-08). EAS
- * Build signs internal-distribution builds with Ad Hoc provisioning profiles,
- * and Apple does not put the entitlement into an Ad Hoc profile — verified by
- * inspecting the generated profile, whose Entitlements dict carries
- * `aps-environment` and `associated-domains` but not the proximity-reader key.
- * So the iOS build cannot even archive while it declares the entitlement.
+ * iOS is ON from 1.2.0. Apple granted the DISTRIBUTION entitlement for Tap to
+ * Pay on iPhone (`com.apple.developer.proximity-reader.payment.acceptance`) on
+ * 2026-10-01, so it is in `app.json` `ios.entitlements` for every build.
  *
- * Until Apple grants distribution, iOS ships **Bluetooth-reader only** (the
- * WisePad 3 needs no Apple entitlement) and `ios.entitlements` is absent from
- * `app.json`. Android is unaffected and keeps full Tap to Pay: the Apple
- * entitlement is an iOS-only key, and the Android half of the feature rides on
- * the Stripe plugin's `tapToPayCheck` prop, which stays set.
+ * This flag and the entitlement move TOGETHER, and only with a version bump.
+ * The flag is inlined into every OTA bundle, and under the `appVersion` runtime
+ * policy a bundle reaches only installs of its own version. iOS 1.1.2 and
+ * earlier have no entitlement, so they must never receive a bundle where this
+ * is true: an iOS fix for them is published from a branch cut before the 1.2.0
+ * bump, where this flag is still off.
  *
- * The one exception is a LOCAL Development-signed build made in Xcode, which the
- * development grant does cover — used to record the videos Apple's
- * distribution review asks for. `EXPO_PUBLIC_TAP_TO_PAY_IOS=true` on that
- * build's command line turns this on AND adds the entitlement (`app.config.js`
- * reads the same variable), so the two cannot drift apart. Unset everywhere
- * else, including every EAS build and OTA update.
+ * Before 1.2.0 the grant was development-only (Case-ID 21181959, 2026-08). EAS
+ * signs internal builds with Ad Hoc profiles, which that grant did not cover,
+ * so the flag came from `EXPO_PUBLIC_TAP_TO_PAY_IOS` on a local Xcode build's
+ * command line. That lever is gone.
  *
- * TO RE-ENABLE once Apple approves distribution: restore the `ios.entitlements`
- * block in `app.json` AND make this `true`. Both, together — the entitlement
- * alone would offer a button that cannot work, and this flag alone would archive
- * a build that Apple rejects.
+ * Android is unaffected: the Apple entitlement is an iOS-only key, and the
+ * Android half rides on the Stripe plugin's `tapToPayCheck` prop.
  * ---------------------------------------------------------------------------
  */
-export const TAP_TO_PAY_IOS_ENABLED = process.env.EXPO_PUBLIC_TAP_TO_PAY_IOS === 'true';
+export const TAP_TO_PAY_IOS_ENABLED = true;
 
 /**
  * May this build, on this device, offer Tap to Pay at all?
