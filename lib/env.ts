@@ -1,4 +1,5 @@
 import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 
 /**
  * Public env vars are embedded at BUILD time via Expo's EXPO_PUBLIC_ prefix.
@@ -102,8 +103,32 @@ export function shouldAllowScreenCapture(): boolean {
   return process.env.EXPO_PUBLIC_ALLOW_SCREENSHOTS === 'true';
 }
 
-export function getAppVersion(): string {
-  return Constants.expoConfig?.version ?? '1.0.0';
+/**
+ * This platform's app version, as its store shows it.
+ *
+ * Versions are per platform: iOS reads `ios.version` then the root `version`,
+ * Android reads `android.version` then the root (the same order Expo's config
+ * plugins and the `appVersion` runtime policy use). Reading the root alone made
+ * Android show the iOS version whenever the two differ.
+ */
+export function getAppVersion(platform: string = Platform.OS): string {
+  return appVersionFromConfig(Constants.expoConfig, platform) ?? '1.0.0';
+}
+
+type VersionedConfig =
+  | { version?: string; ios?: { version?: string }; android?: { version?: string } }
+  | null
+  | undefined;
+
+export function appVersionFromConfig(config: VersionedConfig, platform: string): string | null {
+  const own =
+    platform === 'ios'
+      ? config?.ios?.version
+      : platform === 'android'
+        ? config?.android?.version
+        : undefined;
+  const version = own || config?.version;
+  return typeof version === 'string' && version.length > 0 ? version : null;
 }
 
 /** True when all backend env vars are present (used to show setup hints in dev). */

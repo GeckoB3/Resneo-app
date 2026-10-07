@@ -20,7 +20,7 @@ import { Screen } from '@/components/ui/Screen';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
-import { getWebUrl } from '@/lib/env';
+import { getAppVersion, getWebUrl } from '@/lib/env';
 import {
   buildDestinations,
   LIST_GROUPS,
@@ -114,7 +114,7 @@ export default function MoreScreen() {
 
   const staff = staffData?.staff;
   const isAdmin = staff?.role === 'admin';
-  const appVersion = Constants.expoConfig?.version ?? '—';
+  const appVersion = getAppVersion();
   const unreadCount = notificationsQuery.data?.unreadCount ?? 0;
 
   // Live subscription status drives the billing-problem nudge. `plan_status` is

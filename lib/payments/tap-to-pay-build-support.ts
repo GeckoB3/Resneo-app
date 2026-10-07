@@ -1,5 +1,11 @@
 import { Platform } from 'react-native';
 
+import {
+  currentDeviceFacts,
+  deviceCanUseTapToPay,
+  type DeviceFacts,
+} from '@/lib/payments/tap-to-pay-device';
+
 /**
  * Whether THIS BUILD can use the phone's own NFC as the card reader.
  *
@@ -40,11 +46,21 @@ import { Platform } from 'react-native';
 export const TAP_TO_PAY_IOS_ENABLED = process.env.EXPO_PUBLIC_TAP_TO_PAY_IOS === 'true';
 
 /**
- * `platform` is injectable so this is testable without mocking `Platform`.
- * Every non-iOS platform is allowed through: Android is fully entitled, and web
- * never reaches here (the Terminal SDK is stubbed out of the web bundle).
+ * May this build, on this device, offer Tap to Pay at all?
+ *
+ * iOS needs both the entitled build and an iPhone that can do it (XS or later,
+ * never an iPad; see `tap-to-pay-device.ts`). Every non-iOS platform is allowed
+ * through: Android is fully entitled and its SDK probe decides the device, and
+ * web never reaches here (the Terminal SDK is stubbed out of the web bundle).
+ *
+ * `platform` and `device` are injectable so this is testable without mocking
+ * `Platform` or `expo-device`.
  */
-export function buildSupportsTapToPay(platform: string = Platform.OS): boolean {
-  if (platform === 'ios') return TAP_TO_PAY_IOS_ENABLED;
-  return true;
+export function buildSupportsTapToPay(
+  platform: string = Platform.OS,
+  device: DeviceFacts | null = null,
+): boolean {
+  if (platform !== 'ios') return true;
+  if (!TAP_TO_PAY_IOS_ENABLED) return false;
+  return deviceCanUseTapToPay(device ?? currentDeviceFacts());
 }

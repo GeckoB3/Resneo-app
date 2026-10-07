@@ -1,4 +1,8 @@
-import { shouldAllowScreenCapture, shouldSimulateCardReaders } from '@/lib/env';
+import {
+  appVersionFromConfig,
+  shouldAllowScreenCapture,
+  shouldSimulateCardReaders,
+} from '@/lib/env';
 
 /**
  * The card-reader simulation switch (Tap to Pay design doc §7.6 / §7A.10).
@@ -73,5 +77,24 @@ describe('shouldAllowScreenCapture', () => {
     // '1', 'yes', 'TRUE' must not lift a privacy layer.
     process.env[CAPTURE_KEY] = 'TRUE';
     expect(shouldAllowScreenCapture()).toBe(false);
+  });
+});
+
+describe('appVersionFromConfig', () => {
+  // iOS 1.2.0 ships while Android stays on 1.1.2: each must show its own.
+  const config = { version: '1.2.0', android: { version: '1.1.2' } };
+
+  it('reads android.version on Android, not the root', () => {
+    expect(appVersionFromConfig(config, 'android')).toBe('1.1.2');
+  });
+
+  it('reads ios.version on iOS, then the root', () => {
+    expect(appVersionFromConfig(config, 'ios')).toBe('1.2.0');
+    expect(appVersionFromConfig({ version: '1.1.2', ios: { version: '1.2.0' } }, 'ios')).toBe('1.2.0');
+  });
+
+  it('falls back to the root, and is null with nothing', () => {
+    expect(appVersionFromConfig({ version: '1.1.2' }, 'android')).toBe('1.1.2');
+    expect(appVersionFromConfig(null, 'ios')).toBeNull();
   });
 });

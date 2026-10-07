@@ -3,6 +3,7 @@ import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 
 import { apiFetch } from '@/lib/api/client';
+import { appVersionFromConfig } from '@/lib/env';
 import { Notifications } from '@/lib/push/notificationsModule';
 import { isExpoGoClient } from '@/lib/push/runtime';
 
@@ -36,11 +37,8 @@ function currentPlatform(): DevicePlatform | null {
 }
 
 function appVersionString(): string | null {
-  const expoVersion = Constants.expoConfig?.version;
-  if (typeof expoVersion === 'string' && expoVersion.length > 0) {
-    return expoVersion.slice(0, 80);
-  }
-  return null;
+  // Per platform: the root `version` alone is iOS's when the two differ.
+  return appVersionFromConfig(Constants.expoConfig, Platform.OS)?.slice(0, 80) ?? null;
 }
 
 function projectIdFromConfig(): string | undefined {

@@ -22,6 +22,12 @@ import { TAP_TO_PAY_ON_IPHONE } from '@/lib/payments/tap-to-pay-copy';
  *  - `terms_failed` (3940): Apple refused the signed-in Apple Account.
  *  - `permission_needed`: location permission is missing and this connect was not
  *    allowed to ask for it (the silent warm-up). Set by the hook, not the SDK.
+ *  - `passcode_required` (2920): the iPhone has no passcode, which Apple requires.
+ *  - `phone_call_active` (2930): Tap to Pay cannot run during a phone call.
+ *  - `device_unsupported` (2910): Apple reports this iPhone's configuration as
+ *    unsupported. Also how the support probe says no on iOS.
+ *  - `device_banned` (3920) / `merchant_blocked` (3950): Apple or Stripe has
+ *    barred this iPhone or this merchant; only Stripe support can lift it.
  *  - `os_update_required`: Apple's `PaymentCardReaderError.osVersionNotSupported`
  *    — this iOS is too old for Tap to Pay on iPhone here. Apple requires the app
  *    to tell the merchant to update iOS (checklist 1.4). See
@@ -33,6 +39,11 @@ export type TapToPayFailureReason =
   | 'icloud_required'
   | 'terms_failed'
   | 'permission_needed'
+  | 'passcode_required'
+  | 'phone_call_active'
+  | 'device_unsupported'
+  | 'device_banned'
+  | 'merchant_blocked'
   | 'os_update_required';
 
 const NATIVE_REASONS: Record<string, TapToPayFailureReason> = {
@@ -40,6 +51,11 @@ const NATIVE_REASONS: Record<string, TapToPayFailureReason> = {
   '2970': 'terms_cancelled',
   '2960': 'icloud_required',
   '3940': 'terms_failed',
+  '2920': 'passcode_required',
+  '2930': 'phone_call_active',
+  '2910': 'device_unsupported',
+  '3920': 'device_banned',
+  '3950': 'merchant_blocked',
 };
 
 /**
@@ -134,6 +150,16 @@ export function tapToPayFailureMessage(reason: TapToPayFailureReason, isAdmin: b
       return `Apple could not accept the ${TAP_TO_PAY_ON_IPHONE} terms with the Apple Account on this iPhone. Check the account in the Settings app, then try again.`;
     case 'permission_needed':
       return LOCATION_REFUSED_MESSAGE;
+    case 'passcode_required':
+      return `${TAP_TO_PAY_ON_IPHONE} needs a passcode on this iPhone. Set one in Settings → Face ID & Passcode, then try again.`;
+    case 'phone_call_active':
+      return `${TAP_TO_PAY_ON_IPHONE} can't be used during a phone call. End the call, then try again.`;
+    case 'device_unsupported':
+      return `This iPhone can't use ${TAP_TO_PAY_ON_IPHONE}. Take the payment with a card reader instead.`;
+    case 'device_banned':
+      return `${TAP_TO_PAY_ON_IPHONE} has been blocked on this iPhone. Contact ResNeo support, and take the payment with a card reader instead.`;
+    case 'merchant_blocked':
+      return `${TAP_TO_PAY_ON_IPHONE} has been blocked for this business. Contact ResNeo support, and take the payment with a card reader instead.`;
     case 'os_update_required':
       return TAP_TO_PAY_UPDATE_IOS_MESSAGE;
   }

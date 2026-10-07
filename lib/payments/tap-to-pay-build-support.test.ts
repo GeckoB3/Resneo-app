@@ -28,6 +28,15 @@ describe('buildSupportsTapToPay', () => {
     expect(buildSupportsTapToPay('ios')).toBe(false);
   });
 
+  it('never lets an iPad or an older iPhone through, whatever the flag', () => {
+    expect(buildSupportsTapToPay('ios', { platform: 'ios', isPad: true, modelId: 'iPad13,18' })).toBe(
+      false,
+    );
+    expect(
+      buildSupportsTapToPay('ios', { platform: 'ios', isPad: false, modelId: 'iPhone10,6' }),
+    ).toBe(false);
+  });
+
   it('does not block any other platform', () => {
     expect(buildSupportsTapToPay('web')).toBe(true);
     expect(buildSupportsTapToPay('macos')).toBe(true);

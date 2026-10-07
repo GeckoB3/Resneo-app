@@ -307,6 +307,13 @@ export function useTapToPayReader(): UseTapToPayReader {
           markOsUpdateRequired();
           return false;
         }
+        // The one error that is a definite "no" about the device itself
+        // (`SCPErrorUnsupportedMobileDeviceConfiguration`), rather than a probe
+        // that could not answer.
+        if (classifyTapToPayError(res.error) === 'device_unsupported') {
+          setSupported(false);
+          return false;
+        }
         // The SDK could not answer (often "not initialised yet"). Leave support
         // UNKNOWN rather than false: a false negative would hide Tap to Pay on a
         // perfectly capable phone, and the connect attempt gives the real answer

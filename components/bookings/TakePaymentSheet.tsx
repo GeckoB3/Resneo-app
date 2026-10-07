@@ -1249,7 +1249,7 @@ function CardCollectSection({
           <Text variant="caption" tone="muted">
             {buildSupportsTapToPay()
               ? 'Tap to Pay hidden: this build failed Stripe’s real-device check. Real Tap to Pay never runs on debuggable dev builds or with Developer options on. Test it with the preview build, or set EXPO_PUBLIC_TERMINAL_SIMULATED=true here.'
-              : 'Tap to Pay hidden: this iOS build carries no Apple proximity-reader entitlement, so the card reader path is Bluetooth only. See lib/payments/tap-to-pay-build-support.ts.'}
+              : 'Tap to Pay hidden: this iOS build carries no Apple proximity-reader entitlement, or this device is an iPad or an iPhone older than the XS. The card reader path is Bluetooth only. See lib/payments/tap-to-pay-build-support.ts.'}
           </Text>
         ) : null}
         <Button

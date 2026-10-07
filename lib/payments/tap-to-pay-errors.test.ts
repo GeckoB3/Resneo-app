@@ -12,6 +12,11 @@ describe('classifyTapToPayError', () => {
     ['2970', 'terms_cancelled'],
     ['2960', 'icloud_required'],
     ['3940', 'terms_failed'],
+    ['2920', 'passcode_required'],
+    ['2930', 'phone_call_active'],
+    ['2910', 'device_unsupported'],
+    ['3920', 'device_banned'],
+    ['3950', 'merchant_blocked'],
   ])('maps SCPError %s to %s', (native, reason) => {
     expect(classifyTapToPayError({ nativeErrorCode: native })).toBe(reason);
   });
@@ -24,6 +29,15 @@ describe('classifyTapToPayError', () => {
 });
 
 describe('tapToPayFailureMessage', () => {
+  it('tells staff how to fix a missing passcode, and where', () => {
+    expect(tapToPayFailureMessage('passcode_required', false)).toMatch(/passcode.*Face ID & Passcode/);
+  });
+
+  it('points an unsupported or blocked phone at the card reader', () => {
+    expect(tapToPayFailureMessage('device_unsupported', true)).toMatch(/card reader/);
+    expect(tapToPayFailureMessage('merchant_blocked', true)).toMatch(/support.*card reader/);
+  });
+
   it('tells a non-admin to ask an admin (Apple 3.8.1)', () => {
     expect(tapToPayFailureMessage('terms_not_accepted', false)).toMatch(/Ask an admin/);
     expect(tapToPayFailureMessage('terms_not_accepted', true)).not.toMatch(/Ask an admin/);

@@ -295,6 +295,20 @@ describe('useTapToPayReader', () => {
     expect(mockApi.supportsReadersOfType).not.toHaveBeenCalled();
   });
 
+  it('reads Apple’s unsupported-device error (SCPError 2910) as a definite no', async () => {
+    mockApi.supportsReadersOfType.mockResolvedValue({
+      readerSupportResult: false,
+      error: { message: 'unsupported configuration', nativeErrorCode: '2910' },
+    } as never);
+    const { result } = await renderHook(() => useTapToPayReader());
+
+    await act(async () => {
+      await result.current.checkSupport();
+    });
+
+    expect(result.current.supported).toBe(false);
+  });
+
   it('leaves support UNKNOWN when the SDK cannot answer, so the option stays visible', async () => {
     mockApi.supportsReadersOfType.mockResolvedValue({ error: { message: 'not initialised' } });
     const { result } = await renderHook(() => useTapToPayReader());
