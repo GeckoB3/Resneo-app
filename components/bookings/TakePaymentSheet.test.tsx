@@ -386,7 +386,7 @@ describe('over-entry (the route silently clamps to the balance)', () => {
     await press('Record cash');
     await press('Record £1,200.00 cash');
     // No amount_pence at all: supplying £1,200 would fail the route's schema.
-    expect(mockRecord).toHaveBeenCalledWith({ method: 'cash' });
+    expect(mockRecord).toHaveBeenCalledWith({ method: 'cash', clientRequestId: expect.any(String) });
   });
 });
 

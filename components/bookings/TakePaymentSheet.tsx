@@ -50,6 +50,11 @@ import {
   useTakePayment,
   type InPersonReaderType,
 } from '@/lib/queries/useTakePayment';
+import {
+  externalPaymentSignature,
+  keyForExternalPayment,
+  type ExternalPaymentKey,
+} from '@/lib/payments/external-payment-key';
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { BookingPaymentRow, VisitPayment } from '@/types/booking-detail';
@@ -166,6 +171,8 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
   const refundTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Same-frame guard for the cash/external write; see `recordCash`. */
   const recordingRef = useRef(false);
+  /** The key for the cash/external payment being recorded; see `keyForExternalPayment`. */
+  const externalKeyRef = useRef<ExternalPaymentKey | null>(null);
 
   const recordExternal = useRecordExternalPayment(target?.id ?? '');
   const refund = useRefundPayment(target?.id ?? '');
@@ -322,21 +329,29 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
     /**
      * Same-frame re-entry guard as the card path, and the more important of the
      * two. `busy` is derived from mutation state that has not re-rendered yet,
-     * so two taps in one frame both pass it — and unlike a card payment there is
-     * NO server-side idempotency here: the charge route inserts a ledger row
-     * unconditionally, and the only unique index covers Stripe PaymentIntents.
-     * A double tap therefore records the money twice, and only an admin can
-     * reverse it.
+     * so two taps in one frame both pass it. A server with POS Pass 0 also
+     * dedupes on the `client_request_id` sent below, but an older one inserts a
+     * ledger row unconditionally, so a double tap there records the money twice
+     * and only an admin can reverse it.
      */
     if (recordingRef.current) return;
     recordingRef.current = true;
     setError(null);
+    // Kept across a failed or timed-out attempt, so recording the same payment again sends the
+    // same key and a server with POS Pass 0 records it once. Cleared on success.
+    const held = keyForExternalPayment(
+      externalKeyRef.current,
+      externalPaymentSignature({ bookingId: target?.id ?? '', method, amountPence }),
+    );
+    externalKeyRef.current = held;
     try {
       const result = await recordExternal.mutateAsync({
         method,
         ...(amountPence != null ? { amountPence } : {}),
         ...(note.trim() ? { note: note.trim() } : {}),
+        clientRequestId: held.key,
       });
+      externalKeyRef.current = null;
       hapticSuccess();
       // Cash and other settlements are recorded straight to the ledger, with no
       // Stripe leg and therefore no emailed receipt.
@@ -357,10 +372,9 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
       });
       setMode('success');
     } catch (e) {
-      // A TIMEOUT here is ambiguous, not a failure. This write carries no
-      // idempotency key of any kind (the only unique index covers Stripe
-      // PaymentIntents), and apiFetch aborts at 15s — so the row may well have
-      // landed. Saying "could not be recorded" invites staff to record the same
+      // A TIMEOUT here is ambiguous, not a failure. apiFetch aborts at 15s, so
+      // the row may well have landed. The key above makes a retry safe on a server
+      // with POS Pass 0, but not on an older one, which ignores it. Saying "could not be recorded" invites staff to record the same
       // cash again, putting double the money in the ledger against one payment.
       // The hook now refetches on error too, so the history below is authoritative.
       if (e instanceof ApiError && e.status === 408) {

@@ -310,6 +310,24 @@ export function isDefiniteCardFailure(error: StripeError | null | undefined): bo
   return typeof declineCode === 'string' && declineCode.trim() !== '';
 }
 
+/** Shown when the server cancelled the attempt underneath the reader (see below). */
+export const PAYMENT_TIMED_OUT_MESSAGE = 'This payment timed out. Start it again.';
+
+/**
+ * Did the SERVER cancel this attempt's PaymentIntent while the reader still had it?
+ *
+ * The web's hourly sweep (POS plan P0-5) cancels a card attempt that has been pending for an hour,
+ * because nothing else ever settles one that was walked away from. If the collect screen is still
+ * open when that happens, the SDK fails with the intent `canceled` (or Stripe's
+ * `payment_intent_unexpected_state`), and Stripe's own sentence means nothing to a salon. A staff
+ * cancellation (`CANCELED`) is not this case.
+ */
+export function isServerCancelledAttempt(error: StripeError | null | undefined): boolean {
+  if (!error || error.code === 'CANCELED') return false;
+  if (error.paymentIntent?.status === 'canceled') return true;
+  return (error.apiError as { code?: unknown } | undefined)?.code === 'payment_intent_unexpected_state';
+}
+
 /** Human-readable message from an SDK error envelope, with a safe fallback. */
 export function terminalErrorMessage(error: StripeError | undefined, fallback: string): string {
   if (!error) return fallback;

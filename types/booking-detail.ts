@@ -250,6 +250,12 @@ export interface BookingDetail {
   visit_payment?: VisitPayment | null;
   /** In-person payment ledger rows (full GET only; newest first). Visit-wide. */
   payments?: BookingPaymentRow[];
+  /**
+   * False when the booking holds payment records (a deposit, a payment, a fee) and can never be
+   * deleted (POS plan P0-3); the server refuses with 409 `BOOKING_HAS_MONEY`. Absent on older
+   * servers, which still allow the delete.
+   */
+  can_delete?: boolean;
   /** Present on full GET; summary returns empty arrays. */
   events?: BookingTimelineEventRow[];
   communications?: BookingCommunicationRow[];

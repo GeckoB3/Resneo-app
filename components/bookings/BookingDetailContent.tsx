@@ -1927,8 +1927,9 @@ export function BookingDetailContent({
       ) : null}
 
       {/* Permanent delete — cancelled bookings only (web "Remove from diary");
-          a partner's needs the full grant, as the route requires. */}
-      {isCancelled && policy.canCancel ? (
+          a partner's needs the full grant, as the route requires. Never offered
+          for a booking holding payment records (`can_delete: false`). */}
+      {isCancelled && policy.canCancel && booking.can_delete !== false ? (
         <Card>
           <View style={styles.cardStack}>
             <Text variant="overline" tone="danger">

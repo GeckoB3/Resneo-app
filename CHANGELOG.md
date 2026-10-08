@@ -15,6 +15,27 @@ on the other, and iOS 1.0.4 is the worked example.
 
 ---
 
+## Unreleased OTA: the web's POS Pass 0 (iOS 1.2.0 / Android 1.1.2)
+
+JavaScript only, for both runtimes. Each change is additive: against a server without POS Pass 0
+the app behaves exactly as before.
+
+- **Cash and other payments carry a key.** Take payment sends `client_request_id` when recording
+  cash or another method, and keeps the same key across a failed or timed-out attempt at the same
+  booking, method and amount. A server with Pass 0 records the payment once and echoes the first
+  one (`replayed: true`), so a retry after a dropped connection can no longer record it twice.
+  The key is cleared on success (`lib/payments/external-payment-key.ts`).
+- **Delete is hidden for bookings with payment records.** The booking detail GET now serves
+  `can_delete`; when it is false (a deposit, payment or fee is on the booking) "Remove from diary"
+  is not offered. The server refuses such a delete with 409 `BOOKING_HAS_MONEY` either way, and
+  older builds show its sentence in their toast.
+- **A swept card attempt says so.** The web cancels a card attempt left pending for an hour. If
+  the collect screen is still open when that happens, staff now see "This payment timed out.
+  Start it again." instead of Stripe's own error (`isServerCancelledAttempt`). A staff cancel at
+  the reader is unchanged.
+
+---
+
 ## Unreleased: iOS 1.2.0 (Android stays on 1.1.2)
 
 A native iOS release for **Tap to Pay on iPhone**, now that Apple has granted the distribution

@@ -6,6 +6,7 @@ import {
   getTerminalSdk,
   hasTerminalNativeModule,
   isDefiniteCardFailure,
+  isServerCancelledAttempt,
   __resetTerminalInitForTests,
   __resetTerminalSdkForTests,
 } from '@/lib/payments/terminal-sdk';
@@ -90,6 +91,46 @@ describe('androidPermissionMessage', () => {
       expect(msg).toContain('Nearby devices');
       expect(msg).toContain('app settings');
     }
+  });
+});
+
+describe('isServerCancelledAttempt', () => {
+  /**
+   * The web's hourly sweep (POS plan P0-5) cancels a card attempt left pending for an hour. If the
+   * collect screen is still open, staff get a sentence they can act on instead of Stripe's own.
+   */
+  const err = (over: Record<string, unknown>) => over as never;
+
+  it('is false without an error at all', () => {
+    expect(isServerCancelledAttempt(undefined)).toBe(false);
+    expect(isServerCancelledAttempt(null)).toBe(false);
+  });
+
+  it('is true when the intent came back cancelled', () => {
+    expect(isServerCancelledAttempt(err({ paymentIntent: { status: 'canceled' } }))).toBe(true);
+  });
+
+  it("is true for Stripe's unexpected-state error", () => {
+    expect(
+      isServerCancelledAttempt(err({ apiError: { code: 'payment_intent_unexpected_state' } })),
+    ).toBe(true);
+  });
+
+  it('is false when staff cancelled at the reader', () => {
+    // Staff did this themselves; the sheet already says "not completed".
+    expect(
+      isServerCancelledAttempt(err({ code: 'CANCELED', paymentIntent: { status: 'canceled' } })),
+    ).toBe(false);
+  });
+
+  it('is false for a decline or a network failure', () => {
+    expect(isServerCancelledAttempt(err({ apiError: { declineCode: 'insufficient_funds' } }))).toBe(
+      false,
+    );
+    expect(isServerCancelledAttempt(err({ code: 'REQUEST_TIMED_OUT' }))).toBe(false);
+    expect(
+      isServerCancelledAttempt(err({ paymentIntent: { status: 'requiresPaymentMethod' } })),
+    ).toBe(false);
   });
 });
 

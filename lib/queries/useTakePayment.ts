@@ -12,6 +12,8 @@ import { recordFailedCardAttempt } from '@/lib/payments/failed-attempts';
 import {
   getTerminalSdk,
   isDefiniteCardFailure,
+  isServerCancelledAttempt,
+  PAYMENT_TIMED_OUT_MESSAGE,
   terminalErrorMessage,
 } from '@/lib/payments/terminal-sdk';
 import { queryKeys } from '@/lib/queries/keys';
@@ -177,8 +179,10 @@ export function useTakePayment(bookingId: string) {
           });
         }
         // Carries how it ended (declined / timed out / not completed) and what
-        // the receipt needs, for the sheet (Apple 5.9, 5.10).
-        throw cardPaymentError(message, {
+        // the receipt needs, for the sheet (Apple 5.9, 5.10). An attempt the server
+        // swept away underneath the reader gets a sentence staff can act on instead
+        // of Stripe's own.
+        throw cardPaymentError(isServerCancelledAttempt(error) ? PAYMENT_TIMED_OUT_MESSAGE : message, {
           outcome: cardOutcomeOf(error),
           amountPence: charge.amount_pence,
           paymentIntentId: charge.payment_intent_id,
@@ -271,6 +275,8 @@ export interface ExternalPaymentResult {
   amount_pence?: number;
   /** The balance remaining AFTER this payment, recomputed server-side. */
   balance_due_pence?: number | null;
+  /** True when the server had already recorded this payment under the same key (POS plan P0-5). */
+  replayed?: boolean;
 }
 
 export function useRecordExternalPayment(bookingId: string) {
@@ -282,6 +288,12 @@ export function useRecordExternalPayment(bookingId: string) {
       method: 'cash' | 'external';
       amountPence?: number;
       note?: string;
+      /**
+       * One key per payment staff are recording (see `keyForExternalPayment`):
+       * a retry or a second tap sends the same key, and a server with POS Pass 0 records it
+       * once and echoes the first payment (`replayed: true`). An older server ignores it.
+       */
+      clientRequestId?: string;
     }): Promise<ExternalPaymentResult> => {
       // Staff-facing: this surfaces raw in the payment sheet, so it must read as
       // something a salon can act on rather than as an internal token error.
@@ -295,6 +307,7 @@ export function useRecordExternalPayment(bookingId: string) {
           method: input.method,
           ...(input.amountPence != null ? { amount_pence: input.amountPence } : {}),
           ...(input.note ? { note: input.note } : {}),
+          ...(input.clientRequestId ? { client_request_id: input.clientRequestId } : {}),
         }),
       });
     },
