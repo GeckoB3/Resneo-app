@@ -20,9 +20,24 @@ type StripeConnectCardProps = {
   onOpenDashboard?: () => void;
   openingDashboard?: boolean;
   dashboardErrorText?: string | null;
+  /** The connected account id, shown once Stripe has one (web: "Account: acct_..."). */
+  accountId?: string | null;
+  /** True while the account's status is being read; the steps are not guessed meanwhile. */
+  loading?: boolean;
+  /** The status read failed (web: the message and a Retry button). */
+  statusError?: string | null;
+  onRetry?: () => void;
 };
 
 type ConnectState = 'not_connected' | 'step1_pending' | 'step2_pending' | 'active';
+
+/** What a team member who is not an admin is told at each step (web StripeConnectSection). */
+const STAFF_LINE: Record<ConnectState, string | null> = {
+  not_connected: 'Ask an admin to connect Stripe.',
+  step1_pending: 'Ask an admin to complete Stripe setup.',
+  step2_pending: 'Ask an admin to complete identity verification.',
+  active: null,
+};
 
 /**
  * Stripe Connect onboarding status + CTA — mirrors the web Settings → Payments
@@ -40,6 +55,10 @@ export function StripeConnectCard({
   onOpenDashboard,
   openingDashboard = false,
   dashboardErrorText = null,
+  accountId = null,
+  loading = false,
+  statusError = null,
+  onRetry,
 }: StripeConnectCardProps) {
   const { colors } = useTheme();
 
@@ -82,6 +101,30 @@ export function StripeConnectCard({
   };
 
   const s = statusCopy[state];
+
+  if (hasAccountId && (loading || statusError)) {
+    return (
+      <Card>
+        <View style={styles.cardHeader}>
+          <Text variant="label">Stripe payments</Text>
+        </View>
+        {statusError ? (
+          <>
+            <Text variant="bodySmall" tone="danger" style={styles.help}>
+              {statusError}
+            </Text>
+            {onRetry ? <Button label="Retry" variant="secondary" fullWidth onPress={onRetry} /> : null}
+          </>
+        ) : (
+          <Text variant="bodySmall" tone="muted" style={styles.help}>
+            Checking your Stripe status…
+          </Text>
+        )}
+      </Card>
+    );
+  }
+
+  const staffLine = STAFF_LINE[state];
 
   return (
     <Card>
@@ -139,11 +182,17 @@ export function StripeConnectCard({
         </View>
       ) : null}
 
-      {!isAdmin && state !== 'active' && (
+      {!isAdmin && staffLine ? (
         <Text variant="caption" tone="muted">
-          Ask an admin to complete Stripe setup.
+          {staffLine}
         </Text>
-      )}
+      ) : null}
+
+      {hasAccountId && accountId && state !== 'not_connected' ? (
+        <Text variant="caption" tone="muted" style={styles.account} selectable>
+          {`Account: ${accountId}`}
+        </Text>
+      ) : null}
     </Card>
   );
 }
@@ -185,6 +234,9 @@ const styles = StyleSheet.create({
     marginVertical: spacing.sm,
   },
   errorText: {
+    marginTop: spacing.sm,
+  },
+  account: {
     marginTop: spacing.sm,
   },
   dashboard: {

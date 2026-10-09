@@ -14,6 +14,7 @@ import {
 import { DeleteVenueSheet } from '@/components/manage/DeleteVenueSheet';
 import { PlanChangeSection } from '@/components/plan/PlanChangeSection';
 import { StripeConnectCard } from '@/components/plan/StripeConnectCard';
+import { TrialBreakdownBanner } from '@/components/plan/TrialBreakdownBanner';
 import { UsageMeter } from '@/components/plan/UsageMeter';
 import {
   APPOINTMENTS_PLAN_DETAILS,
@@ -74,12 +75,6 @@ function formatDate(iso: string | null | undefined): string {
     month: 'short',
     year: 'numeric',
   });
-}
-
-function daysRemaining(iso: string | null | undefined, nowMs: number): number {
-  if (!iso) return 0;
-  const diff = Date.parse(iso) - nowMs;
-  return Math.max(0, Math.ceil(diff / 86_400_000));
 }
 
 function planStatusLabel(
@@ -218,9 +213,13 @@ export default function PlanScreen() {
     refetch: refetchBilling,
   } = useBillingStatus(isAdmin);
 
-  const { data: stripeConnect, refetch: refetchStripe } = useStripeConnect(
-    isAdmin && !!venue?.stripe_connected_account_id,
-  );
+  // Any team member may read the Stripe status (web Payments tab, read only for staff).
+  const {
+    data: stripeConnect,
+    isLoading: stripeLoading,
+    error: stripeError,
+    refetch: refetchStripe,
+  } = useStripeConnect(!!venue?.stripe_connected_account_id);
 
   // Live SMS usage (admin-only route, Bearer-reachable). Degrades to the static
   // allowance copy below when it errors (401/403) or returns null (non-SMS venue).
@@ -434,8 +433,6 @@ export default function PlanScreen() {
   const chargesEnabled = stripeConnect?.charges_enabled ?? false;
   const detailsSubmitted = stripeConnect?.details_submitted ?? false;
 
-  const trialDaysLeft = daysRemaining(periodEnd, nowMs);
-
   // Complimentary (superuser-comped) access — web parity. The status route does
   // not surface `billing_access_source` today, so this stays false until the
   // backend includes it; when present, we swap the trial banner for comp copy.
@@ -463,14 +460,14 @@ export default function PlanScreen() {
           />
         )}
 
-        {/* Trial countdown (hidden under complimentary access) */}
+        {/* Trial countdown and where its days came from (web TrialBreakdownBanner), hidden
+            under complimentary access. */}
         {isTrial && !isFreeAccess && (
-          <StatusBanner
-            tone="brand"
-            message={
-              `Free trial: ${trialDaysLeft} day${trialDaysLeft !== 1 ? 's' : ''} remaining ` +
-              `(first charge on ${formatDate(periodEnd)}).`
-            }
+          <TrialBreakdownBanner
+            planStatus={planStatus}
+            periodStart={periodStart}
+            periodEnd={periodEnd}
+            server={billing?.trial_breakdown ?? null}
           />
         )}
 
@@ -734,17 +731,15 @@ export default function PlanScreen() {
           onOpenDashboard={handleOpenStripeDashboard}
           openingDashboard={stripeDashboardMutation.isPending}
           dashboardErrorText={dashboardError}
+          accountId={venue.stripe_connected_account_id ?? null}
+          loading={hasStripeAccount && stripeLoading}
+          statusError={
+            hasStripeAccount && stripeError && !stripeConnect
+              ? stripeError.message || 'Failed to check Stripe status'
+              : null
+          }
+          onRetry={() => void refetchStripe()}
         />
-
-        {/* Non-admin fallback link for Stripe */}
-        {!isAdmin && (
-          <Button
-            label="View payments on web"
-            variant="ghost"
-            fullWidth
-            onPress={() => openWeb('/dashboard/settings?tab=payments')}
-          />
-        )}
 
         {/* Danger zone — self-serve venue deletion (admin only, web parity). */}
         {isAdmin && (

@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { apiFetch } from '@/lib/api/client';
+import type { VenueTrialBreakdown } from '@/lib/billing/trial-breakdown';
 import { isBackendConfigured } from '@/lib/env';
 import { keyScope } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
@@ -73,6 +74,12 @@ export interface BillingStatus {
    * status route; present defensively for the complimentary-access copy.
    */
   billing_access_source?: BillingAccessSource | string | null;
+  /**
+   * Optional: the web's `VenueTrialBreakdown` (standard days, referral bonus days and who
+   * referred the venue). The live status route does not send it yet; the Plan screen shows the
+   * full breakdown the moment it does, and what the billing window proves until then.
+   */
+  trial_breakdown?: VenueTrialBreakdown | null;
 }
 
 export interface StripeConnectStatus {
