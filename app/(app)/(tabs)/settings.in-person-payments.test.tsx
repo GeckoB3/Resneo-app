@@ -120,7 +120,7 @@ describe('More tab — in-person payments switch', () => {
     expect(screen.queryByLabelText(SWITCH)).toBeNull();
     // …but staff can still reach the reader once the venue has it on, so they
     // are not blocked from pairing hardware.
-    expect(screen.getByText('Card reader')).toBeTruthy();
+    expect(screen.getByText('Bluetooth card reader')).toBeTruthy();
   });
 
   it('shows nothing at all to a non-admin whose venue has it off', async () => {
@@ -128,7 +128,7 @@ describe('More tab — in-person payments switch', () => {
     mockEnabled = false;
     await render(<MoreScreen />);
     expect(screen.queryByLabelText(SWITCH)).toBeNull();
-    expect(screen.queryByText('Card reader')).toBeNull();
+    expect(screen.queryByText('Bluetooth card reader')).toBeNull();
   });
 
   it('warns when Stripe is not connected, because the flag alone does nothing', async () => {
@@ -153,7 +153,7 @@ describe('More tab — in-person payments switch', () => {
     mockEnabled = false;
     await render(<MoreScreen />);
     expect(screen.getByLabelText(SWITCH)).toBeTruthy();
-    expect(screen.queryByText('Card reader')).toBeNull();
+    expect(screen.queryByText('Bluetooth card reader')).toBeNull();
   });
 
   it('rolls the switch back and says so when the save fails', async () => {

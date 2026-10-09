@@ -273,12 +273,13 @@ describe('buildDestinations — Checkout (POS app step 1, plan §4.22)', () => {
 
   it("puts Checkout's set-up screens in the app under Checkout set-up (owner, 2026-10-09)", () => {
     const admin = buildDestinations(ctx({ isAdmin: true, posEnabled: true })).filter((d) => d.group === 'checkoutSetup');
+    // Settings first, then products and stock, then the records (owner, 2026-10-09).
     expect(admin.map((d) => d.id)).toEqual([
       'checkout-settings',
-      'pos-records',
+      'commission-rates',
       'stock-setup',
       'import-products',
-      'commission-rates',
+      'pos-records',
       'commission-report',
     ]);
     expect(admin.every((d) => d.kind === 'route' && !d.external)).toBe(true);

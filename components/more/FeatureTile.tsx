@@ -56,7 +56,8 @@ export function FeatureTile({ icon, tint, label, hint, onPress }: FeatureTilePro
         />
       </View>
       <View style={styles.text}>
-        <Text variant="bodyMedium" numberOfLines={1}>
+        {/* One line, shrinking a little rather than cutting off ("Calendar availability"). */}
+        <Text variant="bodyMedium" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
           {label}
         </Text>
         <Text variant="caption" tone="muted" numberOfLines={2}>

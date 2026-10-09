@@ -82,13 +82,15 @@ export const LIST_GROUPS: { key: DestGroup; title: string }[] = [
   { key: 'setup', title: 'Your venue' },
   { key: 'people', title: 'Team & clients' },
   { key: 'bookingTypes', title: 'Booking types' },
+  // Checkout's set-up screens, all in the app (owner, 2026-10-09: full parity with the web; this
+  // group used to open the web). Beside the venue's other set-up, with In-person payments drawn
+  // straight after it. Only POS venues have rows here, and an empty group is not drawn, so every
+  // other venue's More tab is unchanged.
+  { key: 'checkoutSetup', title: 'Checkout set-up' },
   { key: 'growth', title: 'Billing & growth' },
   { key: 'network', title: 'Linked venues' },
+  // Help and the app itself come last.
   { key: 'app', title: 'App & support' },
-  // Checkout's set-up screens, all in the app (owner, 2026-10-09: full parity with the web; this
-  // group used to open the web). Only POS venues have rows here, and an empty group is not drawn,
-  // so every other venue's More tab is unchanged.
-  { key: 'checkoutSetup', title: 'Checkout set-up' },
 ];
 
 /**
@@ -266,31 +268,36 @@ export function buildDestinations(ctx: DestinationsContext): Destination[] {
     const canSettings = isAdmin || ctx.posCan?.manage_settings === true;
     const canRecords = isAdmin || ctx.posCan?.view_reports === true;
     if (canSettings) {
-      list.push({ id: 'checkout-settings', label: 'Checkout settings', hint: 'Tills, tips, receipts, discounts, card readers and more', icon: { ios: 'gearshape.fill', android: 'settings', web: 'settings' }, tile: TILE.slate, group: 'checkoutSetup', kind: 'route', target: '/checkout-settings', keywords: ['checkout', 'till', 'tax', 'VAT', 'receipts', 'tips', 'discounts', 'payment types', 'tills', 'cash', 'float', 'card readers', 'business details', 'permissions'] });
-    }
-    if (canRecords) {
-      list.push({ id: 'pos-records', label: 'Records, reports and exports', hint: 'Takings, sales, tip records and CSV files', icon: { ios: 'doc.text.fill', android: 'description', web: 'description' }, tile: TILE.indigo, group: 'checkoutSetup', kind: 'route', target: '/reports?tab=takings', keywords: ['tip records', 'VAT', 'export', 'CSV', 'takings', 'sales', 'cash-ups', 'payouts'] });
-    }
-    if (isAdmin && ctx.shopEnabled === true) {
-      list.push({ id: 'shop-settings', label: 'Online shop settings', hint: 'Opening, delivery, collection and policies', icon: { ios: 'cart.fill', android: 'shopping_cart', web: 'shopping_cart' }, tile: TILE.teal, group: 'checkoutSetup', kind: 'route', target: '/checkout-settings/shop', keywords: ['shop', 'delivery', 'collection', 'zones', 'policies'] });
+      list.push({ id: 'checkout-settings', label: 'Checkout settings', hint: 'Tills, tips, receipts and discounts', icon: { ios: 'gearshape.fill', android: 'settings', web: 'settings' }, tile: TILE.slate, group: 'checkoutSetup', kind: 'route', target: '/checkout-settings', keywords: ['checkout', 'till', 'tax', 'VAT', 'receipts', 'tips', 'discounts', 'payment types', 'tills', 'cash', 'float', 'card readers', 'business details', 'permissions'] });
     }
     if (isAdmin && ctx.vouchersEnabled === true) {
       list.push({ id: 'voucher-settings', label: 'Gift voucher settings', hint: 'Amounts, expiry, terms and selling online', icon: { ios: 'gift.fill', android: 'card_giftcard', web: 'card_giftcard' }, tile: TILE.rose, group: 'checkoutSetup', kind: 'route', target: '/checkout-settings/gift-vouchers', keywords: ['gift voucher', 'gift card', 'import vouchers'] });
     }
+    if (isAdmin && ctx.loyaltyEnabled === true) {
+      list.push({ id: 'loyalty-setup', label: 'Loyalty card set-up', hint: 'Visits, reward and how long it lasts', icon: { ios: 'star.circle.fill', android: 'loyalty', web: 'loyalty' }, tile: TILE.rose, group: 'checkoutSetup', kind: 'route', target: '/checkout-settings/loyalty', keywords: ['loyalty', 'stamps', 'reward'] });
+    }
+    if (isAdmin && ctx.shopEnabled === true) {
+      list.push({ id: 'shop-settings', label: 'Online shop settings', hint: 'Opening, delivery, collection and policies', icon: { ios: 'cart.fill', android: 'shopping_cart', web: 'shopping_cart' }, tile: TILE.teal, group: 'checkoutSetup', kind: 'route', target: '/checkout-settings/shop', keywords: ['shop', 'delivery', 'collection', 'zones', 'policies'] });
+    }
+    if (isAdmin) {
+      list.push({ id: 'commission-rates', label: 'Commission rates', hint: 'Rates for everyone, by category or per person', icon: { ios: 'percent', android: 'percent', web: 'percent' }, tile: TILE.violet, group: 'checkoutSetup', kind: 'route', target: '/checkout-settings/commission', keywords: ['commission', 'pay', 'rates'] });
+    }
+    // Products and stock set-up.
     if (isAdmin) {
       list.push({ id: 'stock-setup', label: 'Suppliers and stock set-up', hint: 'Suppliers, movements, stock reports', icon: { ios: 'shippingbox', android: 'inventory', web: 'inventory' }, tile: TILE.amber, group: 'checkoutSetup', kind: 'route', target: '/stock?tab=suppliers', keywords: ['suppliers', 'vendor', 'movements', 'stock reports', 'bulk'] });
     }
     if (isAdmin || ctx.posCan?.import_products === true) {
       list.push({ id: 'import-products', label: 'Import products', hint: 'Add products from a CSV file', icon: { ios: 'square.and.arrow.down', android: 'upload_file', web: 'upload_file' }, tile: TILE.sky, group: 'checkoutSetup', kind: 'route', target: '/stock/import', keywords: ['import', 'CSV', 'spreadsheet', 'products'] });
     }
-    if (isAdmin && ctx.loyaltyEnabled === true) {
-      list.push({ id: 'loyalty-setup', label: 'Loyalty card set-up', hint: 'Visits, reward and how long it lasts', icon: { ios: 'star.circle.fill', android: 'loyalty', web: 'loyalty' }, tile: TILE.rose, group: 'checkoutSetup', kind: 'route', target: '/checkout-settings/loyalty', keywords: ['loyalty', 'stamps', 'reward'] });
+    // Records last: what has happened, with the files to export.
+    if (canRecords) {
+      list.push({ id: 'pos-records', label: 'Records, reports and exports', hint: 'Takings, sales, tip records and CSV files', icon: { ios: 'doc.text.fill', android: 'description', web: 'description' }, tile: TILE.indigo, group: 'checkoutSetup', kind: 'route', target: '/reports?tab=takings', keywords: ['tip records', 'VAT', 'export', 'CSV', 'takings', 'sales', 'cash-ups', 'payouts'] });
     }
     if (isAdmin) {
-      list.push({ id: 'commission-rates', label: 'Commission rates', hint: 'Rates for everyone, by category or per person', icon: { ios: 'percent', android: 'percent', web: 'percent' }, tile: TILE.violet, group: 'checkoutSetup', kind: 'route', target: '/checkout-settings/commission', keywords: ['commission', 'pay', 'rates'] });
       list.push({ id: 'commission-report', label: 'Commission report', hint: 'What each person earned, with CSV files', icon: { ios: 'chart.bar.fill', android: 'bar_chart', web: 'bar_chart' }, tile: TILE.violet, group: 'checkoutSetup', kind: 'route', target: '/reports?tab=commission', keywords: ['commission', 'pay', 'report', 'export'] });
     }
   }
+
 
   list.push({ id: 'web-dashboard', label: 'Web dashboard', hint: 'Open the full dashboard in your browser', icon: { ios: 'desktopcomputer', android: 'computer', web: 'computer' }, tile: TILE.slate, group: 'app', kind: 'web', target: '/dashboard', external: true });
 
