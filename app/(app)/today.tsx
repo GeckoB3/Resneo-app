@@ -131,8 +131,8 @@ export function SetupChecklistCard() {
   };
 
   /**
-   * Open a step. Tap-through prompts mark themselves complete first, and the
-   * web-only import hub opens in the browser rather than as an in-app route.
+   * Open a step. Tap-through prompts mark themselves complete first, and a step
+   * whose tool lives only on the web opens in the browser rather than as a route.
    */
   const openStep = (step: SetupStep) => {
     if (step.completeOnClick && venueId) {

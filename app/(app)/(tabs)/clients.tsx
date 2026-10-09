@@ -1,7 +1,5 @@
 import { format, parseISO } from 'date-fns';
-import * as ExpoLinking from 'expo-linking';
 import { type Href, useRouter } from 'expo-router';
-import * as WebBrowser from 'expo-web-browser';
 import { useQueryClient } from '@tanstack/react-query';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -45,7 +43,6 @@ import { ListSkeleton } from '@/components/ui/Skeletons';
 import { SwipeRow, type SwipeAction } from '@/components/ui/SwipeRow';
 import { Text } from '@/components/ui/Text';
 import { ApiError, apiFetch } from '@/lib/api/client';
-import { getWebUrl } from '@/lib/env';
 import { clientsScreenTitle } from '@/lib/booking/terminology';
 import { hiddenByIdentityScopeCopy } from '@/lib/guests/identity-scope';
 import { csvCellQuoted } from '@/lib/csv/csv-cell';
@@ -79,18 +76,11 @@ const EXPORT_PAGE_SIZE = 250;
 const DETAIL_BOOKING_HISTORY_LIMIT = 80;
 
 /**
- * Web Data-import hub path. The CSV/Excel import wizard is desktop-grade and a
- * deliberate v1 scope exclusion on mobile (Domain 05) — the Contacts tab surfaces
- * a discoverable link-out to it (admin-only) rather than porting the wizard.
- * Exported for the import link-out test.
+ * The in-app data import wizard (clients and bookings from another system's CSV
+ * or Excel export; web parity with `/dashboard/import`). The Contacts tab offers
+ * it to admins from the action row and the empty directory. Exported for the test.
  */
-export const WEB_IMPORT_PATH = '/dashboard/import';
-
-/** Resolve a staff-dashboard URL on the configured WEB origin (prod fallback). */
-export function webDashboardUrl(path: string): string {
-  const base = getWebUrl();
-  return base ? `${base}${path}` : `https://app.resneo.com${path}`;
-}
+export const IMPORT_ROUTE = '/import' as Href;
 
 const SORT_OPTIONS: { value: string; label: string }[] = [
   { value: 'last_visit_desc', label: 'Recent first' },
@@ -451,17 +441,8 @@ export default function ClientsScreen() {
     [router],
   );
 
-  // Open the web Data-import hub in an in-app browser tab (system-browser
-  // fallback). Admin-gated at the call sites. The native CSV importer is out of
-  // scope for v1 (Domain 05) — this is the discoverable link-out from Contacts.
-  const openImport = useCallback(() => {
-    const url = webDashboardUrl(WEB_IMPORT_PATH);
-    void WebBrowser.openBrowserAsync(url).catch(() =>
-      ExpoLinking.openURL(url).catch(() =>
-        toast.error('Could not open the import tool. Please try again.'),
-      ),
-    );
-  }, [toast]);
+  // Open the in-app import wizard. Admin-gated at the call sites.
+  const openImport = useCallback(() => router.push(IMPORT_ROUTE), [router]);
 
   // Warm the detail cache on press-in so the detail screen paints instantly.
   const prefetchGuest = useCallback(

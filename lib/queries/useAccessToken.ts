@@ -70,3 +70,12 @@ export function useAccessToken(): string | null {
 
   return accessToken;
 }
+
+/**
+ * The last known access token, read at call time. For helpers that hold one long-lived object
+ * across token refreshes (the import wizard's API): they keep the cache current by calling
+ * `useAccessToken()` themselves, then read this whenever they send a request.
+ */
+export function currentAccessToken(): string | null {
+  return cachedAccessToken;
+}

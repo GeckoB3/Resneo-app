@@ -1,12 +1,16 @@
 /**
- * Clients-05 (Medium): useImportSessions / useUndoImportSession + isAuthGap.
+ * Clients-05: useImportSessions / useUndoImportSession / useStartImportSession /
+ * useDeleteImportSession + isAuthGap. The import routes take the Bearer token and are
+ * admin only.
  *
  * Covers:
  *  - isAuthGap: true ONLY for ApiError 401/403; false for other ApiErrors,
- *    plain Errors, and non-errors (drives the venue-profile read-only fallback);
+ *    plain Errors, and non-errors (a non-admin, not something to retry);
  *  - useImportSessions: GETs `/api/import/sessions` with the Bearer token and
  *    returns the `{ sessions }` payload; an auth-gap (401) is NOT retried;
- *  - useUndoImportSession: POSTs `/api/import/sessions/[id]/undo` (id encoded).
+ *  - useUndoImportSession: POSTs `/api/import/sessions/[id]/undo` (id encoded);
+ *  - useStartImportSession: POSTs `/api/import/sessions`;
+ *  - useDeleteImportSession: DELETEs `/api/import/sessions/[id]`.
  *
  * `apiFetch` is stubbed; the real ApiError + isAuthGap stay (pure). jest hoists
  * mock factories, so closed-over vars are `mock*`.
@@ -31,7 +35,9 @@ jest.mock('@/lib/api/client', () => {
 import { ApiError } from '@/lib/api/client';
 import {
   isAuthGap,
+  useDeleteImportSession,
   useImportSessions,
+  useStartImportSession,
   useUndoImportSession,
 } from '@/lib/queries/useImportSessions';
 
@@ -49,7 +55,7 @@ beforeEach(() => {
 });
 
 describe('isAuthGap', () => {
-  it('is true for ApiError 401 and 403 (cookie-only backend, not reachable via Bearer)', () => {
+  it('is true for ApiError 401 and 403 (no session, or not an admin)', () => {
     expect(isAuthGap(new ApiError('Unauthorised', 401))).toBe(true);
     expect(isAuthGap(new ApiError('Forbidden', 403))).toBe(true);
   });
@@ -100,6 +106,39 @@ describe('useUndoImportSession', () => {
     const [path, opts] = mockApiFetch.mock.calls[0];
     expect(path).toBe('/api/import/sessions/sess%201/undo');
     expect((opts as { method?: string }).method).toBe('POST');
+    expect((opts as { accessToken?: string }).accessToken).toBe(mockToken);
+  });
+});
+
+describe('useStartImportSession', () => {
+  it('POSTs /api/import/sessions and answers the new id', async () => {
+    mockApiFetch.mockResolvedValueOnce({ id: 'new-1', status: 'uploading' });
+
+    const { result } = await renderHook(() => useStartImportSession(), { wrapper: makeWrapper() });
+    let created: { id: string } | undefined;
+    await act(async () => {
+      created = await result.current.mutateAsync();
+    });
+
+    const [path, opts] = mockApiFetch.mock.calls[0];
+    expect(path).toBe('/api/import/sessions');
+    expect((opts as { method?: string }).method).toBe('POST');
+    expect(created?.id).toBe('new-1');
+  });
+});
+
+describe('useDeleteImportSession', () => {
+  it('DELETEs the session with its id URL-encoded', async () => {
+    mockApiFetch.mockResolvedValueOnce({ ok: true });
+
+    const { result } = await renderHook(() => useDeleteImportSession(), { wrapper: makeWrapper() });
+    await act(async () => {
+      await result.current.mutateAsync('sess 2');
+    });
+
+    const [path, opts] = mockApiFetch.mock.calls[0];
+    expect(path).toBe('/api/import/sessions/sess%202');
+    expect((opts as { method?: string }).method).toBe('DELETE');
     expect((opts as { accessToken?: string }).accessToken).toBe(mockToken);
   });
 });

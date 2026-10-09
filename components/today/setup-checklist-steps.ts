@@ -60,9 +60,8 @@ export interface SetupStep {
   /** In-app route. Omitted for web-only steps, which carry {@link webPath}. */
   route?: Href;
   /**
-   * Web-dashboard path opened in the browser instead of an in-app route (the app
-   * has no import tool; it links out like the More tab's "Import contacts"
-   * destination, which uses the same `kind: 'web'` convention).
+   * Web-dashboard path opened in the browser instead of an in-app route, for a
+   * step whose tool lives only on the web (none at present).
    */
   webPath?: string;
   /** Marks the step complete once its row is tapped (see clicked-steps storage). */
@@ -102,9 +101,8 @@ export const POST_ONBOARDING_SETUP_STEPS: SetupStep[] = [
     label: 'Import your bookings and customers',
     description:
       'Bring your existing bookings and customer list into ResNeo so nothing is left behind.',
-    // The import tool is web-only; open the web hub (same target as the More
-    // tab's "Import contacts").
-    webPath: '/dashboard/import',
+    // The in-app import wizard (same target as the More tab's "Import contacts").
+    route: '/import' as Href,
     completeOnClick: true,
   },
 ];

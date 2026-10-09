@@ -60,7 +60,8 @@ const SERVER_INVALID_WEBSITE = 'Invalid website URL';
 
 /** Web Profile-tab hand-offs (tools that still live on the web dashboard). */
 const WEB_TABLE_MGMT_PATH = '/dashboard/availability?tab=table';
-const WEB_IMPORT_PATH = '/dashboard/import';
+/** The in-app data import wizard (web parity with `/dashboard/import`). */
+const IMPORT_ROUTE = '/import' as Href;
 
 /** Resolve a staff-dashboard URL on the configured WEB origin (prod fallback). */
 function webDashboardUrl(path: string): string {
@@ -918,24 +919,23 @@ export default function VenueProfileScreen() {
             </>
           ) : null}
 
-          {/* Data import — web Profile tab parity (admin-only; tool lives on the web) */}
+          {/* Data import (web Profile tab parity, admin-only): the in-app wizard. */}
           <SectionHeader title="Data import" />
 
           <Text variant="bodySmall" tone="secondary">
-            Import clients and bookings from CSV exports of your previous booking system. The
-            import tool (column mapping, validation, 24-hour undo) runs on the web dashboard.
+            Bring in your clients and bookings from a CSV or Excel export of your previous booking
+            system. We match the columns, check every row, and you can undo the whole import for
+            24 hours.
           </Text>
           <Button
-            label="Open Data Import on the web"
+            label="Open Data import"
             variant="secondary"
             fullWidth
-            onPress={() => openWeb(WEB_IMPORT_PATH)}
+            onPress={() => router.push(IMPORT_ROUTE)}
           />
 
-          {/* Read-only recent-imports list + 24h-undo window (Domain 05). The
-              backend list/undo routes are cookie-only, so this degrades to a
-              "manage on the web" note when unreachable with a Bearer token. */}
-          <RecentImportsSection onOpenWeb={openWeb} webImportPath={WEB_IMPORT_PATH} />
+          {/* Recent imports and the 24-hour Undo, run in the app. */}
+          <RecentImportsSection onOpenHub={() => router.push(IMPORT_ROUTE)} />
 
           {/* Feedback */}
           {error ? (

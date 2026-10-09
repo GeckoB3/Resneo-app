@@ -2,16 +2,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { ApiError, apiFetch } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
+import type { ImportUndoSummary } from '@/lib/import/undo-summary';
 import { keyScope, queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 
 /**
  * One row from `GET /api/import/sessions`. Shape mirrors the web `ImportHub`
  * `SessionRow` plus the extra columns the route selects
- * (`C:\Resneo\src\app\api\import\sessions\route.ts`):
- *   id, status, detected_platform, total_rows, imported_clients,
- *   imported_bookings, skipped_rows, updated_existing, undo_available_until,
- *   undone_at, created_at, completed_at, ai_mapping_used.
+ * (`C:\Resneo\src\app\api\import\sessions\route.ts`).
  */
 export interface ImportSessionRow {
   id: string;
@@ -27,6 +25,10 @@ export interface ImportSessionRow {
   created_at: string;
   completed_at: string | null;
   ai_mapping_used: boolean | null;
+  /** What an Undo of this import kept on purpose, when it kept anything (QA G-33). */
+  undo_summary?: ImportUndoSummary | null;
+  /** An Undo stopped part-way: the counts no longer describe what is in the venue. */
+  undo_incomplete?: boolean;
 }
 
 export interface ImportSessionsResponse {
@@ -34,34 +36,31 @@ export interface ImportSessionsResponse {
 }
 
 /**
- * AUTH NOTE (Domain 05, R7): `GET /api/import/sessions` and the undo POST are
- * gated by `requireImportAdmin()` → `createClient()` (cookie-only) on the
- * backend, with NO `Authorization: Bearer` support. The app authenticates
- * exclusively via Bearer, so these endpoints currently answer 401 from mobile.
- * This is treated as an EXPECTED state, not an error: the venue-profile surface
- * shows a read-only "manage on the web" fallback when the list can't load with a
- * Bearer token. If the route is later migrated to `createRouteHandlerClient*`
- * (Bearer-capable), the same hook will start returning data with no UI change.
- *
- * `isAuthGap` lets the UI distinguish "not reachable with a Bearer token"
- * (401/403) from a genuine fetch failure (network/5xx → retry makes sense).
+ * AUTH: every `/api/import/**` route takes the app's Bearer token (the web's
+ * `requireImportAdmin` builds its client from `createRouteHandlerClientFromHeaders`)
+ * and is admin only. A 403 here means the signed-in staff member is not an admin;
+ * a 401 that survives the refresh-and-retry means the session is gone. Both are
+ * deterministic, so neither is retried, and screens say so rather than "try again".
  */
 export function isAuthGap(error: unknown): boolean {
   return error instanceof ApiError && (error.status === 401 || error.status === 403);
 }
 
-/** GET /api/import/sessions — read-only recent imports (admin; cookie-only backend, see note). */
+export function importSessionsKey(accessToken: string | null) {
+  return [...queryKeys.all, 'importSessions', keyScope(accessToken)] as const;
+}
+
+/** GET /api/import/sessions: past imports, newest first (admin). */
 export function useImportSessions(options?: { enabled?: boolean }) {
   const accessToken = useAccessToken();
   const enabled =
     (options?.enabled ?? true) && isBackendConfigured() && accessToken !== null;
 
   return useQuery({
-    queryKey: [...queryKeys.all, 'importSessions', keyScope(accessToken)] as const,
+    queryKey: importSessionsKey(accessToken),
     enabled,
     staleTime: 30_000,
-    // The auth gap (401/403) is deterministic — never retry it; one attempt is
-    // enough to fall back to the web link-out. Network/5xx still get one retry.
+    // 401/403 are deterministic: one attempt. Network/5xx still get one retry.
     retry: (failureCount, error) => !isAuthGap(error) && failureCount < 1,
     queryFn: async (): Promise<ImportSessionsResponse> => {
       if (!accessToken) {
@@ -73,15 +72,61 @@ export function useImportSessions(options?: { enabled?: boolean }) {
 }
 
 /**
- * POST /api/import/sessions/[id]/undo — revert a completed import within 24h.
- *
- * Exposed for completeness, but the same cookie-only auth gap applies: the
- * route uses `requireImportAdmin()` (no Bearer), so this will 401 from the app.
- * The venue-profile UI therefore renders Undo as a web link-out rather than
- * calling this directly. Wired here so a future Bearer migration is a one-line
- * UI change.
+ * POST /api/import/sessions/[id]/undo: take out a completed import within 24 hours.
+ * The answer carries what was kept on purpose (`undo_summary`). The list is refreshed
+ * whether or not it worked: an Undo that stopped part-way has still changed it (QA G-33).
  */
 export function useUndoImportSession() {
+  const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (
+      sessionId: string,
+    ): Promise<{ ok: boolean; undo_summary?: ImportUndoSummary | null }> => {
+      if (!accessToken) {
+        throw new Error('Missing access token');
+      }
+      return apiFetch<{ ok: boolean; undo_summary?: ImportUndoSummary | null }>(
+        `/api/import/sessions/${encodeURIComponent(sessionId)}/undo`,
+        { accessToken, method: 'POST', timeoutMs: 120_000 },
+      );
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: importSessionsKey(accessToken) });
+      // An undo reverts created clients and bookings: refresh those too.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.guests.all() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.bookings.all() });
+    },
+  });
+}
+
+/** POST /api/import/sessions: start a new import. Answers the new session's id. */
+export function useStartImportSession() {
+  const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (): Promise<{ id: string; status: string }> => {
+      if (!accessToken) {
+        throw new Error('Missing access token');
+      }
+      return apiFetch<{ id: string; status: string }>('/api/import/sessions', {
+        accessToken,
+        method: 'POST',
+      });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: importSessionsKey(accessToken) });
+    },
+  });
+}
+
+/**
+ * DELETE /api/import/sessions/[id]: take an import off the list and delete its uploaded
+ * files. Clients and bookings it already wrote stay (Undo is what removes those).
+ */
+export function useDeleteImportSession() {
   const accessToken = useAccessToken();
   const queryClient = useQueryClient();
 
@@ -90,18 +135,13 @@ export function useUndoImportSession() {
       if (!accessToken) {
         throw new Error('Missing access token');
       }
-      return apiFetch<{ ok: boolean }>(
-        `/api/import/sessions/${encodeURIComponent(sessionId)}/undo`,
-        { accessToken, method: 'POST' },
-      );
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({
-        queryKey: [...queryKeys.all, 'importSessions', keyScope(accessToken)],
+      return apiFetch<{ ok: boolean }>(`/api/import/sessions/${encodeURIComponent(sessionId)}`, {
+        accessToken,
+        method: 'DELETE',
       });
-      // A successful undo reverts created guests/bookings — refresh those too.
-      void queryClient.invalidateQueries({ queryKey: queryKeys.guests.all() });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.bookings.all() });
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: importSessionsKey(accessToken) });
     },
   });
 }

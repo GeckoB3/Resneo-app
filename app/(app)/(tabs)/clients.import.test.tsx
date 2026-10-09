@@ -1,43 +1,36 @@
 /**
- * Clients-05 (High, v1 = link-out): the "Import contacts" link-out from the
- * Contacts tab.
+ * Clients-05: "Import contacts" on the Contacts tab opens the in-app data import
+ * wizard (`/import`, web parity with `/dashboard/import`).
  *
- * The CSV/Excel import wizard is a deliberate mobile scope exclusion; instead the
- * Contacts tab surfaces a discoverable, admin-only link-out to the web Data-import
- * hub. These tests pin:
- *   - the admin sort/action row shows an "Import contacts" chip; pressing it opens
- *     the resolved web URL in an in-app browser (with a Linking fallback);
- *   - non-admins do NOT see the chip;
- *   - `webDashboardUrl` builds the URL from the configured web origin, falling back
- *     to the production origin.
+ * These tests pin:
+ *   - the admin action row shows an "Import contacts" chip; pressing it pushes
+ *     the in-app import route (no browser);
+ *   - the empty directory offers the same action to admins;
+ *   - non-admins see neither.
  *
  * The screen pulls many data hooks/providers; each is mocked so the render is
- * about the link-out, not the directory. jest hoists mock factories above imports,
- * so closed-over vars are prefixed `mock*`.
+ * about the import entry point, not the directory. jest hoists mock factories
+ * above imports, so closed-over vars are prefixed `mock*`.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import type { ReactElement, ReactNode } from 'react';
 
-// --- In-app browser + system-browser fallback ------------------------------
+// --- No browser is opened any more: fail loudly if one is ------------------
 const mockOpenBrowserAsync = jest.fn((..._args: unknown[]) => Promise.resolve({ type: 'opened' }));
 jest.mock('expo-web-browser', () => ({
   openBrowserAsync: (...args: unknown[]) => mockOpenBrowserAsync(...args),
 }));
-const mockExpoOpenURL = jest.fn((..._args: unknown[]) => Promise.resolve());
-jest.mock('expo-linking', () => ({
-  openURL: (...args: unknown[]) => mockExpoOpenURL(...args),
-}));
 
-// --- env: a configured web origin so the URL is deterministic --------------
 jest.mock('@/lib/env', () => ({
   getWebUrl: () => 'https://staff.example.com',
   isBackendConfigured: () => true,
 }));
 
 // --- expo-router ------------------------------------------------------------
+const mockPush = jest.fn();
 jest.mock('expo-router', () => ({
-  useRouter: () => ({ push: jest.fn() }),
+  useRouter: () => ({ push: mockPush }),
 }));
 
 // --- react-native-safe-area-context (Screen uses insets) -------------------
@@ -105,7 +98,7 @@ jest.mock('@/providers/VenueProvider', () => ({
   }),
 }));
 
-import ClientsScreen, { WEB_IMPORT_PATH, webDashboardUrl } from '@/app/(app)/(tabs)/clients';
+import ClientsScreen, { IMPORT_ROUTE } from '@/app/(app)/(tabs)/clients';
 
 function withQueryClient(ui: ReactElement) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -123,31 +116,32 @@ async function press(getEl: () => Parameters<typeof fireEvent.press>[0]) {
 
 beforeEach(() => {
   mockOpenBrowserAsync.mockClear();
-  mockExpoOpenURL.mockClear();
+  mockPush.mockClear();
   mockVenue = { id: 'venue-1', current_user_role: 'admin' };
 });
 
-describe('Contacts tab — Import link-out', () => {
-  it('shows an admin "Import contacts" chip that opens the web import hub', async () => {
+describe('Contacts tab: Import contacts', () => {
+  it('shows an admin "Import contacts" chip that opens the in-app import wizard', async () => {
     await withQueryClient(<ClientsScreen />);
 
     // The action-row chip + the empty-state action both read "Import contacts".
     const matches = screen.getAllByText('Import contacts');
     expect(matches.length).toBeGreaterThanOrEqual(1);
 
-    // Pressing the first (the chip) opens the resolved web URL in-app.
     await press(() => matches[0]);
-    expect(mockOpenBrowserAsync).toHaveBeenCalledWith(
-      'https://staff.example.com/dashboard/import',
-    );
+    expect(mockPush).toHaveBeenCalledWith('/import');
+    expect(IMPORT_ROUTE).toBe('/import');
+    expect(mockOpenBrowserAsync).not.toHaveBeenCalled();
   });
 
-  it('also surfaces the link-out from the empty-state action for admins', async () => {
+  it('also offers it from the empty-state action for admins', async () => {
     await withQueryClient(<ClientsScreen />);
 
-    // Empty directory + no search/filter → both the chip AND the EmptyState
-    // action are present, so there are two "Import contacts" affordances.
-    expect(screen.getAllByText('Import contacts').length).toBe(2);
+    // Empty directory + no search/filter: both the chip AND the EmptyState action.
+    const matches = screen.getAllByText('Import contacts');
+    expect(matches.length).toBe(2);
+    await press(() => matches[1]);
+    expect(mockPush).toHaveBeenCalledWith('/import');
   });
 
   it('hides the import affordance from non-admins', async () => {
@@ -155,11 +149,5 @@ describe('Contacts tab — Import link-out', () => {
     await withQueryClient(<ClientsScreen />);
 
     expect(screen.queryByText('Import contacts')).toBeNull();
-  });
-});
-
-describe('webDashboardUrl', () => {
-  it('builds the URL on the configured web origin', () => {
-    expect(webDashboardUrl(WEB_IMPORT_PATH)).toBe('https://staff.example.com/dashboard/import');
   });
 });
