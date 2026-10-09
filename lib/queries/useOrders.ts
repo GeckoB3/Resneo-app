@@ -36,7 +36,28 @@ export function useShopOrders(params: { tab: OrderTab; q: string }, options: { e
   });
 }
 
-/** How many paid orders are new (the Orders tile's count). A server before Pass 6a answers nothing. */
+/** The badge's two counts: new paid orders, and orders still to finish. */
+export interface OrdersBadgeCounts {
+  newCount: number;
+  /** New, preparing, ready or dispatched (2026-10-09); `newCount` when the server does not send it. */
+  unfinishedCount: number;
+}
+
+/**
+ * `GET /api/venue/shop/orders/badge`: `new_count` (the Orders tile's count) and `unfinished_count`,
+ * the orders still to finish, which keeps the tile while orders are preparing, ready or dispatched.
+ * A server before 2026-10-09 sends only `new_count`, which stands in for both. Null from a server
+ * before Pass 6a, or when nothing usable comes back.
+ */
+export function readOrdersBadge(res: { new_count?: unknown; unfinished_count?: unknown } | null | undefined): OrdersBadgeCounts | null {
+  const isCount = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0;
+  const newCount = isCount(res?.new_count) ? res.new_count : null;
+  const unfinished = isCount(res?.unfinished_count) ? res.unfinished_count : null;
+  if (newCount === null && unfinished === null) return null;
+  return { newCount: newCount ?? 0, unfinishedCount: unfinished ?? newCount ?? 0 };
+}
+
+/** The Orders tile's counts (`readOrdersBadge`). A server before Pass 6a answers nothing. */
 export function useOrdersBadge(options: { enabled?: boolean } = {}) {
   const { accessToken, enabled } = usePosGate(options.enabled ?? true);
   return useQuery({
@@ -45,10 +66,10 @@ export function useOrdersBadge(options: { enabled?: boolean } = {}) {
     staleTime: 30_000,
     refetchInterval: 120_000,
     retry: false,
-    queryFn: async (): Promise<number | null> => {
+    queryFn: async (): Promise<OrdersBadgeCounts | null> => {
       try {
-        const res = await posFetch<{ new_count?: number }>(shopPaths.badge, { accessToken: accessToken! });
-        return typeof res.new_count === 'number' ? res.new_count : null;
+        const res = await posFetch<{ new_count?: number; unfinished_count?: number }>(shopPaths.badge, { accessToken: accessToken! });
+        return readOrdersBadge(res);
       } catch (error) {
         if (error instanceof ApiError && [403, 404].includes(error.status)) return null;
         throw error;
@@ -140,8 +161,9 @@ export function useOrderWrite(id: string) {
 
 /**
  * Whether More offers Orders, and its count of new orders (UX spec §2.1, §13.7): Checkout on, the
- * login holds `manage_orders` (from the POS bootstrap), and the shop is on or new paid orders are
- * waiting. Nothing is asked at a venue without Checkout.
+ * login holds `manage_orders` (from the POS bootstrap), and the shop is on or orders are still to
+ * finish (new, preparing, ready or dispatched: `unfinished_count`). The count shown is the new
+ * ones. Nothing is asked at a venue without Checkout.
  */
 export function useOrdersTile(venue: Pick<VenueBootstrap, 'feature_flags'> | null | undefined): {
   enabled: boolean;
@@ -151,6 +173,8 @@ export function useOrdersTile(venue: Pick<VenueBootstrap, 'feature_flags'> | nul
   const boot = usePosBootstrap({ enabled: posOn });
   const canOrders = posOn && canPos(boot.data, 'manage_orders');
   const badge = useOrdersBadge({ enabled: canOrders });
-  const newCount = badge.data ?? null;
-  return { enabled: canOrders && (isShopEnabled(venue) || (newCount ?? 0) > 0), newCount };
+  const newCount = badge.data?.newCount ?? null;
+  // With the shop off the tile stays while any order is still to finish, not only new ones.
+  const unfinished = badge.data?.unfinishedCount ?? 0;
+  return { enabled: canOrders && (isShopEnabled(venue) || unfinished > 0), newCount };
 }

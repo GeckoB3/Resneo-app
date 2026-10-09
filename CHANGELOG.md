@@ -278,11 +278,11 @@ and Pass LC for app step 4) on the server.
     stock, with the return window warning; record a return, goods received and proof of sending.
     Items, collection or delivery, returns, payments and refunds, the customer, messages and the
     timeline follow. Every refusal shows the server's sentence.
-  - *The packing slip* opens on the web, where it prints (there is no slip PDF route yet).
+  - *The packing slip* opens on the web, where it prints (since 2026-10-09 a PDF, below).
   - *The `shop_order_new` push* opens the order (another business's says to switch first). An
     Android "New online orders" channel with the order alert sound bundled since 1.1.2 is created
-    over the air; the web still sends these pushes on `bookings-new`, so it is unused until the
-    web names it.
+    over the air; the web sent these pushes on `bookings-new` until 2026-10-09, when it named the
+    channel (below).
 - **The web's contract changes of 2026-10-09 (`Docs/MOBILE_API.md`, POS and retail).**
   - *Stock value tiles.* `value_cost_pence` and `value_retail_pence` are null for staff without
     `view_reports`; the "Stock value at cost" tile is hidden then, where it read £0.00.
@@ -312,6 +312,10 @@ and Pass LC for app step 4) on the server.
     sheet to print or send it (`packing-slip-{number}.pdf`), as the X and Z reports are shared. A
     server without that route answers 404, and the slip opens on the web page as before; any
     other failure says "We couldn't get the packing slip. Check your connection and try again."
+  - *The Orders tile* stays while orders are still to finish (new, preparing, ready or
+    dispatched), from the badge's new `unfinished_count`; with the shop off it used to go once
+    nothing was new. A server that sends only `new_count` is read as before. The tile's count is
+    still the new orders.
 
 ---
 
