@@ -45,6 +45,7 @@ jest.mock('@/components/pos/SavedCards', () => {
 });
 
 import { PaySheet } from '@/components/pos/PaySheet';
+import { ApiError } from '@/lib/api/client';
 import { makeLine, makeSale } from '@/lib/pos/test-sale';
 import type { PosBootstrap } from '@/types/pos';
 
@@ -108,6 +109,36 @@ describe('PaySheet', () => {
     expect(String(input.body.client_request_id).length).toBeGreaterThanOrEqual(8);
     expect(onPaid).toHaveBeenCalledWith({ changePence: 450, method: 'cash' });
     expect(screen.getByText('Give £4.50 change')).toBeTruthy();
+  });
+
+  it("shows the server's sentence for a reused request id and tries again with a new id", async () => {
+    const sentence = 'That request was already used for a different payment, so nothing new was taken. Refresh the sale and try again.';
+    const send = jest
+      .fn()
+      .mockRejectedValueOnce(new ApiError(sentence, 409, { error: sentence, code: 'CONFLICT', reason: 'request_reused' }))
+      .mockRejectedValueOnce(new ApiError('Network request failed', 0))
+      .mockResolvedValue({ sale, change_given_pence: 0 });
+    await renderSheet({ send });
+    await act(async () => {
+      fireEvent.press(screen.getByText('Cash'));
+    });
+    await act(async () => {
+      fireEvent.changeText(screen.getByLabelText('Cash handed over'), '35.50');
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByText('Record £35.50 in cash'));
+    });
+    expect(screen.getByText(sentence)).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByText('Record £35.50 in cash'));
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByText('Record £35.50 in cash'));
+    });
+    const ids = send.mock.calls.map((c) => (c[0] as { body: { client_request_id: string } }).body.client_request_id);
+    // The refused id is never sent again; a lost answer keeps its id for the retry.
+    expect(ids[1]).not.toBe(ids[0]);
+    expect(ids[2]).toBe(ids[1]);
   });
 
   it('takes part of the bill and says what is left', async () => {

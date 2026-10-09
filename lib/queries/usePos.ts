@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tansta
 
 import { ApiError } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
-import { posFetch, posPaths, staleSaleFrom, type PosMethod } from '@/lib/pos/api';
+import { isRequestReused, posFetch, posPaths, staleSaleFrom, type PosMethod } from '@/lib/pos/api';
 import { isPosEnabled } from '@/lib/pos/pos-enabled';
 import { queryKeys } from '@/lib/queries/keys';
 import { scanCandidates } from '@/lib/retail/scan';
@@ -261,10 +261,13 @@ export function useSaleWrite(saleId: string) {
       }
       invalidateAfterSaleWrite(queryClient, { money: input.money === true });
     },
-    onError: (_error, input) => {
+    onError: (error, input) => {
       // A money write that timed out may still have landed: read the sale again so the screen
       // shows the truth before anyone tries a second time (the request id makes a retry safe).
-      if (input.money) void queryClient.invalidateQueries({ queryKey: queryKeys.pos.sale(accessToken, saleId) });
+      // A reused request id means the sale moved on, so it is read again whatever the write was.
+      if (input.money || isRequestReused(error)) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.pos.sale(accessToken, saleId) });
+      }
     },
   });
 }

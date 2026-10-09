@@ -11,6 +11,15 @@ export function productLabel(productName: string | null | undefined, optionName:
   return [productName, optionName].filter((x) => typeof x === 'string' && x.trim()).join(', ') || 'Product';
 }
 
+/**
+ * A stock value tile's pence, rounded to whole pence, or null when the tile should not show. The
+ * server sends the two value tiles as null to staff without `view_reports` (2026-10-09), and those
+ * staff must see no tile rather than a value of nothing.
+ */
+export function stockValueTilePence(value: number | null | undefined): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.round(value) : null;
+}
+
 /** A whole number as typed, with an optional minus sign; null for anything else. */
 export function parseWhole(raw: string): number | null {
   const s = raw.trim();

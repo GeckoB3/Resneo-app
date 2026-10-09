@@ -218,6 +218,21 @@ export function saleFromErrorBody(error: unknown): PosSale | null {
   return body?.sale && typeof body.sale === 'object' && typeof body.sale.id === 'string' ? body.sale : null;
 }
 
+/**
+ * A request id sent again for something different (2026-10-09): 409 `CONFLICT` with
+ * `reason: 'request_reused'` and a sentence. Nothing was taken and the sale moved on, so the screen
+ * shows the sentence, reads the sale again and makes a new id for the next try. It is a refusal,
+ * never a lost answer: sending the same id again would only be refused again. An older server
+ * named it `POS_REQUEST_REUSED`.
+ */
+export function isRequestReused(error: unknown): boolean {
+  if (!(error instanceof ApiError)) return false;
+  const code = apiErrorCode(error);
+  if (code === 'POS_REQUEST_REUSED') return true;
+  const body = error.body as { reason?: unknown } | undefined;
+  return error.status === 409 && code === 'CONFLICT' && body?.reason === 'request_reused';
+}
+
 /** `POS_BOOKING_ON_OTHER_SALE` names the other sale. */
 export function otherSaleIdFrom(error: unknown): string | null {
   if (apiErrorCode(error) !== 'POS_BOOKING_ON_OTHER_SALE' || !(error instanceof ApiError)) return null;

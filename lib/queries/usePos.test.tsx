@@ -183,6 +183,22 @@ describe('useSaleWrite', () => {
     expect((client.getQueryData(queryKeys.pos.sale(mockToken, 'sale-1')) as PosSale).version).toBe(7);
   });
 
+  it("reads the sale again after a reused request id (409 CONFLICT, request_reused) and passes the server's sentence through", async () => {
+    mockApiFetch.mockRejectedValue(
+      new ApiError('That request was already used for a different payment, so nothing new was taken. Refresh the sale and try again.', 409, { error: 'That request was already used for a different payment, so nothing new was taken. Refresh the sale and try again.', code: 'CONFLICT', reason: 'request_reused' }),
+    );
+    const { wrapper, client } = setup();
+    const invalidate = jest.spyOn(client, 'invalidateQueries');
+    const { result } = await renderHook(() => useSaleWrite('sale-1'), { wrapper });
+    await expect(
+      act(async () => {
+        await result.current.mutateAsync({ action: 'pay-links', body: { version: 3, client_request_id: 'req-1' } });
+      }),
+    ).rejects.toThrow('That request was already used for a different payment, so nothing new was taken. Refresh the sale and try again.');
+    await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.pos.sale(mockToken, 'sale-1') }));
+    expect(mockApiFetch).toHaveBeenCalledTimes(1);
+  });
+
   it("passes other refusals through with the server's sentence", async () => {
     mockApiFetch.mockRejectedValue(
       new ApiError("That's more than your 10% discount limit.", 403, {

@@ -29,6 +29,7 @@ import {
   voucherLastDay,
   voucherLineRefundState,
   voucherSellLine,
+  voucherFrozenCopyId,
   voucherStatusCopyId,
 } from '@/lib/pos/voucher-math';
 import { makeLine, makePayment, makeSale } from '@/lib/pos/test-sale';
@@ -168,6 +169,13 @@ describe('paying with a voucher or credit', () => {
     expect(voucherBlock('expired')).toBe('expired');
     expect(voucherStatusCopyId('frozen')).toBe('vch.status.frozen');
     expect(voucherStatusCopyId('active')).toBe('vch.status.active');
+  });
+
+  it('says "payment dispute" only for a dispute hold (the look-up on_hold, 2026-10-09)', () => {
+    expect(voucherFrozenCopyId('dispute')).toBe('err.VOUCHER_FROZEN.dispute');
+    expect(voucherFrozenCopyId('staff')).toBe('err.VOUCHER_FROZEN');
+    expect(voucherFrozenCopyId(null)).toBe('err.VOUCHER_FROZEN');
+    expect(voucherFrozenCopyId(undefined)).toBe('err.VOUCHER_FROZEN');
   });
 
   it('locks the client while credit is used and not refunded', () => {

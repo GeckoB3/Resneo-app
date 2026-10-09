@@ -17,7 +17,7 @@ import { ListSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { canPos } from '@/lib/pos/pos-enabled';
-import { saleStatusCopyId } from '@/lib/pos/sale-math';
+import { queueChips, saleStatusCopyId } from '@/lib/pos/sale-math';
 import { businessDateLabel, isLeftOpen, tillsInOrder } from '@/lib/pos/till-math';
 import { useMyCommission, usePosBootstrap, usePosEnabled, usePosQueue, usePosSaleList } from '@/lib/queries/usePos';
 import { useTillSessions } from '@/lib/queries/useTill';
@@ -202,13 +202,13 @@ function QueueCard({
           <Badge label={status} tone="accent" />
         </View>
         <View style={styles.chips}>
-          {row.price_unknown ? <Badge label={t('queue.chip.noPrice')} /> : null}
-          {row.deposit_paid_pence > 0 ? (
-            <Badge label={t('queue.chip.deposit', { amount: money(row.deposit_paid_pence) })} />
-          ) : null}
-          {row.open_sale_number_label ? (
-            <Badge label={t('queue.chip.openSale', { saleNo: row.open_sale_number_label })} tone="warning" />
-          ) : null}
+          {queueChips(row).map((chip) => (
+            <Badge
+              key={chip.id}
+              label={t(chip.id, { amount: chip.amountPence !== undefined ? money(chip.amountPence) : '', saleNo: chip.saleNo ?? '' })}
+              tone={chip.tone}
+            />
+          ))}
         </View>
         <View style={styles.rowTop}>
           <Text variant="bodyMedium" style={styles.flex}>

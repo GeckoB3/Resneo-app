@@ -396,6 +396,11 @@ export interface PosVoucherSummary {
   issued_at?: string | null;
   expires_at: string | null;
   recipient_name?: string | null;
+  /**
+   * Why a frozen voucher is on hold (the look-up, 2026-10-09): `dispute` for a payment dispute,
+   * `staff` for a hold an admin put on; null when not on hold. Older servers send nothing.
+   */
+  on_hold?: 'dispute' | 'staff' | null;
 }
 
 /** `GET /api/venue/guests/[guestId]/stored-value`: the client's credit and their vouchers. */
@@ -477,6 +482,11 @@ export interface PosQueueRow {
   balance_due_pence: number;
   open_sale_id: string | null;
   open_sale_number_label: string | null;
+  /**
+   * The client has a loyalty reward ready (`queue.chip.reward`, 2026-10-09). The server sends it
+   * only while loyalty is on; an older server leaves it out, which reads as false.
+   */
+  reward_ready?: boolean;
 }
 
 export interface PosQueueResponse {

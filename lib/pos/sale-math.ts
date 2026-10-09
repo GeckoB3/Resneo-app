@@ -1,6 +1,6 @@
 import type { PosCopyId } from '@/lib/pos/copy';
 import { isStoredValueMethod, refundableOf } from '@/lib/pos/voucher-math';
-import type { PosPayment, PosSale, PosSaleLine, PosTipSettings } from '@/types/pos';
+import type { PosPayment, PosQueueRow, PosSale, PosSaleLine, PosTipSettings } from '@/types/pos';
 
 /**
  * Checkout's arithmetic in the app: the payment panel, tips, the refund builder, the discount
@@ -376,6 +376,30 @@ export function saleStatusCopyId(sale: Pick<PosSale, 'status' | 'parked'>): PosC
     default:
       return 'sale.status.expired';
   }
+}
+
+/** One chip on a "Ready to check out" row. */
+export interface QueueChip {
+  id: 'queue.chip.noPrice' | 'queue.chip.deposit' | 'queue.chip.openSale' | 'queue.chip.reward';
+  tone: 'neutral' | 'warning' | 'success';
+  amountPence?: number;
+  saleNo?: string;
+}
+
+/**
+ * The chips on a "Ready to check out" row, in the web queue's order: no price yet, deposit paid,
+ * the open sale, and "Reward ready" when the client has a loyalty reward waiting (`reward_ready`,
+ * true only from the server, so an older server shows no chip).
+ */
+export function queueChips(
+  row: Pick<PosQueueRow, 'price_unknown' | 'deposit_paid_pence' | 'open_sale_number_label' | 'reward_ready'>,
+): QueueChip[] {
+  const chips: QueueChip[] = [];
+  if (row.price_unknown) chips.push({ id: 'queue.chip.noPrice', tone: 'neutral' });
+  if (row.deposit_paid_pence > 0) chips.push({ id: 'queue.chip.deposit', tone: 'neutral', amountPence: row.deposit_paid_pence });
+  if (row.open_sale_number_label) chips.push({ id: 'queue.chip.openSale', tone: 'warning', saleNo: row.open_sale_number_label });
+  if (row.reward_ready === true) chips.push({ id: 'queue.chip.reward', tone: 'success' });
+  return chips;
 }
 
 /** Whether lines, discounts and the client can still change. */

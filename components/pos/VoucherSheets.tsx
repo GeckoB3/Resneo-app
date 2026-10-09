@@ -36,6 +36,7 @@ import {
   todayInZone,
   voucherBlock,
   voucherDelivery,
+  voucherFrozenCopyId,
   voucherLastDay,
   voucherSellLine,
   voucherStatusCopyId,
@@ -580,7 +581,7 @@ export function VoucherPayPanel({
 
           {block === 'usedUp' ? <Notice>{t('vpay.usedUp')}</Notice> : null}
           {block === 'cancelled' ? <Notice>{t('vpay.cancelled')}</Notice> : null}
-          {block === 'frozen' ? <Notice tone="warning">{t('err.VOUCHER_FROZEN')}</Notice> : null}
+          {block === 'frozen' ? <Notice tone="warning">{t(voucherFrozenCopyId(found.on_hold))}</Notice> : null}
           {block === 'expired' ? <Notice tone="warning">{t('err.VOUCHER_EXPIRED', { date: lastDay ?? '' })}</Notice> : null}
 
           {!block ? (

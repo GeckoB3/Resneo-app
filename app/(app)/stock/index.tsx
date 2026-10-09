@@ -20,7 +20,7 @@ import { Text } from '@/components/ui/Text';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { posErrorMessage } from '@/lib/pos/api';
 import { canPos, isTrackStockOn } from '@/lib/pos/pos-enabled';
-import { productLabel, shortWhen, stocktakeStatusId } from '@/lib/retail/stock-words';
+import { productLabel, shortWhen, stockValueTilePence, stocktakeStatusId } from '@/lib/retail/stock-words';
 import { usePosBootstrap, usePosEnabled } from '@/lib/queries/usePos';
 import { usePurchaseOrders } from '@/lib/queries/usePurchasing';
 import { useRetailProducts, useStockLevels, useStocktakes } from '@/lib/queries/useRetail';
@@ -272,6 +272,8 @@ function LevelsTab({ canAdjust, timeZone }: { canAdjust: boolean; timeZone: stri
   const levels = useStockLevels({ filter, q });
   const items = useMemo(() => (levels.data?.pages ?? []).flatMap((p) => p.items), [levels.data]);
   const tiles = levels.data?.pages[0]?.tiles ?? null;
+  // Null for staff without view_reports: no tile at all, never a value of nothing.
+  const valueCost = stockValueTilePence(tiles?.value_cost_pence);
   const allowAdjust = canAdjust && levels.data?.pages[0]?.can_adjust !== false;
   const [adjusting, setAdjusting] = useState<AdjustTarget | null>(null);
   const [history, setHistory] = useState<{ variantId: string; label: string } | null>(null);
@@ -284,7 +286,7 @@ function LevelsTab({ canAdjust, timeZone }: { canAdjust: boolean; timeZone: stri
         refreshControl={<RefreshControl refreshing={levels.isRefetching && !levels.isFetchingNextPage} onRefresh={() => void levels.refetch()} />}>
         {tiles ? (
           <View style={styles.tiles}>
-            <StatTile label={t('stock.tile.valueCost')} value={money(Math.round(tiles.value_cost_pence))} style={styles.tile} />
+            {valueCost !== null ? <StatTile label={t('stock.tile.valueCost')} value={money(valueCost)} style={styles.tile} /> : null}
             <StatTile label={t('stock.tile.low')} value={String(tiles.low)} style={styles.tile} />
             <StatTile label={t('stock.tile.out')} value={String(tiles.out)} style={styles.tile} />
           </View>

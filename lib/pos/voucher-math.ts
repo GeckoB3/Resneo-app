@@ -251,6 +251,15 @@ export function voucherBlock(status: string): VoucherBlock | null {
   }
 }
 
+/**
+ * The sentence for a voucher on hold, as the web till words it: "payment dispute" only when the
+ * look-up's `on_hold` says a dispute froze it; otherwise (an admin's hold, or an older server that
+ * does not say) the server's own sentence, which names no reason.
+ */
+export function voucherFrozenCopyId(onHold: string | null | undefined): 'err.VOUCHER_FROZEN' | 'err.VOUCHER_FROZEN.dispute' {
+  return onHold === 'dispute' ? 'err.VOUCHER_FROZEN.dispute' : 'err.VOUCHER_FROZEN';
+}
+
 /** The status pill's copy id for a voucher status. */
 export function voucherStatusCopyId(
   status: string | null | undefined,

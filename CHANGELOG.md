@@ -283,6 +283,26 @@ and Pass LC for app step 4) on the server.
     Android "New online orders" channel with the order alert sound bundled since 1.1.2 is created
     over the air; the web still sends these pushes on `bookings-new`, so it is unused until the
     web names it.
+- **The web's contract changes of 2026-10-09 (`Docs/MOBILE_API.md`, POS and retail).**
+  - *Stock value tiles.* `value_cost_pence` and `value_retail_pence` are null for staff without
+    `view_reports`; the "Stock value at cost" tile is hidden then, where it read £0.00.
+  - *A voucher on hold.* `VOUCHER_FROZEN` now reads as the server's sentence, which names no
+    reason ("An admin can check why in Gift vouchers"). The voucher look-up's new `on_hold` says
+    why, and the pay panel says "payment dispute" only for `dispute`, as the web till does.
+  - *Reward ready.* A "Reward ready" chip on Ready to check out rows whose `reward_ready` is true
+    (`queue.chip.reward`); an older server sends nothing and shows no chip.
+  - *A reused request id* (409 `CONFLICT` with `reason: 'request_reused'`, `POS_REQUEST_REUSED`
+    before) shows the server's sentence, reads the sale again whatever the write was, and the
+    cash, other-type and refund sheets make a new request id for the next try, so the refused id
+    is never sent again (a lost answer still keeps its id). The pay link, reader, saved card and
+    voucher panels already made a new id after any refusal.
+  - *Checked, no change:* the app calls none of the settings lists (tills, payment types,
+    discount presets, favourites, commission rates), so their 409 `CONFLICT` and the DELETE
+    `version` rule do not reach it; it sends the sales list only `status=open` and a search the
+    server cuts to 100 characters, so the new 400 `VALIDATION_FAILED` cannot arise; every reading
+    of `balance_due_pence` already treats 0 and below as nothing due; push registration only logs
+    a failure, and the device 400's new `code` and `fields` keep `details`, which the field message
+    still reads.
 
 ---
 

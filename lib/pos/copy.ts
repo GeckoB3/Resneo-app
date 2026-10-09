@@ -60,6 +60,7 @@ export const POS_COPY = {
   'queue.chip.openSale': 'Sale {saleNo} open',
   'queue.chip.class': '{modelName} booking',
   'queue.chip.noPrice': 'No price yet',
+  'queue.chip.reward': 'Reward ready',
   'queue.checkout': 'Check out',
   'queue.empty.title': 'Nobody waiting to pay',
   'queue.empty.body':
@@ -482,7 +483,9 @@ export const POS_COPY = {
   'refund.voucherUsedUp': "This voucher has been used up, so there's nothing left to refund.",
   'err.VOUCHER_NOT_FOUND': "We can't find a gift voucher with that code at {venue}. Check the code and try again.",
   'err.VOUCHER_EXPIRED': "This gift voucher ran out on {date}. An admin can extend it if you're happy to take it.",
-  'err.VOUCHER_FROZEN': "This gift voucher is on hold while a payment dispute is open, so it can't be used yet.",
+  // The server's sentence since 2026-10-09; the look-up's `on_hold` says when it is a dispute.
+  'err.VOUCHER_FROZEN': "This gift voucher is on hold, so it can't be used yet. An admin can check why in Gift vouchers.",
+  'err.VOUCHER_FROZEN.dispute': "This gift voucher is on hold while a payment dispute is open, so it can't be used yet.",
   'err.VOUCHER_INSUFFICIENT_BALANCE': 'This gift voucher only has {balance} left. Take {balance} from it, and the rest another way.',
   'err.CREDIT_INSUFFICIENT': '{clientName} only has {amount} of credit left.',
   'err.voucherLookupLimited': "That's a lot of codes in a short time. Wait a minute, then try again.",

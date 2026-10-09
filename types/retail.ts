@@ -151,8 +151,9 @@ export interface StockLevelRow {
 }
 
 export interface StockTiles {
-  value_cost_pence: number;
-  value_retail_pence: number;
+  /** Money a report shows: null for staff without `view_reports` (web, 2026-10-09). */
+  value_cost_pence: number | null;
+  value_retail_pence: number | null;
   units: number;
   low: number;
   out: number;

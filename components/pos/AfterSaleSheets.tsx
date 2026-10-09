@@ -11,6 +11,7 @@ import { Stepper } from '@/components/ui/Stepper';
 import { Text } from '@/components/ui/Text';
 import { apiErrorCode } from '@/lib/api/client';
 import { newPaymentAttemptId } from '@/lib/payments/attempt-id';
+import { isRequestReused } from '@/lib/pos/api';
 import {
   isCardMethod,
   itemsRefundPence,
@@ -184,7 +185,8 @@ function RefundSheetBody({
     } catch (e) {
       // A card Stripe will no longer refund (POS_CARD_REFUND_UNAVAILABLE): its sentence says to
       // refund another way, which is a different refund, so it gets a new request id.
-      if (apiErrorCode(e) === 'POS_CARD_REFUND_UNAVAILABLE') requestId.current = newPaymentAttemptId();
+      // A reused request id (409 CONFLICT, request_reused) refunded nothing, so the same.
+      if (apiErrorCode(e) === 'POS_CARD_REFUND_UNAVAILABLE' || isRequestReused(e)) requestId.current = newPaymentAttemptId();
       setError(writeError(e, t));
       setNeedsTill(apiErrorCode(e) === 'POS_TILL_SESSION_REQUIRED');
     } finally {

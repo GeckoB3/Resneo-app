@@ -19,6 +19,7 @@ import {
   paymentMethodName,
   pendingCardPayment,
   penceToInput,
+  queueChips,
   refundableLines,
   refundEverything,
   saleIsEditable,
@@ -30,6 +31,25 @@ import {
   tipSuggestions,
   totalsRows,
 } from '@/lib/pos/sale-math';
+
+describe('"Ready to check out" chips', () => {
+  const row = { price_unknown: false, deposit_paid_pence: 0, open_sale_number_label: null };
+
+  it('shows "Reward ready" when the client has a loyalty reward waiting, as the web queue does', () => {
+    expect(queueChips({ ...row, reward_ready: true })).toEqual([{ id: 'queue.chip.reward', tone: 'success' }]);
+  });
+
+  it('shows no reward chip when the row says false or an older server leaves it out', () => {
+    expect(queueChips({ ...row, reward_ready: false })).toEqual([]);
+    expect(queueChips(row)).toEqual([]);
+  });
+
+  it('keeps the web order: no price, deposit, open sale, then the reward', () => {
+    expect(
+      queueChips({ price_unknown: true, deposit_paid_pence: 1000, open_sale_number_label: 'S-12', reward_ready: true }).map((c) => c.id),
+    ).toEqual(['queue.chip.noPrice', 'queue.chip.deposit', 'queue.chip.openSale', 'queue.chip.reward']);
+  });
+});
 
 describe('money input', () => {
   it('reads pounds as typed', () => {

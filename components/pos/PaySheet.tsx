@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/Input';
 import { Text } from '@/components/ui/Text';
 import { apiErrorCode } from '@/lib/api/client';
 import { newPaymentAttemptId } from '@/lib/payments/attempt-id';
+import { isRequestReused } from '@/lib/pos/api';
 import type { SaleCardResult } from '@/lib/payments/useSaleCardPayment';
 import { cardMethodsOffered } from '@/lib/pos/card-methods';
 import type { PosT } from '@/lib/pos/copy';
@@ -151,6 +152,9 @@ function PaySheetBody({
       if (change > 0) setMode('done');
       else onClose();
     } catch (e) {
+      // A reused request id (409 CONFLICT, request_reused) took nothing: the next try is a new
+      // request, so it gets a new id. A lost answer keeps the id, so a retry records it once.
+      if (isRequestReused(e)) requestId.current = newPaymentAttemptId();
       setError(writeError(e, t));
       setErrorCode(apiErrorCode(e));
     } finally {

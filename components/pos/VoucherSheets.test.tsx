@@ -177,6 +177,23 @@ describe('paying with a gift voucher', () => {
     expect(screen.queryByText(/from the voucher$/)).toBeNull();
   });
 
+  it('says "payment dispute" only when a dispute put the voucher on hold', async () => {
+    mockLookup.mockResolvedValue({ ...VOUCHER, status: 'frozen', on_hold: 'dispute' });
+    await renderPay();
+    await findVoucher('7K4QM2XD9HPA');
+    expect(screen.getByText("This gift voucher is on hold while a payment dispute is open, so it can't be used yet.")).toBeTruthy();
+    expect(screen.queryByText(/from the voucher$/)).toBeNull();
+  });
+
+  it("uses the server's sentence, naming no reason, for a hold an admin made", async () => {
+    mockLookup.mockResolvedValue({ ...VOUCHER, status: 'frozen', on_hold: 'staff' });
+    await renderPay();
+    await findVoucher('7K4QM2XD9HPA');
+    expect(screen.getByText("This gift voucher is on hold, so it can't be used yet. An admin can check why in Gift vouchers.")).toBeTruthy();
+    expect(screen.queryByText(/payment dispute/)).toBeNull();
+    expect(screen.queryByText(/from the voucher$/)).toBeNull();
+  });
+
   it("shows the server's sentence when it holds less, and offers to take what is left", async () => {
     mockLookup.mockResolvedValue(VOUCHER);
     const send = jest.fn().mockRejectedValue(

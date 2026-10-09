@@ -50,6 +50,20 @@ describe('getApiErrorMessage', () => {
     ).toBe('Invalid request (duration minutes: Number must be less than or equal to 480)');
   });
 
+  it('reads the device registration 400 in the house shape (2026-10-09), which keeps details', () => {
+    expect(
+      getApiErrorMessage(
+        {
+          error: 'Some device details need checking.',
+          code: 'VALIDATION_FAILED',
+          fields: [{ path: 'platform', message: 'Invalid enum value' }],
+          details: { formErrors: [], fieldErrors: { platform: ['Invalid enum value'] } },
+        },
+        400,
+      ),
+    ).toBe('Some device details need checking. (platform: Invalid enum value)');
+  });
+
   it('leaves a 400 without details exactly as the server phrased it', () => {
     expect(getApiErrorMessage({ error: 'Missing id' }, 400)).toBe('Missing id');
   });
