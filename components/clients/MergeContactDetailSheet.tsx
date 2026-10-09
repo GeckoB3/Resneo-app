@@ -75,7 +75,7 @@ function defaultChoices(): FieldChoices {
 
 function displayVal(v: string | null | undefined): string {
   const s = typeof v === 'string' ? v.trim() : '';
-  return s.length > 0 ? s : '—';
+  return s.length > 0 ? s : 'Not set';
 }
 
 function guestName(g: GuestDetailProfile | GuestListItem | null | undefined): string {
@@ -102,7 +102,7 @@ function isEmptyCfValue(v: unknown): boolean {
 
 /** Stringify a custom-field value for display in the conflict list. */
 function cfDisplay(v: unknown): string {
-  if (isEmptyCfValue(v)) return '—';
+  if (isEmptyCfValue(v)) return 'Not set';
   if (typeof v === 'boolean') return v ? 'Yes' : 'No';
   return String(v);
 }
@@ -1053,7 +1053,7 @@ export function MergeContactDetailSheet({
                   value={
                     mergedProfile.tags && mergedProfile.tags.length > 0
                       ? mergedProfile.tags.join(', ')
-                      : '—'
+                      : 'Not set'
                   }
                 />
                 <PreviewRow

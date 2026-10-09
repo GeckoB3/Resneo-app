@@ -155,7 +155,7 @@ describe('receiving a delivery', () => {
       fireEvent.press(screen.getByText('Add it'));
     });
     expect(screen.getByText('Gloves')).toBeTruthy();
-    expect(screen.getByText('Add 1 items to stock')).toBeTruthy();
+    expect(screen.getByText('Add 1 item to stock')).toBeTruthy();
   });
 });
 

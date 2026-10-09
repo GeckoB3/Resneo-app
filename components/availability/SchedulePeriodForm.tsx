@@ -447,7 +447,6 @@ function CountRow({
           onSubmitEditing={commitDraft}
           editable={!disabled}
           keyboardType="number-pad"
-          selectTextOnFocus
           returnKeyType="done"
           selectTextOnFocus
           accessibilityLabel={label}
