@@ -248,6 +248,9 @@ export default function ClassesScreen() {
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
+              // A horizontal strip in a column grows to fill the height unless told not to, which
+              // stretched the chips into tall ovals.
+              style={styles.filterStrip}
               contentContainerStyle={styles.filterRow}>
               <Chip
                 label="All"
@@ -412,8 +415,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 1,
   },
+  filterStrip: { flexGrow: 0, flexShrink: 0 },
   filterRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.sm,
     paddingHorizontal: spacing.base,
     paddingBottom: spacing.sm,
