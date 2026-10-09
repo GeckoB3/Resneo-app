@@ -12,6 +12,8 @@
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
+// Announcements have their own tests.
+jest.mock('@/components/ui/PlatformAnnouncementBanners', () => ({ PlatformAnnouncementBanners: () => null }));
 jest.mock('expo-constants', () => ({ default: { expoConfig: { version: '1.2.3' } } }));
 jest.mock('expo-web-browser', () => ({ openBrowserAsync: jest.fn(() => Promise.resolve()) }));
 jest.mock('expo-router', () => ({ useRouter: () => ({ push: jest.fn() }) }));

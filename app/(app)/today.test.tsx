@@ -16,6 +16,8 @@ jest.mock('expo-router', () => ({
   useRouter: () => ({ push: mockPush }),
 }));
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
+// Announcements have their own tests.
+jest.mock('@/components/ui/PlatformAnnouncementBanners', () => ({ PlatformAnnouncementBanners: () => null }));
 
 // Render the dismiss-confirmation Sheet's children inline when visible (avoids
 // gesture-handler/Modal), matching the pattern in ResourceManagerSheet.test.

@@ -25,6 +25,7 @@ import {
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { ErrorState } from '@/components/ui/ErrorState';
+import { PlatformAnnouncementBanners } from '@/components/ui/PlatformAnnouncementBanners';
 import { Screen } from '@/components/ui/Screen';
 import { Sheet } from '@/components/ui/Sheet';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
@@ -416,6 +417,9 @@ export default function TodayScreen() {
             }}
           />
         }>
+        {/* ResNeo's announcements, at the top as across the web dashboard. */}
+        <PlatformAnnouncementBanners />
+
         {/* Greeting + quick-action buttons */}
         <GreetingHeader isAppointment={isAppointment} timeZone={venue?.timezone} />
 

@@ -20,6 +20,7 @@ import { PrimaryTile } from "@/components/more/PrimaryTile";
 import { TapToPaySettings } from "@/components/payments/TapToPaySettings";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { PlatformAnnouncementBanners } from "@/components/ui/PlatformAnnouncementBanners";
 import { LoadingState } from "@/components/ui/LoadingState";
 import { PressableScale } from "@/components/ui/PressableScale";
 import { Screen } from "@/components/ui/Screen";
@@ -408,6 +409,9 @@ export default function MoreScreen() {
       bottomInset={false}
       contentContainerStyle={styles.content}
     >
+      {/* ResNeo's announcements, at the top as across the web dashboard. */}
+      <PlatformAnnouncementBanners />
+
       <MoreHero
         name={staff?.name ?? "Staff member"}
         subtitle={venueName ?? staff?.email ?? ""}
