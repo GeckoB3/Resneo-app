@@ -1,5 +1,5 @@
 import { useCallback, useState, type ReactNode } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { CardHeader, StatRow } from '@/components/reports/ReportCardParts';
 import { Button } from '@/components/ui/Button';
@@ -214,7 +214,12 @@ export interface Column<Row> {
   width?: number;
 }
 
-/** A plain table (web `ReportTable`): a header, one row per entry, an optional totals row. */
+/**
+ * A table (web `ReportTable`) laid out for a phone. Two columns read as a plain list: the name left,
+ * the figure right. Wider tables would run off the screen, so each row is stacked instead: the
+ * first column as its title, then every other column as a labelled figure underneath. An optional
+ * totals row closes it in bold.
+ */
 export function ReportTable<Row>({
   caption,
   columns,
@@ -230,44 +235,62 @@ export function ReportTable<Row>({
 }) {
   const { colors } = useTheme();
   if (rows.length === 0) return <EmptyReport />;
-  const width = (c: Column<Row>, i: number) => c.width ?? (i === 0 ? 160 : c.numeric ? 104 : 140);
-  const cell = (content: ReactNode, c: Column<Row>, i: number, strong?: boolean) => (
-    <View key={`${c.label}-${i}`} style={[styles.cell, { width: width(c, i) }]}>
-      {typeof content === 'string' || typeof content === 'number' ? (
-        <Text
-          variant={strong || i === 0 ? 'bodyMedium' : 'bodySmall'}
-          style={[c.numeric ? styles.numeric : null]}>
-          {String(content)}
-        </Text>
-      ) : (
-        content
-      )}
-    </View>
-  );
-  return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} accessibilityLabel={caption}>
-      <View style={[styles.table, { borderColor: colors.border }]}>
-        <View style={[styles.row, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
-          {columns.map((c, i) => (
-            <View key={c.label} style={[styles.cell, { width: width(c, i) }]}>
-              <Text variant="caption" tone="muted" style={c.numeric ? styles.numeric : null}>
-                {c.label}
-              </Text>
-            </View>
-          ))}
-        </View>
-        {rows.map((row, ri) => (
-          <View key={rowKey(row, ri)} style={[styles.row, { borderBottomColor: colors.border }]}>
-            {columns.map((c, i) => cell(c.value(row), c, i))}
+  const show = (content: ReactNode, strong: boolean, numeric: boolean, tone?: 'muted') =>
+    typeof content === 'string' || typeof content === 'number' ? (
+      <Text variant={strong ? 'bodyMedium' : 'bodySmall'} tone={tone} style={numeric ? styles.numeric : null}>
+        {String(content)}
+      </Text>
+    ) : (
+      content
+    );
+  const lines: { key: string; cells: ReactNode[]; total: boolean }[] = [
+    ...rows.map((row, ri) => ({ key: rowKey(row, ri), cells: columns.map((c) => c.value(row)), total: false })),
+    ...(footer ? [{ key: '__total', cells: footer, total: true }] : []),
+  ];
+
+  if (columns.length <= 2) {
+    return (
+      <View style={[styles.table, { borderColor: colors.border }]} accessibilityLabel={caption}>
+        {lines.map((line, i) => (
+          <View
+            key={line.key}
+            style={[
+              styles.listRow,
+              { borderBottomColor: colors.border, borderBottomWidth: i < lines.length - 1 ? StyleSheet.hairlineWidth : 0 },
+              line.total ? { backgroundColor: colors.surface } : null,
+            ]}>
+            <View style={styles.listName}>{show(line.cells[0], true, false)}</View>
+            {columns.length > 1 ? <View>{show(line.cells[1], line.total, true)}</View> : null}
           </View>
         ))}
-        {footer ? (
-          <View style={[styles.row, { backgroundColor: colors.surface }]}>
-            {footer.map((content, i) => cell(content, columns[i] ?? { label: String(i), value: () => '', numeric: i > 0 }, i, true))}
-          </View>
-        ) : null}
       </View>
-    </ScrollView>
+    );
+  }
+
+  return (
+    <View style={[styles.table, { borderColor: colors.border }]} accessibilityLabel={caption}>
+      {lines.map((line, i) => (
+        <View
+          key={line.key}
+          style={[
+            styles.stackRow,
+            { borderBottomColor: colors.border, borderBottomWidth: i < lines.length - 1 ? StyleSheet.hairlineWidth : 0 },
+            line.total ? { backgroundColor: colors.surface } : null,
+          ]}>
+          {show(line.cells[0], true, false)}
+          <View style={styles.pairs}>
+            {columns.slice(1).map((c, ci) => (
+              <View key={c.label} style={styles.pair}>
+                <Text variant="caption" tone="muted">
+                  {c.label}
+                </Text>
+                {show(line.cells[ci + 1], line.total, false)}
+              </View>
+            ))}
+          </View>
+        </View>
+      ))}
+    </View>
   );
 }
 
@@ -310,6 +333,11 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', borderBottomWidth: StyleSheet.hairlineWidth },
   cell: { paddingHorizontal: spacing.sm, paddingVertical: spacing.sm, justifyContent: 'center' },
   numeric: { textAlign: 'right', fontVariant: ['tabular-nums'] },
+  listRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+  listName: { flex: 1, minWidth: 0 },
+  stackRow: { gap: spacing.xs, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+  pairs: { flexDirection: 'row', flexWrap: 'wrap', columnGap: spacing.lg, rowGap: spacing.xs },
+  pair: { minWidth: '28%' },
   tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   tile: { flexGrow: 1, flexBasis: '45%' },
   figures: { gap: spacing.sm, borderTopWidth: StyleSheet.hairlineWidth, paddingTop: spacing.sm },

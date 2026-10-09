@@ -97,7 +97,8 @@ it('shows each person with the totals, the no-rates note and what changed since 
   expect(screen.getByText('Commission by person')).toBeTruthy();
   expect(screen.getByText('Sam')).toBeTruthy();
   expect(screen.getByText('Changed since you exported it on 5 October 2026')).toBeTruthy();
-  expect(screen.getByText('Tips (for reference)')).toBeTruthy();
+  // On a phone each row carries its own labels, so the column name appears once per row.
+  expect(screen.getAllByText('Tips (for reference)').length).toBeGreaterThan(0);
   expect(screen.getByText("Tips aren't commission. They're here so you can see everything in one place.")).toBeTruthy();
 });
 
