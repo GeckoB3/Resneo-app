@@ -401,6 +401,10 @@ export function buildCollectiveTodos(input: {
   isHost: boolean;
   services: readonly AreaService[];
   calendarGroups: readonly CollectiveCalendarGroup[];
+  /** Member only: how many of its own calendars offer each of its services (the Services screen). */
+  ownCalendarCount?: (serviceId: string) => number;
+  /** Member only: its own venue id, to read the hidden reasons that are about itself. */
+  ownVenueId?: string | null;
   limit?: number;
 }): CollectiveTodo[] {
   const onPage = input.services.filter(
@@ -423,6 +427,19 @@ export function buildCollectiveTodos(input: {
         });
       }
     }
+    // A member asked whether to use its own same-named service (web plan L13): its calendars can be
+    // chosen once it answers, so the host is told what it is waiting on.
+    for (const service of onPage) {
+      const itemId = service.collective?.item_id;
+      if (!itemId) continue;
+      for (const group of groups) {
+        if (group.is_host || !(group.awaiting_answer ?? []).includes(itemId)) continue;
+        todos.push({
+          id: `awaiting-${group.venue_id}-${service.id}`,
+          text: areaCopy('ov.todo.awaiting', { venue: group.venue_name, service: service.name }),
+        });
+      }
+    }
     for (const group of groups) {
       if (group.is_host) continue;
       if (!group.calendars.some((c) => c.assigned.length > 0)) {
@@ -430,19 +447,6 @@ export function buildCollectiveTodos(input: {
           id: `new-venue-${group.venue_id}`,
           text: counted('ov.todo.newVenue', onPage.length, { venue: group.venue_name }),
           action: { kind: 'venue_calendars', venueId: group.venue_id, label: areaCopy('svc.offer.chooseCalendars') },
-        });
-      }
-    }
-    // A member asked whether to use its own same-named service (web plan L13): its calendars can be
-    // chosen once it answers, so the host is told what it is waiting on.
-    for (const group of groups) {
-      if (group.is_host) continue;
-      for (const itemId of group.awaiting_answer ?? []) {
-        const service = onPage.find((s) => s.collective?.item_id === itemId);
-        if (!service) continue;
-        todos.push({
-          id: `awaiting-${group.venue_id}-${service.id}`,
-          text: areaCopy('ov.todo.awaiting', { venue: group.venue_name, service: service.name }),
         });
       }
     }
@@ -456,18 +460,37 @@ export function buildCollectiveTodos(input: {
         });
       }
     }
-    todos.push(...hiddenReasonTodos(onPage, false, false));
+    todos.push(...hiddenReasonTodos(onPage, false, false, null));
   } else {
-    todos.push(...hiddenReasonTodos(onPage, true, true));
+    // A copy no calendar of this venue offers cannot be booked here (web `memberTodos`).
+    const count = input.ownCalendarCount;
+    if (count) {
+      for (const service of onPage) {
+        if (count(service.id) === 0) {
+          todos.push({
+            id: `no-calendars-${service.id}`,
+            text: areaCopy('ov.todo.noCalendars', { service: service.name }),
+            action: { kind: 'service', serviceId: service.id, label: areaCopy('svc.offer.chooseCalendars') },
+          });
+        }
+      }
+    }
+    todos.push(...hiddenReasonTodos(onPage, true, true, input.ownVenueId ?? null));
   }
   return todos.slice(0, input.limit ?? 5);
 }
 
-function hiddenReasonTodos(services: readonly AreaService[], withActions: boolean, self: boolean): CollectiveTodo[] {
+function hiddenReasonTodos(
+  services: readonly AreaService[],
+  withActions: boolean,
+  self: boolean,
+  onlyVenueId: string | null,
+): CollectiveTodo[] {
   const payments = new Map<string, { name: string; count: number }>();
   const forms = new Map<string, { name: string; count: number }>();
   for (const service of services) {
     for (const reason of service.collective?.hidden_reasons ?? []) {
+      if (onlyVenueId && reason.venue_id !== onlyVenueId) continue;
       const bucket = reason.reason === 'payments' ? payments : reason.reason === 'forms' ? forms : null;
       if (!bucket) continue;
       const seen = bucket.get(reason.venue_id);

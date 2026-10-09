@@ -121,4 +121,32 @@ describe('the area', () => {
     expect(todo?.text).toBe('You cannot take card payments yet, so 1 paid service is hidden from your guests.');
     expect(todo?.action).toEqual({ kind: 'payments', label: 'Connect Stripe' });
   });
+
+  it('tells a member about its copies none of its calendars offer, and only its own reasons (Services screen)', () => {
+    const member: AreaService[] = [
+      { id: 's9', name: 'Balayage', collective: block({ role: 'replica' }) },
+      {
+        id: 's10',
+        name: 'Cut',
+        collective: block({
+          role: 'replica',
+          hidden_reasons: [
+            { venue_id: 'v-other', venue_name: 'Other', reason: 'forms' },
+            { venue_id: 'v-zen', venue_name: 'Zen Studio', reason: 'forms' },
+          ],
+        }),
+      },
+      { id: 's11', name: 'Retired cut', collective: block({ role: 'retired' }) },
+    ];
+    const todos = buildCollectiveTodos({
+      isHost: false,
+      services: member,
+      calendarGroups: [],
+      ownCalendarCount: (id) => (id === 's10' ? 1 : 0),
+      ownVenueId: 'v-zen',
+    });
+    expect(todos.map((t) => t.id)).toEqual(['no-calendars-s9', 'forms-v-zen']);
+    expect(todos[0]?.action).toEqual({ kind: 'service', serviceId: 's9', label: 'Choose calendars' });
+    expect(todos[1]?.text).toBe('Your forms are switched off, so 1 service that needs a form is hidden from your guests.');
+  });
 });

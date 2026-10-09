@@ -4,6 +4,7 @@ import {
   collectiveStatusBadge,
   isManagedByHost,
   isParked,
+  venueCollectiveOf,
 } from '@/lib/services/collective-service';
 import type { ServiceCollectiveBlock } from '@/types/services-manage';
 
@@ -82,5 +83,23 @@ describe('collective services', () => {
         expect(line).not.toContain('—');
       }
     }
+  });
+});
+
+describe('venueCollectiveOf', () => {
+  it('is null outside a collective', () => {
+    expect(venueCollectiveOf([{}, { collective: null }])).toBeNull();
+  });
+
+  it("reads the side from the block's own venue_role, never from the roles", () => {
+    // A member whose services are all parked would read as the host if guessed from the roles.
+    const member = venueCollectiveOf([{ collective: block({ role: 'parked', venue_role: 'member' }) }]);
+    expect(member).toEqual({ id: 'col-1', name: 'Northside', hostVenueName: 'Bright Cuts', isHost: false });
+    expect(venueCollectiveOf([{ collective: block({ role: 'replica', venue_role: 'host' }) }])?.isHost).toBe(true);
+  });
+
+  it('falls back to the roles for an older server', () => {
+    expect(venueCollectiveOf([{ collective: block({ role: 'master' }) }])?.isHost).toBe(true);
+    expect(venueCollectiveOf([{ collective: block({ role: 'replica' }) }])?.isHost).toBe(false);
   });
 });

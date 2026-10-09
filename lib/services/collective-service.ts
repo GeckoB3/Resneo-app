@@ -115,3 +115,27 @@ export function collectiveServiceLines(service: Pick<ManagedService, 'collective
   if (block.role !== 'parked' && block.status_reason) lines.push(block.status_reason);
   return lines;
 }
+
+export interface VenueCollective {
+  id: string;
+  name: string;
+  hostVenueName: string;
+  isHost: boolean;
+}
+
+/**
+ * The collective this venue is in, as the services themselves report it (web
+ * `AppointmentServicesView`'s `collective`). The block's own `venue_role` says which side this
+ * venue is on; guessing from the roles is kept only for an older server that does not send it.
+ */
+export function venueCollectiveOf(services: readonly Pick<ManagedService, 'collective'>[]): VenueCollective | null {
+  const block = services.find((s) => s.collective)?.collective ?? null;
+  if (!block) return null;
+  const roles = new Set(services.map((s) => s.collective?.role).filter(Boolean));
+  return {
+    id: block.collective_id,
+    name: block.collective_name,
+    hostVenueName: block.host_venue_name,
+    isHost: block.venue_role ? block.venue_role === 'host' : roles.has('master') || !roles.has('replica'),
+  };
+}

@@ -51,6 +51,11 @@ import {
 } from '@/components/manage/StaffServiceOverrideSheet';
 import { ServiceLocationSection, isValidMeetingUrl, normalizeMeetingUrl } from '@/components/services/ServiceLocationSection';
 import { ServiceRemovalBookingsPanel } from '@/components/services/ServiceRemovalBookingsPanel';
+import { AddFromVenueSheet } from '@/components/services/collective/AddFromVenueSheet';
+import { MemberServiceSheet } from '@/components/services/collective/MemberServiceSheet';
+import { ReleaseReviewCard } from '@/components/services/collective/ReleaseReviewCard';
+import { TodoStrip } from '@/components/collective-area/AreaPieces';
+import { AdoptionRequestsCard } from '@/components/linked/setup/AdoptionSheets';
 import {
   ProcessingTimeBlocksEditor,
   processingBlocksToDrafts,
@@ -72,12 +77,21 @@ import { Text } from '@/components/ui/Text';
 import { visibleAddonLibrary } from '@/lib/addons/visible-addon-library';
 import { ApiError, isStaleResource } from '@/lib/api/client';
 import { appointmentCalendarsOf } from '@/lib/calendar/schedule-calendars';
+import { areaCopy } from '@/lib/collective-area/copy';
+import { buildCollectiveTodos } from '@/lib/collective-area/model';
 import {
   collectiveBadge,
   collectiveServiceLines,
   collectiveStatusBadge,
   isManagedByHost,
+  venueCollectiveOf,
 } from '@/lib/services/collective-service';
+import {
+  STAFF_ONLY_LABEL,
+  collectiveNameFromServices,
+  isStaffOnlyService,
+  staffOnlyHelp,
+} from '@/lib/services/staff-only';
 import {
   compareByCategoryThenServiceOrder,
   serviceCategoryLookup,
@@ -86,12 +100,6 @@ import {
 import {
   DEFAULT_BOOKING_INTERVAL_MINUTES,
   bookingStartFingerprint,
-import {
-  STAFF_ONLY_LABEL,
-  collectiveNameFromServices,
-  isStaffOnlyService,
-  staffOnlyHelp,
-} from '@/lib/services/staff-only';
   describeBookingStartTimes,
   normalizeBookingIntervalMinutes,
   normalizeBookingStartForStorage,
@@ -240,6 +248,7 @@ function ServiceRowBase({
   onOverride,
   onMoveUp = null,
   onMoveDown = null,
+  onView = null,
   reorderPending = false,
 }: {
   service: ManagedService;
@@ -265,6 +274,8 @@ function ServiceRowBase({
   /** Admin display-order controls; null at the list edges. */
   onMoveUp?: (() => void) | null;
   onMoveDown?: (() => void) | null;
+  /** A host's service at a member: opens the member's read-only view (web `MemberServiceView`). */
+  onView?: ((service: ManagedService) => void) | null;
   reorderPending?: boolean;
 }) {
   const { colors } = useTheme();
@@ -449,6 +460,19 @@ function ServiceRowBase({
                 style={styles.editBtnFull}
                 disabled={!onMoveDown || reorderPending}
                 onPress={() => onMoveDown?.()}
+              />
+            </View>
+          ) : null}
+
+          {/* A service the host manages: look at it and choose this venue's calendars (web "View"). */}
+          {onView ? (
+            <View style={styles.editRow}>
+              <Button
+                label={areaCopy('svc.member.card.view')}
+                variant="secondary"
+                size="sm"
+                style={styles.editBtnFull}
+                onPress={() => onView(service)}
               />
             </View>
           ) : null}
@@ -718,7 +742,8 @@ export default function ServicesScreen() {
   // Deep link: `?tab=services&service=<id>` opens straight to a pre-expanded
   // service (web parity with the add-ons "Used by" link). Read once on mount.
   // `?setup=ai` opens "Set up with AI" on arrival (web parity: other screens can link to it).
-  const params = useLocalSearchParams<{ tab?: string; service?: string; setup?: string }>();
+  // `?add_from=<venue>&service=<id>` (web N25): a member's suggestion opens "Add from another venue" with it chosen.
+  const params = useLocalSearchParams<{ tab?: string; service?: string; setup?: string; add_from?: string }>();
   const initialTab: ActiveTab = params.tab === 'addons' ? 'addons' : 'services';
   const [activeTab, setActiveTab] = useState<ActiveTab>(initialTab);
   const [includeInactiveAddons, setIncludeInactiveAddons] = useState(false);
@@ -745,6 +770,12 @@ export default function ServicesScreen() {
   const [deleteTarget, setDeleteTarget] = useState<ManagedService | null>(null);
   // A collective host's delete in flight: check, take off the page, delete (R44-1).
   const [deletingOnPage, setDeletingOnPage] = useState(false);
+  // The collective tools (web W6/W7): a host service opened read-only at a member, and the host's
+  // "Add from another venue" with what it said when done.
+  const [viewingService, setViewingService] = useState<ManagedService | null>(null);
+  const [addFromOpen, setAddFromOpen] = useState(false);
+  const [addFromDone, setAddFromDone] = useState<string | null>(null);
+  const [addFromPresetUsed, setAddFromPresetUsed] = useState(false);
   // Set when that delete failed AFTER the service came off the page; the delete
   // sheet shows it in place of its confirm.
   const [deleteHalfway, setDeleteHalfway] = useState<string | null>(null);
@@ -792,6 +823,8 @@ export default function ServicesScreen() {
   );
   const [practitionerIds, setPractitionerIds] = useState<string[]>([]);
   const [isActive, setIsActive] = useState(true);
+  // Admin-only: "Staff bookings only" (is_bookable_online = false), web parity.
+  const [staffOnly, setStaffOnly] = useState(false);
   // Admin-only: staff override permissions
   const [staffMay, setStaffMay] = useState<StaffMayState>(DEFAULT_STAFF_MAY);
   // Location / online-meeting
@@ -823,8 +856,6 @@ export default function ServicesScreen() {
   };
   // Custom availability (stretch) — versioned schedule + enabled flag.
   const [customAvailEnabled, setCustomAvailEnabled] = useState(false);
-  // Admin-only: "Staff bookings only" (is_bookable_online = false), web parity.
-  const [staffOnly, setStaffOnly] = useState(false);
   const [customSchedule, setCustomSchedule] = useState<ServiceCustomScheduleV2>({
     version: 2,
     rules: [],
@@ -1089,6 +1120,52 @@ export default function ServicesScreen() {
     return isHost ? { id: block.collective_id, name: block.collective_name } : null;
   }, [query.data?.services]);
 
+  /** The collective this venue is in, either side, from the block's own `venue_role`. */
+  const serviceCollective = useMemo(() => venueCollectiveOf(query.data?.services ?? []), [query.data?.services]);
+  /** Host admins are handed every calendar in the collective; everyone else gets nothing here. */
+  const collectiveCalendars = useMemo(
+    () => query.data?.collective_calendars ?? [],
+    [query.data?.collective_calendars],
+  );
+  const collectiveMemberVenues = useMemo(
+    () =>
+      collectiveCalendars
+        .filter((g) => !g.is_host)
+        .map((g) => ({ venue_id: g.venue_id, venue_name: g.venue_name })),
+    [collectiveCalendars],
+  );
+  /**
+   * What needs you (web `buildCollectiveTodos` on the Services page): a service no calendar offers,
+   * a venue that has joined and chosen nothing, payments or forms in the way. Empty outside a
+   * collective.
+   */
+  const collectiveTodos = useMemo(() => {
+    if (!serviceCollective) return [];
+    const offersByService = new Map<string, number>();
+    for (const link of practitionerServices) {
+      offersByService.set(link.service_id, (offersByService.get(link.service_id) ?? 0) + 1);
+    }
+    return buildCollectiveTodos({
+      isHost: serviceCollective.isHost,
+      services: query.data?.services ?? [],
+      calendarGroups: collectiveCalendars,
+      ownCalendarCount: (serviceId) => offersByService.get(serviceId) ?? 0,
+      ownVenueId: collectiveCalendars.find((g) => !g.is_host)?.venue_id ?? null,
+    });
+  }, [serviceCollective, query.data?.services, collectiveCalendars, practitionerServices]);
+  /** "Add from another venue": a host admin with at least one other venue in the collective. */
+  const canAddFromVenue = isAdmin && !!serviceCollective?.isHost && collectiveMemberVenues.length > 0;
+  const addFromPreset = useMemo(
+    () =>
+      typeof params.add_from === 'string' && params.add_from
+        ? { venueId: params.add_from, serviceId: typeof params.service === 'string' ? params.service : null }
+        : null,
+    [params.add_from, params.service],
+  );
+  const addFromVisible =
+    (addFromOpen || (addFromPreset !== null && !addFromPresetUsed)) && !!serviceCollective?.isHost && isAdmin;
+  const openServiceView = useCallback((service: ManagedService) => setViewingService(service), []);
+
   const setupCalendars = useMemo(
     () => calendarsForServiceForm.map((p) => ({ id: p.id, name: p.name })),
     [calendarsForServiceForm],
@@ -1130,6 +1207,7 @@ export default function ServicesScreen() {
     );
     setPractitionerIds(linked);
     setIsActive(service.is_active !== false);
+    setStaffOnly(isStaffOnlyService(service));
     setStaffMay({
       name: service.staff_may_customize_name ?? false,
       description: service.staff_may_customize_description ?? false,
@@ -1190,6 +1268,7 @@ export default function ServicesScreen() {
     // an admin, only the staff member's managed calendars otherwise (web parity).
     setPractitionerIds(calendarsForServiceForm.map((p) => p.id));
     setIsActive(true);
+    setStaffOnly(false);
     setCategoryId(null);
     setStaffMay(DEFAULT_STAFF_MAY);
     setLocationType('business_venue');
@@ -1207,7 +1286,6 @@ export default function ServicesScreen() {
     setError(null);
     setCreating(true);
   };
-    setStaffOnly(isStaffOnlyService(service));
 
   /**
    * "More settings" from Set up with AI (web: the wizard opens `AppointmentServiceModal` with
@@ -1268,7 +1346,6 @@ export default function ServicesScreen() {
     // abandons that save; without this the next edit would open straight onto a
     // stale list.
     if (removalSource === 'form') {
-    setStaffOnly(false);
       removal.cancel();
       setRemovalSource(null);
     }
@@ -1448,6 +1525,8 @@ export default function ServicesScreen() {
         // Category heading; null clears it. Sent with every admin save so
         // "None" persists (the API treats an omitted key as untouched).
         category_id: categoryId,
+        // Sent with every admin save, as the web does, so turning it off persists.
+        is_bookable_online: !staffOnly,
         staff_may_customize_name: staffMay.name,
         staff_may_customize_description: staffMay.description,
         staff_may_customize_duration: staffMay.duration,
@@ -1525,8 +1604,6 @@ export default function ServicesScreen() {
           toast.success(`"${shared.name}" is visible to guests again.`);
         }
       } else {
-        // Sent with every admin save, as the web does, so turning it off persists.
-        is_bookable_online: !staffOnly,
         const created = (await create.mutateAsync({
           ...shared,
           ...adminExtras,
@@ -1761,6 +1838,17 @@ export default function ServicesScreen() {
     });
   }
 
+  /** A todo's "Choose calendars": the member view for a host's service, else the edit form (web). */
+  const openTodoService = (serviceId: string) => {
+    const service = services.find((s) => s.id === serviceId);
+    if (!service) return;
+    if (isManagedByHost(service)) {
+      setViewingService(service);
+      return;
+    }
+    openEdit(service);
+  };
+
   const sheetOpen = editTarget !== null || creating;
   const saving = update.isPending || create.isPending;
   // Admin "multiple options" mode — hides the base duration/price fields and the
@@ -1836,6 +1924,7 @@ export default function ServicesScreen() {
           onOverride={handleOpenOverride}
           onMoveUp={canMoveUp ? () => handleMoveService(item.id, -1) : null}
           onMoveDown={canMoveDown ? () => handleMoveService(item.id, 1) : null}
+          onView={managedByHost && canManageService(item) ? openServiceView : null}
           reorderPending={reorderServices.isPending}
         />
         </>
@@ -1857,6 +1946,7 @@ export default function ServicesScreen() {
       services,
       handleMoveService,
       reorderServices.isPending,
+      openServiceView,
     ],
   );
 
@@ -1963,7 +2053,8 @@ export default function ServicesScreen() {
               }, 80);
             }}
             ListHeaderComponent={
-              canCreate ? (
+              <View style={styles.listHeader}>
+              {canCreate ? (
                 canUseAiSetup ? (
                   <View style={styles.headerActions}>
                     <Button label="New service" onPress={openCreate} style={styles.headerAction} />
@@ -1984,7 +2075,32 @@ export default function ServicesScreen() {
                 ) : (
                   <Button label="New service" onPress={openCreate} fullWidth />
                 )
-              ) : null
+              ) : null}
+              {canAddFromVenue ? (
+                <Button
+                  label={areaCopy('svc.addFrom.button')}
+                  variant="secondary"
+                  fullWidth
+                  onPress={() => {
+                    setAddFromDone(null);
+                    setAddFromOpen(true);
+                  }}
+                />
+              ) : null}
+              <TodoStrip todos={collectiveTodos} onOpenService={openTodoService} />
+              {/* After leaving a collective, what to check (web J7). Only when not in one now. */}
+              <ReleaseReviewCard enabled={isAdmin && !serviceCollective} />
+              {isAdmin && serviceCollective && !serviceCollective.isHost ? (
+                <AdoptionRequestsCard collectiveId={serviceCollective.id} />
+              ) : null}
+              {addFromDone ? (
+                <View
+                  accessibilityRole="summary"
+                  style={[styles.addFromDone, { backgroundColor: colors.successSurface, borderColor: colors.success }]}>
+                  <Text variant="bodySmall">{addFromDone}</Text>
+                </View>
+              ) : null}
+              </View>
             }
             ListEmptyComponent={
               canUseAiSetup ? (
@@ -2135,6 +2251,46 @@ export default function ServicesScreen() {
           calendars={setupCalendars}
           stripeConnected={stripeConnected}
           collectiveHost={setupCollectiveHost}
+        />
+      ) : null}
+
+      {/* The host copies a member's own service onto the collective page (web AddFromVenueDialog). */}
+      {addFromVisible && serviceCollective ? (
+        <AddFromVenueSheet
+          collectiveId={serviceCollective.id}
+          collectiveName={serviceCollective.name}
+          venues={collectiveMemberVenues}
+          currencySymbol={currencySymbolFor(venue?.currency)}
+          initialVenueId={addFromPresetUsed ? null : (addFromPreset?.venueId ?? null)}
+          initialServiceId={addFromPresetUsed ? null : (addFromPreset?.serviceId ?? null)}
+          onClose={() => {
+            setAddFromOpen(false);
+            setAddFromPresetUsed(true);
+          }}
+          onAdded={(message) => {
+            setAddFromOpen(false);
+            setAddFromPresetUsed(true);
+            setAddFromDone(message);
+          }}
+        />
+      ) : null}
+
+      {/* A host's service at a member: read it, and choose this venue's calendars (web MemberServiceView). */}
+      {viewingService && viewingService.collective ? (
+        <MemberServiceSheet
+          key={viewingService.id}
+          service={viewingService}
+          block={viewingService.collective}
+          calendars={appointmentCalendarsOf(practitioners).map((p) => ({
+            id: p.id,
+            name: p.name,
+            offers: calendarOffersService(p.id, viewingService.id),
+          }))}
+          expectedCalendarIds={linkedCalendarIds(viewingService.id)}
+          currencySymbol={currencySymbolFor(venue?.currency)}
+          complianceEnabled={complianceEnabled}
+          onClose={() => setViewingService(null)}
+          onSaved={() => setViewingService(null)}
         />
       ) : null}
 
@@ -2512,6 +2668,22 @@ export default function ServicesScreen() {
               <Switch value={isActive} onValueChange={setIsActive} />
             </View>
 
+            {isAdmin ? (
+              <View style={styles.sectionStack}>
+                <View style={styles.switchRow}>
+                  <Text variant="bodyMedium">{STAFF_ONLY_LABEL}</Text>
+                  <Switch
+                    value={staffOnly}
+                    onValueChange={setStaffOnly}
+                    accessibilityLabel={STAFF_ONLY_LABEL}
+                  />
+                </View>
+                <Text variant="caption" tone="muted">
+                  {staffOnlyHelp(collectiveNameFromServices(services))}
+                </Text>
+              </View>
+            ) : null}
+
             {/* Admin-only advanced sections — each collapsed by default so the
                 common fields above stay reachable without scrolling. The save
                 payload, replace-array semantics and validation are unchanged;
@@ -2668,22 +2840,6 @@ export default function ServicesScreen() {
             <Text variant="subheading">Taken off the page, not deleted</Text>
             <Text variant="bodySmall" tone="secondary">
               {deleteHalfway}
-            {isAdmin ? (
-              <View style={styles.sectionStack}>
-                <View style={styles.switchRow}>
-                  <Text variant="bodyMedium">{STAFF_ONLY_LABEL}</Text>
-                  <Switch
-                    value={staffOnly}
-                    onValueChange={setStaffOnly}
-                    accessibilityLabel={STAFF_ONLY_LABEL}
-                  />
-                </View>
-                <Text variant="caption" tone="muted">
-                  {staffOnlyHelp(collectiveNameFromServices(services))}
-                </Text>
-              </View>
-            ) : null}
-
             </Text>
             <View style={styles.actions}>
               <Button label="Close" variant="secondary" style={styles.flex1} onPress={closeDeleteSheet} />
@@ -2779,6 +2935,14 @@ export default function ServicesScreen() {
 // ---------------------------------------------------------------------------
 
 const styles = StyleSheet.create({
+  listHeader: {
+    gap: spacing.sm,
+  },
+  addFromDone: {
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: spacing.md,
+  },
   headerActions: {
     flexDirection: 'row',
     gap: spacing.sm,
