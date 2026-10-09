@@ -1,17 +1,18 @@
 import { barcodeProblem, BARCODE_CHECK_DIGIT_SENTENCE, detectSymbology } from '@/lib/retail/barcode';
 import { parseMoneyInput, penceToInput } from '@/lib/pos/sale-math';
-import type { ProductUsage, RetailProduct, RetailVariant, Symbology, TaxCategory } from '@/types/retail';
+import type { Jurisdiction } from '@/lib/retail/unit-price';
+import type { NetUnit, ProductUsage, RetailProduct, RetailVariant, Symbology, TaxCategory } from '@/types/retail';
 
 /**
  * The app's product editor: its form state and the body it sends (POS plan P7-12; UX spec §6.2,
  * §6.3, §13.6), following the web's `src/components/retail/products/editor-model.ts`.
  *
- * The app edits what the spec gives it: the name, brand and category, how it is used, the two
- * restriction ticks, the VAT category, and per option the name, SKU, barcodes, price, cost, whether
- * it counts stock, the reorder level and quantity, and a new option's starting count. Everything
- * else (description, sizes, supplier, manufacturer details and so on) stays on the web: an edit
- * sends only the fields the app shows, and `retail_save_product` leaves a field it is not sent as
- * it was.
+ * Every field the web's editor has (2026-10-09 parity): the name, brand, category and
+ * description, how it is used, "Sealed for hygiene reasons", "This is make-up" (where the venue's
+ * unit price rules have a make-up basis), the restriction ticks, the manufacturer's details, the
+ * VAT category, the supplier (Track stock on), and per option the name, SKU, barcodes, price, size
+ * and unit, cost, whether it counts stock, the reorder level and quantity, order up to, pack size
+ * and a new option's starting count.
  *
  *   - "Not sold online" is `sold_online` false; "Age restricted (18+)" is `restriction` 'age_18'
  *     and also keeps it off the shop, as does backbar-only use (the database's CHECK).
@@ -34,12 +35,16 @@ export interface OptionDraft {
   sku: string;
   barcodes: BarcodeDraft[];
   price: string;
+  net_quantity: string;
+  net_unit: '' | NetUnit;
   cost: string;
   /** The cost as first shown, so an untouched average cost is not sent back rounded. */
   cost_initial: string;
   track_stock: boolean;
   reorder_level: string;
   reorder_quantity: string;
+  order_up_to_level: string;
+  pack_size: string;
   opening_quantity: string;
   /** Read only, for the Stock section. */
   on_hand: number;
@@ -50,11 +55,18 @@ export interface ProductDraft {
   name: string;
   brand_id: string | null;
   category_id: string | null;
+  supplier_id: string | null;
+  description: string;
   usage: ProductUsage;
   sold_in_store: boolean;
   not_online: boolean;
   age18: boolean;
+  hygiene_sealed: boolean;
+  makeup: boolean;
   tax_category: '' | TaxCategory;
+  manufacturer_name: string;
+  manufacturer_address: string;
+  manufacturer_contact: string;
   /** "This product comes in different sizes or shades". */
   multi: boolean;
   options: OptionDraft[];
@@ -63,6 +75,8 @@ export interface ProductDraft {
 export interface EditorContext {
   trackStock: boolean;
   vatRegistered: boolean;
+  /** The bootstrap's `tax_settings.jurisdiction`: 'ni' sends `unit_price_basis`, as the web does. */
+  jurisdiction?: Jurisdiction;
 }
 
 /** The sentences the model shows, from the copy deck (passed in so this stays pure). */
@@ -72,6 +86,8 @@ export interface EditorWords {
   numberInvalid: string;
   needOption: string;
   barcodeInvalid: string;
+  sizeInvalid: string;
+  sizeUnit: string;
 }
 
 let keySeq = 0;
@@ -97,12 +113,16 @@ export function newOption(trackStock: boolean): OptionDraft {
     sku: '',
     barcodes: [],
     price: '',
+    net_quantity: '',
+    net_unit: '',
     cost: '',
     cost_initial: '',
     // New options count stock once Track stock is on (UX spec §6.3 `var.track`).
     track_stock: trackStock,
     reorder_level: '',
     reorder_quantity: '',
+    order_up_to_level: '',
+    pack_size: '',
     opening_quantity: '',
     on_hand: 0,
     reserved: 0,
@@ -119,11 +139,15 @@ function optionFromVariant(v: RetailVariant): OptionDraft {
     sku: text(v.sku),
     barcodes: v.barcodes.map((b) => ({ barcode: b.barcode, symbology: b.symbology })),
     price: penceToInput(v.price_pence),
+    net_quantity: text(v.net_quantity),
+    net_unit: v.net_unit ?? '',
     cost,
     cost_initial: cost,
     track_stock: v.track_stock,
     reorder_level: text(v.reorder_level),
     reorder_quantity: text(v.reorder_quantity),
+    order_up_to_level: text(v.order_up_to_level),
+    pack_size: text(v.pack_size),
     opening_quantity: '',
     on_hand: v.on_hand,
     reserved: v.reserved,
@@ -136,11 +160,18 @@ export function draftFromProduct(p: RetailProduct | null, trackStock: boolean): 
       name: '',
       brand_id: null,
       category_id: null,
+      supplier_id: null,
+      description: '',
       usage: 'retail',
       sold_in_store: true,
       not_online: false,
       age18: false,
+      hygiene_sealed: false,
+      makeup: false,
       tax_category: '',
+      manufacturer_name: '',
+      manufacturer_address: '',
+      manufacturer_contact: '',
       multi: false,
       options: [newOption(trackStock)],
     };
@@ -154,11 +185,18 @@ export function draftFromProduct(p: RetailProduct | null, trackStock: boolean): 
     name: p.name,
     brand_id: p.brand_id,
     category_id: p.category_id,
+    supplier_id: p.supplier_id,
+    description: text(p.description),
     usage: p.usage,
     sold_in_store: p.sold_in_store,
     not_online: !p.sold_online,
     age18: p.restriction === 'age_18',
+    hygiene_sealed: p.hygiene_sealed,
+    makeup: p.unit_price_basis === 'makeup',
     tax_category: p.tax_category ?? '',
+    manufacturer_name: text(p.manufacturer_name),
+    manufacturer_address: text(p.manufacturer_address),
+    manufacturer_contact: text(p.manufacturer_contact),
     multi: options.length > 1,
     options: options.length ? options : [newOption(trackStock)],
   };
@@ -210,6 +248,7 @@ export function buildProductBody(
   const name = d.name.trim();
   if (!name) errors.name = words.nameRequired;
   else if (name.length > 120) errors.name = 'Keep the name to 120 characters or fewer.';
+  if (d.description.trim().length > 4000) errors.description = 'Keep the description to 4,000 characters or fewer.';
 
   const variants: Record<string, unknown>[] = [];
   const variantKeys: string[] = [];
@@ -235,6 +274,20 @@ export function buildProductBody(
     if (price == null || price > 2_000_000) e('price', words.priceInvalid);
     else v.price_pence = price;
 
+    const qtyRaw = o.net_quantity.trim().replace(',', '.');
+    if (qtyRaw || o.net_unit) {
+      const qty = Number(qtyRaw);
+      if (!qtyRaw || !Number.isFinite(qty) || qty <= 0 || qty > 1_000_000) e('net_quantity', words.sizeInvalid);
+      else if (!o.net_unit) e('net_quantity', words.sizeUnit);
+      else {
+        v.net_quantity = qty;
+        v.net_unit = o.net_unit;
+      }
+    } else {
+      v.net_quantity = null;
+      v.net_unit = null;
+    }
+
     const barcodes: Record<string, unknown>[] = [];
     for (const b of o.barcodes) {
       const problem = barcodeError(b, words);
@@ -256,12 +309,17 @@ export function buildProductBody(
         }
       }
       v.track_stock = o.track_stock;
-      const level = whole(o.reorder_level, 0);
-      if (level === 'bad') e('reorder_level', words.numberInvalid);
-      else v.reorder_level = level;
-      const qty = whole(o.reorder_quantity, 1);
-      if (qty === 'bad') e('reorder_quantity', words.numberInvalid);
-      else v.reorder_quantity = qty;
+      const fields: [keyof OptionDraft, string, number][] = [
+        ['reorder_level', 'reorder_level', 0],
+        ['reorder_quantity', 'reorder_quantity', 1],
+        ['order_up_to_level', 'order_up_to_level', 1],
+        ['pack_size', 'pack_size', 1],
+      ];
+      for (const [k, out, min] of fields) {
+        const n = whole(String(o[k]), min);
+        if (n === 'bad') e(out, words.numberInvalid);
+        else v[out] = n;
+      }
       if (!o.id && o.track_stock) {
         const opening = whole(o.opening_quantity, 0);
         if (opening === 'bad') e('opening_quantity', words.numberInvalid);
@@ -279,9 +337,14 @@ export function buildProductBody(
     name,
     brand_id: d.brand_id,
     category_id: d.category_id,
+    description: nullable(d.description),
     usage: d.usage,
     sold_in_store: d.sold_in_store,
     sold_online: !(d.not_online || d.age18 || d.usage === 'professional'),
+    hygiene_sealed: d.hygiene_sealed,
+    manufacturer_name: nullable(d.manufacturer_name),
+    manufacturer_address: nullable(d.manufacturer_address),
+    manufacturer_contact: nullable(d.manufacturer_contact),
     variants,
   };
   // v1 shows "none" and "age_18" only; a v1.x restriction already on the product is left alone,
@@ -289,6 +352,8 @@ export function buildProductBody(
   if (d.age18) body.restriction = 'age_18';
   else if (!initial || initial.restriction === 'age_18' || initial.restriction === 'none') body.restriction = 'none';
   else body.sold_online = false;
+  if (ctx.trackStock) body.supplier_id = d.supplier_id;
+  if (ctx.jurisdiction === 'ni') body.unit_price_basis = d.makeup ? 'makeup' : 'standard';
   if (ctx.vatRegistered) body.tax_category = d.tax_category || null;
   return { ok: true, body, variantKeys };
 }

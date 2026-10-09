@@ -2,7 +2,7 @@ import { Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
-import { AmountRow, ErrorLine, money, Notice, posStyles, usePosT } from '@/components/pos/parts';
+import { AmountRow, ErrorLine, money, Notice, posStyles } from '@/components/pos/parts';
 import { ReceiveSheet, VariantPickerSheet } from '@/components/retail/PurchasingSheets';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -29,6 +29,7 @@ import {
   poStatusTone,
   type DraftLine,
 } from '@/lib/retail/purchasing';
+import { useStockT } from '@/lib/retail/stock-setup-copy';
 import { shortWhen } from '@/lib/retail/stock-words';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { usePosBootstrap, usePosEnabled } from '@/lib/queries/usePos';
@@ -52,9 +53,14 @@ import type { PurchaseOrderDetail } from '@/types/retail';
  * with the version; a 412 loads the other person's order), "Send to supplier" (asks first; needs
  * the supplier's email) and "Cancel order". Any order: the PDF through the share sheet. A sent or
  * part received order, for `receive_stock`: "Receive delivery". Deliveries so far are listed.
+ *
+ * As the web's `PurchaseOrderPage.tsx` (2026-10-09 parity): a sent order can be sent again, any
+ * open order (draft, sent or part received) can be cancelled and received (not while a draft has
+ * unsaved changes), each draft line shows what is in stock, and a sent order's lines show what has
+ * arrived, the SKU, a deleted product and anything added at delivery.
  */
 export default function PurchaseOrderScreen() {
-  const t = usePosT();
+  const t = useStockT();
   const { id } = useLocalSearchParams<{ id: string }>();
   const orderId = typeof id === 'string' ? id : '';
   const posEnabled = usePosEnabled();
@@ -111,7 +117,7 @@ function OrderBody({
   refreshing: boolean;
   reload: () => void;
 }) {
-  const t = usePosT();
+  const t = useStockT();
   const toast = useToast();
   const accessToken = useAccessToken();
   const order = data.order;
@@ -133,8 +139,15 @@ function OrderBody({
     draftChanged(draft, data.lines) || (expected ?? null) !== (order.expected_on ?? null) || notes.trim() !== (order.notes ?? '').trim();
   const total = draftMode ? draftTotal(draft) : order.total_cost_pence;
   const belowMinimum = supplier.min_order_pence != null && supplier.min_order_pence > 0 && total < supplier.min_order_pence;
-  const canReceive = data.can_receive && (order.status === 'sent' || order.status === 'part_received');
-  const canCancel = data.can_manage && (order.status === 'draft' || order.status === 'sent');
+  const open = order.status === 'draft' || order.status === 'sent' || order.status === 'part_received';
+  const canReceive = data.can_receive && open && data.lines.length > 0;
+  const canCancel = data.can_manage && open;
+  const canSend = data.can_manage && (order.status === 'draft' || order.status === 'sent');
+  const sendLines = draftMode ? draft.length : data.lines.length;
+  // What is in stock for each line's product, for the draft's lines (a product picked here brings its own).
+  const [inStock, setInStock] = useState<Record<string, number>>(() =>
+    Object.fromEntries(data.lines.map((l) => [l.variant_id, l.on_hand])),
+  );
 
   /** Saves the draft; answers the order's new version, or null when it was not saved. */
   async function save(): Promise<number | null> {
@@ -280,11 +293,11 @@ function OrderBody({
                     />
                   </View>
                   {!l.exists ? <Notice tone="warning">{t('po.line.gone')}</Notice> : null}
-                  {l.sku ? (
-                    <Text variant="caption" tone="muted">
-                      {l.sku}
-                    </Text>
-                  ) : null}
+                  <Text variant="caption" tone="muted">
+                    {[l.sku, inStock[l.variant_id] != null ? `${t('po.col.inStock')}: ${inStock[l.variant_id]}` : null]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </Text>
                   <View style={styles.pair}>
                     <Input
                       label={t('po.col.qty')}
@@ -344,14 +357,18 @@ function OrderBody({
             <Card key={l.id}>
               <View style={posStyles.stack}>
                 <Text variant="label">{l.name}</Text>
-                {l.added_at_receipt ? (
+                {l.sku || !l.exists || l.added_at_receipt ? (
                   <Text variant="caption" tone="muted">
-                    {t('po.line.added')}
+                    {[l.sku, !l.exists ? t('po.line.gone') : null, l.added_at_receipt ? t('po.line.added') : null].filter(Boolean).join(' · ')}
                   </Text>
                 ) : null}
-                <Text variant="caption" tone="muted">
-                  {t('po.receive.ordered', { received: l.quantity_received, ordered: l.quantity_ordered })}
-                </Text>
+                {order.status === 'draft' ? (
+                  <AmountRow label={t('po.col.ordered')} amount={String(l.quantity_ordered)} muted />
+                ) : (
+                  <Text variant="caption" tone="muted">
+                    {t('po.receive.ordered', { received: l.quantity_received, ordered: l.quantity_ordered })}
+                  </Text>
+                )}
                 <AmountRow label={t('po.col.cost')} amount={money(l.unit_cost_pence)} muted />
                 <AmountRow label={t('po.col.total')} amount={money(l.line_total_pence)} />
               </View>
@@ -363,7 +380,7 @@ function OrderBody({
         {belowMinimum && supplier.min_order_pence != null ? (
           <Notice tone="warning">{t('po.minOrder', { supplier: supplier.name, amount: money(supplier.min_order_pence) })}</Notice>
         ) : null}
-        {draftMode && !supplier.email ? <Notice tone="warning">{t('po.noEmail', { supplier: supplier.name })}</Notice> : null}
+        {canSend && !supplier.email ? <Notice tone="warning">{t('po.noEmail', { supplier: supplier.name })}</Notice> : null}
         {draftMode && changed ? (
           <Text variant="caption" tone="muted">
             {t('po.unsaved')}
@@ -373,19 +390,21 @@ function OrderBody({
 
         <View style={posStyles.buttons}>
           {draftMode ? (
-            <>
-              <Button label={t('app.po.save')} loading={update.isPending} disabled={!changed || update.isPending} onPress={() => void save()} fullWidth />
-              <Button
-                label={t('po.send')}
-                variant="secondary"
-                disabled={!supplier.email || draft.length === 0 || action.isPending || update.isPending}
-                onPress={() => setConfirm('send')}
-                fullWidth
-              />
-            </>
+            <Button label={t('app.po.save')} loading={update.isPending} disabled={!changed || update.isPending} onPress={() => void save()} fullWidth />
           ) : null}
-          {canReceive ? <Button label={t('po.receive')} onPress={() => setReceiving(true)} fullWidth /> : null}
-          <Button label={t('app.receipt.share')} variant="ghost" loading={sharing} onPress={() => void sharePdf()} fullWidth />
+          {canSend ? (
+            <Button
+              label={t('po.send')}
+              variant="secondary"
+              disabled={!supplier.email || sendLines === 0 || action.isPending || update.isPending}
+              onPress={() => setConfirm('send')}
+              fullWidth
+            />
+          ) : null}
+          {canReceive ? (
+            <Button label={t('po.receive')} disabled={(draftMode && changed) || action.isPending} onPress={() => setReceiving(true)} fullWidth />
+          ) : null}
+          <Button label={t('po.download')} variant="ghost" loading={sharing} onPress={() => void sharePdf()} fullWidth />
           {canCancel ? <Button label={t('po.cancel')} variant="ghost" disabled={action.isPending} onPress={() => setConfirm('cancel')} fullWidth /> : null}
         </View>
 
@@ -422,6 +441,7 @@ function OrderBody({
         onPick={(v) => {
           setPicking(false);
           setDraft((cur) => addToDraft(cur, v, pickerLabel(v)));
+          setInStock((cur) => ({ ...cur, [v.variant_id]: v.on_hand }));
         }}
       />
       <ReceiveSheet visible={receiving} detail={data} onClose={() => setReceiving(false)} />

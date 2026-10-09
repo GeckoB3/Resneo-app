@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { AmountRow, ChoiceChips, ErrorLine, money, Notice, PickRow, PosSheet, posStyles, usePosT } from '@/components/pos/parts';
+import { ChoiceChips, ErrorLine, Notice, PickRow, PosSheet, posStyles, usePosT } from '@/components/pos/parts';
 import { CameraScanner, ScanButton, type ScanMessage } from '@/components/retail/CameraScanner';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -239,22 +239,34 @@ function UseStockBody({ booking, timeZone, onClose }: { booking: UseStockBooking
  */
 export function NewOrderSheet({
   visible,
+  initialSupplierId,
   onClose,
   onCreated,
 }: {
   visible: boolean;
+  /** Low stock's "Suggest an order" opens the sheet with that supplier chosen. */
+  initialSupplierId?: string | null;
   onClose: () => void;
   onCreated: (id: string, message: string | null) => void;
 }) {
-  return visible ? <NewOrderBody onClose={onClose} onCreated={onCreated} /> : null;
+  return visible ? <NewOrderBody initialSupplierId={initialSupplierId ?? null} onClose={onClose} onCreated={onCreated} /> : null;
 }
 
-function NewOrderBody({ onClose, onCreated }: { onClose: () => void; onCreated: (id: string, message: string | null) => void }) {
+function NewOrderBody({
+  initialSupplierId,
+  onClose,
+  onCreated,
+}: {
+  initialSupplierId: string | null;
+  onClose: () => void;
+  onCreated: (id: string, message: string | null) => void;
+}) {
   const t = usePosT();
   const suppliers = useSuppliers();
   const create = useCreatePurchaseOrder();
-  const requestId = useRef(newPaymentAttemptId());
-  const [supplierId, setSupplierId] = useState<string | null>(null);
+  // One key per supplier and kind, kept across a retry, so a double tap never makes two orders (web `NewOrderDialog`).
+  const keys = useRef(new Map<string, string>());
+  const [supplierId, setSupplierId] = useState<string | null>(initialSupplierId);
   const [error, setError] = useState<string | null>(null);
   const live = (suppliers.data ?? []).filter((s) => !s.archived_at);
   const supplier = live.find((s) => s.id === supplierId) ?? null;
@@ -266,7 +278,9 @@ function NewOrderBody({ onClose, onCreated }: { onClose: () => void; onCreated: 
     }
     setError(null);
     try {
-      const res = await create.mutateAsync({ clientRequestId: requestId.current, supplierId: supplier.id, suggest });
+      const keyName = `${suggest ? 'suggest' : 'blank'}:${supplier.id}`;
+      if (!keys.current.has(keyName)) keys.current.set(keyName, newPaymentAttemptId());
+      const res = await create.mutateAsync({ clientRequestId: keys.current.get(keyName)!, supplierId: supplier.id, suggest });
       const message = suggest
         ? (res.suggested ?? 0) > 0
           ? t('po.suggest.added', { count: res.suggested ?? 0, supplier: supplier.name })
@@ -316,44 +330,6 @@ function NewOrderBody({ onClose, onCreated }: { onClose: () => void; onCreated: 
         </Text>
       ) : null}
       <ErrorLine message={error} />
-    </PosSheet>
-  );
-}
-
-// ─── Suppliers (§6.12, read only in the app) ────────────────────────────────
-
-export function SuppliersSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
-  const t = usePosT();
-  const suppliers = useSuppliers({ enabled: visible });
-  const live = (suppliers.data ?? []).filter((s) => !s.archived_at);
-  return (
-    <PosSheet visible={visible} onClose={onClose} title={t('app.po.suppliers')} subtitle={t('app.po.suppliers.web')}>
-      {suppliers.isLoading ? (
-        <Text tone="muted">{t('app.loading')}</Text>
-      ) : suppliers.isError ? (
-        <ErrorLine message={posErrorMessage(suppliers.error, t('sup.error'))} />
-      ) : live.length === 0 ? (
-        <View style={posStyles.stack}>
-          <Text variant="label">{t('sup.empty.title')}</Text>
-          <Text tone="muted">{t('sup.empty.body')}</Text>
-        </View>
-      ) : (
-        live.map((s) => (
-          <Card key={s.id}>
-            <View style={styles.supplier}>
-              <Text variant="label">{s.name}</Text>
-              {s.contact_name ? <AmountRow label={t('sup.f.contact')} amount={s.contact_name} muted /> : null}
-              {s.email ? <AmountRow label={t('sup.f.email')} amount={s.email} muted /> : null}
-              {s.phone ? <AmountRow label={t('sup.f.phone')} amount={s.phone} muted /> : null}
-              {s.account_number ? <AmountRow label={t('sup.f.account')} amount={s.account_number} muted /> : null}
-              {s.lead_time_days != null ? (
-                <AmountRow label={t('sup.col.leadTime')} amount={t('sup.leadTime.days', { count: s.lead_time_days })} muted />
-              ) : null}
-              {s.min_order_pence != null ? <AmountRow label={t('sup.f.minOrder')} amount={money(s.min_order_pence)} muted /> : null}
-            </View>
-          </Card>
-        ))
-      )}
     </PosSheet>
   );
 }
@@ -638,5 +614,4 @@ function ReceiveBody({ detail, onClose }: { detail: PurchaseOrderDetail; onClose
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   pair: { flexDirection: 'row', gap: spacing.sm },
-  supplier: { gap: spacing.xs },
 });
