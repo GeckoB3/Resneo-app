@@ -169,6 +169,28 @@ export const queryKeys = {
       [...queryKeys.reports.all(), 'export-count', keyScope(accessToken), query ?? null] as const,
   },
 
+  /**
+   * Checkout (POS). Only venues with `pos_enabled` ever fill these (lib/pos/pos-enabled.ts).
+   * Reports' Takings and Sales sit here too, so one invalidation after a payment or refund
+   * refreshes every POS figure.
+   */
+  pos: {
+    all: () => [...queryKeys.all, 'pos'] as const,
+    bootstrap: (accessToken?: string | null) => [...queryKeys.pos.all(), 'bootstrap', keyScope(accessToken)] as const,
+    catalogue: (accessToken?: string | null) => [...queryKeys.pos.all(), 'catalogue', keyScope(accessToken)] as const,
+    queue: (accessToken?: string | null, date?: string | null) =>
+      [...queryKeys.pos.all(), 'queue', keyScope(accessToken), date ?? null] as const,
+    sales: (accessToken?: string | null, query?: string | null) =>
+      [...queryKeys.pos.all(), 'sales', keyScope(accessToken), query ?? null] as const,
+    sale: (accessToken?: string | null, saleId?: string | null) =>
+      [...queryKeys.pos.all(), 'sale', keyScope(accessToken), saleId ?? null] as const,
+    reportAccess: (accessToken?: string | null) => [...queryKeys.pos.all(), 'report-access', keyScope(accessToken)] as const,
+    takings: (accessToken?: string | null, query?: string | null) =>
+      [...queryKeys.pos.all(), 'takings', keyScope(accessToken), query ?? null] as const,
+    salesReport: (accessToken?: string | null, query?: string | null) =>
+      [...queryKeys.pos.all(), 'sales-report', keyScope(accessToken), query ?? null] as const,
+  },
+
   referrals: {
     all: () => [...queryKeys.all, 'referrals'] as const,
     dashboard: (accessToken?: string | null) =>

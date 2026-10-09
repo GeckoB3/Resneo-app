@@ -73,11 +73,20 @@ export type VenueFeatureFlagsRaw = Partial<
   waitlist_config?: WaitlistConfig;
 };
 
+/**
+ * Platform-only switches (POS plan D42): only ResNeo turns them on, from
+ * `/super/flags`, so the app reads them and never toggles them. `pos_enabled`
+ * is Checkout (POS plan §4.20). An older web deploy does not send the key, which
+ * reads as off, so every POS surface stays hidden (§4.22, §13.11).
+ */
+export type PlatformOnlyFeatureFlagKey = 'pos_enabled';
+
 /** Env + venue merged flags returned by GET /api/venue. */
 export type ResolvedAppointmentsFeatureFlags = Record<
   AppointmentsFeatureFlagKey,
   boolean
->;
+> &
+  Partial<Record<PlatformOnlyFeatureFlagKey, boolean>>;
 
 export interface VenueFeatureFlagsPayload {
   raw: VenueFeatureFlagsRaw;
