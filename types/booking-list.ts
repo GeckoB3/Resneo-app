@@ -55,6 +55,10 @@ export interface BookingListRow {
   staff_attendance_confirmed_at?: string | null;
   client_arrived_at?: string | null;
   source?: string | null;
+  /** The collective page the booking was made through; null when booked direct. */
+  collective_id?: string | null;
+  /** That collective's name ('Collective' when unknown); null when booked direct. */
+  collective_name?: string | null;
 }
 
 export interface BookingsListResponse {

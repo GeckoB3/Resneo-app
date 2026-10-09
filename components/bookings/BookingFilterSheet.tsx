@@ -6,6 +6,7 @@ import { Chip } from '@/components/ui/Chip';
 import { Sheet } from '@/components/ui/Sheet';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Text } from '@/components/ui/Text';
+import type { CollectiveChoice, CollectiveFilter } from '@/lib/booking/collective-filter';
 import { useAppointmentCatalog } from '@/lib/queries/useAppointmentCatalog';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -61,6 +62,12 @@ type BookingFilterSheetProps = {
   serviceFilter: string | null;
   onChangeService: (id: string | null) => void;
 
+  // Booked through: the collectives the loaded bookings came through. Pass an
+  // empty array to hide the section (as the web does when none did).
+  collectiveChoices?: CollectiveChoice[];
+  collectiveFilter?: CollectiveFilter;
+  onChangeCollective?: (filter: CollectiveFilter) => void;
+
   // Compliance — only when there are bookings needing compliance.
   showCompliance: boolean;
   complianceNeedsCount: number;
@@ -105,7 +112,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 
 /**
  * One bottom sheet for every booking filter — status, staff, type, time of day,
- * service and compliance — replacing the stacked horizontal chip rows that ate
+ * service, booked through (collective) and compliance — replacing the stacked horizontal chip rows that ate
  * the top of the appointments list. The parent owns all filter state; this is a
  * presentational shell. Each section hides itself when it has nothing to show.
  */
@@ -135,6 +142,9 @@ export function BookingFilterSheet({
   venueId,
   serviceFilter,
   onChangeService,
+  collectiveChoices = [],
+  collectiveFilter = 'all',
+  onChangeCollective,
   showCompliance,
   complianceNeedsCount,
   needsComplianceOnly,
@@ -275,6 +285,29 @@ export function BookingFilterSheet({
                     onPress={() => onChangeService(serviceFilter === s.id ? null : s.id)}
                   />
                 ))}
+          </Section>
+        ) : null}
+
+        {collectiveChoices.length > 0 && onChangeCollective ? (
+          <Section title="Booked through">
+            <Chip
+              label="Any page"
+              selected={collectiveFilter === 'all'}
+              onPress={() => onChangeCollective('all')}
+            />
+            {collectiveChoices.map((c) => (
+              <Chip
+                key={c.id}
+                label={c.name}
+                selected={collectiveFilter === c.id}
+                onPress={() => onChangeCollective(collectiveFilter === c.id ? 'all' : c.id)}
+              />
+            ))}
+            <Chip
+              label="Not through a collective"
+              selected={collectiveFilter === 'none'}
+              onPress={() => onChangeCollective(collectiveFilter === 'none' ? 'all' : 'none')}
+            />
           </Section>
         ) : null}
 

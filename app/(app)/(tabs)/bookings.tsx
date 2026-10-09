@@ -40,6 +40,12 @@ import { Text } from '@/components/ui/Text';
 
 import { newBookingActionLabel } from '@/lib/booking/terminology';
 import { collapseMultiServiceVisits } from '@/lib/booking/collapseMultiServiceVisits';
+import {
+  collectiveChoicesFor,
+  collectiveFilterLabel,
+  filterByCollective,
+  type CollectiveFilter,
+} from '@/lib/booking/collective-filter';
 import { inferBookingRowModel } from '@/lib/booking/infer-booking-row-model';
 import type { BookingModel } from '@/types/venue';
 import {
@@ -408,6 +414,8 @@ export default function BookingsScreen() {
   const [search, setSearch] = useState('');
   const [practitionerFilter, setPractitionerFilter] = useState<string | null>(null);
   const [serviceFilter, setServiceFilter] = useState<string | null>(null);
+  // "Booked through": all, none (not through a collective page) or a collective id.
+  const [collectiveFilter, setCollectiveFilter] = useState<CollectiveFilter>('all');
   const [modelFilter, setModelFilter] = useState<ModelFilterKey | null>(null);
   const [needsComplianceOnly, setNeedsComplianceOnly] = useState(false);
   // Unpaid-promotion guard for the swipe "Accept" action. Owned here, not per
@@ -636,6 +644,12 @@ export default function BookingsScreen() {
       rows = rows.filter((b) => b.guest_id === guestFilter);
     }
 
+    // Booked through: narrows this venue's own bookings only; linked venues'
+    // rows pass through, as on the web where they are a separate list.
+    if (collectiveFilter !== 'all') {
+      rows = filterByCollective(rows, collectiveFilter, (id) => linkedMetaById.has(id));
+    }
+
     if (practitionerFilter) {
       rows = rows.filter(
         (b) => (b.practitioner_id ?? b.calendar_id) === practitionerFilter,
@@ -689,6 +703,8 @@ export default function BookingsScreen() {
     mergedRows,
     search,
     guestFilter,
+    collectiveFilter,
+    linkedMetaById,
     practitionerFilter,
     serviceFilter,
     modelFilter,
@@ -952,6 +968,7 @@ export default function BookingsScreen() {
     status !== 'All' ||
     practitionerFilter !== null ||
     serviceFilter !== null ||
+    collectiveFilter !== 'all' ||
     modelFilter !== null ||
     dayHourRange !== null ||
     needsComplianceOnly;
@@ -971,6 +988,7 @@ export default function BookingsScreen() {
     setStatus('All');
     setPractitionerFilter(null);
     setServiceFilter(null);
+    setCollectiveFilter('all');
     setModelFilter(null);
     setDayHourRange(null);
     setNeedsComplianceOnly(false);
@@ -1006,6 +1024,14 @@ export default function BookingsScreen() {
   )?.label;
 
   const staffFilterAvailable = isAppointment && practitioners.length > 1;
+
+  // The collectives this venue's loaded bookings came through. Empty hides the
+  // "Booked through" section, as on the web.
+  const collectiveChoices = useMemo(
+    () => collectiveChoicesFor(rawRows, collectiveFilter),
+    [rawRows, collectiveFilter],
+  );
+  const collectiveLabel = collectiveFilterLabel(collectiveFilter, collectiveChoices);
 
   // Custom scope without a chosen range yet — prompt the picker instead of
   // navigating days. Reset the day-window filter when leaving the day scope.
@@ -1130,6 +1156,14 @@ export default function BookingsScreen() {
                 selected
                 onPress={() => setServiceFilter(null)}
                 onRemove={() => setServiceFilter(null)}
+              />
+            ) : null}
+            {collectiveLabel !== null ? (
+              <Chip
+                label={collectiveLabel}
+                selected
+                onPress={() => setCollectiveFilter('all')}
+                onRemove={() => setCollectiveFilter('all')}
               />
             ) : null}
             {needsComplianceOnly ? (
@@ -1332,6 +1366,9 @@ export default function BookingsScreen() {
         venueId={venueId}
         serviceFilter={serviceFilter}
         onChangeService={setServiceFilter}
+        collectiveChoices={collectiveChoices}
+        collectiveFilter={collectiveFilter}
+        onChangeCollective={setCollectiveFilter}
         showCompliance={complianceEnabled && complianceNeedsCount > 0}
         complianceNeedsCount={complianceNeedsCount}
         needsComplianceOnly={needsComplianceOnly}
