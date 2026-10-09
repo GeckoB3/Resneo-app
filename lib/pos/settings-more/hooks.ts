@@ -3,6 +3,7 @@ import { useCallback, useMemo, useState } from 'react';
 
 import { posFetch, type PosMethod } from '@/lib/pos/api';
 import { keyScope, queryKeys } from '@/lib/queries/keys';
+import { settingsKeys } from '@/lib/queries/useCheckoutSettings';
 import { usePosGate } from '@/lib/queries/usePos';
 
 import { fieldErrorFor, fieldErrorsFrom, isStaleWrite, sameValue, settingsErrorMessage, settingsMorePaths } from './api';
@@ -17,7 +18,10 @@ import type { FieldError, PosCheckoutSettings, PosSettingsResponse } from './typ
 
 export const settingsMoreKeys = {
   root: () => [...queryKeys.pos.all(), 'settings-more'] as const,
-  settings: (t: string | null) => [...settingsMoreKeys.root(), 'pos-settings', keyScope(t)] as const,
+  // The same cache entry as the first half of Checkout settings (lib/queries/useCheckoutSettings.ts),
+  // so a save on any settings screen is seen by every other one. (Tills stay apart: that half caches
+  // the bare list; the card readers screen refetches its own on every open.)
+  settings: (t: string | null) => settingsKeys.settings(t),
   readers: (t: string | null) => [...settingsMoreKeys.root(), 'readers', keyScope(t)] as const,
   tills: (t: string | null) => [...settingsMoreKeys.root(), 'tills', keyScope(t)] as const,
   vouchers: (t: string | null) => [...settingsMoreKeys.root(), 'voucher-settings', keyScope(t)] as const,
