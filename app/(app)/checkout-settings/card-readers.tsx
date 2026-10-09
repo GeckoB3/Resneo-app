@@ -240,16 +240,17 @@ function CardReadersBody({ venueName }: { venueName: string }) {
                   />
                 </FieldBlock>
               ) : null}
+              {/* One row of matching buttons: rename, the test card (test mode), remove. */}
               <View style={settingsStyles.wrap}>
-                {reader.is_active && reader.model === 'simulated' && testMode ? (
-                  <Button label={readersT('set.readers.testCard')} variant="ghost" size="sm" disabled={busy} onPress={() => void testCard(reader)} />
-                ) : null}
                 {reader.is_active ? (
                   <Button label={readersT('set.readers.rename')} variant="secondary" size="sm" disabled={busy} onPress={() => setRenaming(reader)} />
                 ) : null}
+                {reader.is_active && reader.model === 'simulated' && testMode ? (
+                  <Button label={readersT('set.readers.testCard')} variant="secondary" size="sm" disabled={busy} onPress={() => void testCard(reader)} />
+                ) : null}
                 <Button
                   label={readersT('set.readers.remove')}
-                  variant="ghost"
+                  variant="secondary"
                   size="sm"
                   disabled={busy}
                   loading={busy}
@@ -493,6 +494,6 @@ function RenameSheet({
 
 const styles = StyleSheet.create({
   reader: { gap: spacing.xs, paddingVertical: spacing.sm },
-  notes: { gap: spacing.xs },
+  notes: { gap: spacing.md },
   steps: { gap: spacing.xs },
 });

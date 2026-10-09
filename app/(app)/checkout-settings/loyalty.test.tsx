@@ -294,7 +294,7 @@ describe('the preview', () => {
     await show();
     expect(await screen.findByText('How your clients see it')).toBeTruthy();
     expect(screen.getByText('2 of 6 visits at Studio')).toBeTruthy();
-    expect(screen.getByText(/Your reward is ready: .*5\.00 off\. Just mention it when you pay\./)).toBeTruthy();
+    expect(screen.getByText(/When the card is full: .*5\.00 off\./)).toBeTruthy();
     expect(screen.getAllByTestId('stamp-filled')).toHaveLength(2);
     expect(screen.getAllByTestId('stamp-empty')).toHaveLength(4);
     expect(screen.getByText('Email clients when they earn a reward')).toBeTruthy();

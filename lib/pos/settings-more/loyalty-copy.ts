@@ -34,6 +34,7 @@ export const LOYALTY_SET_COPY = {
     "Visits from this date earn stamps. Earlier visits, and visits you imported, don't. You can add stamps by hand to carry over paper cards.",
   'set.loy.email': 'Email {clients} when they earn a reward', // web inline Toggle label
   'set.loy.preview': 'How your {clients} see it',
+  'set.loy.preview.reward': 'When the card is full: {rewardText}.',
   'set.loy.pause': 'Pause the card',
   'set.loy.pause.title': 'Pause the loyalty card?',
   'set.loy.pause.body': "Nobody earns stamps while it's paused. Rewards already earned can still be used.",

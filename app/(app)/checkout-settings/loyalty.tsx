@@ -376,7 +376,7 @@ function LoyaltyBody({ settings }: { settings: PosSettingsResponse }) {
               {loyT('acct.loyalty.progress', { count: previewCount, needed: value.stamps_needed, venue: settings.venue.name })}
             </Text>
             <Text variant="caption" tone="muted">
-              {loyT('acct.loyalty.reward', { rewardText: preview })}
+              {loyT('set.loy.preview.reward', { rewardText: preview })}
             </Text>
           </View>
         </SettingsCard>

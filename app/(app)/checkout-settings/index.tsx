@@ -6,7 +6,7 @@ import { CheckoutSettingsShell, useCheckoutSettingsCtx } from '@/components/pos/
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
 import { TILE } from '@/lib/navigation/more-destinations';
-import { checkoutSettingsHref, visibleCheckoutSettingsSections } from '@/lib/pos/checkout-settings-sections';
+import { checkoutSettingsHref, groupedCheckoutSettingsSections } from '@/lib/pos/checkout-settings-sections';
 import { SETTINGS_COPY } from '@/lib/pos/settings-copy';
 import { spacing } from '@/theme/index';
 
@@ -27,7 +27,7 @@ export default function CheckoutSettingsHub() {
 function Rows() {
   const router = useRouter();
   const { data, t, vouchersEnabled, loyaltyEnabled, shopEnabled } = useCheckoutSettingsCtx();
-  const sections = visibleCheckoutSettingsSections({
+  const groups = groupedCheckoutSettingsSections({
     can: data.can,
     staffCapabilityMap: data.staff_capability_map,
     trackStockEnabled: data.settings.track_stock_enabled === true,
@@ -40,25 +40,33 @@ function Rows() {
       <Text variant="bodySmall" tone="secondary">
         {t('app.set.intro')}
       </Text>
-      <Card padded={false}>
-        {sections.map((s, i) => (
-          <MoreRow
-            key={s.slug}
-            isFirst={i === 0}
-            icon={s.icon}
-            tile={TILE.navy}
-            label={t(s.title)}
-            hint={t(s.hint)}
-            // Some of these routes are built beside this screen set; a plain string keeps typed
-            // routes happy until every route file is in the tree.
-            onPress={() => router.push(checkoutSettingsHref(s.slug) as Href)}
-          />
-        ))}
-      </Card>
+      {groups.map((g) => (
+        <View key={g.title} style={styles.group}>
+          <Text variant="overline" tone="muted" style={styles.groupTitle}>
+            {g.title}
+          </Text>
+          <Card padded={false}>
+            {g.sections.map((s, i) => (
+              <MoreRow
+                key={s.slug}
+                isFirst={i === 0}
+                icon={s.icon}
+                tile={TILE.navy}
+                label={t(s.title)}
+                hint={t(s.hint)}
+                // A plain string keeps typed routes happy for the routes built beside this screen.
+                onPress={() => router.push(checkoutSettingsHref(s.slug) as Href)}
+              />
+            ))}
+          </Card>
+        </View>
+      ))}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  stack: { gap: spacing.md },
+  stack: { gap: spacing.lg },
+  group: { gap: spacing.sm },
+  groupTitle: { paddingHorizontal: spacing.xs },
 });

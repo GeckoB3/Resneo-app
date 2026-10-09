@@ -24,7 +24,7 @@ describe('the history', () => {
     const base = { id: 'h', delta: 1, visit_date: '2026-10-03', staff_name: 'Sam', reason: 'Carried over from a paper card', sale_number: 1042, at: '2026-10-03T10:00:00Z' };
     expect(historyWords({ ...base, kind: 'earn' }, t, 'Europe/London')).toBe('Stamp for the visit on 3 October 2026');
     expect(historyWords({ ...base, kind: 'adjust', delta: 2 }, t, 'Europe/London')).toBe('2 stamps added by Sam: Carried over from a paper card');
-    expect(historyWords({ ...base, kind: 'adjust', delta: -1 }, t, 'Europe/London')).toBe('1 stamps taken off by Sam: Carried over from a paper card');
+    expect(historyWords({ ...base, kind: 'adjust', delta: -1 }, t, 'Europe/London')).toBe('1 stamp taken off by Sam: Carried over from a paper card');
     expect(historyWords({ ...base, kind: 'used' }, t, 'Europe/London')).toBe('Reward used on Sale 1042');
   });
   it('reads an expiry as the day before it ends, in the venue time zone', () => {

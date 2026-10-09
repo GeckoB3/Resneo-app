@@ -3,6 +3,7 @@
  * (`CheckoutSettingsSection.tsx`), in the web's order.
  */
 import {
+  CHECKOUT_SETTINGS_GROUPS,
   CHECKOUT_SETTINGS_SECTIONS,
   canOpenCheckoutSettings,
   checkoutSettingsHref,
@@ -88,5 +89,13 @@ describe('canOpenCheckoutSettings', () => {
     expect(canOpenCheckoutSettings({ is_admin: false, manage_settings: true })).toBe(true);
     expect(canOpenCheckoutSettings({ is_admin: false, manage_settings: false })).toBe(false);
     expect(canOpenCheckoutSettings(null)).toBe(false);
+  });
+});
+
+describe('the hub headings', () => {
+  it('place every section under exactly one heading', () => {
+    const slugs = CHECKOUT_SETTINGS_GROUPS.flatMap((g) => g.slugs);
+    expect(new Set(slugs).size).toBe(slugs.length);
+    expect([...slugs].sort()).toEqual(CHECKOUT_SETTINGS_SECTIONS.map((s) => s.slug).sort());
   });
 });

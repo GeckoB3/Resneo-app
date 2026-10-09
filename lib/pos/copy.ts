@@ -150,6 +150,7 @@ export const POS_COPY = {
   'add.tab.services': 'Services',
   'add.tab.custom': 'Custom',
   'add.options': '{count} options',
+  'add.options.one': '1 option',
   'add.from': 'From {amount}',
   'add.none': 'Nothing matches "{query}".',
   'add.fav.empty': 'No favourites yet. Add the things you sell most, for one-tap selling.',
@@ -754,6 +755,7 @@ export const POS_COPY = {
   'prod.use.professional': 'For treatments only (backbar)',
   'prod.use.both': 'Both',
   'prod.row.options': '{count} options',
+  'prod.row.options.one': '1 option',
   'prod.row.from': 'From {amount}',
   'prod.row.stock': '{count} in stock',
   'prod.row.out': 'Out of stock',
@@ -1007,7 +1009,9 @@ export const POS_COPY = {
   'loyalty.h.earn': 'Stamp for the visit on {date}',
   'loyalty.h.reverse': 'Stamp taken off, because the visit on {date} is no longer completed',
   'loyalty.h.adjust': '{count} stamps added by {staffName}: {reason}',
+  'loyalty.h.adjust.one': '1 stamp added by {staffName}: {reason}',
   'loyalty.h.adjust.remove': '{count} stamps taken off by {staffName}: {reason}',
+  'loyalty.h.adjust.remove.one': '1 stamp taken off by {staffName}: {reason}',
   'loyalty.h.spend': 'Card filled, so a reward was earned',
   'loyalty.h.used': 'Reward used on Sale {saleNo}',
   'loyalty.h.expired': 'Reward ran out',
@@ -1022,6 +1026,7 @@ export const POS_COPY = {
   'loyalty.adjust.reason.mistake': 'Correcting a mistake',
   'loyalty.adjust.confirm': 'Save',
   'loyalty.adjust.tooMany': 'The card only has {count} stamps.',
+  'loyalty.adjust.tooMany.one': 'The card only has 1 stamp.',
   'loyalty.adjust.filled': 'The card is full, so {clientName} has a reward ready: {rewardText}.',
   'loyalty.ready': 'Reward ready',
   'loyalty.apply.title': "{clientName}'s reward",
@@ -1200,6 +1205,7 @@ export const POS_COPY = {
   'app.till.report.title': '{report}: {till}', // (added) "X report: Front desk"
   'app.till.report.failed': "We couldn't open the report. Please try again.", // (added)
   'app.till.report.emailed': 'Z report emailed to {count} admins.', // (added)
+  'app.till.report.emailed.one': 'Z report emailed to 1 admin.', // (added)
   'app.till.report.totalTaken': 'Total taken', // (added) as on the web's printed report
   'app.till.report.tipsPaidOut': 'Tips paid out', // (added) as on the web's printed report
   'app.till.report.hidden': 'Ask an admin to see the cash count.', // (added) expected cash hidden
@@ -1252,7 +1258,9 @@ export const POS_COPY = {
   'po.receive.ref': 'Delivery note reference (optional)',
   'po.receive.extra': "Add something that wasn't ordered",
   'po.receive.confirm': 'Add {count} items to stock',
+  'po.receive.confirm.one': 'Add 1 item to stock',
   'po.receive.done': '{count} items added to stock.',
+  'po.receive.done.one': '1 item added to stock.',
   'use.open': 'Record products used',
   'use.title': 'Record products used',
   'use.qty': 'How many',
@@ -1277,6 +1285,7 @@ export const POS_COPY = {
   'po.saved': 'Order saved.',
   'po.unsaved': 'You have changes that are not saved yet.',
   'po.suggest.added': 'Added {count} products from {supplier}.',
+  'po.suggest.added.one': 'Added 1 product from {supplier}.',
   'po.sent.toast': 'Order emailed to {supplier}.',
   'po.sentTo': 'Sent to {email} on {date}',
   'po.cancelled.toast': 'Order cancelled.',
@@ -1291,6 +1300,7 @@ export const POS_COPY = {
   'po.readOnly': 'An admin can let you draft and send orders. You can still receive deliveries.',
   'po.receipts.title': 'Deliveries',
   'po.receipts.row': '{count} items, {amount}, by {name} on {date}',
+  'po.receipts.row.one': '1 item, {amount}, by {name} on {date}',
   'po.receipts.ref': 'Delivery note {ref}',
   'po.receive.title': 'Receive delivery for order {poNumber}',
   'po.receive.ordered': '{received} of {ordered} received',
@@ -1321,6 +1331,7 @@ export const POS_COPY = {
   'sup.f.minOrder': 'Minimum order',
   'sup.col.leadTime': 'Delivery time',
   'sup.leadTime.days': '{count} days',
+  'sup.leadTime.days.one': '1 day',
   'sup.error': "We couldn't load your suppliers.",
   // The app's own words for app step 4b, where the deck has none.
   'app.po.tab': 'Orders', // (added) the purchase orders tab on Products and stock
@@ -1362,6 +1373,7 @@ export const POS_COPY = {
   'ord.lookup.none': 'No order has that pickup code.',
   'ord.row.number': 'Order {orderNo}',
   'ord.row.items': '{count} items',
+  'ord.row.items.one': '1 item',
   'ord.row.placed': 'Placed {relative}',
   'ord.type.collection': 'Collection',
   'ord.type.delivery': 'Delivery',
@@ -1540,6 +1552,9 @@ export function fillCopy(template: string, vars: CopyVars = {}): string {
 
 /** One string from the deck, filled. */
 export function posCopy(id: PosCopyId, vars: CopyVars = {}): string {
+  // "1 item", not "1 items": a count of one uses the `<id>.one` wording when there is one.
+  const one = `${id}.one`;
+  if (Number(vars.count) === 1 && one in POS_COPY) return fillCopy(POS_COPY[one as PosCopyId], vars);
   return fillCopy(POS_COPY[id], vars);
 }
 

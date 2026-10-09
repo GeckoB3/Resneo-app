@@ -26,6 +26,18 @@ const GB_FIRST_ORDER = (a: string, b: string) => {
 };
 
 /** ISO country codes with calling codes, GB first (NI/UK primary market). */
+/**
+ * A stored number as people read it: a UK number in its national form ("020 7946 0001"), any other
+ * in international form ("+353 1 234 5678"). Anything that does not parse is shown as it came.
+ */
+export function formatPhoneForDisplay(stored: string | null | undefined): string {
+  const raw = stored?.trim() ?? '';
+  if (!raw) return '';
+  const parsed = parsePhoneNumberFromString(raw, 'GB');
+  if (!parsed?.isValid()) return raw;
+  return parsed.country === 'GB' ? parsed.formatNational() : parsed.formatInternational();
+}
+
 export function getSortedCountryCodes(): CountryCode[] {
   return (getCountries() as CountryCode[]).slice().sort(GB_FIRST_ORDER);
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useContext, useEffect, useRef } from 'react';
 import {
   Dimensions,
   Keyboard,
@@ -14,7 +14,8 @@ import {
   type ScrollViewProps,
 } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets, type Edge } from 'react-native-safe-area-context';
+import { HeaderShownContext } from 'expo-router/build/react-navigation/elements';
 
 import { motion, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -58,6 +59,10 @@ export function Screen({
 }: ScreenProps) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  // A navigation header already clears the status bar; padding for it again left an empty band
+  // under every titled screen. Screens without a header (the tabs) still pad the top.
+  const headerShown = useContext(HeaderShownContext);
+  const topEdges: Edge[] = headerShown ? [] : ['top'];
   const paddingStyle = padded ? styles.padded : undefined;
   const safeBottom = bottomInset ? insets.bottom : 0;
 
@@ -152,7 +157,7 @@ export function Screen({
     // top-aligned and fully scrollable when it overflows.
     if (keyboardAvoiding) {
       return (
-        <SafeAreaView style={[styles.flex, { backgroundColor: colors.background }]} edges={['top']}>
+        <SafeAreaView style={[styles.flex, { backgroundColor: colors.background }]} edges={topEdges}>
           <ScrollView
             ref={scrollRef}
             style={[styles.flex, style]}
@@ -170,7 +175,7 @@ export function Screen({
     }
 
     return (
-      <SafeAreaView style={[styles.flex, { backgroundColor: colors.background }]} edges={['top']}>
+      <SafeAreaView style={[styles.flex, { backgroundColor: colors.background }]} edges={topEdges}>
         <ScrollView
           contentContainerStyle={[
             paddingStyle,
@@ -196,7 +201,7 @@ export function Screen({
         style,
         withSafeBottom([paddingStyle, style]),
       ]}
-      edges={['top']}>
+      edges={topEdges}>
       {keyboardAvoiding ? (
         <KeyboardAvoidingView style={styles.flex} behavior={kavBehavior}>
           {inner}

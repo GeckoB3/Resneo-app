@@ -33,6 +33,7 @@ import {
   packingSlipFilename,
   timelineText,
 } from '@/lib/shop/order-words';
+import { formatPhoneForDisplay } from '@/lib/phone/e164';
 import { downloadAndShareFile } from '@/lib/share/share-binary-file';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { useOrderWrite, useShopOrder } from '@/lib/queries/useOrders';
@@ -397,11 +398,16 @@ function OrderBody({
           <View style={posStyles.stack}>
             <Text variant="label">{t('ord.detail.customer')}</Text>
             <Text variant="bodyMedium">{o.contact_name ?? ''}</Text>
+            {/* Left-aligned links under the name, like the client screens; the phone as people read it. */}
             {o.contact_email ? (
-              <Button label={o.contact_email} size="sm" variant="ghost" onPress={() => void Linking.openURL(`mailto:${o.contact_email}`).catch(() => undefined)} />
+              <Text tone="brand" accessibilityRole="link" onPress={() => void Linking.openURL(`mailto:${o.contact_email}`).catch(() => undefined)}>
+                {o.contact_email}
+              </Text>
             ) : null}
             {o.contact_phone ? (
-              <Button label={o.contact_phone} size="sm" variant="ghost" onPress={() => void Linking.openURL(`tel:${o.contact_phone}`).catch(() => undefined)} />
+              <Text tone="brand" accessibilityRole="link" onPress={() => void Linking.openURL(`tel:${o.contact_phone}`).catch(() => undefined)}>
+                {formatPhoneForDisplay(o.contact_phone)}
+              </Text>
             ) : null}
             <Text variant="caption" tone="muted">
               {o.marketing_consent ? t('ord.customer.marketing') : t('ord.customer.noMarketing')}

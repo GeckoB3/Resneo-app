@@ -185,6 +185,30 @@ export function visibleCheckoutSettingsSections(input: CheckoutSettingsGateInput
   return CHECKOUT_SETTINGS_SECTIONS.filter((s) => s.visible(input));
 }
 
+/**
+ * The hub's headings, so related sections sit together (owner, 2026-10-09: every screen ordered
+ * logically). Every slug appears exactly once; a heading with no visible rows is not drawn.
+ */
+export const CHECKOUT_SETTINGS_GROUPS: readonly { title: string; slugs: readonly CheckoutSettingsSlug[] }[] = [
+  { title: 'Your business', slugs: ['features', 'business'] },
+  { title: 'Taking payments', slugs: ['tills', 'card-readers', 'cash', 'payment-types', 'cards-on-file'] },
+  { title: 'Sales and receipts', slugs: ['receipts', 'tips', 'discounts'] },
+  { title: 'Gift vouchers and loyalty', slugs: ['gift-vouchers', 'loyalty'] },
+  { title: 'Products and shop', slugs: ['stock', 'shop'] },
+  { title: 'Your team', slugs: ['permissions', 'commission'] },
+];
+
+/** The visible sections under their headings, in the hub's order. */
+export function groupedCheckoutSettingsSections(
+  input: CheckoutSettingsGateInput,
+): { title: string; sections: CheckoutSettingsSection[] }[] {
+  const visible = new Map(visibleCheckoutSettingsSections(input).map((s) => [s.slug, s]));
+  return CHECKOUT_SETTINGS_GROUPS.map((g) => ({
+    title: g.title,
+    sections: g.slugs.map((slug) => visible.get(slug)).filter((s): s is CheckoutSettingsSection => Boolean(s)),
+  })).filter((g) => g.sections.length > 0);
+}
+
 /** The route a row opens. */
 export function checkoutSettingsHref(slug: CheckoutSettingsSlug): string {
   return `/checkout-settings/${slug}`;
