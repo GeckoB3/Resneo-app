@@ -5,6 +5,7 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-n
 import { BaselineMetricsCard } from '@/components/reports/BaselineMetricsCard';
 import { BookedRevenueSection } from '@/components/reports/BookedRevenueSection';
 import { NewBookingsSection } from '@/components/reports/NewBookingsSection';
+import { SmsUsageBanner } from '@/components/reports/SmsUsageBanner';
 import { CommissionSection, SalesSection, TakingsSection, VouchersSection } from '@/components/reports/PosReportSections';
 import { BookingLogEmailCard } from '@/components/reports/BookingLogEmailCard';
 import { ClientsTab } from '@/components/reports/ClientsTab';
@@ -374,6 +375,10 @@ export default function ReportsScreen() {
 
   const rangeLabel = data ? formatReportRangeLabel(data.from, data.to) : '';
 
+  // Web parity (SettingsView, Reports tab): "SMS segments this period" sits above every report
+  // tab, admins only. Each tab scrolls on its own here, so it heads each tab's scroll.
+  const smsBanner = <SmsUsageBanner enabled={isAdmin} />;
+
   return (
     <Screen scroll={false} padded={false}>
       {header}
@@ -513,6 +518,7 @@ export default function ReportsScreen() {
       ) : posTab && showPosTabs ? (
         // Each POS tab picks its own dates and grain, as Revenue and New bookings do.
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          {smsBanner}
           {shownTab === 'takings' ? (
             <TakingsSection canExport={canExportPos} isAdmin={isAdmin} today={today} />
           ) : shownTab === 'sales' ? (
@@ -531,6 +537,7 @@ export default function ReportsScreen() {
       ) : shownTab === 'new-bookings' ? (
         // New bookings has its own query and range (web 2026-09-18), like Revenue.
         <ScrollView contentContainerStyle={styles.content}>
+          {smsBanner}
           <NewBookingsSection bookingWord={bookingWord} today={today} enabled={isAdmin} />
           <View style={styles.spacer} />
         </ScrollView>
@@ -538,6 +545,7 @@ export default function ReportsScreen() {
         // Booked revenue has its own query and range (web #191); it does not
         // wait on the overview payload.
         <ScrollView contentContainerStyle={styles.content}>
+          {smsBanner}
           <BookedRevenueSection bookingWord={bookingWord} today={today} enabled={isAdmin} />
           <View style={styles.spacer} />
         </ScrollView>
@@ -563,6 +571,8 @@ export default function ReportsScreen() {
               onRefresh={() => void query.refetch()}
             />
           }>
+          {smsBanner}
+
           {/* Range label */}
           <Text variant="caption" tone="muted" style={styles.rangeLabel}>
             {rangeLabel}

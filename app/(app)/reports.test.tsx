@@ -99,6 +99,15 @@ jest.mock('@/components/reports/DataExportCard', () => ({
 }));
 jest.mock('@/components/reports/BaselineMetricsCard', () => ({ BaselineMetricsCard: () => null }));
 jest.mock('@/components/reports/ClientsTab', () => ({ ClientsTab: () => null }));
+// The SMS usage card has its own tests; here it only has to head the admin's reports.
+jest.mock('@/components/reports/SmsUsageBanner', () => {
+  const React = require('react');
+  const { Text } = require('react-native');
+  return {
+    SmsUsageBanner: ({ enabled }: { enabled?: boolean }) =>
+      enabled ? React.createElement(Text, { testID: 'sms-usage' }, 'sms') : null,
+  };
+});
 jest.mock('@/components/reports/SvgBarChart', () => ({ SvgBarChart: () => null }));
 
 const mockDatePickerProps: {
@@ -513,5 +522,25 @@ describe('Reports for a team member (web StaffPosReportsPanel)', () => {
     mockRole = 'staff';
     await render(<ReportsScreen />);
     expect(screen.getByText('Reports are only available to venue admins.')).toBeTruthy();
+  });
+});
+
+describe('Reports SMS usage card (web SmsUsageBanner)', () => {
+  it('heads the Overview for an admin', async () => {
+    await render(<ReportsScreen />);
+    expect(screen.getByTestId('sms-usage')).toBeTruthy();
+  });
+
+  it('heads the tabs that carry their own range too', async () => {
+    mockParams = { tab: 'revenue' };
+    await render(<ReportsScreen />);
+    expect(screen.getByTestId('sms-usage')).toBeTruthy();
+  });
+
+  it('is not shown to a team member', async () => {
+    mockRole = 'staff';
+    mockPosAccess = { visible: true, can_view: true, can_export: false };
+    await render(<ReportsScreen />);
+    expect(screen.queryByTestId('sms-usage')).toBeNull();
   });
 });
