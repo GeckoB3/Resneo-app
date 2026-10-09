@@ -30,6 +30,18 @@ export function extractPushRoute(
     destination the offer email's button already points at. Fabricating a
     booking id to reuse the existing path would route the tap to a 404.
   */
+  /*
+    A sale sent from the web till to this phone (POS app step 2, plan §4.36):
+    `{ type: 'pos_collect_request', payment_id, sale_id, venue_id }`. It has no
+    booking id, so it is only ever examined after the booking check above. The
+    collect screen reads the payment from the server, so only the id is kept.
+  */
+  if (data['type'] === 'pos_collect_request') {
+    const paymentId = firstString([data['payment_id']]);
+    if (!paymentId || !/^[0-9a-f-]{36}$/i.test(paymentId)) return null;
+    return { kind: 'posCollect', paymentId, venueId: firstString([data['venue_id']]) };
+  }
+
   if (data['type'] === 'waitlist_offer') {
     const url = firstString([data['url']]);
     if (url && isSafeHttpsUrl(url)) return { kind: 'url', url };

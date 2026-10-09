@@ -102,3 +102,25 @@ describe('anything else', () => {
     expect(extractPushRoute({})).toBeNull();
   });
 });
+
+describe('a sale sent from the web till to this phone (POS app step 2)', () => {
+  const id = '6f1c2a4e-1b2c-4d3e-8f90-123456789abc';
+
+  it('opens the collect screen for the payment, keeping the venue', async () => {
+    expect(
+      extractPushRoute({ type: 'pos_collect_request', payment_id: id, sale_id: 'sale-1', venue_id: 'venue-1' }),
+    ).toEqual({ kind: 'posCollect', paymentId: id, venueId: 'venue-1' });
+  });
+
+  it('ignores a collect push without a well-formed payment id', async () => {
+    expect(extractPushRoute({ type: 'pos_collect_request', payment_id: '../x' })).toBeNull();
+    expect(extractPushRoute({ type: 'pos_collect_request' })).toBeNull();
+  });
+
+  it('still prefers a booking id, so no existing notification changes', async () => {
+    expect(extractPushRoute({ type: 'pos_collect_request', payment_id: id, booking_id: 'bk-1' })).toEqual({
+      kind: 'booking',
+      bookingId: 'bk-1',
+    });
+  });
+});

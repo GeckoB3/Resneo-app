@@ -38,7 +38,9 @@
 export type PendingPushRoute =
   | { kind: 'booking'; bookingId: string }
   | { kind: 'url'; url: string }
-  | { kind: 'customerHome' };
+  | { kind: 'customerHome' }
+  /** A sale sent from the web till to this phone (`pos_collect_request`, POS plan §4.36). */
+  | { kind: 'posCollect'; paymentId: string; venueId: string | null };
 
 let pendingRoute: PendingPushRoute | null = null;
 const subscribers = new Set<() => void>();

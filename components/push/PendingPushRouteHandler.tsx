@@ -34,6 +34,14 @@ export function PendingPushRouteHandler(): null {
         return;
       }
 
+      if (route.kind === 'posCollect') {
+        // Take a card payment sent from the web till (POS app step 2). The screen checks the
+        // venue, the POS switch and the payment itself, so an old or foreign push is harmless.
+        const venue = route.venueId ? `?venue=${encodeURIComponent(route.venueId)}` : '';
+        router.push(`/checkout/collect/${route.paymentId}${venue}` as Href);
+        return;
+      }
+
       if (route.kind === 'url') {
         /*
           A waitlist offer opens the venue's public booking page, because that

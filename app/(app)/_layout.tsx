@@ -4,6 +4,8 @@ import { StyleSheet, View } from 'react-native';
 
 import { StaffRequired } from '@/components/auth/StaffRequired';
 import { TapToPayIntroduction } from '@/components/payments/TapToPayIntroduction';
+import { CardCapabilityReporter } from '@/components/pos/CardCapabilityReporter';
+import { CollectRequestsBanner } from '@/components/pos/CollectRequests';
 import { PendingPushRouteHandler } from '@/components/push/PendingPushRouteHandler';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { WaitlistAvailabilityBanner } from '@/components/waitlist/WaitlistAvailabilityBanner';
@@ -66,6 +68,10 @@ export default function AppLayout() {
     <View style={{ flex: 1 }}>
       {/* Cross-dashboard waitlist open-slot alerts (renders null unless in staff_choose mode with a match). */}
       <WaitlistAvailabilityBanner />
+      {/* POS app step 2: a sale the web till sent to this phone (renders nothing without POS), and
+          what this phone can do with a card, sent with its push registration (plan §4.36). */}
+      <CollectRequestsBanner />
+      <CardCapabilityReporter />
       <Stack
       screenOptions={{
         headerShown: false,
@@ -116,6 +122,15 @@ export default function AppLayout() {
         options={{
           headerShown: true,
           title: 'Sale',
+        }}
+      />
+      {/* A sale sent from the web till to this phone (POS app step 2), opened from its push, the
+          banner or Today's "Waiting for you". */}
+      <Stack.Screen
+        name="checkout/collect/[paymentId]"
+        options={{
+          headerShown: true,
+          title: 'Payment',
         }}
       />
       <Stack.Screen

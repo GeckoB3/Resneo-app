@@ -12,6 +12,7 @@ import { GreetingHeader } from '@/components/today/GreetingHeader';
 import { HeatmapWeek } from '@/components/today/HeatmapWeek';
 import { KpiGrid } from '@/components/today/KpiGrid';
 import { NewBookingsCard } from '@/components/reports/NewBookingsCard';
+import { CollectRequestsCard } from '@/components/pos/CollectRequests';
 import {
   deriveSetupProgress,
   isOptionalSetupStepKey,
@@ -402,6 +403,10 @@ export default function TodayScreen() {
         }>
         {/* Greeting + quick-action buttons */}
         <GreetingHeader isAppointment={isAppointment} timeZone={venue?.timezone} />
+
+        {/* "Waiting for you": sales the web till sent to this phone (POS app step 2). Hidden when
+            none wait, and at venues without POS. */}
+        <CollectRequestsCard />
 
         {/* Setup checklist (admin-only; pinned pre-onboarding, dismissible after) */}
         <SetupChecklistCard />

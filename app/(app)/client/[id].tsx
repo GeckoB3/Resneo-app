@@ -24,6 +24,7 @@ import { HouseholdSection } from '@/components/clients/HouseholdSection';
 import { MarketingPreferencesCard } from '@/components/clients/MarketingPreferencesCard';
 import { MergeContactDetailSheet } from '@/components/clients/MergeContactDetailSheet';
 import { StoredValueSection } from '@/components/clients/StoredValueSection';
+import { ClientSavedCardsSection } from '@/components/pos/SavedCards';
 import { GuestMessageSheet, type GuestMessageTarget } from '@/components/messaging/GuestMessageSheet';
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge, StatusPill } from '@/components/ui/Badge';
@@ -637,6 +638,10 @@ export default function ClientDetailScreen() {
 
       {/* Credit and vouchers (POS Pass V): only at venues with Checkout and gift vouchers on. */}
       <StoredValueSection guestId={guestId} />
+
+      {/* Saved cards (POS app step 2): only at venues with Checkout and cards on file on; removing
+          one at the client's request needs take_payment. */}
+      <ClientSavedCardsSection guestId={guestId} clientName={name} />
 
       {/* Compliance — per-guest records + audit trail (feature-flagged, read-only) */}
       {complianceEnabled ? <ComplianceSection guestId={guestId} /> : null}

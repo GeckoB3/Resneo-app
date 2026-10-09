@@ -31,6 +31,19 @@ jest.mock('@/components/pos/SaleCardCollect', () => {
   };
 });
 
+jest.mock('@/components/pos/PayLinkPanel', () => {
+  const { Text } = jest.requireActual<typeof import('react-native')>('react-native');
+  return { PayLinkPanel: (props: { amountPence: number }) => <Text>{`pay-link-panel ${props.amountPence}`}</Text> };
+});
+jest.mock('@/components/pos/ReaderPayPanel', () => {
+  const { Text } = jest.requireActual<typeof import('react-native')>('react-native');
+  return { ReaderPayPanel: (props: { amountPence: number }) => <Text>{`reader-panel ${props.amountPence}`}</Text> };
+});
+jest.mock('@/components/pos/SavedCards', () => {
+  const { Text } = jest.requireActual<typeof import('react-native')>('react-native');
+  return { SavedCardMethods: () => <Text>saved-cards</Text>, SavedCardCharge: () => <Text>saved-charge</Text> };
+});
+
 import { PaySheet } from '@/components/pos/PaySheet';
 import { makeLine, makeSale } from '@/lib/pos/test-sale';
 import type { PosBootstrap } from '@/types/pos';
@@ -168,5 +181,56 @@ describe('PaySheet', () => {
       fireEvent.press(screen.getByText('Card'));
     });
     expect(mockCardProps).toHaveBeenLastCalledWith(expect.objectContaining({ amountPence: 3550, tipPence: 0 }));
+  });
+
+  it('offers the counter reader and a pay link only where the venue has them (app step 2)', async () => {
+    await renderSheet();
+    expect(screen.queryByText('Card reader')).toBeNull();
+    expect(screen.queryByText('Pay by link or QR code')).toBeNull();
+    expect(screen.queryByText('saved-cards')).toBeNull();
+  });
+
+  it('sends the amount to the counter reader or a pay link', async () => {
+    await renderSheet({ bootstrap: bootstrap({ card_methods: { card_app: true, card_reader: true, pay_link: true } }) });
+    await act(async () => {
+      fireEvent.press(screen.getByText('Card reader'));
+    });
+    expect(screen.getByText('reader-panel 3550')).toBeTruthy();
+  });
+
+  it('makes a pay link for part of the bill', async () => {
+    await renderSheet({ bootstrap: bootstrap({ card_methods: { card_app: true, pay_link: true } }) });
+    await act(async () => {
+      fireEvent.changeText(screen.getByLabelText('Amount to pay now'), '20.00');
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByText('Pay by link or QR code'));
+    });
+    expect(screen.getByText('pay-link-panel 2000')).toBeTruthy();
+  });
+
+  it('offers cards on file with charge_saved_card, the setting on and a client on the sale', async () => {
+    const withClient = { ...sale, guest: { id: 'g-1', name: 'Ada Lovelace', email: null, phone: null } };
+    await renderSheet({
+      sale: withClient,
+      bootstrap: bootstrap({
+        settings: { max_payment_pence: 1_000_000, card_on_file_enabled: true },
+        capabilities: { take_payment: true, charge_saved_card: true },
+      }),
+    });
+    expect(screen.getByText('saved-cards')).toBeTruthy();
+  });
+
+  it('lets the client be asked to save their card when cards on file are on', async () => {
+    const withClient = { ...sale, guest: { id: 'g-1', name: 'Ada Lovelace', email: null, phone: null } };
+    await renderSheet({
+      sale: withClient,
+      cardAvailable: true,
+      bootstrap: bootstrap({ settings: { max_payment_pence: 1_000_000, card_on_file_enabled: true } }),
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByText('Card'));
+    });
+    expect(mockCardProps).toHaveBeenLastCalledWith(expect.objectContaining({ consentClientName: 'Ada' }));
   });
 });

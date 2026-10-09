@@ -4,7 +4,10 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ReceiptSheet, RefundSheet, TipSplitSheet } from '@/components/pos/AfterSaleSheets';
+import { OpenPayLinks, TipLinkSheet } from '@/components/pos/PayLinkExtras';
 import { PaySheet } from '@/components/pos/PaySheet';
+import { ReaderPayPanel } from '@/components/pos/ReaderPayPanel';
+import { SavedCardDeclinedNotice } from '@/components/pos/SavedCards';
 import {
   AddItemsSheet,
   ClientSheet,
@@ -32,6 +35,7 @@ import { ApiError } from '@/lib/api/client';
 import { getStripePublishableKey } from '@/lib/env';
 import { isTerminalSdkAvailable } from '@/lib/payments/terminal-sdk';
 import { posPaths } from '@/lib/pos/api';
+import { declinedSavedCardPayment, pendingCollectPayment, pendingReaderPayment, tipLinkOffered } from '@/lib/pos/card-methods';
 import { canPos, cardAppAvailable } from '@/lib/pos/pos-enabled';
 import {
   maxRefundablePence,
@@ -56,6 +60,11 @@ import type { PosSale, PosSaleLine } from '@/types/pos';
  * park and resume, combine, void, "Refund and cancel", payments (cash, other types, split, card),
  * completion with receipts, refunds and tip splits. Every action the login's capabilities do not
  * allow is hidden. Nothing here is reachable without the venue's `pos_enabled`.
+ *
+ * App step 2 (P7-8): a counter reader payment waiting on the sale is followed here, with cancel
+ * and try again; a declined card on file says why and offers another way to pay; a sale sent to a
+ * phone can be cancelled; open pay links show their QR code again or are cancelled; and a visit
+ * paid in full offers a tip-only link (`done.tipLink`).
  */
 
 type SheetKind =
@@ -70,7 +79,8 @@ type SheetKind =
   | 'refund'
   | 'refundCancel'
   | 'receipt'
-  | 'tips';
+  | 'tips'
+  | 'tipLink';
 
 function when(iso: string | null | undefined): { date: string; time: string } {
   if (!iso) return { date: '', time: '' };
@@ -182,6 +192,9 @@ function SaleBody({
   const isAdmin = bootstrap.role === 'admin';
   const editable = saleIsEditable(sale);
   const pendingCard = pendingCardPayment(sale);
+  const readerPending = pendingReaderPayment(sale);
+  const savedDeclined = declinedSavedCardPayment(sale);
+  const collectPending = pendingCollectPayment(sale);
   const linesEditable = sale.status === 'open' && !pendingCard;
   const moneyPaid = sale.payments.some((p) => p.is_money && p.status === 'succeeded');
   const refundable = maxRefundablePence(sale.payments) > 0 || sale.payments.some((p) => p.refundable_tip_pence > 0);
@@ -248,7 +261,42 @@ function SaleBody({
           </Notice>
         ) : null}
 
-        {pendingCard ? (
+        {readerPending && can('take_payment') ? (
+          <Card>
+            <ReaderPayPanel
+              key={readerPending.id}
+              sale={sale}
+              bootstrap={bootstrap}
+              send={send}
+              amountPence={readerPending.amount_pence}
+              pendingPaymentId={readerPending.id}
+              onPaid={() => setReceiptNote(null)}
+              onBack={() => undefined}
+            />
+          </Card>
+        ) : savedDeclined ? (
+          <SavedCardDeclinedNotice sale={sale} payment={savedDeclined} send={send} canTakePayment={can('take_payment')} />
+        ) : collectPending ? (
+          <Notice
+            tone="warning"
+            action={
+              can('take_payment')
+                ? {
+                    label: t('app.sale.cancelCard'),
+                    loading: busy === 'cancelCard',
+                    onPress: () =>
+                      void act('cancelCard', {
+                        action: 'cancel',
+                        path: posPaths.collectCancel(collectPending.id),
+                        money: true,
+                        body: {},
+                      }),
+                  }
+                : undefined
+            }>
+            {t('app.sale.cardWaiting')}
+          </Notice>
+        ) : pendingCard ? (
           <Notice
             tone="warning"
             action={
@@ -424,6 +472,8 @@ function SaleBody({
           </Card>
         ) : null}
 
+        <OpenPayLinks sale={sale} bootstrap={bootstrap} send={send} canTakePayment={can('take_payment')} />
+
         {/* Completed: what happened, and the money after it. */}
         {completed ? (
           <Card>
@@ -485,6 +535,9 @@ function SaleBody({
           ) : null}
           {refundable && can('refund') && !pendingCard ? (
             <Button label={t('sale.done.refund')} variant="secondary" onPress={() => setSheet('refund')} fullWidth />
+          ) : null}
+          {tipLinkOffered(sale, bootstrap) ? (
+            <Button label={t('done.tipLink')} variant="secondary" onPress={() => setSheet('tipLink')} fullWidth />
           ) : null}
           {completed && sale.tip_pence > 0 && can('edit_tips') ? (
             <Button label={t('done.tips.change')} variant="ghost" onPress={() => setSheet('tips')} fullWidth />
@@ -562,7 +615,9 @@ function SaleBody({
         cardAvailable={cardAvailable}
         isAdmin={isAdmin}
         onPaid={() => setReceiptNote(null)}
+        onPark={can('park_sale') && !sale.parked ? () => setSheet('park') : undefined}
       />
+      {sheet === 'tipLink' ? <TipLinkSheet visible onClose={closeSheet} sale={sale} /> : null}
       <RefundSheet
         visible={sheet === 'refund' || sheet === 'refundCancel'}
         onClose={closeSheet}

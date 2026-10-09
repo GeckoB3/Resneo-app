@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { money, usePosT } from '@/components/pos/parts';
 import { CardHeader, StatRow } from '@/components/reports/ReportCardParts';
@@ -9,7 +9,8 @@ import { ErrorState } from '@/components/ui/ErrorState';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
-import { useSalesReport, useTakingsReport } from '@/lib/queries/usePos';
+import { payoutStatusCopyId } from '@/lib/pos/card-methods';
+import { usePayoutDetail, usePayouts, useSalesReport, useTakingsReport } from '@/lib/queries/usePos';
 import { spacing } from '@/theme/index';
 import type { PosReportPreset } from '@/types/pos';
 
@@ -17,7 +18,8 @@ import type { PosReportPreset } from '@/types/pos';
  * Reports' Takings and Sales tabs in the app (POS plan P7-4, UX spec §11.1, §11.2, §13.3). Shown
  * only where `GET /api/venue/reports/pos-access` says the venue has them and this login may read
  * them; every other venue keeps the four-option control. Each tab carries its own date presets,
- * as Revenue and New bookings do. Payouts join with app step 2 and cash-ups with app step 3.
+ * as Revenue and New bookings do. Payouts and fees (admins only) joined with app step 2 (P7-9);
+ * cash-ups join with app step 3.
  */
 
 const PRESETS: { value: PosReportPreset; label: string }[] = [
@@ -156,6 +158,98 @@ export function TakingsSection() {
           {d.totals.row_count === 0 ? <Text tone="muted">Nothing to show for this period.</Text> : null}
         </>
       )}
+      <PayoutsSection preset={preset} />
+    </View>
+  );
+}
+
+/**
+ * Payouts and fees on the Takings tab (POS plan P2-8 and P7-9; UX spec §11.1 `rep.t.payouts`,
+ * §13.4): each payout Stripe is sending to the bank, when it arrives, the amount, Stripe's fees and
+ * its status, opening to the payments, refunds and fees it covered. Read-only, admins only (the
+ * route refuses anyone else with 403, and then nothing shows). Instant payouts are v1.x.
+ */
+export function PayoutsSection({ preset }: { preset: PosReportPreset }) {
+  const t = usePosT();
+  const q = usePayouts(preset);
+  const [open, setOpen] = useState<string | null>(null);
+  if (q.error instanceof ApiError && q.error.status === 403) return null;
+  const d = q.data;
+  return (
+    <Card>
+      <CardHeader title={t('rep.t.payouts')} />
+      <Text variant="caption" tone="muted">
+        {t('rep.payout.intro')}
+      </Text>
+      {q.isLoading ? (
+        <DetailSkeleton />
+      ) : q.isError || !d ? (
+        <ErrorState
+          message={q.error instanceof ApiError ? q.error.message : "We couldn't load this report."}
+          onRetry={() => void q.refetch()}
+        />
+      ) : !d.connected ? (
+        <Text tone="muted">{t('rep.payout.notConnected')}</Text>
+      ) : d.payouts.length === 0 ? (
+        <Text tone="muted">{t('rep.payout.none')}</Text>
+      ) : (
+        <View style={styles.stack}>
+          {d.payouts.map((p) => (
+            <View key={p.id} style={styles.payout}>
+              <Pressable
+                onPress={() => setOpen((o) => (o === p.id ? null : p.id))}
+                accessibilityRole="button"
+                accessibilityState={{ expanded: open === p.id }}
+                accessibilityLabel={`${t('rep.payout.arrives')} ${p.arrival_date}, ${money(p.amount_pence)}, ${t(payoutStatusCopyId(p.status))}`}>
+                <StatRow label={`${t('rep.payout.arrives')} ${p.arrival_date}`} value={money(p.amount_pence)} />
+                <StatRow
+                  label={t('rep.payout.fees')}
+                  value={p.fees_pence == null ? t('rep.payout.feesNotListed') : money(p.fees_pence)}
+                />
+                <StatRow label={t('rep.payout.status')} value={t(payoutStatusCopyId(p.status))} />
+                <Text variant="caption" tone="muted">
+                  {open === p.id ? t('rep.payout.hide') : t('rep.payout.show')}
+                </Text>
+              </Pressable>
+              {open === p.id ? <PayoutDetail preset={preset} payoutId={p.id} /> : null}
+            </View>
+          ))}
+          {d.truncated ? (
+            <Text variant="caption" tone="muted">
+              {t('rep.payout.truncated')}
+            </Text>
+          ) : null}
+        </View>
+      )}
+    </Card>
+  );
+}
+
+function PayoutDetail({ preset, payoutId }: { preset: PosReportPreset; payoutId: string }) {
+  const t = usePosT();
+  const q = usePayoutDetail(preset, payoutId);
+  if (q.isLoading) return <DetailSkeleton />;
+  if (q.isError || !q.data) {
+    return (
+      <ErrorState
+        message={q.error instanceof ApiError ? q.error.message : "We couldn't load this report."}
+        onRetry={() => void q.refetch()}
+      />
+    );
+  }
+  const d = q.data;
+  if (!d.payout.automatic) return <Text tone="muted">{t('rep.payout.manual')}</Text>;
+  return (
+    <View style={styles.detail}>
+      <Text variant="label">{t('rep.payout.covered')}</Text>
+      {d.items.map((r) => (
+        <StatRow
+          key={r.id}
+          label={`${r.created_at.slice(0, 10)} ${r.card_last4 ? `${r.label}, card ending ${r.card_last4}` : r.label}`}
+          value={`${money(r.gross_pence)} (${t('rep.payout.fees')} ${money(r.fee_pence)})`}
+        />
+      ))}
+      <StatRow label={t('rep.payout.paidOut')} value={money(d.items.reduce((sum, r) => sum + r.net_pence, 0))} />
     </View>
   );
 }
@@ -233,5 +327,7 @@ export function SalesSection() {
 
 const styles = StyleSheet.create({
   stack: { gap: spacing.md },
+  payout: { gap: spacing.xs },
+  detail: { gap: spacing.xs, paddingLeft: spacing.sm },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
 });
