@@ -30,6 +30,16 @@ describe('isOccupyingBlock', () => {
     },
   );
 
+  // A linked column's resolved states look like their own-column twins, but
+  // working past another venue's closing is not ours to decide (web parity).
+  it.each(['linked_business_closed', 'linked_calendar_closed', 'linked_leave', 'linked_both_closed'])(
+    "keeps a linked venue's %s a wall",
+    (type) => {
+      expect(isOccupyingBlock(type)).toBe(true);
+      expect(isNonWorkingBlock(type)).toBe(false);
+    },
+  );
+
   it('occupies for an unrecognised type, so anything added later is refused first', () => {
     expect(isOccupyingBlock('something_new')).toBe(true);
     expect(isOccupyingBlock(undefined)).toBe(true);

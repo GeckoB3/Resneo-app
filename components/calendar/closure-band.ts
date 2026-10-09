@@ -9,9 +9,15 @@
  *  - **venue closed** — rose: the business is shut but the calendar would work;
  *  - **calendar unavailable** — sky: the business is open but the calendar is
  *    not working;
- *  - **both closed**, and a **linked venue's** own closed hours — slate;
+ *  - **both closed** — slate, and so is a **linked venue's** closed hours
+ *    drawn from its weekly template alone (`linked_venue_closed`, an older
+ *    feed);
  *  - **leave** — violet, a person being absent, the one band the drag refuses;
  *  - **break** — amber.
+ *
+ * A linked column resolved from its owner's hours (web spec §8.2, 2026-09-19)
+ * draws each of its four states exactly as its own-column counterpart
+ * (`scheduleClosureDisplayType`): its bands differ only in staying walls.
  *
  * Amended hours get no band (web retired its own): the grid follows the
  * resolved hours, so the open part of an amended day looks like any other
@@ -20,6 +26,8 @@
  * The web is light-only; the dark looks keep each accent and swap the wash
  * for a translucent tint of it, so the five causes stay as distinct at night.
  */
+
+import { scheduleClosureDisplayType } from '@/lib/calendar/schedule-closures';
 
 export type ClosureBandLook = {
   backgroundColor: string;
@@ -77,7 +85,8 @@ export function closureBandLook(
   blockType: string | null | undefined,
   isDark = false,
 ): ClosureBandLook | null {
-  const entry = blockType ? LOOKS[blockType] : undefined;
+  const displayType = scheduleClosureDisplayType(blockType);
+  const entry = displayType ? LOOKS[displayType] : undefined;
   if (!entry) return null;
   return isDark ? entry.dark : entry.light;
 }

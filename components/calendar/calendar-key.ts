@@ -8,10 +8,9 @@
  *
  * Each entry names the band type the app's grids actually draw for that cause
  * (`closure-band.ts`), so the swatch in the key is the app's own look rather
- * than a copy of the web's classes. One difference is said out loud in the
- * copy: the app draws a linked venue's own closed hours in the slate "Calendar
- * closed" look (`linked_venue_closed`), where the web has moved them to the
- * rose "Venue closed" tint.
+ * than a copy of the web's classes. A linked venue's column draws each of
+ * these causes in the same look as an own column (`scheduleClosureDisplayType`),
+ * as the description says.
  */
 import type { ClosureBandLook } from '@/components/calendar/closure-band';
 import { closureBandLook } from '@/components/calendar/closure-band';
@@ -53,7 +52,7 @@ export const CALENDAR_KEY_ENTRIES: readonly CalendarKeyEntry[] = [
   {
     label: 'Calendar closed',
     meaning:
-      "The business is shut and the calendar is not working either. A linked venue's own closed hours look like this too.",
+      'The business is shut and the calendar is not working either.',
     blockType: 'venue_and_calendar_closed',
   },
   {

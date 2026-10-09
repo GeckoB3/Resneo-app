@@ -17,9 +17,9 @@ import {
   linkedDayHeading,
   linkedGridBooking,
   linkedHasTemplate,
+  linkedColumnClosureInputs,
   linkedScheduleBlocksForColumn,
   linkedVenueColumns,
-  linkedVenueDayHours,
   parseLinkedColumnKey,
   rangesToWorkingHours,
 } from '@/lib/linked/linked-calendar-view';
@@ -185,29 +185,38 @@ export function LinkedVenueCalendarGrid({
   //                   calendar uses (class instances deduped).
   const columns = useMemo<AllCalendarColumn[]>(
     () =>
-      linkedColumns.map((col) => ({
-        calendarId: col.key,
-        calendarName: col.name,
-        workingHours: rangesToWorkingHours(col.openRanges),
-        bookings: timeOnly
-          ? []
-          : col.bookings.map((b) =>
-              linkedGridBooking(b, venue.practitioners, { practitionerInLabel: false }),
-            ),
-        sessions: [],
-        timeBlocks: timeOnly ? col.bookings.map((b) => linkedBusyBlock(b, venue.venueName)) : [],
-        scheduleBlocks: timeOnly ? [] : linkedScheduleBlocksForColumn(venue, col, date),
-        venueHours: linkedVenueDayHours(col.openRanges, col.hasTemplate),
-        // Drawn like an own column: the card header above already carries the
-        // Linked pill, and the owner wants no amber (2026-09-06).
-        linked: true,
-        // Interactive on an edit grant (web `linkedColumnUsesNativeGrid`); a
-        // move may cross onto the partner's other calendars, never onto the
-        // venue-level column, which names no calendar to reassign to.
-        editable,
-        moveGroup: col.practitionerId ? venue.venueId : undefined,
-        processingPatternFor,
-      })),
+      linkedColumns.map((col) => {
+        // The partner's closures, resolved as its own diary resolves them, or
+        // its weekly template on an older feed (`linkedColumnClosureInputs`).
+        const closures = linkedColumnClosureInputs(venue, col, date);
+        return {
+          calendarId: col.key,
+          calendarName: col.name,
+          workingHours: closures.workingHours ?? rangesToWorkingHours(col.openRanges),
+          bookings: timeOnly
+            ? []
+            : col.bookings.map((b) =>
+                linkedGridBooking(b, venue.practitioners, { practitionerInLabel: false }),
+              ),
+          sessions: [],
+          timeBlocks: [
+            ...closures.closureBlocks,
+            ...(timeOnly ? col.bookings.map((b) => linkedBusyBlock(b, venue.venueName)) : []),
+          ],
+          scheduleBlocks: timeOnly ? [] : linkedScheduleBlocksForColumn(venue, col, date),
+          venueHours: closures.venueHours,
+          linkedClosures: closures.source,
+          // Drawn like an own column: the card header above already carries the
+          // Linked pill, and the owner wants no amber (2026-09-06).
+          linked: true,
+          // Interactive on an edit grant (web `linkedColumnUsesNativeGrid`); a
+          // move may cross onto the partner's other calendars, never onto the
+          // venue-level column, which names no calendar to reassign to.
+          editable,
+          moveGroup: col.practitionerId ? venue.venueId : undefined,
+          processingPatternFor,
+        };
+      }),
     [linkedColumns, timeOnly, venue, date, processingPatternFor, editable],
   );
 

@@ -99,6 +99,7 @@ import {
   clampClosureBlocksToWindow,
   isScheduleClosureBlockType,
   partitionClosureBands,
+  type LinkedClosureSource,
 } from '@/lib/calendar/schedule-closures';
 import { venueClosedRanges, type VenueDayHours } from '@/lib/calendar/venue-closures';
 import type { ComplianceBookingFlag } from '@/lib/queries/useCompliance';
@@ -151,6 +152,13 @@ export type AllCalendarColumn = {
    * `editable`. Mark it with `badge`, not a colour.
    */
   linked?: boolean;
+  /**
+   * Where a linked column's closed minutes come from (`linkedColumnClosureInputs`):
+   * `'resolved'` draws each cause as its own-column twin, `'template'` (the
+   * default, an older feed) as the slate `linked_venue_closed`. Every one of
+   * them is a wall. Ignored on an own column.
+   */
+  linkedClosures?: LinkedClosureSource;
   /**
    * This linked column joins the interactive grid (web
    * `linkedColumnUsesNativeGrid`: the link shares full details and grants
@@ -1058,10 +1066,19 @@ function DayColumn({
           endHour * 60,
         ),
         columnName: column.calendarName,
-        linked: column.linked === true,
+        linked: column.linked === true ? (column.linkedClosures ?? 'template') : undefined,
         keyPrefix: column.calendarId,
       }),
-    [column.timeBlocks, column.calendarName, column.calendarId, column.linked, closedRanges, startHour, endHour],
+    [
+      column.timeBlocks,
+      column.calendarName,
+      column.calendarId,
+      column.linked,
+      column.linkedClosures,
+      closedRanges,
+      startHour,
+      endHour,
+    ],
   );
 
   const sessions = useMemo(

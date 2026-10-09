@@ -1,10 +1,12 @@
 import {
   buildCalendarClosureOverlays,
   clampClosureBlocksToWindow,
+  isLinkedResolvedClosureBlockType,
   isScheduleClosureBlockType,
   leaveForCalendarOnDate,
   partitionClosureBands,
   scheduleClosureBlockLabel,
+  scheduleClosureDisplayType,
 } from '@/lib/calendar/schedule-closures';
 
 /**
@@ -280,17 +282,52 @@ describe('partitionClosureBands', () => {
     expect(out.map((e) => e.block.blockType)).toEqual(['venue_closed', 'venue_closed']);
   });
 
-  it("names a partner's shut hours as the linked venue's", () => {
+  it("names a partner's shut hours as the linked venue's when only its weekly template is known", () => {
     const out = partitionClosureBands({
       venueClosed: VENUE_SHUT,
       entries: [],
-      linked: true,
+      linked: 'template',
       keyPrefix: 'linked:v:c',
     });
     expect(out[0]!.block).toMatchObject({
       blockType: 'linked_venue_closed',
       label: 'Linked venue closed 08:00 to 09:00',
     });
+  });
+
+  it("splits a resolved partner column by cause, each typed as its linked counterpart and worded as its own-column twin", () => {
+    // Web `buildLinkedColumnScheduleClosureBlocks` (spec §8.2, 2026-09-19):
+    // the same partition as an own column, then each stripe retyped so it
+    // stays a wall.
+    const leave = {
+      block: { id: 'l', blockType: 'practitioner_leave', label: 'Unavailable', leaveLabel: 'Unavailable' },
+      start: 12 * 60,
+      end: 13 * 60,
+    };
+    const out = partitionClosureBands({
+      venueClosed: VENUE_SHUT,
+      entries: [closed('a', 8 * 60, 10 * 60), closed('b', 19 * 60, 20 * 60), leave],
+      columnName: 'Jenny',
+      linked: 'resolved',
+      keyPrefix: 'linked:v:c',
+    });
+    expect(out.map((e) => [e.block.blockType, e.start, e.end, e.block.label])).toEqual([
+      ['linked_business_closed', 18 * 60, 19 * 60, 'Venue closed 18:00 to 19:00'],
+      ['linked_calendar_closed', 9 * 60, 10 * 60, 'Jenny unavailable 09:00 to 10:00'],
+      ['linked_both_closed', 8 * 60, 9 * 60, 'Jenny closed 08:00 to 09:00'],
+      ['linked_both_closed', 19 * 60, 20 * 60, 'Jenny closed 19:00 to 20:00'],
+      ['linked_leave', 12 * 60, 13 * 60, 'Unavailable 12:00 to 13:00'],
+    ]);
+  });
+
+  it('leaves an own column untyped by the linked rules', () => {
+    const leave = {
+      block: { id: 'l', blockType: 'practitioner_leave', label: 'On leave' },
+      start: 12 * 60,
+      end: 13 * 60,
+    };
+    const out = partitionClosureBands({ venueClosed: VENUE_SHUT, entries: [leave], keyPrefix: 'cal-1' });
+    expect(out.map((e) => e.block.blockType)).toEqual(['venue_closed', 'venue_closed', 'practitioner_leave']);
   });
 
   it('keeps leave whole — over the venue-closed minutes too — and passes breaks and manual blocks through', () => {
@@ -359,6 +396,45 @@ describe('scheduleClosureBlockLabel', () => {
     );
     expect(scheduleClosureBlockLabel('linked_venue_closed')).toBe('Linked venue closed');
   });
+
+  it("words a linked column's resolved states as their own-column counterparts (web parity)", () => {
+    const range = { startTime: '08:00', endTime: '09:00' };
+    expect(scheduleClosureBlockLabel('linked_business_closed', range)).toBe('Venue closed 08:00 to 09:00');
+    expect(scheduleClosureBlockLabel('linked_calendar_closed', { columnName: 'Jenny', ...range })).toBe(
+      'Jenny unavailable 08:00 to 09:00',
+    );
+    expect(scheduleClosureBlockLabel('linked_both_closed', { columnName: 'Jenny', ...range })).toBe(
+      'Jenny closed 08:00 to 09:00',
+    );
+    expect(scheduleClosureBlockLabel('linked_leave', range)).toBe('On leave 08:00 to 09:00');
+    expect(scheduleClosureBlockLabel('linked_leave', { ...range, leaveLabel: 'Closed' })).toBe(
+      'Closed 08:00 to 09:00',
+    );
+  });
+});
+
+describe('scheduleClosureDisplayType / isLinkedResolvedClosureBlockType', () => {
+  it('maps each resolved linked state to its own-column counterpart (web LINKED_TYPE_FOR, reversed)', () => {
+    expect(scheduleClosureDisplayType('linked_business_closed')).toBe('venue_closed');
+    expect(scheduleClosureDisplayType('linked_calendar_closed')).toBe('practitioner_closed');
+    expect(scheduleClosureDisplayType('linked_leave')).toBe('practitioner_leave');
+    expect(scheduleClosureDisplayType('linked_both_closed')).toBe('venue_and_calendar_closed');
+  });
+
+  it('leaves every other type, the older linked_venue_closed included, as it is', () => {
+    for (const t of ['venue_closed', 'practitioner_leave', 'linked_venue_closed', 'break', 'manual', null, undefined]) {
+      expect(scheduleClosureDisplayType(t)).toBe(t);
+    }
+  });
+
+  it('recognises only the four resolved states', () => {
+    for (const t of ['linked_business_closed', 'linked_calendar_closed', 'linked_leave', 'linked_both_closed']) {
+      expect(isLinkedResolvedClosureBlockType(t)).toBe(true);
+    }
+    for (const t of ['linked_venue_closed', 'venue_closed', 'practitioner_leave', undefined]) {
+      expect(isLinkedResolvedClosureBlockType(t)).toBe(false);
+    }
+  });
 });
 
 describe('clampClosureBlocksToWindow', () => {
@@ -405,6 +481,10 @@ describe('isScheduleClosureBlockType', () => {
       'venue_amended_hours',
       'venue_and_calendar_closed',
       'linked_venue_closed',
+      'linked_business_closed',
+      'linked_calendar_closed',
+      'linked_leave',
+      'linked_both_closed',
     ]) {
       expect(isScheduleClosureBlockType(t)).toBe(true);
     }

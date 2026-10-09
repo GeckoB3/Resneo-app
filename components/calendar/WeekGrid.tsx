@@ -42,6 +42,7 @@ import {
   clampClosureBlocksToWindow,
   isScheduleClosureBlockType,
   partitionClosureBands,
+  type LinkedClosureSource,
 } from '@/lib/calendar/schedule-closures';
 import { hexToRgba } from '@/lib/color';
 import { fonts, radius, spacing } from '@/theme/index';
@@ -86,6 +87,12 @@ export type WeekDayColumn = {
   timeBlocks?: CalendarTimeBlock[];
   /** Venue open/closed state for this day → "Closed" shading. */
   venueHours: VenueDayHours;
+  /**
+   * Set on a linked venue's week: where its closed minutes come from
+   * (`linkedColumnClosureInputs`), so every stripe is typed as a linked one and
+   * stays a wall. Omitted for the venue's own calendars.
+   */
+  linkedClosures?: LinkedClosureSource;
 };
 
 type WeekGridProps = {
@@ -437,6 +444,7 @@ function WeekDayCol({
         endHour * 60,
       ),
       columnName: calendarName,
+      linked: day.linkedClosures,
       keyPrefix: day.date,
     });
     const heights = computeRangeHeights(
@@ -450,7 +458,7 @@ function WeekDayCol({
       top: (start - gridStartMin) * PX_PER_MINUTE,
       height: heights.get(block.id) ?? (end - start) * PX_PER_MINUTE,
     }));
-  }, [day.timeBlocks, day.venueHours, day.date, calendarName, gridStartMin, startHour, endHour]);
+  }, [day.timeBlocks, day.venueHours, day.date, day.linkedClosures, calendarName, gridStartMin, startHour, endHour]);
 
   // Clamp to the visible window so an out-of-hours "now" doesn't draw a stray
   // dot/bar above or below the grid (the column has no overflow clip).

@@ -13,8 +13,9 @@ import {
   linkedGridBooking,
   linkedHasTemplate,
   linkedOpenRanges,
+  linkedColumnClosureInputs,
   linkedScheduleBlocksForDate,
-  linkedVenueDayHours,
+  linkedSharedCalendars,
   linkedWeekHeading,
   rangesToWorkingHours,
 } from '@/lib/linked/linked-calendar-view';
@@ -96,6 +97,15 @@ export function LinkedVenueWeekGrid({
   // Venue-level (date-independent): whether any practitioner publishes hours.
   const hasTemplate = useMemo(() => linkedHasTemplate(venue), [venue]);
 
+  // A partner sharing one calendar: its week resolves as its day column does
+  // (venue shut, calendar not working, both, leave). Several calendars merge
+  // into this one week, which only their weekly templates can answer for, so
+  // that week keeps the slate `linked_venue_closed`. A wall either way.
+  const soleCalendarId = useMemo(() => {
+    const shared = linkedSharedCalendars(venue);
+    return shared.length === 1 ? shared[0]!.id : null;
+  }, [venue]);
+
   // One WeekDayColumn per day — the linked analogue of the primary venue's
   // `weekColumns`, sharing the exact same column shape so WeekGrid renders both
   // identically.
@@ -104,6 +114,11 @@ export function LinkedVenueWeekGrid({
       weekDays.map((date) => {
         const dayBookings = venue.bookings.filter((b) => b.bookingDate === date);
         const openRanges = linkedOpenRanges(venue, date);
+        const closures = linkedColumnClosureInputs(
+          venue,
+          { practitionerId: soleCalendarId, openRanges, hasTemplate },
+          date,
+        );
         const d = parseISO(`${date}T12:00:00.000Z`);
         const weekday = d.getDay();
         return {
@@ -112,18 +127,22 @@ export function LinkedVenueWeekGrid({
           dayNumber: format(d, 'd'),
           isToday: date === today,
           isWeekend: weekday === 0 || weekday === 6,
-          workingHours: rangesToWorkingHours(openRanges),
+          workingHours: closures.workingHours ?? rangesToWorkingHours(openRanges),
           // time_only redacts bookings to grey busy bands; full_details shows bars.
           bookings: timeOnly ? [] : dayBookings.map((b) => linkedGridBooking(b, venue.practitioners)),
           // Linked venues carry classes/events/resources as scheduleBlocks (not
           // the grid `sessions` feed), so the session lane is always empty here.
           sessions: [],
           scheduleBlocks: timeOnly ? [] : linkedScheduleBlocksForDate(venue, date),
-          timeBlocks: timeOnly ? dayBookings.map((b) => linkedBusyBlock(b, venue.venueName)) : [],
-          venueHours: linkedVenueDayHours(openRanges, hasTemplate),
+          timeBlocks: [
+            ...closures.closureBlocks,
+            ...(timeOnly ? dayBookings.map((b) => linkedBusyBlock(b, venue.venueName)) : []),
+          ],
+          venueHours: closures.venueHours,
+          linkedClosures: closures.source,
         };
       }),
-    [venue, weekDays, today, timeOnly, hasTemplate],
+    [venue, weekDays, today, timeOnly, hasTemplate, soleCalendarId],
   );
 
   const handleBlockPress = (bookingId: string) => {

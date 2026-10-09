@@ -229,3 +229,38 @@ describe('LinkedVenueCalendarGrid — an edit grant joins the interactive grid',
     expect(onCreateRefused).not.toHaveBeenCalled();
   });
 });
+
+describe('LinkedVenueCalendarGrid closure stripes (web spec §8.2, 2026-09-19)', () => {
+  // The partner venue opens 09:00 to 18:00; Jenny works 10:00 to 17:00 and is
+  // marked Unavailable 12:00 to 13:00.
+  const hours = {
+    openingHours: { [WEEKDAY]: { periods: [{ open: '09:00', close: '18:00' }] } },
+    venueWideBlocks: [],
+    leavePeriods: [
+      {
+        practitioner_id: 'p1',
+        start_date: DATE,
+        end_date: DATE,
+        unavailable_start_time: '12:00:00',
+        unavailable_end_time: '13:00:00',
+        leave_type: 'sick',
+      },
+    ],
+  } as LinkedVenueCalendar['hours'];
+  const schedule = { working_hours: { [WEEKDAY]: [{ start: '10:00', end: '17:00' }] } };
+
+  it("draws the partner's own causes, worded as an own column's, when the feed carries its hours", async () => {
+    await renderGrid(venue({ practitioners: [practitioner({ schedule })], hours, bookings: [] }));
+    expect(screen.getByLabelText('Jenny unavailable 09:00 to 10:00')).toBeTruthy();
+    expect(screen.getByLabelText('Jenny unavailable 17:00 to 18:00')).toBeTruthy();
+    expect(screen.getByLabelText('Unavailable 12:00 to 13:00')).toBeTruthy();
+    expect(screen.queryByLabelText(/^Linked venue closed/)).toBeNull();
+  });
+
+  it('shows them on a time-only link too, as the web does', async () => {
+    await renderGrid(
+      venue({ practitioners: [practitioner({ schedule })], hours, visibility: 'time_only' }),
+    );
+    expect(screen.getByLabelText('Unavailable 12:00 to 13:00')).toBeTruthy();
+  });
+});

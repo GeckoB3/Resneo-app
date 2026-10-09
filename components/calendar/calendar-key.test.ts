@@ -44,10 +44,29 @@ describe('calendar colour key', () => {
     });
   });
 
-  it('says a linked venue closed hours share the slate look, as the app draws them', () => {
+  it("draws a linked venue's resolved closures with their own-column entry's swatch", () => {
+    const entry = (label: string) => CALENDAR_KEY_ENTRIES.find((e) => e.label === label)!;
+    for (const isDark of [false, true]) {
+      expect(closureBandLook('linked_business_closed', isDark)).toEqual(
+        calendarKeySwatch(entry('Venue closed'), isDark),
+      );
+      expect(closureBandLook('linked_calendar_closed', isDark)).toEqual(
+        calendarKeySwatch(entry('Calendar unavailable'), isDark),
+      );
+      expect(closureBandLook('linked_leave', isDark)).toEqual(
+        calendarKeySwatch(entry('Closed, Unavailable or On leave'), isDark),
+      );
+      expect(closureBandLook('linked_both_closed', isDark)).toEqual(
+        calendarKeySwatch(entry('Calendar closed'), isDark),
+      );
+    }
+  });
+
+  it("keeps an older feed's linked_venue_closed slate, and no longer singles linked venues out", () => {
     const slate = CALENDAR_KEY_ENTRIES.find((e) => e.label === 'Calendar closed')!;
     expect(closureBandLook('linked_venue_closed')).toEqual(calendarKeySwatch(slate, false));
-    expect(slate.meaning).toMatch(/linked venue/i);
+    expect(slate.meaning).not.toMatch(/linked venue/i);
+    expect(CALENDAR_KEY_DESCRIPTION).toMatch(/same colours as your own/);
   });
 
   it('uses no em-dash anywhere', () => {

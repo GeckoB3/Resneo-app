@@ -167,8 +167,8 @@ import {
   linkedSharedCalendars,
   linkedSwitcherEntries,
   linkedSwitcherEntryCount,
+  linkedColumnClosureInputs,
   linkedVenueColumns,
-  linkedVenueDayHours,
   narrowLinkedVenueToCalendar,
   rangesToWorkingHours,
   type LinkedVenueColumn,
@@ -2531,6 +2531,11 @@ export default function CalendarScreen() {
     return linkedColumnsShown.map((col) => {
       const v = col.venue;
       const timeOnly = v.visibility === 'time_only';
+      // The partner's closures, resolved as its own diary resolves them (venue
+      // shut, calendar not working, both, leave), or its weekly template on an
+      // older feed. Shown on every grant, as on the web: a time-only link still
+      // learns when a calendar is unavailable.
+      const closures = linkedColumnClosureInputs(v, col, anchor);
       return {
         calendarId: col.key,
         calendarName: col.name,
@@ -2540,7 +2545,7 @@ export default function CalendarScreen() {
           col.practitionerId && !linkedNameRepeatsVenue(col.name, v.venueName)
             ? v.venueName
             : undefined,
-        workingHours: rangesToWorkingHours(col.openRanges),
+        workingHours: closures.workingHours ?? rangesToWorkingHours(col.openRanges),
         // The header names the calendar, so a bar keeps the bare service.
         bookings: timeOnly
           ? []
@@ -2548,11 +2553,15 @@ export default function CalendarScreen() {
               linkedGridBooking(b, v.practitioners, { practitionerInLabel: false }),
             ),
         sessions: [],
-        timeBlocks: timeOnly ? col.bookings.map((b) => linkedBusyBlock(b, v.venueName)) : [],
+        timeBlocks: [
+          ...closures.closureBlocks,
+          ...(timeOnly ? col.bookings.map((b) => linkedBusyBlock(b, v.venueName)) : []),
+        ],
         scheduleBlocks: timeOnly ? [] : linkedScheduleBlocksForColumn(v, col, anchor),
-        // This calendar's OWN hours drive its column's closure shading.
-        venueHours: linkedVenueDayHours(col.openRanges, col.hasTemplate),
+        // The partner's OWN hours drive its column's closure shading.
+        venueHours: closures.venueHours,
         linked: true,
+        linkedClosures: closures.source,
         // Drawn like an own column, marked by the small Linked pill next to
         // the calendar's name (the owner wants no amber, 2026-09-06).
         badge: 'Linked',

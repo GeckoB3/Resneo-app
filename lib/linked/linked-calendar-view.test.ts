@@ -5,6 +5,7 @@ import {
   linkedBookingLabel,
   linkedBookingUsesExpandedDetail,
   linkedBusyBlock,
+  linkedColumnClosureInputs,
   linkedColumnPractitionerIdForPatch,
   linkedColumnUsesNativeGrid,
   linkedCreateNotGrantedMessage,
@@ -31,6 +32,8 @@ import type {
   LinkedVenueCalendar,
 } from '@/types/linked-venues';
 import type { ScheduleBlockDTO } from '@/types/schedule-blocks';
+import { clampClosureBlocksToWindow, partitionClosureBands } from '@/lib/calendar/schedule-closures';
+import { venueClosedRanges } from '@/lib/calendar/venue-closures';
 
 // A fixed date + its local weekday so the working-hours key lookup is robust
 // regardless of the runner's locale (mirrors working-hours.test.ts).
@@ -545,6 +548,106 @@ describe('linkedColumnPractitionerIdForPatch', () => {
     expect(linkedColumnPractitionerIdForPatch('own-cal')).toBe('own-cal');
     // The venue-level column names no calendar; it never takes a reassign.
     expect(linkedColumnPractitionerIdForPatch('linked:v1')).toBe('linked:v1');
+  });
+});
+
+describe('linkedColumnClosureInputs (web buildLinkedColumnScheduleClosureBlocks)', () => {
+  // The partner venue opens 09:00 to 18:00; Jenny works 10:00 to 19:00 and has
+  // an hour marked Unavailable at noon.
+  const hours = {
+    openingHours: { [WEEKDAY]: { periods: [{ open: '09:00', close: '18:00' }] } },
+    venueWideBlocks: [],
+    leavePeriods: [
+      {
+        practitioner_id: 'p1',
+        start_date: DATE,
+        end_date: DATE,
+        unavailable_start_time: '12:00:00',
+        unavailable_end_time: '13:00:00',
+        leave_type: 'sick',
+      },
+    ],
+  };
+  const schedule = { working_hours: { [WEEKDAY]: [{ start: '10:00', end: '19:00' }] } };
+  const jenny = practitioner({
+    id: 'p1',
+    name: 'Jenny',
+    workingHours: { [WEEKDAY]: [{ start: '10:00', end: '19:00' }] },
+    schedule,
+  });
+  const column = (v: LinkedVenueCalendar) => linkedVenueColumns(v, DATE)[0]!;
+
+  it("resolves the partner's own venue hours and calendar bands when the feed carries them", () => {
+    const v = venue({ practitioners: [jenny], hours: hours as LinkedVenueCalendar['hours'] });
+    const inputs = linkedColumnClosureInputs(v, column(v), DATE);
+    expect(inputs.source).toBe('resolved');
+    expect(inputs.venueHours).toEqual({ kind: 'open', periods: [{ start: 540, end: 1080 }] });
+    expect(inputs.workingHours).toEqual([{ start: '10:00', end: '19:00' }]);
+    expect(inputs.closureBlocks.map((b) => [b.blockType, b.start, b.end, b.label])).toEqual([
+      ['practitioner_closed', '00:00', '10:00', 'Closed'],
+      ['practitioner_closed', '19:00', '23:59', 'Closed'],
+      ['practitioner_leave', '12:00', '13:00', 'Unavailable'],
+    ]);
+  });
+
+  it('gives the grid one linked stripe per cause, every one a wall, as the web draws the column', () => {
+    const v = venue({ practitioners: [jenny], hours: hours as LinkedVenueCalendar['hours'] });
+    const inputs = linkedColumnClosureInputs(v, column(v), DATE);
+    // The combined day grid's own steps, over an 08:00 to 20:00 window.
+    const bands = partitionClosureBands({
+      venueClosed: venueClosedRanges(inputs.venueHours, 8 * 60, 20 * 60),
+      entries: clampClosureBlocksToWindow(
+        inputs.closureBlocks.map((block) => ({
+          block,
+          start: Number(block.start.slice(0, 2)) * 60 + Number(block.start.slice(3, 5)),
+          end: Number(block.end.slice(0, 2)) * 60 + Number(block.end.slice(3, 5)),
+        })),
+        8 * 60,
+        20 * 60,
+      ),
+      columnName: 'Jenny',
+      linked: inputs.source,
+      keyPrefix: 'linked:v1:p1',
+    });
+    expect(bands.map((e) => [e.block.blockType, e.block.label])).toEqual([
+      ['linked_business_closed', 'Venue closed 18:00 to 19:00'],
+      ['linked_calendar_closed', 'Jenny unavailable 09:00 to 10:00'],
+      ['linked_both_closed', 'Jenny closed 08:00 to 09:00'],
+      ['linked_both_closed', 'Jenny closed 19:00 to 20:00'],
+      ['linked_leave', 'Unavailable 12:00 to 13:00'],
+    ]);
+  });
+
+  it("follows a partner venue's closure for the day", () => {
+    const closedToday = {
+      ...hours,
+      venueWideBlocks: [{ id: 'c1', block_type: 'closed', date_start: DATE, date_end: DATE }],
+    };
+    const v = venue({ practitioners: [jenny], hours: closedToday as LinkedVenueCalendar['hours'] });
+    expect(linkedColumnClosureInputs(v, column(v), DATE).venueHours).toEqual({ kind: 'closed' });
+  });
+
+  it('falls back to the weekly template on an older feed (no schedule or no hours)', () => {
+    const noSchedule = practitioner({ id: 'p1', name: 'Jenny', workingHours: jenny.workingHours });
+    for (const v of [
+      venue({ practitioners: [noSchedule], hours: hours as LinkedVenueCalendar['hours'] }),
+      venue({ practitioners: [jenny] }),
+    ]) {
+      const col = column(v);
+      expect(linkedColumnClosureInputs(v, col, DATE)).toEqual({
+        venueHours: linkedVenueDayHours(col.openRanges, col.hasTemplate),
+        closureBlocks: [],
+        workingHours: null,
+        source: 'template',
+      });
+    }
+  });
+
+  it('keeps the venue-level column, which names no calendar, on the template', () => {
+    const v = venue({ practitioners: [jenny], hours: hours as LinkedVenueCalendar['hours'] });
+    expect(
+      linkedColumnClosureInputs(v, { practitionerId: null, openRanges: [], hasTemplate: true }, DATE).source,
+    ).toBe('template');
   });
 });
 

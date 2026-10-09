@@ -80,3 +80,45 @@ describe('LinkedVenueWeekGrid', () => {
     expect(screen.queryByText('New booking')).toBeNull();
   });
 });
+
+describe('LinkedVenueWeekGrid closure stripes', () => {
+  // Jenny works Mondays only (the week's first day), 10:00 to 17:00.
+  const MONDAY = String(new Date(2026, 5, 15).getDay());
+  const workingHours = { [MONDAY]: [{ start: '10:00', end: '17:00' }] };
+
+  it("keeps a merged week's closed days as the slate linked stripe, a wall", async () => {
+    await renderWeek(
+      venue({
+        practitioners: [practitioner({ workingHours }), practitioner({ id: 'p2', name: 'Sam', workingHours })],
+      }),
+    );
+    expect(screen.getAllByLabelText(/^Linked venue closed/).length).toBeGreaterThan(0);
+    expect(screen.queryByLabelText(/^Venue closed/)).toBeNull();
+  });
+
+  it("resolves a single shared calendar's week from the partner's own hours", async () => {
+    await renderWeek(
+      venue({
+        practitioners: [
+          practitioner({ workingHours, schedule: { working_hours: workingHours } }),
+        ],
+        hours: {
+          openingHours: { [MONDAY]: { periods: [{ open: '09:00', close: '18:00' }] } },
+          venueWideBlocks: [],
+          leavePeriods: [
+            {
+              practitioner_id: 'p1',
+              start_date: WEEK[0]!,
+              end_date: WEEK[0]!,
+              unavailable_start_time: '12:00:00',
+              unavailable_end_time: '13:00:00',
+              leave_type: 'annual',
+            },
+          ],
+        },
+      }),
+    );
+    expect(screen.getByLabelText('Closed 12:00 to 13:00')).toBeTruthy();
+    expect(screen.queryByLabelText(/^Linked venue closed/)).toBeNull();
+  });
+});

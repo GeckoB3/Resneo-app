@@ -83,6 +83,38 @@ describe('AllCalendarsDayGrid — linked columns', () => {
     expect(onEmptyPress).toHaveBeenCalledWith('own-2', expect.any(String));
   });
 
+  it("draws a resolved linked column's closures by cause, and an older feed's as the linked venue's", async () => {
+    // Both partner venues are shut after 17:00; the grid runs to 18:00.
+    const shutAt17 = { kind: 'open' as const, periods: [{ start: 9 * 60, end: 17 * 60 }] };
+    await render(
+      <AllCalendarsDayGrid
+        embedded
+        calendars={[
+          column({
+            calendarId: 'linked:v1:p1',
+            calendarName: 'Jenny',
+            linked: true,
+            linkedClosures: 'resolved',
+            workingHours: [{ start: '09:00', end: '18:00' }],
+            venueHours: shutAt17,
+          }),
+          column({
+            calendarId: 'linked:v2:p2',
+            calendarName: 'Sam',
+            linked: true,
+            workingHours: [{ start: '09:00', end: '18:00' }],
+            venueHours: shutAt17,
+          }),
+        ]}
+        nowMinutes={null}
+        onBlockPress={jest.fn()}
+        onEmptyPress={jest.fn()}
+      />,
+    );
+    expect(screen.getByLabelText('Venue closed 17:00 to 18:00')).toBeTruthy();
+    expect(screen.getByLabelText('Linked venue closed 17:00 to 18:00')).toBeTruthy();
+  });
+
   it('bands every other hour, as the single-calendar grid does', async () => {
     await render(
       <AllCalendarsDayGrid

@@ -6,7 +6,11 @@
  * never deals with the raw low/high column model — see Docs/LINKED_VENUES_IMPLEMENTATION_PLAN.md §2.
  */
 
+import type { CalendarScheduleRow } from '@/lib/calendar/calendar-hours';
+import type { LeavePeriodInput } from '@/lib/calendar/schedule-closures';
+import type { VenueWideBlock } from '@/lib/calendar/venue-closures';
 import type { ScheduleBlockDTO } from './schedule-blocks';
+import type { OpeningHours } from './venue';
 
 // ---------------------------------------------------------------------------
 // Core enums
@@ -345,6 +349,24 @@ export interface LinkedPractitioner {
   name: string;
   isActive: boolean;
   workingHours?: unknown;
+  /**
+   * Everything the owner's own diary resolves this calendar's hours from
+   * (schedule periods, rota, days off, per-date hours, breaks), web SB-39.
+   * Absent from an older feed; readers fall back to `workingHours`.
+   */
+  schedule?: CalendarScheduleRow;
+}
+
+/**
+ * The owner venue's own hours context, so a linked column is drawn as its
+ * owner draws it (web `LinkedVenueHours`, spec §8.2 amended 2026-09-19).
+ */
+export interface LinkedVenueHours {
+  openingHours: OpeningHours | null;
+  /** Venue-wide closures and amended hours (`availability_blocks` with no service). */
+  venueWideBlocks: VenueWideBlock[];
+  /** Leave on the linked calendars over the requested range, with its Label (no notes). */
+  leavePeriods: LeavePeriodInput[];
 }
 
 export interface LinkedService {
@@ -435,6 +457,8 @@ export interface LinkedVenueCalendar {
   bookings: LinkedBooking[];
   /** Classes / ticketed events / resource bookings shells (full_details only). */
   scheduleBlocks?: ScheduleBlockDTO[];
+  /** The owner venue's hours context; absent from an older feed. */
+  hours?: LinkedVenueHours;
 }
 
 export interface LinkedCalendarResponse {

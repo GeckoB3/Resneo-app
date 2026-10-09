@@ -56,14 +56,71 @@ import {
  *  - `venue_closed` — the business is shut, the calendar would work;
  *  - `practitioner_closed` — the business is open, the calendar is not working;
  *  - `venue_and_calendar_closed` — both;
- *  - `linked_venue_closed` — a partner venue's own closed hours, on its column.
+ *  - `linked_venue_closed` — a partner venue's closed hours from its weekly
+ *    template alone, for a feed that carries no `schedule` / `hours`.
+ *
+ * A partner's column resolved from its owner's own hours (web spec §8.2,
+ * amended 2026-09-19) is split the same four ways, each retyped to its linked
+ * counterpart so it stays a wall (`LINKED_TYPE_FOR`): `linked_business_closed`,
+ * `linked_calendar_closed`, `linked_leave` and `linked_both_closed`. Each draws
+ * and reads like its own-column counterpart ({@link scheduleClosureDisplayType}).
  */
 export type ScheduleClosureBlockType =
   | 'practitioner_closed'
   | 'practitioner_leave'
   | 'venue_closed'
   | 'venue_and_calendar_closed'
-  | 'linked_venue_closed';
+  | 'linked_venue_closed'
+  | 'linked_business_closed'
+  | 'linked_calendar_closed'
+  | 'linked_leave'
+  | 'linked_both_closed';
+
+/**
+ * Where a linked column's closed minutes come from: `'resolved'` when the feed
+ * carried the partner calendar's `schedule` and its venue's `hours`, so the
+ * causes can be told apart; `'template'` for an older feed, where only the
+ * weekly template is known and every closed minute is `linked_venue_closed`.
+ */
+export type LinkedClosureSource = 'resolved' | 'template';
+
+/** A linked column's resolved states (web `isLinkedResolvedClosureBlockType`). */
+export function isLinkedResolvedClosureBlockType(blockType: string | null | undefined): boolean {
+  return (
+    blockType === 'linked_business_closed' ||
+    blockType === 'linked_calendar_closed' ||
+    blockType === 'linked_leave' ||
+    blockType === 'linked_both_closed'
+  );
+}
+
+/**
+ * The own-column type a band draws and reads as (web `scheduleClosureDisplayType`):
+ * a linked column's resolved states borrow their counterpart's tint and words,
+ * so the two kinds of column read the same. Every other type is its own.
+ */
+export function scheduleClosureDisplayType(blockType: string | null | undefined): string | null | undefined {
+  switch (blockType) {
+    case 'linked_business_closed':
+      return 'venue_closed';
+    case 'linked_calendar_closed':
+      return 'practitioner_closed';
+    case 'linked_leave':
+      return 'practitioner_leave';
+    case 'linked_both_closed':
+      return 'venue_and_calendar_closed';
+    default:
+      return blockType;
+  }
+}
+
+/** Own-column type to its linked counterpart (web `LINKED_TYPE_FOR`). */
+const LINKED_TYPE_FOR: Partial<Record<ScheduleClosureBlockType, ScheduleClosureBlockType>> = {
+  venue_closed: 'linked_business_closed',
+  practitioner_closed: 'linked_calendar_closed',
+  practitioner_leave: 'linked_leave',
+  venue_and_calendar_closed: 'linked_both_closed',
+};
 
 export interface ScheduleClosureOverlay {
   id: string;
@@ -291,7 +348,8 @@ export function isScheduleClosureBlockType(blockType: string | null | undefined)
     blockType === 'venue_closed' ||
     blockType === 'venue_amended_hours' ||
     blockType === 'venue_and_calendar_closed' ||
-    blockType === 'linked_venue_closed'
+    blockType === 'linked_venue_closed' ||
+    isLinkedResolvedClosureBlockType(blockType)
   );
 }
 
@@ -306,7 +364,8 @@ function hm(t: string): string {
  * "Hannah unavailable 08:00 to 09:00" when the business is open but the
  * calendar is not working, "Hannah closed 08:00 to 09:00" when both apply
  * (the calendar's own closure is what keeps those minutes shut, so it is
- * named rather than a bare "Closed").
+ * named rather than a bare "Closed"). A linked column's resolved states say
+ * what their own-column counterparts say.
  */
 export function scheduleClosureBlockLabel(
   blockType: string | null | undefined,
@@ -319,6 +378,7 @@ export function scheduleClosureBlockLabel(
   },
 ): string {
   const range = opts?.startTime && opts?.endTime ? ` ${hm(opts.startTime)} to ${hm(opts.endTime)}` : '';
+  blockType = scheduleClosureDisplayType(blockType);
   if (blockType === 'practitioner_leave') {
     return `${opts?.leaveLabel?.trim() || 'On leave'}${range}`;
   }
@@ -367,11 +427,16 @@ export interface ClosureBandEntry<T> {
  * already clipped to the grid window) and the column's overlays (already
  * clamped), and returns the bands to draw in their place:
  *
- *  - minutes only the venue is shut → `venue_closed` (`linked_venue_closed` on
- *    a partner's column, where the "venue" is theirs);
+ *  - minutes only the venue is shut → `venue_closed`;
  *  - minutes only the calendar is off → `practitioner_closed`, kept from the
  *    builder's band but relabelled with the column's name and the range;
  *  - minutes both apply → `venue_and_calendar_closed`.
+ *
+ * On a partner's column (`linked`), every band stays a wall. Resolved from the
+ * partner's own hours, each of the four (leave too) is retyped to its linked
+ * counterpart, drawn and worded as its own-column twin (web
+ * `buildLinkedColumnScheduleClosureBlocks`). From the weekly template alone,
+ * the closed minutes are `linked_venue_closed`, as the web's older-feed fallback.
  *
  * Leave bands pass through whole (relabelled with their minutes), and so do
  * breaks, manual blocks and a partner's busy time. Leave is deliberately NOT
@@ -386,13 +451,20 @@ export function partitionClosureBands<
     venueClosed: readonly MinuteRange[];
     entries: readonly ClosureBandEntry<T>[];
     columnName?: string | null;
-    /** The venue's closed minutes belong to a partner venue (its own column). */
-    linked?: boolean;
+    /**
+     * A partner venue's column, and where its closed minutes come from (see
+     * {@link LinkedClosureSource}). Omitted for an own column.
+     */
+    linked?: LinkedClosureSource;
     /** Namespaces the synthetic bands' ids (one column and date). */
     keyPrefix: string;
   },
 ): ClosureBandEntry<T | ScheduleClosureOverlay>[] {
-  const { venueClosed, entries, columnName, linked = false, keyPrefix } = params;
+  const { venueClosed, entries, columnName, linked, keyPrefix } = params;
+  // The type a band takes on this column: its linked counterpart on a resolved
+  // partner column, so it stays a wall while looking like its own-column twin.
+  const typeFor = (t: ScheduleClosureBlockType): ScheduleClosureBlockType =>
+    linked === 'resolved' ? (LINKED_TYPE_FOR[t] ?? t) : t;
   const venue = unionRanges([...venueClosed]);
   const calendar: MinuteRange[] = [];
   const passthrough: ClosureBandEntry<T | ScheduleClosureOverlay>[] = [];
@@ -410,6 +482,7 @@ export function partitionClosureBands<
       passthrough.push({
         block: {
           ...entry.block,
+          blockType: typeFor('practitioner_leave'),
           label: scheduleClosureBlockLabel('practitioner_leave', {
             startTime,
             endTime,
@@ -445,10 +518,11 @@ export function partitionClosureBands<
   };
 
   const out: ClosureBandEntry<T | ScheduleClosureOverlay>[] = [];
-  const venueType: ScheduleClosureBlockType = linked ? 'linked_venue_closed' : 'venue_closed';
+  const venueType: ScheduleClosureBlockType =
+    linked === 'template' ? 'linked_venue_closed' : typeFor('venue_closed');
   for (const r of subtractRanges(venue, calendar)) out.push(band(venueType, r));
-  for (const r of subtractRanges(calendar, venue)) out.push(band('practitioner_closed', r));
-  for (const r of intersect(venue, calendar)) out.push(band('venue_and_calendar_closed', r));
+  for (const r of subtractRanges(calendar, venue)) out.push(band(typeFor('practitioner_closed'), r));
+  for (const r of intersect(venue, calendar)) out.push(band(typeFor('venue_and_calendar_closed'), r));
   return [...out, ...passthrough];
 }
 

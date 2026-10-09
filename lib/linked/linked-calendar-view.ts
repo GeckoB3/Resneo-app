@@ -11,8 +11,14 @@
  */
 import type { CalendarTimeBlock } from '@/components/calendar/CalendarDayGrid';
 import { minutesToTime } from '@/components/calendar/grid-layout';
+import { resolveColumnDayHours } from '@/lib/calendar/column-day-hours';
 import { dedupeScheduleDTOs, toCalendarScheduleBlock } from '@/lib/calendar/schedule-block-view';
-import { type MinuteRange, type VenueDayHours } from '@/lib/calendar/venue-closures';
+import {
+  buildCalendarClosureOverlays,
+  type LinkedClosureSource,
+  type ScheduleClosureOverlay,
+} from '@/lib/calendar/schedule-closures';
+import { venueDayHours, type MinuteRange, type VenueDayHours } from '@/lib/calendar/venue-closures';
 import { hasAnyWorkingHours, openRangesForDate } from '@/lib/linked/working-hours';
 import type {
   CalendarGridBooking,
@@ -131,6 +137,68 @@ export function linkedVenueDayHours(
 ): VenueDayHours {
   if (openRanges.length > 0) return { kind: 'open', periods: openRanges };
   return hasTemplate ? { kind: 'closed' } : { kind: 'unknown' };
+}
+
+/** What a linked column's closure stripes are drawn from on one date. */
+export interface LinkedColumnClosureInputs {
+  /** The column's venue window: the partner venue's resolved day, or the template's. */
+  venueHours: VenueDayHours;
+  /** The partner calendar's own bands (not working, leave); empty on the template fallback. */
+  closureBlocks: ScheduleClosureOverlay[];
+  /** The resolved working hours for the grid, or null to keep the template's. */
+  workingHours: CalendarGridWorkingHours[] | null;
+  /** Passed to `partitionClosureBands` as `linked`, which types the bands. */
+  source: LinkedClosureSource;
+}
+
+/**
+ * A linked column's closure inputs, resolved exactly as its owner's own diary
+ * resolves them (web `buildLinkedColumnScheduleClosureBlocks`, spec §8.2
+ * amended 2026-09-19): the partner venue's opening hours, closures and amended
+ * hours give the venue window, and the partner calendar's schedule periods,
+ * rota, days off, per-date hours and leave give its own bands. The grid then
+ * partitions them as it does an own column, typed as the linked counterparts
+ * so every stripe stays a wall.
+ *
+ * The same builders as an own column (`resolveColumnDayHours`,
+ * `buildCalendarClosureOverlays`), so the partner's column reads here as it
+ * does on the partner's own app diary.
+ *
+ * An older feed carries no `schedule` / `hours`, and the venue-level column
+ * names no calendar: both fall back to the weekly template, every closed
+ * minute a slate `linked_venue_closed`, as the web's fallback does.
+ */
+export function linkedColumnClosureInputs(
+  venue: LinkedVenueCalendar,
+  column: Pick<LinkedVenueColumn, 'practitionerId' | 'openRanges' | 'hasTemplate'>,
+  date: string,
+): LinkedColumnClosureInputs {
+  const practitioner = column.practitionerId
+    ? venue.practitioners.find((p) => p.id === column.practitionerId)
+    : undefined;
+  const schedule = practitioner?.schedule;
+  const hours = venue.hours;
+  if (practitioner && schedule && hours) {
+    const venueDay = venueDayHours(hours.openingHours, date, hours.venueWideBlocks ?? []);
+    const resolved = resolveColumnDayHours(schedule, date, venueDay);
+    return {
+      venueHours: resolved.venueHours,
+      closureBlocks: buildCalendarClosureOverlays({
+        calendarId: practitioner.id,
+        dateStr: date,
+        calendar: schedule,
+        leavePeriods: hours.leavePeriods ?? [],
+      }),
+      workingHours: resolved.workingHours,
+      source: 'resolved',
+    };
+  }
+  return {
+    venueHours: linkedVenueDayHours(column.openRanges, column.hasTemplate),
+    closureBlocks: [],
+    workingHours: null,
+    source: 'template',
+  };
 }
 
 /** Convert open minute-ranges into the grid's working-hours window. */
