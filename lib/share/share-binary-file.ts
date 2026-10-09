@@ -56,3 +56,54 @@ export async function downloadAndShareFile(args: {
     return { ok: false, message: err instanceof Error ? err.message : 'Could not download the file.' };
   }
 }
+
+/** A file `downloadFileToCache` saved, or why it could not. */
+export type CachedFileResult = { ok: true; uri: string } | { ok: false; message: string; status?: number };
+
+/**
+ * Download a file the API serves into the cache directory without sharing it, for a caller that
+ * shares several files in turn (the packing slips for several orders). The bytes go straight to
+ * disk with the Bearer header, as in `downloadAndShareFile`. Native only: on the web there is no
+ * cache directory, so the caller downloads through `downloadAndShareFile` instead.
+ */
+export async function downloadFileToCache(args: {
+  url: string;
+  filename: string;
+  headers: Record<string, string>;
+}): Promise<CachedFileResult> {
+  const { url, filename, headers } = args;
+  if (Platform.OS === 'web') return { ok: false, message: 'Not available in a browser.' };
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const FileSystem = require('expo-file-system/legacy') as any;
+    const cacheDir = (FileSystem.cacheDirectory as string | null) ?? '';
+    const result = (await FileSystem.downloadAsync(url, `${cacheDir}${filename}`, { headers })) as { status?: number; uri: string };
+    if (typeof result.status === 'number' && result.status >= 400) {
+      return { ok: false, message: `Download failed (${result.status}).`, status: result.status };
+    }
+    return { ok: true, uri: result.uri };
+  } catch (err) {
+    return { ok: false, message: err instanceof Error ? err.message : 'Could not download the file.' };
+  }
+}
+
+/**
+ * Hand one file already on the device to the OS share sheet. `expo-sharing` takes one file per
+ * sheet, so several files are shared one after another. Resolves when the sheet closes.
+ */
+export async function shareCachedFile(
+  uri: string,
+  options: { mimeType: string; dialogTitle?: string },
+): Promise<ShareBinaryResult> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const Sharing = require('expo-sharing') as any;
+    if (typeof Sharing?.isAvailableAsync === 'function' && (await Sharing.isAvailableAsync())) {
+      await Sharing.shareAsync(uri, { mimeType: options.mimeType, dialogTitle: options.dialogTitle });
+      return { ok: true };
+    }
+    return { ok: false, message: 'Sharing is not available on this device.' };
+  } catch (err) {
+    return { ok: false, message: err instanceof Error ? err.message : 'Could not share the file.' };
+  }
+}

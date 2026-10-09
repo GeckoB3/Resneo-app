@@ -1450,6 +1450,9 @@ export const POS_COPY = {
   'ord.action.cancelRefund': 'Cancel and refund',
   'ord.action.refund': 'Refund or return',
   'ord.action.packingSlip': 'Print packing slip',
+  'ord.bulk.select': 'Select',
+  'ord.bulk.packingSlips': 'Print packing slips',
+  'ord.bulk.cancel': 'Done',
   'ord.ready.confirm.title': 'Mark Order {orderNo} ready to collect?',
   'ord.ready.confirm.body': "We'll tell {customerName} it's ready, with their pickup code.",
   'ord.cancel.title': 'Cancel Order {orderNo} and refund {amount}?',
@@ -1522,6 +1525,20 @@ export const POS_COPY = {
   'app.ord.slip.failed': "We couldn't get the packing slip. Check your connection and try again.", // (added)
   'app.ord.otherVenue': 'This order is at another business. Switch to it in the app, then open it again.', // (added)
   'app.ord.badge': '{count} new', // (added) the Orders tile's count
+  // The app's words for printing several packing slips: each one is a PDF for the share sheet,
+  // one sheet at a time, and a server without the PDF route opens the web page instead.
+  'app.ord.bulk.count': '{count} selected', // (added)
+  'app.ord.bulk.hint': 'Tap the orders you want packing slips for.', // (added)
+  'app.ord.bulk.limit': 'You can print up to {max} packing slips at a time.', // (added)
+  'app.ord.bulk.cancelled': "Cancelled orders don't have a packing slip.", // (added)
+  'app.ord.bulk.getting': 'Getting packing slip {current} of {total}', // (added)
+  'app.ord.bulk.next': 'Packing slip {current} of {total}: Order {orderNo}', // (added)
+  'app.ord.bulk.share': 'Share', // (added) opens the share sheet for the next slip
+  'app.ord.bulk.stop': 'Stop', // (added)
+  'app.ord.bulk.failedOne': "We couldn't get the packing slip for {orders}. You can still share the others.", // (added)
+  'app.ord.bulk.failedMany': "We couldn't get the packing slips for {orders}. You can still share the others.", // (added)
+  'app.ord.bulk.allFailed': "We couldn't get the packing slips. Check your connection and try again.", // (added)
+  'app.ord.bulk.web': 'The packing slips open on the web, where you can print them.', // (added)
   // The app's own words for app step 4, where the deck has none.
   'app.stock.more': 'Show more', // (added) the next page of a list
   'app.stock.option': 'Option', // (added) the option picker's label on a stock row
