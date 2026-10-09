@@ -527,7 +527,7 @@ function SaleBody({
         <View style={posStyles.buttons}>
           {editable && sale.balance_due_pence > 0 && !pendingCard && can('take_payment') ? (
             <Button
-              label={`${t('sale.pay.open')}: ${t('sale.bar.balance', { balance: money(sale.balance_due_pence) })}`}
+              label={t('sale.pay.amount', { amount: money(sale.balance_due_pence) })}
               onPress={() => setSheet('pay')}
               fullWidth
             />

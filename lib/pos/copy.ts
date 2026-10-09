@@ -30,7 +30,8 @@ export const POS_COPY = {
   // §18.3 Checkout home, queue and sales lists
   'till.title': 'Checkout',
   'till.newSale': 'New sale',
-  'till.tab.queue': 'Ready to check out',
+  // 'Ready to check out' on the web; shorter so the tab stays on one line on a phone.
+  'till.tab.queue': 'Ready to pay',
   'till.tab.open': 'Open sales',
   'till.tab.all': 'All sales',
   'till.live': 'Live',
@@ -109,6 +110,7 @@ export const POS_COPY = {
   'sale.void': 'Void sale',
   'sale.discount': 'Add a discount',
   'sale.bar.balance': '{balance} to pay',
+  'sale.pay.amount': 'Take {amount}',
   'sale.pay.open': 'Take payment',
   'sale.notFound.title': "We can't find this sale",
   'sale.notFound.body': 'It may belong to another venue, or the link is wrong.',
