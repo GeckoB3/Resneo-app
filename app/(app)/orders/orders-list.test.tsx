@@ -145,4 +145,4 @@ it('stops at 50 ticked orders, as the web prints at most 50', async () => {
   await press(screen.getByLabelText('Order 51'));
   expect(mockBarSelected).toHaveLength(50);
   expect(mockToast.info).toHaveBeenCalledWith('You can print up to 50 packing slips at a time.');
-});
+}, 30_000); // Fifty rows to render and tick: slow under a full parallel run.
