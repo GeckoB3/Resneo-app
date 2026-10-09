@@ -94,7 +94,17 @@ export type LaneCommunicationPolicies = Partial<
   Record<CommunicationMessageKey, LaneMessagePolicy>
 >;
 
+/**
+ * The POS customer messages a venue can switch off (web `pos-message-switches.ts`, plan §4.23).
+ * Stored as `communication_policies.pos`; a missing key is on.
+ */
+export type PosMessageSwitchKey = 'pos_sale_receipt' | 'pos_refund_receipt' | 'voucher_expiry_reminder';
+
+export type PosMessageSwitches = Record<PosMessageSwitchKey, { enabled: boolean }>;
+
 export interface VenueCommunicationPolicies {
   table?: LaneCommunicationPolicies;
   appointments_other?: LaneCommunicationPolicies;
+  /** Checkout message switches; a server before plan §4.23 leaves it out (all on). */
+  pos?: PosMessageSwitches;
 }

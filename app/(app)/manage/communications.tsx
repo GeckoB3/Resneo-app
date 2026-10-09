@@ -13,6 +13,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CommunicationPreviewSheet } from '@/components/manage/CommunicationPreviewSheet';
+import { PosMessageSwitchesCard } from '@/components/manage/PosMessageSwitchesCard';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Chip } from '@/components/ui/Chip';
@@ -28,6 +29,12 @@ import {
   WAITLIST_DEF,
   type MessageDef,
 } from '@/lib/communications/message-defs';
+import {
+  buildCommunicationPoliciesPatch,
+  parsePosMessageSwitches,
+  posMessageFeatures,
+  samePosMessageSwitches,
+} from '@/lib/communications/pos-message-switches';
 import { hapticSelect, hapticSuccess, hapticWarning } from '@/lib/haptics';
 import {
   useCommunicationPolicies,
@@ -53,6 +60,8 @@ import type {
   LaneCommunicationPolicies,
   LaneMessagePolicy,
   MessageChannel,
+  PosMessageSwitches,
+  PosMessageSwitchKey,
   VenueNotificationSettings,
 } from '@/types/communications';
 
@@ -587,6 +596,8 @@ export default function CommunicationsScreen() {
   const [barHeight, setBarHeight] = useState(0);
   const isAdmin = venue?.current_user_role === 'admin';
   const waitlistEnabled = featureFlags?.resolved?.waitlist_v2 === true;
+  // Checkout messages (web plan §4.23): only with Checkout on, from the venue's resolved flags.
+  const posFeatures = posMessageFeatures(venue);
 
   // SMS upsell banner: Appointments Light with no Stripe SUBSCRIPTION (web
   // `CommunicationTemplatesSection`). It used to test the Connect account, which
@@ -606,6 +617,8 @@ export default function CommunicationsScreen() {
   const previewMutation = usePreviewCommunication();
 
   const [lane, setLane] = useState<LaneCommunicationPolicies | null>(null);
+  // Checkout message switches (`communication_policies.pos`), saved with the lanes.
+  const [posDraft, setPosDraft] = useState<PosMessageSwitches | null>(null);
   const [staffDraft, setStaffDraft] = useState<VenueNotificationSettings | null>(null);
   // Owner "New booking alert" draft (venue-level, PATCH /api/venue). Seeded from
   // the bootstrap on first load alongside lane/staffDraft.
@@ -636,6 +649,7 @@ export default function CommunicationsScreen() {
       // its lane switcher) is an intentional exclusion (R7 domain-15 Low) — do
       // not re-add a lane tablist unless a restaurant/table tier ships here.
       setLane(policiesQuery.data.appointments_other ?? {});
+      setPosDraft(parsePosMessageSwitches(policiesQuery.data.pos));
 
       setStaffDraft(settingsQuery.data);
       // Re-sync the owner-alert draft from the (now-loaded) bootstrap.
@@ -653,6 +667,12 @@ export default function CommunicationsScreen() {
 
   const setPolicy = (key: CommunicationMessageKey, next: LaneMessagePolicy) => {
     setLane((current) => ({ ...(current ?? {}), [key]: next }));
+    setSaved(false);
+  };
+
+  const setPosSwitch = (key: PosMessageSwitchKey, enabled: boolean) => {
+    hapticSelect();
+    setPosDraft((current) => ({ ...parsePosMessageSwitches(current), [key]: { enabled } }));
     setSaved(false);
   };
 
@@ -704,11 +724,15 @@ export default function CommunicationsScreen() {
     !!lane &&
     !!policiesQuery.data &&
     JSON.stringify(lane) !== JSON.stringify(policiesQuery.data.appointments_other ?? {});
+  const posChanged =
+    !!posDraft &&
+    !!policiesQuery.data &&
+    !samePosMessageSwitches(posDraft, parsePosMessageSwitches(policiesQuery.data.pos));
   const staffChanged =
     !!staffDraft &&
     !!settingsQuery.data &&
     JSON.stringify(staffDraft) !== JSON.stringify(settingsQuery.data);
-  const hasChanges = laneChanged || staffChanged || ownerAlertChanged || reviewChanged;
+  const hasChanges = laneChanged || posChanged || staffChanged || ownerAlertChanged || reviewChanged;
 
   async function handleSave() {
     if (!lane || !staffDraft || !settingsQuery.data) return;
@@ -726,8 +750,11 @@ export default function CommunicationsScreen() {
     }
     setSaveError(null);
     try {
-      if (laneChanged) {
-        await updatePolicies.mutateAsync({ appointments_other: lane });
+      // Only what changed: the server keeps a `pos` block the patch leaves out, so a lanes-only
+      // save never drops the Checkout switches.
+      const policiesPatch = buildCommunicationPoliciesPatch({ lane, laneChanged, pos: posDraft, posChanged });
+      if (policiesPatch) {
+        await updatePolicies.mutateAsync(policiesPatch);
       }
       if (staffChanged) {
         const changes: Partial<VenueNotificationSettings> = {};
@@ -893,6 +920,16 @@ export default function CommunicationsScreen() {
             onPreview={handlePreview}
           />
         ))}
+
+        {/* Checkout and online shop messages (web PosMessageSwitchesBlock): only with Checkout on */}
+        {posFeatures.pos ? (
+          <PosMessageSwitchesCard
+            features={posFeatures}
+            switches={posDraft}
+            isAdmin={!!isAdmin}
+            onToggle={setPosSwitch}
+          />
+        ) : null}
 
         {/* Staff alerts */}
         <Card>
