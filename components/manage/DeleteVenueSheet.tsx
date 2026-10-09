@@ -25,7 +25,7 @@ type DeleteVenueSheetProps = {
 
 /** "30 Jun 2026" from an ISO timestamp (date portion only). */
 function formatScheduledDate(iso: string | null): string {
-  if (!iso) return '—';
+  if (!iso) return 'Unknown';
   const ms = Date.parse(iso);
   if (Number.isNaN(ms)) return iso.slice(0, 10);
   return new Date(ms).toLocaleDateString('en-GB', {

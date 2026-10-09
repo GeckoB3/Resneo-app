@@ -78,7 +78,7 @@ const RANGE_DAYS: Record<Exclude<RangeKey, 'custom'>, number> = {
   '90d': 90,
 };
 
-const money = (pence: number): string => formatPence(pence) ?? '—';
+const money = (pence: number): string => formatPence(pence) ?? 'None';
 
 /** "YYYY-MM-DD" → a local-noon Date (noon avoids any tz day-boundary slip). */
 function ymdToLocalNoon(ymd: string): Date {
@@ -1074,7 +1074,7 @@ export default function ReportsScreen() {
                                     tone="muted"
                                     numberOfLines={1}
                                     style={styles.addonGroupCol}>
-                                    {addon.addon_group_name_snapshot ?? '—'}
+                                    {addon.addon_group_name_snapshot ?? 'No group'}
                                   </Text>
                                   <Text
                                     variant="bodySmall"

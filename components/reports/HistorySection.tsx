@@ -59,7 +59,7 @@ const RANGE_DAYS: Record<Exclude<HistoryRangeKey, 'month'>, number> = {
 /** Bucket the chart weekly once a range is wider than ~5 weeks of daily points. */
 const WEEKLY_BUCKET_THRESHOLD_DAYS = 35;
 
-const money = (pence: number): string => formatPence(pence) ?? '—';
+const money = (pence: number): string => formatPence(pence) ?? 'None';
 
 // ─── Small local pieces ──────────────────────────────────────────────────────
 function HistoryStatRow({
@@ -224,7 +224,7 @@ export function HistorySection({
         String(guest.visit_count),
         String(guest.no_show_count),
         ((guest.paid_deposit_pence ?? 0) / 100).toFixed(2),
-        guest.last_visit_date ?? '—',
+        guest.last_visit_date ?? 'None',
       ]),
     ]);
     if (!result.ok) {

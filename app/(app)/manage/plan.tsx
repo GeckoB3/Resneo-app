@@ -66,9 +66,9 @@ const MODEL_LABELS: Record<BookingModel, string> = {
 };
 
 function formatDate(iso: string | null | undefined): string {
-  if (!iso) return '—';
+  if (!iso) return 'Unknown';
   const ms = Date.parse(iso);
-  if (Number.isNaN(ms)) return '—';
+  if (Number.isNaN(ms)) return 'Unknown';
   return new Date(ms).toLocaleDateString('en-GB', {
     day: 'numeric',
     month: 'short',
@@ -567,7 +567,7 @@ export default function PlanScreen() {
                 value={`${formatDate(periodStart)} – ${formatDate(periodEnd)}`}
               />
             )}
-            <InfoRow label="Booking types" value={models.join(' · ') || '—'} />
+            <InfoRow label="Booking types" value={models.join(' · ') || 'None'} />
             <InfoRow label="Currency" value={venue.currency?.toUpperCase() ?? 'GBP'} />
           </View>
 

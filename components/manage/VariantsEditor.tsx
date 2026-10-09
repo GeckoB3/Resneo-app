@@ -258,7 +258,7 @@ export function VariantsEditor({
                     {draft.name.trim() || `Option ${index + 1}`}
                   </Text>
                   <Text variant="caption" tone="muted">
-                    {draft.duration || '—'} min
+                    {draft.duration ? `${draft.duration} min` : 'Length not set'}
                     {draft.price.trim() ? ` · £${draft.price.trim()}` : ''}
                     {!draft.isActive ? ' · Inactive' : ''}
                   </Text>

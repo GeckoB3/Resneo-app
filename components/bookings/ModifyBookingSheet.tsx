@@ -2351,7 +2351,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
                   Visit length
                 </Text>
                 <Text variant="bodyMedium">
-                  {visitPlannedMinutes != null ? formatDuration(visitPlannedMinutes) : '—'}
+                  {visitPlannedMinutes != null ? formatDuration(visitPlannedMinutes) : 'Not set'}
                 </Text>
                 <Text variant="caption" tone="muted">
                   {servicesChanged
@@ -2365,7 +2365,7 @@ export function ModifyBookingSheet({ target, onClose }: ModifyBookingSheetProps)
               <>
                 <Stepper
                   label={isVisit ? 'Visit length' : 'Duration'}
-                  value={duration == null ? '—' : formatDuration(duration)}
+                  value={duration == null ? 'Not set' : formatDuration(duration)}
                   onDecrement={() =>
                     setDuration((d) =>
                       d == null ? d : Math.max(minDuration, d - DURATION_STEP_MINUTES),

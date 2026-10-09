@@ -288,7 +288,7 @@ function MessageCard({
                 />
               ) : (
                 <Text variant="bodySmall" tone="muted">
-                  {policy.emailCustomMessage ?? '—'}
+                  {policy.emailCustomMessage ?? 'Not set'}
                 </Text>
               )}
             </View>
@@ -326,7 +326,7 @@ function MessageCard({
                 />
               ) : (
                 <Text variant="bodySmall" tone="muted">
-                  {policy.smsCustomMessage ?? '—'}
+                  {policy.smsCustomMessage ?? 'Not set'}
                 </Text>
               )}
             </View>
@@ -414,7 +414,7 @@ function OwnerAlertCard({
                 Notification email
               </Text>
               <Text variant="bodySmall" tone="muted">
-                {email.trim() || trimmedVenueEmail || '—'}
+                {email.trim() || trimmedVenueEmail || 'Not set'}
               </Text>
             </View>
           )
@@ -499,7 +499,7 @@ function GoogleReviewCard({
               Google review link
             </Text>
             <Text variant="bodySmall" tone="muted">
-              {link.trim() || '—'}
+              {link.trim() || 'Not set'}
             </Text>
           </View>
         )}

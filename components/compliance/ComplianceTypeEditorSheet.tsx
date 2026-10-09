@@ -790,7 +790,7 @@ function ReadonlySummary({
         <ReadonlyRow
           label="Captured by"
           value={
-            (type.capture_methods ?? []).map((m) => CAPTURE_METHOD_LABELS[m] ?? m).join(', ') || '—'
+            (type.capture_methods ?? []).map((m) => CAPTURE_METHOD_LABELS[m] ?? m).join(', ') || 'None'
           }
         />
         <ReadonlyRow

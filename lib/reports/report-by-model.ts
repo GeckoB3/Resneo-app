@@ -46,7 +46,7 @@ export function modelRowLabel(row: ReportByModelRow): string {
 
 /** Human money string for the UI (em-dash when null/0 via `formatPence`). */
 export function modelDepositDisplay(row: ReportByModelRow): string {
-  return formatPence(row.deposit_pence_collected) ?? '—';
+  return formatPence(row.deposit_pence_collected) ?? 'None';
 }
 
 /**

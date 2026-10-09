@@ -190,7 +190,7 @@ interface Confirmation {
   compliance_warnings?: ComplianceBookingWarning[];
 }
 
-const money = (pence: number): string => formatPence(pence) ?? '—';
+const money = (pence: number): string => formatPence(pence) ?? 'Unknown';
 
 function SummaryRow({ label, value }: SummaryRowItem) {
   return (
@@ -393,7 +393,7 @@ export function BookingFlowConfirm({
         {rows.map((row) => (
           <SummaryRow key={row.label} label={row.label} value={row.value} />
         ))}
-        <SummaryRow label="Guest" value={guestName || '—'} />
+        <SummaryRow label="Guest" value={guestName || 'Not given'} />
         {totalPence != null && totalPence > 0 ? (
           <View style={[styles.totalRow, { borderTopColor: colors.border }]}>
             <Text variant="label">Total</Text>

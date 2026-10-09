@@ -101,7 +101,7 @@ function diffSummary(entry: AccountLinkAuditEntry): string | null {
     const before = entry.beforeState[k];
     const after = entry.afterState[k];
     if (before !== after) {
-      changes.push(`${k.replace(/_/g, ' ')}: ${String(before ?? '—')} → ${String(after ?? '—')}`);
+      changes.push(`${k.replace(/_/g, ' ')}: ${String(before ?? 'not set')} → ${String(after ?? 'not set')}`);
     }
   }
   return changes.length > 0 ? changes.join('; ') : null;

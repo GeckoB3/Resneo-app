@@ -814,7 +814,7 @@ export function GroupBookingFlow({
               {people.length} {people.length === 1 ? 'attendee' : 'attendees'}
             </Text>
             <Text variant="bodySmall" tone="muted">
-              Organiser: {fullName || '—'}
+              Organiser: {fullName || 'Not given'}
             </Text>
             <View style={styles.confirmList}>
               {people.map((p, index) => (

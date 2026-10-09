@@ -145,7 +145,7 @@ export function formatEventDateShort(iso: string | undefined): string {
 function eventsEmptyText(venueHasActiveEvents: boolean, venueHasAnyEvents: boolean): string {
   if (venueHasActiveEvents) return 'None here. Assign one from the Event manager.';
   if (venueHasAnyEvents) return 'No active events';
-  return '—';
+  return 'No events yet';
 }
 
 // ---------------------------------------------------------------------------
@@ -477,9 +477,9 @@ function CalendarCard({
         />
       </View>
       <View style={styles.assignBlock}>
-        {/* "None" when the venue has services but none sit here; "—" when
+        {/* "None" when the venue has services but none sit here; "No services yet" when
             there is nothing to assign yet (web parity). */}
-        <AssignmentLine label="Services" names={svc} empty={venueHasServices ? 'None' : '—'} />
+        <AssignmentLine label="Services" names={svc} empty={venueHasServices ? 'None' : 'No services yet'} />
         {parkedSvc.length > 0 ? (
           <AssignmentLine label="Parked" names={parkedSvc} hint="Nobody can book these while the collective is live." />
         ) : null}
@@ -522,7 +522,7 @@ function CalendarCard({
 function AssignmentLine({
   label,
   names,
-  empty = '—',
+  empty = 'None',
   hint,
 }: {
   label: string;

@@ -35,7 +35,7 @@ function formatSavedOn(createdAt: string): string {
 }
 
 function formatHours(h: number | null): string {
-  if (h == null) return '—';
+  if (h == null) return 'Unknown';
   if (h < 1) {
     const mins = Math.round(h * 60);
     return mins <= 1 ? 'under 1 minute' : `${mins} minutes`;
@@ -46,7 +46,7 @@ function formatHours(h: number | null): string {
 }
 
 function formatDurationFriendly(ms: number | null): string {
-  if (ms == null) return '—';
+  if (ms == null) return 'Unknown';
   const sec = Math.round(ms / 1000);
   if (sec < 60) return `${sec} second${sec === 1 ? '' : 's'}`;
   const min = Math.floor(sec / 60);
@@ -186,7 +186,7 @@ export function BaselineMetricsCard({ metrics, snapshot }: BaselineMetricsCardPr
   const periodLabel = formatPeriodRange(metrics.period.from, metrics.period.to);
 
   const noShowValue =
-    metrics.no_show.eligible_count === 0 ? '—' : formatPct(metrics.no_show.rate_pct);
+    metrics.no_show.eligible_count === 0 ? 'No data' : formatPct(metrics.no_show.rate_pct);
 
   const noShowDetail =
     metrics.no_show.eligible_count === 0
@@ -201,7 +201,7 @@ export function BaselineMetricsCard({ metrics, snapshot }: BaselineMetricsCardPr
   const otherMoves = metrics.reschedule.unknown_actor_reschedule_count;
 
   const selfServeValue =
-    modifications === 0 ? '—' : formatPct(metrics.reschedule.guest_self_reschedule_rate_pct);
+    modifications === 0 ? 'No data' : formatPct(metrics.reschedule.guest_self_reschedule_rate_pct);
 
   const knownMoves = guestMoves + staffMoves;
   const selfServeDetail =
@@ -220,7 +220,7 @@ export function BaselineMetricsCard({ metrics, snapshot }: BaselineMetricsCardPr
             .join(' ');
 
   const messagingValue =
-    modifications === 0 ? '—' : formatPct(metrics.reschedule.reschedule_via_email_rate_pct);
+    modifications === 0 ? 'No data' : formatPct(metrics.reschedule.reschedule_via_email_rate_pct);
 
   const messagingDetail =
     modifications === 0
@@ -231,7 +231,7 @@ export function BaselineMetricsCard({ metrics, snapshot }: BaselineMetricsCardPr
 
   const rebookValue =
     metrics.cancellation_rebook.cancellations_with_guest === 0
-      ? '—'
+      ? 'No data'
       : formatPct(metrics.cancellation_rebook.rebook_rate_7d_pct);
 
   const rebookDetail =
@@ -243,7 +243,7 @@ export function BaselineMetricsCard({ metrics, snapshot }: BaselineMetricsCardPr
 
   const gapValue =
     metrics.cancellation_rebook.median_rebook_gap_hours == null
-      ? '—'
+      ? 'No data'
       : formatHours(metrics.cancellation_rebook.median_rebook_gap_hours);
 
   const gapDetail =
@@ -253,7 +253,7 @@ export function BaselineMetricsCard({ metrics, snapshot }: BaselineMetricsCardPr
 
   const staffSamples = metrics.staff_time_to_book.sample_count;
   const staffValue =
-    staffSamples === 0 ? '—' : formatDurationFriendly(metrics.staff_time_to_book.median_duration_ms);
+    staffSamples === 0 ? 'No data' : formatDurationFriendly(metrics.staff_time_to_book.median_duration_ms);
 
   const returningMedian = metrics.staff_time_to_book.returning_guest.median_duration_ms;
   const returningCount = metrics.staff_time_to_book.returning_guest.sample_count;

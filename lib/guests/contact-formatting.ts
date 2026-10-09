@@ -21,7 +21,7 @@ function localCalendarDate(): string {
 
 /** "10 days ago" — the web's wide-screen rendering of a last visit. */
 export function formatRelativeVisitDate(isoDate: string | null | undefined): string {
-  if (!isoDate) return '—';
+  if (!isoDate) return 'None';
   try {
     return formatDistanceToNowStrict(middayOf(isoDate), { addSuffix: true });
   } catch {
@@ -34,7 +34,7 @@ export function formatCalendarDayShort(
   isoDate: string | null | undefined,
   today: string = localCalendarDate(),
 ): string {
-  if (!isoDate) return '—';
+  if (!isoDate) return 'None';
   try {
     const day = middayOf(isoDate);
     if (Number.isNaN(day.getTime())) return isoDate;
@@ -54,7 +54,7 @@ export function formatNextBookingSummary(
 ): string | null {
   if (!date) return null;
   const day = formatCalendarDayShort(date, today);
-  if (day === '—') return null;
+  if (day === 'None') return null;
   const clock = time ? time.slice(0, 5) : null;
   return clock ? `${day} ${clock}` : day;
 }

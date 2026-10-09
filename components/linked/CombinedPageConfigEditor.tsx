@@ -759,7 +759,7 @@ function ColourField({
           </Text>
         ) : (
           <Text variant="caption" tone="muted">
-            —
+            None
           </Text>
         )}
       </View>

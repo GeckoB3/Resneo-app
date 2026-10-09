@@ -57,7 +57,7 @@ export function planDisplayName(pricingTier: string | null | undefined): string 
     case 'founding':
       return 'Founding Partner';
     case '':
-      return '—';
+      return 'No plan';
     default:
       return t.charAt(0).toUpperCase() + t.slice(1);
   }

@@ -91,7 +91,7 @@ function formatGuestName(guest: GuestDetailProfile): string {
   return parts.length > 0 ? parts.join(' ') : 'Unnamed guest';
 }
 
-const formatCurrencyPence = (pence: number): string => formatPence(pence) ?? '—';
+const formatCurrencyPence = (pence: number): string => formatPence(pence) ?? 'None';
 
 /** One column in the stats card — value over a muted caption label. */
 function StatColumn({ label, value, divider }: { label: string; value: string; divider: boolean }) {
@@ -193,7 +193,7 @@ function statTiles(stats: GuestDetailStats): { label: string; value: string }[] 
     { label: 'Cancelled', value: String(stats.cancellations) },
     {
       label: 'Deposits',
-      value: stats.total_deposit_pence_paid > 0 ? formatCurrencyPence(stats.total_deposit_pence_paid) : '—',
+      value: stats.total_deposit_pence_paid > 0 ? formatCurrencyPence(stats.total_deposit_pence_paid) : 'None',
     },
   ];
 }

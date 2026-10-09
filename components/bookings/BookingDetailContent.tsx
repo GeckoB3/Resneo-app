@@ -1823,7 +1823,7 @@ export function BookingDetailContent({
                 <Text variant="bodyMedium" style={styles.detailValue}>
                   {depositLabel
                     ? `${depositLabel}${shownDepositStatus ? ` · ${shownDepositStatus}` : ''}`
-                    : shownDepositStatus ?? '—'}
+                    : shownDepositStatus ?? 'Unknown'}
                 </Text>
               </View>
             ) : null}

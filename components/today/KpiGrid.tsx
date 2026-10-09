@@ -49,7 +49,7 @@ export function KpiGrid({ today, isAppointment, countsAppointments = false, fore
 
   // "Confirmed" tile
   const countNoun = countsAppointments ? 'appointments' : 'bookings';
-  const confirmedValue = bookings > 0 ? `${confirmed}/${bookings}` : '—';
+  const confirmedValue = bookings > 0 ? `${confirmed}/${bookings}` : 'None';
   const confirmedCaption =
     bookings > 0 && attendancePct != null ? `${attendancePct}% of ${countNoun}` : `No ${countNoun} today`;
   const confirmedExtra =
@@ -59,7 +59,7 @@ export function KpiGrid({ today, isAppointment, countsAppointments = false, fore
           .join(' · ')
       : undefined;
 
-  const nextValue = today.next_booking ? today.next_booking.time : '—';
+  const nextValue = today.next_booking ? today.next_booking.time : 'None';
   const nextCaption = today.next_booking
     ? countsAppointments
       ? 'next appointment'

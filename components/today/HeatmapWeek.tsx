@@ -93,7 +93,7 @@ export function HeatmapWeek({ days }: HeatmapWeekProps) {
             ? `${day.fill_percent ?? 0}%`
             : total > 0
             ? String(total)
-            : '—';
+            : '0';
           const isToday = idx === 0;
           const onDark = isDarkTint(bucket);
 

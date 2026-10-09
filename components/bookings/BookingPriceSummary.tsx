@@ -39,7 +39,7 @@ export function BookingPriceSummary({ rows }: { rows: PriceSummaryRow[] }) {
           <Text
             variant={row.emphasis ? 'bodyMedium' : 'bodySmall'}
             tone={row.pence == null ? 'muted' : 'default'}>
-            {row.pence == null ? (row.note ?? '—') : formatPence(row.pence)}
+            {row.pence == null ? (row.note ?? 'No price') : formatPence(row.pence)}
           </Text>
         </View>
       ))}

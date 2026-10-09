@@ -165,15 +165,15 @@ describe('Refer & Earn — data state', () => {
 });
 
 describe('Refer & Earn — empty + credit-remaining-null', () => {
-  it('shows "No referrals yet" and an em-dash for null credit remaining', async () => {
+  it('shows "No referrals yet" and "None" for null credit remaining', async () => {
     setReferrals({
       data: { ...DATA, referralsForUi: [], creditRemainingPence: null, counts: { total: 0, credited: 0, pending: 0 } },
     });
     await render(<ReferEarnScreen />);
 
     expect(screen.getByText('No referrals yet')).toBeTruthy();
-    // KPI shell still rendered; null credit remaining → "—".
-    expect(screen.getByText('—')).toBeTruthy();
+    // KPI shell still rendered; null credit remaining → "None".
+    expect(screen.getByText('None')).toBeTruthy();
     expect(screen.queryByText('Acme Clinic')).toBeNull();
   });
 });
@@ -201,7 +201,7 @@ describe('formatReferralDate', () => {
   });
 
   it('returns an em-dash for null / unparseable input', () => {
-    expect(formatReferralDate(null)).toBe('—');
-    expect(formatReferralDate('not-a-date')).toBe('—');
+    expect(formatReferralDate(null)).toBe('Unknown');
+    expect(formatReferralDate('not-a-date')).toBe('Unknown');
   });
 });

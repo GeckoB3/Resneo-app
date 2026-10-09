@@ -47,7 +47,7 @@ const HIDDEN_DEPOSIT = new Set(['N/A', 'Not Required', 'None', '']);
 
 function formatTime(time: string | null): string {
   if (!time) {
-    return '—';
+    return 'No time';
   }
   return time.slice(0, 5); // HH:mm
 }

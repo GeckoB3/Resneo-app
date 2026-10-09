@@ -35,10 +35,10 @@ import type {
 } from '@/types/collectives';
 
 function fmtPrice(p: number | null): string {
-  return p == null ? '—' : `£${(p / 100).toFixed(2)}`;
+  return p == null ? 'No price' : `£${(p / 100).toFixed(2)}`;
 }
 function fmtDuration(m: number | null): string {
-  return m == null ? '—' : `${m} min`;
+  return m == null ? 'No length' : `${m} min`;
 }
 
 /**

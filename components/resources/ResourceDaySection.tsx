@@ -14,7 +14,7 @@ import { useTheme } from '@/theme/useTheme';
 
 /** "10:00–11:30" (or "10:00" when no end time is stored). */
 function timeRangeLabel(row: ResourceDayBookingRow): string {
-  const start = row.booking_time ? row.booking_time.slice(0, 5) : '—';
+  const start = row.booking_time ? row.booking_time.slice(0, 5) : 'No time';
   const end = row.booking_end_time ? row.booking_end_time.slice(0, 5) : null;
   return end ? `${start}–${end}` : start;
 }

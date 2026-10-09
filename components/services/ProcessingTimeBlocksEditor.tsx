@@ -259,7 +259,7 @@ export function ProcessingTimeBlocksEditor({
       </Text>
       <Text variant="caption" tone="muted">
         Time the client waits (colour developing, a mask setting) while you are free to see someone
-        else. A period can sit inside the {durationMinutes || '—'} min service, or start at its end
+        else. A period can sit inside the {durationMinutes ? `${durationMinutes} min ` : ''}service, or start at its end
         and run on afterwards. The next service in the same visit waits until it has finished.
         {bufferMinutes ? ` Your ${bufferMinutes} min buffer comes after all of it.` : ''}
       </Text>

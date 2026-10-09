@@ -207,7 +207,7 @@ export function CourseEnrollmentsSheet({ course, onClose }: CourseEnrollmentsShe
                           {guestDisplayName(e.guest)}
                         </Text>
                         <Text variant="caption" tone="muted" numberOfLines={1}>
-                          {e.guest?.email ?? '—'} · enrolled {e.created_at.slice(0, 10)}
+                          {e.guest?.email ?? 'No email'} · enrolled {e.created_at.slice(0, 10)}
                         </Text>
                       </View>
                       <Badge label={e.status} tone={ENROLLMENT_TONE[e.status] ?? 'neutral'} />

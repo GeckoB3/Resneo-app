@@ -111,7 +111,7 @@ interface BookingConfirmation {
   practitioner_name: string;
 }
 
-const formatMoney = (pence: number): string => formatPence(pence) ?? '—';
+const formatMoney = (pence: number): string => formatPence(pence) ?? 'Unknown';
 
 function formatSummaryDate(isoDate: string): string {
   const [year, month, day] = isoDate.split('-').map(Number);
@@ -681,7 +681,7 @@ export function ConfirmStep({
         {!isMultiService ? (
           <SummaryRow label="Time" value={formatSummaryTime(slot.start_time)} />
         ) : null}
-        <SummaryRow label="Guest" value={fullName || '—'} />
+        <SummaryRow label="Guest" value={fullName || 'Not given'} />
         {guest.phone.trim() ? <SummaryRow label="Phone" value={formatPhoneForDisplay(guest.phone)} /> : null}
         {guest.email.trim() ? <SummaryRow label="Email" value={guest.email.trim()} /> : null}
         {comment ? <SummaryRow label="Comments" value={comment} /> : null}

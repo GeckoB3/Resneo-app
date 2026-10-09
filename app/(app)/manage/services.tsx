@@ -1852,7 +1852,7 @@ export default function ServicesScreen() {
 
   // One-line summaries for the collapsed advanced sections in the service sheet.
   // Pure presentation — derived from the live form state, never persisted.
-  const bookingRulesSummary = `${advanceDays || '—'}d ahead · ${noticeHours || '0'}h notice${
+  const bookingRulesSummary = `${advanceDays ? `${advanceDays}d ahead` : 'Book ahead not set'} · ${noticeHours || '0'}h notice${
     sameDay ? '' : ' · no same-day'
   }`;
   const staffMayCount = STAFF_MAY_FIELDS.reduce((n, { key }) => n + (staffMay[key] ? 1 : 0), 0);

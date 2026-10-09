@@ -428,7 +428,7 @@ export function TakePaymentSheet({ target, onClose }: TakePaymentSheetProps) {
               {isCharging
                 ? `Charging ${chargeLabel}`
                 : balanceKnown
-                  ? `${formatPositivePence(balancePence) ?? '—'} due`
+                  ? `${formatPositivePence(balancePence) ?? 'Nothing'} due`
                   : 'Enter the amount'}
             </Text>
             <Text variant="bodySmall" tone="muted">

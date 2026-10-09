@@ -23,8 +23,8 @@ describe('formatCalendarDayShort', () => {
   });
 
   it('shows a dash when there is no date', () => {
-    expect(formatCalendarDayShort(null, TODAY)).toBe('—');
-    expect(formatCalendarDayShort(undefined, TODAY)).toBe('—');
+    expect(formatCalendarDayShort(null, TODAY)).toBe('None');
+    expect(formatCalendarDayShort(undefined, TODAY)).toBe('None');
   });
 });
 
@@ -47,7 +47,7 @@ describe('formatRelativeVisitDate', () => {
   });
 
   it('shows a dash when there is no date', () => {
-    expect(formatRelativeVisitDate(null)).toBe('—');
+    expect(formatRelativeVisitDate(null)).toBe('None');
   });
 });
 

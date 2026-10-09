@@ -84,7 +84,7 @@ describe('modelDepositDisplay', () => {
     // Locale-dependent currency glyph — assert it contains the pounds value
     // rather than an exact symbol so the test is locale-robust.
     expect(out).toContain('12.50');
-    expect(out).not.toBe('—');
+    expect(out).not.toBe('None');
   });
 });
 

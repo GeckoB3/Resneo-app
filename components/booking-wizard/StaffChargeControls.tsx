@@ -27,7 +27,7 @@ import { hapticSelect } from '@/lib/haptics';
 import { fonts, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
-const formatMoney = (pence: number): string => formatPence(pence) ?? '—';
+const formatMoney = (pence: number): string => formatPence(pence) ?? 'Unknown';
 
 /** Shared shell: the bordered row, the tick box and the two label lines. */
 function CheckRow({

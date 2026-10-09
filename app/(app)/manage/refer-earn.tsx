@@ -43,9 +43,9 @@ function statusTone(status: ReferralRowForUi['status']): BadgeTone {
 
 /** ISO date → "5 Jun 2026" (placeholder dash when missing/unparseable). */
 export function formatReferralDate(iso: string | null | undefined): string {
-  if (!iso) return '—';
+  if (!iso) return 'Unknown';
   const ms = Date.parse(iso);
-  if (Number.isNaN(ms)) return '—';
+  if (Number.isNaN(ms)) return 'Unknown';
   return new Date(ms).toLocaleDateString('en-GB', {
     day: 'numeric',
     month: 'short',
@@ -249,8 +249,8 @@ export default function ReferEarnScreen() {
     );
   }
 
-  const creditRemaining = formatPence(data.creditRemainingPence) ?? '—';
-  const totalCredited = formatPence(data.totalCreditedPence) ?? '—';
+  const creditRemaining = formatPence(data.creditRemainingPence) ?? 'None';
+  const totalCredited = formatPence(data.totalCreditedPence) ?? 'None';
 
   return (
     <Screen scroll={false} padded={false}>

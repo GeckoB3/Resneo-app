@@ -498,7 +498,7 @@ function CreditList({
             <ActiveBadge active={p.active} />
           </View>
           <Text variant="caption" tone="secondary">
-            {p.credits_count} credits · {formatPence(p.price_pence) ?? '—'}
+            {p.credits_count} credits · {formatPence(p.price_pence) ?? 'No price'}
           </Text>
           <Text variant="caption" tone="muted">
             {p.validity_days ? `${p.validity_days} day expiry` : 'No expiry'} ·{' '}
@@ -565,7 +565,7 @@ function CourseList({
             <ActiveBadge active={p.active} />
           </View>
           <Text variant="caption" tone="secondary">
-            {formatPence(p.price_pence) ?? '—'} · {p.session_instance_ids.length} session
+            {formatPence(p.price_pence) ?? 'No price'} · {p.session_instance_ids.length} session
             {p.session_instance_ids.length === 1 ? '' : 's'}
           </Text>
           <Text variant="caption" tone="muted">

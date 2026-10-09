@@ -49,7 +49,7 @@ describe('HeatmapWeek — render', () => {
     expect(screen.toJSON()).toBeNull();
   });
 
-  it('shows fill % when capped, total covers when uncapped, and "—" when empty', async () => {
+  it('shows fill % when capped, total covers when uncapped, and "0" when empty', async () => {
     const days: DashboardHeatmapDay[] = [
       day({ date: '2026-06-18', day: 'Thu', concurrent_cap: 40, fill_percent: 75, daily_total_covers: 30 }),
       day({ date: '2026-06-19', day: 'Fri', concurrent_cap: null, fill_percent: null, daily_total_covers: 12 }),
@@ -60,10 +60,10 @@ describe('HeatmapWeek — render', () => {
     // Day 0 is labelled "Today" (not its weekday).
     expect(screen.getByText('Today')).toBeTruthy();
     expect(screen.queryByText('Thu')).toBeNull();
-    // Capped day → "%"; uncapped with covers → number; uncapped empty → em-dash.
+    // Capped day → "%"; uncapped with covers → number; uncapped empty → "0".
     expect(screen.getByText('75%')).toBeTruthy();
     expect(screen.getByText('12')).toBeTruthy();
-    expect(screen.getByText('—')).toBeTruthy();
+    expect(screen.getByText('0')).toBeTruthy();
     // Legend present.
     expect(screen.getByText('Quiet')).toBeTruthy();
     expect(screen.getByText('Full')).toBeTruthy();

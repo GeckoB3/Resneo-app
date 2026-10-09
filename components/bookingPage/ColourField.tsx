@@ -35,7 +35,7 @@ export function ColourField({
         {preview ? (
           <Text variant="caption" color={readableTextColor(preview)}>Aa</Text>
         ) : (
-          <Text variant="caption" tone="muted">—</Text>
+          <Text variant="caption" tone="muted">None</Text>
         )}
       </View>
       <View style={styles.flex1}>
