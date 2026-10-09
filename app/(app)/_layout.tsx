@@ -133,6 +133,28 @@ export default function AppLayout() {
           title: 'Payment',
         }}
       />
+      {/* Products and stock (POS app step 4), from its tile in More at POS venues. */}
+      <Stack.Screen
+        name="stock/index"
+        options={{
+          headerShown: true,
+          title: 'Products and stock',
+        }}
+      />
+      <Stack.Screen
+        name="stock/product/[id]"
+        options={{
+          headerShown: true,
+          title: 'Product',
+        }}
+      />
+      <Stack.Screen
+        name="stock/stocktake/[id]"
+        options={{
+          headerShown: true,
+          title: 'Stocktake',
+        }}
+      />
       <Stack.Screen
         name="client/[id]"
         options={{

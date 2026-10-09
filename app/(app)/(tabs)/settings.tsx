@@ -21,7 +21,7 @@ import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { getAppVersion, getWebUrl } from '@/lib/env';
-import { isPosEnabled } from '@/lib/pos/pos-enabled';
+import { isLoyaltyEnabled, isPosEnabled } from '@/lib/pos/pos-enabled';
 import {
   buildDestinations,
   LIST_GROUPS,
@@ -223,6 +223,7 @@ export default function MoreScreen() {
       waitlistEnabled: venue?.feature_flags?.resolved?.waitlist_v2 === true,
       collectiveArea: liveCollectiveName ? { name: liveCollectiveName } : null,
       posEnabled: isPosEnabled(venue),
+      loyaltyEnabled: isLoyaltyEnabled(venue),
     });
   }, [isAdmin, venue, liveCollectiveName]);
 

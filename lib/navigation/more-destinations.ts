@@ -129,6 +129,11 @@ export type DestinationsContext = {
    * rows. Absent or false keeps the More tab exactly as it was before app step 1.
    */
   posEnabled?: boolean;
+  /**
+   * `feature_flags.resolved.pos_loyalty_enabled` (Pass LC): the loyalty card's web row. Resolves
+   * off whenever `pos_enabled` is.
+   */
+  loyaltyEnabled?: boolean;
 };
 
 /**
@@ -163,6 +168,9 @@ export function buildDestinations(ctx: DestinationsContext): Destination[] {
   // Checkout (POS app step 1, UX spec §13.3 `app.tile.checkout`): only with the POS switch on.
   if (ctx.posEnabled === true) {
     list.push({ id: 'checkout', label: 'Checkout', hint: "Take payments and see today's sales", icon: { ios: 'creditcard.fill', android: 'point_of_sale', web: 'point_of_sale' }, tile: TILE.emerald, group: 'workspace', kind: 'route', target: '/checkout', featured: true, keywords: ['till', 'pos', 'sale', 'payment', 'pay', 'receipt', 'refund'] });
+    // Products and stock (app step 4, UX spec §13.6 `app.tile.stock`): every team member; staff
+    // without `manage_products` see products read only, and the stock tabs follow Track stock.
+    list.push({ id: 'stock', label: 'Products and stock', hint: 'Stock levels, stocktakes and deliveries', icon: { ios: 'shippingbox.fill', android: 'inventory_2', web: 'inventory_2' }, tile: TILE.amber, group: 'workspace', kind: 'route', target: '/stock', featured: true, keywords: ['products', 'retail', 'stock', 'stocktake', 'barcode', 'inventory'] });
   }
   if (isSchedulingExperience) {
     list.push({ id: 'availability', label: 'Calendar availability', hint: 'Hours, breaks, closures & amended hours', icon: { ios: 'calendar', android: 'edit_calendar', web: 'edit_calendar' }, tile: TILE.sky, group: 'workspace', kind: 'route', target: '/availability', featured: true, keywords: ['time off', 'leave', 'closures', 'amended hours', 'breaks', 'calendars'] });
@@ -236,6 +244,12 @@ export function buildDestinations(ctx: DestinationsContext): Destination[] {
   if (ctx.posEnabled === true && isAdmin) {
     list.push({ id: 'web-checkout-settings', label: 'Checkout settings', hint: 'Opens in your browser', icon: { ios: 'gearshape.fill', android: 'settings', web: 'settings' }, tile: TILE.slate, group: 'web', kind: 'web', target: '/dashboard/settings?tab=checkout', external: true, keywords: ['tax', 'receipts', 'tips', 'discounts', 'payment types', 'permissions'] });
     list.push({ id: 'web-records', label: 'Records, reports and exports', hint: 'Opens in your browser', icon: { ios: 'doc.text.fill', android: 'description', web: 'description' }, tile: TILE.indigo, group: 'web', kind: 'web', target: '/dashboard/reports', external: true, keywords: ['tip records', 'vat invoice', 'export'] });
+    // App step 4 and Pass LC (UX spec §13.8): what stays on the web.
+    list.push({ id: 'web-stock-setup', label: 'Suppliers, labels and stock set-up', hint: 'Opens in your browser', icon: { ios: 'shippingbox', android: 'inventory', web: 'inventory' }, tile: TILE.amber, group: 'web', kind: 'web', target: '/dashboard/stock?tab=suppliers', external: true, keywords: ['suppliers', 'import products', 'labels', 'bulk'] });
+    if (ctx.loyaltyEnabled === true) {
+      list.push({ id: 'web-loyalty', label: 'Loyalty card set-up', hint: 'Opens in your browser', icon: { ios: 'star.circle.fill', android: 'loyalty', web: 'loyalty' }, tile: TILE.rose, group: 'web', kind: 'web', target: '/dashboard/settings?tab=checkout', external: true, keywords: ['loyalty', 'stamps', 'reward'] });
+    }
+    list.push({ id: 'web-commission', label: 'Commission rates and report', hint: 'Opens in your browser', icon: { ios: 'percent', android: 'percent', web: 'percent' }, tile: TILE.violet, group: 'web', kind: 'web', target: '/dashboard/reports?tab=commission', external: true, keywords: ['commission', 'pay', 'rates'] });
   }
 
   list.push({ id: 'web-dashboard', label: 'Web dashboard', hint: 'Open the full dashboard in your browser', icon: { ios: 'desktopcomputer', android: 'computer', web: 'computer' }, tile: TILE.slate, group: 'app', kind: 'web', target: '/dashboard', external: true });

@@ -250,7 +250,7 @@ describe('buildDestinations — the Collective area (web parity, 2026-09-17)', (
 });
 
 describe('buildDestinations — Checkout (POS app step 1, plan §4.22)', () => {
-  const posIds = ['checkout', 'web-checkout-settings', 'web-records'];
+  const posIds = ['checkout', 'stock', 'web-checkout-settings', 'web-records', 'web-stock-setup', 'web-loyalty', 'web-commission'];
 
   it('adds nothing when the POS switch is off or absent: the More tab is unchanged', () => {
     for (const isAdmin of [true, false]) {
@@ -273,8 +273,22 @@ describe('buildDestinations — Checkout (POS app step 1, plan §4.22)', () => {
 
   it("puts Checkout's set-up screens under On the web, for admins only", () => {
     const admin = buildDestinations(ctx({ isAdmin: true, posEnabled: true })).filter((d) => d.group === 'web');
-    expect(admin.map((d) => d.id)).toEqual(['web-checkout-settings', 'web-records']);
+    expect(admin.map((d) => d.id)).toEqual(['web-checkout-settings', 'web-records', 'web-stock-setup', 'web-commission']);
     expect(admin.every((d) => d.kind === 'web' && d.external)).toBe(true);
     expect(ids(ctx({ isAdmin: false, posEnabled: true }))).not.toContain('web-checkout-settings');
+  });
+
+  it('shows Products and stock to everyone at a POS venue (app step 4, UX spec §13.6)', () => {
+    for (const isAdmin of [true, false]) {
+      const tile = buildDestinations(ctx({ isAdmin, posEnabled: true })).find((d) => d.id === 'stock');
+      expect(tile).toMatchObject({ group: 'workspace', kind: 'route', target: '/stock', label: 'Products and stock' });
+      expect(tile?.hint).toBe('Stock levels, stocktakes and deliveries');
+    }
+  });
+
+  it('adds the loyalty card web row only while loyalty is on (Pass LC)', () => {
+    expect(ids(ctx({ isAdmin: true, posEnabled: true }))).not.toContain('web-loyalty');
+    expect(ids(ctx({ isAdmin: true, posEnabled: true, loyaltyEnabled: true }))).toContain('web-loyalty');
+    expect(ids(ctx({ isAdmin: false, posEnabled: true, loyaltyEnabled: true }))).not.toContain('web-loyalty');
   });
 });
