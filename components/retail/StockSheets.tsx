@@ -11,6 +11,7 @@ import { posErrorMessage } from '@/lib/pos/api';
 import type { PosCopyId } from '@/lib/pos/copy';
 import { movementReasonId, movementReference, parseWhole, stocktakeDefaultName } from '@/lib/retail/stock-words';
 import { useAdjustStock, useRetailNamed, useStartStocktake, useStockMovements } from '@/lib/queries/useRetail';
+import { useNamedList } from '@/lib/queries/useStockSetup';
 import { useToast } from '@/providers/ToastProvider';
 import type { AdjustmentReason, StockMovement } from '@/types/retail';
 
@@ -225,7 +226,7 @@ function MovementRow({ m, timeZone, showProduct }: { m: StockMovement; timeZone:
 
 /**
  * Starting a stocktake (§6.11 Start, needs `count_stock`): a name (`take.name.default` with today's
- * date), everything or only some categories or brands, then `take.start.confirm`. One request id
+ * date), everything or only some categories, brands or suppliers, then `take.start.confirm`. One request id
  * per sheet, so a retry starts it once. Answers the new stocktake's id.
  */
 export function StartStocktakeSheet({
@@ -258,9 +259,11 @@ function StartBody({
   const [scope, setScope] = useState<'full' | 'partial'>('full');
   const [categoryIds, setCategoryIds] = useState<string[]>([]);
   const [brandIds, setBrandIds] = useState<string[]>([]);
+  const [supplierIds, setSupplierIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const categories = useRetailNamed('categories', { enabled: scope === 'partial' });
   const brands = useRetailNamed('brands', { enabled: scope === 'partial' });
+  const suppliers = useNamedList('suppliers', { enabled: scope === 'partial' });
 
   const toggle = (list: string[], id: string) => (list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);
 
@@ -270,7 +273,7 @@ function StartBody({
       setError(t('take.name.required'));
       return;
     }
-    if (scope === 'partial' && categoryIds.length === 0 && brandIds.length === 0) {
+    if (scope === 'partial' && categoryIds.length === 0 && brandIds.length === 0 && supplierIds.length === 0) {
       setError(t('take.scope.pickOne'));
       return;
     }
@@ -285,6 +288,7 @@ function StartBody({
                 type: 'partial',
                 ...(categoryIds.length ? { category_ids: categoryIds } : {}),
                 ...(brandIds.length ? { brand_ids: brandIds } : {}),
+                ...(supplierIds.length ? { supplier_ids: supplierIds } : {}),
               },
       });
       onStarted(res.stocktake_id);
@@ -330,6 +334,21 @@ function StartBody({
             ) : (
               (brands.data ?? []).map((b) => (
                 <PickRow key={b.id} title={b.name} selected={brandIds.includes(b.id)} onPress={() => setBrandIds((l) => toggle(l, b.id))} />
+              ))
+            )}
+            <Text variant="label">{t('take.scope.suppliers')}</Text>
+            {(suppliers.data ?? []).length === 0 ? (
+              <Text variant="caption" tone="muted">
+                {suppliers.isLoading ? t('app.loading') : t('take.scope.none')}
+              </Text>
+            ) : (
+              (suppliers.data ?? []).map((s) => (
+                <PickRow
+                  key={s.id}
+                  title={s.name}
+                  selected={supplierIds.includes(s.id)}
+                  onPress={() => setSupplierIds((l) => toggle(l, s.id))}
+                />
               ))
             )}
           </>

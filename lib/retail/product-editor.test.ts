@@ -20,6 +20,8 @@ const words = {
   numberInvalid: 'Enter a whole number.',
   needOption: 'Add at least one option.',
   barcodeInvalid: "That barcode's check digit is wrong. Check it and try again.",
+  sizeInvalid: 'Enter the size as a number above zero.',
+  sizeUnit: 'Choose the unit for the size.',
 };
 
 function saved(over: Partial<RetailProduct> = {}): RetailProduct {
@@ -103,14 +105,20 @@ describe('a new product', () => {
       option_name: null,
       sku: null,
       price_pence: 1250,
+      net_quantity: null,
+      net_unit: null,
       barcodes: [],
       sort_order: 0,
       cost_pence: 400,
       track_stock: true,
       reorder_level: 2,
       reorder_quantity: null,
+      order_up_to_level: null,
+      pack_size: null,
       opening_quantity: 10,
     });
+    expect(built.body).toMatchObject({ supplier_id: null, description: null, hygiene_sealed: false });
+    expect(built.body).not.toHaveProperty('unit_price_basis');
 
     const off = buildProductBody(d, null, { trackStock: false, vatRegistered: true }, words);
     expect(off.ok && (off.body.variants as Record<string, unknown>[])[0]).not.toHaveProperty('cost_pence');
@@ -144,18 +152,43 @@ describe('editing a product', () => {
     expect(changed.ok && (changed.body.variants as Record<string, unknown>[])[0]).toMatchObject({ id: 'v1', cost_pence: 800 });
   });
 
-  it('never sends what the app does not show, so the web-only fields stay as they are', () => {
-    const p = saved();
-    const built = buildProductBody(draftFromProduct(p, true), p, { trackStock: true, vatRegistered: false }, words);
+  it('sends every field the web editor sends, as the web sends them', () => {
+    const p = saved({ manufacturer_name: 'Maker Ltd' });
+    const d = draftFromProduct(p, true);
+    expect(d.description).toBe('Keep me');
+    expect(d.options[0]).toMatchObject({ net_quantity: '250', net_unit: 'ml', pack_size: '6' });
+    d.makeup = true;
+    const built = buildProductBody(d, p, { trackStock: true, vatRegistered: false, jurisdiction: 'ni' }, words);
     expect(built.ok).toBe(true);
     if (!built.ok) return;
-    for (const key of ['description', 'supplier_id', 'hygiene_sealed', 'manufacturer_name', 'unit_price_basis', 'photos']) {
-      expect(built.body).not.toHaveProperty(key);
-    }
-    const v = (built.body.variants as Record<string, unknown>[])[0]!;
-    for (const key of ['net_quantity', 'net_unit', 'order_up_to_level', 'pack_size', 'opening_quantity']) {
-      expect(v).not.toHaveProperty(key);
-    }
+    expect(built.body).toMatchObject({
+      description: 'Keep me',
+      supplier_id: 'sup1',
+      hygiene_sealed: true,
+      manufacturer_name: 'Maker Ltd',
+      manufacturer_address: null,
+      unit_price_basis: 'makeup',
+    });
+    expect((built.body.variants as Record<string, unknown>[])[0]).toMatchObject({
+      net_quantity: 250,
+      net_unit: 'ml',
+      order_up_to_level: null,
+      pack_size: 6,
+    });
+    const off = buildProductBody(d, p, { trackStock: false, vatRegistered: false, jurisdiction: 'gb' }, words);
+    expect(off.ok && off.body).not.toHaveProperty('supplier_id');
+    expect(off.ok && off.body).not.toHaveProperty('unit_price_basis');
+  });
+
+  it('asks for a size above zero with its unit', () => {
+    const d = draftFromProduct(null, false);
+    d.name = 'Oil';
+    d.options[0] = { ...d.options[0]!, price: '5', net_quantity: '100' };
+    const built = buildProductBody(d, null, { trackStock: false, vatRegistered: false }, words);
+    expect(!built.ok && built.errors[`opt.${d.options[0]!.key}.net_quantity`]).toBe(words.sizeUnit);
+    d.options[0] = { ...d.options[0]!, net_quantity: '0', net_unit: 'ml' };
+    const zero = buildProductBody(d, null, { trackStock: false, vatRegistered: false }, words);
+    expect(!zero.ok && zero.errors[`opt.${d.options[0]!.key}.net_quantity`]).toBe(words.sizeInvalid);
   });
 
   it('archives a removed option, keeps a v1.x restriction, and keeps it off the shop', () => {
@@ -170,7 +203,7 @@ describe('editing a product', () => {
     expect(built.body.sold_online).toBe(false);
     expect(built.body.variants).toEqual([
       { id: 'v1', archived: true },
-      { option_name: 'Travel', sku: null, price_pence: 500, barcodes: [], sort_order: 0 },
+      { option_name: 'Travel', sku: null, price_pence: 500, net_quantity: null, net_unit: null, barcodes: [], sort_order: 0 },
     ]);
   });
 
