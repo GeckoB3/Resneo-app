@@ -94,8 +94,11 @@ export const LIST_GROUPS: { key: DestGroup; title: string }[] = [
 ];
 
 /**
- * Secondary booking models. Classes/Events/Resources have in-app screens;
- * setup & products still live on the web. Tables remain web-only.
+ * Secondary booking models. Classes, Events and Resources are fully in the app,
+ * set-up included: class types, sessions and weekly rules (ClassTypesManagerSheet),
+ * class products such as passes, courses and memberships (/manage/class-products),
+ * events with their ticket tiers (EventManagerSheet) and resources with their
+ * pricing and hours (ResourceManagerSheet). Only Tables opens the web.
  */
 export const SECONDARY_MODEL_ROWS: {
   model: BookingModel;
