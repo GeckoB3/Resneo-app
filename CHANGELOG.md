@@ -303,6 +303,10 @@ and Pass LC for app step 4) on the server.
     of `balance_due_pence` already treats 0 and below as nothing due; push registration only logs
     a failure, and the device 400's new `code` and `fields` keep `details`, which the field message
     still reads.
+  - *"New online orders" in Push notifications* (`shop_order_new`, one of the web's
+    `STAFF_PREFERENCE_KEYS` since 2026-10-09), next to "Cash-up reminders" at venues with the
+    online shop on; on unless turned off. The web now sends the push on the `shop-orders` channel
+    with `order_alert.wav`, which the app step 5 channel already matches, so the order sound plays.
 
 ---
 

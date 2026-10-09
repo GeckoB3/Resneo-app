@@ -31,6 +31,11 @@ export interface NotificationPreferences {
    * past the end of the day. On unless turned off, as the web reads it (`!== false`).
    */
   pos_cash_up_reminder: boolean;
+  /**
+   * The online shop (app step 5): "New online orders", the `shop_order_new` push for a new paid
+   * order. On unless turned off; a staff preference on the web since 2026-10-09.
+   */
+  shop_order_new: boolean;
   /** Limit booking alerts to the staff member's own appointments, or all of them. */
   booking_scope: BookingNotificationScope;
   /** Suppress non-urgent push during an overnight window. */
@@ -55,6 +60,7 @@ export type BooleanNotificationKey =
   | 'low_sms_credit'
   | 'billing'
   | 'pos_cash_up_reminder'
+  | 'shop_order_new'
   | 'quiet_hours_enabled';
 
 export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
@@ -70,6 +76,7 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
   low_sms_credit: true,
   billing: true,
   pos_cash_up_reminder: true,
+  shop_order_new: true,
   booking_scope: 'all',
   quiet_hours_enabled: false,
   quiet_hours_start: '21:00',
@@ -109,6 +116,7 @@ export function resolveNotificationPreferences(
     low_sms_credit: boolOr(r.low_sms_credit, d.low_sms_credit),
     billing: boolOr(r.billing, d.billing),
     pos_cash_up_reminder: boolOr(r.pos_cash_up_reminder, d.pos_cash_up_reminder),
+    shop_order_new: boolOr(r.shop_order_new, d.shop_order_new),
     booking_scope: r.booking_scope === 'mine' ? 'mine' : 'all',
     quiet_hours_enabled: boolOr(r.quiet_hours_enabled, d.quiet_hours_enabled),
     quiet_hours_start: timeOr(r.quiet_hours_start, d.quiet_hours_start),

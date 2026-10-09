@@ -15,9 +15,12 @@ import { ApiError } from '@/lib/api/client';
 import { hapticTap } from '@/lib/haptics';
 import { Notifications } from '@/lib/push/notificationsModule';
 import { posCopy } from '@/lib/pos/copy';
+import { isShopEnabled } from '@/lib/pos/pos-enabled';
+import { posPushRows } from '@/lib/push/pos-push-preferences';
 import { registerCurrentDeviceForPush } from '@/lib/push/registerDevice';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { usePosEnabled } from '@/lib/queries/usePos';
+import { useVenue } from '@/lib/queries/useVenue';
 import {
   useNotificationPreferences,
   useUpdateNotificationPreferences,
@@ -52,18 +55,6 @@ const ACCOUNT_ROWS: ToggleRowConfig[] = [
   { key: 'review', label: 'Reviews & feedback', description: 'When a guest leaves a review' },
   { key: 'low_sms_credit', label: 'Low SMS credit', description: 'Before your guest text reminders run out' },
   { key: 'billing', label: 'Billing & account', description: 'Payment failures and subscription notices' },
-];
-
-/**
- * Checkout's staff pushes (POS plan Appendix G), only at venues with Checkout on. The key joins the
- * web's `STAFF_PREFERENCE_KEYS`, so it is saved in the staff namespace.
- */
-const POS_ROWS: ToggleRowConfig[] = [
-  {
-    key: 'pos_cash_up_reminder',
-    label: posCopy('push.pref.pos_cash_up_reminder'),
-    description: 'When a till is still open at the end of the day',
-  },
 ];
 
 /** "9:00pm" from an HH:mm string. */
@@ -182,6 +173,8 @@ export default function NotificationPreferencesScreen() {
   const accessToken = useAccessToken();
   const prefsQuery = useNotificationPreferences();
   const posEnabled = usePosEnabled();
+  const venue = useVenue();
+  const posRows = posPushRows({ shopEnabled: isShopEnabled(venue.data) });
   const updatePrefs = useUpdateNotificationPreferences();
 
   // Init synchronously so the effect never sets state on the unsupported path
@@ -357,7 +350,7 @@ export default function NotificationPreferencesScreen() {
           {posEnabled ? (
             <View style={styles.section}>
               <SectionHeader title={posCopy('nav.checkout')} />
-              {renderToggleCard(POS_ROWS)}
+              {renderToggleCard(posRows)}
             </View>
           ) : null}
 
