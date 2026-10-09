@@ -559,6 +559,170 @@ export const POS_COPY = {
   // App-only words for vouchers on a phone (UX spec §13: the share sheet in place of a download)
   'app.voucher.pdf': 'Share or print the voucher',
   'app.voucher.pdfFailed': "We couldn't open the voucher. Please try again.",
+  // ── App step 2: card payments (UX spec §13.4, §18.12, §18.17, §18.26, §18.28, §18.35, §23) ──
+  // Payment methods (§18.12, §3.19)
+  'pay.method.cardReader': 'Card reader',
+  'pay.method.link': 'Pay by link or QR code',
+  'pay.method.savedCard': 'Card on file',
+  'app.howToTap.title': 'How to use Tap to Pay on iPhone',
+  'app.sendToReader': 'Send to {reader}',
+  'app.web.readers': 'Card readers and printers',
+  // The counter reader (§3.19.3; the web's `reader.*`)
+  'reader.choose': 'Which reader?',
+  'reader.status.online': 'Ready',
+  'reader.status.offline': 'Offline',
+  'reader.status.busy': 'Busy',
+  'reader.sending': 'Sending {amount} to {reader}…',
+  'reader.waiting.title': 'Waiting for the card',
+  'reader.waiting.body': 'Ask {clientName} to tap, insert or swipe their card on {reader}.',
+  'reader.waiting.tip': 'The reader will ask about a tip first.',
+  'reader.cancel': 'Cancel',
+  'reader.confirming': "The card went through on the reader. We're confirming it with Stripe…",
+  'reader.slow': 'Still waiting. If {clientName} has walked away, cancel. If the card was charged, it will show here by itself.',
+  'reader.success': 'Paid {amount} by {cardBrand} ending {last4}',
+  'reader.success.plain': 'Paid {amount} on the card reader', // (added on the web) no card details came back
+  'reader.declined.title': 'Card declined',
+  'reader.declined.stillOpen': 'The payment is still open on the reader. Ask {clientName} to try again or use another card.',
+  'reader.declined.pin': 'Their bank wants chip and PIN. Ask {clientName} to insert the card and enter their PIN.',
+  'reader.movedAway': "{reader} is now registered to another business, so it can't take this payment. Use another reader or send a pay link.",
+  'reader.tryAgain': 'Try again',
+  'reader.cancelled': 'Payment cancelled. Nothing was taken.',
+  'reader.useOther': 'Use another reader',
+  'reader.useLink': 'Send a pay link instead',
+  'reader.checking': "Checking with the bank. This can take a few minutes. Don't take the payment again.",
+  'reader.failed.title': "The payment didn't go through", // (added on the web)
+  'reader.none': 'Add a card reader in Settings, Checkout to take cards here.', // (added on the web)
+  'err.invalid_state': "This card payment has already gone through, so it can't be cancelled. If it was a mistake, refund it.",
+  // Saving a card (§13.4 "Saving a card on the phone", §18.12, §18.28)
+  'reader.consent.text':
+    'Save this card so {venue} can take payments for your future visits when you agree to them. You can ask them to remove it at any time.',
+  'reader.saved': 'Card saved for next time.',
+  'reader.notSaved': "{clientName} didn't agree, so the card wasn't saved. The payment went through.",
+  'reader.notSaved.wallet':
+    "The payment went through, but the card wasn't saved. Phone and watch payments sometimes can't be kept for next time. Ask {clientName} to use their card instead if they'd like it saved.",
+  'app.saveCard.handTo': 'Hand the phone to {clientName} so they can choose whether to save their card.',
+  'app.saveCard.title': 'Save your card for next time?',
+  'app.saveCard.agree': 'Yes, save my card',
+  'app.saveCard.decline': 'No thanks',
+  'app.saveCard.handBack': 'Thank you. Please hand the phone back.',
+  'app.saveCard.ready': 'I have handed it over', // (added) staff's button on the hand-over screen
+  // Pay by link or QR code (§3.19.4, §3.29; the web's `link.*`)
+  'link.title': 'Pay by link or QR code', // (added on the web)
+  'link.amount': 'Amount on this link', // (added on the web)
+  'link.tipNote': 'The {client} can add a tip on their phone.',
+  'link.allowTip': 'Let them add a tip on their phone', // (added on the web)
+  'link.create': 'Create link',
+  'link.scan': "Ask {clientName} to scan this with their phone's camera.",
+  'link.qrAlt': 'QR code for the pay link', // (added on the web)
+  'link.copy': 'Copy link',
+  'link.copied': 'Link copied.', // (added on the web)
+  'link.share': 'Share link', // (added) the phone's share sheet
+  'link.text': 'Text it',
+  'link.email': 'Email it',
+  'link.text.to': 'Mobile number',
+  'link.email.to': 'Email address',
+  'link.send': 'Send', // (added on the web)
+  'link.sent.text': 'Sent to {phone}.',
+  'link.sent.email': 'Sent to {email}.',
+  'link.waiting': 'Waiting for {clientName} to pay',
+  'link.waitingAmount': 'Waiting for {amount} on a pay link', // (added on the web)
+  'link.expires': 'The link works until {time} on {date}.',
+  'link.cancel': 'Cancel link',
+  'link.cancel.confirm.title': 'Cancel this pay link?',
+  'link.cancel.confirm.body': 'The link stops working straight away. Nothing has been paid on it.',
+  'link.cancel.confirm.button': 'Cancel link', // (added on the web)
+  'link.cancel.keep': 'Keep it', // (added on the web)
+  'link.paid': '{clientName} paid {amount}',
+  'link.later': 'They can pay later. Park this sale, and it updates by itself when they pay.',
+  'link.attemptFailed': 'A card was declined on the link. {clientName} can try another card.',
+  'link.list': 'Pay links', // (added on the web)
+  'link.status.cancelled': 'Cancelled', // (added on the web)
+  'link.status.expired': 'Expired', // (added on the web)
+  'link.show': 'Show QR code', // (added on the web)
+  'link.back': 'Choose another way to pay',
+  'link.close': 'Close', // (added on the web)
+  'done.tipLink': 'Send a tip link',
+  'link.tipOnly.title': 'Send {clientName} a tip link?',
+  'link.tipOnly.body':
+    "They've paid in full. If they'd like to leave a tip later, this link lets them choose an amount on their phone. Nothing is charged unless they choose one.",
+  'link.tipOnly.send': 'Send tip link',
+  'link.tipOnly.sent': 'Tip link sent to {destination}.',
+  'link.tipOnly.how': 'How should we send it?', // (added on the web)
+  // Card on file (§3.19.5, §4.3, §18.12, §18.17)
+  'saved.card': '{brand} ending {last4}, expires {expiry}',
+  'saved.consent': 'Saved with permission on {date}, {channel}',
+  'saved.channel.reader': 'at the desk',
+  'saved.channel.app': 'on the phone at the desk', // (added on the web)
+  'saved.channel.online_booking': 'when booking online',
+  'saved.channel.shop': 'in the online shop',
+  'saved.channel.account': 'in their account',
+  'saved.confirm.title': 'Charge {amount} to {brand} ending {last4}?',
+  'saved.confirm.body': 'Only charge a saved card when {clientName} has agreed to this payment.',
+  'saved.confirm.button': 'Charge card',
+  'saved.processing': 'Charging the card…',
+  'saved.method': 'Card on file: {brand} ending {last4}', // (added on the web)
+  'saved.notCharged': "The card on file wasn't charged", // (added on the web)
+  'saved.declined': 'The card was declined. Ask {clientName} to try another card or another way to pay.', // (added on the web)
+  'client.cards.title': 'Saved cards',
+  'client.cards.remove': 'Remove card',
+  'client.cards.remove.title': 'Remove this card?',
+  'client.cards.remove.body': "{venue} won't be able to charge it again. {clientName} can save it again next time they pay.",
+  'client.cards.empty': 'No saved cards.',
+  'client.cards.removed': '{card} removed.', // (added on the web)
+  'client.cards.loadFailed': "We couldn't load the saved cards.", // (added on the web)
+  // Payouts and fees, for admins (§11.1, §18.26; instant payouts are v1.x)
+  'rep.t.payouts': 'Payouts and fees',
+  'rep.payout.arrives': 'Arrives',
+  'rep.payout.amount': 'Amount',
+  'rep.payout.fees': 'Stripe fees',
+  'rep.payout.status': 'Status',
+  'rep.payout.intro': 'What Stripe is sending to your bank for this period, and the fees it took. Open a payout to see the payments it covered.', // (added on the web)
+  'rep.payout.notConnected': 'Connect Stripe in Settings, Payments to see your payouts here.', // (added on the web)
+  'rep.payout.none': 'No payouts arrive in this period.', // (added)
+  'rep.payout.truncated': 'Showing the first 40 payouts. Choose a shorter period to see the rest.', // (added on the web)
+  'rep.payout.feesNotListed': 'Not listed', // (added on the web)
+  'rep.payout.show': 'Show payments', // (added on the web)
+  'rep.payout.hide': 'Hide', // (added on the web)
+  'rep.payout.manual': "This payout was made by hand in Stripe, so Stripe doesn't list what it covered.", // (added on the web)
+  'rep.payout.covered': 'What this payout covered', // (added on the web)
+  'rep.payout.paidOut': 'Paid out', // (added on the web)
+  'rep.payout.status.paid': 'Paid', // (added on the web)
+  'rep.payout.status.on_its_way': 'On its way', // (added on the web)
+  'rep.payout.status.pending': 'Pending', // (added on the web)
+  'rep.payout.status.failed': 'Failed', // (added on the web)
+  'rep.payout.status.cancelled': 'Cancelled', // (added on the web)
+  // Send to a phone: the app side (§18.35, §23.5)
+  'pay.phone.row': "Card, on {staffName}'s phone",
+  'err.POS_PAYMENT_CLAIMED': '{staffName} has already taken this payment on their phone.',
+  'err.POS_COLLECT_EXPIRED': 'Nobody took this payment in time. Send it again.',
+  'err.POS_NO_CARD_DEVICE': 'No phone here can take cards. Send a pay link instead.',
+  'app.collect.list.title': 'Waiting for you',
+  'app.collect.row': '{amount} for Sale {saleNo}, from {staffName}',
+  'app.collect.row.any': 'For anyone',
+  'app.collect.row.expires': '{seconds} seconds left to take it',
+  'app.collect.title': 'Take {amount}',
+  'app.collect.for': 'Sale {saleNo} at {till}, sent by {staffName}',
+  'app.collect.client': 'For {clientName}',
+  'app.collect.processing': 'Processing',
+  'app.collect.done': 'Paid. The desk can see it.',
+  'app.collect.declined': 'The card was declined. Try again, or ask for another card.',
+  'app.collect.tryAgain': 'Try again',
+  'app.collect.insertCard':
+    "This card needs to be inserted with a PIN, and a phone can't do that. Send a pay link, or try another card.",
+  'app.collect.sendLink': 'Send a pay link',
+  'app.collect.otherCard': 'Try another card',
+  'app.collect.useCounter': 'Use the card reader at the desk',
+  'app.collect.timeout': "The card wasn't tapped within 5 minutes, so this stopped. Nothing was taken.",
+  'app.collect.cancelledByDesk': 'The desk cancelled this payment. Nothing was taken.',
+  'app.collect.accountLimit':
+    "This iPhone has taken Tap to Pay payments for three businesses in the last 24 hours, which is Stripe's limit. Use another phone, or try again later.",
+  'app.collect.expired': 'Nobody took this payment in time, so it was cancelled. Nothing was taken.', // (added) phone.expired, as the phone says it
+  'app.collect.gone': 'This payment has ended. Nothing more to do here.', // (added) paid, cancelled or failed before this phone took it
+  'app.collect.otherVenue': 'This payment is for another business. Switch to it in the app, then open it again.', // (added)
+  'app.collect.someone': 'Someone at the desk', // (added) when the sender is not known
+  'app.collect.desk': 'the desk', // (added) when the till has no name
+  'app.collect.backToSale': 'Open the sale', // (added)
+  'app.collect.close': 'Done', // (added)
 } as const;
 
 export type PosCopyId = keyof typeof POS_COPY;

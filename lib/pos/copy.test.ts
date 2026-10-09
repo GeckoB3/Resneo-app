@@ -53,6 +53,56 @@ describe('POS copy', () => {
     );
   });
 
+  it('keeps the web ids the spec names for app step 2 (UX spec §13.4, §18.35)', () => {
+    const ids = [
+      'app.tapToPay',
+      'app.tapToPay.iphone',
+      'app.howToTap.title',
+      'app.bluetoothReader',
+      'app.sendToReader',
+      'app.collect.list.title',
+      'app.collect.row',
+      'app.collect.title',
+      'app.collect.for',
+      'app.collect.processing',
+      'app.collect.done',
+      'app.collect.declined',
+      'app.collect.insertCard',
+      'app.collect.sendLink',
+      'app.collect.useCounter',
+      'app.collect.timeout',
+      'app.collect.cancelledByDesk',
+      'app.collect.accountLimit',
+      'err.POS_PAYMENT_CLAIMED',
+      'app.saveCard.handTo',
+      'app.saveCard.title',
+      'app.saveCard.agree',
+      'app.saveCard.decline',
+      'app.saveCard.handBack',
+      'reader.consent.text',
+      'reader.saved',
+      'reader.notSaved',
+      'reader.notSaved.wallet',
+      'pay.method.link',
+      'link.scan',
+      'link.text',
+      'link.email',
+      'done.tipLink',
+      'link.tipOnly.title',
+      'saved.confirm.title',
+      'client.cards.remove',
+      'rep.t.payouts',
+      'rep.payout.arrives',
+      'rep.payout.fees',
+    ] as const;
+    for (const id of ids) expect(POS_COPY[id]).toBeTruthy();
+    expect(posCopy('app.collect.row', { amount: '£45.00', saleNo: 'R-1042', staffName: 'Sam' })).toBe(
+      '£45.00 for Sale R-1042, from Sam',
+    );
+    // Apple's exact name, never shortened (plan §4.36 "Apple's rules").
+    expect(POS_COPY['app.tapToPay.iphone']).toBe('Tap to Pay on iPhone');
+  });
+
   it('fills placeholders and leaves unknown ones for a test to spot', () => {
     expect(fillCopy('{amount} to pay', { amount: '£5.00' })).toBe('£5.00 to pay');
     expect(fillCopy('{missing} here')).toBe('{missing} here');

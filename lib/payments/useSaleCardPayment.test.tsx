@@ -254,3 +254,65 @@ describe('useSaleCardPayment', () => {
     expect(mockRetrieve).not.toHaveBeenCalled();
   });
 });
+
+describe('useSaleCardPayment: saving the card with the client consent (app step 2)', () => {
+  it('asks once the payment exists, then collects with allowRedisplay always on a yes', async () => {
+    const order: string[] = [];
+    mockApiFetch.mockResolvedValue(STARTED);
+    mockRetrieve.mockImplementation(async () => {
+      order.push('retrieve');
+      return { paymentIntent: { id: 'pi_1' } };
+    });
+    mockCollect.mockResolvedValue({ paymentIntent: { id: 'pi_1' } });
+    mockConfirm.mockResolvedValue({ paymentIntent: { id: 'pi_1' } });
+    const askConsent = jest.fn(async (paymentId: string) => {
+      order.push(`ask:${paymentId}`);
+      return 'agreed' as const;
+    });
+    const { result } = await renderHook(() => useSaleCardPayment('sale-1'), { wrapper: wrapper() });
+    let out: unknown;
+    await act(async () => {
+      out = await result.current.mutateAsync({ ...INPUT, askConsent });
+    });
+    // Retrieved after the answer, so the client's customer on the PaymentIntent is what is collected.
+    expect(order).toEqual(['ask:pay-9', 'retrieve']);
+    expect(mockCollect).toHaveBeenCalledWith(expect.objectContaining({ allowRedisplay: 'always' }));
+    expect(out).toMatchObject({ cardSave: 'agreed' });
+  });
+
+  it('collects as usual on a no', async () => {
+    mockApiFetch.mockResolvedValue(STARTED);
+    mockRetrieve.mockResolvedValue({ paymentIntent: { id: 'pi_1' } });
+    mockCollect.mockResolvedValue({ paymentIntent: { id: 'pi_1' } });
+    mockConfirm.mockResolvedValue({ paymentIntent: { id: 'pi_1' } });
+    const { result } = await renderHook(() => useSaleCardPayment('sale-1'), { wrapper: wrapper() });
+    let out: unknown;
+    await act(async () => {
+      out = await result.current.mutateAsync({ ...INPUT, askConsent: async () => 'declined' as const });
+    });
+    expect(mockCollect.mock.calls[0]![0]).not.toHaveProperty('allowRedisplay');
+    expect(out).toMatchObject({ cardSave: 'declined' });
+  });
+
+  it('releases the sale when staff cancel while the client is answering', async () => {
+    mockApiFetch.mockImplementation(async (path: string) => (path.endsWith('/cancel') ? { sale: makeSale() } : STARTED));
+    let stop = false;
+    const { result } = await renderHook(() => useSaleCardPayment('sale-1'), { wrapper: wrapper() });
+    let caught: unknown;
+    await act(async () => {
+      caught = await result.current
+        .mutateAsync({
+          ...INPUT,
+          shouldStop: () => stop,
+          askConsent: async () => {
+            stop = true;
+            return null;
+          },
+        })
+        .catch((e: unknown) => e);
+    });
+    expect((caught as SaleCardError).kind).toBe('cancelled');
+    expect(mockRetrieve).not.toHaveBeenCalled();
+    expect(calls().map(([p]) => p)).toContain('/api/venue/pos/sales/sale-1/payments/pay-9/cancel');
+  });
+});

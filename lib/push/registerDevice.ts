@@ -3,6 +3,8 @@ import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 
 import { apiFetch } from '@/lib/api/client';
+import { clientBuild } from '@/lib/pos/client-build';
+import { NO_CARD, sameCardReport, type DeviceCardReport } from '@/lib/pos/card-capability';
 import { appVersionFromConfig } from '@/lib/env';
 import { Notifications } from '@/lib/push/notificationsModule';
 import { isExpoGoClient } from '@/lib/push/runtime';
@@ -113,6 +115,10 @@ export async function registerCurrentDeviceForPush(
     app_version: appVersionString(),
     os_version: Device.osVersion ?? null,
     device_name: Device.modelName ?? null,
+    // POS (plan E.5, Appendix G): which build this is (the POS app step it carries), so the web
+    // sends new push types only to builds that handle them. Every registration sends it.
+    client_build: clientBuild(),
+    ...cardFields(),
   };
 
   try {
@@ -123,6 +129,7 @@ export async function registerCurrentDeviceForPush(
     });
     // Remember the row so signing out can remove it — see `unregisterDevice`.
     registeredDeviceId = response?.device?.id ?? null;
+    lastRegistration = { payload, sentReport: cardReport };
   } catch (error) {
     console.warn('[push] /api/v1/me/devices POST failed:', error);
     return { registered: false, pushToken, reason: 'error' };
@@ -157,6 +164,8 @@ let registeredDeviceId: string | null = null;
 export async function unregisterDevice(accessToken: string | null): Promise<void> {
   const deviceId = registeredDeviceId;
   registeredDeviceId = null;
+  lastRegistration = null;
+  cardReport = null;
   if (!deviceId || !accessToken) return;
   try {
     await apiFetch(`/api/v1/me/devices/${encodeURIComponent(deviceId)}`, {
@@ -166,4 +175,68 @@ export async function unregisterDevice(accessToken: string | null): Promise<void
   } catch (error) {
     console.warn('[push] device unregister failed:', error);
   }
+}
+
+// ─── POS: what this phone can do with a card (app step 2, plan §4.36) ────────
+
+/** The latest card report, sent with every registration from now on. Null until known. */
+let cardReport: DeviceCardReport | null = null;
+
+/** The last registration sent, so a changed card report can be sent again on the same row. */
+let lastRegistration: { payload: Record<string, unknown>; sentReport: DeviceCardReport | null } | null = null;
+
+function cardFields(): Record<string, unknown> {
+  if (!cardReport) return {};
+  return {
+    card_capability: cardReport.card_capability,
+    tap_to_pay_terms_accepted: cardReport.tap_to_pay_terms_accepted,
+  };
+}
+
+/**
+ * The `user_devices` row this session registered, or null (no push permission, a simulator, Expo
+ * Go, or not registered yet). A sale sent from the web till is claimed with it (`device_id`).
+ */
+export function getRegisteredDeviceId(): string | null {
+  return registeredDeviceId;
+}
+
+/**
+ * Records what this phone can do with a card and, when it changed since the last registration,
+ * sends the registration again: the web keys the row on the push token, so this refreshes the same
+ * row. Each registration is the device's latest word (web `account/devices` route), which is why
+ * the whole payload goes again rather than only the changed fields. Best effort: never throws.
+ */
+export async function reportDeviceCardCapability(
+  accessToken: string | null,
+  report: DeviceCardReport,
+): Promise<boolean> {
+  cardReport = report;
+  const last = lastRegistration;
+  // A registration that carried no card fields reads as "none" on the web, so a phone that cannot
+  // take cards sends nothing extra.
+  if (!last || !accessToken || sameCardReport(last.sentReport ?? NO_CARD, report)) return false;
+  const payload = { ...last.payload, client_build: clientBuild(), ...cardFields() };
+  lastRegistration = { payload, sentReport: report };
+  try {
+    const response = await apiFetch<{ device?: { id?: string } }>('/api/v1/me/devices', {
+      accessToken,
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    if (response?.device?.id) registeredDeviceId = response.device.id;
+    return true;
+  } catch (error) {
+    // The next change, or the next sign-in, sends it again.
+    if (lastRegistration?.payload === payload) lastRegistration = { payload, sentReport: last.sentReport };
+    console.warn('[push] card capability update failed:', error);
+    return false;
+  }
+}
+
+/** Test seam: forget this process's registration and card report. */
+export function __resetDeviceRegistrationForTests(): void {
+  registeredDeviceId = null;
+  lastRegistration = null;
+  cardReport = null;
 }

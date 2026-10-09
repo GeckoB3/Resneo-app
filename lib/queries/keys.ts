@@ -193,6 +193,17 @@ export const queryKeys = {
       [...queryKeys.pos.all(), 'takings', keyScope(accessToken), query ?? null] as const,
     salesReport: (accessToken?: string | null, query?: string | null) =>
       [...queryKeys.pos.all(), 'sales-report', keyScope(accessToken), query ?? null] as const,
+    /** App step 2: card payments. */
+    readers: (accessToken?: string | null) => [...queryKeys.pos.all(), 'readers', keyScope(accessToken)] as const,
+    payLinks: (accessToken?: string | null, saleId?: string | null) =>
+      [...queryKeys.pos.all(), 'pay-links', keyScope(accessToken), saleId ?? null] as const,
+    guestCards: (accessToken?: string | null, guestId?: string | null) =>
+      [...queryKeys.pos.all(), 'guest-cards', keyScope(accessToken), guestId ?? null] as const,
+    collectRequests: (accessToken?: string | null) => [...queryKeys.pos.all(), 'collect-requests', keyScope(accessToken)] as const,
+    payouts: (accessToken?: string | null, query?: string | null) =>
+      [...queryKeys.pos.all(), 'payouts', keyScope(accessToken), query ?? null] as const,
+    payoutDetail: (accessToken?: string | null, query?: string | null, payoutId?: string | null) =>
+      [...queryKeys.pos.all(), 'payout-detail', keyScope(accessToken), query ?? null, payoutId ?? null] as const,
   },
 
   referrals: {

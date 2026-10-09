@@ -115,6 +115,8 @@ export interface PosPayment {
   succeeded_at: string | null;
   /** Gift voucher payments only (Pass V). Optional: a server before Pass V leaves it out. */
   voucher?: PosPaymentVoucher | null;
+  /** A sale sent to a phone (Pass 2, plan §4.36): its claim state; null or missing for every other payment. */
+  collect_state?: string | null;
 }
 
 export interface PosRefund {
@@ -262,6 +264,8 @@ export interface PosTipSettings {
   tip_base?: 'services' | 'total';
   tip_allocation_rule?: 'pro_rata_services' | 'equal_performers' | 'operator' | 'manual';
   tipping_policy?: string | null;
+  /** Pass 2: the client may add a tip on a pay link (with tipping on). Missing reads as on, as on the web. */
+  tip_on_links?: boolean;
 }
 
 export interface PosTillSettings {
@@ -274,6 +278,10 @@ export interface PosTillSettings {
   refund_reasons?: string[];
   void_reasons?: string[];
   max_payment_pence?: number;
+  /** Pass 2 (plan §4.4.5): cards on file, off by default. */
+  card_on_file_enabled?: boolean;
+  /** Pass 2: how long a pay link works, in hours. */
+  pay_link_hours?: number;
 }
 
 /** `GET /api/venue/pos/bootstrap` (#1). */
@@ -287,7 +295,14 @@ export interface PosBootstrap {
   tip_settings?: PosTipSettings | null;
   tax_settings?: { vat_registered?: boolean } | null;
   operators: PosOperator[];
-  card_methods?: { card_app?: boolean } | null;
+  /**
+   * Which card methods the venue can use (Appendix E #1). `card_app` since Pass 1; Pass 2 adds
+   * `card_reader` (a counter reader is registered), `send_to_phone` and `pay_link`. A key the
+   * server leaves out reads as off.
+   */
+  card_methods?: { card_app?: boolean; card_reader?: boolean; send_to_phone?: boolean; pay_link?: boolean } | null;
+  /** Pass 2: the venue's active counter readers. */
+  readers?: PosReader[] | null;
   venue: { name: string; currency: string; timezone: string };
   /** The signed-in person (web Pass V and later). */
   me?: { staff_id: string; name: string | null; calendar_ids: string[] } | null;
@@ -532,4 +547,245 @@ export interface SalesReport {
   by_performer: SalesPersonRow[];
   by_seller: SalesPersonRow[];
   discounts_by_reason: { reason: string; discount_count: number; amount_pence: number }[];
+}
+
+// ─── Card payments (Pass 2, app step 2) ─────────────────────────────────────
+
+/** A counter reader (web `PosReaderDto`, `GET /api/venue/pos/readers`). */
+export interface PosReader {
+  id: string;
+  label: string;
+  device_type?: string | null;
+  model?: string;
+  serial_last4?: string | null;
+  till_id?: string | null;
+  default_for_till_ids?: string[];
+  status: 'online' | 'offline' | null;
+  last_seen_at?: string | null;
+  is_active: boolean;
+  inactive_reason?: 'removed' | 'moved' | null;
+  /** A payment is waiting on it now. */
+  busy: boolean;
+  busy_sale_id?: string | null;
+}
+
+export interface PosReaderList {
+  readers: PosReader[];
+  can_take_cards?: boolean;
+  in_person_payments_enabled?: boolean;
+}
+
+export type PosCardSaveStatus = 'asking' | 'agreed' | 'declined' | 'saved' | 'not_saved' | 'failed';
+
+/** A counter reader payment as the till follows it (web `ReaderPaymentState`). */
+export interface PosReaderPaymentState {
+  payment_id: string;
+  sale_id: string;
+  status: PosPaymentStatus;
+  screen: 'waiting' | 'confirming' | 'declined' | 'paid' | 'cancelled' | 'failed' | 'moved_away' | 'checking';
+  /** The server's sentence for a decline or failure, shown word for word. */
+  message: string | null;
+  pin_required: boolean;
+  amount_pence: number;
+  tip_pence: number;
+  card_brand: string | null;
+  card_last4: string | null;
+  reader_id: string | null;
+  reader_label: string | null;
+  attempt: number;
+  started_at: string;
+  reader_action_at: string | null;
+  card_save: PosCardSaveStatus | null;
+}
+
+export interface PosReaderPaymentResponse {
+  reader_state: PosReaderPaymentState;
+  sale_version: number | null;
+  sale_status: string | null;
+}
+
+/** A sale sent to a phone, as the phone follows it (web `CollectPaymentState`, plan §4.36). */
+export type PosCollectScreen =
+  | 'waiting'
+  | 'claimed'
+  | 'collecting'
+  | 'declined'
+  | 'needs_pin'
+  | 'paid'
+  | 'cancelled'
+  | 'expired'
+  | 'timed_out'
+  | 'failed'
+  | 'checking';
+
+export interface PosCollectState {
+  payment_id: string;
+  sale_id: string;
+  status: PosPaymentStatus;
+  collect_state: string;
+  screen: PosCollectScreen;
+  for_anyone: boolean;
+  target_staff_id: string | null;
+  target_name: string | null;
+  claimed_by_staff_id: string | null;
+  claimed_by_name: string | null;
+  reader_type: 'tap_to_pay' | 'wisepad' | null;
+  amount_pence: number;
+  tip_pence: number;
+  card_brand: string | null;
+  card_last4: string | null;
+  failure_code: string | null;
+  failure_message: string | null;
+  expires_at: string;
+  seconds_left: number;
+  claimed_at: string | null;
+  created_at: string;
+}
+
+export interface PosCollectStateResponse {
+  collect: PosCollectState;
+  sale_version: number | null;
+  sale_status: string | null;
+}
+
+/** `POST /api/venue/pos/payments/[id]/claim`. */
+export interface PosClaimResponse {
+  collect: PosCollectState | null;
+  client_secret: string | null;
+  payment_intent_id: string | null;
+  stripe_account_id: string | null;
+  terminal_location_id: string | null;
+  same_device: boolean;
+}
+
+/** One row of `GET /api/venue/pos/collect-requests?mine=1` ("Waiting for you"). */
+export interface PosCollectRequest {
+  payment_id: string;
+  sale_id: string;
+  sale_no: string;
+  amount_pence: number;
+  for_anyone: boolean;
+  target_staff_id: string | null;
+  target_name: string | null;
+  sent_by_name: string | null;
+  client_name: string | null;
+  till_name: string | null;
+  expires_at: string;
+  seconds_left: number;
+  created_at: string;
+}
+
+export interface PosCollectRequestsResponse {
+  requests: PosCollectRequest[];
+}
+
+/** A pay link (web `PayLinkDto`). */
+export interface PosPayLink {
+  id: string;
+  sale_id: string;
+  kind: 'balance' | 'tip_only';
+  status: 'waiting' | 'paid' | 'cancelled' | 'expired';
+  amount_pence: number;
+  tip_pence: number;
+  allow_tip: boolean;
+  expires_at: string;
+  created_at: string;
+  payment_id: string | null;
+  payment_status: PosPaymentStatus | null;
+  last_attempt_failed: boolean;
+  revoked_reason: string | null;
+  url: string;
+  qr_svg: string | null;
+}
+
+export interface PosPayLinksResponse {
+  links: PosPayLink[];
+  healed?: number;
+}
+
+/** `POST .../pay-links` and #13 with `method: 'pay_link'`. */
+export interface PosPayLinkCreated {
+  sale: PosSale;
+  payment: PosPayment | null;
+  link: PosPayLink;
+  link_url: string;
+  replayed: boolean;
+}
+
+/** A client's saved card (web `SavedCardDto`): never a Stripe id. */
+export interface PosSavedCard {
+  id: string;
+  brand: string | null;
+  last4: string | null;
+  exp_month: number | null;
+  exp_year: number | null;
+  consent_at: string;
+  consent_channel: 'reader' | 'app' | 'online_booking' | 'shop' | 'account';
+  created_at: string;
+}
+
+export interface PosSavedCardsResponse {
+  cards: PosSavedCard[];
+  card_on_file_enabled: boolean;
+}
+
+/** `GET .../payments/[paymentId]/card-consent`. */
+export interface PosCardConsentInfo {
+  consent_text: string;
+  can_save: boolean;
+  card_save_status: PosCardSaveStatus | null;
+}
+
+/** `POST .../payments/[paymentId]/card-consent`. */
+export interface PosCardConsentAnswer {
+  card_save_status: PosCardSaveStatus | null;
+  changed: boolean;
+  allow_redisplay: 'always' | null;
+}
+
+export type PosPayoutStatus = 'paid' | 'on_its_way' | 'pending' | 'failed' | 'cancelled';
+
+/** One payout (web `PayoutSummary`). */
+export interface PosPayout {
+  id: string;
+  amount_pence: number;
+  currency: string;
+  arrival_date: string;
+  created_at: string;
+  status: PosPayoutStatus;
+  automatic: boolean;
+  fees_pence: number | null;
+  payments_pence: number | null;
+  refunds_pence: number | null;
+  other_pence: number | null;
+  items_count: number | null;
+}
+
+export interface PosPayoutItem {
+  id: string;
+  kind: 'payment' | 'refund' | 'dispute' | 'fee' | 'other';
+  created_at: string;
+  gross_pence: number;
+  fee_pence: number;
+  net_pence: number;
+  label: string;
+  sale_id: string | null;
+  booking_id: string | null;
+  card_last4: string | null;
+}
+
+/** `GET /api/venue/reports/payouts` (admins only; instant payouts are v1.x). */
+export interface PosPayoutsReport {
+  from: string;
+  to: string;
+  currency: string;
+  connected: boolean;
+  payouts: PosPayout[];
+  truncated: boolean;
+}
+
+export interface PosPayoutDetail {
+  currency: string;
+  payout: PosPayout;
+  items: PosPayoutItem[];
 }

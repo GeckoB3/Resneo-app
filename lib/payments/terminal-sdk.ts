@@ -93,6 +93,8 @@ export interface TerminalHookApi {
   ) => Promise<SdkResult & { paymentIntent?: PaymentIntent.Type }>;
   collectPaymentMethod: (params: {
     paymentIntent: PaymentIntent.Type;
+    /** The SDK's own option (beta.33): 'always' when the client agreed to save the card (POS app step 2). */
+    allowRedisplay?: 'always' | 'limited' | 'unspecified';
   }) => Promise<SdkResult & { paymentIntent?: PaymentIntent.Type }>;
   confirmPaymentIntent: (params: {
     paymentIntent: PaymentIntent.Type;

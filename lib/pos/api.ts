@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 
 import { ApiError, apiErrorCode, apiFetch, isApiErrorBody } from '@/lib/api/client';
-import { getInstalledStoreVersion } from '@/lib/app-update/app-update-runtime';
+import { clientBuild, clientHeaderValue, POS_APP_STEP } from '@/lib/pos/client-build';
 import type { PosSale } from '@/types/pos';
 
 /**
@@ -11,24 +11,15 @@ import type { PosSale } from '@/types/pos';
  * they sent before.
  *
  * Two headers ride on POS calls only:
- * - `X-ResNeo-Client`: the platform, the store version and the over-the-air update id (plan §4.22).
- *   Only POS requests carry it in this step, so no request a venue without POS makes changes.
+ * - `X-ResNeo-Client`: the platform, the store version, the over-the-air update id (plan §4.22) and,
+ *   from app step 2, the POS app step (`pos=2`). Only POS requests carry it, so no request a venue
+ *   without POS makes changes.
  * - `x-pos-device`: a short name for this phone, which the web records when a sale is parked
  *   ("Parked by Sam on iPhone at 14:20", PQ19).
  */
 
 const CLIENT_HEADER = 'X-ResNeo-Client';
 const DEVICE_HEADER = 'x-pos-device';
-
-function updateId(): string | null {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports -- read defensively, as build-channel.ts does
-    const updates = require('expo-updates') as { updateId?: string | null };
-    return updates.updateId?.trim() || null;
-  } catch {
-    return null;
-  }
-}
 
 function deviceName(): string {
   try {
@@ -42,21 +33,11 @@ function deviceName(): string {
   return Platform.OS === 'ios' ? 'iPhone' : Platform.OS === 'android' ? 'Android phone' : 'Phone';
 }
 
-/** `ios; store=1.2.0; update=0b6f…` (fields the web can parse; unknown parts are left out). */
-export function clientHeaderValue(input: { platform: string; storeVersion: string | null; updateId: string | null }): string {
-  const parts = [input.platform];
-  if (input.storeVersion) parts.push(`store=${input.storeVersion}`);
-  if (input.updateId) parts.push(`update=${input.updateId}`);
-  return parts.join('; ');
-}
+export { clientHeaderValue, POS_APP_STEP };
 
 export function posHeaders(): Record<string, string> {
   return {
-    [CLIENT_HEADER]: clientHeaderValue({
-      platform: Platform.OS,
-      storeVersion: getInstalledStoreVersion(),
-      updateId: updateId(),
-    }),
+    [CLIENT_HEADER]: clientBuild(),
     [DEVICE_HEADER]: deviceName(),
   };
 }
@@ -107,6 +88,27 @@ export const posPaths = {
   reportAccess: '/api/venue/reports/pos-access',
   takings: (query: string) => `/api/venue/reports/takings?${query}`,
   salesReport: (query: string) => `/api/venue/reports/sales?${query}`,
+  // Pass 2 (app step 2): card payments.
+  payouts: (query: string) => `/api/venue/reports/payouts?${query}`,
+  payoutDetail: (query: string, payoutId: string) => `/api/venue/reports/payouts?${query}&payout=${encodeURIComponent(payoutId)}`,
+  readers: (refresh: boolean) => `/api/venue/pos/readers${refresh ? '?refresh=1' : ''}`,
+  readerPayment: (saleId: string, paymentId: string) =>
+    `/api/venue/pos/sales/${encodeURIComponent(saleId)}/payments/${encodeURIComponent(paymentId)}/reader`,
+  cardConsent: (saleId: string, paymentId: string) =>
+    `/api/venue/pos/sales/${encodeURIComponent(saleId)}/payments/${encodeURIComponent(paymentId)}/card-consent`,
+  payLinks: (saleId: string) => `/api/venue/pos/sales/${encodeURIComponent(saleId)}/pay-links`,
+  payLinkSend: (saleId: string, linkId: string) =>
+    `/api/venue/pos/sales/${encodeURIComponent(saleId)}/pay-links/${encodeURIComponent(linkId)}/send`,
+  payLinkCancel: (saleId: string, linkId: string) =>
+    `/api/venue/pos/sales/${encodeURIComponent(saleId)}/pay-links/${encodeURIComponent(linkId)}/cancel`,
+  guestCards: (guestId: string) => `/api/venue/pos/guests/${encodeURIComponent(guestId)}/cards`,
+  guestCard: (guestId: string, cardId: string) =>
+    `/api/venue/pos/guests/${encodeURIComponent(guestId)}/cards/${encodeURIComponent(cardId)}`,
+  // A sale sent to this phone from the web till (plan §4.36).
+  collectRequestsMine: '/api/venue/pos/collect-requests?mine=1',
+  collectState: (paymentId: string) => `/api/venue/pos/payments/${encodeURIComponent(paymentId)}/collect`,
+  collectClaim: (paymentId: string) => `/api/venue/pos/payments/${encodeURIComponent(paymentId)}/claim`,
+  collectCancel: (paymentId: string) => `/api/venue/pos/payments/${encodeURIComponent(paymentId)}/cancel`,
 } as const;
 
 /**

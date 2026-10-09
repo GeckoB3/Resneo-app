@@ -21,6 +21,14 @@ import type {
   TakingsReport,
   PosVoucherSettingsResponse,
   PosVoucherSummary,
+  PosCollectRequestsResponse,
+  PosCollectStateResponse,
+  PosPayLinksResponse,
+  PosPayoutDetail,
+  PosPayoutsReport,
+  PosReaderList,
+  PosSavedCard,
+  PosSavedCardsResponse,
 } from '@/types/pos';
 
 /**
@@ -122,7 +130,10 @@ export function invalidateAfterSaleWrite(queryClient: QueryClient, opts: { money
       q.queryKey[2] !== 'sale' &&
       q.queryKey[2] !== 'bootstrap' &&
       q.queryKey[2] !== 'catalogue' &&
-      q.queryKey[2] !== 'voucher-settings',
+      q.queryKey[2] !== 'voucher-settings' &&
+      // Payouts come from Stripe and do not move with a sale.
+      q.queryKey[2] !== 'payouts' &&
+      q.queryKey[2] !== 'payout-detail',
   });
   if (opts.money) {
     // A POS payment moves the bookings' paid caches (plan §4.4.10): the booking detail, the
@@ -365,4 +376,123 @@ export function myFigures(
   const salesPence = performed + sold;
   const tipsPence = (input.takings?.tips?.by_recipient ?? []).filter(mine).reduce((sum, r) => sum + r.net_pence, 0);
   return { salesPence, tipsPence };
+}
+
+// ─── Card payments (app step 2, POS plan P7-8 and P7-9) ─────────────────────
+
+/** The venue's counter readers with their status, asked of Stripe when `refresh` (the web's `?refresh=1`). */
+export function usePosReaders(options: { enabled?: boolean; refresh?: boolean } = {}) {
+  const { accessToken, enabled } = useGate(options.enabled ?? true);
+  return useQuery({
+    queryKey: queryKeys.pos.readers(accessToken),
+    enabled,
+    staleTime: 15_000,
+    queryFn: () => posFetch<PosReaderList>(posPaths.readers(options.refresh === true), { accessToken: accessToken! }),
+  });
+}
+
+/**
+ * The pay links on a sale. Reading them also settles a link payment whose webhook is late, so a
+ * waiting link is polled while it is on screen.
+ */
+export function usePayLinks(saleId: string | null | undefined, options: { enabled?: boolean; poll?: boolean } = {}) {
+  const { accessToken, enabled } = useGate((options.enabled ?? true) && Boolean(saleId));
+  return useQuery({
+    queryKey: queryKeys.pos.payLinks(accessToken, saleId ?? null),
+    enabled,
+    refetchInterval: options.poll ? 4_000 : false,
+    queryFn: () => posFetch<PosPayLinksResponse>(posPaths.payLinks(saleId!), { accessToken: accessToken! }),
+  });
+}
+
+/** A client's saved cards (`GET /api/venue/pos/guests/[guestId]/cards`). Never a Stripe id. */
+export function useGuestSavedCards(guestId: string | null | undefined, options: { enabled?: boolean } = {}) {
+  const { accessToken, enabled } = useGate((options.enabled ?? true) && Boolean(guestId));
+  return useQuery({
+    queryKey: queryKeys.pos.guestCards(accessToken, guestId ?? null),
+    enabled,
+    staleTime: 15_000,
+    retry: false,
+    queryFn: () => posFetch<PosSavedCardsResponse>(posPaths.guestCards(guestId!), { accessToken: accessToken! }),
+  });
+}
+
+/** Removes a client's saved card at their request (needs `take_payment`); answers the cards left. */
+export function useRemoveSavedCard(guestId: string) {
+  const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (cardId: string) => {
+      if (!accessToken) throw new Error('Could not confirm you are signed in. Please try again.');
+      return posFetch<{ cards: PosSavedCard[]; removed: boolean }>(posPaths.guestCard(guestId, cardId), {
+        accessToken,
+        method: 'DELETE',
+      });
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData<PosSavedCardsResponse | undefined>(queryKeys.pos.guestCards(accessToken, guestId), (old) =>
+        old ? { ...old, cards: data.cards } : { cards: data.cards, card_on_file_enabled: true },
+      );
+    },
+  });
+}
+
+/**
+ * "Waiting for you" (`GET /api/venue/pos/collect-requests?mine=1`, plan §4.36): sales the web till
+ * sent to this person, or to any phone. Pushes can be late or lost, so this is read on Today, when
+ * the app comes to the foreground, and every 20 seconds while a screen shows it. Only asked when
+ * this phone can take a card (`enabled`), and the server answers nothing to a login without
+ * `take_payment`.
+ */
+export function useCollectRequests(options: { enabled?: boolean } = {}) {
+  const { accessToken, enabled } = useGate(options.enabled ?? true);
+  return useQuery({
+    queryKey: queryKeys.pos.collectRequests(accessToken),
+    enabled,
+    staleTime: 5_000,
+    refetchInterval: 20_000,
+    refetchOnWindowFocus: true,
+    retry: false,
+    queryFn: () => posFetch<PosCollectRequestsResponse>(posPaths.collectRequestsMine, { accessToken: accessToken! }),
+  });
+}
+
+/** Payouts and fees, for admins (`GET /api/venue/reports/payouts`). Instant payouts are v1.x. */
+export function usePayouts(preset: PosReportPreset, options: { enabled?: boolean } = {}) {
+  const { accessToken, enabled } = useGate(options.enabled ?? true);
+  const query = reportQuery(preset);
+  return useQuery({
+    queryKey: queryKeys.pos.payouts(accessToken, query),
+    enabled,
+    retry: false,
+    queryFn: () => posFetch<PosPayoutsReport>(posPaths.payouts(query), { accessToken: accessToken!, timeoutMs: 30_000 }),
+  });
+}
+
+/** One payout and what it covered. */
+export function usePayoutDetail(preset: PosReportPreset, payoutId: string | null, options: { enabled?: boolean } = {}) {
+  const { accessToken, enabled } = useGate((options.enabled ?? true) && Boolean(payoutId));
+  const query = reportQuery(preset);
+  return useQuery({
+    queryKey: queryKeys.pos.payoutDetail(accessToken, query, payoutId),
+    enabled,
+    retry: false,
+    queryFn: () =>
+      posFetch<PosPayoutDetail>(posPaths.payoutDetail(query, payoutId!), { accessToken: accessToken!, timeoutMs: 30_000 }),
+  });
+}
+
+/**
+ * One sale sent to this phone (`GET /api/venue/pos/payments/[id]/collect`), read every few seconds
+ * while it is open, so the phone learns of a cancel from the desk and of the payment settling.
+ */
+export function useCollectState(paymentId: string | null | undefined, options: { enabled?: boolean; poll?: boolean } = {}) {
+  const { accessToken, enabled } = useGate((options.enabled ?? true) && Boolean(paymentId));
+  return useQuery({
+    queryKey: [...queryKeys.pos.collectRequests(accessToken), 'state', paymentId ?? null] as const,
+    enabled,
+    retry: false,
+    refetchInterval: options.poll ? 3_000 : false,
+    queryFn: () => posFetch<PosCollectStateResponse>(posPaths.collectState(paymentId!), { accessToken: accessToken! }),
+  });
 }

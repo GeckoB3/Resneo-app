@@ -169,6 +169,19 @@ function serialStorageKey(ownerVenueId: string | null): string {
   return `resneo_bt_reader_serial_${ownerVenueId ?? 'own'}`;
 }
 
+/**
+ * Is a Bluetooth reader remembered on this phone for this venue scope? A read only: nothing is
+ * scanned or connected. POS app step 2 tells the web a phone with one can take a card for a sale
+ * sent from the web till (`card_capability: 'wisepad'`). Never throws.
+ */
+export async function hasRememberedBluetoothReader(ownerVenueId: string | null): Promise<boolean> {
+  try {
+    return Boolean(await SecureStore.getItemAsync(serialStorageKey(ownerVenueId)));
+  } catch {
+    return false;
+  }
+}
+
 export interface UseBluetoothReader {
   status: BluetoothReaderStatus;
   error: string | null;
