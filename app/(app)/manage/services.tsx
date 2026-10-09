@@ -86,6 +86,12 @@ import {
 import {
   DEFAULT_BOOKING_INTERVAL_MINUTES,
   bookingStartFingerprint,
+import {
+  STAFF_ONLY_LABEL,
+  collectiveNameFromServices,
+  isStaffOnlyService,
+  staffOnlyHelp,
+} from '@/lib/services/staff-only';
   describeBookingStartTimes,
   normalizeBookingIntervalMinutes,
   normalizeBookingStartForStorage,
@@ -817,6 +823,8 @@ export default function ServicesScreen() {
   };
   // Custom availability (stretch) — versioned schedule + enabled flag.
   const [customAvailEnabled, setCustomAvailEnabled] = useState(false);
+  // Admin-only: "Staff bookings only" (is_bookable_online = false), web parity.
+  const [staffOnly, setStaffOnly] = useState(false);
   const [customSchedule, setCustomSchedule] = useState<ServiceCustomScheduleV2>({
     version: 2,
     rules: [],
@@ -1199,6 +1207,7 @@ export default function ServicesScreen() {
     setError(null);
     setCreating(true);
   };
+    setStaffOnly(isStaffOnlyService(service));
 
   /**
    * "More settings" from Set up with AI (web: the wizard opens `AppointmentServiceModal` with
@@ -1259,6 +1268,7 @@ export default function ServicesScreen() {
     // abandons that save; without this the next edit would open straight onto a
     // stale list.
     if (removalSource === 'form') {
+    setStaffOnly(false);
       removal.cancel();
       setRemovalSource(null);
     }
@@ -1515,6 +1525,8 @@ export default function ServicesScreen() {
           toast.success(`"${shared.name}" is visible to guests again.`);
         }
       } else {
+        // Sent with every admin save, as the web does, so turning it off persists.
+        is_bookable_online: !staffOnly,
         const created = (await create.mutateAsync({
           ...shared,
           ...adminExtras,
@@ -2656,6 +2668,22 @@ export default function ServicesScreen() {
             <Text variant="subheading">Taken off the page, not deleted</Text>
             <Text variant="bodySmall" tone="secondary">
               {deleteHalfway}
+            {isAdmin ? (
+              <View style={styles.sectionStack}>
+                <View style={styles.switchRow}>
+                  <Text variant="bodyMedium">{STAFF_ONLY_LABEL}</Text>
+                  <Switch
+                    value={staffOnly}
+                    onValueChange={setStaffOnly}
+                    accessibilityLabel={STAFF_ONLY_LABEL}
+                  />
+                </View>
+                <Text variant="caption" tone="muted">
+                  {staffOnlyHelp(collectiveNameFromServices(services))}
+                </Text>
+              </View>
+            ) : null}
+
             </Text>
             <View style={styles.actions}>
               <Button label="Close" variant="secondary" style={styles.flex1} onPress={closeDeleteSheet} />
