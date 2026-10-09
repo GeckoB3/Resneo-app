@@ -286,6 +286,25 @@ describe('buildDestinations — Checkout (POS app step 1, plan §4.22)', () => {
     }
   });
 
+  it('shows Orders with its count of new orders only when the login may handle orders (app step 5)', () => {
+    expect(ids(ctx({ isAdmin: true, posEnabled: true }))).not.toContain('orders');
+    const tile = buildDestinations(ctx({ isAdmin: false, posEnabled: true, ordersEnabled: true, ordersNewCount: 3 })).find(
+      (d) => d.id === 'orders',
+    );
+    expect(tile).toMatchObject({ group: 'workspace', kind: 'route', target: '/orders', label: 'Orders', hint: '3 new orders' });
+    expect(buildDestinations(ctx({ isAdmin: true, posEnabled: true, ordersEnabled: true })).find((d) => d.id === 'orders')?.hint).toBe(
+      'Online orders to prepare, send or hand over',
+    );
+    // Off with Checkout off, whatever else is said.
+    expect(ids(ctx({ isAdmin: true, posEnabled: false, ordersEnabled: true }))).not.toContain('orders');
+  });
+
+  it("adds the shop's web row for admins while the shop is on (app step 5)", () => {
+    expect(ids(ctx({ isAdmin: true, posEnabled: true, shopEnabled: true }))).toContain('web-shop');
+    expect(ids(ctx({ isAdmin: false, posEnabled: true, shopEnabled: true }))).not.toContain('web-shop');
+    expect(ids(ctx({ isAdmin: true, posEnabled: true }))).not.toContain('web-shop');
+  });
+
   it('adds the loyalty card web row only while loyalty is on (Pass LC)', () => {
     expect(ids(ctx({ isAdmin: true, posEnabled: true }))).not.toContain('web-loyalty');
     expect(ids(ctx({ isAdmin: true, posEnabled: true, loyaltyEnabled: true }))).toContain('web-loyalty');

@@ -142,3 +142,22 @@ describe('the cash-up reminder (POS app step 3)', () => {
     });
   });
 });
+
+describe('a new online order (POS app step 5)', () => {
+  const saleId = '7c5a2c4e-1b2c-4d3e-8f90-123456789abc';
+
+  it('opens the order, keeping the venue', () => {
+    expect(extractPushRoute({ type: 'shop_order_new', sale_id: saleId, venue_id: 'venue-1' })).toEqual({
+      kind: 'posOrder',
+      orderId: saleId,
+      venueId: 'venue-1',
+    });
+  });
+
+  it('opens the Orders list when the order id is not well formed', () => {
+    expect(extractPushRoute({ type: 'shop_order_new', sale_id: '../x', venue_id: 'venue-1' })).toEqual({
+      kind: 'posOrders',
+      venueId: 'venue-1',
+    });
+  });
+});

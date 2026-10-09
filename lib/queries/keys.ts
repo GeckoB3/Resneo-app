@@ -229,6 +229,12 @@ export const queryKeys = {
       [...queryKeys.pos.all(), 'loyalty-card', keyScope(accessToken), guestId ?? null] as const,
     myCommission: (accessToken?: string | null, period?: string | null) =>
       [...queryKeys.pos.all(), 'my-commission', keyScope(accessToken), period ?? null] as const,
+    /** App step 5 (Pass 6a): online orders. */
+    shopOrders: (accessToken?: string | null, query?: string | null) =>
+      [...queryKeys.pos.all(), 'shop-orders', keyScope(accessToken), query ?? null] as const,
+    shopOrdersBadge: (accessToken?: string | null) => [...queryKeys.pos.all(), 'shop-orders-badge', keyScope(accessToken)] as const,
+    shopOrder: (accessToken?: string | null, id?: string | null) =>
+      [...queryKeys.pos.all(), 'shop-order', keyScope(accessToken), id ?? null] as const,
     /** App step 4b (Pass 5): suppliers, purchase orders and the product picker. */
     suppliers: (accessToken?: string | null) => [...queryKeys.pos.all(), 'suppliers', keyScope(accessToken)] as const,
     purchaseOrders: (accessToken?: string | null, query?: string | null) =>

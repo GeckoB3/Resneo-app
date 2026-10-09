@@ -8,7 +8,7 @@ import { clientHeaderValue, POS_APP_STEP } from '@/lib/pos/client-build';
 describe('clientHeaderValue', () => {
   it('carries the platform, the store version, the update id and the POS app step', () => {
     expect(clientHeaderValue({ platform: 'ios', storeVersion: '1.2.0', updateId: '0b6f', posStep: POS_APP_STEP })).toBe(
-      'ios; store=1.2.0; update=0b6f; pos=3',
+      'ios; store=1.2.0; update=0b6f; pos=5',
     );
   });
 
@@ -22,7 +22,7 @@ describe('clientHeaderValue', () => {
     expect(value.length).toBeLessThanOrEqual(200);
   });
 
-  it('is app step 3: the web sends the cash-up reminder from pos=3', () => {
-    expect(POS_APP_STEP).toBe(3);
+  it('is app step 5: the web sends the cash-up reminder from pos=3 and new orders from pos=5', () => {
+    expect(POS_APP_STEP).toBe(5);
   });
 });

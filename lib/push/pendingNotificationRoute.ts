@@ -42,7 +42,10 @@ export type PendingPushRoute =
   /** A sale sent from the web till to this phone (`pos_collect_request`, POS plan §4.36). */
   | { kind: 'posCollect'; paymentId: string; venueId: string | null }
   /** The cash-up reminder: a till left open past the end of the day (`pos_cash_up_reminder`). */
-  | { kind: 'posTill'; sessionId: string | null; venueId: string | null };
+  | { kind: 'posTill'; sessionId: string | null; venueId: string | null }
+  /** A new online order (`shop_order_new`), or the Orders list when the push names none. */
+  | { kind: 'posOrder'; orderId: string; venueId: string | null }
+  | { kind: 'posOrders'; venueId: string | null };
 
 let pendingRoute: PendingPushRoute | null = null;
 const subscribers = new Set<() => void>();

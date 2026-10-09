@@ -234,3 +234,24 @@ export function posErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message) return error.message;
   return fallback;
 }
+
+/**
+ * Online orders (`/api/venue/shop/orders/**`, Pass 6a, app step 5). Through `posFetch` like every
+ * POS call, so they carry the same headers, and only at venues with `pos_enabled`. The routes are
+ * open with the shop switch off, so paid orders can still be fulfilled; each needs `manage_orders`.
+ */
+export const shopPaths = {
+  orders: (params: { tab: string; q?: string | null; cursor?: string | null }) => {
+    const sp = new URLSearchParams({ tab: params.tab });
+    if (params.q?.trim()) sp.set('q', params.q.trim().slice(0, 80));
+    if (params.cursor) sp.set('cursor', params.cursor);
+    return `/api/venue/shop/orders?${sp.toString()}`;
+  },
+  badge: '/api/venue/shop/orders/badge',
+  lookup: (code: string) => `/api/venue/shop/orders/lookup?code=${encodeURIComponent(code.slice(0, 12))}`,
+  order: (id: string) => `/api/venue/shop/orders/${encodeURIComponent(id)}`,
+  orderAction: (id: string, action: 'status' | 'cancel' | 'refund' | 'returns') =>
+    `/api/venue/shop/orders/${encodeURIComponent(id)}/${action}`,
+  orderReturn: (id: string, returnId: string) =>
+    `/api/venue/shop/orders/${encodeURIComponent(id)}/returns/${encodeURIComponent(returnId)}`,
+} as const;

@@ -258,6 +258,31 @@ and Pass LC for app step 4) on the server.
   - *Record products used* (`record_professional_use`) from Products and stock (today's bookings,
     or none) and on the booking detail at POS venues (that booking), for products used in
     treatments, with a note.
+- **Online orders (app step 5, the P7-16 part: POS plan P7-16; UX spec §8, §13.7).** Orders follow
+  `manage_orders` from the POS bootstrap and the venue's resolved `pos_online_shop_enabled`; the
+  routes stay open with the shop off, so the tile also shows while new paid orders wait. P7-17
+  (recommendations, checkout suggestions, promotion codes, set-aside orders, ordering for a
+  client) and the v1.x order jobs (return requests, lost in transit) are not here. The client
+  build now says `pos=5`, which is what the web checks before it sends `shop_order_new`.
+  - *An Orders tile* in More's workspace, with the count of new orders, and "Online shop settings"
+    under On the web for admins while the shop is on.
+  - *Orders:* to do, ready to collect, sent, done, cancelled and all, with counts; a search by
+    order number, name or email; each row's status, collection or delivery, items, total, when it
+    was placed and its flags (not collected by, return recorded, refund due, refunded). A pickup
+    code typed or scanned from the customer's QR code opens the order with the code filled in.
+  - *An order:* start preparing; mark ready (asks first, then the customer is told); mark collected
+    after checking the pickup code, typed or scanned (or "They don't have the code" and a tick that
+    staff checked who it is); mark dispatched with the carrier, tracking number and link (filled
+    for known carriers), change tracking, mark delivered; cancel and refund in full with a reason;
+    refund or return chosen items (and the delivery) to the card, putting counted items back in
+    stock, with the return window warning; record a return, goods received and proof of sending.
+    Items, collection or delivery, returns, payments and refunds, the customer, messages and the
+    timeline follow. Every refusal shows the server's sentence.
+  - *The packing slip* opens on the web, where it prints (there is no slip PDF route yet).
+  - *The `shop_order_new` push* opens the order (another business's says to switch first). An
+    Android "New online orders" channel with the order alert sound bundled since 1.1.2 is created
+    over the air; the web still sends these pushes on `bookings-new`, so it is unused until the
+    web names it.
 
 ---
 

@@ -81,7 +81,12 @@ export type VenueFeatureFlagsRaw = Partial<
  * is. An older web deploy does not send a key, which
  * reads as off, so every POS surface stays hidden (§4.22, §13.11).
  */
-export type PlatformOnlyFeatureFlagKey = 'pos_enabled' | 'pos_gift_vouchers_enabled' | 'pos_loyalty_enabled';
+export type PlatformOnlyFeatureFlagKey =
+  | 'pos_enabled'
+  | 'pos_gift_vouchers_enabled'
+  | 'pos_loyalty_enabled'
+  /** The online shop (Pass 6a): Orders in More, and its web row. */
+  | 'pos_online_shop_enabled';
 
 /** Env + venue merged flags returned by GET /api/venue. */
 export type ResolvedAppointmentsFeatureFlags = Record<

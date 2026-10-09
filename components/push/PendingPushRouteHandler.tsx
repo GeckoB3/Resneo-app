@@ -52,6 +52,13 @@ export function PendingPushRouteHandler(): null {
         return;
       }
 
+      if (route.kind === 'posOrder' || route.kind === 'posOrders') {
+        // A new online order (POS app step 5) opens the order; the screen checks the venue.
+        const venue = route.venueId ? `?venue=${encodeURIComponent(route.venueId)}` : '';
+        router.push((route.kind === 'posOrder' ? `/orders/${route.orderId}${venue}` : '/orders') as Href);
+        return;
+      }
+
       if (route.kind === 'url') {
         /*
           A waitlist offer opens the venue's public booking page, because that

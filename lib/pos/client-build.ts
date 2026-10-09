@@ -17,9 +17,10 @@ import { getInstalledStoreVersion } from '@/lib/app-update/app-update-runtime';
  * The highest POS app step this bundle carries (`pos=N`). An over-the-air update id has no order,
  * so the web compares this number instead: from 2 it sends this phone sales from the web till
  * (`pos_collect_request`, plan §4.36; web `COLLECT_MIN_POS_STEP`); from 3 the cash-up reminder
- * (`pos_cash_up_reminder`, web `CASH_UP_MIN_POS_STEP`). Raised with each app step.
+ * (`pos_cash_up_reminder`, web `CASH_UP_MIN_POS_STEP`); from 5 new online orders (`shop_order_new`,
+ * web `SHOP_ORDER_MIN_POS_STEP`). Raised with each app step.
  */
-export const POS_APP_STEP = 3;
+export const POS_APP_STEP = 5;
 
 /** The web stores at most this many characters of it. */
 const MAX_LENGTH = 200;

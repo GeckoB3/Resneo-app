@@ -21,7 +21,7 @@ import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { getAppVersion, getWebUrl } from '@/lib/env';
-import { isLoyaltyEnabled, isPosEnabled } from '@/lib/pos/pos-enabled';
+import { isLoyaltyEnabled, isPosEnabled, isShopEnabled } from '@/lib/pos/pos-enabled';
 import {
   buildDestinations,
   LIST_GROUPS,
@@ -31,6 +31,7 @@ import {
 import { useBillingStatus } from '@/lib/queries/useBillingStatus';
 import { useCollectives } from '@/lib/queries/useCollectives';
 import { useNotifications } from '@/lib/queries/useNotifications';
+import { useOrdersTile } from '@/lib/queries/useOrders';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { useUpdateVenue } from '@/lib/queries/useVenueSettings';
 import { useAppLock } from '@/providers/AppLockProvider';
@@ -209,6 +210,10 @@ export default function MoreScreen() {
     return live?.name ?? null;
   }, [collectivesQuery.data]);
 
+  // Orders (POS app step 5): for logins with manage_orders, while the shop is on or new paid
+  // orders are waiting. Nothing is asked at a venue without Checkout.
+  const ordersTile = useOrdersTile(venue);
+
   const destinations = useMemo<Destination[]>(() => {
     const enabledModels = new Set<BookingModel>([
       ...(venue?.active_booking_models ?? []),
@@ -224,8 +229,11 @@ export default function MoreScreen() {
       collectiveArea: liveCollectiveName ? { name: liveCollectiveName } : null,
       posEnabled: isPosEnabled(venue),
       loyaltyEnabled: isLoyaltyEnabled(venue),
+      ordersEnabled: ordersTile.enabled,
+      ordersNewCount: ordersTile.newCount,
+      shopEnabled: isShopEnabled(venue),
     });
-  }, [isAdmin, venue, liveCollectiveName]);
+  }, [isAdmin, venue, liveCollectiveName, ordersTile.enabled, ordersTile.newCount]);
 
   const handlePress = useCallback(
     (dest: Destination) => {

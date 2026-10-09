@@ -178,6 +178,21 @@ export default function AppLayout() {
           title: 'Stocktake',
         }}
       />
+      {/* Online orders (POS app step 5), from the Orders tile in More and the shop_order_new push. */}
+      <Stack.Screen
+        name="orders/index"
+        options={{
+          headerShown: true,
+          title: 'Orders',
+        }}
+      />
+      <Stack.Screen
+        name="orders/[id]"
+        options={{
+          headerShown: true,
+          title: 'Order',
+        }}
+      />
       <Stack.Screen
         name="client/[id]"
         options={{

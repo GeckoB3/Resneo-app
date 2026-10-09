@@ -215,6 +215,29 @@ describe('POS copy', () => {
     expect(posCopy('po.receive.done', { count: 6 })).toBe('6 items added to stock.');
   });
 
+  it('keeps the web ids the spec names for app step 5 (UX spec §13.7, §18.22, §18.28)', () => {
+    const ids = [
+      'app.tile.orders',
+      'app.tile.orders.hint',
+      'app.scan.pickup',
+      'app.web.shop',
+      'ord.title',
+      'ord.tab.todo',
+      'ord.lookup',
+      'ord.action.ready',
+      'ord.ready.confirm.body',
+      'ord.cancel.title',
+      'pickup.noCode.body',
+      'dispatch.noTracking',
+      'ret.record',
+      'ret.evidence.body',
+      'refund.faultyWarning',
+    ] as const;
+    for (const id of ids) expect(POS_COPY[id]).toBeTruthy();
+    expect(posCopy('app.tile.orders.hint')).toBe('Online orders to prepare, send or hand over');
+    expect(posCopy('ord.cancel.title', { orderNo: 42, amount: '£36.00' })).toBe('Cancel Order 42 and refund £36.00?');
+  });
+
   it('fills placeholders and leaves unknown ones for a test to spot', () => {
     expect(fillCopy('{amount} to pay', { amount: '£5.00' })).toBe('£5.00 to pay');
     expect(fillCopy('{missing} here')).toBe('{missing} here');

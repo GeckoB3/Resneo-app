@@ -32,7 +32,18 @@ const ANDROID_CHANNELS = {
   bookingsNew: 'bookings-new',
   bookingsChanged: 'bookings-changed',
   reminders: 'reminders',
+  /**
+   * New online orders (POS app step 5, UX spec §13.7 `app.sound.orders`), created over the air
+   * with the order alert sound the binaries have carried since 1.1.2 (the expo-notifications
+   * plugin's `sounds`). An Android channel's sound is fixed when it is created, hence its own
+   * channel. The web picks it by sending this `channelId` (and `sound: 'order_alert.wav'` for iOS)
+   * on `shop_order_new`; until it does, the push lands on `bookings-new` as before.
+   */
+  shopOrders: 'shop-orders',
 } as const;
+
+/** The bundled order alert sound's file name, as the expo-notifications plugin registered it. */
+const ORDER_ALERT_SOUND = 'order_alert.wav';
 
 /**
  * The CUSTOMER's channels, which are deliberately not the staff ones.
@@ -95,6 +106,15 @@ async function configureAndroidChannels(notifications: NonNullable<typeof Notifi
     await notifications.setNotificationChannelAsync(ANDROID_CHANNELS.reminders, {
       name: 'Reminders',
       importance: AndroidImportance.DEFAULT,
+      lockscreenVisibility: AndroidNotificationVisibility.PRIVATE,
+    });
+    // Unlike the channels above, this one names a sound: the bundled order alert (see above).
+    await notifications.setNotificationChannelAsync(ANDROID_CHANNELS.shopOrders, {
+      name: 'New online orders',
+      importance: AndroidImportance.HIGH,
+      sound: ORDER_ALERT_SOUND,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#003B6F',
       lockscreenVisibility: AndroidNotificationVisibility.PRIVATE,
     });
 

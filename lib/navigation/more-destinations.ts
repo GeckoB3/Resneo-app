@@ -134,6 +134,15 @@ export type DestinationsContext = {
    * off whenever `pos_enabled` is.
    */
   loyaltyEnabled?: boolean;
+  /**
+   * Orders (POS app step 5, UX spec §13.7 `app.tile.orders`): Checkout on, the login holds
+   * `manage_orders`, and the shop is on or paid orders are waiting.
+   */
+  ordersEnabled?: boolean;
+  /** New paid orders, shown on the Orders tile (`nav.orders.badgeSr`). */
+  ordersNewCount?: number | null;
+  /** `feature_flags.resolved.pos_online_shop_enabled`: the shop's web row, for admins. */
+  shopEnabled?: boolean;
 };
 
 /**
@@ -170,6 +179,11 @@ export function buildDestinations(ctx: DestinationsContext): Destination[] {
     list.push({ id: 'checkout', label: 'Checkout', hint: "Take payments and see today's sales", icon: { ios: 'creditcard.fill', android: 'point_of_sale', web: 'point_of_sale' }, tile: TILE.emerald, group: 'workspace', kind: 'route', target: '/checkout', featured: true, keywords: ['till', 'pos', 'sale', 'payment', 'pay', 'receipt', 'refund'] });
     // Products and stock (app step 4, UX spec §13.6 `app.tile.stock`): every team member; staff
     // without `manage_products` see products read only, and the stock tabs follow Track stock.
+    // Orders (app step 5, UX spec §13.7 `app.tile.orders`), with the count of new orders.
+    if (ctx.ordersEnabled === true) {
+      const fresh = ctx.ordersNewCount ?? 0;
+      list.push({ id: 'orders', label: 'Orders', hint: fresh > 0 ? `${fresh} new orders` : 'Online orders to prepare, send or hand over', icon: { ios: 'shippingbox.and.arrow.backward.fill', android: 'local_shipping', web: 'local_shipping' }, tile: TILE.sky, group: 'workspace', kind: 'route', target: '/orders', featured: true, keywords: ['orders', 'shop', 'online', 'collection', 'delivery', 'pickup'] });
+    }
     list.push({ id: 'stock', label: 'Products and stock', hint: 'Stock levels, stocktakes and deliveries', icon: { ios: 'shippingbox.fill', android: 'inventory_2', web: 'inventory_2' }, tile: TILE.amber, group: 'workspace', kind: 'route', target: '/stock', featured: true, keywords: ['products', 'retail', 'stock', 'stocktake', 'barcode', 'inventory'] });
   }
   if (isSchedulingExperience) {
@@ -245,6 +259,10 @@ export function buildDestinations(ctx: DestinationsContext): Destination[] {
     list.push({ id: 'web-checkout-settings', label: 'Checkout settings', hint: 'Opens in your browser', icon: { ios: 'gearshape.fill', android: 'settings', web: 'settings' }, tile: TILE.slate, group: 'web', kind: 'web', target: '/dashboard/settings?tab=checkout', external: true, keywords: ['tax', 'receipts', 'tips', 'discounts', 'payment types', 'permissions'] });
     list.push({ id: 'web-records', label: 'Records, reports and exports', hint: 'Opens in your browser', icon: { ios: 'doc.text.fill', android: 'description', web: 'description' }, tile: TILE.indigo, group: 'web', kind: 'web', target: '/dashboard/reports', external: true, keywords: ['tip records', 'vat invoice', 'export'] });
     // App step 4 and Pass LC (UX spec §13.8): what stays on the web.
+    // App step 5 (UX spec §13.8 `app.web.shop`): shop settings stay on the web.
+    if (ctx.shopEnabled === true) {
+      list.push({ id: 'web-shop', label: 'Online shop settings', hint: 'Opens in your browser', icon: { ios: 'cart.fill', android: 'shopping_cart', web: 'shopping_cart' }, tile: TILE.teal, group: 'web', kind: 'web', target: '/dashboard/settings?tab=checkout', external: true, keywords: ['shop', 'delivery', 'collection', 'policies'] });
+    }
     list.push({ id: 'web-stock-setup', label: 'Suppliers, labels and stock set-up', hint: 'Opens in your browser', icon: { ios: 'shippingbox', android: 'inventory', web: 'inventory' }, tile: TILE.amber, group: 'web', kind: 'web', target: '/dashboard/stock?tab=suppliers', external: true, keywords: ['suppliers', 'import products', 'labels', 'bulk'] });
     if (ctx.loyaltyEnabled === true) {
       list.push({ id: 'web-loyalty', label: 'Loyalty card set-up', hint: 'Opens in your browser', icon: { ios: 'star.circle.fill', android: 'loyalty', web: 'loyalty' }, tile: TILE.rose, group: 'web', kind: 'web', target: '/dashboard/settings?tab=checkout', external: true, keywords: ['loyalty', 'stamps', 'reward'] });

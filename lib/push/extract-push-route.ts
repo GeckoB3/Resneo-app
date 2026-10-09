@@ -57,6 +57,17 @@ export function extractPushRoute(
     };
   }
 
+  /*
+    Online orders (POS app step 5, plan Appendix G): `shop_order_new` (`{ type, sale_id, venue_id }`)
+    opens the order. `shop_order_uncollected` and `shop_order_customer_here` (later passes) carry
+    the same ids and open it too.
+  */
+  if (data['type'] === 'shop_order_new' || data['type'] === 'shop_order_uncollected' || data['type'] === 'shop_order_customer_here') {
+    const orderId = firstString([data['sale_id'], data['order_id']]);
+    if (!orderId || !/^[0-9a-f-]{36}$/i.test(orderId)) return { kind: 'posOrders', venueId: firstString([data['venue_id']]) };
+    return { kind: 'posOrder', orderId, venueId: firstString([data['venue_id']]) };
+  }
+
   if (data['type'] === 'waitlist_offer') {
     const url = firstString([data['url']]);
     if (url && isSafeHttpsUrl(url)) return { kind: 'url', url };

@@ -34,6 +34,15 @@ export function isLoyaltyEnabled(venue: Pick<VenueBootstrap, 'feature_flags'> | 
 }
 
 /**
+ * The online shop (Pass 6a, UX spec §2.1): the venue's resolved `pos_online_shop_enabled`, and only
+ * with Checkout on. With it on, logins with `manage_orders` get Orders in More; with it off, Orders
+ * stays while paid orders are still waiting, so they can be fulfilled (plan §4.20).
+ */
+export function isShopEnabled(venue: Pick<VenueBootstrap, 'feature_flags'> | null | undefined): boolean {
+  return isPosEnabled(venue) && venue?.feature_flags?.resolved?.pos_online_shop_enabled === true;
+}
+
+/**
  * The venue's Track stock switch (simple mode, plan §4.37), from the POS bootstrap. The stock
  * screens (levels, adjustments, history, stocktakes) and the stock fields of the product editor
  * exist only while it is on, as on the web; a server before Pass 4 does not send it, which reads
