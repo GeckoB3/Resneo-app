@@ -112,6 +112,8 @@ export const SETUP_COPY = {
   'banner.memberWaiting': 'You are part of {collective}. {host} is setting up the services and the shared booking page, so nothing is needed from you yet.',
   'banner.memberWaiting.cta': 'View collective',
   'setup.title': 'Link with a venue',
+  // The button that opens it: shorter, so it fits beside 'Get invite link' on a phone.
+  'setup.button': 'Link a venue',
   'setup.step': 'Step {n} of {total}',
   'setup.venue.heading': 'Which venue?',
   'setup.venue.help': 'Search by name, or paste their booking page address.',

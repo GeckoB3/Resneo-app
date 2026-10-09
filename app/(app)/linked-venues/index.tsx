@@ -346,7 +346,7 @@ export default function LinkedVenuesScreen() {
             </View>
           ) : null}
           <Button
-            label={setupCopy('setup.title')}
+            label={setupCopy('setup.button')}
             fullWidth
             disabled={!canCreate}
             onPress={() => setSendOpen(true)}
@@ -384,7 +384,7 @@ export default function LinkedVenuesScreen() {
 
       <View style={styles.entryActions}>
         <Button
-          label={setupCopy('setup.title')}
+          label={setupCopy('setup.button')}
           style={styles.flex1}
           disabled={!canCreate}
           onPress={() => setSendOpen(true)}

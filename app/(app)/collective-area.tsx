@@ -187,7 +187,8 @@ function AreaBody({
   const tabs: { value: AreaTab; label: string }[] = [
     { value: 'services', label: areaCopy('ov.tab.overview') },
     // Classes, events and resources listed on the combined page (web 2026-09-21, plan §4.3).
-    { value: 'listings', label: 'Classes, events & resources' },
+    // 'Classes, events & resources' on the web; shorter so the tab stays readable on a phone.
+    { value: 'listings', label: 'Classes & more' },
     ...(collective.isHost ? [{ value: 'venues' as const, label: areaCopy('ov.tab.venues') }] : []),
     { value: 'history', label: areaCopy('ov.tab.history') },
   ];
