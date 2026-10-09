@@ -185,6 +185,7 @@ export const SETTINGS_COPY = {
   'set.reasons.refund': 'Refund reasons',
   'set.reasons.void': 'Reasons for voiding a sale',
   'set.reasons.add': 'Add a reason',
+  'set.reasons.addButton': 'Add',
   'set.reasons.remove': 'Remove {reason}',
 
   'set.ptypes.title': 'Other payment types',
@@ -303,7 +304,7 @@ export const SETTINGS_COPY = {
   'app.set.row.readers': 'Counter card readers',
   'app.set.row.cash': 'Floats, counts, largest payment',
   'app.set.row.stock': 'Selling past zero, low-stock email',
-  'app.set.row.shop': 'Your online shop',
+  'app.set.row.shop': 'Opening, delivery and policies',
   'app.set.title.cardsOnFile': 'Cards on file',
   'app.set.title.vouchers': 'Gift vouchers',
   'app.set.title.loyalty': 'Loyalty card',

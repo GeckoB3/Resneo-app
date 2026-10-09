@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ScrollView, StyleSheet, Switch, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 
 import { ChoiceChips, posStyles } from '@/components/pos/parts';
 import { Button } from '@/components/ui/Button';
@@ -7,9 +7,11 @@ import { Chip } from '@/components/ui/Chip';
 import { DatePickerField } from '@/components/ui/DatePickerField';
 import { Text } from '@/components/ui/Text';
 import { useStockT } from '@/lib/retail/stock-setup-copy';
+import { useSelectedPillScroll } from '@/lib/ui/useSelectedPillScroll';
 import { useShareDownload } from '@/lib/queries/useStockSetup';
 import { useToast } from '@/providers/ToastProvider';
-import { spacing } from '@/theme/index';
+import { radius, spacing } from '@/theme/index';
+import { useTheme } from '@/theme/useTheme';
 
 /**
  * Small pieces the products and stock set-up screens share: a tab row that scrolls sideways, a
@@ -26,10 +28,21 @@ export function TabChips<T extends string>({
   value: T;
   onChange: (value: T) => void;
 }) {
+  // Keeps the selected tab in view when the screen opens on one off the right edge.
+  const { ref: stripRef, onLayout, onContentSizeChange, onPillLayout } = useSelectedPillScroll(value);
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabs} accessibilityRole="tablist">
+    <ScrollView
+      ref={stripRef}
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={styles.tabs}
+      accessibilityRole="tablist"
+      onLayout={onLayout}
+      onContentSizeChange={onContentSizeChange}>
       {tabs.map((tab) => (
-        <Chip key={tab.value} label={tab.label} selected={tab.value === value} onPress={() => onChange(tab.value)} />
+        <View key={tab.value} onLayout={(e) => onPillLayout(tab.value, e)}>
+          <Chip label={tab.label} selected={tab.value === value} onPress={() => onChange(tab.value)} />
+        </View>
       ))}
     </ScrollView>
   );
@@ -103,6 +116,7 @@ export function DateFilter({
   required?: boolean;
 }) {
   const t = useStockT();
+  const { colors } = useTheme();
   return (
     <View style={styles.group}>
       <Text variant="bodySmall" tone="muted">
@@ -120,13 +134,19 @@ export function DateFilter({
           {required ? null : <Button label={t('ss.clearDate')} size="sm" variant="ghost" onPress={() => onChange(null)} />}
         </View>
       ) : (
-        <Button
-          label={t('ss.setDate')}
-          size="sm"
-          variant="ghost"
+        // Looks like the date fields beside it: a bordered box, "Choose a date" until one is set.
+        <Pressable
+          accessibilityRole="button"
           accessibilityLabel={`${label}: ${t('ss.anyDate')}`}
           onPress={() => onChange(todayIso(maximumDate))}
-        />
+          style={({ pressed }) => [
+            styles.emptyDate,
+            { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
+          ]}>
+          <Text variant="bodyMedium" tone="muted">
+            {t('ss.setDate')}
+          </Text>
+        </Pressable>
       )}
     </View>
   );
@@ -181,4 +201,13 @@ const styles = StyleSheet.create({
   tabs: { gap: spacing.sm, paddingVertical: spacing.xxs },
   flex: { flex: 1 },
   group: { gap: spacing.xs },
+  emptyDate: {
+    alignSelf: 'flex-start',
+    minWidth: 132,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
 });

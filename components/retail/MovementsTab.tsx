@@ -2,7 +2,7 @@ import { type Href, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
-import { ChoiceChips, money, Notice, PickRow, posStyles } from '@/components/pos/parts';
+import { money, Notice, PickRow, PosSheet, posStyles } from '@/components/pos/parts';
 import { DateFilter, ShareFileButton } from '@/components/retail/setup-parts';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -74,6 +74,7 @@ export function MovementsTab({
   const router = useRouter();
   const [scope, setScope] = useState<MovementScope | null>(initialScope ?? null);
   const [reason, setReason] = useState<string>('');
+  const [choosingReason, setChoosingReason] = useState(false);
   const [from, setFrom] = useState<string | null>(null);
   const [to, setTo] = useState<string | null>(null);
   const filters: MovementFilters = {
@@ -118,14 +119,10 @@ export function MovementsTab({
           ) : (
             <ProductPicker onPick={(id, label) => setScope({ productId: id, label })} />
           )}
-          <Text variant="label">{t('mov.filter.reason')}</Text>
-          <ChoiceChips
-            options={[
-              { value: '', label: t('mov.filter.allReasons') },
-              ...MOVEMENT_REASONS.map((r) => ({ value: r, label: t(movementReasonId(r)) })),
-            ]}
-            value={reason}
-            onChange={setReason}
+          {/* One compact row; the reasons open in a sheet so the movements stay near the top. */}
+          <PickRow
+            title={`${t('mov.filter.reason')}: ${reason ? t(movementReasonId(reason)) : t('mov.filter.allReasons')}`}
+            onPress={() => setChoosingReason(true)}
           />
           <View style={styles.dates}>
             <DateFilter label={t('mov.filter.from')} value={from} onChange={setFrom} maximumDate={to ? isoDate(to) : undefined} />
@@ -152,6 +149,21 @@ export function MovementsTab({
       {list.hasNextPage ? (
         <Button label={t('app.stock.more')} variant="secondary" loading={list.isFetchingNextPage} onPress={() => void list.fetchNextPage()} fullWidth />
       ) : null}
+      <PosSheet visible={choosingReason} onClose={() => setChoosingReason(false)} title={t('mov.filter.reason')}>
+        {[{ value: '', label: t('mov.filter.allReasons') }, ...MOVEMENT_REASONS.map((r) => ({ value: r, label: t(movementReasonId(r)) }))].map(
+          (o) => (
+            <PickRow
+              key={o.value || 'all'}
+              title={o.label}
+              selected={reason === o.value}
+              onPress={() => {
+                setReason(o.value);
+                setChoosingReason(false);
+              }}
+            />
+          ),
+        )}
+      </PosSheet>
     </ScrollView>
   );
 }

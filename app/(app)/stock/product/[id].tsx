@@ -1147,7 +1147,11 @@ function OptionEditor({
         {t('var.netUnit')}
       </Text>
       {readOnly ? (
-        <Text>{option.net_unit ? t(`var.unit.${option.net_unit}` as StockCopyId) : ''}</Text>
+        option.net_unit ? (
+          <Text>{t(`var.unit.${option.net_unit}` as StockCopyId)}</Text>
+        ) : (
+          <Text tone="muted">{t('ss.notSet')}</Text>
+        )
       ) : (
         <ChoiceChips<'' | NetUnit>
           options={UNITS.map((u) => ({ value: u, label: t(`var.unit.${u}` as StockCopyId) }))}

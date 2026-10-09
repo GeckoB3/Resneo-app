@@ -80,6 +80,7 @@ import {
 import { partySizeLabel } from '@/lib/booking/terminology';
 import { formatPence, formatPositivePence } from '@/lib/format';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
+import { formatPhoneForDisplay } from '@/lib/phone/e164';
 import {
   useDeleteBooking,
   useResendConfirmation,
@@ -1294,7 +1295,7 @@ export function BookingDetailContent({
               {guestPhone ? (
                 <ContactRow
                   icon={{ ios: 'phone.fill', android: 'call', web: 'call' }}
-                  value={guestPhone}
+                  value={formatPhoneForDisplay(guestPhone)}
                   accessibilityLabel={`Call ${guestName}`}
                   onPress={() => void Linking.openURL(`tel:${guestPhone.replace(/\s+/g, '')}`)}
                 />

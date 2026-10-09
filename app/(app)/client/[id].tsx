@@ -55,6 +55,7 @@ import {
 import { guestBookingsSummary, splitGuestHistory } from '@/lib/guests/guest-history-sections';
 import { marketingSummaryHint } from '@/lib/guests/marketing-permission';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
+import { formatPhoneForDisplay } from '@/lib/phone/e164';
 import { useGuestDetail } from '@/lib/queries/useGuestDetail';
 import { useGuestTimeline, useSendGuestMessage, useUpdateGuest } from '@/lib/queries/useGuestMutations';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
@@ -453,7 +454,7 @@ export default function ClientDetailScreen() {
             </Text>
             {phone || email ? (
               <Text variant="bodySmall" tone="muted" numberOfLines={1} style={styles.profileContact}>
-                {[phone, email].filter(Boolean).join('  ·  ')}
+                {[formatPhoneForDisplay(phone), email].filter(Boolean).join('  ·  ')}
               </Text>
             ) : null}
             {/* "4 appointments on file", in the venue's word for a booking. */}

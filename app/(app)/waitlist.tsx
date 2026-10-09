@@ -32,6 +32,7 @@ import { WaitlistJoinSheet } from '@/components/waitlist/WaitlistJoinSheet';
 import { ApiError } from '@/lib/api/client';
 import { formatDayHeading } from '@/lib/dates/venue-dates';
 import { hapticWarning } from '@/lib/haptics';
+import { formatPhoneForDisplay } from '@/lib/phone/e164';
 import {
   useActOnWaitlistAlert,
   useDeleteWaitlistEntry,
@@ -291,7 +292,7 @@ const WaitlistEntryRow = memo(function WaitlistEntryRow({
         ) : null}
         {entry.guest_phone ? (
           <Text variant="caption" tone="muted">
-            {entry.guest_phone}
+            {formatPhoneForDisplay(entry.guest_phone)}
           </Text>
         ) : null}
         {entry.guest_email ? (

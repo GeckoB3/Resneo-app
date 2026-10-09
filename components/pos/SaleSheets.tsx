@@ -22,6 +22,7 @@ import { Segmented } from '@/components/ui/Segmented';
 import { Stepper } from '@/components/ui/Stepper';
 import { Text } from '@/components/ui/Text';
 import { hapticWarning } from '@/lib/haptics';
+import { formatPhoneForDisplay } from '@/lib/phone/e164';
 import { posErrorMessage } from '@/lib/pos/api';
 import { canPos } from '@/lib/pos/pos-enabled';
 import {
@@ -951,7 +952,7 @@ function ClientSheetBody({
             <PickRow
               key={g.id}
               title={name}
-              detail={[g.phone, g.email].filter(Boolean).join(' · ') || null}
+              detail={[formatPhoneForDisplay(g.phone), g.email].filter(Boolean).join(' · ') || null}
               selected={sale.guest?.id === g.id}
               onPress={() => void setGuest(g.id)}
             />

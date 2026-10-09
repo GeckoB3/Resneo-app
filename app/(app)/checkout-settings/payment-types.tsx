@@ -115,11 +115,12 @@ function PaymentTypesSection() {
               <View key={p.id} style={[styles.row, i > 0 ? { borderTopColor: colors.border, borderTopWidth: StyleSheet.hairlineWidth } : null]}>
                 <Text variant="bodyMedium">{p.name}</Text>
                 {canEdit ? (
+                  // One row of matching small buttons: move up, move down, rename, remove.
                   <View style={styles.inline}>
                     <Button
                       label="↑"
                       accessibilityLabel={t('set.ptypes.moveUp', { name: p.name })}
-                      variant="ghost"
+                      variant="secondary"
                       size="sm"
                       disabled={busy || i === 0}
                       onPress={() => void move(i, -1)}
@@ -127,13 +128,13 @@ function PaymentTypesSection() {
                     <Button
                       label="↓"
                       accessibilityLabel={t('set.ptypes.moveDown', { name: p.name })}
-                      variant="ghost"
+                      variant="secondary"
                       size="sm"
                       disabled={busy || i === types.length - 1}
                       onPress={() => void move(i, 1)}
                     />
                     <Button label={t('set.ptypes.rename')} variant="secondary" size="sm" disabled={busy} onPress={() => setRenaming(p)} />
-                    <Button label={t('set.ptypes.remove')} variant="ghost" size="sm" disabled={busy} onPress={() => setRemoving(p)} />
+                    <Button label={t('set.ptypes.remove')} variant="secondary" size="sm" disabled={busy} onPress={() => setRemoving(p)} />
                   </View>
                 ) : null}
                 <SwitchRow

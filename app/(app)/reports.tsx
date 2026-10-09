@@ -60,6 +60,7 @@ import {
   showBookingTypeBreakdown,
   visibleModelRows,
 } from '@/lib/reports/report-by-model';
+import { useSelectedPillScroll } from '@/lib/ui/useSelectedPillScroll';
 import { isAppointmentFromVenue } from '@/lib/venue/venue-experience';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { minTouchTarget, radius, spacing } from '@/theme/index';
@@ -141,6 +142,13 @@ export default function ReportsScreen() {
       ? 'overview'
       : mainTab;
   const posTab = shownTab === 'takings' || shownTab === 'sales' || shownTab === 'vouchers' || shownTab === 'commission';
+  // Keeps the selected tab chip in view when the screen opens on one off the right edge.
+  const {
+    ref: tabStripRef,
+    onLayout: onTabStripLayout,
+    onContentSizeChange: onTabStripContentSize,
+    onPillLayout: onTabPillLayout,
+  } = useSelectedPillScroll(shownTab);
 
   // The To picker takes a Date for its lower bound. Build it from the
   // YYYY-MM-DD string at local noon (avoids any tz day-boundary slip), memoised
@@ -461,10 +469,13 @@ export default function ReportsScreen() {
             four-option control, unchanged. */}
         {showPosTabs ? (
           <ScrollView
+            ref={tabStripRef}
             horizontal
             showsHorizontalScrollIndicator={false}
             accessibilityLabel="Report tabs"
-            contentContainerStyle={styles.tabChips}>
+            contentContainerStyle={styles.tabChips}
+            onLayout={onTabStripLayout}
+            onContentSizeChange={onTabStripContentSize}>
             {(
               [
                 { value: 'overview', label: 'Overview' },
@@ -477,7 +488,9 @@ export default function ReportsScreen() {
                 { value: 'clients', label: `${clientWord}s` },
               ] as { value: MainTab; label: string }[]
             ).map((o) => (
-              <Chip key={o.value} label={o.label} selected={shownTab === o.value} onPress={() => setMainTab(o.value)} />
+              <View key={o.value} onLayout={(e) => onTabPillLayout(o.value, e)}>
+                <Chip label={o.label} selected={shownTab === o.value} onPress={() => setMainTab(o.value)} />
+              </View>
             ))}
           </ScrollView>
         ) : (

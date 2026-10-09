@@ -72,8 +72,11 @@ describe('the Suppliers tab', () => {
     await act(async () => {
       fireEvent.press(screen.getByText('Add supplier'));
     });
+    // Adding, the sheet's button says "Add supplier" (the last of the tab button, title and button).
+    expect(screen.queryByText('Save changes')).toBeNull();
+    const addButton = () => screen.getAllByText('Add supplier').at(-1)!;
     await act(async () => {
-      fireEvent.press(screen.getByText('Save changes'));
+      fireEvent.press(addButton());
     });
     expect(screen.getByText('Give the supplier a name.')).toBeTruthy();
     expect(mockSave).not.toHaveBeenCalled();
@@ -82,7 +85,7 @@ describe('the Suppliers tab', () => {
       fireEvent.changeText(screen.getByLabelText('Delivery time in days'), '5');
     });
     await act(async () => {
-      fireEvent.press(screen.getByText('Save changes'));
+      fireEvent.press(addButton());
     });
     expect(mockSave).toHaveBeenCalledWith({
       kind: 'create',

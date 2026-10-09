@@ -1,6 +1,7 @@
 import { useState } from 'react';
 
 import { findJustCreatedBooking } from '@/lib/booking/find-just-created-booking';
+import { formatPhoneForDisplay } from '@/lib/phone/e164';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
@@ -681,7 +682,7 @@ export function ConfirmStep({
           <SummaryRow label="Time" value={formatSummaryTime(slot.start_time)} />
         ) : null}
         <SummaryRow label="Guest" value={fullName || '—'} />
-        {guest.phone.trim() ? <SummaryRow label="Phone" value={guest.phone.trim()} /> : null}
+        {guest.phone.trim() ? <SummaryRow label="Phone" value={formatPhoneForDisplay(guest.phone)} /> : null}
         {guest.email.trim() ? <SummaryRow label="Email" value={guest.email.trim()} /> : null}
         {comment ? <SummaryRow label="Comments" value={comment} /> : null}
 

@@ -14,6 +14,7 @@ import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { formatDayHeading } from '@/lib/dates/venue-dates';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
+import { formatPhoneForDisplay } from '@/lib/phone/e164';
 import { type ClassSession } from '@/lib/queries/useClassSchedule';
 import {
   useCancelClassInstance,
@@ -343,7 +344,7 @@ export function ClassRosterView({
             attendees.map((row) => {
               const deposit = formatDeposit(row, currency);
               const presence = formatCheckedIn(row.checked_in_at);
-              const contact = row.guest_phone ?? row.guest_email ?? null;
+              const contact = row.guest_phone ? formatPhoneForDisplay(row.guest_phone) : (row.guest_email ?? null);
               const isCancelled = row.status === 'Cancelled';
               const isNoShow = row.status === 'No-Show';
               const isCheckedIn = !!row.checked_in_at;

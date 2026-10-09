@@ -249,6 +249,7 @@ export const STOCK_SETUP_COPY = {
   'ss.addNamed.label': 'New name', // (added)
   'ss.supplier.details': 'Contact details', // (added) the supplier sheet's second group
   'ss.selected.none': 'Tap products to select them.', // (added) select mode with nothing chosen
+  'ss.notSet': 'Not set', // (added) a card value nobody has filled in yet
 } as const;
 
 export type StockSetupOwnId = keyof typeof STOCK_SETUP_COPY;

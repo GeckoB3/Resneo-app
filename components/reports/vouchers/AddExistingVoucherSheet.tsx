@@ -10,6 +10,7 @@ import { SearchBar } from '@/components/ui/SearchBar';
 import { Text } from '@/components/ui/Text';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { newPaymentAttemptId } from '@/lib/payments/attempt-id';
+import { formatPhoneForDisplay } from '@/lib/phone/e164';
 import { posErrorMessage } from '@/lib/pos/api';
 import { reportsCopy } from '@/lib/pos/reports-copy';
 import { parseMoneyInput } from '@/lib/pos/sale-math';
@@ -206,7 +207,7 @@ export function AddExistingVoucherSheet({
                 <PickRow
                   key={g.id}
                   title={name}
-                  detail={[g.phone, g.email].filter(Boolean).join(' · ') || null}
+                  detail={[formatPhoneForDisplay(g.phone), g.email].filter(Boolean).join(' · ') || null}
                   onPress={() => {
                     setLinked({ id: g.id, name });
                     setSearch('');

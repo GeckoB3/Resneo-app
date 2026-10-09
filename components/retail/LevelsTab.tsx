@@ -205,7 +205,11 @@ function LevelRow({
           <Figure label={t('stock.col.onHand')} value={String(row.on_hand)} strong />
           <Figure label={t('stock.col.reserved')} value={String(row.reserved)} />
           <Figure label={t('stock.col.available')} value={String(row.available)} />
-          <Figure label={t('stock.col.reorderAt')} value={row.reorder_level == null ? '' : String(row.reorder_level)} />
+          <Figure
+            label={t('stock.col.reorderAt')}
+            value={row.reorder_level == null ? t('ss.notSet') : String(row.reorder_level)}
+            muted={row.reorder_level == null}
+          />
         </View>
         <View style={styles.actions}>
           {canAdjust ? <Button label={t('stock.adjust')} size="sm" variant="secondary" onPress={onAdjust} /> : null}
@@ -216,13 +220,15 @@ function LevelRow({
   );
 }
 
-function Figure({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
+function Figure({ label, value, strong, muted }: { label: string; value: string; strong?: boolean; muted?: boolean }) {
   return (
     <View style={styles.figure}>
       <Text variant="caption" tone="muted">
         {label}
       </Text>
-      <Text variant={strong ? 'label' : 'bodySmall'}>{value}</Text>
+      <Text variant={strong ? 'label' : 'bodySmall'} tone={muted ? 'muted' : 'default'}>
+        {value}
+      </Text>
     </View>
   );
 }

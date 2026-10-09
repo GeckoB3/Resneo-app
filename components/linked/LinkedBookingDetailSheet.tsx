@@ -20,6 +20,7 @@ import { ApiError } from '@/lib/api/client';
 import { hapticSelect } from '@/lib/haptics';
 import { LinkedComplianceSection } from '@/components/linked/LinkedComplianceSection';
 import { linkedBookingLabel } from '@/lib/linked/linked-calendar-view';
+import { formatPhoneForDisplay } from '@/lib/phone/e164';
 import { pingLinkedBookingView, useUpdateLinkedBooking } from '@/lib/queries/useLinkedCalendar';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { useToast } from '@/providers/ToastProvider';
@@ -327,7 +328,7 @@ export function LinkedBookingDetailSheet({
                     <DetailRow
                       label="Phone"
                       isFirst
-                      value={<Text variant="bodySmall">{guestPhone}</Text>}
+                      value={<Text variant="bodySmall">{formatPhoneForDisplay(guestPhone)}</Text>}
                     />
                   ) : null}
                   {guestEmail ? (

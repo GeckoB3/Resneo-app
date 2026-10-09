@@ -27,6 +27,7 @@ import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
+import { formatPhoneForDisplay } from '@/lib/phone/e164';
 import { useMergeGuests } from '@/lib/queries/useContactsBulk';
 import { useGuests } from '@/lib/queries/useGuests';
 import { useGuestDetail } from '@/lib/queries/useGuestDetail';
@@ -371,7 +372,7 @@ function SearchResultRow({
 }) {
   const { colors } = useTheme();
   const name = guestName(item);
-  const sub = [item.email, item.phone].filter(Boolean).join(' · ') || 'No email or phone';
+  const sub = [item.email, formatPhoneForDisplay(item.phone)].filter(Boolean).join(' · ') || 'No email or phone';
 
   return (
     <Pressable
@@ -708,7 +709,7 @@ export function MergeContactDetailSheet({
                   Selected: {guestName(sourceGuest)}
                 </Text>
                 <Text variant="caption" tone="secondary">
-                  {sourceGuest.email ?? sourceGuest.phone ?? 'No contact info'}
+                  {sourceGuest.email ?? (sourceGuest.phone ? formatPhoneForDisplay(sourceGuest.phone) : 'No contact info')}
                 </Text>
               </View>
             ) : null}
@@ -788,8 +789,8 @@ export function MergeContactDetailSheet({
               label="Phone"
               targetLabel={targetLabel}
               sourceLabel={sourceLabel}
-              targetValue={displayVal(targetGuest.phone)}
-              sourceValue={displayVal(mergeFromGuest.phone)}
+              targetValue={displayVal(formatPhoneForDisplay(targetGuest.phone))}
+              sourceValue={displayVal(formatPhoneForDisplay(mergeFromGuest.phone))}
               picked={choices.phone}
               onChange={(v) => setChoices((c) => ({ ...c, phone: v }))}
             />
@@ -1042,7 +1043,7 @@ export function MergeContactDetailSheet({
                 <PreviewRow label="First name" value={displayVal(mergedProfile.first_name)} />
                 <PreviewRow label="Last name" value={displayVal(mergedProfile.last_name)} />
                 <PreviewRow label="Email" value={displayVal(mergedProfile.email)} />
-                <PreviewRow label="Phone" value={displayVal(mergedProfile.phone)} />
+                <PreviewRow label="Phone" value={displayVal(formatPhoneForDisplay(mergedProfile.phone))} />
                 <PreviewRow
                   label="Notes"
                   value={displayVal(mergedProfile.customer_profile_notes)}

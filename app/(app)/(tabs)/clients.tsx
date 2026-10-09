@@ -49,6 +49,7 @@ import { getWebUrl } from '@/lib/env';
 import { clientsScreenTitle } from '@/lib/booking/terminology';
 import { hiddenByIdentityScopeCopy } from '@/lib/guests/identity-scope';
 import { csvCellQuoted } from '@/lib/csv/csv-cell';
+import { formatPhoneForDisplay } from '@/lib/phone/e164';
 import { buildAndShareCsv } from '@/lib/reports/csv-export';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { useGuestCustomFields, useGuests } from '@/lib/queries/useGuests';
@@ -223,7 +224,7 @@ function GuestRowBase({
         </View>
         {guest.phone ? (
           <Text variant="caption" tone="secondary" numberOfLines={1}>
-            {guest.phone}
+            {formatPhoneForDisplay(guest.phone)}
           </Text>
         ) : guest.email ? (
           <Text variant="caption" tone="muted" numberOfLines={1}>

@@ -11,6 +11,7 @@ import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
+import { formatPhoneForDisplay } from '@/lib/phone/e164';
 import {
   useAddToHousehold,
   useGuestHousehold,
@@ -301,7 +302,7 @@ export function HouseholdSection({
             ) : (
               results.map((item) => {
                 const isSelected = selected?.id === item.id;
-                const sub = [item.email, item.phone].filter(Boolean).join(' · ') || 'No email or phone';
+                const sub = [item.email, formatPhoneForDisplay(item.phone)].filter(Boolean).join(' · ') || 'No email or phone';
                 return (
                   <Pressable
                     key={item.id}

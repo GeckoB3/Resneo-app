@@ -9,6 +9,7 @@ import { ApiError } from '@/lib/api/client';
 import { ACTION_COLORS } from '@/lib/booking/booking-action-colors';
 import { formatPence } from '@/lib/format';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
+import { formatPhoneForDisplay } from '@/lib/phone/e164';
 import {
   useEventAttendees,
   useToggleAttendeeArrived,
@@ -43,7 +44,7 @@ function canToggleArrived(status: string): boolean {
 }
 
 function contactLine(row: EventAttendee): string | null {
-  const parts = [row.guest_email, row.guest_phone].filter(Boolean);
+  const parts = [row.guest_email, formatPhoneForDisplay(row.guest_phone)].filter(Boolean);
   return parts.length > 0 ? parts.join(' · ') : null;
 }
 

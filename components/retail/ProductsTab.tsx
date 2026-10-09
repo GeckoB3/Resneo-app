@@ -1,5 +1,6 @@
 import { Image } from 'expo-image';
 import { type Href, useRouter } from 'expo-router';
+import { SymbolView } from 'expo-symbols';
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
@@ -422,7 +423,13 @@ function ProductRow({
           {product.main_photo_url ? (
             <Image source={{ uri: product.main_photo_url }} style={[styles.photo, { borderColor: colors.border }]} contentFit="cover" />
           ) : (
-            <View style={[styles.photo, { borderColor: colors.border, backgroundColor: colors.surface }]} />
+            <View style={[styles.photo, styles.photoEmpty, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+              <SymbolView
+                name={{ ios: 'shippingbox', android: 'inventory_2', web: 'inventory_2' }}
+                tintColor={colors.textMuted}
+                size={22}
+              />
+            </View>
           )}
           <View style={styles.flex}>
             <View style={posStyles.row}>
@@ -472,6 +479,7 @@ const styles = StyleSheet.create({
   },
   row: { flexDirection: 'row', gap: spacing.md, alignItems: 'flex-start' },
   photo: { width: 48, height: 48, borderRadius: radius.md, borderWidth: 1 },
+  photoEmpty: { alignItems: 'center', justifyContent: 'center' },
   bar: {
     position: 'absolute',
     left: 0,

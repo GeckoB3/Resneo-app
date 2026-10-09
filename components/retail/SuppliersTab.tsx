@@ -84,7 +84,7 @@ export function SuppliersTab({ canManage }: { canManage: boolean }) {
                 </View>
                 <AmountRow
                   label={t('sup.col.leadTime')}
-                  amount={s.lead_time_days == null ? '' : t('sup.leadTime.days', { count: s.lead_time_days })}
+                  amount={s.lead_time_days == null ? t('ss.notSet') : t('sup.leadTime.days', { count: s.lead_time_days })}
                   muted
                 />
                 <AmountRow label={t('sup.col.open')} amount={String(open.data?.[s.id] ?? 0)} muted />
@@ -210,7 +210,13 @@ function SupplierBody({
       title={supplier ? t('sup.edit.title') : t('sup.add.title')}
       footer={
         <View style={posStyles.buttons}>
-          <Button label={t('common.save')} loading={save.isPending && !archiving} disabled={save.isPending} onPress={() => void onSave()} fullWidth />
+          <Button
+            label={supplier ? t('common.save') : t('sup.add')}
+            loading={save.isPending && !archiving}
+            disabled={save.isPending}
+            onPress={() => void onSave()}
+            fullWidth
+          />
           {supplier && !archiving ? (
             <Button label={t('sup.archive')} variant="ghost" disabled={save.isPending} onPress={() => setArchiving(true)} fullWidth />
           ) : null}

@@ -231,9 +231,14 @@ function ReportCard({
   return (
     <Card>
       <View style={posStyles.stack}>
-        <Text variant="subheading">{title}</Text>
+        {/* The title on the left, "Export CSV" as a small button on the right. */}
+        <View style={styles.titleRow}>
+          <Text variant="subheading" style={styles.flex}>
+            {title}
+          </Text>
+          {exportPath && filename ? <ShareFileButton label={t('srep.export')} path={exportPath} filename={filename} /> : null}
+        </View>
         {right}
-        {exportPath && filename ? <ShareFileButton label={t('srep.export')} path={exportPath} filename={filename} variant="ghost" /> : null}
         {children}
       </View>
     </Card>
@@ -279,6 +284,7 @@ function Rows({ rows }: { rows: { title: string; cells: string[]; onPress?: () =
 const styles = StyleSheet.create({
   content: { padding: spacing.base, gap: spacing.md, paddingBottom: spacing['3xl'] },
   flex: { flex: 1 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   dates: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.lg },
   tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   tile: { flexGrow: 1, flexBasis: '45%' },

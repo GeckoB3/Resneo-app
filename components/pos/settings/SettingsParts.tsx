@@ -595,7 +595,14 @@ export function ReasonChips({
               }}
             />
           </View>
-          <Button label={addLabel} variant="secondary" size="sm" onPress={add} disabled={!text.trim()} />
+          <Button
+            label={t('set.reasons.addButton')}
+            accessibilityLabel={addLabel}
+            variant="secondary"
+            size="sm"
+            onPress={add}
+            disabled={!text.trim()}
+          />
         </View>
       ) : null}
       {localError || error ? (

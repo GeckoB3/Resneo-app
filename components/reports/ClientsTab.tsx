@@ -28,6 +28,7 @@ import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { formatGuestDisplayName } from '@/lib/guests/name';
 import { hapticTap, hapticWarning } from '@/lib/haptics';
+import { formatPhoneForDisplay } from '@/lib/phone/e164';
 import { buildAndShareCsv } from '@/lib/reports/csv-export';
 import { useGuestDetail } from '@/lib/queries/useGuestDetail';
 import { useGuests } from '@/lib/queries/useGuests';
@@ -118,7 +119,7 @@ function GuestRow({
         </View>
         {/* Email and phone, both shown as the web's columns do. */}
         <Text variant="caption" tone="muted" numberOfLines={1}>
-          {`${guest.email ?? '-'} · ${guest.phone ?? '-'}`}
+          {`${guest.email ?? '-'} · ${guest.phone ? formatPhoneForDisplay(guest.phone) : '-'}`}
         </Text>
         <View style={styles.guestMeta}>
           <Text variant="caption" tone="secondary">
@@ -376,7 +377,7 @@ function GuestDetail({
             ) : null}
             {guest.phone ? (
               <Text variant="bodySmall" tone="secondary">
-                {guest.phone}
+                {formatPhoneForDisplay(guest.phone)}
               </Text>
             ) : null}
           </View>
