@@ -5,6 +5,7 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-n
 import { BaselineMetricsCard } from '@/components/reports/BaselineMetricsCard';
 import { BookedRevenueSection } from '@/components/reports/BookedRevenueSection';
 import { NewBookingsSection } from '@/components/reports/NewBookingsSection';
+import { SalesSection, TakingsSection } from '@/components/reports/PosReportSections';
 import { BookingLogEmailCard } from '@/components/reports/BookingLogEmailCard';
 import { ClientsTab } from '@/components/reports/ClientsTab';
 import { DataExportCard } from '@/components/reports/DataExportCard';
@@ -22,6 +23,7 @@ import { DatePickerField } from '@/components/ui/DatePickerField';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Screen } from '@/components/ui/Screen';
+import { Chip } from '@/components/ui/Chip';
 import { Segmented } from '@/components/ui/Segmented';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { StatTile } from '@/components/ui/StatTile';
@@ -32,6 +34,7 @@ import { addDaysToDateStr, formatReportRangeLabel } from '@/lib/dates/venue-date
 import { formatPence } from '@/lib/format';
 import { hapticTap } from '@/lib/haptics';
 import { calendarDateInTimeZone } from '@/lib/queries/useBookingsList';
+import { usePosReportAccess } from '@/lib/queries/usePos';
 import { useReports } from '@/lib/queries/useReports';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { aggregateSourcesByLabel } from '@/lib/reports/csv-export';
@@ -60,7 +63,7 @@ import { useTheme } from '@/theme/useTheme';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type RangeKey = '7d' | '30d' | '90d' | 'custom';
-type MainTab = 'overview' | 'new-bookings' | 'revenue' | 'clients';
+type MainTab = 'overview' | 'new-bookings' | 'revenue' | 'clients' | 'takings' | 'sales';
 
 const RANGE_DAYS: Record<Exclude<RangeKey, 'custom'>, number> = {
   '7d': 7,
@@ -105,6 +108,13 @@ export default function ReportsScreen() {
   );
 
   const query = useReports(appliedFrom, appliedTo, isAdmin);
+  /**
+   * Takings and Sales (POS plan P7-4). Asked only at venues with `pos_enabled` (the hook is gated),
+   * so every other venue makes no new request and keeps the four-option control below unchanged.
+   */
+  const posAccess = usePosReportAccess({ enabled: isAdmin });
+  const showPosTabs = posAccess.data?.visible === true && posAccess.data?.can_view === true;
+  const posTab = mainTab === 'takings' || mainTab === 'sales';
 
   // The To picker takes a Date for its lower bound. Build it from the
   // YYYY-MM-DD string at local noon (avoids any tz day-boundary slip), memoised
@@ -308,7 +318,7 @@ export default function ReportsScreen() {
       <View style={[styles.toolbar, { borderBottomColor: colors.border }]}>
         {/* Preset chips. The Revenue and New bookings tabs carry their own
             ranges (web parity: the date-range card is hidden on both). */}
-        {mainTab !== 'revenue' && mainTab !== 'new-bookings' ? (
+        {mainTab !== 'revenue' && mainTab !== 'new-bookings' && !posTab ? (
         <View style={styles.presetRow}>
           {(['7d', '30d', '90d'] as const).map((key) => (
             <Pressable
@@ -352,7 +362,7 @@ export default function ReportsScreen() {
 
         {/* Custom date inputs (shown when custom is selected) — native OS pickers
             so the range works on iOS and Android alike. */}
-        {mainTab !== 'revenue' && mainTab !== 'new-bookings' && rangeKey === 'custom' ? (
+        {mainTab !== 'revenue' && mainTab !== 'new-bookings' && !posTab && rangeKey === 'custom' ? (
           <View style={styles.customRange}>
             <View style={styles.dateField}>
               <Text variant="caption" tone="muted">
@@ -388,21 +398,50 @@ export default function ReportsScreen() {
           </View>
         ) : null}
 
-        {/* Overview / Revenue / Clients sub-tabs (web #191 added Revenue) */}
-        <Segmented
-          options={[
-            { value: 'overview', label: 'Overview' },
-            { value: 'new-bookings', label: 'New bookings' },
-            { value: 'revenue', label: 'Revenue' },
-            { value: 'clients', label: `${clientWord}s` },
-          ]}
-          value={mainTab}
-          onChange={setMainTab}
-        />
+        {/* Overview / Revenue / Clients sub-tabs (web #191 added Revenue). Where Takings and Sales
+            exist (POS venues, P7-4) the control becomes a scrollable chip row (`app.reports.chips`),
+            and Revenue reads "Booked value" as on the web (§4.18). Everywhere else it is the
+            four-option control, unchanged. */}
+        {showPosTabs ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            accessibilityLabel="Report tabs"
+            contentContainerStyle={styles.tabChips}>
+            {(
+              [
+                { value: 'overview', label: 'Overview' },
+                { value: 'takings', label: 'Takings' },
+                { value: 'sales', label: 'Sales' },
+                { value: 'new-bookings', label: 'New bookings' },
+                { value: 'revenue', label: 'Booked value' },
+                { value: 'clients', label: `${clientWord}s` },
+              ] as { value: MainTab; label: string }[]
+            ).map((o) => (
+              <Chip key={o.value} label={o.label} selected={mainTab === o.value} onPress={() => setMainTab(o.value)} />
+            ))}
+          </ScrollView>
+        ) : (
+          <Segmented
+            options={[
+              { value: 'overview', label: 'Overview' },
+              { value: 'new-bookings', label: 'New bookings' },
+              { value: 'revenue', label: 'Revenue' },
+              { value: 'clients', label: `${clientWord}s` },
+            ]}
+            value={posTab ? 'overview' : mainTab}
+            onChange={setMainTab}
+          />
+        )}
       </View>
 
       {/* ── Content ──────────────────────────────────────────────── */}
-      {mainTab === 'new-bookings' ? (
+      {posTab && showPosTabs ? (
+        <ScrollView contentContainerStyle={styles.content}>
+          {mainTab === 'takings' ? <TakingsSection /> : <SalesSection />}
+          <View style={styles.spacer} />
+        </ScrollView>
+      ) : mainTab === 'new-bookings' ? (
         // New bookings has its own query and range (web 2026-09-18), like Revenue.
         <ScrollView contentContainerStyle={styles.content}>
           <NewBookingsSection bookingWord={bookingWord} today={today} enabled={isAdmin} />
@@ -1034,6 +1073,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     borderBottomWidth: 1,
   },
+  tabChips: { flexDirection: 'row', gap: spacing.sm, paddingVertical: spacing.xs },
   presetRow: {
     flexDirection: 'row',
     gap: spacing.sm,

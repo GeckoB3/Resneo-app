@@ -43,6 +43,20 @@ const mockReports = {
 };
 jest.mock('@/lib/queries/useReports', () => ({ useReports: () => mockReports }));
 
+// Takings and Sales (POS P7-4): the access answer is what decides the tab control. The real hook is
+// gated on the venue's pos_enabled; here `mockPosAccess` stands for its answer (undefined = not asked).
+let mockPosAccess: { visible: boolean; can_view: boolean } | undefined;
+jest.mock('@/lib/queries/usePos', () => ({
+  usePosReportAccess: () => ({ data: mockPosAccess }),
+}));
+jest.mock('@/components/reports/PosReportSections', () => {
+  const { Text } = jest.requireActual<typeof import('react-native')>('react-native');
+  return {
+    TakingsSection: () => <Text>takings-section</Text>,
+    SalesSection: () => <Text>sales-section</Text>,
+  };
+});
+
 jest.mock('@/lib/reports/csv-export', () => ({
   buildAndShareCsv: jest.fn(async () => ({ ok: true })),
   aggregateSourcesByLabel: (bySource: Record<string, number>) =>
@@ -163,6 +177,7 @@ beforeEach(() => {
   mockVenue.bookingModel = 'unified_scheduling';
   mockVenue.terminology = { client: 'Client', booking: 'Appointment', staff: 'Practitioner' };
   mockReports.data = reportsData();
+  mockPosAccess = undefined;
 });
 
 describe('Reports overview range', () => {
@@ -355,5 +370,37 @@ describe('Reports clients tab', () => {
         'Walk-in visits without contact details are counted but not shown in the client list below.',
       ),
     ).toBeTruthy();
+  });
+});
+
+describe('Reports tabs for Checkout (POS app step 1)', () => {
+  it("keeps the four-option control, with today's labels, when POS is off", async () => {
+    await render(<ReportsScreen />);
+    expect(screen.getByText('Overview')).toBeTruthy();
+    expect(screen.getByText('Revenue')).toBeTruthy();
+    expect(screen.queryByText('Takings')).toBeNull();
+    expect(screen.queryByText('Sales')).toBeNull();
+    expect(screen.queryByLabelText('Report tabs')).toBeNull();
+  });
+
+  it('keeps it too when the venue has the tabs but this login may not read them', async () => {
+    mockPosAccess = { visible: true, can_view: false };
+    await render(<ReportsScreen />);
+    expect(screen.queryByText('Takings')).toBeNull();
+  });
+
+  it('shows Takings and Sales as a scrollable chip row, with Revenue renamed Booked value', async () => {
+    mockPosAccess = { visible: true, can_view: true };
+    await render(<ReportsScreen />);
+    expect(screen.getByLabelText('Report tabs')).toBeTruthy();
+    expect(screen.getByText('Booked value')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByText('Takings'));
+    });
+    expect(screen.getByText('takings-section')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByText('Sales'));
+    });
+    expect(screen.getByText('sales-section')).toBeTruthy();
   });
 });
