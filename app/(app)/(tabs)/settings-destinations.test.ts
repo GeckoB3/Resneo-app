@@ -8,7 +8,7 @@
  * Covers the web-parity gating decisions:
  *  - model links (Classes/Events/Resources) are model-driven, NOT admin-only;
  *  - the Tables row stays a web-only link-out;
- *  - "Import contacts" is an admin-only link-out to /dashboard/import;
+ *  - "Import contacts" is admin-only and opens the in-app import wizard (/import);
  *  - Compliance = appointment tier + records flag, shown to staff AND admin;
  *  - Waitlist / Calendar-availability follow model eligibility, not role.
  */
@@ -83,15 +83,16 @@ describe('buildDestinations — model-link gating (web parity)', () => {
   });
 });
 
-describe('buildDestinations — Import contacts (admin-only link-out)', () => {
-  it('is present for admins and opens /dashboard/import via web kind', () => {
+describe('buildDestinations — Import contacts (admin-only, in the app)', () => {
+  it('is present for admins and opens the in-app import wizard', () => {
     const dests = buildDestinations(ctx({ isAdmin: true }));
     const importRow = dests.find((d) => d.id === 'import-contacts');
     expect(importRow).toBeTruthy();
-    expect(importRow?.kind).toBe('web');
-    expect(importRow?.external).toBe(true);
-    expect(importRow?.target).toBe('/dashboard/import');
+    expect(importRow?.kind).toBe('route');
+    expect(importRow?.external).toBeFalsy();
+    expect(importRow?.target).toBe('/import');
     expect(importRow?.group).toBe('people');
+    expect(importRow?.hint).not.toMatch(/web/i);
   });
 
   it('is hidden for non-admin staff', () => {
@@ -176,11 +177,15 @@ describe('buildDestinations — Waitlist & Calendar-availability eligibility', (
 });
 
 describe('buildDestinations — admin-only manage rows still gated', () => {
-  it('hides Team / Plan / Communications etc. from non-admin staff', () => {
+  it('hides Team / Communications etc. from non-admin staff', () => {
     const list = ids(ctx({ isAdmin: false }));
-    for (const id of ['team', 'plan', 'communications', 'booking-settings', 'refer-earn']) {
+    for (const id of ['team', 'communications', 'booking-settings', 'refer-earn']) {
       expect(list).not.toContain(id);
     }
+  });
+
+  it('shows Plan & payments to staff too, read only, as the web shows them the Plan tab', () => {
+    expect(ids(ctx({ isAdmin: false }))).toContain('plan');
   });
 
   it('preserves the Refer & Earn row for admins (Wave 2b — must not regress)', () => {

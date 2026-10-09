@@ -236,7 +236,7 @@ export function buildDestinations(ctx: DestinationsContext): Destination[] {
   if (isAdmin) {
     list.push({ id: 'team', label: 'Team', hint: 'Staff logins & roles', icon: { ios: 'person.2.fill', android: 'group', web: 'group' }, tile: TILE.emerald, group: 'people', kind: 'route', target: '/manage/team', keywords: ['settings', 'staff', 'roles', 'permissions'] });
     list.push({ id: 'communications', label: 'Communications', hint: 'Confirmations, reminders & alerts', icon: { ios: 'envelope.fill', android: 'mail', web: 'mail' }, tile: TILE.amber, group: 'people', kind: 'route', target: '/manage/communications', keywords: ['settings', 'SMS', 'email', 'templates', 'reminders', 'notifications'] });
-    list.push({ id: 'import-contacts', label: 'Import contacts', hint: 'Upload a CSV of clients on the web', icon: { ios: 'square.and.arrow.down', android: 'upload_file', web: 'upload_file' }, tile: TILE.sky, group: 'people', kind: 'web', target: '/dashboard/import', external: true, keywords: ['csv', 'upload', 'bulk', 'clients', 'guests', 'bookings', 'data'] });
+    list.push({ id: 'import-contacts', label: 'Import contacts', hint: 'Bring in clients and bookings from a CSV or Excel file', icon: { ios: 'square.and.arrow.down', android: 'upload_file', web: 'upload_file' }, tile: TILE.sky, group: 'people', kind: 'route', target: '/import', keywords: ['csv', 'excel', 'upload', 'bulk', 'clients', 'guests', 'bookings', 'data', 'import', 'undo'] });
   }
 
   // ── Booking types — only the models this venue has enabled. Model-driven, NOT
@@ -246,9 +246,10 @@ export function buildDestinations(ctx: DestinationsContext): Destination[] {
     list.push({ id: `model-${row.model}`, label: row.label, hint: row.hint, icon: row.icon, tile: row.tile, group: 'bookingTypes', kind: row.appRoute ? 'route' : 'web', target: row.appRoute ?? row.webPath, external: !row.appRoute });
   }
 
-  // ── Billing & growth. ──────────────────────────────────────────────────────
+  // ── Billing & growth. Plan & payments is for everyone, as the web shows staff the Plan and
+  //    Payments tabs (read only for them); Refer & Earn stays admin-only.
+  list.push({ id: 'plan', label: 'Plan & payments', hint: 'Subscription tier & Stripe', icon: { ios: 'creditcard.fill', android: 'credit_card', web: 'credit_card' }, tile: TILE.violet, group: 'growth', kind: 'route', target: '/manage/plan', keywords: ['settings', 'payments', 'stripe', 'billing', 'subscription', 'invoice'] });
   if (isAdmin) {
-    list.push({ id: 'plan', label: 'Plan & payments', hint: 'Subscription tier & Stripe', icon: { ios: 'creditcard.fill', android: 'credit_card', web: 'credit_card' }, tile: TILE.violet, group: 'growth', kind: 'route', target: '/manage/plan', keywords: ['settings', 'payments', 'stripe', 'billing', 'subscription', 'invoice'] });
     list.push({ id: 'refer-earn', label: 'Refer & Earn', hint: 'Share your link & track rewards', icon: { ios: 'gift.fill', android: 'card_giftcard', web: 'card_giftcard' }, tile: TILE.rose, group: 'growth', kind: 'route', target: '/manage/refer-earn', keywords: ['referral', 'rewards', 'credit', 'invite'] });
   }
 
