@@ -17,6 +17,7 @@ import {
   writeError,
   type Send,
 } from '@/components/pos/SaleSheets';
+import { IssuedVouchers, VoucherLineSheet, voucherLineDetails } from '@/components/pos/VoucherSheets';
 import { AmountRow, money, Notice, posStyles, usePosT } from '@/components/pos/parts';
 import { saleHref, useOpenCheckout } from '@/components/pos/useOpenCheckout';
 import { Badge } from '@/components/ui/Badge';
@@ -40,6 +41,7 @@ import {
   saleStatusCopyId,
   totalsRows,
 } from '@/lib/pos/sale-math';
+import { isVoucherLine } from '@/lib/pos/voucher-math';
 import { SaleStaleError, usePosBootstrap, usePosEnabled, usePosSale, useSaleWrite } from '@/lib/queries/usePos';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { useToast } from '@/providers/ToastProvider';
@@ -185,6 +187,7 @@ function SaleBody({
   const refundable = maxRefundablePence(sale.payments) > 0 || sale.payments.some((p) => p.refundable_tip_pence > 0);
   const vat = bootstrap.tax_settings?.vat_registered === true;
   const rows = useMemo(() => totalsRows(sale, { vatRegistered: vat }), [sale, vat]);
+  const timeZone = bootstrap.venue?.timezone ?? 'Europe/London';
   const cardAvailable = cardAppAvailable({
     bootstrap,
     terminalAvailable: isTerminalSdkAvailable(),
@@ -311,7 +314,11 @@ function SaleBody({
                 <LineRow
                   key={l.id}
                   line={l}
-                  onPress={linesEditable || can('edit_credit') ? () => setLine(l) : undefined}
+                  timeZone={timeZone}
+                  onPress={
+                    // A gift voucher line opens its sell form while it can change, else what it says.
+                    isVoucherLine(l) || linesEditable || can('edit_credit') ? () => setLine(l) : undefined
+                  }
                 />
               ))
             )}
@@ -443,6 +450,7 @@ function SaleBody({
                   {t('done.tip', { amount: money(sale.tip_pence), allocation: sale.tips.map((s) => s.name).join(', ') })}
                 </Text>
               ) : null}
+              <IssuedVouchers sale={sale} timeZone={timeZone} canPdf={can('create_sale') || can('manage_vouchers')} />
               <Text variant="caption" tone="muted">
                 {receiptNote ?? t('app.receipt.notSent.pos')}
               </Text>
@@ -575,8 +583,19 @@ function SaleBody({
         }}
       />
       <TipSplitSheet visible={sheet === 'tips'} onClose={closeSheet} sale={sale} send={send} />
+      {line && isVoucherLine(line) ? (
+        <VoucherLineSheet
+          key={line.id}
+          line={line}
+          sale={sale}
+          send={send}
+          editable={linesEditable}
+          timeZone={timeZone}
+          onClose={() => setLine(null)}
+        />
+      ) : null}
       <LineEditorSheet
-        line={line}
+        line={line && !isVoucherLine(line) ? line : null}
         onClose={() => setLine(null)}
         sale={sale}
         bootstrap={bootstrap}
@@ -587,19 +606,22 @@ function SaleBody({
   );
 }
 
-function LineRow({ line, onPress }: { line: PosSaleLine; onPress?: () => void }) {
+function LineRow({ line, timeZone, onPress }: { line: PosSaleLine; timeZone: string; onPress?: () => void }) {
   const t = usePosT();
   const changed = line.unit_price_pence !== line.list_unit_price_pence && line.list_unit_price_pence > 0;
   const who = line.performer?.name ?? line.seller?.name;
+  const voucher = isVoucherLine(line);
   const content = (
     <View style={styles.line}>
       <View style={styles.flex}>
         <Text variant="bodyMedium">
           {line.quantity > 1 ? `${t('line.qtyPrefix', { count: line.quantity })} ` : ''}
-          {line.name}
+          {voucher ? t('line.voucher', { amount: money(line.unit_price_pence) }) : line.name}
         </Text>
         <Text variant="caption" tone="muted">
-          {[line.option_name, who, line.booking ? line.booking.booking_time : null].filter(Boolean).join(' · ')}
+          {voucher
+            ? voucherLineDetails(line, t, timeZone).join(' · ')
+            : [line.option_name, who, line.booking ? line.booking.booking_time : null].filter(Boolean).join(' · ')}
         </Text>
         <View style={styles.badges}>
           {line.line_type === 'custom' ? <Badge label={t('line.chip.custom')} /> : null}

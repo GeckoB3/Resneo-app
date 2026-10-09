@@ -1,14 +1,24 @@
 import { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
-import { ChoiceChips, ErrorLine, money, PosSheet, posStyles, usePosT } from '@/components/pos/parts';
+import {
+  ChoiceChips,
+  ErrorLine,
+  money,
+  PickRow,
+  PosSheet,
+  posStyles,
+  usePosT,
+  writeError,
+  type Send,
+} from '@/components/pos/parts';
+import { VoucherSellForm, VoucherTiles } from '@/components/pos/VoucherSheets';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { SearchBar } from '@/components/ui/SearchBar';
 import { Segmented } from '@/components/ui/Segmented';
 import { Text } from '@/components/ui/Text';
 import { posErrorMessage } from '@/lib/pos/api';
-import type { PosT } from '@/lib/pos/copy';
 import { canPos } from '@/lib/pos/pos-enabled';
 import {
   discountBasePence,
@@ -18,9 +28,9 @@ import {
   penceToInput,
 } from '@/lib/pos/sale-math';
 import { useGuests } from '@/lib/queries/useGuests';
-import { usePosCatalogue, usePosSaleList, SaleStaleError, type SaleWriteInput, type SaleWriteResult } from '@/lib/queries/usePos';
-import { radius, spacing } from '@/theme/index';
-import { useTheme } from '@/theme/useTheme';
+import { creditLocked } from '@/lib/pos/voucher-math';
+import { usePosCatalogue, usePosSaleList, useVoucherSettings, type SaleWriteInput } from '@/lib/queries/usePos';
+import { spacing } from '@/theme/index';
 import type { PosBootstrap, PosCatalogueService, PosSale, PosSaleLine } from '@/types/pos';
 
 /**
@@ -30,52 +40,11 @@ import type { PosBootstrap, PosCatalogueService, PosSale, PosSaleLine } from '@/
  * the sale's `version`; a stale write shows `stale.dialog` and leaves the fresh sale on screen.
  */
 
-export type Send = (input: SaleWriteInput) => Promise<SaleWriteResult>;
-
-export function writeError(error: unknown, t: PosT): string {
-  if (error instanceof SaleStaleError) return t('stale.dialog');
-  return posErrorMessage(error, t('common.saveError'));
-}
-
-/** A tappable row inside a sheet. */
-function PickRow({
-  title,
-  detail,
-  selected,
-  onPress,
-}: {
-  title: string;
-  detail?: string | null;
-  selected?: boolean;
-  onPress: () => void;
-}) {
-  const { colors } = useTheme();
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityState={{ selected: Boolean(selected) }}
-      style={({ pressed }) => [
-        styles.pickRow,
-        {
-          borderColor: selected ? colors.brand : colors.border,
-          backgroundColor: selected ? colors.brandSubtle : colors.surfaceRaised,
-          opacity: pressed ? 0.7 : 1,
-        },
-      ]}>
-      <Text variant="bodyMedium">{title}</Text>
-      {detail ? (
-        <Text variant="caption" tone="muted">
-          {detail}
-        </Text>
-      ) : null}
-    </Pressable>
-  );
-}
+export { writeError, type Send } from '@/components/pos/parts';
 
 // ─── Add items ──────────────────────────────────────────────────────────────
 
-type AddTab = 'services' | 'custom' | 'fee';
+type AddTab = 'services' | 'custom' | 'fee' | 'vouchers';
 
 function AddItemsSheetBody({
   visible,
@@ -95,6 +64,15 @@ function AddItemsSheetBody({
   const t = usePosT();
   const catalogue = usePosCatalogue({ enabled: visible });
   const canCustom = canPos(bootstrap, 'custom_line');
+  // Gift vouchers (Pass V, §20.2): while the voucher switch is on, for logins that can start a sale
+  // and take its payment, once the venue has set vouchers up on the web.
+  const canSellVouchers =
+    bootstrap.vouchers?.selling === true && canPos(bootstrap, 'create_sale') && canPos(bootstrap, 'take_payment');
+  const voucherSettingsQ = useVoucherSettings({ enabled: visible && canSellVouchers });
+  const voucherSettings =
+    canSellVouchers && voucherSettingsQ.data?.settings.set_up ? voucherSettingsQ.data.settings : null;
+  const timeZone = bootstrap.venue?.timezone ?? 'Europe/London';
+  const [voucherPick, setVoucherPick] = useState<{ presetPence: number | null } | null>(null);
   const [tab, setTab] = useState<AddTab>('services');
   const [query, setQuery] = useState('');
   const [service, setService] = useState<PosCatalogueService | null>(null);
@@ -145,13 +123,27 @@ function AddItemsSheetBody({
           { value: 'fee' as const, label: t('add.fee') },
         ]
       : []),
+    ...(voucherSettings ? [{ value: 'vouchers' as const, label: t('add.tab.vouchers') }] : []),
   ];
   const pricePence = parseMoneyInput(price);
   const feeName = feeKind === 'lateCancel' ? t('fee.lateCancel') : feeKind === 'noShow' ? t('fee.noShow') : name.trim();
 
   return (
-    <PosSheet visible={visible} onClose={onClose} title={service ? t('walkin.title') : t('add.open')}>
-      {service ? (
+    <PosSheet
+      visible={visible}
+      onClose={onClose}
+      title={service ? t('walkin.title') : voucherPick && voucherSettings ? t('vsell.title') : t('add.open')}>
+      {voucherPick && voucherSettings ? (
+        <VoucherSellForm
+          settings={voucherSettings}
+          presetPence={voucherPick.presetPence}
+          sale={sale}
+          send={send}
+          timeZone={timeZone}
+          onDone={onClose}
+          onBack={() => setVoucherPick(null)}
+        />
+      ) : service ? (
         <View style={posStyles.stack}>
           <Text variant="label">{service.name}</Text>
           <Text variant="bodySmall" tone="muted">
@@ -207,7 +199,9 @@ function AddItemsSheetBody({
         </View>
       ) : (
         <View style={posStyles.stack}>
-          {tabs.length > 1 ? <Segmented options={tabs} value={tab} onChange={setTab} /> : null}
+          {tabs.length > 1 ? (
+            <Segmented options={tabs} value={tab} onChange={setTab} wrapLabels={tabs.length > 3} />
+          ) : null}
           {tab === 'services' ? (
             <>
               <SearchBar value={query} onChangeText={setQuery} placeholder={t('add.search.placeholder')} onClear={() => setQuery('')} />
@@ -234,6 +228,8 @@ function AddItemsSheetBody({
                 ))
               )}
             </>
+          ) : tab === 'vouchers' && voucherSettings ? (
+            <VoucherTiles settings={voucherSettings} onPick={(presetPence) => setVoucherPick({ presetPence })} />
           ) : tab === 'custom' ? (
             <>
               <Input label={t('custom.name')} value={name} onChangeText={setName} maxLength={120} />
@@ -721,6 +717,14 @@ function ClientSheetBody({
   }
 
   const hasBookings = sale.lines.some((l) => l.booking_id);
+  // Pass V (§20.4): while account credit is used on the sale, the client stays.
+  if (sale.guest && creditLocked(sale)) {
+    return (
+      <PosSheet visible={visible} onClose={onClose} title={t('client.change')}>
+        <Text variant="bodySmall">{t('cpay.clientLocked')}</Text>
+      </PosSheet>
+    );
+  }
 
   return (
     <PosSheet visible={visible} onClose={onClose} title={sale.guest ? t('client.change') : t('client.title')}>
@@ -962,7 +966,6 @@ export function CombineSheet({
 }
 
 const styles = StyleSheet.create({
-  pickRow: { borderWidth: 1, borderRadius: radius.md, padding: spacing.md, gap: spacing.xxs },
   chipWrap: { gap: spacing.sm },
 });
 

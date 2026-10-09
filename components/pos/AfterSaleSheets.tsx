@@ -24,17 +24,46 @@ import {
   spreadRefund,
   type RefundSlice,
 } from '@/lib/pos/sale-math';
-import type { PosBootstrap, PosSale } from '@/types/pos';
+import {
+  isStoredValueMethod,
+  isVoucherLine,
+  paymentVoucherGone,
+  storedValueRefundNote,
+  voucherLineRefundState,
+} from '@/lib/pos/voucher-math';
+import type { PosBootstrap, PosPayment, PosSale } from '@/types/pos';
 
 /**
  * The money after a sale in the app (UX spec §3.20 to §3.22, §13.3): the refund builder (items or
  * an amount, cards first, back to the original method; a different method only for admins, D44),
  * "Refund and cancel", sending the receipt by email or text, and changing a tip's split.
+ *
+ * Pass V (§20.5): a part paid by gift voucher goes back to that voucher, or to the client's
+ * account credit once the voucher has run out (which needs a client on the sale); a part paid by
+ * credit goes back to credit. Neither ever goes anywhere else, whoever is signed in. An admin may
+ * also send money to the client's account credit. A voucher line refunds only what is left on the
+ * voucher, and once part of it is used, only an admin can refund it.
  */
 
 const DEFAULT_REFUND_REASONS = ['Not happy with the service', 'Product returned', 'Charged by mistake', 'Goodwill'];
 
-type Destination = 'original' | 'cash' | 'external';
+type Destination = 'original' | 'cash' | 'external' | 'account_credit';
+
+/** Where one payment's part goes, in words for the summary ("Refund £10.00 to cash"). */
+function destinationWords(
+  p: PosPayment,
+  dest: Destination,
+  ctx: { t: ReturnType<typeof usePosT>; typeName: string | null },
+): string {
+  const { t } = ctx;
+  if (isStoredValueMethod(p.method)) {
+    return p.method === 'gift_card' && paymentVoucherGone(p) ? t('refund.dest.credit').toLowerCase() : paymentMethodName(p);
+  }
+  if (dest === 'cash') return t('refund.dest.cash').toLowerCase();
+  if (dest === 'account_credit') return t('refund.dest.credit').toLowerCase();
+  if (dest === 'external') return ctx.typeName ?? t('refund.dest.other').toLowerCase();
+  return paymentMethodName(p);
+}
 
 function RefundSheetBody({
   visible,
@@ -84,16 +113,24 @@ function RefundSheetBody({
   const tipIds = new Set(withTip ? payments.filter((p) => p.refundable_tip_pence > 0).map((p) => p.id) : []);
   const slices: RefundSlice[] = cancelSale ? refundEverything(sale.payments) : spreadRefund(sale.payments, goods, tipIds).slices;
   const total = slicesTotal(slices);
-  const destinationLabel =
-    destination === 'cash'
-      ? t('refund.dest.cash')
-      : destination === 'external'
-        ? (bootstrap.payment_types.find((p) => p.id === typeId)?.name ?? t('refund.dest.other'))
-        : slices.length === 1
-          ? t('refund.dest.original', { method: paymentMethodName(sale.payments.find((p) => p.id === slices[0]!.payment_id)!) })
-          : t('refund.dest.original', { method: 'the original payments' });
+  const typeName = bootstrap.payment_types.find((p) => p.id === typeId)?.name ?? null;
+  const paymentOf = (id: string) => sale.payments.find((p) => p.id === id)!;
+  // A voucher or credit payment always goes back where it came from; the choice is for money.
+  const destFor = (s: RefundSlice): Destination => (isStoredValueMethod(s.method) ? 'original' : destination);
+  const destinationLabel = [
+    ...new Set(slices.map((s) => destinationWords(paymentOf(s.payment_id), destFor(s), { t, typeName }))),
+  ].join(', ');
+  const hasMoneySlice = payments.some((p) => !isStoredValueMethod(p.method));
+  const storedNotes = slices
+    .filter((s) => isStoredValueMethod(s.method))
+    .map((s) => ({
+      slice: s,
+      payment: paymentOf(s.payment_id),
+      info: storedValueRefundNote(paymentOf(s.payment_id), Boolean(sale.guest)),
+    }));
+  const blocked = storedNotes.some((n) => n.info?.blocked);
 
-  async function submit(dest: Destination, payTypeId: string | null) {
+  async function submit(target: Destination, payTypeId: string | null) {
     setBusy(true);
     setError(null);
     try {
@@ -106,27 +143,31 @@ function RefundSheetBody({
           ...(by === 'items' && !cancelSale
             ? { lines: Object.entries(chosen).filter(([, q]) => q > 0).map(([line_id, quantity]) => ({ line_id, quantity })) }
             : {}),
-          destinations: slices.map((s) => ({
-            payment_id: s.payment_id,
-            amount_pence: s.amount_pence,
-            ...(s.tip_pence > 0 ? { tip_pence: s.tip_pence } : {}),
-            destination: dest,
-            ...(dest === 'external' && payTypeId ? { payment_type_id: payTypeId } : {}),
-          })),
+          destinations: slices.map((s) => {
+            const dest = isStoredValueMethod(s.method) ? 'original' : target;
+            return {
+              payment_id: s.payment_id,
+              amount_pence: s.amount_pence,
+              ...(s.tip_pence > 0 ? { tip_pence: s.tip_pence } : {}),
+              destination: dest,
+              ...(dest === 'external' && payTypeId ? { payment_type_id: payTypeId } : {}),
+            };
+          }),
           reason,
           ...(note.trim() ? { note: note.trim() } : {}),
           ...(cancelSale ? { cancel: true } : {}),
         },
       });
       requestId.current = newPaymentAttemptId();
-      const card = dest === 'original' && slices.some((s) => isCardMethod(s.method));
+      const card = target === 'original' && slices.some((s) => isCardMethod(s.method));
       const pendingCard = (res.refunds ?? []).some((r) => r.status === 'pending');
+      const allMoney = slices.every((s) => !isStoredValueMethod(s.method));
       onRefunded(
         cancelSale && pendingCard
           ? t('rv.pending')
           : card
             ? t('refund.sentCard', { clientName })
-            : dest === 'cash' || (dest === 'original' && slices.every((s) => s.method === 'cash'))
+            : allMoney && (target === 'cash' || (target === 'original' && slices.every((s) => s.method === 'cash')))
               ? t('refund.doneCash', { clientName, amount: money(total) })
               : t('refund.doneOther', { amount: money(total), typeName: destinationLabel }),
       );
@@ -176,23 +217,44 @@ function RefundSheetBody({
                 helper={`Up to ${money(maxGoods)}`}
               />
             ) : (
-              lines.map((r) => (
-                <View key={r.line.id} style={posStyles.stack}>
-                  <Stepper
-                    label={`${r.line.name} (${money(r.remainingPence)})`}
-                    value={String(chosen[r.line.id] ?? 0)}
-                    onDecrement={() => setChosen((c) => ({ ...c, [r.line.id]: Math.max(0, (c[r.line.id] ?? 0) - 1) }))}
-                    onIncrement={() =>
-                      setChosen((c) => ({ ...c, [r.line.id]: Math.min(r.remainingQty, (c[r.line.id] ?? 0) + 1) }))
-                    }
-                  />
-                  {r.line.booking_id ? (
-                    <Text variant="caption" tone="muted">
-                      {t('refund.bookingLine')}
-                    </Text>
-                  ) : null}
-                </View>
-              ))
+              lines.map((r) => {
+                const voucherState = isVoucherLine(r.line)
+                  ? voucherLineRefundState(r.line.voucher, r.line.unit_price_pence, isAdmin)
+                  : null;
+                const stuck = voucherState?.state === 'usedUp' || voucherState?.state === 'adminOnly';
+                const name = isVoucherLine(r.line) ? t('line.voucher', { amount: money(r.line.unit_price_pence) }) : r.line.name;
+                return (
+                  <View key={r.line.id} style={posStyles.stack}>
+                    <Stepper
+                      label={`${name} (${money(r.remainingPence)})`}
+                      value={String(chosen[r.line.id] ?? 0)}
+                      onDecrement={() => setChosen((c) => ({ ...c, [r.line.id]: Math.max(0, (c[r.line.id] ?? 0) - 1) }))}
+                      onIncrement={() => {
+                        if (stuck) return;
+                        setChosen((c) => ({ ...c, [r.line.id]: Math.min(r.remainingQty, (c[r.line.id] ?? 0) + 1) }));
+                      }}
+                    />
+                    {r.line.booking_id ? (
+                      <Text variant="caption" tone="muted">
+                        {t('refund.bookingLine')}
+                      </Text>
+                    ) : null}
+                    {voucherState?.state === 'ok' ? (
+                      <Text variant="caption" tone="muted">
+                        {t('refund.voucherLine', { balance: money(voucherState.balancePence ?? 0) })}
+                      </Text>
+                    ) : voucherState?.state === 'usedUp' ? (
+                      <Text variant="caption" tone="muted">
+                        {t('refund.voucherUsedUp')}
+                      </Text>
+                    ) : voucherState?.state === 'adminOnly' ? (
+                      <Text variant="caption" tone="danger">
+                        {t('refund.voucherUsed')}
+                      </Text>
+                    ) : null}
+                  </View>
+                );
+              })
             )}
             {tipTotal > 0 ? (
               <View style={posStyles.row}>
@@ -206,13 +268,14 @@ function RefundSheetBody({
         ) : null}
 
         <Text variant="label">{t('refund.where')}</Text>
-        {isAdmin ? (
+        {!hasMoneySlice ? null : isAdmin ? (
           <>
             <ChoiceChips
               options={[
                 { value: 'original', label: t('refund.dest.original', { method: 'the original payment' }) },
                 { value: 'cash', label: t('refund.dest.cash') },
                 ...(bootstrap.payment_types.length ? [{ value: 'external' as const, label: t('refund.dest.other') }] : []),
+                ...(sale.guest ? [{ value: 'account_credit' as const, label: t('refund.dest.credit') }] : []),
               ]}
               value={destination}
               onChange={setDestination}
@@ -246,6 +309,25 @@ function RefundSheetBody({
             />
           ) : null;
         })}
+        {storedNotes.map(({ slice, payment, info }) => (
+          <View key={`sv-${slice.payment_id}`} style={posStyles.stack}>
+            {info?.note === 'voucherExpired' ? (
+              <Text variant="caption" tone="muted">
+                {t('refund.dest.voucherExpired', { clientName })}
+              </Text>
+            ) : info?.note === 'needsClient' ? (
+              <Text variant="bodySmall" tone="danger">
+                {t('refund.needsClient')}
+              </Text>
+            ) : (
+              <Text variant="caption" tone="muted">
+                {payment.method === 'gift_card' && payment.voucher?.code_last4
+                  ? t('refund.dest.voucher', { last4: payment.voucher.code_last4 })
+                  : t('refund.dest.original', { method: paymentMethodName(payment) })}
+              </Text>
+            )}
+          </View>
+        ))}
 
         <Text variant="label">{t('refund.reason')}</Text>
         <ChoiceChips options={reasons.map((r) => ({ value: r, label: r }))} value={reason} onChange={setReason} />
@@ -256,7 +338,7 @@ function RefundSheetBody({
           label={t('refund.confirm', { amount: money(total) })}
           variant="danger"
           loading={busy}
-          disabled={busy || total <= 0 || !reason || (destination === 'external' && !typeId)}
+          disabled={busy || total <= 0 || !reason || blocked || (hasMoneySlice && destination === 'external' && !typeId)}
           onPress={() => void submit(destination, typeId)}
           fullWidth
         />

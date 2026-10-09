@@ -23,6 +23,7 @@ import { GuestTagEditor } from '@/components/clients/GuestTagEditor';
 import { HouseholdSection } from '@/components/clients/HouseholdSection';
 import { MarketingPreferencesCard } from '@/components/clients/MarketingPreferencesCard';
 import { MergeContactDetailSheet } from '@/components/clients/MergeContactDetailSheet';
+import { StoredValueSection } from '@/components/clients/StoredValueSection';
 import { GuestMessageSheet, type GuestMessageTarget } from '@/components/messaging/GuestMessageSheet';
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge, StatusPill } from '@/components/ui/Badge';
@@ -633,6 +634,9 @@ export default function ClientDetailScreen() {
       {/* Records: the guest's documents and photos (web 2026-09-05); the booking
           detail shows the same card for the same person. */}
       <DocumentsSection guestId={guestId} collapsible />
+
+      {/* Credit and vouchers (POS Pass V): only at venues with Checkout and gift vouchers on. */}
+      <StoredValueSection guestId={guestId} />
 
       {/* Compliance — per-guest records + audit trail (feature-flagged, read-only) */}
       {complianceEnabled ? <ComplianceSection guestId={guestId} /> : null}

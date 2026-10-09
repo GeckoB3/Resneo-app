@@ -1,20 +1,71 @@
 import { useMemo, type ReactNode } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/Button';
 import { Chip } from '@/components/ui/Chip';
 import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { formatPence } from '@/lib/format';
+import { posErrorMessage } from '@/lib/pos/api';
 import { posCopyFor, type PosT } from '@/lib/pos/copy';
+import { SaleStaleError, type SaleWriteInput, type SaleWriteResult } from '@/lib/queries/usePos';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
 /**
  * Small pieces every Checkout screen shares: the copy function with the venue's client word, money
- * text, a tall scrolling sheet, a row of choice chips and an error line.
+ * text, a tall scrolling sheet, a row of choice chips, a pickable row, an error line, and the
+ * sale-write function and its error sentence.
  */
+
+/** One write to the sale on screen (`useSaleWrite`'s `mutateAsync`). */
+export type Send = (input: SaleWriteInput) => Promise<SaleWriteResult>;
+
+/** A write's error as a sentence: `stale.dialog` for a stale sale, else the server's own words. */
+export function writeError(error: unknown, t: PosT): string {
+  if (error instanceof SaleStaleError) return t('stale.dialog');
+  return posErrorMessage(error, t('common.saveError'));
+}
+
+/** A tappable row inside a sheet. */
+export function PickRow({
+  title,
+  detail,
+  selected,
+  onPress,
+  disabled,
+}: {
+  title: string;
+  detail?: string | null;
+  selected?: boolean;
+  onPress: () => void;
+  disabled?: boolean;
+}) {
+  const { colors } = useTheme();
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityRole="button"
+      accessibilityState={{ selected: Boolean(selected), disabled: Boolean(disabled) }}
+      style={({ pressed }) => [
+        styles.pickRow,
+        {
+          borderColor: selected ? colors.brand : colors.border,
+          backgroundColor: selected ? colors.brandSubtle : colors.surfaceRaised,
+          opacity: disabled ? 0.5 : pressed ? 0.7 : 1,
+        },
+      ]}>
+      <Text variant="bodyMedium">{title}</Text>
+      {detail ? (
+        <Text variant="caption" tone="muted">
+          {detail}
+        </Text>
+      ) : null}
+    </Pressable>
+  );
+}
 
 /** Checkout's words with this venue's word for its clients filled in. */
 export function usePosT(): PosT {
@@ -154,4 +205,5 @@ const styles = StyleSheet.create({
   amountRow: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.md },
   amountLabel: { flex: 1 },
   notice: { borderWidth: 1, borderRadius: radius.md, padding: spacing.md, gap: spacing.sm },
+  pickRow: { borderWidth: 1, borderRadius: radius.md, padding: spacing.md, gap: spacing.xxs },
 });

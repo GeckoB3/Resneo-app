@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import { StyleSheet, Switch, View } from 'react-native';
 
 import { SaleCardCollect } from '@/components/pos/SaleCardCollect';
+import { CreditPayPanel, VoucherPayPanel } from '@/components/pos/VoucherSheets';
 import { writeError, type Send } from '@/components/pos/SaleSheets';
 import { AmountRow, ChoiceChips, ErrorLine, money, PosSheet, posStyles, usePosT } from '@/components/pos/parts';
 import { Button } from '@/components/ui/Button';
@@ -24,6 +25,7 @@ import {
   tipSuggestions,
   type AmountProblem,
 } from '@/lib/pos/sale-math';
+import { useClientStoredValue } from '@/lib/queries/usePos';
 import { spacing } from '@/theme/index';
 import type { PosBootstrap, PosPaymentType, PosSale } from '@/types/pos';
 
@@ -35,9 +37,12 @@ import type { PosBootstrap, PosPaymentType, PosSale } from '@/types/pos';
  * One request id per payment staff are recording, so a retry or a double tap records it once.
  */
 
-type Mode = 'choose' | 'cash' | 'other' | 'tip' | 'card' | 'done';
+type Mode = 'choose' | 'cash' | 'other' | 'tip' | 'card' | 'done' | 'voucher' | 'credit';
 
-export type PaidOutcome = { changePence: number; method: 'cash' | 'external' | 'card_app' };
+export type PaidOutcome = {
+  changePence: number;
+  method: 'cash' | 'external' | 'card_app' | 'gift_card' | 'account_credit';
+};
 
 function amountProblemText(problem: AmountProblem, t: PosT, balance: number, max: number | null | undefined, venue: string) {
   switch (problem) {
@@ -86,7 +91,12 @@ function PaySheetBody({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [changeGiven, setChangeGiven] = useState(0);
+  const [creditPence, setCreditPence] = useState(0);
   const requestId = useRef<string>(newPaymentAttemptId());
+  // Pass V (§20.3, §20.4): a gift voucher while vouchers are on or one sold earlier is still
+  // active; account credit when the client has some (read only from a server that knows Pass V).
+  const vouchersRedeemable = bootstrap.vouchers?.redeemable === true;
+  const timeZone = bootstrap.venue?.timezone ?? 'Europe/London';
 
 
   const amount = parseMoneyInput(amountText);
@@ -144,7 +154,17 @@ function PaySheetBody({
   const cardCeiling = checkPaymentAmount({ amountPence: amount, balancePence: balance, maxPaymentPence: max, tipPence: cardTipPence });
 
   const title =
-    mode === 'cash' ? t('cash.title') : mode === 'other' ? type?.name ?? t('pay.title') : mode === 'tip' ? t('app.tip.title') : t('pay.title');
+    mode === 'cash'
+      ? t('cash.title')
+      : mode === 'other'
+        ? type?.name ?? t('pay.title')
+        : mode === 'tip'
+          ? t('app.tip.title')
+          : mode === 'voucher'
+            ? t('vpay.title')
+            : mode === 'credit'
+              ? t('cpay.title')
+              : t('pay.title');
 
   return (
     <PosSheet visible={visible} onClose={onClose} title={title}>
@@ -205,6 +225,17 @@ function PaySheetBody({
                 fullWidth
               />
             ))}
+            {vouchersRedeemable ? (
+              <Button label={t('pay.method.voucher')} variant="secondary" onPress={() => enter('voucher')} fullWidth />
+            ) : null}
+            {sale.guest && bootstrap.vouchers ? (
+              <CreditMethod
+                guestId={sale.guest.id}
+                clientName={sale.guest.name}
+                onCredit={setCreditPence}
+                onPress={() => enter('credit')}
+              />
+            ) : null}
           </View>
           {!cardAvailable && bootstrap.card_methods?.card_app ? (
             <Text variant="caption" tone="muted">
@@ -349,6 +380,28 @@ function PaySheetBody({
           />
           <Button label={t('pay.otherWay')} variant="ghost" onPress={() => setMode('choose')} fullWidth />
         </View>
+      ) : mode === 'voucher' ? (
+        <VoucherPayPanel
+          sale={sale}
+          send={send}
+          timeZone={timeZone}
+          onDone={() => {
+            onPaid({ changePence: 0, method: 'gift_card' });
+            onClose();
+          }}
+          onBack={() => setMode('choose')}
+        />
+      ) : mode === 'credit' ? (
+        <CreditPayPanel
+          sale={sale}
+          send={send}
+          creditPence={creditPence}
+          onDone={() => {
+            onPaid({ changePence: 0, method: 'account_credit' });
+            onClose();
+          }}
+          onBack={() => setMode('choose')}
+        />
       ) : mode === 'card' && cardAvailable && amount != null ? (
         <SaleCardCollect
           saleId={sale.id}
@@ -369,7 +422,45 @@ function PaySheetBody({
   );
 }
 
+/**
+ * "Account credit" with what the client has under it (`cpay.available`), shown only when they
+ * have some. Its own component, so the credit is read only for a sale with a client.
+ */
+function CreditMethod({
+  guestId,
+  clientName,
+  onCredit,
+  onPress,
+}: {
+  guestId: string;
+  clientName: string;
+  onCredit: (pence: number) => void;
+  onPress: () => void;
+}) {
+  const t = usePosT();
+  const stored = useClientStoredValue(guestId);
+  const credit = Math.max(0, stored.data?.credit.balance_pence ?? 0);
+  if (credit <= 0) return null;
+  return (
+    <View style={styles.method}>
+      <Button
+        label={t('pay.method.credit')}
+        variant="secondary"
+        onPress={() => {
+          onCredit(credit);
+          onPress();
+        }}
+        fullWidth
+      />
+      <Text variant="caption" tone="muted">
+        {t('cpay.available', { clientName, amount: money(credit) })}
+      </Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
+  method: { gap: spacing.xxs },
   chips: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.sm },
   flex: { flex: 1 },
 });
