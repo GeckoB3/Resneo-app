@@ -22,7 +22,9 @@ config, no `eas.json` or native dependency change). Every new screen, tile, butt
 is behind the venue's resolved `feature_flags.resolved.pos_enabled` (POS plan §4.22, test plan
 DEV-04 / APP-08). With it off, or against a web deploy that does not send it, the app is exactly
 as before: "Take payment" and `/charge`, the four-option Reports control, no Checkout tile and not
-one `/api/venue/pos` request. Needs the web's POS Pass 1 (and Pass V) on the server.
+one `/api/venue/pos` request; the one change every venue gets is `client_build` on push registration
+(app step 2, below). Needs the web's POS Pass 1 (and Pass V, and Pass 2 for app step 2) on
+the server.
 
 - **Foundations (P7-1).** `feature_flags.resolved.pos_enabled` is read (`lib/pos/pos-enabled.ts`).
   A sale API client (`lib/pos/api.ts`) sends `X-ResNeo-Client` (platform, store version, update
@@ -89,6 +91,54 @@ one `/api/venue/pos` request. Needs the web's POS Pass 1 (and Pass V) on the ser
   - Not in this step: scanning a voucher's QR code with the camera (a keyboard-mode scanner works,
     as it types), extending an expired voucher, adding an existing voucher, goodwill credit, and
     the voucher sheet's actions. Those stay on the web.
+- **Card payments (app step 2, POS plan P7-8 and P7-9, UX spec §13.4, §23).** Each piece follows the
+  POS bootstrap's `card_methods` (`card_reader`, `send_to_phone`, `pay_link`), which a server before
+  Pass 2 does not send, so against it none of this appears.
+  - *The build and the phone's card capability.* `X-ResNeo-Client` on POS calls now ends `pos=2`,
+    the POS app step the web compares before sending this phone a sale from its till. Every push
+    registration (`POST /api/v1/me/devices`) sends the same string as `client_build`, for every
+    venue (the one change outside the POS screens: a field the web stores and otherwise ignores).
+    At a POS venue that takes cards in person, the registration also says `card_capability`
+    (`tap_to_pay` on an iPhone XS or later or a capable Android phone, `wisepad` with a paired
+    Bluetooth reader, else `none`) and `tap_to_pay_terms_accepted` (Apple's answer from the
+    warm-up; Android has no terms step), and is sent again when that changes. An iPad never reports
+    Tap to Pay.
+  - *A sale sent from the web till (plan §4.36).* The `pos_collect_request` push (Android channel
+    `bookings-new`) opens the collect screen. Pushes can be late or lost, so "Waiting for you" on
+    Today and a banner above every staff screen read `GET /api/venue/pos/collect-requests?mine=1`
+    on opening, on coming to the foreground and every 20 seconds, only on a phone that can take a
+    card here. The screen shows the amount, the sale, the till, who sent it and the client; the
+    app's tip screen when the venue takes tips; then the same card screen as the app's own sale
+    payments (Apple's exact name and button, the processing state, the warm-up, "How to use Tap to
+    Pay on iPhone"). The button claims the payment (`POST .../payments/{id}/claim` with this phone's
+    registration id, `reader_type` and the tip), reports `collecting`, and reads the card. Outcomes:
+    paid; declined (the same PaymentIntent stays open, so the button tries again); a card that
+    wants chip and PIN (cancel, then a pay link, or the desk's reader when there is one; never chip
+    and PIN on the phone); no card in 5 minutes (cancelled with `reason: 'timed_out'`); the desk
+    cancelled (read every 3 seconds); another phone took it, it was sent to someone else or nobody
+    took it in time (the server's sentence); Stripe's three-business limit on an iPhone.
+  - *The counter reader.* "Card reader" in the payment sheet chooses a reader (status from Stripe)
+    and sends the amount (`method: 'card_reader'`), then follows
+    `GET .../payments/{paymentId}/reader`: waiting, confirming, declined with "Try again" on the
+    same PaymentIntent, paid, moved away, cancelled, failed or checking, in the server's words. The
+    sale screen follows a reader payment already waiting and can cancel it.
+  - *Pay by link or QR code.* For the whole bill or the part typed, with a tip on the client's
+    phone when the venue allows it on links. The QR code is drawn on the phone; the link can be
+    copied, shared, texted or emailed (the client's details filled in and editable) or cancelled.
+    The sale lists links still waiting (Show QR code, Cancel link), and a visit paid in full with no
+    tip offers "Send a tip link" (`amount_pence: 0`, `kind: 'tip_only'`).
+  - *Cards on file.* With cards on file on, `charge_saved_card` and a client on the sale, each saved
+    card is a method with when and where the client agreed; it asks first, then charges. A decline
+    says why, holds the sale until "Choose another way to pay" cancels it, and offers a pay link
+    when the bank wants the client to confirm. Before a Tap to Pay or WisePad 3 read, the phone is
+    handed to the client, who answers "Save your card for next time?" with two equal buttons; a yes
+    collects with `allowRedisplay: 'always'`, and staff are told whether the card was kept. The
+    client profile lists saved cards with "Remove card" (`take_payment`).
+  - *Payouts and fees, for admins.* Reports, Takings: each payout's arrival date, amount, Stripe's
+    fees and status, opening to what it covered. Instant payouts are v1.x.
+  - Not in this step: the Finish and pay toast, saving a card at online booking and instant payouts
+    (all v1.x); asking to save the card on the counter reader (the web till's tick); a push that
+    tells the phone the desk cancelled (the phone polls instead).
 
 ---
 
