@@ -21,6 +21,7 @@ import { getAuthCallbackRedirectUrl } from '@/lib/auth/redirect';
 import { setObservabilityUser } from '@/lib/observability';
 import { setQueryAuthScope } from '@/lib/queries/keys';
 import { queryClient } from '@/lib/queries/queryClient';
+import { clearAllStocktakeDrafts } from '@/lib/retail/stocktake-draft';
 import { clearAllServicesSetups } from '@/lib/services-setup/setup-storage';
 import { getSupabase } from '@/lib/supabase';
 import {
@@ -438,6 +439,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
     // A services setup left half-checked belongs to the person leaving (web: sign-out's
     // Clear-Site-Data takes the browser's copy with it).
     void clearAllServicesSetups();
+    // So are stocktake counts still waiting to send (POS app step 4).
+    void clearAllStocktakeDrafts();
     // Drop all cached venue data so a subsequent user can never transiently see
     // the previous user's bookings/clients before their own queries load.
     queryClient.clear();

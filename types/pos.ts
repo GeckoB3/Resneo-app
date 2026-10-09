@@ -59,6 +59,21 @@ export interface PosSaleLine {
    * leaves it out.
    */
   voucher?: PosLineVoucher | null;
+  /**
+   * Product lines only (Pass 4, UX spec §3.7): whether the option counts stock, what is on hand and
+   * available now, and its restriction ('age_18' shows the 18+ chip). Optional: a server before
+   * Pass 4 leaves it out.
+   */
+  product?: PosLineProduct | null;
+}
+
+/** A product line's stock facts (web `PosLineProductDto`). */
+export interface PosLineProduct {
+  track_stock: boolean;
+  on_hand: number;
+  /** On hand less what is held for payments in progress and online orders. */
+  available: number;
+  restriction: string;
 }
 
 /** What a gift voucher line may show (web `PosLineVoucherDto`). Last four characters only. */
@@ -226,7 +241,15 @@ export type PosCapability =
   | 'edit_credit'
   | 'view_reports'
   | 'export'
-  | 'manage_vouchers';
+  | 'manage_vouchers'
+  // Pass 4: products and stock.
+  | 'manage_products'
+  | 'adjust_stock'
+  | 'count_stock'
+  | 'commit_stocktake'
+  // Pass LC: loyalty cards and commission.
+  | 'adjust_loyalty'
+  | 'see_own_commission';
 
 export type PosCapabilityMap = Partial<Record<PosCapability, boolean>> & Record<string, boolean | undefined>;
 
@@ -282,6 +305,8 @@ export interface PosTillSettings {
   card_on_file_enabled?: boolean;
   /** Pass 2: how long a pay link works, in hours. */
   pay_link_hours?: number;
+  /** Pass 4: the venue's Track stock switch (simple mode, plan §4.37). Missing reads as off. */
+  track_stock_enabled?: boolean;
 }
 
 /** `GET /api/venue/pos/bootstrap` (#1). */
@@ -293,7 +318,12 @@ export interface PosBootstrap {
   payment_types: PosPaymentType[];
   discount_presets: PosDiscountPreset[];
   tip_settings?: PosTipSettings | null;
-  tax_settings?: { vat_registered?: boolean } | null;
+  tax_settings?: {
+    vat_registered?: boolean;
+    /** Pass 4: the VAT category a product without its own uses ('standard', 'reduced', ...). */
+    default_product_tax_category?: string | null;
+    jurisdiction?: string | null;
+  } | null;
   operators: PosOperator[];
   /**
    * Which card methods the venue can use (Appendix E #1). `card_app` since Pass 1; Pass 2 adds
@@ -452,9 +482,179 @@ export interface PosCatalogueService {
   calendars: { calendar_id: string; name: string; price_pence: number | null; duration_minutes: number }[];
 }
 
+/** One option the till can sell (web `CatalogueProductOption`), with its stock hints. */
+export interface PosCatalogueProductOption {
+  id: string;
+  name: string | null;
+  sku: string | null;
+  price_pence: number;
+  track_stock: boolean;
+  on_hand: number;
+  /** In stock less what is held for online orders. */
+  available: number;
+  barcodes?: string[];
+}
+
+/** A product the till may sell (web `CatalogueProduct`): live, sold in store, not backbar-only. */
+export interface PosCatalogueProduct {
+  id: string;
+  name: string;
+  brand_name: string | null;
+  category_id?: string | null;
+  category_name?: string | null;
+  /** 'age_18' shows the till's age reminder (plan §4.12, UX spec §3.26). */
+  restriction: string;
+  tax_category?: string | null;
+  photo_url?: string | null;
+  options: PosCatalogueProductOption[];
+}
+
+/** The till's stock rules (D15): Track stock, and selling beyond the count (on by default). */
+export interface PosStockRules {
+  track_stock: boolean;
+  sell_beyond_stock: boolean;
+}
+
 export interface PosCatalogue {
   services: PosCatalogueService[];
   favourites: { id: string; item_type: 'service' | 'variant'; item_id: string; sort_order: number }[];
+  /** Pass 4 (P4-4). Optional: a server before Pass 4 sends none of these. */
+  products?: PosCatalogueProduct[];
+  /** The products behind product favourites and suggestions, with only those options. */
+  favourite_products?: PosCatalogueProduct[];
+  /** Until the venue chooses favourites: its best sellers of the last 30 days, in order. */
+  suggested?: { item_type: 'service' | 'variant'; item_id: string }[];
+  stock?: PosStockRules;
+}
+
+/** `GET /api/venue/pos/catalogue?barcode=`: the product and option a scanned barcode belongs to. */
+export interface PosBarcodeHit {
+  product: PosCatalogueProduct;
+  option_id: string;
+}
+
+// ─── Loyalty cards and commission (Pass LC, UX spec §21, §22) ───────────────
+
+export type PosRewardKind = 'free_service' | 'amount' | 'percent';
+
+/** A loyalty reward (web `LoyaltyRewardDto`). */
+export interface PosLoyaltyReward {
+  id: string;
+  cycle: number;
+  status: 'available' | 'used' | 'expired' | 'cancelled';
+  reward_kind: PosRewardKind;
+  reward_service_item_ids?: string[] | null;
+  reward_service_name: string | null;
+  reward_max_pence?: number | null;
+  reward_amount_pence: number | null;
+  reward_percent_bps: number | null;
+  issued_at: string;
+  expires_at: string | null;
+  sale_id?: string | null;
+  sale_number?: number | null;
+}
+
+export type PosLoyaltyHistoryKind = 'earn' | 'reverse' | 'adjust' | 'spend' | 'used' | 'expired' | 'cancelled';
+
+export interface PosLoyaltyHistoryItem {
+  id: string;
+  kind: PosLoyaltyHistoryKind;
+  delta: number;
+  visit_date: string | null;
+  staff_name: string | null;
+  reason: string | null;
+  sale_number: number | null;
+  at: string;
+}
+
+/** A client's loyalty card (web `LoyaltyCardDto`). */
+export interface PosLoyaltyCard {
+  programme: {
+    name: string;
+    status: string;
+    stamps_needed: number;
+    started_on: string | null;
+    reward_kind: PosRewardKind;
+    reward_service_name: string | null;
+    reward_amount_pence: number | null;
+    reward_percent_bps: number | null;
+  } | null;
+  stamps: number;
+  needed: number;
+  rewards: PosLoyaltyReward[];
+  /** Available and not past their expiry, oldest first. */
+  available: PosLoyaltyReward[];
+  history: PosLoyaltyHistoryItem[];
+}
+
+/** `GET /api/venue/guests/[guestId]/loyalty-card`. `card` is null until the venue sets a programme up. */
+export interface PosLoyaltyCardResponse {
+  card: PosLoyaltyCard | null;
+  can: { adjust: boolean };
+  venue?: { currency: string; timezone: string };
+}
+
+/** One reward as the sale offers it (`GET /api/venue/pos/sales/[id]/loyalty-reward`). */
+export interface PosSaleReward extends PosLoyaltyReward {
+  /** "a free Cut", "£5.00 off": the server's words. */
+  text: string;
+  discount_label: string;
+  /** False for a free service whose service is not on the sale. */
+  applicable: boolean;
+  applied: boolean;
+  /** `loyalty.apply.noService`, filled, when it cannot go on this sale. */
+  blocked_reason: string | null;
+}
+
+export interface PosSaleRewardsResponse {
+  rewards: PosSaleReward[];
+  card: { stamps: number; needed: number; status: string | null } | null;
+}
+
+export type PosMinePeriod = 'today' | 'week' | 'month';
+
+/** `GET /api/venue/pos/commission/report?mine=1&period=`: this person's own figures only. */
+export interface PosMyCommission {
+  mine: {
+    period: PosMinePeriod;
+    from: string;
+    to: string;
+    sales_pence: number;
+    tips_pence: number;
+    /** Null without `see_own_commission`. */
+    commission_pence: number | null;
+  };
+  can: { see_commission: boolean };
+  venue: { name: string; currency: string };
+}
+
+/** `GET /api/venue/guests/[guestId]/purchases` (P4-8; plan §4.17). */
+export interface PosClientSpend {
+  lifetime_pence: number;
+  visits: number;
+  average_pence: number | null;
+}
+
+export interface PosClientPurchase {
+  line_id: string;
+  sale_id: string;
+  sale_number: string | number | null;
+  channel: 'till' | 'app' | 'online';
+  completed_at: string | null;
+  business_date: string | null;
+  product_id: string | null;
+  variant_id: string | null;
+  name: string;
+  option_name: string | null;
+  quantity: number;
+  refunded_quantity: number | null;
+  total_pence: number;
+  seller_name: string | null;
+}
+
+export interface PosClientPurchasesResponse {
+  spend: PosClientSpend;
+  purchases: PosClientPurchase[];
 }
 
 /** `GET /api/venue/reports/pos-access`. */

@@ -25,6 +25,25 @@ export function isVouchersEnabled(venue: Pick<VenueBootstrap, 'feature_flags'> |
 }
 
 /**
+ * Loyalty cards (Pass LC, UX spec §21): the venue's resolved `pos_loyalty_enabled`, and only with
+ * Checkout on. Shows "Reward ready" on a sale and the client profile's "Loyalty card"; a server
+ * before Pass LC does not send the key, so neither appears and no loyalty route is called.
+ */
+export function isLoyaltyEnabled(venue: Pick<VenueBootstrap, 'feature_flags'> | null | undefined): boolean {
+  return isPosEnabled(venue) && venue?.feature_flags?.resolved?.pos_loyalty_enabled === true;
+}
+
+/**
+ * The venue's Track stock switch (simple mode, plan §4.37), from the POS bootstrap. The stock
+ * screens (levels, adjustments, history, stocktakes) and the stock fields of the product editor
+ * exist only while it is on, as on the web; a server before Pass 4 does not send it, which reads
+ * as off.
+ */
+export function isTrackStockOn(bootstrap: Pick<PosBootstrap, 'settings'> | null | undefined): boolean {
+  return bootstrap?.settings?.track_stock_enabled === true;
+}
+
+/**
  * Whether this login may do something at the till (plan §4.19). Every POS action is hidden when
  * the capability map does not allow it, as on the web; the server refuses anyway (403
  * POS_PERMISSION_DENIED). Admins are sent every key as true. A key the server leaves out reads as

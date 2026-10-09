@@ -204,6 +204,31 @@ export const queryKeys = {
       [...queryKeys.pos.all(), 'payouts', keyScope(accessToken), query ?? null] as const,
     payoutDetail: (accessToken?: string | null, query?: string | null, payoutId?: string | null) =>
       [...queryKeys.pos.all(), 'payout-detail', keyScope(accessToken), query ?? null, payoutId ?? null] as const,
+    /** App step 4 (Pass 4): products at the till, a client's purchases, and products and stock. */
+    productSearch: (accessToken?: string | null, q?: string | null) =>
+      [...queryKeys.pos.all(), 'product-search', keyScope(accessToken), q ?? null] as const,
+    purchases: (accessToken?: string | null, guestId?: string | null) =>
+      [...queryKeys.pos.all(), 'purchases', keyScope(accessToken), guestId ?? null] as const,
+    retailProducts: (accessToken?: string | null, query?: string | null) =>
+      [...queryKeys.pos.all(), 'retail-products', keyScope(accessToken), query ?? null] as const,
+    retailProduct: (accessToken?: string | null, productId?: string | null) =>
+      [...queryKeys.pos.all(), 'retail-product', keyScope(accessToken), productId ?? null] as const,
+    retailNamed: (accessToken?: string | null, kind?: string | null) =>
+      [...queryKeys.pos.all(), 'retail-named', keyScope(accessToken), kind ?? null] as const,
+    stockLevels: (accessToken?: string | null, query?: string | null) =>
+      [...queryKeys.pos.all(), 'stock-levels', keyScope(accessToken), query ?? null] as const,
+    movements: (accessToken?: string | null, query?: string | null) =>
+      [...queryKeys.pos.all(), 'movements', keyScope(accessToken), query ?? null] as const,
+    stocktakes: (accessToken?: string | null) => [...queryKeys.pos.all(), 'stocktakes', keyScope(accessToken)] as const,
+    stocktake: (accessToken?: string | null, id?: string | null) =>
+      [...queryKeys.pos.all(), 'stocktake', keyScope(accessToken), id ?? null] as const,
+    /** Pass LC: a sale's rewards, a client's loyalty card, and this person's own figures. */
+    saleRewards: (accessToken?: string | null, saleId?: string | null) =>
+      [...queryKeys.pos.all(), 'sale-rewards', keyScope(accessToken), saleId ?? null] as const,
+    loyaltyCard: (accessToken?: string | null, guestId?: string | null) =>
+      [...queryKeys.pos.all(), 'loyalty-card', keyScope(accessToken), guestId ?? null] as const,
+    myCommission: (accessToken?: string | null, period?: string | null) =>
+      [...queryKeys.pos.all(), 'my-commission', keyScope(accessToken), period ?? null] as const,
   },
 
   referrals: {

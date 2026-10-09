@@ -1,9 +1,9 @@
 import { format, parseISO } from 'date-fns';
 import { Stack, useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
-import { money, posStyles, usePosT } from '@/components/pos/parts';
+import { money, Notice, posStyles, usePosT } from '@/components/pos/parts';
 import { saleHref, useOpenCheckout } from '@/components/pos/useOpenCheckout';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -18,24 +18,14 @@ import { Text } from '@/components/ui/Text';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { canPos } from '@/lib/pos/pos-enabled';
 import { saleStatusCopyId } from '@/lib/pos/sale-math';
-import {
-  myFigures,
-  usePosBootstrap,
-  usePosEnabled,
-  usePosQueue,
-  usePosReportAccess,
-  usePosSaleList,
-  useSalesReport,
-  useTakingsReport,
-} from '@/lib/queries/usePos';
-import { useStaffMe } from '@/lib/queries/useStaffMe';
+import { useMyCommission, usePosBootstrap, usePosEnabled, usePosQueue, usePosSaleList } from '@/lib/queries/usePos';
 import { spacing } from '@/theme/index';
-import type { PosQueueRow, PosSaleListRow } from '@/types/pos';
+import type { PosMinePeriod, PosQueueRow, PosSaleListRow } from '@/types/pos';
 
 /**
  * Checkout home in the app (POS app step 1, UX spec §13.3 "Checkout home"): who is ready to check
  * out, open and parked sales, all sales with a search, a new blank sale, and the person's own
- * sales and tips. Reached from the Checkout tile in More, which exists only when the venue's
+ * sales and tips (from Pass LC, with their commission). Reached from the Checkout tile in More, which exists only when the venue's
  * `pos_enabled` is on; a deep link at a venue without POS shows `till.off` and loads nothing.
  */
 
@@ -272,24 +262,21 @@ function SaleRowCard({ row, onPress }: { row: PosSaleListRow; onPress: () => voi
   );
 }
 
-/** "Your sales and tips" (`app.mine.*`), from the reports, for logins that may read them. */
+/**
+ * "Your sales and tips" (`app.mine.*`, UX spec §13.3, §22.3) for every team member: their own
+ * figures only, today, this week or this month, from the commission report's `mine=1`, with their
+ * commission so far when they hold `see_own_commission`. A server before Pass LC answers nothing,
+ * and the card is not shown.
+ */
 function MySalesCard() {
   const t = usePosT();
-  const access = usePosReportAccess();
-  const me = useStaffMe();
-  const [period, setPeriod] = useState<'today' | 'this-week'>('today');
-  const canView = access.data?.can_view === true;
-  const sales = useSalesReport(period, { enabled: canView });
-  const takings = useTakingsReport(period, { enabled: canView });
-  const figures = useMemo(
-    () =>
-      myFigures(
-        { sales: sales.data, takings: takings.data },
-        { staffId: me.data?.staff?.id ?? null, calendarIds: me.data?.staff?.linked_calendar_ids ?? [] },
-      ),
-    [sales.data, takings.data, me.data],
-  );
-  if (!canView) return null;
+  const [period, setPeriod] = useState<PosMinePeriod>('today');
+  const mine = useMyCommission(period);
+  if (mine.data === null) return null;
+  const data = mine.data;
+  const figures = data && data.mine.period === period ? data.mine : null;
+  const showCommission = Boolean(data?.can.see_commission) && figures?.commission_pence != null;
+  const nothing = figures && figures.sales_pence === 0 && figures.tips_pence === 0 && !(figures.commission_pence ?? 0);
   return (
     <Card>
       <View style={posStyles.stack}>
@@ -297,20 +284,37 @@ function MySalesCard() {
         <Segmented
           options={[
             { value: 'today', label: t('app.mine.today') },
-            { value: 'this-week', label: t('app.mine.week') },
+            { value: 'week', label: t('app.mine.week') },
+            { value: 'month', label: t('comm.mine.period.month') },
           ]}
           value={period}
           onChange={setPeriod}
         />
-        {figures && (figures.salesPence !== 0 || figures.tipsPence !== 0) ? (
-          <>
-            <Text variant="bodyMedium">{t('app.mine.sales', { amount: money(figures.salesPence) })}</Text>
-            <Text variant="bodyMedium">{t('app.mine.tips', { amount: money(figures.tipsPence) })}</Text>
-          </>
-        ) : sales.isLoading || takings.isLoading ? null : (
+        {mine.isError ? (
+          <Notice tone="warning" action={{ label: t('common.tryAgain'), onPress: () => void mine.refetch() }}>
+            {t('app.mine.error')}
+          </Notice>
+        ) : !figures ? (
+          <Text variant="bodySmall" tone="muted">
+            {t('app.loading')}
+          </Text>
+        ) : nothing ? (
           <Text variant="bodySmall" tone="muted">
             {t('app.mine.none')}
           </Text>
+        ) : (
+          <>
+            <Text variant="bodyMedium">{t('app.mine.sales', { amount: money(figures.sales_pence) })}</Text>
+            <Text variant="bodyMedium">{t('app.mine.tips', { amount: money(figures.tips_pence) })}</Text>
+            {showCommission ? (
+              <>
+                <Text variant="bodyMedium">{t('comm.mine.commission', { amount: money(figures.commission_pence ?? 0) })}</Text>
+                <Text variant="caption" tone="muted">
+                  {t('comm.mine.note', { venue: data?.venue.name || 'your venue' })}
+                </Text>
+              </>
+            ) : null}
+          </>
         )}
       </View>
     </Card>

@@ -103,6 +103,48 @@ describe('POS copy', () => {
     expect(POS_COPY['app.tapToPay.iphone']).toBe('Tap to Pay on iPhone');
   });
 
+  it('keeps the web ids the spec names for app step 4 and the Pass LC app step (UX spec §13.6, §13.13)', () => {
+    const ids = [
+      'app.tile.stock',
+      'app.tile.stock.hint',
+      'app.photo.library',
+      'app.photo.camera',
+      'app.stocktake.offline',
+      'add.tab.products',
+      'add.stock.warnOver',
+      'scan.unknown',
+      'age.reminder',
+      'line.chip.age18',
+      'refund.restock',
+      'prod.readOnly',
+      'var.barcode.invalid',
+      'adj.preview',
+      'mov.reason.refund_restock',
+      'take.commit.body',
+      'client.purchases.title',
+      'client.stats.none',
+      'loyalty.ready',
+      'loyalty.apply.confirm',
+      'loyalty.card.progress',
+      'loyalty.adjust.tooMany',
+      'comm.mine.commission',
+      'comm.mine.note',
+      'app.web.stockSetup',
+      'app.web.loyalty',
+      'app.web.commission',
+    ] as const;
+    for (const id of ids) expect(POS_COPY[id]).toBeTruthy();
+    // Word for word from the web decks.
+    expect(posCopy('add.stock.warnOver', { count: 2 })).toBe(
+      'The stock count says 2 left. You can still sell it, and the count will go below zero.',
+    );
+    expect(posCopyFor('client')('age.reminder', { product: 'Straight razor' })).toBe(
+      'Check the client is 18 or over before you sell Straight razor.',
+    );
+    expect(posCopy('loyalty.card.progress', { count: 4, needed: 6 })).toBe('4 of 6 visits');
+    expect(posCopy('app.tile.stock')).toBe('Products and stock');
+  });
+
   it('fills placeholders and leaves unknown ones for a test to spot', () => {
     expect(fillCopy('{amount} to pay', { amount: '£5.00' })).toBe('£5.00 to pay');
     expect(fillCopy('{missing} here')).toBe('{missing} here');

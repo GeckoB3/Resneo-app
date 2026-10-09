@@ -33,8 +33,8 @@ import { ApiError } from '@/lib/api/client';
 import { makeSale } from '@/lib/pos/test-sale';
 import { queryKeys } from '@/lib/queries/keys';
 import {
+  lookupBarcode,
   lookupVoucher,
-  myFigures,
   saleRefetchInterval,
   SaleStaleError,
   usePosBootstrap,
@@ -46,8 +46,12 @@ import {
   useSaleWrite,
   useStartSale,
   useVoucherSettings,
+  useAdjustLoyalty,
+  useMyCommission,
+  useProductSearch,
+  useSaleRewards,
 } from '@/lib/queries/usePos';
-import type { PosSale, SalesReport, TakingsReport } from '@/types/pos';
+import type { PosSale } from '@/types/pos';
 
 function setup() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
@@ -237,34 +241,79 @@ describe('saleRefetchInterval', () => {
   });
 });
 
-describe('myFigures', () => {
-  const sales = {
-    by_performer: [
-      { calendar_id: 'cal-1', staff_id: null, name: 'Sam', services_pence: 5000, retail_pence: 0, other_pence: 0, total_pence: 5000, refunds_pence: 0 },
-      { calendar_id: 'cal-2', staff_id: null, name: 'Ali', services_pence: 9000, retail_pence: 0, other_pence: 0, total_pence: 9000, refunds_pence: 0 },
-    ],
-    by_seller: [
-      { calendar_id: null, staff_id: 'staff-1', name: 'Sam', services_pence: 0, retail_pence: 1200, other_pence: 300, total_pence: 1500, refunds_pence: 0 },
-    ],
-  } as unknown as SalesReport;
-  const takings = {
-    tips: {
-      totals: { allocated_pence: 0, reversed_pence: 0, net_pence: 0, paid_pence: 0, due_pence: 0 },
-      by_recipient: [
-        { calendar_id: 'cal-1', staff_id: null, name: 'Sam', allocation_kind: 'tip', net_pence: 700, paid_pence: 0, due_pence: 700 },
-        { calendar_id: 'cal-2', staff_id: null, name: 'Ali', allocation_kind: 'tip', net_pence: 100, paid_pence: 0, due_pence: 100 },
-      ],
-    },
-  } as unknown as TakingsReport;
-
-  it("adds up this person's services, items and tips, by login or calendar", () => {
-    expect(myFigures({ sales, takings }, { staffId: 'staff-1', calendarIds: ['cal-1'] })).toEqual({
-      salesPence: 6500,
-      tipsPence: 700,
+describe('Your sales and tips (Pass LC, UX spec §22.3)', () => {
+  it("reads this person's own figures from the commission report, for the period chosen", async () => {
+    mockApiFetch.mockResolvedValueOnce({
+      mine: { period: 'week', from: '2026-10-05', to: '2026-10-09', sales_pence: 6500, tips_pence: 700, commission_pence: null },
+      can: { see_commission: false },
+      venue: { name: 'Studio', currency: 'GBP' },
     });
+    const { wrapper } = setup();
+    const { result } = await renderHook(() => useMyCommission('week'), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(mockApiFetch.mock.calls[0]![0]).toBe('/api/venue/pos/commission/report?mine=1&period=week');
+    expect(result.current.data?.mine.sales_pence).toBe(6500);
+    expect(result.current.data?.mine.commission_pence).toBeNull();
   });
 
-  it('is nothing before either report loads', () => {
-    expect(myFigures({ sales: undefined, takings: undefined }, { staffId: 'x', calendarIds: [] })).toBeNull();
+  it('reads a server without the route (before Pass LC) as nothing to show', async () => {
+    mockApiFetch.mockRejectedValueOnce(new ApiError('Not found', 404, { error: 'Not found' }));
+    const { wrapper } = setup();
+    const { result } = await renderHook(() => useMyCommission('today'), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toBeNull();
+  });
+});
+
+describe('products at the till (app step 4, UX spec §3.8)', () => {
+  it('searches products on the server', async () => {
+    mockApiFetch.mockResolvedValueOnce({ services: [], favourites: [], products: [], stock: { track_stock: true, sell_beyond_stock: true } });
+    const { wrapper } = setup();
+    const { result } = await renderHook(() => useProductSearch('shampoo'), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(mockApiFetch.mock.calls[0]![0]).toBe('/api/venue/pos/catalogue?type=products&q=shampoo');
+  });
+
+  it('looks a scanned barcode up exactly, and tells an unknown code from one the till may not sell', async () => {
+    const product = {
+      id: 'p1',
+      name: 'Shampoo',
+      brand_name: null,
+      restriction: 'none',
+      options: [{ id: 'v1', name: null, sku: null, price_pence: 1200, track_stock: true, on_hand: 3, available: 3 }],
+    };
+    mockApiFetch.mockResolvedValueOnce({ product, option_id: 'v1' });
+    await expect(lookupBarcode('t', '5012345678900')).resolves.toEqual({ hit: { product, option_id: 'v1' } });
+    expect(mockApiFetch.mock.calls[0]![0]).toBe('/api/venue/pos/catalogue?barcode=5012345678900');
+
+    mockApiFetch.mockRejectedValueOnce(new ApiError('No product', 404, { error: 'No product has the barcode 123.', code: 'NOT_FOUND' }));
+    await expect(lookupBarcode('t', '1234')).resolves.toEqual({ unknown: true });
+
+    const sentence = 'Shampoo is archived. Unarchive it in Products to sell it.';
+    mockApiFetch.mockRejectedValueOnce(new ApiError(sentence, 404, { error: sentence, code: 'NOT_FOUND', reason: 'archived' }));
+    await expect(lookupBarcode('t', '9999')).resolves.toEqual({ refused: sentence });
+  });
+});
+
+describe('loyalty cards (Pass LC, UX spec §21)', () => {
+  it("adjusts stamps with the form's request id and keeps the card it answers", async () => {
+    const card = { programme: null, stamps: 4, needed: 6, rewards: [], available: [], history: [] };
+    mockApiFetch.mockResolvedValueOnce({ card, issued_reward_ids: [] });
+    const { client, wrapper } = setup();
+    const { result } = await renderHook(() => useAdjustLoyalty('guest-1'), { wrapper });
+    await act(async () => {
+      await result.current.mutateAsync({ delta: 2, reason: 'Carried over from a paper card', clientRequestId: 'req-12345678' });
+    });
+    const [path, init] = mockApiFetch.mock.calls[0]!;
+    expect(path).toBe('/api/venue/guests/guest-1/loyalty-card/adjust');
+    expect(JSON.parse(init.body)).toEqual({ delta: 2, reason: 'Carried over from a paper card', client_request_id: 'req-12345678' });
+    expect(client.getQueryData(queryKeys.pos.loyaltyCard(mockToken, 'guest-1'))).toMatchObject({ card });
+  });
+
+  it('asks nothing while loyalty is off for the sale', async () => {
+    const { wrapper } = setup();
+    const { result } = await renderHook(() => useSaleRewards('sale-1', { enabled: false }), { wrapper });
+    expect(result.current.fetchStatus).toBe('idle');
+    expect(mockApiFetch).not.toHaveBeenCalled();
   });
 });

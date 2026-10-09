@@ -8,8 +8,15 @@ import { queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { useVenue } from '@/lib/queries/useVenue';
 import type {
+  PosBarcodeHit,
   PosBootstrap,
   PosCatalogue,
+  PosClientPurchasesResponse,
+  PosLoyaltyCard,
+  PosLoyaltyCardResponse,
+  PosMinePeriod,
+  PosMyCommission,
+  PosSaleRewardsResponse,
   PosClientStoredValue,
   PosQueueResponse,
   PosReportAccess,
@@ -52,7 +59,8 @@ export function usePosEnabled(): boolean {
   return isPosEnabled(venue.data);
 }
 
-function useGate(extra = true): { accessToken: string | null; enabled: boolean } {
+/** The POS gate every Checkout query uses (shared with the products and stock hooks). */
+export function usePosGate(extra = true): { accessToken: string | null; enabled: boolean } {
   const accessToken = useAccessToken();
   const posEnabled = usePosEnabled();
   return { accessToken, enabled: extra && posEnabled && isBackendConfigured() && accessToken !== null };
@@ -60,7 +68,7 @@ function useGate(extra = true): { accessToken: string | null; enabled: boolean }
 
 /** `GET /api/venue/pos/bootstrap`: settings, capabilities, operators, payment types, presets, tips. */
 export function usePosBootstrap(options: { enabled?: boolean } = {}) {
-  const { accessToken, enabled } = useGate(options.enabled ?? true);
+  const { accessToken, enabled } = usePosGate(options.enabled ?? true);
   return useQuery({
     queryKey: queryKeys.pos.bootstrap(accessToken),
     enabled,
@@ -71,7 +79,7 @@ export function usePosBootstrap(options: { enabled?: boolean } = {}) {
 
 /** `GET /api/venue/pos/catalogue`: services with their options and who does them. */
 export function usePosCatalogue(options: { enabled?: boolean } = {}) {
-  const { accessToken, enabled } = useGate(options.enabled ?? true);
+  const { accessToken, enabled } = usePosGate(options.enabled ?? true);
   return useQuery({
     queryKey: queryKeys.pos.catalogue(accessToken),
     enabled,
@@ -82,7 +90,7 @@ export function usePosCatalogue(options: { enabled?: boolean } = {}) {
 
 /** "Ready to check out" (`GET /api/venue/pos/queue`). */
 export function usePosQueue(date?: string | null, options: { enabled?: boolean } = {}) {
-  const { accessToken, enabled } = useGate(options.enabled ?? true);
+  const { accessToken, enabled } = usePosGate(options.enabled ?? true);
   return useQuery({
     queryKey: queryKeys.pos.queue(accessToken, date ?? null),
     enabled,
@@ -93,7 +101,7 @@ export function usePosQueue(date?: string | null, options: { enabled?: boolean }
 
 /** Open sales (`status=open`) or all sales, with a search on the number or the client. */
 export function usePosSaleList(params: { status?: string | null; q?: string | null }, options: { enabled?: boolean } = {}) {
-  const { accessToken, enabled } = useGate(options.enabled ?? true);
+  const { accessToken, enabled } = usePosGate(options.enabled ?? true);
   const path = posPaths.saleList({ status: params.status ?? null, q: params.q ?? null });
   return useQuery({
     queryKey: queryKeys.pos.sales(accessToken, path),
@@ -112,7 +120,7 @@ export function saleRefetchInterval(sale: PosSale | undefined): number | false {
 
 /** One sale (`GET /api/venue/pos/sales/[id]`), which also settles a card a lost webhook left pending. */
 export function usePosSale(saleId: string | null | undefined, options: { enabled?: boolean } = {}) {
-  const { accessToken, enabled } = useGate((options.enabled ?? true) && Boolean(saleId));
+  const { accessToken, enabled } = usePosGate((options.enabled ?? true) && Boolean(saleId));
   return useQuery({
     queryKey: queryKeys.pos.sale(accessToken, saleId ?? null),
     enabled,
@@ -269,7 +277,7 @@ export function useSaleWrite(saleId: string) {
  * as null: vouchers are simply not sold here.
  */
 export function useVoucherSettings(options: { enabled?: boolean } = {}) {
-  const { accessToken, enabled } = useGate(options.enabled ?? true);
+  const { accessToken, enabled } = usePosGate(options.enabled ?? true);
   return useQuery({
     queryKey: queryKeys.pos.voucherSettings(accessToken),
     enabled,
@@ -291,7 +299,7 @@ export function useVoucherSettings(options: { enabled?: boolean } = {}) {
  * (`GET /api/venue/guests/[guestId]/stored-value`). Last four characters only, never a code.
  */
 export function useClientStoredValue(guestId: string | null | undefined, options: { enabled?: boolean } = {}) {
-  const { accessToken, enabled } = useGate((options.enabled ?? true) && Boolean(guestId));
+  const { accessToken, enabled } = usePosGate((options.enabled ?? true) && Boolean(guestId));
   return useQuery({
     queryKey: queryKeys.pos.storedValue(accessToken, guestId ?? null),
     enabled,
@@ -319,7 +327,7 @@ export async function lookupVoucher(accessToken: string, normalisedCode: string)
 
 /** Whether Reports shows Takings and Sales. Asked only at venues with `pos_enabled`. */
 export function usePosReportAccess(options: { enabled?: boolean } = {}) {
-  const { accessToken, enabled } = useGate(options.enabled ?? true);
+  const { accessToken, enabled } = usePosGate(options.enabled ?? true);
   return useQuery({
     queryKey: queryKeys.pos.reportAccess(accessToken),
     enabled,
@@ -333,7 +341,7 @@ export function reportQuery(preset: PosReportPreset): string {
 }
 
 export function useTakingsReport(preset: PosReportPreset, options: { enabled?: boolean } = {}) {
-  const { accessToken, enabled } = useGate(options.enabled ?? true);
+  const { accessToken, enabled } = usePosGate(options.enabled ?? true);
   const query = reportQuery(preset);
   return useQuery({
     queryKey: queryKeys.pos.takings(accessToken, query),
@@ -343,7 +351,7 @@ export function useTakingsReport(preset: PosReportPreset, options: { enabled?: b
 }
 
 export function useSalesReport(preset: PosReportPreset, options: { enabled?: boolean } = {}) {
-  const { accessToken, enabled } = useGate(options.enabled ?? true);
+  const { accessToken, enabled } = usePosGate(options.enabled ?? true);
   const query = reportQuery(preset);
   return useQuery({
     queryKey: queryKeys.pos.salesReport(accessToken, query),
@@ -353,36 +361,153 @@ export function useSalesReport(preset: PosReportPreset, options: { enabled?: boo
 }
 
 /**
- * "Your sales and tips" (`app.mine.*`): this person's line in the Sales report's performers and
- * sellers, and in the tips by person, matched on their login or one of their calendars.
+ * "Your sales and tips" (`app.mine.*`, Pass LC, UX spec §22.3): this person's own figures from
+ * `GET /api/venue/pos/commission/report?mine=1&period=`, for every team member: the sales credited
+ * to them (their login and the calendars they work on), their tips, and their commission when they
+ * hold `see_own_commission` (null otherwise). It replaces app step 1's reading of the Takings and
+ * Sales reports, which only logins with `view_reports` could see. A server before Pass LC answers
+ * 404, which reads as null: the card is then not shown.
  */
-export function myFigures(
-  input: {
-    sales: SalesReport | undefined;
-    takings: TakingsReport | undefined;
-  },
-  me: { staffId: string | null; calendarIds: string[] },
-): { salesPence: number; tipsPence: number } | null {
-  if (!input.sales && !input.takings) return null;
-  const mine = (row: { staff_id: string | null; calendar_id: string | null }) =>
-    (me.staffId != null && row.staff_id === me.staffId) ||
-    (row.calendar_id != null && me.calendarIds.includes(row.calendar_id));
-  // A line can credit a performer and a seller, so services come from the performer rows and
-  // products and other items from the seller rows: nothing is counted twice.
-  const performed = (input.sales?.by_performer ?? []).filter(mine).reduce((sum, r) => sum + r.total_pence, 0);
-  const sold = (input.sales?.by_seller ?? [])
-    .filter(mine)
-    .reduce((sum, r) => sum + r.retail_pence + r.other_pence, 0);
-  const salesPence = performed + sold;
-  const tipsPence = (input.takings?.tips?.by_recipient ?? []).filter(mine).reduce((sum, r) => sum + r.net_pence, 0);
-  return { salesPence, tipsPence };
+export function useMyCommission(period: PosMinePeriod, options: { enabled?: boolean } = {}) {
+  const { accessToken, enabled } = usePosGate(options.enabled ?? true);
+  return useQuery({
+    queryKey: queryKeys.pos.myCommission(accessToken, period),
+    enabled,
+    staleTime: 30_000,
+    retry: false,
+    queryFn: async (): Promise<PosMyCommission | null> => {
+      try {
+        return await posFetch<PosMyCommission>(posPaths.myCommission(period), { accessToken: accessToken! });
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 404) return null;
+        throw error;
+      }
+    },
+  });
+}
+
+// ─── Products at the till (app step 4, POS plan P7-12, UX spec §3.8) ────────
+
+/**
+ * The till's products for a search (`GET /api/venue/pos/catalogue?type=products&q=`): live, sold in
+ * store, not backbar-only, each option with its price and stock, and the venue's stock rules.
+ * Searched on the server, as the web till does (#19, paged to 50).
+ */
+export function useProductSearch(q: string, options: { enabled?: boolean } = {}) {
+  const { accessToken, enabled } = usePosGate(options.enabled ?? true);
+  const term = q.trim();
+  return useQuery({
+    queryKey: queryKeys.pos.productSearch(accessToken, term),
+    enabled,
+    staleTime: 15_000,
+    placeholderData: (previous) => previous,
+    queryFn: () => posFetch<PosCatalogue>(posPaths.productSearch(term), { accessToken: accessToken! }),
+  });
+}
+
+/**
+ * Looks up one scanned barcode (`GET /api/venue/pos/catalogue?barcode=`). A plain call, made once
+ * per scan. A code no product the till sells has is a 404: with `reason` ('archived',
+ * 'professional', 'not_in_store') and the server's sentence when the venue has it on a product the
+ * till may not sell, without one when nobody has it.
+ */
+export async function lookupBarcode(
+  accessToken: string,
+  code: string,
+): Promise<{ hit: PosBarcodeHit } | { refused: string } | { unknown: true }> {
+  try {
+    const hit = await posFetch<PosBarcodeHit>(posPaths.barcode(code), { accessToken });
+    if (!hit?.product || !hit.product.options?.some((o) => o.id === hit.option_id)) return { unknown: true };
+    return { hit };
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) {
+      const body = error.body as { reason?: unknown; error?: unknown } | undefined;
+      if (typeof body?.reason === 'string' && typeof body.error === 'string') return { refused: body.error };
+      return { unknown: true };
+    }
+    throw error;
+  }
+}
+
+/**
+ * A client's lifetime and average spend and the products they bought
+ * (`GET /api/venue/guests/[guestId]/purchases`, P4-8). The plan put these on the guest GET; the
+ * web serves them from their own route, which only answers at POS venues.
+ */
+export function useClientPurchases(guestId: string | null | undefined, options: { enabled?: boolean } = {}) {
+  const { accessToken, enabled } = usePosGate((options.enabled ?? true) && Boolean(guestId));
+  return useQuery({
+    queryKey: queryKeys.pos.purchases(accessToken, guestId ?? null),
+    enabled,
+    staleTime: 15_000,
+    retry: false,
+    queryFn: () => posFetch<PosClientPurchasesResponse>(posPaths.guestPurchases(guestId!), { accessToken: accessToken! }),
+  });
+}
+
+// ─── Loyalty cards (Pass LC, UX spec §21) ───────────────────────────────────
+
+/**
+ * The rewards the sale's client has waiting (`GET /api/venue/pos/sales/[id]/loyalty-reward`), each
+ * with its words and whether it can go on this sale. Asked only while loyalty is on, the sale has a
+ * client and it can still change; every sale write refreshes it (`invalidateAfterSaleWrite`).
+ */
+export function useSaleRewards(saleId: string, options: { enabled?: boolean } = {}) {
+  const { accessToken, enabled } = usePosGate(options.enabled ?? true);
+  return useQuery({
+    queryKey: queryKeys.pos.saleRewards(accessToken, saleId),
+    enabled,
+    staleTime: 10_000,
+    retry: false,
+    queryFn: () => posFetch<PosSaleRewardsResponse>(posPaths.saleRewards(saleId), { accessToken: accessToken! }),
+  });
+}
+
+/** A client's loyalty card, its rewards and its history (`GET /api/venue/guests/[guestId]/loyalty-card`). */
+export function useLoyaltyCard(guestId: string | null | undefined, options: { enabled?: boolean } = {}) {
+  const { accessToken, enabled } = usePosGate((options.enabled ?? true) && Boolean(guestId));
+  return useQuery({
+    queryKey: queryKeys.pos.loyaltyCard(accessToken, guestId ?? null),
+    enabled,
+    staleTime: 10_000,
+    retry: false,
+    queryFn: () => posFetch<PosLoyaltyCardResponse>(posPaths.guestLoyaltyCard(guestId!), { accessToken: accessToken! }),
+  });
+}
+
+/**
+ * Adds or takes off stamps with a reason (`POST .../loyalty-card/adjust`, admins and
+ * `adjust_loyalty`). The request id is minted by the caller once per form, so a retry writes once.
+ * Answers the card as it now stands, and the rewards a full card issued.
+ */
+export function useAdjustLoyalty(guestId: string) {
+  const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { delta: number; reason: string; clientRequestId: string }) => {
+      if (!accessToken) throw new Error('Could not confirm you are signed in. Please try again.');
+      return posFetch<{ card: PosLoyaltyCard | null; issued_reward_ids: string[]; replayed?: boolean }>(
+        posPaths.guestLoyaltyAdjust(guestId),
+        {
+          accessToken,
+          method: 'POST',
+          body: { delta: input.delta, reason: input.reason, client_request_id: input.clientRequestId },
+        },
+      );
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData<PosLoyaltyCardResponse | undefined>(queryKeys.pos.loyaltyCard(accessToken, guestId), (old) =>
+        old ? { ...old, card: data.card } : { card: data.card, can: { adjust: true } },
+      );
+    },
+  });
 }
 
 // ─── Card payments (app step 2, POS plan P7-8 and P7-9) ─────────────────────
 
 /** The venue's counter readers with their status, asked of Stripe when `refresh` (the web's `?refresh=1`). */
 export function usePosReaders(options: { enabled?: boolean; refresh?: boolean } = {}) {
-  const { accessToken, enabled } = useGate(options.enabled ?? true);
+  const { accessToken, enabled } = usePosGate(options.enabled ?? true);
   return useQuery({
     queryKey: queryKeys.pos.readers(accessToken),
     enabled,
@@ -396,7 +521,7 @@ export function usePosReaders(options: { enabled?: boolean; refresh?: boolean } 
  * waiting link is polled while it is on screen.
  */
 export function usePayLinks(saleId: string | null | undefined, options: { enabled?: boolean; poll?: boolean } = {}) {
-  const { accessToken, enabled } = useGate((options.enabled ?? true) && Boolean(saleId));
+  const { accessToken, enabled } = usePosGate((options.enabled ?? true) && Boolean(saleId));
   return useQuery({
     queryKey: queryKeys.pos.payLinks(accessToken, saleId ?? null),
     enabled,
@@ -407,7 +532,7 @@ export function usePayLinks(saleId: string | null | undefined, options: { enable
 
 /** A client's saved cards (`GET /api/venue/pos/guests/[guestId]/cards`). Never a Stripe id. */
 export function useGuestSavedCards(guestId: string | null | undefined, options: { enabled?: boolean } = {}) {
-  const { accessToken, enabled } = useGate((options.enabled ?? true) && Boolean(guestId));
+  const { accessToken, enabled } = usePosGate((options.enabled ?? true) && Boolean(guestId));
   return useQuery({
     queryKey: queryKeys.pos.guestCards(accessToken, guestId ?? null),
     enabled,
@@ -445,7 +570,7 @@ export function useRemoveSavedCard(guestId: string) {
  * `take_payment`.
  */
 export function useCollectRequests(options: { enabled?: boolean } = {}) {
-  const { accessToken, enabled } = useGate(options.enabled ?? true);
+  const { accessToken, enabled } = usePosGate(options.enabled ?? true);
   return useQuery({
     queryKey: queryKeys.pos.collectRequests(accessToken),
     enabled,
@@ -459,7 +584,7 @@ export function useCollectRequests(options: { enabled?: boolean } = {}) {
 
 /** Payouts and fees, for admins (`GET /api/venue/reports/payouts`). Instant payouts are v1.x. */
 export function usePayouts(preset: PosReportPreset, options: { enabled?: boolean } = {}) {
-  const { accessToken, enabled } = useGate(options.enabled ?? true);
+  const { accessToken, enabled } = usePosGate(options.enabled ?? true);
   const query = reportQuery(preset);
   return useQuery({
     queryKey: queryKeys.pos.payouts(accessToken, query),
@@ -471,7 +596,7 @@ export function usePayouts(preset: PosReportPreset, options: { enabled?: boolean
 
 /** One payout and what it covered. */
 export function usePayoutDetail(preset: PosReportPreset, payoutId: string | null, options: { enabled?: boolean } = {}) {
-  const { accessToken, enabled } = useGate((options.enabled ?? true) && Boolean(payoutId));
+  const { accessToken, enabled } = usePosGate((options.enabled ?? true) && Boolean(payoutId));
   const query = reportQuery(preset);
   return useQuery({
     queryKey: queryKeys.pos.payoutDetail(accessToken, query, payoutId),
@@ -487,7 +612,7 @@ export function usePayoutDetail(preset: PosReportPreset, payoutId: string | null
  * while it is open, so the phone learns of a cancel from the desk and of the payment settling.
  */
 export function useCollectState(paymentId: string | null | undefined, options: { enabled?: boolean; poll?: boolean } = {}) {
-  const { accessToken, enabled } = useGate((options.enabled ?? true) && Boolean(paymentId));
+  const { accessToken, enabled } = usePosGate((options.enabled ?? true) && Boolean(paymentId));
   return useQuery({
     queryKey: [...queryKeys.pos.collectRequests(accessToken), 'state', paymentId ?? null] as const,
     enabled,

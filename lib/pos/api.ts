@@ -109,6 +109,65 @@ export const posPaths = {
   collectState: (paymentId: string) => `/api/venue/pos/payments/${encodeURIComponent(paymentId)}/collect`,
   collectClaim: (paymentId: string) => `/api/venue/pos/payments/${encodeURIComponent(paymentId)}/claim`,
   collectCancel: (paymentId: string) => `/api/venue/pos/payments/${encodeURIComponent(paymentId)}/cancel`,
+  // Pass 4 (app step 4): products at the till. A search is the catalogue's products only; a scan is
+  // one exact barcode look-up.
+  productSearch: (q: string) => {
+    const sp = new URLSearchParams({ type: 'products' });
+    if (q.trim()) sp.set('q', q.trim().slice(0, 80));
+    return `/api/venue/pos/catalogue?${sp.toString()}`;
+  },
+  barcode: (code: string) => `/api/venue/pos/catalogue?barcode=${encodeURIComponent(code.trim().slice(0, 64))}`,
+  guestPurchases: (guestId: string) => `/api/venue/guests/${encodeURIComponent(guestId)}/purchases`,
+  // Pass LC: loyalty cards and commission.
+  saleRewards: (saleId: string) => `/api/venue/pos/sales/${encodeURIComponent(saleId)}/loyalty-reward`,
+  guestLoyaltyCard: (guestId: string) => `/api/venue/guests/${encodeURIComponent(guestId)}/loyalty-card`,
+  guestLoyaltyAdjust: (guestId: string) => `/api/venue/guests/${encodeURIComponent(guestId)}/loyalty-card/adjust`,
+  myCommission: (period: string) => `/api/venue/pos/commission/report?mine=1&period=${encodeURIComponent(period)}`,
+} as const;
+
+/**
+ * Products and stock (`/api/venue/retail/*`, POS plan Appendix E #26 to #30). These go through
+ * `posFetch` too, so they carry the same headers, and like every POS call they are only made at
+ * venues with `pos_enabled`.
+ */
+export const retailPaths = {
+  products: (params: { q?: string | null; archived?: 'live' | 'archived' | 'all'; low?: boolean; offset?: number; limit?: number }) => {
+    const sp = new URLSearchParams();
+    if (params.q?.trim()) sp.set('q', params.q.trim().slice(0, 120));
+    if (params.archived && params.archived !== 'live') sp.set('archived', params.archived);
+    if (params.low) sp.set('low', '1');
+    sp.set('limit', String(params.limit ?? 50));
+    if (params.offset) sp.set('offset', String(params.offset));
+    return `/api/venue/retail/products?${sp.toString()}`;
+  },
+  productsCreate: '/api/venue/retail/products',
+  product: (productId: string) => `/api/venue/retail/products/${encodeURIComponent(productId)}`,
+  productPhotos: (productId: string) => `/api/venue/retail/products/${encodeURIComponent(productId)}/photos`,
+  productPhoto: (productId: string, index: number) =>
+    `/api/venue/retail/products/${encodeURIComponent(productId)}/photos/${index}`,
+  named: (kind: 'brands' | 'categories' | 'suppliers') => `/api/venue/retail/${kind}`,
+  stock: (params: { filter?: string; q?: string | null; offset?: number; tiles?: boolean }) => {
+    const sp = new URLSearchParams();
+    if (params.filter && params.filter !== 'all') sp.set('filter', params.filter);
+    if (params.q?.trim()) sp.set('q', params.q.trim().slice(0, 120));
+    sp.set('limit', '50');
+    if (params.offset) sp.set('offset', String(params.offset));
+    if (params.tiles) sp.set('tiles', '1');
+    return `/api/venue/retail/stock?${sp.toString()}`;
+  },
+  adjustments: '/api/venue/retail/stock/adjustments',
+  movements: (params: { variantId?: string | null; productId?: string | null; offset?: number }) => {
+    const sp = new URLSearchParams();
+    if (params.variantId) sp.set('variant_id', params.variantId);
+    if (params.productId) sp.set('product_id', params.productId);
+    sp.set('limit', '50');
+    if (params.offset) sp.set('offset', String(params.offset));
+    return `/api/venue/retail/stock/movements?${sp.toString()}`;
+  },
+  stocktakes: '/api/venue/retail/stocktakes',
+  stocktake: (id: string) => `/api/venue/retail/stocktakes/${encodeURIComponent(id)}`,
+  stocktakeAction: (id: string, action: 'counts' | 'status' | 'commit' | 'cancel') =>
+    `/api/venue/retail/stocktakes/${encodeURIComponent(id)}/${action}`,
 } as const;
 
 /**

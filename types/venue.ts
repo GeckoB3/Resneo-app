@@ -76,11 +76,12 @@ export type VenueFeatureFlagsRaw = Partial<
 /**
  * Platform-only switches (POS plan D42): only ResNeo turns them on, from
  * `/super/flags`, so the app reads them and never toggles them. `pos_enabled`
- * is Checkout (POS plan §4.20); `pos_gift_vouchers_enabled` is gift vouchers (Pass V), which
- * the web resolves off whenever `pos_enabled` is. An older web deploy does not send a key, which
+ * is Checkout (POS plan §4.20); `pos_gift_vouchers_enabled` is gift vouchers (Pass V) and
+ * `pos_loyalty_enabled` loyalty cards (Pass LC), which the web resolves off whenever `pos_enabled`
+ * is. An older web deploy does not send a key, which
  * reads as off, so every POS surface stays hidden (§4.22, §13.11).
  */
-export type PlatformOnlyFeatureFlagKey = 'pos_enabled' | 'pos_gift_vouchers_enabled';
+export type PlatformOnlyFeatureFlagKey = 'pos_enabled' | 'pos_gift_vouchers_enabled' | 'pos_loyalty_enabled';
 
 /** Env + venue merged flags returned by GET /api/venue. */
 export type ResolvedAppointmentsFeatureFlags = Record<
