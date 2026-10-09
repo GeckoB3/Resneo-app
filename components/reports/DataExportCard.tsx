@@ -4,6 +4,8 @@
  * (CSV, Excel or PDF). The card counts what the choice covers before anything is downloaded, and
  * a range with nothing in it says so instead of producing an empty file. The file comes from
  * `GET /api/venue/export` with every detail the venue holds, and lands in the OS share sheet.
+ * Where Reports shows Takings (`posKinds`, plan §4.18), Sales, Payments, Products and Stock
+ * movements join the kinds, as on the web.
  */
 import { useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -17,6 +19,7 @@ import { getApiUrl, isBackendConfigured } from '@/lib/env';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { exportQuery, useExportCount, type ExportKind } from '@/lib/queries/useExportCount';
 import { downloadAndShareFile } from '@/lib/share/share-binary-file';
+import { reportsCopy } from '@/lib/pos/reports-copy';
 import { useToast } from '@/providers/ToastProvider';
 import { spacing } from '@/theme/index';
 
@@ -70,15 +73,23 @@ export function DataExportCard({
   bookingWord = 'Booking',
   clientLabel = 'Guest',
   today,
+  posKinds = false,
 }: {
   bookingWord?: string;
   clientLabel?: string;
   /** Today in the venue's timezone, to seed the custom range. */
   today: string;
+  /** Offer Sales, Payments, Products and Stock movements (POS on, or the venue has sales). */
+  posKinds?: boolean;
 }) {
   const accessToken = useAccessToken();
   const toast = useToast();
-  const [kind, setKind] = useState<ExportKind>('bookings');
+  const [chosenKind, setKind] = useState<ExportKind>('bookings');
+  // A POS kind chosen before the access check settled falls back to the first kind.
+  const kind: ExportKind =
+    !posKinds && (chosenKind === 'sales' || chosenKind === 'payments' || chosenKind === 'products' || chosenKind === 'stock')
+      ? 'bookings'
+      : chosenKind;
   const [preset, setPreset] = useState<RangePreset>('all');
   const [customFrom, setCustomFrom] = useState(today);
   const [customTo, setCustomTo] = useState(today);
@@ -104,6 +115,34 @@ export function DataExportCard({
       hint: 'Every service with its category, duration, price and deposit, options, add-ons, which calendars offer it, booking rules and instructions.',
       rangeHint: 'Services are chosen by the day they were added.',
     },
+    ...(posKinds
+      ? [
+          {
+            id: 'sales' as const,
+            label: reportsCopy('exp.sales'),
+            hint: reportsCopy('exp.sales.hint', { client: clientLabel.toLowerCase() }),
+            rangeHint: reportsCopy('exp.sales.range'),
+          },
+          {
+            id: 'payments' as const,
+            label: reportsCopy('exp.payments'),
+            hint: reportsCopy('exp.payments.hint'),
+            rangeHint: reportsCopy('exp.payments.range'),
+          },
+          {
+            id: 'products' as const,
+            label: reportsCopy('exp.products'),
+            hint: reportsCopy('exp.products.hint'),
+            rangeHint: reportsCopy('exp.products.range'),
+          },
+          {
+            id: 'stock' as const,
+            label: reportsCopy('exp.stock'),
+            hint: reportsCopy('exp.stock.hint'),
+            rangeHint: reportsCopy('exp.stock.range'),
+          },
+        ]
+      : []),
   ];
   const kindMeta = kinds.find((k) => k.id === kind) ?? kinds[0]!;
   const customInvalid = preset === 'custom' && customFrom > customTo;

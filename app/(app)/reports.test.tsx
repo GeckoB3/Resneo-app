@@ -10,7 +10,8 @@ import { act, fireEvent, render, screen } from '@testing-library/react-native';
 
 import type { ReportsResponse } from '@/types/reports';
 
-jest.mock('expo-router', () => ({ Stack: { Screen: () => null }, useLocalSearchParams: () => ({}) }));
+let mockParams: { tab?: string } = {};
+jest.mock('expo-router', () => ({ Stack: { Screen: () => null }, useLocalSearchParams: () => mockParams }));
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
 
 const mockToast = { success: jest.fn(), error: jest.fn(), info: jest.fn() };
@@ -24,8 +25,18 @@ const mockVenue = {
 };
 jest.mock('@/providers/VenueProvider', () => ({ useVenueContext: () => mockVenue }));
 
+let mockRole = 'admin';
 jest.mock('@/lib/queries/useStaffMe', () => ({
-  useStaffMe: () => ({ data: { staff: { role: 'admin' } }, isLoading: false }),
+  useStaffMe: () => ({ data: { staff: { role: mockRole } }, isLoading: false }),
+}));
+let mockVouchersFlag = false;
+jest.mock('@/lib/queries/useVenue', () => ({
+  useVenue: () => ({
+    data: {
+      currency: 'GBP',
+      feature_flags: { resolved: { pos_enabled: true, pos_gift_vouchers_enabled: mockVouchersFlag } },
+    },
+  }),
 }));
 
 jest.mock('@/lib/queries/useBookingsList', () => ({
@@ -45,16 +56,26 @@ jest.mock('@/lib/queries/useReports', () => ({ useReports: () => mockReports }))
 
 // Takings and Sales (POS P7-4): the access answer is what decides the tab control. The real hook is
 // gated on the venue's pos_enabled; here `mockPosAccess` stands for its answer (undefined = not asked).
-let mockPosAccess: { visible: boolean; can_view: boolean } | undefined;
+let mockPosAccess: { visible: boolean; can_view: boolean; can_export?: boolean } | undefined;
 jest.mock('@/lib/queries/usePos', () => ({
-  usePosReportAccess: () => ({ data: mockPosAccess }),
+  usePosReportAccess: () => ({ data: mockPosAccess, isLoading: false }),
 }));
+const mockSectionProps: Record<string, unknown> = {};
 jest.mock('@/components/reports/PosReportSections', () => {
   const { Text } = jest.requireActual<typeof import('react-native')>('react-native');
   return {
-    TakingsSection: () => <Text>takings-section</Text>,
+    TakingsSection: (props: unknown) => {
+      mockSectionProps.takings = props;
+      return <Text>takings-section</Text>;
+    },
     SalesSection: () => <Text>sales-section</Text>,
+    VouchersSection: () => <Text>vouchers-section</Text>,
+    CommissionSection: () => <Text>commission-section</Text>,
   };
+});
+jest.mock('@/components/reports/pos/StaffPosReportsPanel', () => {
+  const { Text } = jest.requireActual<typeof import('react-native')>('react-native');
+  return { StaffPosReportsPanel: (props: { canExport: boolean }) => <Text>{`staff-panel export=${props.canExport}`}</Text> };
 });
 
 jest.mock('@/lib/reports/csv-export', () => ({
@@ -69,7 +90,13 @@ jest.mock('@/lib/reports/csv-export', () => ({
 jest.mock('@/components/reports/HistorySection', () => ({ HistorySection: () => null }));
 jest.mock('@/components/reports/BookedRevenueSection', () => ({ BookedRevenueSection: () => null }));
 jest.mock('@/components/reports/BookingLogEmailCard', () => ({ BookingLogEmailCard: () => null }));
-jest.mock('@/components/reports/DataExportCard', () => ({ DataExportCard: () => null }));
+const mockExportProps: { posKinds?: boolean }[] = [];
+jest.mock('@/components/reports/DataExportCard', () => ({
+  DataExportCard: (props: { posKinds?: boolean }) => {
+    mockExportProps.push(props);
+    return null;
+  },
+}));
 jest.mock('@/components/reports/BaselineMetricsCard', () => ({ BaselineMetricsCard: () => null }));
 jest.mock('@/components/reports/ClientsTab', () => ({ ClientsTab: () => null }));
 jest.mock('@/components/reports/SvgBarChart', () => ({ SvgBarChart: () => null }));
@@ -178,6 +205,10 @@ beforeEach(() => {
   mockVenue.terminology = { client: 'Client', booking: 'Appointment', staff: 'Practitioner' };
   mockReports.data = reportsData();
   mockPosAccess = undefined;
+  mockParams = {};
+  mockRole = 'admin';
+  mockVouchersFlag = false;
+  mockExportProps.length = 0;
 });
 
 describe('Reports overview range', () => {
@@ -402,5 +433,85 @@ describe('Reports tabs for Checkout (POS app step 1)', () => {
       fireEvent.press(screen.getByText('Sales'));
     });
     expect(screen.getByText('sales-section')).toBeTruthy();
+  });
+});
+
+describe('Reports POS tabs at full parity (web ReportsView)', () => {
+  it('orders the chips as the web does, with Vouchers and Commission for admins', async () => {
+    mockPosAccess = { visible: true, can_view: true, can_export: true };
+    mockVouchersFlag = true;
+    await render(<ReportsScreen />);
+    const labels = ['Overview', 'New bookings', 'Booked value', 'Takings', 'Sales', 'Vouchers', 'Commission', 'Clients'];
+    for (const label of labels) expect(screen.getAllByText(label).length).toBeGreaterThan(0);
+    await act(async () => {
+      fireEvent.press(screen.getByText('Vouchers'));
+    });
+    expect(screen.getByText('vouchers-section')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByText('Commission'));
+    });
+    expect(screen.getByText('commission-section')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByText('Takings'));
+    });
+    expect(mockSectionProps.takings).toEqual({ canExport: true, isAdmin: true, today: '2026-09-11' });
+  });
+
+  it('leaves Vouchers out while gift vouchers are off', async () => {
+    mockPosAccess = { visible: true, can_view: true };
+    await render(<ReportsScreen />);
+    expect(screen.queryByText('Vouchers')).toBeNull();
+    expect(screen.getByText('Commission')).toBeTruthy();
+  });
+
+  it('opens a POS tab from the link', async () => {
+    mockPosAccess = { visible: true, can_view: true };
+    mockParams = { tab: 'commission' };
+    await render(<ReportsScreen />);
+    expect(screen.getByText('commission-section')).toBeTruthy();
+  });
+
+  it('falls back to the Overview where the linked tab does not exist', async () => {
+    mockParams = { tab: 'commission' };
+    await render(<ReportsScreen />);
+    expect(screen.queryByText('commission-section')).toBeNull();
+    expect(screen.getByText('No-show rate')).toBeTruthy();
+  });
+
+  it('renames the deposits card and offers the POS export kinds where Takings shows', async () => {
+    mockPosAccess = { visible: true, can_view: true };
+    await render(<ReportsScreen />);
+    expect(screen.getByText('Deposits by booking date')).toBeTruthy();
+    expect(screen.queryByText('Payments & deposits')).toBeNull();
+    expect(mockExportProps[mockExportProps.length - 1]?.posKinds).toBe(true);
+  });
+
+  it('keeps the old title and kinds elsewhere', async () => {
+    await render(<ReportsScreen />);
+    expect(screen.getByText('Payments & deposits')).toBeTruthy();
+    expect(mockExportProps[mockExportProps.length - 1]?.posKinds).toBe(false);
+  });
+});
+
+describe('Reports for a team member (web StaffPosReportsPanel)', () => {
+  it('shows Takings and Sales only, with view_reports', async () => {
+    mockRole = 'staff';
+    mockPosAccess = { visible: true, can_view: true, can_export: false };
+    await render(<ReportsScreen />);
+    expect(screen.getByText('staff-panel export=false')).toBeTruthy();
+    expect(screen.queryByText('No-show rate')).toBeNull();
+  });
+
+  it('asks them to see an admin without view_reports', async () => {
+    mockRole = 'staff';
+    mockPosAccess = { visible: true, can_view: false };
+    await render(<ReportsScreen />);
+    expect(screen.getByText('Ask an admin if you need to see the takings and sales reports.')).toBeTruthy();
+  });
+
+  it('keeps Reports admin only where there is no POS', async () => {
+    mockRole = 'staff';
+    await render(<ReportsScreen />);
+    expect(screen.getByText('Reports are only available to venue admins.')).toBeTruthy();
   });
 });

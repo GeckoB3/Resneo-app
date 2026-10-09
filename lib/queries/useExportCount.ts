@@ -5,7 +5,8 @@ import { isBackendConfigured } from '@/lib/env';
 import { queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 
-export type ExportKind = 'bookings' | 'contacts' | 'services';
+/** The web's kinds; `sales`, `payments`, `products` and `stock` only where POS reports show (`posKinds`). */
+export type ExportKind = 'bookings' | 'contacts' | 'services' | 'sales' | 'payments' | 'products' | 'stock';
 
 /** The query string for `GET /api/venue/export`, without the format. */
 export function exportQuery(kind: ExportKind, range: { from: string; to: string } | null): string {
