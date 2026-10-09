@@ -5,6 +5,7 @@ import { isBackendConfigured } from '@/lib/env';
 import { posFetch, posPaths, staleSaleFrom, type PosMethod } from '@/lib/pos/api';
 import { isPosEnabled } from '@/lib/pos/pos-enabled';
 import { queryKeys } from '@/lib/queries/keys';
+import { scanCandidates } from '@/lib/retail/scan';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { useVenue } from '@/lib/queries/useVenue';
 import type {
@@ -427,6 +428,23 @@ export async function lookupBarcode(
     }
     throw error;
   }
+}
+
+/**
+ * A scanned or typed code, tried in each form it may be stored under (`scanCandidates`: a UPC-A
+ * read as twelve digits or as an EAN-13 with a 0 in front), scanned form first. The first hit or
+ * refusal wins; unknown only when no form is known.
+ */
+export async function lookupScannedBarcode(
+  accessToken: string,
+  code: string,
+): Promise<{ hit: PosBarcodeHit } | { refused: string } | { unknown: true }> {
+  const forms = scanCandidates(code);
+  for (const form of forms) {
+    const res = await lookupBarcode(accessToken, form);
+    if (!('unknown' in res)) return res;
+  }
+  return { unknown: true };
 }
 
 /**

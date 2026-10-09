@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ChoiceChips, money, posStyles, usePosT } from '@/components/pos/parts';
+import { CameraScanner, ScanButton } from '@/components/retail/CameraScanner';
 import { AdjustStockSheet, MovementsSheet, StartStocktakeSheet, type AdjustTarget } from '@/components/retail/StockSheets';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -129,6 +130,7 @@ function ProductsTab({ canEdit, trackStock }: { canEdit: boolean; trackStock: bo
   const [search, setSearch] = useState('');
   const q = useDebounced(search);
   const [filter, setFilter] = useState<'live' | 'low' | 'archived'>('live');
+  const [camera, setCamera] = useState(false);
   const list = useRetailProducts({ q, archived: filter === 'archived' ? 'archived' : 'live', low: filter === 'low' });
   const items = useMemo(() => (list.data?.pages ?? []).flatMap((p) => p.items), [list.data]);
   const filtered = Boolean(q) || filter !== 'live';
@@ -152,7 +154,10 @@ function ProductsTab({ canEdit, trackStock }: { canEdit: boolean; trackStock: bo
         onClear={() => setSearch('')}
         submitBehavior="submit"
         accessibilityLabel={t('prod.search')}
+        right={<ScanButton onPress={() => setCamera(true)} />}
       />
+      {/* A scanned barcode is searched like a typed one: the products route matches it exactly. */}
+      <CameraScanner visible={camera} onClose={() => setCamera(false)} onScan={(code) => setSearch(code)} />
       <ChoiceChips
         options={[
           { value: 'live', label: t('stock.filter.all') },

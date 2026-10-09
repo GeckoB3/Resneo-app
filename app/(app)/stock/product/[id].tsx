@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 
 import { ChoiceChips, ErrorLine, money, Notice, PickRow, posStyles, usePosT } from '@/components/pos/parts';
+import { CameraScanner, cameraScanAvailable, ScanButton } from '@/components/retail/CameraScanner';
 import { AdjustStockSheet, MovementsSheet, type AdjustTarget } from '@/components/retail/StockSheets';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -752,6 +753,7 @@ function OptionEditor({
   const { colors } = useTheme();
   const [code, setCode] = useState('');
   const [codeError, setCodeError] = useState<string | null>(null);
+  const [camera, setCamera] = useState(false);
   const err = (field: string) => errors[`opt.${option.key}.${field}`];
 
   function addBarcode(raw: string) {
@@ -829,9 +831,12 @@ function OptionEditor({
         rightSlot={
           code.trim() ? (
             <Button label={t('var.barcode.add')} size="sm" variant="ghost" onPress={() => addBarcode(code)} />
+          ) : cameraScanAvailable ? (
+            <ScanButton onPress={() => setCamera(true)} />
           ) : undefined
         }
       />
+      <CameraScanner visible={camera} onClose={() => setCamera(false)} onScan={(scanned) => addBarcode(scanned)} />
       {trackStock ? (
         <>
           <Input

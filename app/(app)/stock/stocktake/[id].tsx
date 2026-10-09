@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, StyleSheet, Switch, View } from 'react-native';
 
 import { AmountRow, ErrorLine, money, Notice, PosSheet, posStyles, usePosT } from '@/components/pos/parts';
+import { CameraScanner, ScanButton, type ScanMessage as CameraMessage } from '@/components/retail/CameraScanner';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -30,6 +31,7 @@ import {
   saveStocktakeDraft,
   type PendingCount,
 } from '@/lib/retail/stocktake-draft';
+import { scanCandidates } from '@/lib/retail/scan';
 import { joinNames, productLabel, reviewSummary, shortWhen, signed, stocktakeStatusId, timeOfDay } from '@/lib/retail/stock-words';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { usePosBootstrap, usePosEnabled } from '@/lib/queries/usePos';
@@ -141,6 +143,8 @@ function StocktakeBody({
   const [loaded, setLoaded] = useState(false);
   const [offline, setOffline] = useState(false);
   const [scan, setScan] = useState('');
+  const [camera, setCamera] = useState(false);
+  const [looking, setLooking] = useState(false);
   const [message, setMessage] = useState<Message | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [setting, setSetting] = useState<StocktakeLine | null>(null);
@@ -261,27 +265,38 @@ function StocktakeBody({
     [data.lines, patches, pending],
   );
 
-  async function handleScan() {
-    const code = scan.trim();
+  /**
+   * A code from the field (a keyboard-mode scanner types it and presses Enter) or from the camera
+   * (`fromCamera`, which leaves the field as it is). A barcode or SKU on this stocktake adds one.
+   */
+  async function handleScan(fromCamera?: string) {
+    const code = (fromCamera ?? scan).trim();
     if (!code) return;
+    const clearField = () => {
+      if (fromCamera === undefined) setScan('');
+    };
     const match = lineForCode(lines, code);
     if (match) {
-      setScan('');
+      clearField();
       count({ variant_id: match.variant_id, label: productLabel(match.product_name, match.option_name) }, 'add', 1, true);
       return;
     }
     if (looksLikeBarcode(code) && accessToken) {
       // An option outside this stocktake's lines: look it up, and the server says if it is out of scope.
       setMessage({ kind: 'info', text: t('take.scan.lookup') });
+      setLooking(true);
       try {
-        const res = await posFetch<RetailProductSearch>(retailPaths.products({ q: code, limit: 10 }), { accessToken });
+        const forms = scanCandidates(code);
         const lc = code.toLowerCase();
-        for (const p of res.items ?? []) {
-          const v = p.variants.find((x) => x.barcodes.includes(code) || (x.sku !== null && x.sku.trim().toLowerCase() === lc));
-          if (v) {
-            setScan('');
-            count({ variant_id: v.id, label: productLabel(p.name, v.option_name) }, 'add', 1, true);
-            return;
+        for (const form of forms) {
+          const res = await posFetch<RetailProductSearch>(retailPaths.products({ q: form, limit: 10 }), { accessToken });
+          for (const p of res.items ?? []) {
+            const v = p.variants.find((x) => x.barcodes.some((b) => forms.includes(b)) || (x.sku !== null && x.sku.trim().toLowerCase() === lc));
+            if (v) {
+              clearField();
+              count({ variant_id: v.id, label: productLabel(p.name, v.option_name) }, 'add', 1, true);
+              return;
+            }
           }
         }
       } catch (e) {
@@ -289,11 +304,13 @@ function StocktakeBody({
           setMessage({ kind: 'error', text: posErrorMessage(e, t('common.networkError')) });
           return;
         }
+      } finally {
+        setLooking(false);
       }
     }
-    if (!lines.some((l) => lineMatches(l, code))) {
+    if (fromCamera !== undefined || !lines.some((l) => lineMatches(l, code))) {
       hapticWarning();
-      setScan('');
+      clearField();
       setMessage({ kind: 'unknown', text: t('take.scan.unknown', { barcode: code }) });
       return;
     }
@@ -368,6 +385,14 @@ function StocktakeBody({
                   onSubmitEditing={() => void handleScan()}
                   submitBehavior="submit"
                   accessibilityLabel={t('take.scan')}
+                  right={
+                    <ScanButton
+                      onPress={() => {
+                        setMessage(null);
+                        setCamera(true);
+                      }}
+                    />
+                  }
                 />
               ) : null}
               {message ? <ScanMessage message={message} /> : null}
@@ -421,6 +446,16 @@ function StocktakeBody({
             ) : null
           }
         />
+        {canCount ? (
+          <CameraScanner
+            visible={camera}
+            mode="continuous"
+            onClose={() => setCamera(false)}
+            onScan={(code) => void handleScan(code)}
+            paused={looking}
+            message={cameraMessage(message)}
+          />
+        ) : null}
         <SetCountSheet
           key={setting?.variant_id ?? 'none'}
           line={setting}
@@ -560,6 +595,15 @@ function StocktakeBody({
       />
     </Screen>
   );
+}
+
+/** The last scan's message, as the camera shows it over the picture. */
+function cameraMessage(message: Message | null): CameraMessage {
+  if (!message) return null;
+  if (message.kind === 'added') return { tone: 'success', text: message.text };
+  if (message.kind === 'info') return { tone: 'info', text: message.text };
+  if (message.kind === 'error') return { tone: 'error', text: message.text };
+  return { tone: 'warning', text: message.text };
 }
 
 function ScanMessage({ message }: { message: Message }) {

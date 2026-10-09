@@ -36,6 +36,7 @@ jest.mock('@/lib/queries/usePos', () => ({
   usePosCatalogue: () => ({ data: mockCatalogue, isLoading: false, isError: false }),
   useProductSearch: () => ({ data: mockCatalogue, isLoading: false, isError: false }),
   lookupBarcode: (...args: unknown[]) => mockLookup(...args),
+  lookupScannedBarcode: (...args: unknown[]) => mockLookup(...args),
   useVoucherSettings: () => ({ data: null, isLoading: false }),
   useSaleRewards: (_id: string, opts: { enabled?: boolean }) => ({ data: opts.enabled ? { rewards: mockRewards, card: null } : undefined }),
 }));

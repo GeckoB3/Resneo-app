@@ -1,6 +1,7 @@
 import { Platform } from 'react-native';
 
 import { ApiError } from '@/lib/api/client';
+import { scanCandidates } from '@/lib/retail/scan';
 import type { StocktakeLine } from '@/types/retail';
 
 /**
@@ -58,12 +59,18 @@ export function countWithPending(serverCounted: number | null, pending: PendingC
   return count;
 }
 
-/** The line a barcode or SKU names in this stocktake (a scan adds one to it). */
+/**
+ * The line a barcode or SKU names in this stocktake (a scan adds one to it). A barcode matches in
+ * any form it may be stored under (`scanCandidates`: UPC-A with or without its leading 0).
+ */
 export function lineForCode(lines: StocktakeLine[], code: string): StocktakeLine | null {
   const c = code.trim();
   if (!c) return null;
   const lc = c.toLowerCase();
-  return lines.find((l) => l.barcodes.includes(c) || (l.sku !== null && l.sku.trim().toLowerCase() === lc)) ?? null;
+  const forms = scanCandidates(c);
+  return (
+    lines.find((l) => l.barcodes.some((b) => forms.includes(b)) || (l.sku !== null && l.sku.trim().toLowerCase() === lc)) ?? null
+  );
 }
 
 /** Whether a row matches what is typed in the scan-or-search field. */

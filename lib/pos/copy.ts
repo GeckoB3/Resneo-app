@@ -1044,6 +1044,12 @@ export const POS_COPY = {
   'app.photo.permission': 'ResNeo needs your camera to take photos of products and receipts.',
   'app.photo.denied': "Camera access is off. Turn it on in your phone's settings, or choose a photo instead.",
   'app.stocktake.offline': "You're offline. Your counts are saved on this phone and will be sent when you're back online.",
+  // Camera scanning, over the air with app step 4 (§13.6), word for word from §18.28.
+  'app.scan.title': 'Scan a barcode',
+  'app.scan.hint': 'Point the camera at the barcode.',
+  'app.scan.torch': 'Torch',
+  'app.scan.permission': 'ResNeo needs your camera to scan barcodes.',
+  'app.scan.denied': "Camera access is off. Turn it on in your phone's settings to scan, or type the code instead.",
   'app.web.stockSetup': 'Suppliers, labels and stock set-up',
   'app.web.loyalty': 'Loyalty card set-up',
   'app.web.commission': 'Commission rates and report',
@@ -1060,6 +1066,10 @@ export const POS_COPY = {
   'app.stocktake.waiting': 'Waiting to send', // (added) a row counted while offline
   'app.loyalty.choose': 'Choose a reward', // (added) two rewards waiting
   'app.mine.error': "We couldn't load your sales and tips.", // (added)
+  'app.scan.allow': 'Turn on the camera', // (added) asks for the camera from the scanner
+  'app.scan.settings': 'Open settings', // (added) camera access was turned off
+  'app.scan.done': 'Done', // (added) closes the camera after scanning several codes
+  'app.scan.cameraFailed': "The camera didn't start. Close this and try again, or type the code instead.", // (added)
 } as const;
 
 export type PosCopyId = keyof typeof POS_COPY;

@@ -13,6 +13,7 @@ import {
   type Send,
 } from '@/components/pos/parts';
 import { AddNoticeBanner, OptionChooser, ProductRows, useAddProduct, type AddNotice } from '@/components/pos/ProductAdd';
+import { CameraScanner, ScanButton } from '@/components/retail/CameraScanner';
 import { VoucherSellForm, VoucherTiles } from '@/components/pos/VoucherSheets';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -35,7 +36,7 @@ import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { useGuests } from '@/lib/queries/useGuests';
 import { creditLocked } from '@/lib/pos/voucher-math';
 import {
-  lookupBarcode,
+  lookupScannedBarcode,
   usePosCatalogue,
   usePosSaleList,
   useProductSearch,
@@ -101,6 +102,7 @@ function AddItemsSheetBody({
   const [feeKind, setFeeKind] = useState<'lateCancel' | 'noShow' | 'other'>('lateCancel');
   const [busy, setBusy] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const [camera, setCamera] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -146,12 +148,13 @@ function AddItemsSheetBody({
   }
 
   // A keyboard-mode scanner types the code into the search field and ends with Enter: the code is
-  // looked up exactly and added (UX spec §3.8 `scan.*`). A name is just a search.
+  // looked up exactly and added (UX spec §3.8 `scan.*`). A name is just a search. The camera
+  // (§13.6) hands its codes to the same path, one at a time.
   async function scan(code: string) {
     if (!accessToken || !productsOn || adding || scanning) return;
     setScanning(true);
     try {
-      const res = await lookupBarcode(accessToken, code);
+      const res = await lookupScannedBarcode(accessToken, code);
       if ('hit' in res) {
         const option = res.hit.product.options.find((o) => o.id === res.hit.option_id)!;
         setQuery('');
@@ -170,6 +173,7 @@ function AddItemsSheetBody({
             onPress: () => {
               setNotice(null);
               setQuery('');
+              setCamera(false);
               setTab('products');
             },
           },
@@ -315,9 +319,33 @@ function AddItemsSheetBody({
               submitBehavior="submit"
               returnKeyType="search"
               accessibilityLabel={t('add.search.placeholder')}
+              right={
+                productsOn ? (
+                  <ScanButton
+                    onPress={() => {
+                      setNotice(null);
+                      setCamera(true);
+                    }}
+                  />
+                ) : undefined
+              }
             />
           ) : null}
           <AddNoticeBanner notice={notice} />
+          {productsOn ? (
+            <CameraScanner
+              visible={camera}
+              mode="continuous"
+              onClose={() => setCamera(false)}
+              onScan={(code) => void scan(code)}
+              paused={scanning || adding}
+              message={
+                notice
+                  ? { tone: notice.tone === 'error' ? 'error' : notice.tone === 'warning' ? 'warning' : 'success', text: notice.lines.join(' ') }
+                  : null
+              }
+            />
+          ) : null}
           {tabs.length > 1 ? <ChoiceChips options={tabs} value={tab} onChange={(v) => setTab(v)} /> : null}
           {catalogue.isLoading ? (
             <Text tone="muted">{t('app.loading')}</Text>

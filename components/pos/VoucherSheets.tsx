@@ -13,6 +13,7 @@ import {
   writeError,
   type Send,
 } from '@/components/pos/parts';
+import { CameraScanner, cameraScanAvailable, ScanButton } from '@/components/retail/CameraScanner';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { DatePickerField } from '@/components/ui/DatePickerField';
@@ -24,6 +25,7 @@ import { newPaymentAttemptId } from '@/lib/payments/attempt-id';
 import { posErrorMessage, posHeaders, posPaths } from '@/lib/pos/api';
 import { parseMoneyInput, penceToInput } from '@/lib/pos/sale-math';
 import { codeInputProblem, normaliseVoucherCode, tidyCodeInput } from '@/lib/pos/voucher-code';
+import { VOUCHER_BARCODE_TYPES } from '@/lib/retail/scan';
 import {
   formatDay,
   issuedVouchers,
@@ -470,6 +472,7 @@ export function VoucherPayPanel({
   const [code, setCode] = useState('');
   const [codeError, setCodeError] = useState<string | null>(null);
   const [finding, setFinding] = useState(false);
+  const [camera, setCamera] = useState(false);
   const [found, setFound] = useState<PosVoucherSummary | null>(null);
   const [amountText, setAmountText] = useState<string | null>(null);
   const { capPence, heldPence } = storedValueCap(sale);
@@ -543,6 +546,17 @@ export function VoucherPayPanel({
         maxLength={40}
         helper={t('vpay.code.help')}
         error={codeError ?? undefined}
+        rightSlot={cameraScanAvailable && !code.trim() ? <ScanButton onPress={() => setCamera(true)} /> : undefined}
+      />
+      {/* The voucher PDF carries the code as a QR code (§13.13): it fills the field, never a cache. */}
+      <CameraScanner
+        visible={camera}
+        onClose={() => setCamera(false)}
+        barcodeTypes={VOUCHER_BARCODE_TYPES}
+        onScan={(scanned) => {
+          setCode(tidyCodeInput(scanned));
+          setCodeError(null);
+        }}
       />
       <Button label={t('vpay.find')} loading={finding} disabled={!code.trim() || finding} onPress={() => void find()} fullWidth />
 

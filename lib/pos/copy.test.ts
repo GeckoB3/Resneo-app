@@ -145,6 +145,16 @@ describe('POS copy', () => {
     expect(posCopy('app.tile.stock')).toBe('Products and stock');
   });
 
+  it('keeps the camera scanning ids word for word (UX spec §13.6, §18.28)', () => {
+    expect(posCopy('app.scan.title')).toBe('Scan a barcode');
+    expect(posCopy('app.scan.hint')).toBe('Point the camera at the barcode.');
+    expect(posCopy('app.scan.torch')).toBe('Torch');
+    expect(posCopy('app.scan.permission')).toBe('ResNeo needs your camera to scan barcodes.');
+    expect(posCopy('app.scan.denied')).toBe(
+      "Camera access is off. Turn it on in your phone's settings to scan, or type the code instead.",
+    );
+  });
+
   it('fills placeholders and leaves unknown ones for a test to spot', () => {
     expect(fillCopy('{amount} to pay', { amount: '£5.00' })).toBe('£5.00 to pay');
     expect(fillCopy('{missing} here')).toBe('{missing} here');

@@ -189,6 +189,20 @@ and Pass LC for app step 4) on the server.
     member, today, this week or this month, with their commission when they hold
     `see_own_commission`. It replaces app step 1's reading of the Takings and Sales reports.
   - "Loyalty card set-up" joins the web rows for admins while loyalty is on.
+- **Camera scanning (over the air with app step 4, UX spec §13.6).** `expo-camera` with barcode
+  scanning has been in the binaries since 1.1.2, so this is JavaScript only; the permission prompt
+  shows the purpose string those binaries carry. A camera button sits beside every field that
+  takes a code, and typing or a keyboard-mode scanner still works as before:
+  - *Add items at the till:* scan one product after another; each is looked up exactly and added,
+    with what happened shown over the picture (the same words and warnings as a typed scan).
+  - *Stocktakes:* count by scanning, several in a row; each code counts once while it stays in
+    view, so holding a box up counts it once and the next unit counts after a pause.
+  - *A product's barcodes, the products search and a gift voucher's code* (its PDF carries the code
+    as a QR code; the scanned code only fills the field).
+  - The camera asks in plain words before the phone does ("ResNeo needs your camera to scan
+    barcodes."), says how to turn it back on when it was refused, and has a torch and Cancel.
+  - A UPC-A code is matched with or without the 0 an iPhone reads in front of it, at the till and
+    in stocktakes, so a camera scan finds what a keyboard scanner stored.
 
 ---
 
