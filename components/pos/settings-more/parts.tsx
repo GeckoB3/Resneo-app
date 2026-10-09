@@ -17,6 +17,7 @@ import { smT } from '@/lib/pos/settings-more/copy';
 import { usePosSettings } from '@/lib/pos/settings-more/hooks';
 import type { PosSettingsResponse } from '@/lib/pos/settings-more/types';
 import { usePosEnabled } from '@/lib/queries/usePos';
+import { useVenue } from '@/lib/queries/useVenue';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
@@ -45,9 +46,20 @@ export function SettingsScreen({
   gate?: (data: PosSettingsResponse) => GateAnswer;
   children: (data: PosSettingsResponse) => ReactNode;
 }) {
+  const venue = useVenue();
   const posEnabled = usePosEnabled();
   const query = usePosSettings({ enabled: posEnabled });
   const header = <Stack.Screen options={{ headerShown: true, title }} />;
+
+  // The venue's switches are read from its bootstrap: wait for it rather than saying "off" early.
+  if (!venue.data && venue.isLoading) {
+    return (
+      <Screen padded={false}>
+        {header}
+        <DetailSkeleton />
+      </Screen>
+    );
+  }
 
   if (!posEnabled || (query.isError && isFeatureOff(query.error))) {
     return (

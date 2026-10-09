@@ -36,6 +36,7 @@ jest.mock('@/providers/VenueProvider', () => ({
 }));
 const mockToast = { success: jest.fn(), error: jest.fn(), info: jest.fn() };
 jest.mock('@/providers/ToastProvider', () => ({ useToast: () => mockToast }));
+jest.mock('@/lib/queries/useVenue', () => ({ useVenue: () => ({ data: { id: 'venue-1' }, isLoading: false }) }));
 jest.mock('@/lib/queries/usePos', () => ({
   usePosEnabled: () => true,
   usePosGate: (extra = true) => ({ accessToken: 'token-A', enabled: extra }),
