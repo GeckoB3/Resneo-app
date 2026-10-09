@@ -23,8 +23,8 @@ is behind the venue's resolved `feature_flags.resolved.pos_enabled` (POS plan §
 DEV-04 / APP-08). With it off, or against a web deploy that does not send it, the app is exactly
 as before: "Take payment" and `/charge`, the four-option Reports control, no Checkout tile and not
 one `/api/venue/pos` request; the one change every venue gets is `client_build` on push registration
-(app step 2, below). Needs the web's POS Pass 1 (and Pass V, and Pass 2 for app step 2) on
-the server.
+(app step 2, below). Needs the web's POS Pass 1 (and Pass V, Pass 2 for app step 2, and Pass 4
+and Pass LC for app step 4) on the server.
 
 - **Foundations (P7-1).** `feature_flags.resolved.pos_enabled` is read (`lib/pos/pos-enabled.ts`).
   A sale API client (`lib/pos/api.ts`) sends `X-ResNeo-Client` (platform, store version, update
@@ -140,6 +140,55 @@ the server.
   - Not in this step: the Finish and pay toast, saving a card at online booking and instant payouts
     (all v1.x); asking to save the card on the counter reader (the web till's tick); a push that
     tells the phone the desk cancelled (the phone polls instead).
+- **Products and stock (app step 4, the Pass 4 half: POS plan P7-12, P7-13, P7-14; UX spec §6,
+  §13.6).** Everything follows what a Pass 4 server sends (the catalogue's `products`, the
+  bootstrap's `track_stock_enabled`, the line's `product`), so against an older server the sale
+  screen is exactly as before and the stock screens are not offered.
+  - *Products at the till.* Add items gains Favourites (product options and services, or the best
+    sellers until an admin chooses favourites) and Products, searched on the server. A tap adds
+    one, or opens "Choose an option"; a second tap adds one more to the same line. The search field
+    takes a keyboard-mode scanner (the code and Enter): the barcode is looked up exactly
+    (`GET /api/venue/pos/catalogue?barcode=`), with "No product has the barcode ..." and "Search
+    instead", or the server's sentence for a product the till may not sell. Each add says what
+    happened, with the stock warnings (below zero, held for online orders) and the age reminder
+    for an 18+ product; a venue that does not sell beyond its count is refused before anything is
+    sent. Product lines show the 18+ chip and "Stock count below zero" or "{n} left", and their
+    quantity can be changed. Lines carry who is serving as the seller.
+  - *Refunds.* "Put back in stock" (unticked) on each product line chosen, sent as `restock`.
+  - *Products and stock.* A "Products and stock" tile in More's workspace for every team member
+    (read only without `manage_products`): products by name, brand, SKU or barcode, low stock and
+    archived; a product with its options (price, SKU, barcodes typed or scanned, and with Track
+    stock on, cost, counting, reorder level and quantity, a starting count), the VAT category,
+    how it is used, "Not sold online" and "Age restricted (18+)", photos from the library or the
+    camera (expo-image-picker, already in the binaries), archive, unarchive and delete. An edit
+    sends only what the app shows; the description, sizes, supplier and maker's details stay as
+    they were (and on the web). With Track stock on: the tiles, stock levels (all, low, out, below
+    zero), adjustments with a reason (`adjust_stock`, one request id per sheet) and each option's
+    movement history.
+  - *Stocktakes.* Start (full, or by category or brand), count by typing, +1 or a keyboard-mode
+    scanner, several people at once (read every 10 seconds), review the differences, "Update
+    stock" (`commit_stocktake`, with "count anything not counted as zero" on a full count) and
+    cancel. Counts are kept on the phone first (a file per stocktake, dropped at sign-out), so
+    with poor signal counting carries on and they are sent, each with its own request id, when
+    the phone is back online.
+  - *The client page.* Lifetime and average spend, and the products they bought, from
+    `GET /api/venue/guests/[guestId]/purchases` (the plan had them on the guest GET; the web
+    serves them from their own route).
+  - *On the web.* "Suppliers, labels and stock set-up" and "Commission rates and report" for admins.
+  - Not in this step: camera scanning (expo-camera is in the binaries but no screen uses it yet),
+    purchase orders, receiving and "Use stock" (P7-15, the web half is still being built), the
+    `retail_low_stock` push (the web sends only the daily email) and photo reordering.
+- **Loyalty cards and commission (the Pass LC app step, PLC-8; UX spec §21, §22).** Loyalty follows
+  the venue's resolved `pos_loyalty_enabled`, which a server before Pass LC does not send.
+  - *Reward ready.* A chip on the sale when its client has a reward waiting, listing the rewards
+    with "Use the reward" (`take_payment`, `POST .../loyalty-reward` with the sale's version), or
+    why a free service cannot go on yet. The discount shows in the server's words.
+  - *The loyalty card* on the client page: the stamps, a reward waiting and its use-by date, the
+    history, and "Add or remove stamps" for admins and `adjust_loyalty`.
+  - *Your sales and tips* now reads `GET /api/venue/pos/commission/report?mine=1` for every team
+    member, today, this week or this month, with their commission when they hold
+    `see_own_commission`. It replaces app step 1's reading of the Takings and Sales reports.
+  - "Loyalty card set-up" joins the web rows for admins while loyalty is on.
 
 ---
 
