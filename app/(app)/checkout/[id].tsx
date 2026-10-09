@@ -20,6 +20,7 @@ import {
   writeError,
   type Send,
 } from '@/components/pos/SaleSheets';
+import { RewardReadyChip } from '@/components/pos/LoyaltyReward';
 import { IssuedVouchers, VoucherLineSheet, voucherLineDetails } from '@/components/pos/VoucherSheets';
 import { AmountRow, money, Notice, posStyles, usePosT } from '@/components/pos/parts';
 import { saleHref, useOpenCheckout } from '@/components/pos/useOpenCheckout';
@@ -45,6 +46,7 @@ import {
   saleStatusCopyId,
   totalsRows,
 } from '@/lib/pos/sale-math';
+import { isAgeRestrictedLine, productLineStock } from '@/lib/pos/product-math';
 import { isVoucherLine } from '@/lib/pos/voucher-math';
 import { SaleStaleError, usePosBootstrap, usePosEnabled, usePosSale, useSaleWrite } from '@/lib/queries/usePos';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
@@ -65,6 +67,10 @@ import type { PosSale, PosSaleLine } from '@/types/pos';
  * and try again; a declined card on file says why and offers another way to pay; a sale sent to a
  * phone can be cancelled; open pay links show their QR code again or are cancelled; and a visit
  * paid in full offers a tip-only link (`done.tipLink`).
+ *
+ * App step 4 (P7-12, Pass LC): product lines show the 18+ chip and their stock chip, "Reward ready"
+ * sits under the client when they have a loyalty reward waiting, and a loyalty discount reads in
+ * the server's words.
  */
 
 type SheetKind =
@@ -352,6 +358,9 @@ function SaleBody({
           </Pressable>
         </View>
 
+        {/* "Reward ready" (Pass LC, §21.3): the client has a loyalty reward waiting. */}
+        <RewardReadyChip sale={sale} bootstrap={bootstrap} send={send} />
+
         {/* Lines. */}
         <Card>
           <View style={posStyles.stack}>
@@ -362,6 +371,7 @@ function SaleBody({
                 <LineRow
                   key={l.id}
                   line={l}
+                  saleStatus={sale.status}
                   timeZone={timeZone}
                   onPress={
                     // A gift voucher line opens its sell form while it can change, else what it says.
@@ -373,7 +383,12 @@ function SaleBody({
             {sale.discounts.map((d) => (
               <View key={d.id} style={posStyles.row}>
                 <Text variant="bodySmall" style={styles.flex}>
-                  {d.reason ? `${t('totals.discounts')}: ${d.reason}` : t('totals.discounts')}
+                  {d.kind === 'loyalty_reward'
+                    ? // "Loyalty reward: a free Cut" (`disc.loyalty`), in the server's words.
+                      d.reason || t('totals.discounts')
+                    : d.reason
+                      ? `${t('totals.discounts')}: ${d.reason}`
+                      : t('totals.discounts')}
                 </Text>
                 <Text variant="bodySmall">-{money(d.applied_pence)}</Text>
                 {linesEditable && can('apply_discount') ? (
@@ -661,11 +676,23 @@ function SaleBody({
   );
 }
 
-function LineRow({ line, timeZone, onPress }: { line: PosSaleLine; timeZone: string; onPress?: () => void }) {
+function LineRow({
+  line,
+  saleStatus,
+  timeZone,
+  onPress,
+}: {
+  line: PosSaleLine;
+  saleStatus: PosSale['status'];
+  timeZone: string;
+  onPress?: () => void;
+}) {
   const t = usePosT();
   const changed = line.unit_price_pence !== line.list_unit_price_pence && line.list_unit_price_pence > 0;
   const who = line.performer?.name ?? line.seller?.name;
   const voucher = isVoucherLine(line);
+  // Product lines (Pass 4, §3.7): the 18+ reminder, and the stock left after this line.
+  const stock = productLineStock(line, saleStatus);
   const content = (
     <View style={styles.line}>
       <View style={styles.flex}>
@@ -685,6 +712,9 @@ function LineRow({ line, timeZone, onPress }: { line: PosSaleLine; timeZone: str
           {changed ? <Badge label={t('line.chip.priceChanged', { listPrice: money(line.list_unit_price_pence) })} tone="warning" /> : null}
           {line.line_discount_pence > 0 ? <Badge label={t('line.chip.discount', { amount: money(line.line_discount_pence) })} /> : null}
           {line.paid_by_credit ? <Badge label={t('line.chip.paid')} tone="success" /> : null}
+          {isAgeRestrictedLine(line) ? <Badge label={t('line.chip.age18')} tone="warning" /> : null}
+          {stock?.kind === 'none' ? <Badge label={t('line.chip.stockNone')} tone="warning" /> : null}
+          {stock?.kind === 'low' ? <Badge label={t('line.chip.stockLow', { count: stock.count })} /> : null}
         </View>
       </View>
       <Text variant="bodyMedium">{money(line.total_pence)}</Text>

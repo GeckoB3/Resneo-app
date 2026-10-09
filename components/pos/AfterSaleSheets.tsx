@@ -24,6 +24,7 @@ import {
   spreadRefund,
   type RefundSlice,
 } from '@/lib/pos/sale-math';
+import { canRestock, refundLinesBody } from '@/lib/pos/product-math';
 import {
   isStoredValueMethod,
   isVoucherLine,
@@ -43,6 +44,9 @@ import type { PosBootstrap, PosPayment, PosSale } from '@/types/pos';
  * credit goes back to credit. Neither ever goes anywhere else, whoever is signed in. An admin may
  * also send money to the client's account credit. A voucher line refunds only what is left on the
  * voucher, and once part of it is used, only an admin can refund it.
+ *
+ * Pass 4 (P4-10, §3.22): a product line chosen for refund offers "Put back in stock", unticked,
+ * sent as the line's `restock`.
  */
 
 const DEFAULT_REFUND_REASONS = ['Not happy with the service', 'Product returned', 'Charged by mistake', 'Goodwill'];
@@ -95,6 +99,8 @@ function RefundSheetBody({
   const [by, setBy] = useState<'amount' | 'items'>('amount');
   const [amountText, setAmountText] = useState(penceToInput(maxGoods));
   const [chosen, setChosen] = useState<Record<string, number>>({});
+  // Product lines put back in stock (P4-10): unticked, because refunds restock only when asked.
+  const [restock, setRestock] = useState<ReadonlySet<string>>(new Set());
   const [withTip, setWithTip] = useState(cancelSale);
   const [destination, setDestination] = useState<Destination>('original');
   const [typeId, setTypeId] = useState<string | null>(null);
@@ -141,7 +147,7 @@ function RefundSheetBody({
         body: {
           client_request_id: requestId.current,
           ...(by === 'items' && !cancelSale
-            ? { lines: Object.entries(chosen).filter(([, q]) => q > 0).map(([line_id, quantity]) => ({ line_id, quantity })) }
+            ? { lines: refundLinesBody(sale.lines, chosen, restock) }
             : {}),
           destinations: slices.map((s) => {
             const dest = isStoredValueMethod(s.method) ? 'original' : target;
@@ -238,6 +244,28 @@ function RefundSheetBody({
                       <Text variant="caption" tone="muted">
                         {t('refund.bookingLine')}
                       </Text>
+                    ) : null}
+                    {canRestock(r.line) && (chosen[r.line.id] ?? 0) > 0 ? (
+                      <View style={posStyles.row}>
+                        <View style={{ flex: 1 }}>
+                          <Text variant="bodySmall">{t('refund.restock')}</Text>
+                          <Text variant="caption" tone="muted">
+                            {t('refund.restock.help')}
+                          </Text>
+                        </View>
+                        <Switch
+                          value={restock.has(r.line.id)}
+                          onValueChange={(on) =>
+                            setRestock((cur) => {
+                              const next = new Set(cur);
+                              if (on) next.add(r.line.id);
+                              else next.delete(r.line.id);
+                              return next;
+                            })
+                          }
+                          accessibilityLabel={`${t('refund.restock')}: ${r.line.name}`}
+                        />
+                      </View>
                     ) : null}
                     {voucherState?.state === 'ok' ? (
                       <Text variant="caption" tone="muted">

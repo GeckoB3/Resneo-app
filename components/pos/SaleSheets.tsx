@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import {
@@ -12,12 +12,15 @@ import {
   writeError,
   type Send,
 } from '@/components/pos/parts';
+import { AddNoticeBanner, OptionChooser, ProductRows, useAddProduct, type AddNotice } from '@/components/pos/ProductAdd';
 import { VoucherSellForm, VoucherTiles } from '@/components/pos/VoucherSheets';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { SearchBar } from '@/components/ui/SearchBar';
 import { Segmented } from '@/components/ui/Segmented';
+import { Stepper } from '@/components/ui/Stepper';
 import { Text } from '@/components/ui/Text';
+import { hapticWarning } from '@/lib/haptics';
 import { posErrorMessage } from '@/lib/pos/api';
 import { canPos } from '@/lib/pos/pos-enabled';
 import {
@@ -27,11 +30,20 @@ import {
   parseMoneyInput,
   penceToInput,
 } from '@/lib/pos/sale-math';
+import { looksLikeBarcode, readStockRules, resolveTillFavourites, type TillFavourite } from '@/lib/pos/product-math';
+import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { useGuests } from '@/lib/queries/useGuests';
 import { creditLocked } from '@/lib/pos/voucher-math';
-import { usePosCatalogue, usePosSaleList, useVoucherSettings, type SaleWriteInput } from '@/lib/queries/usePos';
+import {
+  lookupBarcode,
+  usePosCatalogue,
+  usePosSaleList,
+  useProductSearch,
+  useVoucherSettings,
+  type SaleWriteInput,
+} from '@/lib/queries/usePos';
 import { spacing } from '@/theme/index';
-import type { PosBootstrap, PosCatalogueService, PosSale, PosSaleLine } from '@/types/pos';
+import type { PosBootstrap, PosCatalogueProduct, PosCatalogueService, PosSale, PosSaleLine } from '@/types/pos';
 
 /**
  * The sale's sheets in the app (UX spec §3.8 to §3.17, presented as phone sheets, §13.3): adding
@@ -44,7 +56,7 @@ export { writeError, type Send } from '@/components/pos/parts';
 
 // ─── Add items ──────────────────────────────────────────────────────────────
 
-type AddTab = 'services' | 'custom' | 'fee' | 'vouchers';
+type AddTab = 'favourites' | 'services' | 'products' | 'custom' | 'fee' | 'vouchers';
 
 function AddItemsSheetBody({
   visible,
@@ -62,6 +74,7 @@ function AddItemsSheetBody({
   myCalendarIds: string[];
 }) {
   const t = usePosT();
+  const accessToken = useAccessToken();
   const catalogue = usePosCatalogue({ enabled: visible });
   const canCustom = canPos(bootstrap, 'custom_line');
   // Gift vouchers (Pass V, §20.2): while the voucher switch is on, for logins that can start a sale
@@ -72,19 +85,38 @@ function AddItemsSheetBody({
   const voucherSettings =
     canSellVouchers && voucherSettingsQ.data?.settings.set_up ? voucherSettingsQ.data.settings : null;
   const timeZone = bootstrap.venue?.timezone ?? 'Europe/London';
+  const venueName = bootstrap.venue?.name ?? 'This venue';
   const [voucherPick, setVoucherPick] = useState<{ presetPence: number | null } | null>(null);
-  const [tab, setTab] = useState<AddTab>('services');
+  const [chosenTab, setTab] = useState<AddTab | null>(null);
   const [query, setQuery] = useState('');
+  const [debounced, setDebounced] = useState('');
   const [service, setService] = useState<PosCatalogueService | null>(null);
   const [optionId, setOptionId] = useState<string | null>(null);
   const [calendarId, setCalendarId] = useState<string | null>(null);
+  const [choosing, setChoosing] = useState<PosCatalogueProduct | null>(null);
+  const [notice, setNotice] = useState<AddNotice | null>(null);
   const [name, setName] = useState('');
   const [price, setPrice] = useState('');
   const [group, setGroup] = useState<'services' | 'retail' | 'other'>('services');
   const [feeKind, setFeeKind] = useState<'lateCancel' | 'noShow' | 'other'>('lateCancel');
   const [busy, setBusy] = useState(false);
+  const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(query.trim()), 200);
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  // Products arrive with Pass 4 (P4-4): a server before it sends no `products`, and the sheet stays
+  // as it was (services, custom items, fees and vouchers).
+  const productsOn = Array.isArray(catalogue.data?.products);
+  const rules = readStockRules(catalogue.data?.stock);
+  const favourites = useMemo(() => resolveTillFavourites(catalogue.data), [catalogue.data]);
+  const tab: AddTab = chosenTab ?? (productsOn && favourites.tiles.length > 0 ? 'favourites' : 'services');
+  const searching = debounced.length > 0 && (tab === 'services' || tab === 'products' || tab === 'favourites');
+  const productSearch = useProductSearch(debounced, { enabled: visible && productsOn && (tab === 'products' || searching) });
+  const { add: addProduct, busy: adding } = useAddProduct({ sale, send, rules, venueName, onNotice: setNotice });
 
   const services = useMemo(() => {
     const all = catalogue.data?.services ?? [];
@@ -93,13 +125,61 @@ function AddItemsSheetBody({
     const matched = q ? all.filter((s) => s.name.toLowerCase().includes(q)) : all;
     return [...matched].sort((a, b) => Number(favIds.has(b.id)) - Number(favIds.has(a.id)));
   }, [catalogue.data, query]);
+  const products = productSearch.data?.products ?? [];
 
-  function chooseService(s: PosCatalogueService) {
+  function chooseService(s: PosCatalogueService, presetOptionId: string | null = null) {
     setService(s);
-    setOptionId(s.options.length === 1 ? s.options[0]!.id : null);
+    setOptionId(presetOptionId ?? (s.options.length === 1 ? s.options[0]!.id : null));
     const mine = s.calendars.find((c) => myCalendarIds.includes(c.calendar_id));
     setCalendarId(mine?.calendar_id ?? (s.calendars.length === 1 ? s.calendars[0]!.calendar_id : null));
     setError(null);
+  }
+
+  function pickProduct(p: PosCatalogueProduct) {
+    if (p.options.length === 1) void addProduct(p, p.options[0]!);
+    else if (p.options.length > 1) setChoosing(p);
+  }
+
+  function pickFavourite(f: TillFavourite) {
+    if (f.kind === 'product') void addProduct(f.product, f.option);
+    else chooseService(f.service, f.optionId);
+  }
+
+  // A keyboard-mode scanner types the code into the search field and ends with Enter: the code is
+  // looked up exactly and added (UX spec §3.8 `scan.*`). A name is just a search.
+  async function scan(code: string) {
+    if (!accessToken || !productsOn || adding || scanning) return;
+    setScanning(true);
+    try {
+      const res = await lookupBarcode(accessToken, code);
+      if ('hit' in res) {
+        const option = res.hit.product.options.find((o) => o.id === res.hit.option_id)!;
+        setQuery('');
+        setDebounced('');
+        await addProduct(res.hit.product, option);
+      } else if ('refused' in res) {
+        hapticWarning();
+        setNotice({ tone: 'error', lines: [res.refused] });
+      } else {
+        hapticWarning();
+        setNotice({
+          tone: 'error',
+          lines: [t('scan.unknown', { barcode: code })],
+          action: {
+            label: t('scan.unknown.search'),
+            onPress: () => {
+              setNotice(null);
+              setQuery('');
+              setTab('products');
+            },
+          },
+        });
+      }
+    } catch (e) {
+      setNotice({ tone: 'error', lines: [posErrorMessage(e, t('common.networkError'))] });
+    } finally {
+      setScanning(false);
+    }
   }
 
   async function add(line: Record<string, unknown>) {
@@ -116,7 +196,9 @@ function AddItemsSheetBody({
   }
 
   const tabs: { value: AddTab; label: string }[] = [
+    ...(productsOn ? [{ value: 'favourites' as const, label: t('add.tab.favourites') }] : []),
     { value: 'services', label: t('add.tab.services') },
+    ...(productsOn ? [{ value: 'products' as const, label: t('add.tab.products') }] : []),
     ...(canCustom
       ? [
           { value: 'custom' as const, label: t('add.tab.custom') },
@@ -127,12 +209,21 @@ function AddItemsSheetBody({
   ];
   const pricePence = parseMoneyInput(price);
   const feeName = feeKind === 'lateCancel' ? t('fee.lateCancel') : feeKind === 'noShow' ? t('fee.noShow') : name.trim();
+  const showSearch = tab === 'favourites' || tab === 'services' || tab === 'products';
 
   return (
     <PosSheet
       visible={visible}
       onClose={onClose}
-      title={service ? t('walkin.title') : voucherPick && voucherSettings ? t('vsell.title') : t('add.open')}>
+      title={
+        service
+          ? t('walkin.title')
+          : choosing
+            ? t('add.variant.title')
+            : voucherPick && voucherSettings
+              ? t('vsell.title')
+              : t('add.open')
+      }>
       {voucherPick && voucherSettings ? (
         <VoucherSellForm
           settings={voucherSettings}
@@ -142,6 +233,18 @@ function AddItemsSheetBody({
           timeZone={timeZone}
           onDone={onClose}
           onBack={() => setVoucherPick(null)}
+        />
+      ) : choosing ? (
+        <OptionChooser
+          product={choosing}
+          rules={rules}
+          busy={adding}
+          onBack={() => setChoosing(null)}
+          onPick={(o) => {
+            const product = choosing;
+            setChoosing(null);
+            void addProduct(product, o);
+          }}
         />
       ) : service ? (
         <View style={posStyles.stack}>
@@ -199,17 +302,61 @@ function AddItemsSheetBody({
         </View>
       ) : (
         <View style={posStyles.stack}>
-          {tabs.length > 1 ? (
-            <Segmented options={tabs} value={tab} onChange={setTab} wrapLabels={tabs.length > 3} />
+          {showSearch ? (
+            <SearchBar
+              value={query}
+              onChangeText={setQuery}
+              placeholder={t('add.search.placeholder')}
+              onClear={() => setQuery('')}
+              onSubmitEditing={() => {
+                const code = query.trim();
+                if (productsOn && looksLikeBarcode(code)) void scan(code);
+              }}
+              submitBehavior="submit"
+              returnKeyType="search"
+              accessibilityLabel={t('add.search.placeholder')}
+            />
           ) : null}
-          {tab === 'services' ? (
+          <AddNoticeBanner notice={notice} />
+          {tabs.length > 1 ? <ChoiceChips options={tabs} value={tab} onChange={(v) => setTab(v)} /> : null}
+          {catalogue.isLoading ? (
+            <Text tone="muted">{t('app.loading')}</Text>
+          ) : catalogue.isError ? (
+            <ErrorLine message={posErrorMessage(catalogue.error, t('common.networkError'))} />
+          ) : tab === 'favourites' && !searching ? (
+            favourites.tiles.length === 0 ? (
+              <Text tone="muted">{t('add.fav.empty')}</Text>
+            ) : (
+              <>
+                {favourites.suggested ? (
+                  <Text variant="caption" tone="muted">
+                    {t('add.fav.suggested')}
+                  </Text>
+                ) : null}
+                {favourites.tiles.map((f) => (
+                  <PickRow
+                    key={f.key}
+                    title={f.name}
+                    detail={f.price_pence != null ? money(f.price_pence) : null}
+                    disabled={f.kind === 'product' && adding}
+                    onPress={() => pickFavourite(f)}
+                  />
+                ))}
+              </>
+            )
+          ) : tab === 'products' ? (
+            productSearch.isLoading ? (
+              <Text tone="muted">{t('app.loading')}</Text>
+            ) : productSearch.isError ? (
+              <ErrorLine message={posErrorMessage(productSearch.error, t('common.networkError'))} />
+            ) : products.length === 0 ? (
+              <Text tone="muted">{debounced ? t('add.none', { query: debounced }) : t('add.fav.empty')}</Text>
+            ) : (
+              <ProductRows products={products} rules={rules} disabled={adding} onPick={pickProduct} />
+            )
+          ) : tab === 'services' || tab === 'favourites' ? (
             <>
-              <SearchBar value={query} onChangeText={setQuery} placeholder={t('add.search.placeholder')} onClear={() => setQuery('')} />
-              {catalogue.isLoading ? (
-                <Text tone="muted">{t('app.loading')}</Text>
-              ) : catalogue.isError ? (
-                <ErrorLine message={posErrorMessage(catalogue.error, t('common.networkError'))} />
-              ) : services.length === 0 ? (
+              {services.length === 0 && !(searching && products.length > 0) ? (
                 <Text tone="muted">{t('add.none', { query: query.trim() })}</Text>
               ) : (
                 services.map((s) => (
@@ -227,6 +374,9 @@ function AddItemsSheetBody({
                   />
                 ))
               )}
+              {searching && products.length > 0 ? (
+                <ProductRows products={products} rules={rules} disabled={adding} onPick={pickProduct} />
+              ) : null}
             </>
           ) : tab === 'vouchers' && voucherSettings ? (
             <VoucherTiles settings={voucherSettings} onPick={(presetPence) => setVoucherPick({ presetPence })} />
@@ -295,6 +445,9 @@ function AddItemsSheetBody({
               />
             </>
           )}
+          {productsOn && (tab === 'favourites' || tab === 'products' || tab === 'services') ? (
+            <Button label={t('add.done')} variant="secondary" onPress={onClose} fullWidth />
+          ) : null}
         </View>
       )}
     </PosSheet>
@@ -334,6 +487,9 @@ function LineEditorBody({
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // A product line's quantity (Pass 4, §3.9 `line.qty`); the server checks the stock rules again.
+  const [qty, setQty] = useState(line.quantity);
+  const canQty = editable && line.line_type === 'product' && !line.paid_by_credit;
 
   const noPriceYet = line.list_unit_price_pence === 0;
   const canPrice = editable && !line.paid_by_credit && (canPos(bootstrap, 'override_price') || noPriceYet);
@@ -366,6 +522,32 @@ function LineEditorBody({
           {line.quantity > 1 ? ` · ${t('line.qtyPrefix', { count: line.quantity })}` : ''}
           {performerName ? ` · ${performerName}` : ''}
         </Text>
+
+        {canQty ? (
+          <>
+            <Stepper
+              label={t('line.qty')}
+              value={String(qty)}
+              onDecrement={() => setQty((q) => Math.max(1, q - 1))}
+              onIncrement={() => setQty((q) => Math.min(999, q + 1))}
+            />
+            {qty !== line.quantity ? (
+              <Button
+                label={t('line.save')}
+                variant="secondary"
+                loading={busy === 'qty'}
+                disabled={busy !== null}
+                onPress={() =>
+                  void run('qty', {
+                    action: 'lines',
+                    body: { version: sale.version, ops: [{ op: 'update', line_id: line.id, quantity: qty }] },
+                  })
+                }
+                fullWidth
+              />
+            ) : null}
+          </>
+        ) : null}
 
         {canPrice ? (
           <>
