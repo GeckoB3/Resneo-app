@@ -23,6 +23,8 @@ import { GuestTagEditor } from '@/components/clients/GuestTagEditor';
 import { HouseholdSection } from '@/components/clients/HouseholdSection';
 import { MarketingPreferencesCard } from '@/components/clients/MarketingPreferencesCard';
 import { MergeContactDetailSheet } from '@/components/clients/MergeContactDetailSheet';
+import { ClientPurchasesSection } from '@/components/clients/ClientPurchasesSection';
+import { LoyaltyCardSection } from '@/components/clients/LoyaltyCardSection';
 import { StoredValueSection } from '@/components/clients/StoredValueSection';
 import { ClientSavedCardsSection } from '@/components/pos/SavedCards';
 import { GuestMessageSheet, type GuestMessageTarget } from '@/components/messaging/GuestMessageSheet';
@@ -636,8 +638,14 @@ export default function ClientDetailScreen() {
           detail shows the same card for the same person. */}
       <DocumentsSection guestId={guestId} collapsible />
 
+      {/* Spend and purchases (POS app step 4, P7-14): only at venues with Checkout on. */}
+      <ClientPurchasesSection guestId={guestId} />
+
       {/* Credit and vouchers (POS Pass V): only at venues with Checkout and gift vouchers on. */}
       <StoredValueSection guestId={guestId} />
+
+      {/* The loyalty card (Pass LC): only while the venue has loyalty cards on. */}
+      <LoyaltyCardSection guestId={guestId} clientName={name} />
 
       {/* Saved cards (POS app step 2): only at venues with Checkout and cards on file on; removing
           one at the client's request needs take_payment. */}
