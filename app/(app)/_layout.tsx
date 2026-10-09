@@ -165,6 +165,13 @@ export default function AppLayout() {
         }}
       />
       <Stack.Screen
+        name="stock/purchase-order/[id]"
+        options={{
+          headerShown: true,
+          title: 'Purchase order',
+        }}
+      />
+      <Stack.Screen
         name="stock/stocktake/[id]"
         options={{
           headerShown: true,

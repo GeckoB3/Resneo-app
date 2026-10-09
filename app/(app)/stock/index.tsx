@@ -4,6 +4,7 @@ import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ChoiceChips, money, posStyles, usePosT } from '@/components/pos/parts';
 import { CameraScanner, ScanButton } from '@/components/retail/CameraScanner';
+import { NewOrderSheet, SuppliersSheet, UseStockSheet } from '@/components/retail/PurchasingSheets';
 import { AdjustStockSheet, MovementsSheet, StartStocktakeSheet, type AdjustTarget } from '@/components/retail/StockSheets';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -21,7 +22,10 @@ import { posErrorMessage } from '@/lib/pos/api';
 import { canPos, isTrackStockOn } from '@/lib/pos/pos-enabled';
 import { productLabel, shortWhen, stocktakeStatusId } from '@/lib/retail/stock-words';
 import { usePosBootstrap, usePosEnabled } from '@/lib/queries/usePos';
+import { usePurchaseOrders } from '@/lib/queries/usePurchasing';
 import { useRetailProducts, useStockLevels, useStocktakes } from '@/lib/queries/useRetail';
+import { poStatusId, poStatusTone } from '@/lib/retail/purchasing';
+import { useToast } from '@/providers/ToastProvider';
 import { spacing } from '@/theme/index';
 import type { RetailListProduct, StockFilter, StockLevelRow, StocktakeRow } from '@/types/retail';
 
@@ -38,7 +42,7 @@ import type { RetailListProduct, StockFilter, StockLevelRow, StocktakeRow } from
  * - Stocktakes (Track stock on): the list, and Start (`count_stock`).
  */
 
-type Tab = 'products' | 'levels' | 'stocktakes';
+type Tab = 'products' | 'levels' | 'stocktakes' | 'orders';
 
 function useDebounced(value: string, ms = 250): string {
   const [debounced, setDebounced] = useState(value);
@@ -54,6 +58,7 @@ export default function ProductsAndStockScreen() {
   const posEnabled = usePosEnabled();
   const boot = usePosBootstrap();
   const [tab, setTab] = useState<Tab>('products');
+  const [using, setUsing] = useState(false);
   const header = <Stack.Screen options={{ headerShown: true, title: t('app.tile.stock') }} />;
 
   if (!posEnabled) {
@@ -93,6 +98,7 @@ export default function ProductsAndStockScreen() {
   const trackStock = isTrackStockOn(boot.data);
   const timeZone = boot.data.venue?.timezone ?? 'Europe/London';
   const shown: Tab = trackStock ? tab : 'products';
+  const canUse = trackStock && canPos(boot.data, 'record_professional_use');
 
   return (
     <Screen scroll={false} padded={false}>
@@ -104,17 +110,22 @@ export default function ProductsAndStockScreen() {
               { value: 'products', label: t('prod.title') },
               { value: 'levels', label: t('stock.tab.levels') },
               { value: 'stocktakes', label: t('stock.tab.stocktakes') },
+              { value: 'orders', label: t('app.po.tab') },
             ]}
             value={shown}
             onChange={setTab}
             wrapLabels
           />
         ) : null}
+        {canUse ? <Button label={t('use.open')} variant="secondary" size="sm" onPress={() => setUsing(true)} /> : null}
       </View>
+      <UseStockSheet visible={using} timeZone={timeZone} onClose={() => setUsing(false)} />
       {shown === 'products' ? (
         <ProductsTab canEdit={canPos(boot.data, 'manage_products')} trackStock={trackStock} />
       ) : shown === 'levels' ? (
         <LevelsTab canAdjust={canPos(boot.data, 'adjust_stock')} timeZone={timeZone} />
+      ) : shown === 'orders' ? (
+        <OrdersTab canManage={canPos(boot.data, 'manage_purchase_orders')} timeZone={timeZone} />
       ) : (
         <StocktakesTab canCount={canPos(boot.data, 'count_stock')} timeZone={timeZone} />
       )}
@@ -384,6 +395,89 @@ function LevelRow({
   );
 }
 
+// ─── Purchase orders (app step 4b) ──────────────────────────────────────────
+
+type OrderFilter = 'open' | 'all' | 'received' | 'cancelled';
+
+function OrdersTab({ canManage, timeZone }: { canManage: boolean; timeZone: string }) {
+  const t = usePosT();
+  const router = useRouter();
+  const toast = useToast();
+  const [filter, setFilter] = useState<OrderFilter>('open');
+  const [creating, setCreating] = useState(false);
+  const [suppliers, setSuppliers] = useState(false);
+  const list = usePurchaseOrders(filter);
+  const items = useMemo(() => (list.data?.pages ?? []).flatMap((p) => p.items), [list.data]);
+  const allowNew = canManage && list.data?.pages[0]?.can_manage !== false;
+
+  return (
+    <>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={<RefreshControl refreshing={list.isRefetching && !list.isFetchingNextPage} onRefresh={() => void list.refetch()} />}>
+        <View style={styles.actions}>
+          {allowNew ? <Button label={t('po.new')} onPress={() => setCreating(true)} /> : null}
+          <Button label={t('app.po.suppliers')} variant="secondary" onPress={() => setSuppliers(true)} />
+        </View>
+        <ChoiceChips
+          options={[
+            { value: 'open', label: t('po.filter.open') },
+            { value: 'received', label: t('po.filter.received') },
+            { value: 'cancelled', label: t('po.filter.cancelled') },
+            { value: 'all', label: t('po.filter.all') },
+          ]}
+          value={filter}
+          onChange={setFilter}
+        />
+        {list.isLoading ? (
+          <ListSkeleton />
+        ) : list.isError ? (
+          <ErrorState message={posErrorMessage(list.error, t('po.list.error'))} onRetry={() => void list.refetch()} />
+        ) : items.length === 0 ? (
+          <EmptyState title={t('po.empty.title')} message={t('po.empty.body')} />
+        ) : (
+          items.map((o) => (
+            <Card key={o.id} onPress={() => router.push(`/stock/purchase-order/${o.id}` as Href)} accessibilityRole="button" accessibilityLabel={t('app.po.row', { poNumber: o.number })}>
+              <View style={posStyles.stack}>
+                <View style={posStyles.row}>
+                  <View style={styles.flex}>
+                    <Text variant="label">{`${t('app.po.row', { poNumber: o.number })} · ${o.supplier_name}`}</Text>
+                    <Text variant="caption" tone="muted">
+                      {[
+                        t('app.po.units', { received: o.received_units, ordered: o.ordered_units }),
+                        o.expected_on ? t('app.po.expected', { date: shortWhen(`${o.expected_on}T12:00:00Z`, timeZone) }) : null,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </Text>
+                  </View>
+                  <Text variant="label">{money(o.total_cost_pence)}</Text>
+                </View>
+                <View style={styles.chips}>
+                  <Badge label={t(poStatusId(o.status))} tone={poStatusTone(o.status)} />
+                </View>
+              </View>
+            </Card>
+          ))
+        )}
+        {list.hasNextPage ? (
+          <Button label={t('app.stock.more')} variant="secondary" loading={list.isFetchingNextPage} onPress={() => void list.fetchNextPage()} fullWidth />
+        ) : null}
+      </ScrollView>
+      <NewOrderSheet
+        visible={creating}
+        onClose={() => setCreating(false)}
+        onCreated={(id, message) => {
+          setCreating(false);
+          if (message) toast.info(message);
+          router.push(`/stock/purchase-order/${id}` as Href);
+        }}
+      />
+      <SuppliersSheet visible={suppliers} onClose={() => setSuppliers(false)} />
+    </>
+  );
+}
+
 // ─── Stocktakes ─────────────────────────────────────────────────────────────
 
 function StocktakesTab({ canCount, timeZone }: { canCount: boolean; timeZone: string }) {
@@ -453,7 +547,7 @@ function StocktakeCard({ row, timeZone, onPress }: { row: StocktakeRow; timeZone
 }
 
 const styles = StyleSheet.create({
-  tabs: { paddingHorizontal: spacing.base, paddingTop: spacing.base },
+  tabs: { paddingHorizontal: spacing.base, paddingTop: spacing.base, gap: spacing.sm },
   content: { padding: spacing.base, gap: spacing.md, paddingBottom: spacing['3xl'] },
   flex: { flex: 1 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },

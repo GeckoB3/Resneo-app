@@ -236,6 +236,28 @@ and Pass LC for app step 4) on the server.
     are several), and a sale with no till is put on the till just opened, so its cash counts there.
   - *The `pos_cash_up_reminder` push* opens the Till screen (another business's reminder says to
     switch first), and "Cash-up reminders" joins Push notifications at POS venues.
+- **Purchase orders, deliveries and Use stock (app step 4, the Pass 5 half: POS plan P7-15; UX
+  spec §6.12 to §6.14, §13.6).** Only with Track stock on; against a server before Pass 5 the
+  Orders tab answers with the server's refusal and nothing else changes. Batch and expiry are v1.x.
+  - *Orders* on Products and stock: open, received, cancelled or all, with the supplier, items
+    received of ordered, the expected date and the total at cost. "New order"
+    (`manage_purchase_orders`): choose the supplier, then "Suggest an order" (everything from them
+    at or below its reorder level, in whole packs) or "Start an empty order". Suppliers are listed
+    read only; adding and changing them stays on the web.
+  - *A draft:* quantities and unit costs, remove a line, "Add a product" (the supplier's products
+    first, searched, typed or scanned), "Suggest an order", the expected date and notes, the total
+    and the supplier's minimum; "Save order" with the version (another person's save loads theirs),
+    "Send to supplier" (asks first, needs the supplier's email), "Cancel order", and the PDF
+    through the share sheet.
+  - *Receiving* (`receive_stock`) a sent or part received order: scan items as they are unpacked
+    (typing, a keyboard-mode scanner or the camera, several in a row), each adding one to its line;
+    something not on the order is offered as an extra; "Everything arrived"; the received quantity
+    and unit cost per line, more than ordered with a warning; a delivery note reference; then "Add
+    {count} items to stock" with one request id and the order's version. Deliveries so far are
+    listed on the order.
+  - *Record products used* (`record_professional_use`) from Products and stock (today's bookings,
+    or none) and on the booking detail at POS venues (that booking), for products used in
+    treatments, with a note.
 
 ---
 

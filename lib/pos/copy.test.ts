@@ -188,6 +188,33 @@ describe('POS copy', () => {
     expect(posCopy('close.mismatch', { counted: '£180.00' })).toBe('These need to add up to the £180.00 you counted.');
   });
 
+  it('keeps the web ids the spec names for app step 4b (UX spec §6.12 to §6.14, §18.20)', () => {
+    const ids = [
+      'po.new',
+      'po.suggest',
+      'po.suggest.none',
+      'po.addLine',
+      'po.send.title',
+      'po.send.body',
+      'po.cancel.body',
+      'po.noEmail',
+      'po.receive',
+      'po.receive.scan',
+      'po.receive.extra',
+      'po.receive.confirm',
+      'use.open',
+      'use.booking',
+      'use.saved',
+      'bk.useStock',
+      'sup.empty.title',
+    ] as const;
+    for (const id of ids) expect(POS_COPY[id]).toBeTruthy();
+    expect(posCopy('po.send.body', { email: 'orders@wella.test', venue: 'Studio', replyTo: 'hello@studio.test' })).toBe(
+      "We'll email a PDF to orders@wella.test from Studio, and replies will go to hello@studio.test.",
+    );
+    expect(posCopy('po.receive.done', { count: 6 })).toBe('6 items added to stock.');
+  });
+
   it('fills placeholders and leaves unknown ones for a test to spot', () => {
     expect(fillCopy('{amount} to pay', { amount: '£5.00' })).toBe('£5.00 to pay');
     expect(fillCopy('{missing} here')).toBe('{missing} here');

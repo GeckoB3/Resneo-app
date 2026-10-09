@@ -177,6 +177,27 @@ export const retailPaths = {
   stocktake: (id: string) => `/api/venue/retail/stocktakes/${encodeURIComponent(id)}`,
   stocktakeAction: (id: string, action: 'counts' | 'status' | 'commit' | 'cancel') =>
     `/api/venue/retail/stocktakes/${encodeURIComponent(id)}/${action}`,
+  // Pass 5 (app step 4b): suppliers, purchase orders and professional use (#28, #31, #32).
+  purchaseOrders: (params: { status?: string | null; supplierId?: string | null; offset?: number }) => {
+    const sp = new URLSearchParams();
+    if (params.status && params.status !== 'all') sp.set('status', params.status);
+    if (params.supplierId) sp.set('supplier_id', params.supplierId);
+    sp.set('limit', '50');
+    if (params.offset) sp.set('offset', String(params.offset));
+    return `/api/venue/retail/purchase-orders?${sp.toString()}`;
+  },
+  purchaseOrdersCreate: '/api/venue/retail/purchase-orders',
+  purchaseOrder: (id: string) => `/api/venue/retail/purchase-orders/${encodeURIComponent(id)}`,
+  purchaseOrderAction: (id: string, action: 'send' | 'receive' | 'cancel' | 'suggest') =>
+    `/api/venue/retail/purchase-orders/${encodeURIComponent(id)}/${action}`,
+  purchaseOrderPdf: (id: string) => `/api/venue/retail/purchase-orders/${encodeURIComponent(id)}/pdf`,
+  variants: (params: { q: string; purpose: 'use' | 'order'; supplierId?: string | null }) => {
+    const sp = new URLSearchParams({ purpose: params.purpose, limit: '20' });
+    if (params.q.trim()) sp.set('q', params.q.trim().slice(0, 100));
+    if (params.supplierId) sp.set('supplier_id', params.supplierId);
+    return `/api/venue/retail/variants?${sp.toString()}`;
+  },
+  usage: '/api/venue/retail/usage',
 } as const;
 
 /**

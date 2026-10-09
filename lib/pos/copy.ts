@@ -1214,6 +1214,128 @@ export const POS_COPY = {
   'app.till.eod.cashRow': '{amount} at {time}, by {staffName}', // (added)
   'app.till.otherVenue': 'This till is at another business. Switch to it in the app, then open it again.', // (added) a cash-up push for another venue
   'app.till.notCounting': "This venue doesn't count cash in till sessions. An admin can turn it on in Settings, Checkout, on the web.", // (added)
+  // ── App step 4b: suppliers, purchase orders and Use stock (UX spec §6.12 to §6.14, §18.20) ──
+  // Word for word from the web's `src/components/retail/stock/purchasing-copy.ts` and
+  // `src/components/retail/copy.ts` (the `sup.*` ids).
+  'po.new': 'New order',
+  'po.status.draft': 'Draft',
+  'po.status.sent': 'Sent',
+  'po.status.part_received': 'Part received',
+  'po.status.received': 'Received',
+  'po.status.cancelled': 'Cancelled',
+  'po.empty.title': 'No purchase orders yet',
+  'po.empty.body': 'Start one here, or from low stock with Suggest an order.',
+  'po.suggest': 'Suggest an order',
+  'po.suggest.help': 'Adds everything from {supplier} at or below its reorder level, topped up in whole packs.',
+  'po.suggest.none': 'Nothing from {supplier} is low right now.',
+  'po.addLine': 'Add a product',
+  'po.col.qty': 'Quantity',
+  'po.col.cost': 'Unit cost',
+  'po.col.total': 'Total',
+  'po.expected': 'Expected on',
+  'po.notes': 'Notes for the supplier',
+  'po.minOrder': "{supplier}'s minimum order is {amount}.",
+  'po.send': 'Send to supplier',
+  'po.send.title': 'Email this order to {supplier}?',
+  'po.send.body': "We'll email a PDF to {email} from {venue}, and replies will go to {replyTo}.",
+  'po.cancel': 'Cancel order',
+  'po.cancel.title': 'Cancel purchase order {poNumber}?',
+  'po.cancel.body': "It stays in your records as cancelled. If you've already sent it, tell {supplier} yourself.",
+  'po.noEmail': 'Add an email address for {supplier} to send orders from here.',
+  'po.receive': 'Receive delivery',
+  'po.receive.scan': 'Scan items as you unpack them',
+  'po.receive.qty': 'Received now',
+  'po.receive.cost': 'Unit cost',
+  'po.receive.ref': 'Delivery note reference (optional)',
+  'po.receive.extra': "Add something that wasn't ordered",
+  'po.receive.confirm': 'Add {count} items to stock',
+  'po.receive.done': '{count} items added to stock.',
+  'use.open': 'Record products used',
+  'use.title': 'Record products used',
+  'use.qty': 'How many',
+  'use.booking': 'For a booking (optional)',
+  'use.confirm': 'Record use',
+  'use.saved': 'Recorded. Stock is updated.',
+  'bk.useStock': 'Record products used',
+  'po.title': 'Purchase order {poNumber}',
+  'po.filter.all': 'All',
+  'po.filter.open': 'Open',
+  'po.filter.received': 'Received',
+  'po.filter.cancelled': 'Cancelled',
+  'po.list.error': "We couldn't load your purchase orders.",
+  'po.error': "We couldn't load this purchase order.",
+  'po.new.title': 'New order',
+  'po.new.supplier': 'Supplier',
+  'po.new.blank': 'Start an empty order',
+  'po.lines.empty': 'No products on this order yet. Add a product, or let us suggest an order.',
+  'po.line.remove': 'Remove {product}',
+  'po.line.gone': 'This product has been deleted.',
+  'po.line.added': 'Added at delivery',
+  'po.saved': 'Order saved.',
+  'po.unsaved': 'You have changes that are not saved yet.',
+  'po.suggest.added': 'Added {count} products from {supplier}.',
+  'po.sent.toast': 'Order emailed to {supplier}.',
+  'po.sentTo': 'Sent to {email} on {date}',
+  'po.cancelled.toast': 'Order cancelled.',
+  'po.cancelled.note': 'Cancelled on {date}.',
+  'po.received.note': 'Received in full on {date}.',
+  'po.total': 'Total: {amount}',
+  'po.qty.invalid': 'Enter a quantity of 1 or more for {product}.',
+  'po.cost.invalid': 'Enter a cost like 4.50 for {product}.',
+  'po.search': 'Search by name, SKU or barcode',
+  'po.search.none': 'No counted products match. Turn on Count stock for a product to order it.',
+  'po.search.add': 'Add',
+  'po.readOnly': 'An admin can let you draft and send orders. You can still receive deliveries.',
+  'po.receipts.title': 'Deliveries',
+  'po.receipts.row': '{count} items, {amount}, by {name} on {date}',
+  'po.receipts.ref': 'Delivery note {ref}',
+  'po.receive.title': 'Receive delivery for order {poNumber}',
+  'po.receive.ordered': '{received} of {ordered} received',
+  'po.receive.scan.added': '+1 {product}',
+  'po.receive.scan.unknown': 'No product has the barcode {barcode}.',
+  'po.receive.scan.notOnOrder': "{product} isn't on this order. Add it as something that wasn't ordered?",
+  'po.receive.scan.addIt': 'Add it',
+  'po.receive.over': "That's {count} more than you ordered. We'll still add it to stock.",
+  'po.receive.qty.invalid': 'Enter how many arrived, as a whole number.',
+  'po.receive.nothing': 'Enter how many arrived for at least one item.',
+  'po.receive.fill': 'Everything arrived',
+  'use.product': 'Product',
+  'use.product.choose': 'Search for a product used in treatments',
+  'use.product.none':
+    'No products used in treatments match. In Products, set How you use it to For treatments only, or Both.',
+  'use.product.required': 'Choose a product.',
+  'use.qty.invalid': 'Enter how many you used, as a whole number.',
+  'use.inStock': '{count} in stock',
+  'use.booking.none': 'Not for a booking',
+  'use.note': 'Note (optional)',
+  'use.help': 'Record products you use on clients, like colour and developer, so your stock stays right.',
+  'sup.empty.title': 'No suppliers yet',
+  'sup.empty.body': 'Add the companies you buy from, so you can order from them in a couple of taps.',
+  'sup.f.contact': 'Contact name',
+  'sup.f.email': 'Email for orders',
+  'sup.f.phone': 'Phone',
+  'sup.f.account': 'Your account number with them',
+  'sup.f.minOrder': 'Minimum order',
+  'sup.col.leadTime': 'Delivery time',
+  'sup.leadTime.days': '{count} days',
+  'sup.error': "We couldn't load your suppliers.",
+  // The app's own words for app step 4b, where the deck has none.
+  'app.po.tab': 'Orders', // (added) the purchase orders tab on Products and stock
+  'app.po.suppliers': 'Suppliers', // (added) the suppliers list
+  'app.po.suppliers.web': 'Suppliers are added and changed on the web.', // (added)
+  'app.po.noSuppliers': 'Add the companies you buy from on the web first, then order from them here.', // (added)
+  'app.po.row': 'Order {poNumber}', // (added)
+  'app.po.units': '{received} of {ordered} items received', // (added)
+  'app.po.expected': 'Expected {date}', // (added)
+  'app.po.setExpected': 'Add a date', // (added)
+  'app.po.clearExpected': 'No date', // (added)
+  'app.po.save': 'Save order', // (added)
+  'app.po.stale': 'Someone else changed this order, so we have loaded the latest version. Check it, then carry on.', // (added)
+  'app.po.pdfFailed': "We couldn't open the order. Please try again.", // (added)
+  'app.po.chooseSupplier': 'Choose who you are ordering from.', // (added)
+  'app.po.over': 'Over by {count}', // (added) a line received beyond what was ordered
+  'app.po.extraRemove': 'Remove', // (added)
+  'app.use.forBooking': '{time}, {client}', // (added) a booking in the Use stock picker
   // The app's own words for app step 4, where the deck has none.
   'app.stock.more': 'Show more', // (added) the next page of a list
   'app.stock.option': 'Option', // (added) the option picker's label on a stock row

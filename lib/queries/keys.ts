@@ -229,6 +229,14 @@ export const queryKeys = {
       [...queryKeys.pos.all(), 'loyalty-card', keyScope(accessToken), guestId ?? null] as const,
     myCommission: (accessToken?: string | null, period?: string | null) =>
       [...queryKeys.pos.all(), 'my-commission', keyScope(accessToken), period ?? null] as const,
+    /** App step 4b (Pass 5): suppliers, purchase orders and the product picker. */
+    suppliers: (accessToken?: string | null) => [...queryKeys.pos.all(), 'suppliers', keyScope(accessToken)] as const,
+    purchaseOrders: (accessToken?: string | null, query?: string | null) =>
+      [...queryKeys.pos.all(), 'purchase-orders', keyScope(accessToken), query ?? null] as const,
+    purchaseOrder: (accessToken?: string | null, id?: string | null) =>
+      [...queryKeys.pos.all(), 'purchase-order', keyScope(accessToken), id ?? null] as const,
+    variantPicker: (accessToken?: string | null, query?: string | null) =>
+      [...queryKeys.pos.all(), 'variant-picker', keyScope(accessToken), query ?? null] as const,
     /** App step 3 (Pass 3): till sessions, cash tips waiting, and end of day. */
     tillSessions: (accessToken?: string | null) => [...queryKeys.pos.all(), 'till-sessions', keyScope(accessToken)] as const,
     tillSession: (accessToken?: string | null, sessionId?: string | null) =>

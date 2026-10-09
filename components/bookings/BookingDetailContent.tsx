@@ -28,6 +28,7 @@ import { minutesToTime, timeToMinutes } from '@/components/calendar/grid-layout'
 import { DocumentsSection } from '@/components/clients/DocumentsSection';
 import { LinkedComplianceSection } from '@/components/linked/LinkedComplianceSection';
 import { PosCheckoutButton } from '@/components/pos/PosCheckoutButton';
+import { UseStockButton } from '@/components/retail/UseStockButton';
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge, StatusPill } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -1501,6 +1502,14 @@ export function BookingDetailContent({
                 <View style={styles.toolbarCell}>
                   <PosCheckoutButton bookingId={booking.id} onOpened={onOpenedSale} />
                 </View>
+              ) : null}
+              {posCheckout ? (
+                // POS app step 4b: products used in this treatment (Track stock on only).
+                <UseStockButton
+                  bookingId={booking.id}
+                  label={[booking.booking_time?.slice(0, 5), guestName].filter(Boolean).join(', ')}
+                  containerStyle={styles.toolbarCell}
+                />
               ) : showPaymentToolbarAction ? (
                 <View style={styles.toolbarCell}>
                   <Button

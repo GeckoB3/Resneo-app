@@ -291,3 +291,135 @@ export interface StocktakeCountResult {
   counted_at: string | null;
   replayed?: boolean;
 }
+
+// ─── Suppliers, purchase orders and professional use (Pass 5, app step 4b) ─────
+
+/** `GET /api/venue/retail/suppliers`: `{ suppliers }`, by name. */
+export interface RetailSupplier {
+  id: string;
+  name: string;
+  contact_name: string | null;
+  email: string | null;
+  phone: string | null;
+  account_number?: string | null;
+  lead_time_days: number | null;
+  min_order_pence: number | null;
+  notes?: string | null;
+  archived_at?: string | null;
+  version?: number;
+}
+
+export type PurchaseOrderStatus = 'draft' | 'sent' | 'part_received' | 'received' | 'cancelled';
+
+export interface PurchaseOrderRow {
+  id: string;
+  number: number;
+  status: PurchaseOrderStatus;
+  supplier_id: string;
+  supplier_name: string;
+  expected_on: string | null;
+  total_cost_pence: number;
+  sent_at: string | null;
+  created_at: string;
+  received_at: string | null;
+  cancelled_at: string | null;
+  version: number;
+  line_count: number;
+  ordered_units: number;
+  received_units: number;
+}
+
+/** `GET /api/venue/retail/purchase-orders`. */
+export interface PurchaseOrdersResponse {
+  total: number;
+  items: PurchaseOrderRow[];
+  can_manage: boolean;
+  can_receive: boolean;
+}
+
+export interface PurchaseOrderLine {
+  id: string;
+  variant_id: string;
+  product_id: string;
+  name: string;
+  sku: string | null;
+  quantity_ordered: number;
+  quantity_received: number;
+  unit_cost_pence: number;
+  line_total_pence: number;
+  added_at_receipt: boolean;
+  exists: boolean;
+  track_stock: boolean;
+  pack_size: number | null;
+  on_hand: number;
+  cost_pence: number | null;
+  barcodes: string[];
+}
+
+export interface PurchaseOrderReceipt {
+  id: string;
+  delivery_ref: string | null;
+  units: number;
+  value_pence: number;
+  received_by_name: string | null;
+  received_at: string;
+  status_after: PurchaseOrderStatus;
+}
+
+/** `GET /api/venue/retail/purchase-orders/[id]`. */
+export interface PurchaseOrderDetail {
+  order: {
+    id: string;
+    number: number;
+    status: PurchaseOrderStatus;
+    supplier_id: string;
+    expected_on: string | null;
+    notes: string | null;
+    sent_at: string | null;
+    sent_to_email: string | null;
+    sent_count: number;
+    total_cost_pence: number;
+    created_by_name: string | null;
+    created_at: string;
+    received_at: string | null;
+    cancelled_at: string | null;
+    cancelled_by_name: string | null;
+    version: number;
+  };
+  supplier: RetailSupplier;
+  lines: PurchaseOrderLine[];
+  receipts: PurchaseOrderReceipt[];
+  sender: { venue_name: string; reply_to: string | null };
+  can_manage: boolean;
+  can_receive: boolean;
+}
+
+/** `POST .../receive`. */
+export interface ReceiveResult {
+  receipt_id: string;
+  purchase_order_id: string;
+  units: number;
+  value_pence: number;
+  status: PurchaseOrderStatus;
+  version: number;
+  over_received: { line_id: string; name: string; over_by: number }[];
+  replayed: boolean;
+}
+
+/** `GET /api/venue/retail/variants`: the picker for orders and Use stock. */
+export interface PickerVariant {
+  variant_id: string;
+  product_id: string;
+  product_name: string;
+  option_name: string | null;
+  sku: string | null;
+  usage: ProductUsage;
+  supplier_id: string | null;
+  supplier_name: string | null;
+  brand_name: string | null;
+  on_hand: number;
+  cost_pence: number | null;
+  pack_size: number | null;
+  reorder_level: number | null;
+  barcodes: string[];
+}
