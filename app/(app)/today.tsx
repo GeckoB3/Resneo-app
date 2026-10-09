@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { Stack, useRouter, type Href } from 'expo-router';
 import { useState } from 'react';
 import { Linking, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
@@ -11,6 +12,8 @@ import { ForecastChart } from '@/components/today/ForecastChart';
 import { GreetingHeader } from '@/components/today/GreetingHeader';
 import { HeatmapWeek } from '@/components/today/HeatmapWeek';
 import { KpiGrid } from '@/components/today/KpiGrid';
+import { LowStockHomeCard } from '@/components/today/LowStockHomeCard';
+import { TillHomeCard } from '@/components/today/TillHomeCard';
 import { NewBookingsCard } from '@/components/reports/NewBookingsCard';
 import { CollectRequestsCard } from '@/components/pos/CollectRequests';
 import {
@@ -28,6 +31,7 @@ import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { hapticTap } from '@/lib/haptics';
+import { queryKeys } from '@/lib/queries/keys';
 import { useDashboardHome } from '@/lib/queries/useDashboardHome';
 import {
   markSetupStepClicked,
@@ -337,6 +341,7 @@ function SecondaryActivitySection({
 
 export default function TodayScreen() {
   const query = useDashboardHome();
+  const queryClient = useQueryClient();
   const { venue } = useVenueContext();
   const staffQuery = useStaffMe();
   const isAdmin = staffQuery.data?.staff?.role === 'admin';
@@ -399,7 +404,17 @@ export default function TodayScreen() {
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={
-          <RefreshControl refreshing={query.isRefetching} onRefresh={() => void query.refetch()} />
+          <RefreshControl
+            refreshing={query.isRefetching}
+            onRefresh={() => {
+              void query.refetch();
+              // The Till and Low stock cards read their own routes; pull to refresh reads them again.
+              void queryClient.invalidateQueries({
+                queryKey: queryKeys.pos.all(),
+                predicate: (q) => q.queryKey[2] === 'till-sessions' || q.queryKey[2] === 'low-stock',
+              });
+            }}
+          />
         }>
         {/* Greeting + quick-action buttons */}
         <GreetingHeader isAppointment={isAppointment} timeZone={venue?.timezone} />
@@ -410,6 +425,11 @@ export default function TodayScreen() {
 
         {/* Setup checklist (admin-only; pinned pre-onboarding, dismissible after) */}
         <SetupChecklistCard />
+
+        {/* Till and Low stock (web home parity): only with POS on, and only while the venue counts
+            cash in till sessions / tracks stock. Each hides itself otherwise. */}
+        <TillHomeCard />
+        <LowStockHomeCard />
 
         {/* KPI tiles (primary tile carries the inline forecast sparkline) */}
         <KpiGrid

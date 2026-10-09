@@ -235,6 +235,12 @@ export const STOCK_SETUP_COPY = {
   'srep.col.deliveries': 'Deliveries',
   'srep.overdue': 'Overdue',
 
+  // The home screen's Low stock card (web copy.ts §2.2, LowStockHomeCard.tsx).
+  'home.stock.title': 'Low stock',
+  'home.stock.body': '{count} products are at or below their reorder level.',
+  'home.stock.one': '1 product is at or below its reorder level.',
+  'home.stock.link': "See what's low",
+
   // The app's own words, where the web has none.
   'ss.fileFailed': "We couldn't get that file. Check your connection and try again.", // (added) a CSV or PDF download
   'ss.anyDate': 'Any date', // (added) a date filter not set
