@@ -1,6 +1,7 @@
 import { usePosT } from '@/components/pos/parts';
 import { useOpenCheckout } from '@/components/pos/useOpenCheckout';
 import { Button } from '@/components/ui/Button';
+import { ACTION_COLORS } from '@/lib/booking/booking-action-colors';
 import { canPos } from '@/lib/pos/pos-enabled';
 import { usePosBootstrap } from '@/lib/queries/usePos';
 
@@ -19,6 +20,8 @@ export function PosCheckoutButton({ bookingId, onOpened }: { bookingId: string; 
     <Button
       label={opening ? t('bk.checkout.opening') : t('bk.checkout')}
       variant="secondary"
+      // The same colour as Confirm beside it on the booking detail.
+      customColors={ACTION_COLORS.confirm}
       size="sm"
       fullWidth
       loading={opening}
