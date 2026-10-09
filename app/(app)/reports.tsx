@@ -5,9 +5,10 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-n
 import { BaselineMetricsCard } from '@/components/reports/BaselineMetricsCard';
 import { BookedRevenueSection } from '@/components/reports/BookedRevenueSection';
 import { NewBookingsSection } from '@/components/reports/NewBookingsSection';
-import { SalesSection, TakingsSection } from '@/components/reports/PosReportSections';
+import { CommissionSection, SalesSection, TakingsSection, VouchersSection } from '@/components/reports/PosReportSections';
 import { BookingLogEmailCard } from '@/components/reports/BookingLogEmailCard';
 import { ClientsTab } from '@/components/reports/ClientsTab';
+import { StaffPosReportsPanel } from '@/components/reports/pos/StaffPosReportsPanel';
 import { DataExportCard } from '@/components/reports/DataExportCard';
 import { EventTicketTiersCard } from '@/components/reports/EventTicketTiersCard';
 import { HistorySection } from '@/components/reports/HistorySection';
@@ -33,8 +34,11 @@ import { bookingStatusDisplayLabel } from '@/lib/booking/infer-booking-row-model
 import { addDaysToDateStr, formatReportRangeLabel } from '@/lib/dates/venue-dates';
 import { formatPence } from '@/lib/format';
 import { hapticTap } from '@/lib/haptics';
+import { isVouchersEnabled } from '@/lib/pos/pos-enabled';
+import { reportsCopy } from '@/lib/pos/reports-copy';
 import { calendarDateInTimeZone } from '@/lib/queries/useBookingsList';
 import { usePosReportAccess } from '@/lib/queries/usePos';
+import { useVenue } from '@/lib/queries/useVenue';
 import { useReports } from '@/lib/queries/useReports';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { aggregateSourcesByLabel } from '@/lib/reports/csv-export';
@@ -63,7 +67,9 @@ import { useTheme } from '@/theme/useTheme';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type RangeKey = '7d' | '30d' | '90d' | 'custom';
-type MainTab = 'overview' | 'new-bookings' | 'revenue' | 'clients' | 'takings' | 'sales';
+type MainTab = 'overview' | 'new-bookings' | 'revenue' | 'clients' | 'takings' | 'sales' | 'vouchers' | 'commission';
+
+const TAB_PARAMS: MainTab[] = ['new-bookings', 'revenue', 'clients', 'takings', 'sales', 'vouchers', 'commission'];
 
 const RANGE_DAYS: Record<Exclude<RangeKey, 'custom'>, number> = {
   '7d': 7,
@@ -85,6 +91,7 @@ export default function ReportsScreen() {
   const { colors } = useTheme();
   const { venue, terminology, pricingTier, bookingModel } = useVenueContext();
   const staffQuery = useStaffMe();
+  const venueQuery = useVenue();
   const isAdmin = staffQuery.data?.staff?.role === 'admin';
   const exportCsv = useReportCsvExport();
 
@@ -101,20 +108,39 @@ export default function ReportsScreen() {
 
   // Sub-tabs
   // `?tab=new-bookings` opens that tab (Today's New bookings card links here,
-  // as the web's does), anything else the Overview.
+  // as the web's does), and so do `takings`, `sales`, `vouchers` and
+  // `commission` where they exist; anything else the Overview.
   const { tab: tabParam } = useLocalSearchParams<{ tab?: string }>();
   const [mainTab, setMainTab] = useState<MainTab>(() =>
-    tabParam === 'new-bookings' || tabParam === 'revenue' || tabParam === 'clients' ? tabParam : 'overview',
+    (TAB_PARAMS as string[]).includes(tabParam ?? '') ? (tabParam as MainTab) : 'overview',
   );
 
   const query = useReports(appliedFrom, appliedTo, isAdmin);
   /**
-   * Takings and Sales (POS plan P7-4). Asked only at venues with `pos_enabled` (the hook is gated),
-   * so every other venue makes no new request and keeps the four-option control below unchanged.
+   * Takings, Sales, Vouchers and Commission (POS plan P7-4, web ReportsView). Asked only at venues
+   * with `pos_enabled` (the hook is gated), so every other venue makes no new request and keeps
+   * the four-option control below unchanged. A team member who is not an admin gets Takings and
+   * Sales only, with `view_reports` (web `StaffPosReportsPanel`).
    */
-  const posAccess = usePosReportAccess({ enabled: isAdmin });
-  const showPosTabs = posAccess.data?.visible === true && posAccess.data?.can_view === true;
-  const posTab = mainTab === 'takings' || mainTab === 'sales';
+  const posAccess = usePosReportAccess({ enabled: !staffQuery.isLoading });
+  const posAccessPending = posAccess.data === undefined && posAccess.isLoading;
+  // The renamed figures and the POS export kinds follow `visible` (web `posReportsVisible`).
+  const posReportsVisible = posAccess.data?.visible === true;
+  const showPosTabs = posReportsVisible && posAccess.data?.can_view === true;
+  const canExportPos = posAccess.data?.can_export === true;
+  // Vouchers (UX spec §20.11): admins, while gift vouchers are switched on. Commission (§22.2):
+  // admins, wherever the POS tabs show (no switch of its own).
+  const vouchersVisible = showPosTabs && isAdmin && isVouchersEnabled(venueQuery.data);
+  const commissionVisible = showPosTabs && isAdmin;
+  // A link to a POS tab this venue or login does not have falls back to the Overview (once the
+  // access answer is in; until then the tab waits on a skeleton, as on the web).
+  const shownTab: MainTab =
+    ((mainTab === 'takings' || mainTab === 'sales') && !showPosTabs && !posAccessPending) ||
+    (mainTab === 'vouchers' && !vouchersVisible && !posAccessPending) ||
+    (mainTab === 'commission' && !commissionVisible && !posAccessPending)
+      ? 'overview'
+      : mainTab;
+  const posTab = shownTab === 'takings' || shownTab === 'sales' || shownTab === 'vouchers' || shownTab === 'commission';
 
   // The To picker takes a Date for its lower bound. Build it from the
   // YYYY-MM-DD string at local noon (avoids any tz day-boundary slip), memoised
@@ -282,10 +308,40 @@ export default function ReportsScreen() {
   }
 
   if (!isAdmin) {
+    // A team member given `view_reports` sees Takings and Sales only (web `StaffPosReportsPanel`);
+    // everything else in Reports stays admin only, and the routes check again on every request.
+    if (posAccessPending) {
+      return (
+        <Screen>
+          {header}
+          <Text variant="bodySmall" tone="muted">
+            {reportsCopy('staff.loading')}
+          </Text>
+        </Screen>
+      );
+    }
+    if (showPosTabs) {
+      return (
+        <Screen scroll={false} padded={false}>
+          {header}
+          <StaffPosReportsPanel
+            canExport={canExportPos}
+            today={today}
+            initialTab={tabParam === 'sales' ? 'sales' : 'takings'}
+          />
+        </Screen>
+      );
+    }
     return (
       <Screen>
         {header}
-        <ErrorState message="Reports are only available to venue admins." />
+        {posReportsVisible ? (
+          <Text variant="bodySmall" tone="secondary">
+            {reportsCopy('staff.ask')}
+          </Text>
+        ) : (
+          <ErrorState message="Reports are only available to venue admins." />
+        )}
       </Screen>
     );
   }
@@ -318,7 +374,7 @@ export default function ReportsScreen() {
       <View style={[styles.toolbar, { borderBottomColor: colors.border }]}>
         {/* Preset chips. The Revenue and New bookings tabs carry their own
             ranges (web parity: the date-range card is hidden on both). */}
-        {mainTab !== 'revenue' && mainTab !== 'new-bookings' && !posTab ? (
+        {shownTab !== 'revenue' && shownTab !== 'new-bookings' && !posTab ? (
         <View style={styles.presetRow}>
           {(['7d', '30d', '90d'] as const).map((key) => (
             <Pressable
@@ -362,7 +418,7 @@ export default function ReportsScreen() {
 
         {/* Custom date inputs (shown when custom is selected) — native OS pickers
             so the range works on iOS and Android alike. */}
-        {mainTab !== 'revenue' && mainTab !== 'new-bookings' && !posTab && rangeKey === 'custom' ? (
+        {shownTab !== 'revenue' && shownTab !== 'new-bookings' && !posTab && rangeKey === 'custom' ? (
           <View style={styles.customRange}>
             <View style={styles.dateField}>
               <Text variant="caption" tone="muted">
@@ -399,7 +455,8 @@ export default function ReportsScreen() {
         ) : null}
 
         {/* Overview / Revenue / Clients sub-tabs (web #191 added Revenue). Where Takings and Sales
-            exist (POS venues, P7-4) the control becomes a scrollable chip row (`app.reports.chips`),
+            exist (POS venues, P7-4) the control becomes a scrollable chip row (`app.reports.chips`)
+            in the web's order, with Vouchers and Commission for admins where the web shows them,
             and Revenue reads "Booked value" as on the web (§4.18). Everywhere else it is the
             four-option control, unchanged. */}
         {showPosTabs ? (
@@ -411,14 +468,16 @@ export default function ReportsScreen() {
             {(
               [
                 { value: 'overview', label: 'Overview' },
-                { value: 'takings', label: 'Takings' },
-                { value: 'sales', label: 'Sales' },
                 { value: 'new-bookings', label: 'New bookings' },
                 { value: 'revenue', label: 'Booked value' },
+                { value: 'takings', label: reportsCopy('tab.takings') },
+                { value: 'sales', label: reportsCopy('tab.sales') },
+                ...(vouchersVisible ? [{ value: 'vouchers', label: reportsCopy('tab.vouchers') }] : []),
+                ...(commissionVisible ? [{ value: 'commission', label: reportsCopy('tab.commission') }] : []),
                 { value: 'clients', label: `${clientWord}s` },
               ] as { value: MainTab; label: string }[]
             ).map((o) => (
-              <Chip key={o.value} label={o.label} selected={mainTab === o.value} onPress={() => setMainTab(o.value)} />
+              <Chip key={o.value} label={o.label} selected={shownTab === o.value} onPress={() => setMainTab(o.value)} />
             ))}
           </ScrollView>
         ) : (
@@ -429,25 +488,40 @@ export default function ReportsScreen() {
               { value: 'revenue', label: 'Revenue' },
               { value: 'clients', label: `${clientWord}s` },
             ]}
-            value={posTab ? 'overview' : mainTab}
+            value={posTab ? 'overview' : shownTab}
             onChange={setMainTab}
           />
         )}
       </View>
 
       {/* ── Content ──────────────────────────────────────────────── */}
-      {posTab && showPosTabs ? (
-        <ScrollView contentContainerStyle={styles.content}>
-          {mainTab === 'takings' ? <TakingsSection /> : <SalesSection />}
+      {posTab && posAccessPending ? (
+        <DetailSkeleton />
+      ) : posTab && showPosTabs ? (
+        // Each POS tab picks its own dates and grain, as Revenue and New bookings do.
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          {shownTab === 'takings' ? (
+            <TakingsSection canExport={canExportPos} isAdmin={isAdmin} today={today} />
+          ) : shownTab === 'sales' ? (
+            <SalesSection canExport={canExportPos} today={today} />
+          ) : shownTab === 'vouchers' ? (
+            <VouchersSection
+              canExport={canExportPos}
+              timeZone={timeZone}
+              currency={venueQuery.data?.currency ?? posAccess.data?.currency ?? 'GBP'}
+            />
+          ) : (
+            <CommissionSection today={today} />
+          )}
           <View style={styles.spacer} />
         </ScrollView>
-      ) : mainTab === 'new-bookings' ? (
+      ) : shownTab === 'new-bookings' ? (
         // New bookings has its own query and range (web 2026-09-18), like Revenue.
         <ScrollView contentContainerStyle={styles.content}>
           <NewBookingsSection bookingWord={bookingWord} today={today} enabled={isAdmin} />
           <View style={styles.spacer} />
         </ScrollView>
-      ) : mainTab === 'revenue' ? (
+      ) : shownTab === 'revenue' ? (
         // Booked revenue has its own query and range (web #191); it does not
         // wait on the overview payload.
         <ScrollView contentContainerStyle={styles.content}>
@@ -482,7 +556,7 @@ export default function ReportsScreen() {
           </Text>
 
           {/* ── CLIENTS TAB ─────────────────────────────────── */}
-          {mainTab === 'clients' ? (
+          {shownTab === 'clients' ? (
             <Card>
               <CardHeader title={`${clientWord} directory`} />
               <Text variant="caption" tone="muted" style={styles.rangeCaption}>
@@ -797,12 +871,20 @@ export default function ReportsScreen() {
               {/* Report 4: Deposits / Payments */}
               {deposit ? (
                 <Card>
+                  {/* Where Takings appears, this card is renamed so it is never read as
+                      money taken (web ReportsView, plan §4.18, R28). */}
                   <CardHeader
-                    title={isAppointmentVenue ? 'Payments & deposits' : 'Deposit summary'}
+                    title={
+                      posReportsVisible
+                        ? reportsCopy('ov.depositsByBookingDate')
+                        : isAppointmentVenue
+                          ? 'Payments & deposits'
+                          : 'Deposit summary'
+                    }
                     onExport={exportReport4}
                     exportDisabled={!deposit}
                     exportBlockedMessage={
-                      isAppointmentVenue
+                      isAppointmentVenue && !posReportsVisible
                         ? 'There is no payment summary to export for this period.'
                         : 'There is no deposit summary to export for this period.'
                     }
@@ -1041,7 +1123,7 @@ export default function ReportsScreen() {
               />
 
               {/* Data export */}
-              <DataExportCard bookingWord={bookingWord} clientLabel={clientWord} today={today} />
+              <DataExportCard bookingWord={bookingWord} clientLabel={clientWord} today={today} posKinds={posReportsVisible} />
 
               {/* Empty state for zero-activity ranges */}
               {!summary &&
