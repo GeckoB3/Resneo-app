@@ -119,7 +119,7 @@ describe('the products list', () => {
 
 describe('the product import', () => {
   it('reads quoted CSV cells, skips blank rows and counts the data rows', () => {
-    const text = '﻿Name,"Price, retail",Notes\r\n"Oil ""Gold""",12.50,"two\nlines"\r\n,,\r\nWax,5,\r\n';
+    const text = '\uFEFFName,"Price, retail",Notes\r\n"Oil ""Gold""",12.50,"two\nlines"\r\n,,\r\nWax,5,\r\n';
     expect(parseCsvRecords(text)).toEqual([
       ['Name', 'Price, retail', 'Notes'],
       ['Oil "Gold"', '12.50', 'two\nlines'],
