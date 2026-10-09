@@ -53,6 +53,35 @@ export interface PosSaleLine {
     share_bps: number;
   }[];
   booking: { booking_date: string; booking_time: string; status: string } | null;
+  /**
+   * Gift voucher lines only (Pass V, UX spec §20.2): who it is for and how it goes out, and once
+   * the sale completes the voucher it made. Never the code. Optional: a server before Pass V
+   * leaves it out.
+   */
+  voucher?: PosLineVoucher | null;
+}
+
+/** What a gift voucher line may show (web `PosLineVoucherDto`). Last four characters only. */
+export interface PosLineVoucher {
+  /** Null until the sale completes and the voucher exists. */
+  account_id: string | null;
+  code_last4: string | null;
+  recipient_name: string | null;
+  recipient_email: string | null;
+  message: string | null;
+  send_at: string | null;
+  buyer_name: string | null;
+  buyer_email: string | null;
+  status: string | null;
+  balance_pence: number | null;
+}
+
+/** Which voucher a gift voucher payment drew on (web `PosPaymentVoucherDto`). */
+export interface PosPaymentVoucher {
+  account_id: string;
+  code_last4: string | null;
+  status: string | null;
+  expires_at: string | null;
 }
 
 export type PosPaymentStatus = 'pending' | 'succeeded' | 'failed' | 'cancelled';
@@ -84,6 +113,8 @@ export interface PosPayment {
   business_date: string | null;
   created_at: string;
   succeeded_at: string | null;
+  /** Gift voucher payments only (Pass V). Optional: a server before Pass V leaves it out. */
+  voucher?: PosPaymentVoucher | null;
 }
 
 export interface PosRefund {
@@ -192,7 +223,8 @@ export type PosCapability =
   | 'edit_tips'
   | 'edit_credit'
   | 'view_reports'
-  | 'export';
+  | 'export'
+  | 'manage_vouchers';
 
 export type PosCapabilityMap = Partial<Record<PosCapability, boolean>> & Record<string, boolean | undefined>;
 
@@ -257,6 +289,73 @@ export interface PosBootstrap {
   operators: PosOperator[];
   card_methods?: { card_app?: boolean } | null;
   venue: { name: string; currency: string; timezone: string };
+  /** The signed-in person (web Pass V and later). */
+  me?: { staff_id: string; name: string | null; calendar_ids: string[] } | null;
+  /**
+   * Gift vouchers (Pass V, plan §4.33.1): `selling` while the voucher switch is on; `redeemable`
+   * while it is on or a voucher sold earlier is still active (switching off stops selling, never
+   * redeeming). Missing on a server before Pass V, which reads as both off.
+   */
+  vouchers?: { selling: boolean; redeemable: boolean } | null;
+}
+
+// ─── Gift vouchers and account credit (Pass V, UX spec §20) ─────────────────
+
+/** `GET /api/venue/pos/voucher-settings`: what the Vouchers tab offers. */
+export interface PosVoucherSettings {
+  preset_pence: number[];
+  custom_allowed: boolean;
+  min_pence: number;
+  max_pence: number;
+  expiry_months: number | null;
+  terms?: string | null;
+  online_sale_enabled?: boolean;
+  version?: number;
+  set_up: boolean;
+}
+
+export interface PosVoucherSettingsResponse {
+  settings: PosVoucherSettings;
+  can?: { edit: boolean };
+  venue?: { name: string; currency: string };
+}
+
+/**
+ * A voucher as the look-up and the client's stored value return it: status in words the screens
+ * map (`active`, `used_up`, `expired`, `frozen`, `cancelled`), the balance and the last four only.
+ */
+export interface PosVoucherSummary {
+  id: string;
+  code_last4: string | null;
+  status: string;
+  balance_pence: number;
+  initial_pence: number;
+  currency?: string;
+  source?: string;
+  issued_at?: string | null;
+  expires_at: string | null;
+  recipient_name?: string | null;
+}
+
+/** `GET /api/venue/guests/[guestId]/stored-value`: the client's credit and their vouchers. */
+export interface PosClientStoredValue {
+  credit: {
+    account_id: string | null;
+    balance_pence: number;
+    currency?: string;
+    history?: {
+      id: string;
+      kind: string;
+      delta_pence: number;
+      sale_id: string | null;
+      staff_name: string | null;
+      reason: string | null;
+      business_date: string;
+      created_at: string;
+    }[];
+  };
+  vouchers: PosVoucherSummary[];
+  can?: { manage_vouchers: boolean };
 }
 
 /** One row of `GET /api/venue/pos/sales` (#3). */

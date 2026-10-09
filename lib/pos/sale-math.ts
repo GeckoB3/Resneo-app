@@ -1,4 +1,5 @@
 import type { PosCopyId } from '@/lib/pos/copy';
+import { isStoredValueMethod, refundableOf } from '@/lib/pos/voucher-math';
 import type { PosPayment, PosSale, PosSaleLine, PosTipSettings } from '@/types/pos';
 
 /**
@@ -206,12 +207,19 @@ export function isCardMethod(method: string): boolean {
   return CARD_METHODS.has(method);
 }
 
-/** The money payments that can still give something back, cards first, then in the order taken. */
+/**
+ * The payments that can still give something back, cards first, then in the order taken. A gift
+ * voucher or account credit payment (Pass V) counts too: it goes back where it came from, and its
+ * refundable amount is worked out from the payment (`refundableOf`), as the sale leaves it at zero.
+ */
 export function refundablePayments(payments: PosPayment[]): PosPayment[] {
   return payments
-    .map((p, i) => ({ p, i }))
+    .map((p, i) => ({ p: withRefundable(p), i }))
     .filter(
-      ({ p }) => p.is_money && p.status === 'succeeded' && (p.refundable_pence > 0 || p.refundable_tip_pence > 0),
+      ({ p }) =>
+        (p.is_money || isStoredValueMethod(p.method)) &&
+        p.status === 'succeeded' &&
+        (p.refundable_pence > 0 || p.refundable_tip_pence > 0),
     )
     .sort((a, b) => {
       const ca = isCardMethod(a.p.method) ? 0 : 1;
@@ -219,6 +227,13 @@ export function refundablePayments(payments: PosPayment[]): PosPayment[] {
       return ca - cb || a.i - b.i;
     })
     .map(({ p }) => p);
+}
+
+/** A payment with its refundable amount filled in for applied voucher and credit payments. */
+function withRefundable(p: PosPayment): PosPayment {
+  if (p.is_money) return p;
+  const refundable = refundableOf(p);
+  return refundable === p.refundable_pence ? p : { ...p, refundable_pence: refundable, refundable_tip_pence: 0 };
 }
 
 /** Everything that can still be refunded, goods only (tips are chosen separately). */
@@ -323,6 +338,13 @@ export function totalsRows(sale: PosSale, opts: { vatRegistered: boolean }): Tot
       .reduce((s, p) => s + p.amount_pence - p.refunded_pence, 0);
     if (sum > 0) rows.push({ id: applied[method], amountPence: -sum });
   }
+  // Pass V: a gift voucher or account credit is applied, not money (UX spec §20.3, §20.4).
+  for (const method of ['gift_card', 'account_credit'] as const) {
+    const sum = sale.payments
+      .filter((p) => p.method === method && p.status === 'succeeded')
+      .reduce((s, p) => s + p.amount_pence - p.refunded_pence, 0);
+    if (sum > 0) rows.push({ id: method === 'gift_card' ? 'totals.voucher' : 'totals.credit', amountPence: -sum });
+  }
   if (sale.status !== 'completed' && sale.returned_pence > 0) {
     rows.push({ id: 'totals.returned', amountPence: -sale.returned_pence });
   }
@@ -368,8 +390,17 @@ export function pendingCardPayment(sale: Pick<PosSale, 'payments' | 'payment_loc
 }
 
 /** The person-readable name of a payment method, for lists and the completion summary. */
-export function paymentMethodName(p: Pick<PosPayment, 'method' | 'payment_type_name' | 'card_brand' | 'card_last4'>): string {
+export function paymentMethodName(
+  p: Pick<PosPayment, 'method' | 'payment_type_name' | 'card_brand' | 'card_last4'> & { voucher?: PosPayment['voucher'] },
+): string {
   switch (p.method) {
+    case 'gift_card': {
+      // `pay.voucher.row`, in lower case for a sentence ("paid by gift voucher ending 9HPA").
+      const last4 = p.voucher?.code_last4 ?? null;
+      return last4 ? `gift voucher ending ${last4}` : 'gift voucher';
+    }
+    case 'account_credit':
+      return 'account credit';
     case 'cash':
       return 'cash';
     case 'external':

@@ -98,6 +98,12 @@ export const posPaths = {
     `/api/venue/pos/sales/${encodeURIComponent(saleId)}/discounts/${encodeURIComponent(discountId)}?version=${version}`,
   cancelPayment: (saleId: string, paymentId: string) =>
     `/api/venue/pos/sales/${encodeURIComponent(saleId)}/payments/${encodeURIComponent(paymentId)}/cancel`,
+  // Pass V: gift vouchers and account credit. A code never goes in a path: the look-up takes it
+  // in the body (plan §4.33.2).
+  voucherSettings: '/api/venue/pos/voucher-settings',
+  voucherLookup: '/api/venue/pos/vouchers/lookup',
+  voucherPdf: (voucherId: string) => `/api/venue/pos/vouchers/${encodeURIComponent(voucherId)}/pdf`,
+  guestStoredValue: (guestId: string) => `/api/venue/guests/${encodeURIComponent(guestId)}/stored-value`,
   reportAccess: '/api/venue/reports/pos-access',
   takings: (query: string) => `/api/venue/reports/takings?${query}`,
   salesReport: (query: string) => `/api/venue/reports/sales?${query}`,

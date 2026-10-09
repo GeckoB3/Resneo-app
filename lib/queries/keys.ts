@@ -185,6 +185,10 @@ export const queryKeys = {
     sale: (accessToken?: string | null, saleId?: string | null) =>
       [...queryKeys.pos.all(), 'sale', keyScope(accessToken), saleId ?? null] as const,
     reportAccess: (accessToken?: string | null) => [...queryKeys.pos.all(), 'report-access', keyScope(accessToken)] as const,
+    /** Pass V: the venue's gift voucher settings, and one client's credit and vouchers (never a code). */
+    voucherSettings: (accessToken?: string | null) => [...queryKeys.pos.all(), 'voucher-settings', keyScope(accessToken)] as const,
+    storedValue: (accessToken?: string | null, guestId?: string | null) =>
+      [...queryKeys.pos.all(), 'stored-value', keyScope(accessToken), guestId ?? null] as const,
     takings: (accessToken?: string | null, query?: string | null) =>
       [...queryKeys.pos.all(), 'takings', keyScope(accessToken), query ?? null] as const,
     salesReport: (accessToken?: string | null, query?: string | null) =>

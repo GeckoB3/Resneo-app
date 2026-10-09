@@ -33,6 +33,7 @@ import { ApiError } from '@/lib/api/client';
 import { makeSale } from '@/lib/pos/test-sale';
 import { queryKeys } from '@/lib/queries/keys';
 import {
+  lookupVoucher,
   myFigures,
   saleRefetchInterval,
   SaleStaleError,
@@ -44,6 +45,7 @@ import {
   usePosSaleList,
   useSaleWrite,
   useStartSale,
+  useVoucherSettings,
 } from '@/lib/queries/usePos';
 import type { PosSale, SalesReport, TakingsReport } from '@/types/pos';
 
@@ -191,6 +193,38 @@ describe('useSaleWrite', () => {
         await result.current.mutateAsync({ action: 'discounts', body: { version: 3 } });
       }),
     ).rejects.toThrow("That's more than your 10% discount limit.");
+  });
+});
+
+describe('gift vouchers (Pass V)', () => {
+  it('reads vouchers as off when the voucher settings are refused', async () => {
+    mockApiFetch.mockRejectedValue(new ApiError('off', 403, { error: 'off', code: 'feature_disabled' }));
+    const { wrapper } = setup();
+    const { result } = await renderHook(() => useVoucherSettings(), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toBeNull();
+    expect(mockApiFetch.mock.calls[0]![0]).toBe('/api/venue/pos/voucher-settings');
+  });
+
+  it('asks for no voucher settings while the POS switch is off', async () => {
+    mockResolved = { pos_enabled: false };
+    const { wrapper } = setup();
+    await renderHook(() => useVoucherSettings(), { wrapper });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(mockApiFetch).not.toHaveBeenCalled();
+  });
+
+  it('sends a code only in the body of the look-up, never in the address', async () => {
+    mockApiFetch.mockResolvedValue({ voucher: { id: 'v1', code_last4: '9HPA', status: 'active', balance_pence: 100, initial_pence: 100, expires_at: null } });
+    const voucher = await lookupVoucher(mockToken, '7K4QM2XD9HPA');
+    expect(voucher.id).toBe('v1');
+    const [path, init] = mockApiFetch.mock.calls[0] as [string, { method: string; body: string }];
+    expect(path).toBe('/api/venue/pos/vouchers/lookup');
+    expect(path).not.toContain('7K4Q');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual({ code: '7K4QM2XD9HPA' });
   });
 });
 

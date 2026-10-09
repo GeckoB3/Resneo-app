@@ -16,6 +16,15 @@ export function isPosEnabled(venue: Pick<VenueBootstrap, 'feature_flags'> | null
 }
 
 /**
+ * Gift vouchers (Pass V, UX spec §20): the venue's resolved `pos_gift_vouchers_enabled`, and only
+ * with Checkout on. Shows the client profile's "Credit and vouchers" card, as the web's contact
+ * panel does. Selling and taking vouchers at a sale follow the POS bootstrap's `vouchers` instead.
+ */
+export function isVouchersEnabled(venue: Pick<VenueBootstrap, 'feature_flags'> | null | undefined): boolean {
+  return isPosEnabled(venue) && venue?.feature_flags?.resolved?.pos_gift_vouchers_enabled === true;
+}
+
+/**
  * Whether this login may do something at the till (plan §4.19). Every POS action is hidden when
  * the capability map does not allow it, as on the web; the server refuses anyway (403
  * POS_PERMISSION_DENIED). Admins are sent every key as true. A key the server leaves out reads as

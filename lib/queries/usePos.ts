@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 
+import { ApiError } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
 import { posFetch, posPaths, staleSaleFrom, type PosMethod } from '@/lib/pos/api';
 import { isPosEnabled } from '@/lib/pos/pos-enabled';
@@ -9,6 +10,7 @@ import { useVenue } from '@/lib/queries/useVenue';
 import type {
   PosBootstrap,
   PosCatalogue,
+  PosClientStoredValue,
   PosQueueResponse,
   PosReportAccess,
   PosReportPreset,
@@ -17,6 +19,8 @@ import type {
   PosSaleResponse,
   SalesReport,
   TakingsReport,
+  PosVoucherSettingsResponse,
+  PosVoucherSummary,
 } from '@/types/pos';
 
 /**
@@ -114,7 +118,11 @@ export function usePosSale(saleId: string | null | undefined, options: { enabled
 export function invalidateAfterSaleWrite(queryClient: QueryClient, opts: { money: boolean }): void {
   void queryClient.invalidateQueries({
     queryKey: queryKeys.pos.all(),
-    predicate: (q) => q.queryKey[2] !== 'sale' && q.queryKey[2] !== 'bootstrap' && q.queryKey[2] !== 'catalogue',
+    predicate: (q) =>
+      q.queryKey[2] !== 'sale' &&
+      q.queryKey[2] !== 'bootstrap' &&
+      q.queryKey[2] !== 'catalogue' &&
+      q.queryKey[2] !== 'voucher-settings',
   });
   if (opts.money) {
     // A POS payment moves the bookings' paid caches (plan §4.4.10): the booking detail, the
@@ -239,6 +247,61 @@ export function useSaleWrite(saleId: string) {
       if (input.money) void queryClient.invalidateQueries({ queryKey: queryKeys.pos.sale(accessToken, saleId) });
     },
   });
+}
+
+// ─── Gift vouchers and account credit (Pass V) ─────────────────────────────
+
+/**
+ * The venue's gift voucher settings (`GET /api/venue/pos/voucher-settings`): the amounts the
+ * Vouchers tab offers and the range for another amount. The route answers only while the voucher
+ * switch is on, so a refusal (403 `feature_disabled`, or a 404 from a server before Pass V) reads
+ * as null: vouchers are simply not sold here.
+ */
+export function useVoucherSettings(options: { enabled?: boolean } = {}) {
+  const { accessToken, enabled } = useGate(options.enabled ?? true);
+  return useQuery({
+    queryKey: queryKeys.pos.voucherSettings(accessToken),
+    enabled,
+    staleTime: 5 * 60_000,
+    retry: false,
+    queryFn: async (): Promise<PosVoucherSettingsResponse | null> => {
+      try {
+        return await posFetch<PosVoucherSettingsResponse>(posPaths.voucherSettings, { accessToken: accessToken! });
+      } catch (error) {
+        if (error instanceof ApiError && [401, 403, 404].includes(error.status)) return null;
+        throw error;
+      }
+    },
+  });
+}
+
+/**
+ * A client's account credit and the vouchers they bought or hold
+ * (`GET /api/venue/guests/[guestId]/stored-value`). Last four characters only, never a code.
+ */
+export function useClientStoredValue(guestId: string | null | undefined, options: { enabled?: boolean } = {}) {
+  const { accessToken, enabled } = useGate((options.enabled ?? true) && Boolean(guestId));
+  return useQuery({
+    queryKey: queryKeys.pos.storedValue(accessToken, guestId ?? null),
+    enabled,
+    staleTime: 10_000,
+    retry: false,
+    queryFn: () => posFetch<PosClientStoredValue>(posPaths.guestStoredValue(guestId!), { accessToken: accessToken! }),
+  });
+}
+
+/**
+ * Looks a voucher up by its code (`POST /api/venue/pos/vouchers/lookup`). A plain call rather than
+ * a query or a mutation, so the code is never kept in a cache key or a mutation's variables: it
+ * travels only in this request's body (plan §4.33.2).
+ */
+export async function lookupVoucher(accessToken: string, normalisedCode: string): Promise<PosVoucherSummary> {
+  const res = await posFetch<{ voucher: PosVoucherSummary }>(posPaths.voucherLookup, {
+    accessToken,
+    method: 'POST',
+    body: { code: normalisedCode },
+  });
+  return res.voucher;
 }
 
 // ─── Reports ────────────────────────────────────────────────────────────────

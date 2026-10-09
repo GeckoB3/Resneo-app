@@ -29,6 +29,30 @@ describe('POS copy', () => {
     for (const id of ids) expect(POS_COPY[id]).toBeTruthy();
   });
 
+  it('keeps the web ids the spec names for the Pass V app step', () => {
+    const ids = [
+      'add.tab.vouchers',
+      'vsell.title',
+      'vsell.add',
+      'line.voucher',
+      'pay.method.voucher',
+      'pay.method.credit',
+      'vpay.code.invalid',
+      'vpay.confirm',
+      'vpay.notForVouchers',
+      'cpay.confirm',
+      'cpay.clientLocked',
+      'refund.dest.voucher',
+      'refund.needsClient',
+      'done.voucher.issued',
+      'client.sv.title',
+    ] as const;
+    for (const id of ids) expect(POS_COPY[id]).toBeTruthy();
+    expect(posCopy('vpay.notForVouchers', { amount: '£25.00' })).toBe(
+      "Gift vouchers and account credit can't pay for another gift voucher. Take £25.00 another way.",
+    );
+  });
+
   it('fills placeholders and leaves unknown ones for a test to spot', () => {
     expect(fillCopy('{amount} to pay', { amount: '£5.00' })).toBe('£5.00 to pay');
     expect(fillCopy('{missing} here')).toBe('{missing} here');

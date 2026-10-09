@@ -233,3 +233,42 @@ describe('totals and status', () => {
     expect(paymentMethodName(makePayment({ method: 'cash' }))).toBe('cash');
   });
 });
+
+describe('gift vouchers and account credit in the sale maths (Pass V)', () => {
+  const gift = makePayment({
+    id: 'gv',
+    method: 'gift_card',
+    is_money: false,
+    amount_pence: 3000,
+    refundable_pence: 0,
+    voucher: { account_id: 'acc-1', code_last4: '9HPA', status: 'active', expires_at: null },
+  });
+  const credit = makePayment({ id: 'cr', method: 'account_credit', is_money: false, amount_pence: 500, refundable_pence: 0 });
+  const card = makePayment({ id: 'card', method: 'card_app', amount_pence: 1000, refundable_pence: 1000 });
+
+  it('refunds voucher and credit payments back where they came from, after cards', () => {
+    expect(maxRefundablePence([gift, credit, card])).toBe(4500);
+    const { slices } = spreadRefund([gift, credit, card], 2000);
+    expect(slices.map((s) => [s.payment_id, s.amount_pence])).toEqual([
+      ['card', 1000],
+      ['gv', 1000],
+    ]);
+    expect(refundEverything([gift, credit]).map((s) => s.amount_pence)).toEqual([3000, 500]);
+    // A deposit applied online is not refunded from here.
+    expect(maxRefundablePence([makePayment({ method: 'deposit_applied', is_money: false, refundable_pence: 0 })])).toBe(0);
+  });
+
+  it('shows applied voucher and credit as their own totals rows, not as money paid', () => {
+    const sale = makeSale({ total_pence: 4500, payments: [gift, credit, card], balance_due_pence: 0 });
+    const rows = totalsRows(sale, { vatRegistered: false });
+    expect(rows.find((r) => r.id === 'totals.voucher')?.amountPence).toBe(-3000);
+    expect(rows.find((r) => r.id === 'totals.credit')?.amountPence).toBe(-500);
+    expect(rows.find((r) => r.id === 'totals.paid')?.amountPence).toBe(-1000);
+  });
+
+  it('names them for people', () => {
+    expect(paymentMethodName(gift)).toBe('gift voucher ending 9HPA');
+    expect(paymentMethodName({ ...gift, voucher: null })).toBe('gift voucher');
+    expect(paymentMethodName(credit)).toBe('account credit');
+  });
+});
