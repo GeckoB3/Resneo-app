@@ -42,6 +42,21 @@ export function extractPushRoute(
     return { kind: 'posCollect', paymentId, venueId: firstString([data['venue_id']]) };
   }
 
+  /*
+    The cash-up reminder (POS app step 3, plan §4.31 row 40): `{ type: 'pos_cash_up_reminder',
+    till_session_id, till_id, venue_id }` for a till left open past the end of the day. It opens
+    the till, where the session can be closed; the screen reads the tills from the server, so only
+    the ids are kept.
+  */
+  if (data['type'] === 'pos_cash_up_reminder') {
+    const sessionId = firstString([data['till_session_id']]);
+    return {
+      kind: 'posTill',
+      sessionId: sessionId && /^[0-9a-f-]{36}$/i.test(sessionId) ? sessionId : null,
+      venueId: firstString([data['venue_id']]),
+    };
+  }
+
   if (data['type'] === 'waitlist_offer') {
     const url = firstString([data['url']]);
     if (url && isSafeHttpsUrl(url)) return { kind: 'url', url };

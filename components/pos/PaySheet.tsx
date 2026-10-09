@@ -8,11 +8,13 @@ import { SavedCardCharge, SavedCardMethods } from '@/components/pos/SavedCards';
 import { TipChooser } from '@/components/pos/TipChooser';
 import { CreditPayPanel, VoucherPayPanel } from '@/components/pos/VoucherSheets';
 import { writeError, type Send } from '@/components/pos/SaleSheets';
-import { AmountRow, ErrorLine, money, PosSheet, posStyles, usePosT } from '@/components/pos/parts';
+import { AmountRow, ErrorLine, money, Notice, PosSheet, posStyles, usePosT } from '@/components/pos/parts';
+import { CashTillPrompt } from '@/components/pos/TillSheets';
 import { Button } from '@/components/ui/Button';
 import { Chip } from '@/components/ui/Chip';
 import { Input } from '@/components/ui/Input';
 import { Text } from '@/components/ui/Text';
+import { apiErrorCode } from '@/lib/api/client';
 import { newPaymentAttemptId } from '@/lib/payments/attempt-id';
 import type { SaleCardResult } from '@/lib/payments/useSaleCardPayment';
 import { cardMethodsOffered } from '@/lib/pos/card-methods';
@@ -101,6 +103,8 @@ function PaySheetBody({
   const [reference, setReference] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<string | null>(null);
+  const [tillMessage, setTillMessage] = useState<string | null>(null);
   const [changeGiven, setChangeGiven] = useState(0);
   const [creditPence, setCreditPence] = useState(0);
   const requestId = useRef<string>(newPaymentAttemptId());
@@ -123,6 +127,8 @@ function PaySheetBody({
 
   function enter(next: Mode) {
     setError(null);
+    setErrorCode(null);
+    setTillMessage(null);
     requestId.current = newPaymentAttemptId();
     setMode(next);
   }
@@ -130,6 +136,8 @@ function PaySheetBody({
   async function record(body: Record<string, unknown>, method: 'cash' | 'external') {
     setBusy(true);
     setError(null);
+    setErrorCode(null);
+    setTillMessage(null);
     try {
       const res = await send({
         action: 'payments',
@@ -144,6 +152,7 @@ function PaySheetBody({
       else onClose();
     } catch (e) {
       setError(writeError(e, t));
+      setErrorCode(apiErrorCode(e));
     } finally {
       setBusy(false);
     }
@@ -299,6 +308,19 @@ function PaySheetBody({
           ) : null}
           {!keepChange && change > 0 ? <Text variant="heading">{t('cash.change', { amount: money(change) })}</Text> : null}
           <ErrorLine message={error} />
+          {/* Pass 3 (§3.19.1): with cash counted in till sessions and no till open, open it here. */}
+          {errorCode === 'POS_TILL_SESSION_REQUIRED' ? (
+            <CashTillPrompt
+              sale={sale}
+              send={send}
+              onResolved={(message) => {
+                setError(null);
+                setErrorCode(null);
+                setTillMessage(message);
+              }}
+            />
+          ) : null}
+          {tillMessage ? <Notice tone="success">{tillMessage}</Notice> : null}
           <Button
             label={t('cash.confirm', { amount: money((amount ?? 0) + cashTip) })}
             loading={busy}

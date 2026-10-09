@@ -124,3 +124,21 @@ describe('a sale sent from the web till to this phone (POS app step 2)', () => {
     });
   });
 });
+
+describe('the cash-up reminder (POS app step 3)', () => {
+  const sessionId = '0b5a2c4e-1b2c-4d3e-8f90-123456789abc';
+
+  it('opens the till, keeping the session and the venue', () => {
+    expect(
+      extractPushRoute({ type: 'pos_cash_up_reminder', till_session_id: sessionId, till_id: 'till-1', venue_id: 'venue-1' }),
+    ).toEqual({ kind: 'posTill', sessionId, venueId: 'venue-1' });
+  });
+
+  it('still opens the till when the session id is not well formed', () => {
+    expect(extractPushRoute({ type: 'pos_cash_up_reminder', till_session_id: '../x' })).toEqual({
+      kind: 'posTill',
+      sessionId: null,
+      venueId: null,
+    });
+  });
+});

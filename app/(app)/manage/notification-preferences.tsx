@@ -14,8 +14,10 @@ import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { hapticTap } from '@/lib/haptics';
 import { Notifications } from '@/lib/push/notificationsModule';
+import { posCopy } from '@/lib/pos/copy';
 import { registerCurrentDeviceForPush } from '@/lib/push/registerDevice';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
+import { usePosEnabled } from '@/lib/queries/usePos';
 import {
   useNotificationPreferences,
   useUpdateNotificationPreferences,
@@ -50,6 +52,18 @@ const ACCOUNT_ROWS: ToggleRowConfig[] = [
   { key: 'review', label: 'Reviews & feedback', description: 'When a guest leaves a review' },
   { key: 'low_sms_credit', label: 'Low SMS credit', description: 'Before your guest text reminders run out' },
   { key: 'billing', label: 'Billing & account', description: 'Payment failures and subscription notices' },
+];
+
+/**
+ * Checkout's staff pushes (POS plan Appendix G), only at venues with Checkout on. The key joins the
+ * web's `STAFF_PREFERENCE_KEYS`, so it is saved in the staff namespace.
+ */
+const POS_ROWS: ToggleRowConfig[] = [
+  {
+    key: 'pos_cash_up_reminder',
+    label: posCopy('push.pref.pos_cash_up_reminder'),
+    description: 'When a till is still open at the end of the day',
+  },
 ];
 
 /** "9:00pm" from an HH:mm string. */
@@ -167,6 +181,7 @@ export default function NotificationPreferencesScreen() {
   const toast = useToast();
   const accessToken = useAccessToken();
   const prefsQuery = useNotificationPreferences();
+  const posEnabled = usePosEnabled();
   const updatePrefs = useUpdateNotificationPreferences();
 
   // Init synchronously so the effect never sets state on the unsupported path
@@ -338,6 +353,13 @@ export default function NotificationPreferencesScreen() {
             <SectionHeader title="Account" />
             {renderToggleCard(ACCOUNT_ROWS)}
           </View>
+
+          {posEnabled ? (
+            <View style={styles.section}>
+              <SectionHeader title={posCopy('nav.checkout')} />
+              {renderToggleCard(POS_ROWS)}
+            </View>
+          ) : null}
 
           <View style={styles.section}>
             <SectionHeader title="Which bookings?" />

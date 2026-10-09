@@ -203,6 +203,39 @@ and Pass LC for app step 4) on the server.
     barcodes."), says how to turn it back on when it was refused, and has a torch and Cancel.
   - A UPC-A code is matched with or without the 0 an iPhone reads in front of it, at the till and
     in stocktakes, so a camera scan finds what a keyboard scanner stored.
+- **Cash-up (app step 3, POS plan P7-10; UX spec §7, §13.5).** Everything follows the venue's
+  Count cash in till sessions (`cash_management_enabled`, from the POS bootstrap and
+  `GET /api/venue/pos/sessions`); with it off, or against a server before Pass 3, nothing below
+  appears and no session route is called. P7-11 (printers, the cash drawer and personal PINs) is
+  v1.x. The client build now says `pos=3`, which is what the web checks before it sends the
+  cash-up reminder.
+  - *The Till card on Checkout* says which tills are open or closed, and a till left open from an
+    earlier day, and opens the Till screen.
+  - *Opening* (`open_close_till`): the float, filled with what was left last time or the usual
+    float, as one amount or counted by notes and coins (£50 to 1p, and bagged coin). One request
+    id per sheet; "already open" on another device shows the server's sentence and the open till.
+  - *During the day* (`paid_in_out`): paid in (bank, float, something else) and paid out (petty
+    cash, supplier, staff expenses, something else), each with a note and a receipt photo from the
+    library or the camera (`expo-image-picker`, in the binaries since 1.1.2; uploaded to the
+    session's private `attachments` first); safe drops; tips paid out to the people with cash tips
+    waiting (`GET /api/venue/pos/tips/cash-due`). Each open till lists what went in and out of
+    the drawer, with the photo.
+  - *Closing:* a blind count (the expected figure shows before counting only when the venue turned
+    blind counts off and the person may see expected cash), the result (balanced, over or short;
+    the expected figure only with `see_expected_cash`), a reason when it is out by more than the
+    venue's threshold (`POS_VARIANCE_REASON_REQUIRED` goes back to it), one recount, then the cash
+    to the bank and the float left, which must add up to the count.
+  - *X and Z reports* on screen in the spec's order, shared as the PDF through the share sheet
+    (`report.pdf`), and a Z report emailed to the admins.
+  - *End of day* for admins and `see_expected_cash`: any day in the last 400, the takings tiles,
+    each till counted against expected, takings by method, deposits and fees, tips by person,
+    refunds, online orders waiting and cash outside a till session. The evening email switch
+    stays on the web.
+  - *Cash with no till open:* a cash payment or cash refund refused with
+    `POS_TILL_SESSION_REQUIRED` offers "Open the till" right there (choosing the till when there
+    are several), and a sale with no till is put on the till just opened, so its cash counts there.
+  - *The `pos_cash_up_reminder` push* opens the Till screen (another business's reminder says to
+    switch first), and "Cash-up reminders" joins Push notifications at POS venues.
 
 ---
 

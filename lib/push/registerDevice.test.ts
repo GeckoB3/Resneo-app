@@ -30,6 +30,7 @@ jest.mock('@/lib/push/notificationsModule', () => ({
   },
 }));
 
+import { POS_APP_STEP } from '@/lib/pos/client-build';
 import {
   __resetDeviceRegistrationForTests,
   getRegisteredDeviceId,
@@ -97,7 +98,7 @@ describe('POS app step 2: the build and what the phone can do with a card', () =
   it('sends client_build with the POS app step on every registration', async () => {
     mockApiFetch.mockResolvedValueOnce({ device: { id: 'dev-3' } });
     await registerCurrentDeviceForPush({ accessToken: 'token-A', audience: 'staff' });
-    expect(String(payloadOf(mockApiFetch.mock.calls[0]).client_build)).toMatch(/; pos=2$/);
+    expect(String(payloadOf(mockApiFetch.mock.calls[0]).client_build)).toMatch(new RegExp(`; pos=${POS_APP_STEP}$`));
   });
 
   it('sends the registration again, on the same token, when the card capability changes', async () => {

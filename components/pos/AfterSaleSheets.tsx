@@ -2,7 +2,8 @@ import { useMemo, useRef, useState } from 'react';
 import { Switch, View } from 'react-native';
 
 import { writeError, type Send } from '@/components/pos/SaleSheets';
-import { AmountRow, ChoiceChips, ErrorLine, money, PosSheet, posStyles, usePosT } from '@/components/pos/parts';
+import { AmountRow, ChoiceChips, ErrorLine, money, Notice, PosSheet, posStyles, usePosT } from '@/components/pos/parts';
+import { CashTillPrompt } from '@/components/pos/TillSheets';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Segmented } from '@/components/ui/Segmented';
@@ -108,6 +109,8 @@ function RefundSheetBody({
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [needsTill, setNeedsTill] = useState(false);
+  const [tillOpened, setTillOpened] = useState<string | null>(null);
   const requestId = useRef(newPaymentAttemptId());
 
 
@@ -183,6 +186,7 @@ function RefundSheetBody({
       // refund another way, which is a different refund, so it gets a new request id.
       if (apiErrorCode(e) === 'POS_CARD_REFUND_UNAVAILABLE') requestId.current = newPaymentAttemptId();
       setError(writeError(e, t));
+      setNeedsTill(apiErrorCode(e) === 'POS_TILL_SESSION_REQUIRED');
     } finally {
       setBusy(false);
     }
@@ -362,6 +366,19 @@ function RefundSheetBody({
         <Input label={t('refund.note')} value={note} onChangeText={setNote} maxLength={500} />
         {total > 0 ? <Text variant="bodyMedium">{t('refund.summary', { amount: money(total), destination: destinationLabel })}</Text> : null}
         <ErrorLine message={error} />
+        {/* Pass 3 (§3.25): a cash refund with no till open. */}
+        {needsTill ? (
+          <CashTillPrompt
+            sale={sale}
+            send={send}
+            onResolved={(message) => {
+              setNeedsTill(false);
+              setError(null);
+              setTillOpened(message);
+            }}
+          />
+        ) : null}
+        {tillOpened ? <Notice tone="success">{tillOpened}</Notice> : null}
         <Button
           label={t('refund.confirm', { amount: money(total) })}
           variant="danger"

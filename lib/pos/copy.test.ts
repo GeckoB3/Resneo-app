@@ -155,6 +155,39 @@ describe('POS copy', () => {
     );
   });
 
+  it('keeps the web ids the spec names for app step 3 (UX spec §13.5, §18.21)', () => {
+    const ids = [
+      'session.open',
+      'session.openSince',
+      'session.leftOpen',
+      'session.open.refundOnly',
+      'move.in.title',
+      'move.out.petty',
+      'move.photo',
+      'move.tips.confirm',
+      'close.blind',
+      'close.needsReason',
+      'close.mismatch',
+      'z.xWatermark',
+      'z.email',
+      'eod.cashOutside.help',
+      'denom.bagged',
+      'err.POS_TILL_SESSION_REQUIRED',
+      'err.POS_SESSION_ALREADY_OPEN',
+      'err.POS_VARIANCE_REASON_REQUIRED',
+      'push.pref.pos_cash_up_reminder',
+      'app.receipt.share',
+      'app.photo.library',
+      'app.photo.camera',
+      'app.photo.denied',
+    ] as const;
+    for (const id of ids) expect(POS_COPY[id]).toBeTruthy();
+    expect(posCopy('session.openSince', { staffName: 'Jess', time: '08:52', amount: '£100.00' })).toBe(
+      'Opened by Jess at 08:52 with a £100.00 float',
+    );
+    expect(posCopy('close.mismatch', { counted: '£180.00' })).toBe('These need to add up to the £180.00 you counted.');
+  });
+
   it('fills placeholders and leaves unknown ones for a test to spot', () => {
     expect(fillCopy('{amount} to pay', { amount: '£5.00' })).toBe('£5.00 to pay');
     expect(fillCopy('{missing} here')).toBe('{missing} here');

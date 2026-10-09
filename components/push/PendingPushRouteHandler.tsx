@@ -42,6 +42,16 @@ export function PendingPushRouteHandler(): null {
         return;
       }
 
+      if (route.kind === 'posTill') {
+        // The cash-up reminder (POS app step 3) opens the till, where the session can be closed.
+        const query = new URLSearchParams();
+        if (route.sessionId) query.set('session', route.sessionId);
+        if (route.venueId) query.set('venue', route.venueId);
+        const qs = query.toString();
+        router.push(`/checkout/till${qs ? `?${qs}` : ''}` as Href);
+        return;
+      }
+
       if (route.kind === 'url') {
         /*
           A waitlist offer opens the venue's public booking page, because that

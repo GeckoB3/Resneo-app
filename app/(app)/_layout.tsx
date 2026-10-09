@@ -124,6 +124,22 @@ export default function AppLayout() {
           title: 'Sale',
         }}
       />
+      {/* The till and cash-up (POS app step 3), from the Till card on Checkout and the cash-up
+          reminder push; end of day for admins and see_expected_cash. */}
+      <Stack.Screen
+        name="checkout/till"
+        options={{
+          headerShown: true,
+          title: 'Till and cash-up',
+        }}
+      />
+      <Stack.Screen
+        name="checkout/end-of-day"
+        options={{
+          headerShown: true,
+          title: 'End of day',
+        }}
+      />
       {/* A sale sent from the web till to this phone (POS app step 2), opened from its push, the
           banner or Today's "Waiting for you". */}
       <Stack.Screen

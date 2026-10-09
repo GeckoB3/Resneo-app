@@ -229,6 +229,13 @@ export const queryKeys = {
       [...queryKeys.pos.all(), 'loyalty-card', keyScope(accessToken), guestId ?? null] as const,
     myCommission: (accessToken?: string | null, period?: string | null) =>
       [...queryKeys.pos.all(), 'my-commission', keyScope(accessToken), period ?? null] as const,
+    /** App step 3 (Pass 3): till sessions, cash tips waiting, and end of day. */
+    tillSessions: (accessToken?: string | null) => [...queryKeys.pos.all(), 'till-sessions', keyScope(accessToken)] as const,
+    tillSession: (accessToken?: string | null, sessionId?: string | null) =>
+      [...queryKeys.pos.all(), 'till-session', keyScope(accessToken), sessionId ?? null] as const,
+    cashTipsDue: (accessToken?: string | null) => [...queryKeys.pos.all(), 'cash-tips-due', keyScope(accessToken)] as const,
+    endOfDay: (accessToken?: string | null, date?: string | null) =>
+      [...queryKeys.pos.all(), 'end-of-day', keyScope(accessToken), date ?? null] as const,
   },
 
   referrals: {

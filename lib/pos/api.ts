@@ -123,6 +123,15 @@ export const posPaths = {
   guestLoyaltyCard: (guestId: string) => `/api/venue/guests/${encodeURIComponent(guestId)}/loyalty-card`,
   guestLoyaltyAdjust: (guestId: string) => `/api/venue/guests/${encodeURIComponent(guestId)}/loyalty-card/adjust`,
   myCommission: (period: string) => `/api/venue/pos/commission/report?mine=1&period=${encodeURIComponent(period)}`,
+  // Pass 3 (app step 3): till sessions, cash-up and end of day (Appendix E #23).
+  tillSessions: '/api/venue/pos/sessions',
+  openTill: (tillId: string) => `/api/venue/pos/tills/${encodeURIComponent(tillId)}/sessions`,
+  tillSession: (sessionId: string) => `/api/venue/pos/sessions/${encodeURIComponent(sessionId)}`,
+  tillSessionAction: (sessionId: string, action: 'movements' | 'count' | 'close' | 'email' | 'attachments') =>
+    `/api/venue/pos/sessions/${encodeURIComponent(sessionId)}/${action}`,
+  tillReportPdf: (sessionId: string) => `/api/venue/pos/sessions/${encodeURIComponent(sessionId)}/report.pdf`,
+  cashTipsDue: '/api/venue/pos/tips/cash-due',
+  endOfDay: (date?: string | null) => `/api/venue/pos/end-of-day${date ? `?date=${encodeURIComponent(date)}` : ''}`,
 } as const;
 
 /**

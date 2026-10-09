@@ -1,5 +1,5 @@
 import { format, parseISO } from 'date-fns';
-import { Stack, useRouter } from 'expo-router';
+import { type Href, Stack, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
@@ -18,7 +18,9 @@ import { Text } from '@/components/ui/Text';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { canPos } from '@/lib/pos/pos-enabled';
 import { saleStatusCopyId } from '@/lib/pos/sale-math';
+import { businessDateLabel, isLeftOpen, tillsInOrder } from '@/lib/pos/till-math';
 import { useMyCommission, usePosBootstrap, usePosEnabled, usePosQueue, usePosSaleList } from '@/lib/queries/usePos';
+import { useTillSessions } from '@/lib/queries/useTill';
 import { spacing } from '@/theme/index';
 import type { PosMinePeriod, PosQueueRow, PosSaleListRow } from '@/types/pos';
 
@@ -107,6 +109,8 @@ export default function CheckoutHomeScreen() {
             onPress={() => void open('blank')}
           />
         ) : null}
+
+        {boot.data.settings?.cash_management_enabled === true ? <TillCard /> : null}
 
         <MySalesCard />
 
@@ -257,6 +261,46 @@ function SaleRowCard({ row, onPress }: { row: PosSaleListRow; onPress: () => voi
             {t('sales.startedBy', { staffName: row.created_by_name, time: timeOf(row.created_at) })}
           </Text>
         ) : null}
+      </View>
+    </Card>
+  );
+}
+
+/**
+ * The till at a glance (UX spec §7.1, §2.2 `home.till.*`, §13.5), only while the venue counts cash in
+ * till sessions: each till open or closed, a till left open from an earlier day, and the way into
+ * the Till screen, where the till is opened, cash goes in and out and the day is closed.
+ */
+function TillCard() {
+  const t = usePosT();
+  const router = useRouter();
+  const tills = useTillSessions();
+  const data = tills.data;
+  if (!data?.cash.enabled) return null;
+  const ordered = tillsInOrder(data.tills);
+  return (
+    <Card onPress={() => router.push('/checkout/till' as Href)} accessibilityRole="button" accessibilityLabel={t('app.till.title')}>
+      <View style={posStyles.stack}>
+        <View style={styles.rowTop}>
+          <Text variant="label" style={styles.flex}>
+            {t('till.tab.till')}
+          </Text>
+          {ordered.some((x) => x.session) ? (
+            <Badge label={t('session.chip.open')} tone="success" />
+          ) : (
+            <Badge label={t('session.chip.closed')} />
+          )}
+        </View>
+        {ordered.map((till) => (
+          <Text key={till.id} variant="bodySmall" tone={isLeftOpen(till, data.today) ? 'danger' : 'muted'}>
+            {till.session
+              ? isLeftOpen(till, data.today)
+                ? t('home.till.leftOpen', { till: till.name, date: businessDateLabel(till.session.business_date) })
+                : t('home.till.open', { till: till.name, time: timeOf(till.session.opened_at) })
+              : t('home.till.closed', { till: till.name })}
+          </Text>
+        ))}
+        <Button label={t('app.till.open')} size="sm" variant="secondary" onPress={() => router.push('/checkout/till' as Href)} />
       </View>
     </Card>
   );

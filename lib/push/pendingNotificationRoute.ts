@@ -40,7 +40,9 @@ export type PendingPushRoute =
   | { kind: 'url'; url: string }
   | { kind: 'customerHome' }
   /** A sale sent from the web till to this phone (`pos_collect_request`, POS plan §4.36). */
-  | { kind: 'posCollect'; paymentId: string; venueId: string | null };
+  | { kind: 'posCollect'; paymentId: string; venueId: string | null }
+  /** The cash-up reminder: a till left open past the end of the day (`pos_cash_up_reminder`). */
+  | { kind: 'posTill'; sessionId: string | null; venueId: string | null };
 
 let pendingRoute: PendingPushRoute | null = null;
 const subscribers = new Set<() => void>();

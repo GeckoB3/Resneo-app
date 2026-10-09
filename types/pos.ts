@@ -249,7 +249,18 @@ export type PosCapability =
   | 'commit_stocktake'
   // Pass LC: loyalty cards and commission.
   | 'adjust_loyalty'
-  | 'see_own_commission';
+  | 'see_own_commission'
+  // Pass 3: till sessions and cash-up.
+  | 'open_close_till'
+  | 'paid_in_out'
+  | 'see_expected_cash'
+  // Pass 5: suppliers, purchase orders and professional use.
+  | 'manage_suppliers'
+  | 'manage_purchase_orders'
+  | 'receive_stock'
+  | 'record_professional_use'
+  // Pass 6a: online orders.
+  | 'manage_orders';
 
 export type PosCapabilityMap = Partial<Record<PosCapability, boolean>> & Record<string, boolean | undefined>;
 
@@ -307,6 +318,11 @@ export interface PosTillSettings {
   pay_link_hours?: number;
   /** Pass 4: the venue's Track stock switch (simple mode, plan §4.37). Missing reads as off. */
   track_stock_enabled?: boolean;
+  /** Pass 3: Count cash in till sessions (plan §4.10, §4.37). Missing reads as off. */
+  cash_management_enabled?: boolean;
+  /** Pass 3: nobody sees the expected cash before counting (on by default). */
+  blind_close?: boolean;
+  multiple_tills_enabled?: boolean;
 }
 
 /** `GET /api/venue/pos/bootstrap` (#1). */
@@ -988,4 +1004,198 @@ export interface PosPayoutDetail {
   currency: string;
   payout: PosPayout;
   items: PosPayoutItem[];
+}
+
+// ─── Till sessions and end of day (Pass 3, app step 3, UX spec §7) ──────────
+
+/** A notes-and-coins count as the web stores it: `{ "5000": 2, ..., "bagged": 1250 }`. */
+export type PosDenominations = Record<string, number>;
+
+export interface PosTillSession {
+  id: string;
+  till_id: string;
+  status: 'open' | 'closed';
+  business_date: string;
+  opened_at: string;
+  opened_by_name: string | null;
+  opening_float_pence: number;
+  closed_at: string | null;
+  closed_by_name: string | null;
+  count_attempts: number;
+  /** Only for people who may see expected cash, and only once closed. */
+  expected_cash_pence?: number | null;
+  counted_cash_pence: number | null;
+  variance_pence: number | null;
+  variance_reason: string | null;
+  cash_to_bank_pence: number | null;
+  float_left_pence: number | null;
+  version: number;
+}
+
+export interface PosTillState {
+  id: string;
+  name: string;
+  is_active: boolean;
+  session: PosTillSession | null;
+  /** What was left in the drawer at this till's last close (`session.float.fromLast`). */
+  last_float_left_pence: number | null;
+}
+
+/** `GET /api/venue/pos/sessions`. */
+export interface PosTillSessionsResponse {
+  cash: {
+    enabled: boolean;
+    blind_close: boolean;
+    variance_reason_threshold_pence: number;
+    default_float_pence: number;
+    legacy_cash_till_id: string | null;
+  };
+  tills: PosTillState[];
+  today: string;
+  timezone: string;
+  currency: string;
+  can: { open_close_till: boolean; paid_in_out: boolean; see_expected_cash: boolean; end_of_day: boolean; manage_settings: boolean };
+}
+
+export type PosTillMovementKind = 'paid_in' | 'paid_out' | 'safe_drop' | 'tips_paid_out' | 'no_sale';
+
+export interface PosTillMovement {
+  id: string;
+  kind: PosTillMovementKind | string;
+  category: string | null;
+  category_label: string | null;
+  amount_pence: number;
+  note: string | null;
+  staff_name: string | null;
+  occurred_at: string;
+  /** A ten-minute link to the receipt photo, when one was attached. */
+  photo_url: string | null;
+}
+
+export interface PosTillReportRow {
+  method: string;
+  name: string | null;
+  amount_pence: number;
+  tip_pence?: number;
+  count: number;
+}
+
+/** The X report (still open) or the frozen Z report, with what the reader may not see taken out. */
+export interface PosTillReport {
+  kind: 'x' | 'z';
+  status: 'open' | 'closed';
+  session_id: string;
+  till_id: string;
+  till_name: string;
+  business_date: string;
+  opened_at: string;
+  opened_by_name: string | null;
+  as_at: string;
+  closed_at?: string | null;
+  closed_by_name?: string | null;
+  sales_count: number;
+  by_method: PosTillReportRow[];
+  taken_pence: number;
+  refunds: PosTillReportRow[];
+  refunds_pence: number;
+  discounts: { sales: number; pence: number };
+  voids: { sales: number; pence: number };
+  tips: { card_pence: number; cash_pence: number | null; paid_out_pence: number };
+  cash: {
+    float_pence: number;
+    sales_pence: number;
+    tips_pence: number;
+    legacy_pence: number;
+    refunds_pence: number;
+    paid_in_pence: number;
+    paid_out_pence: number;
+    drops_pence: number;
+    tips_paid_out_pence: number;
+    expected_pence: number;
+  } | null;
+  expected_cash_pence: number | null;
+  counted_cash_pence?: number | null;
+  variance_pence?: number | null;
+  variance_reason?: string | null;
+  cash_to_bank_pence?: number | null;
+  float_left_pence?: number | null;
+  expected_hidden?: boolean;
+}
+
+/** `GET /api/venue/pos/sessions/[id]`, and what every session write answers. */
+export interface PosTillSessionDetail {
+  session: PosTillSession;
+  movements: PosTillMovement[];
+  report: PosTillReport | null;
+  replayed?: boolean;
+  movement_id?: string | null;
+}
+
+/** `POST /api/venue/pos/sessions/[id]/count`: the difference, told to whoever counted. */
+export interface PosTillCountResult {
+  counted_cash_pence: number;
+  variance_pence: number;
+  needs_reason: boolean;
+  threshold_pence: number;
+  count_attempts: number;
+  can_recount: boolean;
+  /** Only for people with `see_expected_cash`. */
+  expected_cash_pence?: number;
+}
+
+/** `GET /api/venue/pos/tips/cash-due`. */
+export interface PosCashDuePerson {
+  calendar_id: string | null;
+  staff_id: string | null;
+  name: string;
+  unpaid_pence: number;
+}
+
+export interface PosEndOfDayTill {
+  session_id: string;
+  till_id: string;
+  till_name: string;
+  status: 'open' | 'closed';
+  business_date: string;
+  opened_at: string;
+  closed_at: string | null;
+  opened_by_name: string | null;
+  closed_by_name: string | null;
+  expected_cash_pence?: number | null;
+  counted_cash_pence: number | null;
+  variance_pence: number | null;
+  variance_reason: string | null;
+}
+
+/** `GET /api/venue/pos/end-of-day?date=` (admins and `see_expected_cash`). */
+export interface PosEndOfDayResponse {
+  today: string;
+  summary: {
+    date: string;
+    totals: {
+      payments_pence: number;
+      refunds_pence: number;
+      disputes_pence: number;
+      net_pence: number;
+      tips_pence: number;
+      card_pence: number;
+      cash_pence: number;
+      other_pence: number;
+    };
+    by_method: { method: string; name: string | null; payments_pence: number; refunds_pence: number; net_pence: number }[];
+    refunds: { method: string; name: string | null; count: number; amount_pence: number }[];
+    deposits: { deposits_pence: number; fees_pence: number };
+    tips: { calendar_id: string | null; staff_id: string | null; name: string; amount_pence: number }[];
+    tills: PosEndOfDayTill[];
+    cash_outside: {
+      total_pence: number;
+      rows: { id: string; amount_pence: number; occurred_at: string; handled_by_name: string | null; source_type: string }[];
+    };
+    orders_waiting: number;
+    open_sessions: number;
+  };
+  legacy_cash_till_id: string | null;
+  currency: string;
+  timezone: string;
+  can: { manage_settings: boolean };
 }

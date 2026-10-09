@@ -497,6 +497,7 @@ export const POS_COPY = {
   'app.tapToPay.iphone': 'Tap to Pay on iPhone',
   'app.bluetoothReader': 'Card reader (Bluetooth)',
   'app.tip.title': 'Would you like to add a tip?',
+  'app.receipt.share': 'Share PDF',
   'app.receipt.sentTo': 'Receipt sent to {destination}.',
   'app.receipt.notSent': 'No receipt sent.',
   'app.receipt.notSent.pos': 'No receipt sent. You can send one from the sale.',
@@ -1053,6 +1054,166 @@ export const POS_COPY = {
   'app.web.stockSetup': 'Suppliers, labels and stock set-up',
   'app.web.loyalty': 'Loyalty card set-up',
   'app.web.commission': 'Commission rates and report',
+  // ── App step 3: till sessions, cash-up and end of day (UX spec §7, §13.5, §18.21) ──
+  // Word for word from the web's `src/lib/pos/till/copy.ts`.
+  'till.tab.till': 'Till',
+  'till.tab.eod': 'End of day',
+  'session.chip.open': 'Till open',
+  'session.chip.closed': 'Till closed',
+  'session.closed.title': '{till} is closed',
+  'session.closed.body': 'Open it with your float to start taking cash.',
+  'session.open': 'Open the till',
+  'session.openSince': 'Opened by {staffName} at {time} with a {amount} float',
+  'session.paidIn': 'Paid in',
+  'session.paidOut': 'Paid out',
+  'session.safeDrop': 'Safe drop',
+  'session.tipsOut': 'Tips paid out',
+  'session.xReport': 'X report',
+  'session.close': 'Close the till',
+  'session.otherTills': 'Other tills',
+  'session.leftOpen': "{till} has been open since {date}. Close it to count that day's cash before starting today.",
+  'session.error': "We couldn't load the till.",
+  'session.open.title': 'Open {till}',
+  'session.float': 'Float in the drawer',
+  'session.float.fromLast': 'Left in the drawer last time: {amount}',
+  'session.countByDenom': 'Count notes and coins',
+  'session.open.confirm': 'Open till',
+  'session.opened': '{till} is open.',
+  'session.openNow': 'Open the till',
+  'session.open.refundOnly': 'Your plan needs attention, so this session can only be used to give a cash refund.',
+  'move.kind.paid_in': 'Paid in',
+  'move.kind.paid_out': 'Paid out',
+  'move.kind.safe_drop': 'Safe drop',
+  'move.kind.tips_paid_out': 'Tips paid out',
+  'move.kind.no_sale': 'Drawer opened',
+  'move.in.title': 'Paid in',
+  'move.out.title': 'Paid out',
+  'move.category': 'What for',
+  'move.in.bank': 'Change from the bank',
+  'move.in.float': 'Float (change from the safe)',
+  'move.in.other': 'Something else',
+  'move.out.petty': 'Petty cash purchase',
+  'move.out.supplier': 'Supplier paid in cash',
+  'move.out.expenses': 'Staff expenses',
+  'move.out.other': 'Something else',
+  'move.note': 'Note',
+  'move.photo': 'Add a photo of the receipt',
+  'move.in.confirm': 'Record paid in',
+  'move.out.confirm': 'Record paid out',
+  'move.drop.title': 'Safe drop',
+  'move.drop.help': 'Take cash out of the drawer to keep it safe during the day.',
+  'move.drop.confirm': 'Record safe drop',
+  'move.tips.title': 'Tips paid out',
+  'move.tips.help': "For cash tips your team takes from the drawer. It's linked to their tip records.",
+  'move.tips.confirm': 'Record {amount} paid out',
+  'close.title': 'Close {till}',
+  'close.count.body': 'Count all the cash in the drawer.',
+  'close.blind': "You'll see how it compares once you've counted.",
+  'close.total': 'Total counted',
+  'close.next': 'Next',
+  'close.expected': 'Expected {expected}. Counted {counted}.',
+  'close.expected.before': 'Expected in the drawer: {expected}',
+  'close.balanced': 'It balances.',
+  'close.over': '{amount} over',
+  'close.short': '{amount} short',
+  'close.needsReason': "The count doesn't match what we expected. Please say what might explain it.",
+  'close.reason': 'What might explain the difference?',
+  'close.recount': 'Count again',
+  'close.bank': 'Cash going to the bank',
+  'close.floatLeft': 'Float left in the drawer',
+  'close.mismatch': 'These need to add up to the {counted} you counted.',
+  'close.legacyCash': 'Cash from older app versions and desk deposits: {amount}',
+  'close.confirm': 'Close till',
+  'z.title': 'Z report',
+  'z.xTitle': 'X report',
+  'z.xWatermark': 'X report: the till is still open',
+  'z.opened': 'Opened',
+  'z.closed': 'Closed',
+  'z.sales': 'Sales',
+  'z.byMethod': 'Takings by method',
+  'z.refunds': 'Refunds',
+  'z.discounts': 'Discounts',
+  'z.voids': 'Voids',
+  'z.tips': 'Tips',
+  'z.tipsCard': 'On cards',
+  'z.tipsCash': 'In cash',
+  'z.tipsOut': 'Paid out from the drawer',
+  'z.cash': 'Cash',
+  'z.float': 'Float',
+  'z.cashSales': 'Cash sales',
+  'z.cashTips': 'Cash tips received',
+  'z.legacyCash': 'Older app and desk deposits',
+  'z.cashRefunds': 'Cash refunds',
+  'z.paidIn': 'Paid in',
+  'z.paidOut': 'Paid out',
+  'z.drops': 'Safe drops',
+  'z.expected': 'Expected',
+  'z.counted': 'Counted',
+  'z.difference': 'Difference',
+  'z.reason': 'Reason',
+  'z.toBank': 'To bank',
+  'z.floatLeft': 'Float left',
+  'z.email': 'Email to admins',
+  'eod.date': 'Day',
+  'eod.tile.takings': 'Taken',
+  'eod.tile.card': 'Card',
+  'eod.tile.cash': 'Cash',
+  'eod.tile.other': 'Other',
+  'eod.tills': 'Tills',
+  'eod.deposits': 'Deposits and no-show fees',
+  'eod.tips': 'Tips by person',
+  'eod.refunds': 'Refunds',
+  'eod.ordersWaiting': 'Online orders waiting',
+  'eod.cashOutside': 'Cash outside a till session',
+  'eod.cashOutside.help':
+    "Cash taken in an older version of the ResNeo app while no till was open. It isn't in any till's expected cash, so put it in the drawer or the safe and note where it went.",
+  'denom.note': '{value} notes',
+  'denom.coin': '{value} coins',
+  'denom.bagged': 'Bagged coins',
+  'denom.total': 'Total',
+  'home.till.open': '{till} is open, since {time}.',
+  'home.till.closed': '{till} is closed. Open it before you take cash.',
+  'home.till.leftOpen': '{till} has been open since {date}. Close it to count the cash.',
+  'err.POS_TILL_SESSION_REQUIRED': 'Open the till before taking or giving back cash.',
+  'err.POS_SESSION_ALREADY_OPEN': '{till} is already open, so you can carry on with that session.',
+  'err.POS_VARIANCE_REASON_REQUIRED': 'The count is {difference} out, so please say why before closing.',
+  'push.pref.pos_cash_up_reminder': 'Cash-up reminders',
+  'push.cashUp.title': 'Time to cash up',
+  'push.cashUp.body': 'The {till} till is still open. Close it to finish the day.',
+  // The app's own words for app step 3, where the deck has none (a phone shares the PDF, §13.5).
+  'app.till.title': 'Till and cash-up', // (added) the Till screen's title
+  'app.till.open': 'Open the till screen', // (added) the Till card's button on Checkout
+  'app.till.moves': 'Today in the drawer', // (added) the movements list
+  'app.till.moves.none': 'Nothing paid in or out yet.', // (added)
+  'app.till.moveBy': '{time}, by {staffName}', // (added) one movement's time and who
+  'app.till.amount': 'Amount', // (added)
+  'app.till.photo.added': 'Receipt photo added', // (added)
+  'app.till.photo.remove': 'Remove the photo', // (added)
+  'app.till.photo.failed': "We couldn't add that photo. Please try again.", // (added)
+  'app.till.photo.view': 'Receipt photo', // (added) a movement's photo thumbnail
+  'app.till.recorded': 'Recorded.', // (added)
+  'app.till.tips.none': 'Nobody has cash tips waiting to be paid.', // (added)
+  'app.till.tips.unpaid': '{amount} to pay', // (added)
+  'app.till.report.title': '{report}: {till}', // (added) "X report: Front desk"
+  'app.till.report.failed': "We couldn't open the report. Please try again.", // (added)
+  'app.till.report.emailed': 'Z report emailed to {count} admins.', // (added)
+  'app.till.report.totalTaken': 'Total taken', // (added) as on the web's printed report
+  'app.till.report.tipsPaidOut': 'Tips paid out', // (added) as on the web's printed report
+  'app.till.report.hidden': 'Ask an admin to see the cash count.', // (added) expected cash hidden
+  'app.till.chooseTill': 'Which till are you opening?', // (added) several tills, from the cash payment
+  'app.till.closed.done': '{till} is closed.', // (added)
+  'app.till.eod.open': 'See the end of day', // (added) admins and see_expected_cash
+  'app.till.eod.prev': 'Day before', // (added)
+  'app.till.eod.next': 'Day after', // (added)
+  'app.till.eod.error': "We couldn't load the end of day.", // (added)
+  'app.till.eod.tillOpen': '{till} is still open.', // (added) a till not yet counted that day
+  'app.till.eod.tillRow': 'Counted {counted}, {difference}', // (added)
+  'app.till.eod.tillRowExpected': 'Counted {counted}, expected {expected}, {difference}', // (added)
+  'app.till.eod.depositsRow': 'Deposits {deposits}. No-show and late fees {fees}.', // (added)
+  'app.till.eod.none': 'Nothing yet.', // (added)
+  'app.till.eod.cashRow': '{amount} at {time}, by {staffName}', // (added)
+  'app.till.otherVenue': 'This till is at another business. Switch to it in the app, then open it again.', // (added) a cash-up push for another venue
+  'app.till.notCounting': "This venue doesn't count cash in till sessions. An admin can turn it on in Settings, Checkout, on the web.", // (added)
   // The app's own words for app step 4, where the deck has none.
   'app.stock.more': 'Show more', // (added) the next page of a list
   'app.stock.option': 'Option', // (added) the option picker's label on a stock row
