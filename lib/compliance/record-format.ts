@@ -8,12 +8,12 @@ import type { ComplianceFormField } from '@/types/compliance';
 
 /** DD/MM/YYYY. Handles both full ISO timestamps and bare YYYY-MM-DD dates. */
 export function formatComplianceDate(iso: string | null | undefined): string {
-  if (!iso) return '–';
+  if (!iso) return 'Not set';
   // A bare calendar date: format the parts directly so it never shifts a day across a timezone.
   const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso.trim());
   if (dateOnly) return `${dateOnly[3]}/${dateOnly[2]}/${dateOnly[1]}`;
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '–';
+  if (Number.isNaN(d.getTime())) return 'Not set';
   return d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
@@ -24,7 +24,7 @@ function optionLabel(options: ComplianceFormField['options'], value: unknown): s
 
 /** Render a stored form answer as text for the record view (option values become their labels). */
 export function formatComplianceAnswer(field: ComplianceFormField, value: unknown): string {
-  if (value == null || value === '') return '–';
+  if (value == null || value === '') return 'Not set';
   switch (field.type) {
     case 'signature': {
       const v = value as { method?: string };
@@ -36,7 +36,7 @@ export function formatComplianceAnswer(field: ComplianceFormField, value: unknow
     }
     case 'multiselect': {
       const values = Array.isArray(value) ? value : [value];
-      if (values.length === 0) return '–';
+      if (values.length === 0) return 'Not set';
       return values.map((v) => optionLabel(field.options, v)).join(', ');
     }
     case 'select':

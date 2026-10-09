@@ -24,8 +24,8 @@ describe('formatComplianceAnswer', () => {
   });
 
   it('shows a dash for an empty Checkboxes answer', () => {
-    expect(formatComplianceAnswer(multiselect, [])).toBe('–');
-    expect(formatComplianceAnswer(multiselect, undefined)).toBe('–');
+    expect(formatComplianceAnswer(multiselect, [])).toBe('Not set');
+    expect(formatComplianceAnswer(multiselect, undefined)).toBe('Not set');
   });
 
   it('shows a Dropdown answer as its option label', () => {
@@ -44,7 +44,7 @@ describe('formatComplianceDate', () => {
   });
 
   it('returns a dash for empty or invalid input', () => {
-    expect(formatComplianceDate(null)).toBe('–');
-    expect(formatComplianceDate('not-a-date')).toBe('–');
+    expect(formatComplianceDate(null)).toBe('Not set');
+    expect(formatComplianceDate('not-a-date')).toBe('Not set');
   });
 });
