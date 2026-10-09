@@ -40,6 +40,8 @@ import { buildCalendarClosureOverlays } from '@/lib/calendar/schedule-closures';
 import { calendarHours } from '@/lib/calendar/calendar-hours';
 import { bookingModificationNotifyOutcome } from '@/lib/booking/modification-notify-result';
 import { AmendHoursSheet, type AmendHoursTarget } from '@/components/calendar/AmendHoursSheet';
+import { calendarJumpForBooking } from '@/components/calendar/calendar-client-search';
+import { CalendarToolsSheet } from '@/components/calendar/CalendarToolsSheet';
 import { resolveColumnDayHours } from '@/lib/calendar/column-day-hours';
 import { calendarHasAvailableHoursOnDate } from '@/lib/calendar/calendar-has-hours-on-date';
 import { MonthGrid, type MonthDayDatum } from '@/components/calendar/MonthGrid';
@@ -184,6 +186,7 @@ import type { CalendarTimeBlock } from '@/components/calendar/CalendarDayGrid';
 import type { CalendarScheduleBlock, ScheduleBlockDTO } from '@/types/schedule-blocks';
 import type { LinkedBooking, LinkedVenueCalendar } from '@/types/linked-venues';
 import type { BookingDetail } from '@/types/booking-detail';
+import type { GuestBookingHistoryRow } from '@/types/guest-detail';
 
 /** A row with no usable end reads as this long, as on the grids. */
 const DEFAULT_SERVICE_MINUTES = 30;
@@ -462,6 +465,8 @@ export default function CalendarScreen() {
   const [monthPickerOpen, setMonthPickerOpen] = useState(false);
   /** The clock button's chooser (amend calendar hours / business hours). */
   const [amendHoursTarget, setAmendHoursTarget] = useState<AmendHoursTarget | null>(null);
+  /** The toolbar's More sheet: contact search and the colour key (`CalendarToolsSheet`). */
+  const [toolsOpen, setToolsOpen] = useState(false);
   // Pending action tracking for inline status tray + drag commits.
   const [pendingActionIds, setPendingActionIds] = useState<Set<string>>(new Set());
 
@@ -1409,6 +1414,60 @@ export default function CalendarScreen() {
     setDetailLinked(null);
     setDetailBookingId(id);
   }, []);
+
+  /**
+   * A booking picked in the toolbar's contact search (web: the contact's
+   * "Guest bookings" opens the booking). The diary moves to that day in day
+   * view, back on this venue's own calendars, makes sure the booking's calendar
+   * is on screen, and opens the booking.
+   */
+  const jumpToSearchedBooking = useCallback(
+    (row: GuestBookingHistoryRow) => {
+      const jump = calendarJumpForBooking(row, calendarIds);
+      hapticSelect();
+      setToolsOpen(false);
+      clearOwnerVenue();
+      setScope('day');
+      setAnchor(jump.date);
+      const calendarId = jump.calendarId;
+      if (calendarId) {
+        // Phone: one calendar at a time unless "All" is on, so show the booking's.
+        setSelectedId((current) => (current === ALL_CALENDARS ? current : calendarId));
+        // Wide day view: a column filter that hides it is lifted.
+        setVisibleIds((current) =>
+          current == null || current.includes(calendarId) ? current : null,
+        );
+      }
+      setDetailLinked(null);
+      setDetailBookingId(jump.bookingId);
+    },
+    [calendarIds, clearOwnerVenue],
+  );
+
+  /** The contact search's Book: the booking form with this person and the diary's day. */
+  const bookForSearchedClient = useCallback(
+    (guestId: string) => {
+      setToolsOpen(false);
+      router.push({
+        pathname: '/booking/new',
+        params: {
+          ...collectiveParamsFor(null),
+          ...newBookingParams({ date: anchor, slot: null }),
+          guestId,
+        },
+      });
+    },
+    [anchor, collectiveParamsFor, router],
+  );
+
+  /** The contact search's View: the person's contact record. */
+  const viewSearchedClient = useCallback(
+    (guestId: string) => {
+      setToolsOpen(false);
+      router.push({ pathname: '/client/[id]', params: { id: guestId } });
+    },
+    [router],
+  );
 
   /**
    * Tap a partner's bar (web `openLinkedBooking` / `openGridBookingDetail`): a
@@ -2949,6 +3008,14 @@ export default function CalendarScreen() {
                 variant="bordered"
                 onPress={() => router.push('/today')}
               />
+              {/* The web toolbar's contact search and colour key, behind one
+                  button so the phone row keeps room for Day / Week / Month. */}
+              <IconButton
+                icon={{ ios: 'ellipsis', android: 'more_horiz', web: 'more_horiz' }}
+                accessibilityLabel="More: search contacts, colour key"
+                variant="bordered"
+                onPress={() => setToolsOpen(true)}
+              />
             </View>
 
             <View style={styles.dateNav}>
@@ -3574,6 +3641,15 @@ export default function CalendarScreen() {
         target={amendHoursTarget}
         isAdmin={staffMe.data?.staff.role === 'admin'}
         onClose={() => setAmendHoursTarget(null)}
+      />
+      <CalendarToolsSheet
+        visible={toolsOpen}
+        onClose={() => setToolsOpen(false)}
+        clientWord={terminology.client}
+        timeZone={timeZone}
+        onPickBooking={jumpToSearchedBooking}
+        onBook={bookForSearchedClient}
+        onViewContact={viewSearchedClient}
       />
       <MonthPickerSheet
         visible={monthPickerOpen}
