@@ -236,7 +236,7 @@ export function buildDestinations(ctx: DestinationsContext): Destination[] {
   if (isAdmin) {
     list.push({ id: 'team', label: 'Team', hint: 'Staff logins & roles', icon: { ios: 'person.2.fill', android: 'group', web: 'group' }, tile: TILE.emerald, group: 'people', kind: 'route', target: '/manage/team', keywords: ['settings', 'staff', 'roles', 'permissions'] });
     list.push({ id: 'communications', label: 'Communications', hint: 'Confirmations, reminders & alerts', icon: { ios: 'envelope.fill', android: 'mail', web: 'mail' }, tile: TILE.amber, group: 'people', kind: 'route', target: '/manage/communications', keywords: ['settings', 'SMS', 'email', 'templates', 'reminders', 'notifications'] });
-    list.push({ id: 'import-contacts', label: 'Import contacts', hint: 'Bring in clients and bookings from a CSV or Excel file', icon: { ios: 'square.and.arrow.down', android: 'upload_file', web: 'upload_file' }, tile: TILE.sky, group: 'people', kind: 'route', target: '/import', keywords: ['csv', 'excel', 'upload', 'bulk', 'clients', 'guests', 'bookings', 'data', 'import', 'undo'] });
+    list.push({ id: 'import-contacts', label: 'Import contacts', hint: 'Clients and bookings from a CSV or Excel file', icon: { ios: 'square.and.arrow.down', android: 'upload_file', web: 'upload_file' }, tile: TILE.sky, group: 'people', kind: 'route', target: '/import', keywords: ['csv', 'excel', 'upload', 'bulk', 'clients', 'guests', 'bookings', 'data', 'import', 'undo'] });
   }
 
   // ── Booking types — only the models this venue has enabled. Model-driven, NOT
