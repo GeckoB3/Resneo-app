@@ -21,7 +21,7 @@ import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { getAppVersion, getWebUrl } from '@/lib/env';
-import { isLoyaltyEnabled, isPosEnabled, isShopEnabled } from '@/lib/pos/pos-enabled';
+import { isLoyaltyEnabled, isPosEnabled, isShopEnabled, isVouchersEnabled } from '@/lib/pos/pos-enabled';
 import {
   buildDestinations,
   LIST_GROUPS,
@@ -32,6 +32,7 @@ import { useBillingStatus } from '@/lib/queries/useBillingStatus';
 import { useCollectives } from '@/lib/queries/useCollectives';
 import { useNotifications } from '@/lib/queries/useNotifications';
 import { useOrdersTile } from '@/lib/queries/useOrders';
+import { usePosBootstrap } from '@/lib/queries/usePos';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { useUpdateVenue } from '@/lib/queries/useVenueSettings';
 import { useAppLock } from '@/providers/AppLockProvider';
@@ -213,6 +214,17 @@ export default function MoreScreen() {
   // Orders (POS app step 5): for logins with manage_orders, while the shop is on or new paid
   // orders are waiting. Nothing is asked at a venue without Checkout.
   const ordersTile = useOrdersTile(venue);
+  // What this login may do at Checkout, for the Checkout set-up rows. Asked only at a POS venue.
+  const posBoot = usePosBootstrap({ enabled: isPosEnabled(venue) });
+  const posCan = useMemo(() => {
+    // Read by key: not every capability the web sends is in the app's PosCapability type.
+    const caps = posBoot.data?.capabilities as Record<string, boolean | undefined> | undefined;
+    return {
+      manage_settings: caps?.manage_settings === true,
+      view_reports: caps?.view_reports === true,
+      import_products: caps?.import_products === true,
+    };
+  }, [posBoot.data]);
 
   const destinations = useMemo<Destination[]>(() => {
     const enabledModels = new Set<BookingModel>([
@@ -232,8 +244,10 @@ export default function MoreScreen() {
       ordersEnabled: ordersTile.enabled,
       ordersNewCount: ordersTile.newCount,
       shopEnabled: isShopEnabled(venue),
+      vouchersEnabled: isVouchersEnabled(venue),
+      posCan,
     });
-  }, [isAdmin, venue, liveCollectiveName, ordersTile.enabled, ordersTile.newCount]);
+  }, [isAdmin, venue, liveCollectiveName, ordersTile.enabled, ordersTile.newCount, posCan]);
 
   const handlePress = useCallback(
     (dest: Destination) => {

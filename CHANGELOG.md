@@ -17,6 +17,19 @@ on the other, and iOS 1.0.4 is the worked example.
 
 ## Unreleased OTA: POS app step 1 (iOS 1.2.0 / Android 1.1.2)
 
+### Checkout set-up in the app (owner, 2026-10-09)
+
+More's "On the web" group is now "Checkout set-up", and every row opens an app screen with the
+web's behaviour; nothing in it opens the browser any more.
+
+- Checkout settings (More > Checkout settings): Features, Business and tax details, Receipts, Tips, Discounts and reasons with preset discounts, Other payment types, Tills, Cash, Team permissions, Card readers, Cards on file, Stock, Gift vouchers, Loyalty card set-up, Commission and Online shop. Each section saves only its own settings; if someone else saved first, you see their changes and keep your edits.
+- Card readers: add a reader by its pairing code, rename it, choose its till, remove it, and see its status; test readers and test cards in test mode.
+- Gift vouchers: amounts, expiry, terms with the template, selling online with the voucher page link and QR code; add an existing voucher or import vouchers from a CSV file.
+- Online shop: the opening checklist, opening and closing, the shop link and QR code, policies with templates, collection, delivery zones, stock display, minimum order and customer messages.
+- Reports: Takings and Sales carry every card the web shows, each with its own CSV; tip records download from Takings; new Vouchers and Commission tabs. Team members with "view reports" now see Takings and Sales.
+- Products and stock: every tab the web's Stock page has (Stock levels, Movements, Stocktakes, Purchase orders, Suppliers, Professional use, Reports), product filters, bulk price and category changes, archive, Export CSV, and Import products from a CSV file. The product editor has every web field.
+- Booking detail: Check out is the same colour as Confirm.
+
 JavaScript only, for both runtimes; the native diff is empty (no module, no `app.json` native
 config, no `eas.json` or native dependency change). Every new screen, tile, button and report tab
 is behind the venue's resolved `feature_flags.resolved.pos_enabled` (POS plan §4.22, test plan

@@ -250,7 +250,7 @@ describe('buildDestinations — the Collective area (web parity, 2026-09-17)', (
 });
 
 describe('buildDestinations — Checkout (POS app step 1, plan §4.22)', () => {
-  const posIds = ['checkout', 'stock', 'web-checkout-settings', 'web-records', 'web-stock-setup', 'web-loyalty', 'web-commission'];
+  const posIds = ['checkout', 'stock', 'checkout-settings', 'pos-records', 'stock-setup', 'import-products', 'loyalty-setup', 'commission-rates', 'commission-report', 'shop-settings', 'voucher-settings'];
 
   it('adds nothing when the POS switch is off or absent: the More tab is unchanged', () => {
     for (const isAdmin of [true, false]) {
@@ -258,7 +258,7 @@ describe('buildDestinations — Checkout (POS app step 1, plan §4.22)', () => {
       const off = buildDestinations(ctx({ isAdmin, posEnabled: false }));
       expect(off).toEqual(before);
       expect(off.map((d) => d.id).filter((id) => posIds.includes(id))).toEqual([]);
-      expect(off.some((d) => d.group === 'web')).toBe(false);
+      expect(off.some((d) => d.group === 'checkoutSetup')).toBe(false);
     }
   });
 
@@ -271,11 +271,34 @@ describe('buildDestinations — Checkout (POS app step 1, plan §4.22)', () => {
     }
   });
 
-  it("puts Checkout's set-up screens under On the web, for admins only", () => {
-    const admin = buildDestinations(ctx({ isAdmin: true, posEnabled: true })).filter((d) => d.group === 'web');
-    expect(admin.map((d) => d.id)).toEqual(['web-checkout-settings', 'web-records', 'web-stock-setup', 'web-commission']);
-    expect(admin.every((d) => d.kind === 'web' && d.external)).toBe(true);
-    expect(ids(ctx({ isAdmin: false, posEnabled: true }))).not.toContain('web-checkout-settings');
+  it("puts Checkout's set-up screens in the app under Checkout set-up (owner, 2026-10-09)", () => {
+    const admin = buildDestinations(ctx({ isAdmin: true, posEnabled: true })).filter((d) => d.group === 'checkoutSetup');
+    expect(admin.map((d) => d.id)).toEqual([
+      'checkout-settings',
+      'pos-records',
+      'stock-setup',
+      'import-products',
+      'commission-rates',
+      'commission-report',
+    ]);
+    expect(admin.every((d) => d.kind === 'route' && !d.external)).toBe(true);
+    expect(admin.find((d) => d.id === 'checkout-settings')?.target).toBe('/checkout-settings');
+    // A team member sees none of them without the matching permission.
+    expect(buildDestinations(ctx({ isAdmin: false, posEnabled: true })).filter((d) => d.group === 'checkoutSetup')).toEqual([]);
+  });
+
+  it('offers Checkout settings and the records to a team member with the matching permission', () => {
+    const staff = ids(ctx({ isAdmin: false, posEnabled: true, posCan: { manage_settings: true, view_reports: true } }));
+    expect(staff).toContain('checkout-settings');
+    expect(staff).toContain('pos-records');
+    expect(staff).not.toContain('commission-rates');
+    expect(ids(ctx({ isAdmin: false, posEnabled: true, posCan: { import_products: true } }))).toContain('import-products');
+  });
+
+  it('adds gift voucher settings for admins while vouchers are on', () => {
+    expect(ids(ctx({ isAdmin: true, posEnabled: true, vouchersEnabled: true }))).toContain('voucher-settings');
+    expect(ids(ctx({ isAdmin: true, posEnabled: true }))).not.toContain('voucher-settings');
+    expect(ids(ctx({ isAdmin: false, posEnabled: true, vouchersEnabled: true }))).not.toContain('voucher-settings');
   });
 
   it('shows Products and stock to everyone at a POS venue (app step 4, UX spec §13.6)', () => {
@@ -299,15 +322,15 @@ describe('buildDestinations — Checkout (POS app step 1, plan §4.22)', () => {
     expect(ids(ctx({ isAdmin: true, posEnabled: false, ordersEnabled: true }))).not.toContain('orders');
   });
 
-  it("adds the shop's web row for admins while the shop is on (app step 5)", () => {
-    expect(ids(ctx({ isAdmin: true, posEnabled: true, shopEnabled: true }))).toContain('web-shop');
-    expect(ids(ctx({ isAdmin: false, posEnabled: true, shopEnabled: true }))).not.toContain('web-shop');
-    expect(ids(ctx({ isAdmin: true, posEnabled: true }))).not.toContain('web-shop');
+  it('adds online shop settings for admins while the shop is on', () => {
+    expect(ids(ctx({ isAdmin: true, posEnabled: true, shopEnabled: true }))).toContain('shop-settings');
+    expect(ids(ctx({ isAdmin: false, posEnabled: true, shopEnabled: true }))).not.toContain('shop-settings');
+    expect(ids(ctx({ isAdmin: true, posEnabled: true }))).not.toContain('shop-settings');
   });
 
-  it('adds the loyalty card web row only while loyalty is on (Pass LC)', () => {
-    expect(ids(ctx({ isAdmin: true, posEnabled: true }))).not.toContain('web-loyalty');
-    expect(ids(ctx({ isAdmin: true, posEnabled: true, loyaltyEnabled: true }))).toContain('web-loyalty');
-    expect(ids(ctx({ isAdmin: false, posEnabled: true, loyaltyEnabled: true }))).not.toContain('web-loyalty');
+  it('adds loyalty card set-up only while loyalty is on (Pass LC)', () => {
+    expect(ids(ctx({ isAdmin: true, posEnabled: true }))).not.toContain('loyalty-setup');
+    expect(ids(ctx({ isAdmin: true, posEnabled: true, loyaltyEnabled: true }))).toContain('loyalty-setup');
+    expect(ids(ctx({ isAdmin: false, posEnabled: true, loyaltyEnabled: true }))).not.toContain('loyalty-setup');
   });
 });

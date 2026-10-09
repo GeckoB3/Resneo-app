@@ -40,6 +40,7 @@ jest.mock('@/lib/queries/useCollectives', () => ({
   useCollectives: () => ({ data: { collectives: mockCollectives } }),
 }));
 jest.mock('@/lib/queries/useOrders', () => ({ useOrdersTile: () => ({ enabled: false, newCount: null }) }));
+jest.mock('@/lib/queries/usePos', () => ({ usePosBootstrap: () => ({ data: undefined }) }));
 jest.mock('@/lib/queries/useNotifications', () => ({
   useNotifications: () => ({ data: { unreadCount: 0 } }),
 }));
