@@ -33,7 +33,7 @@ const money = (p: number) => `£${(p / 100).toFixed(2)}`;
 describe('the copy', () => {
   it('has no em-dash and names no one country', () => {
     for (const [id, text] of Object.entries(STOCK_SETUP_COPY)) {
-      expect({ id, dash: text.includes('—') }).toEqual({ id, dash: false });
+      expect({ id, dash: text.includes(String.fromCharCode(0x2014)) }).toEqual({ id, dash: false });
       expect({ id, region: /Northern Ireland|Great Britain|\bNI\b|\bGB\b/.test(text) }).toEqual({ id, region: false });
     }
   });
