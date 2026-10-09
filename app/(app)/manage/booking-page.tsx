@@ -12,6 +12,7 @@ import { CoverCropperSheet } from '@/components/bookingPage/CoverCropperSheet';
 import { EmbedAndQrSection, type EmbedAccentField } from '@/components/bookingPage/EmbedAndQrSection';
 import { GalleryEditorSheet } from '@/components/bookingPage/GalleryEditorSheet';
 import { LogoFramingSheet } from '@/components/bookingPage/LogoFramingSheet';
+import { MarketplaceSection } from '@/components/bookingPage/MarketplaceSection';
 import { ServicePhotosSheet } from '@/components/bookingPage/ServicePhotosSheet';
 import { TeamProfilesSheet } from '@/components/bookingPage/TeamProfilesSheet';
 import { CombinedPageScopeContent } from '@/components/linked/CombinedPageScopeContent';
@@ -521,14 +522,14 @@ export default function BookingPageScreen() {
 
   if (!isLoading && !isAdmin) {
     return (
-      <Screen>
+      <Screen scroll contentContainerStyle={styles.content}>
         <Stack.Screen options={{ headerShown: true, title: 'Booking page' }} />
-        <View style={styles.gateWrap}>
-          <EmptyState
-            title="Admins only"
-            message="Only venue admins can edit the public booking page."
-          />
-        </View>
+        <EmptyState
+          title="Admins only"
+          message="Only venue admins can edit the public booking page."
+        />
+        {/* The marketplace card is read only for staff, as on the web. */}
+        <MarketplaceSection isAdmin={false} />
       </Screen>
     );
   }
@@ -553,6 +554,8 @@ export default function BookingPageScreen() {
             lockedCollective={combinedEmbed}
           />
         ) : null}
+        {/* Web parity: the marketplace card closes the tab in either scope. */}
+        <MarketplaceSection isAdmin={isAdmin} />
       </Screen>
     );
   }
@@ -885,6 +888,9 @@ export default function BookingPageScreen() {
         </Text>
       ) : null}
 
+      {/* ResNeo marketplace: last on the page, as on the web's Booking Page tab. */}
+      <MarketplaceSection isAdmin={isAdmin} />
+
       <GalleryEditorSheet visible={openSheet === 'gallery'} onClose={() => setOpenSheet(null)} />
       <ServicePhotosSheet visible={openSheet === 'service'} onClose={() => setOpenSheet(null)} />
       <TeamProfilesSheet visible={openSheet === 'team'} onClose={() => setOpenSheet(null)} />
@@ -1201,10 +1207,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.sm,
-  },
-  gateWrap: {
-    flex: 1,
-    padding: spacing.base,
   },
   flex1: {
     flex: 1,

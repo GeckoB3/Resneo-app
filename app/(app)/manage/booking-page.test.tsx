@@ -45,6 +45,15 @@ jest.mock('@/components/bookingPage/GalleryEditorSheet', () => ({ GalleryEditorS
 jest.mock('@/components/bookingPage/LogoFramingSheet', () => ({ LogoFramingSheet: () => null }));
 jest.mock('@/components/bookingPage/ServicePhotosSheet', () => ({ ServicePhotosSheet: () => null }));
 jest.mock('@/components/bookingPage/TeamProfilesSheet', () => ({ TeamProfilesSheet: () => null }));
+// The marketplace card has its own tests; here it only has to sit at the end of each view.
+jest.mock('@/components/bookingPage/MarketplaceSection', () => {
+  const React = require('react');
+  const { Text } = require('react-native');
+  return {
+    MarketplaceSection: ({ isAdmin }: { isAdmin: boolean }) =>
+      React.createElement(Text, { testID: 'marketplace-section' }, isAdmin ? 'admin' : 'staff'),
+  };
+});
 
 const mockToast = { success: jest.fn(), error: jest.fn(), info: jest.fn() };
 jest.mock('@/providers/ToastProvider', () => ({ useToast: () => mockToast }));
@@ -293,5 +302,31 @@ describe('Booking page: the combined page’s embed and QR code (web 4a05756e)',
 
     expect(screen.queryByText('What to embed')).toBeNull();
     expect(screen.getByText(/embed\/plus-1"/)).toBeTruthy();
+  });
+});
+
+describe('Booking page: the ResNeo marketplace card (web MarketplaceSection)', () => {
+  it('closes the venue’s own page, editable for an admin', async () => {
+    await act(async () => {
+      render(<BookingPageScreen />);
+    });
+    expect(screen.getByTestId('marketplace-section').props.children).toBe('admin');
+  });
+
+  it('closes the combined scope too', async () => {
+    mockCollectives = [liveCollective()];
+    await act(async () => {
+      render(<BookingPageScreen />);
+    });
+    expect(screen.getByTestId('marketplace-section').props.children).toBe('admin');
+  });
+
+  it('shows staff the card read only under the admins-only notice', async () => {
+    mockVenue = { ...mockVenue, current_user_role: 'staff' };
+    await act(async () => {
+      render(<BookingPageScreen />);
+    });
+    expect(screen.getByText('Admins only')).toBeTruthy();
+    expect(screen.getByTestId('marketplace-section').props.children).toBe('staff');
   });
 });
