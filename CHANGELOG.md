@@ -59,6 +59,36 @@ one `/api/venue/pos` request. Needs the web's POS Pass 1 (and Pass V) on the ser
   four-option control is unchanged.
 - **On the web.** Admins at POS venues get "Checkout settings" and "Records, reports and exports"
   under a new More group, "On the web".
+- **Gift vouchers and account credit (the Pass V app step, UX spec §13.13, §20).** Everything
+  follows the POS bootstrap's `vouchers` (`selling`, `redeemable`), which a server before Pass V
+  does not send, so against it nothing below appears and no voucher route is called.
+  - *Selling.* A "Gift vouchers" tab in Add items, while vouchers are on and set up on the web, for
+    logins with `create_sale` and `take_payment`: a tile per preset and "Another amount" within the
+    venue's range (`GET /api/venue/pos/voucher-settings`); who it is for, the recipient's name,
+    email and a message of up to 300 characters; print or hand over, email now, or email on a date
+    (8am venue time, tomorrow to a year ahead); an email for a walk-in buyer. The `gift_card` line
+    shows who it is for and how it goes out, has no discount, and opens the same form to change or
+    remove it before payment. The body never carries a code.
+  - *Paying with a gift voucher.* The code field never autofills or suggests; it accepts any case,
+    spaces and dashes, refuses a code that is not one before sending, sends the code only in the
+    body of `POST /api/venue/pos/vouchers/lookup`, and clears it once the voucher is found. The
+    voucher card shows its status, balance, use-by date and who it is for; the amount starts at the
+    smaller of the balance and what a voucher may pay (never the sale's voucher lines,
+    `vpay.notForVouchers`). Used up, cancelled, on hold and expired vouchers say so in plain words.
+    "More than it holds" offers to take what is left.
+  - *Account credit.* Offered when the sale's client has some, with what they have; while credit is
+    on the sale, the client cannot be changed (`cpay.clientLocked`).
+  - *After the sale.* The vouchers the sale made, ready or with their email date, and "Share or print
+    the voucher", which downloads the PDF with the Bearer token and opens the share sheet (the
+    existing `downloadAndShareFile`; no new native module).
+  - *Refunds.* Voucher and credit payments are refundable, back to the voucher (or to the client's
+    credit once the voucher has run out, which needs a client) and back to credit; admins may also
+    refund money to credit. A voucher line refunds only what is left, and only an admin once part is
+    used.
+  - *The client profile.* A read-only "Credit and vouchers" card, at venues with gift vouchers on.
+  - Not in this step: scanning a voucher's QR code with the camera (a keyboard-mode scanner works,
+    as it types), extending an expired voucher, adding an existing voucher, goodwill credit, and
+    the voucher sheet's actions. Those stay on the web.
 
 ---
 
