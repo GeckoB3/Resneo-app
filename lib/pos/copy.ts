@@ -1502,8 +1502,10 @@ export const POS_COPY = {
   'refund.faultyWarning':
     "Only refund after the window if the item is faulty or not as described. Customers' rights for faulty goods last longer.",
   'sstatus.pickup.holdUntil': "We'll keep it for you until {date}.",
-  // The app's own words for app step 5, where the deck has none (a phone opens the slip on the web).
+  // The app's own words for app step 5, where the deck has none. The slip is a PDF for the share
+  // sheet; a server without the PDF route opens the web page instead.
   'app.ord.slip.web': 'The packing slip opens on the web, where you can print it.', // (added)
+  'app.ord.slip.failed': "We couldn't get the packing slip. Check your connection and try again.", // (added)
   'app.ord.otherVenue': 'This order is at another business. Switch to it in the app, then open it again.', // (added)
   'app.ord.badge': '{count} new', // (added) the Orders tile's count
   // The app's own words for app step 4, where the deck has none.

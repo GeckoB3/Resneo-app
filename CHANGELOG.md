@@ -307,6 +307,11 @@ and Pass LC for app step 4) on the server.
     `STAFF_PREFERENCE_KEYS` since 2026-10-09), next to "Cash-up reminders" at venues with the
     online shop on; on unless turned off. The web now sends the push on the `shop-orders` channel
     with `order_alert.wav`, which the app step 5 channel already matches, so the order sound plays.
+  - *The packing slip* is now a PDF: "Print packing slip" downloads
+    `GET /api/venue/shop/orders/[id]/packing-slip.pdf` with the Bearer token and opens the share
+    sheet to print or send it (`packing-slip-{number}.pdf`), as the X and Z reports are shared. A
+    server without that route answers 404, and the slip opens on the web page as before; any
+    other failure says "We couldn't get the packing slip. Check your connection and try again."
 
 ---
 

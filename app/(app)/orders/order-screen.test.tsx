@@ -9,7 +9,16 @@ import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import type { ReactNode } from 'react';
 
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
-jest.mock('expo-web-browser', () => ({ openBrowserAsync: jest.fn(() => Promise.resolve()) }));
+const mockOpenBrowser = jest.fn((_url: string) => Promise.resolve());
+jest.mock('expo-web-browser', () => ({ openBrowserAsync: (url: string) => mockOpenBrowser(url) }));
+const mockShare = jest.fn();
+jest.mock('@/lib/share/share-binary-file', () => ({ downloadAndShareFile: (args: unknown) => mockShare(args) }));
+jest.mock('@/lib/queries/useAccessToken', () => ({ useAccessToken: () => 'token-A' }));
+jest.mock('@/lib/env', () => ({
+  ...jest.requireActual<typeof import('@/lib/env')>('@/lib/env'),
+  getApiUrl: () => 'https://api.example.test',
+  getWebUrl: () => 'https://web.example.test',
+}));
 let mockParams: Record<string, string> = { id: 'o1' };
 jest.mock('expo-router', () => ({
   Stack: { Screen: () => null },
@@ -33,7 +42,8 @@ jest.mock('@/components/retail/CameraScanner', () => ({ CameraScanner: () => nul
 jest.mock('@/providers/VenueProvider', () => ({
   useVenueContext: () => ({ terminology: { client: 'Client', booking: 'Appointment', staff: 'Stylist' } }),
 }));
-jest.mock('@/providers/ToastProvider', () => ({ useToast: () => ({ success: jest.fn(), error: jest.fn(), info: jest.fn() }) }));
+const mockToast = { success: jest.fn(), error: jest.fn(), info: jest.fn() };
+jest.mock('@/providers/ToastProvider', () => ({ useToast: () => mockToast }));
 jest.mock('@/lib/queries/useVenue', () => ({ useVenue: () => ({ data: { id: 'venue-1' } }) }));
 jest.mock('@/lib/queries/usePos', () => ({ usePosEnabled: () => true }));
 
@@ -91,7 +101,48 @@ function detail(status: string) {
 
 beforeEach(() => {
   mockWrite.mockReset();
+  mockShare.mockReset();
+  mockOpenBrowser.mockClear();
+  mockToast.error.mockClear();
   mockParams = { id: 'o1' };
+});
+
+describe('the packing slip', () => {
+  async function pressSlip() {
+    await act(async () => {
+      fireEvent.press(screen.getByText('Print packing slip'));
+    });
+  }
+
+  it('downloads the PDF with the Bearer token and opens the share sheet', async () => {
+    mockDetail = detail('preparing');
+    mockShare.mockResolvedValue({ ok: true });
+    await render(<OrderScreen />);
+    await pressSlip();
+    const args = mockShare.mock.calls[0]![0] as { url: string; filename: string; mimeType: string; headers: Record<string, string> };
+    expect(args.url).toMatch(/\/api\/venue\/shop\/orders\/o1\/packing-slip\.pdf$/);
+    expect(args.filename).toBe('packing-slip-42.pdf');
+    expect(args.mimeType).toBe('application/pdf');
+    expect(args.headers.Authorization).toBe('Bearer token-A');
+    expect(mockOpenBrowser).not.toHaveBeenCalled();
+  });
+
+  it('opens the web page when the server has no PDF route yet (404)', async () => {
+    mockDetail = detail('preparing');
+    mockShare.mockResolvedValue({ ok: false, message: 'Export failed (404).', status: 404 });
+    await render(<OrderScreen />);
+    await pressSlip();
+    expect(mockOpenBrowser).toHaveBeenCalledWith(expect.stringMatching(/\/dashboard\/orders\/o1\/packing-slip$/));
+  });
+
+  it('says so when the download fails', async () => {
+    mockDetail = detail('preparing');
+    mockShare.mockResolvedValue({ ok: false, message: 'Network request failed' });
+    await render(<OrderScreen />);
+    await pressSlip();
+    expect(mockToast.error).toHaveBeenCalledWith("We couldn't get the packing slip. Check your connection and try again.");
+    expect(mockOpenBrowser).not.toHaveBeenCalled();
+  });
 });
 
 describe('an online order', () => {

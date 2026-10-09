@@ -9,10 +9,18 @@ import {
   normalisePickupCode,
   orderActions,
   orderStatusLabel,
+  packingSlipFilename,
   suggestedTrackingUrl,
   timelineText,
 } from '@/lib/shop/order-words';
 import type { ShopOrderDetail, ShopOrderLine } from '@/types/shop';
+
+describe('packingSlipFilename', () => {
+  it('names the PDF after the order number', () => {
+    expect(packingSlipFilename(42)).toBe('packing-slip-42.pdf');
+    expect(packingSlipFilename('')).toBe('packing-slip-order.pdf');
+  });
+});
 
 const t = posCopyFor('client');
 const money = (p: number) => `£${(p / 100).toFixed(2)}`;

@@ -26,6 +26,12 @@ export function orderStatusTone(status: string | null | undefined): 'brand' | 'a
   return STATUS[status ?? 'new']?.tone ?? 'neutral';
 }
 
+/** The packing slip PDF's name in the share sheet: `packing-slip-42.pdf`. */
+export function packingSlipFilename(orderNumber: number | string): string {
+  const n = String(orderNumber).replace(/[^0-9A-Za-z-]/g, '');
+  return `packing-slip-${n || 'order'}.pdf`;
+}
+
 // ─── Pickup codes (§8.4) ────────────────────────────────────────────────────
 
 /** "ACD-479" for display; null stays null. */

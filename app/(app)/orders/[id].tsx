@@ -20,8 +20,8 @@ import { ErrorState } from '@/components/ui/ErrorState';
 import { Screen } from '@/components/ui/Screen';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
-import { getWebUrl } from '@/lib/env';
-import { posErrorMessage } from '@/lib/pos/api';
+import { getApiUrl, getWebUrl } from '@/lib/env';
+import { posErrorMessage, posHeaders, shopPaths } from '@/lib/pos/api';
 import { shortWhen, timeOfDay } from '@/lib/retail/stock-words';
 import {
   formatPickupCode,
@@ -30,8 +30,11 @@ import {
   orderDate,
   orderStatusLabel,
   orderStatusTone,
+  packingSlipFilename,
   timelineText,
 } from '@/lib/shop/order-words';
+import { downloadAndShareFile } from '@/lib/share/share-binary-file';
+import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { useOrderWrite, useShopOrder } from '@/lib/queries/useOrders';
 import { usePosEnabled } from '@/lib/queries/usePos';
 import { useVenue } from '@/lib/queries/useVenue';
@@ -45,8 +48,9 @@ import type { ShopOrderDetail } from '@/types/shop';
  * start preparing; mark ready (asks first, then tells the customer); mark collected after checking
  * the pickup code, typed or scanned (or, without it, that staff checked who the customer is); mark
  * dispatched with the carrier and tracking, change tracking, mark delivered; cancel and refund in
- * full; refund or return chosen items; record a return and its dates. The packing slip opens on
- * the web, where it prints. Items, the fulfilment, returns, payments and refunds, the customer,
+ * full; refund or return chosen items; record a return and its dates. The packing slip is a PDF
+ * (`/packing-slip.pdf`, Bearer) shared through the share sheet, to print or send; a server without
+ * that route answers 404 and the slip opens on the web page instead. Items, the fulfilment, returns, payments and refunds, the customer,
  * messages and the timeline follow.
  */
 export default function OrderScreen() {
@@ -128,6 +132,8 @@ function OrderBody({
   const [evidenceFor, setEvidenceFor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [sharingSlip, setSharingSlip] = useState(false);
+  const accessToken = useAccessToken();
   const actions = orderActions(data);
   const goods = data.lines.filter((l) => l.line_type === 'product');
 
@@ -157,11 +163,33 @@ function OrderBody({
     }
   }
 
-  function openSlip() {
+  function openSlipOnWeb() {
     const base = getWebUrl() || 'https://reserve-ni.vercel.app';
     const url = `${base}/dashboard/orders/${encodeURIComponent(o.id)}/packing-slip`;
     toast.info(t('app.ord.slip.web'));
     void WebBrowser.openBrowserAsync(url).catch(() => Linking.openURL(url).catch(() => undefined));
+  }
+
+  // The slip as a PDF through the share sheet, as the X and Z reports are shared. A server before
+  // the PDF route answers 404, so the slip opens on the web page as it did before.
+  async function shareSlip() {
+    if (!accessToken || sharingSlip) return;
+    setSharingSlip(true);
+    try {
+      const res = await downloadAndShareFile({
+        url: `${getApiUrl()}${shopPaths.packingSlipPdf(o.id)}`,
+        filename: packingSlipFilename(o.number),
+        mimeType: 'application/pdf',
+        headers: { ...posHeaders(), Authorization: `Bearer ${accessToken}` },
+        dialogTitle: t('ord.action.packingSlip'),
+      });
+      if (!res.ok) {
+        if (res.status === 404) openSlipOnWeb();
+        else toast.error(t('app.ord.slip.failed'));
+      }
+    } finally {
+      setSharingSlip(false);
+    }
   }
 
   const actionButton = (key: (typeof actions)[number]) => {
@@ -196,7 +224,17 @@ function OrderBody({
           />
         );
       case 'packingSlip':
-        return <Button key={key} label={t('ord.action.packingSlip')} variant="ghost" onPress={openSlip} fullWidth />;
+        return (
+          <Button
+            key={key}
+            label={t('ord.action.packingSlip')}
+            variant="ghost"
+            loading={sharingSlip}
+            disabled={sharingSlip}
+            onPress={() => void shareSlip()}
+            fullWidth
+          />
+        );
       default:
         return null;
     }

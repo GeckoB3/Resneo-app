@@ -5,7 +5,7 @@ import { Platform } from 'react-native';
  * share sheet, as `shareTextFile` does for text the app builds itself. The bytes never pass
  * through JavaScript: `expo-file-system` fetches straight to the cache with the Bearer header.
  */
-export type ShareBinaryResult = { ok: true } | { ok: false; message: string };
+export type ShareBinaryResult = { ok: true } | { ok: false; message: string; status?: number };
 
 export async function downloadAndShareFile(args: {
   url: string;
@@ -18,7 +18,7 @@ export async function downloadAndShareFile(args: {
   if (Platform.OS === 'web') {
     try {
       const res = await fetch(url, { headers });
-      if (!res.ok) return { ok: false, message: `Export failed (${res.status}).` };
+      if (!res.ok) return { ok: false, message: `Export failed (${res.status}).`, status: res.status };
       const blob = await res.blob();
       const href = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -41,7 +41,11 @@ export async function downloadAndShareFile(args: {
     const uri = `${cacheDir}${filename}`;
     const result = (await FileSystem.downloadAsync(url, uri, { headers })) as { status?: number; uri: string };
     if (typeof result.status === 'number' && result.status >= 400) {
-      return { ok: false, message: result.status === 403 ? 'Only admins can export data.' : `Export failed (${result.status}).` };
+      return {
+        ok: false,
+        message: result.status === 403 ? 'Only admins can export data.' : `Export failed (${result.status}).`,
+        status: result.status,
+      };
     }
     if (typeof Sharing?.isAvailableAsync === 'function' && (await Sharing.isAvailableAsync())) {
       await Sharing.shareAsync(result.uri, { mimeType, dialogTitle: dialogTitle ?? `Export ${filename}` });

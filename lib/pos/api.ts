@@ -267,6 +267,8 @@ export const shopPaths = {
   order: (id: string) => `/api/venue/shop/orders/${encodeURIComponent(id)}`,
   orderAction: (id: string, action: 'status' | 'cancel' | 'refund' | 'returns') =>
     `/api/venue/shop/orders/${encodeURIComponent(id)}/${action}`,
+  /** The order's packing slip as a PDF (Bearer, `manage_orders`), for the share sheet. */
+  packingSlipPdf: (id: string) => `/api/venue/shop/orders/${encodeURIComponent(id)}/packing-slip.pdf`,
   orderReturn: (id: string, returnId: string) =>
     `/api/venue/shop/orders/${encodeURIComponent(id)}/returns/${encodeURIComponent(returnId)}`,
 } as const;
