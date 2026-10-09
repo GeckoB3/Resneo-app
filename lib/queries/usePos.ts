@@ -206,7 +206,8 @@ export function useSaleWrite(saleId: string) {
     mutationFn: async (input: SaleWriteInput): Promise<SaleWriteResult> => {
       if (!accessToken) throw new Error('Could not confirm you are signed in. Please try again.');
       try {
-        return await posFetch<SaleWriteResult>(input.path ?? posPaths.saleAction(saleId, input.action), {
+        const path = input.path ?? (input.action ? posPaths.saleAction(saleId, input.action) : posPaths.sale(saleId));
+        return await posFetch<SaleWriteResult>(path, {
           accessToken,
           method: input.method ?? 'POST',
           ...(input.body !== undefined ? { body: input.body } : {}),

@@ -43,6 +43,7 @@ export type DestGroup =
   | 'network'
   | 'bookingTypes'
   | 'app'
+  | 'web'
   | 'account';
 
 /** One navigable surface — the single source of truth for the bento, the grouped
@@ -84,6 +85,9 @@ export const LIST_GROUPS: { key: DestGroup; title: string }[] = [
   { key: 'growth', title: 'Billing & growth' },
   { key: 'network', title: 'Linked venues' },
   { key: 'app', title: 'App & support' },
+  // Checkout's set-up screens stay on the web (UX spec §13.8, `app.web.group`). Only POS venues
+  // have rows here, and an empty group is not drawn, so every other venue's More tab is unchanged.
+  { key: 'web', title: 'On the web' },
 ];
 
 /**
@@ -120,6 +124,11 @@ export type DestinationsContext = {
    * is offered under its name (web sidebar, 2026-09-17).
    */
   collectiveArea?: { name: string } | null;
+  /**
+   * `feature_flags.resolved.pos_enabled` (POS plan §4.22): the Checkout tile and Checkout's web
+   * rows. Absent or false keeps the More tab exactly as it was before app step 1.
+   */
+  posEnabled?: boolean;
 };
 
 /**
@@ -151,6 +160,10 @@ export function buildDestinations(ctx: DestinationsContext): Destination[] {
   // ── Workspace — the daily-driver tools. `today` is the hero tile; the rest
   //    fill the bento grid. Ordered by how often staff reach for them. ────────
   list.push({ id: 'today', label: 'Today', hint: 'KPIs, forecast & arrivals at a glance', icon: { ios: 'sun.max.fill', android: 'wb_sunny', web: 'wb_sunny' }, tile: TILE.amber, group: 'workspace', kind: 'route', target: '/today', featured: true, primary: true, keywords: ['home', 'dashboard', 'overview'] });
+  // Checkout (POS app step 1, UX spec §13.3 `app.tile.checkout`): only with the POS switch on.
+  if (ctx.posEnabled === true) {
+    list.push({ id: 'checkout', label: 'Checkout', hint: "Take payments and see today's sales", icon: { ios: 'creditcard.fill', android: 'point_of_sale', web: 'point_of_sale' }, tile: TILE.emerald, group: 'workspace', kind: 'route', target: '/checkout', featured: true, keywords: ['till', 'pos', 'sale', 'payment', 'pay', 'receipt', 'refund'] });
+  }
   if (isSchedulingExperience) {
     list.push({ id: 'availability', label: 'Calendar availability', hint: 'Hours, breaks, closures & amended hours', icon: { ios: 'calendar', android: 'edit_calendar', web: 'edit_calendar' }, tile: TILE.sky, group: 'workspace', kind: 'route', target: '/availability', featured: true, keywords: ['time off', 'leave', 'closures', 'amended hours', 'breaks', 'calendars'] });
   }
@@ -218,6 +231,13 @@ export function buildDestinations(ctx: DestinationsContext): Destination[] {
   // ── App & support. ─────────────────────────────────────────────────────────
   list.push({ id: 'support', label: 'Support', hint: 'Contact the ResNeo team', icon: { ios: 'questionmark.circle.fill', android: 'help', web: 'help' }, tile: TILE.teal, group: 'app', kind: 'route', target: '/support', keywords: ['help', 'contact'] });
   list.push({ id: 'push', label: 'Push notifications', hint: 'Alerts this device shows & what for', icon: { ios: 'bell.badge.fill', android: 'notifications_active', web: 'notifications_active' }, tile: TILE.rose, group: 'app', kind: 'route', target: '/manage/notification-preferences', keywords: ['alerts', 'reminders'] });
+  // ── On the web — Checkout's set-up screens (UX spec §13.8). Admins only: staff cannot change
+  //    checkout settings or read the records.
+  if (ctx.posEnabled === true && isAdmin) {
+    list.push({ id: 'web-checkout-settings', label: 'Checkout settings', hint: 'Opens in your browser', icon: { ios: 'gearshape.fill', android: 'settings', web: 'settings' }, tile: TILE.slate, group: 'web', kind: 'web', target: '/dashboard/settings?tab=checkout', external: true, keywords: ['tax', 'receipts', 'tips', 'discounts', 'payment types', 'permissions'] });
+    list.push({ id: 'web-records', label: 'Records, reports and exports', hint: 'Opens in your browser', icon: { ios: 'doc.text.fill', android: 'description', web: 'description' }, tile: TILE.indigo, group: 'web', kind: 'web', target: '/dashboard/reports', external: true, keywords: ['tip records', 'vat invoice', 'export'] });
+  }
+
   list.push({ id: 'web-dashboard', label: 'Web dashboard', hint: 'Open the full dashboard in your browser', icon: { ios: 'desktopcomputer', android: 'computer', web: 'computer' }, tile: TILE.slate, group: 'app', kind: 'web', target: '/dashboard', external: true });
 
   return list;

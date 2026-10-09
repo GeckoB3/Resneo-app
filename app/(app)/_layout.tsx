@@ -102,6 +102,22 @@ export default function AppLayout() {
           presentation: 'modal',
         }}
       />
+      {/* Checkout (POS app step 1). Reachable only from POS surfaces, which exist only when the
+          venue's pos_enabled is on; each screen also says so itself if opened without it. */}
+      <Stack.Screen
+        name="checkout/index"
+        options={{
+          headerShown: true,
+          title: 'Checkout',
+        }}
+      />
+      <Stack.Screen
+        name="checkout/[id]"
+        options={{
+          headerShown: true,
+          title: 'Sale',
+        }}
+      />
       <Stack.Screen
         name="client/[id]"
         options={{

@@ -43,3 +43,18 @@ export function cardAppAvailable(input: {
     input.publishableKey
   );
 }
+
+/**
+ * Whether the booking detail offers "Check out" (UX spec §13.3 `bk.checkout`) in place of "Take
+ * payment": only at a POS venue, on a booking this venue may edit (a partner's linked booking is
+ * checked out at the partner, `bk.linked.note`), and not on a cancelled booking. With the switch
+ * off the booking detail keeps today's "Take payment" and `/charge`.
+ */
+export function showPosCheckout(input: {
+  venue: Pick<VenueBootstrap, 'feature_flags'> | null | undefined;
+  canEdit: boolean;
+  linked: boolean;
+  status: string | null | undefined;
+}): boolean {
+  return isPosEnabled(input.venue) && input.canEdit && !input.linked && input.status !== 'Cancelled';
+}

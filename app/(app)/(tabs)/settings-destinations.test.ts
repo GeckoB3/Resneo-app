@@ -248,3 +248,33 @@ describe('buildDestinations — the Collective area (web parity, 2026-09-17)', (
     expect(ids(ctx({ isAdmin: false, collectiveArea: { name: 'Plus 1 Staging' } }))).not.toContain('collective-area');
   });
 });
+
+describe('buildDestinations — Checkout (POS app step 1, plan §4.22)', () => {
+  const posIds = ['checkout', 'web-checkout-settings', 'web-records'];
+
+  it('adds nothing when the POS switch is off or absent: the More tab is unchanged', () => {
+    for (const isAdmin of [true, false]) {
+      const before = buildDestinations(ctx({ isAdmin }));
+      const off = buildDestinations(ctx({ isAdmin, posEnabled: false }));
+      expect(off).toEqual(before);
+      expect(off.map((d) => d.id).filter((id) => posIds.includes(id))).toEqual([]);
+      expect(off.some((d) => d.group === 'web')).toBe(false);
+    }
+  });
+
+  it('shows the Checkout tile in the workspace to everyone at a POS venue', () => {
+    for (const isAdmin of [true, false]) {
+      const tile = buildDestinations(ctx({ isAdmin, posEnabled: true })).find((d) => d.id === 'checkout');
+      expect(tile).toMatchObject({ group: 'workspace', featured: true, kind: 'route', target: '/checkout' });
+      expect(tile?.label).toBe('Checkout');
+      expect(tile?.hint).not.toContain('—');
+    }
+  });
+
+  it("puts Checkout's set-up screens under On the web, for admins only", () => {
+    const admin = buildDestinations(ctx({ isAdmin: true, posEnabled: true })).filter((d) => d.group === 'web');
+    expect(admin.map((d) => d.id)).toEqual(['web-checkout-settings', 'web-records']);
+    expect(admin.every((d) => d.kind === 'web' && d.external)).toBe(true);
+    expect(ids(ctx({ isAdmin: false, posEnabled: true }))).not.toContain('web-checkout-settings');
+  });
+});

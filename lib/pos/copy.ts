@@ -464,6 +464,8 @@ export const POS_COPY = {
   'app.sale.tipChange.title': 'Change tip split',
   'app.sale.tipChange.rule': 'Share it',
   'app.sale.credit.choose': 'Choose who gets credit',
+  'app.loading': 'Loading…',
+  'reader.success.tip': 'Includes a {tip} tip',
   'app.home.mineAdminOnly': 'Ask an admin to see your sales and tips.',
 } as const;
 

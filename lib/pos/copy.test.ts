@@ -8,12 +8,14 @@ describe('POS copy', () => {
   const entries = Object.entries(POS_COPY);
 
   it('never uses an em-dash', () => {
-    const offenders = entries.filter(([, text]) => text.includes('—')).map(([id]) => id);
+    const EM_DASH = String.fromCharCode(0x2014);
+    const offenders = entries.filter(([, text]) => text.includes(EM_DASH)).map(([id]) => id);
     expect(offenders).toEqual([]);
   });
 
   it('uses straight apostrophes and quotes', () => {
-    const offenders = entries.filter(([, text]) => /[‘’“”]/.test(text)).map(([id]) => id);
+    const curly = [0x2018, 0x2019, 0x201c, 0x201d].map((c) => String.fromCharCode(c));
+    const offenders = entries.filter(([, text]) => curly.some((c) => text.includes(c))).map(([id]) => id);
     expect(offenders).toEqual([]);
   });
 

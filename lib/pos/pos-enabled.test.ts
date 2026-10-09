@@ -2,7 +2,7 @@
  * The POS switch (plan §4.22, test plan DEV-04 / APP-08): only an explicit `pos_enabled: true`
  * in the resolved flags turns Checkout on, and every action follows the capability map.
  */
-import { canPos, cardAppAvailable, isPosEnabled } from '@/lib/pos/pos-enabled';
+import { canPos, cardAppAvailable, isPosEnabled, showPosCheckout } from '@/lib/pos/pos-enabled';
 import type { PosBootstrap } from '@/types/pos';
 import type { VenueBootstrap } from '@/types/venue';
 
@@ -48,5 +48,23 @@ describe('cardAppAvailable', () => {
     expect(check(ready, true, false)).toBe(false);
     expect(check({ ...ready, card_methods: { card_app: false } })).toBe(false);
     expect(check({ ...ready, capabilities: { take_payment: false } })).toBe(false);
+  });
+});
+
+describe('showPosCheckout (the booking detail)', () => {
+  const on = flags({ pos_enabled: true });
+  const base = { venue: on, canEdit: true, linked: false, status: 'Confirmed' };
+
+  it('offers Check out at a POS venue, for every status but Cancelled', () => {
+    expect(showPosCheckout(base)).toBe(true);
+    expect(showPosCheckout({ ...base, status: 'Completed' })).toBe(true);
+    expect(showPosCheckout({ ...base, status: 'Cancelled' })).toBe(false);
+  });
+
+  it("keeps today's booking detail with the switch off, and on a partner's or view-only booking", () => {
+    expect(showPosCheckout({ ...base, venue: flags({ pos_enabled: false }) })).toBe(false);
+    expect(showPosCheckout({ ...base, venue: flags({}) })).toBe(false);
+    expect(showPosCheckout({ ...base, linked: true })).toBe(false);
+    expect(showPosCheckout({ ...base, canEdit: false })).toBe(false);
   });
 });

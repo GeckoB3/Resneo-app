@@ -27,6 +27,7 @@ import { ResourceMoveSheet, type ResourceMoveTarget } from '@/components/booking
 import { minutesToTime, timeToMinutes } from '@/components/calendar/grid-layout';
 import { DocumentsSection } from '@/components/clients/DocumentsSection';
 import { LinkedComplianceSection } from '@/components/linked/LinkedComplianceSection';
+import { PosCheckoutButton } from '@/components/pos/PosCheckoutButton';
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge, StatusPill } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -92,6 +93,7 @@ import {
   linkedDetailPolicy,
   type LinkedBookingContext,
 } from '@/lib/linked/linked-detail-policy';
+import { showPosCheckout } from '@/lib/pos/pos-enabled';
 import { writeRebookBootstrap, type RebookBootstrapPayload } from '@/lib/rebook-bootstrap';
 import type { GuestBookingHistoryRow } from '@/types/guest-detail';
 import {
@@ -166,6 +168,11 @@ type BookingDetailContentProps = {
    * Contacts.
    */
   linked?: LinkedBookingContext | null;
+  /**
+   * Called once Checkout has opened this booking's sale (POS venues only), so a host that shows
+   * this panel in a sheet can close the sheet rather than leave it over the sale screen.
+   */
+  onOpenedSale?: () => void;
 };
 
 const TERMINAL_STATUSES = new Set<BookingStatus>(['Cancelled', 'Completed', 'No-Show']);
@@ -534,6 +541,7 @@ export function BookingDetailContent({
   fallbackPractitionerName,
   detailPending = false,
   linked = null,
+  onOpenedSale,
 }: BookingDetailContentProps) {
   const { colors } = useTheme();
   const router = useRouter();
@@ -924,7 +932,20 @@ export function BookingDetailContent({
    */
   const inPersonPaymentsOn = venue?.in_person_payments_enabled === true && isAppointmentVenue;
   const isPaidInPerson = inPersonPaymentsOn && booking.payment_state === 'paid';
-  const showPaymentToolbarAction = canTakePayment || isPaidInPerson;
+  /**
+   * Checkout (POS app step 1, UX spec §13.3 `bk.checkout`). With the venue's `pos_enabled` on,
+   * "Check out" takes the place of "Take payment": it opens the sale this booking is on, or starts
+   * one from the booking with the rest of its visit, for every bookable model. `/charge` refuses a
+   * booking that is on an open sale (plan §4.4.10), so the two are never offered together. With
+   * the switch off, or on a partner's booking, nothing here changes and no POS request is made.
+   */
+  const posCheckout = showPosCheckout({
+    venue,
+    canEdit: policy.canEdit,
+    linked: Boolean(linked),
+    status: booking.status,
+  });
+  const showPaymentToolbarAction = posCheckout || canTakePayment || isPaidInPerson;
 
   const paymentSheetTarget = (initialMode?: 'menu' | 'refund'): TakePaymentTarget => ({
     id: booking.id,
@@ -1476,7 +1497,11 @@ export function BookingDetailContent({
           ) : null}
           {showToolbarRow ? (
             <View style={styles.toolbarGrid}>
-              {showPaymentToolbarAction ? (
+              {posCheckout ? (
+                <View style={styles.toolbarCell}>
+                  <PosCheckoutButton bookingId={booking.id} onOpened={onOpenedSale} />
+                </View>
+              ) : showPaymentToolbarAction ? (
                 <View style={styles.toolbarCell}>
                   <Button
                     label={isPaidInPerson ? 'Paid' : 'Take payment'}
@@ -1815,7 +1840,7 @@ export function BookingDetailContent({
             <BookingPaymentHistory rows={paymentHistory} />
             {/* Take payment (Tap to Pay / card reader / cash). Optional, per
                 appointment: nothing depends on it and nothing auto-opens it. */}
-            {canTakePayment ? (
+            {canTakePayment && !posCheckout ? (
               <Button label="Take payment" fullWidth onPress={openTakePayment} />
             ) : null}
             {/* Beside the ledger it acts on, rather than two unsignposted taps

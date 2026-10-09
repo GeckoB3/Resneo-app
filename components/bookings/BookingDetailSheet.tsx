@@ -217,6 +217,7 @@ export function BookingDetailSheet({
                 isAppointmentVenue={isAppointmentVenue}
                 onStatusChange={handleStatusChange}
                 onDeleted={onClose}
+                onOpenedSale={onClose}
                 fallbackServiceName={fallbackServiceName}
                 fallbackPractitionerName={fallbackPractitionerName}
                 linked={linked}

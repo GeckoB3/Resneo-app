@@ -1330,7 +1330,7 @@ function CardCollectSection({
 // Bluetooth pairing step (§7A.7 responsibilities, inline to avoid stacking)
 // ---------------------------------------------------------------------------
 
-function ReaderPairingSection({
+export function ReaderPairingSection({
   onPaired,
   onBack,
 }: {
