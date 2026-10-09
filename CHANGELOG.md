@@ -15,6 +15,53 @@ on the other, and iOS 1.0.4 is the worked example.
 
 ---
 
+## Unreleased OTA: POS app step 1 (iOS 1.2.0 / Android 1.1.2)
+
+JavaScript only, for both runtimes; the native diff is empty (no module, no `app.json` native
+config, no `eas.json` or native dependency change). Every new screen, tile, button and report tab
+is behind the venue's resolved `feature_flags.resolved.pos_enabled` (POS plan §4.22, test plan
+DEV-04 / APP-08). With it off, or against a web deploy that does not send it, the app is exactly
+as before: "Take payment" and `/charge`, the four-option Reports control, no Checkout tile and not
+one `/api/venue/pos` request. Needs the web's POS Pass 1 (and Pass V) on the server.
+
+- **Foundations (P7-1).** `feature_flags.resolved.pos_enabled` is read (`lib/pos/pos-enabled.ts`).
+  A sale API client (`lib/pos/api.ts`) sends `X-ResNeo-Client` (platform, store version, update
+  id) and `x-pos-device` on POS requests only. React Query hooks for the bootstrap, catalogue,
+  queue, sale lists, one sale and every sale write (`lib/queries/usePos.ts`): each write sends the
+  sale's `version`, and a 412 `POS_SALE_STALE` swaps in the fresh sale it carries. Every write
+  that creates something carries a `client_request_id` minted once per tap. Capabilities come
+  from the POS bootstrap, and every action they do not allow is hidden.
+- **A card collector for sales (F2).** `lib/payments/useSaleCardPayment.ts` takes Tap to Pay or
+  the WisePad 3 through `POST /api/venue/pos/sales/[id]/payments` with `method: 'card_app'`, on
+  the venue's existing Terminal Location. It is built beside the booking path, which is unchanged;
+  the two share only the Terminal driver. It gives up after five minutes and cancels its own
+  attempt (`.../payments/[paymentId]/cancel`), and also cancels after a decline or a staff cancel;
+  an ambiguous confirm is never cancelled. The webhook settles the payment, never the app.
+- **Checkout (P7-2).** A Checkout tile in More's workspace opens Checkout home: Ready to check
+  out, Open sales (parked and part paid) and All sales with a search, New sale, and "Your sales
+  and tips" for logins that may read the reports. "Check out" replaces "Take payment" on the
+  booking detail and opens the booking's sale, or starts one with the rest of its visit. The sale
+  screen: lines; services from the catalogue with who did them (a walk-in in their diary); custom
+  items and fees; price changes with a reason; discounts with presets, held to the staff limit;
+  the client; who is serving; park and resume; combine with another open sale; void; "Refund and
+  cancel"; a waiting card payment can be cancelled.
+- **Paying.** The amount now (the whole balance, part of it, or an even split); cash with what was
+  handed over, the change and "keep the change as a tip"; the venue's other payment types with
+  their reference; card by Tap to Pay or the Bluetooth reader, with the app's own tip screen first
+  when tipping is on (Tap to Pay takes no on-reader tip, P7-2). Typed tips for cash and other.
+- **The money after the sale (P7-3).** The completed sale with its summary and change; receipts by
+  email or text, resent at any time ("No receipt sent. You can send one from the sale."); the
+  refund builder (by amount or items, cards first, back to the original payment; cash or another
+  type for admins only, D44); changing a tip's split (`edit_tips`) and who gets credit for a line
+  (`edit_credit`).
+- **Reports (P7-4).** Where `GET /api/venue/reports/pos-access` says so, Takings and Sales join the
+  tabs, which become a scrollable chip row with Revenue renamed "Booked value". Elsewhere the
+  four-option control is unchanged.
+- **On the web.** Admins at POS venues get "Checkout settings" and "Records, reports and exports"
+  under a new More group, "On the web".
+
+---
+
 ## Unreleased OTA: the web's POS Pass 0 (iOS 1.2.0 / Android 1.1.2)
 
 JavaScript only, for both runtimes. Each change is additive: against a server without POS Pass 0
