@@ -49,6 +49,17 @@ type InputProps = TextInputProps & {
  * then instantly dismisses. A shared-value update stays on the UI thread, so
  * the TextInput keeps focus.
  */
+/** Number pads: their fields are pre-filled with amounts and counts more often than not. */
+function isNumericKeyboard(keyboardType: TextInputProps['keyboardType'], inputMode: TextInputProps['inputMode']): boolean {
+  return (
+    keyboardType === 'decimal-pad' ||
+    keyboardType === 'number-pad' ||
+    keyboardType === 'numeric' ||
+    inputMode === 'decimal' ||
+    inputMode === 'numeric'
+  );
+}
+
 export const Input = forwardRef<TextInput, InputProps>(function Input(
   {
     label,
@@ -110,6 +121,9 @@ export const Input = forwardRef<TextInput, InputProps>(function Input(
           ref={ref}
           placeholderTextColor={colors.textMuted}
           style={[styles.input, { color: colors.text }, style]}
+          // A number field often opens pre-filled ("35.00"); a tap selects it, so typing 5 gives 5,
+          // not 35.005. A screen can still pass selectTextOnFocus={false}.
+          selectTextOnFocus={isNumericKeyboard(props.keyboardType, props.inputMode)}
           {...props}
           onFocus={handleFocus}
           onBlur={handleBlur}

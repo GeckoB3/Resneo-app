@@ -415,6 +415,7 @@ function LeadTimeField({
       onBlur={commit}
       editable={!disabled}
       keyboardType="number-pad"
+      selectTextOnFocus
       placeholder="None"
       placeholderTextColor={colors.textMuted}
       accessibilityLabel="Lead time in hours before the appointment"
@@ -528,6 +529,7 @@ function AddRequirementSheet({
           value={leadTime}
           onChangeText={setLeadTime}
           keyboardType="number-pad"
+          selectTextOnFocus
           placeholder="None"
           placeholderTextColor={colors.textMuted}
           accessibilityLabel="Lead time in hours before the appointment"
