@@ -95,8 +95,15 @@ export function SaleCardCollect({
       tipPence={tipPence}
       isAdmin={isAdmin}
       consentClientName={consentClientName}
-      pay={(_kind, hooks) =>
-        payment.mutateAsync({ clientRequestId: newPaymentAttemptId(), version, amountPence, tipPence, ...hooks })
+      pay={(kind, hooks) =>
+        payment.mutateAsync({
+          clientRequestId: newPaymentAttemptId(),
+          version,
+          amountPence,
+          tipPence,
+          readerType: kind === 'tap_to_pay' ? 'tap_to_pay' : 'wisepad',
+          ...hooks,
+        })
       }
       describeError={(e) =>
         e instanceof SaleStaleError

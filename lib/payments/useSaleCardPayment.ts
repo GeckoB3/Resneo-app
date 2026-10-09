@@ -80,6 +80,11 @@ export type SaleCardInput = {
   version: number;
   amountPence: number;
   tipPence: number;
+  /**
+   * Which reader takes it (app step 2): sent as `reader_type` so the web can record it. A server
+   * that does not read it yet ignores it (the body schema drops unknown keys).
+   */
+  readerType?: 'tap_to_pay' | 'wisepad';
   /** The card has been read; Stripe is confirming. */
   onCardRead?: () => void;
   /** The server made the payment: staff can now cancel it. */
@@ -298,6 +303,7 @@ export function useSaleCardPayment(saleId: string) {
             method: 'card_app',
             amount_pence: input.amountPence,
             ...(input.tipPence > 0 ? { tip_pence: input.tipPence } : {}),
+            ...(input.readerType ? { reader_type: input.readerType } : {}),
           },
         });
       } catch (error) {

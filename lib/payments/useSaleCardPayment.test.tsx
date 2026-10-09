@@ -316,3 +316,17 @@ describe('useSaleCardPayment: saving the card with the client consent (app step 
     expect(calls().map(([p]) => p)).toContain('/api/venue/pos/sales/sale-1/payments/pay-9/cancel');
   });
 });
+
+describe('useSaleCardPayment: the reader type (app step 2)', () => {
+  it('says which reader takes it', async () => {
+    mockApiFetch.mockResolvedValue(STARTED);
+    mockRetrieve.mockResolvedValue({ paymentIntent: { id: 'pi_1' } });
+    mockCollect.mockResolvedValue({ paymentIntent: { id: 'pi_1' } });
+    mockConfirm.mockResolvedValue({ paymentIntent: { id: 'pi_1' } });
+    const { result } = await renderHook(() => useSaleCardPayment('sale-1'), { wrapper: wrapper() });
+    await act(async () => {
+      await result.current.mutateAsync({ ...INPUT, readerType: 'wisepad' });
+    });
+    expect(calls()[0]![1]).toMatchObject({ method: 'card_app', reader_type: 'wisepad' });
+  });
+});

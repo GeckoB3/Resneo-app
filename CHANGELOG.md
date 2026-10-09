@@ -102,7 +102,8 @@ the server.
     (`tap_to_pay` on an iPhone XS or later or a capable Android phone, `wisepad` with a paired
     Bluetooth reader, else `none`) and `tap_to_pay_terms_accepted` (Apple's answer from the
     warm-up; Android has no terms step), and is sent again when that changes. An iPad never reports
-    Tap to Pay.
+    Tap to Pay. The app's own card payments (`card_app`) also send `reader_type`, which a server that
+    does not read it yet ignores.
   - *A sale sent from the web till (plan §4.36).* The `pos_collect_request` push (Android channel
     `bookings-new`) opens the collect screen. Pushes can be late or lost, so "Waiting for you" on
     Today and a banner above every staff screen read `GET /api/venue/pos/collect-requests?mine=1`
