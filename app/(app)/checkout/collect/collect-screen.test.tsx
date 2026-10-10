@@ -4,7 +4,9 @@
  * and the education) is shared with the app's own sale payments and is stubbed here; this pins what
  * the collect screen decides:
  * - who sent it, from which till, for which client;
- * - the app's tip screen first when the venue takes tips, and that tip goes into the claim;
+ * - the client's own tip screen when the venue takes tips (handed to the card panel, which asks once
+ *   the reader is ready), the sale's details hidden while they hold the phone, and that tip goes
+ *   into the claim; a payment this phone already claimed keeps its tip;
  * - the reader the person chose becomes the claim's `reader_type`;
  * - the outcomes in the deck's words: timed out, declined, chip and PIN with a pay link, the desk
  *   cancelled, another phone took it, and a request that has ended;
@@ -159,10 +161,12 @@ beforeEach(() => {
 });
 
 type Panel = {
-  pay: (kind: string, hooks: Record<string, unknown>) => Promise<unknown>;
+  pay: (kind: string, hooks: Record<string, unknown>, tipPence?: number) => Promise<unknown>;
   describeError: (e: unknown) => string | null;
   onFailure: (e: unknown) => void;
   onDone: (r: unknown) => void;
+  onCustomerFacing: (facing: boolean) => void;
+  customerTip: Record<string, unknown> | null;
   tipPence: number;
   processingLabel: string;
 };
@@ -178,22 +182,34 @@ describe('CollectScreen', () => {
     expect(panel().processingLabel).toBe('Processing');
   });
 
-  it('asks for the tip first, and claims with it and the chosen reader', async () => {
+  it("gives the card panel the client's tip screen, hides the sale's details while they hold the phone, and claims with their tip", async () => {
     mockBoot = boot({ tip_settings: { tipping_enabled: true, tip_percent_presets: [10, 15, 20], smart_tip_threshold_pence: 1000 } });
     await render(<CollectScreen />);
-    expect(screen.getByText('Would you like to add a tip?')).toBeTruthy();
+    expect(screen.queryByText('Would you like to add a tip?')).toBeNull();
+    expect(panel().customerTip).toEqual(expect.objectContaining({ amountPence: 4500, balancePence: 4500, clientName: 'Ada' }));
+    expect(panel().tipPence).toBe(0);
     await act(async () => {
-      fireEvent.press(screen.getByText('10% (£4.50)'));
+      panel().onCustomerFacing(true);
     });
-    await act(async () => {
-      fireEvent.press(screen.getByText('Charge £49.50'));
-    });
-    expect(panel().tipPence).toBe(450);
+    expect(screen.queryByText('Take £45.00')).toBeNull();
+    expect(screen.getByText('card-panel')).toBeTruthy();
     mockClaim.mockResolvedValue({ paymentId: 'pay-7' });
     await act(async () => {
-      await panel().pay('bluetooth', { shouldStop: () => false });
+      await panel().pay('bluetooth', { shouldStop: () => false }, 450);
     });
     expect(mockClaim).toHaveBeenCalledWith(expect.objectContaining({ readerType: 'wisepad', tipPence: 450 }));
+    await act(async () => {
+      panel().onCustomerFacing(false);
+    });
+    expect(screen.getByText('Take £45.00')).toBeTruthy();
+  });
+
+  it('keeps the tip of a payment this phone already claimed, and asks for none', async () => {
+    mockBoot = boot({ tip_settings: { tipping_enabled: true, tip_percent_presets: [10, 15, 20], smart_tip_threshold_pence: 1000 } });
+    mockCollect = collect({ collect_state: 'claimed', screen: 'claimed', claimed_by_staff_id: 'staff-1', claimed_by_name: 'Jess', tip_pence: 450 });
+    await render(<CollectScreen />);
+    expect(panel().customerTip).toBeNull();
+    expect(panel().tipPence).toBe(450);
   });
 
   it("words the outcomes as the deck does", async () => {

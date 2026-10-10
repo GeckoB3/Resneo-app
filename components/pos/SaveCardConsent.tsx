@@ -20,11 +20,15 @@ import { spacing } from '@/theme/index';
  *    `app.saveCard.agree` and `app.saveCard.decline`;
  * 3. then `app.saveCard.handBack`, and the card is read as usual.
  *
+ * When the client already holds the phone (they have just chosen a tip, `CustomerTip.tsx`), the
+ * question is asked straight away and nobody is told to hand the phone back: they tap their card
+ * next, and the card screen says thank you at the end.
+ *
  * The question is only asked when the server says this payment can save a card (`can_save`). A
  * refusal to set the card up says so and the payment goes ahead without saving it.
  */
 
-type Step = { paymentId: string; saleId: string; text: string; stage: 'handTo' | 'ask' | 'saving' };
+type Step = { paymentId: string; saleId: string; text: string; stage: 'handTo' | 'ask' | 'saving'; handedOver: boolean };
 export type ConsentAnswer = 'agreed' | 'declined' | null;
 
 export function useCardConsentPrompt(clientName: string) {
@@ -45,7 +49,7 @@ export function useCardConsentPrompt(clientName: string) {
 
   /** Asks, when this payment can save a card; resolves the client's answer (null when not asked). */
   const ask = useCallback(
-    async (saleId: string, paymentId: string): Promise<ConsentAnswer> => {
+    async (saleId: string, paymentId: string, opts: { handedOver?: boolean } = {}): Promise<ConsentAnswer> => {
       setNote(null);
       setError(null);
       if (!accessToken) return null;
@@ -53,7 +57,8 @@ export function useCardConsentPrompt(clientName: string) {
       if (!info) return null;
       return new Promise<ConsentAnswer>((resolve) => {
         resolver.current = resolve;
-        setStep({ paymentId, saleId, text: info.consent_text, stage: 'handTo' });
+        const handedOver = opts.handedOver === true;
+        setStep({ paymentId, saleId, text: info.consent_text, stage: handedOver ? 'ask' : 'handTo', handedOver });
       });
     },
     [accessToken],
@@ -65,11 +70,11 @@ export function useCardConsentPrompt(clientName: string) {
       setStep({ ...step, stage: 'saving' });
       try {
         const res = await answerCardConsent(accessToken, step.saleId, step.paymentId, { agreed, consentText: step.text });
-        finish(res.card_save_status === 'agreed' ? 'agreed' : 'declined', t('app.saveCard.handBack'));
+        finish(res.card_save_status === 'agreed' ? 'agreed' : 'declined', step.handedOver ? null : t('app.saveCard.handBack'));
       } catch (e) {
         // "We couldn't set this card up to be saved. The payment can still go ahead."
         setError(null);
-        finish(null, posErrorMessage(e, t('app.saveCard.handBack')));
+        finish(null, step.handedOver ? posErrorMessage(e, '') || null : posErrorMessage(e, t('app.saveCard.handBack')));
       }
     },
     [accessToken, finish, step, t],

@@ -17,6 +17,33 @@ on the other, and iOS 1.0.4 is the worked example.
 
 ## Unreleased OTA: POS app step 1 (iOS 1.2.0 / Android 1.1.2)
 
+### The client chooses the tip on their side of the phone (owner, 2026-10-10)
+
+Before a Tap to Pay or Bluetooth reader payment, the tip screen used to sit inside staff's payment
+sheet, worded for the client but chosen by staff. Now staff press Tap to Pay (or the reader) as
+before, the reader gets ready while they still hold the phone, and the app says "Hand the phone to
+{client} so they can choose a tip." The client sees the total and the venue's suggestions as
+buttons of one size, with "No tip" among them and nothing chosen for them, presses "Pay {total}"
+and taps their card straight away. The app ends on "Thank you. Please hand the phone back."
+The same happens for a sale sent from the web till ("Send to a phone"), where the sale's details
+are hidden while the client holds the phone.
+
+- `components/pos/CustomerTip.tsx` (new): the client's screen and its hand-over prompt; replaces
+  `TipChooser.tsx`.
+- `CardCollectPanel` asks for the tip once the reader is ready, once per payment (a retry after a
+  decline keeps it), and passes it to `pay`. Saving a card skips its own hand-over when the client
+  already holds the phone.
+- No server change: the tip goes in the payment as before.
+
+### Delivery zones and the card readers screen (owner, 2026-10-10)
+
+- Online shop settings: delivery zones are now the whole UK, the Republic of Ireland, local
+  delivery by postcode, or Highlands and islands (a starting list). Needs the web change that adds
+  `delivery_areas` and `zone_presets` to `/api/venue/shop/settings`: ship the web first.
+- Orders: an Irish delivery address ends "Ireland".
+- Card readers: a note on taking cards with a phone instead of a separate reader; the line naming
+  another booking system is gone.
+
 ### Tap to Pay on Android with Developer options on (owner, 2026-10-10)
 
 Stripe refuses Tap to Pay on an Android phone with Developer options (or USB or Wi-Fi debugging)

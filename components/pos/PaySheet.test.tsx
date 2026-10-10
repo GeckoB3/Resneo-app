@@ -1,7 +1,7 @@
 /**
  * The sale's payment sheet (UX spec §3.18, §3.19, §13.3): cash with change, other payment types
- * with a required reference, the card button only where the app can take a card, and the app's
- * own tip screen before a card when tipping is on.
+ * with a required reference, the card button only where the app can take a card, and, when tipping
+ * is on, the client's own tip screen handed to the card collector (never a tip step in staff's sheet).
  *
  * jest hoists mock factories above imports, so every closed-over variable is prefixed `mock*`.
  */
@@ -187,31 +187,34 @@ describe('PaySheet', () => {
     expect(screen.queryByText('Card')).toBeNull();
   });
 
-  it('asks for a tip first when tipping is on, then hands the tip to the card collector', async () => {
-    await renderSheet({
-      cardAvailable: true,
-      bootstrap: bootstrap({ tip_settings: { tipping_enabled: true, tip_percent_presets: [10, 15, 20], smart_tip_threshold_pence: 1000 } }),
-    });
+  it('goes straight to the card with tipping on, giving the collector the client\'s tip screen', async () => {
+    const tipSettings = { tipping_enabled: true, tip_percent_presets: [10, 15, 20], smart_tip_threshold_pence: 1000 };
+    await renderSheet({ cardAvailable: true, bootstrap: bootstrap({ tip_settings: tipSettings }) });
     await act(async () => {
       fireEvent.press(screen.getByText('Card'));
     });
-    expect(screen.getAllByText('Would you like to add a tip?').length).toBeGreaterThan(0);
-    await act(async () => {
-      fireEvent.press(screen.getByText('10% (£3.55)'));
-    });
-    await act(async () => {
-      fireEvent.press(screen.getByText('Charge £39.05'));
-    });
+    // No tip step in staff's sheet: the client chooses once the reader is ready.
+    expect(screen.queryByText('Would you like to add a tip?')).toBeNull();
     expect(screen.getByText('card-collector')).toBeTruthy();
-    expect(mockCardProps).toHaveBeenLastCalledWith(expect.objectContaining({ amountPence: 3550, tipPence: 355 }));
+    const props = mockCardProps.mock.calls.at(-1)![0] as { amountPence: number; customerTip: Record<string, unknown>; onCustomerFacing: (f: boolean) => void };
+    expect(props.amountPence).toBe(3550);
+    expect(props.customerTip).toEqual(
+      expect.objectContaining({ amountPence: 3550, balancePence: 3550, tipSettings, venueName: 'Studio', maxPaymentPence: 1_000_000 }),
+    );
+    // While the client holds the phone, the sheet's title is the venue's name, not staff's words.
+    await act(async () => {
+      props.onCustomerFacing(true);
+    });
+    expect(screen.getByText('Studio')).toBeTruthy();
+    expect(screen.queryByText('Take payment')).toBeNull();
   });
 
-  it('goes straight to the card when tipping is off', async () => {
+  it('goes straight to the card with no tip screen when tipping is off', async () => {
     await renderSheet({ cardAvailable: true });
     await act(async () => {
       fireEvent.press(screen.getByText('Card'));
     });
-    expect(mockCardProps).toHaveBeenLastCalledWith(expect.objectContaining({ amountPence: 3550, tipPence: 0 }));
+    expect(mockCardProps).toHaveBeenLastCalledWith(expect.objectContaining({ amountPence: 3550, customerTip: null }));
   });
 
   it('offers the counter reader and a pay link only where the venue has them (app step 2)', async () => {

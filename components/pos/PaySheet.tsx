@@ -5,7 +5,6 @@ import { PayLinkPanel } from '@/components/pos/PayLinkPanel';
 import { ReaderPayPanel } from '@/components/pos/ReaderPayPanel';
 import { SaleCardCollect } from '@/components/pos/SaleCardCollect';
 import { SavedCardCharge, SavedCardMethods } from '@/components/pos/SavedCards';
-import { TipChooser } from '@/components/pos/TipChooser';
 import { CreditPayPanel, VoucherPayPanel } from '@/components/pos/VoucherSheets';
 import { writeError, type Send } from '@/components/pos/SaleSheets';
 import { AmountRow, ErrorLine, money, Notice, PosSheet, posStyles, usePosT } from '@/components/pos/parts';
@@ -39,7 +38,9 @@ import type { PosBootstrap, PosPaymentType, PosSale, PosSavedCard } from '@/type
  * Taking payment on a sale in the app (UX spec §3.18, §3.19, §13.3): the amount to pay now (the
  * whole balance, part of it, or an even split), then cash with change, another payment type with
  * its reference, or a card by Tap to Pay or the Bluetooth reader. Typed tips for cash and other
- * payments; for a card, the app's own tip screen comes first (Tap to Pay asks for no tip, P7-2).
+ * payments; for a card, the client chooses the tip on their side of the phone once the reader is
+ * ready (`CustomerTip.tsx`; Tap to Pay asks for no tip, P7-2), and the sheet's title becomes the
+ * venue's name while they hold it.
  * One request id per payment staff are recording, so a retry or a double tap records it once.
  *
  * App step 2 (POS plan P7-8, UX spec §13.4) adds: the counter reader (`card_reader`, driven by the
@@ -48,7 +49,7 @@ import type { PosBootstrap, PosPaymentType, PosSale, PosSavedCard } from '@/type
  * `charge_saved_card`). Saving a card with the client's consent rides on the card collector.
  */
 
-type Mode = 'choose' | 'cash' | 'other' | 'tip' | 'card' | 'done' | 'voucher' | 'credit' | 'reader' | 'link' | 'saved';
+type Mode = 'choose' | 'cash' | 'other' | 'card' | 'done' | 'voucher' | 'credit' | 'reader' | 'link' | 'saved';
 
 export type PaidOutcome = {
   changePence: number;
@@ -96,7 +97,7 @@ function PaySheetBody({
   const [mode, setMode] = useState<Mode>('choose');
   const [amountText, setAmountText] = useState(penceToInput(balance));
   const [tipText, setTipText] = useState('');
-  const [cardTip, setCardTip] = useState<number>(0);
+  const [customerFacing, setCustomerFacing] = useState(false);
   const [savedCard, setSavedCard] = useState<PosSavedCard | null>(null);
   const [tendered, setTendered] = useState('');
   const [keepChange, setKeepChange] = useState(false);
@@ -169,15 +170,13 @@ function PaySheetBody({
   const cashTip = keepChange ? change : typedTip;
   const cashReady = amountOk && cashCovers(amount ?? 0, keepChange ? 0 : typedTip, tenderedPence);
 
-  const cardTipPence = cardTip;
-
   const title =
-    mode === 'cash'
-      ? t('cash.title')
-      : mode === 'other'
-        ? type?.name ?? t('pay.title')
-        : mode === 'tip'
-          ? t('app.tip.title')
+    mode === 'card' && customerFacing
+      ? venueName
+      : mode === 'cash'
+        ? t('cash.title')
+        : mode === 'other'
+          ? type?.name ?? t('pay.title')
           : mode === 'voucher'
             ? t('vpay.title')
             : mode === 'credit'
@@ -228,10 +227,7 @@ function PaySheetBody({
               <Button
                 label={t('app.pay.card')}
                 disabled={!amountOk}
-                onPress={() => {
-                  setCardTip(0);
-                  enter(tips.enabled ? 'tip' : 'card');
-                }}
+                onPress={() => enter('card')}
                 fullWidth
               />
             ) : null}
@@ -384,20 +380,6 @@ function PaySheetBody({
           />
           <Button label={t('pay.otherWay')} variant="ghost" onPress={() => setMode('choose')} fullWidth />
         </View>
-      ) : mode === 'tip' ? (
-        <TipChooser
-          sale={sale}
-          tipSettings={bootstrap.tip_settings}
-          amountPence={amount ?? 0}
-          balancePence={balance}
-          maxPaymentPence={max}
-          venueName={venueName}
-          onContinue={(tip) => {
-            setCardTip(tip);
-            setMode('card');
-          }}
-          onBack={() => setMode('choose')}
-        />
       ) : mode === 'voucher' ? (
         <VoucherPayPanel
           sale={sale}
@@ -471,7 +453,20 @@ function PaySheetBody({
           saleId={sale.id}
           version={sale.version}
           amountPence={amount}
-          tipPence={cardTipPence}
+          customerTip={
+            tips.enabled
+              ? {
+                  sale,
+                  tipSettings: bootstrap.tip_settings,
+                  amountPence: amount,
+                  balancePence: balance,
+                  maxPaymentPence: max,
+                  venueName,
+                  clientName: sale.guest ? sale.guest.name.split(' ')[0] || sale.guest.name : null,
+                }
+              : null
+          }
+          onCustomerFacing={setCustomerFacing}
           isAdmin={isAdmin}
           balanceAfterStalePence={sale.balance_due_pence}
           consentClientName={consentClientName}
@@ -480,7 +475,7 @@ function PaySheetBody({
             onPaid({ changePence: 0, method: 'card_app' });
             onClose();
           }}
-          onBack={() => setMode(tips.enabled ? 'tip' : 'choose')}
+          onBack={() => setMode('choose')}
         />
       ) : null}
     </PosSheet>

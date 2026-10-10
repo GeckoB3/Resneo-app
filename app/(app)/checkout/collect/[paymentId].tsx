@@ -6,7 +6,6 @@ import { TapToPayEducationSheet } from '@/components/payments/TapToPayEducation'
 import { PayLinkPanel } from '@/components/pos/PayLinkPanel';
 import { ReaderPayPanel } from '@/components/pos/ReaderPayPanel';
 import { CardCollectPanel, type CardCollectKind } from '@/components/pos/SaleCardCollect';
-import { TipChooser } from '@/components/pos/TipChooser';
 import { money, posStyles, usePosT, type Send } from '@/components/pos/parts';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -45,11 +44,13 @@ import type { PosBootstrap, PosCollectState, PosSale } from '@/types/pos';
  * banner above every screen.
  *
  * 1. `app.collect.title` with who sent it and from which till, and the client when there is one.
- * 2. The app's own tip screen when the venue takes tips (`app.tip.title`), handed to the client.
- * 3. The card screen, which is the same screen as the app's own sale payments
+ * 2. The card screen, which is the same screen as the app's own sale payments
  *    (`CardCollectPanel`): Apple's exact name and button, the processing state, the warm-up and the
- *    "How to tap" education. Pressing it claims the payment with the tip (only now does the server
- *    make the PaymentIntent), then reads the card.
+ *    "How to tap" education.
+ * 3. When the venue takes tips, once the reader is ready the phone is handed to the client, who
+ *    chooses the tip on their side of it (`CustomerTip.tsx`, `app.tip.title`); the header about the
+ *    sale is hidden while they hold it. Then the payment is claimed with the tip (only now does the
+ *    server make the PaymentIntent) and the client taps their card.
  * 4. Outcomes: paid (`app.collect.done`); declined (`app.collect.declined`, the same PaymentIntent
  *    stays pending, so the Tap to Pay button tries again); a card that wants chip and PIN
  *    (`app.collect.insertCard`, with `app.collect.sendLink` and, when the venue has one,
@@ -63,7 +64,7 @@ import type { PosBootstrap, PosCollectState, PosSale } from '@/types/pos';
  * cards here; an iPad never offers Tap to Pay (`buildSupportsTapToPay`).
  */
 
-type Phase = 'tip' | 'card' | 'link' | 'reader' | 'done';
+type Phase = 'card' | 'link' | 'reader' | 'done';
 
 export default function CollectScreen() {
   const t = usePosT();
@@ -187,8 +188,10 @@ function CollectBody({
   const tips = tipConfig(bootstrap.tip_settings);
 
   const claimedByMe = collect.claimed_by_staff_id != null && collect.claimed_by_staff_id === myId;
-  const [phase, setPhase] = useState<Phase>(tips.enabled && !claimedByMe ? 'tip' : 'card');
-  const [tipPence, setTipPence] = useState<number>(claimedByMe ? collect.tip_pence : 0);
+  const [phase, setPhase] = useState<Phase>('card');
+  // A payment this phone claimed already carries its tip; otherwise the client chooses one.
+  const fixedTip = claimedByMe ? collect.tip_pence : 0;
+  const [customerFacing, setCustomerFacing] = useState(false);
   const [needsPin, setNeedsPin] = useState(false);
   const [result, setResult] = useState<SaleCardResult | null>(null);
   const [leaving, setLeaving] = useState(false);
@@ -292,26 +295,9 @@ function CollectBody({
     <Screen>
       {header}
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        {head}
-        {phase === 'tip' ? (
-          <>
-            <Text variant="heading">{t('app.tip.title')}</Text>
-            <TipChooser
-              sale={sale}
-              tipSettings={bootstrap.tip_settings}
-              amountPence={collect.amount_pence}
-              balancePence={collect.amount_pence}
-              maxPaymentPence={bootstrap.settings.max_payment_pence ?? null}
-              venueName={bootstrap.venue?.name ?? 'This venue'}
-              onContinue={(tip) => {
-                setTipPence(tip);
-                setPhase('card');
-              }}
-              onBack={close}
-              backLabel={t('app.card.back')}
-            />
-          </>
-        ) : phase === 'link' ? (
+        {/* The client holding the phone sees only their own screen, not the sale's details. */}
+        {customerFacing ? null : head}
+        {phase === 'link' ? (
           <PayLinkPanel
             sale={sale}
             bootstrap={bootstrap}
@@ -333,14 +319,28 @@ function CollectBody({
           <CardCollectPanel
             saleId={sale.id}
             amountPence={collect.amount_pence}
-            tipPence={tipPence}
+            tipPence={fixedTip}
+            customerTip={
+              tips.enabled && !claimedByMe
+                ? {
+                    sale,
+                    tipSettings: bootstrap.tip_settings,
+                    amountPence: collect.amount_pence,
+                    balancePence: collect.amount_pence,
+                    maxPaymentPence: bootstrap.settings.max_payment_pence ?? null,
+                    venueName: bootstrap.venue?.name ?? 'This venue',
+                    clientName: sale.guest ? sale.guest.name.split(' ')[0] || sale.guest.name : null,
+                  }
+                : null
+            }
+            onCustomerFacing={setCustomerFacing}
             isAdmin={bootstrap.role === 'admin'}
             consentClientName={
               bootstrap.settings.card_on_file_enabled === true && sale.guest ? sale.guest.name.split(' ')[0] || sale.guest.name : null
             }
             processingLabel={t('app.collect.processing')}
             externalStop={endedElsewhere}
-            pay={async (kind: CardCollectKind, hooks) => {
+            pay={async (kind: CardCollectKind, hooks, tipPence) => {
               setBusy(true);
               setNeedsPin(false);
               deskCancelled.current = false;
@@ -400,7 +400,7 @@ function CollectBody({
         )}
         {/* Apple's rules apply to this screen however it was opened, a push included (plan §4.36):
             the "How to tap" education is one tap away. */}
-        {phase === 'card' && Platform.OS === 'ios' && buildSupportsTapToPay() ? (
+        {phase === 'card' && !customerFacing && Platform.OS === 'ios' && buildSupportsTapToPay() ? (
           <Button
             label={t('app.howToTap.title')}
             variant="ghost"

@@ -5,6 +5,7 @@ import { ActivityIndicator, Platform, View } from 'react-native';
 import { ReaderPairingSection } from '@/components/bookings/TakePaymentSheet';
 import { TapToPayEducationContent } from '@/components/payments/TapToPayEducation';
 import { TapToPayProgress } from '@/components/payments/TapToPayProgress';
+import { useCustomerTipPrompt, type CustomerTipInput } from '@/components/pos/CustomerTip';
 import { ErrorLine, money, posStyles, usePosT } from '@/components/pos/parts';
 import { useCardConsentPrompt } from '@/components/pos/SaveCardConsent';
 import { Button } from '@/components/ui/Button';
@@ -44,6 +45,12 @@ import { useTheme } from '@/theme/useTheme';
  * the client is asked on this phone whether to save their card before it is read
  * (`useCardConsentPrompt`), and afterwards staff are told whether it was kept.
  *
+ * Tips (owner, 2026-10-10): when the venue takes tips, the tip is the client's choice, on their
+ * side of the phone (`CustomerTip.tsx`). Staff press Tap to Pay or the reader as before; once the
+ * reader is ready, the app tells them to hand the phone over, the client chooses a tip and taps
+ * their card straight away, and the app ends on "Thank you. Please hand the phone back." The tip is
+ * asked once per payment: a retry after a decline keeps it.
+ *
  * The reader steps and screens live in `CardCollectPanel`, which a sale sent from the web till to
  * this phone uses too (plan §4.36, `app/(app)/checkout/collect/[paymentId].tsx`): there the
  * payment comes from the claim, not from `card_app`, but Apple's rules, the warm-up, the processing
@@ -53,21 +60,23 @@ import { useTheme } from '@/theme/useTheme';
  * the SDK's `useStripeTerminal` hook.
  */
 
-type Stage = 'idle' | 'preparing' | 'starting' | 'collecting' | 'processing' | 'error';
+type Stage = 'idle' | 'preparing' | 'tip' | 'starting' | 'collecting' | 'processing' | 'handBack' | 'error';
 export type CardCollectKind = 'tap_to_pay' | 'bluetooth';
 type Kind = CardCollectKind;
 
-/** Starts and collects one card payment with the reader `kind`, reporting progress through `hooks`. */
+/** Starts and collects one card payment with the reader `kind` and the tip, reporting progress through `hooks`. */
 export type CardCollectPay = (
   kind: CardCollectKind,
   hooks: Pick<SaleCardInput, 'onStarted' | 'onCardRead' | 'shouldStop' | 'askConsent'>,
+  tipPence: number,
 ) => Promise<SaleCardResult>;
 
 export function SaleCardCollect({
   saleId,
   version,
   amountPence,
-  tipPence,
+  customerTip = null,
+  onCustomerFacing,
   isAdmin,
   balanceAfterStalePence,
   consentClientName = null,
@@ -77,7 +86,10 @@ export function SaleCardCollect({
   saleId: string;
   version: number;
   amountPence: number;
-  tipPence: number;
+  /** When the venue takes tips: what the client's tip screen needs. */
+  customerTip?: CustomerTipInput | null;
+  /** The client has the phone (choosing a tip, tapping, or being thanked), or staff have it back. */
+  onCustomerFacing?: (facing: boolean) => void;
   isAdmin: boolean;
   /** The balance to name if the sale changed before the payment started (`stale.payment`). */
   balanceAfterStalePence: number;
@@ -92,10 +104,11 @@ export function SaleCardCollect({
     <CardCollectPanel
       saleId={saleId}
       amountPence={amountPence}
-      tipPence={tipPence}
+      customerTip={customerTip}
+      onCustomerFacing={onCustomerFacing}
       isAdmin={isAdmin}
       consentClientName={consentClientName}
-      pay={(kind, hooks) =>
+      pay={(kind, hooks, tipPence) =>
         payment.mutateAsync({
           clientRequestId: newPaymentAttemptId(),
           version,
@@ -120,12 +133,15 @@ export function SaleCardCollect({
  * The reader steps and screens of a card payment on this phone, for whatever started the payment
  * (`pay`). `describeError` may put its own sentence on a failure; `extra` shows under it (a sale
  * sent to a phone offers a pay link there); `externalStop` stops a collection someone else ended
- * (the desk cancelled it).
+ * (the desk cancelled it). `tipPence` is a tip already fixed (a payment this phone claimed
+ * earlier); `customerTip` asks the client for one once the reader is ready.
  */
 export function CardCollectPanel({
   saleId,
   amountPence,
-  tipPence,
+  tipPence = 0,
+  customerTip = null,
+  onCustomerFacing,
   isAdmin,
   consentClientName = null,
   pay,
@@ -139,7 +155,9 @@ export function CardCollectPanel({
 }: {
   saleId: string;
   amountPence: number;
-  tipPence: number;
+  tipPence?: number;
+  customerTip?: CustomerTipInput | null;
+  onCustomerFacing?: (facing: boolean) => void;
   isAdmin: boolean;
   consentClientName?: string | null;
   pay: CardCollectPay;
@@ -160,6 +178,7 @@ export function CardCollectPanel({
   const accessToken = useAccessToken();
   const toast = useToast();
   const consent = useCardConsentPrompt(consentClientName ?? '');
+  const tipPrompt = useCustomerTipPrompt(customerTip);
 
   const [stage, setStage] = useState<Stage>('idle');
   const [kind, setKind] = useState<Kind>('tap_to_pay');
@@ -170,6 +189,25 @@ export function CardCollectPanel({
   const stageRef = useRef<Stage>('idle');
   const stopRef = useRef(false);
   const startingRef = useRef(false);
+  // The tip, asked once per payment (a retry after a decline keeps it), and whether the client
+  // holds the phone because they chose it.
+  const [tip, setTip] = useState(tipPence);
+  const tipRef = useRef(tipPence);
+  const tipChosenRef = useRef(customerTip == null);
+  const [handedOver, setHandedOver] = useState(false);
+  const handedOverRef = useRef(false);
+  const [paid, setPaid] = useState<SaleCardResult | null>(null);
+
+  const markHandedOver = (value: boolean) => {
+    handedOverRef.current = value;
+    setHandedOver(value);
+  };
+
+  const facing = tipPrompt.facing || handedOver;
+  useEffect(() => {
+    onCustomerFacing?.(facing);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when it changes
+  }, [facing]);
 
   const setStageBoth = (s: Stage) => {
     stageRef.current = s;
@@ -188,7 +226,7 @@ export function CardCollectPanel({
   }, []);
 
   const supportsTapToPay = buildSupportsTapToPay() && tapToPay.supported !== false;
-  const total = amountPence + tipPence;
+  const total = amountPence + tip;
 
   async function collect(chosen: Kind) {
     if (startingRef.current) return;
@@ -228,16 +266,41 @@ export function CardCollectPanel({
         }
       }
 
+      // The reader is ready: now the client chooses the tip, on their side of the phone.
+      let tipNow = tipRef.current;
+      if (customerTip && !tipChosenRef.current) {
+        setStageBoth('tip');
+        const chosenTip = await tipPrompt.ask();
+        if (chosenTip == null || stopRef.current) return setStageBoth('idle');
+        tipChosenRef.current = true;
+        tipRef.current = chosenTip;
+        setTip(chosenTip);
+        markHandedOver(true);
+        tipNow = chosenTip;
+      }
+
       setStageBoth('starting');
-      const result = await pay(chosen, {
-        shouldStop: () => stopRef.current,
-        onStarted: () => setStageBoth('collecting'),
-        onCardRead: () => setStageBoth('processing'),
-        ...(consentClientName ? { askConsent: (paymentId: string) => consent.ask(saleId, paymentId) } : {}),
-      });
+      const result = await pay(
+        chosen,
+        {
+          shouldStop: () => stopRef.current,
+          onStarted: () => setStageBoth('collecting'),
+          onCardRead: () => setStageBoth('processing'),
+          ...(consentClientName
+            ? { askConsent: (paymentId: string) => consent.ask(saleId, paymentId, { handedOver: handedOverRef.current }) }
+            : {}),
+        },
+        tipNow,
+      );
       hapticSuccess();
-      setStageBoth('idle');
       announceCardSave(result);
+      if (handedOverRef.current) {
+        // The client tapped on this phone: thank them before staff carry on.
+        setPaid(result);
+        setStageBoth('handBack');
+        return;
+      }
+      setStageBoth('idle');
       onDone(result);
     } catch (e) {
       hapticWarning();
@@ -283,6 +346,10 @@ export function CardCollectPanel({
   }, [externalStop]);
 
   function cancel() {
+    if (stageRef.current === 'tip') {
+      tipPrompt.reset();
+      return;
+    }
     if (consent.active) {
       stopRef.current = true;
       consent.reset();
@@ -320,6 +387,30 @@ export function CardCollectPanel({
   const busy = stage === 'preparing' || stage === 'starting' || stage === 'collecting' || stage === 'processing';
   const canCancel = stage === 'preparing' || stage === 'starting' || stage === 'collecting';
 
+  if (tipPrompt.active) return <>{tipPrompt.view}</>;
+
+  if (stage === 'handBack' && paid) {
+    return (
+      <View style={posStyles.stack}>
+        <Text variant="title" color={colors.success}>
+          {t('app.card.success', { amount: money(total) })}
+        </Text>
+        <Text variant="heading">{t('app.handBack')}</Text>
+        <Button
+          label={t('add.done')}
+          onPress={() => {
+            const result = paid;
+            setPaid(null);
+            markHandedOver(false);
+            setStageBoth('idle');
+            onDone(result);
+          }}
+          fullWidth
+        />
+      </View>
+    );
+  }
+
   if (consent.active) {
     return (
       <View style={posStyles.stack}>
@@ -338,9 +429,9 @@ export function CardCollectPanel({
           {consent.note}
         </Text>
       ) : null}
-      {tipPence > 0 ? (
+      {tip > 0 ? (
         <Text variant="bodySmall" tone="muted">
-          {t('reader.success.tip', { tip: money(tipPence) })}
+          {t('reader.success.tip', { tip: money(tip) })}
         </Text>
       ) : null}
 
@@ -359,7 +450,11 @@ export function CardCollectPanel({
         )
       ) : null}
       {stage === 'collecting' ? (
-        <Text variant="bodyMedium">{kind === 'tap_to_pay' ? t('app.card.hold') : t('app.card.holdReader')}</Text>
+        <Text variant="bodyMedium">
+          {kind === 'tap_to_pay'
+            ? t(handedOver ? 'app.card.hold.customer' : 'app.card.hold')
+            : t(handedOver ? 'app.card.holdReader.customer' : 'app.card.holdReader')}
+        </Text>
       ) : null}
       {stage === 'starting' || stage === 'processing' ? (
         <View style={posStyles.row}>
@@ -382,7 +477,8 @@ export function CardCollectPanel({
       ) : null}
 
       <View style={posStyles.buttons}>
-        {supportsTapToPay ? (
+        {/* While the client holds the phone to pay, only Cancel shows. */}
+        {supportsTapToPay && !(handedOver && busy) ? (
           <Button
             label={tapToPayButtonLabel()}
             leftIcon={
@@ -394,19 +490,25 @@ export function CardCollectPanel({
             fullWidth
           />
         ) : null}
-        <Button
-          label={bluetooth.connected ? t('app.card.useReader') : t('app.card.connectReader')}
-          variant="secondary"
-          disabled={busy}
-          loading={busy && kind === 'bluetooth'}
-          onPress={() => void collect('bluetooth')}
-          fullWidth
-        />
+        {!(handedOver && busy) ? (
+          <Button
+            label={bluetooth.connected ? t('app.card.useReader') : t('app.card.connectReader')}
+            variant="secondary"
+            disabled={busy}
+            loading={busy && kind === 'bluetooth'}
+            onPress={() => void collect('bluetooth')}
+            fullWidth
+          />
+        ) : null}
         {/* Never disabled: the way out of every stage. */}
         <Button
           label={canCancel ? t('app.card.cancel') : t('app.card.back')}
           variant="ghost"
-          onPress={() => (canCancel ? cancel() : onBack())}
+          onPress={() => {
+            if (canCancel) return cancel();
+            markHandedOver(false);
+            onBack();
+          }}
           fullWidth
         />
       </View>
