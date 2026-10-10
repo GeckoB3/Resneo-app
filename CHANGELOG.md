@@ -46,7 +46,7 @@ web's behaviour; nothing in it opens the browser any more.
 - Online shop: the opening checklist, opening and closing, the shop link and QR code, policies with templates, collection, delivery zones, stock display, minimum order and customer messages.
 - Reports: Takings and Sales carry every card the web shows, each with its own CSV; tip records download from Takings; new Vouchers and Commission tabs. Team members with "view reports" now see Takings and Sales.
 - Products and stock: every tab the web's Stock page has (Stock levels, Movements, Stocktakes, Purchase orders, Suppliers, Professional use, Reports), product filters, bulk price and category changes, archive, Export CSV, and Import products from a CSV file. The product editor has every web field.
-- Booking detail: Check out is the same colour as Confirm.
+- Booking detail: Check out and Record products used are navy, the colour of Take payment at venues without POS.
 
 JavaScript only, for both runtimes; the native diff is empty (no module, no `app.json` native
 config, no `eas.json` or native dependency change). Every new screen, tile, button and report tab

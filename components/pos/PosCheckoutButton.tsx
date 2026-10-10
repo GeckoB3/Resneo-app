@@ -20,8 +20,8 @@ export function PosCheckoutButton({ bookingId, onOpened }: { bookingId: string; 
     <Button
       label={opening ? t('bk.checkout.opening') : t('bk.checkout')}
       variant="secondary"
-      // The same colour as Confirm beside it on the booking detail.
-      customColors={ACTION_COLORS.confirm}
+      // Navy, as "Take payment" is at venues without POS: a money action.
+      customColors={ACTION_COLORS.payment}
       size="sm"
       fullWidth
       loading={opening}

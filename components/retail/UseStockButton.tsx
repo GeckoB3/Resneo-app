@@ -4,6 +4,7 @@ import { View, type StyleProp, type ViewStyle } from 'react-native';
 import { usePosT } from '@/components/pos/parts';
 import { UseStockSheet } from '@/components/retail/PurchasingSheets';
 import { Button } from '@/components/ui/Button';
+import { ACTION_COLORS } from '@/lib/booking/booking-action-colors';
 import { canPos, isTrackStockOn } from '@/lib/pos/pos-enabled';
 import { usePosBootstrap, usePosEnabled } from '@/lib/queries/usePos';
 
@@ -28,7 +29,15 @@ export function UseStockButton({
   if (!posEnabled || !isTrackStockOn(boot.data) || !canPos(boot.data, 'record_professional_use')) return null;
   return (
     <View style={containerStyle}>
-      <Button label={t('bk.useStock')} variant="secondary" size="sm" fullWidth onPress={() => setOpen(true)} />
+      <Button
+        label={t('bk.useStock')}
+        variant="secondary"
+        // Navy, as "Check out" beside it on the booking detail.
+        customColors={ACTION_COLORS.payment}
+        size="sm"
+        fullWidth
+        onPress={() => setOpen(true)}
+      />
       <UseStockSheet
         visible={open}
         booking={{ id: bookingId, label }}
