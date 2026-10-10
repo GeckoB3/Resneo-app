@@ -38,12 +38,17 @@ export const READERS_COPY = {
   'set.readers.simulated': 'Add a test reader',
   'set.readers.wisepos.note':
     'Stripe stopped selling this reader on 1 September 2026. It gets only essential fixes from 1 February 2028 and stops working on 1 February 2031.',
-  'set.readers.ownReader':
-    'Already have a Stripe reader, for example from Phorest? Pair it the same way. Owning it, and any rental agreement, is up to you.',
   'set.readers.movedHere': 'It was registered to another account before. Now it takes payments for {venue}.',
   'set.readers.branding': "Your readers show your logo when they're idle, and your tip suggestions. ResNeo sets these up for you.",
   'set.readers.getOne':
-    "Need a card reader? Contact ResNeo support and we'll help you get one, or pair a Stripe reader you already have. You can take cards on your phones without one.",
+    "Need a card reader? Contact ResNeo support and we'll help you get one, or pair a Stripe reader you already have.",
+  // Phones as the card reader (web, added 2026-10-10): the till's "Send to a phone".
+  'set.readers.phone.title': 'Take cards on your phone instead',
+  'set.readers.phone.body':
+    "You don't need a separate card reader. Your team can take contactless cards, phones and watches on their own phones with the ResNeo app. At the till, choose Send to a phone.",
+  'set.readers.phone.step1':
+    'Install the ResNeo app on the phone, sign in and allow notifications. It works on an iPhone XS or newer and on most Android phones with contactless (NFC).',
+  'set.readers.phone.step2': 'On an iPhone, open More in the app and turn on Tap to Pay. Android phones are ready once you sign in.',
   'set.readers.empty': "You haven't added a card reader yet.",
   'set.readers.testCard': 'Present a test card',
   'set.readers.testCard.done': 'Test card presented on {reader}.', // (app) the web says nothing on success

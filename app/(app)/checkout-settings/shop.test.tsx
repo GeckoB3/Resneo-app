@@ -90,6 +90,8 @@ type View = {
   readiness: { checks: Record<string, boolean>; canOpen: boolean; open: boolean; missing: string[] };
   missing_sentence: string;
   allowed_areas: string[];
+  delivery_areas: string[];
+  zone_presets: { highlands: string[] };
   shop_url: string | null;
   templates: Record<string, string>;
   policy_updated_at: string | null;
@@ -129,6 +131,8 @@ function shopView(over: { settings?: Record<string, unknown>; ready?: boolean; z
     },
     missing_sentence: ready ? '' : "a public phone number, your customers' right to cancel and a product sold online",
     allowed_areas: over.jurisdiction === 'ni' ? ['ni', 'gb'] : ['gb'],
+    delivery_areas: over.jurisdiction === 'ie' ? [] : ['uk', 'ie', 'postcodes'],
+    zone_presets: { highlands: ['HS', 'IV', 'ZE'] },
     shop_url: 'https://example.test/shop/studio',
     templates: { returns: 'Template returns', cancellation: 'Template cancellation', delivery: 'Template delivery', terms: 'Template terms' },
     policy_updated_at: '2026-10-01T10:00:00Z',
@@ -198,7 +202,11 @@ describe('the opening checklist', () => {
     ).toBeTruthy();
     expect(screen.getByLabelText('Open my shop').props.disabled).toBe(true);
     expect(screen.getByText('Version 2, last changed 1 October 2026. Each order keeps the version its customer agreed to.')).toBeTruthy();
-    expect(screen.getByText('For now, your shop can deliver to addresses in Great Britain.')).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Add a zone for each place you deliver to, each with its own price. If an address is in a postcode zone and the whole-UK zone, the postcode zone's price is used.",
+      ),
+    ).toBeTruthy();
   });
 
   it('opens Checkout settings for business details and Products for products', async () => {
@@ -324,33 +332,35 @@ describe('delivery zones', () => {
   it('lists zones with their area, price, free-over and time, and Not offered', async () => {
     mockView = shopView({
       zones: [
-        { id: 'z1', name: 'Mainland', area: 'gb', price_pence: 395, free_over_pence: 5000, estimate_text: null, is_active: true, version: 1 },
-        { id: 'z2', name: 'Islands', area: 'gb', price_pence: 900, free_over_pence: null, estimate_text: '5 days', is_active: false, version: 1 },
+        { id: 'z1', name: 'Mainland', area: 'uk', price_pence: 395, free_over_pence: 5000, estimate_text: null, is_active: true, version: 1 },
+        { id: 'z2', name: 'Islands', area: 'postcodes', include_postcode_prefixes: ['HS', 'IV'], price_pence: 900, free_over_pence: null, estimate_text: '5 days', is_active: false, version: 1 },
+        { id: 'z3', name: 'Ireland', area: 'ie', price_pence: 995, free_over_pence: null, estimate_text: null, is_active: true, version: 1 },
       ],
     });
     await show();
     expect(
-      await screen.findByText('Great Britain · £3.95 · Free delivery on orders over £50.00. Below that, delivery costs £3.95. · Delivered within 30 days'),
+      await screen.findByText('The whole UK · £3.95 · Free delivery on orders over £50.00. Below that, delivery costs £3.95. · Delivered within 30 days'),
     ).toBeTruthy();
-    expect(screen.getByText('Great Britain · £9.00 · 5 days')).toBeTruthy();
+    expect(screen.getByText('Postcodes HS, IV · £9.00 · 5 days')).toBeTruthy();
+    expect(screen.getByText('Republic of Ireland · £9.95 · Delivered within 30 days')).toBeTruthy();
     expect(screen.getByText('Not offered')).toBeTruthy();
-    expect(screen.queryByText('Add a zone for the whole of Great Britain')).toBeNull();
+    expect(screen.queryByText('Add a zone for the whole of the UK')).toBeNull();
   });
 
-  it('adds the starter zone for the whole country', async () => {
+  it('adds the starter zone for the whole UK', async () => {
     await show();
     expect(await screen.findByText('No delivery zones yet.')).toBeTruthy();
-    await press('Add a zone for the whole of Great Britain');
+    await press('Add a zone for the whole of the UK');
     const post = mockCalls.find((c) => c.method === 'POST');
     expect(post?.path).toBe('/api/venue/shop/delivery-zones');
-    expect(post?.body).toMatchObject({ name: 'Mainland', area: 'gb', price_pence: 395 });
+    expect(post?.body).toMatchObject({ name: 'Standard delivery', area: 'uk', price_pence: 395 });
     expect(typeof post?.body?.client_request_id).toBe('string');
   });
 
-  it('checks the zone sheet, then shows the server area refusal word for word', async () => {
+  it('checks the zone sheet and its postcodes, then shows the server refusal word for word', async () => {
     mockView = shopView({ jurisdiction: 'ni' });
     await show();
-    await screen.findByText('For now, your shop can deliver to addresses in the UK.');
+    await screen.findByText('No delivery zones yet.');
     await press('Add a delivery zone');
     await press('Save zone');
     expect(screen.getByText('Add a name and a price.')).toBeTruthy();
@@ -358,32 +368,74 @@ describe('delivery zones', () => {
 
     await fireEvent.changeText(screen.getByLabelText('Name customers see'), 'Local');
     await fireEvent.changeText(screen.getByLabelText('Price'), '4.50');
-    await press('Great Britain');
-    const refusal = 'You can only deliver to the areas your business is allowed to for now.';
+    await press('Local delivery (postcodes you choose)');
+    await press('Save zone');
+    expect(screen.getByText('Add at least one postcode area or district.')).toBeTruthy();
+    expect(mockCalls.some((c) => c.method === 'POST')).toBe(false);
+    await fireEvent.changeText(screen.getByLabelText('Postcodes it covers'), 'LS6, LS7');
+    const refusal = "These aren't postcode areas or districts: LS7x. Use the first part of a postcode, like LS6.";
     mockHandler = (call) => {
-      if (call.method === 'POST') throw new ApiError(refusal, 409, { error: refusal, code: 'SHOP_DELIVERY_AREA' });
+      if (call.method === 'POST') throw new ApiError(refusal, 400, { error: refusal, code: 'VALIDATION_FAILED' });
       return baseHandler()(call);
     };
     await press('Save zone');
     const post = mockCalls.find((c) => c.method === 'POST');
-    expect(post?.body).toMatchObject({ name: 'Local', area: 'gb', price_pence: 450, free_over_pence: null, estimate_text: null, is_active: true });
+    expect(post?.body).toMatchObject({
+      name: 'Local',
+      area: 'postcodes',
+      postcodes: ['LS6', 'LS7'],
+      price_pence: 450,
+      free_over_pence: null,
+      estimate_text: null,
+      is_active: true,
+    });
     expect(screen.getByText(refusal)).toBeTruthy();
+    // Northern Ireland parcels to Ireland need no customs, so no customs note there.
+    await press('Republic of Ireland');
+    expect(screen.queryByText(/customs form/)).toBeNull();
+  });
+
+  it('starts a Highlands and islands zone from the list, and warns about customs for Ireland', async () => {
+    await show();
+    await screen.findByText('No delivery zones yet.');
+    await press('Add a delivery zone');
+    await press('Highlands and islands');
+    expect(screen.getByLabelText('Name customers see').props.value).toBe('Highlands and islands');
+    expect(screen.getByLabelText('Postcodes it covers').props.value).toBe('HS, IV, ZE');
+    await fireEvent.changeText(screen.getByLabelText('Price'), '12.95');
+    mockHandler = (call) => (call.method === 'POST' ? { zone: {} } : baseHandler()(call));
+    await press('Save zone');
+    expect(mockCalls.find((c) => c.method === 'POST')?.body).toMatchObject({
+      name: 'Highlands and islands',
+      area: 'postcodes',
+      postcodes: ['HS', 'IV', 'ZE'],
+      price_pence: 1295,
+    });
+
+    await press('Add a delivery zone');
+    await press('Republic of Ireland');
+    expect(screen.getByLabelText('Name customers see').props.value).toBe('Republic of Ireland');
+    expect(
+      screen.getByText(
+        'Parcels to the Republic of Ireland need a customs form, and your customer may have to pay import VAT or fees when it arrives. Check with your carrier and your accountant before you offer it.',
+      ),
+    ).toBeTruthy();
   });
 
   it('edits a zone with its version', async () => {
     mockView = shopView({
-      zones: [{ id: 'z1', name: 'Mainland', area: 'gb', price_pence: 395, free_over_pence: null, estimate_text: null, is_active: true, version: 3 }],
+      zones: [{ id: 'z1', name: 'Mainland', area: 'uk', price_pence: 395, free_over_pence: null, estimate_text: null, is_active: true, version: 3 }],
     });
     await show();
     await screen.findByText('Mainland');
     await fireEvent.press(screen.getByLabelText('Edit Mainland'));
-    expect(screen.getByText('Country: Great Britain (the whole country)')).toBeTruthy();
+    expect(screen.getByText('Where it delivers')).toBeTruthy();
     await fireEvent(screen.getByLabelText('Offer this zone'), 'valueChange', false);
     mockHandler = (call) => (call.method === 'PATCH' ? { zone: {} } : baseHandler()(call));
     await press('Save zone');
     expect(mockCalls.find((c) => c.method === 'PATCH')?.body).toEqual({
       name: 'Mainland',
-      area: 'gb',
+      area: 'uk',
       price_pence: 395,
       free_over_pence: null,
       estimate_text: null,

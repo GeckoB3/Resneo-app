@@ -188,10 +188,16 @@ export interface ShopSettings {
   [key: string]: unknown;
 }
 
+/** What a zone covers (web `ZoneArea`): the whole UK, the Republic of Ireland, or chosen UK postcodes. */
+export type ShopZoneArea = 'uk' | 'ie' | 'postcodes';
+
 export interface ShopZone {
   id: string;
   name: string;
-  area: 'gb' | 'ni' | 'custom';
+  area: ShopZoneArea;
+  country?: 'GB' | 'IE';
+  /** A postcode zone's areas, districts, sectors or ranges ("LS6", "PA20-PA49"). */
+  include_postcode_prefixes?: string[];
   price_pence: number;
   free_over_pence: number | null;
   estimate_text: string | null;
@@ -212,7 +218,12 @@ export interface ShopAdminView {
   zones: ShopZone[];
   readiness: ShopReadiness;
   missing_sentence: string;
-  allowed_areas: ('gb' | 'ni')[];
+  /** What builds before 2026-10-10 offered; this build reads `delivery_areas`. */
+  allowed_areas: string[];
+  /** The areas the zone editor offers ([] for an Irish venue until Pass 10). */
+  delivery_areas?: ShopZoneArea[];
+  /** Ready-made postcode lists the editor starts from. */
+  zone_presets?: { highlands: string[] };
   shop_url: string | null;
   templates: Record<'returns' | 'cancellation' | 'delivery' | 'terms', string>;
   policy_updated_at: string | null;

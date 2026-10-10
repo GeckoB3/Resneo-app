@@ -241,7 +241,16 @@ function OrderBody({
     }
   };
 
-  const address = [o.delivery_address?.line1, o.delivery_address?.line2, o.delivery_address?.town, o.delivery_address?.postcode].filter(Boolean).join(', ');
+  // An Irish address ends "Ireland", as the web's `addressLine` writes it.
+  const address = [
+    o.delivery_address?.line1,
+    o.delivery_address?.line2,
+    o.delivery_address?.town,
+    o.delivery_address?.postcode,
+    o.delivery_address?.country === 'IE' ? 'Ireland' : null,
+  ]
+    .filter(Boolean)
+    .join(', ');
   const pastWindow = data.return_window_closed && data.return_window_ends ? orderDate(data.return_window_ends, tz) : null;
 
   return (

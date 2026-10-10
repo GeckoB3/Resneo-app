@@ -54,14 +54,28 @@ export const SHOP_SET_COPY = {
   'set.shop.collection.ready': 'Usually ready within',
   'set.shop.collection.hold': 'Keep orders for (days)',
   'set.shop.delivery.enabled': 'Deliver orders',
-  'set.shop.delivery.area': 'For now, your shop can deliver to addresses in {areas}.',
+  'set.shop.delivery.help':
+    "Add a zone for each place you deliver to, each with its own price. If an address is in a postcode zone and the whole-UK zone, the postcode zone's price is used.",
   'set.shop.rate.add': 'Add a delivery zone',
   'set.shop.rate.starter': 'Add a zone for the whole of {country}',
   'set.shop.rate.edit': 'Edit',
   'set.shop.rate.name': 'Name customers see',
-  'set.shop.rate.name.placeholder': 'Mainland',
-  'set.shop.rate.area': 'Country',
-  'set.shop.rate.area.country': 'The whole country',
+  'set.shop.rate.name.placeholder': 'Standard delivery',
+  'set.shop.rate.area': 'Where it delivers',
+  'set.shop.rate.kind.uk': 'The whole UK',
+  'set.shop.rate.kind.ie': 'Republic of Ireland',
+  'set.shop.rate.kind.local': 'Local delivery (postcodes you choose)',
+  'set.shop.rate.kind.highlands': 'Highlands and islands',
+  'set.shop.rate.name.local': 'Local delivery',
+  'set.shop.rate.name.highlands': 'Highlands and islands',
+  'set.shop.rate.name.ie': 'Republic of Ireland',
+  'set.shop.rate.postcodes': 'Postcodes it covers',
+  'set.shop.rate.postcodes.help':
+    'Use the first part of a postcode, separated by commas: a whole area (LS), a district (LS6), a sector (LS6 2) or a range (LS1-LS9).',
+  'set.shop.rate.postcodes.missing': 'Add at least one postcode area or district.',
+  'set.shop.rate.highlands.note': "These are the postcodes most carriers charge extra for. Check your carrier's list and change it if you need to.",
+  'set.shop.rate.ie.note':
+    'Parcels to the Republic of Ireland need a customs form, and your customer may have to pay import VAT or fees when it arrives. Check with your carrier and your accountant before you offer it.',
   'set.shop.rate.price': 'Price',
   'set.shop.rate.freeOver': 'Free when the order is over (optional)',
   'set.shop.rate.estimate': 'Delivery time',
@@ -88,9 +102,11 @@ export const SHOP_SET_COPY = {
   'shop.freeOver': 'Free delivery on orders over {threshold}. Below that, delivery costs {amount}.',
   'sco.rate.defaultEstimate': 'Delivered within 30 days',
 
-  'area.gb': 'Great Britain',
-  'area.ni': 'Northern Ireland',
-  'area.gbAndNi': 'the UK',
+  'area.uk': 'The whole UK',
+  'area.ie': 'Republic of Ireland',
+  'area.postcodes': 'Postcodes {list}',
+  'area.postcodesMore': 'Postcodes {list} and {count} more',
+  'areas.uk': 'the UK',
   'ready.60': '1 working hour',
   'ready.120': '2 working hours',
   'ready.240': '4 working hours',
@@ -107,18 +123,42 @@ export function shT(id: ShopSetCopyId, vars: CopyVars = {}): string {
 /** The "Usually ready within" choices, in the web's order. */
 export const READY_OPTIONS = [60, 120, 240, 480, 960] as const;
 
-/** A delivery area's name (web: `ni` is Northern Ireland, anything else Great Britain). */
-export function areaName(area: string): string {
-  return shT(area === 'ni' ? 'area.ni' : 'area.gb');
+/** What a zone covers, as the web's zone row says it: "The whole UK", "Postcodes LS6, LS7 and 3 more". */
+export function zoneAreaText(zone: { area: string; include_postcode_prefixes?: string[] }): string {
+  if (zone.area === 'ie') return shT('area.ie');
+  if (zone.area !== 'postcodes') return shT('area.uk');
+  const list = zone.include_postcode_prefixes ?? [];
+  return list.length > 4
+    ? shT('area.postcodesMore', { list: list.slice(0, 4).join(', '), count: list.length - 4 })
+    : shT('area.postcodes', { list: list.join(', ') });
 }
 
-/**
- * The delivery area sentence exactly as the web's card shows it: nothing for an Ireland venue,
- * "the UK" for a Northern Ireland venue, Great Britain otherwise.
- */
-export function deliveryAreaSentence(jurisdiction: string): string | null {
-  if (jurisdiction === 'ie') return null;
-  return shT('set.shop.delivery.area', { areas: shT(jurisdiction === 'ni' ? 'area.gbAndNi' : 'area.gb') });
+/** The four kinds the zone editor offers (web `ZoneKind`); local and Highlands are both postcode zones. */
+export type ZoneKind = 'uk' | 'ie' | 'local' | 'highlands';
+
+/** Which kind an existing zone is: a postcode zone is the Highlands one while its list is unchanged. */
+export function zoneKind(zone: { area: string; include_postcode_prefixes?: string[] }, highlands: readonly string[]): ZoneKind {
+  if (zone.area === 'ie') return 'ie';
+  if (zone.area !== 'postcodes') return 'uk';
+  const list = zone.include_postcode_prefixes ?? [];
+  const same = list.length === highlands.length && list.every((p, i) => p === highlands[i]);
+  return same ? 'highlands' : 'local';
+}
+
+/** The name a new zone of this kind starts with ('' for the whole UK). */
+export function zoneKindName(kind: ZoneKind): string {
+  if (kind === 'local') return shT('set.shop.rate.name.local');
+  if (kind === 'highlands') return shT('set.shop.rate.name.highlands');
+  if (kind === 'ie') return shT('set.shop.rate.name.ie');
+  return '';
+}
+
+/** What the venue typed, one entry per postcode prefix ("LS6, LS7" becomes ["LS6", "LS7"]). */
+export function postcodeEntries(text: string): string[] {
+  return text
+    .split(/[,;\n]+/)
+    .map((p) => p.trim())
+    .filter(Boolean);
 }
 
 /** Money in the venue's currency (web `formatMoney(p, currency)`). */
@@ -135,11 +175,11 @@ export function shopMoney(pence: number, currency: string | null | undefined): s
 
 /** One zone's line under its name: area, price, free over, delivery time (web zone row). */
 export function zoneSummary(
-  zone: { area: string; price_pence: number; free_over_pence: number | null; estimate_text: string | null },
+  zone: { area: string; include_postcode_prefixes?: string[]; price_pence: number; free_over_pence: number | null; estimate_text: string | null },
   currency: string | null | undefined,
 ): string {
   const money = (p: number) => shopMoney(p, currency);
-  const parts = [areaName(zone.area), money(zone.price_pence)];
+  const parts = [zoneAreaText(zone), money(zone.price_pence)];
   if (zone.free_over_pence != null) {
     parts.push(shT('shop.freeOver', { threshold: money(zone.free_over_pence), amount: money(zone.price_pence) }));
   }

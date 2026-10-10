@@ -193,6 +193,15 @@ function CardReadersBody({ venueName }: { venueName: string }) {
             {readersT('set.readers.inPersonOff')}
           </MessageBox>
         ) : null}
+        {/* Phones as the card reader, as the web's Card readers section says it. */}
+        {list.data ? (
+          <MessageBox tone="info" role="note">
+            <Text variant="bodySmall" style={styles.noteTitle}>
+              {readersT('set.readers.phone.title')}
+            </Text>
+            {['', readersT('set.readers.phone.body'), `1. ${readersT('set.readers.phone.step1')}`, `2. ${readersT('set.readers.phone.step2')}`].join('\n')}
+          </MessageBox>
+        ) : null}
         {list.data && canTakeCards && readers.length === 0 ? (
           <Text variant="bodySmall" tone="secondary">
             {readersT('set.readers.empty')}
@@ -262,9 +271,6 @@ function CardReadersBody({ venueName }: { venueName: string }) {
         })}
 
         <View style={styles.notes}>
-          <Text variant="bodySmall" tone="secondary">
-            {readersT('set.readers.ownReader')}
-          </Text>
           <Text variant="bodySmall" tone="secondary">
             {readersT('set.readers.getOne')}
           </Text>
@@ -416,9 +422,6 @@ function AddReaderSheet({
         <Text variant="bodySmall">2. {readersT('set.readers.step2')}</Text>
         <Text variant="bodySmall">3. {readersT('set.readers.step3')}</Text>
       </View>
-      <Text variant="caption" tone="muted">
-        {readersT('set.readers.ownReader')}
-      </Text>
       <Input
         label={readersT('set.readers.code')}
         accessibilityLabel={readersT('set.readers.code')}
@@ -496,4 +499,5 @@ const styles = StyleSheet.create({
   reader: { gap: spacing.xs, paddingVertical: spacing.sm },
   notes: { gap: spacing.md },
   steps: { gap: spacing.xs },
+  noteTitle: { fontWeight: '600' },
 });

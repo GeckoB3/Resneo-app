@@ -75,7 +75,7 @@ export interface ShopOrderDetail {
     fulfilment_type: 'collection' | 'delivery' | null;
     fulfilment_status: FulfilmentStatus | string | null;
     pickup_code: string | null;
-    delivery_address: { line1?: string | null; line2?: string | null; town?: string | null; postcode?: string | null } | null;
+    delivery_address: { line1?: string | null; line2?: string | null; town?: string | null; postcode?: string | null; country?: 'GB' | 'IE' | null } | null;
     carrier: string | null;
     tracking_number: string | null;
     tracking_url: string | null;

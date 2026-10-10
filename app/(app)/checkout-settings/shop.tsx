@@ -40,8 +40,6 @@ import { smT } from '@/lib/pos/settings-more/copy';
 import { settingsMoreKeys, useSettingsQuery, useSettingsSend } from '@/lib/pos/settings-more/hooks';
 import {
   READY_OPTIONS,
-  areaName,
-  deliveryAreaSentence,
   shT,
   zoneSummary,
   type ShopSetCopyId,
@@ -239,7 +237,7 @@ function ShopSettingsBody({ data }: { data: PosSettingsResponse }) {
       await send(settingsMorePaths.deliveryZones, 'POST', {
         client_request_id: starterRequestId.current,
         name: shT('set.shop.rate.name.placeholder'),
-        area: 'gb',
+        area: 'uk',
         price_pence: 395,
       });
       starterRequestId.current = newPaymentAttemptId();
@@ -274,7 +272,8 @@ function ShopSettingsBody({ data }: { data: PosSettingsResponse }) {
 
   const readiness = view.readiness;
   const open = view.settings.shop_open;
-  const areaSentence = deliveryAreaSentence(String(view.settings.jurisdiction));
+  const deliveryAreas = view.delivery_areas ?? [];
+  const areaSentence = deliveryAreas.length > 0 ? shT('set.shop.delivery.help') : null;
   const fieldError = (path: string) => fieldErrorFor(fields, path);
 
   return (
@@ -471,15 +470,17 @@ function ShopSettingsBody({ data }: { data: PosSettingsResponse }) {
                   </View>
                 )}
                 <View style={styles.wrap}>
-                  {view.zones.length === 0 && view.allowed_areas.includes('gb') ? (
+                  {view.zones.length === 0 && deliveryAreas.includes('uk') ? (
                     <Button
-                      label={shT('set.shop.rate.starter', { country: areaName('gb') })}
+                      label={shT('set.shop.rate.starter', { country: shT('areas.uk') })}
                       size="sm"
                       loading={starterBusy}
                       onPress={() => void addStarterZone()}
                     />
                   ) : null}
-                  <Button label={shT('set.shop.rate.add')} variant="secondary" size="sm" onPress={() => openZone(null)} />
+                  {deliveryAreas.length > 0 ? (
+                    <Button label={shT('set.shop.rate.add')} variant="secondary" size="sm" onPress={() => openZone(null)} />
+                  ) : null}
                 </View>
                 {starterError ? (
                   <MessageBox tone="danger" role="alert">
@@ -547,7 +548,8 @@ function ShopSettingsBody({ data }: { data: PosSettingsResponse }) {
           key={zoneSheet.n}
           visible
           zone={zoneSheet.zone}
-          allowedAreas={view.allowed_areas}
+          highlands={view.zone_presets?.highlands ?? []}
+          importNote={view.settings.jurisdiction !== 'ni'}
           onClose={() => setZoneSheet(null)}
           onSaved={async () => {
             setZoneSheet(null);
