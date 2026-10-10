@@ -109,6 +109,7 @@ import {
   READER_CONNECT_TIMEOUT_MS,
   READER_DISCOVERY_TIMEOUT_MS,
 } from '@/lib/payments/reader-timeouts';
+import { TAP_TO_PAY_DEVELOPER_OPTIONS_MESSAGE } from '@/lib/payments/tap-to-pay-errors';
 import { __resetTapToPayConnectForTests, useTapToPayReader } from '@/lib/payments/terminal';
 import { __resetTerminalInitForTests } from '@/lib/payments/terminal-sdk';
 
@@ -223,6 +224,23 @@ describe('useTapToPayReader', () => {
 
     expect(res.ok).toBe(false);
     expect(res.error).toBe('NFC is switched off.');
+  });
+
+  it('says how to fix a discovery refused because Developer options are on', async () => {
+    mockApi.discoverReaders.mockResolvedValue({
+      error: {
+        code: 'TAP_TO_PAY_INSECURE_ENVIRONMENT',
+        nativeErrorCode: 'TAP_TO_PAY_INSECURE_ENVIRONMENT',
+        message: 'Developer options must not be enabled when using the production version of the Tap to Pay reader.',
+      },
+    });
+    const { result } = await renderHook(() => useTapToPayReader());
+
+    const res = await act(async () => result.current.connect());
+
+    expect(res).toEqual({ ok: false, error: TAP_TO_PAY_DEVELOPER_OPTIONS_MESSAGE, reason: 'developer_options_on' });
+    expect(result.current.error).toBe(TAP_TO_PAY_DEVELOPER_OPTIONS_MESSAGE);
+    expect(mockApi.connectReader).not.toHaveBeenCalled();
   });
 
   it('returns the connect failure reason to the caller', async () => {

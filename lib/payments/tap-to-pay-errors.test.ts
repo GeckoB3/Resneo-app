@@ -1,4 +1,5 @@
 import {
+  TAP_TO_PAY_DEVELOPER_OPTIONS_MESSAGE,
   TAP_TO_PAY_UPDATE_IOS_MESSAGE,
   classifyTapToPayError,
   iosOlderThanTapToPayFloor,
@@ -21,7 +22,12 @@ describe('classifyTapToPayError', () => {
     expect(classifyTapToPayError({ nativeErrorCode: native })).toBe(reason);
   });
 
+  it('reads Android’s Developer options refusal by the code’s name', () => {
+    expect(classifyTapToPayError({ nativeErrorCode: 'TAP_TO_PAY_INSECURE_ENVIRONMENT' })).toBe('developer_options_on');
+  });
+
   it('leaves everything else unclassified', () => {
+    expect(classifyTapToPayError({ nativeErrorCode: 'TAP_TO_PAY_NFC_DISABLED' })).toBeNull();
     expect(classifyTapToPayError({ nativeErrorCode: '9999' })).toBeNull();
     expect(classifyTapToPayError(undefined)).toBeNull();
     expect(classifyTapToPayError({} as never)).toBeNull();
@@ -45,6 +51,15 @@ describe('tapToPayFailureMessage', () => {
 
   it('uses Apple’s name for the feature verbatim', () => {
     expect(tapToPayFailureMessage('icloud_required', true)).toContain('Tap to Pay on iPhone');
+  });
+
+  it('tells staff to turn Developer options off, and where, for admins and everyone else', () => {
+    for (const isAdmin of [true, false]) {
+      const message = tapToPayFailureMessage('developer_options_on', isAdmin);
+      expect(message).toBe(TAP_TO_PAY_DEVELOPER_OPTIONS_MESSAGE);
+      expect(message).toMatch(/Developer options.*Settings app.*switch at the top/);
+      expect(message).not.toContain('iPhone');
+    }
   });
 });
 

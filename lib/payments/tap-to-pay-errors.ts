@@ -32,6 +32,13 @@ import { TAP_TO_PAY_ON_IPHONE } from '@/lib/payments/tap-to-pay-copy';
  *    — this iOS is too old for Tap to Pay on iPhone here. Apple requires the app
  *    to tell the merchant to update iOS (checklist 1.4). See
  *    `isOsVersionNotSupported` for how it arrives.
+ *  - `developer_options_on` (Android `TAP_TO_PAY_INSECURE_ENVIRONMENT`): Developer
+ *    options, or USB or Wi-Fi debugging, are on. Stripe refuses the phone's own
+ *    reader at discovery when they are, in test mode as well as live; only the
+ *    simulated reader allows them (SDK changelog). On Android `nativeErrorCode`
+ *    is the code's name. The same code during PIN entry means a screen recording,
+ *    an accessibility service or an overlay instead, but PIN entry never reaches
+ *    this classifier: it runs only on the support probe, discovery and connect.
  */
 export type TapToPayFailureReason =
   | 'terms_not_accepted'
@@ -44,7 +51,8 @@ export type TapToPayFailureReason =
   | 'device_unsupported'
   | 'device_banned'
   | 'merchant_blocked'
-  | 'os_update_required';
+  | 'os_update_required'
+  | 'developer_options_on';
 
 const NATIVE_REASONS: Record<string, TapToPayFailureReason> = {
   '3930': 'terms_not_accepted',
@@ -56,6 +64,8 @@ const NATIVE_REASONS: Record<string, TapToPayFailureReason> = {
   '2910': 'device_unsupported',
   '3920': 'device_banned',
   '3950': 'merchant_blocked',
+  // Android sends the code's name rather than a number.
+  TAP_TO_PAY_INSECURE_ENVIRONMENT: 'developer_options_on',
 };
 
 /**
@@ -162,8 +172,18 @@ export function tapToPayFailureMessage(reason: TapToPayFailureReason, isAdmin: b
       return `${TAP_TO_PAY_ON_IPHONE} has been blocked for this business. Contact ResNeo support, and take the payment with a card reader instead.`;
     case 'os_update_required':
       return TAP_TO_PAY_UPDATE_IOS_MESSAGE;
+    case 'developer_options_on':
+      return TAP_TO_PAY_DEVELOPER_OPTIONS_MESSAGE;
   }
 }
 
 /** Apple 1.4 / HIG: recommend updating to the latest iOS, and say where. */
 export const TAP_TO_PAY_UPDATE_IOS_MESSAGE = `${TAP_TO_PAY_ON_IPHONE} needs a newer version of iOS. Update this iPhone to the latest iOS in Settings → General → Software Update, then try again.`;
+
+/**
+ * Android only. Where Developer options sit varies by maker (the foot of Settings
+ * on Samsung, under System on Pixel), so this names the screen, not a path. The
+ * switch at its top turns USB and Wi-Fi debugging off with it.
+ */
+export const TAP_TO_PAY_DEVELOPER_OPTIONS_MESSAGE =
+  "Tap to Pay can't run on this phone while Developer options are on. Open the Settings app, find Developer options and turn off the switch at the top, then try again.";

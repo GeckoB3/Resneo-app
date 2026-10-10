@@ -17,6 +17,24 @@ on the other, and iOS 1.0.4 is the worked example.
 
 ## Unreleased OTA: POS app step 1 (iOS 1.2.0 / Android 1.1.2)
 
+### Tap to Pay on Android with Developer options on (owner, 2026-10-10)
+
+Stripe refuses Tap to Pay on an Android phone with Developer options (or USB or Wi-Fi debugging)
+on, in test mode as well as live, and fails reader discovery with `TAP_TO_PAY_INSECURE_ENVIRONMENT`.
+Staff saw Stripe's own text. The app now says "Tap to Pay can't run on this phone while Developer
+options are on. Open the Settings app, find Developer options and turn off the switch at the top,
+then try again." It applies to both card paths: Take payment on a booking, and the card step at
+Checkout.
+
+- `classifyTapToPayError` maps Android's code name to a new `developer_options_on` reason
+  (`lib/payments/tap-to-pay-errors.ts`).
+- `useTapToPayReader().connect` now classifies discovery errors as well as connect errors, through
+  one helper (`lib/payments/terminal.ts`). Before, discovery only recognised iOS's "update iOS".
+  The same code during PIN entry (a screen recording, an accessibility service or an overlay) is
+  not classified, so it still shows Stripe's message.
+
+JavaScript only.
+
 ### Checkout set-up in the app (owner, 2026-10-09)
 
 More's "On the web" group is now "Checkout set-up", and every row opens an app screen with the

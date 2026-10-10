@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
-import type { Reader } from '@stripe/stripe-terminal-react-native';
+import type { Reader, StripeError } from '@stripe/stripe-terminal-react-native';
 
 import { shouldSimulateCardReaders } from '@/lib/env';
 import {
@@ -347,6 +347,19 @@ export function useTapToPayReader(): UseTapToPayReader {
         return reason ? { ok: false, error: message, reason } : { ok: false, error: message };
       };
 
+      /**
+       * A discovery or connect error, in staff's words when its reason is known
+       * (Android's Developer options fail at discovery, Apple's terms at connect),
+       * else the SDK's own message.
+       */
+      const failWithError = (error: StripeError, fallback: string): TapToPayConnectResult => {
+        const reason = classifyTapToPayError(error);
+        if (reason === 'os_update_required') markOsUpdateRequired();
+        return reason
+          ? fail(tapToPayFailureMessage(reason, options.tosAcceptancePermitted !== false), reason)
+          : fail(terminalErrorMessage(error, fallback));
+      };
+
       // Already connected from a previous payment in this session — but ONLY
       // reuse the phone's own reader. A Bluetooth reader may be connected from an
       // earlier payment; collecting through it after the staff member chose "Tap
@@ -462,11 +475,7 @@ export function useTapToPayReader(): UseTapToPayReader {
           discoveringRef.current = false;
           if (discovery?.error) {
             pendingReaderRef.current = null;
-            if (isOsVersionNotSupported(discovery.error)) {
-              markOsUpdateRequired();
-              return fail(tapToPayFailureMessage('os_update_required', true), 'os_update_required');
-            }
-            return fail(terminalErrorMessage(discovery.error, 'Could not find a card reader.'));
+            return failWithError(discovery.error, 'Could not find a card reader.');
           }
 
           const reader = await withTimeout(
@@ -492,11 +501,7 @@ export function useTapToPayReader(): UseTapToPayReader {
             'The card reader did not finish starting up. Try again.',
           );
           if (connected?.error) {
-            const reason = classifyTapToPayError(connected.error);
-            if (reason === 'os_update_required') markOsUpdateRequired();
-            return reason
-              ? fail(tapToPayFailureMessage(reason, options.tosAcceptancePermitted !== false), reason)
-              : fail(terminalErrorMessage(connected.error, 'Could not connect the card reader.'));
+            return failWithError(connected.error, 'Could not connect the card reader.');
           }
 
           setStatus('ready');
