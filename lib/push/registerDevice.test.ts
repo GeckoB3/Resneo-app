@@ -131,6 +131,30 @@ describe('POS app step 2: the build and what the phone can do with a card', () =
     expect(mockApiFetch).toHaveBeenCalledTimes(1);
   });
 
+  it('sends a capability learned while the first registration was in flight (the lost Tap to Pay report)', async () => {
+    let finishFirst: (v: unknown) => void = () => {};
+    mockApiFetch.mockImplementationOnce(() => new Promise((resolve) => { finishFirst = resolve; }));
+    mockApiFetch.mockResolvedValueOnce({ device: { id: 'dev-7' } });
+    const registering = registerCurrentDeviceForPush({ accessToken: 'token-A', audience: 'staff' });
+    // Let the registration build its payload (no card fields yet) and start the POST.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mockApiFetch).toHaveBeenCalledTimes(1);
+    expect(payloadOf(mockApiFetch.mock.calls[0])).not.toHaveProperty('card_capability');
+    // The reporter learns the phone takes cards before the POST answers: nothing to resend on yet.
+    await expect(
+      reportDeviceCardCapability('token-A', { card_capability: 'tap_to_pay', tap_to_pay_terms_accepted: true }),
+    ).resolves.toBe(false);
+    finishFirst({ device: { id: 'dev-7' } });
+    await registering;
+    expect(mockApiFetch).toHaveBeenCalledTimes(2);
+    expect(payloadOf(mockApiFetch.mock.calls[1])).toMatchObject({ card_capability: 'tap_to_pay', tap_to_pay_terms_accepted: true });
+    // And it is now recorded as sent, so the same answer sends nothing more.
+    await expect(
+      reportDeviceCardCapability('token-A', { card_capability: 'tap_to_pay', tap_to_pay_terms_accepted: true }),
+    ).resolves.toBe(false);
+    expect(mockApiFetch).toHaveBeenCalledTimes(2);
+  });
+
   it('carries a capability known before registration in the first registration', async () => {
     await reportDeviceCardCapability('token-A', { card_capability: 'wisepad', tap_to_pay_terms_accepted: null });
     expect(mockApiFetch).not.toHaveBeenCalled();

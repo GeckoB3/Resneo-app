@@ -108,6 +108,9 @@ export async function registerCurrentDeviceForPush(
     return { registered: false, pushToken: null, reason: 'no-token' };
   }
 
+  // The card report this registration carries. The reporter can learn a new one while the POST is
+  // in flight; recording the newer one as sent would leave the server with no card fields for good.
+  const reportInPayload = cardReport;
   const payload: Record<string, unknown> = {
     platform,
     audience: input.audience,
@@ -129,10 +132,14 @@ export async function registerCurrentDeviceForPush(
     });
     // Remember the row so signing out can remove it — see `unregisterDevice`.
     registeredDeviceId = response?.device?.id ?? null;
-    lastRegistration = { payload, sentReport: cardReport };
+    lastRegistration = { payload, sentReport: reportInPayload };
   } catch (error) {
     console.warn('[push] /api/v1/me/devices POST failed:', error);
     return { registered: false, pushToken, reason: 'error' };
+  }
+  // A report that arrived while the POST was in flight goes now, on the same row.
+  if (cardReport && !sameCardReport(reportInPayload ?? NO_CARD, cardReport)) {
+    await reportDeviceCardCapability(input.accessToken, cardReport);
   }
 
   return { registered: true, pushToken };
