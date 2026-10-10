@@ -1,5 +1,96 @@
 # Go-live check — Resneo app
 
+## Run 2026-10-10: the POS app, iOS 1.2.0 and Android 1.1.2, from `d05319c`
+
+**Scope:** `5aeb548..d05319c`, 68 commits: the `pos` branch (POS app steps 1 to 5, checkout set-up,
+products and stock, reports, orders, data import, and the web parity items beside them), the
+Android Tap to Pay Developer options message (`fc4b3bb`) and the navy Check out buttons
+(`d05319c`). The user-facing lines are the "Unreleased OTA: POS app step 1" entry in
+`CHANGELOG.md`. Every POS screen, tile and button is behind the venue's `pos_enabled`.
+
+**Verdict: cleared to publish, one update per platform (§6).** One thing left for the owner: the
+three function-only migrations (§4) cannot be seen from outside.
+
+### 1. Version and reach
+
+| Check | Result |
+|---|---|
+| Published tip | `5aeb548` on both: group `57d774dc` (Android, runtime 1.1.2) and `e835441e` (iOS, runtime 1.2.0), "ResNeo POS Pass 0 follow-ups", 2026-10-08 (`eas update:list --branch production`) |
+| Runtimes | root `version` 1.2.0 (iOS), `android.version` 1.1.2; `appVersion` policy |
+| App Store | 1.2.0 released 2026-10-07 22:28 UTC (iTunes lookup, GB). iOS 1.1.2 installs do not get this update; production `app-version.json` has `ios.latest` 1.2.0, so they are asked to update |
+| Store binaries | Android build 18 from `287a871`; iOS 1.2.0 from `15a8e96` |
+
+### 2. Nothing native moved
+
+`git diff 5aeb548..HEAD` over `package.json`, `package-lock.json`, `app.json`, `app.config.js`,
+`eas.json`, `metro.config.js`, `babel.config.js`, `modules`, `patches` and `plugins` is empty. Since
+the stores' binaries: iOS (`15a8e96`) nothing; Android (`287a871`) only the iOS-only set already
+cleared on 2026-10-07 and shipped on 1.1.2 since (the iOS entitlement and team id, the
+`tap-to-pay-education` module, the two `patches/expo-modules-*`). The camera, order sound and
+`/account/orders` link the POS steps use have been in the binaries since 1.1.2. Installed packages
+match the lock: 1,244 checked, **0 drift**.
+
+### 3. Verified on this machine
+
+- `tsc --noEmit`: clean. `jest`: **464 suites / 4,301 tests pass**. `expo lint`: 0 errors, 434
+  warnings.
+- EAS `production` environment (`eas env:list`): `EXPO_PUBLIC_API_URL` www.resneo.com,
+  `EXPO_PUBLIC_SUPABASE_URL` njualfobtudvlugqkqho (live), the live publishable key, `pk_live_`
+  Stripe key, Sentry DSN, all PUBLIC. No `TERMINAL_SIMULATED`, `ALLOW_SCREENSHOTS` or
+  `TAP_TO_PAY_IOS`. `NODE_ENV` unset in the shell.
+- Cleared-cache export under `eas env:exec production`, both Hermes bundles (14 MB each):
+
+| Marker | iOS | Android |
+|---|---|---|
+| `njualfobtudvlugqkqho.supabase.co` (live) / live publishable key | present / present | present / present |
+| `zkppmyyvkjvbsvemakbb` (dev) / dev publishable key | none / none | none / none |
+| `www.resneo.com` | present | present |
+| `pk_live_` / `pk_test_` | present / none | present / none |
+| `ingest.de.sentry.io` | present | present |
+| `192.168.` | none | none |
+| `reserve-ni.vercel.app` | once: the `getWebUrl()` fallbacks (settings, orders, packing slip, assistant links), unreachable with the API URL set | same |
+| `localhost:3000` | once: expo-router's `head/url.js` fallback, a library string | none |
+| `EXPO_PUBLIC_TERMINAL_SIMULATED` / `ALLOW_SCREENSHOTS` / `TAP_TO_PAY_IOS` | inlined away | inlined away |
+| New code: the Developer options message, `TAP_TO_PAY_INSECURE_ENVIRONMENT` | present | present |
+
+### 4. Web
+
+- Web `main` and `staging` are the same commit, `0d92c653` (#224, 2026-10-10 10:48 UTC). Vercel's
+  Production deployment of it: `success`, 10:51 UTC.
+- Routes: every `/api/...` path the batch adds was probed unauthenticated on www.resneo.com: 115
+  extracted, then the base paths behind query-string templates and every action segment the app
+  sends (46). All answer 401 or 405 (exist). The only 404s were extraction artefacts (comment
+  globs, query templates) and eight sale "actions" that are labels sent with an explicit path;
+  staging answers the same.
+- Live database (PostgREST, publishable key, `limit=0`, no rows read), migrations `20270301` on:
+  all **59 new tables** and **27 added columns** exist (`42501` permission denied or 200). Controls:
+  a made-up table answers `PGRST205`, a made-up column `42703`, even on a table anon cannot read.
+- **Not visible from outside:** `20270322120000_pos_engine_request_ids` (five `pos_*` payment and
+  refund functions take request ids), `20270322120100_pos_invariant_report_folded` and
+  `20270323120000_retail_track_all_stock` only replace functions; PostgREST hides functions anon
+  cannot execute. Their tables (through `20270321`) are all live. Owner to confirm with
+  `npx supabase migration list --linked` in `C:\Resneo`.
+
+### 5. Device testing
+
+- The owner built an Android preview APK from `main` and started testing on 2026-10-10. Tap to
+  Pay stopped at Stripe's Developer options check, which led to `fc4b3bb`. `fc4b3bb` and `d05319c`
+  have not been on a device.
+- iOS: POS not rehearsed on a device.
+
+### 6. Publish
+
+```
+npx eas-cli update --channel production --platform ios --environment production --clear-cache --message "ResNeo POS app: Checkout, stock, orders and data import"
+npx eas-cli update --channel production --platform android --environment production --clear-cache --message "ResNeo POS app: Checkout, stock, orders and data import"
+```
+
+Rolling back returns each platform to the previous group (`e835441e` / `57d774dc`):
+`npx eas-cli update:republish --group <group> --platform <platform>`, or to the store bundle with
+`npx eas-cli update:roll-back-to-embedded --channel production --runtime-version <1.2.0 or 1.1.2>`.
+
+---
+
 ## Run 2026-10-07: first OTA on 1.1.2, both platforms, from `3610a3c`
 
 **Scope:** everything after the 1.1.2 store build (`287a871`): PR #5 (Tap to Pay on iPhone
