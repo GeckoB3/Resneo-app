@@ -25,6 +25,7 @@ import { useAuth } from '@/providers/AuthProvider';
 import { useTapToPay } from '@/providers/TapToPayProvider';
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
+import { useOverlayOpen } from '@/lib/ui/open-overlays';
 
 /**
  * "Tap to Pay on iPhone is here": the full-screen introduction every eligible
@@ -62,6 +63,7 @@ export function TapToPayIntroduction() {
   const [turnedOn, setTurnedOn] = useState(false);
 
   const eligible = tapToPay.applies && tapToPay.supported === true && userId != null;
+  useOverlayOpen(open && !isLocked);
 
   useEffect(() => {
     if (!eligible || !userId) return;

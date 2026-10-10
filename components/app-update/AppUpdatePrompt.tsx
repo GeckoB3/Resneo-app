@@ -14,6 +14,7 @@ import { decideUpdate, type UpdateDecision } from '@/lib/app-update/version-poli
 import { useAppLock } from '@/providers/AppLockProvider';
 import { elevation, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
+import { useOverlayOpen } from '@/lib/ui/open-overlays';
 
 /** Coming back to the app re-checks, but not more often than this. */
 export const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
@@ -65,6 +66,7 @@ export function AppUpdatePrompt() {
     return () => subscription.remove();
   }, [check]);
 
+  useOverlayOpen(decision.kind !== 'none' && !isLocked);
   if (decision.kind === 'none') return null;
   const required = decision.kind === 'required';
 

@@ -10,6 +10,7 @@ import { Text } from '@/components/ui/Text';
 import { acceptScan, NEW_SCAN_GATE, PRODUCT_BARCODE_TYPES, type ScanGate } from '@/lib/retail/scan';
 import { AppLockCover } from '@/providers/AppLockProvider';
 import { radius, spacing } from '@/theme/index';
+import { useOverlayOpen } from '@/lib/ui/open-overlays';
 
 /**
  * Scanning with the phone's camera (POS app step 4 over the air, UX spec §13.6 "Camera scanning";
@@ -53,6 +54,7 @@ export function CameraScanner({
   paused?: boolean;
   barcodeTypes?: readonly BarcodeType[];
 }) {
+  useOverlayOpen(visible);
   return (
     <Modal
       visible={visible}

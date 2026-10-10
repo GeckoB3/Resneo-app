@@ -5,6 +5,7 @@ import { StyleSheet, View } from 'react-native';
 import { StaffRequired } from '@/components/auth/StaffRequired';
 import { TapToPayIntroduction } from '@/components/payments/TapToPayIntroduction';
 import { CardCapabilityReporter } from '@/components/pos/CardCapabilityReporter';
+import { CollectRequestPrompt } from '@/components/pos/CollectRequestPrompt';
 import { CollectRequestsBanner } from '@/components/pos/CollectRequests';
 import { PendingPushRouteHandler } from '@/components/push/PendingPushRouteHandler';
 import { LoadingState } from '@/components/ui/LoadingState';
@@ -71,6 +72,8 @@ export default function AppLayout() {
       {/* POS app step 2: a sale the web till sent to this phone (renders nothing without POS), and
           what this phone can do with a card, sent with its push registration (plan §4.36). */}
       <CollectRequestsBanner />
+      {/* The same, offered at once when the push arrives while the app is open. */}
+      <CollectRequestPrompt />
       <CardCapabilityReporter />
       <Stack
       screenOptions={{

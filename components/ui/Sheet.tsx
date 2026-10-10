@@ -13,6 +13,7 @@ import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-cont
 
 import { useKeyboardInset } from '@/components/ui/useKeyboardInset';
 import { useReduceMotion } from '@/lib/motion';
+import { useOverlayOpen } from '@/lib/ui/open-overlays';
 import { SHEET_MAX_WIDTH, useContentMaxWidth } from '@/lib/responsive';
 import { AppLockCover } from '@/providers/AppLockProvider';
 import { radius, spacing } from '@/theme/index';
@@ -71,6 +72,8 @@ export function Sheet({
   // one edge and its buttons at the other. Undefined on a phone, where the cap
   // never bites.
   const sheetMaxWidth = useContentMaxWidth(SHEET_MAX_WIDTH);
+  // Counted while open, so an in-app prompt knows it cannot appear over this window.
+  useOverlayOpen(visible);
 
   // Drag-to-dismiss: a downward pan on the handle/header translates the whole
   // sheet down; releasing past a distance/velocity threshold closes it,

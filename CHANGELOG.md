@@ -17,6 +17,25 @@ on the other, and iOS 1.0.4 is the worked example.
 
 ## Unreleased OTA: POS app step 1 (iOS 1.2.0 / Android 1.1.2)
 
+### A sale sent to this phone pops up in the app (owner, 2026-10-10)
+
+When the web till sends a sale to this phone while the app is open, the app now offers it at once:
+the phone buzzes and plays the sound, and a sheet shows "Take £45.00", who sent it from which till
+and for whom, with "Take payment" (opens the payment screen) and "Not now" (the "Waiting for you"
+banner stays). It never opens the payment screen by itself. The phone's own banner is left out
+then, so nobody sees it twice.
+
+It stays out of the way while a sheet or other full-screen window is open (a payment in progress,
+a client holding the phone for a tip), on the payment screen itself, while the app is locked, and
+for another venue's request; the phone's own banner shows instead, as before. Either way the push
+now makes the request list read again at once, so the blue banner no longer waits up to 20 seconds.
+
+- `components/pos/CollectRequestPrompt.tsx` (new), mounted beside the banner in `app/(app)/_layout.tsx`.
+- `lib/push/collect-prompt.ts` (new): the notification handler offers the push to the prompt and
+  hides the banner only when the prompt takes it.
+- `lib/ui/open-overlays.ts` (new): `Sheet`, the update prompt, the Tap to Pay introduction and the
+  camera scanner count themselves while open.
+
 ### The client chooses the tip on their side of the phone (owner, 2026-10-10)
 
 Before a Tap to Pay or Bluetooth reader payment, the tip screen used to sit inside staff's payment

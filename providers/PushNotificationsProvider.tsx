@@ -1,7 +1,8 @@
 import { useEffect, useRef, type ReactNode } from 'react';
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 
 import { isBackendConfigured } from '@/lib/env';
+import { offerCollectPrompt } from '@/lib/push/collect-prompt';
 import { Notifications } from '@/lib/push/notificationsModule';
 import { extractPushRoute } from '@/lib/push/extract-push-route';
 import { setPendingPushRoute } from '@/lib/push/pendingNotificationRoute';
@@ -319,12 +320,17 @@ export function PushNotificationsProvider({ children }: PushNotificationsProvide
         const notifications = Notifications;
 
         notifications.setNotificationHandler({
-          handleNotification: async () => ({
-            shouldShowBanner: true,
-            shouldShowList: true,
-            shouldPlaySound: true,
-            shouldSetBadge: true,
-          }),
+          handleNotification: async (notification) => {
+            // A sale sent to this phone while the app is open: the in-app prompt shows it, with
+            // the sound, so the phone's own banner is left out (owner, 2026-10-10). When the
+            // prompt can't show (a sheet is open, another venue, the collect screen), the banner
+            // shows as before.
+            const data = notification.request.content.data as Record<string, unknown> | null | undefined;
+            if (AppState.currentState === 'active' && offerCollectPrompt(data)) {
+              return { shouldShowBanner: false, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false };
+            }
+            return { shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: true };
+          },
         });
 
         await configureAndroidChannels(notifications);

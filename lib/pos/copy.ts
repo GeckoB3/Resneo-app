@@ -717,6 +717,9 @@ export const POS_COPY = {
   'app.collect.row.any': 'For anyone',
   'app.collect.row.expires': '{seconds} seconds left to take it',
   'app.collect.title': 'Take {amount}',
+  // The in-app prompt when one arrives while the app is open (added 2026-10-10, owner).
+  'app.collect.prompt.take': 'Take payment',
+  'app.collect.prompt.later': 'Not now',
   'app.collect.for': 'Sale {saleNo} at {till}, sent by {staffName}',
   'app.collect.client': 'For {clientName}',
   'app.collect.processing': 'Processing',
