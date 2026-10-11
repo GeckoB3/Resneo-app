@@ -240,7 +240,7 @@ export function PracticeSale({
         <Card>
           <View style={posStyles.stack}>
             {sale.lines.length === 0 ? (
-              <Text tone="muted">{t('app.sale.lines.empty')}</Text>
+              <Text tone="muted">{practiceT('setup.practice.empty')}</Text>
             ) : (
               sale.lines.map((l) => (
                 <PracticeLineRow

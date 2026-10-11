@@ -166,6 +166,9 @@ describe('a practice sale', () => {
 
   it('keeps to products and the practice item: no client, services, vouchers, fees, park or void', async () => {
     const { send } = await show(practice({ lines: [], subtotal_pence: 0, total_pence: 0, balance_due_pence: 0 }));
+    // The empty bill names what a practice takes, never a service or a fee.
+    expect(screen.getByText('Add a product or the practice item to start.')).toBeTruthy();
+    expect(screen.queryByText('Nothing on this sale yet. Add a service, an item or a fee.')).toBeNull();
     // Nobody is attached, and the client cannot be changed.
     expect(screen.getByText('Walk-in')).toBeTruthy();
     for (const absent of ['Park sale', 'Void sale', 'Combine with another sale', 'New sale', 'Refund', 'Send receipt']) {

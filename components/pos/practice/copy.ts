@@ -32,6 +32,8 @@ export const PRACTICE_COPY = {
 
   // The sentences the web added for the screens (its `PRACTICE_COPY_ADDED`).
   'setup.practice.saleTitle': 'Practice sale',
+  // The empty bill: a practice sale takes products and the practice item, never a service or a fee.
+  'setup.practice.empty': 'Add a product or the practice item to start.',
   'setup.practice.back': 'Back to set-up',
   'setup.practice.coach.step': 'Tip {n} of {total}',
   'setup.practice.coach.next': 'Next',
