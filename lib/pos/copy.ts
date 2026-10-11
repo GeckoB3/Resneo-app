@@ -1302,6 +1302,9 @@ export const POS_COPY = {
   'app.till.eod.tillOpen': '{till} is still open.', // (added) a till not yet counted that day
   'app.till.eod.tillRow': 'Counted {counted}, {difference}', // (added)
   'app.till.eod.tillRowExpected': 'Counted {counted}, expected {expected}, {difference}', // (added)
+  'app.till.eod.balanced': 'it balances', // (added) `close.balanced` inside the row's sentence
+  'app.till.eod.times': '{from} to {to}', // (added) when the session was open, to tell a day's sessions apart
+  'app.till.eod.openSince': 'Open since {from}', // (added)
   'app.till.eod.depositsRow': 'Deposits {deposits}. No-show and late fees {fees}.', // (added)
   'app.till.eod.none': 'Nothing yet.', // (added)
   'app.till.eod.cashRow': '{amount} at {time}, by {staffName}', // (added)

@@ -61,6 +61,8 @@ export default function EndOfDayScreen() {
   const s = data.summary;
   const shown = s.date || data.today;
   const timeZone = data.timezone;
+  // Inside the row's sentence: "Counted £50.00, expected £50.00, it balances".
+  const rowVariance = (pence: number) => (pence === 0 ? t('app.till.eod.balanced') : varianceWords(pence, t, money));
 
   return (
     <Screen scroll={false} padded={false}>
@@ -110,6 +112,11 @@ export default function EndOfDayScreen() {
                     </Text>
                     <Badge label={till.status === 'open' ? t('session.chip.open') : t('session.chip.closed')} tone={till.status === 'open' ? 'warning' : 'neutral'} />
                   </View>
+                  <Text variant="caption" tone="muted">
+                    {till.closed_at
+                      ? t('app.till.eod.times', { from: timeOfDay(till.opened_at, timeZone), to: timeOfDay(till.closed_at, timeZone) })
+                      : t('app.till.eod.openSince', { from: timeOfDay(till.opened_at, timeZone) })}
+                  </Text>
                   {till.status === 'open' || till.counted_cash_pence == null ? (
                     <Text variant="bodySmall" tone="muted">
                       {t('app.till.eod.tillOpen', { till: till.till_name })}
@@ -120,11 +127,11 @@ export default function EndOfDayScreen() {
                         ? t('app.till.eod.tillRowExpected', {
                             counted: money(till.counted_cash_pence),
                             expected: money(till.expected_cash_pence),
-                            difference: varianceWords(till.variance_pence ?? 0, t, money),
+                            difference: rowVariance(till.variance_pence ?? 0),
                           })
                         : t('app.till.eod.tillRow', {
                             counted: money(till.counted_cash_pence),
-                            difference: varianceWords(till.variance_pence ?? 0, t, money),
+                            difference: rowVariance(till.variance_pence ?? 0),
                           })}
                     </Text>
                   )}
