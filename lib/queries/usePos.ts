@@ -37,6 +37,7 @@ import type {
   PosReaderList,
   PosSavedCard,
   PosSavedCardsResponse,
+  PosVenueAlertsResponse,
 } from '@/types/pos';
 
 /**
@@ -337,6 +338,30 @@ export function usePosReportAccess(options: { enabled?: boolean } = {}) {
     enabled,
     staleTime: 60_000,
     queryFn: () => posFetch<PosReportAccess>(posPaths.reportAccess, { accessToken: accessToken! }),
+  });
+}
+
+/**
+ * "Needs your attention" on Checkout (UX spec §2.2; the web's `GET /api/venue/pos/alerts`, QA
+ * W2-06): the venue's open alerts it can act on, newest first. Admins only: a login the route
+ * refuses (403) or a server before the route (404) reads as nothing to show, and the card hides,
+ * as it does on the web. A sale write refreshes it (`invalidateAfterSaleWrite`).
+ */
+export function usePosAlerts(options: { enabled?: boolean } = {}) {
+  const { accessToken, enabled } = usePosGate(options.enabled ?? true);
+  return useQuery({
+    queryKey: queryKeys.pos.alerts(accessToken),
+    enabled,
+    staleTime: 30_000,
+    retry: false,
+    queryFn: async (): Promise<PosVenueAlertsResponse | null> => {
+      try {
+        return await posFetch<PosVenueAlertsResponse>(posPaths.alerts, { accessToken: accessToken! });
+      } catch (error) {
+        if (error instanceof ApiError && [403, 404].includes(error.status)) return null;
+        throw error;
+      }
+    },
   });
 }
 

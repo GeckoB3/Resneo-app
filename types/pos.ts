@@ -654,6 +654,26 @@ export interface PosMyCommission {
   venue: { name: string; currency: string };
 }
 
+/**
+ * One row of "Needs your attention" (`GET /api/venue/pos/alerts`, UX spec §2.2; the web's
+ * `src/lib/pos/venue-alerts.ts`): a card refund the bank refused, a disputed card payment that still
+ * wants a response, or an online order paid after its items were released. Admins only.
+ */
+export interface PosVenueAlert {
+  id: string;
+  kind: 'refund_failed' | 'dispute' | 'stock_conflict';
+  created_at: string;
+  /** The sale (or online order) it is about, when the alert names one. */
+  sale_id: string | null;
+  /** A disputed payment's amount. */
+  amount_pence: number | null;
+}
+
+export interface PosVenueAlertsResponse {
+  alerts: PosVenueAlert[];
+  currency: string;
+}
+
 /** `GET /api/venue/guests/[guestId]/purchases` (P4-8; plan §4.17). */
 export interface PosClientSpend {
   lifetime_pence: number;

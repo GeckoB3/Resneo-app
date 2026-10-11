@@ -3,6 +3,7 @@ import { type Href, Stack, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
+import { AttentionCard, EmptyCard, RowLink, SaleRowCard, SectionTitle, TodayFiguresCard } from '@/components/pos/CheckoutHome';
 import { money, Notice, posStyles, usePosT } from '@/components/pos/parts';
 import { saleHref, useOpenCheckout } from '@/components/pos/useOpenCheckout';
 import { Badge } from '@/components/ui/Badge';
@@ -11,27 +12,38 @@ import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Screen } from '@/components/ui/Screen';
-import { SearchBar } from '@/components/ui/SearchBar';
 import { Segmented } from '@/components/ui/Segmented';
 import { ListSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { canPos } from '@/lib/pos/pos-enabled';
-import { queueChips, saleStatusCopyId } from '@/lib/pos/sale-math';
+import { queueChips } from '@/lib/pos/sale-math';
 import { businessDateLabel, isLeftOpen, tillsInOrder } from '@/lib/pos/till-math';
-import { useMyCommission, usePosBootstrap, usePosEnabled, usePosQueue, usePosSaleList } from '@/lib/queries/usePos';
+import { todayInZone } from '@/lib/pos/voucher-math';
+import { useMyCommission, usePosAlerts, usePosBootstrap, usePosEnabled, usePosQueue, usePosSaleList } from '@/lib/queries/usePos';
+import { useSalesRange, useTakingsRange } from '@/lib/queries/usePosReports';
 import { useTillSessions } from '@/lib/queries/useTill';
 import { spacing } from '@/theme/index';
-import type { PosMinePeriod, PosQueueRow, PosSaleListRow } from '@/types/pos';
+import type { PosMinePeriod, PosQueueRow } from '@/types/pos';
+import type { PosRangeChoice } from '@/types/pos-reports';
 
 /**
- * Checkout home in the app (POS app step 1, UX spec §13.3 "Checkout home"): who is ready to check
- * out, open and parked sales, all sales with a search, a new blank sale, and the person's own
- * sales and tips (from Pass LC, with their commission). Reached from the Checkout tile in More, which exists only when the venue's
- * `pos_enabled` is on; a deep link at a venue without POS shows `till.off` and loads nothing.
+ * Checkout home in the app (POS app step 1, UX spec §13.3 "Checkout home"), laid out to fit the
+ * person (Part 2 mock-up 5, approved 2026-10-11):
+ * - "New sale" first.
+ * - The business's day for admins and team members with `view_reports` (owner's decision): net
+ *   takings, the number of sales and tips today, from the Takings and Sales reports Reports reads.
+ * - "Needs your attention" for admins (`GET /api/venue/pos/alerts`), hidden when there is nothing.
+ * - The till at a glance, while the venue counts cash in till sessions.
+ * - Who is ready to pay, saying how clients get there, then open sales as a list, with every sale
+ *   one tap away on All sales.
+ * - The person's own sales and tips last: with its periods for a team member, today's for an admin,
+ *   and not at all in a one-person business, where the day's figures are already theirs.
+ * Reached from the Checkout tile in More, which exists only when the venue's `pos_enabled` is on; a
+ * deep link at a venue without POS shows `till.off` and loads nothing.
  */
 
-type Tab = 'queue' | 'open' | 'all';
+const TODAY: PosRangeChoice = { kind: 'preset', preset: 'today' };
 
 function timeOf(iso: string | null | undefined): string {
   if (!iso) return '';
@@ -47,13 +59,16 @@ export default function CheckoutHomeScreen() {
   const router = useRouter();
   const posEnabled = usePosEnabled();
   const boot = usePosBootstrap();
-  const [tab, setTab] = useState<Tab>('queue');
-  const [search, setSearch] = useState('');
   const { open, openingKey } = useOpenCheckout();
 
-  const queue = usePosQueue(null, { enabled: tab === 'queue' });
-  const openSales = usePosSaleList({ status: 'open' }, { enabled: tab === 'open' });
-  const allSales = usePosSaleList({ q: search.trim().length >= 1 ? search : null }, { enabled: tab === 'all' });
+  const isAdmin = boot.data?.role === 'admin';
+  // Admins are sent every capability as true, so this is admins and anyone with view_reports.
+  const showFigures = canPos(boot.data, 'view_reports');
+  const queue = usePosQueue(null);
+  const openSales = usePosSaleList({ status: 'open' });
+  const takings = useTakingsRange(TODAY, 'day', { enabled: showFigures });
+  const salesToday = useSalesRange(TODAY, 'day', { enabled: showFigures });
+  const alerts = usePosAlerts({ enabled: isAdmin });
 
   const header = <Stack.Screen options={{ headerShown: true, title: t('till.title') }} />;
 
@@ -92,52 +107,65 @@ export default function CheckoutHomeScreen() {
   }
 
   const canStart = canPos(boot.data, 'create_sale');
-  const active = tab === 'queue' ? queue : tab === 'open' ? openSales : allSales;
+  // One person serving (one calendar, or one login): every sale is already theirs.
+  const onePerson = (boot.data.operators ?? []).length <= 1;
+  const queueRows = queue.data?.bookings ?? [];
+  const openRows = openSales.data?.sales ?? [];
+  const venueToday = todayInZone(boot.data.venue?.timezone ?? 'Europe/London');
+
+  const refresh = () => {
+    void queue.refetch();
+    void openSales.refetch();
+    if (showFigures) {
+      void takings.refetch();
+      void salesToday.refetch();
+    }
+    if (isAdmin) void alerts.refetch();
+  };
 
   return (
     <Screen scroll={false} padded={false}>
       {header}
       <ScrollView
         contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={active.isRefetching} onRefresh={() => void active.refetch()} />}
+        refreshControl={<RefreshControl refreshing={queue.isRefetching || openSales.isRefetching} onRefresh={refresh} />}
         keyboardShouldPersistTaps="handled">
         {canStart ? (
-          <Button
-            label={t('till.newSale')}
-            fullWidth
-            loading={openingKey === 'blank'}
-            onPress={() => void open('blank')}
+          <Button label={t('till.newSale')} size="lg" fullWidth loading={openingKey === 'blank'} onPress={() => void open('blank')} />
+        ) : null}
+
+        {showFigures ? (
+          <TodayFiguresCard
+            dateYmd={takings.data?.from ?? salesToday.data?.from ?? venueToday}
+            netPence={takings.data?.totals.net_pence ?? null}
+            salesCount={salesToday.data?.totals.sales_count ?? null}
+            tipsPence={takings.data?.totals.tips_pence ?? null}
+            error={takings.isError || salesToday.isError}
+            onRetry={() => {
+              void takings.refetch();
+              void salesToday.refetch();
+            }}
           />
         ) : null}
 
+        {isAdmin ? <AttentionCard alerts={alerts.data?.alerts} /> : null}
+
         {boot.data.settings?.cash_management_enabled === true ? <TillCard /> : null}
 
-        <MySalesCard />
-
-        <Segmented
-          options={[
-            { value: 'queue', label: t('till.tab.queue') },
-            { value: 'open', label: t('till.tab.open') },
-            { value: 'all', label: t('till.tab.all') },
-          ]}
-          value={tab}
-          onChange={setTab}
-          wrapLabels
-        />
-
-        {tab === 'all' ? (
-          <SearchBar value={search} onChangeText={setSearch} placeholder={t('sales.search')} onClear={() => setSearch('')} />
-        ) : null}
-
-        {tab === 'queue' ? (
-          queue.isLoading ? (
-            <ListSkeleton />
-          ) : queue.isError ? (
-            <ErrorState message={t('queue.error')} onRetry={() => void queue.refetch()} />
-          ) : (queue.data?.bookings ?? []).length === 0 ? (
-            <EmptyState title={t('queue.empty.title')} message={t('queue.empty.body')} />
-          ) : (
-            (queue.data?.bookings ?? []).map((row) => (
+        <SectionTitle title={t('till.tab.queue')} count={queueRows.length} />
+        {queue.isLoading ? (
+          <ListSkeleton rows={2} />
+        ) : queue.isError ? (
+          <ErrorState message={t('queue.error')} onRetry={() => void queue.refetch()} />
+        ) : queueRows.length === 0 ? (
+          <EmptyCard title={t('queue.empty.title')} body={t('app.queue.explain')} />
+        ) : (
+          <>
+            {/* How clients get here, so a quiet queue never looks broken. */}
+            <Text variant="bodySmall" tone="muted">
+              {t('app.queue.explain')}
+            </Text>
+            {queueRows.map((row) => (
               <QueueCard
                 key={row.booking_id}
                 row={row}
@@ -147,26 +175,27 @@ export default function CheckoutHomeScreen() {
                   row.open_sale_id ? router.push(saleHref(row.open_sale_id)) : void open({ bookingId: row.booking_id })
                 }
               />
-            ))
-          )
-        ) : active.isLoading ? (
-          <ListSkeleton />
-        ) : active.isError ? (
-          <ErrorState
-            message={active.error instanceof ApiError ? active.error.message : t('common.networkError')}
-            onRetry={() => void active.refetch()}
-          />
-        ) : ((tab === 'open' ? openSales.data?.sales : allSales.data?.sales) ?? []).length === 0 ? (
-          tab === 'open' ? (
-            <EmptyState title={t('sales.empty.title')} message={t('sales.empty.body')} />
-          ) : (
-            <Text tone="muted">{t('sales.none.filtered')}</Text>
-          )
-        ) : (
-          ((tab === 'open' ? openSales.data?.sales : allSales.data?.sales) ?? []).map((row) => (
-            <SaleRowCard key={row.id} row={row} onPress={() => router.push(saleHref(row.id))} />
-          ))
+            ))}
+          </>
         )}
+
+        <SectionTitle title={t('till.tab.open')} count={openRows.length} />
+        {openSales.isLoading ? (
+          <ListSkeleton rows={2} />
+        ) : openSales.isError ? (
+          <ErrorState
+            message={openSales.error instanceof ApiError ? openSales.error.message : t('common.networkError')}
+            onRetry={() => void openSales.refetch()}
+          />
+        ) : openRows.length === 0 ? (
+          <EmptyCard title={t('sales.empty.title')} body={t('sales.empty.body')} />
+        ) : (
+          openRows.map((row) => <SaleRowCard key={row.id} row={row} onPress={() => router.push(saleHref(row.id))} />)
+        )}
+
+        <RowLink label={t('till.tab.all')} onPress={() => router.push('/checkout/all-sales' as Href)} />
+
+        {onePerson ? null : <MySalesCard periods={!isAdmin} />}
       </ScrollView>
     </Screen>
   );
@@ -223,49 +252,6 @@ function QueueCard({
   );
 }
 
-function SaleRowCard({ row, onPress }: { row: PosSaleListRow; onPress: () => void }) {
-  const t = usePosT();
-  const status = t(saleStatusCopyId({ status: row.status, parked: row.parked ? { at: row.parked.at, by_staff_id: null, note: row.parked.note, device: row.parked.device } : null }));
-  const owing = row.status === 'open' || row.status === 'part_paid';
-  return (
-    <Card onPress={onPress} accessibilityRole="button" accessibilityLabel={t('sale.title', { saleNo: row.number_label })}>
-      <View style={posStyles.stack}>
-        <View style={styles.rowTop}>
-          <View style={styles.flex}>
-            <Text variant="label">
-              {t('sale.title', { saleNo: row.number_label })} · {row.client_name ?? t('sales.walkIn')}
-            </Text>
-            <Text variant="caption" tone="muted" numberOfLines={1}>
-              {row.summary || t('sales.items', { count: row.line_count })}
-            </Text>
-          </View>
-          <Text variant="label">{money(owing ? row.balance_due_pence : row.total_pence)}</Text>
-        </View>
-        <View style={styles.chips}>
-          <Badge label={status} tone={row.status === 'completed' ? 'success' : row.status === 'part_paid' ? 'warning' : undefined} />
-          {row.card_waiting ? <Badge label={t('sales.pill.cardPending')} tone="accent" /> : null}
-          {row.refund_status === 'partial' ? <Badge label={t('sale.refund.partial')} /> : null}
-          {row.refund_status === 'full' ? <Badge label={t('sale.refund.full')} /> : null}
-        </View>
-        {row.parked ? (
-          <Text variant="caption" tone="muted">
-            {t('sales.parkedBy', {
-              staffName: row.operator_name ?? row.created_by_name ?? 'your team',
-              device: row.parked.device ?? 'a device',
-              time: timeOf(row.parked.at),
-            })}
-            {row.parked.note ? `. ${row.parked.note}` : ''}
-          </Text>
-        ) : row.created_by_name ? (
-          <Text variant="caption" tone="muted">
-            {t('sales.startedBy', { staffName: row.created_by_name, time: timeOf(row.created_at) })}
-          </Text>
-        ) : null}
-      </View>
-    </Card>
-  );
-}
-
 /**
  * The till at a glance (UX spec §7.1, §2.2 `home.till.*`, §13.5), only while the venue counts cash in
  * till sessions: each till open or closed, a till left open from an earlier day, and the way into
@@ -307,33 +293,39 @@ function TillCard() {
 }
 
 /**
- * "Your sales and tips" (`app.mine.*`, UX spec §13.3, §22.3) for every team member: their own
- * figures only, today, this week or this month, from the commission report's `mine=1`, with their
- * commission so far when they hold `see_own_commission`. A server before Pass LC answers nothing,
- * and the card is not shown.
+ * "Your sales and tips" (`app.mine.*`, UX spec §13.3, §22.3): this person's own figures only, from
+ * the commission report's `mine=1`, with their commission so far when they hold
+ * `see_own_commission`. A team member chooses today, this week or this month; an admin sees today's,
+ * under the business's day at the top, without commission (as on the web: the venue is who pays it).
+ * A server before Pass LC answers nothing, and the card is not shown.
  */
-function MySalesCard() {
+function MySalesCard({ periods }: { periods: boolean }) {
   const t = usePosT();
-  const [period, setPeriod] = useState<PosMinePeriod>('today');
+  const [chosen, setChosen] = useState<PosMinePeriod>('today');
+  const period: PosMinePeriod = periods ? chosen : 'today';
   const mine = useMyCommission(period);
   if (mine.data === null) return null;
   const data = mine.data;
   const figures = data && data.mine.period === period ? data.mine : null;
-  const showCommission = Boolean(data?.can.see_commission) && figures?.commission_pence != null;
+  const showCommission = periods && Boolean(data?.can.see_commission) && figures?.commission_pence != null;
   const nothing = figures && figures.sales_pence === 0 && figures.tips_pence === 0 && !(figures.commission_pence ?? 0);
   return (
     <Card>
       <View style={posStyles.stack}>
-        <Text variant="label">{t('app.mine.title')}</Text>
-        <Segmented
-          options={[
-            { value: 'today', label: t('app.mine.today') },
-            { value: 'week', label: t('app.mine.week') },
-            { value: 'month', label: t('comm.mine.period.month') },
-          ]}
-          value={period}
-          onChange={setPeriod}
-        />
+        <Text variant="overline" tone="muted" accessibilityRole="header">
+          {periods ? t('app.mine.title') : t('app.home.mineToday')}
+        </Text>
+        {periods ? (
+          <Segmented
+            options={[
+              { value: 'today', label: t('app.mine.today') },
+              { value: 'week', label: t('app.mine.week') },
+              { value: 'month', label: t('comm.mine.period.month') },
+            ]}
+            value={chosen}
+            onChange={setChosen}
+          />
+        ) : null}
         {mine.isError ? (
           <Notice tone="warning" action={{ label: t('common.tryAgain'), onPress: () => void mine.refetch() }}>
             {t('app.mine.error')}
@@ -347,7 +339,7 @@ function MySalesCard() {
             {t('app.mine.none')}
           </Text>
         ) : (
-          <>
+          <View style={styles.mine}>
             <Text variant="bodyMedium">{t('app.mine.sales', { amount: money(figures.sales_pence) })}</Text>
             <Text variant="bodyMedium">{t('app.mine.tips', { amount: money(figures.tips_pence) })}</Text>
             {showCommission ? (
@@ -358,7 +350,7 @@ function MySalesCard() {
                 </Text>
               </>
             ) : null}
-          </>
+          </View>
         )}
       </View>
     </Card>
@@ -370,4 +362,5 @@ const styles = StyleSheet.create({
   rowTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   flex: { flex: 1 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
+  mine: { gap: spacing.xxs },
 });

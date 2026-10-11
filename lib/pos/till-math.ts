@@ -334,6 +334,19 @@ export function businessDateLabel(ymd: string): string {
   }
 }
 
+/** A business date in full, as Checkout's day heads it: "Sunday 11 October". */
+export function longBusinessDateLabel(ymd: string): string {
+  try {
+    const d = new Date(`${ymd}T12:00:00Z`);
+    if (Number.isNaN(d.getTime())) return ymd;
+    // Built from its parts, so every phone words it the same way (no stray comma after the day).
+    const part = (opts: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat('en-GB', { ...opts, timeZone: 'UTC' }).format(d);
+    return `${part({ weekday: 'long' })} ${d.getUTCDate()} ${part({ month: 'long' })}`;
+  } catch {
+    return ymd;
+  }
+}
+
 /** The day before or after a business date (YYYY-MM-DD). */
 export function shiftYmd(ymd: string, days: number): string {
   const d = new Date(`${ymd}T12:00:00Z`);

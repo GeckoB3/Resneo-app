@@ -127,6 +127,14 @@ export default function AppLayout() {
           title: 'Sale',
         }}
       />
+      {/* Every sale with a search, one tap from Checkout home (Part 2 mock-up 5). */}
+      <Stack.Screen
+        name="checkout/all-sales"
+        options={{
+          headerShown: true,
+          title: 'All sales',
+        }}
+      />
       {/* The till and cash-up (POS app step 3), from the Till card on Checkout and the cash-up
           reminder push; end of day for admins and see_expected_cash. */}
       <Stack.Screen

@@ -12,6 +12,7 @@ import {
   denominationsFromDraft,
   GBP_DENOMINATIONS,
   isLeftOpen,
+  longBusinessDateLabel,
   reportWhen,
   shiftYmd,
   tillForCash,
@@ -242,5 +243,7 @@ describe('days', () => {
   it('moves a business date and reads it', () => {
     expect(shiftYmd('2026-10-01', -1)).toBe('2026-09-30');
     expect(businessDateLabel('2026-10-09')).toBe('Fri 9 Oct');
+    expect(longBusinessDateLabel('2026-10-11')).toBe('Sunday 11 October');
+    expect(longBusinessDateLabel('not a date')).toBe('not a date');
   });
 });

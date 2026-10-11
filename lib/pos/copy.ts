@@ -662,6 +662,27 @@ export const POS_COPY = {
   'app.loading': 'Loading…',
   'reader.success.tip': 'Includes a {tip} tip',
   'app.home.mineAdminOnly': 'Ask an admin to see your sales and tips.',
+  // Checkout home that fits the person (Part 2 mock-up 5, 2026-10-11): the business's day for
+  // admins and `view_reports`, what needs an admin's attention, the queue saying how clients get
+  // there, open sales as a list, and the person's own figures last.
+  'app.home.today': 'Today, {date}', // (added)
+  'app.home.net': 'Net takings', // (added)
+  'app.home.sales': 'Sales', // (added) the number of sales today
+  'app.home.tips': 'Tips', // (added)
+  'app.home.seeReports': 'See Reports', // (added)
+  'app.home.figuresError': "We couldn't load today's figures.", // (added)
+  'app.home.mineToday': 'Your sales and tips today', // (added)
+  'app.queue.explain':
+    'When a {client} arrives, or their appointment starts or finishes, they appear here. You can also check out any appointment from the calendar.', // (added)
+  // "Needs your attention" (§18.2 `home.alerts.*`, the web's src/lib/pos/venue-alerts.ts).
+  'home.alerts.title': 'Needs your attention',
+  'home.alerts.refundFailed': "A card refund didn't go through. Refund the {client} another way.",
+  'home.alerts.dispute': 'A {client} has disputed a card payment of {amount}. Respond in your Stripe dashboard.',
+  'home.alerts.dispute.noAmount': 'A {client} has disputed a card payment. Respond in your Stripe dashboard.',
+  'home.alerts.stockConflict': 'An online order was paid after its items were released. Check you have them.',
+  'home.alerts.openSale': 'Open the sale',
+  'home.alerts.openOrder': 'Open the order',
+  'home.alerts.openPayments': 'Open payment settings',
   // App-only words for vouchers on a phone (UX spec §13: the share sheet in place of a download)
   'app.voucher.pdf': 'Share or print the voucher',
   'app.voucher.pdfFailed': "We couldn't open the voucher. Please try again.",

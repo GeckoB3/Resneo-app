@@ -86,6 +86,8 @@ export const posPaths = {
   voucherPdf: (voucherId: string) => `/api/venue/pos/vouchers/${encodeURIComponent(voucherId)}/pdf`,
   guestStoredValue: (guestId: string) => `/api/venue/guests/${encodeURIComponent(guestId)}/stored-value`,
   reportAccess: '/api/venue/reports/pos-access',
+  // "Needs your attention" on Checkout (UX spec §2.2), admins only.
+  alerts: '/api/venue/pos/alerts',
   takings: (query: string) => `/api/venue/reports/takings?${query}`,
   salesReport: (query: string) => `/api/venue/reports/sales?${query}`,
   // Pass 2 (app step 2): card payments.
