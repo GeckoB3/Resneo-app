@@ -102,6 +102,16 @@ function AddItemsSheetBody({
   const [name, setName] = useState('');
   const [price, setPrice] = useState('');
   const [group, setGroup] = useState<'services' | 'retail' | 'other'>('services');
+  // Who gets credit for a custom item (as on the web): whoever is serving, else the first
+  // calendar, so its commission and tips have someone to go to (APP-06, 2026-10-11).
+  const personKey = (p: { calendar_id: string | null; staff_id: string | null }) => `${p.calendar_id ?? ''}|${p.staff_id ?? ''}`;
+  const defaultSeller =
+    bootstrap.operators.find((o) => personKey(o) === personKey(sale.operator)) ??
+    bootstrap.operators.find((o) => o.calendar_id) ??
+    bootstrap.operators[0] ??
+    null;
+  const [sellerKey, setSellerKey] = useState<string | null>(defaultSeller ? personKey(defaultSeller) : null);
+  const seller = bootstrap.operators.find((o) => personKey(o) === sellerKey) ?? null;
   const [feeKind, setFeeKind] = useState<'lateCancel' | 'noShow' | 'other'>('lateCancel');
   const [busy, setBusy] = useState(false);
   const [scanning, setScanning] = useState(false);
@@ -431,13 +441,35 @@ function AddItemsSheetBody({
                 value={group}
                 onChange={setGroup}
               />
+              {bootstrap.operators.length > 0 ? (
+                <>
+                  <Text variant="label">{t('attr.title', { item: name.trim() || t('custom.name').toLowerCase() })}</Text>
+                  <ChoiceChips
+                    options={bootstrap.operators.map((o) => ({ value: personKey(o), label: o.name }))}
+                    value={sellerKey}
+                    onChange={setSellerKey}
+                  />
+                </>
+              ) : null}
               <ErrorLine message={error} />
               <Button
                 label={t('custom.add')}
                 loading={busy}
                 disabled={!name.trim() || pricePence == null}
                 onPress={() =>
-                  void add({ kind: 'custom', name: name.trim(), unit_price_pence: pricePence, reporting_group: group })
+                  void add({
+                    kind: 'custom',
+                    name: name.trim(),
+                    unit_price_pence: pricePence,
+                    reporting_group: group,
+                    ...(seller
+                      ? {
+                          seller: seller.calendar_id
+                            ? { calendar_id: seller.calendar_id, name: seller.name }
+                            : { staff_id: seller.staff_id ?? undefined, name: seller.name },
+                        }
+                      : {}),
+                  })
                 }
                 fullWidth
               />
@@ -876,6 +908,11 @@ function DiscountSheetBody({
         {off > 0 ? (
           <Text variant="bodyMedium">
             {t('disc.preview', { amount: money(off), total: money(Math.max(0, sale.total_pence - off)) })}
+          </Text>
+        ) : null}
+        {base <= 0 && sale.lines.some((l) => l.line_type === 'gift_card') ? (
+          <Text variant="bodySmall" tone="muted">
+            {t('disc.vouchersOnly')}
           </Text>
         ) : null}
         {overLimit ? (

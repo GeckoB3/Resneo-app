@@ -344,7 +344,10 @@ function SaleBody({
             <Text variant="caption" tone="muted">
               {t('app.sale.client')}
             </Text>
-            <Text variant="label">{sale.guest?.name || (editable ? t('client.add') : t('sales.walkIn'))}</Text>
+            <Text variant="label">
+              {sale.guest?.name ||
+                (editable ? t('client.add') : sale.channel === 'online' ? onlineBuyer(sale) ?? t('sales.onlineClient') : t('sales.walkIn'))}
+            </Text>
           </Pressable>
           <Pressable
             disabled={!editable}
@@ -517,7 +520,7 @@ function SaleBody({
               ) : null}
               <IssuedVouchers sale={sale} timeZone={timeZone} canPdf={can('create_sale') || can('manage_vouchers')} />
               <Text variant="caption" tone="muted">
-                {receiptNote ?? t('app.receipt.notSent.pos')}
+                {receiptNote ?? (sale.channel === 'online' ? t('app.receipt.online') : t('app.receipt.notSent.pos'))}
               </Text>
             </View>
           </Card>
@@ -737,3 +740,8 @@ const styles = StyleSheet.create({
   line: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
   flex: { flex: 1 },
 });
+
+/** An online sale (a gift voucher bought on the voucher page) has no client, only its buyer's name. */
+function onlineBuyer(sale: PosSale): string | null {
+  return sale.lines.find((l) => l.voucher?.buyer_name)?.voucher?.buyer_name ?? null;
+}

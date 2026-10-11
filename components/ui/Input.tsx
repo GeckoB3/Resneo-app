@@ -124,6 +124,8 @@ export const Input = forwardRef<TextInput, InputProps>(function Input(
           // A number field often opens pre-filled ("35.00"); a tap selects it, so typing 5 gives 5,
           // not 35.005. A screen can still pass selectTextOnFocus={false}.
           selectTextOnFocus={isNumericKeyboard(props.keyboardType, props.inputMode)}
+          // The visible label names the field for screen readers too; a caller can still pass its own.
+          accessibilityLabel={typeof label === 'string' ? label : undefined}
           {...props}
           onFocus={handleFocus}
           onBlur={handleBlur}

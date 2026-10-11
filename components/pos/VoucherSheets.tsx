@@ -323,7 +323,12 @@ export function voucherLineDetails(line: PosSaleLine, t: ReturnType<typeof usePo
     delivery === 'later' && v?.send_at
       ? t('line.voucher.delivery.later', { date: formatDay(v.send_at, timeZone) })
       : delivery === 'now'
-        ? t('line.voucher.delivery.now')
+        ? // Once the voucher exists it has gone out: say where, in the past tense (APP-05).
+          v?.account_id
+          ? (v.recipient_email ?? v.buyer_email)
+            ? t('line.voucher.delivery.sent', { email: v.recipient_email ?? v.buyer_email ?? '' })
+            : t('line.voucher.delivery.sentNoEmail')
+          : t('line.voucher.delivery.now')
         : t('line.voucher.delivery.print'),
   );
   return out;

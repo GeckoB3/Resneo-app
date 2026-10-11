@@ -68,6 +68,7 @@ export const POS_COPY = {
     'When a {client} arrives, or their appointment starts or finishes, they appear here so you can check them out in one tap.',
   'queue.error': "We couldn't load who's ready to pay.",
   'sales.walkIn': 'Walk-in',
+  'sales.onlineClient': 'Online customer',
   'sales.items': '{count} items',
   'sales.items.one': '1 item',
   'sales.pill.cardPending': 'Card payment in progress',
@@ -231,6 +232,7 @@ export const POS_COPY = {
   'disc.preview': 'Takes {amount} off. New total {total}.',
   'disc.preset.max': 'Up to {amount}',
   'disc.apply': 'Apply discount',
+  'disc.vouchersOnly': "Gift vouchers can't be discounted.",
   'disc.remove': 'Remove discount',
 
   // §18.9 Combine, park and void
@@ -446,6 +448,8 @@ export const POS_COPY = {
   'line.voucher.for': 'For {recipientName}',
   'line.voucher.delivery.print': 'To print or hand over',
   'line.voucher.delivery.now': "Emailed when it's paid for",
+  'line.voucher.delivery.sent': 'Emailed to {email}',
+  'line.voucher.delivery.sentNoEmail': 'Emailed when it was paid for',
   'line.voucher.delivery.later': 'Emailed on {date}',
   'line.voucher.noDiscount': "Gift vouchers can't be discounted.",
   'totals.voucher': 'Gift voucher',
@@ -581,6 +585,7 @@ export const POS_COPY = {
   'app.receipt.sentTo': 'Receipt sent to {destination}.',
   'app.receipt.notSent': 'No receipt sent.',
   'app.receipt.notSent.pos': 'No receipt sent. You can send one from the sale.',
+  'app.receipt.online': 'Their receipt was emailed when they paid online.',
   'app.balance.zero': 'Nothing left to pay',
   'app.reports.chips': 'Report tabs',
   'app.mine.title': 'Your sales and tips',

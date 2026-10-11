@@ -175,11 +175,18 @@ export function discountOffPence(draft: DiscountDraft, basePence: number, maxPen
   return Math.max(0, Math.min(off, basePence));
 }
 
-/** The base a new discount works on: the whole sale as it stands, or what is left of one line. */
+/**
+ * The base a new discount works on: the whole sale as it stands, or what is left of one line. A gift
+ * voucher line is never discounted (plan §4.33.3), and the server leaves it out of a whole-sale
+ * discount, so the preview does too (it once promised £6.25 off a voucher, then saved £0).
+ */
 export function discountBasePence(sale: Pick<PosSale, 'total_pence' | 'lines'>, lineId?: string | null): number {
-  if (!lineId) return Math.max(0, sale.total_pence);
+  if (!lineId) {
+    const vouchers = sale.lines.filter((l) => l.line_type === 'gift_card').reduce((sum, l) => sum + l.total_pence, 0);
+    return Math.max(0, sale.total_pence - vouchers);
+  }
   const line = sale.lines.find((l) => l.id === lineId);
-  if (!line) return 0;
+  if (!line || line.line_type === 'gift_card') return 0;
   return Math.max(0, line.unit_price_pence * line.quantity - line.line_discount_pence);
 }
 

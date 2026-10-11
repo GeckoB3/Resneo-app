@@ -159,6 +159,14 @@ describe('discounts', () => {
     expect(discountBasePence(sale, null)).toBe(sale.total_pence);
   });
 
+  it('never bases a discount on a gift voucher line (the server leaves them out)', () => {
+    const service = makeLine({ id: 's', total_pence: 3500, unit_price_pence: 3500 });
+    const voucher = makeLine({ id: 'v', line_type: 'gift_card', reporting_group: 'other', total_pence: 5000, unit_price_pence: 5000 });
+    expect(discountBasePence(makeSale({ total_pence: 8500, lines: [service, voucher] }), null)).toBe(3500);
+    expect(discountBasePence(makeSale({ total_pence: 5000, lines: [voucher] }), null)).toBe(0);
+    expect(discountBasePence(makeSale({ total_pence: 5000, lines: [voucher] }), 'v')).toBe(0);
+  });
+
   it("holds staff to the venue's limit", () => {
     const sale = makeSale({ subtotal_pence: 10000 });
     expect(overStaffLimit({ sale, newOffPence: 1000, limitPercent: 10 })).toBe(false);

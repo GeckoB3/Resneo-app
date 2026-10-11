@@ -98,6 +98,48 @@ beforeEach(() => {
   mockRewards = [];
 });
 
+describe('a custom item', () => {
+  it('credits whoever is serving by default, and lets staff pick someone else', async () => {
+    const send = jest.fn().mockResolvedValue({ sale });
+    const boot = bootstrap({
+      capabilities: { take_payment: true, create_sale: true, custom_line: true },
+      operators: [
+        { kind: 'calendar', calendar_id: 'cal-1', staff_id: null, name: 'Sam' },
+        { kind: 'login', calendar_id: null, staff_id: 'st-2', name: 'Jo' },
+      ],
+    });
+    await renderAdd(send, boot);
+    await act(async () => {
+      fireEvent.press(screen.getByText('Custom'));
+    });
+    await act(async () => {
+      fireEvent.changeText(screen.getByLabelText('Item name'), 'Fringe tidy');
+    });
+    await act(async () => {
+      fireEvent.changeText(screen.getByLabelText('Price'), '8');
+    });
+    expect(screen.getByText('Who gets credit for Fringe tidy?')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByText('Jo'));
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByText('Add to sale'));
+    });
+    expect(send).toHaveBeenCalledWith({
+      action: 'lines',
+      body: {
+        version: sale.version,
+        ops: [
+          {
+            op: 'add',
+            line: { kind: 'custom', name: 'Fringe tidy', unit_price_pence: 800, reporting_group: 'services', seller: { staff_id: 'st-2', name: 'Jo' } },
+          },
+        ],
+      },
+    });
+  });
+});
+
 describe('adding products', () => {
   it('adds a favourite product with who is serving, and warns about stock and age', async () => {
     const send = await renderAdd();
