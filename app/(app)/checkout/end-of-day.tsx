@@ -88,7 +88,12 @@ export default function EndOfDayScreen() {
         </View>
 
         <View style={styles.tiles}>
-          <StatTile label={t('eod.tile.takings')} value={money(s.totals.net_pence)} style={styles.tile} />
+          <StatTile
+            label={t('eod.tile.takings')}
+            value={money(s.totals.net_pence)}
+            caption={t('eod.tile.tips', { amount: money(s.totals.tips_pence) })}
+            style={styles.tile}
+          />
           <StatTile label={t('eod.tile.card')} value={money(s.totals.card_pence)} style={styles.tile} />
         </View>
         <View style={styles.tiles}>
@@ -148,7 +153,7 @@ export default function EndOfDayScreen() {
 
         <Card>
           <View style={posStyles.stack}>
-            <Text variant="label">{t('z.byMethod')}</Text>
+            <Text variant="label">{t('eod.byMethod')}</Text>
             {s.by_method.length === 0 ? (
               <Text variant="bodySmall" tone="muted">
                 {t('app.till.eod.none')}

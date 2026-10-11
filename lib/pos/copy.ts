@@ -1253,7 +1253,11 @@ export const POS_COPY = {
   'z.floatLeft': 'Float left',
   'z.email': 'Email to admins',
   'eod.date': 'Day',
-  'eod.tile.takings': 'Taken',
+  // End of day counts tips in with what was taken, where Takings and the Z report keep them apart,
+  // so it says so and shows the tips beside it (web QA W1-10).
+  'eod.tile.takings': 'Taken, including tips',
+  'eod.tile.tips': 'Tips {amount}',
+  'eod.byMethod': 'By payment method, including tips',
   'eod.tile.card': 'Card',
   'eod.tile.cash': 'Cash',
   'eod.tile.other': 'Other',
