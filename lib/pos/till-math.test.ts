@@ -192,6 +192,26 @@ describe('X and Z reports', () => {
     expect(sections.find((s) => s.heading === 'Tips')!.lines.map((l) => l.label)).toEqual(['On cards']);
   });
 
+  it('shows nothing taken out as £0.00, never "-£0.00" or "(£0.00)"', () => {
+    // The app's money formatter, which prints negative zero with a minus.
+    const intl = (p: number) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(p / 100);
+    const quiet: PosTillReport = {
+      ...z,
+      refunds: [],
+      discounts: { sales: 0, pence: 0 },
+      voids: { sales: 0, pence: 0 },
+      tips: { card_pence: 0, cash_pence: 0, paid_out_pence: 0 },
+    };
+    const values = tillReportSections(quiet, { ...f, money: intl }).flatMap((s) => s.lines.map((l) => l.value));
+    expect(values.some((v) => (v ?? '').includes('-£0.00') || v === '(£0.00)')).toBe(false);
+    const busy = tillReportSections(
+      { ...quiet, discounts: { sales: 1, pence: 500 }, voids: { sales: 1, pence: 300 } },
+      { ...f, money: intl },
+    ).flatMap((s) => s.lines.map((l) => l.value));
+    expect(busy).toContain('-£5.00');
+    expect(busy).toContain('(£3.00)');
+  });
+
   it('names the PDF as the web does', () => {
     expect(tillReportFilename(z)).toBe('z-report-front-desk-2026-09-25.pdf');
     expect(tillMethodLabel('external', 'Bank transfer')).toBe('Other: Bank transfer');

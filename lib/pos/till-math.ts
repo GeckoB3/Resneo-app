@@ -177,6 +177,8 @@ export function tillReportSections(
   f: { t: PosT; money: (pence: number) => string; when: (iso: string) => string },
 ): ReportSection[] {
   const { t, money, when } = f;
+  // Money going out shows a minus only when there is some: negating zero prints "-£0.00".
+  const minus = (pence: number) => money(pence > 0 ? -pence : 0);
   const out: ReportSection[] = [];
   const head: ReportLine[] = [
     { label: t('z.opened'), value: `${when(report.opened_at)}${report.opened_by_name ? `  by ${report.opened_by_name}` : ''}` },
@@ -194,18 +196,18 @@ export function tillReportSections(
   if (report.refunds.length > 0) {
     out.push({
       heading: t('z.refunds'),
-      lines: report.refunds.map((r) => ({ label: tillMethodLabel(r.method, r.name), value: money(-r.amount_pence) })),
+      lines: report.refunds.map((r) => ({ label: tillMethodLabel(r.method, r.name), value: minus(r.amount_pence) })),
     });
   }
   out.push({
     lines: [
       {
         label: `${t('z.discounts')}  ${report.discounts.sales} ${report.discounts.sales === 1 ? 'sale' : 'sales'}`,
-        value: money(-report.discounts.pence),
+        value: minus(report.discounts.pence),
       },
       {
         label: `${t('z.voids')}  ${report.voids.sales} ${report.voids.sales === 1 ? 'sale' : 'sales'}`,
-        value: `(${money(report.voids.pence)})`,
+        value: report.voids.pence > 0 ? `(${money(report.voids.pence)})` : money(0),
       },
     ],
   });
@@ -213,7 +215,7 @@ export function tillReportSections(
   const tips: ReportLine[] = [{ label: t('z.tipsCard'), value: money(report.tips.card_pence) }];
   if (report.tips.cash_pence != null) {
     tips.push({ label: t('z.tipsCash'), value: money(report.tips.cash_pence) });
-    tips.push({ label: t('z.tipsOut'), value: money(-report.tips.paid_out_pence) });
+    tips.push({ label: t('z.tipsOut'), value: minus(report.tips.paid_out_pence) });
   }
   out.push({ heading: t('z.tips'), lines: tips });
 
@@ -227,11 +229,11 @@ export function tillReportSections(
     );
     if (c.legacy_pence !== 0) cash.push({ label: t('z.legacyCash'), value: money(c.legacy_pence) });
     cash.push(
-      { label: t('z.cashRefunds'), value: money(-c.refunds_pence) },
+      { label: t('z.cashRefunds'), value: minus(c.refunds_pence) },
       { label: t('z.paidIn'), value: money(c.paid_in_pence) },
-      { label: t('z.paidOut'), value: money(-c.paid_out_pence) },
-      { label: t('z.drops'), value: money(-c.drops_pence) },
-      { label: t('app.till.report.tipsPaidOut'), value: money(-c.tips_paid_out_pence) },
+      { label: t('z.paidOut'), value: minus(c.paid_out_pence) },
+      { label: t('z.drops'), value: minus(c.drops_pence) },
+      { label: t('app.till.report.tipsPaidOut'), value: minus(c.tips_paid_out_pence) },
       { label: t('z.expected'), value: money(c.expected_pence), strong: true },
     );
   }
