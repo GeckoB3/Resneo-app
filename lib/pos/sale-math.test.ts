@@ -10,6 +10,8 @@ import {
   cashQuickAmounts,
   checkPaymentAmount,
   discountBasePence,
+  discountBlock,
+  previewDiscountPence,
   discountOffPence,
   itemsRefundPence,
   lineRefundPence,
@@ -308,5 +310,34 @@ describe('saleCarriesVat', () => {
     expect(saleCarriesVat([makeLine({ tax_code: 'Z' })])).toBe(true);
     expect(saleCarriesVat([makeLine({ tax_code: 'O' })])).toBe(false);
     expect(saleCarriesVat([])).toBe(false);
+  });
+});
+
+describe('a preset that reaches only some lines (web W1-05)', () => {
+  const service = makeLine({ id: 's', line_type: 'service', reporting_group: 'services', unit_price_pence: 800, total_pence: 800 });
+  const product = makeLine({ id: 'p', line_type: 'product', reporting_group: 'retail', unit_price_pence: 1200, total_pence: 1200 });
+  const voucher = makeLine({ id: 'v', line_type: 'gift_card', reporting_group: 'other', unit_price_pence: 2500, total_pence: 2500 });
+  const sale = makeSale({ total_pence: 4500, lines: [service, product, voucher] });
+
+  it('previews only what the engine will take', () => {
+    const draft = { kind: 'percent' as const, value: 20 };
+    // 20% of the £8 service, not of the £20 the service and product make together.
+    expect(previewDiscountPence(sale, { appliesTo: 'services', draft })).toBe(160);
+    expect(previewDiscountPence(sale, { appliesTo: 'products', draft })).toBe(240);
+    expect(previewDiscountPence(sale, { appliesTo: 'all', draft })).toBe(400);
+    expect(discountBasePence(sale, null, 'services')).toBe(800);
+  });
+
+  it("takes a line's percentage of its full price, up to what is left of it", () => {
+    const line = makeLine({ id: 'x', unit_price_pence: 2000, quantity: 2, line_discount_pence: 500, total_pence: 3500 });
+    const one = makeSale({ lines: [line] });
+    expect(previewDiscountPence(one, { lineId: 'x', draft: { kind: 'percent', value: 10 } })).toBe(400);
+    expect(previewDiscountPence(one, { lineId: 'x', draft: { kind: 'amount', value: 9000 } })).toBe(3500);
+  });
+
+  it('says why nothing can come off', () => {
+    expect(discountBlock(makeSale({ lines: [voucher] }), null, 'all')).toBe('vouchers_only');
+    expect(discountBlock(makeSale({ lines: [product, voucher] }), null, 'services')).toBe('no_match');
+    expect(discountBlock(sale, null, 'services')).toBeNull();
   });
 });

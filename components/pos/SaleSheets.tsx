@@ -27,8 +27,10 @@ import { formatPhoneForDisplay } from '@/lib/phone/e164';
 import { posErrorMessage } from '@/lib/pos/api';
 import { canPos } from '@/lib/pos/pos-enabled';
 import {
-  discountBasePence,
-  discountOffPence,
+  discountBlock,
+  lineTakesDiscount,
+  previewDiscountPence,
+  readAppliesTo,
   overStaffLimit,
   parseMoneyInput,
   penceToInput,
@@ -798,8 +800,11 @@ function DiscountSheetBody({
   const reasons = settings.discount_reasons ?? [];
   const isAdmin = bootstrap.role === 'admin';
   const line = lineId ? sale.lines.find((l) => l.id === lineId) ?? null : null;
-  const base = discountBasePence(sale, lineId);
-  const preset = presets.find((p) => p.id === presetId) ?? null;
+  // On a line, only the presets that reach it (web W1-05).
+  const shownPresets = line ? presets.filter((p) => lineTakesDiscount(line, readAppliesTo(p.applies_to))) : presets;
+  const preset = shownPresets.find((p) => p.id === presetId) ?? null;
+  const appliesTo = mode === 'preset' && preset ? readAppliesTo(preset.applies_to) : 'all';
+  const block = discountBlock(sale, lineId, appliesTo);
   const draftValue =
     mode === 'preset'
       ? preset
@@ -811,7 +816,13 @@ function DiscountSheetBody({
         ? Number(value.replace(',', '.')) || 0
         : parseMoneyInput(value) ?? 0;
   const draftKind = mode === 'preset' ? (preset?.kind === 'percent' ? 'percent' : 'amount') : kind;
-  const off = discountOffPence({ kind: draftKind, value: draftValue }, base, preset?.max_amount_pence ?? null);
+  // What the engine will take: only the lines this discount reaches (web W1-05).
+  const off = previewDiscountPence(sale, {
+    lineId,
+    appliesTo,
+    draft: { kind: draftKind, value: draftValue },
+    maxPence: mode === 'preset' ? preset?.max_amount_pence ?? null : null,
+  });
   const limit = settings.staff_max_discount_percent ?? 0;
   const overLimit = !isAdmin && mode === 'manual' && off > 0 && overStaffLimit({ sale, newOffPence: off, limitPercent: limit });
   const chosenReason = reason === '__other' ? freeReason.trim() : reason ?? '';
@@ -847,7 +858,7 @@ function DiscountSheetBody({
       title={t('disc.title')}
       subtitle={line ? t('disc.scope.line', { item: line.name }) : t('disc.scope.sale')}>
       <View style={posStyles.stack}>
-        {presets.length ? (
+        {shownPresets.length ? (
           <Segmented
             options={[
               { value: 'manual', label: t('disc.tab.manual') },
@@ -879,7 +890,7 @@ function DiscountSheetBody({
             />
           </>
         ) : (
-          presets.map((p) => (
+          shownPresets.map((p) => (
             <PickRow
               key={p.id}
               title={p.name}
@@ -910,9 +921,9 @@ function DiscountSheetBody({
             {t('disc.preview', { amount: money(off), total: money(Math.max(0, sale.total_pence - off)) })}
           </Text>
         ) : null}
-        {base <= 0 && sale.lines.some((l) => l.line_type === 'gift_card') ? (
+        {block ? (
           <Text variant="bodySmall" tone="muted">
-            {t('disc.vouchersOnly')}
+            {t(block === 'vouchers_only' ? 'disc.vouchersOnly' : 'disc.noMatch')}
           </Text>
         ) : null}
         {overLimit ? (

@@ -233,6 +233,7 @@ export const POS_COPY = {
   'disc.preset.max': 'Up to {amount}',
   'disc.apply': 'Apply discount',
   'disc.vouchersOnly': "Gift vouchers can't be discounted.",
+  'disc.noMatch': "There's nothing on this sale that this discount applies to.",
   'disc.remove': 'Remove discount',
 
   // §18.9 Combine, park and void

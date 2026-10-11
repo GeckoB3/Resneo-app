@@ -175,19 +175,67 @@ export function discountOffPence(draft: DiscountDraft, basePence: number, maxPen
   return Math.max(0, Math.min(off, basePence));
 }
 
+/** What a preset may reach (`applies_to`); a manual discount reaches everything (web `discount-math.ts`). */
+export type DiscountAppliesTo = 'all' | 'services' | 'products';
+
+/** Lines no whole-sale discount reaches (the engine's rule): a gift voucher is never discounted (plan §4.33.3). */
+const NEVER_DISCOUNTED: ReadonlySet<string> = new Set(['gift_card', 'service_charge', 'delivery']);
+
+export function readAppliesTo(value: unknown): DiscountAppliesTo {
+  return value === 'services' || value === 'products' ? value : 'all';
+}
+
+/** Whether a discount that reaches `appliesTo` reaches this line. */
+export function lineTakesDiscount(line: Pick<PosSaleLine, 'line_type' | 'reporting_group'>, appliesTo: DiscountAppliesTo): boolean {
+  if (NEVER_DISCOUNTED.has(line.line_type)) return false;
+  if (appliesTo === 'services') return line.reporting_group === 'services';
+  if (appliesTo === 'products') return line.line_type === 'product';
+  return true;
+}
+
 /**
- * The base a new discount works on: the whole sale as it stands, or what is left of one line. A gift
- * voucher line is never discounted (plan §4.33.3), and the server leaves it out of a whole-sale
- * discount, so the preview does too (it once promised £6.25 off a voucher, then saved £0).
+ * The base a new discount works on, as the engine (`pos__recompute_totals`) works it out: what is
+ * left of the lines a whole-sale discount reaches (never a gift voucher, a service charge or
+ * delivery; only services or only products for a preset that says so), or what is left of one line.
+ * The preview once promised £6.25 off a voucher, then saved £0.
  */
-export function discountBasePence(sale: Pick<PosSale, 'total_pence' | 'lines'>, lineId?: string | null): number {
+export function discountBasePence(sale: Pick<PosSale, 'lines'>, lineId?: string | null, appliesTo: DiscountAppliesTo = 'all'): number {
   if (!lineId) {
-    const vouchers = sale.lines.filter((l) => l.line_type === 'gift_card').reduce((sum, l) => sum + l.total_pence, 0);
-    return Math.max(0, sale.total_pence - vouchers);
+    return sale.lines.filter((l) => lineTakesDiscount(l, appliesTo)).reduce((sum, l) => sum + Math.max(0, l.total_pence), 0);
   }
   const line = sale.lines.find((l) => l.id === lineId);
   if (!line || line.line_type === 'gift_card') return 0;
   return Math.max(0, line.unit_price_pence * line.quantity - line.line_discount_pence);
+}
+
+/** What a new discount would take off, as the engine will: a line's percentage is of its full price, up to what is left. */
+export function previewDiscountPence(
+  sale: Pick<PosSale, 'lines'>,
+  input: { lineId?: string | null; appliesTo?: DiscountAppliesTo; draft: DiscountDraft; maxPence?: number | null },
+): number {
+  if (!input.lineId) return discountOffPence(input.draft, discountBasePence(sale, null, input.appliesTo ?? 'all'), input.maxPence);
+  const line = sale.lines.find((l) => l.id === input.lineId);
+  if (!line || line.line_type === 'gift_card' || !(input.draft.value > 0)) return 0;
+  const gross = line.unit_price_pence * line.quantity;
+  const left = Math.max(0, gross - line.line_discount_pence);
+  let off = input.draft.kind === 'percent' ? roundHalfUp((gross * Math.min(input.draft.value, 100)) / 100) : Math.round(input.draft.value);
+  if (input.maxPence != null && input.maxPence > 0) off = Math.min(off, input.maxPence);
+  return Math.max(0, Math.min(off, left));
+}
+
+/**
+ * Why a discount could take nothing before anyone types a value: the sale holds only gift vouchers
+ * (`disc.vouchersOnly`), or nothing the preset reaches (`disc.noMatch`).
+ */
+export function discountBlock(
+  sale: Pick<PosSale, 'lines'>,
+  lineId: string | null | undefined,
+  appliesTo: DiscountAppliesTo,
+): 'vouchers_only' | 'no_match' | null {
+  if (discountBasePence(sale, lineId, appliesTo) > 0) return null;
+  if (lineId) return sale.lines.find((l) => l.id === lineId)?.line_type === 'gift_card' ? 'vouchers_only' : null;
+  if (sale.lines.some((l) => !NEVER_DISCOUNTED.has(l.line_type) && l.total_pence > 0)) return 'no_match';
+  return sale.lines.some((l) => l.line_type === 'gift_card') ? 'vouchers_only' : null;
 }
 
 /**
