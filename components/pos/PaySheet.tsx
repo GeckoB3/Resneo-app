@@ -2,6 +2,16 @@ import { useMemo, useRef, useState } from 'react';
 import { StyleSheet, Switch, View } from 'react-native';
 
 import { PayLinkPanel } from '@/components/pos/PayLinkPanel';
+import {
+  DueHeadline,
+  OtherWays,
+  PAY_ICONS,
+  PayLink,
+  PayTile,
+  PayTileGrid,
+  PayTileUnavailable,
+  SplitWays,
+} from '@/components/pos/PayTiles';
 import { ReaderPayPanel } from '@/components/pos/ReaderPayPanel';
 import { SaleCardCollect } from '@/components/pos/SaleCardCollect';
 import { SavedCardCharge, SavedCardMethods } from '@/components/pos/SavedCards';
@@ -15,6 +25,8 @@ import { Input } from '@/components/ui/Input';
 import { Text } from '@/components/ui/Text';
 import { apiErrorCode } from '@/lib/api/client';
 import { newPaymentAttemptId } from '@/lib/payments/attempt-id';
+import { buildSupportsTapToPay } from '@/lib/payments/tap-to-pay-build-support';
+import { tapToPayButtonLabel } from '@/lib/payments/tap-to-pay-copy';
 import { isRequestReused } from '@/lib/pos/api';
 import type { SaleCardResult } from '@/lib/payments/useSaleCardPayment';
 import { cardMethodsOffered } from '@/lib/pos/card-methods';
@@ -27,11 +39,13 @@ import {
   parseMoneyInput,
   penceToInput,
   splitEvenly,
+  splitWaysOffered,
   tipConfig,
   type AmountProblem,
 } from '@/lib/pos/sale-math';
 import { useClientStoredValue } from '@/lib/queries/usePos';
-import { spacing } from '@/theme/index';
+import { fonts, radius, spacing } from '@/theme/index';
+import { useTheme } from '@/theme/useTheme';
 import type { PosBootstrap, PosPaymentType, PosSale, PosSavedCard } from '@/types/pos';
 
 /**
@@ -47,6 +61,13 @@ import type { PosBootstrap, PosPaymentType, PosSale, PosSavedCard } from '@/type
  * server, with its status), pay by link or QR code (`pay_link`, the QR code on this phone, for the
  * whole bill or the part typed), and the client's cards on file (`saved_card`, with
  * `charge_saved_card`). Saving a card with the client's consent rides on the card collector.
+ *
+ * The choice is laid out as Part 2 mock-up 1 (approved 2026-10-11): "£49.95 to pay" as the
+ * headline, the amount field behind "Pay part of it" (with an even split that shows every share,
+ * odd pennies first), the everyday methods as tiles with the card methods first and in navy,
+ * account credit and saved cards as tiles when the client has them, and the venue's own payment
+ * types under "Other ways". Every method shows under the same rules as before. On a phone that
+ * can't take cards, at a venue with no counter reader, the card tile says so and what to do instead.
  */
 
 type Mode = 'choose' | 'cash' | 'other' | 'card' | 'done' | 'voucher' | 'credit' | 'reader' | 'link' | 'saved';
@@ -90,12 +111,16 @@ function PaySheetBody({
   onPark?: () => void;
 }) {
   const t = usePosT();
+  const { colors } = useTheme();
   const tips = useMemo(() => tipConfig(bootstrap.tip_settings), [bootstrap.tip_settings]);
   const balance = Math.max(0, sale.balance_due_pence);
   const max = bootstrap.settings.max_payment_pence ?? null;
 
   const [mode, setMode] = useState<Mode>('choose');
   const [amountText, setAmountText] = useState(penceToInput(balance));
+  // "Pay part of it": the amount field and the even split, folded away until asked for.
+  const [partOpen, setPartOpen] = useState(false);
+  const [ways, setWays] = useState<number | null>(null);
   const [tipText, setTipText] = useState('');
   const [customerFacing, setCustomerFacing] = useState(false);
   const [savedCard, setSavedCard] = useState<PosSavedCard | null>(null);
@@ -126,6 +151,35 @@ function PaySheetBody({
   // Cards on file on and a client on the sale: the client may save their card on this phone.
   const consentClientName =
     bootstrap.settings?.card_on_file_enabled === true && sale.guest ? sale.guest.name.split(' ')[0] || sale.guest.name : null;
+  // The venue takes cards in the app but this phone can't (Expo Go, no Terminal SDK or no key),
+  // and there is no counter reader to take one instead: the card tile says so (mock-up note 5).
+  const cardNotHere = !cardAvailable && bootstrap.card_methods?.card_app === true && !methods.cardReader;
+  const waysOffered = splitWaysOffered(balance);
+  const shares = ways ? splitEvenly(balance, ways) : null;
+  // The amount never hides a problem behind "Pay part of it": a bill above the venue's largest
+  // single payment, or a balance that moved while the sheet was open, opens it with the reason.
+  const showPart = partOpen || amountProblem !== null;
+  const wholeBillOk = checkPaymentAmount({ amountPence: balance, balancePence: balance, maxPaymentPence: max }) === null;
+
+  // Typing or splitting keeps the amount open, even when it opened itself to show a problem.
+  function changeAmount(text: string) {
+    setPartOpen(true);
+    setAmountText(text);
+    setWays(null);
+  }
+
+  function chooseWays(next: number) {
+    setPartOpen(true);
+    setWays(next);
+    // Taking a share takes exactly the first share shown, odd pennies and all.
+    setAmountText(penceToInput(splitEvenly(balance, next)[0]!));
+  }
+
+  function payAll() {
+    setPartOpen(false);
+    setWays(null);
+    setAmountText(penceToInput(balance));
+  }
 
   function enter(next: Mode) {
     setError(null);
@@ -192,7 +246,13 @@ function PaySheetBody({
   return (
     // While the client holds the phone (tip, card, result), the sheet becomes client mode: full
     // screen, nothing to drag or tap shut, Back asks staff before stopping (2026-10-11).
-    <PosSheet visible={visible} onClose={onClose} title={title} takeover={mode === 'card' && customerFacing}>
+    <PosSheet
+      visible={visible}
+      onClose={onClose}
+      title={title}
+      eyebrow={mode === 'choose'}
+      headline={mode === 'choose' ? <DueHeadline balancePence={balance} /> : undefined}
+      takeover={mode === 'card' && customerFacing}>
       {mode === 'done' ? (
         <View style={posStyles.stack}>
           <Text variant="title">{t('done.change', { amount: money(changeGiven) })}</Text>
@@ -200,70 +260,103 @@ function PaySheetBody({
         </View>
       ) : mode === 'choose' ? (
         <View style={posStyles.stack}>
-          <Input
-            label={t('pay.amount')}
-            accessibilityLabel={t('pay.amount')}
-            value={amountText}
-            onChangeText={setAmountText}
-            keyboardType="decimal-pad"
-            inputMode="decimal"
-            error={amountProblem ? amountProblemText(amountProblem, t, balance, max, venueName) ?? undefined : undefined}
-            helper={amountOk && remaining > 0 ? t('pay.amount.part', { remaining: money(remaining) }) : undefined}
-          />
-          {balance > 1 ? (
-            <View style={styles.chips}>
-              <Text variant="caption" tone="muted">
-                {t('pay.splitEvenly')}
-              </Text>
-              {[2, 3, 4].map((ways) => (
-                <Chip
-                  key={ways}
-                  label={`${ways} x ${money(splitEvenly(balance, ways)[0]!)}`}
-                  onPress={() => setAmountText(penceToInput(splitEvenly(balance, ways)[0]!))}
-                />
-              ))}
+          {/* Most sales are paid in one go, so the amount waits behind "Pay part of it". */}
+          {balance > 1 && !showPart ? <PayLink label={t('app.pay.part')} expanded={false} onPress={() => setPartOpen(true)} /> : null}
+          {showPart ? (
+            <View style={[styles.part, { borderColor: colors.border, backgroundColor: colors.surfaceRaised }]}>
+              <View style={styles.partHead}>
+                <Text variant="label" tone="secondary" style={styles.flex}>
+                  {t('app.pay.part')}
+                </Text>
+                {wholeBillOk ? <PayLink label={t('app.pay.all')} onPress={payAll} /> : null}
+              </View>
+              <Input
+                accessibilityLabel={t('pay.amount')}
+                value={amountText}
+                onChangeText={changeAmount}
+                keyboardType="decimal-pad"
+                inputMode="decimal"
+                leftIcon={
+                  <Text variant="bodyMedium" tone="muted" style={styles.amountInput}>
+                    £
+                  </Text>
+                }
+                style={styles.amountInput}
+                error={amountProblem ? amountProblemText(amountProblem, t, balance, max, venueName) ?? undefined : undefined}
+                helper={amountOk && remaining > 0 ? t('pay.amount.part', { remaining: money(remaining) }) : undefined}
+              />
+              {waysOffered.length > 0 ? (
+                <View style={styles.split}>
+                  <Text variant="label" tone="secondary">
+                    {t('pay.splitEvenly')}
+                  </Text>
+                  <SplitWays ways={waysOffered} value={ways} onChange={chooseWays} />
+                  {/* Every share, never "2 x": nobody is caught out by the odd penny. */}
+                  {shares ? <Text style={styles.shares}>{shares.map(money).join(' + ')}</Text> : null}
+                </View>
+              ) : null}
             </View>
           ) : null}
-          <View style={posStyles.buttons}>
+          {showPart && amountOk && amount != null ? (
+            <Text variant="label" tone="secondary">
+              {t('app.pay.takeBy', { amount: money(amount) })}
+            </Text>
+          ) : null}
+          <PayTileGrid>
             {cardAvailable ? (
-              <Button
-                label={t('app.pay.card')}
+              <PayTile
+                icon={PAY_ICONS.tapToPay}
+                title={t('app.pay.card')}
+                detail={
+                  buildSupportsTapToPay()
+                    ? t('app.pay.tile.card', { tapToPay: tapToPayButtonLabel() })
+                    : t('app.pay.tile.cardBluetooth')
+                }
+                primary
                 disabled={!amountOk}
                 onPress={() => enter('card')}
-                fullWidth
+              />
+            ) : null}
+            {cardNotHere ? (
+              <PayTileUnavailable
+                title={t('app.pay.card')}
+                flag={t('app.pay.tile.notHere')}
+                detail={methods.payLink ? t('app.pay.tile.notHere.link') : t('app.pay.tile.notHere.other')}
               />
             ) : null}
             {methods.cardReader ? (
-              <Button label={t('pay.method.cardReader')} variant="secondary" disabled={!amountOk} onPress={() => enter('reader')} fullWidth />
-            ) : null}
-            {methods.payLink ? (
-              <Button label={t('pay.method.link')} variant="secondary" disabled={!amountOk} onPress={() => enter('link')} fullWidth />
-            ) : null}
-            {methods.savedCards && amountOk ? (
-              <SavedCardMethods
-                sale={sale}
-                onChoose={(card) => {
-                  setSavedCard(card);
-                  enter('saved');
-                }}
-              />
-            ) : null}
-            <Button label={t('pay.method.cash')} variant="secondary" disabled={!amountOk} onPress={() => enter('cash')} fullWidth />
-            {(bootstrap.payment_types ?? []).map((pt) => (
-              <Button
-                key={pt.id}
-                label={t('pay.method.other', { typeName: pt.name })}
-                variant="secondary"
+              <PayTile
+                icon={PAY_ICONS.reader}
+                title={t('pay.method.cardReader')}
+                detail={t('app.pay.tile.reader')}
+                primary
                 disabled={!amountOk}
-                onPress={() => {
-                  setType(pt);
-                  enter('other');
-                }}
-                fullWidth
+                onPress={() => enter('reader')}
               />
-            ))}
+            ) : null}
+            <PayTile
+              icon={PAY_ICONS.cash}
+              title={t('pay.method.cash')}
+              detail={t('app.pay.tile.cash')}
+              disabled={!amountOk}
+              onPress={() => enter('cash')}
+            />
+            {methods.payLink ? (
+              <PayTile
+                icon={PAY_ICONS.link}
+                title={t('pay.method.link')}
+                detail={t('app.pay.tile.link')}
+                disabled={!amountOk}
+                onPress={() => enter('link')}
+              />
+            ) : null}
             {vouchersRedeemable ? (
-              <Button label={t('pay.method.voucher')} variant="secondary" onPress={() => enter('voucher')} fullWidth />
+              <PayTile
+                icon={PAY_ICONS.voucher}
+                title={t('pay.method.voucher')}
+                detail={t('app.pay.tile.voucher')}
+                onPress={() => enter('voucher')}
+              />
             ) : null}
             {sale.guest && bootstrap.vouchers ? (
               <CreditMethod
@@ -273,12 +366,27 @@ function PaySheetBody({
                 onPress={() => enter('credit')}
               />
             ) : null}
-          </View>
-          {!cardAvailable && bootstrap.card_methods?.card_app ? (
-            <Text variant="caption" tone="muted">
-              {t('app.pay.cardUnavailable')}
-            </Text>
-          ) : null}
+            {methods.savedCards ? (
+              <SavedCardMethods
+                sale={sale}
+                disabled={!amountOk}
+                onChoose={(card) => {
+                  setSavedCard(card);
+                  enter('saved');
+                }}
+              />
+            ) : null}
+          </PayTileGrid>
+          <OtherWays
+            types={bootstrap.payment_types ?? []}
+            disabled={!amountOk}
+            onChoose={(id) => {
+              const pt = (bootstrap.payment_types ?? []).find((p) => p.id === id);
+              if (!pt) return;
+              setType(pt);
+              enter('other');
+            }}
+          />
         </View>
       ) : mode === 'cash' ? (
         <View style={posStyles.stack}>
@@ -504,27 +612,26 @@ function CreditMethod({
   const credit = Math.max(0, stored.data?.credit.balance_pence ?? 0);
   if (credit <= 0) return null;
   return (
-    <View style={styles.method}>
-      <Button
-        label={t('pay.method.credit')}
-        variant="secondary"
-        onPress={() => {
-          onCredit(credit);
-          onPress();
-        }}
-        fullWidth
-      />
-      <Text variant="caption" tone="muted">
-        {t('cpay.available', { clientName, amount: money(credit) })}
-      </Text>
-    </View>
+    <PayTile
+      icon={PAY_ICONS.credit}
+      title={t('pay.method.credit')}
+      detail={t('cpay.available', { clientName, amount: money(credit) })}
+      onPress={() => {
+        onCredit(credit);
+        onPress();
+      }}
+    />
   );
 }
 
 const styles = StyleSheet.create({
-  method: { gap: spacing.xxs },
   chips: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.sm },
   flex: { flex: 1 },
+  part: { borderWidth: 1, borderRadius: radius.card, paddingHorizontal: 14, paddingTop: spacing.md, paddingBottom: 14, gap: spacing.md },
+  partHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  amountInput: { fontSize: 20, lineHeight: 26, fontFamily: fonts.semibold },
+  split: { gap: spacing.sm },
+  shares: { fontSize: 15, lineHeight: 20, fontFamily: fonts.bold, fontVariant: ['tabular-nums'] },
 });
 
 /** Mounted only while open, so every opening starts from a clean form. */

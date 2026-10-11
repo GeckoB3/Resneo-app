@@ -28,6 +28,7 @@ import {
   saleIsEditable,
   saleStatusCopyId,
   splitEvenly,
+  splitWaysOffered,
   spreadRefund,
   tipBasePence,
   tipConfig,
@@ -87,9 +88,22 @@ describe('cash', () => {
 });
 
 describe('split payments', () => {
-  it('splits evenly with the odd penny on the last share', () => {
-    expect(splitEvenly(1000, 3)).toEqual([333, 333, 334]);
+  it('splits evenly with the odd pennies on the first shares', () => {
+    expect(splitEvenly(1000, 3)).toEqual([334, 333, 333]);
+    expect(splitEvenly(4995, 2)).toEqual([2498, 2497]);
+    expect(splitEvenly(4995, 3)).toEqual([1665, 1665, 1665]);
+    expect(splitEvenly(4995, 4)).toEqual([1249, 1249, 1249, 1248]);
     expect(splitEvenly(1000, 0)).toEqual([1000]);
+    // Every split adds back up to the balance.
+    for (const balance of [1, 2, 3, 7, 99, 101, 4995, 123457]) {
+      for (const ways of [2, 3, 4]) expect(splitEvenly(balance, ways).reduce((a, b) => a + b, 0)).toBe(balance);
+    }
+  });
+
+  it('offers only the splits that leave every share at least a penny', () => {
+    expect(splitWaysOffered(4995)).toEqual([2, 3, 4]);
+    expect(splitWaysOffered(3)).toEqual([2, 3]);
+    expect(splitWaysOffered(1)).toEqual([]);
   });
 
   it('refuses nothing at all, more than the balance, and more than the ceiling with the tip', () => {

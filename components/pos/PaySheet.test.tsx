@@ -3,6 +3,11 @@
  * with a required reference, the card button only where the app can take a card, and, when tipping
  * is on, the client's own tip screen handed to the card collector (never a tip step in staff's sheet).
  *
+ * Laid out as Part 2 mock-up 1 (2026-10-11): "£35.50 to pay" as the headline, the amount behind
+ * "Pay part of it" with an even split that shows every share (odd pennies first), the methods as
+ * tiles, the venue's own types under "Other ways", and a card tile that says when this phone can't
+ * take cards.
+ *
  * jest hoists mock factories above imports, so every closed-over variable is prefixed `mock*`.
  */
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
@@ -39,6 +44,9 @@ jest.mock('@/components/pos/ReaderPayPanel', () => {
   const { Text } = jest.requireActual<typeof import('react-native')>('react-native');
   return { ReaderPayPanel: (props: { amountPence: number }) => <Text>{`reader-panel ${props.amountPence}`}</Text> };
 });
+// Whether this build and phone may offer Tap to Pay (the card tile's line says so).
+let mockTapToPay = true;
+jest.mock('@/lib/payments/tap-to-pay-build-support', () => ({ buildSupportsTapToPay: () => mockTapToPay }));
 jest.mock('@/components/pos/SavedCards', () => {
   const { Text } = jest.requireActual<typeof import('react-native')>('react-native');
   return { SavedCardMethods: () => <Text>saved-cards</Text>, SavedCardCharge: () => <Text>saved-charge</Text> };
@@ -87,7 +95,16 @@ async function renderSheet(props: Partial<Parameters<typeof PaySheet>[0]> = {}) 
   return { send, onPaid, onClose };
 }
 
-beforeEach(() => mockCardProps.mockReset());
+async function openPart() {
+  await act(async () => {
+    fireEvent.press(screen.getByText('Pay part of it'));
+  });
+}
+
+beforeEach(() => {
+  mockCardProps.mockReset();
+  mockTapToPay = true;
+});
 
 describe('PaySheet', () => {
   it('records cash with what was handed over, a request id, and shows the change', async () => {
@@ -143,14 +160,17 @@ describe('PaySheet', () => {
 
   it('takes part of the bill and says what is left', async () => {
     await renderSheet();
+    await openPart();
     await act(async () => {
       fireEvent.changeText(screen.getByLabelText('Amount to pay now'), '20');
     });
     expect(screen.getByText('Paying part now leaves £15.50 to pay.')).toBeTruthy();
+    expect(screen.getByText('Take £20.00 by')).toBeTruthy();
   });
 
   it('refuses more than the balance before sending anything', async () => {
     const { send } = await renderSheet();
+    await openPart();
     await act(async () => {
       fireEvent.changeText(screen.getByLabelText('Amount to pay now'), '40');
     });
@@ -161,7 +181,10 @@ describe('PaySheet', () => {
   it('needs the reference a payment type asks for', async () => {
     const { send } = await renderSheet();
     await act(async () => {
-      fireEvent.press(screen.getByText('Other: Bank transfer'));
+      fireEvent.press(screen.getByText('Other ways'));
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByText('Bank transfer'));
     });
     const confirm = screen.getByText('Record £35.50 by Bank transfer');
     await act(async () => {
@@ -182,9 +205,19 @@ describe('PaySheet', () => {
     });
   });
 
-  it('offers a card only where the app can take one', async () => {
+  it('offers a card only where the app can take one, and says so in the card tile where it cannot', async () => {
     await renderSheet({ cardAvailable: false });
-    expect(screen.queryByText('Card')).toBeNull();
+    // The venue takes cards in the app, this phone can't, and there is no counter reader.
+    expect(screen.getByText('Card')).toBeTruthy();
+    expect(screen.getByText('Not on this phone')).toBeTruthy();
+    expect(screen.getByText('Take cash or another way, or use the web till')).toBeTruthy();
+    // Nothing to press: the collector never opens, and the old footnote is gone.
+    expect(screen.queryByRole('button', { name: 'Card' })).toBeNull();
+    await act(async () => {
+      fireEvent.press(screen.getByText('Card'));
+    });
+    expect(screen.queryByText('card-collector')).toBeNull();
+    expect(screen.queryByText("Card payments can't be taken on this phone. Take cash or another way, or use the web till.")).toBeNull();
   });
 
   it('goes straight to the card with tipping on, giving the collector the client\'s tip screen', async () => {
@@ -235,6 +268,7 @@ describe('PaySheet', () => {
 
   it('makes a pay link for part of the bill', async () => {
     await renderSheet({ bootstrap: bootstrap({ card_methods: { card_app: true, pay_link: true } }) });
+    await openPart();
     await act(async () => {
       fireEvent.changeText(screen.getByLabelText('Amount to pay now'), '20.00');
     });
@@ -267,5 +301,171 @@ describe('PaySheet', () => {
       fireEvent.press(screen.getByText('Card'));
     });
     expect(mockCardProps).toHaveBeenLastCalledWith(expect.objectContaining({ consentClientName: 'Ada' }));
+  });
+  describe('as a clear choice (Part 2 mock-up 1)', () => {
+    const types = [
+      { id: 'type-1', name: 'Bank transfer', requires_reference: true, is_active: true },
+      { id: 'type-2', name: 'Paper voucher', requires_reference: false, is_active: true },
+    ];
+
+    it("leads with the amount due, shows the methods as tiles and folds the venue's own types", async () => {
+      await renderSheet({
+        bootstrap: bootstrap({
+          card_methods: { card_app: true, card_reader: true, pay_link: true },
+          vouchers: { selling: true, redeemable: true },
+          payment_types: types,
+        }),
+      });
+      expect(screen.getByText('Take payment')).toBeTruthy();
+      expect(screen.getByText('£35.50 to pay')).toBeTruthy();
+      // Most sales are paid in one go: the amount waits behind "Pay part of it".
+      expect(screen.queryByLabelText('Amount to pay now')).toBeNull();
+      expect(screen.getByText('Tap, insert or swipe')).toBeTruthy();
+      expect(screen.getByText('Shows the change to give')).toBeTruthy();
+      expect(screen.getByText('They pay on their own phone')).toBeTruthy();
+      expect(screen.getByText('Scan or type the code')).toBeTruthy();
+      // Card methods are navy; the rest are not.
+      expect(screen.getByRole('button', { name: 'Card reader' })).toHaveStyle({ backgroundColor: '#003B6F' });
+      expect(screen.getByRole('button', { name: 'Cash' })).not.toHaveStyle({ backgroundColor: '#003B6F' });
+      // This phone can't take cards, but the counter reader can: no "Not on this phone", no footnote.
+      expect(screen.queryByText('Not on this phone')).toBeNull();
+      expect(screen.queryByText("Card payments can't be taken on this phone. Take cash or another way, or use the web till.")).toBeNull();
+      // One row names the venue's own types; each is a tap away once it opens.
+      expect(screen.getByText('Bank transfer, Paper voucher')).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Paper voucher' })).toBeNull();
+      await act(async () => {
+        fireEvent.press(screen.getByRole('button', { name: 'Other ways' }));
+      });
+      expect(screen.getByRole('button', { name: 'Paper voucher' })).toBeTruthy();
+      expect(screen.queryByText('Other: Bank transfer')).toBeNull();
+      await act(async () => {
+        fireEvent.press(screen.getByRole('button', { name: 'Paper voucher' }));
+      });
+      expect(screen.getByText('Record £35.50 by Paper voucher')).toBeTruthy();
+    });
+
+    it('splits evenly with every share shown, odd pennies first, and takes exactly that share', async () => {
+      const odd = makeSale({ total_pence: 4995, balance_due_pence: 4995, lines: [makeLine({ total_pence: 4995 })] });
+      const { send } = await renderSheet({ sale: odd });
+      expect(screen.getByText('£49.95 to pay')).toBeTruthy();
+      await openPart();
+      await act(async () => {
+        fireEvent.press(screen.getByRole('radio', { name: 'Split it 2 ways' }));
+      });
+      expect(screen.getByText('£24.98 + £24.97')).toBeTruthy();
+      expect(screen.getByLabelText('Amount to pay now').props.value).toBe('24.98');
+      expect(screen.getByText('Paying part now leaves £24.97 to pay.')).toBeTruthy();
+      expect(screen.getByText('Take £24.98 by')).toBeTruthy();
+      await act(async () => {
+        fireEvent.press(screen.getByRole('radio', { name: 'Split it 4 ways' }));
+      });
+      expect(screen.getByText('£12.49 + £12.49 + £12.49 + £12.48')).toBeTruthy();
+      expect(screen.getByText('Take £12.49 by')).toBeTruthy();
+      await act(async () => {
+        fireEvent.press(screen.getByRole('radio', { name: 'Split it 2 ways' }));
+      });
+      await act(async () => {
+        fireEvent.press(screen.getByText('Cash'));
+      });
+      await act(async () => {
+        fireEvent.press(screen.getByText('Record £24.98 in cash'));
+      });
+      expect((send.mock.calls[0]![0] as { body: Record<string, unknown> }).body).toMatchObject({ method: 'cash', amount_pence: 2498 });
+    });
+
+    it('puts the odd penny of £10.00 in three on the first share', async () => {
+      const ten = makeSale({ total_pence: 1000, balance_due_pence: 1000, lines: [makeLine({ total_pence: 1000 })] });
+      await renderSheet({ sale: ten });
+      await openPart();
+      await act(async () => {
+        fireEvent.press(screen.getByRole('radio', { name: 'Split it 3 ways' }));
+      });
+      expect(screen.getByText('£3.34 + £3.33 + £3.33')).toBeTruthy();
+      expect(screen.getByRole('radio', { name: 'Split it 3 ways' })).toHaveProp('accessibilityState', expect.objectContaining({ checked: true }));
+      // Typing an amount by hand lets go of the split.
+      await act(async () => {
+        fireEvent.changeText(screen.getByLabelText('Amount to pay now'), '5');
+      });
+      expect(screen.queryByText('£3.34 + £3.33 + £3.33')).toBeNull();
+      expect(screen.getByText('Paying part now leaves £5.00 to pay.')).toBeTruthy();
+    });
+
+    it('goes back to the whole bill with "Pay all of it"', async () => {
+      const { send } = await renderSheet();
+      await openPart();
+      await act(async () => {
+        fireEvent.changeText(screen.getByLabelText('Amount to pay now'), '20');
+      });
+      await act(async () => {
+        fireEvent.press(screen.getByText('Pay all of it'));
+      });
+      expect(screen.queryByLabelText('Amount to pay now')).toBeNull();
+      expect(screen.queryByText(/^Take .* by$/)).toBeNull();
+      await act(async () => {
+        fireEvent.press(screen.getByText('Cash'));
+      });
+      await act(async () => {
+        fireEvent.press(screen.getByText('Record £35.50 in cash'));
+      });
+      expect((send.mock.calls[0]![0] as { body: Record<string, unknown> }).body).toMatchObject({ amount_pence: 3550 });
+    });
+
+    it("opens the amount by itself when the whole bill is more than the venue's largest single payment", async () => {
+      await renderSheet({ bootstrap: bootstrap({ settings: { max_payment_pence: 2000 } }) });
+      expect(screen.getByLabelText('Amount to pay now')).toBeTruthy();
+      expect(
+        screen.getByText(
+          "That's more than £20.00, the largest single payment Studio allows. Check the amount, or ask an admin to change the limit in Settings, Checkout.",
+        ),
+      ).toBeTruthy();
+      // "Pay all of it" would only bring the same problem back.
+      expect(screen.queryByText('Pay all of it')).toBeNull();
+      expect(screen.getByRole('button', { name: 'Cash' })).toBeDisabled();
+      await act(async () => {
+        fireEvent.press(screen.getByRole('radio', { name: 'Split it 2 ways' }));
+      });
+      expect(screen.getByText('£17.75 + £17.75')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Cash' })).not.toBeDisabled();
+    });
+
+    it('holds every tile that takes the amount while the amount is more than the bill', async () => {
+      await renderSheet({ bootstrap: bootstrap({ card_methods: { card_app: true, pay_link: true }, vouchers: { selling: true, redeemable: true } }) });
+      await openPart();
+      await act(async () => {
+        fireEvent.changeText(screen.getByLabelText('Amount to pay now'), '40');
+      });
+      expect(screen.getByRole('button', { name: 'Cash' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Pay by link or QR code' })).toBeDisabled();
+      // A voucher asks for its own amount, as before.
+      expect(screen.getByRole('button', { name: 'Gift voucher' })).not.toBeDisabled();
+    });
+
+    it("tells staff to send a pay link when the phone can't take cards and links are on", async () => {
+      await renderSheet({ cardAvailable: false, bootstrap: bootstrap({ card_methods: { card_app: true, pay_link: true } }) });
+      expect(screen.getByText('Not on this phone')).toBeTruthy();
+      expect(screen.getByText('Send a pay link, or use the web till')).toBeTruthy();
+      expect(screen.getByLabelText('Card. Not on this phone. Send a pay link, or use the web till')).toBeTruthy();
+    });
+
+    it('shows no card tile at a venue that takes no cards in the app', async () => {
+      await renderSheet({ cardAvailable: false, bootstrap: bootstrap({ card_methods: { card_app: false } }) });
+      expect(screen.queryByText('Card')).toBeNull();
+      expect(screen.queryByText('Not on this phone')).toBeNull();
+    });
+
+    it('offers the card on this phone first, in navy, saying how it is taken', async () => {
+      await renderSheet({ cardAvailable: true, bootstrap: bootstrap({ card_methods: { card_app: true, card_reader: true } }) });
+      expect(screen.getByRole('button', { name: 'Card' })).toHaveStyle({ backgroundColor: '#003B6F' });
+      expect(screen.getByText('Tap to Pay on iPhone or a Bluetooth reader')).toBeTruthy();
+      const order = screen.getAllByRole('button').map((b) => b.props.accessibilityLabel as string);
+      expect(order.indexOf('Card')).toBeLessThan(order.indexOf('Card reader'));
+      expect(order.indexOf('Card reader')).toBeLessThan(order.indexOf('Cash'));
+    });
+
+    it('says a phone without Tap to Pay takes cards on its Bluetooth reader', async () => {
+      mockTapToPay = false;
+      await renderSheet({ cardAvailable: true });
+      expect(screen.getByText('With your Bluetooth card reader')).toBeTruthy();
+    });
   });
 });

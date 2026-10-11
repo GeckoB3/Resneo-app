@@ -87,6 +87,8 @@ export function PosSheet({
   onClose,
   title,
   subtitle,
+  eyebrow = false,
+  headline,
   children,
   footer,
   takeover = false,
@@ -95,6 +97,10 @@ export function PosSheet({
   onClose: () => void;
   title: string;
   subtitle?: string | null;
+  /** The title as a small overline above `headline` ("TAKE PAYMENT" over "£49.95 to pay"). */
+  eyebrow?: boolean;
+  /** A headline under the title that stays put while the body scrolls. */
+  headline?: ReactNode;
   children: ReactNode;
   footer?: ReactNode;
   /** Client mode: the sheet fills the screen and the children draw everything (`Sheet` takeover). */
@@ -110,7 +116,14 @@ export function PosSheet({
   return (
     <Sheet visible={visible} onClose={onClose} fill maxHeight="92%">
       <View style={styles.sheetHeader}>
-        <Text variant="heading">{title}</Text>
+        {eyebrow ? (
+          <Text variant="overline" tone="muted" accessibilityRole="header">
+            {title}
+          </Text>
+        ) : (
+          <Text variant="heading">{title}</Text>
+        )}
+        {headline ?? null}
         {subtitle ? (
           <Text variant="bodySmall" tone="muted">
             {subtitle}

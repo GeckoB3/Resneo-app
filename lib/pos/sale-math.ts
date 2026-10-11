@@ -56,13 +56,21 @@ export function cashCovers(amountPence: number, tipPence: number, tenderedPence:
   return tenderedPence >= amountPence + tipPence;
 }
 
-/** Equal shares of the balance (`pay.splitEvenly`): the last share takes any odd penny. */
+/**
+ * Equal shares of the balance (`pay.splitEvenly`), largest first: the odd pennies go to the first
+ * shares, so £49.95 two ways is £24.98 + £24.97 and £10.00 three ways is £3.34 + £3.33 + £3.33
+ * (owner's decision, 2026-10-11). Taking a share takes the first one, exactly as shown.
+ */
 export function splitEvenly(balancePence: number, ways: number): number[] {
   const n = Math.max(1, Math.floor(ways));
   const base = Math.floor(balancePence / n);
-  const shares = Array.from({ length: n }, () => base);
-  shares[n - 1] = balancePence - base * (n - 1);
-  return shares;
+  const odd = balancePence - base * n;
+  return Array.from({ length: n }, (_, i) => base + (i < odd ? 1 : 0));
+}
+
+/** The ways a balance can be split so every share is at least a penny (the 2, 3 and 4 ways control). */
+export function splitWaysOffered(balancePence: number): number[] {
+  return [2, 3, 4].filter((ways) => balancePence >= ways);
 }
 
 export type AmountProblem = 'empty' | 'zero' | 'exceeds_balance' | 'above_ceiling';

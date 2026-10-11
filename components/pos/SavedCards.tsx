@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { View } from 'react-native';
 
 import { ErrorLine, money, posStyles, usePosT, writeError, type Send } from '@/components/pos/parts';
+import { PAY_ICONS, PayTile } from '@/components/pos/PayTiles';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
@@ -31,28 +32,40 @@ import type { PosPayment, PosSale, PosSavedCard } from '@/types/pos';
  *   request (`take_payment`), which asks first and then removes it for good.
  */
 
-export function SavedCardMethods({ sale, onChoose }: { sale: PosSale; onChoose: (card: PosSavedCard) => void }) {
+export function SavedCardMethods({
+  sale,
+  onChoose,
+  disabled = false,
+}: {
+  sale: PosSale;
+  onChoose: (card: PosSavedCard) => void;
+  /** While the amount to pay can't be taken. */
+  disabled?: boolean;
+}) {
   const t = usePosT();
   const { venue } = useVenueContext();
   const cards = useGuestSavedCards(sale.guest?.id);
   const list = cards.data?.card_on_file_enabled ? cards.data.cards : [];
   if (list.length === 0) return null;
   const timeZone = venue?.timezone ?? 'Europe/London';
+  // One tile per card in the payment sheet's grid, with when and where they agreed.
   return (
     <>
-      {list.map((card) => (
-        <View key={card.id} style={{ gap: 2 }}>
-          <Button
-            label={t('saved.method', { brand: cardBrandName(card.brand), last4: card.last4 ?? '' })}
-            variant="secondary"
+      {list.map((card) => {
+        const brand = cardBrandName(card.brand);
+        return (
+          <PayTile
+            key={card.id}
+            icon={PAY_ICONS.savedCard}
+            title={t('pay.method.savedCard')}
+            detail={`${brand} ending ${card.last4 ?? ''}`.trim()}
+            note={savedCardConsentLine(card, t, timeZone)}
+            label={t('saved.method', { brand, last4: card.last4 ?? '' })}
+            disabled={disabled}
             onPress={() => onChoose(card)}
-            fullWidth
           />
-          <Text variant="caption" tone="muted">
-            {savedCardConsentLine(card, t, timeZone)}
-          </Text>
-        </View>
-      ))}
+        );
+      })}
     </>
   );
 }

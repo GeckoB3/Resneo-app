@@ -608,6 +608,24 @@ export const POS_COPY = {
   'app.pay.cardUnavailable': "Card payments can't be taken on this phone. Take cash or another way, or use the web till.",
   'app.pay.tipFirst': 'Choose a tip first, then hand over for the card.',
   'app.pay.withTip': 'Charge {amount}',
+  // The payment sheet as a clear choice (Part 2 mock-up 1, 2026-10-11): the amount due is the
+  // headline (`sale.bar.balance`), the amount field waits behind "Pay part of it", a split shows
+  // every share, the everyday methods are tiles, and the venue's own types fold under "Other ways".
+  'app.pay.part': 'Pay part of it', // (added)
+  'app.pay.all': 'Pay all of it', // (added)
+  'app.pay.takeBy': 'Take {amount} by', // (added) above the tiles while paying part
+  'app.pay.ways': '{count} ways', // (added) the split control
+  'app.pay.ways.a11y': 'Split it {count} ways', // (added)
+  'app.pay.tile.card': '{tapToPay} or a Bluetooth reader', // (added) the card on this phone
+  'app.pay.tile.cardBluetooth': 'With your Bluetooth card reader', // (added) a phone without Tap to Pay
+  'app.pay.tile.reader': 'Tap, insert or swipe', // (added) the counter reader
+  'app.pay.tile.cash': 'Shows the change to give', // (added)
+  'app.pay.tile.link': 'They pay on their own phone', // (added)
+  'app.pay.tile.voucher': 'Scan or type the code', // (added)
+  'app.pay.tile.notHere': 'Not on this phone', // (added) the card tile on a phone that can't take cards
+  'app.pay.tile.notHere.link': 'Send a pay link, or use the web till', // (added)
+  'app.pay.tile.notHere.other': 'Take cash or another way, or use the web till', // (added)
+  'app.pay.otherWays': 'Other ways', // (added) the venue's own payment types
   'app.card.hold': "Hold the {client}'s card near the top of your phone.",
   'app.card.holdReader': 'Hold the card to the reader, or insert the chip.',
   'app.card.preparing': 'Getting the card reader ready.',
