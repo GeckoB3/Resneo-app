@@ -17,7 +17,7 @@ import { reportsCopy } from '@/lib/pos/reports-copy';
 import { parseMoneyInput } from '@/lib/pos/sale-math';
 import { formatDay, todayInZone, voucherLastDay } from '@/lib/pos/voucher-math';
 import { posReportPaths, useVoucherAction, useVoucherDetail, type VoucherAction } from '@/lib/queries/usePosReports';
-import { formatLongDay, formatMoneyExact, isDisputeHold, movementWords, voucherLastDayYmd } from '@/lib/reports/pos-report-format';
+import { formatLongDay, formatMoneyExact, isDisputeHold, movementWords, voucherEmailAction, voucherLastDayYmd } from '@/lib/reports/pos-report-format';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { VoucherDetail } from '@/types/pos-reports';
@@ -49,11 +49,13 @@ export function ReportVoucherStatus({ status }: { status: string }) {
   return <Badge label={t(s.id)} tone={s.tone} />;
 }
 
-/** `vch.sent`, `vch.scheduled` or `vch.notSent`. */
+/** `vch.sent`, `vch.scheduled` or `vch.notSent`; a used-up voucher is never sent. */
 function deliveryWords(a: VoucherDetail['account'], timeZone: string): string {
   const email = a.recipient_email ?? a.buyer_email;
   if (a.sent_at && email) return reportsCopy('vch.sent', { email, date: formatDay(a.sent_at, timeZone) });
-  if (a.send_at && email && !a.sent_at) return reportsCopy('vch.scheduled', { email, date: formatDay(a.send_at, timeZone) });
+  if (a.send_at && email && !a.sent_at && a.status !== 'used_up') {
+    return reportsCopy('vch.scheduled', { email, date: formatDay(a.send_at, timeZone) });
+  }
   return reportsCopy('vch.notSent');
 }
 
@@ -96,6 +98,7 @@ export function VoucherDetailSheet({
   const lastDay = a ? voucherLastDay(a.expires_at, timeZone) : null;
   const newestExtendId = detail?.movements.find((m) => m.kind === 'extend')?.id ?? null;
   const closed = a?.status === 'cancelled';
+  const emailAction = a ? voucherEmailAction(a) : null;
   const today = todayInZone(timeZone);
 
   const close = () => {
@@ -158,7 +161,7 @@ export function VoucherDetailSheet({
         const toRecipient = Boolean(a.recipient_email || a.recipient_name);
         return (
           <View style={styles.stack}>
-            <Text variant="label">{reportsCopy('vch.resend')}</Text>
+            <Text variant="label">{reportsCopy(emailAction ?? 'vch.resend')}</Text>
             <Input
               label={toRecipient ? reportsCopy('vch.resend.to') : reportsCopy('vch.resend.holder')}
               accessibilityLabel={toRecipient ? reportsCopy('vch.resend.to') : reportsCopy('vch.resend.holder')}
@@ -170,7 +173,7 @@ export function VoucherDetailSheet({
             />
             <ErrorLine message={error} />
             <Button
-              label={reportsCopy('vch.resend')}
+              label={reportsCopy(emailAction ?? 'vch.resend')}
               loading={action.isPending}
               disabled={!text.trim()}
               onPress={() => void run({ action: 'resend', to: text.trim() })}
@@ -338,7 +341,10 @@ export function VoucherDetailSheet({
 
             <View style={styles.facts}>
               {isVoucher ? <Text variant="bodySmall">{reportsCopy('vch.initial', { amount: money(a.initial_pence) })}</Text> : null}
-              <Text variant="bodySmall">{reportsCopy('vch.issued', { date: formatDay(a.issued_at, timeZone) })}</Text>
+              {/* Only a voucher sold here was bought; paper, imported and credit were added. */}
+              <Text variant="bodySmall">
+                {reportsCopy(isVoucher && a.source === 'sold' ? 'vch.issued' : 'vch.added', { date: formatDay(a.issued_at, timeZone) })}
+              </Text>
               {isVoucher ? (
                 <Text variant="bodySmall">{lastDay ? t('vch.expires', { date: lastDay }) : reportsCopy('vch.noExpiry')}</Text>
               ) : null}
@@ -359,7 +365,9 @@ export function VoucherDetailSheet({
                 {isVoucher ? (
                   <>
                     <Button label={reportsCopy('vch.pdf')} variant="secondary" loading={pdfBusy} onPress={() => void sharePdf()} fullWidth />
-                    <Button label={reportsCopy('vch.resend')} variant="secondary" onPress={() => open('resend')} fullWidth />
+                    {emailAction ? (
+                      <Button label={reportsCopy(emailAction)} variant="secondary" onPress={() => open('resend')} fullWidth />
+                    ) : null}
                     <Button label={reportsCopy('vch.extend')} variant="secondary" onPress={() => open('extend')} fullWidth />
                     {a.status === 'frozen' ? (
                       <Button label={reportsCopy('vch.unfreeze')} variant="secondary" onPress={() => open('unfreeze')} fullWidth />
@@ -378,7 +386,7 @@ export function VoucherDetailSheet({
               {detail.movements.map((m) => (
                 <View key={m.id} style={[styles.movement, { borderBottomColor: colors.border }]}>
                   <View style={styles.flex}>
-                    <Text variant="bodySmall">{movementWords(m, { lastDay, newestExtendId })}</Text>
+                    <Text variant="bodySmall">{movementWords(m, { lastDay, newestExtendId, source: a.source })}</Text>
                     <Text variant="caption" tone="muted">
                       {[formatDay(m.created_at, timeZone), m.staff_name].filter(Boolean).join(', ')}
                     </Text>

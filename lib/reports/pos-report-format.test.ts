@@ -15,6 +15,7 @@ import {
   isDisputeHold,
   marginPercentLabel,
   movementWords,
+  voucherEmailAction,
   periodLabel,
   rangeQuery,
   refundReasonLabel,
@@ -143,6 +144,41 @@ describe('vouchers', () => {
     expect(movementWords(m('extend'), { lastDay: null, newestExtendId: 'extend' })).toBe('No expiry date');
     expect(movementWords(m('adjust'), ctx)).toBe('Changed by Sam: Goodwill');
     expect(movementWords(m('cancel'), ctx)).toBe('Cancelled: Goodwill');
+  });
+
+  it('says Added for a voucher from paper or an import, and words holds and releases', () => {
+    const m = (kind: string, over: Partial<VoucherMovement> = {}): VoucherMovement => ({
+      id: kind,
+      kind,
+      delta_pence: 0,
+      sale_id: null,
+      sale_number: null,
+      staff_name: 'Sam',
+      reason: 'Lost in the post',
+      business_date: '2026-10-01',
+      created_at: '2026-10-01T10:00:00Z',
+      ...over,
+    });
+    const ctx = { lastDay: null, newestExtendId: null };
+    expect(movementWords(m('issue'), { ...ctx, source: 'sold' })).toBe('Bought');
+    expect(movementWords(m('issue'), { ...ctx, source: 'existing' })).toBe('Added');
+    expect(movementWords(m('hold'), ctx)).toBe('Put on hold: Lost in the post');
+    expect(movementWords(m('hold', { reason: null }), ctx)).toBe('Put on hold');
+    expect(movementWords(m('hold', { dispute: true, reason: null }), ctx)).toBe('Put on hold while a payment dispute is open');
+    expect(movementWords(m('release', { reason: 'Found' }), ctx)).toBe('Taken off hold: Found');
+    expect(movementWords(m('release', { dispute: true, reason: null }), ctx)).toBe(
+      'Taken off hold, because the payment dispute closed',
+    );
+  });
+
+  it('offers the email button only when the voucher can be sent', () => {
+    const a = { kind: 'voucher', status: 'active', recipient_email: 'jo@example.com', buyer_email: null, sent_at: null };
+    expect(voucherEmailAction(a)).toBe('vch.send');
+    expect(voucherEmailAction({ ...a, sent_at: '2026-10-01T10:00:00Z' })).toBe('vch.resend');
+    expect(voucherEmailAction({ ...a, recipient_email: null })).toBeNull();
+    expect(voucherEmailAction({ ...a, status: 'frozen' })).toBeNull();
+    expect(voucherEmailAction({ ...a, status: 'used_up' })).toBeNull();
+    expect(voucherEmailAction({ ...a, kind: 'credit' })).toBeNull();
   });
 
   it('tells a dispute hold from a hold put on by hand', () => {

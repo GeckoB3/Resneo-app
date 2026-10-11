@@ -299,12 +299,26 @@ export function num(v: unknown): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : Number(v ?? 0) || 0;
 }
 
-/** What one voucher movement says, in the deck's words (`movementWords`). */
-export function movementWords(m: VoucherMovement, ctx: { lastDay: string | null; newestExtendId: string | null }): string {
+/**
+ * What one voucher movement says, in the deck's words (`movementWords`). `source` is the voucher's:
+ * one added from paper or an import was never bought here, so it says "Added". Holds and releases
+ * come from the audit log as zero rows (web W5-19).
+ */
+export function movementWords(
+  m: VoucherMovement,
+  ctx: { lastDay: string | null; newestExtendId: string | null; source?: string | null },
+): string {
   const saleNo = m.sale_number ?? '';
+  const reason = m.reason?.trim();
   switch (m.kind) {
     case 'issue':
-      return reportsCopy('vch.mov.issue');
+      return reportsCopy(ctx.source === 'existing' ? 'vch.mov.added' : 'vch.mov.issue');
+    case 'hold':
+      if (m.dispute) return reportsCopy('vch.mov.hold.dispute');
+      return reason ? reportsCopy('vch.mov.hold', { reason }) : reportsCopy('vch.mov.hold.noReason');
+    case 'release':
+      if (m.dispute) return reportsCopy('vch.mov.release.dispute');
+      return reason ? reportsCopy('vch.mov.release', { reason }) : reportsCopy('vch.mov.release.noReason');
     case 'redeem':
       return reportsCopy('vch.mov.redeem', { saleNo });
     case 'redeem_reversal':
@@ -326,6 +340,23 @@ export function movementWords(m: VoucherMovement, ctx: { lastDay: string | null;
     default:
       return m.reason ?? m.kind;
   }
+}
+
+/**
+ * The email button the voucher sheet offers (web `voucherEmailAction`): none without an address to
+ * send to, while on hold, cancelled or used up (none of them is ever sent); "Email the voucher" when
+ * it has never gone, else "Send the email again".
+ */
+export function voucherEmailAction(a: {
+  kind: string;
+  status: string;
+  recipient_email: string | null;
+  buyer_email: string | null;
+  sent_at: string | null;
+}): 'vch.send' | 'vch.resend' | null {
+  if (a.kind === 'credit' || !(a.recipient_email || a.buyer_email)) return null;
+  if (a.status === 'frozen' || a.status === 'cancelled' || a.status === 'used_up') return null;
+  return a.sent_at ? 'vch.resend' : 'vch.send';
 }
 
 /** Whether a held voucher is held for a payment dispute (web `voucherHoldKind`, `disputeFreezeReason`). */

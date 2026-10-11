@@ -310,6 +310,8 @@ export interface VoucherMovement {
   reason: string | null;
   business_date: string;
   created_at: string;
+  /** A `hold` or `release` row from a payment dispute, not a team member (web W5-19). */
+  dispute?: boolean;
 }
 
 /** The voucher sheet, as GET and PATCH /api/venue/pos/vouchers/[id] return it. */
