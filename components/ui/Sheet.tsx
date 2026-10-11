@@ -9,15 +9,16 @@ import {
   type DimensionValue,
 } from 'react-native';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
-import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import Animated, { FadeIn, runOnJS, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useKeyboardInset } from '@/components/ui/useKeyboardInset';
 import { useReduceMotion } from '@/lib/motion';
+import { requestClientBack } from '@/lib/ui/client-facing';
 import { useOverlayOpen } from '@/lib/ui/open-overlays';
 import { SHEET_MAX_WIDTH, useContentMaxWidth } from '@/lib/responsive';
 import { AppLockCover } from '@/providers/AppLockProvider';
-import { radius, spacing } from '@/theme/index';
+import { clientColors, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 
 /** Drag the handle/header down past this many points to dismiss the sheet. */
@@ -49,6 +50,13 @@ type SheetProps = {
    *   which double-counts the reserved space). See sheet-keyboard-avoidance memo.
    */
   keyboardAvoidance?: 'reserve' | 'overlay';
+  /**
+   * Client mode (POS, 2026-10-11): while a client holds the phone to tip and pay, the sheet fills
+   * the screen in client navy with no handle, scrim tap or drag, and Back asks the staff stop panel
+   * (`requestClientBack`) instead of closing. A client can then never close the payment by
+   * accident. The content draws its own safe areas.
+   */
+  takeover?: boolean;
   children: ReactNode;
 };
 
@@ -64,6 +72,7 @@ export function Sheet({
   maxHeight = '90%',
   fill = false,
   keyboardAvoidance = 'reserve',
+  takeover = false,
   children,
 }: SheetProps) {
   const { colors } = useTheme();
@@ -96,6 +105,11 @@ export function Sheet({
   const handleRequestClose = () => {
     if (Keyboard.isVisible()) {
       Keyboard.dismiss();
+      return;
+    }
+    // In client mode Back belongs to staff's "Stop this card payment?" panel, never to closing.
+    if (takeover) {
+      requestClientBack();
       return;
     }
     onClose();
@@ -147,30 +161,40 @@ export function Sheet({
           sheet brought a root of its own. Harmless on iOS and web. */}
       <GestureHandlerRootView style={[styles.root, { backgroundColor: colors.overlay }]}>
         <ModalWindowInsets>
-          <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Dismiss" />
-          <Animated.View
-            style={[
-              styles.sheet,
-              { backgroundColor: colors.surfaceRaised },
-              sheetMaxWidth ? { maxWidth: sheetMaxWidth } : null,
-              fill ? { height: maxHeight } : { maxHeight },
-              sheetTransform,
-            ]}>
-            <SheetContent fill={fill} keyboardAvoidance={keyboardAvoidance}>
-              <GestureDetector gesture={panGesture}>
-                <Pressable
-                  onPress={onClose}
-                  accessibilityRole="button"
-                  accessibilityLabel="Close"
-                  accessibilityHint="Or drag down to dismiss"
-                  hitSlop={12}
-                  style={styles.handleHitArea}>
-                  <View style={[styles.handle, { backgroundColor: colors.border }]} />
-                </Pressable>
-              </GestureDetector>
+          {takeover ? null : (
+            <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Dismiss" />
+          )}
+          {takeover ? (
+            <Animated.View
+              entering={reduceMotion ? undefined : FadeIn.duration(300)}
+              style={[styles.takeover, { backgroundColor: clientColors.bg }]}>
               {children}
-            </SheetContent>
-          </Animated.View>
+            </Animated.View>
+          ) : (
+            <Animated.View
+              style={[
+                styles.sheet,
+                { backgroundColor: colors.surfaceRaised },
+                sheetMaxWidth ? { maxWidth: sheetMaxWidth } : null,
+                fill ? { height: maxHeight } : { maxHeight },
+                sheetTransform,
+              ]}>
+              <SheetContent fill={fill} keyboardAvoidance={keyboardAvoidance}>
+                <GestureDetector gesture={panGesture}>
+                  <Pressable
+                    onPress={onClose}
+                    accessibilityRole="button"
+                    accessibilityLabel="Close"
+                    accessibilityHint="Or drag down to dismiss"
+                    hitSlop={12}
+                    style={styles.handleHitArea}>
+                    <View style={[styles.handle, { backgroundColor: colors.border }]} />
+                  </Pressable>
+                </GestureDetector>
+                {children}
+              </SheetContent>
+            </Animated.View>
+          )}
         </ModalWindowInsets>
         {/* The app-lock cover must be rendered INSIDE this Modal: the provider's
             own cover lives in the root view, and a Modal is a separate native
@@ -265,6 +289,13 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     borderTopLeftRadius: radius.surface,
     borderTopRightRadius: radius.surface,
+  },
+  takeover: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
   },
   content: {
     paddingTop: spacing.lg,

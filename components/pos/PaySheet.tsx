@@ -190,7 +190,9 @@ function PaySheetBody({
                     : t('pay.title');
 
   return (
-    <PosSheet visible={visible} onClose={onClose} title={title}>
+    // While the client holds the phone (tip, card, result), the sheet becomes client mode: full
+    // screen, nothing to drag or tap shut, Back asks staff before stopping (2026-10-11).
+    <PosSheet visible={visible} onClose={onClose} title={title} takeover={mode === 'card' && customerFacing}>
       {mode === 'done' ? (
         <View style={posStyles.stack}>
           <Text variant="title">{t('done.change', { amount: money(changeGiven) })}</Text>

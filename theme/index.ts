@@ -75,6 +75,34 @@ export const accent = {
   900: '#004244',
 } as const;
 
+/**
+ * Client mode (POS, 2026-10-11): the screens a client sees while holding the phone to tip and pay.
+ * Always navy, whatever the phone's appearance, so they run straight into the dark Tap to Pay
+ * screens without a white flash. Teal is the client's action; white is staff's.
+ * Contrast (WCAG): text on `bg` 11.3:1, `textSecondary` 7.8:1, `accent` on `bg` 5.1:1,
+ * `onAccent` on `accent` 6.9:1 (never white on teal), `optionBorder` on `bg` 3.8:1.
+ */
+export const clientColors = {
+  bg: brand[600],
+  bgDeep: brand[900],
+  option: brand[500],
+  optionBorder: brand[300],
+  accent: accent[500],
+  onAccent: brand[800],
+  text: '#FFFFFF',
+  textSecondary: brand[100],
+  textTertiary: brand[200],
+  success: '#34D399',
+  error: '#FCA5A5',
+  disabledFill: 'rgba(255,255,255,0.10)',
+  disabledText: brand[200],
+  pressedFill: 'rgba(255,255,255,0.12)',
+  rule: 'rgba(255,255,255,0.16)',
+  staff: '#FFFFFF',
+  onStaff: brand[600],
+  staffScrim: 'rgba(0,27,54,0.72)',
+} as const;
+
 // ---------------------------------------------------------------------------
 // Semantic colour palettes (light + dark)
 // Keep ALL existing keys so current primitives keep compiling, plus new ones.

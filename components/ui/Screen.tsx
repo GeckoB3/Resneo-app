@@ -41,6 +41,12 @@ type ScreenProps = ScrollViewProps & {
    * screen hides content.
    */
   bottomInset?: boolean;
+  /**
+   * Client mode (POS, 2026-10-11): no padding and no safe-area insets at all, so a child can fill
+   * the whole window and draw its own (`ClientFrame`). Only a prop change, so whatever is inside
+   * keeps its state when a screen switches into it.
+   */
+  fullBleed?: boolean;
 };
 
 /**
@@ -52,6 +58,7 @@ export function Screen({
   padded = true,
   keyboardAvoiding = false,
   bottomInset = true,
+  fullBleed = false,
   style,
   contentContainerStyle,
   children,
@@ -62,9 +69,9 @@ export function Screen({
   // A navigation header already clears the status bar; padding for it again left an empty band
   // under every titled screen. Screens without a header (the tabs) still pad the top.
   const headerShown = useContext(HeaderShownContext);
-  const topEdges: Edge[] = headerShown ? [] : ['top'];
-  const paddingStyle = padded ? styles.padded : undefined;
-  const safeBottom = bottomInset ? insets.bottom : 0;
+  const topEdges: Edge[] = headerShown || fullBleed ? [] : ['top'];
+  const paddingStyle = padded && !fullBleed ? styles.padded : undefined;
+  const safeBottom = bottomInset && !fullBleed ? insets.bottom : 0;
 
   /**
    * Add the safe area to whatever bottom padding is already in play, rather than

@@ -3,6 +3,7 @@ import { AppState, Platform } from 'react-native';
 
 import { isBackendConfigured } from '@/lib/env';
 import { offerCollectPrompt } from '@/lib/push/collect-prompt';
+import { isClientFacing } from '@/lib/ui/client-facing';
 import { Notifications } from '@/lib/push/notificationsModule';
 import { extractPushRoute } from '@/lib/push/extract-push-route';
 import { setPendingPushRoute } from '@/lib/push/pendingNotificationRoute';
@@ -326,6 +327,11 @@ export function PushNotificationsProvider({ children }: PushNotificationsProvide
             // prompt can't show (a sheet is open, another venue, the collect screen), the banner
             // shows as before.
             const data = notification.request.content.data as Record<string, unknown> | null | undefined;
+            // A client holds the phone to tip and pay: no banner or sound, so another client's
+            // name never shows over their screen. It waits in the list for staff (2026-10-11).
+            if (AppState.currentState === 'active' && isClientFacing()) {
+              return { shouldShowBanner: false, shouldShowList: true, shouldPlaySound: false, shouldSetBadge: true };
+            }
             if (AppState.currentState === 'active' && offerCollectPrompt(data)) {
               return { shouldShowBanner: false, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false };
             }

@@ -128,7 +128,12 @@ export function useCardConsentPrompt(clientName: string) {
     );
   }
 
-  return { ask, view, note, active: step !== null, reset };
+  // Client mode (2026-10-11): when the client already holds the phone, the client screens draw the
+  // question themselves (`ClientConsent`) from these.
+  const question =
+    step && step.handedOver && step.stage !== 'handTo' ? { text: step.text, saving: step.stage === 'saving' } : null;
+
+  return { ask, view, note, active: step !== null, reset, question, answer: (agreed: boolean) => void answer(agreed) };
 }
 
 const styles = StyleSheet.create({

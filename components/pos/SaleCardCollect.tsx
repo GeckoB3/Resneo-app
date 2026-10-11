@@ -1,10 +1,21 @@
 import { SymbolView } from 'expo-symbols';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { ActivityIndicator, Platform, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
 
 import { ReaderPairingSection } from '@/components/bookings/TakePaymentSheet';
 import { TapToPayEducationContent } from '@/components/payments/TapToPayEducation';
 import { TapToPayProgress } from '@/components/payments/TapToPayProgress';
+import { StaffStopPanel } from '@/components/pos/client-mode/ClientFrame';
+import {
+  ClientConsent,
+  ClientEnding,
+  ClientHandBack,
+  ClientPaid,
+  ClientProcessing,
+  ClientReady,
+  type ClientEndingKind,
+} from '@/components/pos/client-mode/ClientScreens';
+import { ClientTip } from '@/components/pos/client-mode/ClientTip';
 import { useCustomerTipPrompt, type CustomerTipInput } from '@/components/pos/CustomerTip';
 import { ErrorLine, money, posStyles, usePosT } from '@/components/pos/parts';
 import { useCardConsentPrompt } from '@/components/pos/SaveCardConsent';
@@ -25,9 +36,11 @@ import {
 } from '@/lib/payments/useSaleCardPayment';
 import { posErrorMessage } from '@/lib/pos/api';
 import { cardSaveCopyId, followCardSave } from '@/lib/pos/card-consent';
-import { isAccountLimitError } from '@/lib/pos/card-methods';
+import { isAccountLimitError, isPinRequired } from '@/lib/pos/card-methods';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { SaleStaleError } from '@/lib/queries/usePos';
+import { useClientFacing } from '@/lib/ui/client-facing';
+import { useVenueContext } from '@/providers/VenueProvider';
 import { useToast } from '@/providers/ToastProvider';
 import { useTapToPay } from '@/providers/TapToPayProvider';
 import { useTheme } from '@/theme/useTheme';
@@ -150,6 +163,8 @@ export function CardCollectPanel({
   extra,
   externalStop = false,
   processingLabel,
+  clientEnding,
+  hardwareBack = false,
   onDone,
   onBack,
 }: {
@@ -166,11 +181,17 @@ export function CardCollectPanel({
   extra?: ReactNode;
   externalStop?: boolean;
   processingLabel?: string;
+  /** How a failure reads to the client, when the caller knows better (the desk cancelled). */
+  clientEnding?: (error: unknown) => ClientEndingKind | null;
+  /** A full screen (not a sheet): take Android Back with `BackHandler` while the client holds the phone. */
+  hardwareBack?: boolean;
   onDone: (result: SaleCardResult) => void;
   onBack: () => void;
 }) {
   const t = usePosT();
   const { colors } = useTheme();
+  const { venue } = useVenueContext();
+  const logoUrl = venue?.logo_url ?? null;
   const tapToPay = useTapToPayReader();
   const tapToPayStatus = useTapToPay();
   const bluetooth = useBluetoothReader();
@@ -197,6 +218,15 @@ export function CardCollectPanel({
   const [handedOver, setHandedOver] = useState(false);
   const handedOverRef = useRef(false);
   const [paid, setPaid] = useState<SaleCardResult | null>(null);
+  // Client mode (POS test round 2026-10-11, Part 3): from the tip until staff press Done the client
+  // sees only client screens, failures included, and nothing they press can close the payment.
+  const [ending, setEnding] = useState<ClientEndingKind | null>(null);
+  const [handBackOnly, setHandBackOnly] = useState(false);
+  const [changingTip, setChangingTip] = useState(false);
+  const [stopAsk, setStopAsk] = useState(false);
+  const staffStoppedRef = useRef(false);
+  // The card-save toast waits until staff have the phone back.
+  const pendingSave = useRef<SaleCardResult | null>(null);
 
   const markHandedOver = (value: boolean) => {
     handedOverRef.current = value;
@@ -208,6 +238,18 @@ export function CardCollectPanel({
     onCustomerFacing?.(facing);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only when it changes
   }, [facing]);
+
+  // Staff may stop from the client's screens until the card has been read.
+  const stoppable =
+    tipPrompt.stage === 'choose' ||
+    changingTip ||
+    (handedOver && !ending && !handBackOnly && stage !== 'handBack' && stage !== 'processing');
+  const stoppableRef = useRef(false);
+  stoppableRef.current = stoppable;
+  const openStop = useCallback(() => {
+    if (stoppableRef.current) setStopAsk(true);
+  }, []);
+  useClientFacing(facing, openStop, { hardwareBack });
 
   const setStageBoth = (s: Stage) => {
     stageRef.current = s;
@@ -232,6 +274,9 @@ export function CardCollectPanel({
     if (startingRef.current) return;
     startingRef.current = true;
     stopRef.current = false;
+    staffStoppedRef.current = false;
+    setEnding(null);
+    setHandBackOnly(false);
     setKind(chosen);
     setMessage(null);
     setJustTurnedOn(false);
@@ -293,7 +338,8 @@ export function CardCollectPanel({
         tipNow,
       );
       hapticSuccess();
-      announceCardSave(result);
+      if (handedOverRef.current) pendingSave.current = result;
+      else announceCardSave(result);
       if (handedOverRef.current) {
         // The client tapped on this phone: thank them before staff carry on.
         setPaid(result);
@@ -306,6 +352,27 @@ export function CardCollectPanel({
       hapticWarning();
       consent.reset();
       onFailure?.(e);
+      if (handedOverRef.current) {
+        if (staffStoppedRef.current) {
+          // Staff stopped it from the client's screen: back to their card screen.
+          staffStoppedRef.current = false;
+          markHandedOver(false);
+          setStageBoth('idle');
+          setMessage(t('app.card.cancelled'));
+          return;
+        }
+        // The client still holds the phone: tell them in their words. Staff read the detail after.
+        setEnding(clientEnding?.(e) ?? clientEndingOf(e));
+        const forStaff = describeError?.(e) ?? null;
+        setStageBoth('error');
+        setMessage(
+          forStaff ??
+            (e instanceof SaleCardError && e.kind === 'cancelled'
+              ? t('app.card.cancelled')
+              : posErrorMessage(e, t('app.card.notCompleted'))),
+        );
+        return;
+      }
       const custom = describeError?.(e) ?? null;
       if (custom) {
         setStageBoth('error');
@@ -372,6 +439,50 @@ export function CardCollectPanel({
     }
   }
 
+  /** "Stop payment" on staff's panel inside client mode. */
+  function stopFromClient() {
+    setStopAsk(false);
+    if (tipPrompt.stage === 'choose') {
+      tipPrompt.reset();
+      markHandedOver(false);
+      return;
+    }
+    if (changingTip) {
+      setChangingTip(false);
+      markHandedOver(false);
+      setStageBoth('idle');
+      setMessage(t('app.card.cancelled'));
+      return;
+    }
+    if (stageRef.current === 'preparing') {
+      cancel();
+      markHandedOver(false);
+      return;
+    }
+    staffStoppedRef.current = true;
+    cancel();
+  }
+
+  /** Staff have the phone back: their card screen shows how it ended and every other way to pay. */
+  function endClientMode() {
+    setEnding(null);
+    setHandBackOnly(false);
+    setChangingTip(false);
+    markHandedOver(false);
+  }
+
+  function finishPaid() {
+    const result = paid;
+    setPaid(null);
+    markHandedOver(false);
+    setStageBoth('idle');
+    if (pendingSave.current) {
+      announceCardSave(pendingSave.current);
+      pendingSave.current = null;
+    }
+    if (result) onDone(result);
+  }
+
   if (pairing) {
     return (
       <ReaderPairingSection
@@ -387,29 +498,96 @@ export function CardCollectPanel({
   const busy = stage === 'preparing' || stage === 'starting' || stage === 'collecting' || stage === 'processing';
   const canCancel = stage === 'preparing' || stage === 'starting' || stage === 'collecting';
 
-  if (tipPrompt.active) return <>{tipPrompt.view}</>;
-
-  if (stage === 'handBack' && paid) {
-    return (
-      <View style={posStyles.stack}>
-        <Text variant="title" color={colors.success}>
-          {t('app.card.success', { amount: money(total) })}
-        </Text>
-        <Text variant="heading">{t('app.handBack')}</Text>
-        <Button
-          label={t('add.done')}
-          onPress={() => {
-            const result = paid;
-            setPaid(null);
-            markHandedOver(false);
-            setStageBoth('idle');
-            onDone(result);
+  if (facing) {
+    const clientInput = customerTip ? { ...customerTip, logoUrl } : null;
+    const base = {
+      venueName: customerTip?.venueName ?? venue?.name ?? '',
+      logoUrl,
+      totalPence: total,
+      tipPence: tip,
+    };
+    let screen: ReactNode;
+    if (tipPrompt.stage === 'choose' && clientInput) {
+      screen = <ClientTip input={clientInput} onChoose={(v) => tipPrompt.choose(v)} onStaffClose={openStop} />;
+    } else if (changingTip && clientInput) {
+      screen = (
+        <ClientTip
+          input={clientInput}
+          initialTip={tip}
+          onChoose={(v) => {
+            tipRef.current = v;
+            setTip(v);
+            setChangingTip(false);
+            void collect(kind);
           }}
-          fullWidth
+          onStaffClose={openStop}
         />
+      );
+    } else if (stage === 'handBack' && paid) {
+      screen = <ClientPaid {...base} card={paid.card} clientName={customerTip?.clientName ?? null} onDone={finishPaid} />;
+    } else if (handBackOnly) {
+      screen = <ClientHandBack venueName={base.venueName} logoUrl={logoUrl} onDone={endClientMode} />;
+    } else if (ending) {
+      screen = (
+        <ClientEnding
+          {...base}
+          kind={ending}
+          canChangeTip={clientInput != null}
+          onTryAgain={() => {
+            setEnding(null);
+            void collect(kind);
+          }}
+          onChangeTip={() => {
+            setEnding(null);
+            setChangingTip(true);
+          }}
+          onOtherWay={() => {
+            setEnding(null);
+            setHandBackOnly(true);
+          }}
+          onDone={endClientMode}
+        />
+      );
+    } else if (consent.question) {
+      screen = (
+        <ClientConsent
+          {...base}
+          text={consent.question.text}
+          saving={consent.question.saving}
+          onAnswer={consent.answer}
+          onStaffClose={openStop}
+        />
+      );
+    } else if (stage === 'processing') {
+      screen = <ClientProcessing {...base} />;
+    } else {
+      screen = <ClientReady {...base} reader={kind} onStaffClose={openStop} />;
+    }
+    return (
+      <View style={styles.client}>
+        {/* Under staff's stop panel the client screen is hidden from screen readers, so the panel
+            is the only thing they reach. */}
+        <View
+          style={styles.client}
+          importantForAccessibility={stopAsk ? 'no-hide-descendants' : 'auto'}
+          accessibilityElementsHidden={stopAsk}>
+          {screen}
+        </View>
+        {stopAsk ? (
+          <StaffStopPanel
+            title={t('app.client.stop.title')}
+            body={t('app.client.stop.body')}
+            keepLabel={t('app.client.stop.keep')}
+            stopLabel={t('app.client.stop.confirm')}
+            onKeep={() => setStopAsk(false)}
+            onStop={stopFromClient}
+          />
+        ) : null}
       </View>
     );
   }
+
+  if (tipPrompt.stage === 'handTo') return <>{tipPrompt.handToView}</>;
 
   if (consent.active) {
     return (
@@ -515,3 +693,29 @@ export function CardCollectPanel({
     </View>
   );
 }
+
+/** How a failure reads to a client who still holds the phone (research §6.3, S8). */
+function clientEndingOf(error: unknown): ClientEndingKind {
+  if (error instanceof SaleCardError) {
+    if (isPinRequired(error.codes.declineCode) || isPinRequired(error.codes.code)) return 'pin';
+    switch (error.kind) {
+      case 'cancelled':
+        // Not staff (that path ends client mode): the client closed the card screen.
+        return 'closed';
+      case 'declined':
+        return 'declined';
+      case 'timed_out':
+        return 'timeout';
+      case 'unsure':
+        return 'unsure';
+      default:
+        return 'notDone';
+    }
+  }
+  // The sale changed, the network, or a sentence from the server: the team has to look.
+  return 'team';
+}
+
+const styles = StyleSheet.create({
+  client: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
+});

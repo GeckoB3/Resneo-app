@@ -201,11 +201,12 @@ describe('PaySheet', () => {
     expect(props.customerTip).toEqual(
       expect.objectContaining({ amountPence: 3550, balancePence: 3550, tipSettings, venueName: 'Studio', maxPaymentPence: 1_000_000 }),
     );
-    // While the client holds the phone, the sheet's title is the venue's name, not staff's words.
+    // While the client holds the phone the sheet becomes client mode: the collector draws the whole
+    // screen and none of staff's words stay on it.
     await act(async () => {
       props.onCustomerFacing(true);
     });
-    expect(screen.getByText('Studio')).toBeTruthy();
+    expect(screen.getByText('card-collector')).toBeTruthy();
     expect(screen.queryByText('Take payment')).toBeNull();
   });
 

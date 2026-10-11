@@ -89,6 +89,7 @@ export function PosSheet({
   subtitle,
   children,
   footer,
+  takeover = false,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -96,7 +97,16 @@ export function PosSheet({
   subtitle?: string | null;
   children: ReactNode;
   footer?: ReactNode;
+  /** Client mode: the sheet fills the screen and the children draw everything (`Sheet` takeover). */
+  takeover?: boolean;
 }) {
+  if (takeover) {
+    return (
+      <Sheet visible={visible} onClose={onClose} takeover>
+        {children}
+      </Sheet>
+    );
+  }
   return (
     <Sheet visible={visible} onClose={onClose} fill maxHeight="92%">
       <View style={styles.sheetHeader}>

@@ -9,8 +9,14 @@
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
+jest.mock('expo-image', () => ({ Image: 'Image' }));
+jest.mock('expo-status-bar', () => ({ StatusBar: () => null }));
+jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }));
 jest.mock('@/providers/VenueProvider', () => ({
-  useVenueContext: () => ({ terminology: { client: 'Client', booking: 'Appointment', staff: 'Stylist' } }),
+  useVenueContext: () => ({
+    terminology: { client: 'Client', booking: 'Appointment', staff: 'Stylist' },
+    venue: { name: 'Studio', logo_url: null },
+  }),
 }));
 jest.mock('@/components/bookings/TakePaymentSheet', () => ({ ReaderPairingSection: () => null }));
 jest.mock('@/components/payments/TapToPayEducation', () => ({ TapToPayEducationContent: () => null }));
@@ -34,6 +40,7 @@ jest.mock('@/providers/ToastProvider', () => ({ useToast: () => ({ info: jest.fn
 jest.mock('@/lib/haptics', () => ({ ...jest.requireActual<typeof import('@/lib/haptics')>('@/lib/haptics'), hapticSuccess: jest.fn(), hapticWarning: jest.fn() }));
 
 import { CardCollectPanel } from '@/components/pos/SaleCardCollect';
+import { __resetClientFacingForTests, isClientFacing, requestClientBack } from '@/lib/ui/client-facing';
 import { SaleCardError, type SaleCardResult } from '@/lib/payments/useSaleCardPayment';
 import { makeLine, makeSale } from '@/lib/pos/test-sale';
 
@@ -69,10 +76,10 @@ async function renderPanel(pay: jest.Mock) {
 
 async function chooseTenPercent() {
   await act(async () => {
-    fireEvent.press(screen.getByText('I have handed it over'));
+    fireEvent.press(screen.getByText('Hand over'));
   });
   await act(async () => {
-    fireEvent.press(screen.getByText('10% (£4.50)'));
+    fireEvent.press(screen.getByText('10%'));
   });
   await act(async () => {
     fireEvent.press(screen.getByText('Pay £49.50'));
@@ -80,7 +87,10 @@ async function chooseTenPercent() {
 }
 
 describe('CardCollectPanel with the client choosing the tip', () => {
-  beforeEach(() => mockConnect.mockClear());
+  beforeEach(() => {
+    mockConnect.mockClear();
+    __resetClientFacingForTests();
+  });
 
   it('readies the reader, hands over for the tip, pays with it, then asks for the phone back', async () => {
     const pay = jest.fn(async () => paidResult);
@@ -95,7 +105,11 @@ describe('CardCollectPanel with the client choosing the tip', () => {
     await chooseTenPercent();
     expect(pay).toHaveBeenCalledWith('tap_to_pay', expect.any(Object), 450);
     expect(onFacing).toHaveBeenCalledWith(true);
-    expect(screen.getByText('Thank you. Please hand the phone back.')).toBeTruthy();
+    // Client mode: paid, with the tip, thanks by name, then staff's Done.
+    expect(screen.getByText('Paid')).toBeTruthy();
+    expect(screen.getByText('Includes a £4.50 tip')).toBeTruthy();
+    expect(screen.getByText('Thank you, Ada.')).toBeTruthy();
+    expect(screen.getByText('Please hand the phone back.')).toBeTruthy();
     expect(onDone).not.toHaveBeenCalled();
     await act(async () => {
       fireEvent.press(screen.getByText('Done'));
@@ -115,12 +129,62 @@ describe('CardCollectPanel with the client choosing the tip', () => {
     });
     await chooseTenPercent();
     expect(pay).toHaveBeenCalledTimes(1);
+    // The client still holds the phone: they see their own declined screen, not staff's.
+    expect(screen.getByText('Payment declined')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByText('Try again'));
+    });
+    expect(screen.queryByText('Hand over')).toBeNull();
+    expect(pay).toHaveBeenLastCalledWith('tap_to_pay', expect.any(Object), 450);
+    expect(screen.getByText('Paid')).toBeTruthy();
+  });
+
+  it('never offers a retry when the outcome is unsure, and hands back to staff', async () => {
+    const pay = jest.fn().mockRejectedValueOnce(new SaleCardError('unsure', 'unsure', 'p1'));
+    const { onFacing } = await renderPanel(pay);
     await act(async () => {
       fireEvent.press(screen.getByText(/^Tap to Pay/));
     });
-    expect(screen.queryByText('I have handed it over')).toBeNull();
-    expect(pay).toHaveBeenLastCalledWith('tap_to_pay', expect.any(Object), 450);
-    expect(screen.getByText('Thank you. Please hand the phone back.')).toBeTruthy();
+    await chooseTenPercent();
+    expect(screen.getByText("We're checking your payment")).toBeTruthy();
+    expect(screen.queryByText('Try again')).toBeNull();
+    await act(async () => {
+      fireEvent.press(screen.getByText('Done'));
+    });
+    expect(onFacing).toHaveBeenLastCalledWith(false);
+    expect(screen.getByText(/^Tap to Pay/)).toBeTruthy();
+  });
+
+  it('lets staff stop from the client screen, after asking', async () => {
+    const pay = jest.fn(async () => paidResult);
+    const { onFacing } = await renderPanel(pay);
+    await act(async () => {
+      fireEvent.press(screen.getByText(/^Tap to Pay/));
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByText('Hand over'));
+    });
+    expect(isClientFacing()).toBe(true);
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('Stop the card payment, for the team'));
+    });
+    expect(screen.getByText('Stop this card payment?')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByText('Keep paying'));
+    });
+    expect(screen.queryByText('Stop this card payment?')).toBeNull();
+    // Back (Android) opens the same question instead of closing anything.
+    await act(async () => {
+      requestClientBack();
+    });
+    expect(screen.getByText('Stop this card payment?')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByText('Stop payment'));
+    });
+    expect(pay).not.toHaveBeenCalled();
+    expect(onFacing).toHaveBeenLastCalledWith(false);
+    expect(isClientFacing()).toBe(false);
+    expect(screen.getByText(/^Tap to Pay/)).toBeTruthy();
   });
 
   it('charges nothing when the hand-over is cancelled', async () => {

@@ -291,10 +291,17 @@ function CollectBody({
     return null;
   };
 
+  // Client mode (2026-10-11): while the client holds the phone the screen is theirs alone: no header,
+  // no swipe back, and Back asks staff before stopping. Only props change, so the card panel keeps
+  // its state.
+  const facing = customerFacing && phase === 'card';
   return (
-    <Screen>
-      {header}
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+    <Screen fullBleed={facing}>
+      <Stack.Screen options={{ headerShown: !facing, gestureEnabled: !facing, title: t('pay.title') }} />
+      <ScrollView
+        scrollEnabled={!facing}
+        contentContainerStyle={facing ? styles.fullBleed : styles.content}
+        keyboardShouldPersistTaps="handled">
         {/* The client holding the phone sees only their own screen, not the sale's details. */}
         {customerFacing ? null : head}
         {phase === 'link' ? (
@@ -340,6 +347,8 @@ function CollectBody({
             }
             processingLabel={t('app.collect.processing')}
             externalStop={endedElsewhere}
+            hardwareBack
+            clientEnding={() => (deskCancelled.current ? 'desk' : null)}
             pay={async (kind: CardCollectKind, hooks, tipPence) => {
               setBusy(true);
               setNeedsPin(false);
@@ -419,4 +428,5 @@ function CollectBody({
 
 const styles = StyleSheet.create({
   content: { padding: spacing.base, gap: spacing.md, paddingBottom: spacing['3xl'] },
+  fullBleed: { flexGrow: 1 },
 });
