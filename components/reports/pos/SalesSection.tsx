@@ -4,13 +4,13 @@ import { StyleSheet, View } from 'react-native';
 import {
   FigureList,
   KpiTiles,
-  PosRangeCard,
+  PosRangeLine,
   PosReportCard,
+  ReportInfoLine,
   ReportLoadError,
   ReportTable,
   reportStyles,
   useReportDownload,
-  useReportNotice,
   type Column,
 } from '@/components/reports/pos/PosReportUi';
 import { SalesProductCards } from '@/components/reports/pos/SalesProductCards';
@@ -26,6 +26,7 @@ import {
   hasProductSections,
   LINE_TYPE_LABELS,
   periodLabel,
+  periodsSoFar,
   rangeQuery,
   REPORTING_GROUP_LABELS,
   shortChartLabel,
@@ -39,7 +40,8 @@ import type { PosRangeChoice, ReportGrain } from '@/types/pos-reports';
  * paid, from completed sales. Totals with discounts, deposits applied and VAT, by period (chart and
  * table), services and products (and by kind of item), by service, by category, services and
  * products by team member, the product cards (margin, by product, brand, category, stock), and
- * discounts by reason and person. Each card's CSV comes from the server.
+ * discounts by reason and person. Each card's CSV comes from the server. It leads with the numbers
+ * (Part 2 mock-up 3): the range on one line, the figures, what the report counts, then the tables.
  */
 export function SalesSection({ canExport, today }: { canExport: boolean; today: string }) {
   const { colors } = useTheme();
@@ -48,22 +50,22 @@ export function SalesSection({ canExport, today }: { canExport: boolean; today: 
   const q = useSalesRange(choice, grain);
   const data = q.data;
   const money = (pence: number) => formatMoneyExact(pence, data?.currency);
-  const notice = useReportNotice();
   const download = useReportDownload();
   const exportable = canExport && (data?.can_export ?? true);
   const query = rangeQuery(choice, grain);
   const csv = (card: string, label: ReportsCopyId) =>
     exportable ? () => void download(`${posReportPaths.sales(query)}&format=csv&card=${card}`, reportsCopy(label)) : undefined;
 
+  const periods = useMemo(() => periodsSoFar(data?.by_period ?? [], today), [data, today]);
   const chart = useMemo(
     () =>
-      (data?.by_period ?? []).map((p) => ({
+      periods.map((p) => ({
         key: p.period_start,
         label: shortChartLabel(p.period_start, data!.grain),
         value: p.sales_pence,
         subValue: periodLabel(p.period_start, p.period_end, data!.grain),
       })),
-    [data],
+    [data, periods],
   );
 
   const personColumns: Column<SalesPersonRow>[] = [
@@ -83,17 +85,15 @@ export function SalesSection({ canExport, today }: { canExport: boolean; today: 
 
   return (
     <View style={reportStyles.stack}>
-      <PosRangeCard
-        title={reportsCopy('tab.sales')}
-        help={reportsCopy('sl.help')}
+      <PosRangeLine
+        report={reportsCopy('tab.sales')}
         choice={choice}
         onChoice={setChoice}
         grain={grain}
         onGrain={setGrain}
+        today={today}
         loading={q.isFetching}
         currentRange={data ? { from: data.from, to: data.to } : null}
-        today={today}
-        onNotice={notice}
       />
 
       {q.isError ? <ReportLoadError message={posErrorMessage(q.error, reportsCopy('rep.error'))} onRetry={() => void q.refetch()} /> : null}
@@ -101,31 +101,33 @@ export function SalesSection({ canExport, today }: { canExport: boolean; today: 
 
       {data ? (
         <View style={[reportStyles.stack, q.isFetching ? styles.busy : null]} accessibilityState={{ busy: q.isFetching }}>
-          <PosReportCard title={reportsCopy('sl.title', { range: periodLabel(data.from, data.to, 'week') })} onExport={csv('totals', 'csv.sales')}>
-            <KpiTiles
-              items={[
-                {
-                  label: reportsCopy('rep.sales'),
-                  value: money(data.totals.sales_pence),
-                  caption: data.totals.refunds_pence > 0 ? reportsCopy('sl.refundsSub', { amount: money(-data.totals.refunds_pence) }) : undefined,
-                },
-                { label: reportsCopy('sl.count'), value: String(data.totals.sales_count) },
-                { label: reportsCopy('sl.average'), value: money(data.totals.average_sale_pence) },
-                {
-                  label: reportsCopy('sl.retailPerVisit'),
-                  value: money(data.totals.retail_per_visit_pence),
-                  caption: data.totals.visit_count === 1 ? reportsCopy('sl.visit') : reportsCopy('sl.visits', { count: data.totals.visit_count }),
-                },
-              ]}
-            />
-            <FigureList
-              items={[
-                [reportsCopy('sl.discountsGiven'), money(data.totals.discount_pence)],
-                [reportsCopy('sl.applied'), money(data.totals.applied_pence)],
-                [reportsCopy('sl.vatIncluded'), money(data.totals.tax_pence)],
-              ]}
-            />
-          </PosReportCard>
+          {/* The figures first, in the web's colours (Part 2 mock-up 3). */}
+          <KpiTiles
+            items={[
+              {
+                label: reportsCopy('rep.sales'),
+                value: money(data.totals.sales_pence),
+                tone: 'brand',
+                caption: data.totals.refunds_pence > 0 ? reportsCopy('sl.refundsSub', { amount: money(-data.totals.refunds_pence) }) : undefined,
+              },
+              { label: reportsCopy('sl.count'), value: String(data.totals.sales_count), tone: 'slate' },
+              { label: reportsCopy('sl.average'), value: money(data.totals.average_sale_pence), tone: 'emerald' },
+              {
+                label: reportsCopy('sl.retailPerVisit'),
+                value: money(data.totals.retail_per_visit_pence),
+                tone: 'amber',
+                caption: data.totals.visit_count === 1 ? reportsCopy('sl.visit') : reportsCopy('sl.visits', { count: data.totals.visit_count }),
+              },
+            ]}
+          />
+          <FigureList
+            items={[
+              [reportsCopy('sl.discountsGiven'), money(data.totals.discount_pence)],
+              [reportsCopy('sl.applied'), money(data.totals.applied_pence)],
+              [reportsCopy('sl.vatIncluded'), money(data.totals.tax_pence)],
+            ]}
+          />
+          <ReportInfoLine text={reportsCopy('sl.help')} exportTitle={reportsCopy('csv.sales')} onExport={csv('totals', 'csv.sales')} />
 
           <PosReportCard title={reportsCopy(`grain.title.${grain}` as ReportsCopyId)} onExport={csv('by_period', 'csv.sales.byPeriod')}>
             {data.totals.sales_count === 0 && data.totals.refund_count === 0 ? (
@@ -137,7 +139,7 @@ export function SalesSection({ canExport, today }: { canExport: boolean; today: 
                 <SvgBarChart data={chart} color={colors.brand} formatValue={money} labelWidth={72} />
                 <ReportTable
                   caption={reportsCopy('csv.sales.byPeriod')}
-                  rows={data.by_period}
+                  rows={periods}
                   rowKey={(r) => r.period_start}
                   columns={[
                     { label: reportsCopy('rep.period'), value: (r) => periodLabel(r.period_start, r.period_end, data.grain) },

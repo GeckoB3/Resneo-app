@@ -1,14 +1,25 @@
 /**
  * The Takings tab against the web's TakingsSection: every card, the per-card CSVs and the monthly
  * tip records through the share sheet (only for people who may export), cash-ups when there are
- * any, payouts for admins only, and the range card's refusals.
+ * any, payouts for admins only, and the range sheet's refusals. Laid out as Part 2 mock-up 3: the
+ * range on one line opening a sheet, the four figures first, then the tables.
  *
  * jest hoists mock factories above imports, so every closed-over variable is prefixed `mock*`.
  */
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
+import type { ReactNode } from 'react';
 
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
 jest.mock('@/components/reports/SvgBarChart', () => ({ SvgBarChart: () => null }));
+// The range sheet draws its children while open, as a plain view.
+jest.mock('@/components/ui/Sheet', () => {
+  const React = jest.requireActual<typeof import('react')>('react');
+  const { View } = jest.requireActual<typeof import('react-native')>('react-native');
+  return {
+    Sheet: ({ visible, children }: { visible: boolean; children: ReactNode }) =>
+      visible ? React.createElement(View, { testID: 'range-sheet' }, children) : null,
+  };
+});
 // Each date field, pressed, picks the date the test set for its label.
 const mockDates: Record<string, string> = {};
 jest.mock('@/components/ui/DatePickerField', () => {
@@ -97,7 +108,7 @@ beforeEach(() => {
 it('opens on this week by day, as the web does, and shows every card', async () => {
   await render(<TakingsSection canExport isAdmin today="2026-10-09" />);
   expect(mockTakingsArgs[0]).toEqual([{ kind: 'preset', preset: 'this-week' }, 'day']);
-  expect(screen.getByText('Takings, 5 Oct to 11 Oct 2026')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'This week, 5 to 9 Oct' })).toBeTruthy();
   expect(screen.getByText('Figures before 7 Oct 2026 are estimated from older records.')).toBeTruthy();
   expect(screen.getByText('Disputes -£20.00')).toBeTruthy();
   expect(screen.getByText('Treatwell')).toBeTruthy();
@@ -167,24 +178,41 @@ it('shows cash-ups with the expected figure only when the server allows it', asy
   );
 });
 
-it('changes range and grain, and refuses an inverted custom range', async () => {
+const openRange = async () => {
+  await act(async () => {
+    fireEvent.press(screen.getByHintText('Opens the date choices'));
+  });
+};
+
+it('changes range and grain in the sheet, and refuses an inverted custom range inside it', async () => {
   await render(<TakingsSection canExport isAdmin today="2026-10-09" />);
+  await openRange();
   await act(async () => {
     fireEvent.press(screen.getByText('Last month'));
   });
+  // Choosing closes the sheet; the line says the new range.
+  expect(screen.queryByTestId('range-sheet')).toBeNull();
+  expect(screen.getByRole('button', { name: /^Last month, 1 to 30 Sept?$/ })).toBeTruthy();
+  await openRange();
   await act(async () => {
     fireEvent.press(screen.getByText('Month'));
   });
   expect(mockTakingsArgs[mockTakingsArgs.length - 1]).toEqual([{ kind: 'preset', preset: 'last-month' }, 'month']);
+  await openRange();
   await act(async () => {
-    fireEvent.press(screen.getByText('Choose dates'));
+    fireEvent.press(screen.getByRole('button', { name: 'Choose dates' }));
   });
   await act(async () => {
     fireEvent.press(screen.getByText('Apply'));
   });
-  // The dates start from the report's own range, which is fine to apply.
-  expect(mockTakingsArgs[mockTakingsArgs.length - 1]).toEqual([{ kind: 'custom', from: '2026-10-05', to: '2026-10-11' }, 'month']);
+  // The dates start from the report's own range, up to today, which is fine to apply.
+  expect(mockTakingsArgs[mockTakingsArgs.length - 1]).toEqual([{ kind: 'custom', from: '2026-10-05', to: '2026-10-09' }, 'month']);
+  expect(screen.getByRole('button', { name: '5 to 9 Oct' })).toBeTruthy();
 
+  await openRange();
+  await act(async () => {
+    fireEvent.press(screen.getByRole('button', { name: 'Choose dates, 5 to 9 Oct' }));
+  });
   mockDates['Takings From'] = '2026-10-20';
   await act(async () => {
     fireEvent.press(screen.getByLabelText('Takings From'));
@@ -193,7 +221,9 @@ it('changes range and grain, and refuses an inverted custom range', async () => 
   await act(async () => {
     fireEvent.press(screen.getByText('Apply'));
   });
-  expect(mockToast.info).toHaveBeenCalledWith('The end date must not be before the start date.');
+  // Said inside the sheet, where it can be seen, and nothing is asked for.
+  expect(screen.getByText('The end date must not be before the start date.')).toBeTruthy();
+  expect(mockToast.info).not.toHaveBeenCalled();
   expect(mockTakingsArgs[mockTakingsArgs.length - 1]).toEqual(mockTakingsArgs[before - 1]);
 
   mockDates['Takings From'] = '2025-01-01';
@@ -203,5 +233,50 @@ it('changes range and grain, and refuses an inverted custom range', async () => 
   await act(async () => {
     fireEvent.press(screen.getByText('Apply'));
   });
-  expect(mockToast.info).toHaveBeenLastCalledWith('Choose a range of 400 days or less.');
+  expect(screen.getByText('Choose a range of 400 days or less.')).toBeTruthy();
+  // Back to the presets without choosing.
+  await act(async () => {
+    fireEvent.press(screen.getByRole('button', { name: 'Back' }));
+  });
+  expect(screen.getByText('Show takings for')).toBeTruthy();
+});
+
+it('opens a sheet with every preset and its dates, Choose dates and Show by (mock-up 3, note 1)', async () => {
+  await render(<TakingsSection canExport isAdmin today="2026-10-09" />);
+  // One line, not ten chips.
+  expect(screen.queryByText('Yesterday')).toBeNull();
+  await openRange();
+  expect(screen.getByText('Show takings for')).toBeTruthy();
+  const radios = screen.getAllByRole('radio').map((r) => r.props.accessibilityLabel as string);
+  expect(radios[0]).toBe('Today, Fri 9 Oct');
+  expect(radios[1]).toBe('Yesterday, Thu 8 Oct');
+  // This week and this month end today, as on the web.
+  expect(radios[2]).toBe('This week, 5 to 9 Oct');
+  expect(radios[3]).toMatch(/^Last week, 28 Sept? to 4 Oct$/);
+  expect(radios[4]).toBe('This month, 1 to 9 Oct');
+  expect(radios[5]).toMatch(/^Last month, 1 to 30 Sept?$/);
+  expect(screen.getByRole('radio', { name: 'This week, 5 to 9 Oct' })).toHaveProp('accessibilityState', expect.objectContaining({ checked: true }));
+  expect(screen.getByRole('button', { name: 'Choose dates' })).toBeTruthy();
+  expect(screen.getByText('Show by')).toBeTruthy();
+  expect(screen.getByRole('tab', { name: 'Day' })).toBeTruthy();
+});
+
+it('leads with the four figures, then the method table with tips under each method (mock-up 3, notes 2 to 4)', async () => {
+  await render(<TakingsSection canExport isAdmin today="2026-10-09" />);
+  expect(screen.getByLabelText('Payments in, £120.00')).toBeTruthy();
+  expect(screen.getByLabelText('Refunds out, -£15.00')).toBeTruthy();
+  expect(screen.getByLabelText('Net takings, £105.00, Disputes -£20.00, £113.00 with tips')).toBeTruthy();
+  expect(screen.getByLabelText('Tips, £8.00')).toBeTruthy();
+  expect(screen.getByText("Money in and out, on the day it moved. A deposit paid online on Monday for Friday's appointment counts on Monday.")).toBeTruthy();
+  // Each method in one row, In, Out and Net in columns and its tips under its name.
+  expect(screen.getByLabelText('Treatwell: payments in £40.00, refunds out £0.00, net takings £40.00, tips £0.00')).toBeTruthy();
+  expect(screen.getByLabelText('Total: payments in £120.00, refunds out -£15.00, net takings £105.00, tips £8.00')).toBeTruthy();
+  // The short column heads are for the eye; a screen reader hears each row in full instead.
+  expect(screen.getAllByText('In', { includeHiddenElements: true }).length).toBeGreaterThan(0);
+  expect(screen.queryByText('In')).toBeNull();
+  // The figures' own CSV sits on the line under them.
+  await act(async () => {
+    fireEvent.press(screen.getByLabelText('Export Takings as CSV'));
+  });
+  expect(mockDownload).toHaveBeenLastCalledWith(expect.objectContaining({ path: expect.stringContaining('&format=csv&card=totals') }));
 });

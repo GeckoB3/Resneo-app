@@ -121,7 +121,8 @@ beforeEach(() => {
 it('opens on this month, as at its last day, with the five figures', async () => {
   await render(<VouchersSection canExport timeZone="Europe/London" currency="GBP" />);
   expect(mockReportArgs[0]).toEqual([{ from: '2026-10-01', to: '2026-10-09' }, '2026-10-09']);
-  expect(screen.getByText('Vouchers, 1 October 2026 to 9 October 2026')).toBeTruthy();
+  // The range on one line, this tab's own "this month" running to today (Part 2 mock-up 3).
+  expect(screen.getByRole('button', { name: 'This month, 1 to 9 Oct' })).toBeTruthy();
   expect(screen.getByText('2 vouchers')).toBeTruthy();
   // Used is what was redeemed less what was put back (strings from SQL included).
   expect(screen.getByText('£25')).toBeTruthy();
@@ -134,6 +135,15 @@ it('opens on this month, as at its last day, with the five figures', async () =>
 
 it('moves the period and the as-at date as the web does', async () => {
   await render(<VouchersSection canExport timeZone="Europe/London" currency="GBP" />);
+  await act(async () => {
+    fireEvent.press(screen.getByHintText('Opens the date choices'));
+  });
+  // Only this tab's periods, with their dates, and no Show by.
+  expect(screen.getAllByRole('radio').map((r) => r.props.accessibilityLabel as string)).toEqual([
+    'This month, 1 to 9 Oct',
+    expect.stringMatching(/^Last month, 1 to 30 Sept?$/),
+  ]);
+  expect(screen.queryByText('Show by')).toBeNull();
   await act(async () => {
     fireEvent.press(screen.getByText('Last month'));
   });
@@ -149,7 +159,7 @@ it('moves the period and the as-at date as the web does', async () => {
 it('downloads the voucher CSV with the period and the as-at date', async () => {
   await render(<VouchersSection canExport timeZone="Europe/London" currency="GBP" />);
   await act(async () => {
-    fireEvent.press(screen.getByLabelText('Export Vouchers, 1 October 2026 to 9 October 2026 as CSV'));
+    fireEvent.press(screen.getByLabelText('Export Vouchers as CSV'));
   });
   expect(mockDownload).toHaveBeenLastCalledWith(
     expect.objectContaining({ path: '/api/venue/pos/vouchers/report?from=2026-10-01&to=2026-10-09&as_at=2026-10-09&format=csv' }),

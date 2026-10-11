@@ -375,8 +375,9 @@ export default function ReportsScreen() {
 
   const rangeLabel = data ? formatReportRangeLabel(data.from, data.to) : '';
 
-  // Web parity (SettingsView, Reports tab): "SMS segments this period" sits above every report
-  // tab, admins only. Each tab scrolls on its own here, so it heads each tab's scroll.
+  // "SMS segments this period", admins only, heads the Overview and no other tab (Part 2 mock-up 3,
+  // 2026-10-11): it is about the plan, not takings or sales, and it pushed every tab's first figure
+  // below the fold.
   const smsBanner = <SmsUsageBanner enabled={isAdmin} />;
 
   return (
@@ -518,7 +519,6 @@ export default function ReportsScreen() {
       ) : posTab && showPosTabs ? (
         // Each POS tab picks its own dates and grain, as Revenue and New bookings do.
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          {smsBanner}
           {shownTab === 'takings' ? (
             <TakingsSection canExport={canExportPos} isAdmin={isAdmin} today={today} />
           ) : shownTab === 'sales' ? (
@@ -537,7 +537,6 @@ export default function ReportsScreen() {
       ) : shownTab === 'new-bookings' ? (
         // New bookings has its own query and range (web 2026-09-18), like Revenue.
         <ScrollView contentContainerStyle={styles.content}>
-          {smsBanner}
           <NewBookingsSection bookingWord={bookingWord} today={today} enabled={isAdmin} />
           <View style={styles.spacer} />
         </ScrollView>
@@ -545,7 +544,6 @@ export default function ReportsScreen() {
         // Booked revenue has its own query and range (web #191); it does not
         // wait on the overview payload.
         <ScrollView contentContainerStyle={styles.content}>
-          {smsBanner}
           <BookedRevenueSection bookingWord={bookingWord} today={today} enabled={isAdmin} />
           <View style={styles.spacer} />
         </ScrollView>
@@ -571,7 +569,7 @@ export default function ReportsScreen() {
               onRefresh={() => void query.refetch()}
             />
           }>
-          {smsBanner}
+          {shownTab === 'overview' ? smsBanner : null}
 
           {/* Range label */}
           <Text variant="caption" tone="muted" style={styles.rangeLabel}>

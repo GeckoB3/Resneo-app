@@ -2,7 +2,7 @@ import { useRouter, type Href } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { PosRangeCard, PosReportCard, ReportLoadError, ReportTable, reportStyles, useReportDownload, useReportNotice } from '@/components/reports/pos/PosReportUi';
+import { PosRangeLine, PosReportCard, ReportInfoLine, ReportLoadError, ReportTable, reportStyles, useReportDownload } from '@/components/reports/pos/PosReportUi';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { posErrorMessage } from '@/lib/pos/api';
@@ -31,7 +31,6 @@ export function CommissionSection({ today }: { today: string }) {
   const data = q.data;
   const drill = useCommissionLines(choice, grain, person?.person_key ?? null);
   const money = (pence: number) => formatMoneyExact(pence, data?.currency);
-  const notice = useReportNotice();
   const download = useReportDownload();
   const query = rangeQuery(choice, grain);
   const changedPersons = new Set(data?.changed?.persons ?? []);
@@ -42,9 +41,8 @@ export function CommissionSection({ today }: { today: string }) {
 
   return (
     <View style={reportStyles.stack}>
-      <PosRangeCard
-        title={reportsCopy('tab.commission')}
-        help={`${reportsCopy('rep.c.help')} ${reportsCopy('rep.c.onlyTill')}`}
+      <PosRangeLine
+        report={reportsCopy('tab.commission')}
         choice={choice}
         onChoice={(c) => {
           setPerson(null);
@@ -52,11 +50,11 @@ export function CommissionSection({ today }: { today: string }) {
         }}
         grain={grain}
         onGrain={setGrain}
+        today={today}
         loading={q.isFetching}
         currentRange={data ? { from: data.from, to: data.to } : null}
-        today={today}
-        onNotice={notice}
       />
+      <ReportInfoLine text={`${reportsCopy('rep.c.help')} ${reportsCopy('rep.c.onlyTill')}`} />
 
       {q.isError ? <ReportLoadError message={posErrorMessage(q.error, reportsCopy('rep.error'))} onRetry={() => void q.refetch()} /> : null}
       {!data && q.isLoading ? <DetailSkeleton /> : null}

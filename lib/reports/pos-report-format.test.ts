@@ -18,10 +18,14 @@ import {
   takingsSourceLabel,
   voucherEmailAction,
   periodLabel,
+  periodsSoFar,
+  presetRange,
+  presetRangeSoFar,
   rangeQuery,
   refundReasonLabel,
   sellThroughPercent,
   shortChartLabel,
+  shortRangeLabel,
   stockRowName,
   takingsMethodLabel,
   takingsPersonLabel,
@@ -45,6 +49,48 @@ describe('range and grain', () => {
     expect(customRangeProblem('2026-01-01', '2026-02-04')).toBeNull();
     // 400 days exactly is allowed.
     expect(customRangeProblem('2026-01-01', '2027-02-04')).toBeNull();
+  });
+});
+
+describe('the one-line range control', () => {
+  // Sunday 11 October 2026, as the mock-up.
+  const today = '2026-10-11';
+
+  it("works out each preset's dates as the report routes do (the web's resolvePosReportPreset)", () => {
+    expect(presetRange('today', today)).toEqual({ from: '2026-10-11', to: '2026-10-11' });
+    expect(presetRange('yesterday', today)).toEqual({ from: '2026-10-10', to: '2026-10-10' });
+    expect(presetRange('this-week', today)).toEqual({ from: '2026-10-05', to: '2026-10-11' });
+    expect(presetRange('last-week', today)).toEqual({ from: '2026-09-28', to: '2026-10-04' });
+    expect(presetRange('this-month', today)).toEqual({ from: '2026-10-01', to: '2026-10-31' });
+    expect(presetRange('last-month', today)).toEqual({ from: '2026-09-01', to: '2026-09-30' });
+    // A Monday starts its own week; January's last month is December.
+    expect(presetRange('this-week', '2026-10-05')).toEqual({ from: '2026-10-05', to: '2026-10-11' });
+    expect(presetRange('last-month', '2027-01-15')).toEqual({ from: '2026-12-01', to: '2026-12-31' });
+  });
+
+  it('shows this week and this month up to today, as the web does, and leaves past ranges whole', () => {
+    expect(presetRangeSoFar('this-week', '2026-10-09')).toEqual({ from: '2026-10-05', to: '2026-10-09' });
+    expect(presetRangeSoFar('this-month', today)).toEqual({ from: '2026-10-01', to: '2026-10-11' });
+    expect(presetRangeSoFar('last-week', today)).toEqual({ from: '2026-09-28', to: '2026-10-04' });
+    expect(presetRangeSoFar('last-month', today)).toEqual({ from: '2026-09-01', to: '2026-09-30' });
+    expect(presetRangeSoFar('today', today)).toEqual({ from: today, to: today });
+  });
+
+  it('stops the period rows at today, because later days are always empty', () => {
+    const rows = ['2026-10-10', '2026-10-11', '2026-10-12', '2026-10-31'].map((period_start) => ({ period_start }));
+    expect(periodsSoFar(rows, today).map((r) => r.period_start)).toEqual(['2026-10-10', '2026-10-11']);
+    // A week or month that started on or before today stays.
+    expect(periodsSoFar([{ period_start: '2026-10-05' }, { period_start: '2026-10-12' }], today)).toEqual([{ period_start: '2026-10-05' }]);
+  });
+
+  it('says a range in a few words, with the year only when it is not this year', () => {
+    expect(shortRangeLabel('2026-10-11', '2026-10-11', today)).toBe('Sun 11 Oct');
+    expect(shortRangeLabel('2026-10-05', '2026-10-11', today)).toBe('5 to 11 Oct');
+    // The phone's own month words: newer locale data says "Sept" for September in British English.
+    expect(shortRangeLabel('2026-09-28', '2026-10-04', today)).toMatch(/^28 Sept? to 4 Oct$/);
+    expect(shortRangeLabel('2026-09-01', '2026-09-30', today)).toMatch(/^1 to 30 Sept?$/);
+    expect(shortRangeLabel('2025-09-01', '2025-09-30', today)).toMatch(/^1 to 30 Sept? 2025$/);
+    expect(shortRangeLabel('2025-12-29', '2026-01-04', today)).toBe('29 Dec 2025 to 4 Jan 2026');
   });
 });
 

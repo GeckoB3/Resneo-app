@@ -89,6 +89,7 @@ jest.mock('@/lib/reports/csv-export', () => ({
 // Sections with queries of their own, or charts that need a layout pass.
 jest.mock('@/components/reports/HistorySection', () => ({ HistorySection: () => null }));
 jest.mock('@/components/reports/BookedRevenueSection', () => ({ BookedRevenueSection: () => null }));
+jest.mock('@/components/reports/NewBookingsSection', () => ({ NewBookingsSection: () => null }));
 jest.mock('@/components/reports/BookingLogEmailCard', () => ({ BookingLogEmailCard: () => null }));
 const mockExportProps: { posKinds?: boolean }[] = [];
 jest.mock('@/components/reports/DataExportCard', () => ({
@@ -531,9 +532,24 @@ describe('Reports SMS usage card (web SmsUsageBanner)', () => {
     expect(screen.getByTestId('sms-usage')).toBeTruthy();
   });
 
-  it('heads the tabs that carry their own range too', async () => {
-    mockParams = { tab: 'revenue' };
+  // Part 2 mock-up 3 (2026-10-11): SMS usage is about the plan, so it sits on the Overview only and
+  // every other tab opens on its own figures.
+  it.each(['revenue', 'new-bookings', 'clients', 'takings', 'sales'])('stays off the %s tab', async (tab) => {
+    mockPosAccess = { visible: true, can_view: true, can_export: true };
+    mockParams = { tab };
     await render(<ReportsScreen />);
+    expect(screen.queryByTestId('sms-usage')).toBeNull();
+  });
+
+  it('comes back when the Overview is chosen again', async () => {
+    mockPosAccess = { visible: true, can_view: true, can_export: true };
+    mockParams = { tab: 'takings' };
+    await render(<ReportsScreen />);
+    expect(screen.getByText('takings-section')).toBeTruthy();
+    expect(screen.queryByTestId('sms-usage')).toBeNull();
+    await act(async () => {
+      fireEvent.press(screen.getByText('Overview'));
+    });
     expect(screen.getByTestId('sms-usage')).toBeTruthy();
   });
 

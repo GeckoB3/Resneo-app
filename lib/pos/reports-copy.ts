@@ -46,6 +46,10 @@ export const REPORTS_COPY = {
   'grain.title.day': 'By day',
   'grain.title.week': 'By week',
   'grain.title.month': 'By month',
+  // The one-line range control and its sheet (Part 2 mock-up 3, 2026-10-11).
+  'rng.sheetTitle': 'Show {report} for',
+  'rng.hint': 'Opens the date choices',
+  'rng.back': 'Back',
 
   // ─── Shared report parts ──────────────────────────────────────────────────
   'rep.empty': 'Nothing to show for this period.',
@@ -78,6 +82,14 @@ export const REPORTS_COPY = {
   'tk.net': 'Net takings',
   'tk.tips': 'Tips',
   'tk.disputesSub': 'Disputes {amount}',
+  'tk.withTips': '{amount} with tips',
+  // The takings tables on a phone: short column heads, each row's tips under its name, and the
+  // whole row in words for a screen reader.
+  'tk.col.in': 'In',
+  'tk.col.out': 'Out',
+  'tk.col.net': 'Net',
+  'tk.tipsSub': 'Tips {amount}',
+  'tk.row.a11y': '{name}: payments in {in}, refunds out {out}, net takings {net}, tips {tips}',
   'tk.byMethod': 'By payment method',
   'tk.method': 'Method',
   'tk.bySource': 'By where it came from',

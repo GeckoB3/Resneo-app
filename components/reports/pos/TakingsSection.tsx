@@ -6,13 +6,14 @@ import { PayoutsCard } from '@/components/reports/pos/PayoutsCard';
 import {
   FigureList,
   KpiTiles,
-  PosRangeCard,
+  MoneyTable,
+  PosRangeLine,
   PosReportCard,
+  ReportInfoLine,
   ReportLoadError,
   ReportTable,
   reportStyles,
   useReportDownload,
-  useReportNotice,
 } from '@/components/reports/pos/PosReportUi';
 import { SvgBarChart } from '@/components/reports/SvgBarChart';
 import { Button } from '@/components/ui/Button';
@@ -26,6 +27,7 @@ import {
   formatMoneyExact,
   formatReportDate,
   periodLabel,
+  periodsSoFar,
   rangeQuery,
   refundReasonLabel,
   refundSourceLabel,
@@ -38,7 +40,13 @@ import {
 } from '@/lib/reports/pos-report-format';
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
+import type { TakingsAmounts } from '@/types/pos';
 import type { PosRangeChoice, ReportGrain } from '@/types/pos-reports';
+
+/** A takings row's money as a table row's (`MoneyTable`). */
+function moneyOf(r: Pick<TakingsAmounts, 'payments_pence' | 'refunds_pence' | 'net_pence' | 'tips_pence'>) {
+  return { inPence: r.payments_pence, outPence: r.refunds_pence, netPence: r.net_pence, tipsPence: r.tips_pence };
+}
 
 /**
  * The Takings tab (web `TakingsSection.tsx`, UX spec §11.1): money in and out on the day it moved,
@@ -46,6 +54,9 @@ import type { PosRangeChoice, ReportGrain } from '@/types/pos-reports';
  * it, refunds and reasons, disputes, tips by person with the monthly tip records, VAT by rate with
  * deposits and fees listed apart, cash-ups and (admins) payouts and fees. Each card's CSV comes
  * from the server and opens the share sheet; the buttons show only to people who may export.
+ *
+ * It leads with the numbers (Part 2 mock-up 3): the range on one line, the four figures, what the
+ * report counts, then the tables, with In, Out and Net in columns and each row's tips under it.
  */
 export function TakingsSection({ canExport, isAdmin, today }: { canExport: boolean; isAdmin: boolean; today: string }) {
   const { colors } = useTheme();
@@ -54,37 +65,35 @@ export function TakingsSection({ canExport, isAdmin, today }: { canExport: boole
   const q = useTakingsRange(choice, grain);
   const data = q.data;
   const money = (pence: number) => formatMoneyExact(pence, data?.currency);
-  const notice = useReportNotice();
   const download = useReportDownload();
   const exportable = canExport && (data?.can_export ?? true);
   const query = rangeQuery(choice, grain);
   const csv = (card: string, label: ReportsCopyId) =>
     exportable ? () => void download(`${posReportPaths.takings(query)}&format=csv&card=${card}`, reportsCopy(label)) : undefined;
 
+  const periods = useMemo(() => periodsSoFar(data?.by_period ?? [], today), [data, today]);
   const chart = useMemo(
     () =>
-      (data?.by_period ?? []).map((p) => ({
+      periods.map((p) => ({
         key: p.period_start,
         label: shortChartLabel(p.period_start, data!.grain),
         value: p.payments_pence,
         subValue: `${periodLabel(p.period_start, p.period_end, data!.grain)}. ${reportsCopy('tk.refundsOut')} ${formatMoneyExact(Math.abs(p.refunds_pence), data!.currency)}`,
       })),
-    [data],
+    [data, periods],
   );
 
   return (
     <View style={reportStyles.stack}>
-      <PosRangeCard
-        title={reportsCopy('tab.takings')}
-        help={reportsCopy('tk.help')}
+      <PosRangeLine
+        report={reportsCopy('tab.takings')}
         choice={choice}
         onChoice={setChoice}
         grain={grain}
         onGrain={setGrain}
+        today={today}
         loading={q.isFetching}
         currentRange={data ? { from: data.from, to: data.to } : null}
-        today={today}
-        onNotice={notice}
       />
 
       {q.isError ? <ReportLoadError message={posErrorMessage(q.error, reportsCopy('rep.error'))} onRetry={() => void q.refetch()} /> : null}
@@ -98,55 +107,44 @@ export function TakingsSection({ canExport, isAdmin, today }: { canExport: boole
             </View>
           ) : null}
 
-          <PosReportCard title={reportsCopy('tk.title', { range: periodLabel(data.from, data.to, 'week') })} onExport={csv('totals', 'csv.takings')}>
-            <KpiTiles
-              items={[
-                { label: reportsCopy('tk.paymentsIn'), value: money(data.totals.payments_pence) },
-                { label: reportsCopy('tk.refundsOut'), value: money(data.totals.refunds_pence) },
-                {
-                  label: reportsCopy('tk.net'),
-                  value: money(data.totals.net_pence),
-                  caption: data.totals.disputes_pence !== 0 ? reportsCopy('tk.disputesSub', { amount: money(data.totals.disputes_pence) }) : undefined,
-                },
-                { label: reportsCopy('tk.tips'), value: money(data.totals.tips_pence) },
-              ]}
-            />
-          </PosReportCard>
+          {/* The four figures first, in the web's colours (mock-up 3, note 2). */}
+          <KpiTiles
+            items={[
+              { label: reportsCopy('tk.paymentsIn'), value: money(data.totals.payments_pence), tone: 'emerald' },
+              { label: reportsCopy('tk.refundsOut'), value: money(data.totals.refunds_pence), tone: 'amber' },
+              {
+                label: reportsCopy('tk.net'),
+                value: money(data.totals.net_pence),
+                tone: 'brand',
+                caption: data.totals.disputes_pence !== 0 ? reportsCopy('tk.disputesSub', { amount: money(data.totals.disputes_pence) }) : undefined,
+                // Net takings leave tips out, where End of day counts them in (web QA W1-10).
+                caption2: data.totals.tips_pence !== 0 ? reportsCopy('tk.withTips', { amount: money(data.totals.net_with_tips_pence) }) : undefined,
+              },
+              { label: reportsCopy('tk.tips'), value: money(data.totals.tips_pence), tone: 'slate' },
+            ]}
+          />
+          <ReportInfoLine text={reportsCopy('tk.help')} exportTitle={reportsCopy('csv.takings')} onExport={csv('totals', 'csv.takings')} />
 
           <PosReportCard title={reportsCopy('tk.byMethod')} onExport={csv('by_method', 'csv.takings.byMethod')}>
-            <ReportTable
+            <MoneyTable
               caption={reportsCopy('csv.takings.byMethod')}
-              rows={data.by_method}
-              rowKey={(r) => `${r.method}:${r.external_type_name ?? ''}`}
-              columns={[
-                { label: reportsCopy('tk.method'), value: (r) => takingsMethodLabel(r.method, r.external_type_name), width: 190 },
-                { label: reportsCopy('tk.paymentsIn'), value: (r) => money(r.payments_pence), numeric: true },
-                { label: reportsCopy('tk.refundsOut'), value: (r) => money(r.refunds_pence), numeric: true },
-                { label: reportsCopy('tk.net'), value: (r) => money(r.net_pence), numeric: true },
-                { label: reportsCopy('tk.tips'), value: (r) => money(r.tips_pence), numeric: true },
-              ]}
-              footer={[
-                reportsCopy('rep.total'),
-                money(data.totals.payments_pence),
-                money(data.totals.refunds_pence),
-                money(data.totals.net_pence),
-                money(data.totals.tips_pence),
-              ]}
+              nameHeader={reportsCopy('tk.method')}
+              money={money}
+              rows={data.by_method.map((r) => ({
+                key: `${r.method}:${r.external_type_name ?? ''}`,
+                name: takingsMethodLabel(r.method, r.external_type_name),
+                ...moneyOf(r),
+              }))}
+              total={{ key: '__total', name: reportsCopy('rep.total'), ...moneyOf(data.totals) }}
             />
           </PosReportCard>
 
           <PosReportCard title={reportsCopy('tk.bySource')} onExport={csv('by_source', 'csv.takings.bySource')}>
-            <ReportTable
+            <MoneyTable
               caption={reportsCopy('tk.bySource')}
-              rows={data.by_source}
-              rowKey={(r) => r.source}
-              columns={[
-                { label: reportsCopy('tk.source'), value: (r) => takingsSourceLabel(r.source), width: 190 },
-                { label: reportsCopy('tk.paymentsIn'), value: (r) => money(r.payments_pence), numeric: true },
-                { label: reportsCopy('tk.refundsOut'), value: (r) => money(r.refunds_pence), numeric: true },
-                { label: reportsCopy('tk.net'), value: (r) => money(r.net_pence), numeric: true },
-                { label: reportsCopy('tk.tips'), value: (r) => money(r.tips_pence), numeric: true },
-              ]}
+              nameHeader={reportsCopy('tk.source')}
+              money={money}
+              rows={data.by_source.map((r) => ({ key: r.source, name: takingsSourceLabel(r.source), ...moneyOf(r) }))}
             />
           </PosReportCard>
 
@@ -158,34 +156,26 @@ export function TakingsSection({ canExport, isAdmin, today }: { canExport: boole
             ) : (
               <>
                 <SvgBarChart data={chart} color={colors.brand} formatValue={money} labelWidth={72} />
-                <ReportTable
+                <MoneyTable
                   caption={reportsCopy('csv.takings.byPeriod')}
-                  rows={data.by_period}
-                  rowKey={(r) => r.period_start}
-                  columns={[
-                    { label: reportsCopy('rep.period'), value: (r) => periodLabel(r.period_start, r.period_end, data.grain) },
-                    { label: reportsCopy('tk.paymentsIn'), value: (r) => money(r.payments_pence), numeric: true },
-                    { label: reportsCopy('tk.refundsOut'), value: (r) => money(r.refunds_pence), numeric: true },
-                    { label: reportsCopy('tk.net'), value: (r) => money(r.net_pence), numeric: true },
-                    { label: reportsCopy('tk.tips'), value: (r) => money(r.tips_pence), numeric: true },
-                  ]}
+                  nameHeader={reportsCopy('rep.period')}
+                  money={money}
+                  rows={periods.map((r) => ({
+                    key: r.period_start,
+                    name: periodLabel(r.period_start, r.period_end, data.grain),
+                    ...moneyOf(r),
+                  }))}
                 />
               </>
             )}
           </PosReportCard>
 
           <PosReportCard title={reportsCopy('tk.byPerson')} onExport={csv('by_person', 'csv.takings.byPerson')}>
-            <ReportTable
+            <MoneyTable
               caption={reportsCopy('tk.byPerson')}
-              rows={data.by_person}
-              rowKey={(r, i) => r.staff_id ?? `none-${i}`}
-              columns={[
-                { label: reportsCopy('rep.teamMember'), value: (r) => takingsPersonLabel(r.name, r.staff_id), width: 180 },
-                { label: reportsCopy('tk.paymentsIn'), value: (r) => money(r.payments_pence), numeric: true },
-                { label: reportsCopy('tk.refundsOut'), value: (r) => money(r.refunds_pence), numeric: true },
-                { label: reportsCopy('tk.net'), value: (r) => money(r.net_pence), numeric: true },
-                { label: reportsCopy('tk.tips'), value: (r) => money(r.tips_pence), numeric: true },
-              ]}
+              nameHeader={reportsCopy('rep.teamMember')}
+              money={money}
+              rows={data.by_person.map((r, i) => ({ key: r.staff_id ?? `none-${i}`, name: takingsPersonLabel(r.name, r.staff_id), ...moneyOf(r) }))}
             />
           </PosReportCard>
 

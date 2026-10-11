@@ -72,6 +72,92 @@ export function periodLabel(start: string, end: string, grain: ReportGrain): str
   return start === end ? to : `${from} to ${to}`;
 }
 
+function toYmd(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function addDaysYmd(ymd: string, days: number): string {
+  const d = parseYmd(ymd);
+  d.setUTCDate(d.getUTCDate() + days);
+  return toYmd(d);
+}
+
+/** The Monday a date's week starts on (weeks start on Monday, as the diary's do). */
+function weekStartYmd(ymd: string): string {
+  const d = parseYmd(ymd);
+  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+  return toYmd(d);
+}
+
+function monthEndYmd(start: string): string {
+  const d = parseYmd(start);
+  d.setUTCMonth(d.getUTCMonth() + 1);
+  d.setUTCDate(0);
+  return toYmd(d);
+}
+
+/**
+ * A preset's dates from the venue's own today, exactly as the report routes work them out (the
+ * web's `resolvePosReportPreset`): whole weeks from Monday, whole months.
+ */
+export function presetRange(preset: PosReportPreset, today: string): { from: string; to: string } {
+  switch (preset) {
+    case 'today':
+      return { from: today, to: today };
+    case 'yesterday': {
+      const d = addDaysYmd(today, -1);
+      return { from: d, to: d };
+    }
+    case 'this-week': {
+      const from = weekStartYmd(today);
+      return { from, to: addDaysYmd(from, 6) };
+    }
+    case 'last-week': {
+      const from = addDaysYmd(weekStartYmd(today), -7);
+      return { from, to: addDaysYmd(from, 6) };
+    }
+    case 'this-month': {
+      const from = `${today.slice(0, 8)}01`;
+      return { from, to: monthEndYmd(from) };
+    }
+    case 'last-month': {
+      const from = `${addDaysYmd(`${today.slice(0, 8)}01`, -1).slice(0, 8)}01`;
+      return { from, to: monthEndYmd(from) };
+    }
+  }
+}
+
+/**
+ * A preset's dates as the range line shows them: like `presetRange`, but "This week" and "This
+ * month" end today (the web's `presetDatesSoFar`), because nothing can be taken or sold later.
+ */
+export function presetRangeSoFar(preset: PosReportPreset, today: string): { from: string; to: string } {
+  const { from, to } = presetRange(preset, today);
+  return { from, to: to > today ? today : to };
+}
+
+/**
+ * Periods that start after today are always empty, so the period chart and table stop at today,
+ * as the range's words do ("This month, 1 to 11 Oct"); the web's `periodsSoFar`.
+ */
+export function periodsSoFar<Row extends { period_start: string }>(rows: Row[], today: string): Row[] {
+  return rows.filter((r) => r.period_start <= today);
+}
+
+/**
+ * A range in a few words, for the one-line range control and its sheet (Part 2 mock-up 3): "Sun 11
+ * Oct", "5 to 11 Oct", "28 Sep to 4 Oct", with the year only when it is not this year.
+ */
+export function shortRangeLabel(from: string, to: string, today: string): string {
+  const sameYear = from.slice(0, 4) === to.slice(0, 4);
+  const year: Intl.DateTimeFormatOptions = !sameYear || from.slice(0, 4) !== today.slice(0, 4) ? { year: 'numeric' } : {};
+  if (from === to) return formatDayLabel(from, { weekday: 'short', day: 'numeric', month: 'short', ...year });
+  const end = formatDayLabel(to, { day: 'numeric', month: 'short', ...year });
+  if (!sameYear) return `${formatDayLabel(from, { day: 'numeric', month: 'short', year: 'numeric' })} to ${end}`;
+  if (from.slice(0, 7) === to.slice(0, 7)) return `${parseYmd(from).getUTCDate()} to ${end}`;
+  return `${formatDayLabel(from, { day: 'numeric', month: 'short' })} to ${end}`;
+}
+
 /** A chart's short axis label for a period. */
 export function shortChartLabel(start: string, grain: ReportGrain): string {
   if (grain === 'month') return formatDayLabel(start, { month: 'short', year: '2-digit' });

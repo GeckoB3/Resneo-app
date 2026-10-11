@@ -93,7 +93,11 @@ beforeEach(() => {
 
 it('shows the totals, the services and products cards and the product cards', async () => {
   await render(<SalesSection canExport today="2026-10-09" />);
-  expect(screen.getByText('Sales, 5 Oct to 11 Oct 2026')).toBeTruthy();
+  // The range on one line, then the figures in the web's colours (Part 2 mock-up 3).
+  expect(screen.getByRole('button', { name: 'This week, 5 to 9 Oct' })).toBeTruthy();
+  expect(screen.getByLabelText('Sales, £100.00, Refunds -£10.00')).toBeTruthy();
+  expect(screen.getByLabelText('Number of sales, 3')).toBeTruthy();
+  expect(screen.getByText('What you sold, on the day each sale was paid. Deposits paid earlier count as part of the sale, not as new money.')).toBeTruthy();
   expect(screen.getByText('Refunds -£10.00')).toBeTruthy();
   expect(screen.getByText('1 visit with a service')).toBeTruthy();
   expect(screen.getByText('Deposits and earlier payments applied')).toBeTruthy();
@@ -110,8 +114,14 @@ it('shows the totals, the services and products cards and the product cards', as
   expect(screen.queryByText('Stock value, slow sellers and sell-through')).toBeNull();
 });
 
-it('downloads a product card from the server', async () => {
+it('downloads the totals from the line under the figures, and a product card from the server', async () => {
   await render(<SalesSection canExport today="2026-10-09" />);
+  await act(async () => {
+    fireEvent.press(screen.getByLabelText('Export Sales as CSV'));
+  });
+  expect(mockDownload).toHaveBeenLastCalledWith(
+    expect.objectContaining({ path: '/api/venue/reports/sales?grain=day&preset=this-week&format=csv&card=totals' }),
+  );
   await act(async () => {
     fireEvent.press(screen.getByLabelText('Export By product as CSV'));
   });
