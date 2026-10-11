@@ -19,7 +19,7 @@
  * Content-sized sheets must stay byte-identical to the old layout (lg + inset).
  */
 import { render, screen } from '@testing-library/react-native';
-import { Platform, Text, View } from 'react-native';
+import { Keyboard, Platform, Text, View } from 'react-native';
 
 import { Sheet } from './Sheet';
 import { spacing } from '@/theme/index';
@@ -84,6 +84,18 @@ function sheetBottomPad(): number | undefined {
     node = node.parent;
   }
   return undefined;
+}
+
+/** Android's Back press: the Modal host's `onRequestClose`, found by walking up from the handle. */
+function requestClose(): void {
+  let node = screen.getByLabelText('Close') as unknown as
+    | (StyledNode & { props: { onRequestClose?: () => void } })
+    | null;
+  while (node && typeof node.props?.onRequestClose !== 'function') {
+    node = node.parent as typeof node;
+  }
+  if (!node?.props.onRequestClose) throw new Error('No Modal host above the sheet handle');
+  node.props.onRequestClose();
 }
 
 beforeEach(() => {
@@ -163,6 +175,34 @@ describe('Sheet', () => {
       </Sheet>,
     );
     expect(sheetBottomPad()).toBe(spacing.md + mockModalWindowInsets.bottom);
+  });
+
+  // Android sends Back to the Modal even with the keyboard up. One press used to close the sheet
+  // and lose a half-typed form (gift voucher recipient, payment reference) on 2026-10-11.
+  it('puts the keyboard away on Back instead of closing while the keyboard is up', async () => {
+    const onClose = jest.fn();
+    jest.spyOn(Keyboard, 'isVisible').mockReturnValue(true);
+    const dismiss = jest.spyOn(Keyboard, 'dismiss').mockImplementation(() => {});
+    await render(
+      <Sheet visible onClose={onClose}>
+        <Text>Their name</Text>
+      </Sheet>,
+    );
+    requestClose();
+    expect(dismiss).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('closes on Back when the keyboard is down', async () => {
+    const onClose = jest.fn();
+    jest.spyOn(Keyboard, 'isVisible').mockReturnValue(false);
+    await render(
+      <Sheet visible onClose={onClose}>
+        <Text>Body</Text>
+      </Sheet>,
+    );
+    requestClose();
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it('renders nothing when hidden', async () => {

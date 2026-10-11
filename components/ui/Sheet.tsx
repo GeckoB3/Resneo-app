@@ -1,5 +1,6 @@
 import { useEffect, type ReactNode } from 'react';
 import {
+  Keyboard,
   Modal,
   Platform,
   Pressable,
@@ -89,6 +90,17 @@ export function Sheet({
     if (visible) dragY.set(0);
   }, [visible, dragY]);
 
+  // Android hands Back to the Modal even while the keyboard is up, so one press used to hide the
+  // keyboard AND close the sheet, throwing away what was typed (found on a Samsung, 2026-10-11).
+  // With the keyboard up, Back only puts the keyboard away; the next Back closes the sheet.
+  const handleRequestClose = () => {
+    if (Keyboard.isVisible()) {
+      Keyboard.dismiss();
+      return;
+    }
+    onClose();
+  };
+
   const settleBack = () => {
     'worklet';
     dragY.set(reduceMotion ? 0 : withSpring(0, DRAG_SPRING));
@@ -127,7 +139,7 @@ export function Sheet({
       // scrim stops short of it. RN warns if only one is set.
       statusBarTranslucent
       navigationBarTranslucent
-      onRequestClose={onClose}>
+      onRequestClose={handleRequestClose}>
       {/* A Modal is a separate native window, and on Android the app's root
           GestureHandlerRootView (app/_layout.tsx) never sees its touches: every
           gesture-handler gesture in a sheet (this drag handle, the signature pad,
