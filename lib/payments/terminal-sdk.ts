@@ -76,6 +76,19 @@ export interface TerminalSdkModule {
   }) => Promise<{ error?: Record<string, string> | null }>;
 }
 
+/**
+ * Stripe's `TapToPayUxConfiguration` in beta.33 (Android): where the tap zone indicator sits, a
+ * light or dark screen, and three colours. Plain strings, so no SDK value is imported here.
+ */
+export interface TapToPayUxConfig {
+  tapZone?:
+    | { indicator: 'default' }
+    | { indicator: 'above' | 'below' | 'left' | 'right'; bias?: number }
+    | { indicator: 'front' | 'behind'; xBias?: number; yBias?: number };
+  darkMode?: 'dark' | 'light' | 'system';
+  colors?: { primary?: string; success?: string; error?: string };
+}
+
 /** Result envelope shared by most SDK calls: `{ error? }` rather than throwing. */
 interface SdkResult {
   error?: StripeError;
@@ -100,6 +113,12 @@ export interface TerminalHookApi {
     paymentIntent: PaymentIntent.Type;
   }) => Promise<SdkResult & { paymentIntent?: PaymentIntent.Type }>;
   cancelCollectPaymentMethod: () => Promise<SdkResult>;
+  /**
+   * Android only (beta.33): styles Stripe's Tap to Pay screen. iOS answers UNSUPPORTED_OPERATION
+   * without touching native code; the hook throws before `initialize()`. Optional because an older
+   * build's SDK may lack it.
+   */
+  setTapToPayUxConfiguration?: (config: TapToPayUxConfig) => Promise<SdkResult>;
   supportsReadersOfType: (params: {
     deviceType: Reader.DeviceType;
     discoveryMethod: Reader.DiscoveryMethod;

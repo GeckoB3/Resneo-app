@@ -8,6 +8,7 @@ import {
   hasIosLocationPermission,
 } from '@/lib/payments/card-present-permissions';
 import { ensureTerminalLocationId } from '@/lib/payments/connection-token';
+import { applyTapToPayUx } from '@/lib/payments/tap-to-pay-ux';
 import {
   READER_CANCEL_TIMEOUT_MS,
   READER_DISCOVERY_TIMEOUT_MESSAGE,
@@ -418,6 +419,9 @@ export function useTapToPayReader(): UseTapToPayReader {
           if (!init.ok) {
             return fail(init.error ?? 'Could not start the card reader.');
           }
+          // Android: Stripe's tap screen in the client screens' colours (dark, teal). Bounded and
+          // best-effort: a payment never waits on how the screen looks.
+          await withTimeout(applyTapToPayUx(terminal), 2_000, 'Tap to Pay screen settings timed out.').catch(() => undefined);
 
           // Android needs runtime location permission before discovery.
           if (Platform.OS === 'android' && sdk?.requestNeededAndroidPermissions) {
