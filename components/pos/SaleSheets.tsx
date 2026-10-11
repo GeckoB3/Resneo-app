@@ -13,6 +13,7 @@ import {
   type Send,
 } from '@/components/pos/parts';
 import { AddNoticeBanner, OptionChooser, ProductRows, useAddProduct, type AddNotice } from '@/components/pos/ProductAdd';
+import { CreateContactForm } from '@/components/clients/CreateContactSheet';
 import { CameraScanner, ScanButton } from '@/components/retail/CameraScanner';
 import { VoucherSellForm, VoucherTiles } from '@/components/pos/VoucherSheets';
 import { Button } from '@/components/ui/Button';
@@ -35,6 +36,7 @@ import {
 import { looksLikeBarcode, readStockRules, resolveTillFavourites, type TillFavourite } from '@/lib/pos/product-math';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { useGuests } from '@/lib/queries/useGuests';
+import { useVenueContext } from '@/providers/VenueProvider';
 import { creditLocked } from '@/lib/pos/voucher-math';
 import {
   lookupScannedBarcode,
@@ -908,10 +910,15 @@ function ClientSheetBody({
   send: Send;
 }) {
   const t = usePosT();
+  const { terminology } = useVenueContext();
   const [search, setSearch] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const guests = useGuests({ search, limit: 20 }, { enabled: visible && search.trim().length >= 2 });
+  // UX spec §3.11: search, create one in place, or carry on as a walk-in (web `ClientDialog`).
+  const [creating, setCreating] = useState(false);
+  const searching = search.trim().length >= 2;
+  const guests = useGuests({ search, limit: 20 }, { enabled: visible && searching });
+  const found = guests.data?.guests ?? [];
 
 
   async function setGuest(guestId: string | null) {
@@ -937,6 +944,31 @@ function ClientSheetBody({
     );
   }
 
+  if (creating) {
+    // A search that reads as a name ("Jo Bloggs") starts the form; an email or a number does not.
+    const typedName = /[@\d]/.test(search) ? '' : search.trim();
+    return (
+      <PosSheet visible={visible} onClose={onClose} title={t('client.new')}>
+        {busy ? (
+          // The contact is saved and the form has cleared; say what is happening while the sale updates.
+          <Text variant="bodySmall" tone="muted">
+            {t('client.attaching')}
+          </Text>
+        ) : (
+          <CreateContactForm
+            clientNoun={terminology.client.toLowerCase()}
+            initialName={typedName}
+            intro={t('client.new.intro')}
+            hideHeading
+            onCancel={() => setCreating(false)}
+            onCreated={(guestId) => void setGuest(guestId)}
+          />
+        )}
+        <ErrorLine message={error} />
+      </PosSheet>
+    );
+  }
+
   return (
     <PosSheet visible={visible} onClose={onClose} title={sale.guest ? t('client.change') : t('client.title')}>
       <View style={posStyles.stack}>
@@ -946,7 +978,17 @@ function ClientSheetBody({
           </Text>
         ) : null}
         <SearchBar value={search} onChangeText={setSearch} placeholder={t('client.search')} onClear={() => setSearch('')} />
-        {(guests.data?.guests ?? []).map((g) => {
+        {searching && guests.isLoading ? (
+          <Text variant="bodySmall" tone="muted">
+            {t('client.searching')}
+          </Text>
+        ) : null}
+        {searching && !guests.isLoading && !guests.isError && found.length === 0 ? (
+          <Text variant="bodySmall" tone="muted">
+            {t('add.none', { query: search.trim() })}
+          </Text>
+        ) : null}
+        {found.map((g) => {
           const name = [g.first_name, g.last_name].filter(Boolean).join(' ').trim() || g.email || g.phone || '';
           return (
             <PickRow
@@ -959,6 +1001,7 @@ function ClientSheetBody({
           );
         })}
         <ErrorLine message={error} />
+        <Button label={t('client.new')} variant="secondary" disabled={busy} onPress={() => setCreating(true)} fullWidth />
         {sale.guest ? (
           <Button label={t('client.remove')} variant="ghost" loading={busy} onPress={() => void setGuest(null)} fullWidth />
         ) : (

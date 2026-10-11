@@ -212,6 +212,9 @@ export const POS_COPY = {
   'client.title': 'Add a {client}',
   'client.search': 'Search by name, phone or email',
   'client.new': 'New {client}',
+  'client.new.intro': "They're saved to your contacts and added to this sale. If the email or phone is already saved, we use that record.",
+  'client.searching': 'Searching…',
+  'client.attaching': 'Adding them to this sale…',
   'client.walkIn': 'Carry on without a {client}',
   'client.changeBooking': 'The bookings on this sale stay with {clientName}. Only the sale changes.',
 

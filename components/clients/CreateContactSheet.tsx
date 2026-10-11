@@ -30,15 +30,44 @@ type CreateContactSheetProps = {
  * Server deduplicates by email then phone, so saving someone who already
  * exists returns their existing record instead of a duplicate.
  */
-export function CreateContactSheet({
-  visible,
-  onClose,
+export function CreateContactSheet({ visible, onClose, onCreated, clientNoun = 'client' }: CreateContactSheetProps) {
+  return (
+    <Sheet visible={visible} onClose={onClose} maxHeight="88%">
+      <CreateContactForm onCancel={onClose} onCreated={onCreated} clientNoun={clientNoun} />
+    </Sheet>
+  );
+}
+
+type CreateContactFormProps = {
+  /** Cancel, after the form has cleared itself. */
+  onCancel: () => void;
+  /** Called after successful creation with the new guest's id. */
+  onCreated: (guestId: string) => void;
+  clientNoun?: string;
+  /** Start the name fields from a search already typed ("Jo Bloggs"). */
+  initialName?: string;
+  /** Under the heading; defaults to the Contacts wording. */
+  intro?: string;
+  /** Leave out "New client" when the surrounding sheet already says it. */
+  hideHeading?: boolean;
+};
+
+/**
+ * The new-contact form on its own, so a sheet that is already open (the till's "Add a client")
+ * can switch its content to it. Swapping one Sheet for another in a single render breaks on iOS.
+ */
+export function CreateContactForm({
+  onCancel,
   onCreated,
   clientNoun = 'client',
-}: CreateContactSheetProps) {
+  initialName = '',
+  intro,
+  hideHeading = false,
+}: CreateContactFormProps) {
   const mutation = useCreateGuest();
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
+  const [first, ...rest] = initialName.trim().split(/\s+/);
+  const [firstName, setFirstName] = useState(first ?? '');
+  const [lastName, setLastName] = useState(rest.join(' '));
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -76,7 +105,7 @@ export function CreateContactSheet({
 
   function handleClose() {
     resetForm();
-    onClose();
+    onCancel();
   }
 
   async function handleSave() {
@@ -104,89 +133,87 @@ export function CreateContactSheet({
   }
 
   return (
-    <Sheet visible={visible} onClose={handleClose} maxHeight="88%">
-      <View style={styles.body}>
-        <Text variant="subheading">New {clientNoun}</Text>
-        <Text variant="bodySmall" tone="secondary">
-          Add a {clientNoun} without creating a booking. If the email or phone already exists, their
-          existing record opens instead.
-        </Text>
+    <View style={styles.body}>
+      {hideHeading ? null : <Text variant="subheading">New {clientNoun}</Text>}
+      <Text variant="bodySmall" tone="secondary">
+        {intro ??
+          `Add a ${clientNoun} without creating a booking. If the email or phone already exists, their existing record opens instead.`}
+      </Text>
 
-        <View style={styles.nameRow}>
-          <View style={styles.nameField}>
-            <Input
-              label="First name"
-              value={firstName}
-              onChangeText={edited('first_name', setFirstName)}
-              autoCapitalize="words"
-              maxLength={GUEST_CONTACT_MAX_LENGTH.first_name}
-              error={fieldErrors.first_name}
-            />
-          </View>
-          <View style={styles.nameField}>
-            <Input
-              label="Last name"
-              value={lastName}
-              onChangeText={edited('last_name', setLastName)}
-              autoCapitalize="words"
-              maxLength={GUEST_CONTACT_MAX_LENGTH.last_name}
-              error={fieldErrors.last_name}
-            />
-          </View>
-        </View>
-
-        <Input
-          label="Email"
-          value={email}
-          onChangeText={edited('email', setEmail)}
-          keyboardType="email-address"
-          autoCapitalize="none"
-          autoCorrect={false}
-          maxLength={GUEST_CONTACT_MAX_LENGTH.email}
-          placeholder="name@example.com"
-          error={fieldErrors.email}
-        />
-        <Input
-          label="Phone"
-          value={phone}
-          onChangeText={edited('phone', setPhone)}
-          keyboardType="phone-pad"
-          maxLength={GUEST_CONTACT_MAX_LENGTH.phone}
-          placeholder="07911 123456"
-          error={fieldErrors.phone}
-        />
-
-        {hasIdentity && !hasReachableDetail ? (
-          <Text variant="caption" tone="muted">
-            Without an email or phone this {clientNoun} is listed under &ldquo;All identified guests&rdquo;
-            rather than the default &ldquo;Saved contact details&rdquo; view.
-          </Text>
-        ) : null}
-
-        {error ? (
-          <Text variant="bodySmall" tone="danger">
-            {error}
-          </Text>
-        ) : null}
-
-        <View style={styles.actions}>
-          <Button
-            label="Cancel"
-            variant="secondary"
-            style={styles.flex1}
-            onPress={handleClose}
-            disabled={mutation.isPending}
+      <View style={styles.nameRow}>
+        <View style={styles.nameField}>
+          <Input
+            label="First name"
+            value={firstName}
+            onChangeText={edited('first_name', setFirstName)}
+            autoCapitalize="words"
+            maxLength={GUEST_CONTACT_MAX_LENGTH.first_name}
+            error={fieldErrors.first_name}
           />
-          <Button
-            label={mutation.isPending ? 'Saving…' : `Add ${clientNoun}`}
-            style={styles.flex1}
-            loading={mutation.isPending}
-            disabled={!hasIdentity}
-            onPress={() => void handleSave()}
+        </View>
+        <View style={styles.nameField}>
+          <Input
+            label="Last name"
+            value={lastName}
+            onChangeText={edited('last_name', setLastName)}
+            autoCapitalize="words"
+            maxLength={GUEST_CONTACT_MAX_LENGTH.last_name}
+            error={fieldErrors.last_name}
           />
         </View>
       </View>
-    </Sheet>
+
+      <Input
+        label="Email"
+        value={email}
+        onChangeText={edited('email', setEmail)}
+        keyboardType="email-address"
+        autoCapitalize="none"
+        autoCorrect={false}
+        maxLength={GUEST_CONTACT_MAX_LENGTH.email}
+        placeholder="name@example.com"
+        error={fieldErrors.email}
+      />
+      <Input
+        label="Phone"
+        value={phone}
+        onChangeText={edited('phone', setPhone)}
+        keyboardType="phone-pad"
+        maxLength={GUEST_CONTACT_MAX_LENGTH.phone}
+        placeholder="07911 123456"
+        error={fieldErrors.phone}
+      />
+
+      {hasIdentity && !hasReachableDetail ? (
+        <Text variant="caption" tone="muted">
+          Without an email or phone this {clientNoun} is listed under &ldquo;All identified guests&rdquo;
+          rather than the default &ldquo;Saved contact details&rdquo; view.
+        </Text>
+      ) : null}
+
+      {error ? (
+        <Text variant="bodySmall" tone="danger">
+          {error}
+        </Text>
+      ) : null}
+
+      <View style={styles.actions}>
+        <Button
+          label="Cancel"
+          variant="secondary"
+          style={styles.flex1}
+          onPress={handleClose}
+          disabled={mutation.isPending}
+        />
+        <Button
+          label={mutation.isPending ? 'Saving…' : `Add ${clientNoun}`}
+          style={styles.flex1}
+          loading={mutation.isPending}
+          disabled={!hasIdentity}
+          onPress={() => void handleSave()}
+        />
+      </View>
+    </View>
   );
 }
 
