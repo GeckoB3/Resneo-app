@@ -21,7 +21,7 @@ import { useTillSession, useTillSessions } from '@/lib/queries/useTill';
 import { useVenue } from '@/lib/queries/useVenue';
 import { useToast } from '@/providers/ToastProvider';
 import { radius, spacing } from '@/theme/index';
-import type { PosTillMovement, PosTillSessionsResponse, PosTillState } from '@/types/pos';
+import type { PosTillMovement, PosTillSession, PosTillSessionsResponse, PosTillState } from '@/types/pos';
 
 /**
  * The till in the app (POS app step 3, plan P7-10; UX spec §7.1 to §7.5, §7.8, §13.5), reached from
@@ -126,115 +126,127 @@ function TillCard({ till, data }: { till: PosTillState; data: PosTillSessionsRes
   const [opening, setOpening] = useState(false);
   const [moving, setMoving] = useState<MoveKind | null>(null);
   const [tipsOut, setTipsOut] = useState(false);
-  const [closing, setClosing] = useState(false);
+  const [closing, setClosing] = useState<PosTillSession | null>(null);
   const [showX, setShowX] = useState(false);
   const timeZone = data.timezone;
   const leftOpen = isLeftOpen(till, data.today);
+  const report = detail.data?.report ?? null;
+
+  // The close sheet holds on to the session it is closing. Once the till closes `till.session` is
+  // null and the card turns to its closed state, but the sheet stays on the Z report until it is
+  // dismissed. It sits beside the card, in the same place either way, so it keeps its step.
+  const closeSheet = closing ? (
+    <CloseTillSheet
+      visible
+      till={till}
+      session={closing}
+      blindClose={data.cash.blind_close}
+      canSeeExpected={data.can.see_expected_cash}
+      expectedBeforePence={report?.expected_cash_pence ?? null}
+      usualFloatPence={data.cash.default_float_pence}
+      timeZone={timeZone}
+      onClose={() => setClosing(null)}
+    />
+  ) : null;
 
   if (!session) {
     return (
-      <Card>
-        <View style={posStyles.stack}>
-          <View style={posStyles.row}>
-            <Text variant="subheading" style={styles.flex}>
-              {t('session.closed.title', { till: till.name })}
+      <>
+        <Card>
+          <View style={posStyles.stack}>
+            <View style={posStyles.row}>
+              <Text variant="subheading" style={styles.flex}>
+                {t('session.closed.title', { till: till.name })}
+              </Text>
+              <Badge label={t('session.chip.closed')} />
+            </View>
+            <Text variant="bodySmall" tone="muted">
+              {t('session.closed.body')}
             </Text>
-            <Badge label={t('session.chip.closed')} />
+            {data.can.open_close_till && till.is_active ? (
+              <Button label={t('session.open')} onPress={() => setOpening(true)} fullWidth />
+            ) : null}
           </View>
-          <Text variant="bodySmall" tone="muted">
-            {t('session.closed.body')}
-          </Text>
-          {data.can.open_close_till && till.is_active ? (
-            <Button label={t('session.open')} onPress={() => setOpening(true)} fullWidth />
-          ) : null}
-        </View>
-        <OpenTillSheet
-          visible={opening}
-          till={till}
-          usualFloatPence={data.cash.default_float_pence}
-          onClose={() => setOpening(false)}
-          onOpened={(_detail, message) => {
-            setOpening(false);
-            toast.success(message);
-          }}
-        />
-      </Card>
+          <OpenTillSheet
+            visible={opening}
+            till={till}
+            usualFloatPence={data.cash.default_float_pence}
+            onClose={() => setOpening(false)}
+            onOpened={(_detail, message) => {
+              setOpening(false);
+              toast.success(message);
+            }}
+          />
+        </Card>
+        {closeSheet}
+      </>
     );
   }
 
-  const report = detail.data?.report ?? null;
   const movements = detail.data?.movements ?? [];
   return (
-    <Card>
-      <View style={posStyles.stack}>
-        {leftOpen ? (
-          <Notice tone="warning">{t('session.leftOpen', { till: till.name, date: businessDateLabel(session.business_date) })}</Notice>
-        ) : null}
-        <View style={posStyles.row}>
-          <Text variant="subheading" style={styles.flex}>
-            {till.name}
-          </Text>
-          <Badge label={t('session.chip.open')} tone="success" />
-        </View>
-        <Text variant="bodySmall" tone="muted">
-          {t('session.openSince', {
-            staffName: session.opened_by_name ?? 'your team',
-            time: timeOfDay(session.opened_at, timeZone),
-            amount: money(session.opening_float_pence),
-          })}
-        </Text>
-        {data.can.paid_in_out ? (
-          <View style={styles.actions}>
-            <Button label={t('session.paidIn')} size="sm" variant="secondary" onPress={() => setMoving('paid_in')} />
-            <Button label={t('session.paidOut')} size="sm" variant="secondary" onPress={() => setMoving('paid_out')} />
-            <Button label={t('session.safeDrop')} size="sm" variant="secondary" onPress={() => setMoving('safe_drop')} />
-            <Button label={t('session.tipsOut')} size="sm" variant="secondary" onPress={() => setTipsOut(true)} />
+    <>
+      <Card>
+        <View style={posStyles.stack}>
+          {leftOpen ? (
+            <Notice tone="warning">{t('session.leftOpen', { till: till.name, date: businessDateLabel(session.business_date) })}</Notice>
+          ) : null}
+          <View style={posStyles.row}>
+            <Text variant="subheading" style={styles.flex}>
+              {till.name}
+            </Text>
+            <Badge label={t('session.chip.open')} tone="success" />
           </View>
-        ) : null}
-        <View style={styles.actions}>
-          <Button label={t('session.xReport')} size="sm" variant="ghost" onPress={() => setShowX((v) => !v)} />
-          {data.can.open_close_till ? <Button label={t('session.close')} size="sm" onPress={() => setClosing(true)} /> : null}
-        </View>
-        {showX ? (
-          detail.isLoading ? (
-            <Text tone="muted">{t('app.loading')}</Text>
-          ) : report ? (
-            <TillReportView report={report} timeZone={timeZone} canEmail={false} />
-          ) : (
-            <Notice tone="warning" action={{ label: t('common.tryAgain'), onPress: () => void detail.refetch() }}>
-              {t('session.error')}
-            </Notice>
-          )
-        ) : null}
-        <Text variant="label">{t('app.till.moves')}</Text>
-        {detail.isLoading ? (
-          <Text tone="muted">{t('app.loading')}</Text>
-        ) : detail.isError ? (
-          <Notice tone="warning" action={{ label: t('common.tryAgain'), onPress: () => void detail.refetch() }}>
-            {posErrorMessage(detail.error, t('session.error'))}
-          </Notice>
-        ) : movements.length === 0 ? (
           <Text variant="bodySmall" tone="muted">
-            {t('app.till.moves.none')}
+            {t('session.openSince', {
+              staffName: session.opened_by_name ?? 'your team',
+              time: timeOfDay(session.opened_at, timeZone),
+              amount: money(session.opening_float_pence),
+            })}
           </Text>
-        ) : (
-          movements.map((m) => <MovementRow key={m.id} movement={m} timeZone={timeZone} />)
-        )}
-      </View>
-      <MovementSheet kind={moving} session={session} onClose={() => setMoving(null)} />
-      <TipsPaidOutSheet visible={tipsOut} session={session} onClose={() => setTipsOut(false)} />
-      <CloseTillSheet
-        visible={closing}
-        till={till}
-        session={session}
-        blindClose={data.cash.blind_close}
-        canSeeExpected={data.can.see_expected_cash}
-        expectedBeforePence={report?.expected_cash_pence ?? null}
-        usualFloatPence={data.cash.default_float_pence}
-        timeZone={timeZone}
-        onClose={() => setClosing(false)}
-      />
-    </Card>
+          {data.can.paid_in_out ? (
+            <View style={styles.actions}>
+              <Button label={t('session.paidIn')} size="sm" variant="secondary" onPress={() => setMoving('paid_in')} />
+              <Button label={t('session.paidOut')} size="sm" variant="secondary" onPress={() => setMoving('paid_out')} />
+              <Button label={t('session.safeDrop')} size="sm" variant="secondary" onPress={() => setMoving('safe_drop')} />
+              <Button label={t('session.tipsOut')} size="sm" variant="secondary" onPress={() => setTipsOut(true)} />
+            </View>
+          ) : null}
+          <View style={styles.actions}>
+            <Button label={t('session.xReport')} size="sm" variant="ghost" onPress={() => setShowX((v) => !v)} />
+            {data.can.open_close_till ? <Button label={t('session.close')} size="sm" onPress={() => setClosing(session)} /> : null}
+          </View>
+          {showX ? (
+            detail.isLoading ? (
+              <Text tone="muted">{t('app.loading')}</Text>
+            ) : report ? (
+              <TillReportView report={report} timeZone={timeZone} canEmail={false} />
+            ) : (
+              <Notice tone="warning" action={{ label: t('common.tryAgain'), onPress: () => void detail.refetch() }}>
+                {t('session.error')}
+              </Notice>
+            )
+          ) : null}
+          <Text variant="label">{t('app.till.moves')}</Text>
+          {detail.isLoading ? (
+            <Text tone="muted">{t('app.loading')}</Text>
+          ) : detail.isError ? (
+            <Notice tone="warning" action={{ label: t('common.tryAgain'), onPress: () => void detail.refetch() }}>
+              {posErrorMessage(detail.error, t('session.error'))}
+            </Notice>
+          ) : movements.length === 0 ? (
+            <Text variant="bodySmall" tone="muted">
+              {t('app.till.moves.none')}
+            </Text>
+          ) : (
+            movements.map((m) => <MovementRow key={m.id} movement={m} timeZone={timeZone} />)
+          )}
+        </View>
+        <MovementSheet kind={moving} session={session} onClose={() => setMoving(null)} />
+        <TipsPaidOutSheet visible={tipsOut} session={session} onClose={() => setTipsOut(false)} />
+      </Card>
+      {closeSheet}
+    </>
   );
 }
 
