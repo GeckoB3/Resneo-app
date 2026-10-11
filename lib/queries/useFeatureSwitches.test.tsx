@@ -100,7 +100,9 @@ describe('useSetFeatureSwitch', () => {
     expect(client.getQueryData(queryKeys.posSwitches.state('token-A'))).toEqual(after);
     // The venue and every Checkout query (the POS bootstrap among them) are read again.
     expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.venue.all() });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.pos.all() });
+    // Only the venue and the POS bootstrap are read again, never every Checkout query at once.
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: [...queryKeys.pos.all(), 'bootstrap'] });
+    expect(invalidate).not.toHaveBeenCalledWith({ queryKey: queryKeys.pos.all() });
   });
 
   it('leaves the venue alone when the caller applies the last answer itself', async () => {

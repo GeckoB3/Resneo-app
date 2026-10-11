@@ -38,14 +38,16 @@ export function useFeatureSwitches(options: { enabled?: boolean } = {}) {
 
 /**
  * After a change: the switches as the server answered, the venue with them (so the Checkout tiles,
- * Today's cards and the hub move at once), then a fresh read of the venue and of every Checkout
- * query, the POS bootstrap included.
+ * Today's cards and the hub move at once), then a fresh read of the venue and of the POS bootstrap
+ * only. Every other Checkout query fetches when its screen opens or its switch enables it, and on
+ * its own timer: re-reading them all at once sent a burst the small staging database could not take
+ * (2026-10-11).
  */
 export function applySwitchResult(queryClient: QueryClient, accessToken: string | null, res: PosFeatureSwitchesResponse): void {
   queryClient.setQueryData(queryKeys.posSwitches.state(accessToken), res);
   queryClient.setQueryData<VenueBootstrap>(queryKeys.venue.bootstrap(accessToken), (old) => (old ? venueWithSwitches(old, res) : old));
   void queryClient.invalidateQueries({ queryKey: queryKeys.venue.all() });
-  void queryClient.invalidateQueries({ queryKey: queryKeys.pos.all() });
+  void queryClient.invalidateQueries({ queryKey: [...queryKeys.pos.all(), 'bootstrap'] });
 }
 
 /**
