@@ -8,7 +8,7 @@ import { Text } from '@/components/ui/Text';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { hapticSuccess, hapticWarning } from '@/lib/haptics';
 import { newPaymentAttemptId } from '@/lib/payments/attempt-id';
-import { posPaths } from '@/lib/pos/api';
+import { keepsRequestId, posPaths } from '@/lib/pos/api';
 import { cardBrandName, savedCardConsentLine, savedCardLabel } from '@/lib/pos/card-methods';
 import { canPos } from '@/lib/pos/pos-enabled';
 import { useGuestSavedCards, usePosBootstrap, usePosEnabled, useRemoveSavedCard } from '@/lib/queries/usePos';
@@ -115,7 +115,8 @@ export function SavedCardCharge({
       onPaid();
     } catch (e) {
       hapticWarning();
-      if (apiErrorCode(e)) requestId.current = newPaymentAttemptId();
+      // A lost answer or a server error keeps the id, so a retry charges once (web W1-09).
+      if (!keepsRequestId(e)) requestId.current = newPaymentAttemptId();
       const d = savedCardDecline(e);
       if (d) setDeclined(d);
       else setError(writeError(e, t));

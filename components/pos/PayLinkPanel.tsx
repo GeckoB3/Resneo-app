@@ -10,7 +10,7 @@ import { Text } from '@/components/ui/Text';
 import { apiErrorCode } from '@/lib/api/client';
 import { hapticSuccess } from '@/lib/haptics';
 import { newPaymentAttemptId } from '@/lib/payments/attempt-id';
-import { posErrorMessage, posFetch, posPaths } from '@/lib/pos/api';
+import { keepsRequestId, posErrorMessage, posFetch, posPaths } from '@/lib/pos/api';
 import { payLinkExpiry, tipsOnLinks } from '@/lib/pos/card-methods';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { usePayLinks } from '@/lib/queries/usePos';
@@ -109,8 +109,8 @@ export function PayLinkPanel({
       setPhase({ kind: 'live', linkId: createdLink.id });
       void links.refetch();
     } catch (e) {
-      // Only a dropped connection keeps the same request id, so "Try again" never makes two links.
-      if (apiErrorCode(e)) requestId.current = newPaymentAttemptId();
+      // A lost answer or a server error keeps the same request id, so "Try again" never makes two links.
+      if (!keepsRequestId(e)) requestId.current = newPaymentAttemptId();
       setError(writeError(e, t));
       setPhase({ kind: 'setup' });
     }

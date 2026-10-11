@@ -233,6 +233,17 @@ export function isRequestReused(error: unknown): boolean {
   return error.status === 409 && code === 'CONFLICT' && body?.reason === 'request_reused';
 }
 
+/**
+ * Whether a failed money write tries again with the same request id (web `retryKeepsRequestId`): a
+ * lost answer or a server error (5xx other than 502, which is a definite refusal) may have been
+ * recorded, so the retry must be the same request, which the server replays instead of recording
+ * it twice. Any other refusal took nothing, so the next try is a new request.
+ */
+export function keepsRequestId(error: unknown): boolean {
+  if (!(error instanceof ApiError)) return true;
+  return error.status >= 500 && error.status !== 502;
+}
+
 /** `POS_BOOKING_ON_OTHER_SALE` names the other sale. */
 export function otherSaleIdFrom(error: unknown): string | null {
   if (apiErrorCode(error) !== 'POS_BOOKING_ON_OTHER_SALE' || !(error instanceof ApiError)) return null;

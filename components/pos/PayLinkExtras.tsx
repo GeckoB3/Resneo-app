@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/Input';
 import { Text } from '@/components/ui/Text';
 import { apiErrorCode } from '@/lib/api/client';
 import { newPaymentAttemptId } from '@/lib/payments/attempt-id';
-import { posErrorMessage, posFetch, posPaths } from '@/lib/pos/api';
+import { keepsRequestId, posErrorMessage, posFetch, posPaths } from '@/lib/pos/api';
 import { payLinkExpiry, waitingPayLinks } from '@/lib/pos/card-methods';
 import { queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
@@ -176,7 +176,7 @@ export function TipLinkSheet({
       onClose();
     } catch (e) {
       // Only a dropped connection keeps the same request id, so trying again never makes two links.
-      if (apiErrorCode(e) && !madeLinkId.current) requestId.current = newPaymentAttemptId();
+      if (!keepsRequestId(e) && !madeLinkId.current) requestId.current = newPaymentAttemptId();
       setError(posErrorMessage(e, t('common.networkError')));
     } finally {
       setBusy(false);
