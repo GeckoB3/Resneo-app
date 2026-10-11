@@ -38,6 +38,8 @@ export interface PosCheckoutSettings {
   tip_amount_presets: number[];
   smart_tip_threshold_pence: number;
   tip_custom_allowed: boolean;
+  /** Tips on pay links (§9.4 `set.tips.links`). Older responses may leave it out. */
+  tip_on_links?: boolean;
   tip_base: 'services' | 'total';
   tip_allocation_rule: PosTipRule;
   tipping_policy: string | null;

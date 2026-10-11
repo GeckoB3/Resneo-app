@@ -12,6 +12,8 @@ import type { PosCapabilityMap } from '@/types/pos';
 export interface PosCheckoutSettings {
   trading_name: string | null;
   card_on_file_enabled?: boolean;
+  /** How long a pay link works, 1 to 720 hours (§9.10 `set.links.hours`). */
+  pay_link_hours?: number;
   track_stock_enabled: boolean;
   allow_negative_stock_at_till?: boolean;
   low_stock_digest?: boolean;

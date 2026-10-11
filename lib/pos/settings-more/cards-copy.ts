@@ -11,6 +11,10 @@ export const CARDS_ON_FILE_COPY = {
   'set.cof.on': 'Cards on file are on.',
   'set.cof.off': 'Cards on file are off. Cards already saved stay saved until removed.',
   'set.cof.readOnly': 'Only an admin, or someone allowed to change checkout settings, can change this.', // (app)
+  'set.links.title': 'Pay links and saved cards',
+  'set.links.hours': 'Pay links work for',
+  'set.links.hours.help': 'Links you have already sent keep the time they were given.',
+  'set.links.hours.saved': 'New pay links work for {time}.',
 } as const;
 
 export type CardsOnFileCopyId = keyof typeof CARDS_ON_FILE_COPY;

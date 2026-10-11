@@ -107,6 +107,20 @@ it('turns cards on file on at the loaded version', async () => {
   expect(screen.getByText('Cards on file are on.')).toBeTruthy();
 });
 
+it('lets the venue choose how long pay links work', async () => {
+  await show();
+  await screen.findByText('Save cards when clients agree');
+  // 24 hours unless the venue changed it.
+  expect(screen.getByLabelText('24 hours').props.accessibilityState).toMatchObject({ selected: true });
+  mockHandler = (call) => (call.method === 'PATCH' ? { ...settings({ version: 6 }), settings: { ...settings().settings, pay_link_hours: 72, version: 6 } } : settings());
+  await act(async () => {
+    fireEvent.press(screen.getByLabelText('3 days'));
+  });
+  const patch = mockCalls.find((c) => c.method === 'PATCH')!;
+  expect(patch.body).toEqual({ pay_link_hours: 72, version: 5 });
+  expect(screen.getByText('New pay links work for 3 days.')).toBeTruthy();
+});
+
 it('says when someone else saved first', async () => {
   await show();
   await screen.findByText('Save cards when clients agree');

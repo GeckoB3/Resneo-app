@@ -36,6 +36,7 @@ const KEYS = [
   'smart_tip_threshold_pence',
   'tip_custom_allowed',
   'tip_base',
+  'tip_on_links',
   'tip_allocation_rule',
   'tipping_policy',
 ] as const;
@@ -150,6 +151,14 @@ function TipsSection() {
             />
 
             <SwitchRow label={t('set.tips.custom')} value={v.tip_custom_allowed} disabled={disabled} onChange={(x) => f.set('tip_custom_allowed', x)} />
+
+            <SwitchRow
+              label={t('set.tips.links')}
+              help={t('set.tips.links.help')}
+              value={v.tip_on_links !== false}
+              disabled={disabled}
+              onChange={(x) => f.set('tip_on_links', x)}
+            />
 
             <RadioList<PosCheckoutSettings['tip_base']>
               label={t('set.tips.base')}
