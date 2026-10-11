@@ -94,7 +94,7 @@ beforeEach(() => {
 it('shows the totals, the services and products cards and the product cards', async () => {
   await render(<SalesSection canExport today="2026-10-09" />);
   expect(screen.getByText('Sales, 5 Oct to 11 Oct 2026')).toBeTruthy();
-  expect(screen.getByText('Refunds -£10')).toBeTruthy();
+  expect(screen.getByText('Refunds -£10.00')).toBeTruthy();
   expect(screen.getByText('1 visit with a service')).toBeTruthy();
   expect(screen.getByText('Deposits and earlier payments applied')).toBeTruthy();
   expect(screen.getByText('VAT included')).toBeTruthy();

@@ -6,7 +6,7 @@ import { Text } from '@/components/ui/Text';
 import { posErrorMessage } from '@/lib/pos/api';
 import { reportsCopy } from '@/lib/pos/reports-copy';
 import { posReportPaths, useCashUps } from '@/lib/queries/usePosReports';
-import { formatMoney, formatReportDate, rangeQuery } from '@/lib/reports/pos-report-format';
+import { formatMoneyExact, formatReportDate, rangeQuery } from '@/lib/reports/pos-report-format';
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { CashUpRow, PosRangeChoice, ReportGrain } from '@/types/pos-reports';
@@ -23,7 +23,7 @@ export function CashUpsCard({ choice, grain, canExport }: { choice: PosRangeChoi
   const q = useCashUps(choice, grain);
   const download = useReportDownload();
   const data = q.data;
-  const money = (pence: number) => formatMoney(pence, data?.currency);
+  const money = (pence: number) => formatMoneyExact(pence, data?.currency);
   const sessions = Array.isArray(data?.sessions) ? data!.sessions : [];
   const outside = data?.outside && Array.isArray(data.outside.rows) ? data.outside : { total_pence: 0, count: 0, rows: [] };
   if (data && sessions.length === 0 && outside.count === 0) return null;

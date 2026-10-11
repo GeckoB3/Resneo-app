@@ -8,7 +8,7 @@ import { Text } from '@/components/ui/Text';
 import { posErrorMessage } from '@/lib/pos/api';
 import { reportsCopy } from '@/lib/pos/reports-copy';
 import { posReportPaths, useCommissionLines, useCommissionReport } from '@/lib/queries/usePosReports';
-import { formatLongDay, formatMoney, rangeQuery } from '@/lib/reports/pos-report-format';
+import { formatLongDay, formatMoneyExact, rangeQuery } from '@/lib/reports/pos-report-format';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { CommissionPersonRow, PosRangeChoice, ReportGrain } from '@/types/pos-reports';
@@ -30,7 +30,7 @@ export function CommissionSection({ today }: { today: string }) {
   const q = useCommissionReport(choice, grain);
   const data = q.data;
   const drill = useCommissionLines(choice, grain, person?.person_key ?? null);
-  const money = (pence: number) => formatMoney(pence, data?.currency);
+  const money = (pence: number) => formatMoneyExact(pence, data?.currency);
   const notice = useReportNotice();
   const download = useReportDownload();
   const query = rangeQuery(choice, grain);

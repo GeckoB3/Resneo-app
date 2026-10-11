@@ -22,7 +22,7 @@ import { reportsCopy, type ReportsCopyId } from '@/lib/pos/reports-copy';
 import { posReportPaths, useSalesRange } from '@/lib/queries/usePosReports';
 import {
   discountReasonLabel,
-  formatMoney,
+  formatMoneyExact,
   hasProductSections,
   LINE_TYPE_LABELS,
   periodLabel,
@@ -47,7 +47,7 @@ export function SalesSection({ canExport, today }: { canExport: boolean; today: 
   const [grain, setGrain] = useState<ReportGrain>('day');
   const q = useSalesRange(choice, grain);
   const data = q.data;
-  const money = (pence: number) => formatMoney(pence, data?.currency);
+  const money = (pence: number) => formatMoneyExact(pence, data?.currency);
   const notice = useReportNotice();
   const download = useReportDownload();
   const exportable = canExport && (data?.can_export ?? true);

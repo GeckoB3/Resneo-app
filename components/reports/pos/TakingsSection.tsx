@@ -23,7 +23,7 @@ import { reportsCopy, type ReportsCopyId } from '@/lib/pos/reports-copy';
 import { useTakingsRange, posReportPaths } from '@/lib/queries/usePosReports';
 import {
   disputeStatusLabel,
-  formatMoney,
+  formatMoneyExact,
   formatReportDate,
   periodLabel,
   rangeQuery,
@@ -53,7 +53,7 @@ export function TakingsSection({ canExport, isAdmin, today }: { canExport: boole
   const [grain, setGrain] = useState<ReportGrain>('day');
   const q = useTakingsRange(choice, grain);
   const data = q.data;
-  const money = (pence: number) => formatMoney(pence, data?.currency);
+  const money = (pence: number) => formatMoneyExact(pence, data?.currency);
   const notice = useReportNotice();
   const download = useReportDownload();
   const exportable = canExport && (data?.can_export ?? true);
@@ -67,7 +67,7 @@ export function TakingsSection({ canExport, isAdmin, today }: { canExport: boole
         key: p.period_start,
         label: shortChartLabel(p.period_start, data!.grain),
         value: p.payments_pence,
-        subValue: `${periodLabel(p.period_start, p.period_end, data!.grain)}. ${reportsCopy('tk.refundsOut')} ${formatMoney(Math.abs(p.refunds_pence), data!.currency)}`,
+        subValue: `${periodLabel(p.period_start, p.period_end, data!.grain)}. ${reportsCopy('tk.refundsOut')} ${formatMoneyExact(Math.abs(p.refunds_pence), data!.currency)}`,
       })),
     [data],
   );

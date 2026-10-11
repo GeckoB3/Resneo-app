@@ -99,7 +99,7 @@ it('opens on this week by day, as the web does, and shows every card', async () 
   expect(mockTakingsArgs[0]).toEqual([{ kind: 'preset', preset: 'this-week' }, 'day']);
   expect(screen.getByText('Takings, 5 Oct to 11 Oct 2026')).toBeTruthy();
   expect(screen.getByText('Figures before 7 Oct 2026 are estimated from older records.')).toBeTruthy();
-  expect(screen.getByText('Disputes -£20')).toBeTruthy();
+  expect(screen.getByText('Disputes -£20.00')).toBeTruthy();
   expect(screen.getByText('Treatwell')).toBeTruthy();
   expect(screen.getByText('Online deposits')).toBeTruthy();
   expect(screen.getByText('Online, no team member')).toBeTruthy();
@@ -157,8 +157,8 @@ it('shows cash-ups with the expected figure only when the server allows it', asy
   expect(screen.getByText('Cash-ups')).toBeTruthy();
   expect(screen.getByText('Front desk')).toBeTruthy();
   expect(screen.queryByText('Expected')).toBeNull();
-  expect(screen.getByText('Over £0, short £5, net -£5.')).toBeTruthy();
-  expect(screen.getByText('Cash outside a till session: £12')).toBeTruthy();
+  expect(screen.getByText('Over £0.00, short £5.00, net -£5.00.')).toBeTruthy();
+  expect(screen.getByText('Cash outside a till session: £12.00')).toBeTruthy();
   await act(async () => {
     fireEvent.press(screen.getByLabelText('Export Cash-ups as CSV'));
   });

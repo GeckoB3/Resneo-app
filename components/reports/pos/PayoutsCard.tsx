@@ -12,7 +12,7 @@ import { posErrorMessage } from '@/lib/pos/api';
 import { payoutStatusCopyId } from '@/lib/pos/card-methods';
 import { reportsCopy } from '@/lib/pos/reports-copy';
 import { usePayoutDetailRange, usePayoutsRange } from '@/lib/queries/usePosReports';
-import { formatMoney, formatReportDate } from '@/lib/reports/pos-report-format';
+import { formatMoneyExact, formatReportDate } from '@/lib/reports/pos-report-format';
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { PosPayoutStatus } from '@/types/pos';
@@ -40,7 +40,7 @@ export function PayoutsCard({ choice, grain }: { choice: PosRangeChoice; grain: 
   const [open, setOpen] = useState<string | null>(null);
   if (q.error instanceof ApiError && q.error.status === 403) return null;
   const data = q.data;
-  const money = (pence: number) => formatMoney(pence, data?.currency);
+  const money = (pence: number) => formatMoneyExact(pence, data?.currency);
 
   return (
     <PosReportCard title={t('rep.t.payouts')}>
@@ -120,7 +120,7 @@ function PayoutDetail({
   const { colors } = useTheme();
   const q = usePayoutDetailRange(choice, grain, payoutId);
   const d = q.data;
-  const money = (pence: number) => formatMoney(pence, d?.currency ?? currency);
+  const money = (pence: number) => formatMoneyExact(pence, d?.currency ?? currency);
   return (
     <View style={[styles.detail, { borderTopColor: colors.border }]}>
       <View style={styles.detailHead}>
