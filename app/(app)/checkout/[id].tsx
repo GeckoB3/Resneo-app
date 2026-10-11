@@ -36,6 +36,7 @@ import { ApiError } from '@/lib/api/client';
 import { getStripePublishableKey } from '@/lib/env';
 import { isTerminalSdkAvailable } from '@/lib/payments/terminal-sdk';
 import { posPaths } from '@/lib/pos/api';
+import { capitalise } from '@/lib/pos/copy';
 import { declinedSavedCardPayment, pendingCollectPayment, pendingReaderPayment, tipLinkOffered } from '@/lib/pos/card-methods';
 import { canPos, cardAppAvailable } from '@/lib/pos/pos-enabled';
 import {
@@ -461,7 +462,7 @@ function SaleBody({
               {sale.payments.map((p) => (
                 <View key={p.id} style={posStyles.row}>
                   <Text variant="bodySmall" style={styles.flex}>
-                    {paymentMethodName(p)}
+                    {capitalise(paymentMethodName(p))}
                     {p.tip_pence > 0 ? ` (${t('tip.label').toLowerCase()} ${money(p.tip_pence)})` : ''}
                   </Text>
                   <Text variant="bodySmall" tone={p.status === 'succeeded' ? 'default' : 'muted'}>

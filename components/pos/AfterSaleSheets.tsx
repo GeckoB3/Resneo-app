@@ -12,6 +12,7 @@ import { Text } from '@/components/ui/Text';
 import { apiErrorCode } from '@/lib/api/client';
 import { newPaymentAttemptId } from '@/lib/payments/attempt-id';
 import { isRequestReused } from '@/lib/pos/api';
+import { capitalise } from '@/lib/pos/copy';
 import {
   isCardMethod,
   itemsRefundPence,
@@ -489,7 +490,7 @@ function TipSplitSheetBody({
       <View style={posStyles.stack}>
         {tipped.length > 1 ? (
           <ChoiceChips
-            options={tipped.map((p) => ({ value: p.id, label: `${paymentMethodName(p)} ${money(p.tip_pence)}` }))}
+            options={tipped.map((p) => ({ value: p.id, label: `${capitalise(paymentMethodName(p))} ${money(p.tip_pence)}` }))}
             value={paymentId}
             onChange={setPaymentId}
           />
