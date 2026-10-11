@@ -15,6 +15,7 @@ import {
   isDisputeHold,
   marginPercentLabel,
   movementWords,
+  takingsSourceLabel,
   voucherEmailAction,
   periodLabel,
   rangeQuery,
@@ -219,5 +220,12 @@ describe('downloads', () => {
     );
     expect(filenameFromDisposition('attachment; filename="../evil.csv"', 'x.csv')).toBe('x.csv');
     expect(filenameFromDisposition(null, 'x.csv')).toBe('x.csv');
+  });
+});
+
+describe('takings sources', () => {
+  it('names the gift vouchers sold source the server now sends', () => {
+    expect(takingsSourceLabel('vouchers')).toBe('Gift vouchers sold');
+    expect(takingsSourceLabel('shop')).toBe('Online shop orders');
   });
 });

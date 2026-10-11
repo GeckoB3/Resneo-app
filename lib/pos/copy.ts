@@ -258,6 +258,7 @@ export const POS_COPY = {
   'void.title': 'Void Sale {saleNo}?',
   'void.body': 'The sale is cancelled and kept in your records as voided. Use this for mistakes.',
   'void.bookings': 'The bookings on it go back to unpaid, so they can be checked out again.',
+  'void.bookings.deposit': 'The bookings on it can be checked out again. Any deposit already paid stays with its booking.',
   'void.walkIns': 'Walk-in services added on this sale are cancelled in the diary too.',
   'void.reason': 'Reason',
   'void.confirm': 'Void sale',

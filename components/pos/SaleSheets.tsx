@@ -1188,11 +1188,15 @@ export function VoidSheet({
   const [error, setError] = useState<string | null>(null);
   const hasBookings = sale.lines.some((l) => l.booking_id && !l.walkin_booking);
   const hasWalkIns = sale.lines.some((l) => l.walkin_booking);
+  // A deposit paid online stays paid on its booking when the sale is voided (web W1-18).
+  const keepsDeposit = sale.payments.some(
+    (p) => (p.method === 'deposit_applied' || p.method === 'prior_payment') && p.status === 'succeeded',
+  );
   return (
     <PosSheet visible={visible} onClose={onClose} title={t('void.title', { saleNo: sale.number_label })}>
       <View style={posStyles.stack}>
         <Text variant="bodySmall">{t('void.body')}</Text>
-        {hasBookings ? <Text variant="bodySmall">{t('void.bookings')}</Text> : null}
+        {hasBookings ? <Text variant="bodySmall">{t(keepsDeposit ? 'void.bookings.deposit' : 'void.bookings')}</Text> : null}
         {hasWalkIns ? <Text variant="bodySmall">{t('void.walkIns')}</Text> : null}
         <Text variant="label">{t('void.reason')}</Text>
         <ChoiceChips options={reasons.map((r) => ({ value: r, label: r }))} value={reason} onChange={setReason} />

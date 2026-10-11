@@ -165,6 +165,7 @@ const SOURCE_LABELS: Record<string, string> = {
   fees: 'No-show and late cancellation fees',
   shop: 'Online shop orders',
   classes: 'Class passes and memberships',
+  vouchers: 'Gift vouchers sold',
   disputes: 'Disputes',
   other: 'Other',
 };
