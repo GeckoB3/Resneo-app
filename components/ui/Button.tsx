@@ -124,6 +124,9 @@ export function Button({
   return (
     <AnimatedPressable
       accessibilityRole="button"
+      // Name the button by its label. Android never clears a content description once it is
+      // set, so without a label a button that was loading is read as "busy" for ever after.
+      accessibilityLabel={label}
       accessibilityState={{ disabled: !!isDisabled, busy: loading }}
       disabled={isDisabled}
       hitSlop={hitSlop ?? autoHitSlop}
