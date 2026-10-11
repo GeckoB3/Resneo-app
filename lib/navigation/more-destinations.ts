@@ -17,7 +17,9 @@
  */
 import type { SymbolViewProps } from 'expo-symbols';
 
+import { SWITCH_COPY } from '@/lib/pos/switches/copy';
 import { isAppointmentPlanTier } from '@/lib/venue/venue-experience';
+import type { PosSwitchOfferState } from '@/types/pos-switches';
 import type { BookingModel } from '@/types/venue';
 
 /** Icon-tile hues — a curated ramp so each destination feels distinct. */
@@ -65,6 +67,8 @@ export type Destination = {
   primary?: boolean;
   /** Opens an external surface — shows the "open" glyph. */
   external?: boolean;
+  /** A small pill on the tile ("New" on Checkout while it is offered, POS Part 5 C1). */
+  badge?: string;
   /**
    * The web's vocabulary for this destination, kept from the settings search
    * the More tab used to carry (Ask ResNeo stands in its place since R27). Not
@@ -156,7 +160,26 @@ export type DestinationsContext = {
    * member with `manage_settings` reaches Checkout settings and one with `view_reports` the records.
    */
   posCan?: { manage_settings?: boolean; view_reports?: boolean; import_products?: boolean };
+  /**
+   * Checkout's offer (POS Part 5, `GET /api/venue` `feature_offers.pos`, admins only). With Checkout
+   * off, `available` gives an admin the Checkout tile opening the landing (C1), and `paused` keeps
+   * it to say so. Absent (an older server) changes nothing.
+   */
+  posOfferState?: PosSwitchOfferState | null;
+  /** "New" on that tile: offered, and this admin has not hidden the offer on Today. */
+  posOfferNew?: boolean;
+  /**
+   * The way back while Checkout is off at a venue that has had it (design section 7.2): Orders
+   * while orders are still to hand over or send, and Sales history while anything is left to finish.
+   */
+  posWayBack?: { orders: boolean; ordersNewCount?: number | null; salesHistory: boolean } | null;
 };
+
+/** The Orders tile (app step 5, UX spec §13.7 `app.tile.orders`), with the count of new orders. */
+function ordersDestination(newCount: number | null | undefined): Destination {
+  const fresh = newCount ?? 0;
+  return { id: 'orders', label: 'Orders', hint: fresh > 0 ? `${fresh} new orders` : 'Online orders to prepare, send or hand over', icon: { ios: 'shippingbox.and.arrow.backward.fill', android: 'local_shipping', web: 'local_shipping' }, tile: TILE.sky, group: 'workspace', kind: 'route', target: '/orders', featured: true, keywords: ['orders', 'shop', 'online', 'collection', 'delivery', 'pickup'] };
+}
 
 /**
  * Build the full, role- and eligibility-aware destination index. Pure so the
@@ -194,10 +217,36 @@ export function buildDestinations(ctx: DestinationsContext): Destination[] {
     // without `manage_products` see products read only, and the stock tabs follow Track stock.
     // Orders (app step 5, UX spec §13.7 `app.tile.orders`), with the count of new orders.
     if (ctx.ordersEnabled === true) {
-      const fresh = ctx.ordersNewCount ?? 0;
-      list.push({ id: 'orders', label: 'Orders', hint: fresh > 0 ? `${fresh} new orders` : 'Online orders to prepare, send or hand over', icon: { ios: 'shippingbox.and.arrow.backward.fill', android: 'local_shipping', web: 'local_shipping' }, tile: TILE.sky, group: 'workspace', kind: 'route', target: '/orders', featured: true, keywords: ['orders', 'shop', 'online', 'collection', 'delivery', 'pickup'] });
+      list.push(ordersDestination(ctx.ordersNewCount));
     }
     list.push({ id: 'stock', label: 'Products and stock', hint: 'Stock levels, stocktakes and deliveries', icon: { ios: 'shippingbox.fill', android: 'inventory_2', web: 'inventory_2' }, tile: TILE.amber, group: 'workspace', kind: 'route', target: '/stock', featured: true, keywords: ['products', 'retail', 'stock', 'stocktake', 'barcode', 'inventory'] });
+  } else {
+    // Checkout is off (POS Part 5). An admin of a venue ResNeo offers it to gets the Checkout tile,
+    // with "New" until they hide the offer, opening the landing (C1); while ResNeo pauses it, the
+    // tile stays and says so. Team members get no tile (SW1).
+    const offer = ctx.posOfferState;
+    if (isAdmin && (offer === 'available' || offer === 'paused')) {
+      list.push({
+        id: 'checkout',
+        label: SWITCH_COPY['app.sw.tile'],
+        hint: offer === 'paused' ? SWITCH_COPY['sw.panel.extra.paused'] : SWITCH_COPY['app.sw.title'],
+        icon: { ios: 'creditcard.fill', android: 'point_of_sale', web: 'point_of_sale' },
+        tile: TILE.emerald,
+        group: 'workspace',
+        kind: 'route',
+        target: '/checkout',
+        featured: true,
+        ...(offer === 'available' && ctx.posOfferNew === true ? { badge: SWITCH_COPY['app.sw.tile.badge'] } : {}),
+        keywords: ['till', 'pos', 'sale', 'payment', 'pay', 'receipt', 'switch on'],
+      });
+    }
+    // The way back to what is left to finish (design section 7.2): Orders and Sales history.
+    if (ctx.posWayBack?.orders === true) {
+      list.push(ordersDestination(ctx.posWayBack.ordersNewCount));
+    }
+    if (ctx.posWayBack?.salesHistory === true) {
+      list.push({ id: 'sales-history', label: 'Sales history', hint: SWITCH_COPY['app.sw.salesHistory.hint'], icon: { ios: 'clock.arrow.circlepath', android: 'history', web: 'history' }, tile: TILE.indigo, group: 'workspace', kind: 'route', target: '/checkout/all-sales', featured: true, keywords: ['sales', 'refund', 'receipt', 'history', 'pay links'] });
+    }
   }
   if (isSchedulingExperience) {
     list.push({ id: 'availability', label: 'Calendar availability', hint: 'Hours, breaks, closures & amended hours', icon: { ios: 'calendar', android: 'edit_calendar', web: 'edit_calendar' }, tile: TILE.sky, group: 'workspace', kind: 'route', target: '/availability', featured: true, keywords: ['time off', 'leave', 'closures', 'amended hours', 'breaks', 'calendars'] });

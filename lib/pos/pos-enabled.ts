@@ -1,4 +1,5 @@
 import type { PosBootstrap, PosCapability } from '@/types/pos';
+import type { DismissiblePromptKey, PosSwitchOffer, PosSwitchOfferState, PosSwitchUnavailableReason } from '@/types/pos-switches';
 import type { VenueBootstrap } from '@/types/venue';
 
 /**
@@ -6,13 +7,79 @@ import type { VenueBootstrap } from '@/types/venue';
  * §13.11). Only `feature_flags.resolved.pos_enabled === true` from GET /api/venue turns Checkout
  * on. Anything else (off, missing, an older web deploy, the venue not loaded yet) is off, and with
  * it off the app makes no `/api/venue/pos` request and shows no POS screen, tile, button or tab:
- * every install behaves exactly as the builds before app step 1.
+ * every install behaves exactly as the builds before app step 1. The exceptions are the offer
+ * below (from GET /api/venue itself) and, at a venue that has had Checkout, the way back to what
+ * is left to finish (`posFinishingOpen`).
  *
  * Pure so the gate can be tested without rendering; `usePosEnabled` in `lib/queries/usePos.ts`
  * reads it from the venue bootstrap.
  */
 export function isPosEnabled(venue: Pick<VenueBootstrap, 'feature_flags'> | null | undefined): boolean {
   return venue?.feature_flags?.resolved?.pos_enabled === true;
+}
+
+const OFFER_STATES: readonly PosSwitchOfferState[] = ['available', 'on', 'paused', 'not_available'];
+const OFFER_REASONS: readonly PosSwitchUnavailableReason[] = [
+  'not_offered',
+  'blocked',
+  'environment',
+  'plan',
+  'currency',
+  'billing',
+  'onboarding',
+  'needs_checkout',
+];
+const NOT_AVAILABLE: PosSwitchOffer = { state: 'not_available', reason: null, public_reason: null };
+
+/**
+ * Checkout's offer to this admin (POS Part 5, SW1 and SW2): `GET /api/venue` `feature_offers.pos`.
+ * `available` puts the Checkout tile with "New" in More and the offer card on Today; `paused`
+ * keeps the tile to say why. The server sends it to admins only and it is additive, so an older
+ * deploy, a team member or anything unreadable is `not_available`: nothing new shows.
+ */
+export function posOffer(venue: Pick<VenueBootstrap, 'feature_offers'> | null | undefined): PosSwitchOffer {
+  const raw: unknown = venue?.feature_offers?.pos;
+  if (!raw || typeof raw !== 'object') return NOT_AVAILABLE;
+  const { state, reason, public_reason } = raw as Record<string, unknown>;
+  if (typeof state !== 'string' || !(OFFER_STATES as readonly string[]).includes(state)) return NOT_AVAILABLE;
+  return {
+    state: state as PosSwitchOfferState,
+    reason: typeof reason === 'string' && (OFFER_REASONS as readonly string[]).includes(reason) ? (reason as PosSwitchUnavailableReason) : null,
+    public_reason: typeof public_reason === 'string' && public_reason.trim() ? public_reason.trim() : null,
+  };
+}
+
+/**
+ * The door to Checkout for this admin (POS Part 5, section 12): `feature_offers.pos_door`, the web's
+ * one rule for its "New" item and Home card (offered, the venue never made a sale, and this admin
+ * has not hidden the card). Only an explicit `true` opens it: an older server, which sends no door,
+ * and a team member show none.
+ */
+export function posOfferDoor(venue: Pick<VenueBootstrap, 'feature_offers'> | null | undefined): boolean {
+  return venue?.feature_offers?.pos_door === true;
+}
+
+/** Whether this admin hid a prompt, by the server's record (`dismissed_prompts`; absent reads as no). */
+export function posPromptDismissed(
+  venue: Pick<VenueBootstrap, 'dismissed_prompts'> | null | undefined,
+  key: DismissiblePromptKey,
+): boolean {
+  const list: unknown = venue?.dismissed_prompts;
+  return Array.isArray(list) && list.includes(key);
+}
+
+/**
+ * Checkout is off, but this venue has had it (design section 7.2, "keep the way back"): the routes
+ * that finish what was started stay open on the server (`allowWhenOff`: sale reads and lists,
+ * refunds, every order action), so the app may offer Sales history and Orders. Read from the
+ * stored flag: once Checkout has been switched on, `feature_flags.raw.pos_enabled` holds a boolean
+ * (false after switching off or a pause), while a venue that never had Checkout holds nothing, and
+ * the app still asks nothing there.
+ */
+export function posFinishingOpen(venue: Pick<VenueBootstrap, 'feature_flags'> | null | undefined): boolean {
+  if (!venue || isPosEnabled(venue)) return false;
+  const stored = (venue.feature_flags?.raw as Record<string, unknown> | undefined)?.pos_enabled;
+  return typeof stored === 'boolean';
 }
 
 /**

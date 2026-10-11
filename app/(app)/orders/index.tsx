@@ -16,7 +16,7 @@ import { SearchBar } from '@/components/ui/SearchBar';
 import { ListSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { posErrorMessage } from '@/lib/pos/api';
-import { canPos } from '@/lib/pos/pos-enabled';
+import { canPos, posFinishingOpen } from '@/lib/pos/pos-enabled';
 import { PICKUP_BARCODE_TYPES } from '@/lib/retail/scan';
 import { shortWhen } from '@/lib/retail/stock-words';
 import { normalisePickupCode, orderStatusLabel, orderStatusTone, relativeTime } from '@/lib/shop/order-words';
@@ -25,6 +25,7 @@ import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { lookupOrderByPickupCode, useShopOrders } from '@/lib/queries/useOrders';
 import { usePosBootstrap, usePosEnabled } from '@/lib/queries/usePos';
 import { useToast } from '@/providers/ToastProvider';
+import { useVenueContext } from '@/providers/VenueProvider';
 import { spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { OrderTab, ShopOrderRow } from '@/types/shop';
@@ -58,13 +59,18 @@ export default function OrdersScreen() {
   const t = usePosT();
   const router = useRouter();
   const posEnabled = usePosEnabled();
+  const { venue } = useVenueContext();
+  // The way back (POS Part 5, design section 7.2): with Checkout off at a venue that has had it,
+  // orders still to finish stay here. The routes stay open and answer only logins with
+  // `manage_orders`; the POS bootstrap does not answer while Checkout is off.
+  const finishing = !posEnabled && posFinishingOpen(venue);
   const boot = usePosBootstrap();
   const accessToken = useAccessToken();
   const [tab, setTab] = useState<OrderTab>('todo');
   const [search, setSearch] = useState('');
   const q = useDebounced(search);
-  const canManage = canPos(boot.data, 'manage_orders');
-  const list = useShopOrders({ tab, q }, { enabled: canManage });
+  const canManage = finishing || canPos(boot.data, 'manage_orders');
+  const list = useShopOrders({ tab, q }, { enabled: canManage, finishing });
   const [code, setCode] = useState('');
   const [finding, setFinding] = useState(false);
   const [lookupError, setLookupError] = useState<string | null>(null);
@@ -78,7 +84,7 @@ export default function OrdersScreen() {
     const cancelled = new Set(rows.filter((o) => !canPrintPackingSlip(o)).map((o) => o.id));
     return [...selected.values()].filter((o) => !cancelled.has(o.id));
   }, [rows, selected]);
-  const showSelect = posEnabled && !boot.isLoading && canManage;
+  const showSelect = (posEnabled || finishing) && !boot.isLoading && canManage;
   const header = (
     <Stack.Screen
       options={{
@@ -140,7 +146,7 @@ export default function OrdersScreen() {
     }
   }
 
-  if (!posEnabled) {
+  if (!posEnabled && !finishing) {
     return (
       <Screen>
         {header}
@@ -148,7 +154,7 @@ export default function OrdersScreen() {
       </Screen>
     );
   }
-  if (boot.isLoading) {
+  if (!finishing && boot.isLoading) {
     return (
       <Screen padded={false}>
         {header}

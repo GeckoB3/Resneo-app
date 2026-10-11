@@ -5,6 +5,7 @@ import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
 import { AttentionCard, EmptyCard, RowLink, SaleRowCard, SectionTitle, TodayFiguresCard } from '@/components/pos/CheckoutHome';
 import { money, Notice, posStyles, usePosT } from '@/components/pos/parts';
+import { CheckoutLanding } from '@/components/pos/switches/CheckoutLanding';
 import { saleHref, useOpenCheckout } from '@/components/pos/useOpenCheckout';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -39,8 +40,10 @@ import type { PosRangeChoice } from '@/types/pos-reports';
  *   one tap away on All sales.
  * - The person's own sales and tips last: with its periods for a team member, today's for an admin,
  *   and not at all in a one-person business, where the day's figures are already theirs.
- * Reached from the Checkout tile in More, which exists only when the venue's `pos_enabled` is on; a
- * deep link at a venue without POS shows `till.off` and loads nothing.
+ * Reached from the Checkout tile in More. With the venue's `pos_enabled` off it is the landing
+ * (POS Part 5, `CheckoutLanding`): switching on for an admin of an offered venue, the paused and
+ * not-available states, and at a venue never offered it today's `till.off`; none of it asks a
+ * Checkout route.
  */
 
 const TODAY: PosRangeChoice = { kind: 'preset', preset: 'today' };
@@ -73,12 +76,8 @@ export default function CheckoutHomeScreen() {
   const header = <Stack.Screen options={{ headerShown: true, title: t('till.title') }} />;
 
   if (!posEnabled) {
-    return (
-      <Screen>
-        {header}
-        <EmptyState title={t('till.off.title')} message={t('till.off.body', { venue: 'your venue' })} />
-      </Screen>
-    );
+    // Checkout is off: the landing (POS Part 5), whose states include today's "not available".
+    return <CheckoutLanding />;
   }
   if (boot.isLoading) {
     return (

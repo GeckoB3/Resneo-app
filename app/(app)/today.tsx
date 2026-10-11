@@ -7,6 +7,7 @@ import { SymbolView } from 'expo-symbols';
 import { AlertsCard } from '@/components/today/AlertsCard';
 import { BookingTypeChips } from '@/components/today/BookingTypeChips';
 import { CapacityCard } from '@/components/today/CapacityCard';
+import { CheckoutOfferCard } from '@/components/today/CheckoutOfferCard';
 import { DiarySection } from '@/components/today/DiarySection';
 import { ForecastChart } from '@/components/today/ForecastChart';
 import { GreetingHeader } from '@/components/today/GreetingHeader';
@@ -429,6 +430,10 @@ export default function TodayScreen() {
 
         {/* Setup checklist (admin-only; pinned pre-onboarding, dismissible after) */}
         <SetupChecklistCard />
+
+        {/* Checkout's offer (POS Part 5): admins of a venue ResNeo offers it to, while it is off,
+            until they hide it. Hides itself otherwise. */}
+        <CheckoutOfferCard />
 
         {/* Till and Low stock (web home parity): only with POS on, and only while the venue counts
             cash in till sessions / tracks stock. Each hides itself otherwise. */}

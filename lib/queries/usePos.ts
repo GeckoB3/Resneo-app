@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tansta
 import { ApiError } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
 import { isRequestReused, posFetch, posPaths, staleSaleFrom, type PosMethod } from '@/lib/pos/api';
-import { isPosEnabled } from '@/lib/pos/pos-enabled';
+import { isPosEnabled, posFinishingOpen } from '@/lib/pos/pos-enabled';
 import { queryKeys } from '@/lib/queries/keys';
 import { scanCandidates } from '@/lib/retail/scan';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
@@ -61,11 +61,19 @@ export function usePosEnabled(): boolean {
   return isPosEnabled(venue.data);
 }
 
-/** The POS gate every Checkout query uses (shared with the products and stock hooks). */
-export function usePosGate(extra = true): { accessToken: string | null; enabled: boolean } {
+/**
+ * The POS gate every Checkout query uses (shared with the products and stock hooks).
+ *
+ * `finishing` is for the reads the way back needs while Checkout is off (POS Part 5, design
+ * section 7.2): the sale list and a sale, and the online orders, whose routes stay open on the
+ * server with Checkout off (`allowWhenOff`). They are asked then only at a venue that has had
+ * Checkout (`posFinishingOpen`); a venue that never had it still sends nothing.
+ */
+export function usePosGate(extra = true, opts: { finishing?: boolean } = {}): { accessToken: string | null; enabled: boolean } {
   const accessToken = useAccessToken();
-  const posEnabled = usePosEnabled();
-  return { accessToken, enabled: extra && posEnabled && isBackendConfigured() && accessToken !== null };
+  const venue = useVenue();
+  const open = isPosEnabled(venue.data) || (opts.finishing === true && posFinishingOpen(venue.data));
+  return { accessToken, enabled: extra && open && isBackendConfigured() && accessToken !== null };
 }
 
 /** `GET /api/venue/pos/bootstrap`: settings, capabilities, operators, payment types, presets, tips. */
@@ -101,9 +109,15 @@ export function usePosQueue(date?: string | null, options: { enabled?: boolean }
   });
 }
 
-/** Open sales (`status=open`) or all sales, with a search on the number or the client. */
-export function usePosSaleList(params: { status?: string | null; q?: string | null }, options: { enabled?: boolean } = {}) {
-  const { accessToken, enabled } = usePosGate(options.enabled ?? true);
+/**
+ * Open sales (`status=open`) or all sales, with a search on the number or the client. `finishing`
+ * lets Sales history and the way back read it while Checkout is off (`usePosGate`).
+ */
+export function usePosSaleList(
+  params: { status?: string | null; q?: string | null },
+  options: { enabled?: boolean; finishing?: boolean } = {},
+) {
+  const { accessToken, enabled } = usePosGate(options.enabled ?? true, { finishing: options.finishing });
   const path = posPaths.saleList({ status: params.status ?? null, q: params.q ?? null });
   return useQuery({
     queryKey: queryKeys.pos.sales(accessToken, path),
@@ -120,9 +134,12 @@ export function saleRefetchInterval(sale: PosSale | undefined): number | false {
   return false;
 }
 
-/** One sale (`GET /api/venue/pos/sales/[id]`), which also settles a card a lost webhook left pending. */
-export function usePosSale(saleId: string | null | undefined, options: { enabled?: boolean } = {}) {
-  const { accessToken, enabled } = usePosGate((options.enabled ?? true) && Boolean(saleId));
+/**
+ * One sale (`GET /api/venue/pos/sales/[id]`), which also settles a card a lost webhook left pending.
+ * `finishing` lets Sales history open a past sale while Checkout is off (`usePosGate`).
+ */
+export function usePosSale(saleId: string | null | undefined, options: { enabled?: boolean; finishing?: boolean } = {}) {
+  const { accessToken, enabled } = usePosGate((options.enabled ?? true) && Boolean(saleId), { finishing: options.finishing });
   return useQuery({
     queryKey: queryKeys.pos.sale(accessToken, saleId ?? null),
     enabled,

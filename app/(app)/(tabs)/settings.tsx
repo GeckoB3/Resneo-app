@@ -33,7 +33,12 @@ import {
   isPosEnabled,
   isShopEnabled,
   isVouchersEnabled,
+  posOffer,
+  posOfferDoor,
+  posPromptDismissed,
 } from "@/lib/pos/pos-enabled";
+import { offerDoorOpen } from "@/lib/pos/switches/model";
+import { offerScope, useOfferHidden } from "@/lib/pos/switches/offer-dismissal";
 import {
   buildDestinations,
   LIST_GROUPS,
@@ -42,6 +47,7 @@ import {
 } from "@/lib/navigation/more-destinations";
 import { useBillingStatus } from "@/lib/queries/useBillingStatus";
 import { useCollectives } from "@/lib/queries/useCollectives";
+import { usePosWayBack } from "@/lib/queries/useFeatureSwitches";
 import { useNotifications } from "@/lib/queries/useNotifications";
 import { useOrdersTile } from "@/lib/queries/useOrders";
 import { usePosBootstrap } from "@/lib/queries/usePos";
@@ -257,6 +263,25 @@ export default function MoreScreen() {
     };
   }, [posBoot.data]);
 
+  // Checkout's offer while it is off (POS Part 5): the Checkout tile for an admin, with "New" while
+  // the door is open (the web's rule: offered, no sale yet, not hidden); and the way back to what
+  // is left to finish after switching off.
+  const offer = posOffer(venue);
+  const offerState = offer.state;
+  const hiddenHere = useOfferHidden(isAdmin ? offerScope(venue?.id, staff?.id) : null);
+  const offerNew = offerDoorOpen({
+    isAdmin,
+    posEnabled: isPosEnabled(venue),
+    offer,
+    door: posOfferDoor(venue),
+    dismissed: posPromptDismissed(venue, "pos_offer"),
+    hiddenHere,
+  });
+  const wayBack = usePosWayBack(venue, isAdmin);
+  const wayBackOrders = wayBack.orders;
+  const wayBackNewOrders = wayBack.ordersNewCount;
+  const wayBackSales = wayBack.salesHistory;
+
   const destinations = useMemo<Destination[]>(() => {
     const enabledModels = new Set<BookingModel>([
       ...(venue?.active_booking_models ?? []),
@@ -278,6 +303,13 @@ export default function MoreScreen() {
       shopEnabled: isShopEnabled(venue),
       vouchersEnabled: isVouchersEnabled(venue),
       posCan,
+      posOfferState: offerState,
+      posOfferNew: offerNew,
+      posWayBack: {
+        orders: wayBackOrders,
+        ordersNewCount: wayBackNewOrders,
+        salesHistory: wayBackSales,
+      },
     });
   }, [
     isAdmin,
@@ -286,6 +318,11 @@ export default function MoreScreen() {
     ordersTile.enabled,
     ordersTile.newCount,
     posCan,
+    offerState,
+    offerNew,
+    wayBackOrders,
+    wayBackNewOrders,
+    wayBackSales,
   ]);
 
   const handlePress = useCallback(
@@ -484,6 +521,7 @@ export default function MoreScreen() {
                 tint={dest.tile}
                 label={dest.label}
                 hint={dest.hint}
+                badge={dest.badge}
                 onPress={() => handlePress(dest)}
               />
             ))}

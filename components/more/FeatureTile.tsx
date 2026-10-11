@@ -1,6 +1,7 @@
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 import { StyleSheet, View } from 'react-native';
 
+import { Badge } from '@/components/ui/Badge';
 import { PressableScale } from '@/components/ui/PressableScale';
 import { Text } from '@/components/ui/Text';
 import { hexToRgba } from '@/lib/color';
@@ -15,6 +16,8 @@ type FeatureTileProps = {
   label: string;
   hint: string;
   onPress: () => void;
+  /** A small pill beside the chevron ("New" on Checkout while it is offered). */
+  badge?: string;
 };
 
 /**
@@ -27,7 +30,7 @@ type FeatureTileProps = {
  * hand (`useTileBasis`) — two across on a phone, three or four on a tablet,
  * rather than two half-window tiles each holding one line of text.
  */
-export function FeatureTile({ icon, tint, label, hint, onPress }: FeatureTileProps) {
+export function FeatureTile({ icon, tint, label, hint, onPress, badge }: FeatureTileProps) {
   const { colors, isDark } = useTheme();
   const flexBasis = useTileBasis();
   const washAlpha = isDark ? 0.18 : 0.07;
@@ -37,7 +40,7 @@ export function FeatureTile({ icon, tint, label, hint, onPress }: FeatureTilePro
     <PressableScale
       onPress={onPress}
       haptic
-      accessibilityLabel={label}
+      accessibilityLabel={badge ? `${label}, ${badge}` : label}
       accessibilityHint={hint}
       style={[
         styles.tile,
@@ -49,11 +52,14 @@ export function FeatureTile({ icon, tint, label, hint, onPress }: FeatureTilePro
         <View style={[styles.glyph, { backgroundColor: tint, boxShadow: `0 4px 10px ${hexToRgba(tint, 0.4)}` }]}>
           <SymbolView name={icon} tintColor="#FFFFFF" size={20} />
         </View>
-        <SymbolView
-          name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }}
-          tintColor={colors.textMuted}
-          size={15}
-        />
+        <View style={styles.trailing}>
+          {badge ? <Badge label={badge} tone="accent" solid /> : null}
+          <SymbolView
+            name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }}
+            tintColor={colors.textMuted}
+            size={15}
+          />
+        </View>
       </View>
       <View style={styles.text}>
         {/* One line, shrinking a little rather than cutting off ("Calendar availability"). */}
@@ -86,6 +92,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  trailing: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
   glyph: {
     width: 42,

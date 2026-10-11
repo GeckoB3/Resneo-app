@@ -20,9 +20,13 @@ import type { VenueBootstrap } from '@/types/venue';
  * caller. Server sentences are shown word for word.
  */
 
-/** Orders for a tab and a search, newest first, paged by the server's cursor, with every tab's count. */
-export function useShopOrders(params: { tab: OrderTab; q: string }, options: { enabled?: boolean } = {}) {
-  const { accessToken, enabled } = usePosGate(options.enabled ?? true);
+/**
+ * Orders for a tab and a search, newest first, paged by the server's cursor, with every tab's
+ * count. `finishing` keeps Orders working while Checkout is off and orders are still to finish
+ * (POS Part 5, design section 7.2; the routes are `allowWhenOff`).
+ */
+export function useShopOrders(params: { tab: OrderTab; q: string }, options: { enabled?: boolean; finishing?: boolean } = {}) {
+  const { accessToken, enabled } = usePosGate(options.enabled ?? true, { finishing: options.finishing });
   const first = shopPaths.orders({ tab: params.tab, q: params.q });
   return useInfiniteQuery({
     queryKey: queryKeys.pos.shopOrders(accessToken, first),
@@ -57,9 +61,13 @@ export function readOrdersBadge(res: { new_count?: unknown; unfinished_count?: u
   return { newCount: newCount ?? 0, unfinishedCount: unfinished ?? newCount ?? 0 };
 }
 
-/** The Orders tile's counts (`readOrdersBadge`). A server before Pass 6a answers nothing. */
-export function useOrdersBadge(options: { enabled?: boolean } = {}) {
-  const { accessToken, enabled } = usePosGate(options.enabled ?? true);
+/**
+ * The Orders tile's counts (`readOrdersBadge`). A server before Pass 6a answers nothing, and so
+ * does a login without `manage_orders` (403). `finishing`: read while Checkout is off, for the way
+ * back (`usePosGate`).
+ */
+export function useOrdersBadge(options: { enabled?: boolean; finishing?: boolean } = {}) {
+  const { accessToken, enabled } = usePosGate(options.enabled ?? true, { finishing: options.finishing });
   return useQuery({
     queryKey: queryKeys.pos.shopOrdersBadge(accessToken),
     enabled,
@@ -78,9 +86,12 @@ export function useOrdersBadge(options: { enabled?: boolean } = {}) {
   });
 }
 
-/** One order: items, customer, fulfilment, payments and refunds, returns, messages and the timeline. */
-export function useShopOrder(id: string | null | undefined, options: { enabled?: boolean } = {}) {
-  const { accessToken, enabled } = usePosGate((options.enabled ?? true) && Boolean(id));
+/**
+ * One order: items, customer, fulfilment, payments and refunds, returns, messages and the timeline.
+ * `finishing`: read while Checkout is off, so an order can still be finished (`usePosGate`).
+ */
+export function useShopOrder(id: string | null | undefined, options: { enabled?: boolean; finishing?: boolean } = {}) {
+  const { accessToken, enabled } = usePosGate((options.enabled ?? true) && Boolean(id), { finishing: options.finishing });
   return useQuery({
     queryKey: queryKeys.pos.shopOrder(accessToken, id ?? null),
     enabled,

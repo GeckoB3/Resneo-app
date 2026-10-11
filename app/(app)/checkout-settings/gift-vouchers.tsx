@@ -31,9 +31,9 @@ import {
   voucherSettingsPatch,
   type VoucherDraft,
 } from '@/components/pos/settings-more/vouchers/voucher-settings-logic';
+import { ExtraOffState } from '@/components/pos/switches/ExtraOffState';
 import { Button } from '@/components/ui/Button';
 import { ConfirmSheet } from '@/components/ui/ConfirmSheet';
-import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Input } from '@/components/ui/Input';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
@@ -77,7 +77,11 @@ export default function GiftVouchersSettingsScreen() {
     <SettingsScreen
       title={vchT('set.vch.title')}
       gate={(data) =>
-        !isVouchersEnabled(venue.data) ? { featureOff: vchT('set.vch.title') } : data.can.is_admin ? 'ok' : 'admin_only'
+        !isVouchersEnabled(venue.data)
+          ? { featureOff: vchT('set.vch.title'), extra: 'pos_gift_vouchers_enabled' }
+          : data.can.is_admin
+            ? 'ok'
+            : 'admin_only'
       }>
       {(data) => <GiftVouchersBody pos={data} />}
     </SettingsScreen>
@@ -88,9 +92,11 @@ function GiftVouchersBody({ pos }: { pos: PosSettingsResponse }) {
   const query = useSettingsQuery<VoucherSettingsResponse>(settingsMoreKeys.vouchers, settingsMorePaths.voucherSettings);
   if (query.isError && isFeatureOff(query.error)) {
     return (
-      <EmptyState
-        title={smT('gate.featureOff.title', { feature: vchT('set.vch.title') })}
-        message={smT('gate.featureOff.body', { feature: vchT('set.vch.title') })}
+      <ExtraOffState
+        extra="pos_gift_vouchers_enabled"
+        feature={vchT('set.vch.title')}
+        isAdmin={pos.can.is_admin}
+        venueName={pos.venue?.name ?? ''}
       />
     );
   }

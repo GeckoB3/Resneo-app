@@ -15,6 +15,7 @@ jest.mock('@react-native-community/datetimepicker', () => 'DateTimePicker');
 jest.mock('expo-router', () => ({
   Stack: { Screen: () => null },
   useNavigation: () => ({ addListener: () => () => undefined, dispatch: jest.fn() }),
+  useRouter: () => ({ push: jest.fn() }),
 }));
 jest.mock('@/components/ui/Sheet', () => {
   const React = jest.requireActual<typeof import('react')>('react');

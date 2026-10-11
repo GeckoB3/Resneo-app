@@ -2,6 +2,7 @@ import { Stack, useNavigation } from 'expo-router';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Switch, View } from 'react-native';
 
+import { ExtraOffState } from '@/components/pos/switches/ExtraOffState';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { ConfirmSheet } from '@/components/ui/ConfirmSheet';
@@ -20,6 +21,7 @@ import { usePosEnabled } from '@/lib/queries/usePos';
 import { useVenue } from '@/lib/queries/useVenue';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
+import type { PosSwitchExtraKey } from '@/types/pos-switches';
 
 /**
  * The pieces every screen in the second half of Checkout settings shares: the screen with its
@@ -28,13 +30,15 @@ import { useTheme } from '@/theme/useTheme';
  * error boxes, and the unsaved-changes guard.
  */
 
-export type GateAnswer = 'ok' | 'admin_only' | { featureOff: string };
+/** `featureOff` names the extra and its switch, for what the screen says while it is off. */
+export type GateAnswer = 'ok' | 'admin_only' | { featureOff: string; extra: PosSwitchExtraKey };
 
 /**
  * A settings screen: the header, then the gates in the web's order. Checkout off (or the settings
- * route refusing with `feature_disabled`) shows `gate.posOff`; a feature switched off shows
- * `gate.featureOff`; a login the web would not show the card to sees `gate.adminOnly`. Only then
- * does `children` render, with the loaded settings.
+ * route refusing with `feature_disabled`) shows `gate.posOff`; an extra switched off says how it
+ * comes on (`ExtraOffState`: an admin switches it on in Checkout settings, POS Part 5); a login the
+ * web would not show the card to sees `gate.adminOnly`. Only then does `children` render, with the
+ * loaded settings.
  */
 export function SettingsScreen({
   title,
@@ -87,14 +91,15 @@ export function SettingsScreen({
   }
   const answer = gate ? gate(query.data) : 'ok';
   if (answer !== 'ok') {
-    const featureOff = typeof answer === 'object' ? answer.featureOff : null;
     return (
       <Screen>
         {header}
-        {featureOff ? (
-          <EmptyState
-            title={smT('gate.featureOff.title', { feature: featureOff })}
-            message={smT('gate.featureOff.body', { feature: featureOff })}
+        {typeof answer === 'object' ? (
+          <ExtraOffState
+            extra={answer.extra}
+            feature={answer.featureOff}
+            isAdmin={query.data.can.is_admin}
+            venueName={query.data.venue?.name ?? ''}
           />
         ) : (
           <EmptyState title={smT('gate.adminOnly.title')} message={smT('gate.adminOnly.body')} />

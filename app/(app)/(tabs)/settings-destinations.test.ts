@@ -340,3 +340,60 @@ describe('buildDestinations — Checkout (POS app step 1, plan §4.22)', () => {
     expect(ids(ctx({ isAdmin: false, posEnabled: true, loyaltyEnabled: true }))).not.toContain('loyalty-setup');
   });
 });
+
+describe('buildDestinations — switching Checkout on (POS Part 5, C1)', () => {
+  it('gives an admin of an offered venue the Checkout tile with "New", opening the landing', () => {
+    const tile = buildDestinations(ctx({ isAdmin: true, posEnabled: false, posOfferState: 'available', posOfferNew: true })).find(
+      (d) => d.id === 'checkout',
+    );
+    expect(tile).toMatchObject({ group: 'workspace', featured: true, kind: 'route', target: '/checkout', label: 'Checkout', badge: 'New' });
+    expect(tile?.hint).toBe('Take payments on your phone and at your desk');
+  });
+
+  it('keeps the tile without "New" once the admin has hidden the offer', () => {
+    const tile = buildDestinations(ctx({ isAdmin: true, posOfferState: 'available', posOfferNew: false })).find((d) => d.id === 'checkout');
+    expect(tile?.target).toBe('/checkout');
+    expect(tile?.badge).toBeUndefined();
+  });
+
+  it('keeps the tile while ResNeo pauses Checkout, saying so', () => {
+    const tile = buildDestinations(ctx({ isAdmin: true, posOfferState: 'paused', posOfferNew: true })).find((d) => d.id === 'checkout');
+    expect(tile).toMatchObject({ hint: 'Paused by ResNeo' });
+    expect(tile?.badge).toBeUndefined();
+  });
+
+  it('gives team members no tile (SW1), and nothing when not offered or from an older server', () => {
+    expect(ids(ctx({ isAdmin: false, posOfferState: 'available', posOfferNew: true }))).not.toContain('checkout');
+    expect(ids(ctx({ isAdmin: true, posOfferState: 'not_available' }))).not.toContain('checkout');
+    expect(buildDestinations(ctx({ isAdmin: true, posOfferState: undefined }))).toEqual(buildDestinations(ctx({ isAdmin: true })));
+  });
+
+  it('does not touch the Checkout tile once Checkout is on', () => {
+    const tile = buildDestinations(ctx({ isAdmin: true, posEnabled: true, posOfferState: 'on', posOfferNew: true })).find(
+      (d) => d.id === 'checkout',
+    );
+    expect(tile?.badge).toBeUndefined();
+    expect(tile?.hint).toBe("Take payments and see today's sales");
+  });
+});
+
+describe('buildDestinations — the way back after Checkout goes off (design section 7.2)', () => {
+  it('keeps Orders while orders are still to finish, with the count of new ones', () => {
+    const tile = buildDestinations(
+      ctx({ isAdmin: false, posEnabled: false, posWayBack: { orders: true, ordersNewCount: 2, salesHistory: false } }),
+    ).find((d) => d.id === 'orders');
+    expect(tile).toMatchObject({ target: '/orders', hint: '2 new orders', featured: true });
+  });
+
+  it('keeps Sales history, opening the read-only list', () => {
+    const tile = buildDestinations(
+      ctx({ isAdmin: true, posEnabled: false, posWayBack: { orders: false, ordersNewCount: null, salesHistory: true } }),
+    ).find((d) => d.id === 'sales-history');
+    expect(tile).toMatchObject({ label: 'Sales history', target: '/checkout/all-sales', group: 'workspace', hint: 'Past sales and refunds' });
+  });
+
+  it('adds nothing while nothing is left to finish', () => {
+    const none = buildDestinations(ctx({ isAdmin: true, posWayBack: { orders: false, ordersNewCount: null, salesHistory: false } }));
+    expect(none).toEqual(buildDestinations(ctx({ isAdmin: true })));
+  });
+});

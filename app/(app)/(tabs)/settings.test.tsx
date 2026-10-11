@@ -47,6 +47,10 @@ jest.mock('@/lib/queries/useCollectives', () => ({
   useCollectives: () => ({ data: { collectives: mockCollectives } }),
 }));
 jest.mock('@/lib/queries/useOrders', () => ({ useOrdersTile: () => ({ enabled: false, newCount: null }) }));
+// The way back after Checkout goes off has its own tests (settings-destinations, the switches suite).
+jest.mock('@/lib/queries/useFeatureSwitches', () => ({
+  usePosWayBack: () => ({ orders: false, ordersNewCount: null, salesHistory: false }),
+}));
 jest.mock('@/lib/queries/usePos', () => ({ usePosBootstrap: () => ({ data: undefined }) }));
 jest.mock('@/lib/queries/useNotifications', () => ({
   useNotifications: () => ({ data: { unreadCount: 0 } }),

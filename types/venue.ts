@@ -1,5 +1,6 @@
 import type { BookingPageConfig } from '@/lib/booking/bookingPageConfig';
 import type { ComplianceConfig } from '@/lib/compliance/config';
+import type { VenueFeatureOffers } from '@/types/pos-switches';
 import type { StaffRole } from '@/types/staff';
 
 export type { BookingPageConfig };
@@ -74,8 +75,10 @@ export type VenueFeatureFlagsRaw = Partial<
 };
 
 /**
- * Platform-only switches (POS plan D42): only ResNeo turns them on, from
- * `/super/flags`, so the app reads them and never toggles them. `pos_enabled`
+ * Platform-only switches (POS plan D42, replaced by SW1 on 2026-10-11): a venue
+ * admin switches them on and off through `POST /api/venue/feature-switches` once
+ * ResNeo offers it, and ResNeo from `/super/flags`; the app reads the resolved
+ * values here and never writes these keys through the feature flags. `pos_enabled`
  * is Checkout (POS plan §4.20); `pos_gift_vouchers_enabled` is gift vouchers (Pass V) and
  * `pos_loyalty_enabled` loyalty cards (Pass LC), which the web resolves off whenever `pos_enabled`
  * is. An older web deploy does not send a key, which
@@ -189,4 +192,13 @@ export interface VenueBootstrap {
    * assistant screen still explains a 404).
    */
   assistant_enabled?: boolean;
+  /**
+   * What this admin is offered to switch on themselves (POS Part 5, SW2): `pos`
+   * is Checkout's offer and `pos_door` whether to show its door (the Today card
+   * and "New"). Sent to admins only and additive, so an older deploy or a team
+   * member gets nothing: `posOffer` reads `not_available`, `posOfferDoor` false.
+   */
+  feature_offers?: Partial<VenueFeatureOffers> | null;
+  /** The prompts this admin hid, kept on the staff row (`pos_offer`, `pos_setup`). Admins only. */
+  dismissed_prompts?: string[] | null;
 }

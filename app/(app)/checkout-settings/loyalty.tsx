@@ -19,10 +19,10 @@ import {
   SwitchRow,
   useLeaveGuard,
 } from '@/components/pos/settings-more/parts';
+import { ExtraOffState } from '@/components/pos/switches/ExtraOffState';
 import { Button } from '@/components/ui/Button';
 import { ConfirmSheet } from '@/components/ui/ConfirmSheet';
 import { DatePickerField } from '@/components/ui/DatePickerField';
-import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Input } from '@/components/ui/Input';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
@@ -88,7 +88,11 @@ export default function LoyaltySettingsScreen() {
     <SettingsScreen
       title={loyT('set.loy.screen')}
       gate={(data) =>
-        !isLoyaltyEnabled(venue.data) ? { featureOff: loyT('feature.name') } : data.can.is_admin ? 'ok' : 'admin_only'
+        !isLoyaltyEnabled(venue.data)
+          ? { featureOff: loyT('feature.name'), extra: 'pos_loyalty_enabled' }
+          : data.can.is_admin
+            ? 'ok'
+            : 'admin_only'
       }>
       {(data) => <LoyaltyBody settings={data} />}
     </SettingsScreen>
@@ -141,9 +145,11 @@ function LoyaltyBody({ settings }: { settings: PosSettingsResponse }) {
 
   if (query.isError && isFeatureOff(query.error)) {
     return (
-      <EmptyState
-        title={smT('gate.featureOff.title', { feature: loyT('feature.name') })}
-        message={smT('gate.featureOff.body', { feature: loyT('feature.name') })}
+      <ExtraOffState
+        extra="pos_loyalty_enabled"
+        feature={loyT('feature.name')}
+        isAdmin={settings.can.is_admin}
+        venueName={settings.venue?.name ?? ''}
       />
     );
   }

@@ -118,7 +118,13 @@ export default function ShopSettingsRoute() {
   return (
     <SettingsScreen
       title={shT('set.shop.title')}
-      gate={(data) => (!isShopEnabled(venue.data) ? { featureOff: shT('feature.name') } : data.can.is_admin ? 'ok' : 'admin_only')}>
+      gate={(data) =>
+        !isShopEnabled(venue.data)
+          ? { featureOff: shT('feature.name'), extra: 'pos_online_shop_enabled' }
+          : data.can.is_admin
+            ? 'ok'
+            : 'admin_only'
+      }>
       {(data) => <ShopSettingsBody data={data} />}
     </SettingsScreen>
   );

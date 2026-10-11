@@ -14,6 +14,13 @@ jest.mock('expo-router', () => ({
   Stack: { Screen: () => null },
   useRouter: () => ({ push: mockPush }),
   useNavigation: () => ({ addListener: () => () => undefined, dispatch: jest.fn() }),
+  useLocalSearchParams: () => ({}),
+}));
+// Switching Checkout on and off has its own tests (components/pos/switches); here nothing is read.
+jest.mock('@/lib/queries/useFeatureSwitches', () => ({
+  useFeatureSwitches: () => ({ data: undefined, isLoading: false }),
+  useSetFeatureSwitch: () => ({ mutateAsync: jest.fn(), isPending: false }),
+  downloadVouchersList: jest.fn(),
 }));
 jest.mock('@/components/ui/Sheet', () => {
   const React = jest.requireActual<typeof import('react')>('react');

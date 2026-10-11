@@ -2,7 +2,7 @@
  * The POS switch (plan §4.22, test plan DEV-04 / APP-08): only an explicit `pos_enabled: true`
  * in the resolved flags turns Checkout on, and every action follows the capability map.
  */
-import { canPos, cardAppAvailable, isPosEnabled, showPosCheckout } from '@/lib/pos/pos-enabled';
+import { canPos, cardAppAvailable, isPosEnabled, posFinishingOpen, posOffer, showPosCheckout } from '@/lib/pos/pos-enabled';
 import type { PosBootstrap } from '@/types/pos';
 import type { VenueBootstrap } from '@/types/venue';
 
@@ -66,5 +66,53 @@ describe('showPosCheckout (the booking detail)', () => {
     expect(showPosCheckout({ ...base, venue: flags({}) })).toBe(false);
     expect(showPosCheckout({ ...base, linked: true })).toBe(false);
     expect(showPosCheckout({ ...base, canEdit: false })).toBe(false);
+  });
+});
+
+describe('posOffer (POS Part 5, GET /api/venue feature_offers.pos)', () => {
+  const withOffer = (pos: unknown) => ({ feature_offers: { pos } }) as unknown as Pick<VenueBootstrap, 'feature_offers'>;
+
+  it('reads the offer an admin is sent', () => {
+    expect(posOffer(withOffer({ state: 'available', reason: null, public_reason: null }))).toEqual({
+      state: 'available',
+      reason: null,
+      public_reason: null,
+    });
+    expect(posOffer(withOffer({ state: 'paused', reason: 'blocked', public_reason: ' We are checking a payment. ' }))).toEqual({
+      state: 'paused',
+      reason: 'blocked',
+      public_reason: 'We are checking a payment.',
+    });
+  });
+
+  it('reads an older server (no feature_offers), a team member or the venue not loaded as not available', () => {
+    expect(posOffer({} as Pick<VenueBootstrap, 'feature_offers'>).state).toBe('not_available');
+    expect(posOffer({ feature_offers: null } as Pick<VenueBootstrap, 'feature_offers'>).state).toBe('not_available');
+    expect(posOffer(null).state).toBe('not_available');
+    expect(posOffer(undefined).state).toBe('not_available');
+  });
+
+  it('reads anything unexpected as not available', () => {
+    expect(posOffer(withOffer({ state: 'shiny' })).state).toBe('not_available');
+    expect(posOffer(withOffer('available')).state).toBe('not_available');
+    expect(posOffer(withOffer({ state: 'not_available', reason: 'made-up' })).reason).toBeNull();
+  });
+});
+
+describe('posFinishingOpen (the way back, design section 7.2)', () => {
+  const venue = (resolved: Record<string, boolean>, raw: Record<string, unknown>) =>
+    ({ feature_flags: { raw, resolved } }) as unknown as Pick<VenueBootstrap, 'feature_flags'>;
+
+  it('opens after Checkout was switched off, or while it is paused', () => {
+    expect(posFinishingOpen(venue({ pos_enabled: false }, { pos_enabled: false }))).toBe(true);
+    // The environment switch: stored on, resolved off.
+    expect(posFinishingOpen(venue({ pos_enabled: false }, { pos_enabled: true }))).toBe(true);
+  });
+
+  it('stays shut while Checkout is on, and at a venue that never had it', () => {
+    expect(posFinishingOpen(venue({ pos_enabled: true }, { pos_enabled: true }))).toBe(false);
+    expect(posFinishingOpen(venue({}, {}))).toBe(false);
+    expect(posFinishingOpen(venue({ waitlist_v2: true }, { waitlist_v2: true }))).toBe(false);
+    expect(posFinishingOpen(null)).toBe(false);
   });
 });

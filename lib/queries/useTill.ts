@@ -22,6 +22,9 @@ import type {
  *
  * THE GATE: like every POS query, nothing here is asked unless the venue's `pos_enabled` is on, and
  * the screens ask only while the venue counts cash in till sessions (`cash_management_enabled`).
+ * The one exception is the way back after Checkout goes off (POS Part 5): More asks
+ * `useTillSessions({ finishing: true })` at a venue that has had Checkout, as an open till keeps
+ * Sales history in More.
  *
  * Every write that creates something (opening, a movement) carries a `client_request_id` minted
  * once per sheet by the caller, so a retry or a double tap is recorded once. Session writes answer
@@ -29,8 +32,9 @@ import type {
  */
 
 /** `GET /api/venue/pos/sessions`: every till, its open session, the cash settings and what this person may do. */
-export function useTillSessions(options: { enabled?: boolean } = {}) {
-  const { accessToken, enabled } = usePosGate(options.enabled ?? true);
+export function useTillSessions(options: { enabled?: boolean; finishing?: boolean } = {}) {
+  // `finishing`: read while Checkout is off, for the way back (an open till keeps Sales history).
+  const { accessToken, enabled } = usePosGate(options.enabled ?? true, { finishing: options.finishing });
   return useQuery({
     queryKey: queryKeys.pos.tillSessions(accessToken),
     enabled,

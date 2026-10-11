@@ -254,6 +254,15 @@ export const queryKeys = {
       [...queryKeys.pos.all(), 'end-of-day', keyScope(accessToken), date ?? null] as const,
   },
 
+  /**
+   * Switching Checkout and its extras on and off (POS Part 5): `GET /api/venue/feature-switches`,
+   * admins only. Outside `pos`, because it is read while Checkout is off.
+   */
+  posSwitches: {
+    all: () => [...queryKeys.all, 'pos-switches'] as const,
+    state: (accessToken?: string | null) => [...queryKeys.posSwitches.all(), 'state', keyScope(accessToken)] as const,
+  },
+
   referrals: {
     all: () => [...queryKeys.all, 'referrals'] as const,
     dashboard: (accessToken?: string | null) =>

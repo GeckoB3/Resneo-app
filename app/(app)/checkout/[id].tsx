@@ -38,7 +38,7 @@ import { isTerminalSdkAvailable } from '@/lib/payments/terminal-sdk';
 import { posPaths } from '@/lib/pos/api';
 import { capitalise } from '@/lib/pos/copy';
 import { declinedSavedCardPayment, pendingCollectPayment, pendingReaderPayment, tipLinkOffered } from '@/lib/pos/card-methods';
-import { canPos, cardAppAvailable } from '@/lib/pos/pos-enabled';
+import { canPos, cardAppAvailable, posFinishingOpen } from '@/lib/pos/pos-enabled';
 import {
   maxRefundablePence,
   paymentMethodName,
@@ -50,9 +50,11 @@ import {
 } from '@/lib/pos/sale-math';
 import { isAgeRestrictedLine, productLineStock } from '@/lib/pos/product-math';
 import { isVoucherLine } from '@/lib/pos/voucher-math';
+import { salesHistoryBootstrap } from '@/lib/pos/switches/model';
 import { SaleStaleError, usePosBootstrap, usePosEnabled, usePosSale, useSaleWrite } from '@/lib/queries/usePos';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { useToast } from '@/providers/ToastProvider';
+import { useVenueContext } from '@/providers/VenueProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { PosSale, PosSaleLine } from '@/types/pos';
@@ -105,15 +107,20 @@ export default function SaleScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const saleId = typeof id === 'string' ? id : '';
   const posEnabled = usePosEnabled();
+  const { venue } = useVenueContext();
+  const me = useStaffMe();
+  // Sales history (POS Part 5, section 7.2): with Checkout off at a venue that has had it, an admin
+  // opens a past sale read only and may refund money already taken, as on the web.
+  const isAdmin = (me.data?.staff?.role ?? venue?.current_user_role) === 'admin';
+  const history = !posEnabled && isAdmin && posFinishingOpen(venue);
   const boot = usePosBootstrap();
-  const saleQ = usePosSale(saleId);
+  const saleQ = usePosSale(saleId, { finishing: history });
   const write = useSaleWrite(saleId);
   const send: Send = (input) => write.mutateAsync(input);
-  const me = useStaffMe();
 
   const header = (title: string) => <Stack.Screen options={{ headerShown: true, title }} />;
 
-  if (!posEnabled) {
+  if (!posEnabled && !history) {
     return (
       <Screen>
         {header(t('till.title'))}
@@ -121,7 +128,7 @@ export default function SaleScreen() {
       </Screen>
     );
   }
-  if (saleQ.isLoading || boot.isLoading) {
+  if (saleQ.isLoading || (!history && boot.isLoading)) {
     return (
       <Screen padded={false}>
         {header(t('till.title'))}
@@ -137,7 +144,17 @@ export default function SaleScreen() {
       </Screen>
     );
   }
-  if (!saleQ.data || !boot.data) {
+  const bootstrap = history
+    ? salesHistoryBootstrap(
+        {
+          name: venue?.name ?? '',
+          currency: venue?.currency ?? 'GBP',
+          timezone: venue?.timezone ?? 'Europe/London',
+        },
+        isAdmin,
+      )
+    : boot.data;
+  if (!saleQ.data || !bootstrap) {
     const err = saleQ.error ?? boot.error;
     return (
       <Screen>
@@ -157,12 +174,13 @@ export default function SaleScreen() {
   return (
     <SaleBody
       sale={saleQ.data}
-      bootstrap={boot.data}
+      bootstrap={bootstrap}
       send={send}
       refreshing={saleQ.isRefetching}
       onRefresh={() => void saleQ.refetch()}
       myCalendarIds={me.data?.staff?.linked_calendar_ids ?? []}
       header={header(t('sale.title', { saleNo: saleQ.data.number_label }))}
+      historyVenue={history ? venue?.name?.trim() || 'your venue' : null}
     />
   );
 }
@@ -175,6 +193,7 @@ function SaleBody({
   onRefresh,
   myCalendarIds,
   header,
+  historyVenue = null,
 }: {
   sale: PosSale;
   bootstrap: NonNullable<ReturnType<typeof usePosBootstrap>['data']>;
@@ -183,6 +202,8 @@ function SaleBody({
   onRefresh: () => void;
   myCalendarIds: string[];
   header: ReactNode;
+  /** Sales history while Checkout is off: the venue's name for the banner; read only but refunds. */
+  historyVenue?: string | null;
 }) {
   const t = usePosT();
   const { colors } = useTheme();
@@ -198,12 +219,13 @@ function SaleBody({
 
   const can = (c: Parameters<typeof canPos>[1]) => canPos(bootstrap, c);
   const isAdmin = bootstrap.role === 'admin';
-  const editable = saleIsEditable(sale);
+  const history = historyVenue !== null;
+  const editable = saleIsEditable(sale) && !history;
   const pendingCard = pendingCardPayment(sale);
   const readerPending = pendingReaderPayment(sale);
   const savedDeclined = declinedSavedCardPayment(sale);
   const collectPending = pendingCollectPayment(sale);
-  const linesEditable = sale.status === 'open' && !pendingCard;
+  const linesEditable = sale.status === 'open' && !pendingCard && !history;
   const moneyPaid = sale.payments.some((p) => p.is_money && p.status === 'succeeded');
   const refundable = maxRefundablePence(sale.payments) > 0 || sale.payments.some((p) => p.refundable_tip_pence > 0);
   // From the sale's own lines, not today's setting (web W1-03).
@@ -253,6 +275,8 @@ function SaleBody({
         </View>
 
         {notice ? <Notice tone="warning">{notice}</Notice> : null}
+
+        {history ? <Notice tone="warning">{t('hist.banner', { venue: historyVenue })}</Notice> : null}
 
         {sale.parked && editable ? (
           <Notice
@@ -365,7 +389,7 @@ function SaleBody({
         </View>
 
         {/* "Reward ready" (Pass LC, §21.3): the client has a loyalty reward waiting. */}
-        <RewardReadyChip sale={sale} bootstrap={bootstrap} send={send} />
+        {history ? null : <RewardReadyChip sale={sale} bootstrap={bootstrap} send={send} />}
 
         {/* Lines. */}
         <Card>
@@ -381,7 +405,7 @@ function SaleBody({
                   timeZone={timeZone}
                   onPress={
                     // A gift voucher line opens its sell form while it can change, else what it says.
-                    isVoucherLine(l) || linesEditable || can('edit_credit') ? () => setLine(l) : undefined
+                    !history && (isVoucherLine(l) || linesEditable || can('edit_credit')) ? () => setLine(l) : undefined
                   }
                 />
               ))
@@ -493,7 +517,7 @@ function SaleBody({
           </Card>
         ) : null}
 
-        <OpenPayLinks sale={sale} bootstrap={bootstrap} send={send} canTakePayment={can('take_payment')} />
+        {history ? null : <OpenPayLinks sale={sale} bootstrap={bootstrap} send={send} canTakePayment={can('take_payment')} />}
 
         {/* Completed: what happened, and the money after it. */}
         {completed ? (

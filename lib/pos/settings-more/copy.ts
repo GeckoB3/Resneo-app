@@ -43,7 +43,7 @@ export const SM_COPY = {
   'gate.adminOnly.title': 'For admins',
   'gate.adminOnly.body': 'Only an admin can change these settings. Ask an admin if something here needs changing.',
   'gate.featureOff.title': '{feature} is switched off',
-  'gate.featureOff.body': "{feature} isn't switched on for your business yet. Contact ResNeo support and we can turn it on for you.",
+  // What follows the title (an admin switches it on in Checkout settings) is `ExtraOffState`'s.
 } as const;
 
 export type SmCopyId = keyof typeof SM_COPY;

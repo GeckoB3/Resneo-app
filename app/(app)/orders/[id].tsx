@@ -22,6 +22,7 @@ import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { getApiUrl, getWebUrl } from '@/lib/env';
 import { posErrorMessage, posHeaders, shopPaths } from '@/lib/pos/api';
+import { posFinishingOpen } from '@/lib/pos/pos-enabled';
 import { shortWhen, timeOfDay } from '@/lib/retail/stock-words';
 import {
   formatPickupCode,
@@ -62,10 +63,12 @@ export default function OrderScreen() {
   const venueParam = typeof params.venue === 'string' ? params.venue : null;
   const venue = useVenue();
   const posEnabled = usePosEnabled();
-  const detail = useShopOrder(orderId);
+  // The way back (POS Part 5, section 7.2): an order can still be finished with Checkout off.
+  const finishing = !posEnabled && posFinishingOpen(venue.data);
+  const detail = useShopOrder(orderId, { finishing });
   const header = (title: string) => <Stack.Screen options={{ headerShown: true, title }} />;
 
-  if (!posEnabled) {
+  if (!posEnabled && !finishing) {
     return (
       <Screen>
         {header(t('ord.title'))}
