@@ -22,6 +22,8 @@ jest.mock('@/lib/queries/useFeatureSwitches', () => ({
   useSetFeatureSwitch: () => ({ mutateAsync: jest.fn(), isPending: false }),
   downloadVouchersList: jest.fn(),
 }));
+// The set-up card (POS Part 4) has its own tests (components/pos/setup/SetupCard.test.tsx).
+jest.mock('@/components/pos/setup/SetupCard', () => ({ PosSetupCard: () => null }));
 jest.mock('@/components/ui/Sheet', () => {
   const React = jest.requireActual<typeof import('react')>('react');
   const { View } = jest.requireActual<typeof import('react-native')>('react-native');

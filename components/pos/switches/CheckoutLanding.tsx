@@ -13,6 +13,7 @@ import { Screen } from '@/components/ui/Screen';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { posFinishingOpen, posOffer } from '@/lib/pos/pos-enabled';
+import { SETUP_WELCOME_HREF } from '@/lib/pos/setup/flow';
 import { SETTINGS_COPY } from '@/lib/pos/settings-copy';
 import { extraLanding, swT } from '@/lib/pos/switches/copy';
 import { landingExtras, landingState, pausedSentence } from '@/lib/pos/switches/model';
@@ -26,9 +27,12 @@ import type { PosSwitchExtraKey } from '@/types/pos-switches';
 /** Where Sales history opens while Checkout is off (read only, refunds for admins). */
 export const SALES_HISTORY_HREF = '/checkout/all-sales';
 
-/** Where switching on lands: Checkout settings, saying "Checkout is on. Let's get it ready." */
+/**
+ * Where switching on lands (POS Part 4, OB1 and OB2): the set-up wizard's welcome, W0, naming any
+ * extra that did not come on (`?missed=`).
+ */
 export function welcomeHref(missed: readonly PosSwitchExtraKey[]): string {
-  return `/checkout-settings?welcome=1${missed.length ? `&missed=${missed.join(',')}` : ''}`;
+  return `${SETUP_WELCOME_HREF}${missed.length ? `?missed=${missed.join(',')}` : ''}`;
 }
 
 /**
@@ -232,8 +236,9 @@ export function CheckoutLanding({ variant = 'checkout' }: { variant?: 'checkout'
           ticked={ticked}
           onDone={({ missed }) => {
             setConfirming(false);
-            if (variant === 'settings') router.setParams({ welcome: '1', missed: missed.join(',') });
-            else router.push(welcomeHref(missed) as Href);
+            // Straight into set-up, from the Checkout tile and from Checkout settings alike; this
+            // screen becomes Checkout (or its settings) underneath, where "I'll do it later" returns.
+            router.push(welcomeHref(missed) as Href);
           }}
         />
       ) : null}

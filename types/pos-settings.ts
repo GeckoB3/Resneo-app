@@ -4,6 +4,8 @@
  * discounts as their own routes list them. Field for field with the web's types.
  */
 
+import type { PosBusinessDetailsView } from '@/types/pos-setup';
+
 export interface PosAddress {
   line1: string | null;
   line2: string | null;
@@ -53,6 +55,12 @@ export interface PosCheckoutSettings {
   cash_management_enabled: boolean;
   track_stock_enabled: boolean;
   multiple_tills_enabled: boolean;
+  /**
+   * "Sell products" (POS Part 4, OB3; `types/pos-setup.ts` `SELL_PRODUCTS_SETTING`): off hides
+   * Products and stock in More and the Products tab in the till. A server before it leaves the key
+   * out, which reads as on.
+   */
+  sell_products_enabled?: boolean;
   card_on_file_enabled?: boolean;
   allow_negative_stock_at_till?: boolean;
   low_stock_digest?: boolean;
@@ -78,6 +86,17 @@ export interface PosSettingsResponse {
   capability_defaults: PosSettingsCapabilityMap;
   can: { is_admin: boolean; manage_settings: boolean; edit_capabilities: boolean };
   venue: { name: string; currency: string; timezone: string };
+  /**
+   * OB5 (POS Part 4): what receipts show for the name, address, email and phone, and whether each
+   * comes from the venue profile or a receipt-only value. A server before it sends nothing.
+   */
+  business_details?: PosBusinessDetailsView;
+  /**
+   * The online shop is on, so "Sell products" stays on (owner decision, Part 4: the shop sells the
+   * venue's products). Switching it off then answers 409 `POS_FEATURE_IN_USE`. A server before
+   * it leaves this out, which reads as false.
+   */
+  sell_products_needed_by_shop?: boolean;
 }
 
 export interface PosSettingsPaymentType {

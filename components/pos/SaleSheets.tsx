@@ -36,6 +36,7 @@ import {
   penceToInput,
 } from '@/lib/pos/sale-math';
 import { looksLikeBarcode, readStockRules, resolveTillFavourites, type TillFavourite } from '@/lib/pos/product-math';
+import { sellProductsOn } from '@/lib/pos/setup/answers';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { useGuests } from '@/lib/queries/useGuests';
 import { useVenueContext } from '@/providers/VenueProvider';
@@ -126,11 +127,17 @@ function AddItemsSheetBody({
   }, [query]);
 
   // Products arrive with Pass 4 (P4-4): a server before it sends no `products`, and the sheet stays
-  // as it was (services, custom items, fees and vouchers).
-  const productsOn = Array.isArray(catalogue.data?.products);
+  // as it was (services, custom items, fees and vouchers). "Sell products" off (POS Part 4, OB3)
+  // takes away the Products tab, scanning and the product favourites; the service favourites stay.
+  const favouritesOn = Array.isArray(catalogue.data?.products);
+  const sellProducts = sellProductsOn(bootstrap.settings);
+  const productsOn = favouritesOn && sellProducts;
   const rules = readStockRules(catalogue.data?.stock);
-  const favourites = useMemo(() => resolveTillFavourites(catalogue.data), [catalogue.data]);
-  const tab: AddTab = chosenTab ?? (productsOn && favourites.tiles.length > 0 ? 'favourites' : 'services');
+  const favourites = useMemo(() => {
+    const all = resolveTillFavourites(catalogue.data);
+    return sellProducts ? all : { ...all, tiles: all.tiles.filter((f) => f.kind !== 'product') };
+  }, [catalogue.data, sellProducts]);
+  const tab: AddTab = chosenTab ?? (favouritesOn && favourites.tiles.length > 0 ? 'favourites' : 'services');
   const searching = debounced.length > 0 && (tab === 'services' || tab === 'products' || tab === 'favourites');
   const productSearch = useProductSearch(debounced, { enabled: visible && productsOn && (tab === 'products' || searching) });
   const { add: addProduct, busy: adding } = useAddProduct({ sale, send, rules, venueName, onNotice: setNotice });
@@ -215,7 +222,7 @@ function AddItemsSheetBody({
   }
 
   const tabs: { value: AddTab; label: string }[] = [
-    ...(productsOn ? [{ value: 'favourites' as const, label: t('add.tab.favourites') }] : []),
+    ...(favouritesOn ? [{ value: 'favourites' as const, label: t('add.tab.favourites') }] : []),
     { value: 'services', label: t('add.tab.services') },
     ...(productsOn ? [{ value: 'products' as const, label: t('add.tab.products') }] : []),
     ...(canCustom

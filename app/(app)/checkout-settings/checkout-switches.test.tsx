@@ -27,6 +27,8 @@ jest.mock('expo-router', () => ({
   useNavigation: () => ({ addListener: () => () => undefined, dispatch: jest.fn() }),
   useLocalSearchParams: () => mockParams,
 }));
+// The set-up card (POS Part 4) has its own tests (components/pos/setup/SetupCard.test.tsx).
+jest.mock('@/components/pos/setup/SetupCard', () => ({ PosSetupCard: () => null }));
 jest.mock('@/components/ui/Sheet', () => {
   const React = jest.requireActual<typeof import('react')>('react');
   const { View } = jest.requireActual<typeof import('react-native')>('react-native');

@@ -5,6 +5,7 @@ import { MoreRow } from '@/components/more/MoreRow';
 import { CheckoutLanding } from '@/components/pos/switches/CheckoutLanding';
 import { CheckoutOnGroup, SwitchOffCheckout } from '@/components/pos/switches/CheckoutOnGroup';
 import { CheckoutSettingsShell, useCheckoutSettingsCtx } from '@/components/pos/settings/SettingsParts';
+import { PosSetupCard } from '@/components/pos/setup/SetupCard';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
 import { TILE } from '@/lib/navigation/more-destinations';
@@ -24,6 +25,9 @@ import { spacing } from '@/theme/index';
  * Switching Checkout on and off (POS Part 5): for admins, "Checkout is on" with the three extras
  * and the History sits on top, and "Switch off Checkout" at the bottom. While Checkout is off, an
  * admin of a venue offered it (or paused by ResNeo) gets the landing here, as on the web.
+ *
+ * Setting it up (POS Part 4): above them, for admins, the "Finish setting up Checkout" card while a
+ * step is left, or "Run set-up again" once it is gone.
  */
 export default function CheckoutSettingsHub() {
   const venue = useVenue();
@@ -55,6 +59,8 @@ function Rows() {
   const timeZone = data.venue?.timezone || 'Europe/London';
   return (
     <View style={styles.stack}>
+      {/* "Finish setting up Checkout" (POS Part 4), or "Run set-up again" once it is gone. */}
+      {isAdmin ? <PosSetupCard place="hub" /> : null}
       {isAdmin ? (
         <CheckoutOnGroup
           welcome={params.welcome === '1'}

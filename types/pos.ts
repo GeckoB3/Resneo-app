@@ -323,6 +323,11 @@ export interface PosTillSettings {
   /** Pass 3: nobody sees the expected cash before counting (on by default). */
   blind_close?: boolean;
   multiple_tills_enabled?: boolean;
+  /**
+   * Part 4 (OB3): "Sell products". Off hides the Products tab when adding items to a sale, and
+   * Products and stock in More. Missing (a server before it) reads as on.
+   */
+  sell_products_enabled?: boolean;
 }
 
 /** `GET /api/venue/pos/bootstrap` (#1). */

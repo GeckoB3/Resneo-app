@@ -50,6 +50,7 @@ import { useCollectives } from "@/lib/queries/useCollectives";
 import { usePosWayBack } from "@/lib/queries/useFeatureSwitches";
 import { useNotifications } from "@/lib/queries/useNotifications";
 import { useOrdersTile } from "@/lib/queries/useOrders";
+import { sellProductsOn } from "@/lib/pos/setup/answers";
 import { usePosBootstrap } from "@/lib/queries/usePos";
 import { useStaffMe } from "@/lib/queries/useStaffMe";
 import { useUpdateVenue } from "@/lib/queries/useVenueSettings";
@@ -262,6 +263,8 @@ export default function MoreScreen() {
       import_products: caps?.import_products === true,
     };
   }, [posBoot.data]);
+  // "Sell products" off (POS Part 4, OB3) hides Products and stock; unknown until the bootstrap is in.
+  const sellProducts = sellProductsOn(posBoot.data?.settings);
 
   // Checkout's offer while it is off (POS Part 5): the Checkout tile for an admin, with "New" while
   // the door is open (the web's rule: offered, no sale yet, not hidden); and the way back to what
@@ -303,6 +306,7 @@ export default function MoreScreen() {
       shopEnabled: isShopEnabled(venue),
       vouchersEnabled: isVouchersEnabled(venue),
       posCan,
+      sellProducts,
       posOfferState: offerState,
       posOfferNew: offerNew,
       posWayBack: {
@@ -318,6 +322,7 @@ export default function MoreScreen() {
     ordersTile.enabled,
     ordersTile.newCount,
     posCan,
+    sellProducts,
     offerState,
     offerNew,
     wayBackOrders,

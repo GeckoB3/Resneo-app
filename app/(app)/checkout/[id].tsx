@@ -6,6 +6,8 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-n
 import { ReceiptSheet, RefundSheet, TipSplitSheet } from '@/components/pos/AfterSaleSheets';
 import { OpenPayLinks, TipLinkSheet } from '@/components/pos/PayLinkExtras';
 import { PaySheet } from '@/components/pos/PaySheet';
+import { isPracticeSale } from '@/components/pos/practice/model';
+import { PracticeSale } from '@/components/pos/practice/PracticeSale';
 import { ReaderPayPanel } from '@/components/pos/ReaderPayPanel';
 import { SavedCardDeclinedNotice } from '@/components/pos/SavedCards';
 import {
@@ -168,6 +170,19 @@ export default function SaleScreen() {
           }}
         />
       </Screen>
+    );
+  }
+
+  // A practice sale (set-up wizard W11, OB4) has a screen of its own, where paying is only shown.
+  if (!history && isPracticeSale(saleQ.data)) {
+    return (
+      <PracticeSale
+        sale={saleQ.data}
+        bootstrap={bootstrap}
+        send={send}
+        refreshing={saleQ.isRefetching}
+        onRefresh={() => void saleQ.refetch()}
+      />
     );
   }
 

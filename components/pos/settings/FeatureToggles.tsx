@@ -19,23 +19,32 @@ import type { PosCheckoutSettings } from '@/types/pos-settings';
  */
 
 type Message = { kind: 'ok' | 'error'; text: string } | null;
-type FeatureKey = 'track_stock_enabled' | 'cash_management_enabled' | 'multiple_tills_enabled';
+type FeatureKey = 'track_stock_enabled' | 'cash_management_enabled' | 'multiple_tills_enabled' | 'sell_products_enabled';
 
-/** A switch that saves one feature key, asking before it goes off. */
+/**
+ * A switch that saves one feature key, asking before it goes off (`offBody`, else the shared
+ * sentence). `lockedOn` shows it on and fixed, with `note` saying why.
+ */
 function FeatureSwitch({
   settingKey,
   feature,
   help,
+  offBody,
+  lockedOn = false,
+  note,
 }: {
   settingKey: Exclude<FeatureKey, 'track_stock_enabled'>;
   feature: string;
   help: string;
+  offBody?: string;
+  lockedOn?: boolean;
+  note?: string | null;
 }) {
   const { data, t, save, canEdit } = useCheckoutSettingsCtx();
   const [busy, setBusy] = useState(false);
   const [askOff, setAskOff] = useState(false);
   const [message, setMessage] = useState<Message>(null);
-  const on = data.settings[settingKey] === true;
+  const on = lockedOn || data.settings[settingKey] === true;
 
   const change = async (next: boolean) => {
     setBusy(true);
@@ -52,14 +61,19 @@ function FeatureSwitch({
         label={feature}
         help={help}
         value={on}
-        disabled={!canEdit || busy}
+        disabled={!canEdit || busy || lockedOn}
         onChange={(next) => (next ? void change(true) : setAskOff(true))}
       />
+      {note ? (
+        <Text variant="caption" tone="secondary">
+          {note}
+        </Text>
+      ) : null}
       <MessageLine message={message} />
       <ConfirmSheet
         visible={askOff}
         title={t('feat.off.title', { feature })}
-        message={t('feat.off.body')}
+        message={offBody ?? t('feat.off.body')}
         confirmLabel={t('feat.off.confirm')}
         cancelLabel={t('common.cancel')}
         destructive={false}
@@ -81,6 +95,29 @@ export function CashCountToggle({ showHelp = true }: { showHelp?: boolean }) {
       settingKey="cash_management_enabled"
       feature={t('feat.cash')}
       help={showHelp ? t('feat.cash.help') : t('set.cash.enabled.help')}
+    />
+  );
+}
+
+/**
+ * Sell products (POS Part 4, OB3): on by default; off hides Products and stock in More and the
+ * Products tab when adding items to a sale (the web's fourth simple-mode switch). Shown only when
+ * the server has it, so an older one is never sent a key it does not know. While the online shop
+ * is on it stays on and fixed (owner decision: the shop sells the venue's products); the server
+ * refuses it then too (409 `POS_FEATURE_IN_USE`), and its sentence shows under the switch.
+ */
+export function SellProductsToggle() {
+  const { data, t } = useCheckoutSettingsCtx();
+  if (typeof data.settings.sell_products_enabled !== 'boolean') return null;
+  const neededByShop = data.sell_products_needed_by_shop === true;
+  return (
+    <FeatureSwitch
+      settingKey="sell_products_enabled"
+      feature={t('feat.sellProducts')}
+      help={t('app.set.feat.sellProducts.help')}
+      offBody={t('app.set.feat.sellProducts.off')}
+      lockedOn={neededByShop}
+      note={neededByShop ? t('feat.sellProducts.shopNote') : null}
     />
   );
 }

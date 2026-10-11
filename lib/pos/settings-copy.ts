@@ -43,6 +43,10 @@ export const SETTINGS_COPY = {
   'err.unavailable': "Checkout isn't available for your business right now.",
 
   'feat.title': 'Features',
+  // Part 4 (OB3): the fourth simple-mode switch. The web's help and off sentence name its menu; the
+  // app's are under `app.set.feat.*`.
+  'feat.sellProducts': 'Sell products',
+  'feat.sellProducts.shopNote': 'Your online shop sells your products, so this stays on while your shop is on.',
   'feat.help': 'Checkout starts simple. Turn on only what you need, and change it whenever you like.',
   'feat.stock': 'Track stock',
   'feat.stock.help': 'Count how many of each product you have, take them off as you sell, get low-stock alerts and do stocktakes.',
@@ -283,6 +287,10 @@ export const SETTINGS_COPY = {
   'set.cash.max.help': 'Stops typing mistakes, like an extra zero. It applies to every way of paying.',
 
   // The app's own words: the hub and its rows.
+  'app.set.feat.sellProducts.help':
+    'Sell products at the till, with Products and stock in More. Turn it off if you only take payment for appointments.',
+  'app.set.feat.sellProducts.off':
+    'Products and stock leaves More, and the till stops offering products. Nothing is deleted. If you turn it back on later, everything will be as you left it.',
   'app.set.title': 'Checkout settings',
   'app.set.intro': 'Your till, receipts, tips, discounts, card readers, cash and online shop.',
   'app.set.noAccess.title': 'Admins only',
@@ -291,7 +299,7 @@ export const SETTINGS_COPY = {
   'app.set.adminOnly.title': 'Admins only',
   'app.set.adminOnly.body': 'Only an admin can change this.',
   'app.set.error.title': "We couldn't load your checkout settings",
-  'app.set.row.features': 'Track stock, cash and tills',
+  'app.set.row.features': 'Products, stock, cash and tills',
   'app.set.row.business': 'Legal name, address, VAT',
   'app.set.row.receipts': 'Number prefix, message, sending',
   'app.set.row.tips': 'Suggestions, sharing, policy',

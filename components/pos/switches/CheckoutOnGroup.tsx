@@ -38,8 +38,9 @@ export const EXTRA_SETTINGS_HREF: Record<PosSwitchExtraKey, string> = {
 /**
  * "Checkout is on" at the top of Checkout settings, for admins (design section 14 step 6, drawn as
  * A5): who switched it on and when, the three extras with their switches (on, off, or paused by
- * ResNeo with its reason), and the History (SW9: every change is recorded here, no email). Just
- * after switching on it says "Checkout is on. Let's get it ready." (the set-up wizard comes later).
+ * ResNeo with its reason), and the History (SW9: every change is recorded here, no email). With
+ * `?welcome=1` it says "Checkout is on. Let's get it ready."; switching on now opens the set-up
+ * wizard instead (POS Part 4), which this line handed over to.
  *
  * Switching an extra on is one tap; switching one off opens its sheet (section 7.3). Nothing shows
  * while the switches cannot be read (a server before them, or a team member), so the hub is then

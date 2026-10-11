@@ -2,6 +2,8 @@ import { useMemo, useRef, useState } from 'react';
 import { StyleSheet, Switch, View } from 'react-native';
 
 import { PayLinkPanel } from '@/components/pos/PayLinkPanel';
+import { isPracticeSale } from '@/components/pos/practice/model';
+import { PracticePaySheet } from '@/components/pos/practice/PracticePaySheet';
 import {
   DueHeadline,
   OtherWays,
@@ -636,5 +638,10 @@ const styles = StyleSheet.create({
 
 /** Mounted only while open, so every opening starts from a clean form. */
 export function PaySheet(props: Parameters<typeof PaySheetBody>[0]) {
-  return props.visible ? <PaySheetBody {...props} /> : null;
+  if (!props.visible) return null;
+  // A practice sale (set-up W11, OB4) never takes money: each method only shows what would happen.
+  if (isPracticeSale(props.sale)) {
+    return <PracticePaySheet visible onClose={props.onClose} sale={props.sale} bootstrap={props.bootstrap} onPaid={props.onPaid} />;
+  }
+  return <PaySheetBody {...props} />;
 }

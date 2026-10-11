@@ -133,7 +133,7 @@ describe('the landing for an admin of an offered venue', () => {
 });
 
 describe('switching on', () => {
-  it("asks for the seller's tick at the first switch-on, then switches Checkout on and lands in Checkout settings", async () => {
+  it("asks for the seller's tick at the first switch-on, then switches Checkout on and opens set-up", async () => {
     const after = onResponse();
     mockMutate.mockResolvedValue({ ok: true, switches: after });
     await show();
@@ -163,7 +163,8 @@ describe('switching on', () => {
       version: 1,
     });
     expect(mockApply).toHaveBeenCalledWith(expect.anything(), 'token-A', after);
-    expect(mockPush).toHaveBeenCalledWith('/checkout-settings?welcome=1');
+    // POS Part 4: switching on hands straight into the set-up wizard's welcome (W0).
+    expect(mockPush).toHaveBeenCalledWith('/checkout-setup/welcome');
   });
 
   it('does not ask for the tick again once accepted', async () => {
@@ -229,7 +230,7 @@ describe('switching on', () => {
       ['pos_loyalty_enabled', false, 4],
     ]);
     expect(mockApply).toHaveBeenCalledWith(expect.anything(), 'token-A', first);
-    expect(mockPush).toHaveBeenCalledWith('/checkout-settings?welcome=1&missed=pos_loyalty_enabled');
+    expect(mockPush).toHaveBeenCalledWith('/checkout-setup/welcome?missed=pos_loyalty_enabled');
   });
 
   it("says why Checkout did not come on, and keeps the sheet", async () => {
@@ -249,7 +250,7 @@ describe('switching on', () => {
     expect(mockPush).not.toHaveBeenCalled();
   });
 
-  it('stays on Checkout settings when switched on from there', async () => {
+  it('opens set-up from Checkout settings too, with Checkout settings left underneath', async () => {
     mockSwitches = switchesResponse({ terms_accepted: true });
     mockMutate.mockResolvedValue({ ok: true, switches: onResponse() });
     await show('settings');
@@ -259,8 +260,8 @@ describe('switching on', () => {
     await act(async () => {
       fireEvent.press(screen.getByText('Switch on and set up'));
     });
-    expect(mockSetParams).toHaveBeenCalledWith({ welcome: '1', missed: '' });
-    expect(mockPush).not.toHaveBeenCalled();
+    expect(mockPush).toHaveBeenCalledWith('/checkout-setup/welcome');
+    expect(mockSetParams).not.toHaveBeenCalled();
   });
 });
 

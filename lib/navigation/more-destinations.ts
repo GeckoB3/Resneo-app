@@ -145,6 +145,12 @@ export type DestinationsContext = {
    */
   loyaltyEnabled?: boolean;
   /**
+   * "Sell products" (POS Part 4, OB3; the POS bootstrap's `settings.sell_products_enabled`). False
+   * hides Products and stock, its set-up and the product import, as the web's menu hides Products
+   * and Stock. Absent (a server before it, or the bootstrap not loaded yet) changes nothing.
+   */
+  sellProducts?: boolean;
+  /**
    * Orders (POS app step 5, UX spec §13.7 `app.tile.orders`): Checkout on, the login holds
    * `manage_orders`, and the shop is on or paid orders are waiting.
    */
@@ -219,7 +225,8 @@ export function buildDestinations(ctx: DestinationsContext): Destination[] {
     if (ctx.ordersEnabled === true) {
       list.push(ordersDestination(ctx.ordersNewCount));
     }
-    list.push({ id: 'stock', label: 'Products and stock', hint: 'Stock levels, stocktakes and deliveries', icon: { ios: 'shippingbox.fill', android: 'inventory_2', web: 'inventory_2' }, tile: TILE.amber, group: 'workspace', kind: 'route', target: '/stock', featured: true, keywords: ['products', 'retail', 'stock', 'stocktake', 'barcode', 'inventory'] });
+    // "Sell products" off (POS Part 4, OB3) hides Products and stock, as the web's menu does.
+    if (ctx.sellProducts !== false) list.push({ id: 'stock', label: 'Products and stock', hint: 'Stock levels, stocktakes and deliveries', icon: { ios: 'shippingbox.fill', android: 'inventory_2', web: 'inventory_2' }, tile: TILE.amber, group: 'workspace', kind: 'route', target: '/stock', featured: true, keywords: ['products', 'retail', 'stock', 'stocktake', 'barcode', 'inventory'] });
   } else {
     // Checkout is off (POS Part 5). An admin of a venue ResNeo offers it to gets the Checkout tile,
     // with "New" until they hide the offer, opening the landing (C1); while ResNeo pauses it, the
@@ -335,11 +342,11 @@ export function buildDestinations(ctx: DestinationsContext): Destination[] {
     if (isAdmin) {
       list.push({ id: 'commission-rates', label: 'Commission rates', hint: 'Rates for everyone, by category or per person', icon: { ios: 'percent', android: 'percent', web: 'percent' }, tile: TILE.violet, group: 'checkoutSetup', kind: 'route', target: '/checkout-settings/commission', keywords: ['commission', 'pay', 'rates'] });
     }
-    // Products and stock set-up.
-    if (isAdmin) {
+    // Products and stock set-up (gone with "Sell products" off, as Products and stock is).
+    if (isAdmin && ctx.sellProducts !== false) {
       list.push({ id: 'stock-setup', label: 'Suppliers and stock set-up', hint: 'Suppliers, movements, stock reports', icon: { ios: 'shippingbox', android: 'inventory', web: 'inventory' }, tile: TILE.amber, group: 'checkoutSetup', kind: 'route', target: '/stock?tab=suppliers', keywords: ['suppliers', 'vendor', 'movements', 'stock reports', 'bulk'] });
     }
-    if (isAdmin || ctx.posCan?.import_products === true) {
+    if ((isAdmin || ctx.posCan?.import_products === true) && ctx.sellProducts !== false) {
       list.push({ id: 'import-products', label: 'Import products', hint: 'Add products from a CSV file', icon: { ios: 'square.and.arrow.down', android: 'upload_file', web: 'upload_file' }, tile: TILE.sky, group: 'checkoutSetup', kind: 'route', target: '/stock/import', keywords: ['import', 'CSV', 'spreadsheet', 'products'] });
     }
     // Records last: what has happened, with the files to export.

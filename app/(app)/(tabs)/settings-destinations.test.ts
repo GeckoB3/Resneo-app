@@ -315,6 +315,20 @@ describe('buildDestinations — Checkout (POS app step 1, plan §4.22)', () => {
     }
   });
 
+  it('hides Products and stock, its set-up and the import while "Sell products" is off (POS Part 4, OB3)', () => {
+    const off = ids(ctx({ isAdmin: true, posEnabled: true, sellProducts: false }));
+    expect(off).not.toContain('stock');
+    expect(off).not.toContain('stock-setup');
+    expect(off).not.toContain('import-products');
+    expect(off).toContain('checkout');
+    expect(off).toContain('checkout-settings');
+    // On, or not known yet (a server before it, the bootstrap still loading): as before.
+    for (const sellProducts of [true, undefined]) {
+      const on = ids(ctx({ isAdmin: true, posEnabled: true, sellProducts }));
+      expect(on).toEqual(expect.arrayContaining(['stock', 'stock-setup', 'import-products']));
+    }
+  });
+
   it('shows Orders with its count of new orders only when the login may handle orders (app step 5)', () => {
     expect(ids(ctx({ isAdmin: true, posEnabled: true }))).not.toContain('orders');
     const tile = buildDestinations(ctx({ isAdmin: false, posEnabled: true, ordersEnabled: true, ordersNewCount: 3 })).find(

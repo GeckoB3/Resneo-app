@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import {
@@ -12,28 +12,31 @@ import {
   useSettingsSection,
   useUnsavedGuard,
 } from '@/components/pos/settings/SettingsParts';
+import { BusinessDetailsFields, useBusinessDetailsDraft } from '@/components/pos/setup/BusinessDetailsFields';
 import { Text } from '@/components/ui/Text';
 import { SETTINGS_COPY } from '@/lib/pos/settings-copy';
+import { setupT } from '@/lib/pos/setup/copy';
+import { useToast } from '@/providers/ToastProvider';
+import { useVenueContext } from '@/providers/VenueProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { PosAddress, PosCompanyRegisteredIn, PosTaxCategory } from '@/types/pos-settings';
 
 /**
- * Business and tax details (web `BusinessCard.tsx`, UX spec §9.2): legal and trading name, company
- * number, business address, registered office and where the company is registered (limited
- * companies), public email and phone, VAT registration, VAT number and the default VAT rates. The
- * server works out the rules from the address; the screen does not show them.
+ * Business and tax details (web `BusinessCard.tsx`, UX spec §9.2), with the owner's OB5 (POS Part 4):
+ * the business name, address, email and phone receipts show are the venue profile's, shown and
+ * edited here (which also changes the booking page), each with an optional receipt-only value
+ * (`BusinessDetailsFields`, shared with set-up's W5). Checkout's own details follow: legal name,
+ * company number, registered office and where the company is registered (limited companies), VAT
+ * registration, VAT number and the default VAT rates. The server works out the rules from the
+ * address; the screen does not show them.
  */
 
 const KEYS = [
   'legal_name',
-  'trading_name',
   'company_number',
-  'business_address',
   'registered_office_address',
   'company_registered_in',
-  'public_contact_email',
-  'public_contact_phone',
   'vat_registered',
   'vat_number',
   'default_service_tax_category',
@@ -45,6 +48,7 @@ const EMPTY_ADDRESS: PosAddress = { line1: null, line2: null, town: null, postco
 export default function BusinessSettingsScreen() {
   return (
     <CheckoutSettingsShell title={SETTINGS_COPY['set.biz.title']}>
+      <ProfileDetailsSection />
       <BusinessSection />
     </CheckoutSettingsShell>
   );
@@ -74,6 +78,74 @@ function AddressFields({
   );
 }
 
+/**
+ * OB5: the profile's name, address, email and phone, with the receipt-only values. Its own Save:
+ * the profile's changes go through `PATCH /api/venue` (admins; it also changes the booking page),
+ * the receipt-only values through the versioned settings save. Started again from what is saved
+ * when the venue arrives.
+ */
+function ProfileDetailsSection() {
+  const { venue } = useVenueContext();
+  return <ProfileDetailsForm key={venue?.id ?? 'none'} />;
+}
+
+function ProfileDetailsForm() {
+  const { venue } = useVenueContext();
+  const { data, canEdit, save } = useCheckoutSettingsCtx();
+  const toast = useToast();
+  const draft = useBusinessDetailsDraft(venue, data.settings);
+  const guard = useUnsavedGuard(draft.dirty);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<{ text: string; stale: boolean } | null>(null);
+  const isAdmin = data.can.is_admin === true;
+  const { reset } = draft;
+
+  const submit = async () => {
+    if (saving) return;
+    setSaving(true);
+    setError(null);
+    const problem = isAdmin ? await draft.saveProfile() : null;
+    if (problem) {
+      setSaving(false);
+      setError({ text: problem, stale: false });
+      return;
+    }
+    if (Object.keys(draft.receiptChanges).length > 0) {
+      const r = await save(draft.receiptChanges);
+      if (!r.ok) {
+        setSaving(false);
+        setError({ text: r.message, stale: r.stale });
+        return;
+      }
+    }
+    setSaving(false);
+    toast.success(setupT('app.setup.biz.saved'));
+  };
+
+  const discard = useCallback(() => {
+    reset(venue, data.settings);
+    setError(null);
+  }, [data.settings, reset, venue]);
+
+  return (
+    <>
+      <FormSection
+        title={setupT('app.setup.biz.title')}
+        description={setupT('app.setup.biz.help')}
+        dirty={draft.dirty}
+        saving={saving}
+        error={error?.text ?? null}
+        stale={error?.stale ?? false}
+        canEdit={canEdit}
+        onSave={() => void submit()}
+        onDiscard={discard}>
+        <BusinessDetailsFields draft={draft} canEditProfile={isAdmin && canEdit && !saving} canEditReceipts={canEdit && !saving} />
+      </FormSection>
+      {guard}
+    </>
+  );
+}
+
 function BusinessSection() {
   const { data, t, canEdit } = useCheckoutSettingsCtx();
   const { colors } = useTheme();
@@ -83,7 +155,7 @@ function BusinessSection() {
   const disabled = !canEdit;
   const [officeDifferent, setOfficeDifferent] = useState(() => v.registered_office_address != null);
   const country = data.settings.business_country === 'IE' ? t('set.biz.country.ie') : t('set.biz.country.gb');
-  const sub = (key: 'business_address' | 'registered_office_address') => (path: string) => f.fieldError(`${key}.${path}`);
+  const sub = (key: 'registered_office_address') => (path: string) => f.fieldError(`${key}.${path}`);
   const taxOptions: { value: PosTaxCategory; label: string }[] = [
     { value: 'standard', label: t('vat.rate.standard') },
     { value: 'reduced', label: t('vat.rate.reduced') },
@@ -104,16 +176,11 @@ function BusinessSection() {
         onSave={() => void f.submit()}
         onDiscard={f.discard}>
         <TextField label={t('set.biz.legalName')} help={t('set.biz.legalName.help')} value={v.legal_name} onChange={(x) => f.set('legal_name', x)} disabled={disabled} maxLength={160} error={f.fieldError('legal_name')} />
-        <TextField label={t('set.biz.tradingName')} help={t('set.biz.tradingName.help')} value={v.trading_name} onChange={(x) => f.set('trading_name', x)} disabled={disabled} maxLength={160} error={f.fieldError('trading_name')} />
         <TextField label={t('set.biz.companyNumber')} help={t('set.biz.companyNumber.help')} value={v.company_number} onChange={(x) => f.set('company_number', x)} disabled={disabled} maxLength={20} autoCapitalize="characters" error={f.fieldError('company_number')} />
 
-        <View style={styles.stack}>
-          <Text variant="subheading">{t('set.biz.address')}</Text>
-          <AddressFields value={v.business_address} onChange={(a) => f.set('business_address', a)} disabled={disabled} error={sub('business_address')} />
-          <FieldBlock label={t('set.biz.country')} help={t('set.biz.country.help')}>
-            <Text variant="body">{country}</Text>
-          </FieldBlock>
-        </View>
+        <FieldBlock label={t('set.biz.country')} help={t('set.biz.country.help')}>
+          <Text variant="body">{country}</Text>
+        </FieldBlock>
 
         {v.company_number ? (
           <View style={styles.stack}>
@@ -152,9 +219,6 @@ function BusinessSection() {
             />
           </View>
         ) : null}
-
-        <TextField label={t('set.biz.email')} help={t('set.biz.email.help')} keyboardType="email-address" autoComplete="email" autoCapitalize="none" value={v.public_contact_email} onChange={(x) => f.set('public_contact_email', x)} disabled={disabled} maxLength={254} error={f.fieldError('public_contact_email')} />
-        <TextField label={t('set.biz.phone')} help={t('set.biz.phone.help')} keyboardType="phone-pad" autoComplete="tel" value={v.public_contact_phone} onChange={(x) => f.set('public_contact_phone', x)} disabled={disabled} maxLength={30} error={f.fieldError('public_contact_phone')} />
 
         <View style={[styles.vat, { borderColor: colors.border, backgroundColor: colors.surface }]}>
           <SwitchRow label={t('set.biz.vatRegistered')} value={v.vat_registered} disabled={disabled} onChange={(x) => f.set('vat_registered', x)} />

@@ -17,6 +17,7 @@ import { LowStockHomeCard } from '@/components/today/LowStockHomeCard';
 import { TillHomeCard } from '@/components/today/TillHomeCard';
 import { NewBookingsCard } from '@/components/reports/NewBookingsCard';
 import { CollectRequestsCard } from '@/components/pos/CollectRequests';
+import { PosSetupCard } from '@/components/pos/setup/SetupCard';
 import {
   deriveSetupProgress,
   isOptionalSetupStepKey,
@@ -434,6 +435,10 @@ export default function TodayScreen() {
         {/* Checkout's offer (POS Part 5): admins of a venue ResNeo offers it to, while it is off,
             until they hide it. Hides itself otherwise. */}
         <CheckoutOfferCard />
+
+        {/* "Finish setting up Checkout" (POS Part 4): admins, while Checkout is on and a step is
+            left, until they hide it. Hides itself otherwise. */}
+        <PosSetupCard place="today" />
 
         {/* Till and Low stock (web home parity): only with POS on, and only while the venue counts
             cash in till sessions / tracks stock. Each hides itself otherwise. */}
