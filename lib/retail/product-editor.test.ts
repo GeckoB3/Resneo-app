@@ -9,6 +9,7 @@ import {
   draftFromProduct,
   errorKeyForPath,
   newOption,
+  pendingBarcode,
   sameDraft,
   serverFieldErrors,
 } from '@/lib/retail/product-editor';
@@ -20,6 +21,7 @@ const words = {
   numberInvalid: 'Enter a whole number.',
   needOption: 'Add at least one option.',
   barcodeInvalid: "That barcode's check digit is wrong. Check it and try again.",
+  barcodeTyped: '{problem} To save without it, clear the barcode you typed.',
   sizeInvalid: 'Enter the size as a number above zero.',
   sizeUnit: 'Choose the unit for the size.',
 };
@@ -210,6 +212,59 @@ describe('editing a product', () => {
   it('knows when nothing changed', () => {
     const p = saved();
     expect(sameDraft(draftFromProduct(p, true), draftFromProduct(p, true))).toBe(true);
+  });
+});
+
+describe('a barcode typed but not added', () => {
+  it('is saved with the rest, and counts as an unsaved change', () => {
+    const p = saved();
+    const d = draftFromProduct(p, true);
+    d.options[0] = { ...d.options[0]!, barcode_typed: ' 4006381333931 ' };
+    expect(sameDraft(d, draftFromProduct(p, true))).toBe(false);
+    const built = buildProductBody(d, p, { trackStock: true, vatRegistered: false }, words);
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    expect((built.body.variants as Record<string, unknown>[])[0]!.barcodes).toEqual([
+      { barcode: '5012345678900', symbology: 'ean13' },
+      { barcode: '4006381333931', symbology: 'ean13' },
+    ]);
+  });
+
+  it('stops the save when its check digit is wrong, and is ignored when the option has it already', () => {
+    const p = saved();
+    const d = draftFromProduct(p, true);
+    d.options[0] = { ...d.options[0]!, barcode_typed: '4006381333932' };
+    const built = buildProductBody(d, p, { trackStock: true, vatRegistered: false }, words);
+    expect(built.ok).toBe(false);
+    if (built.ok) return;
+    expect(built.errors[`opt.${d.options[0]!.key}.barcodes`]).toBe(
+      "That barcode's check digit is wrong. Check it and try again. To save without it, clear the barcode you typed.",
+    );
+    expect(pendingBarcode({ barcodes: [{ barcode: '5012345678900' }], barcode_typed: '5012345678900' }, words)).toEqual({
+      code: null,
+      problem: null,
+    });
+    expect(pendingBarcode({ barcodes: [], barcode_typed: '   ' }, words)).toEqual({ code: null, problem: null });
+  });
+});
+
+describe('a backbar product', () => {
+  it('saves without a price as zero, and shows a zero price as an empty box', () => {
+    const d = draftFromProduct(null, false);
+    d.name = 'Developer';
+    d.usage = 'professional';
+    const built = buildProductBody(d, null, { trackStock: false, vatRegistered: false }, words);
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    expect((built.body.variants as Record<string, unknown>[])[0]!.price_pence).toBe(0);
+
+    const p = saved({ usage: 'professional' });
+    p.variants[0] = { ...p.variants[0]!, price_pence: 0 };
+    expect(draftFromProduct(p, true).options[0]!.price).toBe('');
+    // A product for sale still needs its price.
+    d.usage = 'retail';
+    const retail = buildProductBody(d, null, { trackStock: false, vatRegistered: false }, words);
+    expect(retail.ok).toBe(false);
   });
 });
 

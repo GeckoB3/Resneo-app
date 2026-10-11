@@ -316,7 +316,7 @@ export const REPORTS_COPY = {
   'vadd.open': 'Add an existing voucher',
   'vadd.title': 'Add an existing voucher',
   'vadd.body':
-    "Record a voucher you sold before ResNeo, on paper or with Booksy or Fresha, so you can take it here. It isn't money taken today, so it won't show in your takings.",
+    "Record a voucher you sold before ResNeo, on paper or with another booking system, so you can take it here. It isn't money taken today, so it won't show in your takings.",
   'vadd.codeChoice': 'Voucher code',
   'vadd.code.own': 'Use the code printed on the voucher',
   'vadd.code.new': 'Give it a new ResNeo code',

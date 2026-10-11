@@ -8,7 +8,7 @@ jest.mock('@/providers/VenueProvider', () => ({
   useVenueContext: () => ({ terminology: { client: 'Client', booking: 'Appointment', staff: 'Stylist' } }),
 }));
 
-import { applyPriceChange, bulkPreview, bulkPriceBody, filterCount, hasFilters, EMPTY_FILTERS, percentToBps } from '@/lib/retail/product-list';
+import { applyPriceChange, bulkPreview, bulkPriceBody, filterCount, hasFilters, EMPTY_FILTERS, percentToBps, priceLabel } from '@/lib/retail/product-list';
 import {
   guessImportColumns,
   importBody,
@@ -114,6 +114,11 @@ describe('the products list', () => {
     const costUp = bulkPriceBody(['p1'], { which: 'cost', mode: 'increase', kind: 'amount', value: '1' });
     expect(bulkPreview([product()], costUp, money, t)).toBe('None of these products has a cost yet, so nothing will change.');
     expect(bulkPriceBody(['p1'], { which: 'retail', mode: 'decrease', kind: 'amount', value: 'abc' })).toBeNull();
+  });
+
+  it('shows "For treatments" for a backbar product, never £0', () => {
+    expect(priceLabel(product(), money, t)).toBe('£10.00');
+    expect(priceLabel({ ...product(), usage: 'professional' }, money, t)).toBe('For treatments');
   });
 });
 

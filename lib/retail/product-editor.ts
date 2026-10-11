@@ -34,6 +34,8 @@ export interface OptionDraft {
   option_name: string;
   sku: string;
   barcodes: BarcodeDraft[];
+  /** Typed in the barcode box but not added yet: part of the draft, so it counts as unsaved. */
+  barcode_typed: string;
   price: string;
   net_quantity: string;
   net_unit: '' | NetUnit;
@@ -86,6 +88,8 @@ export interface EditorWords {
   numberInvalid: string;
   needOption: string;
   barcodeInvalid: string;
+  /** `x.barcode.typed`, with `{problem}` for the typed code's problem. */
+  barcodeTyped: string;
   sizeInvalid: string;
   sizeUnit: string;
 }
@@ -112,6 +116,7 @@ export function newOption(trackStock: boolean): OptionDraft {
     option_name: '',
     sku: '',
     barcodes: [],
+    barcode_typed: '',
     price: '',
     net_quantity: '',
     net_unit: '',
@@ -129,7 +134,7 @@ export function newOption(trackStock: boolean): OptionDraft {
   };
 }
 
-function optionFromVariant(v: RetailVariant): OptionDraft {
+function optionFromVariant(v: RetailVariant, usage: ProductUsage): OptionDraft {
   const cost = costText(v.cost_pence);
   return {
     key: v.id,
@@ -138,7 +143,9 @@ function optionFromVariant(v: RetailVariant): OptionDraft {
     option_name: text(v.option_name),
     sku: text(v.sku),
     barcodes: v.barcodes.map((b) => ({ barcode: b.barcode, symbology: b.symbology })),
-    price: penceToInput(v.price_pence),
+    barcode_typed: '',
+    // A backbar product saved without a price shows an empty box, not "0.00".
+    price: usage === 'professional' && v.price_pence === 0 ? '' : penceToInput(v.price_pence),
     net_quantity: text(v.net_quantity),
     net_unit: v.net_unit ?? '',
     cost,
@@ -180,7 +187,7 @@ export function draftFromProduct(p: RetailProduct | null, trackStock: boolean): 
   const options = p.variants
     .filter((v) => !v.archived_at)
     .sort((a, b) => a.sort_order - b.sort_order)
-    .map(optionFromVariant);
+    .map((v) => optionFromVariant(v, p.usage));
   return {
     name: p.name,
     brand_id: p.brand_id,
@@ -234,6 +241,20 @@ export function barcodeError(b: BarcodeDraft, words: Pick<EditorWords, 'barcodeI
 }
 
 /**
+ * The code typed in an option's barcode box: `code` when it can be added (null when the box is
+ * empty or the option already has it), or the `problem` that stops it.
+ */
+export function pendingBarcode(
+  o: Pick<OptionDraft, 'barcodes' | 'barcode_typed'>,
+  words: Pick<EditorWords, 'barcodeInvalid'>,
+): { code: string | null; problem: string | null } {
+  const code = o.barcode_typed.trim();
+  if (!code || o.barcodes.some((b) => b.barcode.trim() === code)) return { code: null, problem: null };
+  const problem = barcodeError({ barcode: code }, words);
+  return problem ? { code: null, problem } : { code, problem: null };
+}
+
+/**
  * Checks the form and builds the create or edit body (without `client_request_id` or `version`,
  * which the caller adds). `initial` is the product as loaded, or null for a new one. Field errors
  * are keyed `name` and `opt.<key>.<field>`.
@@ -271,7 +292,9 @@ export function buildProductBody(
     if (o.sku.trim().length > 64) e('sku', 'Keep the SKU to 64 characters or fewer.');
 
     const price = parseMoneyInput(o.price);
-    if (price == null || price > 2_000_000) e('price', words.priceInvalid);
+    // Backbar-only products are never sold, so their price is optional and saves as zero.
+    if (!o.price.trim() && d.usage === 'professional') v.price_pence = 0;
+    else if (price == null || price > 2_000_000) e('price', words.priceInvalid);
     else v.price_pence = price;
 
     const qtyRaw = o.net_quantity.trim().replace(',', '.');
@@ -294,6 +317,10 @@ export function buildProductBody(
       if (problem) e('barcodes', problem);
       barcodes.push(b.symbology ? { barcode: b.barcode.trim(), symbology: b.symbology } : { barcode: b.barcode.trim() });
     }
+    // A code typed but not added is saved with the rest; one with a problem stops the save.
+    const typed = pendingBarcode(o, words);
+    if (typed.problem) e('barcodes', words.barcodeTyped.replace('{problem}', typed.problem));
+    else if (typed.code) barcodes.push({ barcode: typed.code, symbology: detectSymbology(typed.code) });
     v.barcodes = barcodes;
     v.sort_order = sort;
     sort += 1;

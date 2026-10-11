@@ -284,6 +284,7 @@ function ProductEditor({
       numberInvalid: t('x.number.invalid'),
       needOption: t('x.needOption'),
       barcodeInvalid: t('var.barcode.invalid'),
+      barcodeTyped: t('x.barcode.typed'),
       sizeInvalid: t('x.size.invalid'),
       sizeUnit: t('x.size.unit'),
     }),
@@ -646,7 +647,14 @@ function ProductEditor({
                 onChange={(v) => set('usage', v)}
               />
             )}
-            <SwitchRow label={t('prod.f.soldInStore')} value={draft.sold_in_store} disabled={readOnly} onChange={(v) => set('sold_in_store', v)} />
+            {/* The till never sells backbar-only products, whatever this says; the stored value is kept. */}
+            <SwitchRow
+              label={t('prod.f.soldInStore')}
+              help={draft.usage === 'professional' ? t('x.soldInStore.backbar') : null}
+              value={draft.sold_in_store && draft.usage !== 'professional'}
+              disabled={readOnly || draft.usage === 'professional'}
+              onChange={(v) => set('sold_in_store', v)}
+            />
             <SwitchRow
               label={t('prod.f.hygiene')}
               help={t('prod.f.hygiene.help')}
@@ -804,6 +812,7 @@ function ProductEditor({
                 trackStock={trackStock}
                 jurisdiction={jurisdiction}
                 basis={basis}
+                backbar={draft.usage === 'professional'}
                 readOnly={readOnly}
                 errors={errors}
                 canRemove={draft.multi && live.length > 1}
@@ -1024,6 +1033,7 @@ function OptionEditor({
   trackStock,
   jurisdiction,
   basis,
+  backbar,
   readOnly,
   errors,
   canRemove,
@@ -1036,6 +1046,8 @@ function OptionEditor({
   trackStock: boolean;
   jurisdiction: Jurisdiction;
   basis: 'standard' | 'makeup';
+  /** A backbar-only product: never sold, so its price is optional. */
+  backbar: boolean;
   readOnly: boolean;
   errors: FieldErrors;
   canRemove: boolean;
@@ -1044,7 +1056,8 @@ function OptionEditor({
 }) {
   const t = useStockT();
   const { colors } = useTheme();
-  const [code, setCode] = useState('');
+  // The typed code lives in the draft, so Save adds it and it counts as an unsaved change.
+  const code = option.barcode_typed;
   const [codeError, setCodeError] = useState<string | null>(null);
   const [camera, setCamera] = useState(false);
   const err = (field: string) => errors[`opt.${option.key}.${field}`];
@@ -1058,19 +1071,22 @@ function OptionEditor({
     return u ? t('var.unitPrice.preview', { unitPrice: formatUnitPrice(u, money) }) : null;
   })();
 
-  function addBarcode(raw: string) {
+  // `quiet`: leaving the box adds a good code, and keeps one with a problem for Save to point out.
+  function addBarcode(raw: string, quiet = false) {
     const value = raw.trim();
     if (!value) return;
     const b = { barcode: value, symbology: detectSymbology(value) };
     const problem = barcodeError(b, { barcodeInvalid: t('var.barcode.invalid') });
     if (problem) {
-      setCodeError(problem);
+      if (!quiet) setCodeError(problem);
       return;
     }
     setCodeError(null);
-    setCode('');
-    if (option.barcodes.some((x) => x.barcode === value)) return;
-    onChange({ barcodes: [...option.barcodes, b] });
+    if (option.barcodes.some((x) => x.barcode === value)) {
+      onChange({ barcode_typed: '' });
+      return;
+    }
+    onChange({ barcodes: [...option.barcodes, b], barcode_typed: '' });
   }
 
   const num = (field: 'reorder_level' | 'reorder_quantity' | 'order_up_to_level' | 'pack_size' | 'opening_quantity', label: string, help?: string) => (
@@ -1125,6 +1141,7 @@ function OptionEditor({
       <Input
         label={t('var.price')}
         accessibilityLabel={t('var.price')}
+        helper={backbar ? t('x.price.backbar') : undefined}
         value={option.price}
         onChangeText={(v) => onChange({ price: v })}
         keyboardType="decimal-pad"
@@ -1184,11 +1201,12 @@ function OptionEditor({
             accessibilityLabel={t('var.barcode.add')}
             value={code}
             onChangeText={(v) => {
-              setCode(v);
+              onChange({ barcode_typed: v });
               setCodeError(null);
             }}
             // A keyboard-mode scanner types the code and presses Enter.
             onSubmitEditing={() => addBarcode(code)}
+            onEndEditing={() => addBarcode(code, true)}
             submitBehavior="submit"
             returnKeyType="done"
             autoCapitalize="none"

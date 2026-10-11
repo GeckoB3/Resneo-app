@@ -30,8 +30,9 @@ export function filterCount(f: ProductListFilters, trackStock: boolean): number 
   return [f.category_id, f.brand_id, trackStock && f.supplier_id, f.use, f.online, trackStock && f.low, f.archived].filter(Boolean).length;
 }
 
-/** "£12.50", or "From £9" when the options differ in price. */
+/** "£12.50", or "From £9" when the options differ in price; backbar-only products are never sold. */
 export function priceLabel(p: RetailListProduct, money: (pence: number) => string, t: StockT): string {
+  if (p.usage === 'professional') return t('x.row.backbar');
   const prices = p.variants.map((v) => v.price_pence);
   if (prices.length === 0) return '';
   const min = Math.min(...prices);
