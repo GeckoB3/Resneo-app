@@ -330,6 +330,18 @@ export interface TotalsRow {
 }
 
 /** The rows of the totals block, in order, with only the rows that have a value. */
+const VAT_CODES: ReadonlySet<string> = new Set(['S', 'R', 'Z', 'E']);
+
+/**
+ * Whether a sale was made while the venue was VAT registered, read from its own lines (web
+ * `saleCarriesVat`): each line keeps the VAT letter it was added with, and a venue that is not
+ * registered gives every line `O`. The sale screen reads this, never today's setting, so turning
+ * VAT on or off later never rewrites a sale that already happened.
+ */
+export function saleCarriesVat(lines: readonly { tax_code: string | null | undefined }[]): boolean {
+  return lines.some((l) => typeof l.tax_code === 'string' && VAT_CODES.has(l.tax_code));
+}
+
 export function totalsRows(sale: PosSale, opts: { vatRegistered: boolean }): TotalsRow[] {
   const rows: TotalsRow[] = [];
   rows.push({ id: 'totals.subtotal', amountPence: sale.subtotal_pence });

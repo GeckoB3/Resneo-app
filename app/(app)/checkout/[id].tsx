@@ -43,6 +43,7 @@ import {
   maxRefundablePence,
   paymentMethodName,
   pendingCardPayment,
+  saleCarriesVat,
   saleIsEditable,
   saleStatusCopyId,
   totalsRows,
@@ -205,7 +206,8 @@ function SaleBody({
   const linesEditable = sale.status === 'open' && !pendingCard;
   const moneyPaid = sale.payments.some((p) => p.is_money && p.status === 'succeeded');
   const refundable = maxRefundablePence(sale.payments) > 0 || sale.payments.some((p) => p.refundable_tip_pence > 0);
-  const vat = bootstrap.tax_settings?.vat_registered === true;
+  // From the sale's own lines, not today's setting (web W1-03).
+  const vat = saleCarriesVat(sale.lines);
   const rows = useMemo(() => totalsRows(sale, { vatRegistered: vat }), [sale, vat]);
   const timeZone = bootstrap.venue?.timezone ?? 'Europe/London';
   const cardAvailable = cardAppAvailable({

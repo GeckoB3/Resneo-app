@@ -17,6 +17,7 @@ import {
   overStaffLimit,
   parseMoneyInput,
   paymentMethodName,
+  saleCarriesVat,
   pendingCardPayment,
   penceToInput,
   queueChips,
@@ -298,5 +299,14 @@ describe('gift vouchers and account credit in the sale maths (Pass V)', () => {
     expect(paymentMethodName(gift)).toBe('gift voucher ending 9HPA');
     expect(paymentMethodName({ ...gift, voucher: null })).toBe('gift voucher');
     expect(paymentMethodName(credit)).toBe('account credit');
+  });
+});
+
+describe('saleCarriesVat', () => {
+  it("reads VAT from the sale's own lines, not today's setting", () => {
+    expect(saleCarriesVat([makeLine({ tax_code: 'S' }), makeLine({ tax_code: 'O' })])).toBe(true);
+    expect(saleCarriesVat([makeLine({ tax_code: 'Z' })])).toBe(true);
+    expect(saleCarriesVat([makeLine({ tax_code: 'O' })])).toBe(false);
+    expect(saleCarriesVat([])).toBe(false);
   });
 });
