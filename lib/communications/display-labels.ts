@@ -42,6 +42,17 @@ export function formatCommunicationLogLabel(messageType: string): string {
     class_membership_renewed: 'Membership renewed',
     class_membership_cancelling: 'Membership cancellation scheduled',
     class_membership_ended: 'Membership ended',
+    // Checkout and the online shop (logged with the sale's client since web W2-19, 2026-10-11).
+    pos_sale_receipt: 'Receipt',
+    pos_refund_receipt: 'Refund receipt',
+    pos_pay_link: 'Pay link',
+    shop_order_confirmed: 'Order confirmation',
+    shop_order_ready_for_collection: 'Order ready to collect',
+    shop_order_dispatched: 'Order sent',
+    shop_order_delivered: 'Order delivered',
+    shop_order_refunded: 'Order refund',
+    shop_order_cancelled: 'Order cancelled',
+    shop_return_received: 'Return received',
     // Card-hold deposits (§10.3 / §10.2.2). Keyed by the full log type (with
     // channel suffix) so each channel keeps its own label; the normalized
     // lookup above misses these on purpose.

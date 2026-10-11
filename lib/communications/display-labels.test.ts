@@ -17,3 +17,12 @@ describe('formatCommunicationLogLabel', () => {
     expect(formatCommunicationLogLabel('some_new_event')).toBe('some new event');
   });
 });
+
+describe('checkout and shop messages', () => {
+  it('names them in plain words, whatever the channel', () => {
+    expect(formatCommunicationLogLabel('pos_sale_receipt_email')).toBe('Receipt');
+    expect(formatCommunicationLogLabel('pos_refund_receipt_sms')).toBe('Refund receipt');
+    expect(formatCommunicationLogLabel('pos_pay_link_sms')).toBe('Pay link');
+    expect(formatCommunicationLogLabel('shop_order_ready_for_collection_sms')).toBe('Order ready to collect');
+  });
+});
