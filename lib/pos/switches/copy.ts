@@ -94,7 +94,8 @@ export const SWITCH_COPY = {
   'sw.panel.switchOff': 'Switch off Checkout',
   'sw.history.hide': 'Hide history',
   // (app) Each extra's own settings, under its switch while it is on, and what a switch did.
-  'app.sw.panel.setUp': 'Set up',
+  // Opens the extra's own settings whether or not it is set up yet, so it does not say "Set up".
+  'app.sw.panel.setUp': 'Settings',
   'app.sw.extra.onDone': '{extra} switched on.',
   'app.sw.extra.offDone': '{extra} switched off.',
 

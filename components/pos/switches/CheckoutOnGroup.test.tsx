@@ -124,7 +124,7 @@ describe('the extras', () => {
   it("opens an extra's set-up from under its switch", async () => {
     await group();
     await act(async () => {
-      fireEvent.press(screen.getByText('Set up'));
+      fireEvent.press(screen.getByText('Settings'));
     });
     expect(mockPush).toHaveBeenCalledWith('/checkout-settings/gift-vouchers');
   });

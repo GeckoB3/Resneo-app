@@ -28,7 +28,7 @@ import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { PosSwitchExtraKey } from '@/types/pos-switches';
 
-/** Each extra's own settings, opened from "Set up" under its switch. */
+/** Each extra's own settings, opened from "Settings" under its switch. */
 export const EXTRA_SETTINGS_HREF: Record<PosSwitchExtraKey, string> = {
   pos_gift_vouchers_enabled: '/checkout-settings/gift-vouchers',
   pos_loyalty_enabled: '/checkout-settings/loyalty',
