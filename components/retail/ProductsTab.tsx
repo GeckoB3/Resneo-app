@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ChoiceChips, money, PosSheet, posStyles } from '@/components/pos/parts';
+import { ProductsAiEntry } from '@/components/retail/ai-import/ProductsAiEntry';
 import { BulkCategorySheet, BulkPriceSheet } from '@/components/retail/BulkSheets';
 import { CameraScanner, ScanButton } from '@/components/retail/CameraScanner';
 import { NamedChoice, ShareFileButton, SwitchRow } from '@/components/retail/setup-parts';
@@ -136,6 +137,7 @@ export function ProductsTab({
         </Text>
         <View style={styles.actions}>
           {canEdit ? <Button label={t('prod.add')} onPress={() => router.push('/stock/product/new' as Href)} /> : null}
+          {canEdit ? <ProductsAiEntry /> : null}
           {canImport ? <Button label={t('prod.import')} variant="secondary" onPress={() => router.push('/stock/import' as Href)} /> : null}
           {canExport ? (
             <ShareFileButton label={t('prod.export')} path={stockSetupPaths.productsExport(filters.archived)} filename="products.csv" />

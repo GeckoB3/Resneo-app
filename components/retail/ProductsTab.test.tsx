@@ -21,6 +21,12 @@ jest.mock('@/components/ui/Sheet', () => {
   };
 });
 jest.mock('@/components/retail/CameraScanner', () => ({ CameraScanner: () => null, ScanButton: () => null }));
+// "Add with AI" (POS Part 4, OB7) shows only when the server offers the products reader.
+let mockAiOffered = false;
+jest.mock('@/components/retail/ai-import/api', () => ({
+  PRODUCTS_AI_HREF: '/stock/ai-import',
+  useProductsAiAvailability: () => ({ offered: mockAiOffered, loading: false }),
+}));
 jest.mock('@/providers/VenueProvider', () => ({
   useVenueContext: () => ({ terminology: { client: 'Client', booking: 'Appointment', staff: 'Stylist' } }),
 }));
@@ -90,6 +96,7 @@ jest.mock('@/lib/queries/useStockSetup', () => ({
 import { ProductsTab } from '@/components/retail/ProductsTab';
 
 beforeEach(() => {
+  mockAiOffered = false;
   mockBulk.mockReset();
   mockPush.mockReset();
   mockToast.success.mockReset();
@@ -108,6 +115,24 @@ describe('the products list', () => {
       fireEvent.press(screen.getByText('Import'));
     });
     expect(mockPush).toHaveBeenCalledWith('/stock/import');
+  });
+
+  it('offers "Add with AI" beside Add product only when the reader is on, to people who can add products', async () => {
+    await render(<ProductsTab canEdit canImport canExport={false} trackStock />);
+    expect(screen.getByText('Add product')).toBeTruthy();
+    expect(screen.queryByText('Add with AI')).toBeNull();
+    await screen.unmount();
+
+    mockAiOffered = true;
+    await render(<ProductsTab canEdit canImport canExport={false} trackStock />);
+    await act(async () => {
+      fireEvent.press(screen.getByText('Add with AI'));
+    });
+    expect(mockPush).toHaveBeenCalledWith('/stock/ai-import');
+    await screen.unmount();
+
+    await render(<ProductsTab canEdit={false} canImport canExport={false} trackStock />);
+    expect(screen.queryByText('Add with AI')).toBeNull();
   });
 
   it('sends the filters to the server', async () => {
