@@ -4,6 +4,7 @@ import {
   collectiveStatusBadge,
   isManagedByHost,
   isParked,
+  suggestActionFor,
   venueCollectiveOf,
 } from '@/lib/services/collective-service';
 import type { ServiceCollectiveBlock } from '@/types/services-manage';
@@ -101,5 +102,34 @@ describe('venueCollectiveOf', () => {
   it('falls back to the roles for an older server', () => {
     expect(venueCollectiveOf([{ collective: block({ role: 'master' }) }])?.isHost).toBe(true);
     expect(venueCollectiveOf([{ collective: block({ role: 'replica' }) }])?.isHost).toBe(false);
+  });
+});
+
+describe('suggestActionFor (web "Suggest to {host}")', () => {
+  const member = { id: 'col-1', name: 'Northside', hostVenueName: 'Host Venue', isHost: false };
+  const parked = { id: 'svc-3', collective: block({ role: 'parked' }) };
+  const none = new Set<string>();
+
+  it("offers a member admin's parked service to the host", () => {
+    expect(suggestActionFor(parked, { isAdmin: true, collective: member, suggestedIds: none })).toEqual({
+      label: 'Suggest to Host Venue',
+      canSuggest: true,
+    });
+  });
+
+  it('says it was suggested while the host has not answered, instead of offering it again', () => {
+    expect(suggestActionFor(parked, { isAdmin: true, collective: member, suggestedIds: new Set(['svc-3']) })).toEqual({
+      label: 'Suggested to Host Venue',
+      canSuggest: false,
+    });
+  });
+
+  it('offers nothing to the host, to staff, or for a service already on the page', () => {
+    expect(suggestActionFor(parked, { isAdmin: true, collective: { ...member, isHost: true }, suggestedIds: none })).toBeNull();
+    expect(suggestActionFor(parked, { isAdmin: false, collective: member, suggestedIds: none })).toBeNull();
+    expect(
+      suggestActionFor({ id: 'svc-4', collective: block({ role: 'replica' }) }, { isAdmin: true, collective: member, suggestedIds: none }),
+    ).toBeNull();
+    expect(suggestActionFor(parked, { isAdmin: true, collective: null, suggestedIds: none })).toBeNull();
   });
 });

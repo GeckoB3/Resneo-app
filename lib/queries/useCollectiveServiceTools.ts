@@ -5,6 +5,10 @@
  *
  *   Add from another venue   GET  /api/venue/collectives/[id]/offerings?source_venue_id=
  *                            POST /api/venue/collectives/[id]/offerings  { source_venue_id, source_service_id }
+ *   Suggestions (N25)        GET  /api/venue/collectives/[id]/suggestions  (the host: every one
+ *                                 waiting; a member: its own)
+ *                            POST /api/venue/collectives/[id]/suggestions  { service_id }  (a member)
+ *                            POST /api/venue/collectives/[id]/suggestions/decline  { service_id }  (the host)
  *   Review your services     GET  /api/venue/collectives/review
  *                            POST /api/venue/collectives/review  { collective_id }
  *   A host service, as the   PATCH /api/venue/appointment-services  (calendars, the meeting link
@@ -26,6 +30,22 @@ export interface OwnService {
   name: string;
   duration_minutes: number | null;
   price_pence: number | null;
+}
+
+/** A member's suggestion still waiting for the host (web `WaitingSuggestion`). */
+export interface WaitingSuggestion {
+  service_id: string;
+  service_name: string;
+  venue_id: string;
+  venue_name: string;
+  duration_minutes: number | null;
+  price_pence: number | null;
+  suggested_at: string;
+}
+
+export interface CollectiveSuggestions {
+  role: 'host' | 'member';
+  suggestions: WaitingSuggestion[];
 }
 
 /** The checklist after leaving, being removed or the end of a collective (web `ReleaseReview`). */
@@ -50,6 +70,8 @@ export const collectiveServiceToolKeys = {
     [...queryKeys.collectives.all(), 'addFromServices', keyScope(accessToken), collectiveId, venueId] as const,
   releaseReview: (accessToken: string | null) =>
     [...queryKeys.collectives.all(), 'releaseReview', keyScope(accessToken)] as const,
+  suggestions: (accessToken: string | null, collectiveId: string | null) =>
+    [...queryKeys.collectives.all(), 'suggestions', keyScope(accessToken), collectiveId] as const,
 };
 
 /**
@@ -112,6 +134,64 @@ export function useAddFromVenue() {
       });
     },
     onSuccess: invalidate,
+  });
+}
+
+/**
+ * GET the suggestions still waiting: every member's for the host, to add or leave off; a member's
+ * own, so its parked service says it was suggested. Before 2026-10-12 a suggestion reached the host
+ * only as one notice, and nothing on this screen showed it.
+ */
+export function useCollectiveSuggestions(collectiveId: string | null, enabled: boolean) {
+  const accessToken = useAccessToken();
+  return useQuery({
+    queryKey: collectiveServiceToolKeys.suggestions(accessToken, collectiveId),
+    enabled: enabled && isBackendConfigured() && accessToken !== null && !!collectiveId,
+    retry: false,
+    queryFn: async (): Promise<CollectiveSuggestions> => {
+      if (!accessToken || !collectiveId) throw new Error('Missing access token');
+      const data = await apiFetch<{ role?: string; suggestions?: WaitingSuggestion[] }>(
+        `/api/venue/collectives/${collectiveId}/suggestions`,
+        { accessToken },
+      );
+      return { role: data.role === 'host' ? 'host' : 'member', suggestions: data.suggestions ?? [] };
+    },
+  });
+}
+
+/** POST a member's parked service as a suggestion; the host is told straight away (N25). */
+export function useSuggestService() {
+  const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { collectiveId: string; serviceId: string }): Promise<unknown> => {
+      if (!accessToken) throw new Error('Missing access token');
+      return apiFetch<unknown>(`/api/venue/collectives/${input.collectiveId}/suggestions`, {
+        accessToken,
+        method: 'POST',
+        body: JSON.stringify({ service_id: input.serviceId }),
+      });
+    },
+    onSuccess: (_data, input) =>
+      void queryClient.invalidateQueries({ queryKey: collectiveServiceToolKeys.suggestions(accessToken, input.collectiveId) }),
+  });
+}
+
+/** POST the host's "Not now": the suggestion leaves the list and the member is told by a bell. */
+export function useDeclineSuggestion() {
+  const accessToken = useAccessToken();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { collectiveId: string; serviceId: string }): Promise<unknown> => {
+      if (!accessToken) throw new Error('Missing access token');
+      return apiFetch<unknown>(`/api/venue/collectives/${input.collectiveId}/suggestions/decline`, {
+        accessToken,
+        method: 'POST',
+        body: JSON.stringify({ service_id: input.serviceId }),
+      });
+    },
+    onSuccess: (_data, input) =>
+      void queryClient.invalidateQueries({ queryKey: collectiveServiceToolKeys.suggestions(accessToken, input.collectiveId) }),
   });
 }
 

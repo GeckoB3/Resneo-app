@@ -4,6 +4,8 @@
  * Web paths:
  *   /dashboard/calendar?date=2026-06-11  →  { type: 'calendar' }      (calendar tab)
  *   /dashboard/settings?tab=linked-accounts  →  { type: 'linked-venues' }  (Linked Venues hub)
+ *   /dashboard/appointment-services?add_from=…&service=…  →  { type: 'services' }  (Services; a
+ *                                        member's suggestion, N25, opens "Add from another venue")
  *   anything else                        →  null (no navigation)
  *
  * Linked-venue activity points at the web Settings → Linked Accounts page; the
@@ -13,6 +15,7 @@
 export type NotificationRoute =
   | { type: 'calendar'; date: string }
   | { type: 'linked-venues' }
+  | { type: 'services'; addFrom: string | null; service: string | null }
   | null;
 
 export function parseNotificationRoute(href: string | null | undefined): NotificationRoute {
@@ -30,5 +33,25 @@ export function parseNotificationRoute(href: string | null | undefined): Notific
     return { type: 'linked-venues' };
   }
 
+  // The Services page; a member's suggestion carries the venue and service to add (N25).
+  if (/\/dashboard\/appointment-services(?:\?|$)/.test(href)) {
+    return { type: 'services', addFrom: queryValue(href, 'add_from'), service: queryValue(href, 'service') };
+  }
+
+  return null;
+}
+
+/** One query value, decoded, or null. By hand: React Native's URLSearchParams has had no get(). */
+function queryValue(href: string, name: string): string | null {
+  const query = href.split('?')[1]?.split('#')[0] ?? '';
+  for (const pair of query.split('&')) {
+    const [key, value = ''] = pair.split('=');
+    if (key !== name || !value) continue;
+    try {
+      return decodeURIComponent(value.replace(/\+/g, ' '));
+    } catch {
+      return null;
+    }
+  }
   return null;
 }

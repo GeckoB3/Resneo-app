@@ -237,6 +237,12 @@ export default function NotificationsScreen() {
       // Link activity → the native Linked Venues hub (admin-only). Non-admins
       // stay on the feed, which is the mobile home for this activity.
       router.push('/linked-venues' as Href);
+    } else if (route?.type === 'services' && isAdmin) {
+      // A member's suggestion (N25) → Services, with "Add from another venue" open on it.
+      const query = route.addFrom
+        ? `?add_from=${encodeURIComponent(route.addFrom)}${route.service ? `&service=${encodeURIComponent(route.service)}` : ''}`
+        : '';
+      router.push(`/manage/services${query}` as Href);
     }
   };
 

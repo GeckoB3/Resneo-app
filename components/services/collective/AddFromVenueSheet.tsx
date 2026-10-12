@@ -30,7 +30,7 @@ export interface AddFromVenueSheetProps {
 }
 
 /** Web `formatPricePenceForServiceCatalog`, for a price that is set. */
-function priceWords(pence: number, symbol: string): string {
+export function priceWords(pence: number, symbol: string): string {
   return pence <= 0 ? 'Free' : `${symbol}${(pence / 100).toFixed(2)}`;
 }
 

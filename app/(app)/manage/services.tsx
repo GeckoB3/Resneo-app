@@ -54,6 +54,13 @@ import { ServiceRemovalBookingsPanel } from '@/components/services/ServiceRemova
 import { AddFromVenueSheet } from '@/components/services/collective/AddFromVenueSheet';
 import { MemberServiceSheet } from '@/components/services/collective/MemberServiceSheet';
 import { ReleaseReviewCard } from '@/components/services/collective/ReleaseReviewCard';
+import { SuggestedServicesCard } from '@/components/services/collective/SuggestedServicesCard';
+import { ConfirmSheet } from '@/components/ui/ConfirmSheet';
+import {
+  refusalText,
+  useCollectiveSuggestions,
+  useSuggestService,
+} from '@/lib/queries/useCollectiveServiceTools';
 import { TodoStrip } from '@/components/collective-area/AreaPieces';
 import { AdoptionRequestsCard } from '@/components/linked/setup/AdoptionSheets';
 import {
@@ -84,6 +91,7 @@ import {
   collectiveServiceLines,
   collectiveStatusBadge,
   isManagedByHost,
+  suggestActionFor,
   venueCollectiveOf,
 } from '@/lib/services/collective-service';
 import {
@@ -249,6 +257,7 @@ function ServiceRowBase({
   onMoveUp = null,
   onMoveDown = null,
   onView = null,
+  suggest = null,
   reorderPending = false,
 }: {
   service: ManagedService;
@@ -276,6 +285,11 @@ function ServiceRowBase({
   onMoveDown?: (() => void) | null;
   /** A host's service at a member: opens the member's read-only view (web `MemberServiceView`). */
   onView?: ((service: ManagedService) => void) | null;
+  /**
+   * A member's parked service (web "Suggest to {host}"): the button's words and what it does, or,
+   * once suggested and the host has not answered, only the words ("Suggested to {host}").
+   */
+  suggest?: { label: string; onPress: ((service: ManagedService) => void) | null } | null;
   reorderPending?: boolean;
 }) {
   const { colors } = useTheme();
@@ -462,6 +476,25 @@ function ServiceRowBase({
                 onPress={() => onMoveDown?.()}
               />
             </View>
+          ) : null}
+
+          {/* A member asks its host to add a parked service (web "Suggest to {host}"). */}
+          {suggest ? (
+            suggest.onPress ? (
+              <View style={styles.editRow}>
+                <Button
+                  label={suggest.label}
+                  variant="secondary"
+                  size="sm"
+                  style={styles.editBtnFull}
+                  onPress={() => suggest.onPress?.(service)}
+                />
+              </View>
+            ) : (
+              <Text variant="caption" tone="secondary">
+                {suggest.label}
+              </Text>
+            )
           ) : null}
 
           {/* A service the host manages: look at it and choose this venue's calendars (web "View"). */}
@@ -776,6 +809,12 @@ export default function ServicesScreen() {
   const [addFromOpen, setAddFromOpen] = useState(false);
   const [addFromDone, setAddFromDone] = useState<string | null>(null);
   const [addFromPresetUsed, setAddFromPresetUsed] = useState(false);
+  // A member's suggestion the host chose to add: the sheet opens with that venue and service.
+  const [addFromPick, setAddFromPick] = useState<{ venueId: string; serviceId: string | null } | null>(null);
+  // A member suggesting one of its parked services (web W6/W7, N25): the question, then what it said.
+  const [suggestAsk, setSuggestAsk] = useState<ManagedService | null>(null);
+  const [suggestNote, setSuggestNote] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
+  const suggestService = useSuggestService();
   // Set when that delete failed AFTER the service came off the page; the delete
   // sheet shows it in place of its confirm.
   const [deleteHalfway, setDeleteHalfway] = useState<string | null>(null);
@@ -1163,7 +1202,34 @@ export default function ServicesScreen() {
     [params.add_from, params.service],
   );
   const addFromVisible =
-    (addFromOpen || (addFromPreset !== null && !addFromPresetUsed)) && !!serviceCollective?.isHost && isAdmin;
+    (addFromOpen || addFromPick !== null || (addFromPreset !== null && !addFromPresetUsed)) &&
+    !!serviceCollective?.isHost &&
+    isAdmin;
+  /** A member admin's own suggestions the host has not answered: those parked services say so. */
+  const isMemberAdmin = isAdmin && !!serviceCollective && !serviceCollective.isHost;
+  const ownSuggestionsQuery = useCollectiveSuggestions(serviceCollective?.id ?? null, isMemberAdmin);
+  const ownSuggestedIds = useMemo(
+    () =>
+      new Set(
+        ownSuggestionsQuery.data?.role === 'member' ? ownSuggestionsQuery.data.suggestions.map((s) => s.service_id) : [],
+      ),
+    [ownSuggestionsQuery.data],
+  );
+  const askToSuggest = useCallback((service: ManagedService) => {
+    setSuggestNote(null);
+    setSuggestAsk(service);
+  }, []);
+  const suggestRow = useCallback(
+    (service: ManagedService) => {
+      const action = suggestActionFor(service, {
+        isAdmin,
+        collective: serviceCollective,
+        suggestedIds: ownSuggestedIds,
+      });
+      return action ? { label: action.label, onPress: action.canSuggest ? askToSuggest : null } : null;
+    },
+    [isAdmin, serviceCollective, ownSuggestedIds, askToSuggest],
+  );
   const openServiceView = useCallback((service: ManagedService) => setViewingService(service), []);
 
   const setupCalendars = useMemo(
@@ -1925,6 +1991,7 @@ export default function ServicesScreen() {
           onMoveUp={canMoveUp ? () => handleMoveService(item.id, -1) : null}
           onMoveDown={canMoveDown ? () => handleMoveService(item.id, 1) : null}
           onView={managedByHost && canManageService(item) ? openServiceView : null}
+          suggest={suggestRow(item)}
           reorderPending={reorderServices.isPending}
         />
         </>
@@ -1947,6 +2014,7 @@ export default function ServicesScreen() {
       handleMoveService,
       reorderServices.isPending,
       openServiceView,
+      suggestRow,
     ],
   );
 
@@ -2083,6 +2151,7 @@ export default function ServicesScreen() {
                   fullWidth
                   onPress={() => {
                     setAddFromDone(null);
+                    setAddFromPick(null);
                     setAddFromOpen(true);
                   }}
                 />
@@ -2092,6 +2161,31 @@ export default function ServicesScreen() {
               <ReleaseReviewCard enabled={isAdmin && !serviceCollective} />
               {isAdmin && serviceCollective && !serviceCollective.isHost ? (
                 <AdoptionRequestsCard collectiveId={serviceCollective.id} />
+              ) : null}
+              {isAdmin && serviceCollective?.isHost ? (
+                <SuggestedServicesCard
+                  collectiveId={serviceCollective.id}
+                  collectiveName={serviceCollective.name}
+                  currencySymbol={currencySymbolFor(venue?.currency)}
+                  onAdd={(s) => {
+                    setAddFromDone(null);
+                    setAddFromOpen(false);
+                    setAddFromPresetUsed(true);
+                    setAddFromPick({ venueId: s.venue_id, serviceId: s.service_id });
+                  }}
+                />
+              ) : null}
+              {suggestNote ? (
+                <View
+                  accessibilityRole={suggestNote.tone === 'error' ? 'alert' : 'summary'}
+                  style={[
+                    styles.addFromDone,
+                    suggestNote.tone === 'error'
+                      ? { backgroundColor: colors.dangerSurface, borderColor: colors.danger }
+                      : { backgroundColor: colors.successSurface, borderColor: colors.success },
+                  ]}>
+                  <Text variant="bodySmall">{suggestNote.text}</Text>
+                </View>
               ) : null}
               {addFromDone ? (
                 <View
@@ -2261,19 +2355,73 @@ export default function ServicesScreen() {
           collectiveName={serviceCollective.name}
           venues={collectiveMemberVenues}
           currencySymbol={currencySymbolFor(venue?.currency)}
-          initialVenueId={addFromPresetUsed ? null : (addFromPreset?.venueId ?? null)}
-          initialServiceId={addFromPresetUsed ? null : (addFromPreset?.serviceId ?? null)}
+          initialVenueId={addFromPick?.venueId ?? (addFromPresetUsed ? null : (addFromPreset?.venueId ?? null))}
+          initialServiceId={addFromPick?.serviceId ?? (addFromPresetUsed ? null : (addFromPreset?.serviceId ?? null))}
           onClose={() => {
             setAddFromOpen(false);
+            setAddFromPick(null);
             setAddFromPresetUsed(true);
           }}
           onAdded={(message) => {
             setAddFromOpen(false);
+            setAddFromPick(null);
             setAddFromPresetUsed(true);
             setAddFromDone(message);
           }}
         />
       ) : null}
+
+      {/* A member suggests one of its parked services to the host (web "Suggest to {host}"). */}
+      <ConfirmSheet
+        visible={suggestAsk !== null && !!serviceCollective}
+        title={
+          suggestAsk && serviceCollective
+            ? areaCopy('svc.member.suggest.title', { service: suggestAsk.name, collective: serviceCollective.name })
+            : ''
+        }
+        message={
+          suggestAsk && serviceCollective
+            ? areaCopy('svc.member.suggest.message', {
+                host: serviceCollective.hostVenueName,
+                service: suggestAsk.name,
+                collective: serviceCollective.name,
+              })
+            : undefined
+        }
+        confirmLabel={areaCopy('svc.member.suggest.confirm')}
+        destructive={false}
+        loading={suggestService.isPending}
+        onClose={() => {
+          if (!suggestService.isPending) setSuggestAsk(null);
+        }}
+        onConfirm={() => {
+          const ask = suggestAsk;
+          if (!ask || !serviceCollective) return;
+          suggestService.mutate(
+            { collectiveId: serviceCollective.id, serviceId: ask.id },
+            {
+              onSuccess: () => {
+                setSuggestAsk(null);
+                setSuggestNote({
+                  tone: 'ok',
+                  text: areaCopy('svc.member.suggest.done', { host: serviceCollective.hostVenueName }),
+                });
+              },
+              onError: (error) => {
+                setSuggestAsk(null);
+                setSuggestNote({
+                  tone: 'error',
+                  text: refusalText(
+                    error,
+                    'Could not send the suggestion. Please try again.',
+                    'Could not send the suggestion. Please check your connection.',
+                  ),
+                });
+              },
+            },
+          );
+        }}
+      />
 
       {/* A host's service at a member: read it, and choose this venue's calendars (web MemberServiceView). */}
       {viewingService && viewingService.collective ? (

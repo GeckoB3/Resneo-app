@@ -16,6 +16,7 @@
  * @see Docs/MOBILE_API.md (web), "Venue collectives: what changes for the app"
  */
 import type { BadgeTone } from '@/components/ui/Badge';
+import { areaCopy } from '@/lib/collective-area/copy';
 import type { ManagedService, ServiceCollectiveBlock } from '@/types/services-manage';
 
 export function collectiveBlockOf(service: Pick<ManagedService, 'collective'>): ServiceCollectiveBlock | null {
@@ -138,4 +139,21 @@ export function venueCollectiveOf(services: readonly Pick<ManagedService, 'colle
     hostVenueName: block.host_venue_name,
     isHost: block.venue_role ? block.venue_role === 'host' : roles.has('master') || !roles.has('replica'),
   };
+}
+
+/**
+ * What a member admin's service row offers its host (web "Suggest to {host}", contract 10, N25): a
+ * parked service can be suggested, and once suggested, while the host has not answered, the row says
+ * so instead of offering the button again. Null for anything else: a host, a staff member, or a
+ * service already on the page.
+ */
+export function suggestActionFor(
+  service: Pick<ManagedService, 'id' | 'collective'>,
+  opts: { isAdmin: boolean; collective: VenueCollective | null; suggestedIds: ReadonlySet<string> },
+): { label: string; canSuggest: boolean } | null {
+  const { collective } = opts;
+  if (!opts.isAdmin || !collective || collective.isHost || !isParked(service)) return null;
+  return opts.suggestedIds.has(service.id)
+    ? { label: areaCopy('svc.member.card.suggested', { host: collective.hostVenueName }), canSuggest: false }
+    : { label: areaCopy('svc.member.card.suggest', { host: collective.hostVenueName }), canSuggest: true };
 }
