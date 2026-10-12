@@ -79,6 +79,9 @@ export const queryKeys = {
       [...queryKeys.customer.all(), 'courses', keyScope(accessToken)] as const,
     recurring: (accessToken?: string | null) =>
       [...queryKeys.customer.all(), 'recurring', keyScope(accessToken)] as const,
+    /** `GET /api/v1/me/loyalty`: the customer's loyalty stamp cards (POS Pass LC). */
+    loyalty: (accessToken?: string | null) =>
+      [...queryKeys.customer.all(), 'loyalty', keyScope(accessToken)] as const,
     /** Public appointment slots for a reschedule. Not scoped to the caller. */
     slots: (venueId: string | null, date: string | null, serviceId: string | null, practitionerId: string | null) =>
       [...queryKeys.customer.all(), 'slots', venueId, date, serviceId, practitionerId] as const,

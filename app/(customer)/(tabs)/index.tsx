@@ -1,6 +1,7 @@
 import { StyleSheet, View } from 'react-native';
 
 import { CustomerHomeHeader } from '@/components/customer/CustomerHomeHeader';
+import { LoyaltyCard } from '@/components/customer/LoyaltyCard';
 import { NextBookingCard } from '@/components/customer/NextBookingCard';
 import { OutstandingPaymentsCard } from '@/components/customer/OutstandingPaymentsCard';
 import { PassesSummaryCard } from '@/components/customer/PassesSummaryCard';
@@ -19,6 +20,10 @@ import { spacing } from '@/theme/index';
  * aggregate for exactly this reason: the hub is the screen a customer opens to
  * answer "what is next and do I owe anything", and answering it from five
  * requests would mean five ways to be half-loaded.
+ *
+ * The loyalty card is the one section with its own request
+ * (`GET /api/v1/me/loyalty`). It cannot half-load the hub, because it shows
+ * nothing until it has a card to show, and the hub never waits for it.
  */
 export default function CustomerHomeScreen() {
   const { data, isLoading, isError, refetch } = useCustomerHome();
@@ -45,6 +50,9 @@ export default function CustomerHomeScreen() {
         <OutstandingPaymentsCard home={data} />
         <UpcomingList home={data} />
         <PassesSummaryCard home={data} />
+        {/* With the passes, as the other thing a customer holds at a venue, and
+            before venue history, where the web account puts it too. */}
+        <LoyaltyCard />
         {/* Last, and the reason an empty hub is not a dead end: a customer with
             nothing booked usually still has venues to go back to. */}
         <VenueHistorySection home={data} />
