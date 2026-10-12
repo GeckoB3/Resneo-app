@@ -280,7 +280,7 @@ export const SETUP_COPY = {
   // The web says "from Settings, Checkout"; the app has the same in Gift voucher settings.
   'app.setup.vch.existing': 'Already sold paper vouchers? You can add them, or import a list, in Gift voucher settings.',
   'setup.vch.collective':
-    "Your booking page hands over to the {collective} page, which doesn't show gift vouchers. Share your own voucher link instead: {link}",
+    "Your booking page hands over to the {collective} page. While you sell vouchers online, its Gift vouchers tab links to your voucher page. You can share your own link too: {link}",
 
   // W9. Set up your loyalty card.
   'setup.loy.title': 'Set up your loyalty card',
@@ -310,7 +310,7 @@ export const SETUP_COPY = {
   'setup.shop.go': 'Set up my shop',
   'setup.shop.later': 'Later',
   'setup.shop.collective':
-    "Your booking page hands over to the {collective} page, which doesn't show shops. Share your own shop link instead: {link}",
+    "Your booking page hands over to the {collective} page. Once your shop is open, its Shop tab links to it. You can share your own link too: {link}",
   'app.setup.shop.open': 'Your shop is open.',
 
   // W11. Try a practice sale (the sale screen's practice mode is its own builder's).

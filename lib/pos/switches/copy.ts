@@ -47,7 +47,7 @@ export const SWITCH_COPY = {
   'sw.landing.need.stripeDone': 'Stripe is connected.',
   'sw.landing.small': 'You can switch it off whenever you like. Nothing is deleted.',
   'sw.landing.collective':
-    "Checkout is for {venue} only. Each business in {collective} has its own till, products and takings. Your shared booking page doesn't show shops or gift vouchers, so you'll share your own links for those.",
+    "Checkout is for {venue} only. Each business in {collective} has its own till, products and takings. Your shared booking page has no shop or gift vouchers of its own: it links to each business's own shop and voucher page while they sell online.",
 
   // Step 2: the states shown instead of the button.
   'sw.na.currency': "Checkout works in pounds for now. We'll let you know when it works in euros.",
