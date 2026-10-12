@@ -153,6 +153,7 @@ export function GrantEditor({
   disabled = false,
   label,
   hint,
+  revenueNote,
 }: {
   value: LinkGrant;
   onChange: (next: LinkGrant) => void;
@@ -164,6 +165,8 @@ export function GrantEditor({
   /** Optional title rendered above the controls (used by GrantPairEditor). */
   label?: string;
   hint?: string;
+  /** Said under the booking actions when this access also shares booked value in Reports. */
+  revenueNote?: string;
 }) {
   const { colors } = useTheme();
   const v = normaliseGrant(value);
@@ -227,6 +230,11 @@ export function GrantEditor({
           }}
           wrapLabels
         />
+        {revenueNote && v.calendar === 'full_details' && v.act === 'create_edit_cancel' ? (
+          <Text variant="caption" tone="muted">
+            {revenueNote}
+          </Text>
+        ) : null}
       </View>
 
       {calendars.length > 0 && v.calendar !== 'none' ? (

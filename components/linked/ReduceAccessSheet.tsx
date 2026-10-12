@@ -92,6 +92,7 @@ export function ReduceAccessSheet({
           keyboardShouldPersistTaps="handled">
           <GrantEditor
             label={`What ${name} can do with your data`}
+            revenueNote={`${name} also sees your booked value in their Reports.`}
             value={grant}
             onChange={setGrant}
             disabled={busy}

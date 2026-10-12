@@ -166,7 +166,12 @@ export function describeGrant(grant: LinkGrant): string[] {
   out.push('see the calendar in full detail');
   if (grant.pii) out.push('see client contact details');
   if (grant.act === 'edit_existing') out.push('edit existing bookings');
-  if (grant.act === 'create_edit_cancel') out.push('create, edit and cancel bookings');
+  if (grant.act === 'create_edit_cancel') {
+    out.push('create, edit and cancel bookings');
+    // Full detail with full booking management also shares booked value in Reports (the web's
+    // grantAllowsRevenueReporting, src/lib/reports/booked-revenue.ts).
+    out.push('see booked value in Reports');
+  }
   if (scopeNote) out.push(scopeNote);
   return out;
 }

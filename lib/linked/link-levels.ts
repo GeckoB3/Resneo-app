@@ -48,6 +48,7 @@ export const LINK_LEVELS: readonly LinkLevel[] = [
     bullets: [
       "See each other's bookings and client details",
       'Make, move and cancel bookings for each other',
+      "See each other's booked value in Reports",
       'The only level that can run a shared booking page (a collective)',
     ],
     grant: { calendar: 'full_details', pii: true, act: 'create_edit_cancel' },
