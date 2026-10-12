@@ -14,6 +14,12 @@ import {
   type Column,
 } from '@/components/reports/pos/PosReportUi';
 import { SalesProductCards } from '@/components/reports/pos/SalesProductCards';
+import {
+  CalendarRefusal,
+  CalendarScopeNote,
+  useCalendarRefusal,
+  useReportCalendar,
+} from '@/components/reports/ReportCalendarFilter';
 import { SvgBarChart } from '@/components/reports/SvgBarChart';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
@@ -31,6 +37,7 @@ import {
   REPORTING_GROUP_LABELS,
   shortChartLabel,
 } from '@/lib/reports/pos-report-format';
+import { reportCalendarCopy, withCalendarParam } from '@/lib/reports/report-calendar';
 import { useTheme } from '@/theme/useTheme';
 import type { SalesPersonRow } from '@/types/pos';
 import type { PosRangeChoice, ReportGrain } from '@/types/pos-reports';
@@ -42,17 +49,26 @@ import type { PosRangeChoice, ReportGrain } from '@/types/pos-reports';
  * products by team member, the product cards (margin, by product, brand, category, stock), and
  * discounts by reason and person. Each card's CSV comes from the server. It leads with the numbers
  * (Part 2 mock-up 3): the range on one line, the figures, what the report counts, then the tables.
+ *
+ * Shown only where Reports has the server's word that the venue has Sales (pos-access `visible`),
+ * which with Checkout off is a venue with past sales, so its reads run then too (`reportsVisible`).
+ * With a calendar chosen it asks for that calendar's sales, CSVs included, and says what the answer
+ * covers; the stock card is always the whole venue.
  */
 export function SalesSection({ canExport, today }: { canExport: boolean; today: string }) {
   const { colors } = useTheme();
   const [choice, setChoice] = useState<PosRangeChoice>({ kind: 'preset', preset: 'this-week' });
   const [grain, setGrain] = useState<ReportGrain>('day');
-  const q = useSalesRange(choice, grain);
+  const { calendar } = useReportCalendar();
+  const calendarId = calendar?.id ?? null;
+  const q = useSalesRange(choice, grain, { calendarId, reportsVisible: true });
   const data = q.data;
+  const refusal = useCalendarRefusal(q.error);
   const money = (pence: number) => formatMoneyExact(pence, data?.currency);
   const download = useReportDownload();
   const exportable = canExport && (data?.can_export ?? true);
-  const query = rangeQuery(choice, grain);
+  // The CSVs are asked for the same calendar as the figures.
+  const query = withCalendarParam(rangeQuery(choice, grain), calendarId);
   const csv = (card: string, label: ReportsCopyId) =>
     exportable ? () => void download(`${posReportPaths.sales(query)}&format=csv&card=${card}`, reportsCopy(label)) : undefined;
 
@@ -96,11 +112,18 @@ export function SalesSection({ canExport, today }: { canExport: boolean; today: 
         currentRange={data ? { from: data.from, to: data.to } : null}
       />
 
-      {q.isError ? <ReportLoadError message={posErrorMessage(q.error, reportsCopy('rep.error'))} onRetry={() => void q.refetch()} /> : null}
+      {q.isError ? (
+        refusal ? (
+          <CalendarRefusal message={refusal} />
+        ) : (
+          <ReportLoadError message={posErrorMessage(q.error, reportsCopy('rep.error'))} onRetry={() => void q.refetch()} />
+        )
+      ) : null}
       {!data && q.isLoading ? <DetailSkeleton /> : null}
 
       {data ? (
         <View style={[reportStyles.stack, q.isFetching ? styles.busy : null]} accessibilityState={{ busy: q.isFetching }}>
+          <CalendarScopeNote echoed={data.calendar} detail={reportCalendarCopy('cal.detail.sales')} />
           {/* The figures first, in the web's colours (Part 2 mock-up 3). */}
           <KpiTiles
             items={[

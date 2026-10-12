@@ -4,14 +4,26 @@
  * The value of every appointment on the diary that has not been cancelled
  * (and, since web QA A-3 on 2026-09-23, every class, event and room booking),
  * by day / week / month and by calendar, with linked venues' calendars when
- * their grant is full detail with create/edit/cancel rights. The default view
- * deducts no-shows; "Include no-shows" adds them back. Prices are the server's
- * (`loadRowTotalResolver`, the same precedence as the booking panel), so the
- * app never re-prices a row.
+ * their grant is full detail with create/edit/cancel rights, and every member
+ * of a live collective. The default view deducts no-shows; "Include no-shows"
+ * adds them back. Prices are the server's (`loadRowTotalResolver`, the same
+ * precedence as the booking panel), so the app never re-prices a row.
+ *
+ * With more than one venue, or a collective, the figures are subtotalled by
+ * venue as the web's "Venue" table does: yours marked "(you)", and the part
+ * booked through the collective's page in "Through {collective}". Collective
+ * members are named as members, never as shared through a linked account.
  */
 import { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Switch, View } from 'react-native';
 
+import { ReportTable, type Column } from '@/components/reports/pos/PosReportUi';
+import {
+  CalendarRefusal,
+  CalendarScopeNote,
+  useCalendarRefusal,
+  useReportCalendar,
+} from '@/components/reports/ReportCalendarFilter';
 import { SvgStackedBarChart } from '@/components/reports/SvgStackedBarChart';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -34,20 +46,26 @@ import {
   BOOKED_REVENUE_PRESETS,
   bookedRevenueBarColour,
   bookedRevenueChartLabel,
+  bookedRevenueCollectiveNetPence,
+  bookedRevenueCollectiveNote,
   bookedRevenueColumnName,
   bookedRevenueCsvFilename,
   bookedRevenueCsvRows,
+  bookedRevenueLinkedVenueNames,
   bookedRevenueNetPence,
   bookedRevenuePeriodLabel,
   bookedRevenueRangeError,
   bookedRevenueStepBase,
+  listVenueNames,
   shiftBookedRevenueRange,
+  showBookedRevenueVenues,
   type BookedRevenueRangeChoice,
 } from '@/lib/reports/booked-revenue';
+import { reportCalendarCopy } from '@/lib/reports/report-calendar';
 import { useToast } from '@/providers/ToastProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
-import type { BookedRevenueGrain } from '@/types/reports';
+import type { BookedRevenueGrain, BookedRevenueVenue } from '@/types/reports';
 
 const money = (pence: number): string => formatPence(pence) ?? `£${(pence / 100).toFixed(2)}`;
 
@@ -83,13 +101,24 @@ export function BookedRevenueSection({
   const [customTo, setCustomTo] = useState(today);
   const [grain, setGrain] = useState<BookedRevenueGrain>('day');
   const [includeNoShows, setIncludeNoShows] = useState(false);
+  // The Reports screen's calendar filter: one calendar's figures, or the whole venue.
+  const { calendar } = useReportCalendar();
 
-  const query = useBookedRevenue(choice, grain, enabled);
+  const query = useBookedRevenue(choice, grain, enabled, calendar?.id ?? null);
   const data = query.data;
+  const refusal = useCalendarRefusal(query.error);
 
   const columns = useMemo(() => data?.columns ?? [], [data]);
   const ownColumns = columns.filter((c) => !c.linked);
   const linkedColumns = columns.filter((c) => c.linked);
+  // Older responses carry no venue list; they read as "no breakdown" rather than failing (web).
+  // One calendar is one column of your own: no venue table and no partner notes (web 90ff4d17).
+  const venues = data?.venues ?? [];
+  const collective = data?.collective ?? null;
+  const showVenues = data ? showBookedRevenueVenues(data, calendar) : false;
+  const collectiveNote = data && !calendar ? bookedRevenueCollectiveNote(data) : null;
+  const linkedVenues =
+    data && !calendar ? bookedRevenueLinkedVenueNames(data) : { names: [] as string[], fromColumns: false };
   const series = useMemo(
     () =>
       columns.map((col, index) => ({
@@ -128,6 +157,65 @@ export function BookedRevenueSection({
   const lowerCountWord = countWord.toLowerCase();
   const errorMessage =
     query.error instanceof ApiError ? query.error.message : 'Could not load booked revenue.';
+
+  /**
+   * The web's "Venue" table laid out for a phone (a row per venue with its figures under its name):
+   * booked revenue, the part through the collective's page when there is a collective, and the
+   * count, with the totals row.
+   */
+  const venueColumns: Column<BookedRevenueVenue>[] = [
+    {
+      label: 'Venue',
+      value: (v) => (
+        <Text variant="bodyMedium">
+          {v.venue_name}
+          {v.access === 'own' ? (
+            <Text variant="caption" tone="muted">
+              {' (you)'}
+            </Text>
+          ) : null}
+        </Text>
+      ),
+    },
+    {
+      label: 'Booked revenue',
+      value: (v) => money(bookedRevenueNetPence(data?.totals.by_venue?.[v.venue_id], includeNoShows)),
+      numeric: true,
+    },
+    ...(collective
+      ? [
+          {
+            label: `Through ${collective.name}`,
+            value: (v: BookedRevenueVenue) =>
+              money(bookedRevenueCollectiveNetPence(data?.totals.by_venue?.[v.venue_id], includeNoShows)),
+            numeric: true,
+          },
+        ]
+      : []),
+    {
+      label: `${countWord}s`,
+      value: (v) => {
+        const cell = data?.totals.by_venue?.[v.venue_id];
+        return String(cell ? cell.booked_count + (includeNoShows ? cell.no_show_count : 0) : 0);
+      },
+      numeric: true,
+    },
+  ];
+  const venueFooter = [
+    'Total',
+    money(totalNet),
+    ...(collective
+      ? [
+          money(
+            venues.reduce(
+              (sum, v) => sum + bookedRevenueCollectiveNetPence(data?.totals.by_venue?.[v.venue_id], includeNoShows),
+              0,
+            ),
+          ),
+        ]
+      : []),
+    String(totalCount),
+  ];
 
   /**
    * The range the arrows step from: the last one REQUESTED. The query keeps the
@@ -175,8 +263,8 @@ export function BookedRevenueSection({
     }
     hapticTap();
     const result = await buildAndShareCsv(
-      bookedRevenueCsvFilename(data),
-      bookedRevenueCsvRows(data, includeNoShows),
+      bookedRevenueCsvFilename(data, calendar),
+      bookedRevenueCsvRows(data, includeNoShows, calendar),
     );
     if (!result.ok) {
       toast.error('Could not export the report.');
@@ -318,19 +406,35 @@ export function BookedRevenueSection({
         </View>
 
         {query.isError && !data ? (
-          <ErrorState message={errorMessage} onRetry={() => void query.refetch()} />
+          refusal ? (
+            <CalendarRefusal message={refusal} />
+          ) : (
+            <ErrorState message={errorMessage} onRetry={() => void query.refetch()} />
+          )
         ) : !data ? (
           <DetailSkeleton />
         ) : (
           <>
             {/* An error with figures already on screen is shown above them and
-                the table stays, as on the web (`BookedRevenueSection.tsx:319`). */}
+                the table stays, as on the web (`BookedRevenueSection.tsx:319`).
+                A refusal of the chosen calendar offers all calendars instead. */}
             {query.isError ? (
-              <Text variant="bodySmall" tone="danger" style={styles.inlineError}>
-                {errorMessage}
-              </Text>
+              refusal ? (
+                <View style={styles.inlineError}>
+                  <CalendarRefusal message={refusal} />
+                </View>
+              ) : (
+                <Text variant="bodySmall" tone="danger" style={styles.inlineError}>
+                  {errorMessage}
+                </Text>
+              )
             ) : null}
             <View style={query.isFetching ? styles.refreshing : undefined}>
+            <CalendarScopeNote
+              echoed={data.calendar}
+              detail={reportCalendarCopy('cal.detail.bookedValue')}
+              style={styles.scopeNote}
+            />
             <View style={styles.tiles}>
               <StatTile
                 label={includeNoShows ? 'Booked revenue (incl. no-shows)' : 'Booked revenue'}
@@ -368,11 +472,30 @@ export function BookedRevenueSection({
                 </Text>
               </View>
             ) : null}
-            {linkedColumns.length > 0 ? (
-              <Text variant="bodySmall" tone="muted">
-                Includes calendars from {[...new Set(linkedColumns.map((c) => c.venue_name))].join(', ')},
+            {/* Collective members are named as members (web, D49), never as shared
+                through a linked account; only link venues get the linked note. */}
+            {collectiveNote ? (
+              <Text variant="bodySmall" tone="muted" style={styles.venueNote}>
+                {collectiveNote}
+              </Text>
+            ) : null}
+            {linkedVenues.names.length > 0 ? (
+              <Text variant="bodySmall" tone="muted" style={styles.venueNote}>
+                Includes calendars from {linkedVenues.fromColumns ? linkedVenues.names.join(', ') : listVenueNames(linkedVenues.names)},
                 shared with you through a linked account.
               </Text>
+            ) : null}
+
+            {showVenues ? (
+              <View style={styles.venueTable}>
+                <ReportTable
+                  caption="Booked revenue by venue"
+                  columns={venueColumns}
+                  rows={venues}
+                  rowKey={(v) => v.venue_id}
+                  footer={venueFooter}
+                />
+              </View>
             ) : null}
 
             {data.periods.length === 0 || columns.length === 0 ? (
@@ -552,6 +675,16 @@ const styles = StyleSheet.create({
   },
   inlineError: {
     marginBottom: spacing.sm,
+  },
+  scopeNote: {
+    marginBottom: spacing.sm,
+  },
+  venueNote: {
+    marginBottom: spacing.sm,
+  },
+  venueTable: {
+    marginTop: spacing.xs,
+    marginBottom: spacing.md,
   },
   tiles: {
     flexDirection: 'row',

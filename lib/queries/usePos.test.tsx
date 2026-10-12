@@ -81,7 +81,6 @@ describe('the POS gate', () => {
         queue: usePosQueue(),
         list: usePosSaleList({ status: 'open' }),
         sale: usePosSale('sale-1'),
-        access: usePosReportAccess(),
       }),
       { wrapper },
     );
@@ -104,6 +103,50 @@ describe('the POS gate', () => {
     expect(init.accessToken).toBe(mockToken);
     expect(init.headers['X-ResNeo-Client']).toMatch(/^(ios|android|web)/);
     expect(init.headers['x-pos-device']).toBeTruthy();
+  });
+});
+
+// Reports asks the server whether Takings and Sales exist here at every venue, as the web does: the
+// server says yes where Checkout is on OR the venue has a completed sale, so a venue that switched
+// Checkout off keeps its history (web `pos-access/route.ts`, plan §4.18, PQ69).
+describe("Reports' Takings and Sales access", () => {
+  it.each([
+    ['off', { pos_enabled: false }],
+    ['missing (an older web deploy)', { waitlist_v2: true }],
+  ])('is asked with Checkout %s, as a plain request without the POS headers', async (_label, resolved) => {
+    mockResolved = resolved as Record<string, boolean>;
+    mockApiFetch.mockResolvedValue({ visible: true, pos_enabled: false, has_sales: true, can_view: true, can_export: true });
+    const { wrapper } = setup();
+    const { result } = await renderHook(() => usePosReportAccess(), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.visible).toBe(true);
+    const [path, init] = mockApiFetch.mock.calls[0] as [string, { accessToken: string; headers?: Record<string, string> }];
+    expect(path).toBe('/api/venue/reports/pos-access');
+    expect(init.accessToken).toBe(mockToken);
+    expect(init.headers?.['X-ResNeo-Client']).toBeUndefined();
+    // Nothing else POS was asked for.
+    expect(mockApiFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the POS headers with Checkout on, as before', async () => {
+    mockApiFetch.mockResolvedValue({ visible: true, pos_enabled: true, has_sales: false, can_view: true, can_export: true });
+    const { wrapper } = setup();
+    const { result } = await renderHook(() => usePosReportAccess(), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    const [path, init] = mockApiFetch.mock.calls[0] as [string, { headers: Record<string, string> }];
+    expect(path).toBe('/api/venue/reports/pos-access');
+    expect(init.headers['X-ResNeo-Client']).toMatch(/^(ios|android|web)/);
+  });
+
+  it('waits while it is not enabled (the staff check still loading)', async () => {
+    mockResolved = { pos_enabled: false };
+    const { wrapper } = setup();
+    const { result } = await renderHook(() => usePosReportAccess({ enabled: false }), { wrapper });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(result.current.fetchStatus).toBe('idle');
+    expect(mockApiFetch).not.toHaveBeenCalled();
   });
 });
 

@@ -8,10 +8,13 @@
  *   - GET /api/venue/guests?sort=paid_deposit_desc          (lifetime value)
  * Class-commerce KPIs are cookie-only on the web (/api/venue/class-commerce-reports
  * uses bare createClient()), so class venues get an inline web-dashboard note.
+ * Both cards are the whole venue: the Reports calendar filter does not reach these
+ * routes, so each card says so while a calendar is chosen.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
+import { WholeVenueNote } from '@/components/reports/ReportCalendarFilter';
 import { SvgBarChart } from '@/components/reports/SvgBarChart';
 import { SvgLineChart } from '@/components/reports/SvgLineChart';
 import { Card } from '@/components/ui/Card';
@@ -262,6 +265,7 @@ export function HistorySection({
           exportDisabled={!hasActivity}
           onExportBlocked={() => notify('notice', 'No history to export in this range.')}
         />
+        <WholeVenueNote style={styles.wholeVenue} />
 
         <View style={styles.rangeControls}>
           <Segmented
@@ -413,6 +417,7 @@ export function HistorySection({
           exportDisabled={clients.length === 0}
           onExportBlocked={() => notify('notice', 'No clients to export yet.')}
         />
+        <WholeVenueNote style={styles.wholeVenue} />
         <Text variant="caption" tone="muted" style={styles.ltvCaption}>
           Top clients by lifetime deposits collected (all time).
         </Text>
@@ -538,5 +543,8 @@ const styles = StyleSheet.create({
   },
   ltvCaption: {
     marginTop: spacing.xs,
+  },
+  wholeVenue: {
+    marginTop: spacing.sm,
   },
 });

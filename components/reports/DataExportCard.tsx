@@ -10,6 +10,7 @@
 import { useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
+import { WholeVenueNote } from '@/components/reports/ReportCalendarFilter';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Chip } from '@/components/ui/Chip';
@@ -186,6 +187,8 @@ export function DataExportCard({
   return (
     <Card style={styles.card}>
       <Text variant="label">Export your data</Text>
+      {/* The export is the whole venue's; the Reports calendar filter never applies to it. */}
+      <WholeVenueNote variant="files" />
       <Text variant="bodySmall" tone="secondary">
         {`Take a copy of everything ResNeo holds for your venue: your ${bookingWord.toLowerCase()}s, your ${clientLabel.toLowerCase()}s and your services. Choose what to export, which dates, and the file type. Every file includes the full details, so you can move to another system or keep a backup at any time.`}
       </Text>

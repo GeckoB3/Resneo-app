@@ -17,10 +17,14 @@ import type { CashUpRow, PosRangeChoice, ReportGrain } from '@/types/pos-reports
  * the cash older app builds took while no till session was open. Shows only once the venue has
  * closed a till or has such cash. The expected figure appears only for people with
  * `see_expected_cash`, which the server decides.
+ *
+ * Always the whole venue: never sent the Reports calendar filter (the Takings tab it sits in says
+ * so while a calendar is chosen). Shown with Takings only, so it reads with Checkout off too
+ * (`reportsVisible`).
  */
 export function CashUpsCard({ choice, grain, canExport }: { choice: PosRangeChoice; grain: ReportGrain; canExport: boolean }) {
   const { colors } = useTheme();
-  const q = useCashUps(choice, grain);
+  const q = useCashUps(choice, grain, { reportsVisible: true });
   const download = useReportDownload();
   const data = q.data;
   const money = (pence: number) => formatMoneyExact(pence, data?.currency);

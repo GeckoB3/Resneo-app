@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 
-import { ApiError } from '@/lib/api/client';
+import { ApiError, apiFetch } from '@/lib/api/client';
 import { isBackendConfigured } from '@/lib/env';
 import { isRequestReused, posFetch, posPaths, staleSaleFrom, type PosMethod } from '@/lib/pos/api';
 import { isPosEnabled, posFinishingOpen } from '@/lib/pos/pos-enabled';
@@ -46,7 +46,9 @@ import type {
  *
  * THE GATE: every query here is disabled unless the venue's resolved `pos_enabled` is true, so a
  * venue without POS never sends a single `/api/venue/pos` request (plan §4.22, test plan DEV-04,
- * APP-08). Writes are only reachable from screens that are themselves behind the same gate.
+ * APP-08). Writes are only reachable from screens that are themselves behind the same gate. The one
+ * exception is Reports' access question (`usePosReportAccess`, `/api/venue/reports/pos-access`),
+ * which the web asks at every venue so a venue with Checkout off keeps its sales history.
  *
  * Sale writes: every one sends the `version` the app loaded and answers with the whole sale, which
  * replaces the cached one. A 412 POS_SALE_STALE carries the fresh sale: it replaces the cached one
@@ -68,11 +70,22 @@ export function usePosEnabled(): boolean {
  * section 7.2): the sale list and a sale, and the online orders, whose routes stay open on the
  * server with Checkout off (`allowWhenOff`). They are asked then only at a venue that has had
  * Checkout (`posFinishingOpen`); a venue that never had it still sends nothing.
+ *
+ * `reports` is for Reports' Takings and Sales reads (takings, sales, tips, cash-ups, payouts) from
+ * a screen that has the server's word that this venue has them (`usePosReportAccess`, `visible`):
+ * with Checkout off, a venue with past sales keeps those reports, and their routes serve them
+ * (plan §4.18, PQ69). Everywhere else the switch alone decides, as before.
  */
-export function usePosGate(extra = true, opts: { finishing?: boolean } = {}): { accessToken: string | null; enabled: boolean } {
+export function usePosGate(
+  extra = true,
+  opts: { finishing?: boolean; reports?: boolean } = {},
+): { accessToken: string | null; enabled: boolean } {
   const accessToken = useAccessToken();
   const venue = useVenue();
-  const open = isPosEnabled(venue.data) || (opts.finishing === true && posFinishingOpen(venue.data));
+  const open =
+    isPosEnabled(venue.data) ||
+    (opts.finishing === true && posFinishingOpen(venue.data)) ||
+    opts.reports === true;
   return { accessToken, enabled: extra && open && isBackendConfigured() && accessToken !== null };
 }
 
@@ -347,14 +360,26 @@ export async function lookupVoucher(accessToken: string, normalisedCode: string)
 
 // ─── Reports ────────────────────────────────────────────────────────────────
 
-/** Whether Reports shows Takings and Sales. Asked only at venues with `pos_enabled`. */
+/**
+ * Whether Reports shows Takings and Sales (`GET /api/venue/reports/pos-access`). Asked at every
+ * venue, as the web's Reports ask it: the server shows them where Checkout is on OR the venue has
+ * a completed sale (`visible`), so a venue that switched Checkout off keeps its takings and sales
+ * history (plan §4.18, PQ69), and only the server knows whether there are sales. With Checkout on
+ * it goes through `posFetch` as it always has; with it off it is a plain request, so the POS
+ * headers still ride on POS venues' requests only. Reports is its only caller.
+ */
 export function usePosReportAccess(options: { enabled?: boolean } = {}) {
-  const { accessToken, enabled } = usePosGate(options.enabled ?? true);
+  const accessToken = useAccessToken();
+  const posOn = usePosEnabled();
+  const enabled = (options.enabled ?? true) && isBackendConfigured() && accessToken !== null;
   return useQuery({
     queryKey: queryKeys.pos.reportAccess(accessToken),
     enabled,
     staleTime: 60_000,
-    queryFn: () => posFetch<PosReportAccess>(posPaths.reportAccess, { accessToken: accessToken! }),
+    queryFn: () =>
+      posOn
+        ? posFetch<PosReportAccess>(posPaths.reportAccess, { accessToken: accessToken! })
+        : apiFetch<PosReportAccess>(posPaths.reportAccess, { accessToken: accessToken! }),
   });
 }
 

@@ -2,14 +2,16 @@
  * The client side of the booked-revenue report (web #191,
  * `BookedRevenueSection.tsx` + `src/lib/reports/booked-revenue.ts`): the
  * range choice, the query it becomes, the period labels, the net figure with
- * or without no-shows, the bar colours and the CSV rows. The aggregation
- * itself is the server's; the app reads its answer.
+ * or without no-shows, the bar colours, the venue breakdown and its notes, and
+ * the CSV rows. The aggregation itself is the server's; the app reads its answer.
  */
+import { calendarFileTag, withCalendarCsvLine, withCalendarParam } from '@/lib/reports/report-calendar';
 import type {
   BookedRevenueCell,
   BookedRevenueGrain,
   BookedRevenuePreset,
   BookedRevenueReport,
+  BookedRevenueVenueCell,
 } from '@/types/reports';
 
 export const BOOKED_REVENUE_PRESETS: { id: BookedRevenuePreset; label: string }[] = [
@@ -52,15 +54,22 @@ export type BookedRevenueRangeChoice =
   | { kind: 'preset'; preset: BookedRevenuePreset }
   | { kind: 'custom'; from: string; to: string };
 
-/** The query string for a choice and grain (the server resolves presets from the venue's today). */
-export function bookedRevenueQuery(choice: BookedRevenueRangeChoice, grain: BookedRevenueGrain): string {
+/**
+ * The query string for a choice and grain (the server resolves presets from the venue's today),
+ * with `calendar_id` when one calendar's figures are asked for.
+ */
+export function bookedRevenueQuery(
+  choice: BookedRevenueRangeChoice,
+  grain: BookedRevenueGrain,
+  calendarId: string | null = null,
+): string {
   const p = new URLSearchParams({ grain });
   if (choice.kind === 'preset') p.set('preset', choice.preset);
   else {
     p.set('from', choice.from);
     p.set('to', choice.to);
   }
-  return p.toString();
+  return withCalendarParam(p.toString(), calendarId);
 }
 
 function parseYmd(ymd: string): Date {
@@ -205,8 +214,70 @@ export function bookedRevenueColumnName(col: { name: string; linked: boolean; ve
   return col.linked ? `${col.name} (${col.venue_name})` : col.name;
 }
 
-/** The CSV the web exports, row for row. */
-export function bookedRevenueCsvRows(data: BookedRevenueReport, includeNoShows: boolean): string[][] {
+/** The part of a venue's net figure booked through the collective's page (web `collectiveNetPence`). */
+export function bookedRevenueCollectiveNetPence(
+  cell: BookedRevenueVenueCell | undefined,
+  includeNoShows: boolean,
+): number {
+  if (!cell) return 0;
+  return cell.collective_booked_pence + (includeNoShows ? cell.collective_no_show_pence : 0);
+}
+
+/** "A", "A and B", "A, B and C" (web `listNames`). */
+export function listVenueNames(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? '';
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
+/**
+ * Whether the report is split by venue (web `showVenueBreakdown`): more than one venue, or a
+ * collective. An older server sends no venue list, which reads as no breakdown rather than a failure.
+ * One calendar is one column of your own (the server leaves partners out), so never with a calendar
+ * chosen.
+ */
+export function showBookedRevenueVenues(
+  data: Pick<BookedRevenueReport, 'venues' | 'collective'>,
+  calendar: { name: string } | null = null,
+): boolean {
+  if (calendar) return false;
+  return (data.venues ?? []).length > 1 || data.collective != null;
+}
+
+/**
+ * The note naming the other members of this venue's collective (web, collectives D49): every venue
+ * in a live collective sees each venue's booked revenue, venue by venue. Null when there are none.
+ * They are never described as shared through a linked account: their figures come from the
+ * membership, not from a link.
+ */
+export function bookedRevenueCollectiveNote(data: Pick<BookedRevenueReport, 'venues' | 'collective'>): string | null {
+  const collective = data.collective ?? null;
+  const names = (data.venues ?? []).filter((v) => v.access === 'collective').map((v) => v.venue_name);
+  if (!collective || names.length === 0) return null;
+  return `Includes ${listVenueNames(names)}, ${names.length === 1 ? 'which is' : 'which are'} part of ${collective.name} with you. Every venue in a collective sees each venue's booked revenue, venue by venue.`;
+}
+
+/**
+ * The venues shared through a linked account (web): those the report lists with `access: 'link'`,
+ * or, from an older server with no venue list, the venues of the linked columns.
+ */
+export function bookedRevenueLinkedVenueNames(
+  data: Pick<BookedRevenueReport, 'venues' | 'columns'>,
+): { names: string[]; fromColumns: boolean } {
+  const venues = data.venues ?? [];
+  const names = venues.filter((v) => v.access === 'link').map((v) => v.venue_name);
+  if (names.length > 0 || venues.length > 0) return { names, fromColumns: false };
+  return { names: [...new Set(data.columns.filter((c) => c.linked).map((c) => c.venue_name))], fromColumns: true };
+}
+
+/**
+ * The CSV the web exports, row for row, with the venue breakdown after the totals when there is one.
+ * For one calendar it starts with "Showing {calendar} only" and has no venue breakdown.
+ */
+export function bookedRevenueCsvRows(
+  data: BookedRevenueReport,
+  includeNoShows: boolean,
+  calendar: { name: string } | null = null,
+): string[][] {
   const header = ['Period', ...data.columns.map(bookedRevenueColumnName), 'Total', 'No-shows'];
   const money = (pence: number) => (pence / 100).toFixed(2);
   const rows = data.periods.map((p) => [
@@ -221,9 +292,23 @@ export function bookedRevenueCsvRows(data: BookedRevenueReport, includeNoShows: 
     money(bookedRevenueNetPence(data.totals, includeNoShows)),
     money(data.totals.no_show_pence),
   ]);
-  return [header, ...rows];
+  if (showBookedRevenueVenues(data, calendar)) {
+    const collective = data.collective ?? null;
+    rows.push([]);
+    rows.push(['Venue', 'Booked revenue', collective ? `Through ${collective.name}` : 'Through a collective page']);
+    for (const v of data.venues ?? []) {
+      const cell = data.totals.by_venue?.[v.venue_id];
+      rows.push([
+        v.venue_name,
+        money(bookedRevenueNetPence(cell, includeNoShows)),
+        money(bookedRevenueCollectiveNetPence(cell, includeNoShows)),
+      ]);
+    }
+  }
+  return withCalendarCsvLine([header, ...rows], calendar);
 }
 
-export function bookedRevenueCsvFilename(data: BookedRevenueReport): string {
-  return `booked-revenue-${data.from}-${data.to}-${data.grain}.csv`;
+/** The web's file name, with the calendar's name in it for one calendar ("booked-revenue-jess-..."). */
+export function bookedRevenueCsvFilename(data: BookedRevenueReport, calendar: { name: string } | null = null): string {
+  return `booked-revenue${calendarFileTag(calendar)}-${data.from}-${data.to}-${data.grain}.csv`;
 }

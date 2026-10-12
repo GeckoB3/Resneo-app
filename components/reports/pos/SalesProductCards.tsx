@@ -1,6 +1,7 @@
 import { StyleSheet, View } from 'react-native';
 
 import { KpiTiles, PosReportCard, ReportTable, type Column } from '@/components/reports/pos/PosReportUi';
+import { WholeVenueNote } from '@/components/reports/ReportCalendarFilter';
 import { Text } from '@/components/ui/Text';
 import { reportsCopy, type ReportsCopyId } from '@/lib/pos/reports-copy';
 import { marginPercentLabel, sellThroughPercent, stockRowName } from '@/lib/reports/pos-report-format';
@@ -11,7 +12,8 @@ import type { SalesProductFigures, SalesProductsReport } from '@/types/pos-repor
  * The Sales tab's product cards (web `SalesProductSections.tsx`, UX spec §11.2 `rep.s.byProduct`,
  * `rep.s.byBrand`, `rep.s.margin`): margin and cost of products from each sale's cost snapshot,
  * sales by product, brand and category with margin, and the stock now (value, not sold in 90 days,
- * sell-through). Shown once the venue has sold a product or counts stock.
+ * sell-through). Shown once the venue has sold a product or counts stock. The stock card is the
+ * whole venue whatever calendar Reports is showing, and says so while one is chosen.
  */
 export function SalesProductCards({
   products,
@@ -104,6 +106,7 @@ export function SalesProductCards({
 
       {s.tracked > 0 ? (
         <PosReportCard title={reportsCopy('sl.stock')} onExport={csv('product_stock', 'csv.sales.stock')}>
+          <WholeVenueNote />
           <KpiTiles
             items={[
               { label: reportsCopy('sl.stock.cost'), value: money(s.value_cost_pence) },

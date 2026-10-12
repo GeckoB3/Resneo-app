@@ -8,6 +8,7 @@
  * Pure: no React and no I/O, so each report can be pinned by a test.
  */
 import { bookingStatusDisplayLabel } from '@/lib/booking/infer-booking-row-model';
+import { calendarFileTag } from '@/lib/reports/report-calendar';
 import { isUnifiedSchedulingVenue } from '@/lib/venue/venue-experience';
 import type {
   ReportAppointmentInsights,
@@ -37,6 +38,11 @@ export interface ReportCsvContext {
 export interface ReportRange {
   from: string;
   to: string;
+  /**
+   * The calendar the figures are for (the payload's `calendar` echo): its name goes in the file
+   * name, as the web's do ("report1-booking-summary-jess-..."). Absent or null: the whole venue.
+   */
+  calendar?: { name: string } | null;
 }
 
 const pounds = (pence: number): string => (pence / 100).toFixed(2);
@@ -101,7 +107,7 @@ export function buildReport1Csv(
 ): ReportCsv {
   const { appointment: appt, terminology } = ctx;
   return {
-    filename: `report1-booking-summary-${range.from}-${range.to}.csv`,
+    filename: `report1-booking-summary${calendarFileTag(range.calendar)}-${range.from}-${range.to}.csv`,
     rows: [
       ['Metric', 'Value'],
       [
@@ -137,7 +143,7 @@ export function buildReport2Csv(
   ctx: ReportCsvContext,
 ): ReportCsv {
   return {
-    filename: `report2-no-show-rate-${range.from}-${range.to}.csv`,
+    filename: `report2-no-show-rate${calendarFileTag(range.calendar)}-${range.from}-${range.to}.csv`,
     rows: [
       ctx.appointment
         ? ['Date', 'No-shows', 'Attended or no-show (count)', 'Rate %']
@@ -161,7 +167,7 @@ export function buildReport3Csv(
 ): ReportCsv {
   const { appointment: appt, terminology } = ctx;
   return {
-    filename: `report3-cancellation-${range.from}-${range.to}.csv`,
+    filename: `report3-cancellation${calendarFileTag(range.calendar)}-${range.from}-${range.to}.csv`,
     rows: [
       ['Metric', 'Value'],
       [
@@ -184,7 +190,7 @@ export function buildReport3Csv(
 
 export function buildReport4Csv(deposit: ReportDeposit, range: ReportRange): ReportCsv {
   return {
-    filename: `report4-deposit-${range.from}-${range.to}.csv`,
+    filename: `report4-deposit${calendarFileTag(range.calendar)}-${range.from}-${range.to}.csv`,
     rows: [
       ['Metric', 'Pence', 'GBP'],
       [
@@ -221,7 +227,7 @@ export function buildReport5Csv(
   range: ReportRange,
 ): ReportCsv {
   return {
-    filename: `report5-table-utilisation-${range.from}-${range.to}.csv`,
+    filename: `report5-table-utilisation${calendarFileTag(range.calendar)}-${range.from}-${range.to}.csv`,
     rows: [
       ['Table', 'Utilisation %', 'Occupied hours', 'Available hours'],
       ...rows.map((row) => [
@@ -244,7 +250,7 @@ export function buildReport7Csv(
   const bookingPlural = `${ctx.terminology.booking}s`;
   const addons = insights.addon_revenue;
   return {
-    filename: `report7-appointment-insights-${range.from}-${range.to}.csv`,
+    filename: `report7-appointment-insights${calendarFileTag(range.calendar)}-${range.from}-${range.to}.csv`,
     rows: [
       [ctx.terminology.staff, bookingPlural, 'Arrived or completed'],
       ...insights.by_practitioner.map((row) => [
@@ -287,7 +293,7 @@ export function buildEventTicketTiersCsv(
   range: ReportRange,
 ): ReportCsv {
   return {
-    filename: `report-event-ticket-tiers-${range.from}-${range.to}.csv`,
+    filename: `report-event-ticket-tiers${calendarFileTag(range.calendar)}-${range.from}-${range.to}.csv`,
     rows: [
       ['Ticket type', 'Tickets sold', 'Bookings', 'Revenue (£)'],
       ...rows.map((row) => [
@@ -305,7 +311,7 @@ export function buildResourceUtilisationCsv(
   range: ReportRange,
 ): ReportCsv {
   return {
-    filename: `report-resource-utilisation-${range.from}-${range.to}.csv`,
+    filename: `report-resource-utilisation${calendarFileTag(range.calendar)}-${range.from}-${range.to}.csv`,
     rows: [
       ['Resource', 'Bookings', 'Utilisation %', 'Booked hours', 'Available hours'],
       ...rows.map((row) => [

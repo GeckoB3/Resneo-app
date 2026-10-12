@@ -3,6 +3,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { CashUpsCard } from '@/components/reports/pos/CashUpsCard';
 import { PayoutsCard } from '@/components/reports/pos/PayoutsCard';
+import { WholeVenueNote } from '@/components/reports/ReportCalendarFilter';
 import {
   FigureList,
   KpiTiles,
@@ -57,12 +58,20 @@ function moneyOf(r: Pick<TakingsAmounts, 'payments_pence' | 'refunds_pence' | 'n
  *
  * It leads with the numbers (Part 2 mock-up 3): the range on one line, the four figures, what the
  * report counts, then the tables, with In, Out and Net in columns and each row's tips under it.
+ *
+ * Shown only where Reports has the server's word that the venue has Takings (pos-access `visible`),
+ * which with Checkout off is a venue with past sales, so its reads run then too (`reportsVisible`).
+ *
+ * Always the whole venue (web 90ff4d17): the money journal is never split by calendar, one payment
+ * often covering several people's work, so the Reports calendar filter is never sent here, nor to
+ * the tip records, cash-ups or payouts. With a calendar chosen the tab says so, and the picker is
+ * greyed out, as on the web.
  */
 export function TakingsSection({ canExport, isAdmin, today }: { canExport: boolean; isAdmin: boolean; today: string }) {
   const { colors } = useTheme();
   const [choice, setChoice] = useState<PosRangeChoice>({ kind: 'preset', preset: 'this-week' });
   const [grain, setGrain] = useState<ReportGrain>('day');
-  const q = useTakingsRange(choice, grain);
+  const q = useTakingsRange(choice, grain, { reportsVisible: true });
   const data = q.data;
   const money = (pence: number) => formatMoneyExact(pence, data?.currency);
   const download = useReportDownload();
@@ -95,6 +104,9 @@ export function TakingsSection({ canExport, isAdmin, today }: { canExport: boole
         loading={q.isFetching}
         currentRange={data ? { from: data.from, to: data.to } : null}
       />
+
+      {/* The whole venue's, whichever calendar is chosen for the other tabs. */}
+      <WholeVenueNote variant="tab" />
 
       {q.isError ? <ReportLoadError message={posErrorMessage(q.error, reportsCopy('rep.error'))} onRetry={() => void q.refetch()} /> : null}
       {!data && q.isLoading ? <DetailSkeleton /> : null}

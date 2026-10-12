@@ -1,4 +1,5 @@
 import type { PosReportPreset, SalesPersonRow, TakingsAmounts } from '@/types/pos';
+import type { ReportCalendarRef } from '@/types/reports';
 
 /**
  * Reports' POS tabs as the web routes return them (the full payloads; `types/pos.ts` keeps the
@@ -95,6 +96,11 @@ export interface TakingsPayload {
   vat: VatReport;
   tips: TipsSummaryFull;
   can_export: boolean;
+  /**
+   * The calendar these figures are for when one was asked for (`calendar_id`). Null or absent is
+   * the whole venue, which a report that does not split by calendar answers whatever was asked.
+   */
+  calendar?: ReportCalendarRef | null;
 }
 
 // ─── Cash-ups (GET /api/venue/reports/cash-ups) ───────────────────────────────
@@ -216,6 +222,11 @@ export interface SalesPayload {
   discounts_by_person: { staff_id: string | null; name: string | null; discount_count: number; amount_pence: number }[];
   /** Pass 4: the product sections, absent from older servers. */
   products?: SalesProductsReport;
+  /**
+   * The calendar these figures are for when one was asked for (`calendar_id`); null or absent is
+   * the whole venue. Stock now is the whole venue's either way.
+   */
+  calendar?: ReportCalendarRef | null;
 }
 
 // ─── Commission (GET /api/venue/pos/commission/report) ────────────────────────
@@ -264,6 +275,8 @@ export interface CommissionReport {
   currency: string;
   receipt_prefix: string | null;
   can_export: boolean;
+  /** The calendar these figures are for when one was asked for; null or absent is the whole venue. */
+  calendar?: ReportCalendarRef | null;
 }
 
 // ─── Vouchers (GET /api/venue/pos/vouchers/report, /vouchers/[id]) ────────────

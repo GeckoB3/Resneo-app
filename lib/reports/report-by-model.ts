@@ -12,6 +12,7 @@
  * @see _reference/Resneo/src/app/api/venue/reports/route.ts (`report_by_booking_model`)
  */
 import { formatPence } from '@/lib/format';
+import { calendarFileTag } from '@/lib/reports/report-calendar';
 import type { ReportByModelRow } from '@/types/reports';
 
 /** A money cell that never collapses to an em-dash inside a CSV. */
@@ -61,9 +62,12 @@ export function showBookingTypeBreakdown(
   return visibleModelRows(rows).length > 1;
 }
 
-/** The filename the web downloads this breakdown as (ReportsView.tsx:514). */
-export function modelBreakdownCsvFilename(from: string, to: string): string {
-  return `report-by-booking-type-${from}-${to}.csv`;
+/**
+ * The filename the web downloads this breakdown as (ReportsView.tsx:514), with the calendar's name
+ * in it for one calendar's figures (web 90ff4d17).
+ */
+export function modelBreakdownCsvFilename(from: string, to: string, calendar: { name: string } | null = null): string {
+  return `report-by-booking-type${calendarFileTag(calendar)}-${from}-${to}.csv`;
 }
 
 /**

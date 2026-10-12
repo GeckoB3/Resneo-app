@@ -1,6 +1,12 @@
 import { useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
+import {
+  CalendarRefusal,
+  CalendarScopeNote,
+  useCalendarRefusal,
+  useReportCalendar,
+} from '@/components/reports/ReportCalendarFilter';
 import { SvgStackedBarChart, type StackedRow, type StackedSeries } from '@/components/reports/SvgStackedBarChart';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -27,6 +33,7 @@ import {
   newBookingsRangeError,
   type NewBookingsRangeChoice,
 } from '@/lib/reports/new-bookings';
+import { reportCalendarCopy } from '@/lib/reports/report-calendar';
 import { useToast } from '@/providers/ToastProvider';
 import { spacing } from '@/theme/index';
 import type { NewBookingsGrain } from '@/types/reports';
@@ -35,7 +42,8 @@ import type { NewBookingsGrain } from '@/types/reports';
 
 /**
  * Reports, New bookings (web `NewBookingsSection.tsx`, 2026-09-18): bookings MADE per day, week
- * or month, split by how they came in, with a preset or custom range and a CSV.
+ * or month, split by how they came in, with a preset or custom range and a CSV. With a calendar
+ * chosen on the Reports screen, only that calendar's bookings (`calendar_id`).
  */
 export function NewBookingsSection({ bookingWord, today, enabled = true }: { bookingWord: string; today: string; enabled?: boolean }) {
   const toast = useToast();
@@ -44,8 +52,10 @@ export function NewBookingsSection({ bookingWord, today, enabled = true }: { boo
   const [customFrom, setCustomFrom] = useState(today);
   const [customTo, setCustomTo] = useState(today);
   const [grain, setGrain] = useState<NewBookingsGrain>('day');
-  const query = useNewBookings(choice, grain, enabled);
+  const { calendar } = useReportCalendar();
+  const query = useNewBookings(choice, grain, enabled, calendar?.id ?? null);
   const data = query.data;
+  const refusal = useCalendarRefusal(query.error);
 
   const channels = useMemo(
     () => NEW_BOOKING_CHANNELS.filter((c) => c !== 'linked_venue' || (data?.totals.by_channel.linked_venue ?? 0) > 0),
@@ -75,7 +85,7 @@ export function NewBookingsSection({ bookingWord, today, enabled = true }: { boo
 
   const exportCsv = async () => {
     if (!data) return;
-    const result = await buildAndShareCsv(newBookingsCsvFilename(data), newBookingsCsvRows(data));
+    const result = await buildAndShareCsv(newBookingsCsvFilename(data, calendar), newBookingsCsvRows(data, calendar));
     if (!result.ok) toast.error(result.message);
   };
 
@@ -133,13 +143,18 @@ export function NewBookingsSection({ bookingWord, today, enabled = true }: { boo
       {query.isLoading ? (
         <DetailSkeleton />
       ) : query.isError ? (
-        <ErrorState message={query.error instanceof ApiError ? query.error.message : 'Could not load new bookings.'} onRetry={() => void query.refetch()} />
+        refusal ? (
+          <CalendarRefusal message={refusal} />
+        ) : (
+          <ErrorState message={query.error instanceof ApiError ? query.error.message : 'Could not load new bookings.'} onRetry={() => void query.refetch()} />
+        )
       ) : data ? (
         <>
           <Card style={styles.card}>
             <Text variant="caption" tone="muted">
               {rangeLabel}
             </Text>
+            <CalendarScopeNote echoed={data.calendar} detail={reportCalendarCopy('cal.detail.newBookings')} />
             <View style={styles.tiles}>
               <StatTile label={`New ${bookingWord.toLowerCase()}s`} value={String(data.totals.total)} style={styles.tile} />
               {channels.map((c) => (

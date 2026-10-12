@@ -24,6 +24,10 @@ import type { PosRangeChoice, ReportGrain } from '@/types/pos-reports';
  * else): each payout Stripe is sending to the bank, when it arrives, the amount, Stripe's fees and
  * its status, opening to the payments, refunds and fees it covered. Read-only; there is no CSV on
  * the web either. Instant payouts are v1.x.
+ *
+ * Always the whole venue: never sent the Reports calendar filter (the Takings tab it sits in says
+ * so while a calendar is chosen). Shown with Takings only, so it reads with Checkout off too
+ * (`reportsVisible`).
  */
 
 const STATUS_TONE: Record<PosPayoutStatus, BadgeTone> = {
@@ -36,7 +40,7 @@ const STATUS_TONE: Record<PosPayoutStatus, BadgeTone> = {
 
 export function PayoutsCard({ choice, grain }: { choice: PosRangeChoice; grain: ReportGrain }) {
   const t = usePosT();
-  const q = usePayoutsRange(choice, grain);
+  const q = usePayoutsRange(choice, grain, { reportsVisible: true });
   const [open, setOpen] = useState<string | null>(null);
   if (q.error instanceof ApiError && q.error.status === 403) return null;
   const data = q.data;
@@ -118,7 +122,7 @@ function PayoutDetail({
 }) {
   const t = usePosT();
   const { colors } = useTheme();
-  const q = usePayoutDetailRange(choice, grain, payoutId);
+  const q = usePayoutDetailRange(choice, grain, payoutId, { reportsVisible: true });
   const d = q.data;
   const money = (pence: number) => formatMoneyExact(pence, d?.currency ?? currency);
   return (

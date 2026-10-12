@@ -141,6 +141,20 @@ describe('report 1 CSV', () => {
   });
 });
 
+describe('a calendar in the file name (web 90ff4d17)', () => {
+  it("names one calendar's figures, and leaves the whole venue's as they were", () => {
+    expect(buildReport1Csv(summary, { ...RANGE, calendar: { name: 'Jess' } }, APPOINTMENT).filename).toBe(
+      'report1-booking-summary-jess-2026-09-01-2026-09-30.csv',
+    );
+    expect(buildReport1Csv(summary, { ...RANGE, calendar: null }, APPOINTMENT).filename).toBe(
+      'report1-booking-summary-2026-09-01-2026-09-30.csv',
+    );
+    expect(buildReport5Csv([], { ...RANGE, calendar: { name: 'Room 2!' } }).filename).toBe(
+      'report5-table-utilisation-room-2-2026-09-01-2026-09-30.csv',
+    );
+  });
+});
+
 describe('report 2 CSV', () => {
   it('uses the web filename and its two header shapes', () => {
     const appt = buildReport2Csv(series, RANGE, APPOINTMENT);

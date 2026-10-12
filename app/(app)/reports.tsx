@@ -9,6 +9,13 @@ import { SmsUsageBanner } from '@/components/reports/SmsUsageBanner';
 import { CommissionSection, SalesSection, TakingsSection, VouchersSection } from '@/components/reports/PosReportSections';
 import { BookingLogEmailCard } from '@/components/reports/BookingLogEmailCard';
 import { ClientsTab } from '@/components/reports/ClientsTab';
+import {
+  CalendarRefusal,
+  CalendarScopeNote,
+  ReportCalendarPicker,
+  ReportCalendarProvider,
+  useReportCalendarFilter,
+} from '@/components/reports/ReportCalendarFilter';
 import { StaffPosReportsPanel } from '@/components/reports/pos/StaffPosReportsPanel';
 import { DataExportCard } from '@/components/reports/DataExportCard';
 import { EventTicketTiersCard } from '@/components/reports/EventTicketTiersCard';
@@ -35,7 +42,7 @@ import { bookingStatusDisplayLabel } from '@/lib/booking/infer-booking-row-model
 import { addDaysToDateStr, formatReportRangeLabel } from '@/lib/dates/venue-dates';
 import { formatPence } from '@/lib/format';
 import { hapticTap } from '@/lib/haptics';
-import { isVouchersEnabled } from '@/lib/pos/pos-enabled';
+import { isPosEnabled, isVouchersEnabled } from '@/lib/pos/pos-enabled';
 import { reportsCopy } from '@/lib/pos/reports-copy';
 import { calendarDateInTimeZone } from '@/lib/queries/useBookingsList';
 import { usePosReportAccess } from '@/lib/queries/usePos';
@@ -43,6 +50,7 @@ import { useVenue } from '@/lib/queries/useVenue';
 import { useReports } from '@/lib/queries/useReports';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { aggregateSourcesByLabel } from '@/lib/reports/csv-export';
+import { calendarRefusalMessage, reportCalendarCopy } from '@/lib/reports/report-calendar';
 import {
   buildReport1Csv,
   buildReport2Csv,
@@ -117,12 +125,21 @@ export default function ReportsScreen() {
     (TAB_PARAMS as string[]).includes(tabParam ?? '') ? (tabParam as MainTab) : 'overview',
   );
 
-  const query = useReports(appliedFrom, appliedTo, isAdmin);
   /**
-   * Takings, Sales, Vouchers and Commission (POS plan P7-4, web ReportsView). Asked only at venues
-   * with `pos_enabled` (the hook is gated), so every other venue makes no new request and keeps
-   * the four-option control below unchanged. A team member who is not an admin gets Takings and
-   * Sales only, with `view_reports` (web `StaffPosReportsPanel`).
+   * The Calendar picker (lib/reports/report-calendar.ts): one calendar's figures, or all calendars.
+   * It lives here, above the tabs, so the choice holds while moving between them, and reaches each
+   * section through `ReportCalendarProvider`. A team member's panel has its own.
+   */
+  const calendarFilter = useReportCalendarFilter(isAdmin);
+  const calendarId = calendarFilter.calendar?.id ?? null;
+
+  const query = useReports(appliedFrom, appliedTo, isAdmin, calendarId);
+  /**
+   * Takings, Sales, Vouchers and Commission (POS plan P7-4, web ReportsView). Asked at every venue,
+   * as the web asks: the server shows Takings and Sales where Checkout is on or the venue has a
+   * completed sale (`visible`, plan §4.18, PQ69), so a venue that switched Checkout off keeps its
+   * sales history. Where it says no, the four-option control below is unchanged. A team member who
+   * is not an admin gets Takings and Sales only, with `view_reports` (web `StaffPosReportsPanel`).
    */
   const posAccess = usePosReportAccess({ enabled: !staffQuery.isLoading });
   const posAccessPending = posAccess.data === undefined && posAccess.isLoading;
@@ -130,10 +147,11 @@ export default function ReportsScreen() {
   const posReportsVisible = posAccess.data?.visible === true;
   const showPosTabs = posReportsVisible && posAccess.data?.can_view === true;
   const canExportPos = posAccess.data?.can_export === true;
-  // Vouchers (UX spec §20.11): admins, while gift vouchers are switched on. Commission (§22.2):
-  // admins, wherever the POS tabs show (no switch of its own).
+  // Vouchers (UX spec §20.11): admins, while gift vouchers are switched on, which needs Checkout on.
+  // Commission (§22.2): admins, wherever the POS tabs show, while Checkout is on: its report route
+  // refuses with Checkout off, so a venue keeping only its history does not get a tab that fails.
   const vouchersVisible = showPosTabs && isAdmin && isVouchersEnabled(venueQuery.data);
-  const commissionVisible = showPosTabs && isAdmin;
+  const commissionVisible = showPosTabs && isAdmin && isPosEnabled(venueQuery.data);
   // A link to a POS tab this venue or login does not have falls back to the Overview (once the
   // access answer is in; until then the tab waits on a skeleton, as on the web).
   const shownTab: MainTab =
@@ -300,7 +318,7 @@ export default function ReportsScreen() {
   const exportModelBreakdown = useCallback(async () => {
     if (!modelRows.length || !data) return;
     await exportCsv(
-      modelBreakdownCsvFilename(data.from, data.to),
+      modelBreakdownCsvFilename(data.from, data.to, data.calendar ?? null),
       buildModelBreakdownCsvRows(modelRows),
     );
   }, [modelRows, data, exportCsv]);
@@ -379,10 +397,13 @@ export default function ReportsScreen() {
   // 2026-10-11): it is about the plan, not takings or sales, and it pushed every tab's first figure
   // below the fold.
   const smsBanner = <SmsUsageBanner enabled={isAdmin} />;
+  // The Overview and Clients payload refused because of the chosen calendar: the server's words.
+  const overviewRefusal = query.isError ? calendarRefusalMessage(query.error, calendarId != null) : null;
 
   return (
     <Screen scroll={false} padded={false}>
       {header}
+      <ReportCalendarProvider calendar={calendarFilter.calendar} onClear={calendarFilter.clear}>
 
       {/* ── Toolbar: presets + sub-tabs ─────────────────────────── */}
       <View style={[styles.toolbar, { borderBottomColor: colors.border }]}>
@@ -511,6 +532,19 @@ export default function ReportsScreen() {
             onChange={setMainTab}
           />
         )}
+
+        {/* One calendar's figures, or all calendars, for every tab that can split by calendar;
+            the rest say they are the whole venue. Shown once the venue has two calendars, and kept
+            while moving between tabs. */}
+        {calendarFilter.showPicker ? (
+          <ReportCalendarPicker
+            options={calendarFilter.options}
+            value={calendarId}
+            onChange={calendarFilter.choose}
+            // Takings and Vouchers are always the whole venue's: greyed out there, as on the web.
+            disabled={shownTab === 'takings' || shownTab === 'vouchers'}
+          />
+        ) : null}
       </View>
 
       {/* ── Content ──────────────────────────────────────────────── */}
@@ -549,6 +583,37 @@ export default function ReportsScreen() {
         </ScrollView>
       ) : query.isLoading ? (
         <DetailSkeleton />
+      ) : overviewRefusal ? (
+        // The server can't narrow the Overview to this calendar yet (409 before its migration) or
+        // doesn't know it (400): its words in place of the Overview's figures, while every section
+        // that loads on its own (SMS usage, history, the export, the client list) still shows, so one
+        // refusal never blocks the rest (web 90ff4d17).
+        <ScrollView contentContainerStyle={styles.content}>
+          {shownTab === 'overview' ? smsBanner : null}
+          <CalendarRefusal message={overviewRefusal} />
+          {shownTab === 'clients' ? (
+            <Card>
+              <CardHeader title={`${clientWord} directory`} />
+              <View style={styles.clientsContent}>
+                <ClientsTab
+                  clientWord={clientWord}
+                  bookingWord={bookingWord}
+                  isAppointment={isAppointmentVenue}
+                />
+              </View>
+            </Card>
+          ) : (
+            <>
+              <HistorySection
+                isAppointmentVenue={isAppointmentVenue}
+                today={today}
+                showClassCommerceNote={Boolean(data?.enabled_models?.includes('class_session'))}
+              />
+              <DataExportCard bookingWord={bookingWord} clientLabel={clientWord} today={today} posKinds={posReportsVisible} />
+            </>
+          )}
+          <View style={styles.spacer} />
+        </ScrollView>
       ) : query.isError || !data ? (
         <View style={styles.stateWrap}>
           <ErrorState
@@ -575,6 +640,17 @@ export default function ReportsScreen() {
           <Text variant="caption" tone="muted" style={styles.rangeLabel}>
             {rangeLabel}
           </Text>
+          {/* What the Overview and Clients figures are for, from the answer itself (the web's words).
+              A filtered Overview sends no table utilisation and no baseline snapshot; those cards
+              read the empty answer as they always have. */}
+          <CalendarScopeNote
+            echoed={data.calendar}
+            detail={
+              shownTab === 'clients'
+                ? reportCalendarCopy('cal.detail.clients', { client: clientWord, clientLower })
+                : reportCalendarCopy('cal.detail.overview')
+            }
+          />
 
           {/* ── CLIENTS TAB ─────────────────────────────────── */}
           {shownTab === 'clients' ? (
@@ -1163,6 +1239,7 @@ export default function ReportsScreen() {
           <View style={styles.spacer} />
         </ScrollView>
       )}
+      </ReportCalendarProvider>
     </Screen>
   );
 }

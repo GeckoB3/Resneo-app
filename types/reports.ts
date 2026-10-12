@@ -215,6 +215,24 @@ export interface ReportsResponse {
   client_summary?: ReportClientSummary | null;
   booking_log_email_config?: BookingLogEmailConfig | null;
   default_booking_log_email?: string | null;
+  /** The calendar these figures are for when one was asked for; null or absent is the whole venue. */
+  calendar?: ReportCalendarRef | null;
+}
+
+// ─── Calendar filter (the shared contract with the web, 2026-10-12) ──────────
+// A calendar is a team member's or a resource's column in the diary. See
+// lib/reports/report-calendar.ts.
+
+/** The calendar a report was worked out for, as the server echoes it (`calendar`). */
+export interface ReportCalendarRef {
+  id: string;
+  name: string;
+}
+
+/** One calendar in the Reports filter (GET /api/venue/reports/calendars). */
+export interface ReportCalendarOption extends ReportCalendarRef {
+  /** False for a calendar no longer in use; it may still have history. */
+  active: boolean;
 }
 
 // ─── Booked revenue (web #191, `src/lib/reports/booked-revenue.ts`) ──────────
@@ -263,6 +281,23 @@ export interface BookedRevenuePeriod extends BookedRevenueCell {
   by_calendar: Record<string, BookedRevenueCell>;
 }
 
+/** A venue's subtotal, with the part booked through the collective's page. */
+export interface BookedRevenueVenueCell extends BookedRevenueCell {
+  /** Of `booked_pence`, the bookings made through a collective's page. */
+  collective_booked_pence: number;
+  /** Of `no_show_pence`, the bookings made through a collective's page. */
+  collective_no_show_pence: number;
+  /** Rows (booked or no-show) made through a collective's page. */
+  collective_count: number;
+}
+
+/** A venue in the report, and why it may be shown: yours, a collective member, or a linked venue. */
+export interface BookedRevenueVenue {
+  venue_id: string;
+  venue_name: string;
+  access: 'own' | 'collective' | 'link';
+}
+
 export interface BookedRevenueReport {
   from: string;
   to: string;
@@ -274,11 +309,25 @@ export interface BookedRevenueReport {
   totals: BookedRevenueCell & {
     by_calendar: Record<string, BookedRevenueCell>;
     /**
+     * One subtotal per venue in `venues`, so a blended total is never the only
+     * figure (web, collectives D49). Absent from older servers.
+     */
+    by_venue?: Record<string, BookedRevenueVenueCell>;
+    /**
      * The same totals split by kind of booking, for the kinds present. Says which
      * bookings are unpriced. Absent from servers before 2026-09-23.
      */
     by_kind?: Partial<Record<BookedRevenueKind, BookedRevenueCell>>;
   };
+  /**
+   * Every venue in the report, yours first. Absent from older servers, which
+   * then show no venue breakdown (the web reads it the same way).
+   */
+  venues?: BookedRevenueVenue[];
+  /** The live collective this venue belongs to, when it does. */
+  collective?: { id: string; name: string } | null;
+  /** The calendar these figures are for when one was asked for; null or absent is the whole venue. */
+  calendar?: ReportCalendarRef | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -303,5 +352,7 @@ export interface NewBookingsReport {
   today: string;
   periods: NewBookingsPeriod[];
   totals: NewBookingCounts;
+  /** The calendar these figures are for when one was asked for; null or absent is the whole venue. */
+  calendar?: ReportCalendarRef | null;
 }
 

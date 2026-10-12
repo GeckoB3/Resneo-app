@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { KpiTiles, PosRangeLine, PosReportCard, ReportInfoLine, ReportLoadError, reportStyles, useReportDownload } from '@/components/reports/pos/PosReportUi';
+import { WholeVenueNote } from '@/components/reports/ReportCalendarFilter';
 import { AddExistingVoucherSheet } from '@/components/reports/vouchers/AddExistingVoucherSheet';
 import { AllVouchersCard } from '@/components/reports/vouchers/AllVouchersCard';
 import { VoucherImportSheet } from '@/components/reports/vouchers/VoucherImportSheet';
@@ -77,6 +78,9 @@ export function VouchersSection({ canExport, timeZone, currency }: { canExport: 
         loading={q.isFetching}
         currentRange={period}
       />
+      {/* Vouchers belong to the venue, not a calendar: the Reports filter never applies here, and
+          the picker is greyed out on this tab, as on the web. */}
+      <WholeVenueNote variant="tab" />
 
       {q.isError ? <ReportLoadError message={posErrorMessage(q.error, reportsCopy('rep.error'))} onRetry={() => void q.refetch()} /> : null}
       {!data && q.isLoading ? <DetailSkeleton /> : null}

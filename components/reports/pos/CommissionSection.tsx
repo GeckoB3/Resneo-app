@@ -3,12 +3,19 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { PosRangeLine, PosReportCard, ReportInfoLine, ReportLoadError, ReportTable, reportStyles, useReportDownload } from '@/components/reports/pos/PosReportUi';
+import {
+  CalendarRefusal,
+  CalendarScopeNote,
+  useCalendarRefusal,
+  useReportCalendar,
+} from '@/components/reports/ReportCalendarFilter';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { posErrorMessage } from '@/lib/pos/api';
 import { reportsCopy } from '@/lib/pos/reports-copy';
 import { posReportPaths, useCommissionLines, useCommissionReport } from '@/lib/queries/usePosReports';
 import { formatLongDay, formatMoneyExact, rangeQuery } from '@/lib/reports/pos-report-format';
+import { reportCalendarCopy, withCalendarParam } from '@/lib/reports/report-calendar';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { CommissionPersonRow, PosRangeChoice, ReportGrain } from '@/types/pos-reports';
@@ -19,7 +26,8 @@ import type { CommissionPersonRow, PosRangeChoice, ReportGrain } from '@/types/p
  * reference), a totals row, a person's lines on a tap (each opening its sale), "Changed since you
  * exported it" after a credit correction, and the CSV (summary or every line) through the share
  * sheet. Reads GET /api/venue/pos/commission/report. A team member's own figures are on Checkout's
- * "My sales" (`useMyCommission`), as on the web.
+ * "My sales" (`useMyCommission`), as on the web. With a calendar chosen on the Reports screen it
+ * asks for that calendar's commission (`calendar_id`), lines and CSVs included.
  */
 export function CommissionSection({ today }: { today: string }) {
   const router = useRouter();
@@ -27,12 +35,21 @@ export function CommissionSection({ today }: { today: string }) {
   const [choice, setChoice] = useState<PosRangeChoice>({ kind: 'preset', preset: 'this-month' });
   const [grain, setGrain] = useState<ReportGrain>('day');
   const [person, setPerson] = useState<CommissionPersonRow | null>(null);
-  const q = useCommissionReport(choice, grain);
+  const { calendar } = useReportCalendar();
+  const calendarId = calendar?.id ?? null;
+  // Another calendar is another set of people: close the drill-down, as a new range does.
+  const [personCalendarId, setPersonCalendarId] = useState(calendarId);
+  if (personCalendarId !== calendarId) {
+    setPersonCalendarId(calendarId);
+    setPerson(null);
+  }
+  const q = useCommissionReport(choice, grain, { calendarId });
   const data = q.data;
-  const drill = useCommissionLines(choice, grain, person?.person_key ?? null);
+  const refusal = useCalendarRefusal(q.error);
+  const drill = useCommissionLines(choice, grain, person?.person_key ?? null, calendarId);
   const money = (pence: number) => formatMoneyExact(pence, data?.currency);
   const download = useReportDownload();
-  const query = rangeQuery(choice, grain);
+  const query = withCalendarParam(rangeQuery(choice, grain), calendarId);
   const changedPersons = new Set(data?.changed?.persons ?? []);
   const changedLines = new Set(data?.changed?.lines ?? []);
   const saleNo = (n: number) => `${data?.receipt_prefix ?? ''}${n}`;
@@ -56,11 +73,18 @@ export function CommissionSection({ today }: { today: string }) {
       />
       <ReportInfoLine text={`${reportsCopy('rep.c.help')} ${reportsCopy('rep.c.onlyTill')}`} />
 
-      {q.isError ? <ReportLoadError message={posErrorMessage(q.error, reportsCopy('rep.error'))} onRetry={() => void q.refetch()} /> : null}
+      {q.isError ? (
+        refusal ? (
+          <CalendarRefusal message={refusal} />
+        ) : (
+          <ReportLoadError message={posErrorMessage(q.error, reportsCopy('rep.error'))} onRetry={() => void q.refetch()} />
+        )
+      ) : null}
       {!data && q.isLoading ? <DetailSkeleton /> : null}
 
       {data ? (
         <View style={[reportStyles.stack, q.isFetching ? styles.busy : null]} accessibilityState={{ busy: q.isFetching }}>
+          <CalendarScopeNote echoed={data.calendar} detail={reportCalendarCopy('cal.detail.commission')} />
           {!data.has_rates ? (
             <View accessibilityRole="text" style={[styles.note, { borderColor: colors.info, backgroundColor: colors.infoSurface }]}>
               <Text variant="bodySmall">{reportsCopy('rep.c.noRates')}</Text>
@@ -122,7 +146,10 @@ export function CommissionSection({ today }: { today: string }) {
             {data.can_export ? (
               <Pressable accessibilityRole="button" onPress={() => exportCsv('lines')} hitSlop={8}>
                 <Text variant="label" tone="brand">
-                  {reportsCopy('rep.c.exportLines', { lines: reportsCopy('rep.c.lines', { staffName: reportsCopy('rep.c.everyone') }) })}
+                  {/* One calendar's lines are that person's (web 90ff4d17). */}
+                  {reportsCopy('rep.c.exportLines', {
+                    lines: reportsCopy('rep.c.lines', { staffName: calendar?.name ?? reportsCopy('rep.c.everyone') }),
+                  })}
                 </Text>
               </Pressable>
             ) : null}

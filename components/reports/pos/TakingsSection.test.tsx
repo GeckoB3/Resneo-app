@@ -107,7 +107,8 @@ beforeEach(() => {
 
 it('opens on this week by day, as the web does, and shows every card', async () => {
   await render(<TakingsSection canExport isAdmin today="2026-10-09" />);
-  expect(mockTakingsArgs[0]).toEqual([{ kind: 'preset', preset: 'this-week' }, 'day']);
+  // Every venue's reads run once Reports has shown the tab (`reportsVisible`); Takings is never filtered.
+  expect(mockTakingsArgs[0]).toEqual([{ kind: 'preset', preset: 'this-week' }, 'day', { reportsVisible: true }]);
   expect(screen.getByRole('button', { name: 'This week, 5 to 9 Oct' })).toBeTruthy();
   expect(screen.getByText('Figures before 7 Oct 2026 are estimated from older records.')).toBeTruthy();
   expect(screen.getByText('Disputes -£20.00')).toBeTruthy();
@@ -178,6 +179,8 @@ it('shows cash-ups with the expected figure only when the server allows it', asy
   );
 });
 
+const ALL_CALENDARS = { reportsVisible: true };
+
 const openRange = async () => {
   await act(async () => {
     fireEvent.press(screen.getByHintText('Opens the date choices'));
@@ -197,7 +200,7 @@ it('changes range and grain in the sheet, and refuses an inverted custom range i
   await act(async () => {
     fireEvent.press(screen.getByText('Month'));
   });
-  expect(mockTakingsArgs[mockTakingsArgs.length - 1]).toEqual([{ kind: 'preset', preset: 'last-month' }, 'month']);
+  expect(mockTakingsArgs[mockTakingsArgs.length - 1]).toEqual([{ kind: 'preset', preset: 'last-month' }, 'month', ALL_CALENDARS]);
   await openRange();
   await act(async () => {
     fireEvent.press(screen.getByRole('button', { name: 'Choose dates' }));
@@ -206,7 +209,7 @@ it('changes range and grain in the sheet, and refuses an inverted custom range i
     fireEvent.press(screen.getByText('Apply'));
   });
   // The dates start from the report's own range, up to today, which is fine to apply.
-  expect(mockTakingsArgs[mockTakingsArgs.length - 1]).toEqual([{ kind: 'custom', from: '2026-10-05', to: '2026-10-09' }, 'month']);
+  expect(mockTakingsArgs[mockTakingsArgs.length - 1]).toEqual([{ kind: 'custom', from: '2026-10-05', to: '2026-10-09' }, 'month', ALL_CALENDARS]);
   expect(screen.getByRole('button', { name: '5 to 9 Oct' })).toBeTruthy();
 
   await openRange();

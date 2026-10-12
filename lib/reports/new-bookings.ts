@@ -3,6 +3,7 @@
  * 2026-09-18): bookings MADE per day, week or month, whatever date each is for, split by how
  * they came in. The server counts; this module carries the presets, the labels and the CSV.
  */
+import { calendarFileTag, withCalendarCsvLine } from '@/lib/reports/report-calendar';
 import type { NewBookingChannel, NewBookingCounts } from '@/types/dashboard';
 import type { NewBookingsGrain, NewBookingsPreset, NewBookingsReport } from '@/types/reports';
 
@@ -109,7 +110,8 @@ export function newBookingsFootnote(counts: NewBookingCounts): string | null {
   return parts.length > 0 ? parts.join(' ') : null;
 }
 
-export function newBookingsCsvRows(data: NewBookingsReport): string[][] {
+/** The web's CSV; for one calendar it starts with "Showing {calendar} only" (web 90ff4d17). */
+export function newBookingsCsvRows(data: NewBookingsReport, calendar: { name: string } | null = null): string[][] {
   const header = ['Period', 'From', 'To', 'New bookings', ...NEW_BOOKING_CHANNELS.map((c) => NEW_BOOKING_CHANNEL_LABELS[c]), 'Since cancelled', 'Awaiting payment'];
   const line = (label: string, from: string, to: string, c: NewBookingCounts) => [
     label,
@@ -122,9 +124,10 @@ export function newBookingsCsvRows(data: NewBookingsReport): string[][] {
   ];
   const rows = data.periods.map((p) => line(newBookingsPeriodLabel(p.period_start, p.period_end, data.grain), p.period_start, p.period_end, p));
   rows.push(line('Total', data.from, data.to, data.totals));
-  return [header, ...rows];
+  return withCalendarCsvLine([header, ...rows], calendar);
 }
 
-export function newBookingsCsvFilename(data: NewBookingsReport): string {
-  return `new-bookings-${data.from}-${data.to}-${data.grain}.csv`;
+/** The web's file name, with the calendar's name in it for one calendar ("new-bookings-jess-..."). */
+export function newBookingsCsvFilename(data: NewBookingsReport, calendar: { name: string } | null = null): string {
+  return `new-bookings${calendarFileTag(calendar)}-${data.from}-${data.to}-${data.grain}.csv`;
 }

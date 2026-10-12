@@ -159,8 +159,12 @@ export const queryKeys = {
 
   reports: {
     all: () => [...queryKeys.all, 'reports'] as const,
-    range: (accessToken?: string | null, from?: string | null, to?: string | null) =>
-      [...queryKeys.reports.all(), keyScope(accessToken), from ?? null, to ?? null] as const,
+    /** The Overview and Clients payload, per range and per calendar (null: the whole venue). */
+    range: (accessToken?: string | null, from?: string | null, to?: string | null, calendarId?: string | null) =>
+      [...queryKeys.reports.all(), keyScope(accessToken), from ?? null, to ?? null, calendarId ?? null] as const,
+    /** The calendars Reports can be filtered by (`GET /api/venue/reports/calendars`). */
+    calendars: (accessToken?: string | null) =>
+      [...queryKeys.reports.all(), 'calendars', keyScope(accessToken)] as const,
     /** Booked revenue (web #191): keyed on the resolved query string. */
     bookedRevenue: (accessToken?: string | null, query?: string | null) =>
       [...queryKeys.reports.all(), 'booked-revenue', keyScope(accessToken), query ?? null] as const,

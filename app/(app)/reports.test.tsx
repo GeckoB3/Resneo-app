@@ -7,8 +7,10 @@
  * are stubbed so each test is about what this screen decides.
  */
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
+import type { ReactNode } from 'react';
 
-import type { ReportsResponse } from '@/types/reports';
+import { ApiError } from '@/lib/api/client';
+import type { ReportCalendarOption, ReportsResponse } from '@/types/reports';
 
 let mockParams: { tab?: string } = {};
 jest.mock('expo-router', () => ({ Stack: { Screen: () => null }, useLocalSearchParams: () => mockParams }));
@@ -30,11 +32,13 @@ jest.mock('@/lib/queries/useStaffMe', () => ({
   useStaffMe: () => ({ data: { staff: { role: mockRole } }, isLoading: false }),
 }));
 let mockVouchersFlag = false;
+// Checkout's switch. Off with past sales is a venue that keeps its Takings and Sales history.
+let mockPosOn = true;
 jest.mock('@/lib/queries/useVenue', () => ({
   useVenue: () => ({
     data: {
       currency: 'GBP',
-      feature_flags: { resolved: { pos_enabled: true, pos_gift_vouchers_enabled: mockVouchersFlag } },
+      feature_flags: { resolved: { pos_enabled: mockPosOn, pos_gift_vouchers_enabled: mockPosOn && mockVouchersFlag } },
     },
   }),
 }));
@@ -52,7 +56,38 @@ const mockReports = {
   error: null as unknown,
   refetch: jest.fn(),
 };
-jest.mock('@/lib/queries/useReports', () => ({ useReports: () => mockReports }));
+// Each call's arguments (from, to, enabled, calendarId): the calendar asked for is the last one.
+const mockReportsArgs: unknown[][] = [];
+jest.mock('@/lib/queries/useReports', () => ({
+  useReports: (...args: unknown[]) => {
+    mockReportsArgs.push(args);
+    return mockReports;
+  },
+}));
+
+// The calendars the picker offers (GET /api/venue/reports/calendars).
+let mockCalendars: ReportCalendarOption[] = [];
+jest.mock('@/lib/queries/useReportCalendars', () => ({
+  useReportCalendars: () => ({ data: mockCalendars }),
+}));
+// The picker's sheet draws its children while open, as a plain view.
+jest.mock('@/components/ui/Sheet', () => {
+  const React = jest.requireActual<typeof import('react')>('react');
+  const { View } = jest.requireActual<typeof import('react-native')>('react-native');
+  return {
+    Sheet: ({ visible, children }: { visible: boolean; children: ReactNode }) =>
+      visible ? React.createElement(View, { testID: 'calendar-sheet' }, children) : null,
+  };
+});
+
+/** What a mocked section reads from the screen's calendar filter: "takings calendar: Hannah". */
+function MockCalendarText({ label }: { label: string }) {
+  const { Text } = jest.requireActual<typeof import('react-native')>('react-native');
+  const { useReportCalendar } = jest.requireActual<typeof import('@/components/reports/ReportCalendarFilter')>(
+    '@/components/reports/ReportCalendarFilter',
+  );
+  return <Text>{`${label} calendar: ${useReportCalendar().calendar?.name ?? 'all'}`}</Text>;
+}
 
 // Takings and Sales (POS P7-4): the access answer is what decides the tab control. The real hook is
 // gated on the venue's pos_enabled; here `mockPosAccess` stands for its answer (undefined = not asked).
@@ -66,9 +101,19 @@ jest.mock('@/components/reports/PosReportSections', () => {
   return {
     TakingsSection: (props: unknown) => {
       mockSectionProps.takings = props;
-      return <Text>takings-section</Text>;
+      return (
+        <>
+          <Text>takings-section</Text>
+          <MockCalendarText label="takings" />
+        </>
+      );
     },
-    SalesSection: () => <Text>sales-section</Text>,
+    SalesSection: () => (
+      <>
+        <Text>sales-section</Text>
+        <MockCalendarText label="sales" />
+      </>
+    ),
     VouchersSection: () => <Text>vouchers-section</Text>,
     CommissionSection: () => <Text>commission-section</Text>,
   };
@@ -87,8 +132,13 @@ jest.mock('@/lib/reports/csv-export', () => ({
 }));
 
 // Sections with queries of their own, or charts that need a layout pass.
-jest.mock('@/components/reports/HistorySection', () => ({ HistorySection: () => null }));
-jest.mock('@/components/reports/BookedRevenueSection', () => ({ BookedRevenueSection: () => null }));
+jest.mock('@/components/reports/HistorySection', () => {
+  const { Text } = jest.requireActual<typeof import('react-native')>('react-native');
+  return { HistorySection: () => <Text>history-section</Text> };
+});
+jest.mock('@/components/reports/BookedRevenueSection', () => ({
+  BookedRevenueSection: () => <MockCalendarText label="revenue" />,
+}));
 jest.mock('@/components/reports/NewBookingsSection', () => ({ NewBookingsSection: () => null }));
 jest.mock('@/components/reports/BookingLogEmailCard', () => ({ BookingLogEmailCard: () => null }));
 const mockExportProps: { posKinds?: boolean }[] = [];
@@ -99,7 +149,10 @@ jest.mock('@/components/reports/DataExportCard', () => ({
   },
 }));
 jest.mock('@/components/reports/BaselineMetricsCard', () => ({ BaselineMetricsCard: () => null }));
-jest.mock('@/components/reports/ClientsTab', () => ({ ClientsTab: () => null }));
+jest.mock('@/components/reports/ClientsTab', () => {
+  const { Text } = jest.requireActual<typeof import('react-native')>('react-native');
+  return { ClientsTab: () => <Text>clients-list</Text> };
+});
 // The SMS usage card has its own tests; here it only has to head the admin's reports.
 jest.mock('@/components/reports/SmsUsageBanner', () => {
   const React = require('react');
@@ -218,7 +271,12 @@ beforeEach(() => {
   mockParams = {};
   mockRole = 'admin';
   mockVouchersFlag = false;
+  mockPosOn = true;
   mockExportProps.length = 0;
+  mockReportsArgs.length = 0;
+  mockCalendars = [];
+  mockReports.isError = false;
+  mockReports.error = null;
 });
 
 describe('Reports overview range', () => {
@@ -558,5 +616,281 @@ describe('Reports SMS usage card (web SmsUsageBanner)', () => {
     mockPosAccess = { visible: true, can_view: true, can_export: false };
     await render(<ReportsScreen />);
     expect(screen.queryByTestId('sms-usage')).toBeNull();
+  });
+});
+
+// Checkout off with past sales (web `pos-access/route.ts`: visible = POS on OR a completed sale):
+// the tabs follow the server's answer, not the switch, so the venue keeps its history.
+describe('Reports with Checkout off but a sales history', () => {
+  it('shows Takings and Sales when the server says the venue has them', async () => {
+    mockPosOn = false;
+    mockPosAccess = { visible: true, can_view: true, can_export: true };
+    await render(<ReportsScreen />);
+    expect(screen.getByLabelText('Report tabs')).toBeTruthy();
+    expect(screen.getByText('Booked value')).toBeTruthy();
+    expect(screen.getByText('Deposits by booking date')).toBeTruthy();
+    expect(mockExportProps[mockExportProps.length - 1]?.posKinds).toBe(true);
+    await act(async () => {
+      fireEvent.press(screen.getByText('Takings'));
+    });
+    expect(screen.getByText('takings-section')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByText('Sales'));
+    });
+    expect(screen.getByText('sales-section')).toBeTruthy();
+  });
+
+  it('leaves out Commission and Vouchers, whose routes need Checkout on', async () => {
+    mockPosOn = false;
+    mockVouchersFlag = true;
+    mockPosAccess = { visible: true, can_view: true, can_export: true };
+    await render(<ReportsScreen />);
+    expect(screen.getByText('Takings')).toBeTruthy();
+    expect(screen.queryByText('Commission')).toBeNull();
+    expect(screen.queryByText('Vouchers')).toBeNull();
+  });
+
+  it('opens the Takings link', async () => {
+    mockPosOn = false;
+    mockPosAccess = { visible: true, can_view: true };
+    mockParams = { tab: 'takings' };
+    await render(<ReportsScreen />);
+    expect(screen.getByText('takings-section')).toBeTruthy();
+  });
+
+  it('sends a Commission link to the Overview', async () => {
+    mockPosOn = false;
+    mockPosAccess = { visible: true, can_view: true };
+    mockParams = { tab: 'commission' };
+    await render(<ReportsScreen />);
+    expect(screen.queryByText('commission-section')).toBeNull();
+    expect(screen.getByText('No-show rate')).toBeTruthy();
+  });
+
+  it('keeps the four-option control where the server says there is no history', async () => {
+    mockPosOn = false;
+    mockPosAccess = { visible: false, can_view: false };
+    await render(<ReportsScreen />);
+    expect(screen.queryByLabelText('Report tabs')).toBeNull();
+    expect(screen.getByText('Revenue')).toBeTruthy();
+    expect(screen.queryByText('Takings')).toBeNull();
+    expect(screen.getByText('Payments & deposits')).toBeTruthy();
+  });
+
+  it('gives a team member with view_reports their Takings and Sales', async () => {
+    mockPosOn = false;
+    mockRole = 'staff';
+    mockPosAccess = { visible: true, can_view: true, can_export: true };
+    await render(<ReportsScreen />);
+    expect(screen.getByText('staff-panel export=true')).toBeTruthy();
+  });
+});
+
+const HANNAH: ReportCalendarOption = { id: 'cal-hannah', name: 'Hannah', active: true };
+const JENNY: ReportCalendarOption = { id: 'cal-jenny', name: 'Jenny', active: true };
+const OLD_JO: ReportCalendarOption = { id: 'cal-jo', name: 'Jo', active: false };
+
+/** The calendar the Overview was last asked for (useReports' fourth argument). */
+function lastOverviewCalendar(): unknown {
+  return mockReportsArgs[mockReportsArgs.length - 1]?.[3] ?? null;
+}
+
+async function chooseCalendar(label: string) {
+  await act(async () => {
+    fireEvent.press(screen.getByHintText('Opens the calendar choices'));
+  });
+  await act(async () => {
+    fireEvent.press(screen.getByRole('radio', { name: label }));
+  });
+}
+
+describe('Reports calendar filter', () => {
+  it('shows no picker until the venue has two calendars', async () => {
+    mockCalendars = [HANNAH];
+    await render(<ReportsScreen />);
+    expect(screen.queryByHintText('Opens the calendar choices')).toBeNull();
+    expect(lastOverviewCalendar()).toBeNull();
+  });
+
+  it('lists All calendars and each calendar, labelling one no longer active', async () => {
+    mockCalendars = [HANNAH, JENNY, OLD_JO];
+    await render(<ReportsScreen />);
+    expect(screen.getByRole('button', { name: 'Calendar, All calendars' })).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByHintText('Opens the calendar choices'));
+    });
+    expect(screen.getByText('Show figures for')).toBeTruthy();
+    const radios = screen.getAllByRole('radio').map((r) => r.props.accessibilityLabel as string);
+    expect(radios).toEqual(['All calendars', 'Hannah', 'Jenny', 'Jo (no longer active)']);
+    expect(screen.getByRole('radio', { name: 'All calendars' })).toHaveProp(
+      'accessibilityState',
+      expect.objectContaining({ checked: true }),
+    );
+  });
+
+  it('asks the Overview for the chosen calendar and says so from the answer', async () => {
+    mockCalendars = [HANNAH, JENNY];
+    await render(<ReportsScreen />);
+    expect(lastOverviewCalendar()).toBeNull();
+    mockReports.data = reportsData({ calendar: { id: 'cal-hannah', name: 'Hannah' } });
+    await chooseCalendar('Hannah');
+    expect(lastOverviewCalendar()).toBe('cal-hannah');
+    expect(screen.queryByTestId('calendar-sheet')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Calendar, Hannah' })).toBeTruthy();
+    expect(screen.getByText('Showing Hannah only.')).toBeTruthy();
+  });
+
+  it('says the figures are the whole venue when the answer carries no calendar', async () => {
+    mockCalendars = [HANNAH, JENNY];
+    await render(<ReportsScreen />);
+    // Nothing is said while all calendars are chosen.
+    expect(screen.queryByText('These figures are for the whole venue.')).toBeNull();
+    await chooseCalendar('Jenny');
+    expect(lastOverviewCalendar()).toBe('cal-jenny');
+    expect(screen.queryByText(/^Showing/)).toBeNull();
+    expect(screen.getByText('These figures are for the whole venue.')).toBeTruthy();
+  });
+
+  it('keeps the calendar while moving between tabs, and hands it to each section', async () => {
+    mockCalendars = [HANNAH, JENNY];
+    mockPosAccess = { visible: true, can_view: true, can_export: true };
+    await render(<ReportsScreen />);
+    await chooseCalendar('Hannah');
+    await act(async () => {
+      fireEvent.press(screen.getByText('Booked value'));
+    });
+    expect(screen.getByText('revenue calendar: Hannah')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByText('Takings'));
+    });
+    expect(screen.getByText('takings calendar: Hannah')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByText('Sales'));
+    });
+    expect(screen.getByText('sales calendar: Hannah')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByText('Overview'));
+    });
+    expect(screen.getByRole('button', { name: 'Calendar, Hannah' })).toBeTruthy();
+    expect(lastOverviewCalendar()).toBe('cal-hannah');
+    // Back to all calendars: every section is the whole venue again.
+    await chooseCalendar('All calendars');
+    expect(lastOverviewCalendar()).toBeNull();
+    await act(async () => {
+      fireEvent.press(screen.getByText('Takings'));
+    });
+    expect(screen.getByText('takings calendar: all')).toBeTruthy();
+  });
+
+  it("says what the Clients figures are for one calendar, in the web's words", async () => {
+    mockCalendars = [HANNAH, JENNY];
+    await render(<ReportsScreen />);
+    await act(async () => {
+      screen.getAllByText('Clients').forEach((node) => fireEvent.press(node));
+    });
+    mockReports.data = reportsData({ calendar: { id: 'cal-hannah', name: 'Hannah' } });
+    await chooseCalendar('Hannah');
+    expect(
+      screen.getByText(
+        'Showing Hannah only. Clients who booked on this calendar in these dates. Known clients are those who have ever booked on it. The directory below lists all your clients.',
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText('clients-list')).toBeTruthy();
+  });
+
+  it("says what the Overview figures are for one calendar, in the web's words", async () => {
+    mockCalendars = [HANNAH, JENNY];
+    await render(<ReportsScreen />);
+    mockReports.data = reportsData({ calendar: { id: 'cal-hannah', name: 'Hannah' } });
+    await chooseCalendar('Hannah');
+    expect(
+      screen.getByText(
+        'Showing Hannah only. Bookings on this calendar, and in rooms or other resources shown on it. A visit with services on more than one calendar counts once on each.',
+      ),
+    ).toBeTruthy();
+  });
+
+  it('greys the picker out on Takings and Vouchers, which are always the whole venue, and keeps the choice', async () => {
+    mockCalendars = [HANNAH, JENNY];
+    mockPosAccess = { visible: true, can_view: true, can_export: true };
+    mockVouchersFlag = true;
+    await render(<ReportsScreen />);
+    await chooseCalendar('Hannah');
+    for (const tab of ['Takings', 'Vouchers']) {
+      await act(async () => {
+        fireEvent.press(screen.getByText(tab));
+      });
+      expect(screen.getByRole('button', { name: 'Calendar, All calendars' })).toHaveProp(
+        'accessibilityState',
+        expect.objectContaining({ disabled: true }),
+      );
+    }
+    await act(async () => {
+      fireEvent.press(screen.getByText('Sales'));
+    });
+    expect(screen.getByRole('button', { name: 'Calendar, Hannah' })).toHaveProp(
+      'accessibilityState',
+      expect.objectContaining({ disabled: false }),
+    );
+    expect(screen.getByText('sales calendar: Hannah')).toBeTruthy();
+  });
+
+  it("shows the server's sentence when filtering is not ready yet, with the way back", async () => {
+    mockCalendars = [HANNAH, JENNY];
+    await render(<ReportsScreen />);
+    const sentence = "Filtering by calendar isn't ready yet for this report.";
+    mockReports.data = undefined;
+    mockReports.isError = true;
+    mockReports.error = new ApiError(sentence, 409, { error: sentence, code: 'CONFLICT' });
+    await chooseCalendar('Hannah');
+    expect(screen.getByText(sentence)).toBeTruthy();
+    expect(screen.queryByText('Try again')).toBeNull();
+    // The sections that load on their own still show: one refusal never blocks the rest.
+    expect(screen.getByTestId('sms-usage')).toBeTruthy();
+    expect(screen.getByText('history-section')).toBeTruthy();
+    expect(mockExportProps.length).toBeGreaterThan(0);
+    // The Clients tab keeps its list too.
+    await act(async () => {
+      screen.getAllByText('Clients').forEach((node) => fireEvent.press(node));
+    });
+    expect(screen.getByText(sentence)).toBeTruthy();
+    expect(screen.getByText('clients-list')).toBeTruthy();
+    mockReports.data = reportsData();
+    mockReports.isError = false;
+    mockReports.error = null;
+    await act(async () => {
+      fireEvent.press(screen.getByText('Show all calendars'));
+    });
+    expect(lastOverviewCalendar()).toBeNull();
+    expect(screen.getByRole('button', { name: 'Calendar, All calendars' })).toBeTruthy();
+    expect(screen.getByText('Client directory')).toBeTruthy();
+  });
+
+  it("shows the server's sentence for a calendar it does not know", async () => {
+    mockCalendars = [HANNAH, JENNY];
+    await render(<ReportsScreen />);
+    const sentence = "That isn't a calendar. Choose one from the list, or All calendars.";
+    mockReports.data = undefined;
+    mockReports.isError = true;
+    mockReports.error = new ApiError(sentence, 400, {
+      error: sentence,
+      code: 'VALIDATION_FAILED',
+      fields: [{ path: 'calendar_id', message: sentence }],
+    });
+    await chooseCalendar('Jenny');
+    expect(screen.getByText(sentence)).toBeTruthy();
+    expect(screen.getByText('Show all calendars')).toBeTruthy();
+  });
+
+  it('keeps the usual error for any other failure', async () => {
+    mockCalendars = [HANNAH, JENNY];
+    mockReports.data = undefined;
+    mockReports.isError = true;
+    mockReports.error = new ApiError('Something went wrong on our side.', 500, { error: 'Something went wrong on our side.' });
+    await render(<ReportsScreen />);
+    await chooseCalendar('Hannah');
+    expect(screen.getByText('Something went wrong on our side.')).toBeTruthy();
+    expect(screen.getByText('Try again')).toBeTruthy();
+    expect(screen.queryByText('Show all calendars')).toBeNull();
   });
 });

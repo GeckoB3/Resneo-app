@@ -4,6 +4,7 @@ import { posFetch } from '@/lib/pos/api';
 import { keyScope, queryKeys } from '@/lib/queries/keys';
 import { usePosGate } from '@/lib/queries/usePos';
 import { rangeQuery } from '@/lib/reports/pos-report-format';
+import { calendarRetryOption, withCalendarParam } from '@/lib/reports/report-calendar';
 import type { PosPayoutDetail, PosPayoutsReport } from '@/types/pos';
 import type {
   AddedVoucher,
@@ -23,7 +24,14 @@ import type {
  * Reports' POS tabs (Takings, Sales, Vouchers, Commission) with the web's own range and grain:
  * every query carries `rangeQuery(choice, grain)`, exactly the query string the web sends. Like
  * every POS call these go through `posFetch` and only run at venues with `pos_enabled`
- * (`usePosGate`), so a venue without POS sends none of them.
+ * (`usePosGate`), so a venue without POS sends none of them. Takings, Sales, cash-ups and payouts
+ * also run where Reports has the server's word that the venue keeps those reports with Checkout
+ * off (`reportsVisible`, plan §4.18); vouchers and commission need Checkout on, as their routes do.
+ *
+ * The calendar filter (lib/reports/report-calendar.ts): Sales and Commission take `calendarId`, sent
+ * as `calendar_id` and so part of the key, so one calendar's figures are never cached for another.
+ * Takings (the money journal), cash-ups, payouts and vouchers are the whole venue and are never
+ * sent it.
  *
  * Keys sit under `queryKeys.pos.all()`, so a sale write refreshes the reports as it already does
  * (`invalidateAfterSaleWrite`); payouts keep the keys that function leaves alone, because Stripe's
@@ -31,6 +39,20 @@ import type {
  */
 
 const REPORT_TIMEOUT = 30_000;
+
+export interface PosReportQueryOptions {
+  enabled?: boolean;
+  /**
+   * Reports has the server's answer that this venue has Takings and Sales (pos-access `visible`),
+   * so the query may run with Checkout off: a venue with past sales keeps its history.
+   */
+  reportsVisible?: boolean;
+}
+
+export interface PosCalendarReportOptions extends PosReportQueryOptions {
+  /** One calendar's figures (`calendar_id`); null or absent is the whole venue. */
+  calendarId?: string | null;
+}
 
 export const posReportPaths = {
   takings: (q: string) => `/api/venue/reports/takings?${q}`,
@@ -51,8 +73,12 @@ export const posReportPaths = {
 const reportKey = (name: string, accessToken: string | null, ...rest: (string | null)[]) =>
   [...queryKeys.pos.all(), name, keyScope(accessToken), ...rest] as const;
 
-export function useTakingsRange(choice: PosRangeChoice, grain: ReportGrain, options: { enabled?: boolean } = {}) {
-  const { accessToken, enabled } = usePosGate(options.enabled ?? true);
+/**
+ * Takings: the money journal, always the whole venue (its route ignores `calendar_id`, web
+ * 90ff4d17), so never sent a calendar.
+ */
+export function useTakingsRange(choice: PosRangeChoice, grain: ReportGrain, options: PosReportQueryOptions = {}) {
+  const { accessToken, enabled } = usePosGate(options.enabled ?? true, { reports: options.reportsVisible });
   const q = rangeQuery(choice, grain);
   return useQuery({
     queryKey: queryKeys.pos.takings(accessToken, q),
@@ -62,19 +88,21 @@ export function useTakingsRange(choice: PosRangeChoice, grain: ReportGrain, opti
   });
 }
 
-export function useSalesRange(choice: PosRangeChoice, grain: ReportGrain, options: { enabled?: boolean } = {}) {
-  const { accessToken, enabled } = usePosGate(options.enabled ?? true);
-  const q = rangeQuery(choice, grain);
+export function useSalesRange(choice: PosRangeChoice, grain: ReportGrain, options: PosCalendarReportOptions = {}) {
+  const { accessToken, enabled } = usePosGate(options.enabled ?? true, { reports: options.reportsVisible });
+  const q = withCalendarParam(rangeQuery(choice, grain), options.calendarId);
   return useQuery({
     queryKey: queryKeys.pos.salesReport(accessToken, q),
     enabled,
     placeholderData: keepPreviousData,
+    ...calendarRetryOption(options.calendarId),
     queryFn: () => posFetch<SalesPayload>(posReportPaths.sales(q), { accessToken: accessToken!, timeoutMs: REPORT_TIMEOUT }),
   });
 }
 
-export function useCashUps(choice: PosRangeChoice, grain: ReportGrain, options: { enabled?: boolean } = {}) {
-  const { accessToken, enabled } = usePosGate(options.enabled ?? true);
+/** Cash-ups: the whole venue, so never sent a calendar. */
+export function useCashUps(choice: PosRangeChoice, grain: ReportGrain, options: PosReportQueryOptions = {}) {
+  const { accessToken, enabled } = usePosGate(options.enabled ?? true, { reports: options.reportsVisible });
   const q = rangeQuery(choice, grain);
   return useQuery({
     queryKey: reportKey('cash-ups-report', accessToken, q),
@@ -84,9 +112,9 @@ export function useCashUps(choice: PosRangeChoice, grain: ReportGrain, options: 
   });
 }
 
-/** Payouts and fees, admins only (the route refuses anyone else). */
-export function usePayoutsRange(choice: PosRangeChoice, grain: ReportGrain, options: { enabled?: boolean } = {}) {
-  const { accessToken, enabled } = usePosGate(options.enabled ?? true);
+/** Payouts and fees, admins only (the route refuses anyone else). The whole venue: never sent a calendar. */
+export function usePayoutsRange(choice: PosRangeChoice, grain: ReportGrain, options: PosReportQueryOptions = {}) {
+  const { accessToken, enabled } = usePosGate(options.enabled ?? true, { reports: options.reportsVisible });
   const q = rangeQuery(choice, grain);
   return useQuery({
     queryKey: queryKeys.pos.payouts(accessToken, q),
@@ -97,8 +125,13 @@ export function usePayoutsRange(choice: PosRangeChoice, grain: ReportGrain, opti
   });
 }
 
-export function usePayoutDetailRange(choice: PosRangeChoice, grain: ReportGrain, payoutId: string | null) {
-  const { accessToken, enabled } = usePosGate(Boolean(payoutId));
+export function usePayoutDetailRange(
+  choice: PosRangeChoice,
+  grain: ReportGrain,
+  payoutId: string | null,
+  options: Pick<PosReportQueryOptions, 'reportsVisible'> = {},
+) {
+  const { accessToken, enabled } = usePosGate(Boolean(payoutId), { reports: options.reportsVisible });
   const q = rangeQuery(choice, grain);
   return useQuery({
     queryKey: queryKeys.pos.payoutDetail(accessToken, q, payoutId),
@@ -109,23 +142,36 @@ export function usePayoutDetailRange(choice: PosRangeChoice, grain: ReportGrain,
   });
 }
 
-/** The Commission tab, admins only (staff read their own figures from `useMyCommission`). Never cached long. */
-export function useCommissionReport(choice: PosRangeChoice, grain: ReportGrain, options: { enabled?: boolean } = {}) {
+/**
+ * The Commission tab, admins only (staff read their own figures from `useMyCommission`). Never
+ * cached long. Its route needs Checkout on, so it keeps the plain POS gate.
+ */
+export function useCommissionReport(
+  choice: PosRangeChoice,
+  grain: ReportGrain,
+  options: { enabled?: boolean; calendarId?: string | null } = {},
+) {
   const { accessToken, enabled } = usePosGate(options.enabled ?? true);
-  const q = rangeQuery(choice, grain);
+  const q = withCalendarParam(rangeQuery(choice, grain), options.calendarId);
   return useQuery({
     queryKey: reportKey('commission-report', accessToken, q),
     enabled,
     staleTime: 0,
     placeholderData: keepPreviousData,
+    ...calendarRetryOption(options.calendarId),
     queryFn: () => posFetch<CommissionReport>(posReportPaths.commission(q), { accessToken: accessToken!, timeoutMs: REPORT_TIMEOUT }),
   });
 }
 
-/** One person's commission lines (the drill-down). */
-export function useCommissionLines(choice: PosRangeChoice, grain: ReportGrain, personKey: string | null) {
+/** One person's commission lines (the drill-down), for the same calendar as the report. */
+export function useCommissionLines(
+  choice: PosRangeChoice,
+  grain: ReportGrain,
+  personKey: string | null,
+  calendarId: string | null = null,
+) {
   const { accessToken, enabled } = usePosGate(Boolean(personKey));
-  const q = rangeQuery(choice, grain);
+  const q = withCalendarParam(rangeQuery(choice, grain), calendarId);
   return useQuery({
     queryKey: reportKey('commission-lines', accessToken, q, personKey),
     enabled,

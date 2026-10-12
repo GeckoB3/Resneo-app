@@ -3,6 +3,11 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { SalesSection } from '@/components/reports/pos/SalesSection';
 import { TakingsSection } from '@/components/reports/pos/TakingsSection';
+import {
+  ReportCalendarPicker,
+  ReportCalendarProvider,
+  useReportCalendarFilter,
+} from '@/components/reports/ReportCalendarFilter';
 import { Segmented } from '@/components/ui/Segmented';
 import { reportsCopy } from '@/lib/pos/reports-copy';
 import { spacing } from '@/theme/index';
@@ -13,6 +18,10 @@ import { useTheme } from '@/theme/useTheme';
  * row 24, UX spec §2.3): the Takings and Sales tabs only. Everything else in Reports stays admin
  * only, payouts included, and the report routes check `view_reports` (and `export` for CSV) on
  * every request.
+ *
+ * The same Calendar picker as an admin's Reports (lib/reports/report-calendar.ts), kept while
+ * moving between the two tabs: it narrows Sales to one calendar and is greyed out on Takings, which
+ * is always the whole venue's. It shows once the server lists two calendars for this login.
  */
 export function StaffPosReportsPanel({
   canExport,
@@ -25,8 +34,9 @@ export function StaffPosReportsPanel({
 }) {
   const { colors } = useTheme();
   const [tab, setTab] = useState<'takings' | 'sales'>(initialTab);
+  const filter = useReportCalendarFilter();
   return (
-    <>
+    <ReportCalendarProvider calendar={filter.calendar} onClear={filter.clear}>
       <View style={[styles.toolbar, { borderBottomColor: colors.border }]}>
         <Segmented
           options={[
@@ -36,6 +46,15 @@ export function StaffPosReportsPanel({
           value={tab}
           onChange={setTab}
         />
+        {filter.showPicker ? (
+          <ReportCalendarPicker
+            options={filter.options}
+            value={filter.calendar?.id ?? null}
+            onChange={filter.choose}
+            // Takings is always the whole venue's: greyed out there, as on the web.
+            disabled={tab === 'takings'}
+          />
+        ) : null}
       </View>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         {tab === 'takings' ? (
@@ -45,12 +64,18 @@ export function StaffPosReportsPanel({
         )}
         <View style={styles.spacer} />
       </ScrollView>
-    </>
+    </ReportCalendarProvider>
   );
 }
 
 const styles = StyleSheet.create({
-  toolbar: { paddingHorizontal: spacing.base, paddingTop: spacing.sm, paddingBottom: spacing.md, borderBottomWidth: 1 },
+  toolbar: {
+    paddingHorizontal: spacing.base,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.md,
+    borderBottomWidth: 1,
+    gap: spacing.sm,
+  },
   content: { paddingHorizontal: spacing.base, paddingTop: spacing.sm, gap: spacing.base },
   spacer: { height: spacing['2xl'] },
 });

@@ -7,6 +7,7 @@
  */
 import { StyleSheet, View } from 'react-native';
 
+import { WholeVenueNote } from '@/components/reports/ReportCalendarFilter';
 import { Badge } from '@/components/ui/Badge';
 import { Card } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
@@ -42,6 +43,8 @@ export function SmsUsageBanner({ enabled = true }: { enabled?: boolean }) {
         Usage
       </Text>
       <Text variant="subheading">SMS segments this period</Text>
+      {/* The plan's SMS are the venue's, whatever calendar Reports is showing. */}
+      <WholeVenueNote />
       <View
         style={[styles.track, { backgroundColor: colors.border }]}
         accessibilityRole="progressbar"
