@@ -19,6 +19,7 @@
  * Content-sized sheets must stay byte-identical to the old layout (lg + inset).
  */
 import { render, screen } from '@testing-library/react-native';
+import { useEffect } from 'react';
 import { Keyboard, Platform, Text, View } from 'react-native';
 
 import { Sheet } from './Sheet';
@@ -203,6 +204,40 @@ describe('Sheet', () => {
     );
     requestClose();
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps its content mounted when client mode starts and ends', async () => {
+    // A card payment waiting on the client's tip lives in the content: remounting it on the
+    // hand-over threw the payment away, so with tips on no card payment could start (2026-10-12).
+    let mounts = 0;
+    function Content() {
+      useEffect(() => {
+        mounts += 1;
+      }, []);
+      return <Text>Body</Text>;
+    }
+    const view = await render(
+      <Sheet visible onClose={jest.fn()} fill>
+        <Content />
+      </Sheet>,
+    );
+    expect(screen.getByLabelText('Close')).toBeTruthy();
+    await view.rerender(
+      <Sheet visible onClose={jest.fn()} fill takeover>
+        <Content />
+      </Sheet>,
+    );
+    // Client mode: no handle and no scrim to tap shut, the same content.
+    expect(screen.queryByLabelText('Close')).toBeNull();
+    expect(screen.queryByLabelText('Dismiss')).toBeNull();
+    expect(screen.getByText('Body')).toBeTruthy();
+    await view.rerender(
+      <Sheet visible onClose={jest.fn()} fill>
+        <Content />
+      </Sheet>,
+    );
+    expect(screen.getByLabelText('Close')).toBeTruthy();
+    expect(mounts).toBe(1);
   });
 
   it('renders nothing when hidden', async () => {

@@ -7,6 +7,7 @@
  * jest hoists mock factories above imports, so every closed-over variable is prefixed `mock*`.
  */
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
+import { useState } from 'react';
 
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
 jest.mock('expo-image', () => ({ Image: 'Image' }));
@@ -38,8 +39,23 @@ jest.mock('@/lib/payments/bluetoothReader', () => ({
 jest.mock('@/lib/queries/useAccessToken', () => ({ useAccessToken: () => 'tok' }));
 jest.mock('@/providers/ToastProvider', () => ({ useToast: () => ({ info: jest.fn(), success: jest.fn() }) }));
 jest.mock('@/lib/haptics', () => ({ ...jest.requireActual<typeof import('@/lib/haptics')>('@/lib/haptics'), hapticSuccess: jest.fn(), hapticWarning: jest.fn() }));
+// The real sheet, for the pay-sheet case below: its drag gesture needs reanimated's worklet runtime,
+// which jest-expo does not start, and its lock cover needs the app's provider.
+jest.mock('react-native-gesture-handler', () => {
+  const React = jest.requireActual<typeof import('react')>('react');
+  const { View } = jest.requireActual<typeof import('react-native')>('react-native');
+  const builder: Record<string, () => unknown> = {};
+  for (const m of ['activeOffsetY', 'failOffsetY', 'onChange', 'onEnd']) builder[m] = () => builder;
+  return {
+    Gesture: { Pan: () => builder },
+    GestureDetector: ({ children }: { children: React.ReactNode }) => children,
+    GestureHandlerRootView: (props: object) => React.createElement(View, props),
+  };
+});
+jest.mock('@/providers/AppLockProvider', () => ({ AppLockCover: () => null }));
 
 import { CardCollectPanel } from '@/components/pos/SaleCardCollect';
+import { PosSheet } from '@/components/pos/parts';
 import { __resetClientFacingForTests, isClientFacing, requestClientBack } from '@/lib/ui/client-facing';
 import { SaleCardError, type SaleCardResult } from '@/lib/payments/useSaleCardPayment';
 import { makeLine, makeSale } from '@/lib/pos/test-sale';
@@ -86,7 +102,45 @@ async function chooseTenPercent() {
   });
 }
 
+/** The panel as the pay sheet holds it: the sheet turns into client mode while the client has the phone. */
+function InPaySheet({ pay, onDone }: { pay: jest.Mock; onDone: jest.Mock }) {
+  const [facing, setFacing] = useState(false);
+  return (
+    <PosSheet visible onClose={jest.fn()} title="Take payment" takeover={facing}>
+      <CardCollectPanel
+        saleId="sale-1"
+        amountPence={4500}
+        customerTip={tipInput}
+        onCustomerFacing={setFacing}
+        isAdmin={false}
+        pay={pay}
+        onDone={onDone}
+        onBack={jest.fn()}
+      />
+    </PosSheet>
+  );
+}
+
 describe('CardCollectPanel with the client choosing the tip', () => {
+  it('inside the pay sheet, the payment survives the switch to client mode and carries the tip', async () => {
+    // With tips on, the hand-over switched the sheet to client mode, which remounted this panel:
+    // the client never saw the tip screen and no payment was ever made (2026-10-12).
+    const pay = jest.fn(async () => paidResult);
+    const onDone = jest.fn();
+    await render(<InPaySheet pay={pay} onDone={onDone} />);
+    await act(async () => {
+      fireEvent.press(screen.getByText(/^Tap to Pay/));
+    });
+    expect(screen.getByText('Hand the phone to Ada so they can choose a tip.')).toBeTruthy();
+    await chooseTenPercent();
+    expect(pay).toHaveBeenCalledWith('tap_to_pay', expect.any(Object), 450);
+    expect(screen.getByText('Thank you, Ada.')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByText('Done'));
+    });
+    expect(onDone).toHaveBeenCalledWith(paidResult);
+  });
+
   beforeEach(() => {
     mockConnect.mockClear();
     __resetClientFacingForTests();

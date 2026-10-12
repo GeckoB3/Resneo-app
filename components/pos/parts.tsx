@@ -106,34 +106,35 @@ export function PosSheet({
   /** Client mode: the sheet fills the screen and the children draw everything (`Sheet` takeover). */
   takeover?: boolean;
 }) {
-  if (takeover) {
-    return (
-      <Sheet visible={visible} onClose={onClose} takeover>
-        {children}
-      </Sheet>
-    );
-  }
+  // One tree in both modes: the header and footer come and go around a body that stays put, so the
+  // body is never remounted when client mode starts or ends (it holds a card payment in progress).
   return (
-    <Sheet visible={visible} onClose={onClose} fill maxHeight="92%">
-      <View style={styles.sheetHeader}>
-        {eyebrow ? (
-          <Text variant="overline" tone="muted" accessibilityRole="header">
-            {title}
-          </Text>
-        ) : (
-          <Text variant="heading">{title}</Text>
-        )}
-        {headline ?? null}
-        {subtitle ? (
-          <Text variant="bodySmall" tone="muted">
-            {subtitle}
-          </Text>
-        ) : null}
-      </View>
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.sheetBody} keyboardShouldPersistTaps="handled">
+    <Sheet visible={visible} onClose={onClose} fill={!takeover} maxHeight="92%" takeover={takeover}>
+      {takeover ? null : (
+        <View style={styles.sheetHeader}>
+          {eyebrow ? (
+            <Text variant="overline" tone="muted" accessibilityRole="header">
+              {title}
+            </Text>
+          ) : (
+            <Text variant="heading">{title}</Text>
+          )}
+          {headline ?? null}
+          {subtitle ? (
+            <Text variant="bodySmall" tone="muted">
+              {subtitle}
+            </Text>
+          ) : null}
+        </View>
+      )}
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={takeover ? styles.takeoverBody : styles.sheetBody}
+        scrollEnabled={!takeover}
+        keyboardShouldPersistTaps="handled">
         {children}
       </ScrollView>
-      {footer ? <View style={styles.footer}>{footer}</View> : null}
+      {!takeover && footer ? <View style={styles.footer}>{footer}</View> : null}
     </Sheet>
   );
 }
@@ -223,6 +224,8 @@ const styles = StyleSheet.create({
   sheetHeader: { paddingHorizontal: spacing.lg, paddingBottom: spacing.sm, gap: spacing.xs },
   scroll: { flex: 1 },
   sheetBody: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xl, gap: spacing.md },
+  // Client mode: the content fills the screen (the card panel's client screens are absolute fill).
+  takeoverBody: { flexGrow: 1 },
   footer: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, gap: spacing.sm },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   amountRow: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.md },

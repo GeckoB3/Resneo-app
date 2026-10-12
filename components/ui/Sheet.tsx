@@ -9,7 +9,7 @@ import {
   type DimensionValue,
 } from 'react-native';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
-import Animated, { FadeIn, runOnJS, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useKeyboardInset } from '@/components/ui/useKeyboardInset';
@@ -142,6 +142,16 @@ export function Sheet({
     transform: [{ translateY: dragY.get() }],
   }));
 
+  // Client mode fades in over 300 ms. It is the same view as the sheet, restyled, so the opacity is
+  // animated here rather than with an `entering` animation, which would need a new view.
+  const takeoverOpacity = useSharedValue(1);
+  useEffect(() => {
+    if (!takeover || reduceMotion) return;
+    takeoverOpacity.set(0);
+    takeoverOpacity.set(withTiming(1, { duration: 300 }));
+  }, [takeover, reduceMotion, takeoverOpacity]);
+  const takeoverFade = useAnimatedStyle(() => ({ opacity: takeoverOpacity.get() }));
+
   return (
     <Modal
       visible={visible}
@@ -164,22 +174,25 @@ export function Sheet({
           {takeover ? null : (
             <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Dismiss" />
           )}
-          {takeover ? (
-            <Animated.View
-              entering={reduceMotion ? undefined : FadeIn.duration(300)}
-              style={[styles.takeover, { backgroundColor: clientColors.bg }]}>
-              {children}
-            </Animated.View>
-          ) : (
-            <Animated.View
-              style={[
-                styles.sheet,
-                { backgroundColor: colors.surfaceRaised },
-                sheetMaxWidth ? { maxWidth: sheetMaxWidth } : null,
-                fill ? { height: maxHeight } : { maxHeight },
-                sheetTransform,
-              ]}>
-              <SheetContent fill={fill} keyboardAvoidance={keyboardAvoidance}>
+          {/* The sheet and client mode are ONE view with ONE content column, only restyled, so the
+              caller's content stays mounted when client mode starts or ends. Two separate views
+              remounted it: a card payment waiting on the client's tip was thrown away the moment the
+              phone was handed over, so with tips on no card payment could start (2026-10-12). */}
+          <Animated.View
+            style={[
+              ...(takeover
+                ? [styles.takeover, { backgroundColor: clientColors.bg }]
+                : [
+                    styles.sheet,
+                    { backgroundColor: colors.surfaceRaised },
+                    sheetMaxWidth ? { maxWidth: sheetMaxWidth } : null,
+                    fill ? { height: maxHeight } : { maxHeight },
+                  ]),
+              sheetTransform,
+              takeoverFade,
+            ]}>
+            <SheetContent fill={fill} keyboardAvoidance={keyboardAvoidance} takeover={takeover}>
+              {takeover ? null : (
                 <GestureDetector gesture={panGesture}>
                   <Pressable
                     onPress={onClose}
@@ -191,10 +204,10 @@ export function Sheet({
                     <View style={[styles.handle, { backgroundColor: colors.border }]} />
                   </Pressable>
                 </GestureDetector>
-                {children}
-              </SheetContent>
-            </Animated.View>
-          )}
+              )}
+              {children}
+            </SheetContent>
+          </Animated.View>
         </ModalWindowInsets>
         {/* The app-lock cover must be rendered INSIDE this Modal: the provider's
             own cover lives in the root view, and a Modal is a separate native
@@ -240,10 +253,13 @@ function ModalWindowInsets({ children }: { children: ReactNode }) {
 function SheetContent({
   fill,
   keyboardAvoidance,
+  takeover,
   children,
 }: {
   fill: boolean;
   keyboardAvoidance: 'reserve' | 'overlay';
+  /** Client mode: the content fills the screen and draws its own safe areas, so no padding here. */
+  takeover: boolean;
   children: ReactNode;
 }) {
   const insets = useSafeAreaInsets();
@@ -264,13 +280,13 @@ function SheetContent({
   // — it existed only to keep the pre-keyboard resting layout byte-identical —
   // which left their pinned footer sitting hard on the safe-area boundary.
   // Content-sized sheets are unchanged: lg + inset, exactly as before.
-  const basePad = (fill ? spacing.md : spacing.lg) + insets.bottom;
+  const basePad = takeover ? 0 : (fill ? spacing.md : spacing.lg) + insets.bottom;
   const animatedPad = useAnimatedStyle(() => ({
-    paddingBottom: basePad + (keyboardAvoidance === 'overlay' ? 0 : keyboardInset.value),
+    paddingBottom: basePad + (takeover || keyboardAvoidance === 'overlay' ? 0 : keyboardInset.value),
   }));
 
   return (
-    <Animated.View style={[fill ? styles.contentFill : styles.content, animatedPad]}>
+    <Animated.View style={[takeover ? styles.contentTakeover : fill ? styles.contentFill : styles.content, animatedPad]}>
       {children}
     </Animated.View>
   );
@@ -306,6 +322,9 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingTop: spacing.sm,
     gap: spacing.sm,
+  },
+  contentTakeover: {
+    flex: 1,
   },
   handleHitArea: {
     alignSelf: 'center',
