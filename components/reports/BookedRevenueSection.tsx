@@ -9,7 +9,10 @@
  * adds them back. Prices are the server's (`loadRowTotalResolver`, the same
  * precedence as the booking panel), so the app never re-prices a row.
  *
- * With more than one venue, or a collective, the figures are subtotalled by
+ * Since release 1 (2026-10-13) it follows the Reports screen's Showing picker:
+ * your own venue by default, a calendar, a business, or everyone together. For
+ * everyone together (or, from an older server, more than one venue or a
+ * collective) the figures are subtotalled by
  * venue as the web's "Venue" table does: yours marked "(you)", and the part
  * booked through the collective's page in "Through {collective}". Collective
  * members are named as members, never as shared through a linked account.
@@ -17,12 +20,14 @@
 import { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Switch, View } from 'react-native';
 
+import { BasisCaption, ChangePill, ComparisonCaption } from '@/components/reports/ComparisonParts';
 import { ReportTable, type Column } from '@/components/reports/pos/PosReportUi';
 import {
   CalendarRefusal,
   CalendarScopeNote,
   useCalendarRefusal,
   useReportCalendar,
+  useReportScopeQuery,
 } from '@/components/reports/ReportCalendarFilter';
 import { SvgStackedBarChart } from '@/components/reports/SvgStackedBarChart';
 import { Button } from '@/components/ui/Button';
@@ -62,6 +67,8 @@ import {
   type BookedRevenueRangeChoice,
 } from '@/lib/reports/booked-revenue';
 import { reportCalendarCopy } from '@/lib/reports/report-calendar';
+import { describeChange } from '@/lib/reports/report-comparison';
+import { showingCsvScope } from '@/lib/reports/report-scope';
 import { useToast } from '@/providers/ToastProvider';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
@@ -101,12 +108,14 @@ export function BookedRevenueSection({
   const [customTo, setCustomTo] = useState(today);
   const [grain, setGrain] = useState<BookedRevenueGrain>('day');
   const [includeNoShows, setIncludeNoShows] = useState(false);
-  // The Reports screen's calendar filter: one calendar's figures, or the whole venue.
-  const { calendar } = useReportCalendar();
+  // The Reports screen's Showing picker: your venue (the default since release 1), a calendar (yours
+  // or a partner's), a business, or everyone together; and its comparison.
+  const { showing } = useReportCalendar();
+  const scopeQuery = useReportScopeQuery();
 
-  const query = useBookedRevenue(choice, grain, enabled, calendar?.id ?? null);
+  const query = useBookedRevenue(choice, grain, enabled, scopeQuery);
   const data = query.data;
-  const refusal = useCalendarRefusal(query.error);
+  const refusal = useCalendarRefusal(query.error, 'bookings');
 
   const columns = useMemo(() => data?.columns ?? [], [data]);
   const ownColumns = columns.filter((c) => !c.linked);
@@ -115,10 +124,14 @@ export function BookedRevenueSection({
   // One calendar is one column of your own: no venue table and no partner notes (web 90ff4d17).
   const venues = data?.venues ?? [];
   const collective = data?.collective ?? null;
+  // The CSV's first lines and file tag for the choice (a calendar, a business, or everyone together).
+  const calendar = showingCsvScope(showing, venues.map((v) => v.venue_name));
+  // The partner notes, as the web: for anything but one calendar (they name only partners in the answer).
+  const showPartnerNotes = data ? (data.scope ? data.scope.kind !== 'calendar' : showing.kind === 'venue') : false;
   const showVenues = data ? showBookedRevenueVenues(data, calendar) : false;
-  const collectiveNote = data && !calendar ? bookedRevenueCollectiveNote(data) : null;
+  const collectiveNote = data && showPartnerNotes ? bookedRevenueCollectiveNote(data) : null;
   const linkedVenues =
-    data && !calendar ? bookedRevenueLinkedVenueNames(data) : { names: [] as string[], fromColumns: false };
+    data && showPartnerNotes ? bookedRevenueLinkedVenueNames(data) : { names: [] as string[], fromColumns: false };
   const series = useMemo(
     () =>
       columns.map((col, index) => ({
@@ -143,6 +156,11 @@ export function BookedRevenueSection({
   );
 
   const totalNet = data ? bookedRevenueNetPence(data.totals, includeNoShows) : 0;
+  // The main figure against the earlier period, worked out from its totals exactly as `totalNet` is.
+  const totalChange =
+    data?.comparison?.totals
+      ? describeChange(totalNet, bookedRevenueNetPence({ ...data.comparison.totals }, includeNoShows), 'money')
+      : null;
   const totalCount = data ? data.totals.booked_count + (includeNoShows ? data.totals.no_show_count : 0) : 0;
   const unpriced = data?.totals.unpriced_count ?? 0;
   const unpricedMessage = data ? unpricedNote(data.totals.by_kind, unpriced) : null;
@@ -279,6 +297,7 @@ export function BookedRevenueSection({
         <View style={styles.cardHeader}>
           <Text variant="label">Booked revenue</Text>
         </View>
+        <BasisCaption basis="date" />
         <Text variant="bodySmall" tone="muted">
           The value of every {lowerCountWord} on the diary that has not been cancelled, by day and by
           calendar.
@@ -432,7 +451,9 @@ export function BookedRevenueSection({
             <View style={query.isFetching ? styles.refreshing : undefined}>
             <CalendarScopeNote
               echoed={data.calendar}
+              scope={data.scope}
               detail={reportCalendarCopy('cal.detail.bookedValue')}
+              togetherNames={showVenues ? venues.map((v) => v.venue_name) : undefined}
               style={styles.scopeNote}
             />
             <View style={styles.tiles}>
@@ -440,6 +461,7 @@ export function BookedRevenueSection({
                 label={includeNoShows ? 'Booked revenue (incl. no-shows)' : 'Booked revenue'}
                 value={money(totalNet)}
                 caption={hasFuture && hasPast ? 'Past and upcoming dates' : hasFuture ? 'Upcoming dates' : 'Past dates'}
+                badge={<ChangePill change={totalChange} />}
                 style={styles.tile}
               />
               <StatTile
@@ -464,6 +486,7 @@ export function BookedRevenueSection({
                 style={styles.tile}
               />
             </View>
+            <ComparisonCaption comparison={data.comparison} style={styles.venueNote} />
 
             {unpricedMessage ? (
               <View style={[styles.note, { backgroundColor: colors.warningSurface, borderColor: colors.warning }]}>

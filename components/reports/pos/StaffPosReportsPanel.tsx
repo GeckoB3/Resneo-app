@@ -19,7 +19,7 @@ import { useTheme } from '@/theme/useTheme';
  * only, payouts included, and the report routes check `view_reports` (and `export` for CSV) on
  * every request.
  *
- * The same Calendar picker as an admin's Reports (lib/reports/report-calendar.ts), kept while
+ * The same Showing picker as an admin's Reports, without linked businesses (lib/reports/report-calendar.ts), kept while
  * moving between the two tabs: it narrows Sales to one calendar and is greyed out on Takings, which
  * is always the whole venue's. It shows once the server lists two calendars for this login.
  */
@@ -34,9 +34,10 @@ export function StaffPosReportsPanel({
 }) {
   const { colors } = useTheme();
   const [tab, setTab] = useState<'takings' | 'sales'>(initialTab);
-  const filter = useReportCalendarFilter();
+  // A team member never gets a linked business or everyone together: those are for admins only.
+  const filter = useReportCalendarFilter(true, false);
   return (
-    <ReportCalendarProvider calendar={filter.calendar} onClear={filter.clear}>
+    <ReportCalendarProvider showing={filter.showing} options={filter.options} onClear={filter.clear}>
       <View style={[styles.toolbar, { borderBottomColor: colors.border }]}>
         <Segmented
           options={[
@@ -49,7 +50,7 @@ export function StaffPosReportsPanel({
         {filter.showPicker ? (
           <ReportCalendarPicker
             options={filter.options}
-            value={filter.calendar?.id ?? null}
+            value={filter.showing}
             onChange={filter.choose}
             // Takings is always the whole venue's: greyed out there, as on the web.
             disabled={tab === 'takings'}

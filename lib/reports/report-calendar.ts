@@ -90,8 +90,13 @@ export function calendarFileTag(calendar: { name: string } | null | undefined): 
  * A CSV the app builds for one calendar: "Showing {calendar} only" and a blank line before the
  * header, as the web's files start. Unchanged for all calendars.
  */
-export function withCalendarCsvLine(rows: string[][], calendar: { name: string } | null | undefined): string[][] {
+export function withCalendarCsvLine(
+  rows: string[][],
+  calendar: { name: string; lines?: string[][] } | null | undefined,
+): string[][] {
   if (!calendar) return rows;
+  // The Showing picker's own first lines (report-scope.ts `showingCsvScope`), for a business or together.
+  if (calendar.lines && calendar.lines.length > 0) return [...calendar.lines, ...rows];
   return [[reportCalendarCopy('cal.csvShowing', { calendar: calendar.name })], [], ...rows];
 }
 

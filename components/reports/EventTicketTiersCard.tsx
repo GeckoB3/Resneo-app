@@ -13,6 +13,7 @@ import { StatTile } from '@/components/ui/StatTile';
 import { Text } from '@/components/ui/Text';
 import { formatPence } from '@/lib/format';
 import { buildEventTicketTiersCsv, type ReportRange } from '@/lib/reports/overview-report';
+import { reportScopeCopy } from '@/lib/reports/report-scope';
 import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { ReportEventTicketTierRow } from '@/types/reports';
@@ -39,6 +40,7 @@ export function EventTicketTiersCard({
     <Card>
       <CardHeader
         title="Event ticket sales by tier"
+        basis={reportScopeCopy('basis.date')}
         onExport={() => {
           const csv = buildEventTicketTiersCsv(rows, range);
           void exportCsv(csv.filename, csv.rows);

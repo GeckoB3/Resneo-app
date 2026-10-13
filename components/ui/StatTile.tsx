@@ -23,6 +23,8 @@ type StatTileProps = {
   sparkline?: number[];
   /** Optional leading adornment (icon). */
   icon?: ReactNode;
+  /** Optional element beside the value, e.g. Reports' change pill against an earlier period. */
+  badge?: ReactNode;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -39,6 +41,7 @@ export function StatTile({
   trend = 'neutral',
   sparkline,
   icon,
+  badge,
   style,
 }: StatTileProps) {
   const { colors } = useTheme();
@@ -70,6 +73,7 @@ export function StatTile({
             {delta}
           </Text>
         ) : null}
+        {badge ? <View style={styles.badge}>{badge}</View> : null}
       </View>
 
       {caption ? (
@@ -111,6 +115,9 @@ const styles = StyleSheet.create({
   },
   value: {
     fontVariant: ['tabular-nums'],
+  },
+  badge: {
+    marginBottom: spacing.xxs,
   },
   delta: {
     marginBottom: spacing.xxs,

@@ -111,7 +111,10 @@ export function newBookingsFootnote(counts: NewBookingCounts): string | null {
 }
 
 /** The web's CSV; for one calendar it starts with "Showing {calendar} only" (web 90ff4d17). */
-export function newBookingsCsvRows(data: NewBookingsReport, calendar: { name: string } | null = null): string[][] {
+export function newBookingsCsvRows(
+  data: NewBookingsReport,
+  calendar: { name: string; lines?: string[][] } | null = null,
+): string[][] {
   const header = ['Period', 'From', 'To', 'New bookings', ...NEW_BOOKING_CHANNELS.map((c) => NEW_BOOKING_CHANNEL_LABELS[c]), 'Since cancelled', 'Awaiting payment'];
   const line = (label: string, from: string, to: string, c: NewBookingCounts) => [
     label,

@@ -9,6 +9,8 @@ import { SmsUsageBanner } from '@/components/reports/SmsUsageBanner';
 import { CommissionSection, SalesSection, TakingsSection, VouchersSection } from '@/components/reports/PosReportSections';
 import { BookingLogEmailCard } from '@/components/reports/BookingLogEmailCard';
 import { ClientsTab } from '@/components/reports/ClientsTab';
+import { ChangePill, ComparisonCaption, CompareWithControl } from '@/components/reports/ComparisonParts';
+import { ReportTable, type Column } from '@/components/reports/pos/PosReportUi';
 import {
   CalendarRefusal,
   CalendarScopeNote,
@@ -50,7 +52,10 @@ import { useVenue } from '@/lib/queries/useVenue';
 import { useReports } from '@/lib/queries/useReports';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { aggregateSourcesByLabel } from '@/lib/reports/csv-export';
-import { calendarRefusalMessage, reportCalendarCopy } from '@/lib/reports/report-calendar';
+import { reportCalendarCopy } from '@/lib/reports/report-calendar';
+import { describeChange, type ChangeKind } from '@/lib/reports/report-comparison';
+import { NEW_BOOKING_CHANNELS, NEW_BOOKING_CHANNEL_LABELS } from '@/lib/reports/new-bookings';
+import { bookingScopeQuery, isPartnerShowing, reportScopeCopy, scopeRefusalMessage } from '@/lib/reports/report-scope';
 import {
   buildReport1Csv,
   buildReport2Csv,
@@ -74,6 +79,7 @@ import { isAppointmentFromVenue } from '@/lib/venue/venue-experience';
 import { useVenueContext } from '@/providers/VenueProvider';
 import { minTouchTarget, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
+import type { OverviewBusinessRow, OverviewHeadline } from '@/types/reports';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type RangeKey = '7d' | '30d' | '90d' | 'custom';
@@ -126,14 +132,18 @@ export default function ReportsScreen() {
   );
 
   /**
-   * The Calendar picker (lib/reports/report-calendar.ts): one calendar's figures, or all calendars.
-   * It lives here, above the tabs, so the choice holds while moving between them, and reaches each
-   * section through `ReportCalendarProvider`. A team member's panel has its own.
+   * The Showing picker (lib/reports/report-scope.ts): your whole venue, one of your calendars, a
+   * business you may report on, one of its calendars, or everyone together, with "Compare with"
+   * beside it. It lives here, above the tabs, so both choices hold while moving between them, and
+   * reaches each section through `ReportCalendarProvider`. A team member's panel has its own,
+   * without businesses.
    */
   const calendarFilter = useReportCalendarFilter(isAdmin);
-  const calendarId = calendarFilter.calendar?.id ?? null;
+  const showing = calendarFilter.showing;
+  const compare = calendarFilter.compare;
+  const scopeQuery = useMemo(() => ({ ...bookingScopeQuery(showing), compare }), [showing, compare]);
 
-  const query = useReports(appliedFrom, appliedTo, isAdmin, calendarId);
+  const query = useReports(appliedFrom, appliedTo, isAdmin, scopeQuery);
   /**
    * Takings, Sales, Vouchers and Commission (POS plan P7-4, web ReportsView). Asked at every venue,
    * as the web asks: the server shows Takings and Sales where Checkout is on or the venue has a
@@ -272,12 +282,36 @@ export default function ReportsScreen() {
   // (ReportsView.tsx:614-616, 1076-1078).
   const noShowRatePct = noShowOverallRatePct(noShowSeries);
 
+  // How they booked (release 1): the New bookings channels, or, from an older server, the sources.
+  const channelBars = insights?.by_channel
+    ? NEW_BOOKING_CHANNELS.filter((c) => (insights.by_channel?.[c] ?? 0) > 0).map((c) => ({
+        key: c,
+        label: NEW_BOOKING_CHANNEL_LABELS[c],
+        value: insights.by_channel?.[c] ?? 0,
+      }))
+    : insights
+      ? aggregateSourcesByLabel(insights.by_booking_source).map(({ name, value }) => ({ key: name, label: name, value }))
+      : [];
+
   const hasAppointmentInsights = Boolean(
     insights &&
       (insights.by_practitioner.length > 0 ||
         insights.by_service.length > 0 ||
-        Object.keys(insights.by_booking_source).length > 0),
+        channelBars.length > 0),
   );
+
+  // ── Comparison with the earlier period (release 1): nothing from an older server ──
+  const headline = data?.headline ?? null;
+  const earlier = data?.comparison?.figures ?? null;
+  const changeOf = (key: keyof OverviewHeadline, kind: ChangeKind, higherIsBetter = true) =>
+    headline && earlier ? describeChange(headline[key], earlier[key], kind, higherIsBetter) : null;
+  const pill = (key: keyof OverviewHeadline, kind: ChangeKind, higherIsBetter = true) => {
+    const change = changeOf(key, kind, higherIsBetter);
+    return change ? <ChangePill change={change} /> : undefined;
+  };
+  // Each business's figures, only for everyone together.
+  const byBusiness = data?.by_business && data.by_business.length > 0 ? data.by_business : null;
+  const togetherNames = byBusiness?.map((b) => b.venue_name);
 
   // ── Export helpers — hoisted before early returns so hook order is stable ─
   const csvContext = useMemo<ReportCsvContext>(
@@ -387,9 +421,7 @@ export default function ReportsScreen() {
   const svcMax = insights
     ? Math.max(...insights.by_service.map((r) => r.booking_count), 1)
     : 1;
-  const channelMax = insights?.by_booking_source
-    ? Math.max(...Object.values(insights.by_booking_source), 1)
-    : 1;
+  const channelMax = Math.max(...channelBars.map((b) => b.value), 1);
 
   const rangeLabel = data ? formatReportRangeLabel(data.from, data.to) : '';
 
@@ -397,13 +429,60 @@ export default function ReportsScreen() {
   // 2026-10-11): it is about the plan, not takings or sales, and it pushed every tab's first figure
   // below the fold.
   const smsBanner = <SmsUsageBanner enabled={isAdmin} />;
-  // The Overview and Clients payload refused because of the chosen calendar: the server's words.
-  const overviewRefusal = query.isError ? calendarRefusalMessage(query.error, calendarId != null) : null;
+  // The Overview and Clients payload refused because of the choice: the server's words.
+  const overviewRefusal = query.isError ? scopeRefusalMessage(query.error, showing.kind !== 'venue') : null;
+  // The bookings tabs follow the comparison; the till tabs do not compare.
+  const comparesTab = shownTab === 'overview' || shownTab === 'clients' || shownTab === 'new-bookings' || shownTab === 'revenue';
+
+  /** "Business" with "(you)" by your own, as the Booked value venue table names them. */
+  const businessNameColumn = {
+    label: reportScopeCopy('scope.business.col'),
+    value: (r: OverviewBusinessRow) => (
+      <Text variant="bodyMedium">
+        {r.venue_name}
+        {r.access === 'own' ? (
+          <Text variant="caption" tone="muted">
+            {' (you)'}
+          </Text>
+        ) : null}
+      </Text>
+    ),
+  };
+  const overviewBusinessColumns: Column<OverviewBusinessRow>[] = [
+    businessNameColumn,
+    { label: `${bookingWord}s created`, value: (r) => String(r.headline.bookings_created), numeric: true },
+    { label: 'Cancellation rate', value: (r) => `${r.headline.cancellation_rate_pct}%`, numeric: true },
+    { label: 'No-shows', value: (r) => String(r.headline.no_show_count), numeric: true },
+    { label: 'Deposits collected', value: (r) => money(r.headline.deposits_collected_pence), numeric: true },
+  ];
+  const clientBusinessColumns: Column<OverviewBusinessRow>[] = [
+    businessNameColumn,
+    { label: `New ${clientLower}s`, value: (r) => String(r.headline.new_clients), numeric: true },
+    { label: `Returning ${clientLower}s`, value: (r) => String(r.headline.returning_clients), numeric: true },
+  ];
+  const businessTable = (columns: Column<OverviewBusinessRow>[]) =>
+    byBusiness ? (
+      <Card>
+        <CardHeader title={reportScopeCopy('scope.byBusiness')} />
+        <View style={styles.stats}>
+          <ReportTable
+            caption={reportScopeCopy('scope.byBusiness')}
+            columns={columns}
+            rows={byBusiness}
+            rowKey={(r) => r.venue_id}
+          />
+        </View>
+      </Card>
+    ) : null;
 
   return (
     <Screen scroll={false} padded={false}>
       {header}
-      <ReportCalendarProvider calendar={calendarFilter.calendar} onClear={calendarFilter.clear}>
+      <ReportCalendarProvider
+        showing={showing}
+        options={calendarFilter.options}
+        compare={compare}
+        onClear={calendarFilter.clear}>
 
       {/* ── Toolbar: presets + sub-tabs ─────────────────────────── */}
       <View style={[styles.toolbar, { borderBottomColor: colors.border }]}>
@@ -533,18 +612,25 @@ export default function ReportsScreen() {
           />
         )}
 
-        {/* One calendar's figures, or all calendars, for every tab that can split by calendar;
-            the rest say they are the whole venue. Shown once the venue has two calendars, and kept
-            while moving between tabs. */}
+        {/* What the figures are for: your venue, a calendar, a linked business or everyone
+            together, for every tab that can be narrowed; the rest say they are your venue's. Shown
+            once there is a choice to make, and kept while moving between tabs. */}
         {calendarFilter.showPicker ? (
           <ReportCalendarPicker
             options={calendarFilter.options}
-            value={calendarId}
+            value={showing}
             onChange={calendarFilter.choose}
-            // Takings and Vouchers are always the whole venue's: greyed out there, as on the web.
-            disabled={shownTab === 'takings' || shownTab === 'vouchers'}
+            // Takings and Vouchers are always the whole venue's, and a partner's till money is never
+            // shared: greyed out there, as on the web.
+            disabled={
+              shownTab === 'takings' ||
+              shownTab === 'vouchers' ||
+              ((shownTab === 'sales' || shownTab === 'commission') && isPartnerShowing(showing))
+            }
           />
         ) : null}
+        {/* The bookings tabs' comparison, kept while moving between them. */}
+        {comparesTab ? <CompareWithControl value={compare} onChange={calendarFilter.setCompare} /> : null}
       </View>
 
       {/* ── Content ──────────────────────────────────────────────── */}
@@ -645,6 +731,8 @@ export default function ReportsScreen() {
               read the empty answer as they always have. */}
           <CalendarScopeNote
             echoed={data.calendar}
+            scope={data.scope}
+            togetherNames={togetherNames}
             detail={
               shownTab === 'clients'
                 ? reportCalendarCopy('cal.detail.clients', { client: clientWord, clientLower })
@@ -654,8 +742,9 @@ export default function ReportsScreen() {
 
           {/* ── CLIENTS TAB ─────────────────────────────────── */}
           {shownTab === 'clients' ? (
+            <>
             <Card>
-              <CardHeader title={`${clientWord} directory`} />
+              <CardHeader title={`${clientWord} directory`} basis={reportScopeCopy('basis.date')} />
               <Text variant="caption" tone="muted" style={styles.rangeCaption}>
                 {rangeLabel}
               </Text>
@@ -672,12 +761,14 @@ export default function ReportsScreen() {
                       label="New this period"
                       value={String(clients.new_clients_in_period)}
                       caption={rangeLabel}
+                      badge={pill('new_clients', 'count')}
                       style={styles.tile}
                     />
                     <StatTile
                       label="Returning this period"
                       value={String(clients.returning_clients_in_period)}
                       caption={rangeLabel}
+                      badge={pill('returning_clients', 'count')}
                       style={styles.tile}
                     />
                     <StatTile
@@ -696,6 +787,7 @@ export default function ReportsScreen() {
                       {`Walk-in visits without contact details are counted but not shown in the ${clientLower} list below.`}
                     </Text>
                   ) : null}
+                  <ComparisonCaption comparison={data.comparison} style={styles.cardIntro} />
                 </>
               ) : null}
               <View style={styles.clientsContent}>
@@ -706,14 +798,20 @@ export default function ReportsScreen() {
                 />
               </View>
             </Card>
+            {businessTable(clientBusinessColumns)}
+            </>
           ) : (
             /* ── OVERVIEW TAB ─────────────────────────────────── */
             <>
+              <ComparisonCaption comparison={data.comparison} />
+              {businessTable(overviewBusinessColumns)}
+
               {/* Report 1: Bookings / Appointment Activity */}
               {summary ? (
                 <Card>
                   <CardHeader
                     title={isAppointmentVenue ? 'Appointment activity' : 'Booking summary'}
+                    basis={reportScopeCopy('basis.made')}
                     onExport={exportReport1}
                     exportDisabled={!summary}
                     exportBlockedMessage={
@@ -729,11 +827,13 @@ export default function ReportsScreen() {
                       }
                       value={String(summary.total_bookings_created)}
                       accent="brand"
+                      badge={pill('bookings_created', 'count')}
                     />
                     <StatRow
                       label={isAppointmentVenue ? `${clientWord} places booked` : 'Covers booked'}
                       value={String(summary.covers_booked)}
                       accent="brand"
+                      badge={pill('places_booked', 'count')}
                     />
                     <StatRow
                       label={
@@ -743,6 +843,7 @@ export default function ReportsScreen() {
                       }
                       value={String(summary.covers_seated)}
                       accent="emerald"
+                      badge={pill('seen', 'count')}
                     />
                   </View>
 
@@ -794,6 +895,7 @@ export default function ReportsScreen() {
                 <Card>
                   <CardHeader
                     title="By booking type"
+                    basis={reportScopeCopy('basis.date')}
                     onExport={exportModelBreakdown}
                     exportDisabled={modelRows.length === 0}
                     exportBlockedMessage="There is no booking-type breakdown to export for this period."
@@ -884,6 +986,7 @@ export default function ReportsScreen() {
               <Card>
                 <CardHeader
                   title="No-show rate"
+                  basis={reportScopeCopy('basis.date')}
                   onExport={exportReport2}
                   exportDisabled={noShowSeries.length === 0}
                   exportBlockedMessage="There is no no-show rate data to export for this period."
@@ -898,6 +1001,7 @@ export default function ReportsScreen() {
                     label="Overall rate"
                     value={`${noShowRatePct.toFixed(1)}%`}
                     accent={noShowRatePct > 10 ? 'red' : 'emerald'}
+                    badge={pill('no_show_rate_pct', 'rate', false)}
                   />
                   <StatRow label="Total no-shows" value={String(totalNoShows)} />
                   <StatRow label="Eligible appointments" value={String(totalConfirmed)} />
@@ -934,6 +1038,7 @@ export default function ReportsScreen() {
                 <Card>
                   <CardHeader
                     title="Cancellation rate"
+                    basis={reportScopeCopy('basis.made')}
                     onExport={exportReport3}
                     exportDisabled={!cancellation}
                     exportBlockedMessage="There is no cancellation data to export for this period."
@@ -948,6 +1053,7 @@ export default function ReportsScreen() {
                       label="Cancellation rate"
                       value={`${cancellation.cancellation_rate_pct}%`}
                       accent={cancellation.cancellation_rate_pct > 10 ? 'red' : 'emerald'}
+                      badge={pill('cancellation_rate_pct', 'rate', false)}
                     />
                     <StatRow
                       label={isAppointmentVenue ? `${clientWord}-initiated` : 'Guest-initiated'}
@@ -978,6 +1084,7 @@ export default function ReportsScreen() {
                           ? 'Payments & deposits'
                           : 'Deposit summary'
                     }
+                    basis={reportScopeCopy('basis.made')}
                     onExport={exportReport4}
                     exportDisabled={!deposit}
                     exportBlockedMessage={
@@ -991,6 +1098,7 @@ export default function ReportsScreen() {
                       label="Total collected"
                       value={money(deposit.total_collected_pence)}
                       accent="emerald"
+                      badge={pill('deposits_collected_pence', 'money')}
                     />
                     <StatRow
                       label="Total refunded"
@@ -1042,12 +1150,13 @@ export default function ReportsScreen() {
                 <Card>
                   <CardHeader
                     title="Team, services & channels"
+                    basis={reportScopeCopy('basis.date')}
                     onExport={exportReport7}
                     exportDisabled={!hasAppointmentInsights}
                     exportBlockedMessage="There is no appointment breakdown to export for this period."
                   />
                   <Text variant="bodySmall" tone="secondary" style={styles.cardIntro}>
-                    {`Non-cancelled ${bookingLower}s in this date range. Volume is split by ${staffLower} (calendar), by service, and by how the ${clientLower} booked. The "Arrived or completed" bar counts marked arrival, started, or completed visits.`}
+                    {`Visits in this date range that were not cancelled, split by ${staffLower} (calendar), by service, and by how the ${clientLower} booked. A visit with several services counts once on each calendar and once for each service in it. The "Arrived or completed" bar counts marked arrival, started, or completed visits.`}
                   </Text>
 
                   {!insights || !hasAppointmentInsights ? (
@@ -1091,19 +1200,13 @@ export default function ReportsScreen() {
                         </View>
                       ) : null}
 
-                      {Object.keys(insights.by_booking_source).length > 0 ? (
+                      {channelBars.length > 0 ? (
                         <View style={styles.chartSection}>
                           <Text variant="overline" tone="muted">
                             {`How ${clientLower}s booked (channel mix)`}
                           </Text>
                           <SvgBarChart
-                            data={aggregateSourcesByLabel(insights.by_booking_source).map(
-                              ({ name, value }) => ({
-                                key: name,
-                                label: name,
-                                value,
-                              }),
-                            )}
+                            data={channelBars}
                             color={colors.success}
                             maxValue={channelMax}
                           />
@@ -1184,7 +1287,7 @@ export default function ReportsScreen() {
               {/* Clients summary card (overview tab) */}
               {clients ? (
                 <Card>
-                  <CardHeader title={`${clientWord}s`} />
+                  <CardHeader title={`${clientWord}s`} basis={reportScopeCopy('basis.date')} />
                   <View style={styles.stats}>
                     <StatRow
                       label={`Known ${clientLower}s (all-time)`}

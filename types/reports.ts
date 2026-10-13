@@ -53,6 +53,11 @@ export interface ReportAppointmentInsights {
     booking_count: number;
   }[];
   by_booking_source: Record<string, number>;
+  /**
+   * How the visits were booked, in the New bookings channels (release 1, 2026-10-13). Read this and
+   * fall back to `by_booking_source` only when it is absent (older servers).
+   */
+  by_channel?: Partial<Record<NewBookingChannel, number>>;
   addon_revenue?: {
     total_pence: number;
     bookings_with_addons: number;
@@ -217,6 +222,82 @@ export interface ReportsResponse {
   default_booking_log_email?: string | null;
   /** The calendar these figures are for when one was asked for; null or absent is the whole venue. */
   calendar?: ReportCalendarRef | null;
+  /** What the figures are for (release 1). Absent from older servers. */
+  scope?: ReportScopeEcho | null;
+  /** The figures the cards compare (release 1). Absent from older servers. */
+  headline?: OverviewHeadline | null;
+  /** Each business's figures, only for everyone together (`business=all`). */
+  by_business?: OverviewBusinessRow[] | null;
+  /** The same figures for the earlier period. Absent from older servers: no change pills. */
+  comparison?: (ReportComparisonRange & { figures: OverviewHeadline }) | null;
+}
+
+// ─── Showing and comparisons (release 1, 2026-10-13; web report-scope.ts) ─────
+
+/** Why a report may show a venue: it is yours, a linked venue with full access, or a collective member. */
+export type ReportAccess = 'own' | 'link' | 'collective';
+
+/** What a report is showing, as each bookings report echoes it at the top level as `scope`. */
+export interface ReportScopeEcho {
+  kind: 'venue' | 'calendar' | 'business' | 'together';
+  /** "Plus 1", "Jess", "Light 3" or "Everyone together" (the collective's name in a collective). */
+  name: string;
+  /** The business shown, for a linked business or one of its calendars; null for your own. */
+  business: { venue_id: string; name: string; access: Exclude<ReportAccess, 'own'> } | null;
+}
+
+/** A business an admin may report on (GET /api/venue/reports/calendars `businesses`). */
+export interface ReportBusinessOption {
+  venue_id: string;
+  name: string;
+  access: Exclude<ReportAccess, 'own'>;
+  /** False when the business shared only some of its calendars on the link: "shared calendars". */
+  all_calendars: boolean;
+  /** The calendars it shares with you, inactive ones included and marked. */
+  calendars: ReportCalendarOption[];
+}
+
+/** Everything the Showing picker offers (GET /api/venue/reports/calendars). */
+export interface ReportShowingOptions {
+  /** Your own venue; null from a server before release 1. */
+  venue: { id: string; name: string } | null;
+  calendars: ReportCalendarOption[];
+  /** Empty for staff, and from older servers. */
+  businesses: ReportBusinessOption[];
+  /** "Everyone together" (or the collective's name), or null when there is no business. */
+  together: { name: string } | null;
+}
+
+/** The Overview's headline figures, current (`headline`) and earlier (`comparison.figures`). */
+export interface OverviewHeadline {
+  bookings_created: number;
+  places_booked: number;
+  seen: number;
+  cancellation_rate_pct: number;
+  no_show_count: number;
+  no_show_rate_pct: number;
+  deposits_collected_pence: number;
+  new_clients: number;
+  returning_clients: number;
+  anonymous_visits: number;
+}
+
+/** What a comparison is with: its basis and dates. */
+export interface ReportComparisonRange {
+  basis: 'previous' | 'last_year';
+  from: string;
+  to: string;
+}
+
+/** One business's part of a combined report. */
+export interface ReportBusinessPart {
+  venue_id: string;
+  venue_name: string;
+  access: ReportAccess;
+}
+
+export interface OverviewBusinessRow extends ReportBusinessPart {
+  headline: OverviewHeadline;
 }
 
 // ─── Calendar filter (the shared contract with the web, 2026-10-12) ──────────
@@ -328,6 +409,14 @@ export interface BookedRevenueReport {
   collective?: { id: string; name: string } | null;
   /** The calendar these figures are for when one was asked for; null or absent is the whole venue. */
   calendar?: ReportCalendarRef | null;
+  /** What the figures are for (release 1). Absent from older servers. */
+  scope?: ReportScopeEcho | null;
+  /** The main figures for the earlier period (release 1). Absent from older servers. */
+  comparison?:
+    | (ReportComparisonRange & {
+        totals: Pick<BookedRevenueCell, 'booked_pence' | 'no_show_pence' | 'booked_count' | 'no_show_count' | 'unpriced_count'>;
+      })
+    | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -354,5 +443,11 @@ export interface NewBookingsReport {
   totals: NewBookingCounts;
   /** The calendar these figures are for when one was asked for; null or absent is the whole venue. */
   calendar?: ReportCalendarRef | null;
+  /** What the figures are for (release 1). Absent from older servers. */
+  scope?: ReportScopeEcho | null;
+  /** Each business's totals, only for everyone together (`business=all`). */
+  by_business?: (ReportBusinessPart & { totals: NewBookingCounts })[] | null;
+  /** The totals for the earlier period (release 1). Absent from older servers. */
+  comparison?: (ReportComparisonRange & { totals: NewBookingCounts }) | null;
 }
 

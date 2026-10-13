@@ -135,6 +135,38 @@ describe('calendar_id goes to every report that splits by calendar', () => {
   });
 });
 
+describe('the Showing picker on the wire (release 1)', () => {
+  it('sends a business, everyone together and the comparison to the three bookings reports', async () => {
+    const { wrapper } = setup();
+    const { result } = await renderHook(
+      () => ({
+        overview: useReports('2026-10-01', '2026-10-11', true, { business: 'all', compare: 'last_year' }),
+        newBookings: useNewBookings({ kind: 'preset', preset: 'this_week' }, 'day', true, { business: 'venue-2', compare: 'previous' }),
+        revenue: useBookedRevenue({ kind: 'preset', preset: 'this_week' }, 'day', true, { calendarId: 'partner-cal', compare: 'previous' }),
+      }),
+      { wrapper },
+    );
+    await waitFor(() => expect(mockApiFetch).toHaveBeenCalledTimes(3));
+    await settled(result);
+    expect(paths().sort()).toEqual(
+      [
+        '/api/venue/reports?from=2026-10-01&to=2026-10-11&business=all&compare=last_year',
+        '/api/venue/reports/new-bookings?grain=day&preset=this_week&business=venue-2&compare=previous',
+        '/api/venue/reports/booked-revenue?grain=day&preset=this_week&calendar_id=partner-cal&compare=previous',
+      ].sort(),
+    );
+  });
+
+  it('keys each scope and comparison apart', () => {
+    expect(queryKeys.reports.range('t', 'a', 'b', null, 'all', 'previous')).not.toEqual(
+      queryKeys.reports.range('t', 'a', 'b', null, 'venue-2', 'previous'),
+    );
+    expect(queryKeys.reports.range('t', 'a', 'b', null, 'all', 'previous')).not.toEqual(
+      queryKeys.reports.range('t', 'a', 'b', null, 'all', 'last_year'),
+    );
+  });
+});
+
 describe('one calendar is never cached for another', () => {
   it('keys each calendar apart, and the whole venue apart from both', async () => {
     const { client, wrapper } = setup();
@@ -175,10 +207,31 @@ describe('the calendars list', () => {
     const { result } = await renderHook(() => useReportCalendars(), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(paths()).toEqual(['/api/venue/reports/calendars']);
-    expect(result.current.data).toEqual([
-      { id: 'c1', name: 'Hannah', active: true },
-      { id: 'c2', name: 'Old room', active: false },
-    ]);
+    expect(result.current.data).toEqual({
+      venue: null,
+      calendars: [
+        { id: 'c1', name: 'Hannah', active: true },
+        { id: 'c2', name: 'Old room', active: false },
+      ],
+      businesses: [],
+      together: null,
+    });
+  });
+
+  it('reads the businesses for an admin, and never for a team member', async () => {
+    mockApiFetch.mockResolvedValue({
+      venue: { id: 'v1', name: 'Plus 1' },
+      calendars: [{ id: 'c1', name: 'Hannah', active: true }],
+      businesses: [{ venue_id: 'v2', name: 'Light 3', access: 'collective', all_calendars: true, calendars: [] }],
+      together: { name: 'Studio Collective' },
+    });
+    const { wrapper } = setup();
+    const { result } = await renderHook(() => ({ admin: useReportCalendars(), staff: useReportCalendars(true, false) }), { wrapper });
+    await waitFor(() => expect(result.current.admin.isSuccess && result.current.staff.isSuccess).toBe(true));
+    expect(result.current.admin.data?.businesses.map((b) => b.name)).toEqual(['Light 3']);
+    expect(result.current.admin.data?.together).toEqual({ name: 'Studio Collective' });
+    expect(result.current.staff.data?.businesses).toEqual([]);
+    expect(result.current.staff.data?.together).toBeNull();
   });
 
   it.each([404, 403])('reads a %s as no calendars, so no picker shows', async (status) => {
@@ -186,7 +239,7 @@ describe('the calendars list', () => {
     const { wrapper } = setup();
     const { result } = await renderHook(() => useReportCalendars(), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data).toEqual([]);
+    expect(result.current.data).toEqual({ venue: null, calendars: [], businesses: [], together: null });
   });
 
   it('asks nothing while it is not enabled', async () => {

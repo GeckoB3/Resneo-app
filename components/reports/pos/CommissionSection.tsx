@@ -84,7 +84,7 @@ export function CommissionSection({ today }: { today: string }) {
 
       {data ? (
         <View style={[reportStyles.stack, q.isFetching ? styles.busy : null]} accessibilityState={{ busy: q.isFetching }}>
-          <CalendarScopeNote echoed={data.calendar} detail={reportCalendarCopy('cal.detail.commission')} />
+          <CalendarScopeNote echoed={data.calendar} detail={reportCalendarCopy('cal.detail.commission')} till />
           {!data.has_rates ? (
             <View accessibilityRole="text" style={[styles.note, { borderColor: colors.info, backgroundColor: colors.infoSurface }]}>
               <Text variant="bodySmall">{reportsCopy('rep.c.noRates')}</Text>

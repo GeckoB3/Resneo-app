@@ -22,6 +22,7 @@ import type {
   ReportResourceUtilisationRow,
   ReportTableUtilisationRow,
 } from '@/types/reports';
+import { reportScopeCopy } from '@/lib/reports/report-scope';
 
 /** One row: the name, its percentage, the bar, and the hours behind it. */
 function UtilisationRow({
@@ -121,6 +122,7 @@ export function ResourceUtilisationCard({
     <Card>
       <CardHeader
         title="Resource utilisation"
+        basis={reportScopeCopy('basis.date')}
         onExport={() => {
           const csv = buildResourceUtilisationCsv(rows, range);
           void exportCsv(csv.filename, csv.rows);

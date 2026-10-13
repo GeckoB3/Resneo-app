@@ -10,7 +10,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import type { ReactNode } from 'react';
 
 import { ApiError } from '@/lib/api/client';
-import type { ReportCalendarOption, ReportsResponse } from '@/types/reports';
+import type { ReportBusinessOption, ReportCalendarOption, ReportsResponse } from '@/types/reports';
 
 let mockParams: { tab?: string } = {};
 jest.mock('expo-router', () => ({ Stack: { Screen: () => null }, useLocalSearchParams: () => mockParams }));
@@ -65,10 +65,18 @@ jest.mock('@/lib/queries/useReports', () => ({
   },
 }));
 
-// The calendars the picker offers (GET /api/venue/reports/calendars).
+// What the Showing picker offers (GET /api/venue/reports/calendars).
 let mockCalendars: ReportCalendarOption[] = [];
+let mockBusinesses: ReportBusinessOption[] = [];
 jest.mock('@/lib/queries/useReportCalendars', () => ({
-  useReportCalendars: () => ({ data: mockCalendars }),
+  useReportCalendars: () => ({
+    data: {
+      venue: { id: 'v1', name: 'Plus 1' },
+      calendars: mockCalendars,
+      businesses: mockBusinesses,
+      together: mockBusinesses.length > 0 ? { name: 'Everyone together' } : null,
+    },
+  }),
 }));
 // The picker's sheet draws its children while open, as a plain view.
 jest.mock('@/components/ui/Sheet', () => {
@@ -162,7 +170,14 @@ jest.mock('@/components/reports/SmsUsageBanner', () => {
       enabled ? React.createElement(Text, { testID: 'sms-usage' }, 'sms') : null,
   };
 });
-jest.mock('@/components/reports/SvgBarChart', () => ({ SvgBarChart: () => null }));
+// Each bar chart's rows, so a test can read which bars a card drew.
+const mockBarCharts: { label: string; value: number }[][] = [];
+jest.mock('@/components/reports/SvgBarChart', () => ({
+  SvgBarChart: (props: { data: { label: string; value: number }[] }) => {
+    mockBarCharts.push(props.data);
+    return null;
+  },
+}));
 
 const mockDatePickerProps: {
   accessibilityLabel: string;
@@ -275,6 +290,8 @@ beforeEach(() => {
   mockExportProps.length = 0;
   mockReportsArgs.length = 0;
   mockCalendars = [];
+  mockBusinesses = [];
+  mockBarCharts.length = 0;
   mockReports.isError = false;
   mockReports.error = null;
 });
@@ -690,14 +707,19 @@ const HANNAH: ReportCalendarOption = { id: 'cal-hannah', name: 'Hannah', active:
 const JENNY: ReportCalendarOption = { id: 'cal-jenny', name: 'Jenny', active: true };
 const OLD_JO: ReportCalendarOption = { id: 'cal-jo', name: 'Jo', active: false };
 
-/** The calendar the Overview was last asked for (useReports' fourth argument). */
+/** What the Overview was last asked for (useReports' fourth argument: the scope and comparison). */
+function lastOverviewScope(): { calendarId?: string | null; business?: string | null; compare?: string | null } {
+  return (mockReportsArgs[mockReportsArgs.length - 1]?.[3] as ReturnType<typeof lastOverviewScope>) ?? {};
+}
+
+/** The calendar the Overview was last asked for. */
 function lastOverviewCalendar(): unknown {
-  return mockReportsArgs[mockReportsArgs.length - 1]?.[3] ?? null;
+  return lastOverviewScope().calendarId ?? null;
 }
 
 async function chooseCalendar(label: string) {
   await act(async () => {
-    fireEvent.press(screen.getByHintText('Opens the calendar choices'));
+    fireEvent.press(screen.getByHintText('Opens the choices of what to show'));
   });
   await act(async () => {
     fireEvent.press(screen.getByRole('radio', { name: label }));
@@ -708,16 +730,16 @@ describe('Reports calendar filter', () => {
   it('shows no picker until the venue has two calendars', async () => {
     mockCalendars = [HANNAH];
     await render(<ReportsScreen />);
-    expect(screen.queryByHintText('Opens the calendar choices')).toBeNull();
+    expect(screen.queryByHintText('Opens the choices of what to show')).toBeNull();
     expect(lastOverviewCalendar()).toBeNull();
   });
 
   it('lists All calendars and each calendar, labelling one no longer active', async () => {
     mockCalendars = [HANNAH, JENNY, OLD_JO];
     await render(<ReportsScreen />);
-    expect(screen.getByRole('button', { name: 'Calendar, All calendars' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Showing, All calendars' })).toBeTruthy();
     await act(async () => {
-      fireEvent.press(screen.getByHintText('Opens the calendar choices'));
+      fireEvent.press(screen.getByHintText('Opens the choices of what to show'));
     });
     expect(screen.getByText('Show figures for')).toBeTruthy();
     const radios = screen.getAllByRole('radio').map((r) => r.props.accessibilityLabel as string);
@@ -736,7 +758,7 @@ describe('Reports calendar filter', () => {
     await chooseCalendar('Hannah');
     expect(lastOverviewCalendar()).toBe('cal-hannah');
     expect(screen.queryByTestId('calendar-sheet')).toBeNull();
-    expect(screen.getByRole('button', { name: 'Calendar, Hannah' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Showing, Hannah' })).toBeTruthy();
     expect(screen.getByText('Showing Hannah only.')).toBeTruthy();
   });
 
@@ -747,7 +769,7 @@ describe('Reports calendar filter', () => {
     expect(screen.queryByText('These figures are for the whole venue.')).toBeNull();
     await chooseCalendar('Jenny');
     expect(lastOverviewCalendar()).toBe('cal-jenny');
-    expect(screen.queryByText(/^Showing/)).toBeNull();
+    expect(screen.queryByText(/^Showing .+ only\./)).toBeNull();
     expect(screen.getByText('These figures are for the whole venue.')).toBeTruthy();
   });
 
@@ -771,7 +793,7 @@ describe('Reports calendar filter', () => {
     await act(async () => {
       fireEvent.press(screen.getByText('Overview'));
     });
-    expect(screen.getByRole('button', { name: 'Calendar, Hannah' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Showing, Hannah' })).toBeTruthy();
     expect(lastOverviewCalendar()).toBe('cal-hannah');
     // Back to all calendars: every section is the whole venue again.
     await chooseCalendar('All calendars');
@@ -820,7 +842,7 @@ describe('Reports calendar filter', () => {
       await act(async () => {
         fireEvent.press(screen.getByText(tab));
       });
-      expect(screen.getByRole('button', { name: 'Calendar, All calendars' })).toHaveProp(
+      expect(screen.getByRole('button', { name: 'Showing, All calendars' })).toHaveProp(
         'accessibilityState',
         expect.objectContaining({ disabled: true }),
       );
@@ -828,7 +850,7 @@ describe('Reports calendar filter', () => {
     await act(async () => {
       fireEvent.press(screen.getByText('Sales'));
     });
-    expect(screen.getByRole('button', { name: 'Calendar, Hannah' })).toHaveProp(
+    expect(screen.getByRole('button', { name: 'Showing, Hannah' })).toHaveProp(
       'accessibilityState',
       expect.objectContaining({ disabled: false }),
     );
@@ -862,7 +884,7 @@ describe('Reports calendar filter', () => {
       fireEvent.press(screen.getByText('Show all calendars'));
     });
     expect(lastOverviewCalendar()).toBeNull();
-    expect(screen.getByRole('button', { name: 'Calendar, All calendars' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Showing, All calendars' })).toBeTruthy();
     expect(screen.getByText('Client directory')).toBeTruthy();
   });
 
@@ -892,5 +914,185 @@ describe('Reports calendar filter', () => {
     expect(screen.getByText('Something went wrong on our side.')).toBeTruthy();
     expect(screen.getByText('Try again')).toBeTruthy();
     expect(screen.queryByText('Show all calendars')).toBeNull();
+  });
+});
+
+const LIGHT3: ReportBusinessOption = {
+  venue_id: 'v2',
+  name: 'Light 3',
+  access: 'collective',
+  all_calendars: true,
+  calendars: [{ id: 'cal-jess', name: 'Jess', active: true }],
+};
+
+const HEADLINE = {
+  bookings_created: 12,
+  places_booked: 14,
+  seen: 9,
+  cancellation_rate_pct: 12.5,
+  no_show_count: 1,
+  no_show_rate_pct: 5,
+  deposits_collected_pence: 5000,
+  new_clients: 4,
+  returning_clients: 6,
+  anonymous_visits: 1,
+};
+
+describe('Reports Showing picker and comparison (release 1)', () => {
+  it('offers your venue, each business and everyone together, and asks the Overview for the choice', async () => {
+    mockCalendars = [HANNAH];
+    mockBusinesses = [LIGHT3];
+    await render(<ReportsScreen />);
+    // One calendar of your own, but a business to choose: the picker shows.
+    expect(screen.getByRole('button', { name: 'Showing, Plus 1: all calendars' })).toBeTruthy();
+    expect(lastOverviewScope()).toEqual({ calendarId: null, business: null, compare: 'previous' });
+    await act(async () => {
+      fireEvent.press(screen.getByHintText('Opens the choices of what to show'));
+    });
+    expect(screen.getAllByRole('radio').map((r) => r.props.accessibilityLabel)).toEqual([
+      'Plus 1: all calendars',
+      'Hannah',
+      'Light 3: all calendars',
+      'Jess',
+      'Everyone together',
+    ]);
+    await act(async () => {
+      fireEvent.press(screen.getByRole('radio', { name: 'Everyone together' }));
+    });
+    expect(lastOverviewScope()).toEqual({ calendarId: null, business: 'all', compare: 'previous' });
+    await chooseCalendar('Jess');
+    expect(lastOverviewScope()).toEqual({ calendarId: 'cal-jess', business: null, compare: 'previous' });
+    expect(screen.getByRole('button', { name: 'Showing, Jess at Light 3' })).toBeTruthy();
+    await chooseCalendar('Light 3: all calendars');
+    expect(lastOverviewScope()).toEqual({ calendarId: null, business: 'v2', compare: 'previous' });
+  });
+
+  it("never hands Sales a partner's choice: the picker greys out and the choice stays for the other tabs", async () => {
+    mockCalendars = [HANNAH, JENNY];
+    mockBusinesses = [LIGHT3];
+    mockPosAccess = { visible: true, can_view: true };
+    await render(<ReportsScreen />);
+    await chooseCalendar('Jess');
+    await act(async () => {
+      fireEvent.press(screen.getByText('Sales'));
+    });
+    // The till section reads no calendar at all.
+    expect(screen.getByText('sales calendar: all')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Showing, Plus 1: all calendars' })).toHaveProp(
+      'accessibilityState',
+      expect.objectContaining({ disabled: true }),
+    );
+    // No comparison on the till tabs.
+    expect(screen.queryByText('Compare with')).toBeNull();
+    await act(async () => {
+      fireEvent.press(screen.getByText('Overview'));
+    });
+    expect(screen.getByRole('button', { name: 'Showing, Jess at Light 3' })).toBeTruthy();
+    expect(lastOverviewCalendar()).toBe('cal-jess');
+  });
+
+  it('hands Sales your own calendar, as before', async () => {
+    mockCalendars = [HANNAH, JENNY];
+    mockBusinesses = [LIGHT3];
+    mockPosAccess = { visible: true, can_view: true };
+    await render(<ReportsScreen />);
+    await chooseCalendar('Hannah');
+    await act(async () => {
+      fireEvent.press(screen.getByText('Sales'));
+    });
+    expect(screen.getByText('sales calendar: Hannah')).toBeTruthy();
+  });
+
+  it('sends the comparison and keeps it while moving between tabs', async () => {
+    await render(<ReportsScreen />);
+    expect(screen.getByText('Compare with')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByText('Same dates last year'));
+    });
+    expect(lastOverviewScope().compare).toBe('last_year');
+    await act(async () => {
+      screen.getAllByText('Clients').forEach((node) => fireEvent.press(node));
+    });
+    expect(lastOverviewScope().compare).toBe('last_year');
+    expect(screen.getByText('Same dates last year')).toBeTruthy();
+  });
+
+  it('shows the changes on the headline figures, and what they compare with', async () => {
+    mockReports.data = reportsData({
+      headline: HEADLINE,
+      comparison: {
+        basis: 'previous',
+        from: '2026-07-14',
+        to: '2026-08-12',
+        figures: { ...HEADLINE, bookings_created: 10, places_booked: 14, seen: 0, cancellation_rate_pct: 10, no_show_rate_pct: 6, deposits_collected_pence: 10000 },
+      },
+    });
+    await render(<ReportsScreen />);
+    expect(screen.getByText('Changes compare with 14 Jul to 12 Aug 2026.')).toBeTruthy();
+    expect(screen.getByLabelText('+20%')).toBeTruthy();
+    expect(screen.getByLabelText('No change')).toBeTruthy();
+    expect(screen.getByLabelText('Up from 0')).toBeTruthy();
+    // A higher cancellation rate is worse; a lower no-show rate is better.
+    expect(screen.getByLabelText('+2.5 pts')).toBeTruthy();
+    expect(screen.getByLabelText('-1.0 pts')).toBeTruthy();
+    expect(screen.getByLabelText('-50%')).toBeTruthy();
+    expect(screen.getAllByText('Counted on the day each booking was made').length).toBeGreaterThanOrEqual(3);
+    expect(screen.getAllByText('Counted by appointment date').length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('shows no change pills from a server without a comparison', async () => {
+    await render(<ReportsScreen />);
+    expect(screen.queryByTestId('change-pill')).toBeNull();
+    expect(screen.queryByText(/^Changes compare with/)).toBeNull();
+  });
+
+  it('lists each business for everyone together, on the Overview and the Clients tab', async () => {
+    mockCalendars = [HANNAH];
+    mockBusinesses = [LIGHT3];
+    mockReports.data = reportsData({
+      scope: { kind: 'together', name: 'Everyone together', business: null },
+      headline: HEADLINE,
+      by_business: [
+        { venue_id: 'v1', venue_name: 'Plus 1', access: 'own', headline: HEADLINE },
+        { venue_id: 'v2', venue_name: 'Light 3', access: 'collective', headline: { ...HEADLINE, bookings_created: 3, new_clients: 2 } },
+      ],
+    });
+    await render(<ReportsScreen />);
+    expect(screen.getByLabelText('By business')).toBeTruthy();
+    expect(screen.getByText(/^Showing Everyone together: Plus 1 and Light 3\./)).toBeTruthy();
+    expect(screen.getAllByText('Appointments created').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText('Deposits collected').length).toBe(2);
+    await act(async () => {
+      screen.getAllByText('Clients').forEach((node) => fireEvent.press(node));
+    });
+    expect(screen.getByLabelText('By business')).toBeTruthy();
+    expect(screen.getAllByText('New clients').length).toBe(2);
+    expect(screen.getAllByText('Returning clients').length).toBe(2);
+    // A client of two businesses counts once at each.
+    expect(screen.getByText(/A client who visits two businesses counts once at each\./)).toBeTruthy();
+  });
+
+  it('has no table by business for a single scope', async () => {
+    mockReports.data = reportsData({ headline: HEADLINE, by_business: null });
+    await render(<ReportsScreen />);
+    expect(screen.queryByLabelText('By business')).toBeNull();
+  });
+
+  it('reads how they booked from the channels, and explains what a visit counts as', async () => {
+    mockReports.data = reportsData({
+      report7_appointment_insights: {
+        by_practitioner: [],
+        by_service: [],
+        by_booking_source: { phone: 9 },
+        by_channel: { online: 3, team: 2, walk_in: 0, linked_venue: 1 },
+      },
+    });
+    await render(<ReportsScreen />);
+    expect(mockBarCharts.some((data) => data.map((d) => d.label).join('|') === 'Online|By your team|By a linked venue')).toBe(true);
+    expect(
+      screen.getByText(
+        'Visits in this date range that were not cancelled, split by practitioner (calendar), by service, and by how the client booked. A visit with several services counts once on each calendar and once for each service in it. The "Arrived or completed" bar counts marked arrival, started, or completed visits.',
+      ),
+    ).toBeTruthy();
   });
 });

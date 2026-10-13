@@ -165,7 +165,7 @@ export function GrantEditor({
   /** Optional title rendered above the controls (used by GrantPairEditor). */
   label?: string;
   hint?: string;
-  /** Said under the booking actions when this access also shares booked value in Reports. */
+  /** Said under the booking actions when this access also shares the booking reports. */
   revenueNote?: string;
 }) {
   const { colors } = useTheme();

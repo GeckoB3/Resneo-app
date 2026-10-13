@@ -5,7 +5,7 @@ import { isBackendConfigured } from '@/lib/env';
 import { queryKeys } from '@/lib/queries/keys';
 import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { bookedRevenueQuery, type BookedRevenueRangeChoice } from '@/lib/reports/booked-revenue';
-import { calendarRetryOption } from '@/lib/reports/report-calendar';
+import { scopeRetryOption, type ReportScopeQuery } from '@/lib/reports/report-scope';
 import type { BookedRevenueGrain, BookedRevenueReport } from '@/types/reports';
 
 /**
@@ -16,17 +16,19 @@ import type { BookedRevenueGrain, BookedRevenueReport } from '@/types/reports';
  * venue's own today, so "This week" is the diary's week. The previous answer
  * stays on screen while the next range loads.
  *
- * `calendarId` asks for one calendar's figures (`calendar_id`); it is in the
- * query string, so it is in the key too.
+ * `scope` is what the Showing picker chose (`calendar_id`, `business`,
+ * `compare`; lib/reports/report-scope.ts), or a bare calendar id as before
+ * release 1. Since release 1 the default is your own venue only; `business=all`
+ * adds every partner. It is in the query string, so it is in the key too.
  */
 export function useBookedRevenue(
   choice: BookedRevenueRangeChoice,
   grain: BookedRevenueGrain,
   enabled = true,
-  calendarId: string | null = null,
+  scope: ReportScopeQuery | string | null = null,
 ) {
   const accessToken = useAccessToken();
-  const query = bookedRevenueQuery(choice, grain, calendarId);
+  const query = bookedRevenueQuery(choice, grain, scope);
   const queryEnabled = enabled && isBackendConfigured() && accessToken !== null;
 
   return useQuery({
@@ -34,7 +36,7 @@ export function useBookedRevenue(
     enabled: queryEnabled,
     placeholderData: keepPreviousData,
     staleTime: 30_000,
-    ...calendarRetryOption(calendarId),
+    ...scopeRetryOption(scope),
     queryFn: async (): Promise<BookedRevenueReport> => {
       if (!accessToken) {
         throw new Error('Missing access token');

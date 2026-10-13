@@ -1,11 +1,14 @@
 import { useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
+import { BasisCaption, ChangePill, ComparisonCaption } from '@/components/reports/ComparisonParts';
+import { ReportTable, type Column } from '@/components/reports/pos/PosReportUi';
 import {
   CalendarRefusal,
   CalendarScopeNote,
   useCalendarRefusal,
   useReportCalendar,
+  useReportScopeQuery,
 } from '@/components/reports/ReportCalendarFilter';
 import { SvgStackedBarChart, type StackedRow, type StackedSeries } from '@/components/reports/SvgStackedBarChart';
 import { Button } from '@/components/ui/Button';
@@ -34,16 +37,19 @@ import {
   type NewBookingsRangeChoice,
 } from '@/lib/reports/new-bookings';
 import { reportCalendarCopy } from '@/lib/reports/report-calendar';
+import { describeChange } from '@/lib/reports/report-comparison';
+import { reportScopeCopy, showingCsvScope } from '@/lib/reports/report-scope';
 import { useToast } from '@/providers/ToastProvider';
 import { spacing } from '@/theme/index';
-import type { NewBookingsGrain } from '@/types/reports';
+import type { NewBookingsGrain, NewBookingsReport } from '@/types/reports';
 
-
+type BusinessRow = NonNullable<NewBookingsReport['by_business']>[number];
 
 /**
  * Reports, New bookings (web `NewBookingsSection.tsx`, 2026-09-18): bookings MADE per day, week
- * or month, split by how they came in, with a preset or custom range and a CSV. With a calendar
- * chosen on the Reports screen, only that calendar's bookings (`calendar_id`).
+ * or month, split by how they came in, with a preset or custom range and a CSV. It follows the
+ * Reports screen's Showing picker (a calendar, yours or a partner's, a business, or everyone together,
+ * with a table by business) and its comparison (the total's change against an earlier period).
  */
 export function NewBookingsSection({ bookingWord, today, enabled = true }: { bookingWord: string; today: string; enabled?: boolean }) {
   const toast = useToast();
@@ -52,10 +58,33 @@ export function NewBookingsSection({ bookingWord, today, enabled = true }: { boo
   const [customFrom, setCustomFrom] = useState(today);
   const [customTo, setCustomTo] = useState(today);
   const [grain, setGrain] = useState<NewBookingsGrain>('day');
-  const { calendar } = useReportCalendar();
-  const query = useNewBookings(choice, grain, enabled, calendar?.id ?? null);
+  const { showing } = useReportCalendar();
+  const scopeQuery = useReportScopeQuery();
+  const query = useNewBookings(choice, grain, enabled, scopeQuery);
   const data = query.data;
-  const refusal = useCalendarRefusal(query.error);
+  const refusal = useCalendarRefusal(query.error, 'bookings');
+  const byBusiness = data?.by_business && data.by_business.length > 0 ? data.by_business : null;
+  // The CSV's first lines and file tag for the choice, each business named for everyone together.
+  const csvScope = showingCsvScope(showing, byBusiness?.map((b) => b.venue_name));
+  const totalChange = data?.comparison ? describeChange(data.totals.total, data.comparison.totals?.total, 'count') : null;
+  const businessColumns: Column<BusinessRow>[] = [
+    {
+      label: reportScopeCopy('scope.business.col'),
+      value: (r) => (
+        <Text variant="bodyMedium">
+          {r.venue_name}
+          {r.access === 'own' ? (
+            <Text variant="caption" tone="muted">
+              {' (you)'}
+            </Text>
+          ) : null}
+        </Text>
+      ),
+    },
+    { label: 'Bookings made', value: (r) => String(r.totals.total), numeric: true },
+    { label: 'Cancelled', value: (r) => String(r.totals.cancelled), numeric: true },
+    { label: 'Waiting for payment', value: (r) => String(r.totals.awaiting_payment), numeric: true },
+  ];
 
   const channels = useMemo(
     () => NEW_BOOKING_CHANNELS.filter((c) => c !== 'linked_venue' || (data?.totals.by_channel.linked_venue ?? 0) > 0),
@@ -85,7 +114,7 @@ export function NewBookingsSection({ bookingWord, today, enabled = true }: { boo
 
   const exportCsv = async () => {
     if (!data) return;
-    const result = await buildAndShareCsv(newBookingsCsvFilename(data, calendar), newBookingsCsvRows(data, calendar));
+    const result = await buildAndShareCsv(newBookingsCsvFilename(data, csvScope), newBookingsCsvRows(data, csvScope));
     if (!result.ok) toast.error(result.message);
   };
 
@@ -93,6 +122,7 @@ export function NewBookingsSection({ bookingWord, today, enabled = true }: { boo
     <View style={styles.section}>
       <Card style={styles.card}>
         <Text variant="subheading">New {bookingWord.toLowerCase()}s</Text>
+        <BasisCaption basis="made" />
         <Text variant="bodySmall" tone="secondary">
           {`How many ${bookingWord.toLowerCase()}s were made in the period, whatever date each is for, and how they came in. A cancelled one still counts as made.`}
         </Text>
@@ -154,9 +184,19 @@ export function NewBookingsSection({ bookingWord, today, enabled = true }: { boo
             <Text variant="caption" tone="muted">
               {rangeLabel}
             </Text>
-            <CalendarScopeNote echoed={data.calendar} detail={reportCalendarCopy('cal.detail.newBookings')} />
+            <CalendarScopeNote
+              echoed={data.calendar}
+              scope={data.scope}
+              detail={reportCalendarCopy('cal.detail.newBookings')}
+              togetherNames={byBusiness?.map((b) => b.venue_name)}
+            />
             <View style={styles.tiles}>
-              <StatTile label={`New ${bookingWord.toLowerCase()}s`} value={String(data.totals.total)} style={styles.tile} />
+              <StatTile
+                label={`New ${bookingWord.toLowerCase()}s`}
+                value={String(data.totals.total)}
+                badge={<ChangePill change={totalChange} />}
+                style={styles.tile}
+              />
               {channels.map((c) => (
                 <StatTile key={c} label={NEW_BOOKING_CHANNEL_LABELS[c]} value={String(data.totals.by_channel[c] ?? 0)} style={styles.tile} />
               ))}
@@ -166,7 +206,21 @@ export function NewBookingsSection({ bookingWord, today, enabled = true }: { boo
                 {footnote}
               </Text>
             ) : null}
+            <ComparisonCaption comparison={data.comparison} />
           </Card>
+          {byBusiness ? (
+            <Card style={styles.card}>
+              <Text variant="label" accessibilityRole="header">
+                {reportScopeCopy('scope.byBusiness')}
+              </Text>
+              <ReportTable
+                caption={reportScopeCopy('scope.byBusiness')}
+                columns={businessColumns}
+                rows={byBusiness}
+                rowKey={(r) => r.venue_id}
+              />
+            </Card>
+          ) : null}
           {rows.length > 0 && series.length > 0 ? (
             <Card style={styles.card}>
               <SvgStackedBarChart rows={rows} series={series} formatValue={(v) => String(Math.round(v))} />

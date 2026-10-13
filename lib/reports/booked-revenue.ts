@@ -5,7 +5,8 @@
  * or without no-shows, the bar colours, the venue breakdown and its notes, and
  * the CSV rows. The aggregation itself is the server's; the app reads its answer.
  */
-import { calendarFileTag, withCalendarCsvLine, withCalendarParam } from '@/lib/reports/report-calendar';
+import { calendarFileTag, withCalendarCsvLine } from '@/lib/reports/report-calendar';
+import { withScopeParams, type ReportScopeQuery } from '@/lib/reports/report-scope';
 import type {
   BookedRevenueCell,
   BookedRevenueGrain,
@@ -56,12 +57,13 @@ export type BookedRevenueRangeChoice =
 
 /**
  * The query string for a choice and grain (the server resolves presets from the venue's today),
- * with `calendar_id` when one calendar's figures are asked for.
+ * with the Showing picker's scope (`calendar_id` or `business`) and `compare` when given; a bare
+ * string is one calendar, as before release 1.
  */
 export function bookedRevenueQuery(
   choice: BookedRevenueRangeChoice,
   grain: BookedRevenueGrain,
-  calendarId: string | null = null,
+  scope: ReportScopeQuery | string | null = null,
 ): string {
   const p = new URLSearchParams({ grain });
   if (choice.kind === 'preset') p.set('preset', choice.preset);
@@ -69,7 +71,7 @@ export function bookedRevenueQuery(
     p.set('from', choice.from);
     p.set('to', choice.to);
   }
-  return withCalendarParam(p.toString(), calendarId);
+  return withScopeParams(p.toString(), scope);
 }
 
 function parseYmd(ymd: string): Date {
@@ -230,16 +232,20 @@ export function listVenueNames(names: string[]): string {
 }
 
 /**
- * Whether the report is split by venue (web `showVenueBreakdown`): more than one venue, or a
- * collective. An older server sends no venue list, which reads as no breakdown rather than a failure.
+ * Whether the report is split by venue (web `showVenueBreakdown`): everyone together, or, from a
+ * server before release 1 (no `scope`), more than one venue or a collective. An older server sends no venue list, which reads as no breakdown rather than a failure.
  * One calendar is one column of your own (the server leaves partners out), so never with a calendar
  * chosen.
  */
 export function showBookedRevenueVenues(
-  data: Pick<BookedRevenueReport, 'venues' | 'collective'>,
+  data: Pick<BookedRevenueReport, 'venues' | 'collective' | 'scope'>,
   calendar: { name: string } | null = null,
 ): boolean {
-  if (calendar) return false;
+  // As the web: never for one calendar; otherwise when there is more than one venue (a business or
+  // everyone together) or a collective (its "Through" column, even for your own venue alone).
+  if (data.scope && typeof data.scope.kind === 'string') {
+    if (data.scope.kind === 'calendar') return false;
+  } else if (calendar) return false;
   return (data.venues ?? []).length > 1 || data.collective != null;
 }
 
@@ -276,7 +282,7 @@ export function bookedRevenueLinkedVenueNames(
 export function bookedRevenueCsvRows(
   data: BookedRevenueReport,
   includeNoShows: boolean,
-  calendar: { name: string } | null = null,
+  calendar: { name: string; lines?: string[][] } | null = null,
 ): string[][] {
   const header = ['Period', ...data.columns.map(bookedRevenueColumnName), 'Total', 'No-shows'];
   const money = (pence: number) => (pence / 100).toFixed(2);

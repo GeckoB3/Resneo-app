@@ -168,9 +168,9 @@ export function describeGrant(grant: LinkGrant): string[] {
   if (grant.act === 'edit_existing') out.push('edit existing bookings');
   if (grant.act === 'create_edit_cancel') {
     out.push('create, edit and cancel bookings');
-    // Full detail with full booking management also shares booked value in Reports (the web's
-    // grantAllowsRevenueReporting, src/lib/reports/booked-revenue.ts).
-    out.push('see booked value in Reports');
+    // Full detail with full booking management also shares the booking reports, never till money
+    // (the web's grantAllowsRevenueReporting, src/lib/reports/report-scope.ts).
+    out.push('see booking reports');
   }
   if (scopeNote) out.push(scopeNote);
   return out;

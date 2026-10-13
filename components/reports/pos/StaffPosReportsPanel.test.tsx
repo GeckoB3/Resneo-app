@@ -21,10 +21,12 @@ jest.mock('@/components/ui/Sheet', () => {
 
 let mockCalendars: ReportCalendarOption[] = [];
 const mockCalendarsEnabled: unknown[] = [];
+const mockAllowBusinesses: unknown[] = [];
 jest.mock('@/lib/queries/useReportCalendars', () => ({
-  useReportCalendars: (enabled: unknown) => {
+  useReportCalendars: (enabled: unknown, allowBusinesses: unknown) => {
     mockCalendarsEnabled.push(enabled);
-    return { data: mockCalendars };
+    mockAllowBusinesses.push(allowBusinesses);
+    return { data: { venue: null, calendars: mockCalendars, businesses: [], together: null } };
   },
 }));
 
@@ -58,8 +60,10 @@ it('offers the Calendar picker on Sales, greys it out on Takings, and keeps the 
   await render(<StaffPosReportsPanel canExport={false} today="2026-10-09" />);
   // The panel asks for the list itself: a team member's Reports have no admin screen around them.
   expect(mockCalendarsEnabled).toContain(true);
+  // A team member is never offered a linked business or everyone together.
+  expect(mockAllowBusinesses.every((allow) => allow === false)).toBe(true);
   // Takings is always the whole venue's: the picker is greyed out there, as on the web.
-  expect(screen.getByRole('button', { name: 'Calendar, All calendars' })).toHaveProp(
+  expect(screen.getByRole('button', { name: 'Showing, All calendars' })).toHaveProp(
     'accessibilityState',
     expect.objectContaining({ disabled: true }),
   );
@@ -67,7 +71,7 @@ it('offers the Calendar picker on Sales, greys it out on Takings, and keeps the 
     fireEvent.press(screen.getByRole('tab', { name: 'Sales' }));
   });
   await act(async () => {
-    fireEvent.press(screen.getByRole('button', { name: 'Calendar, All calendars' }));
+    fireEvent.press(screen.getByRole('button', { name: 'Showing, All calendars' }));
   });
   expect(screen.getAllByRole('radio').map((r) => r.props.accessibilityLabel)).toEqual([
     'All calendars',
@@ -83,19 +87,19 @@ it('offers the Calendar picker on Sales, greys it out on Takings, and keeps the 
   });
   // The choice is kept for Sales while Takings shows the whole venue.
   expect(screen.getByText('takings calendar: Hannah')).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'Calendar, All calendars' })).toHaveProp(
+  expect(screen.getByRole('button', { name: 'Showing, All calendars' })).toHaveProp(
     'accessibilityState',
     expect.objectContaining({ disabled: true }),
   );
   await act(async () => {
     fireEvent.press(screen.getByRole('tab', { name: 'Sales' }));
   });
-  expect(screen.getByRole('button', { name: 'Calendar, Hannah' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Showing, Hannah' })).toBeTruthy();
 });
 
 it('shows no picker when the server lists fewer than two calendars for this login', async () => {
   mockCalendars = [{ id: 'c1', name: 'Hannah', active: true }];
   await render(<StaffPosReportsPanel canExport={false} today="2026-10-09" />);
-  expect(screen.queryByRole('button', { name: 'Calendar, All calendars' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Showing, All calendars' })).toBeNull();
   expect(screen.getByText('takings calendar: all')).toBeTruthy();
 });

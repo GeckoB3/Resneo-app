@@ -159,9 +159,27 @@ export const queryKeys = {
 
   reports: {
     all: () => [...queryKeys.all, 'reports'] as const,
-    /** The Overview and Clients payload, per range and per calendar (null: the whole venue). */
-    range: (accessToken?: string | null, from?: string | null, to?: string | null, calendarId?: string | null) =>
-      [...queryKeys.reports.all(), keyScope(accessToken), from ?? null, to ?? null, calendarId ?? null] as const,
+    /**
+     * The Overview and Clients payload, per range, per calendar (null: the whole venue), per business
+     * (`all` for everyone together) and per comparison.
+     */
+    range: (
+      accessToken?: string | null,
+      from?: string | null,
+      to?: string | null,
+      calendarId?: string | null,
+      business?: string | null,
+      compare?: string | null,
+    ) =>
+      [
+        ...queryKeys.reports.all(),
+        keyScope(accessToken),
+        from ?? null,
+        to ?? null,
+        calendarId ?? null,
+        business ?? null,
+        compare ?? null,
+      ] as const,
     /** The calendars Reports can be filtered by (`GET /api/venue/reports/calendars`). */
     calendars: (accessToken?: string | null) =>
       [...queryKeys.reports.all(), 'calendars', keyScope(accessToken)] as const,

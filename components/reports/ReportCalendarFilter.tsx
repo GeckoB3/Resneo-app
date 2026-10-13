@@ -1,19 +1,22 @@
 /**
- * Reports' calendar filter (lib/reports/report-calendar.ts has the contract): one "Calendar" picker
- * for the whole Reports screen, "All calendars" plus each calendar, and what each section says
- * about it.
+ * Reports' "Showing" picker (lib/reports/report-scope.ts has the contract; it extends the one-calendar
+ * filter in lib/reports/report-calendar.ts): your whole venue, one of your calendars, a business you
+ * may report on, one of its shared calendars, or everyone together, and what each section says.
  *
  * The choice lives on the screen (`useReportCalendarFilter`) and reaches every section through
- * `ReportCalendarProvider`, so it holds while moving between tabs. Without a provider a section
- * reads "all calendars" and behaves exactly as it did before the filter.
+ * `ReportCalendarProvider`, so it holds while moving between tabs, with the "Compare with" choice
+ * beside it. Without a provider a section reads your whole venue and behaves exactly as it did
+ * before the filter.
  *
- * - Sections that split by calendar send `calendar_id`, then say what the answer is for:
- *   `CalendarScopeNote` ("Showing Hannah only.", or the whole venue when the answer carries no
- *   calendar).
- * - Sections that are always the whole venue show `WholeVenueNote` while a calendar is chosen; on
- *   Takings and Vouchers the picker is greyed out (`disabled`), as on the web.
- * - A refusal because of the filter (409 before the server's migration, 400 on `calendar_id`)
- *   shows the server's sentence with "Show all calendars" (`CalendarRefusal`).
+ * - The bookings sections (Overview and Clients, New bookings, Booked value) send the whole choice
+ *   (`useReportScopeQuery`), then say what the answer is for: `CalendarScopeNote`.
+ * - The till sections (Sales, Commission) read `calendar`, which is only ever one of your OWN
+ *   calendars: a partner's till money is never shared. With a partner or everyone together chosen
+ *   they show your venue's figures and say so (`CalendarScopeNote till`, `WholeVenueNote tab`).
+ * - Sections that are always the whole venue show `WholeVenueNote` while something is chosen; on
+ *   Takings and Vouchers, and on every till tab while a partner is chosen, the picker is greyed out.
+ * - A refusal because of the choice (409 before the server's migration, 400 on `calendar_id` or
+ *   `business`) shows the server's sentence with "Show all calendars" (`CalendarRefusal`).
  */
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
@@ -32,17 +35,32 @@ import { Sheet } from '@/components/ui/Sheet';
 import { Text } from '@/components/ui/Text';
 import { hapticTap } from '@/lib/haptics';
 import { useReportCalendars } from '@/lib/queries/useReportCalendars';
+import { calendarRefusalMessage, reportCalendarCopy } from '@/lib/reports/report-calendar';
+import type { ComparisonBasis } from '@/lib/reports/report-comparison';
 import {
-  calendarRefusalMessage,
-  calendarScope,
-  calendarScopeText,
-  reportCalendarCopy,
-  reportCalendarLabel,
-  showReportCalendarPicker,
-} from '@/lib/reports/report-calendar';
+  bookingScopeQuery,
+  isPartnerShowing,
+  NO_SHOWING_OPTIONS,
+  reportScopeCopy,
+  resolveShowing,
+  scopeNote,
+  scopeRefusalMessage,
+  showingChoiceKey,
+  showingPickerGroups,
+  showingPickerLabel,
+  showShowingPicker,
+  tillCalendarId,
+  tillScopeText,
+  togetherNamesFromOptions,
+  VENUE_CHOICE,
+  WHOLE_VENUE,
+  type ReportScopeQuery,
+  type ResolvedShowing,
+  type ShowingChoice,
+} from '@/lib/reports/report-scope';
 import { fonts, minTouchTarget, radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
-import type { ReportCalendarOption, ReportCalendarRef } from '@/types/reports';
+import type { ReportCalendarRef, ReportScopeEcho, ReportShowingOptions } from '@/types/reports';
 
 type Icon = SymbolViewProps['name'];
 const ICONS = {
@@ -56,58 +74,124 @@ const ICONS = {
 // ─── The choice, shared with every section ───────────────────────────────────
 
 interface ReportCalendarValue {
-  /** The calendar chosen, or null for all calendars (the whole venue). */
+  /**
+   * One of your OWN calendars, or null: what a till report (Sales, Commission) may be sent. Never a
+   * partner's calendar.
+   */
   calendar: ReportCalendarRef | null;
-  /** Back to all calendars: a section's way out of a refusal. */
+  /** What the bookings reports show: your venue, a calendar (yours or a partner's), a business, or together. */
+  showing: ResolvedShowing;
+  /** The picker's choices, for the together note's names. */
+  options: ReportShowingOptions;
+  /** "Compare with": the previous period (the default) or the same dates last year. */
+  compare: ComparisonBasis;
+  /** Back to your whole venue: a section's way out of a refusal. */
   clearCalendar: () => void;
 }
 
-const NO_CALENDAR: ReportCalendarValue = { calendar: null, clearCalendar: () => {} };
+const NO_CALENDAR: ReportCalendarValue = {
+  calendar: null,
+  showing: WHOLE_VENUE,
+  options: NO_SHOWING_OPTIONS,
+  compare: 'previous',
+  clearCalendar: () => {},
+};
 
 const ReportCalendarContext = createContext<ReportCalendarValue>(NO_CALENDAR);
 
+/** One of your own calendars as a choice (a provider given only `calendar`, as before release 1). */
+function ownCalendarShowing(calendar: ReportCalendarRef | null): ResolvedShowing {
+  if (!calendar) return WHOLE_VENUE;
+  return {
+    choice: { kind: 'calendar', calendarId: calendar.id },
+    kind: 'calendar',
+    calendar,
+    business: null,
+    name: calendar.name,
+  };
+}
+
 export function ReportCalendarProvider({
-  calendar,
+  calendar = null,
+  showing,
+  options = NO_SHOWING_OPTIONS,
+  compare = 'previous',
   onClear,
   children,
 }: {
-  calendar: ReportCalendarRef | null;
+  /** One of your own calendars; read when `showing` is not given. */
+  calendar?: ReportCalendarRef | null;
+  showing?: ResolvedShowing;
+  options?: ReportShowingOptions;
+  compare?: ComparisonBasis;
   onClear: () => void;
   children: ReactNode;
 }) {
-  const value = useMemo(() => ({ calendar, clearCalendar: onClear }), [calendar, onClear]);
+  const value = useMemo<ReportCalendarValue>(() => {
+    const shown = showing ?? ownCalendarShowing(calendar);
+    return {
+      calendar: tillCalendarId(shown) && shown.calendar ? shown.calendar : null,
+      showing: shown,
+      options,
+      compare,
+      clearCalendar: onClear,
+    };
+  }, [calendar, showing, options, compare, onClear]);
   return <ReportCalendarContext.Provider value={value}>{children}</ReportCalendarContext.Provider>;
 }
 
-/** The calendar the Reports screen is showing (null: all calendars). */
+/** What the Reports screen is showing (`calendar` null: your whole venue, for a till report). */
 export function useReportCalendar(): ReportCalendarValue {
   return useContext(ReportCalendarContext);
 }
 
 /**
- * The screen's filter state: the calendars to choose from (`GET /api/venue/reports/calendars`) and
- * the one chosen. A calendar that has gone from the list reads as all calendars, so no report is
- * asked for a calendar the server no longer offers.
+ * What a bookings report (Overview and Clients, New bookings, Booked value) is sent: `calendar_id`,
+ * `business` and `compare`. Stable while the choice is, so it can sit in a query's inputs.
  */
-export function useReportCalendarFilter(enabled = true) {
-  const list = useReportCalendars(enabled);
-  const [chosenId, setChosenId] = useState<string | null>(null);
-  const options = useMemo(() => list.data ?? [], [list.data]);
-  const chosen = chosenId ? (options.find((o) => o.id === chosenId) ?? null) : null;
-  // Kept by id and name, so a refreshed list hands the sections the same calendar.
-  const id = chosen?.id ?? null;
-  const name = chosen?.name ?? null;
+export function useReportScopeQuery(): ReportScopeQuery {
+  const { showing, compare } = useReportCalendar();
+  const { calendarId, business } = bookingScopeQuery(showing);
+  return useMemo(() => ({ calendarId, business, compare }), [calendarId, business, compare]);
+}
+
+/**
+ * The screen's picker state: the choices (`GET /api/venue/reports/calendars`), the one chosen, and
+ * the comparison. A calendar or business that has gone from the list reads as your whole venue, so no
+ * report is asked for something the server no longer offers. `allowBusinesses` false (a team
+ * member) never offers a business.
+ */
+export function useReportCalendarFilter(enabled = true, allowBusinesses = true) {
+  const list = useReportCalendars(enabled, allowBusinesses);
+  const [choice, setChoice] = useState<ShowingChoice>(VENUE_CHOICE);
+  const [compare, setCompare] = useState<ComparisonBasis>('previous');
+  const options = useMemo(() => list.data ?? NO_SHOWING_OPTIONS, [list.data]);
+  const resolved = resolveShowing(options, choice);
+  // Kept by what it is, so a refreshed list hands the sections the same choice.
+  const key = [
+    showingChoiceKey(resolved.choice),
+    resolved.name,
+    resolved.calendar?.name ?? '',
+    resolved.business?.name ?? '',
+    resolved.business?.all_calendars ? '1' : '0',
+  ].join('|');
+  const [kept, setKept] = useState({ key, showing: resolved });
+  if (kept.key !== key) setKept({ key, showing: resolved });
+  const showing = kept.key === key ? kept.showing : resolved;
   const calendar = useMemo<ReportCalendarRef | null>(
-    () => (id !== null && name !== null ? { id, name } : null),
-    [id, name],
+    () => (tillCalendarId(showing) && showing.calendar ? showing.calendar : null),
+    [showing],
   );
-  const clear = useCallback(() => setChosenId(null), []);
+  const clear = useCallback(() => setChoice(VENUE_CHOICE), []);
   return {
     options,
+    showing,
     calendar,
-    choose: setChosenId,
+    choose: setChoice,
     clear,
-    showPicker: showReportCalendarPicker(options, calendar?.id ?? null),
+    compare,
+    setCompare,
+    showPicker: showShowingPicker(options, showing),
   };
 }
 
@@ -144,11 +228,13 @@ function CalendarOption({
 }
 
 /**
- * "Calendar: All calendars" on one line; a tap opens a sheet with "All calendars" and each
- * calendar (one no longer active says so), and choosing applies it and closes the sheet.
+ * "Showing: All calendars" on one line; a tap opens a sheet with the choices (lib/reports/report-scope.ts
+ * `showingPickerGroups`: your venue and its calendars, then each business and its calendars, then
+ * everyone together), and choosing applies it and closes the sheet.
  *
- * `disabled` on a tab whose figures are always the whole venue's (Takings, Vouchers): greyed out
- * and reading "All calendars", as the web's, while the tab says the choice stays on the others.
+ * `disabled` on a tab whose figures are always your venue's (Takings, Vouchers, and every till tab
+ * while a partner is chosen): greyed out and reading your whole venue, while the tab says the choice
+ * stays on the others.
  */
 export function ReportCalendarPicker({
   options,
@@ -156,19 +242,22 @@ export function ReportCalendarPicker({
   onChange,
   disabled = false,
 }: {
-  options: ReportCalendarOption[];
-  /** The chosen calendar's id, or null for all calendars. */
-  value: string | null;
-  onChange: (calendarId: string | null) => void;
+  options: ReportShowingOptions;
+  /** What is chosen. */
+  value: ResolvedShowing;
+  onChange: (choice: ShowingChoice) => void;
   disabled?: boolean;
 }) {
   const { colors } = useTheme();
   const { height } = useWindowDimensions();
   const [open, setOpen] = useState(false);
-  const chosen = value && !disabled ? (options.find((o) => o.id === value) ?? null) : null;
-  const label = chosen ? reportCalendarLabel(chosen) : reportCalendarCopy('cal.all');
-  const pick = (id: string | null) => {
-    onChange(id);
+  const shown = disabled ? WHOLE_VENUE : value;
+  const chosen = shown.kind !== 'venue';
+  const label = showingPickerLabel(options, shown);
+  const selectedKey = showingChoiceKey(shown.choice);
+  const groups = showingPickerGroups(options);
+  const pick = (choice: ShowingChoice) => {
+    onChange(choice);
     setOpen(false);
   };
 
@@ -180,8 +269,8 @@ export function ReportCalendarPicker({
           setOpen(true);
         }}
         accessibilityRole="button"
-        accessibilityLabel={`${reportCalendarCopy('cal.label')}, ${label}`}
-        accessibilityHint={disabled ? undefined : reportCalendarCopy('cal.hint')}
+        accessibilityLabel={`${reportScopeCopy('scope.label')}, ${label}`}
+        accessibilityHint={disabled ? undefined : reportScopeCopy('scope.hint')}
         accessibilityState={{ expanded: open, disabled }}
         disabled={disabled}
         style={({ pressed }) => [
@@ -194,7 +283,7 @@ export function ReportCalendarPicker({
         ]}>
         <SymbolView name={ICONS.calendars} size={18} tintColor={colors.brand} />
         <Text variant="label" tone="muted">
-          {reportCalendarCopy('cal.label')}
+          {reportScopeCopy('scope.label')}
         </Text>
         <Text variant="bodyMedium" numberOfLines={1} style={styles.flex}>
           {label}
@@ -208,15 +297,23 @@ export function ReportCalendarPicker({
         </Text>
         {/* Content-sized up to about half the screen, then it scrolls: a long team still fits. */}
         <ScrollView style={{ maxHeight: Math.round(height * 0.55) }} accessibilityRole="radiogroup">
-          <CalendarOption label={reportCalendarCopy('cal.all')} selected={!chosen} last={options.length === 0} onPress={() => pick(null)} />
-          {options.map((o, i) => (
-            <CalendarOption
-              key={o.id}
-              label={reportCalendarLabel(o)}
-              selected={chosen?.id === o.id}
-              last={i === options.length - 1}
-              onPress={() => pick(o.id)}
-            />
+          {groups.map((group, gi) => (
+            <View key={group.key} style={gi > 0 ? [styles.group, { borderTopColor: colors.border }] : null}>
+              {group.heading ? (
+                <Text variant="overline" tone="muted" accessibilityRole="header" style={styles.groupHeading}>
+                  {group.heading}
+                </Text>
+              ) : null}
+              {group.rows.map((row, i) => (
+                <CalendarOption
+                  key={row.key}
+                  label={row.label}
+                  selected={row.key === selectedKey}
+                  last={i === group.rows.length - 1}
+                  onPress={() => pick(row.choice)}
+                />
+              ))}
+            </View>
           ))}
         </ScrollView>
         <Text variant="bodySmall" tone="muted">
@@ -230,26 +327,45 @@ export function ReportCalendarPicker({
 // ─── What a section says ─────────────────────────────────────────────────────
 
 /**
- * Under a report that can split by calendar: what the figures on screen are for, from the answer
- * itself (`echoed` is its `calendar`). Nothing while all calendars are chosen and the answer is
- * the whole venue's, as before the filter.
+ * Under a report that can be narrowed: what the figures on screen are for, from the answer itself
+ * (`echoed` is its `calendar`, `scope` its `scope`). Nothing while your whole venue is chosen and the
+ * answer is the whole venue's, as before the picker.
+ *
+ * `till` for Sales and Commission, which only ever take one of your own calendars: while a partner
+ * or everyone together is chosen they say the figures are your venue's only.
+ * `togetherNames` lists each business for everyone together (the answer's own list), yours first;
+ * without it the picker's list is used.
  */
 export function CalendarScopeNote({
   echoed,
+  scope,
   detail,
+  till = false,
+  togetherNames,
   style,
 }: {
   echoed: ReportCalendarRef | null | undefined;
+  scope?: ReportScopeEcho | null;
   /** What one calendar's figures are, after "Showing {calendar} only." (the web's words). */
   detail?: string;
+  till?: boolean;
+  togetherNames?: readonly string[];
   style?: StyleProp<ViewStyle>;
 }) {
   const { colors } = useTheme();
-  const { calendar } = useReportCalendar();
-  const scope = calendarScope(calendar, echoed);
-  const text = calendarScopeText(scope);
-  if (!scope || !text) return null;
-  if (scope.kind === 'whole-venue') return <QuietLine text={text} style={style} />;
+  const { showing, calendar, options } = useReportCalendar();
+  if (till && isPartnerShowing(showing)) {
+    const tillText = tillScopeText(showing);
+    return tillText ? <QuietLine text={tillText} style={style} /> : null;
+  }
+  const chosen = till ? ownCalendarShowing(calendar) : showing;
+  const note = scopeNote(
+    chosen,
+    { calendar: echoed, scope: till ? null : scope },
+    { detail, togetherNames: togetherNames && togetherNames.length > 0 ? togetherNames : togetherNamesFromOptions(options) },
+  );
+  if (!note) return null;
+  if (note.kind === 'whole-venue') return <QuietLine text={reportCalendarCopy('cal.wholeVenue')} style={style} />;
   return (
     <View
       accessibilityRole="text"
@@ -257,19 +373,21 @@ export function CalendarScopeNote({
       <SymbolView name={ICONS.filter} size={16} tintColor={colors.brand} style={styles.quietIcon} />
       <Text variant="bodySmall" style={styles.flex}>
         <Text variant="bodySmall" style={styles.bold}>
-          {text}
+          {note.lead}
         </Text>
-        {detail ? ` ${detail}` : null}
+        {note.detail ? ` ${note.detail}` : null}
       </Text>
     </View>
   );
 }
 
 /**
- * In a report that is always the whole venue, while a calendar is chosen (the web's words):
- * - `figures`: a card inside a tab that splits by calendar (stock, history, SMS usage);
- * - `tab`: a whole tab, Takings or Vouchers, where the picker is greyed out: "These figures are for
- *   the whole venue. {calendar} stays chosen on the other tabs.";
+ * In a report that is always your venue's, while something is chosen (the web's words):
+ * - `figures`: a card inside a tab that can be narrowed (stock, history, SMS usage);
+ * - `tab`: a whole tab, Takings or Vouchers (and Sales or Commission while a partner is chosen),
+ *   where the picker is greyed out: "These figures are for the whole venue. {calendar} stays chosen
+ *   on the other tabs.", or, for a partner or everyone together, that takings and sales are never
+ *   shared between businesses;
  * - `files`: the data export.
  */
 export function WholeVenueNote({
@@ -279,15 +397,18 @@ export function WholeVenueNote({
   variant?: 'figures' | 'tab' | 'files';
   style?: StyleProp<ViewStyle>;
 }) {
-  const { calendar } = useReportCalendar();
-  if (!calendar) return null;
+  const { showing } = useReportCalendar();
+  if (showing.kind === 'venue') return null;
+  const partner = isPartnerShowing(showing);
   const text =
     variant === 'tab'
-      ? reportCalendarCopy('cal.wholeVenueTab', { calendar: calendar.name })
+      ? partner
+        ? tillScopeText(showing)
+        : reportCalendarCopy('cal.wholeVenueTab', { calendar: showing.name })
       : variant === 'files'
         ? reportCalendarCopy('cal.wholeVenueFiles')
         : reportCalendarCopy('cal.wholeVenue');
-  return <QuietLine text={text} style={style} />;
+  return text ? <QuietLine text={text} style={style} /> : null;
 }
 
 function QuietLine({ text, style }: { text: string; style?: StyleProp<ViewStyle> }) {
@@ -303,23 +424,28 @@ function QuietLine({ text, style }: { text: string; style?: StyleProp<ViewStyle>
 }
 
 /**
- * The server's sentence when it refused this report because of the chosen calendar (or null for
- * any other failure), for the section to show in place of its usual error.
+ * The server's sentence when it refused this report because of the choice (or null for any other
+ * failure), for the section to show in place of its usual error. `kind` 'bookings' for Overview and
+ * Clients, New bookings and Booked value (a calendar, yours or a partner's, or a business); 'till'
+ * (the default) for Sales and Commission (one of your own calendars).
  */
-export function useCalendarRefusal(error: unknown): string | null {
-  const { calendar } = useReportCalendar();
-  return calendarRefusalMessage(error, calendar != null);
+export function useCalendarRefusal(error: unknown, kind: 'till' | 'bookings' = 'till'): string | null {
+  const { calendar, showing } = useReportCalendar();
+  return kind === 'bookings'
+    ? scopeRefusalMessage(error, showing.kind !== 'venue')
+    : calendarRefusalMessage(error, calendar != null);
 }
 
 /** The refusal in the section: the server's words, and the way back to all calendars. */
 export function CalendarRefusal({ message }: { message: string }) {
   const { colors } = useTheme();
-  const { clearCalendar } = useReportCalendar();
+  const { clearCalendar, showing } = useReportCalendar();
   return (
     <View accessibilityRole="alert" style={[styles.refusal, { borderColor: colors.warning, backgroundColor: colors.warningSurface }]}>
       <Text variant="bodySmall">{message}</Text>
       <Button
-        label={reportCalendarCopy('cal.showAll')}
+        // The web's words: back to all calendars, or to your venue from a partner or everyone together.
+        label={isPartnerShowing(showing) ? reportScopeCopy('scope.showYourVenue') : reportCalendarCopy('cal.showAll')}
         size="sm"
         variant="secondary"
         onPress={clearCalendar}
@@ -342,6 +468,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   option: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, minHeight: 48 },
+  group: { borderTopWidth: StyleSheet.hairlineWidth, marginTop: spacing.xs, paddingTop: spacing.xs },
+  groupHeading: { marginTop: spacing.sm },
   mark: { width: 20, alignItems: 'center' },
   scope: {
     flexDirection: 'row',

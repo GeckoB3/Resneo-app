@@ -23,11 +23,11 @@ const mockQueries: string[] = [];
 let mockReport: BookedRevenueReport | undefined;
 const mockQueryState = { isError: false, error: null as unknown };
 jest.mock('@/lib/queries/useBookedRevenue', () => ({
-  useBookedRevenue: (choice: unknown, grain: string, _enabled: boolean, calendarId: string | null) => {
+  useBookedRevenue: (choice: unknown, grain: string, _enabled: boolean, scope: unknown) => {
     const { bookedRevenueQuery } = jest.requireActual<typeof import('@/lib/reports/booked-revenue')>(
       '@/lib/reports/booked-revenue',
     );
-    mockQueries.push(bookedRevenueQuery(choice as never, grain as never, calendarId));
+    mockQueries.push(bookedRevenueQuery(choice as never, grain as never, scope as never));
     return {
       data: mockReport,
       isFetching: false,
@@ -45,6 +45,8 @@ jest.mock('@/lib/reports/csv-export', () => ({
 
 import { BookedRevenueSection } from '@/components/reports/BookedRevenueSection';
 import { ReportCalendarProvider } from '@/components/reports/ReportCalendarFilter';
+import { resolveShowing, type ShowingChoice } from '@/lib/reports/report-scope';
+import type { ReportShowingOptions } from '@/types/reports';
 import { buildAndShareCsv } from '@/lib/reports/csv-export';
 
 const cell = (booked: number, noShow = 0) => ({
@@ -205,7 +207,7 @@ describe('BookedRevenueSection: the Reports calendar filter', () => {
 
   it('asks for the whole venue when no calendar is chosen', async () => {
     await render(<BookedRevenueSection bookingWord="Appointment" today="2026-09-11" />);
-    expect(mockQueries[0]).toBe('grain=day&preset=this_week');
+    expect(mockQueries[0]).toBe('grain=day&preset=this_week&compare=previous');
     expect(screen.queryByText(/^Showing/)).toBeNull();
     expect(screen.queryByText('These figures are for the whole venue.')).toBeNull();
   });
@@ -230,7 +232,7 @@ describe('BookedRevenueSection: the Reports calendar filter', () => {
         <BookedRevenueSection bookingWord="Appointment" today="2026-09-11" />
       </ReportCalendarProvider>,
     );
-    expect(mockQueries[0]).toBe('grain=day&preset=this_week&calendar_id=cal-1');
+    expect(mockQueries[0]).toBe('grain=day&preset=this_week&calendar_id=cal-1&compare=previous');
     expect(screen.getByText('Showing Hannah only.')).toBeTruthy();
     expect(
       screen.getByText("Showing Hannah only. Just this calendar's column. Other calendars and linked venues are left out."),
@@ -310,5 +312,75 @@ describe('BookedRevenueSection: the Reports calendar filter', () => {
     expect(screen.getByText('Show all calendars')).toBeTruthy();
     // The figures kept on screen are the whole venue's, and say so.
     expect(screen.getByText('These figures are for the whole venue.')).toBeTruthy();
+  });
+});
+
+describe('BookedRevenueSection: Showing a business or everyone together (release 1)', () => {
+  const OPTIONS: ReportShowingOptions = {
+    venue: { id: 'v', name: 'Ours' },
+    calendars: [{ id: 'a', name: 'Hannah', active: true }],
+    businesses: [
+      { venue_id: 'mv', name: 'Member Studio', access: 'collective', all_calendars: true, calendars: [{ id: 'm', name: 'Mia', active: true }] },
+      { venue_id: 'p', name: 'Partner', access: 'link', all_calendars: true, calendars: [{ id: 'b', name: 'Jenny', active: true }] },
+    ],
+    together: { name: 'Aura Collective' },
+  };
+  function renderShowing(choice: ShowingChoice, compare: 'previous' | 'last_year' = 'previous') {
+    return render(
+      <ReportCalendarProvider showing={resolveShowing(OPTIONS, choice)} options={OPTIONS} compare={compare} onClear={jest.fn()}>
+        <BookedRevenueSection bookingWord="Appointment" today="2026-09-11" />
+      </ReportCalendarProvider>,
+    );
+  }
+  const comparison = {
+    basis: 'previous' as const,
+    from: '2026-08-31',
+    to: '2026-09-06',
+    totals: { booked_pence: 8000, no_show_pence: 2000, booked_count: 4, no_show_count: 1, unpriced_count: 0 },
+  };
+
+  it('asks for everyone together and the comparison, keeps the venue table, and lists each business', async () => {
+    mockReport = collectiveReport({ scope: { kind: 'together', name: 'Aura Collective', business: null }, comparison });
+    await renderShowing({ kind: 'together' }, 'last_year');
+    expect(mockQueries[0]).toBe('grain=day&preset=this_week&business=all&compare=last_year');
+    expect(screen.getByLabelText('Booked revenue by venue')).toBeTruthy();
+    expect(screen.getByText(/^Showing Aura Collective: Ours, Member Studio and Partner\./)).toBeTruthy();
+    // 10000 against 8000 (no-shows deducted): +25%.
+    expect(screen.getByLabelText('+25%')).toBeTruthy();
+    expect(screen.getByText('Changes compare with 31 Aug to 6 Sep 2026.')).toBeTruthy();
+  });
+
+  it('works the comparison out the same way when no-shows are included', async () => {
+    mockReport = collectiveReport({ scope: { kind: 'together', name: 'Aura Collective', business: null }, comparison });
+    await renderShowing({ kind: 'together' });
+    await act(async () => {
+      fireEvent(screen.getByTestId('include-no-shows'), 'valueChange', true);
+    });
+    // 10000 against 8000 + 2000: no change.
+    expect(screen.getByLabelText('No change')).toBeTruthy();
+  });
+
+  it('asks for one business, with its venue table (as the web), and says what a business shows', async () => {
+    mockReport = collectiveReport({
+      scope: { kind: 'business', name: 'Partner', business: { venue_id: 'p', name: 'Partner', access: 'link' } },
+      venues: [{ venue_id: 'p', venue_name: 'Partner', access: 'link' }],
+    });
+    await renderShowing({ kind: 'business', venueId: 'p' });
+    expect(mockQueries[0]).toBe('grain=day&preset=this_week&business=p&compare=previous');
+    expect(screen.getByLabelText('Booked revenue by venue')).toBeTruthy();
+    expect(
+      screen.getByText('Showing Partner. Bookings on the calendars Partner shares with you. Takings and sales are not shared between businesses.'),
+    ).toBeTruthy();
+  });
+
+  it('keeps the venue table for your own venue in a collective, for its Through column (as the web)', async () => {
+    mockReport = collectiveReport({
+      scope: { kind: 'venue', name: 'Ours', business: null },
+      venues: [{ venue_id: 'v', venue_name: 'Ours', access: 'own' }],
+    });
+    await renderShowing({ kind: 'venue' });
+    expect(screen.getByLabelText('Booked revenue by venue')).toBeTruthy();
+    // No comparison from this answer: no pill.
+    expect(screen.queryByTestId('change-pill')).toBeNull();
   });
 });

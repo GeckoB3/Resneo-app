@@ -123,7 +123,7 @@ export function SalesSection({ canExport, today }: { canExport: boolean; today: 
 
       {data ? (
         <View style={[reportStyles.stack, q.isFetching ? styles.busy : null]} accessibilityState={{ busy: q.isFetching }}>
-          <CalendarScopeNote echoed={data.calendar} detail={reportCalendarCopy('cal.detail.sales')} />
+          <CalendarScopeNote echoed={data.calendar} detail={reportCalendarCopy('cal.detail.sales')} till />
           {/* The figures first, in the web's colours (Part 2 mock-up 3). */}
           <KpiTiles
             items={[

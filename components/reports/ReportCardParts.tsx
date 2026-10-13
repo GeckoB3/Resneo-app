@@ -5,7 +5,7 @@
  * per-model cards (tables, event tiers, resources) are built the same way as
  * the sections that were already there.
  */
-import { useCallback } from 'react';
+import { useCallback, type ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Text } from '@/components/ui/Text';
@@ -17,15 +17,17 @@ import { useTheme } from '@/theme/useTheme';
 
 export type StatRowAccent = 'emerald' | 'amber' | 'red' | 'brand' | 'teal';
 
-/** One label + figure line inside a report card. */
+/** One label + figure line inside a report card, with an optional badge (the change pill) by the figure. */
 export function StatRow({
   label,
   value,
   accent,
+  badge,
 }: {
   label: string;
   value: string;
   accent?: StatRowAccent;
+  badge?: ReactNode;
 }) {
   const { colors } = useTheme();
   const valueColor =
@@ -46,6 +48,7 @@ export function StatRow({
       <Text variant="bodySmall" tone="muted" style={styles.statLabel}>
         {label}
       </Text>
+      {badge ? <View style={styles.badge}>{badge}</View> : null}
       <Text variant="bodyMedium" style={[styles.statValue, { color: valueColor }]}>
         {value}
       </Text>
@@ -56,26 +59,34 @@ export function StatRow({
 /**
  * A report card's title, with the CSV export action on the right. A blocked
  * export says why, in the web's words for that report
- * (`ReportSection`'s `exportBlockedMessage`).
+ * (`ReportSection`'s `exportBlockedMessage`). `basis` is the small line under
+ * the title that says which date the figures are counted by (release 1).
  */
 export function CardHeader({
   title,
   onExport,
   exportDisabled,
   exportBlockedMessage,
+  basis,
 }: {
   title: string;
   onExport?: () => void;
   exportDisabled?: boolean;
   exportBlockedMessage?: string;
+  basis?: string;
 }) {
   const { colors } = useTheme();
   const toast = useToast();
   return (
     <View style={styles.cardHeader}>
-      <Text variant="label" style={styles.cardTitle}>
-        {title}
-      </Text>
+      <View style={styles.cardTitle}>
+        <Text variant="label">{title}</Text>
+        {basis ? (
+          <Text variant="caption" tone="muted">
+            {basis}
+          </Text>
+        ) : null}
+      </View>
       {onExport ? (
         <Pressable
           accessibilityRole="button"
@@ -127,6 +138,9 @@ const styles = StyleSheet.create({
   },
   statValue: {
     fontVariant: ['tabular-nums'],
+  },
+  badge: {
+    alignSelf: 'center',
   },
   cardHeader: {
     flexDirection: 'row',
