@@ -6,11 +6,17 @@
  * prefixed `mock*`. Charts, the heavy child sections and the native date picker
  * are stubbed so each test is about what this screen decides.
  */
-import { act, fireEvent, render, screen } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, within } from '@testing-library/react-native';
 import type { ReactNode } from 'react';
 
 import { ApiError } from '@/lib/api/client';
-import type { ReportBusinessOption, ReportCalendarOption, ReportsResponse } from '@/types/reports';
+import type {
+  ReportBusinessOption,
+  ReportCalendarOption,
+  ReportsResponse,
+  SalonMeasures,
+  SalonMeasuresReport,
+} from '@/types/reports';
 
 let mockParams: { tab?: string } = {};
 jest.mock('expo-router', () => ({ Stack: { Screen: () => null }, useLocalSearchParams: () => mockParams }));
@@ -62,6 +68,23 @@ jest.mock('@/lib/queries/useReports', () => ({
   useReports: (...args: unknown[]) => {
     mockReportsArgs.push(args);
     return mockReports;
+  },
+}));
+
+// The salon measures (release 2): each call's arguments (from, to, enabled, scope).
+const mockMeasures = {
+  data: undefined as SalonMeasuresReport | undefined,
+  isLoading: false,
+  isError: false,
+  isRefetching: false,
+  error: null as unknown,
+  refetch: jest.fn(),
+};
+const mockMeasuresArgs: unknown[][] = [];
+jest.mock('@/lib/queries/useReportMeasures', () => ({
+  useReportMeasures: (...args: unknown[]) => {
+    mockMeasuresArgs.push(args);
+    return mockMeasures;
   },
 }));
 
@@ -294,6 +317,10 @@ beforeEach(() => {
   mockBarCharts.length = 0;
   mockReports.isError = false;
   mockReports.error = null;
+  mockMeasures.data = undefined;
+  mockMeasures.isError = false;
+  mockMeasures.error = null;
+  mockMeasuresArgs.length = 0;
 });
 
 describe('Reports overview range', () => {
@@ -526,8 +553,13 @@ describe('Reports POS tabs at full parity (web ReportsView)', () => {
     mockPosAccess = { visible: true, can_view: true, can_export: true };
     mockVouchersFlag = true;
     await render(<ReportsScreen />);
-    const labels = ['Overview', 'New bookings', 'Booked value', 'Takings', 'Sales', 'Vouchers', 'Commission', 'Clients'];
+    const labels = ['Overview', 'New bookings', 'Booked value', 'Team', 'Takings', 'Sales', 'Vouchers', 'Commission', 'Clients'];
     for (const label of labels) expect(screen.getAllByText(label).length).toBeGreaterThan(0);
+    // Team straight after Booked value, before the till tabs (release 2).
+    const order = within(screen.getByLabelText('Report tabs'))
+      .getAllByText(/.+/)
+      .map((n) => n.props.children as string);
+    expect(order).toEqual(labels);
     await act(async () => {
       fireEvent.press(screen.getByText('Vouchers'));
     });
@@ -1091,8 +1123,167 @@ describe('Reports Showing picker and comparison (release 1)', () => {
     expect(mockBarCharts.some((data) => data.map((d) => d.label).join('|') === 'Online|By your team|By a linked venue')).toBe(true);
     expect(
       screen.getByText(
-        'Visits in this date range that were not cancelled, split by practitioner (calendar), by service, and by how the client booked. A visit with several services counts once on each calendar and once for each service in it. The "Arrived or completed" bar counts marked arrival, started, or completed visits.',
+        'Visits in this date range that were not cancelled, by service and by how the client booked. A visit with several services counts once for each service in it.',
       ),
     ).toBeTruthy();
+  });
+});
+
+// ─── Release 2: salon measures and the Team tab ──────────────────────────────
+
+function salonMeasures(overrides: Partial<SalonMeasures> = {}): SalonMeasures {
+  return {
+    booked_pence: 103400,
+    visits: 40,
+    visit_pence: 103400,
+    avg_visit_pence: 2585,
+    booked_minutes: 1278,
+    working_minutes: 2040,
+    utilisation_pct: 62.5,
+    rebook_eligible: 40,
+    rebooked: 15,
+    rebooking_pct: 38,
+    cohort: 10,
+    returned: 4,
+    retention_pct: 40,
+    no_show_count: 2,
+    no_show_due: 50,
+    no_show_rate_pct: 4,
+    no_show_value_pence: 6000,
+    recovered_pence: 2000,
+    ...overrides,
+  };
+}
+
+function measuresData(overrides: Partial<SalonMeasuresReport> = {}): SalonMeasuresReport {
+  return {
+    from: '2026-08-13',
+    to: '2026-09-11',
+    today: '2026-09-11',
+    scope: { kind: 'venue', name: 'Plus 1', business: null },
+    calendar: null,
+    comparison: { basis: 'previous', from: '2026-07-14', to: '2026-08-12' },
+    totals: salonMeasures(),
+    earlier: salonMeasures(),
+    by_calendar: [
+      {
+        calendar_id: 'cal-hannah',
+        name: 'Hannah',
+        venue_id: 'v1',
+        venue_name: 'Plus 1',
+        active: true,
+        current: salonMeasures(),
+        earlier: salonMeasures(),
+      },
+    ],
+    by_business: null,
+    busiest: [{ weekday: 1, hour: 9, booked_minutes: 30, working_minutes: 60 }],
+    not_returned: [{ guest_id: 'g1', name: 'Ava Brown', first_visit_date: '2026-06-01', calendar_name: 'Hannah', venue_name: 'Plus 1' }],
+    not_returned_total: 1,
+    checkout: null,
+    ...overrides,
+  };
+}
+
+function lastMeasuresArgs(): unknown[] {
+  return mockMeasuresArgs[mockMeasuresArgs.length - 1] ?? [];
+}
+
+describe('Reports release 2: salon measures and the Team tab', () => {
+  it('puts Team between Revenue and Clients in the five-option control', async () => {
+    await render(<ReportsScreen />);
+    // The control's labels, in the order drawn (each label's first appearance on the screen).
+    const drawn = screen
+      .getAllByText(/^(Overview|New bookings|Revenue|Team|Clients)$/)
+      .map((n) => n.props.children as string)
+      .slice(0, 5);
+    expect(drawn).toEqual(['Overview', 'New bookings', 'Revenue', 'Team', 'Clients']);
+  });
+
+  it('asks for the measures with the Overview range, choice and comparison, only on the tabs that show them', async () => {
+    mockCalendars = [HANNAH];
+    mockBusinesses = [LIGHT3];
+    await render(<ReportsScreen />);
+    expect(lastMeasuresArgs()).toEqual(['2026-08-13', '2026-09-11', true, { calendarId: null, business: null, compare: 'previous' }]);
+    await act(async () => {
+      fireEvent.press(screen.getByHintText('Opens the choices of what to show'));
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByRole('radio', { name: 'Everyone together' }));
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByText('Same dates last year'));
+    });
+    expect(lastMeasuresArgs()[3]).toEqual({ calendarId: null, business: 'all', compare: 'last_year' });
+    await act(async () => {
+      fireEvent.press(screen.getByText('Revenue'));
+    });
+    expect(lastMeasuresArgs()[2]).toBe(false);
+    await act(async () => {
+      fireEvent.press(screen.getByText('Team'));
+    });
+    expect(lastMeasuresArgs()[2]).toBe(true);
+    expect(lastMeasuresArgs()[3]).toEqual({ calendarId: null, business: 'all', compare: 'last_year' });
+  });
+
+  it('never asks for the measures for a team member', async () => {
+    mockRole = 'staff';
+    await render(<ReportsScreen />);
+    expect(mockMeasuresArgs.every((args) => args[2] === false)).toBe(true);
+  });
+
+  it('shows Key measures and Busiest times on the Overview, after the table by business', async () => {
+    mockMeasures.data = measuresData();
+    await render(<ReportsScreen />);
+    expect(screen.getByText('Key measures')).toBeTruthy();
+    expect(screen.getByText('21.3 of 34.0 hours booked')).toBeTruthy();
+    expect(screen.getAllByText('What no-shows cost').length).toBeGreaterThan(0);
+    expect(screen.getByText('Busiest times')).toBeTruthy();
+    expect(screen.getByText('50%')).toBeTruthy();
+  });
+
+  it('drops the chart by staff for a line that opens the Team tab', async () => {
+    mockMeasures.data = measuresData();
+    mockReports.data = reportsData({
+      report7_appointment_insights: {
+        by_practitioner: [{ practitioner_id: 'p1', practitioner_name: 'Hannah', booking_count: 4, completed_count: 2 }],
+        by_service: [],
+        by_booking_source: {},
+      },
+    });
+    await render(<ReportsScreen />);
+    expect(mockBarCharts.some((data) => data.some((d) => d.label === 'Hannah'))).toBe(false);
+    expect(screen.queryByText('By practitioner')).toBeNull();
+    expect(screen.getByText("See each person's figures on the Team tab.")).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByText('Team tab'));
+    });
+    expect(screen.getByText("Each calendar's figures for these dates, with the change against the earlier period underneath.")).toBeTruthy();
+    expect(screen.getByTestId('team-row')).toBeTruthy();
+    // The Team tab follows the shared range and Compare with.
+    expect(screen.getByText('30 days')).toBeTruthy();
+    expect(screen.getByText('Compare with')).toBeTruthy();
+  });
+
+  it('opens the Team tab from a link', async () => {
+    mockParams = { tab: 'team' };
+    mockMeasures.data = measuresData();
+    await render(<ReportsScreen />);
+    expect(screen.getByTestId('team-total')).toBeTruthy();
+  });
+
+  it('adds Rebooking rate, First-visit retention and the list to the Clients tab', async () => {
+    mockMeasures.data = measuresData();
+    await render(<ReportsScreen />);
+    await act(async () => {
+      screen.getAllByText('Clients').forEach((node) => fireEvent.press(node));
+    });
+    expect(screen.getByText('4 of 10 came back within 90 days')).toBeTruthy();
+    expect(screen.getByText('15 of 40 visits')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByText('Show the 1 who have not come back'));
+    });
+    expect(screen.getByText('Ava Brown')).toBeTruthy();
+    expect(screen.getByText('First visit 1 Jun 2026')).toBeTruthy();
   });
 });

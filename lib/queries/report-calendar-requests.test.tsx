@@ -42,6 +42,7 @@ import {
 } from '@/lib/queries/usePosReports';
 import { useReportCalendars } from '@/lib/queries/useReportCalendars';
 import { useReports } from '@/lib/queries/useReports';
+import { useReportMeasures } from '@/lib/queries/useReportMeasures';
 
 const WEEK = { kind: 'preset', preset: 'this-week' } as const;
 
@@ -164,6 +165,53 @@ describe('the Showing picker on the wire (release 1)', () => {
     expect(queryKeys.reports.range('t', 'a', 'b', null, 'all', 'previous')).not.toEqual(
       queryKeys.reports.range('t', 'a', 'b', null, 'all', 'last_year'),
     );
+  });
+});
+
+describe('the salon measures on the wire (release 2)', () => {
+  it('sends the range, each Showing choice and the comparison, as the Overview does', async () => {
+    const { wrapper } = setup();
+    const { result } = await renderHook(
+      () => ({
+        venue: useReportMeasures('2026-10-01', '2026-10-11', true, { compare: 'previous' }),
+        own: useReportMeasures('2026-10-01', '2026-10-11', true, { calendarId: 'cal-1', compare: 'previous' }),
+        partnerCal: useReportMeasures('2026-10-01', '2026-10-11', true, { calendarId: 'partner-cal', business: 'venue-2', compare: 'last_year' }),
+        business: useReportMeasures('2026-10-01', '2026-10-11', true, { business: 'venue-2', compare: 'previous' }),
+        together: useReportMeasures('2026-10-01', '2026-10-11', true, { business: 'all', compare: 'last_year' }),
+        bare: useReportMeasures('2026-10-01', '2026-10-11', true),
+      }),
+      { wrapper },
+    );
+    await waitFor(() => expect(mockApiFetch).toHaveBeenCalledTimes(6));
+    await settled(result);
+    expect(paths().sort()).toEqual(
+      [
+        '/api/venue/reports/measures?from=2026-10-01&to=2026-10-11&compare=previous',
+        '/api/venue/reports/measures?from=2026-10-01&to=2026-10-11&calendar_id=cal-1&compare=previous',
+        '/api/venue/reports/measures?from=2026-10-01&to=2026-10-11&calendar_id=partner-cal&compare=last_year',
+        '/api/venue/reports/measures?from=2026-10-01&to=2026-10-11&business=venue-2&compare=previous',
+        '/api/venue/reports/measures?from=2026-10-01&to=2026-10-11&business=all&compare=last_year',
+        '/api/venue/reports/measures?from=2026-10-01&to=2026-10-11',
+      ].sort(),
+    );
+  });
+
+  it('keys each scope, range and comparison apart, and apart from the Overview', () => {
+    const key = queryKeys.reports.measures;
+    expect(key('t', 'a', 'b', null, 'all', 'previous')).not.toEqual(key('t', 'a', 'b', null, 'venue-2', 'previous'));
+    expect(key('t', 'a', 'b', null, 'all', 'previous')).not.toEqual(key('t', 'a', 'b', null, 'all', 'last_year'));
+    expect(key('t', 'a', 'b', 'cal-1', null, 'previous')).not.toEqual(key('t', 'a', 'b', null, null, 'previous'));
+    expect(key('t', 'a', 'b', null, null, 'previous')).not.toEqual(key('t', 'a', 'c', null, null, 'previous'));
+    expect(key('t', 'a', 'b', null, null, 'previous')).not.toEqual(queryKeys.reports.range('t', 'a', 'b', null, null, 'previous'));
+  });
+
+  it('asks nothing while it is not enabled (a team member)', async () => {
+    const { wrapper } = setup();
+    await renderHook(() => useReportMeasures('2026-10-01', '2026-10-11', false), { wrapper });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(mockApiFetch).not.toHaveBeenCalled();
   });
 });
 

@@ -13,8 +13,10 @@ type StatTileProps = {
   label: string;
   /** The headline figure — pre-formatted (e.g. "£1,240", "32"). */
   value: string;
-  /** Optional secondary line under the value. */
-  caption?: string;
+  /** Optional secondary line under the value; several lines as an array. */
+  caption?: string | string[];
+  /** How many lines each caption line may wrap to (default 1, cut short after). */
+  captionLines?: number;
   /** Optional change indicator (e.g. "+12%"); coloured by `trend`. */
   delta?: string;
   /** Tints the delta + sparkline: up = success, down = danger, neutral = muted. */
@@ -37,6 +39,7 @@ export function StatTile({
   label,
   value,
   caption,
+  captionLines = 1,
   delta,
   trend = 'neutral',
   sparkline,
@@ -76,11 +79,11 @@ export function StatTile({
         {badge ? <View style={styles.badge}>{badge}</View> : null}
       </View>
 
-      {caption ? (
-        <Text variant="caption" tone="secondary" numberOfLines={1}>
-          {caption}
+      {(Array.isArray(caption) ? caption : caption ? [caption] : []).map((line, i) => (
+        <Text key={i} variant="caption" tone="secondary" numberOfLines={captionLines}>
+          {line}
         </Text>
-      ) : null}
+      ))}
 
       {sparkline && sparkline.length >= 2 ? (
         <MiniSparkline data={sparkline} color={trendColor} height={32} style={styles.spark} />
@@ -110,10 +113,14 @@ const styles = StyleSheet.create({
   },
   valueRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'flex-end',
     gap: spacing.sm,
   },
   value: {
+    // A badge that does not fit beside the figure moves to the next line; the figure never breaks
+    // mid-number, and a long word value ("No working hours") wraps by words at full width.
+    maxWidth: '100%',
     fontVariant: ['tabular-nums'],
   },
   badge: {

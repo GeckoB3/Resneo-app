@@ -9,6 +9,14 @@ import { SmsUsageBanner } from '@/components/reports/SmsUsageBanner';
 import { CommissionSection, SalesSection, TakingsSection, VouchersSection } from '@/components/reports/PosReportSections';
 import { BookingLogEmailCard } from '@/components/reports/BookingLogEmailCard';
 import { ClientsTab } from '@/components/reports/ClientsTab';
+import {
+  BusiestTimesCard,
+  ClientMeasures,
+  KeyMeasuresCard,
+  MeasuresLoadProblem,
+  TeamTabLink,
+} from '@/components/reports/SalonMeasuresCards';
+import { TeamSection } from '@/components/reports/TeamSection';
 import { ChangePill, ComparisonCaption, CompareWithControl } from '@/components/reports/ComparisonParts';
 import { ReportTable, type Column } from '@/components/reports/pos/PosReportUi';
 import {
@@ -50,11 +58,13 @@ import { calendarDateInTimeZone } from '@/lib/queries/useBookingsList';
 import { usePosReportAccess } from '@/lib/queries/usePos';
 import { useVenue } from '@/lib/queries/useVenue';
 import { useReports } from '@/lib/queries/useReports';
+import { useReportMeasures } from '@/lib/queries/useReportMeasures';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { aggregateSourcesByLabel } from '@/lib/reports/csv-export';
 import { reportCalendarCopy } from '@/lib/reports/report-calendar';
 import { describeChange, type ChangeKind } from '@/lib/reports/report-comparison';
 import { NEW_BOOKING_CHANNELS, NEW_BOOKING_CHANNEL_LABELS } from '@/lib/reports/new-bookings';
+import { measuresCopy } from '@/lib/reports/salon-measures';
 import { bookingScopeQuery, isPartnerShowing, reportScopeCopy, scopeRefusalMessage } from '@/lib/reports/report-scope';
 import {
   buildReport1Csv,
@@ -83,9 +93,9 @@ import type { OverviewBusinessRow, OverviewHeadline } from '@/types/reports';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type RangeKey = '7d' | '30d' | '90d' | 'custom';
-type MainTab = 'overview' | 'new-bookings' | 'revenue' | 'clients' | 'takings' | 'sales' | 'vouchers' | 'commission';
+type MainTab = 'overview' | 'new-bookings' | 'revenue' | 'team' | 'clients' | 'takings' | 'sales' | 'vouchers' | 'commission';
 
-const TAB_PARAMS: MainTab[] = ['new-bookings', 'revenue', 'clients', 'takings', 'sales', 'vouchers', 'commission'];
+const TAB_PARAMS: MainTab[] = ['new-bookings', 'revenue', 'team', 'clients', 'takings', 'sales', 'vouchers', 'commission'];
 
 const RANGE_DAYS: Record<Exclude<RangeKey, 'custom'>, number> = {
   '7d': 7,
@@ -171,6 +181,19 @@ export default function ReportsScreen() {
       ? 'overview'
       : mainTab;
   const posTab = shownTab === 'takings' || shownTab === 'sales' || shownTab === 'vouchers' || shownTab === 'commission';
+  /**
+   * The salon measures (reports release 2): Key measures and Busiest times on the Overview, the
+   * rebooking and retention tiles on Clients, and the Team tab. Admin only, like its endpoint, and
+   * for the same range, Showing choice and Compare with as the Overview; asked for only while one
+   * of those tabs is open.
+   */
+  const measuresQuery = useReportMeasures(
+    appliedFrom,
+    appliedTo,
+    isAdmin && (shownTab === 'overview' || shownTab === 'clients' || shownTab === 'team'),
+    scopeQuery,
+  );
+  const measures = measuresQuery.data;
   // Keeps the selected tab chip in view when the screen opens on one off the right edge.
   const {
     ref: tabStripRef,
@@ -415,9 +438,6 @@ export default function ReportsScreen() {
     ? Math.max(...Object.values(summary.by_status), 1)
     : 1;
 
-  const pracMax = insights
-    ? Math.max(...insights.by_practitioner.map((r) => r.booking_count), 1)
-    : 1;
   const svcMax = insights
     ? Math.max(...insights.by_service.map((r) => r.booking_count), 1)
     : 1;
@@ -432,7 +452,12 @@ export default function ReportsScreen() {
   // The Overview and Clients payload refused because of the choice: the server's words.
   const overviewRefusal = query.isError ? scopeRefusalMessage(query.error, showing.kind !== 'venue') : null;
   // The bookings tabs follow the comparison; the till tabs do not compare.
-  const comparesTab = shownTab === 'overview' || shownTab === 'clients' || shownTab === 'new-bookings' || shownTab === 'revenue';
+  const comparesTab =
+    shownTab === 'overview' ||
+    shownTab === 'clients' ||
+    shownTab === 'new-bookings' ||
+    shownTab === 'revenue' ||
+    shownTab === 'team';
 
   /** "Business" with "(you)" by your own, as the Booked value venue table names them. */
   const businessNameColumn = {
@@ -587,6 +612,7 @@ export default function ReportsScreen() {
                 { value: 'overview', label: 'Overview' },
                 { value: 'new-bookings', label: 'New bookings' },
                 { value: 'revenue', label: 'Booked value' },
+                { value: 'team', label: measuresCopy('team.tab') },
                 { value: 'takings', label: reportsCopy('tab.takings') },
                 { value: 'sales', label: reportsCopy('tab.sales') },
                 ...(vouchersVisible ? [{ value: 'vouchers', label: reportsCopy('tab.vouchers') }] : []),
@@ -605,6 +631,7 @@ export default function ReportsScreen() {
               { value: 'overview', label: 'Overview' },
               { value: 'new-bookings', label: 'New bookings' },
               { value: 'revenue', label: 'Revenue' },
+              { value: 'team', label: measuresCopy('team.tab') },
               { value: 'clients', label: `${clientWord}s` },
             ]}
             value={posTab ? 'overview' : shownTab}
@@ -667,6 +694,10 @@ export default function ReportsScreen() {
           <BookedRevenueSection bookingWord={bookingWord} today={today} enabled={isAdmin} />
           <View style={styles.spacer} />
         </ScrollView>
+      ) : shownTab === 'team' ? (
+        // The Team tab (release 2) follows the shared range, Showing and Compare with, from the
+        // measures answer alone; it does not wait on the Overview payload.
+        <TeamSection query={measuresQuery} scoped={showing.kind !== 'venue'} />
       ) : query.isLoading ? (
         <DetailSkeleton />
       ) : overviewRefusal ? (
@@ -749,8 +780,7 @@ export default function ReportsScreen() {
                 {rangeLabel}
               </Text>
               {clients ? (
-                <>
-                  {/* The web's tiles, labels and meaning cues (ClientsSection.tsx:294-317). */}
+                  /* The web's tiles, labels and meaning cues (ClientsSection.tsx:294-317). */
                   <View style={styles.tiles}>
                     <StatTile
                       label={`Known ${clientLower}s (all-time)`}
@@ -782,14 +812,16 @@ export default function ReportsScreen() {
                       style={styles.tile}
                     />
                   </View>
-                  {clients.anonymous_visits_in_period > 0 ? (
-                    <Text variant="bodySmall" tone="muted" style={styles.cardIntro}>
-                      {`Walk-in visits without contact details are counted but not shown in the ${clientLower} list below.`}
-                    </Text>
-                  ) : null}
-                  <ComparisonCaption comparison={data.comparison} style={styles.cardIntro} />
-                </>
               ) : null}
+              {/* Release 2: Rebooking rate and First-visit retention, their definitions, and the
+                  first-time clients who have not come back. */}
+              {measures ? <ClientMeasures data={measures} /> : null}
+              {clients && clients.anonymous_visits_in_period > 0 ? (
+                <Text variant="bodySmall" tone="muted" style={styles.cardIntro}>
+                  {`Walk-in visits without contact details are counted but not shown in the ${clientLower} list below.`}
+                </Text>
+              ) : null}
+              {clients || measures ? <ComparisonCaption comparison={data.comparison} style={styles.cardIntro} /> : null}
               <View style={styles.clientsContent}>
                 <ClientsTab
                   clientWord={clientWord}
@@ -805,6 +837,25 @@ export default function ReportsScreen() {
             <>
               <ComparisonCaption comparison={data.comparison} />
               {businessTable(overviewBusinessColumns)}
+
+              {/* Release 2: Key measures, then Busiest times (hidden when nobody works). */}
+              {measures ? (
+                <>
+                  <KeyMeasuresCard data={measures} />
+                  <BusiestTimesCard cells={measures.busiest} />
+                </>
+              ) : measuresQuery.isError ? (
+                <Card>
+                  <CardHeader title={measuresCopy('key.title')} basis={reportScopeCopy('basis.date')} />
+                  <View style={styles.cardIntro}>
+                    <MeasuresLoadProblem
+                      error={measuresQuery.error}
+                      scoped={showing.kind !== 'venue'}
+                      onRetry={() => void measuresQuery.refetch()}
+                    />
+                  </View>
+                </Card>
+              ) : null}
 
               {/* Report 1: Bookings / Appointment Activity */}
               {summary ? (
@@ -1156,8 +1207,10 @@ export default function ReportsScreen() {
                     exportBlockedMessage="There is no appointment breakdown to export for this period."
                   />
                   <Text variant="bodySmall" tone="secondary" style={styles.cardIntro}>
-                    {`Visits in this date range that were not cancelled, split by ${staffLower} (calendar), by service, and by how the ${clientLower} booked. A visit with several services counts once on each calendar and once for each service in it. The "Arrived or completed" bar counts marked arrival, started, or completed visits.`}
+                    {`Visits in this date range that were not cancelled, by service and by how the ${clientLower} booked. A visit with several services counts once for each service in it.`}
                   </Text>
+                  {/* Release 2: the Team tab replaces the chart by staff. */}
+                  <TeamTabLink onPress={() => setMainTab('team')} />
 
                   {!insights || !hasAppointmentInsights ? (
                     <Text variant="bodySmall" tone="muted" style={styles.cardIntro}>
@@ -1165,24 +1218,6 @@ export default function ReportsScreen() {
                     </Text>
                   ) : (
                     <>
-                      {insights.by_practitioner.length > 0 ? (
-                        <View style={styles.chartSection}>
-                          <Text variant="overline" tone="muted">
-                            {`By ${staffLower}`}
-                          </Text>
-                          <SvgBarChart
-                            data={insights.by_practitioner.map((row) => ({
-                              key: String(row.practitioner_id),
-                              label: row.practitioner_name,
-                              value: row.booking_count,
-                              subValue: `${row.completed_count} arrived or completed`,
-                            }))}
-                            color={colors.brand}
-                            maxValue={pracMax}
-                          />
-                        </View>
-                      ) : null}
-
                       {insights.by_service.length > 0 ? (
                         <View style={styles.chartSection}>
                           <Text variant="overline" tone="muted">

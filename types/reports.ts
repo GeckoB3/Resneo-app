@@ -451,3 +451,91 @@ export interface NewBookingsReport {
   comparison?: (ReportComparisonRange & { totals: NewBookingCounts }) | null;
 }
 
+
+// ---------------------------------------------------------------------------
+// Salon measures and the Team tab (release 2, 2026-10-13; web
+// `src/lib/reports/salon-measures.ts`, GET /api/venue/reports/measures)
+// ---------------------------------------------------------------------------
+
+/**
+ * One set of salon measures: the totals, the earlier period's, one calendar's or one business's.
+ * Percentages are to 1 dp, and null when there is nothing to divide by.
+ */
+export interface SalonMeasures {
+  booked_pence: number;
+  visits: number;
+  visit_pence: number;
+  avg_visit_pence: number | null;
+  booked_minutes: number;
+  working_minutes: number;
+  utilisation_pct: number | null;
+  rebook_eligible: number;
+  rebooked: number;
+  rebooking_pct: number | null;
+  cohort: number;
+  returned: number;
+  retention_pct: number | null;
+  no_show_count: number;
+  no_show_due: number;
+  no_show_rate_pct: number | null;
+  no_show_value_pence: number;
+  recovered_pence: number;
+}
+
+/** One weekday-and-hour cell of the busiest times grid. */
+export interface SalonBusiestCell {
+  /** 1 Monday to 7 Sunday. */
+  weekday: number;
+  /** 0 to 23. */
+  hour: number;
+  booked_minutes: number;
+  working_minutes: number;
+}
+
+/** A first-time client who has not come back (newest first). */
+export interface SalonNotReturnedClient {
+  guest_id: string;
+  name: string;
+  first_visit_date: string;
+  calendar_name: string | null;
+  venue_name: string;
+}
+
+/** One calendar's row on the Team tab, already sorted by the server. */
+export interface SalonCalendarRow {
+  calendar_id: string;
+  name: string;
+  venue_id: string;
+  venue_name: string;
+  active: boolean;
+  current: SalonMeasures;
+  earlier: SalonMeasures;
+}
+
+/** The till's view of a visit, your own venue only. */
+export interface SalonCheckoutVisitFigures {
+  service_visits: number;
+  spend_pence: number;
+  avg_spend_pence: number | null;
+  product_visits: number;
+  product_share_pct: number | null;
+}
+
+/** GET /api/venue/reports/measures (admin only, no-store). */
+export interface SalonMeasuresReport {
+  from: string;
+  to: string;
+  today: string;
+  scope?: ReportScopeEcho | null;
+  calendar?: ReportCalendarRef | null;
+  comparison: ReportComparisonRange | null;
+  totals: SalonMeasures;
+  earlier: SalonMeasures;
+  by_calendar: SalonCalendarRow[];
+  /** Each business, only for everyone together. */
+  by_business: (ReportBusinessPart & { current: SalonMeasures; earlier: SalonMeasures })[] | null;
+  busiest: SalonBusiestCell[];
+  not_returned: SalonNotReturnedClient[];
+  not_returned_total: number;
+  checkout: { current: SalonCheckoutVisitFigures; earlier: SalonCheckoutVisitFigures | null } | null;
+}

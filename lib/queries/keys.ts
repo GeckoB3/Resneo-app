@@ -180,6 +180,28 @@ export const queryKeys = {
         business ?? null,
         compare ?? null,
       ] as const,
+    /**
+     * The salon measures and the Team tab (release 2, `GET /api/venue/reports/measures`), per range,
+     * calendar, business and comparison, like `range`.
+     */
+    measures: (
+      accessToken?: string | null,
+      from?: string | null,
+      to?: string | null,
+      calendarId?: string | null,
+      business?: string | null,
+      compare?: string | null,
+    ) =>
+      [
+        ...queryKeys.reports.all(),
+        'measures',
+        keyScope(accessToken),
+        from ?? null,
+        to ?? null,
+        calendarId ?? null,
+        business ?? null,
+        compare ?? null,
+      ] as const,
     /** The calendars Reports can be filtered by (`GET /api/venue/reports/calendars`). */
     calendars: (accessToken?: string | null) =>
       [...queryKeys.reports.all(), 'calendars', keyScope(accessToken)] as const,
