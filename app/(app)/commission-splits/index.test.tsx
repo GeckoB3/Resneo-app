@@ -1,13 +1,17 @@
 /**
- * Commission splits in the app (web Settings, Commission splits tab; 2026-10-14), against the
- * contract's `/api/venue/commission/*` routes with Checkout on or off:
+ * Commission splits in the app, calendar first (web Settings, Commission splits and its page test,
+ * 2026-10-14), against the contract's `/api/venue/commission/*` routes with Checkout on or off:
  *
  * - the admin gate, and no Checkout gate (a venue without Checkout counts completed bookings);
- * - Your team: what counts for services and the VAT basis saving at once on the settings version (a
- *   stale answer shows the server's sentence), the rates for everyone, by category and per person,
- *   Change rate and its sheet, Stop this rate, Earlier rates, and "Shown as" per person;
- * - Businesses you work with: what a split needs, the list and its statuses, opening a split, and
- *   "Propose a split" with its body, its checks, the worked example and the server's refusal.
+ * - each of your calendars in words (own or standard rates, the categories that differ), calendars
+ *   at businesses you work with grouped by business, logins without a calendar where Checkout is set
+ *   up, what links make possible when there are none, and past splits out of the way;
+ * - waiting for your answer, at the top: Accept and Decline with the web's sentences;
+ * - "Set up a split" in one sheet: whose takings, who earns a share, then a person's share (saved in
+ *   one step) or a proposal (with its sentence and worked example), and Back; a pairing that already
+ *   has a split; "Share with a business";
+ * - changing a share, a share for someone paid nothing, a category rate, the server's sentences;
+ * - Standard rates and How figures are worked out, as the old team panel did them.
  *
  * jest hoists mock factories above imports, so every closed-over variable is prefixed `mock*`.
  */
@@ -16,15 +20,14 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import type { ReactNode } from 'react';
 
 import { ApiError } from '@/lib/api/client';
-import type { CommissionRate, CommissionSettingsResponse, SplitView, SplitsListResponse } from '@/types/commission-splits';
+import type { CommissionRate, CommissionSettingsResponse, SplitTermsView, SplitView, SplitsListResponse } from '@/types/commission-splits';
 
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
 jest.mock('@react-native-community/datetimepicker', () => 'DateTimePicker');
-let mockParams: Record<string, string> = {};
 const mockPush = jest.fn();
 jest.mock('expo-router', () => ({
   Stack: { Screen: () => null },
-  useLocalSearchParams: () => mockParams,
+  useLocalSearchParams: () => ({}),
   useRouter: () => ({ push: mockPush, replace: jest.fn(), back: jest.fn() }),
   useNavigation: () => ({ addListener: () => () => undefined, dispatch: jest.fn() }),
 }));
@@ -47,7 +50,7 @@ jest.mock('@/providers/VenueProvider', () => ({
 const mockToast = { success: jest.fn(), error: jest.fn(), info: jest.fn() };
 jest.mock('@/providers/ToastProvider', () => ({ useToast: () => mockToast }));
 jest.mock('@/lib/queries/useVenue', () => ({
-  useVenue: () => ({ data: { id: 'venue-1', currency: 'GBP', timezone: 'Europe/London' }, isLoading: false }),
+  useVenue: () => ({ data: { id: 'v-me', currency: 'GBP', timezone: 'Europe/London' }, isLoading: false }),
 }));
 let mockRole = 'admin';
 jest.mock('@/lib/queries/useStaffMe', () => ({
@@ -82,84 +85,120 @@ import CommissionSplitsScreen from './index';
 
 const SETTINGS = '/api/venue/commission/settings';
 const RATES = '/api/venue/commission/rates';
+const SHARE = '/api/venue/commission/share';
 const SPLITS = '/api/venue/commission/splits';
 const STALE =
   "Someone else changed these settings while you were editing. We've loaded their changes. Check them, then save yours again.";
-const DUPLICATE = 'There is already a rate for this starting on that date. Choose another date.';
-const CAL = '11111111-1111-4111-8111-111111111111';
-const CAT = '22222222-2222-4222-8222-222222222222';
-const ALEX = '33333333-3333-4333-8333-333333333333';
 
+const ME = { venue_id: 'v-me', name: 'Bloom Hair' };
+const SAM = { venue_id: 'v-sam', name: 'Sam Cuts' };
+const NAIL = { venue_id: 'v-nail', name: 'Nail Studio' };
+
+let nextId = 0;
 function rate(over: Partial<CommissionRate>): CommissionRate {
+  nextId += 1;
   return {
-    id: 'r',
+    id: `r-${nextId}`,
     item_type: 'service',
     category_id: null,
     category_name: null,
     calendar_id: null,
     staff_id: null,
     person_name: null,
-    rate_bps: 1000,
-    effective_from: '2026-10-01',
+    rate_bps: 500,
+    effective_from: '2026-01-01',
     created_by_name: null,
-    created_at: '2026-10-01T09:00:00Z',
+    created_at: '2026-01-01T09:00:00Z',
     ...over,
   };
 }
 
+const BASE_RATES: CommissionRate[] = [
+  rate({ id: 'r-service', rate_bps: 500 }),
+  rate({ id: 'r-product', item_type: 'product', rate_bps: 2000 }),
+  rate({ id: 'r-jess', calendar_id: 'cal-jess', rate_bps: 4000, effective_from: '2026-09-01' }),
+  rate({ id: 'r-jess-colour', calendar_id: 'cal-jess', category_id: 'colour', category_name: 'Colour', rate_bps: 5000, effective_from: '2026-09-01' }),
+];
+
 function settings(over: Partial<CommissionSettingsResponse> = {}): CommissionSettingsResponse {
   return {
-    rates: [
-      rate({ id: 'r1', rate_bps: 1000, effective_from: '2026-09-01' }),
-      rate({ id: 'r2', rate_bps: 1500, effective_from: '2026-10-01' }),
-      rate({ id: 'r3', calendar_id: CAL, person_name: 'Sam', rate_bps: 2000, effective_from: '2026-10-01' }),
-    ],
+    rates: BASE_RATES,
     people: [
-      { calendar_id: CAL, staff_id: null, name: 'Sam', label: 'commission' },
-      { calendar_id: null, staff_id: ALEX, name: 'Alex', label: 'their_share' },
+      { calendar_id: 'cal-jess', staff_id: null, name: 'Jess', label: 'commission' },
+      { calendar_id: 'cal-kim', staff_id: null, name: 'Kim', label: 'their_share' },
+      { calendar_id: null, staff_id: 'staff-desk', name: 'Front desk', label: 'commission' },
     ],
-    categories: [{ id: CAT, name: 'Colour', item_type: 'service' }],
+    categories: [{ id: 'colour', name: 'Colour', item_type: 'service' }],
     basis: { value: 'net_ex_vat', editable: true, vat_registered: true },
     source: { value: 'checkout', setting: 'auto', checkout_available: true },
-    settings_version: 7,
-    today: '2026-10-09',
+    settings_version: 3,
+    today: '2026-10-14',
     currency: 'GBP',
     ...over,
   };
 }
 
-function split(over: Partial<SplitView> = {}): SplitView {
+function terms(over: Partial<SplitTermsView> = {}): SplitTermsView {
   return {
-    id: 's-1',
+    id: 't1',
+    version: 1,
+    effective_from: '2026-09-01',
+    services_rate_bps: 4000,
+    products_rate_bps: null,
+    vat_basis: 'net_ex_vat',
+    status: 'accepted',
+    proposed_by_you: true,
+    proposed_at: '2026-08-20T10:00:00Z',
+    decided_at: '2026-08-21T10:00:00Z',
+    ...over,
+  };
+}
+
+const NO_ACTIONS = { respond: false, withdraw: false, propose_change: false, end: false };
+
+/** Sam Cuts pays you rent on Sam's calendar. */
+function samSplit(over: Partial<SplitView> = {}): SplitView {
+  const t = terms();
+  return {
+    id: 's-sam',
     status: 'active',
     label: 'rent',
-    settlement_period: 'monthly',
+    settlement_period: 'weekly',
     role: 'payee',
-    payer: { venue_id: 'v-sam', name: 'Sam Cuts' },
-    payee: { venue_id: 'venue-1', name: 'Bloom' },
-    partner: { venue_id: 'v-sam', name: 'Sam Cuts' },
+    payer: SAM,
+    payee: ME,
+    partner: SAM,
     calendar: { id: 'cal-sam', name: 'Sam' },
     proposed_by_you: true,
-    created_at: '2026-10-01T09:00:00Z',
-    terms: {
-      id: 't-1',
-      version: 1,
-      effective_from: '2026-10-01',
-      services_rate_bps: 4000,
-      products_rate_bps: null,
-      vat_basis: 'net_ex_vat',
-      status: 'accepted',
-      proposed_by_you: true,
-      proposed_at: '2026-09-20T09:00:00Z',
-      decided_at: '2026-09-21T09:00:00Z',
-    },
+    created_at: '2026-08-20T10:00:00Z',
+    terms: t,
     pending: null,
-    history: [],
+    history: [t],
     ended_on: null,
     end_reason: null,
     ended_by_you: null,
-    can: { respond: false, withdraw: false, propose_change: true, end: true },
+    can: { ...NO_ACTIONS, propose_change: true, end: true },
     ...over,
+  };
+}
+
+/** Sam Cuts proposed that you pay them a fee on Jess's calendar: it needs your answer. */
+function jessProposal(): SplitView {
+  const pending = terms({ id: 't-jess', services_rate_bps: 1000, status: 'proposed', proposed_by_you: false, decided_at: null, effective_from: '2026-11-02' });
+  return {
+    ...samSplit(),
+    id: 's-jess',
+    status: 'proposed',
+    label: 'fee',
+    role: 'payer',
+    payer: ME,
+    payee: SAM,
+    calendar: { id: 'cal-jess', name: 'Jess' },
+    proposed_by_you: false,
+    terms: null,
+    pending,
+    history: [pending],
+    can: { ...NO_ACTIONS, respond: true },
   };
 }
 
@@ -167,24 +206,19 @@ function list(over: Partial<SplitsListResponse> = {}): SplitsListResponse {
   return {
     today: '2026-10-14',
     currency: 'GBP',
-    venue: { venue_id: 'venue-1', name: 'Bloom' },
+    venue: ME,
     basis_default: 'net_ex_vat',
-    splits: [],
+    splits: [samSplit()],
     partners: [
-      {
-        venue_id: 'v-sam',
-        name: 'Sam Cuts',
-        access: 'link',
-        their_calendars: [{ id: 'cal-sam', name: 'Sam' }],
-        your_calendars: [{ id: 'cal-jo', name: 'Jo' }],
-      },
+      { ...SAM, access: 'link', their_calendars: [{ id: 'cal-sam', name: 'Sam' }], your_calendars: [{ id: 'cal-jess', name: 'Jess' }] },
+      { ...NAIL, access: 'collective', their_calendars: [{ id: 'cal-nina', name: 'Nina' }], your_calendars: [] },
     ],
     ...over,
   };
 }
 
-let currentSettings: unknown;
-let currentList: unknown;
+let currentSettings: CommissionSettingsResponse;
+let currentList: SplitsListResponse;
 let onWrite: (call: Call) => unknown;
 
 beforeEach(() => {
@@ -192,7 +226,6 @@ beforeEach(() => {
   mockPush.mockClear();
   mockToast.success.mockClear();
   mockRole = 'admin';
-  mockParams = {};
   currentSettings = settings();
   currentList = list();
   onWrite = () => currentSettings;
@@ -205,17 +238,20 @@ beforeEach(() => {
         from: '2026-09-01',
         to: '2026-09-30',
         currency: 'GBP',
-        services_pence: 90000,
-        products_pence: 5000,
-        services_owed_pence: 36000,
-        products_owed_pence: 500,
-        owed_pence: 36500,
-        vat_note: true,
+        services_pence: 20000,
+        products_pence: 0,
+        services_owed_pence: 7000,
+        products_owed_pence: 0,
+        owed_pence: 7000,
+        vat_note: false,
       };
     }
     throw new Error(`unexpected ${call.method} ${call.path}`);
   };
 });
+
+/** A tick for the query client's batched notifications, so every update lands inside `act`. */
+const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 async function show() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } } });
@@ -224,34 +260,46 @@ async function show() {
       <CommissionSplitsScreen />
     </QueryClientProvider>,
   );
+  // Both reads answer at once here; let them land inside `act`.
   await act(async () => {
-    await Promise.resolve();
+    await settle();
+    await settle();
   });
+  await screen.findByText('Your calendars');
 }
 
 async function press(el: Parameters<typeof fireEvent.press>[0]) {
   await act(async () => {
     fireEvent.press(el);
+    await settle();
   });
 }
 
 async function type(el: Parameters<typeof fireEvent.changeText>[0], text: string) {
   await act(async () => {
     fireEvent.changeText(el, text);
+    await settle();
   });
 }
 
 const writes = () => mockCalls.filter((c) => c.method !== 'GET');
+const section = (id: string) => screen.getByTestId(id);
+const sheet = () => screen.getByTestId('sheet');
 
-async function openBusinesses() {
-  await press(screen.getAllByText('Businesses you work with')[0]!);
-  await screen.findByText(/Agree a share of one calendar/);
+/** "Set up a split" at the top of the screen (calendars at other businesses have their own). */
+async function openSetUp() {
+  await press(screen.getByLabelText('Set up a split'));
+  return sheet();
 }
 
 describe('the gates', () => {
   it('is for admins only', async () => {
     mockRole = 'staff';
-    await show();
+    await render(
+      <QueryClientProvider client={new QueryClient()}>
+        <CommissionSplitsScreen />
+      </QueryClientProvider>,
+    );
     expect(screen.getByText('For admins')).toBeTruthy();
     expect(screen.getByText('Only admins can manage commission splits.')).toBeTruthy();
     expect(mockCalls).toEqual([]);
@@ -265,7 +313,7 @@ describe('the gates', () => {
     });
     await show();
     expect(
-      await screen.findByText('Services count from completed bookings. Products and gift vouchers count once you sell them at Checkout.'),
+      screen.getByText('Services count from completed bookings. Products and gift vouchers count once you sell them at Checkout.'),
     ).toBeTruthy();
     expect(screen.getByText("VAT isn't set up in ResNeo, so figures use prices as booked.")).toBeTruthy();
     expect(screen.queryByText('Automatic')).toBeNull();
@@ -274,61 +322,490 @@ describe('the gates', () => {
   });
 });
 
-describe('your team', () => {
-  it('shows the current rate per row, the placeholders and the precedence', async () => {
+describe('what the screen says', () => {
+  it('describes each of your calendars in words, with its own rates or your standard rates', async () => {
     await show();
-    expect(await screen.findByText('15%, From 1 October 2026')).toBeTruthy();
-    expect(screen.getByText('Products')).toBeTruthy();
-    expect(screen.getAllByText('0%')).toHaveLength(1);
-    expect(screen.getByText('Sam: Services')).toBeTruthy();
-    expect(screen.getByText('20%, From 1 October 2026')).toBeTruthy();
-    expect(screen.getByText(/The most specific rate wins/)).toBeTruthy();
-    expect(screen.getByText('Set the shares people and businesses earn from what your calendars take, and see what is owed. ResNeo works out the figures. Paying them is up to you.')).toBeTruthy();
+    expect(
+      screen.getByText('Decide who earns a share of what each calendar takes. ResNeo works out what is owed. Paying it is up to you.'),
+    ).toBeTruthy();
+    const yours = section('calendars');
+    expect(within(yours).getByText('You pay Jess 40% of services and 20% of products, as commission.')).toBeTruthy();
+    expect(within(yours).getByText('Own rates')).toBeTruthy();
+    expect(within(yours).getByText('Different for Colour (50%).')).toBeTruthy();
+    expect(within(yours).getByText('You pay Kim 5% of services and 20% of products, as their share.')).toBeTruthy();
+    expect(within(yours).getByText('Standard rates')).toBeTruthy();
+    // A login is not a calendar: it has its own section.
+    expect(within(yours).queryByText(/Front desk/)).toBeNull();
+    // Sam Cuts can see Jess's calendar and has no split on it yet.
+    expect(within(yours).getAllByText('Share with a business')).toHaveLength(1);
   });
 
-  it('says there are no rates yet', async () => {
-    currentSettings = settings({ rates: [] });
+  it('says when someone earns only on some categories, and when someone earns nothing', async () => {
+    currentSettings = settings({
+      rates: [rate({ calendar_id: 'cal-jess', category_id: 'colour', category_name: 'Colour', rate_bps: 1000 })],
+    });
     await show();
-    expect(await screen.findByText('No rates yet. Add one for everyone to start.')).toBeTruthy();
+    const yours = section('calendars');
+    expect(within(yours).getByText('You pay Jess only on some categories, as commission.')).toBeTruthy();
+    expect(within(yours).getByText('Different for Colour (10%).')).toBeTruthy();
+    expect(within(yours).getByText("You don't pay Kim a share yet.")).toBeTruthy();
+    expect(within(yours).getByLabelText("Set a share: Kim's share")).toBeTruthy();
+    expect(within(yours).getByLabelText("Change: Jess's share")).toBeTruthy();
   });
 
-  it('shows earlier rates newest first', async () => {
+  it('groups calendars at businesses you work with by business, with their splits', async () => {
     await show();
-    await press(await screen.findByText('Earlier rates'));
-    const lines = screen.getAllByText(/^1\d%, From /).map((n) => n.props.children);
-    expect(lines).toEqual(['15%, From 1 October 2026', '15%, From 1 October 2026', '10%, From 1 September 2026']);
+    const theirs = section('partners');
+    expect(within(theirs).getByText('Calendars at businesses you work with')).toBeTruthy();
+    expect(within(theirs).getByText('Sam Cuts')).toBeTruthy();
+    expect(within(theirs).getByText('"Work as one team" link')).toBeTruthy();
+    expect(within(theirs).getByText('Sam Cuts pays you 40% of services, as rent.')).toBeTruthy();
+    expect(within(theirs).getByText('Active')).toBeTruthy();
+    expect(within(theirs).getByText('Nail Studio')).toBeTruthy();
+    expect(within(theirs).getByText('Your collective')).toBeTruthy();
+    expect(within(theirs).getByText('Nina')).toBeTruthy();
+    expect(within(theirs).getByText('No split yet.')).toBeTruthy();
   });
 
-  it("stops a person's own rate from today through the commission rates route", async () => {
-    onWrite = () => {
-      // The answer replaces the settings, and the read after every write sees the same.
-      currentSettings = settings({ rates: [...settings().rates, rate({ id: 'r4', calendar_id: CAL, rate_bps: null, effective_from: '2026-10-09' })] });
-      return { rate: {}, ...(currentSettings as CommissionSettingsResponse) };
+  it('explains logins without a calendar where Checkout is set up', async () => {
+    await show();
+    const logins = section('logins');
+    expect(within(logins).getByText(/only earn from what they sell at Checkout/)).toBeTruthy();
+    expect(within(logins).getByText('You pay Front desk 5% of services and 20% of products, as commission.')).toBeTruthy();
+    expect(within(logins).getByLabelText("Change: Front desk's share")).toBeTruthy();
+  });
+
+  it('leaves logins out without Checkout', async () => {
+    currentSettings = settings({ source: { value: 'bookings', setting: 'auto', checkout_available: false } });
+    await show();
+    expect(screen.queryByTestId('logins')).toBeNull();
+  });
+
+  it("keeps a login's own rate in view without Checkout", async () => {
+    currentSettings = settings({
+      rates: [...BASE_RATES, rate({ staff_id: 'staff-desk', item_type: 'product', rate_bps: 300 })],
+      source: { value: 'bookings', setting: 'auto', checkout_available: false },
+    });
+    await show();
+    expect(within(section('logins')).getByText('You pay Front desk 5% of services and 3% of products, as commission.')).toBeTruthy();
+  });
+
+  it('says what links and collectives make possible when there are none', async () => {
+    currentList = list({ partners: [], splits: [] });
+    await show();
+    const theirs = section('partners');
+    expect(within(theirs).getByText(/When you link with another business/)).toBeTruthy();
+    await press(within(theirs).getByText('Go to Linked Accounts'));
+    expect(mockPush).toHaveBeenCalledWith('/linked-venues');
+    expect(within(section('calendars')).queryByText('Share with a business')).toBeNull();
+  });
+
+  it('keeps ended, declined and withdrawn splits out of the way until asked', async () => {
+    const ended = samSplit({ id: 's-old', status: 'ended', ended_on: '2026-09-30', can: NO_ACTIONS, calendar: { id: 'cal-old', name: 'Old' } });
+    currentList = list({ splits: [samSplit(), ended] });
+    await show();
+    const past = section('past');
+    expect(within(past).queryByText('Old at Sam Cuts')).toBeNull();
+    await press(within(past).getByText('Show 1'));
+    expect(within(past).getByText('Old at Sam Cuts')).toBeTruthy();
+    expect(within(past).getByText('Ended')).toBeTruthy();
+    await press(within(past).getByText('Hide'));
+    expect(within(past).queryByText('Old at Sam Cuts')).toBeNull();
+  });
+
+  it('opens a split from its line', async () => {
+    await show();
+    await press(within(section('partners')).getByLabelText('Manage: Sam at Sam Cuts'));
+    expect(mockPush).toHaveBeenCalledWith('/commission-splits/s-sam');
+  });
+});
+
+describe('waiting for your answer', () => {
+  it('shows the proposal at the top in plain words and accepts it', async () => {
+    const proposal = jessProposal();
+    const accepted: SplitView = { ...proposal, status: 'active', terms: { ...proposal.pending!, status: 'accepted' }, pending: null, can: NO_ACTIONS };
+    currentList = list({ splits: [samSplit(), proposal] });
+    onWrite = (call) => {
+      if (call.path.endsWith('/respond')) {
+        currentList = list({ splits: [samSplit(), accepted] });
+        return { split: accepted };
+      }
+      throw new Error(`unexpected ${call.path}`);
     };
     await show();
-    await press(await screen.findByText('Stop this rate'));
+    const waiting = section('answer');
+    expect(within(waiting).getByText('Waiting for your answer')).toBeTruthy();
+    expect(within(waiting).getByText('Nothing counts until you accept.')).toBeTruthy();
+    expect(within(waiting).getByText('Jess at Bloom Hair')).toBeTruthy();
+    expect(within(waiting).getByText('Sam Cuts proposed this split')).toBeTruthy();
+    expect(within(waiting).getByText('You pay Sam Cuts 10% of services, as a fee.')).toBeTruthy();
+    expect(within(waiting).getByText('Worked out before VAT, from 2 November 2026. Settle up weekly.')).toBeTruthy();
+    // The proposal sits on Jess's calendar too, waiting.
+    expect(within(section('calendars')).getByText('Proposed: you pay Sam Cuts 10% of services, as a fee.')).toBeTruthy();
+    await press(within(waiting).getByText('Accept'));
+    expect(await screen.findByText('Accepted. It counts from 2 November 2026.')).toBeTruthy();
+    expect(writes()).toEqual([{ path: `${SPLITS}/s-jess/respond`, method: 'POST', body: { terms_id: 't-jess', action: 'accept' } }]);
+    await waitFor(() => expect(screen.queryByTestId('answer')).toBeNull());
+    expect(within(section('calendars')).getByText('You pay Sam Cuts 10% of services, as a fee.')).toBeTruthy();
+  });
+
+  it("declines, and opens the proposal's details", async () => {
+    const proposal = jessProposal();
+    currentList = list({ splits: [samSplit(), proposal] });
+    onWrite = () => ({ split: { ...proposal, status: 'declined', pending: null, can: NO_ACTIONS } });
+    await show();
+    await press(within(section('answer')).getByText('See details'));
+    expect(mockPush).toHaveBeenCalledWith('/commission-splits/s-jess');
+    await press(within(section('answer')).getByText('Decline'));
+    expect(writes()[0]!.body).toEqual({ terms_id: 't-jess', action: 'decline' });
+    expect(await screen.findByText('Declined. Sam Cuts has been told.')).toBeTruthy();
+  });
+
+  it("shows the server's refusal beside the proposal", async () => {
+    const NOT_PENDING = 'Those terms are no longer waiting for an answer.';
+    currentList = list({ splits: [samSplit(), jessProposal()] });
+    onWrite = () => {
+      throw new ApiError(NOT_PENDING, 409, { error: NOT_PENDING, code: 'SPLIT_TERMS_NOT_PENDING' });
+    };
+    await show();
+    await press(within(section('answer')).getByText('Accept'));
+    expect(await within(section('answer')).findByText(NOT_PENDING)).toBeTruthy();
+  });
+});
+
+describe('Set up a split', () => {
+  it('sets the share for the person who works one of your calendars, saying what will count first', async () => {
+    onWrite = (call) => {
+      if (call.path !== SHARE) throw new Error(`unexpected ${call.path}`);
+      currentSettings = settings({ rates: [...BASE_RATES, rate({ calendar_id: 'cal-kim', rate_bps: 3000, effective_from: '2026-10-14' })] });
+      return { added: 2, ...currentSettings };
+    };
+    await show();
+    const chooser = await openSetUp();
+    expect(within(chooser).getByText('Whose takings are shared?')).toBeTruthy();
+    expect(within(chooser).getByText('At Sam Cuts')).toBeTruthy();
+    expect(within(chooser).getByText('Logins without a calendar')).toBeTruthy();
+    await press(within(chooser).getByLabelText('Kim'));
+    // Kim's calendar can only share with Kim: nobody else can see it, so Kim is chosen.
+    expect(within(chooser).getByText('You pay them a share of what this calendar takes. For employed or self-employed team members.')).toBeTruthy();
+    await press(within(chooser).getByText('Next'));
+
+    const form = sheet();
+    expect(within(form).getByText("Kim's share")).toBeTruthy();
+    expect(within(form).getByText('What you pay Kim from what this calendar takes.')).toBeTruthy();
+    expect(within(form).getByLabelText('Set their own rates').props.accessibilityState).toMatchObject({ selected: true });
+    // Kim earns your standard 5% today, so that is where the field starts.
+    expect(within(form).getByLabelText('Share of services (%)').props.value).toBe('5');
+    await type(within(form).getByLabelText('Share of services (%)'), '30');
+    await type(within(form).getByLabelText('Share of products (%)'), '10');
+    expect(
+      within(form).getByText('From 14 October 2026, you pay Kim 30% of services and 10% of products on their calendar, as their share.'),
+    ).toBeTruthy();
+    expect(within(form).getByText('For example, on £100.00 of services, Kim earns £30.00.')).toBeTruthy();
+    await press(within(form).getByText('Save'));
+
+    expect(
+      await screen.findByText(
+        'Saved. From 14 October 2026, you pay Kim 30% of services and 10% of products on their calendar, as their share.',
+      ),
+    ).toBeTruthy();
+    expect(writes()).toEqual([
+      {
+        path: SHARE,
+        method: 'POST',
+        body: { person_key: 'c:cal-kim', label: 'their_share', effective_from: '2026-10-14', service_rate_percent: 30, product_rate_percent: 10 },
+      },
+    ]);
+    expect(screen.queryByTestId('sheet')).toBeNull();
+    await waitFor(() => expect(within(section('calendars')).getAllByText('Own rates')).toHaveLength(2));
+  });
+
+  it('offers a business that can see your calendar, and goes Back to the choice', async () => {
+    await show();
+    const chooser = await openSetUp();
+    await press(within(chooser).getByLabelText('Jess'));
+    // Jess, and Sam Cuts, which can see her calendar: nothing is chosen for you.
+    expect(within(chooser).getAllByLabelText('Jess')).toHaveLength(2);
+    expect(within(chooser).getByText('A business you work with')).toBeTruthy();
+    expect(within(chooser).getByRole('button', { name: 'Next' })).toBeDisabled();
+    await press(within(chooser).getByLabelText('Sam Cuts'));
+    await press(within(chooser).getByText('Next'));
+    const form = sheet();
+    expect(within(form).getByText('Jess at Bloom Hair')).toBeTruthy();
+    expect(
+      within(form).getByText('You pay Sam Cuts a share of what this calendar takes, such as rent for a chair. Sam Cuts must accept first.'),
+    ).toBeTruthy();
+    await press(within(form).getByText('Back'));
+    expect(within(sheet()).getByText('Whose takings are shared?')).toBeTruthy();
+    // Back keeps the calendar chosen.
+    expect(within(sheet()).getByText('Who earns a share?')).toBeTruthy();
+  });
+
+  it('proposes a share of a calendar at a business you work with, which they then accept', async () => {
+    const proposed = samSplit({
+      id: 's-nina',
+      status: 'proposed',
+      partner: NAIL,
+      payer: NAIL,
+      calendar: { id: 'cal-nina', name: 'Nina' },
+      terms: null,
+      pending: terms({ id: 't-nina', services_rate_bps: 3500, status: 'proposed', decided_at: null, effective_from: '2026-10-14' }),
+      can: { ...NO_ACTIONS, withdraw: true },
+    });
+    onWrite = (call) => {
+      if (call.path !== SPLITS) throw new Error(`unexpected ${call.path}`);
+      currentList = list({ splits: [samSplit(), proposed] });
+      return { split: proposed };
+    };
+    await show();
+    // Straight from Nina's card: the calendar and the business are already chosen.
+    await press(within(section('partners')).getByLabelText('Set up a split: Nina at Nail Studio'));
+    const form = sheet();
+    expect(within(form).getByText('Nina at Nail Studio')).toBeTruthy();
+    expect(
+      within(form).getByText('Nail Studio pays you a share of what this calendar takes, such as rent for a chair. Nail Studio must accept first.'),
+    ).toBeTruthy();
+    expect(within(form).queryByText('Business')).toBeNull();
+    expect(within(form).queryByText('Back')).toBeNull();
+    expect(within(form).getByRole('button', { name: 'Send to Nail Studio' })).toBeDisabled();
+    await type(within(form).getByLabelText('Share of services (%)'), '35');
+    expect(
+      within(form).getByText(
+        "From 14 October 2026, Nail Studio pays you 35% of services on Nina's calendar, worked out before VAT. It counts as rent and you settle up weekly. Nothing counts until Nail Studio accepts.",
+      ),
+    ).toBeTruthy();
+    expect(await within(form).findByText('Last month this would have come to £70.00.', {}, { timeout: 3000 })).toBeTruthy();
+    await press(within(form).getByText('Send to Nail Studio'));
+    expect(await screen.findByText('Sent. Nail Studio needs to accept it before it counts.')).toBeTruthy();
+    expect(writes()[0]).toMatchObject({
+      path: SPLITS,
+      method: 'POST',
+      body: {
+        calendar_id: 'cal-nina',
+        other_venue_id: 'v-nail',
+        label: 'rent',
+        services_rate_percent: 35,
+        products_rate_percent: null,
+        settlement_period: 'weekly',
+        effective_from: '2026-10-14',
+        vat_basis: 'net_ex_vat',
+      },
+    });
+    expect(within(section('partners')).getByText('Proposed: Nail Studio pays you 35% of services, as rent.')).toBeTruthy();
+    expect(within(section('partners')).getByText('Waiting for Nail Studio')).toBeTruthy();
+  });
+
+  it('checks the shares before sending, and says when it starts before today', async () => {
+    await show();
+    await press(within(section('partners')).getByLabelText('Set up a split: Nina at Nail Studio'));
+    const form = sheet();
+    await type(within(form).getByLabelText('Share of services (%)'), '120');
+    await press(within(form).getByText('Send to Nail Studio'));
+    expect(within(form).getByText('Enter a percentage from 0 to 100.')).toBeTruthy();
+    await type(within(form).getByLabelText('Share of services (%)'), '12.345');
+    await press(within(form).getByText('Send to Nail Studio'));
+    expect(within(form).getByText('Use up to two decimal places.')).toBeTruthy();
+    expect(writes()).toHaveLength(0);
+    await act(async () => {
+      fireEvent(within(form).getByLabelText('Starts on'), 'valueChange', {}, new Date(2026, 9, 1, 12));
+    });
+    expect(within(form).getByText('This starts before today, so figures already in ResNeo will count once Nail Studio agrees.')).toBeTruthy();
+  });
+
+  it('marks a pairing that already has a split instead of offering it twice', async () => {
+    await show();
+    const chooser = await openSetUp();
+    await press(within(chooser).getByLabelText('Sam'));
+    expect(within(chooser).getByText('Already set up. Manage it from the list.')).toBeTruthy();
+    expect(within(chooser).getByRole('button', { name: 'Next' })).toBeDisabled();
+  });
+
+  it('shares one of your calendars with a business straight from its card', async () => {
+    await show();
+    await press(within(section('calendars')).getByText('Share with a business'));
+    const chooser = sheet();
+    // Only the business is offered, and so it is chosen.
+    expect(within(chooser).getAllByLabelText('Jess')).toHaveLength(1);
+    expect(within(chooser).getByLabelText('Sam Cuts')).toBeTruthy();
+    await press(within(chooser).getByText('Next'));
+    expect(within(sheet()).getByText('Jess at Bloom Hair')).toBeTruthy();
+  });
+});
+
+describe('changing a share', () => {
+  it('puts a person back on your standard rates', async () => {
+    onWrite = () => ({ added: 1, ...currentSettings });
+    await show();
+    await press(screen.getByLabelText("Change: Jess's share"));
+    const form = sheet();
+    expect(within(form).getByText("Jess's share")).toBeTruthy();
+    expect(within(form).getByLabelText('Share of services (%)').props.value).toBe('40');
+    await press(within(form).getByLabelText('Use your standard rates'));
+    expect(within(form).getByText('5% of services and 20% of products')).toBeTruthy();
+    expect(
+      within(form).getByText('From 14 October 2026, you pay Jess 5% of services and 20% of products on their calendar, as commission.'),
+    ).toBeTruthy();
+    await press(within(form).getByText('Save'));
+    expect(writes()[0]).toEqual({
+      path: SHARE,
+      method: 'POST',
+      body: { person_key: 'c:cal-jess', label: 'commission', effective_from: '2026-10-14', service_rate_percent: null, product_rate_percent: null },
+    });
+  });
+
+  it('shows the server sentence beside the field it is about', async () => {
+    const NO_DATE = 'Choose the date it starts.';
+    onWrite = () => {
+      throw new ApiError(NO_DATE, 400, { error: NO_DATE, code: 'VALIDATION_FAILED', fields: [{ path: 'effective_from', message: NO_DATE }] });
+    };
+    await show();
+    await press(screen.getByLabelText("Change: Jess's share"));
+    await press(within(sheet()).getByText('Save'));
+    expect(await within(sheet()).findByText(NO_DATE)).toBeTruthy();
+    expect(within(sheet()).getAllByText(NO_DATE)).toHaveLength(1);
+  });
+
+  it("leaves products out for someone who earns none where Checkout isn't set up, and checks the share", async () => {
+    currentSettings = settings({ rates: [], source: { value: 'bookings', setting: 'auto', checkout_available: false } });
+    onWrite = () => ({ added: 1, ...currentSettings });
+    await show();
+    await press(screen.getByLabelText("Set a share: Kim's share"));
+    const form = sheet();
+    expect(within(form).getByText('Your standard rates are 0% at the moment.')).toBeTruthy();
+    expect(within(form).queryByLabelText('Share of products (%)')).toBeNull();
+    await press(within(form).getByText('Save'));
+    expect(within(form).getByText('Enter a percentage from 0 to 100.')).toBeTruthy();
+    expect(writes()).toHaveLength(0);
+    await type(within(form).getByLabelText('Share of services (%)'), '25');
+    await press(within(form).getByText('Commission'));
+    await press(within(form).getByText('Save'));
+    expect(writes()[0]!.body).toEqual({ person_key: 'c:cal-kim', label: 'commission', effective_from: '2026-10-14', service_rate_percent: 25 });
+  });
+
+  it('warns when a share starts before today', async () => {
+    await show();
+    await press(screen.getByLabelText("Change: Jess's share"));
+    await act(async () => {
+      fireEvent(within(sheet()).getByLabelText('Starts on'), 'valueChange', {}, new Date(2026, 9, 1, 12));
+    });
+    expect(within(sheet()).getByText('This starts before today, so figures already worked out from 1 October 2026 will change.')).toBeTruthy();
+    expect(within(sheet()).getByText(/^From 1 October 2026, you pay Jess/)).toBeTruthy();
+  });
+
+  it("lists, stops and adds a person's own category rates, and shows their earlier rates", async () => {
+    onWrite = () => ({ rate: {}, ...currentSettings });
+    await show();
+    await press(screen.getByLabelText("Change: Jess's share"));
+    const form = sheet();
+    await press(within(form).getByText('Rates for one category (1)'));
+    expect(within(form).getByText('Colour (Services): 50%, From 1 September 2026')).toBeTruthy();
+    await press(within(form).getByText('Stop this rate'));
+    expect(writes()[0]!.body).toEqual({
+      calendar_id: 'cal-jess',
+      staff_id: null,
+      effective_from: '2026-10-14',
+      item_type: 'service',
+      category_id: 'colour',
+      rate_percent: null,
+    });
+    await press(within(form).getByLabelText('Colour (Services)'));
+    await type(within(form).getByLabelText('Rate (%)'), '12');
+    await press(within(form).getByText('Add a category rate'));
+    expect(writes()[1]).toEqual({
+      path: RATES,
+      method: 'POST',
+      body: { calendar_id: 'cal-jess', staff_id: null, effective_from: '2026-10-14', item_type: 'service', category_id: 'colour', rate_percent: 12 },
+    });
+    await press(within(form).getByText('Earlier rates'));
+    expect(within(form).getByText('Services: 40%, From 1 September 2026')).toBeTruthy();
+    expect(within(form).getByText('Services, Colour: 50%, From 1 September 2026')).toBeTruthy();
+  });
+});
+
+describe('standard rates and how figures are worked out', () => {
+  it('shows each standard rate, the placeholders and which rate wins', async () => {
+    await show();
+    expect(screen.getByText('What your team earns unless a calendar has its own rates.')).toBeTruthy();
+    expect(screen.getByText('5%, From 1 January 2026')).toBeTruthy();
+    expect(screen.getByText('20%, From 1 January 2026')).toBeTruthy();
+    expect(screen.getByText(/^0% · Usually 0%/)).toBeTruthy();
+    expect(screen.getByText(/a calendar's own rate for a category, then its own rate/)).toBeTruthy();
+    // Jess's own rates are on her calendar, not in a list of people.
+    expect(screen.queryByText('For one person')).toBeNull();
+    expect(screen.queryByText('People')).toBeNull();
+  });
+
+  it('changes the rate for everyone from a date', async () => {
+    onWrite = () => {
+      currentSettings = settings({ rates: [...BASE_RATES, rate({ id: 'r-voucher', item_type: 'voucher', rate_bps: 1250, effective_from: '2026-10-14' })] });
+      return { rate: {}, ...currentSettings };
+    };
+    await show();
+    await press(screen.getAllByText('Change rate')[2]!); // Gift vouchers (placeholder)
+    await press(within(sheet()).getByText('Save changes'));
+    expect(within(sheet()).getByText('Enter a rate between 0% and 100%.')).toBeTruthy();
+    expect(writes()).toHaveLength(0);
+    await type(within(sheet()).getByLabelText('Rate (%)'), '12,5');
+    await press(within(sheet()).getByText('Save changes'));
     expect(writes()[0]).toEqual({
       path: RATES,
       method: 'POST',
-      body: { item_type: 'service', category_id: null, calendar_id: CAL, staff_id: null, rate_percent: null, effective_from: '2026-10-09' },
+      body: { item_type: 'voucher', category_id: null, calendar_id: null, staff_id: null, rate_percent: 12.5, effective_from: '2026-10-14' },
     });
-    expect(await screen.findByText('Stop this rate, From 9 October 2026')).toBeTruthy();
+    expect(mockToast.success).toHaveBeenCalledWith('Commission rate saved.');
+    expect(await screen.findByText(/^12\.5%, From 14 October 2026/)).toBeTruthy();
+  });
+
+  it('adds, stops and shows the earlier versions of a standard category rate', async () => {
+    currentSettings = settings({
+      rates: [
+        ...BASE_RATES,
+        rate({ id: 'r-c1', category_id: 'colour', category_name: 'Colour', rate_bps: 800 }),
+        rate({ id: 'r-c2', category_id: 'colour', category_name: 'Colour', rate_bps: 900, effective_from: '2026-06-01' }),
+      ],
+    });
+    onWrite = () => ({ rate: {}, ...currentSettings });
+    await show();
+    expect(screen.getByText('Colour (Services)')).toBeTruthy();
+    await press(screen.getAllByText('Earlier rates').at(-1)!);
+    expect(screen.getAllByText(/^(8|9)%, From /).map((n) => n.props.children)).toEqual([
+      '9%, From 1 June 2026',
+      '9%, From 1 June 2026',
+      '8%, From 1 January 2026',
+    ]);
+    await press(screen.getByText('Stop this rate'));
+    expect(writes()[0]!.body).toEqual({
+      item_type: 'service',
+      category_id: 'colour',
+      calendar_id: null,
+      staff_id: null,
+      rate_percent: null,
+      effective_from: '2026-10-14',
+    });
+    await press(screen.getByText('Add a category rate'));
+    expect(within(sheet()).getByText('Choose a category')).toBeTruthy();
+    await type(within(sheet()).getByLabelText('Rate (%)'), '5');
+    expect(within(sheet()).getByRole('button', { name: 'Save changes' })).toBeDisabled();
+    await press(within(sheet()).getByLabelText('Colour'));
+    await press(within(sheet()).getByText('Save changes'));
+    expect(writes()[1]!.body).toMatchObject({ item_type: 'service', category_id: 'colour', calendar_id: null, staff_id: null, rate_percent: 5 });
   });
 
   it('saves what counts for services at once, with the settings version', async () => {
-    onWrite = () => settings({ source: { value: 'bookings', setting: 'bookings', checkout_available: true }, settings_version: 8 });
+    onWrite = () => settings({ source: { value: 'bookings', setting: 'bookings', checkout_available: true }, settings_version: 4 });
     await show();
-    await press(await screen.findByText('Completed bookings'));
-    expect(writes()[0]).toEqual({ path: SETTINGS, method: 'PATCH', body: { version: 7, commission_source: 'bookings' } });
+    expect(screen.getByText('How figures are worked out')).toBeTruthy();
+    await press(screen.getByText('Completed bookings'));
+    expect(writes()[0]).toEqual({ path: SETTINGS, method: 'PATCH', body: { version: 3, commission_source: 'bookings' } });
     expect(mockToast.success).toHaveBeenCalledWith('Saved. The report now counts services from completed bookings.');
   });
 
   it('saves the VAT basis at once', async () => {
-    onWrite = () => settings({ basis: { value: 'net_inc_vat', editable: true, vat_registered: true }, settings_version: 8 });
+    onWrite = () => settings({ basis: { value: 'net_inc_vat', editable: true, vat_registered: true }, settings_version: 4 });
     await show();
-    await press(await screen.findByText('Prices including VAT'));
-    expect(writes()[0]).toEqual({ path: SETTINGS, method: 'PATCH', body: { version: 7, commission_basis: 'net_inc_vat' } });
-    expect(mockToast.success).toHaveBeenCalledWith('Commission settings saved.');
+    await press(screen.getByText('Prices including VAT'));
+    expect(writes()[0]).toEqual({ path: SETTINGS, method: 'PATCH', body: { version: 3, commission_basis: 'net_inc_vat' } });
+    expect(mockToast.success).toHaveBeenCalledWith('Saved.');
   });
 
   it('shows a stale answer word for word beside the fresh settings', async () => {
@@ -336,236 +813,8 @@ describe('your team', () => {
       throw new ApiError(STALE, 412, { error: STALE, code: 'STALE_RESOURCE', settings: settings({ settings_version: 9 }) });
     };
     await show();
-    await press(await screen.findByText('Prices including VAT'));
+    await press(screen.getByText('Prices including VAT'));
     expect(await screen.findByText(STALE)).toBeTruthy();
-    expect(mockToast.success).not.toHaveBeenCalled();
-  });
-
-  it('changes how the report describes a person', async () => {
-    onWrite = () => settings({ people: [{ calendar_id: CAL, staff_id: null, name: 'Sam', label: 'their_share' }, settings().people[1]!] });
-    await show();
-    await screen.findByText('People');
-    // Sam's row comes first, then Alex's (already "Their share").
-    await press(screen.getAllByText('Their share')[0]!);
-    expect(writes()[0]).toEqual({ path: '/api/venue/commission/people', method: 'PUT', body: { person_key: `c:${CAL}`, label: 'their_share' } });
-    expect(mockToast.success).toHaveBeenCalledWith('Saved.');
-  });
-});
-
-describe('the rate sheet', () => {
-  it('changes the rate for everyone from a date', async () => {
-    onWrite = () => {
-      currentSettings = settings({
-        rates: [...settings().rates, rate({ id: 'r5', item_type: 'product', rate_bps: 1250, effective_from: '2026-10-09' })],
-      });
-      return { rate: {}, ...(currentSettings as CommissionSettingsResponse) };
-    };
-    await show();
-    await screen.findByText('Products');
-    await press(screen.getAllByText('Change rate')[1]!); // Products (placeholder)
-    await press(screen.getAllByText('Save changes').at(-1)!);
-    expect(screen.getByText('Enter a rate between 0% and 100%.')).toBeTruthy();
-    expect(writes()).toHaveLength(0);
-    await type(screen.getByLabelText('Rate (%)'), '12,5');
-    await press(screen.getAllByText('Save changes').at(-1)!);
-    expect(writes()[0]).toEqual({
-      path: RATES,
-      method: 'POST',
-      body: { item_type: 'product', category_id: null, calendar_id: null, staff_id: null, rate_percent: 12.5, effective_from: '2026-10-09' },
-    });
-    expect(mockToast.success).toHaveBeenCalledWith('Commission rate saved.');
-    expect(await screen.findByText('12.5%, From 9 October 2026')).toBeTruthy();
-  });
-
-  it('warns about a start date before today', async () => {
-    await show();
-    await press((await screen.findAllByText('Change rate'))[0]!);
-    await act(async () => {
-      fireEvent(screen.getByLabelText('Starts on'), 'valueChange', {}, new Date(2026, 8, 20, 12));
-    });
-    expect(screen.getByText(/This starts before today, so it changes commission already worked out from 20 September 2026\./)).toBeTruthy();
-  });
-
-  it('shows the duplicate-date refusal word for word', async () => {
-    onWrite = () => {
-      throw new ApiError(DUPLICATE, 409, { error: DUPLICATE, code: 'CONFLICT', fields: [{ path: 'effective_from', message: DUPLICATE }] });
-    };
-    await show();
-    await press((await screen.findAllByText('Change rate'))[0]!);
-    await type(screen.getByLabelText('Rate (%)'), '15');
-    await press(screen.getAllByText('Save changes').at(-1)!);
-    expect(await screen.findByText(DUPLICATE)).toBeTruthy();
-  });
-
-  it("adds a person's rates with a category", async () => {
-    await show();
-    await press(await screen.findByText("Add a person's rates"));
-    const sheet = screen.getByTestId('sheet');
-    expect(within(sheet).getByText('Choose a team member')).toBeTruthy();
-    expect(within(sheet).getByText('Any category')).toBeTruthy();
-    await press(within(sheet).getByText('Alex'));
-    await press(within(sheet).getByText('Colour'));
-    await type(within(sheet).getByLabelText('Rate (%)'), '30');
-    await press(within(sheet).getByText('Save changes'));
-    expect(writes()[0]!.body).toEqual({
-      item_type: 'service',
-      category_id: CAT,
-      calendar_id: null,
-      staff_id: ALEX,
-      rate_percent: 30,
-      effective_from: '2026-10-09',
-    });
-  });
-
-  it('a category rate needs a category', async () => {
-    await show();
-    await press(await screen.findByText('Add a category rate'));
-    expect(screen.getByText('Choose a category')).toBeTruthy();
-    expect(screen.queryByText('Any category')).toBeNull();
-    await type(screen.getByLabelText('Rate (%)'), '5');
-    await press(screen.getAllByText('Save changes').at(-1)!);
-    expect(writes()).toHaveLength(0);
-    await press(screen.getByText('Colour'));
-    await press(screen.getAllByText('Save changes').at(-1)!);
-    expect(writes()[0]!.body).toMatchObject({ item_type: 'service', category_id: CAT, rate_percent: 5 });
-  });
-});
-
-describe('businesses you work with', () => {
-  it('says what a split needs when there is no business to propose one to', async () => {
-    currentList = list({ partners: [] });
-    await show();
-    await openBusinesses();
-    expect(screen.getByText(/Splits need a link where the other business shares its calendar/)).toBeTruthy();
-    expect(screen.getByText('No splits yet.')).toBeTruthy();
-    expect(screen.queryByText('Propose a split')).toBeNull();
-  });
-
-  it('opens on the businesses from a notice, lists each split with its status, and opens one', async () => {
-    mockParams = { section: 'businesses' };
-    currentList = list({
-      splits: [
-        split(),
-        split({
-          id: 's-2',
-          status: 'proposed',
-          role: 'payer',
-          label: 'fee',
-          payer: { venue_id: 'venue-1', name: 'Bloom' },
-          payee: { venue_id: 'v-sam', name: 'Sam Cuts' },
-          calendar: { id: 'cal-jo', name: 'Jo' },
-          proposed_by_you: false,
-          terms: null,
-          pending: { ...split().terms!, id: 't-9', status: 'proposed', proposed_by_you: false, effective_from: '2026-11-01' },
-          can: { respond: true, withdraw: false, propose_change: false, end: false },
-        }),
-      ],
-    });
-    await show();
-    expect(await screen.findByText('Sam at Sam Cuts')).toBeTruthy();
-    expect(screen.getByText('Sam Cuts pays you · Rent')).toBeTruthy();
-    expect(screen.getByText('40% of services from 1 October 2026 · Monthly')).toBeTruthy();
-    expect(screen.getByText('Active')).toBeTruthy();
-    expect(screen.getByText('Jo at Bloom')).toBeTruthy();
-    expect(screen.getByText('You pay Sam Cuts · Fee')).toBeTruthy();
-    expect(screen.getByText('Needs your answer')).toBeTruthy();
-    await press(screen.getByLabelText('Jo at Bloom'));
-    expect(mockPush).toHaveBeenCalledWith('/commission-splits/s-2');
-  });
-
-  it('proposes a split with every term, then opens it', async () => {
-    onWrite = () => ({ split: split({ id: 's-new', status: 'proposed' }) });
-    await show();
-    await openBusinesses();
-    await press(screen.getByText('Propose a split'));
-    const sheet = screen.getByTestId('sheet');
-    // One business: it is chosen; the calendar is not.
-    expect(within(sheet).getByText('Choose a calendar')).toBeTruthy();
-    expect(within(sheet).getByText('Their calendars (Sam Cuts pays you)')).toBeTruthy();
-    expect(within(sheet).getByText('Your calendars (you pay Sam Cuts)')).toBeTruthy();
-    await press(within(sheet).getByText('Sam'));
-    await press(within(sheet).getByText('Fee'));
-    await type(within(sheet).getByLabelText('Share of services (%)'), '40');
-    await act(async () => {
-      fireEvent(within(sheet).getByLabelText('Include products'), 'valueChange', true);
-    });
-    await type(within(sheet).getByLabelText('Share of products (%)'), '10');
-    await press(within(sheet).getByText('Including VAT'));
-    // Settle up starts at weekly, Monday to Sunday (web parity).
-    await press(within(sheet).getByText('Send to Sam Cuts'));
-    expect(writes()[0]).toEqual({
-      path: SPLITS,
-      method: 'POST',
-      body: {
-        calendar_id: 'cal-sam',
-        other_venue_id: 'v-sam',
-        label: 'fee',
-        settlement_period: 'weekly',
-        effective_from: '2026-10-14',
-        services_rate_percent: 40,
-        products_rate_percent: 10,
-        vat_basis: 'net_inc_vat',
-      },
-    });
-    expect(mockToast.success).toHaveBeenCalledWith('Sent. Sam Cuts needs to accept it before it counts.');
-    expect(mockPush).toHaveBeenCalledWith('/commission-splits/s-new');
-  });
-
-  it('shows the worked example on last month, with the VAT note for the business that pays', async () => {
-    await show();
-    await openBusinesses();
-    await press(screen.getByText('Propose a split'));
-    const sheet = screen.getByTestId('sheet');
-    await press(within(sheet).getByText('Jo'));
-    await type(within(sheet).getByLabelText('Share of services (%)'), '40');
-    expect(await within(sheet).findByText('Last month this would have come to £365.00.', {}, { timeout: 3000 })).toBeTruthy();
-    expect(within(sheet).getByText('£900.00 of completed bookings.')).toBeTruthy();
-    // Your calendar: your business pays, so the note names it.
-    expect(within(sheet).getByText("VAT isn't set up in ResNeo for Bloom, so this uses prices as booked.")).toBeTruthy();
-    const preview = mockCalls.find((c) => c.path.startsWith('/api/venue/commission/splits/preview?'));
-    expect(preview?.path).toBe(
-      '/api/venue/commission/splits/preview?calendar_id=cal-jo&other_venue_id=v-sam&services_rate_percent=40&vat_basis=net_ex_vat',
-    );
-  });
-
-  it('checks the shares before sending, and says when it starts before today', async () => {
-    await show();
-    await openBusinesses();
-    await press(screen.getByText('Propose a split'));
-    const sheet = screen.getByTestId('sheet');
-    await press(within(sheet).getByText('Sam'));
-    await type(within(sheet).getByLabelText('Share of services (%)'), '120');
-    await press(within(sheet).getByText('Send to Sam Cuts'));
-    expect(within(sheet).getByText('Enter a percentage from 0 to 100.')).toBeTruthy();
-    await type(within(sheet).getByLabelText('Share of services (%)'), '12.345');
-    await press(within(sheet).getByText('Send to Sam Cuts'));
-    expect(within(sheet).getByText('Use up to two decimal places.')).toBeTruthy();
-    expect(writes()).toHaveLength(0);
-    await act(async () => {
-      fireEvent(within(sheet).getByLabelText('Starts on'), 'valueChange', {}, new Date(2026, 9, 1, 12));
-    });
-    expect(within(sheet).getByText('This starts before today, so figures already in ResNeo will count once Sam Cuts agrees.')).toBeTruthy();
-  });
-
-  it("shows the server's refusal word for word, with the field it named beside its input", async () => {
-    const NOT_ALLOWED =
-      'You can only agree a split on a calendar at a business you have a "Work as one team" link with, or that shares a live collective with you.';
-    onWrite = () => {
-      throw new ApiError(NOT_ALLOWED, 400, {
-        error: NOT_ALLOWED,
-        code: 'VALIDATION_FAILED',
-        fields: [{ path: 'effective_from', message: 'The start date must be before the split ends.' }],
-      });
-    };
-    await show();
-    await openBusinesses();
-    await press(screen.getByText('Propose a split'));
-    const sheet = screen.getByTestId('sheet');
-    await press(within(sheet).getByText('Sam'));
-    await type(within(sheet).getByLabelText('Share of services (%)'), '40');
-    await press(within(sheet).getByText('Send to Sam Cuts'));
-    await waitFor(() => expect(within(sheet).getByText(NOT_ALLOWED)).toBeTruthy());
-    expect(within(sheet).getByText('The start date must be before the split ends.')).toBeTruthy();
     expect(mockToast.success).not.toHaveBeenCalled();
   });
 });

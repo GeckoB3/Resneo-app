@@ -13,7 +13,6 @@ export const COMMISSION_SET_COPY = {
   'set.comm.basis.excl': 'Prices without VAT',
   'set.comm.basis.incl': 'Prices including VAT',
   'set.comm.basis.help': "This only makes a difference if you're VAT registered. Tips, service charges and delivery never count.",
-  'set.comm.basis.saved': 'Commission settings saved.', // web inline
   'set.comm.defaults': 'For everyone',
   'set.comm.type.service': 'Services',
   'set.comm.type.product': 'Products',
@@ -34,17 +33,13 @@ export const COMMISSION_SET_COPY = {
   'set.comm.empty': 'No rates yet. Add one for everyone to start.',
   // The rate sheet (web inline).
   'set.comm.sheet.type': 'Type',
-  'set.comm.sheet.person': 'Team member',
-  'set.comm.sheet.person.choose': 'Choose a team member',
   'set.comm.sheet.category.choose': 'Choose a category',
-  'set.comm.sheet.category.any': 'Any category',
   'set.comm.sheet.rate': 'Rate (%)',
   'set.comm.sheet.from': 'Starts on',
   'set.comm.sheet.rateInvalid': 'Enter a rate between 0% and 100%.',
   'set.comm.sheet.save': 'Save changes',
   'set.comm.sheet.cancel': 'Cancel',
   'set.comm.rate.saved': 'Commission rate saved.',
-  'set.comm.fallback.person': 'Team member',
   'set.comm.fallback.category': 'Category',
   // (app) The web leaves the card out when the server has no rates for it; the app says so.
   'set.comm.unavailable.title': "Commission isn't available yet",

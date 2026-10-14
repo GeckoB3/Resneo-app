@@ -1,46 +1,49 @@
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
+import { SheetStep } from '@/components/commission-splits/FlowSheet';
 import { SplitExample } from '@/components/commission-splits/SplitExample';
 import { TermsFields, checkTerms, draftRates, type TermsDraft } from '@/components/commission-splits/TermsFields';
-import { ChoiceChips, PosSheet } from '@/components/pos/parts';
-import { FieldBlock, MessageBox, OptionList } from '@/components/pos/settings-more/parts';
+import { ChoiceChips } from '@/components/pos/parts';
+import { FieldBlock, MessageBox } from '@/components/pos/settings-more/parts';
 import { Button } from '@/components/ui/Button';
 import { DatePickerField } from '@/components/ui/DatePickerField';
-import { Text } from '@/components/ui/Text';
 import { commissionErrorMessage, commissionFieldErrors, fieldMessage, type CommissionFieldError } from '@/lib/commission/api';
+import { businessSummary } from '@/lib/commission/describe';
 import { splitsT } from '@/lib/commission/splits-copy';
 import { PERIODS, SPLIT_LABELS, labelWords, periodWords } from '@/lib/commission/splits-format';
+import { formatLongDay } from '@/lib/reports/pos-report-format';
 import { useProposeSplit } from '@/lib/queries/useCommissionSplits';
-import { useToast } from '@/providers/ToastProvider';
 import { spacing } from '@/theme/index';
 import type { SettlementPeriod, SplitLabel, SplitPreviewParams, SplitsListResponse, SplitView } from '@/types/commission-splits';
 
 /**
- * "Propose a split" (web propose form): the business (any you have a "Work as one team" link with,
- * or share a live collective with), one calendar, theirs (they pay you) or yours (you pay them),
- * what to call it, the shares, the VAT basis (starting at your commission setting), how often to
- * settle up and the start date, with a note when it starts before today. The worked example on last
- * month's figures follows the terms as they are typed. Nothing counts until the other business
- * accepts; the server's refusal shows word for word, with the fields it named beside the inputs.
+ * Propose a split (web `ProposeSplitDialog` with `initial`): the business and the calendar were
+ * chosen in "Set up a split" (or on the calendar's own card), so they are shown, not asked: the title
+ * is the calendar at its business, with who pays whom under it. Then the shares, the VAT basis
+ * (starting at your commission setting), what to call it, how often to settle up and the start date,
+ * with a note when it starts before today. A sentence says exactly what will count, with the worked
+ * example on last month's figures under it. Nothing counts until the other business accepts; the
+ * server's refusal shows word for word, with the fields it named beside the inputs. Shown inside
+ * `FlowSheet`.
  */
 export function ProposeSplitSheet({
   list,
   currency,
+  initial,
   onClose,
   onSent,
+  onBack,
 }: {
   list: SplitsListResponse;
   currency?: string | null;
+  /** The business, and `theirs:<calendar>` (they pay you) or `yours:<calendar>` (you pay them). */
+  initial: { partnerId: string; calendar: string };
   onClose: () => void;
-  onSent: (split: SplitView) => void;
+  onSent: (split: SplitView, partnerName: string) => void;
+  onBack?: () => void;
 }) {
-  const toast = useToast();
   const propose = useProposeSplit();
-  const partners = list.partners.filter((p) => p.their_calendars.length > 0 || p.your_calendars.length > 0);
-  const [partnerId, setPartnerId] = useState<string | null>(partners.length === 1 ? partners[0]!.venue_id : null);
-  // `t:<id>` for their calendar (they pay you), `y:<id>` for yours (you pay them).
-  const [calendarKey, setCalendarKey] = useState<string | null>(null);
   const [label, setLabel] = useState<SplitLabel>('rent');
   // Weekly (Monday to Sunday) to start with, as on the web.
   const [period, setPeriod] = useState<SettlementPeriod>('weekly');
@@ -50,11 +53,11 @@ export function ProposeSplitSheet({
   const [fields, setFields] = useState<CommissionFieldError[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  const partner = partners.find((p) => p.venue_id === partnerId) ?? null;
-  const calendarId = calendarKey ? calendarKey.slice(2) : null;
-  const theirs = calendarKey?.startsWith('t:') ?? false;
+  const partner = list.partners.find((p) => p.venue_id === initial.partnerId) ?? null;
+  const [side, calendarId] = initial.calendar.split(':', 2) as ['theirs' | 'yours', string];
   // The business whose calendar it is pays.
-  const payerName = theirs ? (partner?.name ?? '') : list.venue.name;
+  const payerName = side === 'yours' ? list.venue.name : (partner?.name ?? '');
+  const calendarName = (side === 'yours' ? partner?.your_calendars : partner?.their_calendars)?.find((c) => c.id === calendarId)?.name ?? '';
   const rates = draftRates(draft);
   const previewParams: SplitPreviewParams | null =
     partner && calendarId && rates
@@ -66,9 +69,31 @@ export function ProposeSplitSheet({
           vat_basis: draft.vat,
         }
       : null;
+  const summary =
+    partner && rates
+      ? businessSummary({
+          role: side === 'yours' ? 'payer' : 'payee',
+          partner: partner.name,
+          calendar: calendarName,
+          date: formatLongDay(start),
+          servicesBps: Math.round(rates.services * 100),
+          productsBps: rates.products === null ? null : Math.round(rates.products * 100),
+          basis: draft.vat,
+          label,
+          period,
+        })
+      : null;
 
   const serverField = (path: string) => fieldMessage(fields, path);
   const clearField = (path: string) => setFields((prev) => prev.filter((f) => f.path !== path));
+  // The business and calendar are chosen before this step, so only these fields show here. A 400's
+  // sentence is its first field's message, which already sits beside that field when it shows.
+  const shownField = (f: { path: string }) =>
+    ['label', 'services_rate_percent', 'products_rate_percent', 'vat_basis', 'settlement_period', 'effective_from'].some(
+      (k) => f.path === k || f.path.startsWith(`${k}.`),
+    );
+  const general = error && !fields.some((f) => f.message === error && shownField(f)) ? error : null;
+  const others = fields.filter((f) => !shownField(f) && f.message !== general);
 
   const send = async () => {
     if (!partner || !calendarId || propose.isPending) return;
@@ -91,8 +116,7 @@ export function ProposeSplitSheet({
         products_rate_percent: check.products,
         vat_basis: draft.vat,
       });
-      toast.success(splitsT('form.sent', { partner: partner.name }));
-      onSent(split);
+      onSent(split, partner.name);
     } catch (e) {
       setError(commissionErrorMessage(e));
       setFields(commissionFieldErrors(e));
@@ -100,82 +124,32 @@ export function ProposeSplitSheet({
   };
 
   return (
-    <PosSheet
-      visible
-      onClose={onClose}
-      title={splitsT('form.title')}
+    <SheetStep
+      title={splitsT('biz.calendarAt', { calendar: calendarName, business: payerName })}
+      subtitle={partner ? splitsT(side === 'yours' ? 'propose.youPay.help' : 'propose.theyPay.help', { partner: partner.name }) : null}
       footer={
-        <View style={styles.footer}>
+        <>
+          {/* The refusal sits by the buttons, so it is seen however far the sheet is scrolled. */}
+          {general || others.length ? (
+            <MessageBox tone="danger" role="alert">
+              {[general, ...others.map((f) => f.message)].filter(Boolean).join('\n')}
+            </MessageBox>
+          ) : null}
           <Button
-            label={partner ? splitsT('form.send', { partner: partner.name }) : splitsT('biz.propose')}
+            label={partner ? splitsT('form.send', { partner: partner.name }) : splitsT('setup.title')}
             onPress={() => void send()}
             loading={propose.isPending}
-            disabled={!partner || !calendarId}
+            disabled={!partner || !calendarId || !draft.services.trim()}
             fullWidth
           />
-          <Button label={splitsT('ui.close')} variant="secondary" onPress={onClose} disabled={propose.isPending} fullWidth />
-        </View>
-      }>
-      <FieldBlock
-        label={splitsT('form.business')}
-        help={partner ? null : splitsT('form.business.choose')}
-        error={serverField('other_venue_id')}>
-        <OptionList
-          value={partnerId}
-          options={partners.map((p) => ({ value: p.venue_id, label: p.name }))}
-          onChange={(id) => {
-            if (id === partnerId) return;
-            setPartnerId(id);
-            setCalendarKey(null);
-            clearField('other_venue_id');
-          }}
-        />
-      </FieldBlock>
-
-      <FieldBlock
-        label={splitsT('form.calendar')}
-        help={partner && !calendarKey ? splitsT('form.calendar.choose') : null}
-        error={serverField('calendar_id')}>
-        {!partner ? (
-          <Text variant="bodySmall" tone="muted">
-            {splitsT('form.calendar.none')}
-          </Text>
-        ) : (
-          <View style={styles.groups}>
-            {partner.their_calendars.length > 0 ? (
-              <OptionList
-                label={splitsT('form.calendar.theirs', { partner: partner.name })}
-                value={calendarKey?.startsWith('t:') ? calendarKey : null}
-                options={partner.their_calendars.map((c) => ({ value: `t:${c.id}`, label: c.name }))}
-                onChange={(key) => {
-                  setCalendarKey(key);
-                  clearField('calendar_id');
-                }}
-              />
+          <View style={styles.row}>
+            {onBack ? (
+              <Button label={splitsT('setup.back')} variant="ghost" onPress={onBack} disabled={propose.isPending} style={styles.flex} />
             ) : null}
-            {partner.your_calendars.length > 0 ? (
-              <OptionList
-                label={splitsT('form.calendar.yours', { partner: partner.name })}
-                value={calendarKey?.startsWith('y:') ? calendarKey : null}
-                options={partner.your_calendars.map((c) => ({ value: `y:${c.id}`, label: c.name }))}
-                onChange={(key) => {
-                  setCalendarKey(key);
-                  clearField('calendar_id');
-                }}
-              />
-            ) : null}
+            <Button label={splitsT('ui.close')} variant="secondary" onPress={onClose} disabled={propose.isPending} style={styles.flex} />
           </View>
-        )}
-      </FieldBlock>
-
-      <FieldBlock label={splitsT('form.label')} error={serverField('label')}>
-        <ChoiceChips<SplitLabel>
-          options={SPLIT_LABELS.map((l) => ({ value: l, label: labelWords(l) }))}
-          value={label}
-          onChange={setLabel}
-        />
-      </FieldBlock>
-
+        </>
+      }>
       <TermsFields
         draft={draft}
         onChange={(next) => {
@@ -188,6 +162,14 @@ export function ProposeSplitSheet({
           vat: serverField('vat_basis'),
         }}
       />
+
+      <FieldBlock label={splitsT('form.label')} error={serverField('label')}>
+        <ChoiceChips<SplitLabel>
+          options={SPLIT_LABELS.map((l) => ({ value: l, label: labelWords(l) }))}
+          value={label}
+          onChange={setLabel}
+        />
+      </FieldBlock>
 
       <FieldBlock label={splitsT('form.period')} error={serverField('settlement_period')}>
         <ChoiceChips<SettlementPeriod>
@@ -213,18 +195,12 @@ export function ProposeSplitSheet({
         </MessageBox>
       ) : null}
 
-      <SplitExample params={previewParams} business={payerName} currency={currency} />
-
-      {error ? (
-        <MessageBox tone="danger" role="alert">
-          {error}
-        </MessageBox>
-      ) : null}
-    </PosSheet>
+      <SplitExample params={previewParams} business={payerName} currency={currency} summary={summary} />
+    </SheetStep>
   );
 }
 
 const styles = StyleSheet.create({
-  footer: { gap: spacing.sm },
-  groups: { gap: spacing.md },
+  row: { flexDirection: 'row', gap: spacing.sm },
+  flex: { flex: 1, minWidth: 0 },
 });

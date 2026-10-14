@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { DatePickerField } from '@/components/ui/DatePickerField';
 import { Input } from '@/components/ui/Input';
 import { commissionErrorMessage } from '@/lib/commission/api';
-import { COMMISSION_TYPES, commT, typeWords } from '@/lib/pos/settings-more/commission-copy';
+import { commT, typeWords } from '@/lib/pos/settings-more/commission-copy';
 import { usePostCommissionRate } from '@/lib/queries/useCommissionSplits';
 import { spacing } from '@/theme/index';
 import type { CommissionItemType, CommissionSettingsResponse } from '@/types/commission-splits';
@@ -19,25 +19,21 @@ export interface RateScope {
   staff_id: string | null;
 }
 
-/** What opened the sheet: a row's own scope (`fixed`), a new category rate, or a new person's rate. */
+/** What opened the sheet: a row's own scope (`fixed`), or a new category rate for everyone. */
 export interface RateSheetTarget {
   scope: Partial<RateScope>;
   fixed: boolean;
-  withPerson: boolean;
 }
-
-export const personKeyOf = (p: { calendar_id: string | null; staff_id: string | null }) =>
-  p.calendar_id ? `c:${p.calendar_id}` : `s:${p.staff_id ?? ''}`;
 
 /**
  * The rate sheet (web `RateDialog`): a new dated rate, never an edit. From a row it only asks for the
- * rate and the start date; "Add a category rate" also asks for the type and the category; "Add a
- * person's rates" asks for the type, the team member and a category or Any category. A start date
- * before today warns that it changes figures already worked out. The server's refusal (a rate for
- * the same scope and date, a removed person or category) shows word for word.
+ * rate and the start date; "Add a category rate" also asks for the type and the category. A start
+ * date before today warns that it changes figures already worked out. The server's refusal (a
+ * removed category, a date it cannot take) shows word for word.
  *
  * Commission splits (2026-10-14): saves through `POST /api/venue/commission/rates`, which works with
- * or without Checkout, and the answer's settings replace the cached ones.
+ * or without Checkout, and the answer's settings replace the cached ones. A person's own rates are
+ * set on their calendar (the share sheet), so this sheet is for your standard rates only.
  */
 export function RateSheet({
   loaded,
@@ -45,24 +41,21 @@ export function RateSheet({
   onClose,
   onSaved,
 }: {
-  loaded: Pick<CommissionSettingsResponse, 'people' | 'categories' | 'today'>;
+  loaded: Pick<CommissionSettingsResponse, 'categories' | 'today'>;
   target: RateSheetTarget;
   onClose: () => void;
   onSaved: (next: CommissionSettingsResponse) => void;
 }) {
   const post = usePostCommissionRate();
-  const { scope, fixed, withPerson } = target;
+  const { scope, fixed } = target;
   const [itemType, setItemType] = useState<CommissionItemType>(scope.item_type ?? 'service');
   const [categoryId, setCategoryId] = useState<string>(scope.category_id ?? '');
-  const [personKey, setPersonKey] = useState<string>(
-    scope.calendar_id ? `c:${scope.calendar_id}` : scope.staff_id ? `s:${scope.staff_id}` : '',
-  );
   const [rate, setRate] = useState('');
   const [from, setFrom] = useState(loaded.today);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const categories = loaded.categories.filter((c) => c.item_type === itemType);
-  const needsCategory = !fixed && !withPerson;
+  const needsCategory = !fixed;
 
   const save = async () => {
     const pct = Number(rate.trim().replace(',', '.'));
@@ -72,16 +65,12 @@ export function RateSheet({
     }
     setBusy(true);
     setError(null);
-    const person = personKey.startsWith('c:')
-      ? { calendar_id: personKey.slice(2), staff_id: null }
-      : personKey.startsWith('s:')
-        ? { calendar_id: null, staff_id: personKey.slice(2) }
-        : { calendar_id: null, staff_id: null };
     try {
       const next = await post.mutateAsync({
         item_type: itemType,
         category_id: categoryId || null,
-        ...person,
+        calendar_id: scope.calendar_id ?? null,
+        staff_id: scope.staff_id ?? null,
         rate_percent: pct,
         effective_from: from,
       });
@@ -93,15 +82,9 @@ export function RateSheet({
     }
   };
 
-  const title = fixed ? commT('set.comm.change') : withPerson ? commT('set.comm.person.add') : commT('set.comm.category.add');
-  const typeOptions = (withPerson ? COMMISSION_TYPES : (['service', 'product'] as CommissionItemType[])).map((t) => ({
-    value: t,
-    label: typeWords(t),
-  }));
-  const categoryOptions = [
-    ...(needsCategory ? [] : [{ value: '', label: commT('set.comm.sheet.category.any') }]),
-    ...categories.map((c) => ({ value: c.id, label: c.name })),
-  ];
+  const title = fixed ? commT('set.comm.change') : commT('set.comm.category.add');
+  const typeOptions = (['service', 'product'] as CommissionItemType[]).map((t) => ({ value: t, label: typeWords(t) }));
+  const categoryOptions = categories.map((c) => ({ value: c.id, label: c.name }));
 
   return (
     <PosSheet
@@ -114,7 +97,7 @@ export function RateSheet({
             label={commT('set.comm.sheet.save')}
             onPress={() => void save()}
             loading={busy}
-            disabled={(needsCategory && !categoryId) || (withPerson && !personKey)}
+            disabled={needsCategory && !categoryId}
             fullWidth
           />
           <Button label={commT('set.comm.sheet.cancel')} variant="secondary" onPress={onClose} disabled={busy} fullWidth />
@@ -132,16 +115,7 @@ export function RateSheet({
           }}
         />
       ) : null}
-      {withPerson ? (
-        <FieldBlock label={commT('set.comm.sheet.person')} help={personKey ? null : commT('set.comm.sheet.person.choose')}>
-          <OptionList
-            value={personKey || null}
-            options={loaded.people.map((p) => ({ value: personKeyOf(p), label: p.name }))}
-            onChange={setPersonKey}
-          />
-        </FieldBlock>
-      ) : null}
-      {!fixed && itemType !== 'voucher' ? (
+      {!fixed ? (
         <FieldBlock
           label={commT('set.comm.byCategory')}
           help={needsCategory && !categoryId ? commT('set.comm.sheet.category.choose') : null}>

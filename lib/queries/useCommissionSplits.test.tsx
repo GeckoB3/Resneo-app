@@ -37,7 +37,6 @@ import {
   usePostCommissionRate,
   useProposeSplit,
   useProposeTerms,
-  usePutPersonLabel,
   useRespondSplit,
   useSplitLines,
   useSplitPreview,
@@ -46,6 +45,7 @@ import {
   useSplitStatements,
   useTeamCommissionLines,
   useTeamCommissionReport,
+  useTeamShare,
   useUndoSettlement,
   useWithdrawTerms,
 } from '@/lib/queries/useCommissionSplits';
@@ -216,14 +216,53 @@ describe('your team', () => {
     expect(client.getQueryData(queryKeys.commissionSplits.settings('token-A'))).toEqual(settings(3));
   });
 
-  it("puts a person's label", async () => {
-    mockApiFetch.mockResolvedValueOnce(settings());
-    const { wrapper } = setup();
-    const { result } = await renderHook(() => usePutPersonLabel(), { wrapper });
+  it("saves one person's share in one step, keeping the settings it answers with", async () => {
+    const answer = { added: 2, ...settings(3) };
+    mockApiFetch.mockResolvedValueOnce(answer);
+    const { client, wrapper } = setup();
+    const invalidate = jest.spyOn(client, 'invalidateQueries');
+    const { result } = await renderHook(() => useTeamShare(), { wrapper });
+    const body = {
+      person_key: 'c:cal-1',
+      label: 'their_share' as const,
+      effective_from: '2026-10-14',
+      service_rate_percent: 30,
+      product_rate_percent: null,
+    };
     await act(async () => {
-      await result.current.mutateAsync({ person_key: 'c:cal-1', label: 'their_share' });
+      await result.current.mutateAsync(body);
+      // The mutation's own state settles in the query client's next batch.
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
     });
-    expect(calls()[0]).toEqual(['/api/venue/commission/people', 'PUT', { person_key: 'c:cal-1', label: 'their_share' }]);
+    expect(calls()[0]).toEqual(['/api/venue/commission/share', 'POST', body]);
+    expect(mockApiFetch.mock.calls[0]![1]).toMatchObject({ accessToken: 'token-A', method: 'POST' });
+    // The settings without `added`, as GET /settings answers.
+    expect(client.getQueryData(queryKeys.commissionSplits.settings('token-A'))).toEqual(settings(3));
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.commissionSplits.all() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+  });
+
+  it('rejects a refused share with the server sentence, keeping the cached settings', async () => {
+    const REFUSED = 'Choose the date it starts.';
+    mockApiFetch.mockImplementation(async () => {
+      throw new ApiError(REFUSED, 400, { error: REFUSED, code: 'VALIDATION_FAILED', fields: [{ path: 'effective_from', message: REFUSED }] });
+    });
+    const { client, wrapper } = setup();
+    client.setQueryData(queryKeys.commissionSplits.settings('token-A'), settings(3));
+    const { result } = await renderHook(() => useTeamShare(), { wrapper });
+    let caught: unknown;
+    await act(async () => {
+      await result.current
+        .mutateAsync({ person_key: 's:staff-1', label: 'commission', effective_from: 'soon', service_rate_percent: null })
+        .catch((e: unknown) => {
+          caught = e;
+        });
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    });
+    expect((caught as ApiError).status).toBe(400);
+    expect((caught as ApiError).message).toBe(REFUSED);
+    expect(client.getQueryData(queryKeys.commissionSplits.settings('token-A'))).toEqual(settings(3));
+    await waitFor(() => expect(result.current.isError).toBe(true));
   });
 });
 

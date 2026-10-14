@@ -14,7 +14,8 @@ import { splitsT } from './splits-copy';
 export const commissionPaths = {
   settings: '/api/venue/commission/settings',
   rates: '/api/venue/commission/rates',
-  people: '/api/venue/commission/people',
+  /** One person's share in one step: their own rates (or your standard ones), the label and the start date. */
+  share: '/api/venue/commission/share',
   /** The team report (`preset=`, `from=&to=`, `calendar_id=`). */
   report: (query: string) => `/api/venue/commission/report?${query}`,
   /** One person's lines in the team report. */

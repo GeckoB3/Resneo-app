@@ -15,6 +15,7 @@ import { Screen } from '@/components/ui/Screen';
 import { DetailSkeleton } from '@/components/ui/Skeletons';
 import { Text } from '@/components/ui/Text';
 import { commissionErrorMessage, isReadOnlySplit, isSplitNotFound } from '@/lib/commission/api';
+import { splitTermsSentence, termsDetail } from '@/lib/commission/describe';
 import { splitsT } from '@/lib/commission/splits-copy';
 import {
   basisWords,
@@ -22,7 +23,6 @@ import {
   directionLine,
   endedLines,
   historyLine,
-  labelWords,
   lowerFirst,
   periodText,
   periodWords,
@@ -51,8 +51,9 @@ import type { SplitPeriodView, SplitStatementsResponse, SplitTermsView, SplitVie
 type OpenSheet = { kind: 'terms' } | { kind: 'end' } | { kind: 'paid'; period: SplitPeriodView } | null;
 
 /**
- * One split with another business (web split card and statements): what it is, who pays whom, its
- * status, the terms in force, a version waiting for an answer (Accept or Decline when the other
+ * One split with another business (web Manage dialog and statements): the calendar at its business,
+ * led by what it shares in one sentence ("Sam Cuts pays you 40% of services, as rent.") and how it is
+ * worked out and settled, its status, a version waiting for an answer (Accept or Decline when the other
  * business proposed it, with the worked example; Withdraw when you did), "Propose new terms" and
  * "End this split" where the server allows them (`can`), "Earlier terms", and the statements: each
  * period newest first with its status and what is owed, "Mark as paid" with an optional note, who
@@ -134,6 +135,11 @@ export default function SplitDetailScreen() {
   const partner = split.partner.name;
   const pending = split.pending;
   const earlier = split.history.filter((t) => t.id !== split.terms?.id && t.id !== pending?.id);
+  // The head (web SplitCard): the agreed terms, else what is waiting for an answer. A declined or
+  // withdrawn split never had agreed terms, so it says what was proposed.
+  const agreed = split.terms ?? (split.status === 'proposed' ? null : (split.history.find((t) => t.status === 'accepted') ?? null));
+  const summaryTerms = agreed ?? (pending ? null : (split.history[0] ?? null));
+  const headTerms = summaryTerms ?? pending;
 
   const refresh = async () => {
     setRefreshing(true);
@@ -197,18 +203,17 @@ export default function SplitDetailScreen() {
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void refresh()} />}>
         <SettingsCard title={calendarAt(split)}>
-          <Text variant="bodySmall" tone="secondary">
-            {`${directionLine(split)} · ${labelWords(split.label)}`}
-          </Text>
+          <Text variant="bodyMedium">{headTerms ? splitTermsSentence(split, headTerms) : directionLine(split)}</Text>
+          {headTerms ? (
+            <Text variant="caption" tone="muted">
+              {termsDetail(split, headTerms, formatLongDay)}
+            </Text>
+          ) : null}
           <View style={styles.badges}>
             {splitBadges(split, today).map((b) => (
               <Badge key={b.text} label={b.text} tone={b.tone} />
             ))}
           </View>
-          {split.terms ? <TermsLines terms={split.terms} /> : null}
-          <Text variant="caption" tone="muted">
-            {`${splitsT('form.period')}: ${periodWords(split.settlement_period)}`}
-          </Text>
           {endedLines(split, today).map((line) => (
             <Text key={line} variant="bodySmall" tone="secondary">
               {line}
@@ -235,7 +240,8 @@ export default function SplitDetailScreen() {
                   ? splitsT('biz.pending.yours')
                   : splitsT('biz.pending.yoursChange', { date: formatLongDay(pending.effective_from) })
             }>
-            <TermsLines terms={pending} />
+            {/* Already the head's sentence when nothing is agreed yet. */}
+            {headTerms === pending ? null : <TermsLines terms={pending} />}
             {split.can.respond ? (
               <>
                 <SplitExample

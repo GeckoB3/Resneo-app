@@ -54,6 +54,30 @@ for builds already installed (Checkout set-up's team step still uses them).
 - `components/reports/pos/CommissionSection.tsx` is the new tab; the Checkout-only commission report
   hooks and types are gone.
 
+**Calendar first (later the same day).** The screen now matches the web's rebuilt page: one
+scrolling screen, no tabs. Each of your calendars is a card that says in plain words what you pay
+the person who works it ("You pay Jess 40% of services and 20% of products, as commission."), with
+"Own rates" or "Standard rates", any category that earns something else and the next dated change,
+then Change (or Set a share), and any share agreed with a business on it. Calendars at businesses
+you work with are grouped by business, with Set up a split on any that has no split yet, or a way to
+Linked venues when there are none. Logins without a calendar have their own section, explained,
+where Checkout is set up. Proposals waiting for your answer sit at the top with Accept, Decline and
+See details. Standard rates, How figures are worked out and Past splits follow.
+
+**Set up a split** asks whose takings are shared, then who earns a share (the person, a business
+that can see the calendar, or your business on theirs), then the share itself, all in one sheet
+with Back, and says in one sentence exactly what will count before anything saves. A person's share
+saves in one step through the web's new `POST /api/venue/commission/share`. A split's own screen
+now leads with the same sentence ("Sam Cuts pays you 40% of services, as rent.") and how it is
+worked out and settled.
+
+- `lib/commission/describe.ts` and `team-share.ts` (new): the web's sentences, word for word.
+- `components/commission-splits/SetUpSplitSheet.tsx`, `TeamShareSheet.tsx`, `FlowSheet.tsx`,
+  `CalendarCards.tsx` and `TeamRatesCards.tsx` (new). `BusinessSplitsPanel.tsx` and
+  `TeamCommissionPanel.tsx` are gone, and the rate sheet no longer adds one person's rates.
+- `lib/queries/useCommissionSplits.ts`: `useTeamShare` (new); `usePutPersonLabel` is gone, since
+  the share sheet's "Call it" saves the label.
+
 ### A sale sent to this phone pops up in the app (owner, 2026-10-10)
 
 When the web till sends a sale to this phone while the app is open, the app now offers it at once:

@@ -10,7 +10,6 @@ import { useAccessToken } from '@/lib/queries/useAccessToken';
 import { useStaffMe } from '@/lib/queries/useStaffMe';
 import { calendarRetryOption } from '@/lib/reports/report-calendar';
 import type {
-  CommissionPeoplePut,
   CommissionRatePostBody,
   CommissionRatePostResponse,
   CommissionSettingsPatch,
@@ -29,6 +28,8 @@ import type {
   SplitView,
   SplitWithdrawBody,
   TeamCommissionReport,
+  TeamShareBody,
+  TeamShareResponse,
 } from '@/types/commission-splits';
 import type { PosRangeChoice } from '@/types/pos-reports';
 
@@ -130,14 +131,20 @@ export function usePostCommissionRate() {
   });
 }
 
-/** PUT /api/venue/commission/people: how the report describes one person ("Shown as"). */
-export function usePutPersonLabel() {
+/**
+ * POST /api/venue/commission/share: one person's share in one step (Set up a split, and Change or
+ * Set a share on a calendar). The answer is the settings plus `added`; the settings replace the
+ * cached ones, as a rate write's do.
+ */
+export function useTeamShare() {
   const accessToken = useAccessToken();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (body: CommissionPeoplePut) =>
-      call<CommissionSettingsResponse>(accessToken, commissionPaths.people, 'PUT', body),
-    onSuccess: (data) => queryClient.setQueryData(queryKeys.commissionSplits.settings(accessToken), data),
+    mutationFn: (body: TeamShareBody) => call<TeamShareResponse>(accessToken, commissionPaths.share, 'POST', body),
+    onSuccess: (data) => {
+      const { added: _added, ...settings } = data;
+      queryClient.setQueryData(queryKeys.commissionSplits.settings(accessToken), settings);
+    },
     onSettled: () => invalidateAll(queryClient),
   });
 }

@@ -16,6 +16,7 @@ import {
   periodText,
   reportRatesText,
   splitBadges,
+  splitStatus,
   statementStatus,
   termsSummary,
   termsSummaryFrom,
@@ -122,6 +123,25 @@ describe('status badges', () => {
     expect(splitBadges(split({ status: 'ended', ended_on: '2026-10-01' }), today)).toEqual([{ text: 'Ended', tone: 'neutral' }]);
     expect(splitBadges(split({ status: 'declined' }), today)[0]!.text).toBe('Declined');
     expect(splitBadges(split({ status: 'withdrawn' }), today)[0]!.text).toBe('Withdrawn');
+  });
+
+  it("gives a calendar's line one status, as the web's splitStatus", () => {
+    const theirs = terms({ id: 't-2', status: 'proposed', proposed_by_you: false });
+    expect(splitStatus(split({ status: 'proposed', terms: null, pending: theirs, proposed_by_you: false }), today)).toEqual({
+      text: 'Needs your answer',
+      tone: 'warning',
+    });
+    expect(splitStatus(split({ status: 'proposed', terms: null, pending: { ...theirs, proposed_by_you: true } }), today)).toEqual({
+      text: 'Waiting for Sam Cuts',
+      tone: 'brand',
+    });
+    expect(splitStatus(split(), today)).toEqual({ text: 'Active', tone: 'success' });
+    expect(splitStatus(split({ pending: theirs }), today).text).toBe('Needs your answer');
+    expect(splitStatus(split({ pending: { ...theirs, proposed_by_you: true } }), today).text).toBe('Active');
+    expect(splitStatus(split({ status: 'ended', ended_on: today }), today).text).toBe('Ends after 14 October 2026');
+    expect(splitStatus(split({ status: 'ended', ended_on: '2026-10-01' }), today).text).toBe('Ended');
+    expect(splitStatus(split({ status: 'declined' }), today)).toEqual({ text: 'Declined', tone: 'neutral' });
+    expect(splitStatus(split({ status: 'withdrawn' }), today).text).toBe('Withdrawn');
   });
 
   it('says when an ended split last counted, and when the link ended it', () => {

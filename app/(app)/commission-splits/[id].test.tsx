@@ -1,6 +1,6 @@
 /**
- * One split with another business (web split card and statements; 2026-10-14): the admin gate,
- * answering the other business's proposal (with the worked example), what you sent and Withdraw,
+ * One split with another business (web Manage dialog and statements; 2026-10-14): the admin gate,
+ * the head in words (what it shares, how it is worked out and settled), answering the other business's proposal (with the worked example), what you sent and Withdraw,
  * "Propose new terms" with its date check, "End this split", Earlier terms, and the statements:
  * newest first, the totals, who marked a period paid, the note when figures changed since, "Mark as
  * paid" with a note, Undo after a question, and a split the link no longer allows being read only.
@@ -230,15 +230,17 @@ describe('the gate', () => {
 });
 
 describe('the split', () => {
-  it('says what it is, who pays, its terms, how often it settles up, and its earlier terms', async () => {
+  it('leads with what it shares in words, how it is worked out and settled, and keeps its earlier terms', async () => {
     current = statements({ split: split({ history: [terms({ id: 't-0', version: 1, status: 'declined', services_rate_bps: 5000 }), terms({ version: 2 })] }) });
     await show();
     expect(await screen.findByText('Sam at Sam Cuts')).toBeTruthy();
-    expect(screen.getByText('Sam Cuts pays you · Rent')).toBeTruthy();
+    expect(screen.getByText('Sam Cuts pays you 40% of services, as rent.')).toBeTruthy();
+    expect(screen.getByText('Worked out before VAT, from 1 October 2026. Settle up monthly.')).toBeTruthy();
     expect(screen.getByText('Active')).toBeTruthy();
-    expect(screen.getByText('40% of services from 1 October 2026')).toBeTruthy();
-    expect(screen.getByText('Work it out on prices: before VAT')).toBeTruthy();
-    expect(screen.getByText('Settle up: Monthly')).toBeTruthy();
+    // The old head is gone: no "who pays · label", terms summary or settle-up line.
+    expect(screen.queryByText('Sam Cuts pays you · Rent')).toBeNull();
+    expect(screen.queryByText('40% of services from 1 October 2026')).toBeNull();
+    expect(screen.queryByText('Settle up: Monthly')).toBeNull();
     await press(screen.getByText('Earlier terms'));
     expect(screen.getByText('Version 1: 50% of services, before VAT, from 1 October 2026 (declined)')).toBeTruthy();
   });
@@ -252,6 +254,10 @@ describe('the split', () => {
     await show();
     expect(await screen.findByText('Sam Cuts proposed this split')).toBeTruthy();
     expect(screen.getByText('Needs your answer')).toBeTruthy();
+    // Nothing is agreed yet, so the head says what was proposed, once.
+    expect(screen.getByText('Sam Cuts pays you 40% of services, as rent.')).toBeTruthy();
+    expect(screen.getByText('Worked out before VAT, from 1 November 2026. Settle up monthly.')).toBeTruthy();
+    expect(screen.queryByText('40% of services from 1 November 2026')).toBeNull();
     expect(await screen.findByText('Last month this would have come to £220.00.', {}, { timeout: 3000 })).toBeTruthy();
     expect(mockCalls.some((c) => c.path === '/api/venue/commission/splits/preview?calendar_id=cal-sam&other_venue_id=v-sam&services_rate_percent=40&vat_basis=net_ex_vat')).toBe(true);
     await press(screen.getByText('Accept'));
@@ -264,6 +270,9 @@ describe('the split', () => {
     current = statements({ split: split({ pending, can: { respond: true, withdraw: false, propose_change: false, end: true } }) });
     await show();
     expect(await screen.findByText('Sam Cuts proposed new terms from 1 December 2026')).toBeTruthy();
+    // The agreed terms lead; the new ones sit with the question.
+    expect(screen.getByText('Sam Cuts pays you 40% of services, as rent.')).toBeTruthy();
+    expect(screen.getByText('40% of services from 1 December 2026')).toBeTruthy();
     await press(screen.getByText('Decline'));
     expect(writes()[0]).toEqual({ path: `${BASE}/respond`, method: 'POST', body: { terms_id: 't-9', action: 'decline' } });
     expect(mockToast.success).toHaveBeenCalledWith('Declined. Sam Cuts has been told.');
@@ -406,6 +415,18 @@ describe('statements', () => {
     await press(within(sheet).getByText('Undo'));
     expect(writes()[0]).toEqual({ path: `${BASE}/settlements/st-1/undo`, method: 'POST', body: undefined });
     expect(mockToast.success).toHaveBeenCalledWith('No longer marked as paid.');
+  });
+
+  it('says what a declined split proposed, with its status', async () => {
+    const declined = terms({ id: 't-9', status: 'declined', services_rate_bps: 3500, effective_from: '2026-11-01' });
+    current = statements({
+      split: split({ status: 'declined', terms: null, pending: null, history: [declined], can: { respond: false, withdraw: false, propose_change: false, end: false } }),
+      periods: [],
+    });
+    await show();
+    expect(await screen.findByText('Sam Cuts pays you 35% of services, as rent.')).toBeTruthy();
+    expect(screen.getByText('Worked out before VAT, from 1 November 2026. Settle up monthly.')).toBeTruthy();
+    expect(screen.getByText('Declined')).toBeTruthy();
   });
 
   it('keeps a split the link no longer allows read only', async () => {

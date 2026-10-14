@@ -111,6 +111,28 @@ export function splitBadges(split: SplitView, today: string): { text: string; to
   return [main, split.pending.proposed_by_you ? waiting : answer];
 }
 
+/**
+ * One status for a split's line on the calendars (web `splitStatus`): who has to act, or where it
+ * stands. New terms the other business proposed on an active split read "Needs your answer"; your
+ * own read "Active" (the split's screen shows both, `splitBadges`).
+ */
+export function splitStatus(split: SplitView, today: string): { text: string; tone: StatusTone } {
+  if (split.status === 'proposed') {
+    const ours = split.pending ? split.pending.proposed_by_you : split.proposed_by_you;
+    return ours
+      ? { text: splitsT('biz.status.waiting', { partner: split.partner.name }), tone: 'brand' }
+      : { text: splitsT('biz.status.needsAnswer'), tone: 'warning' };
+  }
+  if (split.status === 'declined') return { text: splitsT('biz.status.declined'), tone: 'neutral' };
+  if (split.status === 'withdrawn') return { text: splitsT('biz.status.withdrawn'), tone: 'neutral' };
+  if (split.ended_on && split.ended_on >= today) {
+    return { text: splitsT('biz.status.ending', { date: formatLongDay(split.ended_on) }), tone: 'warning' };
+  }
+  if (split.status === 'ended') return { text: splitsT('biz.status.ended'), tone: 'neutral' };
+  if (split.pending && !split.pending.proposed_by_you) return { text: splitsT('biz.status.needsAnswer'), tone: 'warning' };
+  return { text: splitsT('biz.status.active'), tone: 'success' };
+}
+
 /** Why and when an ended split stopped counting (`biz.ended.*`); nothing while it still counts. */
 export function endedLines(split: SplitView, today: string): string[] {
   if (split.status !== 'ended' || !split.ended_on || split.ended_on >= today) return [];

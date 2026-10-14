@@ -57,7 +57,7 @@ export type SplitEndReason = 'ended' | 'link_ended';
 
 // ---------------------------------------------------------------------------------------------
 // Team commission settings: GET/PATCH /api/venue/commission/settings, POST /api/venue/commission/rates,
-// PUT /api/venue/commission/people
+// PUT /api/venue/commission/people, POST /api/venue/commission/share
 // ---------------------------------------------------------------------------------------------
 
 export interface CommissionSettingsPerson {
@@ -99,6 +99,23 @@ export interface CommissionSettingsPatch {
 export interface CommissionPeoplePut {
   person_key: string;
   label: CommissionPersonLabel;
+}
+
+/**
+ * POST /api/venue/commission/share: one person's share in one step. A rate is their own rate from
+ * `effective_from`; null puts them back on your standard rate from then; left out, it is unchanged.
+ */
+export interface TeamShareBody {
+  person_key: string;
+  label: CommissionPersonLabel;
+  effective_from: string;
+  service_rate_percent?: number | null;
+  product_rate_percent?: number | null;
+}
+
+/** The settings, plus how many rates the change added (0 when only the label changed, or nothing did). */
+export interface TeamShareResponse extends CommissionSettingsResponse {
+  added: number;
 }
 
 /** POST /api/venue/commission/rates: the same body as POST /api/venue/pos/commission/rates. */
