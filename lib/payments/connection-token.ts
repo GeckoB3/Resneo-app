@@ -13,6 +13,7 @@
  */
 
 import { apiFetch } from '@/lib/api/client';
+import { setConnectionTokenFailure } from '@/lib/payments/connection-token-failure';
 
 export interface ConnectionTokenResponse {
   secret: string;
@@ -35,11 +36,20 @@ export async function fetchConnectionToken(args: {
   accessToken: string | null;
   ownerVenueId: string | null;
 }): Promise<ConnectionTokenResponse> {
-  const res = await apiFetch<ConnectionTokenResponse>('/api/payments/connection-token', {
-    accessToken: args.accessToken,
-    method: 'POST',
-    body: JSON.stringify(args.ownerVenueId ? { owner_venue_id: args.ownerVenueId } : {}),
-  });
+  let res: ConnectionTokenResponse;
+  try {
+    res = await apiFetch<ConnectionTokenResponse>('/api/payments/connection-token', {
+      accessToken: args.accessToken,
+      method: 'POST',
+      body: JSON.stringify(args.ownerVenueId ? { owner_venue_id: args.ownerVenueId } : {}),
+    });
+  } catch (e) {
+    // The server's sentence (why this venue cannot take a card payment). The SDK hides it behind
+    // its own when this runs as its tokenProvider, so terminalErrorMessage reads it back.
+    setConnectionTokenFailure(e instanceof Error ? e.message : null);
+    throw e;
+  }
+  setConnectionTokenFailure(null);
   if (res?.location_id) {
     locationByScope.set(scopeKey(args.ownerVenueId), res.location_id);
   }

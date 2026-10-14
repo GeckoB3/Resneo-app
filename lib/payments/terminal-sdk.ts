@@ -39,6 +39,7 @@ import type {
 import type { ComponentType, ReactNode } from 'react';
 import { NativeModules } from 'react-native';
 
+import { getConnectionTokenFailure } from '@/lib/payments/connection-token-failure';
 import {
   READER_INIT_TIMEOUT_MESSAGE,
   READER_INIT_TIMEOUT_MS,
@@ -349,9 +350,24 @@ export function isServerCancelledAttempt(error: StripeError | null | undefined):
   return (error.apiError as { code?: unknown } | undefined)?.code === 'payment_intent_unexpected_state';
 }
 
-/** Human-readable message from an SDK error envelope, with a safe fallback. */
+/** Shown when the token fetch failed without a reason from the server (no signal, say). */
+export const CONNECTION_TOKEN_FALLBACK_MESSAGE =
+  'Could not reach ResNeo to start the card reader. Check your connection and try again.';
+
+/**
+ * Human-readable message from an SDK error envelope, with a safe fallback.
+ *
+ * A failed `tokenProvider` comes back as the SDK's own "Couldn't fetch connection token. Please
+ * check your tokenProvider method", which tells staff nothing. The server's reason, recorded by
+ * `fetchConnectionToken`, is shown instead: on a linked calendar it names the business whose
+ * account the payment would go to and what they need to turn on.
+ */
 export function terminalErrorMessage(error: StripeError | undefined, fallback: string): string {
   if (!error) return fallback;
+  const code = (error as { code?: unknown }).code;
+  if (code === 'CONNECTION_TOKEN_PROVIDER_ERROR' || code === 'CONNECTION_TOKEN_PROVIDER_ERROR_WHILE_FORWARDING') {
+    return getConnectionTokenFailure() ?? CONNECTION_TOKEN_FALLBACK_MESSAGE;
+  }
   const message = (error as { message?: unknown }).message;
   return typeof message === 'string' && message.trim() ? message : fallback;
 }

@@ -7,10 +7,13 @@ import {
   hasTerminalNativeModule,
   isDefiniteCardFailure,
   isServerCancelledAttempt,
+  CONNECTION_TOKEN_FALLBACK_MESSAGE,
+  terminalErrorMessage,
   __resetTerminalInitForTests,
   __resetTerminalSdkForTests,
 } from '@/lib/payments/terminal-sdk';
 import { READER_INIT_TIMEOUT_MS } from '@/lib/payments/reader-timeouts';
+import { setConnectionTokenFailure } from '@/lib/payments/connection-token-failure';
 
 /**
  * The Terminal SDK executes native-module work as it loads, and in a build
@@ -257,5 +260,32 @@ describe('ensureTerminalInitialized', () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+});
+
+describe('terminalErrorMessage and a failed connection token', () => {
+  const sdkTokenError = {
+    code: 'CONNECTION_TOKEN_PROVIDER_ERROR',
+    message: "Couldn't fetch connection token. Please check your tokenProvider method",
+  } as never;
+
+  afterEach(() => setConnectionTokenFailure(null));
+
+  it('shows the server’s reason instead of the SDK’s sentence', () => {
+    setConnectionTokenFailure('This booking belongs to Glow Studio, so the payment goes to their account. They have not turned on in-person card payments, so you cannot take a card payment for it. They can turn it on in their Settings, under In-person payments, or take the payment themselves.');
+    expect(terminalErrorMessage(sdkTokenError, 'Could not start the card reader.')).toBe('This booking belongs to Glow Studio, so the payment goes to their account. They have not turned on in-person card payments, so you cannot take a card payment for it. They can turn it on in their Settings, under In-person payments, or take the payment themselves.');
+  });
+
+  it('falls back to plain words when the server gave no reason', () => {
+    expect(terminalErrorMessage(sdkTokenError, 'Could not start the card reader.')).toBe(
+      CONNECTION_TOKEN_FALLBACK_MESSAGE,
+    );
+  });
+
+  it('leaves every other SDK error as it was', () => {
+    setConnectionTokenFailure('unrelated');
+    expect(
+      terminalErrorMessage({ code: 'READER_BUSY', message: 'The reader is busy.' } as never, 'fallback'),
+    ).toBe('The reader is busy.');
   });
 });

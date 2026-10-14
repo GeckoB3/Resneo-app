@@ -6,6 +6,11 @@
  * venue's connected account. That is the highest-severity failure in this
  * feature, so the scoping is pinned here.
  */
+import {
+  getConnectionTokenFailure,
+  setConnectionTokenFailure,
+} from '@/lib/payments/connection-token-failure';
+
 const mockApiFetch = jest.fn();
 jest.mock('@/lib/api/client', () => ({
   apiFetch: (...args: unknown[]) => mockApiFetch(...args),
@@ -21,6 +26,7 @@ import {
 beforeEach(() => {
   mockApiFetch.mockReset();
   clearTerminalLocationCache();
+  setConnectionTokenFailure(null);
 });
 
 describe('fetchConnectionToken', () => {
@@ -114,5 +120,20 @@ describe('ensureTerminalLocationId', () => {
     await expect(
       ensureTerminalLocationId({ accessToken: 'tok', ownerVenueId: null }),
     ).rejects.toThrow('In-person payments are not enabled.');
+  });
+});
+
+describe('the reason a token fetch failed', () => {
+  it('keeps the server’s sentence, because the SDK hides it behind its own', async () => {
+    mockApiFetch.mockRejectedValueOnce(new Error('This booking belongs to Glow Studio, so the payment goes to their account. They have not turned on in-person card payments, so you cannot take a card payment for it. They can turn it on in their Settings, under In-person payments, or take the payment themselves.'));
+    await expect(fetchConnectionToken({ accessToken: 'tok', ownerVenueId: 'venue-2' })).rejects.toThrow();
+    expect(getConnectionTokenFailure()).toBe('This booking belongs to Glow Studio, so the payment goes to their account. They have not turned on in-person card payments, so you cannot take a card payment for it. They can turn it on in their Settings, under In-person payments, or take the payment themselves.');
+  });
+
+  it('forgets it once a fetch succeeds', async () => {
+    setConnectionTokenFailure('earlier failure');
+    mockApiFetch.mockResolvedValueOnce({ secret: 's1', location_id: 'loc_own' });
+    await fetchConnectionToken({ accessToken: 'tok', ownerVenueId: null });
+    expect(getConnectionTokenFailure()).toBeNull();
   });
 });
