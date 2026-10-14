@@ -17,6 +17,7 @@
  */
 import type { SymbolViewProps } from 'expo-symbols';
 
+import { SPLITS_COPY } from '@/lib/commission/splits-copy';
 import { SWITCH_COPY } from '@/lib/pos/switches/copy';
 import { isAppointmentPlanTier } from '@/lib/venue/venue-experience';
 import type { PosSwitchOfferState } from '@/types/pos-switches';
@@ -291,6 +292,10 @@ export function buildDestinations(ctx: DestinationsContext): Destination[] {
   // ── Team & clients — people, messaging & client data. ──────────────────────
   if (isAdmin) {
     list.push({ id: 'team', label: 'Team', hint: 'Staff logins & roles', icon: { ios: 'person.2.fill', android: 'group', web: 'group' }, tile: TILE.emerald, group: 'people', kind: 'route', target: '/manage/team', keywords: ['settings', 'staff', 'roles', 'permissions'] });
+    // Commission splits (2026-10-14): what the team earns and the shares agreed with businesses you
+    // work with. Beside Team, because it is about the people who work your calendars, and outside
+    // Checkout set-up, because it no longer needs Checkout on.
+    list.push({ id: 'commission-splits', label: SPLITS_COPY['page.title'], hint: SPLITS_COPY['page.tab.description'], icon: { ios: 'percent', android: 'percent', web: 'percent' }, tile: TILE.violet, group: 'people', kind: 'route', target: '/commission-splits', keywords: ['commission', 'pay', 'rates', 'rent', 'chair rent', 'split', 'share', 'statements', 'report'] });
     list.push({ id: 'communications', label: 'Communications', hint: 'Confirmations, reminders & alerts', icon: { ios: 'envelope.fill', android: 'mail', web: 'mail' }, tile: TILE.amber, group: 'people', kind: 'route', target: '/manage/communications', keywords: ['settings', 'SMS', 'email', 'templates', 'reminders', 'notifications'] });
     list.push({ id: 'import-contacts', label: 'Import contacts', hint: 'Clients and bookings from a CSV or Excel file', icon: { ios: 'square.and.arrow.down', android: 'upload_file', web: 'upload_file' }, tile: TILE.sky, group: 'people', kind: 'route', target: '/import', keywords: ['csv', 'excel', 'upload', 'bulk', 'clients', 'guests', 'bookings', 'data', 'import', 'undo'] });
   }
@@ -339,9 +344,6 @@ export function buildDestinations(ctx: DestinationsContext): Destination[] {
     if (isAdmin && ctx.shopEnabled === true) {
       list.push({ id: 'shop-settings', label: 'Online shop settings', hint: 'Opening, delivery, collection and policies', icon: { ios: 'cart.fill', android: 'shopping_cart', web: 'shopping_cart' }, tile: TILE.teal, group: 'checkoutSetup', kind: 'route', target: '/checkout-settings/shop', keywords: ['shop', 'delivery', 'collection', 'zones', 'policies'] });
     }
-    if (isAdmin) {
-      list.push({ id: 'commission-rates', label: 'Commission rates', hint: 'Rates for everyone, by category or per person', icon: { ios: 'percent', android: 'percent', web: 'percent' }, tile: TILE.violet, group: 'checkoutSetup', kind: 'route', target: '/checkout-settings/commission', keywords: ['commission', 'pay', 'rates'] });
-    }
     // Products and stock set-up (gone with "Sell products" off, as Products and stock is).
     if (isAdmin && ctx.sellProducts !== false) {
       list.push({ id: 'stock-setup', label: 'Suppliers and stock set-up', hint: 'Suppliers, movements, stock reports', icon: { ios: 'shippingbox', android: 'inventory', web: 'inventory' }, tile: TILE.amber, group: 'checkoutSetup', kind: 'route', target: '/stock?tab=suppliers', keywords: ['suppliers', 'vendor', 'movements', 'stock reports', 'bulk'] });
@@ -352,9 +354,6 @@ export function buildDestinations(ctx: DestinationsContext): Destination[] {
     // Records last: what has happened, with the files to export.
     if (canRecords) {
       list.push({ id: 'pos-records', label: 'Records, reports and exports', hint: 'Takings, sales, tip records and CSV files', icon: { ios: 'doc.text.fill', android: 'description', web: 'description' }, tile: TILE.indigo, group: 'checkoutSetup', kind: 'route', target: '/reports?tab=takings', keywords: ['tip records', 'VAT', 'export', 'CSV', 'takings', 'sales', 'cash-ups', 'payouts'] });
-    }
-    if (isAdmin) {
-      list.push({ id: 'commission-report', label: 'Commission report', hint: 'What each person earned, with CSV files', icon: { ios: 'chart.bar.fill', android: 'bar_chart', web: 'bar_chart' }, tile: TILE.violet, group: 'checkoutSetup', kind: 'route', target: '/reports?tab=commission', keywords: ['commission', 'pay', 'report', 'export'] });
     }
   }
 

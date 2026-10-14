@@ -517,13 +517,17 @@ describe('Reports clients tab', () => {
 });
 
 describe('Reports tabs for Checkout (POS app step 1)', () => {
-  it("keeps the four-option control, with today's labels, when POS is off", async () => {
+  it("keeps today's labels when POS is off, with Commission splits for admins (2026-10-14)", async () => {
     await render(<ReportsScreen />);
     expect(screen.getByText('Overview')).toBeTruthy();
     expect(screen.getByText('Revenue')).toBeTruthy();
     expect(screen.queryByText('Takings')).toBeNull();
     expect(screen.queryByText('Sales')).toBeNull();
-    expect(screen.queryByLabelText('Report tabs')).toBeNull();
+    // Six tabs no longer fit the four-option control: the chip row, without the till tabs.
+    const order = within(screen.getByLabelText('Report tabs'))
+      .getAllByText(/.+/)
+      .map((n) => n.props.children as string);
+    expect(order).toEqual(['Overview', 'New bookings', 'Revenue', 'Team', 'Commission splits', 'Clients']);
   });
 
   it('keeps it too when the venue has the tabs but this login may not read them', async () => {
@@ -549,11 +553,11 @@ describe('Reports tabs for Checkout (POS app step 1)', () => {
 });
 
 describe('Reports POS tabs at full parity (web ReportsView)', () => {
-  it('orders the chips as the web does, with Vouchers and Commission for admins', async () => {
+  it('orders the chips as the web does, with Vouchers and Commission splits for admins', async () => {
     mockPosAccess = { visible: true, can_view: true, can_export: true };
     mockVouchersFlag = true;
     await render(<ReportsScreen />);
-    const labels = ['Overview', 'New bookings', 'Booked value', 'Team', 'Takings', 'Sales', 'Vouchers', 'Commission', 'Clients'];
+    const labels = ['Overview', 'New bookings', 'Booked value', 'Team', 'Takings', 'Sales', 'Vouchers', 'Commission splits', 'Clients'];
     for (const label of labels) expect(screen.getAllByText(label).length).toBeGreaterThan(0);
     // Team straight after Booked value, before the till tabs (release 2).
     const order = within(screen.getByLabelText('Report tabs'))
@@ -565,7 +569,7 @@ describe('Reports POS tabs at full parity (web ReportsView)', () => {
     });
     expect(screen.getByText('vouchers-section')).toBeTruthy();
     await act(async () => {
-      fireEvent.press(screen.getByText('Commission'));
+      fireEvent.press(screen.getByText('Commission splits'));
     });
     expect(screen.getByText('commission-section')).toBeTruthy();
     await act(async () => {
@@ -578,7 +582,7 @@ describe('Reports POS tabs at full parity (web ReportsView)', () => {
     mockPosAccess = { visible: true, can_view: true };
     await render(<ReportsScreen />);
     expect(screen.queryByText('Vouchers')).toBeNull();
-    expect(screen.getByText('Commission')).toBeTruthy();
+    expect(screen.getByText('Commission splits')).toBeTruthy();
   });
 
   it('opens a POS tab from the link', async () => {
@@ -589,10 +593,18 @@ describe('Reports POS tabs at full parity (web ReportsView)', () => {
   });
 
   it('falls back to the Overview where the linked tab does not exist', async () => {
+    mockParams = { tab: 'vouchers' };
+    await render(<ReportsScreen />);
+    expect(screen.queryByText('vouchers-section')).toBeNull();
+    expect(screen.getByText('No-show rate')).toBeTruthy();
+  });
+
+  it('opens Commission splits from its link without Checkout (2026-10-14)', async () => {
     mockParams = { tab: 'commission' };
     await render(<ReportsScreen />);
-    expect(screen.queryByText('commission-section')).toBeNull();
-    expect(screen.getByText('No-show rate')).toBeTruthy();
+    expect(screen.getByText('commission-section')).toBeTruthy();
+    // It picks its own dates: no 7, 30 or 90 days above it.
+    expect(screen.queryByText('30 days')).toBeNull();
   });
 
   it('renames the deposits card and offers the POS export kinds where Takings shows', async () => {
@@ -689,13 +701,13 @@ describe('Reports with Checkout off but a sales history', () => {
     expect(screen.getByText('sales-section')).toBeTruthy();
   });
 
-  it('leaves out Commission and Vouchers, whose routes need Checkout on', async () => {
+  it('leaves out Vouchers, whose routes need Checkout on, and keeps Commission splits, whose routes do not', async () => {
     mockPosOn = false;
     mockVouchersFlag = true;
     mockPosAccess = { visible: true, can_view: true, can_export: true };
     await render(<ReportsScreen />);
     expect(screen.getByText('Takings')).toBeTruthy();
-    expect(screen.queryByText('Commission')).toBeNull();
+    expect(screen.getByText('Commission splits')).toBeTruthy();
     expect(screen.queryByText('Vouchers')).toBeNull();
   });
 
@@ -707,20 +719,20 @@ describe('Reports with Checkout off but a sales history', () => {
     expect(screen.getByText('takings-section')).toBeTruthy();
   });
 
-  it('sends a Commission link to the Overview', async () => {
+  it('opens a Commission splits link (2026-10-14)', async () => {
     mockPosOn = false;
     mockPosAccess = { visible: true, can_view: true };
     mockParams = { tab: 'commission' };
     await render(<ReportsScreen />);
-    expect(screen.queryByText('commission-section')).toBeNull();
-    expect(screen.getByText('No-show rate')).toBeTruthy();
+    expect(screen.getByText('commission-section')).toBeTruthy();
   });
 
-  it('keeps the four-option control where the server says there is no history', async () => {
+  it('keeps the till tabs out where the server says there is no history', async () => {
     mockPosOn = false;
     mockPosAccess = { visible: false, can_view: false };
     await render(<ReportsScreen />);
-    expect(screen.queryByLabelText('Report tabs')).toBeNull();
+    expect(screen.getByLabelText('Report tabs')).toBeTruthy();
+    expect(screen.getByText('Commission splits')).toBeTruthy();
     expect(screen.getByText('Revenue')).toBeTruthy();
     expect(screen.queryByText('Takings')).toBeNull();
     expect(screen.getByText('Payments & deposits')).toBeTruthy();

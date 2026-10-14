@@ -131,13 +131,23 @@ describe('the hub', () => {
     expect(mockPush).toHaveBeenCalledWith('/checkout-settings/tills');
   });
 
+  it('opens Commission splits from the Commission row (2026-10-14)', async () => {
+    mockSettings = settingsResponse(ADMIN);
+    await render(<Hub />);
+    expect(screen.getByText('Your team, and businesses you work with')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('Commission splits'));
+    });
+    expect(mockPush).toHaveBeenCalledWith('/commission-splits');
+  });
+
   it('keeps admin-only rows from team members', async () => {
     mockSettings = settingsResponse(STAFF);
     await render(<Hub />);
     expect(screen.getByText('Receipts')).toBeTruthy();
     expect(screen.queryByText('Who can do what')).toBeNull();
     expect(screen.queryByText('Gift vouchers')).toBeNull();
-    expect(screen.queryByText('Commission')).toBeNull();
+    expect(screen.queryByText('Commission splits')).toBeNull();
   });
 
   it('turns away a login without manage_settings', async () => {

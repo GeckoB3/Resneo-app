@@ -31,14 +31,19 @@ jest.mock('@/lib/queries/usePosReports', () => ({
     mockSalesArgs.push(args);
     return { data: mockSales, isLoading: false, isFetching: false, isError: false, refetch: jest.fn() };
   },
-  useCommissionReport: (...args: unknown[]) => {
+}));
+// Commission splits (2026-10-14): the team half of the tab reads its own route, with or without Checkout.
+jest.mock('@/lib/queries/useCommissionSplits', () => ({
+  useTeamCommissionReport: (...args: unknown[]) => {
     mockCommissionArgs.push(args);
     return { data: mockCommission, isLoading: false, isFetching: false, isError: false, refetch: jest.fn() };
   },
-  useCommissionLines: (...args: unknown[]) => {
+  useTeamCommissionLines: (...args: unknown[]) => {
     mockLinesArgs.push(args);
     return { data: undefined, isError: false, refetch: jest.fn() };
   },
+  useSplitsReport: () => ({ data: undefined, isLoading: false, isFetching: false, isError: false, refetch: jest.fn() }),
+  useSplitLines: () => ({ data: undefined, isError: false, refetch: jest.fn() }),
 }));
 
 import { CommissionSection } from '@/components/reports/pos/CommissionSection';
@@ -121,6 +126,7 @@ const person = {
   calendar_id: 'cal-1',
   staff_id: null,
   person_name: 'Hannah',
+  label: 'commission',
   service_base_pence: 10000,
   service_commission_pence: 1000,
   product_base_pence: 0,
@@ -138,10 +144,15 @@ beforeEach(() => {
   mockCommissionArgs.length = 0;
   mockLinesArgs.length = 0;
   mockSales = sales({ calendar: HANNAH });
-  const { person_key: _k, calendar_id: _c, staff_id: _s, person_name: _n, ...totals } = person;
+  const { person_key: _k, calendar_id: _c, staff_id: _s, person_name: _n, label: _l, ...totals } = person;
   mockCommission = {
     from: '2026-10-01',
     to: '2026-10-09',
+    preset: 'this-month',
+    today: '2026-10-09',
+    source: 'checkout',
+    basis: 'net_ex_vat',
+    vat_note: false,
     rows: [person],
     totals,
     lines: null,
@@ -185,18 +196,18 @@ describe('Sales with a calendar chosen', () => {
 describe('Commission with a calendar chosen', () => {
   it("asks for that calendar's commission, lines and CSVs included", async () => {
     await render(withCalendar(<CommissionSection today="2026-10-09" />));
-    expect(mockCommissionArgs[0]).toEqual([{ kind: 'preset', preset: 'this-month' }, 'day', { calendarId: 'cal-1' }]);
+    expect(mockCommissionArgs[0]).toEqual([{ kind: 'preset', preset: 'this-month' }, { calendarId: 'cal-1' }]);
     expect(screen.getByText('Showing Hannah only.')).toBeTruthy();
     await act(async () => {
       fireEvent.press(screen.getByRole('button', { name: "Hannah's sales" }));
     });
-    expect(mockLinesArgs[mockLinesArgs.length - 1]).toEqual([{ kind: 'preset', preset: 'this-month' }, 'day', 'c:cal-1', 'cal-1']);
+    expect(mockLinesArgs[mockLinesArgs.length - 1]).toEqual([{ kind: 'preset', preset: 'this-month' }, 'c:cal-1', 'cal-1']);
     await act(async () => {
       fireEvent.press(screen.getByLabelText('Export Commission by person as CSV'));
     });
     expect(mockDownload).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        path: '/api/venue/pos/commission/report?grain=day&preset=this-month&calendar_id=cal-1&format=csv&kind=summary',
+        path: '/api/venue/commission/report?preset=this-month&calendar_id=cal-1&format=csv&kind=summary',
       }),
     );
   });

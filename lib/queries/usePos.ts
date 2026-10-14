@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 
 import { ApiError, apiFetch } from '@/lib/api/client';
+import { commissionPaths } from '@/lib/commission/api';
 import { isBackendConfigured } from '@/lib/env';
 import { isRequestReused, posFetch, posPaths, staleSaleFrom, type PosMethod } from '@/lib/pos/api';
 import { isPosEnabled, posFinishingOpen } from '@/lib/pos/pos-enabled';
@@ -433,11 +434,12 @@ export function useSalesReport(preset: PosReportPreset, options: { enabled?: boo
 
 /**
  * "Your sales and tips" (`app.mine.*`, Pass LC, UX spec §22.3): this person's own figures from
- * `GET /api/venue/pos/commission/report?mine=1&period=`, for every team member: the sales credited
- * to them (their login and the calendars they work on), their tips, and their commission when they
- * hold `see_own_commission` (null otherwise). It replaces app step 1's reading of the Takings and
- * Sales reports, which only logins with `view_reports` could see. A server before Pass LC answers
- * 404, which reads as null: the card is then not shown.
+ * `GET /api/venue/commission/report?mine=1&period=` (Commission splits, 2026-10-14; the same answer
+ * the Checkout route gave), for every team member: the sales credited to them (their login and the
+ * calendars they work on), their tips, and their commission when they hold `see_own_commission`
+ * (null otherwise). It replaces app step 1's reading of the Takings and Sales reports, which only
+ * logins with `view_reports` could see. A server without the route answers 404, which reads as
+ * null: the card is then not shown. The card is on Checkout home, so it keeps the POS gate.
  */
 export function useMyCommission(period: PosMinePeriod, options: { enabled?: boolean } = {}) {
   const { accessToken, enabled } = usePosGate(options.enabled ?? true);
@@ -448,7 +450,7 @@ export function useMyCommission(period: PosMinePeriod, options: { enabled?: bool
     retry: false,
     queryFn: async (): Promise<PosMyCommission | null> => {
       try {
-        return await posFetch<PosMyCommission>(posPaths.myCommission(period), { accessToken: accessToken! });
+        return await apiFetch<PosMyCommission>(commissionPaths.mine(period), { accessToken: accessToken! });
       } catch (error) {
         if (error instanceof ApiError && error.status === 404) return null;
         throw error;

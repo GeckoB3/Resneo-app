@@ -229,55 +229,8 @@ export interface SalesPayload {
   calendar?: ReportCalendarRef | null;
 }
 
-// ─── Commission (GET /api/venue/pos/commission/report) ────────────────────────
-
-export interface CommissionPersonRow {
-  person_key: string;
-  calendar_id: string | null;
-  staff_id: string | null;
-  person_name: string;
-  service_base_pence: number;
-  service_commission_pence: number;
-  product_base_pence: number;
-  product_commission_pence: number;
-  voucher_base_pence: number;
-  voucher_commission_pence: number;
-  total_commission_pence: number;
-  tips_pence: number;
-  sales_pence: number;
-}
-
-export interface CommissionLineRow {
-  row_kind: 'sale' | 'refund';
-  business_date: string;
-  sale_id: string;
-  sale_number: number;
-  refund_id: string | null;
-  line_id: string;
-  item_type: 'service' | 'product' | 'voucher';
-  item_name: string;
-  person_key: string;
-  person_name: string;
-  share_bps: number;
-  base_pence: number;
-  rate_bps: number;
-  commission_pence: number;
-}
-
-export interface CommissionReport {
-  from: string;
-  to: string;
-  rows: CommissionPersonRow[];
-  totals: Omit<CommissionPersonRow, 'person_key' | 'calendar_id' | 'staff_id' | 'person_name'>;
-  lines: CommissionLineRow[] | null;
-  changed: { exported_at: string; persons: string[]; lines: string[] } | null;
-  has_rates: boolean;
-  currency: string;
-  receipt_prefix: string | null;
-  can_export: boolean;
-  /** The calendar these figures are for when one was asked for; null or absent is the whole venue. */
-  calendar?: ReportCalendarRef | null;
-}
+// Commission moved to Commission splits (2026-10-14): its report's shapes are in
+// types/commission-splits.ts (`TeamCommissionReport`).
 
 // ─── Vouchers (GET /api/venue/pos/vouchers/report, /vouchers/[id]) ────────────
 

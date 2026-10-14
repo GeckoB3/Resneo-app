@@ -19,6 +19,8 @@ jest.mock('@/lib/env', () => ({
   ...jest.requireActual<typeof import('@/lib/env')>('@/lib/env'),
   isBackendConfigured: () => true,
 }));
+// Commission splits reads wait for staff/me to say this login is an admin.
+jest.mock('@/lib/queries/useStaffMe', () => ({ useStaffMe: () => ({ data: { staff: { role: 'admin' } }, isLoading: false }) }));
 jest.mock('@/lib/queries/useVenue', () => ({
   useVenue: () => ({ data: { feature_flags: { raw: {}, resolved: { pos_enabled: mockPosOn } } } }),
 }));
@@ -30,11 +32,10 @@ jest.mock('@/lib/api/client', () => {
 import { ApiError } from '@/lib/api/client';
 import { queryKeys } from '@/lib/queries/keys';
 import { useBookedRevenue } from '@/lib/queries/useBookedRevenue';
+import { useTeamCommissionLines, useTeamCommissionReport } from '@/lib/queries/useCommissionSplits';
 import { useNewBookings } from '@/lib/queries/useNewBookings';
 import {
   useCashUps,
-  useCommissionLines,
-  useCommissionReport,
   usePayoutsRange,
   useSalesRange,
   useTakingsRange,
@@ -79,8 +80,8 @@ describe('calendar_id goes to every report that splits by calendar', () => {
         newBookings: useNewBookings({ kind: 'preset', preset: 'this_week' }, 'day', true, 'cal-1'),
         revenue: useBookedRevenue({ kind: 'preset', preset: 'this_week' }, 'day', true, 'cal-1'),
         sales: useSalesRange(WEEK, 'day', { calendarId: 'cal-1' }),
-        commission: useCommissionReport(WEEK, 'day', { calendarId: 'cal-1' }),
-        lines: useCommissionLines(WEEK, 'day', 'c:sam', 'cal-1'),
+        commission: useTeamCommissionReport(WEEK, { calendarId: 'cal-1' }),
+        lines: useTeamCommissionLines(WEEK, 'c:sam', 'cal-1'),
       }),
       { wrapper },
     );
@@ -92,8 +93,9 @@ describe('calendar_id goes to every report that splits by calendar', () => {
         '/api/venue/reports/new-bookings?grain=day&preset=this_week&calendar_id=cal-1',
         '/api/venue/reports/booked-revenue?grain=day&preset=this_week&calendar_id=cal-1',
         '/api/venue/reports/sales?grain=day&preset=this-week&calendar_id=cal-1',
-        '/api/venue/pos/commission/report?grain=day&preset=this-week&calendar_id=cal-1',
-        '/api/venue/pos/commission/report?grain=day&preset=this-week&calendar_id=cal-1&person=c%3Asam',
+        // Commission splits (2026-10-14): the team report takes no grain.
+        '/api/venue/commission/report?preset=this-week&calendar_id=cal-1',
+        '/api/venue/commission/report?preset=this-week&calendar_id=cal-1&person=c%3Asam',
       ].sort(),
     );
   });
@@ -318,14 +320,13 @@ describe('Takings and Sales with Checkout off', () => {
     expect(paths().every((path) => path.startsWith('/api/venue/reports/'))).toBe(true);
   });
 
-  it('stay quiet anywhere else (Checkout home), and Commission and vouchers always need Checkout on', async () => {
+  it('stay quiet anywhere else (Checkout home), and vouchers always need Checkout on', async () => {
     mockPosOn = false;
     const { wrapper } = setup();
     const { result } = await renderHook(
       () => ({
         takings: useTakingsRange(WEEK, 'day'),
         sales: useSalesRange(WEEK, 'day'),
-        commission: useCommissionReport(WEEK, 'day', { calendarId: 'cal-1' }),
         vouchers: useVoucherReport({ from: '2026-10-01', to: '2026-10-11' }, '2026-10-11'),
       }),
       { wrapper },
@@ -334,7 +335,16 @@ describe('Takings and Sales with Checkout off', () => {
       await Promise.resolve();
     });
     expect(result.current.takings.fetchStatus).toBe('idle');
-    expect(result.current.commission.fetchStatus).toBe('idle');
+    expect(result.current.vouchers.fetchStatus).toBe('idle');
     expect(mockApiFetch).not.toHaveBeenCalled();
+  });
+
+  it("reads Commission splits' team report with Checkout off (2026-10-14)", async () => {
+    mockPosOn = false;
+    const { wrapper } = setup();
+    const { result } = await renderHook(() => ({ commission: useTeamCommissionReport(WEEK, { calendarId: 'cal-1' }) }), { wrapper });
+    await waitFor(() => expect(mockApiFetch).toHaveBeenCalledTimes(1));
+    await settled(result);
+    expect(paths()).toEqual(['/api/venue/commission/report?preset=this-week&calendar_id=cal-1']);
   });
 });

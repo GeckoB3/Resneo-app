@@ -49,10 +49,11 @@ import { StatTile } from '@/components/ui/StatTile';
 import { Text } from '@/components/ui/Text';
 import { ApiError } from '@/lib/api/client';
 import { bookingStatusDisplayLabel } from '@/lib/booking/infer-booking-row-model';
+import { splitsT } from '@/lib/commission/splits-copy';
 import { addDaysToDateStr, formatReportRangeLabel } from '@/lib/dates/venue-dates';
 import { formatPence } from '@/lib/format';
 import { hapticTap } from '@/lib/haptics';
-import { isPosEnabled, isVouchersEnabled } from '@/lib/pos/pos-enabled';
+import { isVouchersEnabled } from '@/lib/pos/pos-enabled';
 import { reportsCopy } from '@/lib/pos/reports-copy';
 import { calendarDateInTimeZone } from '@/lib/queries/useBookingsList';
 import { usePosReportAccess } from '@/lib/queries/usePos';
@@ -155,11 +156,11 @@ export default function ReportsScreen() {
 
   const query = useReports(appliedFrom, appliedTo, isAdmin, scopeQuery);
   /**
-   * Takings, Sales, Vouchers and Commission (POS plan P7-4, web ReportsView). Asked at every venue,
-   * as the web asks: the server shows Takings and Sales where Checkout is on or the venue has a
-   * completed sale (`visible`, plan §4.18, PQ69), so a venue that switched Checkout off keeps its
-   * sales history. Where it says no, the four-option control below is unchanged. A team member who
-   * is not an admin gets Takings and Sales only, with `view_reports` (web `StaffPosReportsPanel`).
+   * Takings, Sales and Vouchers (POS plan P7-4, web ReportsView). Asked at every venue, as the web
+   * asks: the server shows Takings and Sales where Checkout is on or the venue has a completed sale
+   * (`visible`, plan §4.18, PQ69), so a venue that switched Checkout off keeps its sales history. A
+   * team member who is not an admin gets Takings and Sales only, with `view_reports` (web
+   * `StaffPosReportsPanel`). Commission splits is every admin's, with or without Checkout.
    */
   const posAccess = usePosReportAccess({ enabled: !staffQuery.isLoading });
   const posAccessPending = posAccess.data === undefined && posAccess.isLoading;
@@ -168,19 +169,21 @@ export default function ReportsScreen() {
   const showPosTabs = posReportsVisible && posAccess.data?.can_view === true;
   const canExportPos = posAccess.data?.can_export === true;
   // Vouchers (UX spec §20.11): admins, while gift vouchers are switched on, which needs Checkout on.
-  // Commission (§22.2): admins, wherever the POS tabs show, while Checkout is on: its report route
-  // refuses with Checkout off, so a venue keeping only its history does not get a tab that fails.
+  // Commission splits (2026-10-14): every admin, whether or not Checkout is on, since its routes no
+  // longer need Checkout (it replaces the Checkout-only Commission tab).
   const vouchersVisible = showPosTabs && isAdmin && isVouchersEnabled(venueQuery.data);
-  const commissionVisible = showPosTabs && isAdmin && isPosEnabled(venueQuery.data);
+  const commissionVisible = isAdmin;
   // A link to a POS tab this venue or login does not have falls back to the Overview (once the
   // access answer is in; until then the tab waits on a skeleton, as on the web).
   const shownTab: MainTab =
     ((mainTab === 'takings' || mainTab === 'sales') && !showPosTabs && !posAccessPending) ||
     (mainTab === 'vouchers' && !vouchersVisible && !posAccessPending) ||
-    (mainTab === 'commission' && !commissionVisible && !posAccessPending)
+    (mainTab === 'commission' && !commissionVisible)
       ? 'overview'
       : mainTab;
-  const posTab = shownTab === 'takings' || shownTab === 'sales' || shownTab === 'vouchers' || shownTab === 'commission';
+  const posTab = shownTab === 'takings' || shownTab === 'sales' || shownTab === 'vouchers';
+  // The tabs that pick their own dates (the till tabs and Commission splits): no 7, 30 or 90 days above them.
+  const ownRangeTab = posTab || shownTab === 'commission';
   /**
    * The salon measures (reports release 2): Key measures and Busiest times on the Overview, the
    * rebooking and retention tiles on Clients, and the Team tab. Admin only, like its endpoint, and
@@ -513,7 +516,7 @@ export default function ReportsScreen() {
       <View style={[styles.toolbar, { borderBottomColor: colors.border }]}>
         {/* Preset chips. The Revenue and New bookings tabs carry their own
             ranges (web parity: the date-range card is hidden on both). */}
-        {shownTab !== 'revenue' && shownTab !== 'new-bookings' && !posTab ? (
+        {shownTab !== 'revenue' && shownTab !== 'new-bookings' && !ownRangeTab ? (
         <View style={styles.presetRow}>
           {(['7d', '30d', '90d'] as const).map((key) => (
             <Pressable
@@ -557,7 +560,7 @@ export default function ReportsScreen() {
 
         {/* Custom date inputs (shown when custom is selected) — native OS pickers
             so the range works on iOS and Android alike. */}
-        {shownTab !== 'revenue' && shownTab !== 'new-bookings' && !posTab && rangeKey === 'custom' ? (
+        {shownTab !== 'revenue' && shownTab !== 'new-bookings' && !ownRangeTab && rangeKey === 'custom' ? (
           <View style={styles.customRange}>
             <View style={styles.dateField}>
               <Text variant="caption" tone="muted">
@@ -593,12 +596,12 @@ export default function ReportsScreen() {
           </View>
         ) : null}
 
-        {/* Overview / Revenue / Clients sub-tabs (web #191 added Revenue). Where Takings and Sales
-            exist (POS venues, P7-4) the control becomes a scrollable chip row (`app.reports.chips`)
-            in the web's order, with Vouchers and Commission for admins where the web shows them,
-            and Revenue reads "Booked value" as on the web (§4.18). Everywhere else it is the
-            four-option control, unchanged. */}
-        {showPosTabs ? (
+        {/* Overview / Revenue / Clients sub-tabs (web #191 added Revenue). The control is a
+            scrollable chip row (`app.reports.chips`) in the web's order: Takings and Sales where
+            they exist (POS venues, P7-4), with Revenue reading "Booked value" as on the web
+            (§4.18), Vouchers for admins where the web shows it, and Commission splits for every
+            admin (2026-10-14). The five-option control stays for anyone without those. */}
+        {showPosTabs || commissionVisible ? (
           <ScrollView
             ref={tabStripRef}
             horizontal
@@ -611,12 +614,16 @@ export default function ReportsScreen() {
               [
                 { value: 'overview', label: 'Overview' },
                 { value: 'new-bookings', label: 'New bookings' },
-                { value: 'revenue', label: 'Booked value' },
+                { value: 'revenue', label: showPosTabs ? 'Booked value' : 'Revenue' },
                 { value: 'team', label: measuresCopy('team.tab') },
-                { value: 'takings', label: reportsCopy('tab.takings') },
-                { value: 'sales', label: reportsCopy('tab.sales') },
+                ...(showPosTabs
+                  ? [
+                      { value: 'takings', label: reportsCopy('tab.takings') },
+                      { value: 'sales', label: reportsCopy('tab.sales') },
+                    ]
+                  : []),
                 ...(vouchersVisible ? [{ value: 'vouchers', label: reportsCopy('tab.vouchers') }] : []),
-                ...(commissionVisible ? [{ value: 'commission', label: reportsCopy('tab.commission') }] : []),
+                ...(commissionVisible ? [{ value: 'commission', label: splitsT('rep.tab') }] : []),
                 { value: 'clients', label: `${clientWord}s` },
               ] as { value: MainTab; label: string }[]
             ).map((o) => (
@@ -634,7 +641,7 @@ export default function ReportsScreen() {
               { value: 'team', label: measuresCopy('team.tab') },
               { value: 'clients', label: `${clientWord}s` },
             ]}
-            value={posTab ? 'overview' : shownTab}
+            value={ownRangeTab ? 'overview' : shownTab}
             onChange={setMainTab}
           />
         )}
@@ -670,15 +677,20 @@ export default function ReportsScreen() {
             <TakingsSection canExport={canExportPos} isAdmin={isAdmin} today={today} />
           ) : shownTab === 'sales' ? (
             <SalesSection canExport={canExportPos} today={today} />
-          ) : shownTab === 'vouchers' ? (
+          ) : (
             <VouchersSection
               canExport={canExportPos}
               timeZone={timeZone}
               currency={venueQuery.data?.currency ?? posAccess.data?.currency ?? 'GBP'}
             />
-          ) : (
-            <CommissionSection today={today} />
           )}
+          <View style={styles.spacer} />
+        </ScrollView>
+      ) : shownTab === 'commission' ? (
+        // Commission splits (2026-10-14) picks its own dates too, with or without Checkout: the
+        // team's commission and the splits agreed with other businesses.
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          <CommissionSection today={today} />
           <View style={styles.spacer} />
         </ScrollView>
       ) : shownTab === 'new-bookings' ? (

@@ -243,6 +243,13 @@ export default function NotificationsScreen() {
         ? `?add_from=${encodeURIComponent(route.addFrom)}${route.service ? `&service=${encodeURIComponent(route.service)}` : ''}`
         : '';
       router.push(`/manage/services${query}` as Href);
+    } else if (route?.type === 'commission-splits' && isAdmin) {
+      // A commission split notice → that split, or Commission splits on its businesses section.
+      router.push(
+        (route.splitId
+          ? `/commission-splits/${encodeURIComponent(route.splitId)}`
+          : '/commission-splits?section=businesses') as Href,
+      );
     }
   };
 

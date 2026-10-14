@@ -308,7 +308,8 @@ export const SETTINGS_COPY = {
   'app.set.row.cardsOnFile': 'How long links work, saving cards',
   'app.set.row.vouchers': 'Amounts, expiry, selling online',
   'app.set.row.loyalty': 'Stamps and rewards',
-  'app.set.row.commission': 'What your team earns',
+  // Commission splits (2026-10-14): the row opens /commission-splits, outside Checkout.
+  'app.set.row.commission': 'Your team, and businesses you work with',
   'app.set.row.permissions': 'What your team can do',
   'app.set.row.tills': 'Where you take money',
   'app.set.row.readers': 'Counter card readers',
@@ -318,7 +319,7 @@ export const SETTINGS_COPY = {
   'app.set.title.cardsOnFile': 'Pay links and saved cards',
   'app.set.title.vouchers': 'Gift vouchers',
   'app.set.title.loyalty': 'Loyalty card',
-  'app.set.title.commission': 'Commission',
+  'app.set.title.commission': 'Commission splits',
   'app.set.title.readers': 'Card readers',
   'app.set.title.stock': 'Stock',
   'app.set.title.shop': 'Online shop',

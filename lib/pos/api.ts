@@ -124,7 +124,7 @@ export const posPaths = {
   saleRewards: (saleId: string) => `/api/venue/pos/sales/${encodeURIComponent(saleId)}/loyalty-reward`,
   guestLoyaltyCard: (guestId: string) => `/api/venue/guests/${encodeURIComponent(guestId)}/loyalty-card`,
   guestLoyaltyAdjust: (guestId: string) => `/api/venue/guests/${encodeURIComponent(guestId)}/loyalty-card/adjust`,
-  myCommission: (period: string) => `/api/venue/pos/commission/report?mine=1&period=${encodeURIComponent(period)}`,
+  // "My sales" moved to Commission splits (2026-10-14): `commissionPaths.mine` in lib/commission/api.ts.
   // Pass 3 (app step 3): till sessions, cash-up and end of day (Appendix E #23).
   tillSessions: '/api/venue/pos/sessions',
   openTill: (tillId: string) => `/api/venue/pos/tills/${encodeURIComponent(tillId)}/sessions`,

@@ -310,7 +310,9 @@ describe('Your sales and tips (Pass LC, UX spec §22.3)', () => {
     const { wrapper } = setup();
     const { result } = await renderHook(() => useMyCommission('week'), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockApiFetch.mock.calls[0]![0]).toBe('/api/venue/pos/commission/report?mine=1&period=week');
+    // Commission splits (2026-10-14): the route that works with or without Checkout, same answer.
+    expect(mockApiFetch.mock.calls[0]![0]).toBe('/api/venue/commission/report?mine=1&period=week');
+    expect(mockApiFetch.mock.calls[0]![1]).toMatchObject({ accessToken: 'token-A' });
     expect(result.current.data?.mine.sales_pence).toBe(6500);
     expect(result.current.data?.mine.commission_pence).toBeNull();
   });

@@ -255,7 +255,7 @@ describe('buildDestinations — the Collective area (web parity, 2026-09-17)', (
 });
 
 describe('buildDestinations — Checkout (POS app step 1, plan §4.22)', () => {
-  const posIds = ['checkout', 'stock', 'checkout-settings', 'pos-records', 'stock-setup', 'import-products', 'loyalty-setup', 'commission-rates', 'commission-report', 'shop-settings', 'voucher-settings'];
+  const posIds = ['checkout', 'stock', 'checkout-settings', 'pos-records', 'stock-setup', 'import-products', 'loyalty-setup', 'shop-settings', 'voucher-settings'];
 
   it('adds nothing when the POS switch is off or absent: the More tab is unchanged', () => {
     for (const isAdmin of [true, false]) {
@@ -278,15 +278,9 @@ describe('buildDestinations — Checkout (POS app step 1, plan §4.22)', () => {
 
   it("puts Checkout's set-up screens in the app under Checkout set-up (owner, 2026-10-09)", () => {
     const admin = buildDestinations(ctx({ isAdmin: true, posEnabled: true })).filter((d) => d.group === 'checkoutSetup');
-    // Settings first, then products and stock, then the records (owner, 2026-10-09).
-    expect(admin.map((d) => d.id)).toEqual([
-      'checkout-settings',
-      'commission-rates',
-      'stock-setup',
-      'import-products',
-      'pos-records',
-      'commission-report',
-    ]);
+    // Settings first, then products and stock, then the records (owner, 2026-10-09). Commission
+    // moved out to Commission splits (2026-10-14).
+    expect(admin.map((d) => d.id)).toEqual(['checkout-settings', 'stock-setup', 'import-products', 'pos-records']);
     expect(admin.every((d) => d.kind === 'route' && !d.external)).toBe(true);
     expect(admin.find((d) => d.id === 'checkout-settings')?.target).toBe('/checkout-settings');
     // A team member sees none of them without the matching permission.
@@ -297,7 +291,7 @@ describe('buildDestinations — Checkout (POS app step 1, plan §4.22)', () => {
     const staff = ids(ctx({ isAdmin: false, posEnabled: true, posCan: { manage_settings: true, view_reports: true } }));
     expect(staff).toContain('checkout-settings');
     expect(staff).toContain('pos-records');
-    expect(staff).not.toContain('commission-rates');
+    expect(staff).not.toContain('commission-splits');
     expect(ids(ctx({ isAdmin: false, posEnabled: true, posCan: { import_products: true } }))).toContain('import-products');
   });
 
@@ -352,6 +346,39 @@ describe('buildDestinations — Checkout (POS app step 1, plan §4.22)', () => {
     expect(ids(ctx({ isAdmin: true, posEnabled: true }))).not.toContain('loyalty-setup');
     expect(ids(ctx({ isAdmin: true, posEnabled: true, loyaltyEnabled: true }))).toContain('loyalty-setup');
     expect(ids(ctx({ isAdmin: false, posEnabled: true, loyaltyEnabled: true }))).not.toContain('loyalty-setup');
+  });
+});
+
+describe('buildDestinations — Commission splits (2026-10-14)', () => {
+  it('gives every admin one Commission splits row beside Team, with Checkout on or off', () => {
+    for (const posEnabled of [true, false, undefined]) {
+      const dests = buildDestinations(ctx({ isAdmin: true, posEnabled }));
+      const row = dests.find((d) => d.id === 'commission-splits');
+      expect(row).toMatchObject({
+        label: 'Commission splits',
+        hint: 'Commission for your team, and shares agreed with businesses you work with',
+        group: 'people',
+        kind: 'route',
+        target: '/commission-splits',
+      });
+      expect(row?.external).toBeFalsy();
+      const people = dests.filter((d) => d.group === 'people').map((d) => d.id);
+      expect(people.indexOf('commission-splits')).toBe(people.indexOf('team') + 1);
+    }
+  });
+
+  it('replaces the two Checkout set-up commission rows', () => {
+    const list = ids(ctx({ isAdmin: true, posEnabled: true }));
+    expect(list).not.toContain('commission-rates');
+    expect(list).not.toContain('commission-report');
+    expect(list.filter((id) => id === 'commission-splits')).toHaveLength(1);
+  });
+
+  it('is not offered to team members', () => {
+    expect(ids(ctx({ isAdmin: false }))).not.toContain('commission-splits');
+    expect(ids(ctx({ isAdmin: false, posEnabled: true, posCan: { manage_settings: true, view_reports: true } }))).not.toContain(
+      'commission-splits',
+    );
   });
 });
 

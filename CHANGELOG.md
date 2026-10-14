@@ -17,6 +17,43 @@ on the other, and iOS 1.0.4 is the worked example.
 
 ## Unreleased OTA: POS app step 1 (iOS 1.2.0 / Android 1.1.2)
 
+### Commission splits (owner, 2026-10-14)
+
+Commission has moved out of Checkout into **Commission splits** (More, Team & clients, admins only),
+which works with or without Checkout and matches the web's Settings, Commission splits tab. It has
+two parts:
+
+- **Your team**: everything the old Checkout commission screen did (rates for everyone, by category
+  and per person, Change rate, Stop this rate, Earlier rates and the VAT basis), plus what counts for
+  services (Automatic, sales checked out at the till, or completed bookings) and how the report
+  describes each person (Commission or Their share). Without Checkout set up, services count from
+  completed bookings and the screen says so.
+- **Businesses you work with**: shares of one calendar's revenue agreed with a business you have a
+  "Work as one team" link with, or share a live collective with. Propose a split (the calendar, who
+  pays, what to call it, the shares, the VAT basis, weekly or monthly, the start date) with a worked
+  example on last month's figures; accept or decline the other business's proposal; withdraw your
+  own; propose new terms; end a split; and each split's statements, with "Mark as paid" (and a
+  note) and Undo. A split the link or collective no longer allows is read only.
+
+In Reports, the Commission tab is now **Commission splits**, for every admin whether or not Checkout
+is on, with one date range for both halves: Your team (a completed booking shows its date, time,
+client and service) and Businesses you work with (You owe, Owed to you, a row per split, its lines,
+its statements and the CSVs). "My sales" on Checkout home reads the new route. The old Checkout
+settings link and its hub row open Commission splits, and a commission split notice in the feed
+opens its businesses section.
+
+Needs the web's `/api/venue/commission/*` routes; the old `/api/venue/pos/commission/*` routes stay
+for builds already installed (Checkout set-up's team step still uses them).
+
+- `app/(app)/commission-splits/index.tsx` and `[id].tsx` (new), with
+  `components/commission-splits/*` (new). `app/(app)/checkout-settings/commission.tsx` now redirects.
+- `lib/queries/useCommissionSplits.ts` (new): every read and write, keyed under
+  `queryKeys.commissionSplits`, gated on the admin role, not on Checkout.
+- `types/commission-splits.ts` and `lib/commission/splits-copy.ts` (new), field for field and word
+  for word from the web's `src/lib/commission/types.ts` and `copy.ts`.
+- `components/reports/pos/CommissionSection.tsx` is the new tab; the Checkout-only commission report
+  hooks and types are gone.
+
 ### A sale sent to this phone pops up in the app (owner, 2026-10-10)
 
 When the web till sends a sale to this phone while the app is open, the app now offers it at once:

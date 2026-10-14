@@ -126,6 +126,7 @@ export const CHECKOUT_SETTINGS_SECTIONS: readonly CheckoutSettingsSection[] = [
     visible: (i) => i.loyaltyEnabled && i.can.is_admin,
   },
   {
+    // Commission splits (2026-10-14): admins; opens /commission-splits, which no longer needs Checkout.
     slug: 'commission',
     title: 'app.set.title.commission',
     hint: 'app.set.row.commission',
@@ -209,8 +210,12 @@ export function groupedCheckoutSettingsSections(
   })).filter((g) => g.sections.length > 0);
 }
 
-/** The route a row opens. */
+/**
+ * The route a row opens. Commission moved out of Checkout into Commission splits (2026-10-14), so
+ * its row opens that screen; the old `/checkout-settings/commission` route redirects there too.
+ */
 export function checkoutSettingsHref(slug: CheckoutSettingsSlug): string {
+  if (slug === 'commission') return '/commission-splits';
   return `/checkout-settings/${slug}`;
 }
 

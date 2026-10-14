@@ -6,11 +6,11 @@ import { FieldBlock, MessageBox, OptionList, longDay } from '@/components/pos/se
 import { Button } from '@/components/ui/Button';
 import { DatePickerField } from '@/components/ui/DatePickerField';
 import { Input } from '@/components/ui/Input';
-import { settingsErrorMessage, settingsMorePaths } from '@/lib/pos/settings-more/api';
+import { commissionErrorMessage } from '@/lib/commission/api';
 import { COMMISSION_TYPES, commT, typeWords } from '@/lib/pos/settings-more/commission-copy';
-import { useSettingsSend } from '@/lib/pos/settings-more/hooks';
-import type { CommissionItemType, CommissionRatesResponse } from '@/lib/pos/settings-more/types';
+import { usePostCommissionRate } from '@/lib/queries/useCommissionSplits';
 import { spacing } from '@/theme/index';
+import type { CommissionItemType, CommissionSettingsResponse } from '@/types/commission-splits';
 
 export interface RateScope {
   item_type: CommissionItemType;
@@ -35,6 +35,9 @@ export const personKeyOf = (p: { calendar_id: string | null; staff_id: string | 
  * person's rates" asks for the type, the team member and a category or Any category. A start date
  * before today warns that it changes figures already worked out. The server's refusal (a rate for
  * the same scope and date, a removed person or category) shows word for word.
+ *
+ * Commission splits (2026-10-14): saves through `POST /api/venue/commission/rates`, which works with
+ * or without Checkout, and the answer's settings replace the cached ones.
  */
 export function RateSheet({
   loaded,
@@ -42,12 +45,12 @@ export function RateSheet({
   onClose,
   onSaved,
 }: {
-  loaded: CommissionRatesResponse;
+  loaded: Pick<CommissionSettingsResponse, 'people' | 'categories' | 'today'>;
   target: RateSheetTarget;
   onClose: () => void;
-  onSaved: (next: CommissionRatesResponse) => void;
+  onSaved: (next: CommissionSettingsResponse) => void;
 }) {
-  const send = useSettingsSend();
+  const post = usePostCommissionRate();
   const { scope, fixed, withPerson } = target;
   const [itemType, setItemType] = useState<CommissionItemType>(scope.item_type ?? 'service');
   const [categoryId, setCategoryId] = useState<string>(scope.category_id ?? '');
@@ -75,7 +78,7 @@ export function RateSheet({
         ? { calendar_id: null, staff_id: personKey.slice(2) }
         : { calendar_id: null, staff_id: null };
     try {
-      const next = await send<CommissionRatesResponse>(settingsMorePaths.commissionRates, 'POST', {
+      const next = await post.mutateAsync({
         item_type: itemType,
         category_id: categoryId || null,
         ...person,
@@ -86,7 +89,7 @@ export function RateSheet({
       onSaved(next);
     } catch (e) {
       setBusy(false);
-      setError(settingsErrorMessage(e));
+      setError(commissionErrorMessage(e));
     }
   };
 

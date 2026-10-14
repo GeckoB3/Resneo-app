@@ -9,7 +9,6 @@ import type { PosPayoutDetail, PosPayoutsReport } from '@/types/pos';
 import type {
   AddedVoucher,
   CashUpsPayload,
-  CommissionReport,
   PosRangeChoice,
   ReportGrain,
   SalesPayload,
@@ -21,15 +20,16 @@ import type {
 } from '@/types/pos-reports';
 
 /**
- * Reports' POS tabs (Takings, Sales, Vouchers, Commission) with the web's own range and grain:
- * every query carries `rangeQuery(choice, grain)`, exactly the query string the web sends. Like
- * every POS call these go through `posFetch` and only run at venues with `pos_enabled`
- * (`usePosGate`), so a venue without POS sends none of them. Takings, Sales, cash-ups and payouts
- * also run where Reports has the server's word that the venue keeps those reports with Checkout
- * off (`reportsVisible`, plan §4.18); vouchers and commission need Checkout on, as their routes do.
+ * Reports' POS tabs (Takings, Sales, Vouchers) with the web's own range and grain: every query
+ * carries `rangeQuery(choice, grain)`, exactly the query string the web sends. Like every POS call
+ * these go through `posFetch` and only run at venues with `pos_enabled` (`usePosGate`), so a venue
+ * without POS sends none of them. Takings, Sales, cash-ups and payouts also run where Reports has
+ * the server's word that the venue keeps those reports with Checkout off (`reportsVisible`, plan
+ * §4.18); vouchers need Checkout on, as their routes do. Commission splits has its own reads, with
+ * or without Checkout (`lib/queries/useCommissionSplits.ts`).
  *
- * The calendar filter (lib/reports/report-calendar.ts): Sales and Commission take `calendarId`, sent
- * as `calendar_id` and so part of the key, so one calendar's figures are never cached for another.
+ * The calendar filter (lib/reports/report-calendar.ts): Sales takes `calendarId`, sent as
+ * `calendar_id` and so part of the key, so one calendar's figures are never cached for another.
  * Takings (the money journal), cash-ups, payouts and vouchers are the whole venue and are never
  * sent it.
  *
@@ -61,8 +61,6 @@ export const posReportPaths = {
   payouts: (q: string) => `/api/venue/reports/payouts?${q}`,
   payout: (q: string, id: string) => `/api/venue/reports/payouts?${q}&payout=${encodeURIComponent(id)}`,
   tips: (q: string) => `/api/venue/reports/tips?${q}`,
-  commission: (q: string) => `/api/venue/pos/commission/report?${q}`,
-  commissionPerson: (q: string, personKey: string) => `/api/venue/pos/commission/report?${q}&person=${encodeURIComponent(personKey)}`,
   voucherReport: (q: string) => `/api/venue/pos/vouchers/report?${q}`,
   vouchers: '/api/venue/pos/vouchers',
   voucher: (id: string) => `/api/venue/pos/vouchers/${encodeURIComponent(id)}`,
@@ -139,45 +137,6 @@ export function usePayoutDetailRange(
     retry: false,
     queryFn: () =>
       posFetch<PosPayoutDetail>(posReportPaths.payout(q, payoutId!), { accessToken: accessToken!, timeoutMs: REPORT_TIMEOUT }),
-  });
-}
-
-/**
- * The Commission tab, admins only (staff read their own figures from `useMyCommission`). Never
- * cached long. Its route needs Checkout on, so it keeps the plain POS gate.
- */
-export function useCommissionReport(
-  choice: PosRangeChoice,
-  grain: ReportGrain,
-  options: { enabled?: boolean; calendarId?: string | null } = {},
-) {
-  const { accessToken, enabled } = usePosGate(options.enabled ?? true);
-  const q = withCalendarParam(rangeQuery(choice, grain), options.calendarId);
-  return useQuery({
-    queryKey: reportKey('commission-report', accessToken, q),
-    enabled,
-    staleTime: 0,
-    placeholderData: keepPreviousData,
-    ...calendarRetryOption(options.calendarId),
-    queryFn: () => posFetch<CommissionReport>(posReportPaths.commission(q), { accessToken: accessToken!, timeoutMs: REPORT_TIMEOUT }),
-  });
-}
-
-/** One person's commission lines (the drill-down), for the same calendar as the report. */
-export function useCommissionLines(
-  choice: PosRangeChoice,
-  grain: ReportGrain,
-  personKey: string | null,
-  calendarId: string | null = null,
-) {
-  const { accessToken, enabled } = usePosGate(Boolean(personKey));
-  const q = withCalendarParam(rangeQuery(choice, grain), calendarId);
-  return useQuery({
-    queryKey: reportKey('commission-lines', accessToken, q, personKey),
-    enabled,
-    staleTime: 0,
-    queryFn: () =>
-      posFetch<CommissionReport>(posReportPaths.commissionPerson(q, personKey!), { accessToken: accessToken!, timeoutMs: REPORT_TIMEOUT }),
   });
 }
 

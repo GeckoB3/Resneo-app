@@ -6,6 +6,8 @@
  *   /dashboard/settings?tab=linked-accounts  →  { type: 'linked-venues' }  (Linked Venues hub)
  *   /dashboard/appointment-services?add_from=…&service=…  →  { type: 'services' }  (Services; a
  *                                        member's suggestion, N25, opens "Add from another venue")
+ *   /dashboard/settings?tab=commission[&…]  →  { type: 'commission-splits' }  (Commission splits;
+ *                                        a `split=<id>` among the extra params opens that split)
  *   anything else                        →  null (no navigation)
  *
  * Linked-venue activity points at the web Settings → Linked Accounts page; the
@@ -16,6 +18,7 @@ export type NotificationRoute =
   | { type: 'calendar'; date: string }
   | { type: 'linked-venues' }
   | { type: 'services'; addFrom: string | null; service: string | null }
+  | { type: 'commission-splits'; splitId: string | null }
   | null;
 
 export function parseNotificationRoute(href: string | null | undefined): NotificationRoute {
@@ -25,6 +28,13 @@ export function parseNotificationRoute(href: string | null | undefined): Notific
   const calendarMatch = href.match(/\/calendar\?date=(\d{4}-\d{2}-\d{2})/);
   if (calendarMatch) {
     return { type: 'calendar', date: calendarMatch[1] };
+  }
+
+  // Commission splits notices (2026-10-14: proposed, accepted, declined, ended, withdrawn, marked
+  // paid, undone) → the app's Commission splits screen (admins; the caller keeps non-admins on the
+  // feed), with whatever else the link carries.
+  if (/\/dashboard\/settings(?:\?|$)/.test(href) && queryValue(href, 'tab') === 'commission') {
+    return { type: 'commission-splits', splitId: queryValue(href, 'split') };
   }
 
   // Linked-venue activity → the native Linked Venues hub (admins; the caller

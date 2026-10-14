@@ -310,6 +310,31 @@ export const queryKeys = {
     state: (accessToken?: string | null) => [...queryKeys.posSwitches.all(), 'state', keyScope(accessToken)] as const,
   },
 
+  /**
+   * Commission splits (`/api/venue/commission/*`, 2026-10-14): team rates and settings, splits with
+   * other businesses, their statements, and both reports. Outside `pos`, because none of it needs
+   * Checkout on. Every write invalidates the whole namespace.
+   */
+  commissionSplits: {
+    all: () => [...queryKeys.all, 'commission-splits'] as const,
+    settings: (accessToken?: string | null) =>
+      [...queryKeys.commissionSplits.all(), 'settings', keyScope(accessToken)] as const,
+    splits: (accessToken?: string | null) =>
+      [...queryKeys.commissionSplits.all(), 'splits', keyScope(accessToken)] as const,
+    preview: (accessToken?: string | null, query?: string | null) =>
+      [...queryKeys.commissionSplits.all(), 'preview', keyScope(accessToken), query ?? null] as const,
+    statements: (accessToken?: string | null, splitId?: string | null) =>
+      [...queryKeys.commissionSplits.all(), 'statements', keyScope(accessToken), splitId ?? null] as const,
+    teamReport: (accessToken?: string | null, query?: string | null) =>
+      [...queryKeys.commissionSplits.all(), 'team-report', keyScope(accessToken), query ?? null] as const,
+    teamLines: (accessToken?: string | null, query?: string | null, personKey?: string | null) =>
+      [...queryKeys.commissionSplits.all(), 'team-lines', keyScope(accessToken), query ?? null, personKey ?? null] as const,
+    splitsReport: (accessToken?: string | null, query?: string | null) =>
+      [...queryKeys.commissionSplits.all(), 'splits-report', keyScope(accessToken), query ?? null] as const,
+    splitLines: (accessToken?: string | null, query?: string | null, splitId?: string | null) =>
+      [...queryKeys.commissionSplits.all(), 'split-lines', keyScope(accessToken), query ?? null, splitId ?? null] as const,
+  },
+
   referrals: {
     all: () => [...queryKeys.all, 'referrals'] as const,
     dashboard: (accessToken?: string | null) =>

@@ -78,8 +78,13 @@ describe('visibleCheckoutSettingsSections', () => {
     expect(slugs(input({ trackStockEnabled: true }))).toContain('stock');
   });
 
-  it('gives every row a route under /checkout-settings', () => {
-    for (const s of CHECKOUT_SETTINGS_SECTIONS) expect(checkoutSettingsHref(s.slug)).toBe(`/checkout-settings/${s.slug}`);
+  it('gives every row a route under /checkout-settings, except Commission, which opens Commission splits', () => {
+    for (const s of CHECKOUT_SETTINGS_SECTIONS) {
+      if (s.slug === 'commission') continue;
+      expect(checkoutSettingsHref(s.slug)).toBe(`/checkout-settings/${s.slug}`);
+    }
+    // Commission moved out of Checkout (2026-10-14).
+    expect(checkoutSettingsHref('commission')).toBe('/commission-splits');
   });
 });
 
