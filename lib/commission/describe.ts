@@ -256,6 +256,8 @@ export function businessSummary(input: {
   basis: CommissionBasis;
   label: SplitLabel;
   period: SettlementPeriod;
+  /** New terms for an agreed split: the current terms carry on until they are accepted. */
+  change?: boolean;
 }): string {
   const sentence = splitsT(input.role === 'payer' ? 'sum.biz.youPay' : 'sum.biz.theyPay', {
     date: input.date,
@@ -266,5 +268,5 @@ export function businessSummary(input: {
     label: asLabel(input.label),
     period: SPLITS_COPY[`sum.period.${input.period}`],
   });
-  return `${sentence} ${splitsT('sum.biz.accept', { partner: input.partner })}`;
+  return `${sentence} ${splitsT(input.change ? 'change.help' : 'sum.biz.accept', { partner: input.partner })}`;
 }

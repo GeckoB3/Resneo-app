@@ -56,11 +56,11 @@ export function currentOf(rows: CommissionRate[], today: string): CommissionRate
   return [...rows].reverse().find((r) => r.effective_from <= today) ?? rows[rows.length - 1]!;
 }
 
-/** "40%, From 1 October 2026", or "Stop this rate, From ..." for a stop. */
+/** "40%, from 1 October 2026", or "Stop this rate, from ..." for a stop. */
 export function rateText(r: Pick<CommissionRate, 'rate_bps' | 'effective_from'>): string {
-  return `${r.rate_bps === null ? commT('set.comm.stop') : `${bpsToPercentText(r.rate_bps)}%`}, ${commT('set.comm.from', {
-    date: longDay(r.effective_from),
-  })}`;
+  return `${r.rate_bps === null ? commT('set.comm.stop') : `${bpsToPercentText(r.rate_bps)}%`}, ${lowerFirst(
+    commT('set.comm.from', { date: longDay(r.effective_from) }),
+  )}`;
 }
 
 const SOURCE_WORDS: Record<CommissionSource, string> = {
@@ -299,7 +299,13 @@ function RateRow({
         {line}
       </Text>
       <View style={styles.actions}>
-        <Button label={commT('set.comm.change')} size="sm" variant="secondary" onPress={onChange} />
+        <Button
+          label={commT('set.comm.change')}
+          size="sm"
+          variant="secondary"
+          accessibilityLabel={`${commT('set.comm.change')}: ${label}`}
+          onPress={onChange}
+        />
         {onStop ? <Button label={commT('set.comm.stop')} size="sm" variant="ghost" onPress={onStop} loading={stopping} /> : null}
         {history ? (
           <Button

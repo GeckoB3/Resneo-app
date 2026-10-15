@@ -293,3 +293,42 @@ describe('businesses you work with', () => {
     expect(screen.getByText('No business splits for these dates.')).toBeTruthy();
   });
 });
+
+describe('finding your way around', () => {
+  it('links to the rates, hides gift vouchers with none in the range, and says the names open their lines', async () => {
+    await render(<CommissionSection today="2026-10-09" />);
+    expect(screen.queryByText('Vouchers sold')).toBeNull();
+    expect(screen.queryByText('Vouchers commission')).toBeNull();
+    expect(
+      screen.getByText("Choose a name to see what it is worked out from. Tips aren't commission. They're here so you can see everything in one place."),
+    ).toBeTruthy();
+    expect(screen.getByText('Choose a split to see what it is worked out from.')).toBeTruthy();
+    expect(screen.getByText('Payer keeps')).toBeTruthy();
+    await press(screen.getByText('Change rates'));
+    expect(mockPush).toHaveBeenCalledWith('/commission-splits');
+  });
+
+  it('shows gift voucher columns once vouchers counted something', async () => {
+    mockReport = { ...mockReport, totals: { ...(mockReport.totals as object), voucher_base_pence: 5000 } };
+    await render(<CommissionSection today="2026-10-09" />);
+    expect(screen.getAllByText('Vouchers sold').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Vouchers commission').length).toBeGreaterThan(0);
+  });
+
+  it("names a person's line columns plainly, with Their part for a shared line, and closes the lines", async () => {
+    await render(<CommissionSection today="2026-10-09" />);
+    await press(screen.getByLabelText("Sam's sales"));
+    for (const label of ['Item', 'Their part', 'Counted', 'Rate']) expect(screen.getAllByText(label).length).toBeGreaterThan(0);
+    expect(screen.queryByText('Base')).toBeNull();
+    await press(screen.getByText('Close'));
+    expect(screen.queryByText('Their part')).toBeNull();
+  });
+
+  it("closes a split's lines", async () => {
+    await render(<CommissionSection today="2026-10-09" />);
+    await press(screen.getByLabelText('Sam at Sam Cuts'));
+    expect(screen.getByText('Export CSV: Sam at Sam Cuts')).toBeTruthy();
+    await press(screen.getByText('Close'));
+    expect(screen.queryByText('Export CSV: Sam at Sam Cuts')).toBeNull();
+  });
+});

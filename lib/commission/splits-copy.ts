@@ -14,6 +14,8 @@ export const SPLITS_COPY = {
   'page.intro':
     'Decide who earns a share of what each calendar takes. ResNeo works out what is owed. Paying it is up to you.',
   'page.setUp': 'Set up a split',
+  'page.seeReport': 'See what is owed in Reports',
+  'page.helpLink': 'How commission splits work',
 
   // The calendar-first page (Settings and the app's Commission splits screen)
   'answer.title': 'Waiting for your answer',
@@ -30,7 +32,6 @@ export const SPLITS_COPY = {
   'cal.theirs.collective': 'Your collective',
   'cal.theirs.empty':
     'When you link with another business using "Work as one team", or join a collective, their calendars show here so you can agree a share, such as chair rent.',
-  'cal.theirs.emptyAction': 'Go to Linked Accounts',
   'cal.logins.title': 'Logins without a calendar',
   'cal.logins.help':
     "These team logins aren't linked to a calendar, so they only earn from what they sell at Checkout, such as products. To count a login with a calendar, choose its calendars in Staff.",
@@ -60,7 +61,7 @@ export const SPLITS_COPY = {
   'cal.counting.help': 'These apply to the shares you pay your team.',
   'cal.past.title': 'Past splits',
   'cal.past.help': 'Splits that ended, were declined or were withdrawn. Their statements stay here to read.',
-  'cal.past.show': 'Show {count}',
+  'cal.past.show': 'Show past splits ({count})',
   'cal.past.hide': 'Hide',
 
   // How a share is described ("as rent")
@@ -88,6 +89,7 @@ export const SPLITS_COPY = {
   'setup.earner.you': '{venue} (your business)',
   'setup.earner.you.help': '{partner} pays you a share of what this calendar takes, such as rent for a chair. They must accept first.',
   'setup.earner.exists': 'Already set up. Manage it from the list.',
+  'setup.earner.now': 'At the moment: {what}.',
   'propose.youPay.help': 'You pay {partner} a share of what this calendar takes, such as rent for a chair. {partner} must accept first.',
   'propose.theyPay.help': '{partner} pays you a share of what this calendar takes, such as rent for a chair. {partner} must accept first.',
   'setup.earner.business': 'A business you work with',
@@ -106,14 +108,28 @@ export const SPLITS_COPY = {
   'share.products': 'Share of products (%)',
   'share.products.help': 'Products credited to them at Checkout.',
   'share.label': 'Call it',
+  'share.label.help': 'Only changes the word used on reports.',
   'share.start': 'Starts on',
+  'share.start.help': 'The first day the new share counts. Days before it keep the rates they had.',
   'share.save': 'Save',
   'share.saved': 'Saved.',
   'share.backdated': 'This starts before today, so figures already worked out from {date} will change.',
   'share.categories': 'Rates for one category',
   'share.categories.help': 'Use these when a category earns a different rate, such as colour.',
   'share.categories.add': 'Add a category rate',
+  'share.categories.instant': 'Category rates save as soon as you add or stop them.',
   'share.history': 'Earlier rates',
+
+  // Changing one standard rate
+  'rate.title': 'Standard rate for {what}',
+  'rate.title.category': 'Add a category rate',
+  'rate.label': 'Rate (%)',
+  'rate.current': 'At the moment: {rate}%.',
+  'rate.summary': 'From {date}, your team earns {rate}% of {what}, unless a calendar has its own rate.',
+  'rate.summary.category': 'From {date}, your team earns {rate}% on {what}, unless a calendar has its own rate for it.',
+  'rate.type': 'Type',
+  'rate.category': 'Category',
+  'rate.category.choose': 'Choose a category',
   'sum.team': 'From {date}, you pay {name} {what} on their calendar, {label}.',
   'sum.team.login': 'From {date}, you pay {name} {what} from their sales at Checkout, {label}.',
   'sum.team.nothing': 'From {date}, you pay {name} nothing.',
@@ -184,13 +200,16 @@ export const SPLITS_COPY = {
   // Propose form
   'form.business': 'Business',
   'form.label': 'Call it',
+  'form.label.help': 'Only changes the word used on statements and reports.',
   'form.services': 'Share of services (%)',
   'form.products': 'Include products',
   'form.products.help':
     'Products sold at Checkout and credited to this calendar. The business that sold them shares these figures only by agreeing to this split.',
   'form.productsRate': 'Share of products (%)',
   'form.vat': 'Work it out on prices',
+  'form.vat.help': 'Before VAT is usual. It only makes a difference if the business that pays is VAT registered.',
   'form.period': 'Settle up',
+  'form.period.help': 'How often a statement is made, so you both know what to settle.',
   'form.start': 'Starts on',
   'form.backdated': 'This starts before today, so figures already in ResNeo will count once {partner} agrees.',
   'form.example': 'Last month this would have come to {owed}.',
@@ -210,13 +229,16 @@ export const SPLITS_COPY = {
   'change.title': 'Propose new terms',
   'change.start': 'New terms start on',
   'change.help': 'The current terms stay in force until {partner} accepts.',
+  'change.now': 'Now: {summary}.',
   'change.mustFollow': 'New terms must start after {date}, when the current terms began.',
   'change.sent': 'Sent. The current terms stay in force until {partner} accepts.',
   'withdraw': 'Withdraw',
   'withdraw.done': 'Withdrawn.',
+  'withdraw.help': '{partner} will no longer be asked to accept these terms.',
   'end': 'End this split',
   'end.lastDay': 'Last day it counts',
   'end.help': '{partner} will be told. Figures up to and including the last day still count.',
+  'end.after': 'Both businesses can still read its statements afterwards.',
   'end.confirm': 'End split',
   'end.done': 'Ended. The last day it counts is {date}.',
 
@@ -224,6 +246,15 @@ export const SPLITS_COPY = {
   'rep.tab': 'Commission splits',
   'rep.team.title': 'Your team',
   'rep.team.bookings': 'Services count from completed bookings at their booked price. Products and gift vouchers count from Checkout.',
+  'rep.team.drill': 'Choose a name to see what it is worked out from.',
+  'rep.team.settings': 'Change rates',
+  'rep.biz.drill': 'Choose a split to see what it is worked out from.',
+  'rep.col.date': 'Date',
+  'rep.col.item': 'Item',
+  'rep.col.sale': 'Sale',
+  'rep.col.counted': 'Counted',
+  'rep.col.part': 'Their part',
+  'rep.col.rate': 'Rate',
   'rep.biz.title': 'Businesses you work with',
   'rep.biz.help': 'Shares agreed with other businesses, worked out on each calendar\'s completed bookings, and products where agreed.',
   'rep.biz.youOwe': 'You owe',
@@ -234,7 +265,7 @@ export const SPLITS_COPY = {
   'rep.biz.col.products': 'Products counted',
   'rep.biz.col.rate': 'Rate',
   'rep.biz.col.owed': 'Owed',
-  'rep.biz.col.kept': 'Kept',
+  'rep.biz.col.kept': 'Payer keeps',
   'rep.biz.none': 'No business splits for these dates.',
   'rep.biz.lines': '{calendar} at {business}',
   'rep.biz.line.booking': 'Booking',
@@ -247,6 +278,9 @@ export const SPLITS_COPY = {
   'stmt.title': 'Statements',
   'stmt.help': 'One statement per {period} period. Mark a period as paid once you have settled it. ResNeo does not move any money.',
   'stmt.outstanding': 'Outstanding: {amount}',
+  'stmt.outstanding.youOwe': 'You still owe {partner}: {amount}',
+  'stmt.outstanding.owedToYou': '{partner} still owes you: {amount}',
+  'stmt.soFar': 'So far: {amount}',
   'stmt.paidTotal': 'Marked paid: {amount}',
   'stmt.period': '{start} to {end}',
   'stmt.status.current': 'In progress',
@@ -261,11 +295,14 @@ export const SPLITS_COPY = {
   'stmt.changed': 'The figures have changed since this was marked paid: it was {was} and is now {now}.',
   'stmt.undo': 'Undo',
   'stmt.undo.confirm': 'Undo the payment mark for {period}?',
+  'stmt.undo.help': 'The period shows as outstanding again for both businesses.',
   'stmt.undone': 'No longer marked as paid.',
   'stmt.done': 'Marked as paid.',
   'stmt.empty': 'No periods yet. Statements start once the split is agreed.',
 
   // Errors the app checks before sending, or says itself (the routes answer with the same sentences)
+  'err.notAllowed':
+    'You can only agree a split on a calendar at a business you have a "Work as one team" link with, or that shares a live collective with you.',
   'err.lastDay': 'The last day must be today or later.',
   'err.startAfterEnd': 'The start date must be before the split ends.',
   'err.notFound': 'That split no longer exists.',
@@ -287,6 +324,11 @@ export const SPLITS_COPY = {
   // (app) A request that never reached ResNeo, or came back with no sentence.
   'app.networkError': "We couldn't reach ResNeo. Check your connection and try again.",
   'app.saveError': "We couldn't save that. Please try again.",
+  // (app) The way forward when there are no calendars: Availability Settings, Calendars tab.
+  'app.calendars.add': 'Add a calendar',
+  'app.calendars.none': 'There are no calendars to choose yet. Add a calendar first, then come back to set up a split.',
+  // (app) The app's screen is called Linked venues (the web's 'cal.theirs.emptyAction' names its own).
+  'app.linkedVenues': 'Go to Linked venues',
 } as const;
 
 export type SplitsCopyId = keyof typeof SPLITS_COPY;

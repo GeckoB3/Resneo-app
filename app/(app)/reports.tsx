@@ -1,5 +1,5 @@
 import { Stack, useLocalSearchParams } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState, type RefObject } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
 import { BaselineMetricsCard } from '@/components/reports/BaselineMetricsCard';
@@ -141,6 +141,18 @@ export default function ReportsScreen() {
   const [mainTab, setMainTab] = useState<MainTab>(() =>
     (TAB_PARAMS as string[]).includes(tabParam ?? '') ? (tabParam as MainTab) : 'overview',
   );
+  // Commission splits: a drill-down that has just opened scrolls into view (web scrollIntoView).
+  const commissionScrollRef = useRef<ScrollView>(null);
+  const commissionInnerRef = useRef<View>(null);
+  const revealInCommission = useCallback((node: View) => {
+    const inner = commissionInnerRef.current;
+    if (!inner) return;
+    node.measureLayout(
+      inner,
+      (_x, y) => commissionScrollRef.current?.scrollTo({ y: Math.max(0, y - spacing.sm), animated: true }),
+      () => undefined,
+    );
+  }, []);
 
   /**
    * The Showing picker (lib/reports/report-scope.ts): your whole venue, one of your calendars, a
@@ -689,8 +701,13 @@ export default function ReportsScreen() {
       ) : shownTab === 'commission' ? (
         // Commission splits (2026-10-14) picks its own dates too, with or without Checkout: the
         // team's commission and the splits agreed with other businesses.
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          <CommissionSection today={today} />
+        <ScrollView
+          ref={commissionScrollRef}
+          // The prop's type predates React 19's nullable refs.
+          innerViewRef={commissionInnerRef as RefObject<View>}
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled">
+          <CommissionSection today={today} onReveal={revealInCommission} />
           <View style={styles.spacer} />
         </ScrollView>
       ) : shownTab === 'new-bookings' ? (

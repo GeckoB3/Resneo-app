@@ -78,7 +78,7 @@ export function TermsFields({
           />
         </FieldBlock>
       ) : null}
-      <FieldBlock label={splitsT('form.vat')} error={errors.vat}>
+      <FieldBlock label={splitsT('form.vat')} help={splitsT('form.vat.help')} error={errors.vat}>
         <ChoiceChips<CommissionBasis>
           options={BASES.map((b) => ({ value: b, label: basisWords(b) }))}
           value={draft.vat}

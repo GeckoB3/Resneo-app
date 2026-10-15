@@ -64,6 +64,11 @@ export function termsSummaryFrom(terms: { services_rate_bps: number; products_ra
   return `${termsSummary(terms)} ${splitsT('biz.summary.from', { date: formatLongDay(terms.effective_from) })}`;
 }
 
+/** "40% of services, before VAT, from 1 November 2026" (web `termsSummary`). */
+export function termsWithBasis(terms: Pick<SplitTermsView, 'services_rate_bps' | 'products_rate_bps' | 'vat_basis' | 'effective_from'>): string {
+  return `${termsSummary(terms)}, ${lowerFirst(basisWords(terms.vat_basis))}, ${splitsT('biz.summary.from', { date: formatLongDay(terms.effective_from) })}`;
+}
+
 /** The rates in force in a report's range: one in words, or each with the day it started. */
 export function reportRatesText(rates: SplitReportRow['rates']): string {
   if (rates.length === 0) return '';

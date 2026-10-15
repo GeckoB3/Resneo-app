@@ -356,11 +356,30 @@ export function ReportInfoLine({ text, exportTitle, onExport }: { text: string; 
   );
 }
 
-/** A report card: its title, and "Export CSV" when this person may export. */
-export function PosReportCard({ title, onExport, children }: { title: string; onExport?: () => void; children: ReactNode }) {
+/** A report card: its title, "Export CSV" when this person may export, and Close for a drill-down. */
+export function PosReportCard({
+  title,
+  onExport,
+  close,
+  children,
+}: {
+  title: string;
+  onExport?: () => void;
+  /** A drill-down's way back: its label and what it does. */
+  close?: { label: string; onPress: () => void };
+  children: ReactNode;
+}) {
+  const header = <CardHeader title={title} onExport={onExport} />;
   return (
     <Card style={styles.card}>
-      <CardHeader title={title} onExport={onExport} />
+      {close ? (
+        <View style={styles.closableHead}>
+          <View style={styles.flex}>{header}</View>
+          <Button label={close.label} size="sm" variant="ghost" onPress={close.onPress} />
+        </View>
+      ) : (
+        header
+      )}
       {children}
     </Card>
   );
@@ -680,6 +699,7 @@ const styles = StyleSheet.create({
   dateField: { gap: spacing.xs },
   error: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderWidth: 1, borderRadius: radius.md, padding: spacing.md },
   flex: { flex: 1 },
+  closableHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   table: { borderWidth: 1, borderRadius: radius.sm, overflow: 'hidden' },
   row: { flexDirection: 'row', borderBottomWidth: StyleSheet.hairlineWidth },
   cell: { paddingHorizontal: spacing.sm, paddingVertical: spacing.sm, justifyContent: 'center' },

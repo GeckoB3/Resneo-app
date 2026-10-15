@@ -70,11 +70,17 @@ export function TeamShareSheet({
   const showProducts = settings.source.checkout_available || view.product.own || view.product.bps > 0;
   const standard = { service: standardRate(settings.rates, 'service', today), product: standardRate(settings.rates, 'product', today) };
 
-  const [mode, setMode] = useState<Mode>(fresh || view.service.own || view.product.own ? 'own' : 'standard');
   // A first share starts empty, so nothing is saved by accident at 0%.
   const startText = (bps: number) => (fresh && bps === 0 ? '' : bpsToPercentText(bps));
-  const [services, setServices] = useState(() => startText(view.service.bps));
-  const [products, setProducts] = useState(() => startText(view.product.bps));
+  // What the sheet opened with, so Save with nothing changed only closes it.
+  const [initial] = useState(() => ({
+    mode: (fresh || view.service.own || view.product.own ? 'own' : 'standard') as Mode,
+    services: startText(view.service.bps),
+    products: startText(view.product.bps),
+  }));
+  const [mode, setMode] = useState<Mode>(initial.mode);
+  const [services, setServices] = useState(initial.services);
+  const [products, setProducts] = useState(initial.products);
   const [label, setLabel] = useState<CommissionPersonLabel>(person.label);
   const [start, setStart] = useState(today);
   const [checks, setChecks] = useState<{ services: string | null; products: string | null }>({ services: null, products: null });
@@ -101,8 +107,16 @@ export function TeamShareSheet({
         })
       : null;
 
+  const unchanged =
+    !fresh && mode === initial.mode && services === initial.services && products === initial.products && label === person.label && start === today;
+
   const save = async () => {
     if (share.isPending) return;
+    // Nothing to change: don't write a new dated rate that says the same thing.
+    if (unchanged) {
+      onClose();
+      return;
+    }
     if (mode === 'own') {
       const s = checkPercent(services);
       const p = showProducts ? checkPercent(products) : null;
@@ -204,7 +218,7 @@ export function TeamShareSheet({
         </>
       ) : null}
 
-      <FieldBlock label={splitsT('share.label')}>
+      <FieldBlock label={splitsT('share.label')} help={splitsT('share.label.help')}>
         <ChoiceChips<CommissionPersonLabel>
           options={PERSON_LABELS.map((l) => ({ value: l, label: labelWords(l) }))}
           value={label}
@@ -212,7 +226,7 @@ export function TeamShareSheet({
         />
       </FieldBlock>
 
-      <FieldBlock label={splitsT('share.start')} error={fieldMessage(fields, 'effective_from')}>
+      <FieldBlock label={splitsT('share.start')} help={splitsT('share.start.help')} error={fieldMessage(fields, 'effective_from')}>
         <DatePickerField
           value={start}
           onChange={(d) => {
@@ -331,7 +345,7 @@ function CategoryRates({
       {open ? (
         <>
           <Text variant="caption" tone="muted">
-            {splitsT('share.categories.help')}
+            {`${splitsT('share.categories.help')} ${splitsT('share.categories.instant')}`}
           </Text>
           {rows.map(({ scope, current }) => (
             <View key={`${scope.item_type}|${scope.category_id}`} style={styles.categoryRow}>
@@ -348,15 +362,15 @@ function CategoryRates({
               />
             </View>
           ))}
-          <FieldBlock label={commT('set.comm.fallback.category')} help={categoryKey ? null : commT('set.comm.sheet.category.choose')}>
+          <FieldBlock label={splitsT('rate.category')} help={categoryKey ? null : splitsT('rate.category.choose')}>
             <OptionList
               value={categoryKey}
               options={settings.categories.map((c) => ({ value: `${c.item_type}|${c.id}`, label: `${c.name} (${typeWords(c.item_type)})` }))}
               onChange={setCategoryKey}
             />
           </FieldBlock>
-          <FieldBlock label={commT('set.comm.sheet.rate')}>
-            <Input value={rate} onChangeText={setRate} keyboardType="decimal-pad" accessibilityLabel={commT('set.comm.sheet.rate')} />
+          <FieldBlock label={splitsT('rate.label')}>
+            <Input value={rate} onChangeText={setRate} keyboardType="decimal-pad" accessibilityLabel={splitsT('rate.label')} />
           </FieldBlock>
           <View style={styles.start}>
             <Button

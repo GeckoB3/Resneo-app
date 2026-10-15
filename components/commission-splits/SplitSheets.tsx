@@ -8,9 +8,11 @@ import { FieldBlock, MessageBox } from '@/components/pos/settings-more/parts';
 import { Button } from '@/components/ui/Button';
 import { DatePickerField } from '@/components/ui/DatePickerField';
 import { Input } from '@/components/ui/Input';
+import { Text } from '@/components/ui/Text';
 import { commissionErrorMessage, commissionFieldErrors, fieldMessage, type CommissionFieldError } from '@/lib/commission/api';
+import { businessSummary } from '@/lib/commission/describe';
 import { splitsT } from '@/lib/commission/splits-copy';
-import { nextDay, periodText, splitMoney } from '@/lib/commission/splits-format';
+import { calendarAt, nextDay, periodText, splitMoney, termsWithBasis } from '@/lib/commission/splits-format';
 import { bpsToPercentText } from '@/lib/pos/settings-more/commission-copy';
 import { formatLongDay } from '@/lib/reports/pos-report-format';
 import { useEndSplit, useMarkPaid, useProposeTerms } from '@/lib/queries/useCommissionSplits';
@@ -30,9 +32,10 @@ const ymdToDate = (ymd: string) => {
 };
 
 /**
- * "Propose new terms": a start date after the current terms began (and before the split ends, when
- * it is ending), the shares, the VAT basis and the worked example. The current terms stay in force
- * until the other business accepts.
+ * "Propose new terms": what is agreed now, a start date after the current terms began (and before
+ * the split ends, when it is ending), the shares, the VAT basis, the worked example, and a sentence
+ * saying exactly what the new terms would count. The current terms stay in force until the other
+ * business accepts.
  */
 export function TermsSheet({
   split,
@@ -73,6 +76,20 @@ export function TermsSheet({
         products_rate_percent: rates.products,
         vat_basis: draft.vat,
       }
+    : null;
+  const summary = rates
+    ? businessSummary({
+        role: split.role,
+        partner,
+        calendar: split.calendar.name,
+        date: formatLongDay(start),
+        servicesBps: Math.round(rates.services * 100),
+        productsBps: rates.products === null ? null : Math.round(rates.products * 100),
+        basis: draft.vat,
+        label: split.label,
+        period: split.settlement_period,
+        change: true,
+      })
     : null;
 
   const startProblem = (d: string): string | null => {
@@ -119,13 +136,14 @@ export function TermsSheet({
       visible
       onClose={onClose}
       title={splitsT('change.title')}
-      subtitle={splitsT('change.help', { partner })}
+      subtitle={calendarAt(split)}
       footer={
         <View style={styles.footer}>
           <Button label={splitsT('form.send', { partner })} onPress={() => void send()} loading={propose.isPending} fullWidth />
           <Button label={splitsT('ui.close')} variant="secondary" onPress={onClose} disabled={propose.isPending} fullWidth />
         </View>
       }>
+      {current ? <Text variant="bodySmall">{splitsT('change.now', { summary: termsWithBasis(current) })}</Text> : null}
       <FieldBlock label={splitsT('change.start')} error={checks.start ?? fieldMessage(fields, 'effective_from')}>
         <DatePickerField
           value={start}
@@ -153,7 +171,7 @@ export function TermsSheet({
           vat: fieldMessage(fields, 'vat_basis'),
         }}
       />
-      <SplitExample params={previewParams} business={split.payer.name} currency={currency} />
+      <SplitExample params={previewParams} business={split.payer.name} currency={currency} summary={summary} />
       {error ? (
         <MessageBox tone="danger" role="alert">
           {error}
@@ -212,6 +230,9 @@ export function EndSplitSheet({ split, today, onClose }: { split: SplitView; tod
           accessibilityLabel={splitsT('end.lastDay')}
         />
       </FieldBlock>
+      <Text variant="bodySmall" tone="secondary">
+        {splitsT('end.after')}
+      </Text>
       {error ? (
         <MessageBox tone="danger" role="alert">
           {error}

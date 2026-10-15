@@ -278,7 +278,7 @@ describe('the split', () => {
     expect(mockToast.success).toHaveBeenCalledWith('Declined. Sam Cuts has been told.');
   });
 
-  it('shows the terms you sent, and withdraws them', async () => {
+  it('shows the terms you sent, and withdraws them after asking', async () => {
     const pending = terms({ id: 't-9', status: 'proposed', proposed_by_you: true, effective_from: '2026-11-01' });
     current = statements({
       split: split({ status: 'proposed', terms: null, pending, can: { respond: false, withdraw: true, propose_change: false, end: false } }),
@@ -289,6 +289,11 @@ describe('the split', () => {
     expect(screen.getByText('Waiting for Sam Cuts')).toBeTruthy();
     expect(screen.queryByText('Accept')).toBeNull();
     await press(screen.getByText('Withdraw'));
+    // Nothing is sent until the question is answered.
+    const sheet = screen.getByTestId('sheet');
+    expect(within(sheet).getByText('Sam Cuts will no longer be asked to accept these terms.')).toBeTruthy();
+    expect(writes()).toHaveLength(0);
+    await press(within(sheet).getAllByText('Withdraw').at(-1)!);
     expect(writes()[0]).toEqual({ path: `${BASE}/withdraw`, method: 'POST', body: { terms_id: 't-9' } });
     expect(mockToast.success).toHaveBeenCalledWith('Withdrawn.');
   });
@@ -318,7 +323,9 @@ describe('changing and ending', () => {
     await show();
     await press(await screen.findByText('Propose new terms'));
     const sheet = screen.getByTestId('sheet');
-    expect(within(sheet).getByText('The current terms stay in force until Sam Cuts accepts.')).toBeTruthy();
+    expect(within(sheet).getByText('Now: 40% of services, before VAT, from 1 October 2026.')).toBeTruthy();
+    // The sentence under the form says what the new terms count, and that the current ones carry on.
+    expect(within(sheet).getByText(/^From .*, Sam Cuts pays you 40% of services .* The current terms stay in force until Sam Cuts accepts\.$/)).toBeTruthy();
     expect(within(sheet).getByLabelText('Share of services (%)').props.value).toBe('40');
     await act(async () => {
       fireEvent(within(sheet).getByLabelText('New terms start on'), 'valueChange', {}, new Date(2026, 9, 1, 12));
@@ -364,7 +371,7 @@ describe('changing and ending', () => {
 describe('statements', () => {
   it('lists each period newest first, with the totals, who marked it paid and what changed since', async () => {
     await show();
-    expect(await screen.findByText('Outstanding: £360.00')).toBeTruthy();
+    expect(await screen.findByText('Sam Cuts still owes you: £360.00')).toBeTruthy();
     expect(screen.getByText('Marked paid: £200.00')).toBeTruthy();
     expect(
       screen.getByText('One statement per monthly period. Mark a period as paid once you have settled it. ResNeo does not move any money.'),
@@ -380,6 +387,10 @@ describe('statements', () => {
     // Only the closed, unpaid period can be marked paid; only the marked one undone.
     expect(screen.getAllByText('Mark as paid')).toHaveLength(1);
     expect(screen.getAllByText('Undo')).toHaveLength(1);
+    // The period in progress says what it has come to so far; closed ones say who owes it.
+    expect(screen.getByText('So far: £160.00')).toBeTruthy();
+    expect(screen.getByText('Owed to you: £360.00')).toBeTruthy();
+    expect(screen.getByText('Owed to you: £220.00')).toBeTruthy();
   });
 
   it('marks a period paid with an optional note', async () => {
@@ -411,6 +422,7 @@ describe('statements', () => {
     await press(await screen.findByText('Undo'));
     const sheet = screen.getByTestId('sheet');
     expect(within(sheet).getByText('Undo the payment mark for 1 September 2026 to 30 September 2026?')).toBeTruthy();
+    expect(within(sheet).getByText('The period shows as outstanding again for both businesses.')).toBeTruthy();
     expect(writes()).toHaveLength(0);
     await press(within(sheet).getByText('Undo'));
     expect(writes()[0]).toEqual({ path: `${BASE}/settlements/st-1/undo`, method: 'POST', body: undefined });

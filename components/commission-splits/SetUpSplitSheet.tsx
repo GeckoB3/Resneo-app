@@ -6,7 +6,7 @@ import { FieldBlock, OptionList } from '@/components/pos/settings-more/parts';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Text } from '@/components/ui/Text';
-import { isLiveSplit } from '@/lib/commission/describe';
+import { isLiveSplit, personShare, shareWhat } from '@/lib/commission/describe';
 import { splitsT } from '@/lib/commission/splits-copy';
 import { personKeyOf } from '@/lib/commission/team-share';
 import { radius, spacing } from '@/theme/index';
@@ -42,6 +42,7 @@ export function SetUpSplitSheet({
   initialCalendar,
   businessOnly,
   onChoose,
+  onAddCalendar,
   onClose,
 }: {
   settings: CommissionSettingsResponse;
@@ -52,6 +53,8 @@ export function SetUpSplitSheet({
   businessOnly?: boolean;
   /** Next, with the choice and the calendar it was made on (for Back). */
   onChoose: (choice: SetUpChoice, calendar: string) => void;
+  /** No calendar to choose: where calendars are added. */
+  onAddCalendar?: () => void;
   onClose: () => void;
 }) {
   const [calendar, setCalendar] = useState(initialCalendar ?? '');
@@ -67,10 +70,15 @@ export function SetUpSplitSheet({
   if (calendar.startsWith('c:') || calendar.startsWith('s:')) {
     person = settings.people.find((p) => personKeyOf(p) === calendar) ?? null;
     if (person && !businessOnly) {
+      // What they earn today, so choosing them reads as a change, not a fresh start.
+      const view = personShare(settings.rates, person, settings.today);
+      const now = shareWhat(view.service.bps, view.product.bps, view.voucher.bps);
       earners.push({
         value: 'person',
         label: person.name,
-        help: splitsT(person.calendar_id ? 'setup.earner.person.help' : 'setup.earner.login.help'),
+        help: [splitsT(person.calendar_id ? 'setup.earner.person.help' : 'setup.earner.login.help'), now ? splitsT('setup.earner.now', { what: now }) : null]
+          .filter(Boolean)
+          .join(' '),
         exists: false,
       });
     }
@@ -126,6 +134,25 @@ export function SetUpSplitSheet({
     setEarner('');
   };
   const theirGroups = list.partners.filter((p) => p.their_calendars.length);
+  // Nothing to choose from: say why, and where calendars are added, rather than an empty list.
+  const nothingToChoose = !yours.length && !theirGroups.length && !logins.length;
+
+  if (nothingToChoose) {
+    return (
+      <SheetStep
+        title={splitsT('setup.title')}
+        footer={
+          <>
+            {onAddCalendar ? <Button label={splitsT('app.calendars.add')} onPress={onAddCalendar} fullWidth /> : null}
+            <Button label={splitsT('ui.close')} variant="secondary" onPress={onClose} fullWidth />
+          </>
+        }>
+        <Text variant="bodySmall" tone="secondary">
+          {splitsT('app.calendars.none')}
+        </Text>
+      </SheetStep>
+    );
+  }
 
   return (
     <SheetStep

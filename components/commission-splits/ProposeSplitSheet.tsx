@@ -95,8 +95,27 @@ export function ProposeSplitSheet({
   const general = error && !fields.some((f) => f.message === error && shownField(f)) ? error : null;
   const others = fields.filter((f) => !shownField(f) && f.message !== general);
 
+  // The business (or its calendar) is no longer one you can agree a split with, such as a link that
+  // ended while the sheet was open: say so, rather than a half-empty title and a dead button.
+  if (!partner || !calendarName) {
+    return (
+      <SheetStep
+        title={splitsT('setup.title')}
+        footer={
+          <View style={styles.row}>
+            {onBack ? <Button label={splitsT('setup.back')} variant="ghost" onPress={onBack} style={styles.flex} /> : null}
+            <Button label={splitsT('ui.close')} variant="secondary" onPress={onClose} style={styles.flex} />
+          </View>
+        }>
+        <MessageBox tone="warning" role="note">
+          {splitsT('err.notAllowed')}
+        </MessageBox>
+      </SheetStep>
+    );
+  }
+
   const send = async () => {
-    if (!partner || !calendarId || propose.isPending) return;
+    if (!calendarId || propose.isPending) return;
     const check = checkTerms(draft);
     if (!check.ok) {
       setChecks({ services: check.services, products: check.products });
@@ -126,7 +145,7 @@ export function ProposeSplitSheet({
   return (
     <SheetStep
       title={splitsT('biz.calendarAt', { calendar: calendarName, business: payerName })}
-      subtitle={partner ? splitsT(side === 'yours' ? 'propose.youPay.help' : 'propose.theyPay.help', { partner: partner.name }) : null}
+      subtitle={splitsT(side === 'yours' ? 'propose.youPay.help' : 'propose.theyPay.help', { partner: partner.name })}
       footer={
         <>
           {/* The refusal sits by the buttons, so it is seen however far the sheet is scrolled. */}
@@ -136,10 +155,10 @@ export function ProposeSplitSheet({
             </MessageBox>
           ) : null}
           <Button
-            label={partner ? splitsT('form.send', { partner: partner.name }) : splitsT('setup.title')}
+            label={splitsT('form.send', { partner: partner.name })}
             onPress={() => void send()}
             loading={propose.isPending}
-            disabled={!partner || !calendarId || !draft.services.trim()}
+            disabled={!calendarId || !draft.services.trim()}
             fullWidth
           />
           <View style={styles.row}>
@@ -163,7 +182,7 @@ export function ProposeSplitSheet({
         }}
       />
 
-      <FieldBlock label={splitsT('form.label')} error={serverField('label')}>
+      <FieldBlock label={splitsT('form.label')} help={splitsT('form.label.help')} error={serverField('label')}>
         <ChoiceChips<SplitLabel>
           options={SPLIT_LABELS.map((l) => ({ value: l, label: labelWords(l) }))}
           value={label}
@@ -171,7 +190,7 @@ export function ProposeSplitSheet({
         />
       </FieldBlock>
 
-      <FieldBlock label={splitsT('form.period')} error={serverField('settlement_period')}>
+      <FieldBlock label={splitsT('form.period')} help={splitsT('form.period.help')} error={serverField('settlement_period')}>
         <ChoiceChips<SettlementPeriod>
           options={PERIODS.map((p) => ({ value: p, label: periodWords(p) }))}
           value={period}
@@ -189,7 +208,7 @@ export function ProposeSplitSheet({
           accessibilityLabel={splitsT('form.start')}
         />
       </FieldBlock>
-      {start < list.today && partner ? (
+      {start < list.today ? (
         <MessageBox tone="warning" role="note">
           {splitsT('form.backdated', { partner: partner.name })}
         </MessageBox>

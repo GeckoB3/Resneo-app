@@ -1,5 +1,5 @@
 import { useRouter, type Href } from 'expo-router';
-import { useState } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { PosRangeLine, PosReportCard, ReportInfoLine, ReportLoadError, ReportTable, reportStyles, useReportDownload } from '@/components/reports/pos/PosReportUi';
@@ -44,8 +44,12 @@ import type { PosRangeChoice } from '@/types/pos-reports';
  *   split's lines on a tap, its statements, the CSVs and the VAT notes. Always the whole venue.
  *
  * A team member's own figures are on Checkout's "My sales" (`useMyCommission`), as on the web.
+ * A line under each table says a name or split opens its lines; a drill-down has Close and, with
+ * `onReveal` (the Reports screen's scroll view), scrolls into view as it opens. "Change rates" goes
+ * to the Commission splits screen. Gift voucher columns show only when vouchers counted something
+ * in the range, and "Their part" only when a line was shared between people.
  */
-export function CommissionSection({ today }: { today: string }) {
+export function CommissionSection({ today, onReveal }: { today: string; onReveal?: (node: View) => void }) {
   const [choice, setChoice] = useState<PosRangeChoice>({ kind: 'preset', preset: 'this-month' });
   const [person, setPerson] = useState<TeamCommissionRow | null>(null);
   const [splitRow, setSplitRow] = useState<SplitReportRow | null>(null);
@@ -75,8 +79,15 @@ export function CommissionSection({ today }: { today: string }) {
         loading={team.isFetching || businesses.isFetching}
         currentRange={shown ? { from: shown.from, to: shown.to } : null}
       />
-      <TeamReport choice={choice} query={team} calendarName={calendar?.name ?? null} person={person} onPerson={setPerson} />
-      <BusinessReport choice={choice} query={businesses} split={splitRow} onSplit={setSplitRow} />
+      <TeamReport
+        choice={choice}
+        query={team}
+        calendarName={calendar?.name ?? null}
+        person={person}
+        onPerson={setPerson}
+        onReveal={onReveal}
+      />
+      <BusinessReport choice={choice} query={businesses} split={splitRow} onSplit={setSplitRow} onReveal={onReveal} />
     </View>
   );
 }
@@ -90,11 +101,39 @@ interface ReportQuery<T> {
   refetch: () => unknown;
 }
 
-function SectionTitle({ text }: { text: string }) {
-  return (
-    <Text variant="subheading" accessibilityRole="header" style={styles.sectionTitle}>
+function SectionTitle({ text, action }: { text: string; action?: { label: string; onPress: () => void } }) {
+  const title = (
+    <Text variant="subheading" accessibilityRole="header" style={[styles.sectionTitle, action ? styles.flex : null]}>
       {text}
     </Text>
+  );
+  if (!action) return title;
+  return (
+    <View style={styles.titleRow}>
+      {title}
+      <Pressable accessibilityRole="link" onPress={action.onPress} hitSlop={8} style={styles.titleAction}>
+        <Text variant="label" tone="brand">
+          {action.label}
+        </Text>
+      </Pressable>
+    </View>
+  );
+}
+
+/** A drill-down that has just opened: it asks once, when it first lays out, to be scrolled into view. */
+function RevealOnMount({ onReveal, children }: { onReveal?: (node: View) => void; children: ReactNode }) {
+  const ref = useRef<View>(null);
+  const done = useRef(false);
+  return (
+    <View
+      ref={ref}
+      onLayout={() => {
+        if (done.current || !onReveal || !ref.current) return;
+        done.current = true;
+        onReveal(ref.current);
+      }}>
+      {children}
+    </View>
   );
 }
 
@@ -122,12 +161,15 @@ function TeamReport({
   calendarName,
   person,
   onPerson,
+  onReveal,
 }: {
   choice: PosRangeChoice;
   query: ReportQuery<TeamCommissionReport>;
   calendarName: string | null;
   person: TeamCommissionRow | null;
-  onPerson: (row: TeamCommissionRow) => void;
+  /** A name was chosen (its lines open), or null when its lines close. */
+  onPerson: (row: TeamCommissionRow | null) => void;
+  onReveal?: (node: View) => void;
 }) {
   const router = useRouter();
   const { colors } = useTheme();
@@ -144,6 +186,10 @@ function TeamReport({
   const saleNo = (n: number | null) => `${data?.receipt_prefix ?? ''}${n ?? ''}`;
   const exportCsv = (kind: 'summary' | 'lines') =>
     void download(`${commissionPaths.report(query)}&format=csv&kind=${kind}`, splitsT('rep.team.title')).then(() => void q.refetch());
+  // Gift voucher columns only when a voucher earned or counted something in this range.
+  const showVouchers = Boolean(data && (data.totals.voucher_base_pence !== 0 || data.totals.voucher_commission_pence !== 0));
+  // "Their part" only when a line was shared between people.
+  const showPart = Boolean(drill.data?.lines?.some((l) => l.share_bps !== 10_000));
 
   // A completed booking shows its date and time, its client and its service (the Item column); a
   // sale or refund links to its sale.
@@ -177,7 +223,10 @@ function TeamReport({
 
   return (
     <View style={reportStyles.stack}>
-      <SectionTitle text={splitsT('rep.team.title')} />
+      <SectionTitle
+        text={splitsT('rep.team.title')}
+        action={{ label: splitsT('rep.team.settings'), onPress: () => router.push('/commission-splits' as Href) }}
+      />
       {data ? (
         <ReportInfoLine
           text={data.source === 'bookings' ? splitsT('rep.team.bookings') : `${reportsCopy('rep.c.help')} ${reportsCopy('rep.c.onlyTill')}`}
@@ -238,8 +287,22 @@ function TeamReport({
                 { label: reportsCopy('rep.c.col.servicesComm'), value: (r) => money(r.service_commission_pence), numeric: true, width: 120 },
                 { label: reportsCopy('rep.c.col.productsBase'), value: (r) => money(r.product_base_pence), numeric: true, width: 112 },
                 { label: reportsCopy('rep.c.col.productsComm'), value: (r) => money(r.product_commission_pence), numeric: true, width: 120 },
-                { label: reportsCopy('rep.c.col.vouchersBase'), value: (r) => money(r.voucher_base_pence), numeric: true, width: 112 },
-                { label: reportsCopy('rep.c.col.vouchersComm'), value: (r) => money(r.voucher_commission_pence), numeric: true, width: 120 },
+                ...(showVouchers
+                  ? [
+                      {
+                        label: reportsCopy('rep.c.col.vouchersBase'),
+                        value: (r: TeamCommissionRow) => money(r.voucher_base_pence),
+                        numeric: true,
+                        width: 112,
+                      },
+                      {
+                        label: reportsCopy('rep.c.col.vouchersComm'),
+                        value: (r: TeamCommissionRow) => money(r.voucher_commission_pence),
+                        numeric: true,
+                        width: 120,
+                      },
+                    ]
+                  : []),
                 { label: reportsCopy('rep.c.col.total'), value: (r) => money(r.total_commission_pence), numeric: true, width: 120 },
                 { label: reportsCopy('rep.c.col.tips'), value: (r) => money(r.tips_pence), numeric: true, width: 120 },
               ]}
@@ -249,14 +312,13 @@ function TeamReport({
                 money(data.totals.service_commission_pence),
                 money(data.totals.product_base_pence),
                 money(data.totals.product_commission_pence),
-                money(data.totals.voucher_base_pence),
-                money(data.totals.voucher_commission_pence),
+                ...(showVouchers ? [money(data.totals.voucher_base_pence), money(data.totals.voucher_commission_pence)] : []),
                 money(data.totals.total_commission_pence),
                 money(data.totals.tips_pence),
               ]}
             />
             <Text variant="caption" tone="muted">
-              {reportsCopy('rep.c.tipsNote')}
+              {`${data.rows.length ? `${splitsT('rep.team.drill')} ` : ''}${reportsCopy('rep.c.tipsNote')}`}
             </Text>
             {data.can_export ? (
               <Pressable accessibilityRole="button" onPress={() => exportCsv('lines')} hitSlop={8}>
@@ -271,28 +333,38 @@ function TeamReport({
           </PosReportCard>
 
           {person ? (
-            <PosReportCard title={reportsCopy('rep.c.lines', { staffName: person.person_name })}>
-              {drill.data?.lines ? (
-                <ReportTable
-                  caption={reportsCopy('rep.c.lines', { staffName: person.person_name })}
-                  rows={drill.data.lines}
-                  rowKey={(l, i) => `${l.row_kind}:${l.refund_id ?? l.sale_id ?? l.booking_id}:${l.line_id}:${i}`}
-                  columns={[
-                    { label: reportsCopy('rep.date'), value: lineDate, width: 170 },
-                    { label: splitsT('ui.saleOrBooking'), value: lineSource, width: 170 },
-                    { label: reportsCopy('rep.c.item'), value: (l) => l.item_name, width: 170 },
-                    { label: reportsCopy('rep.c.share'), value: (l) => `${l.share_bps / 100}%`, numeric: true, width: 80 },
-                    { label: reportsCopy('rep.c.base'), value: (l) => money(l.base_pence), numeric: true },
-                    { label: reportsCopy('rep.c.rate'), value: (l) => `${l.rate_bps / 100}%`, numeric: true, width: 80 },
-                    { label: reportsCopy('rep.c.commission'), value: (l) => money(l.commission_pence), numeric: true, width: 112 },
-                  ]}
-                />
-              ) : drill.isError ? (
-                <ReportLoadError message={commissionErrorMessage(drill.error, reportsCopy('rep.error'))} onRetry={() => void drill.refetch()} />
-              ) : (
-                <DetailSkeleton />
-              )}
-            </PosReportCard>
+            <RevealOnMount key={person.person_key} onReveal={onReveal}>
+              <PosReportCard
+                title={reportsCopy('rep.c.lines', { staffName: person.person_name })}
+                close={{ label: splitsT('ui.close'), onPress: () => onPerson(null) }}>
+                {drill.data?.lines ? (
+                  <ReportTable
+                    caption={reportsCopy('rep.c.lines', { staffName: person.person_name })}
+                    rows={drill.data.lines}
+                    rowKey={(l, i) => `${l.row_kind}:${l.refund_id ?? l.sale_id ?? l.booking_id}:${l.line_id}:${i}`}
+                    columns={[
+                      { label: splitsT('rep.col.date'), value: lineDate, width: 170 },
+                      {
+                        label: data.source === 'bookings' || drill.data.lines.some((l) => l.row_kind === 'booking') ? splitsT('ui.saleOrBooking') : splitsT('rep.col.sale'),
+                        value: lineSource,
+                        width: 170,
+                      },
+                      { label: splitsT('rep.col.item'), value: (l) => l.item_name, width: 170 },
+                      ...(showPart
+                        ? [{ label: splitsT('rep.col.part'), value: (l: TeamCommissionLine) => `${l.share_bps / 100}%`, numeric: true, width: 96 }]
+                        : []),
+                      { label: splitsT('rep.col.counted'), value: (l) => money(l.base_pence), numeric: true },
+                      { label: splitsT('rep.col.rate'), value: (l) => `${l.rate_bps / 100}%`, numeric: true, width: 80 },
+                      { label: reportsCopy('rep.c.commission'), value: (l) => money(l.commission_pence), numeric: true, width: 112 },
+                    ]}
+                  />
+                ) : drill.isError ? (
+                  <ReportLoadError message={commissionErrorMessage(drill.error, reportsCopy('rep.error'))} onRetry={() => void drill.refetch()} />
+                ) : (
+                  <DetailSkeleton />
+                )}
+              </PosReportCard>
+            </RevealOnMount>
           ) : null}
         </View>
       ) : null}
@@ -313,11 +385,14 @@ function BusinessReport({
   query: q,
   split,
   onSplit,
+  onReveal,
 }: {
   choice: PosRangeChoice;
   query: ReportQuery<SplitReportResponse>;
   split: SplitReportRow | null;
-  onSplit: (row: SplitReportRow) => void;
+  /** A split was chosen (its lines open), or null when its lines close. */
+  onSplit: (row: SplitReportRow | null) => void;
+  onReveal?: (node: View) => void;
 }) {
   const router = useRouter();
   const data = q.data;
@@ -417,6 +492,11 @@ function BusinessReport({
               ]}
             />
           )}
+          {data.rows.length ? (
+            <Text variant="caption" tone="muted">
+              {splitsT('rep.biz.drill')}
+            </Text>
+          ) : null}
 
           {vatBusinesses.map((business) => (
             <Text key={business} variant="caption" tone="muted">
@@ -435,49 +515,51 @@ function BusinessReport({
           </Pressable>
 
           {split ? (
-            <PosReportCard title={linesTitle(split)}>
-              {drill.data?.lines ? (
-                <ReportTable
-                  caption={linesTitle(split)}
-                  rows={drill.data.lines}
-                  rowKey={(l, i) => `${l.kind}:${l.date}:${l.sale_number ?? ''}:${i}`}
-                  columns={[
-                    {
-                      label: reportsCopy('rep.date'),
-                      width: 170,
-                      value: (l) => (
-                        <View>
-                          <Text variant="bodyMedium">{`${formatLongDay(l.date)}${l.time ? `, ${l.time.slice(0, 5)}` : ''}`}</Text>
-                          <Text variant="bodySmall" tone="secondary">
-                            {splitLineLabel(l)}
-                          </Text>
-                        </View>
-                      ),
-                    },
-                    { label: reportsCopy('rep.c.item'), value: (l) => l.item_name, width: 170 },
-                    { label: reportsCopy('rep.c.base'), value: (l) => money(l.base_pence), numeric: true },
-                    { label: reportsCopy('rep.c.rate'), value: (l) => `${l.rate_bps / 100}%`, numeric: true, width: 80 },
-                    { label: splitsT('rep.biz.col.owed'), value: (l) => money(l.owed_pence), numeric: true },
-                  ]}
-                />
-              ) : drill.isError ? (
-                <ReportLoadError message={commissionErrorMessage(drill.error, reportsCopy('rep.error'))} onRetry={() => void drill.refetch()} />
-              ) : (
-                <DetailSkeleton />
-              )}
-              {data.can_export ? (
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() =>
-                    void download(`${commissionPaths.splitLines(query, split.split_id)}&format=csv&kind=lines`, linesTitle(split))
-                  }
-                  hitSlop={8}>
-                  <Text variant="label" tone="brand">
-                    {reportsCopy('rep.c.exportLines', { lines: linesTitle(split) })}
-                  </Text>
-                </Pressable>
-              ) : null}
-            </PosReportCard>
+            <RevealOnMount key={split.split_id} onReveal={onReveal}>
+              <PosReportCard title={linesTitle(split)} close={{ label: splitsT('ui.close'), onPress: () => onSplit(null) }}>
+                {drill.data?.lines ? (
+                  <ReportTable
+                    caption={linesTitle(split)}
+                    rows={drill.data.lines}
+                    rowKey={(l, i) => `${l.kind}:${l.date}:${l.sale_number ?? ''}:${i}`}
+                    columns={[
+                      {
+                        label: splitsT('rep.col.date'),
+                        width: 170,
+                        value: (l) => (
+                          <View>
+                            <Text variant="bodyMedium">{`${formatLongDay(l.date)}${l.time ? `, ${l.time.slice(0, 5)}` : ''}`}</Text>
+                            <Text variant="bodySmall" tone="secondary">
+                              {splitLineLabel(l)}
+                            </Text>
+                          </View>
+                        ),
+                      },
+                      { label: splitsT('rep.col.item'), value: (l) => l.item_name, width: 170 },
+                      { label: splitsT('rep.col.counted'), value: (l) => money(l.base_pence), numeric: true },
+                      { label: splitsT('rep.col.rate'), value: (l) => `${l.rate_bps / 100}%`, numeric: true, width: 80 },
+                      { label: splitsT('rep.biz.col.owed'), value: (l) => money(l.owed_pence), numeric: true },
+                    ]}
+                  />
+                ) : drill.isError ? (
+                  <ReportLoadError message={commissionErrorMessage(drill.error, reportsCopy('rep.error'))} onRetry={() => void drill.refetch()} />
+                ) : (
+                  <DetailSkeleton />
+                )}
+                {data.can_export ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() =>
+                      void download(`${commissionPaths.splitLines(query, split.split_id)}&format=csv&kind=lines`, linesTitle(split))
+                    }
+                    hitSlop={8}>
+                    <Text variant="label" tone="brand">
+                      {reportsCopy('rep.c.exportLines', { lines: linesTitle(split) })}
+                    </Text>
+                  </Pressable>
+                ) : null}
+              </PosReportCard>
+            </RevealOnMount>
           ) : null}
         </View>
       ) : null}
@@ -490,6 +572,9 @@ const styles = StyleSheet.create({
   note: { borderWidth: 1, borderRadius: radius.md, padding: spacing.md, gap: spacing.xs },
   link: { textDecorationLine: 'underline' },
   sectionTitle: { marginTop: spacing.sm },
+  flex: { flex: 1, minWidth: 0 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  titleAction: { marginTop: spacing.sm },
   tiles: { flexDirection: 'row', gap: spacing.sm },
   tile: { flex: 1 },
   splitCell: { gap: 2 },

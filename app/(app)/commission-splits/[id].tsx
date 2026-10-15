@@ -50,6 +50,9 @@ import type { SplitPeriodView, SplitStatementsResponse, SplitTermsView, SplitVie
 
 type OpenSheet = { kind: 'terms' } | { kind: 'end' } | { kind: 'paid'; period: SplitPeriodView } | null;
 
+/** Where a refusal shows: by the answer buttons, or by the statement period that was undone. */
+type ActionError = { where: 'pending'; message: string } | { where: 'statement'; period: string; message: string };
+
 /**
  * One split with another business (web Manage dialog and statements): the calendar at its business,
  * led by what it shares in one sentence ("Sam Cuts pays you 40% of services, as rent.") and how it is
@@ -57,8 +60,10 @@ type OpenSheet = { kind: 'terms' } | { kind: 'end' } | { kind: 'paid'; period: S
  * business proposed it, with the worked example; Withdraw when you did), "Propose new terms" and
  * "End this split" where the server allows them (`can`), "Earlier terms", and the statements: each
  * period newest first with its status and what is owed, "Mark as paid" with an optional note, who
- * marked it and when, a note when the figures changed since, and Undo. Both businesses' admins see
- * the same record; ResNeo moves no money.
+ * marked it and when, a note when the figures changed since, and Undo. Withdraw and Undo ask first;
+ * a refusal shows beside the control that caused it. "End this split" comes last, set apart, in
+ * red. The header is the split's own title once it is known. Both businesses' admins see the same
+ * record; ResNeo moves no money.
  */
 export default function SplitDetailScreen() {
   const params = useLocalSearchParams<{ id?: string }>();
@@ -75,11 +80,14 @@ export default function SplitDetailScreen() {
   const undo = useUndoSettlement();
   const [sheet, setSheet] = useState<OpenSheet>(null);
   const [undoing, setUndoing] = useState<SplitPeriodView | null>(null);
+  const [withdrawing, setWithdrawing] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [acting, setActing] = useState<'accept' | 'decline' | 'withdraw' | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ActionError | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const header = <Stack.Screen options={{ headerShown: true, title: splitsT('page.title') }} />;
+  const { colors } = useTheme();
+  const headerFor = (title: string) => <Stack.Screen options={{ headerShown: true, title }} />;
+  const header = headerFor(splitsT('page.title'));
 
   if (staffLoading) {
     return (
@@ -162,7 +170,7 @@ export default function SplitDetailScreen() {
           : splitsT('respond.declined', { partner }),
       );
     } catch (e) {
-      setError(commissionErrorMessage(e));
+      setError({ where: 'pending', message: commissionErrorMessage(e) });
     } finally {
       setActing(null);
     }
@@ -176,29 +184,32 @@ export default function SplitDetailScreen() {
       await withdraw.mutateAsync({ splitId: split.id, body: { terms_id: pending.id } });
       toast.success(splitsT('withdraw.done'));
     } catch (e) {
-      setError(commissionErrorMessage(e));
+      setError({ where: 'pending', message: commissionErrorMessage(e) });
     } finally {
       setActing(null);
+      setWithdrawing(false);
     }
   };
 
   const confirmUndo = async () => {
-    const settlement = undoing?.settlement;
-    if (!settlement || undo.isPending) return;
+    const period = undoing;
+    const settlement = period?.settlement;
+    if (!period || !settlement || undo.isPending) return;
     setError(null);
     try {
       await undo.mutateAsync({ splitId: split.id, settlementId: settlement.id });
       toast.success(splitsT('stmt.undone'));
     } catch (e) {
-      setError(commissionErrorMessage(e));
+      setError({ where: 'statement', period: period.start, message: commissionErrorMessage(e) });
     } finally {
       setUndoing(null);
     }
   };
+  const pendingError = error?.where === 'pending' ? error.message : null;
 
   return (
     <Screen scroll={false} padded={false}>
-      {header}
+      {headerFor(calendarAt(split))}
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void refresh()} />}>
@@ -221,11 +232,6 @@ export default function SplitDetailScreen() {
           ))}
         </SettingsCard>
 
-        {error ? (
-          <MessageBox tone="danger" role="alert">
-            {error}
-          </MessageBox>
-        ) : null}
 
         {pending ? (
           <SettingsCard
@@ -242,6 +248,11 @@ export default function SplitDetailScreen() {
             }>
             {/* Already the head's sentence when nothing is agreed yet. */}
             {headTerms === pending ? null : <TermsLines terms={pending} />}
+            {pendingError ? (
+              <MessageBox tone="danger" role="alert">
+                {pendingError}
+              </MessageBox>
+            ) : null}
             {split.can.respond ? (
               <>
                 <SplitExample
@@ -277,7 +288,7 @@ export default function SplitDetailScreen() {
               <Button
                 label={splitsT('withdraw')}
                 variant="secondary"
-                onPress={() => void withdrawPending()}
+                onPress={() => setWithdrawing(true)}
                 loading={acting === 'withdraw'}
                 disabled={acting !== null}
               />
@@ -285,15 +296,8 @@ export default function SplitDetailScreen() {
           </SettingsCard>
         ) : null}
 
-        {split.can.propose_change || split.can.end ? (
-          <View style={styles.actions}>
-            {split.can.propose_change ? (
-              <Button label={splitsT('change.title')} variant="secondary" onPress={() => setSheet({ kind: 'terms' })} style={styles.flex} />
-            ) : null}
-            {split.can.end ? (
-              <Button label={splitsT('end')} variant="ghost" onPress={() => setSheet({ kind: 'end' })} style={styles.flex} />
-            ) : null}
-          </View>
+        {split.can.propose_change ? (
+          <Button label={splitsT('change.title')} variant="secondary" onPress={() => setSheet({ kind: 'terms' })} fullWidth />
         ) : null}
 
         {earlier.length > 0 ? (
@@ -302,6 +306,11 @@ export default function SplitDetailScreen() {
               label={splitsT('biz.history')}
               variant="ghost"
               size="sm"
+              leftIcon={
+                <Text variant="caption" tone="brand" accessibilityElementsHidden importantForAccessibility="no">
+                  {historyOpen ? '\u25BE' : '\u25B8'}
+                </Text>
+              }
               onPress={() => setHistoryOpen((o) => !o)}
               accessibilityState={{ expanded: historyOpen }}
             />
@@ -325,7 +334,20 @@ export default function SplitDetailScreen() {
           // A split the link or collective no longer allows is read only (`err.readOnly`).
           onMarkPaid={readOnly ? null : (period) => setSheet({ kind: 'paid', period })}
           onUndo={readOnly ? null : setUndoing}
+          undoError={error?.where === 'statement' ? error : null}
         />
+
+        {split.can.end ? (
+          // Last, set apart and in red: it ends the split for both businesses.
+          <View style={[styles.endRow, { borderTopColor: colors.border }]}>
+            <Button
+              label={splitsT('end')}
+              variant="ghost"
+              customColors={{ background: 'transparent', text: colors.danger }}
+              onPress={() => setSheet({ kind: 'end' })}
+            />
+          </View>
+        ) : null}
       </ScrollView>
 
       {sheet?.kind === 'terms' ? <TermsSheet split={split} today={today} currency={currency} onClose={() => setSheet(null)} /> : null}
@@ -334,8 +356,19 @@ export default function SplitDetailScreen() {
         <MarkPaidSheet split={split} period={sheet.period} currency={currency} onClose={() => setSheet(null)} />
       ) : null}
       <ConfirmSheet
+        visible={withdrawing}
+        title={splitsT('withdraw')}
+        message={splitsT('withdraw.help', { partner })}
+        confirmLabel={splitsT('withdraw')}
+        cancelLabel={splitsT('ui.close')}
+        loading={acting === 'withdraw'}
+        onConfirm={() => void withdrawPending()}
+        onClose={() => setWithdrawing(false)}
+      />
+      <ConfirmSheet
         visible={undoing !== null}
         title={undoing ? splitsT('stmt.undo.confirm', { period: periodText(undoing) }) : ''}
+        message={splitsT('stmt.undo.help')}
         confirmLabel={splitsT('stmt.undo')}
         cancelLabel={splitsT('ui.close')}
         loading={undo.isPending}
@@ -368,6 +401,7 @@ function StatementsCard({
   currency,
   onMarkPaid,
   onUndo,
+  undoError,
 }: {
   split: SplitView;
   data: SplitStatementsResponse | null;
@@ -378,9 +412,13 @@ function StatementsCard({
   /** Null for a read-only split: no "Mark as paid" and no Undo. */
   onMarkPaid: ((period: SplitPeriodView) => void) | null;
   onUndo: ((period: SplitPeriodView) => void) | null;
+  /** Undo was refused for this period: the sentence shows in its box. */
+  undoError: { period: string; message: string } | null;
 }) {
   const { colors } = useTheme();
   const money = (pence: number) => splitMoney(pence, currency);
+  const youPay = split.role === 'payer';
+  const owedWord = splitsT(youPay ? 'rep.biz.youOwe' : 'rep.biz.owedToYou');
   const withProducts = split.history.some((t) => t.products_rate_bps !== null);
   const periods = data ? [...data.periods].sort((a, b) => (a.start < b.start ? 1 : a.start > b.start ? -1 : 0)) : [];
   return (
@@ -390,11 +428,22 @@ function StatementsCard({
       {loadError ? (
         <ErrorState message={loadError} onRetry={onRetry} />
       ) : !data ? (
-        loading ? <DetailSkeleton /> : null
+        loading ? (
+          <DetailSkeleton />
+        ) : (
+          <Text variant="bodySmall" tone="secondary">
+            {splitsT('stmt.empty')}
+          </Text>
+        )
       ) : (
         <>
           <View style={styles.totals}>
-            <Text variant="bodyMedium">{splitsT('stmt.outstanding', { amount: money(data.outstanding_pence) })}</Text>
+            <Text variant="bodyMedium">
+              {splitsT(youPay ? 'stmt.outstanding.youOwe' : 'stmt.outstanding.owedToYou', {
+                partner: split.partner.name,
+                amount: money(data.outstanding_pence),
+              })}
+            </Text>
             <Text variant="bodySmall" tone="secondary">
               {splitsT('stmt.paidTotal', { amount: money(data.paid_pence) })}
             </Text>
@@ -432,7 +481,9 @@ function StatementsCard({
                       {`${splitsT('rep.biz.col.products')}: ${money(p.products_pence)}`}
                     </Text>
                   ) : null}
-                  <Text variant="bodySmall">{`${splitsT('rep.biz.col.owed')}: ${money(p.owed_pence)}`}</Text>
+                  <Text variant="bodySmall">
+                    {p.status === 'current' ? splitsT('stmt.soFar', { amount: money(p.owed_pence) }) : `${owedWord}: ${money(p.owed_pence)}`}
+                  </Text>
                   {p.settlement ? (
                     <>
                       <Text variant="caption" tone="muted">
@@ -453,6 +504,11 @@ function StatementsCard({
                   {onMarkPaid && p.status === 'outstanding' && !p.settlement ? (
                     <Button label={splitsT('stmt.markPaid')} size="sm" variant="secondary" onPress={() => onMarkPaid(p)} />
                   ) : null}
+                  {undoError?.period === p.start ? (
+                    <Text variant="caption" tone="danger" accessibilityRole="alert">
+                      {undoError.message}
+                    </Text>
+                  ) : null}
                   {onUndo && p.settlement ? <Button label={splitsT('stmt.undo')} size="sm" variant="ghost" onPress={() => onUndo(p)} /> : null}
                 </View>
               );
@@ -470,6 +526,7 @@ const styles = StyleSheet.create({
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   flex: { flex: 1 },
   history: { gap: spacing.xs, alignItems: 'flex-start' },
+  endRow: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: spacing.sm, alignItems: 'flex-start' },
   terms: { gap: spacing.xxs },
   totals: { gap: spacing.xxs },
   period: { borderWidth: 1, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, gap: spacing.xs },

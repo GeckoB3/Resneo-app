@@ -99,7 +99,7 @@ export function PartnerGroups({
         </Text>
         <Pressable onPress={onLinkedVenues} accessibilityRole="link" hitSlop={8}>
           <Text variant="label" tone="brand">
-            {splitsT('cal.theirs.emptyAction')}
+            {splitsT('app.linkedVenues')}
           </Text>
         </Pressable>
       </View>

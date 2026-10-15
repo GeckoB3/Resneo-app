@@ -24,6 +24,8 @@ import type { CommissionRate, CommissionSettingsResponse, SplitTermsView, SplitV
 
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
 jest.mock('@react-native-community/datetimepicker', () => 'DateTimePicker');
+const mockOpenBrowser = jest.fn((_url: string) => Promise.resolve({ type: 'opened' }));
+jest.mock('expo-web-browser', () => ({ openBrowserAsync: (url: string) => mockOpenBrowser(url) }));
 const mockPush = jest.fn();
 jest.mock('expo-router', () => ({
   Stack: { Screen: () => null },
@@ -395,7 +397,7 @@ describe('what the screen says', () => {
     await show();
     const theirs = section('partners');
     expect(within(theirs).getByText(/When you link with another business/)).toBeTruthy();
-    await press(within(theirs).getByText('Go to Linked Accounts'));
+    await press(within(theirs).getByText('Go to Linked venues'));
     expect(mockPush).toHaveBeenCalledWith('/linked-venues');
     expect(within(section('calendars')).queryByText('Share with a business')).toBeNull();
   });
@@ -406,7 +408,7 @@ describe('what the screen says', () => {
     await show();
     const past = section('past');
     expect(within(past).queryByText('Old at Sam Cuts')).toBeNull();
-    await press(within(past).getByText('Show 1'));
+    await press(within(past).getByText('Show past splits (1)'));
     expect(within(past).getByText('Old at Sam Cuts')).toBeTruthy();
     expect(within(past).getByText('Ended')).toBeTruthy();
     await press(within(past).getByText('Hide'));
@@ -487,7 +489,12 @@ describe('Set up a split', () => {
     expect(within(chooser).getByText('Logins without a calendar')).toBeTruthy();
     await press(within(chooser).getByLabelText('Kim'));
     // Kim's calendar can only share with Kim: nobody else can see it, so Kim is chosen.
-    expect(within(chooser).getByText('You pay them a share of what this calendar takes. For employed or self-employed team members.')).toBeTruthy();
+    // What Kim earns today follows, so choosing her reads as a change, not a fresh start.
+    expect(
+      within(chooser).getByText(
+        'You pay them a share of what this calendar takes. For employed or self-employed team members. At the moment: 5% of services and 20% of products.',
+      ),
+    ).toBeTruthy();
     await press(within(chooser).getByText('Next'));
 
     const form = sheet();
@@ -660,9 +667,21 @@ describe('changing a share', () => {
     };
     await show();
     await press(screen.getByLabelText("Change: Jess's share"));
+    await type(within(sheet()).getByLabelText('Share of services (%)'), '45');
     await press(within(sheet()).getByText('Save'));
     expect(await within(sheet()).findByText(NO_DATE)).toBeTruthy();
     expect(within(sheet()).getAllByText(NO_DATE)).toHaveLength(1);
+  });
+
+  it('only closes when Save is pressed with nothing changed', async () => {
+    await show();
+    await press(screen.getByLabelText("Change: Jess's share"));
+    const form = sheet();
+    expect(within(form).getByText('Only changes the word used on reports.')).toBeTruthy();
+    expect(within(form).getByText('The first day the new share counts. Days before it keep the rates they had.')).toBeTruthy();
+    await press(within(form).getByText('Save'));
+    expect(writes()).toHaveLength(0);
+    expect(screen.queryByTestId('sheet')).toBeNull();
   });
 
   it("leaves products out for someone who earns none where Checkout isn't set up, and checks the share", async () => {
@@ -698,7 +717,7 @@ describe('changing a share', () => {
     await press(screen.getByLabelText("Change: Jess's share"));
     const form = sheet();
     await press(within(form).getByText('Rates for one category (1)'));
-    expect(within(form).getByText('Colour (Services): 50%, From 1 September 2026')).toBeTruthy();
+    expect(within(form).getByText('Colour (Services): 50%, from 1 September 2026')).toBeTruthy();
     await press(within(form).getByText('Stop this rate'));
     expect(writes()[0]!.body).toEqual({
       calendar_id: 'cal-jess',
@@ -717,8 +736,8 @@ describe('changing a share', () => {
       body: { calendar_id: 'cal-jess', staff_id: null, effective_from: '2026-10-14', item_type: 'service', category_id: 'colour', rate_percent: 12 },
     });
     await press(within(form).getByText('Earlier rates'));
-    expect(within(form).getByText('Services: 40%, From 1 September 2026')).toBeTruthy();
-    expect(within(form).getByText('Services, Colour: 50%, From 1 September 2026')).toBeTruthy();
+    expect(within(form).getByText('Services: 40%, from 1 September 2026')).toBeTruthy();
+    expect(within(form).getByText('Services, Colour: 50%, from 1 September 2026')).toBeTruthy();
   });
 });
 
@@ -726,8 +745,8 @@ describe('standard rates and how figures are worked out', () => {
   it('shows each standard rate, the placeholders and which rate wins', async () => {
     await show();
     expect(screen.getByText('What your team earns unless a calendar has its own rates.')).toBeTruthy();
-    expect(screen.getByText('5%, From 1 January 2026')).toBeTruthy();
-    expect(screen.getByText('20%, From 1 January 2026')).toBeTruthy();
+    expect(screen.getByText('5%, from 1 January 2026')).toBeTruthy();
+    expect(screen.getByText('20%, from 1 January 2026')).toBeTruthy();
     expect(screen.getByText(/^0% · Usually 0%/)).toBeTruthy();
     expect(screen.getByText(/a calendar's own rate for a category, then its own rate/)).toBeTruthy();
     // Jess's own rates are on her calendar, not in a list of people.
@@ -742,10 +761,18 @@ describe('standard rates and how figures are worked out', () => {
     };
     await show();
     await press(screen.getAllByText('Change rate')[2]!); // Gift vouchers (placeholder)
+    // It names the rate it changes and starts on the rate in force today.
+    expect(within(sheet()).getByText('Standard rate for gift vouchers')).toBeTruthy();
+    expect(within(sheet()).getByLabelText('Rate (%)').props.value).toBe('0');
+    expect(within(sheet()).getByText('At the moment: 0%.')).toBeTruthy();
+    await type(within(sheet()).getByLabelText('Rate (%)'), '120');
     await press(within(sheet()).getByText('Save changes'));
-    expect(within(sheet()).getByText('Enter a rate between 0% and 100%.')).toBeTruthy();
+    expect(within(sheet()).getByText('Enter a percentage from 0 to 100.')).toBeTruthy();
     expect(writes()).toHaveLength(0);
     await type(within(sheet()).getByLabelText('Rate (%)'), '12,5');
+    expect(
+      within(sheet()).getByText('From 14 October 2026, your team earns 12.5% of gift vouchers, unless a calendar has its own rate.'),
+    ).toBeTruthy();
     await press(within(sheet()).getByText('Save changes'));
     expect(writes()[0]).toEqual({
       path: RATES,
@@ -753,7 +780,17 @@ describe('standard rates and how figures are worked out', () => {
       body: { item_type: 'voucher', category_id: null, calendar_id: null, staff_id: null, rate_percent: 12.5, effective_from: '2026-10-14' },
     });
     expect(mockToast.success).toHaveBeenCalledWith('Commission rate saved.');
-    expect(await screen.findByText(/^12\.5%, From 14 October 2026/)).toBeTruthy();
+    expect(await screen.findByText(/^12\.5%, from 14 October 2026/)).toBeTruthy();
+  });
+
+  it('only closes when the same rate is saved from today', async () => {
+    await show();
+    await press(screen.getAllByText('Change rate')[0]!); // Services, 5% today
+    expect(within(sheet()).getByText('Standard rate for services')).toBeTruthy();
+    expect(within(sheet()).getByLabelText('Rate (%)').props.value).toBe('5');
+    await press(within(sheet()).getByText('Save changes'));
+    expect(writes()).toHaveLength(0);
+    expect(screen.queryByTestId('sheet')).toBeNull();
   });
 
   it('adds, stops and shows the earlier versions of a standard category rate', async () => {
@@ -768,10 +805,10 @@ describe('standard rates and how figures are worked out', () => {
     await show();
     expect(screen.getByText('Colour (Services)')).toBeTruthy();
     await press(screen.getAllByText('Earlier rates').at(-1)!);
-    expect(screen.getAllByText(/^(8|9)%, From /).map((n) => n.props.children)).toEqual([
-      '9%, From 1 June 2026',
-      '9%, From 1 June 2026',
-      '8%, From 1 January 2026',
+    expect(screen.getAllByText(/^(8|9)%, from /).map((n) => n.props.children)).toEqual([
+      '9%, from 1 June 2026',
+      '9%, from 1 June 2026',
+      '8%, from 1 January 2026',
     ]);
     await press(screen.getByText('Stop this rate'));
     expect(writes()[0]!.body).toEqual({
@@ -816,5 +853,31 @@ describe('standard rates and how figures are worked out', () => {
     await press(screen.getByText('Prices including VAT'));
     expect(await screen.findByText(STALE)).toBeTruthy();
     expect(mockToast.success).not.toHaveBeenCalled();
+  });
+});
+
+describe('ways forward', () => {
+  it('links to what is owed in Reports and to the help article', async () => {
+    await show();
+    await press(screen.getByText('See what is owed in Reports'));
+    expect(mockPush).toHaveBeenCalledWith('/reports?tab=commission');
+    await press(screen.getByText('How commission splits work'));
+    expect(mockOpenBrowser).toHaveBeenCalledWith('https://www.resneo.com/help/settings/commission-splits');
+  });
+
+  it('with no calendars, says why nothing is listed and where calendars are added', async () => {
+    currentSettings = settings({ people: [] });
+    currentList = list({ splits: [], partners: [] });
+    await show();
+    expect(screen.getByText('You have no calendars yet.')).toBeTruthy();
+    await press(screen.getByText('Add a calendar'));
+    expect(mockPush).toHaveBeenCalledWith('/availability?tab=team');
+    mockPush.mockClear();
+    await press(screen.getAllByText('Set up a split')[0]!);
+    const chooser = sheet();
+    expect(within(chooser).getByText('There are no calendars to choose yet. Add a calendar first, then come back to set up a split.')).toBeTruthy();
+    expect(within(chooser).queryByText('Next')).toBeNull();
+    await press(within(chooser).getByText('Add a calendar'));
+    expect(mockPush).toHaveBeenCalledWith('/availability?tab=team');
   });
 });

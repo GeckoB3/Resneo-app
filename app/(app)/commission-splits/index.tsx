@@ -1,7 +1,8 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { Stack, useRouter, type Href } from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter, type Href } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
 import { useRef, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { Linking, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
 import { CalendarCard, LineRow, PartnerGroups } from '@/components/commission-splits/CalendarCards';
 import { FlowSheet } from '@/components/commission-splits/FlowSheet';
@@ -38,6 +39,11 @@ import { radius, spacing } from '@/theme/index';
 import { useTheme } from '@/theme/useTheme';
 import type { CommissionSettingsPerson, SplitView } from '@/types/commission-splits';
 
+/** The web help article for this screen (opened in the in-app browser, as other web help links). */
+const HELP_URL = 'https://www.resneo.com/help/settings/commission-splits';
+/** Where calendars are added: Availability Settings, Calendars tab. */
+const CALENDARS_HREF = '/availability?tab=team';
+
 /** Where Back in the second step returns to: step one, on the calendar that was chosen. */
 type Back = { calendar?: string; businessOnly?: boolean };
 
@@ -63,10 +69,14 @@ type Opened =
  * "Set up a split" asks whose takings, then who earns a share, then the share itself, with a sentence
  * saying exactly what will count, all in one sheet. Every split opens `/commission-splits/[id]`,
  * where its terms, statements and everything else you can do to it live. The old Checkout settings
- * route `/checkout-settings/commission` redirects here; a `?section=` from an older link is ignored.
+ * route `/checkout-settings/commission` redirects here. `?section=businesses` (a notification, the
+ * report's "Manage splits", a split that no longer exists) scrolls to the calendars at businesses
+ * you work with; any other `?section=` from an older link is ignored.
  */
 export default function CommissionSplitsScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ section?: string | string[] }>();
+  const section = Array.isArray(params.section) ? params.section[0] : params.section;
   const { colors } = useTheme();
   const { isAdmin, staffLoading } = useCommissionGate();
   const queryClient = useQueryClient();
@@ -74,6 +84,8 @@ export default function CommissionSplitsScreen() {
   const listQuery = useSplitsList();
   const respond = useRespondSplit();
   const scrollRef = useRef<ScrollView>(null);
+  // `?section=businesses` scrolls there once, the first time that card is laid out.
+  const scrolledTo = useRef<string | null>(null);
   const [opened, setOpened] = useState<Opened | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -110,10 +122,19 @@ export default function CommissionSplitsScreen() {
 
   const settings = settingsQuery.data && Array.isArray(settingsQuery.data.rates) ? settingsQuery.data : null;
   const list = listQuery.data && Array.isArray(listQuery.data.splits) ? listQuery.data : null;
+  const openHelp = () => {
+    void WebBrowser.openBrowserAsync(HELP_URL).catch(() => Linking.openURL(HELP_URL).catch(() => undefined));
+  };
   const intro = (
-    <Text variant="bodySmall" tone="secondary">
-      {splitsT('page.intro')}
-    </Text>
+    <View style={styles.intro}>
+      <Text variant="bodySmall" tone="secondary">
+        {splitsT('page.intro')}
+      </Text>
+      <View style={styles.links}>
+        <TextLink label={splitsT('page.seeReport')} onPress={() => router.push('/reports?tab=commission' as Href)} />
+        <TextLink label={splitsT('page.helpLink')} onPress={openHelp} />
+      </View>
+    </View>
   );
 
   if (!settings || !list) {
@@ -250,6 +271,10 @@ export default function CommissionSplitsScreen() {
           initialCalendar={opened.calendar}
           businessOnly={opened.businessOnly}
           onChoose={(choice, calendar) => choose(choice, { calendar, businessOnly: opened.businessOnly })}
+          onAddCalendar={() => {
+            close();
+            router.push(CALENDARS_HREF as Href);
+          }}
           onClose={close}
         />
       );
@@ -369,9 +394,12 @@ export default function CommissionSplitsScreen() {
         <View testID="calendars">
           <SettingsCard title={splitsT('cal.yours.title')} description={splitsT('cal.yours.help')}>
             {yours.length === 0 && orphanPayer.length === 0 ? (
-              <Text variant="bodySmall" tone="secondary">
-                {splitsT('cal.yours.empty')}
-              </Text>
+              <View style={styles.empty}>
+                <Text variant="bodySmall" tone="secondary">
+                  {splitsT('cal.yours.empty')}
+                </Text>
+                <TextLink label={splitsT('app.calendars.add')} onPress={() => router.push(CALENDARS_HREF as Href)} />
+              </View>
             ) : null}
             {yours.map((p) => (
               <CalendarCard
@@ -402,7 +430,14 @@ export default function CommissionSplitsScreen() {
           </SettingsCard>
         </View>
 
-        <View testID="partners">
+        <View
+          testID="partners"
+          onLayout={(e) => {
+            if (section !== 'businesses' || scrolledTo.current === section) return;
+            scrolledTo.current = section;
+            const y = e.nativeEvent.layout.y;
+            scrollRef.current?.scrollTo({ y: Math.max(0, y - spacing.sm), animated: true });
+          }}>
           <SettingsCard title={splitsT('cal.theirs.title')} description={splitsT('cal.theirs.help')}>
             <PartnerGroups
               partners={list.partners}
@@ -461,7 +496,21 @@ export default function CommissionSplitsScreen() {
   );
 }
 
+/** A short link in the brand colour, as the page's other "go somewhere" lines. */
+function TextLink({ label, onPress }: { label: string; onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress} accessibilityRole="link" hitSlop={8}>
+      <Text variant="label" tone="brand">
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
+  intro: { gap: spacing.sm },
+  links: { flexDirection: 'row', flexWrap: 'wrap', columnGap: spacing.lg, rowGap: spacing.xs },
+  empty: { gap: spacing.sm, alignItems: 'flex-start' },
   content: { padding: spacing.base, gap: spacing.base, paddingBottom: spacing['3xl'] },
   answer: { borderWidth: 1, borderRadius: radius.lg, padding: spacing.md, gap: spacing.md },
   answerHead: { gap: spacing.xxs },
